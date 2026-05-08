@@ -62,8 +62,8 @@ class ffmpeg_reader:
 		if not return_code == 1 or len(probe) < 1:
 			# Could not determine the resolution from ffmpeg call. Reverting to ffmpeg.probe()
 			probe = ffmpeg.probe(self.device_path)
-			height = probe["streams"][0]["height"]
-			width = probe["streams"][0]["width"]
+			height = int(probe["streams"][0]["height"])
+			width = int(probe["streams"][0]["width"])
 		else:
 			(height, width) = [x.strip() for x in probe[0].split("x")]
 
