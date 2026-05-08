@@ -21,7 +21,7 @@ import atexit
 import subprocess
 import snapshot
 import numpy as np
-import _thread as thread
+import threading
 import paths_factory
 from recorders.video_capture import VideoCapture
 from i18n import _
@@ -169,9 +169,9 @@ timings["in"] = time.time() - timings["st"]
 timings["ll"] = time.time()
 
 # Start threading and wait for init to finish
-lock = thread.allocate_lock()
+lock = threading.Lock()
 lock.acquire()
-thread.start_new_thread(init_detector, (lock, ))
+threading.Thread(target=init_detector, args=(lock,), daemon=True).start()
 
 # Start video capture on the IR camera
 timings["ic"] = time.time()
