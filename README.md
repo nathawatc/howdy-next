@@ -78,7 +78,7 @@ _Maintainer: [@dmafanasyev](https://github.com/dmafanasyev)_
 
 Go to the [openSUSE wiki page](https://en.opensuse.org/SDB:Facial_authentication) for detailed installation instructions.
 
-### Building from source
+### Building from Source
 
 If you want to build Howdy from source, a few dependencies are required.
 
@@ -161,7 +161,7 @@ Please first check the
 and if you encounter an error that hasn't been reported yet, don't be afraid to
 open a new issue.
 
-#### A note on security
+#### A Note on Security
 
 This package is in no way as secure as a password and will never be. Although
 it's harder to fool than normal face recognition, a person who looks similar to

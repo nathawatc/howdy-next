@@ -1,4 +1,4 @@
-# Howdy PAM module
+# Howdy PAM Module
 
 ## Requirements
 
