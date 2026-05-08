@@ -5,7 +5,7 @@
 This module depends on `INIReader` and `libevdev`.
 They can be installed with these packages:
 
-```
+```text
 Arch Linux - libinih libevdev
 Debian     - libinih-dev libevdev-dev
 Fedora     - inih-devel libevdev-devel
@@ -17,19 +17,19 @@ it will be automatically pulled from git at the subproject's pinned version.
 
 ## Build
 
-``` sh
+```sh
 meson setup build
 ninja -C build # or meson compile -C build
 ```
 
 ## Install
 
-``` sh
+```sh
 meson install -C build
 ```
 
 Add the following line to your PAM configuration (/etc/pam.d/your-service):
 
-``` pam
+```pam
 auth  sufficient  pam_howdy.so
 ```

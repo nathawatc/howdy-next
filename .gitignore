@@ -128,3 +128,6 @@ debian/howdy
 
 # Meson
 subprojects/
+
+# OpenCode Agent
+.sisyphus/

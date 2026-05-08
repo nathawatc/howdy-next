@@ -46,7 +46,7 @@ py_sources = [
 # Include PAM module
 if get_option('install_in_site_packages')
     pysourcesinstalldir = join_paths(py.get_install_dir(), 'howdy')
-else  
+else
     pysourcesinstalldir = get_option('py_sources_dir') != '' ? get_option('py_sources_dir') / 'howdy' : join_paths(get_option('prefix'), get_option('libdir'), 'howdy')
 endif
 
@@ -114,7 +114,7 @@ install_man('../howdy.1')
 #     downloader = find_program('wget')
 #     bunzip2 = find_program('bunzip2')
 
-#     links = [ 
+#     links = [
 #         'https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2',
 #         'https://github.com/davisking/dlib-models/raw/master/mmod_human_face_detector.dat.bz2',
 #         'https://github.com/davisking/dlib-models/raw/master/shape_predictor_5_face_landmarks.dat.bz2'
