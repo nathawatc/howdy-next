@@ -10,4 +10,3 @@ patch_hash = 9a53348e4ed9180a52aafc092fda080ddc70102c9fc55686990e461b22e6e1e7
 [provide]
 inih = inih_dep
 inireader = inireader_dep
-

@@ -77,7 +77,7 @@ auto howdy_error(int status,
       break;
     default:
       conv_function(PAM_ERROR_MSG,
-                    std::string(S("Unknown error: ") + status).c_str());
+                    std::string(S("Unknown error: ") + std::to_string(status)).c_str());
       syslog(LOG_ERR, "Failure, unknown error %d", status);
     }
   } else if (WIFSIGNALED(status)) {
@@ -110,11 +110,12 @@ auto howdy_status(char *username, int status, const INIReader &config,
   }
 
   if (!config.GetBoolean("core", "no_confirmation", true)) {
-    // Construct confirmation text from i18n string
     std::string confirm_text(S("Identified face as {}"));
-    std::string identify_msg =
-        confirm_text.replace(confirm_text.find("{}"), 2, std::string(username));
-    conv_function(PAM_TEXT_INFO, identify_msg.c_str());
+    auto placeholder_pos = confirm_text.find("{}");
+    if (placeholder_pos != std::string::npos) {
+      confirm_text.replace(placeholder_pos, 2, std::string(username));
+    }
+    conv_function(PAM_TEXT_INFO, confirm_text.c_str());
   }
 
   syslog(LOG_INFO, "Login approved");

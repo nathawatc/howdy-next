@@ -29,12 +29,15 @@ py_sources = [
     'cli/test.py',
     'cli.py',
     'compare.py',
+    'core/__init__.py',
+    'core/detector.py',
     'i18n.py',
     'paths_factory.py',
     'recorders/__init__.py',
     'recorders/ffmpeg_reader.py',
     'recorders/pyv4l2_reader.py',
-    'recorders/v4l2.py',
+    'recorders/v4l2/__init__.py',
+    'recorders/v4l2/v4l2.py',
     'recorders/video_capture.py',
     'rubberstamps/__init__.py',
     'rubberstamps/hotkey.py',
@@ -46,7 +49,7 @@ py_sources = [
 # Include PAM module
 if get_option('install_in_site_packages')
     pysourcesinstalldir = join_paths(py.get_install_dir(), 'howdy')
-else  
+else
     pysourcesinstalldir = get_option('py_sources_dir') != '' ? get_option('py_sources_dir') / 'howdy' : join_paths(get_option('prefix'), get_option('libdir'), 'howdy')
 endif
 
@@ -87,7 +90,6 @@ else
     )
 endif
 
-install_data('logo.png', install_tag: 'meta')
 autocomplete = configure_file(
     input: 'autocomplete/howdy.in',
     output: 'autocomplete',
@@ -114,7 +116,7 @@ install_man('../howdy.1')
 #     downloader = find_program('wget')
 #     bunzip2 = find_program('bunzip2')
 
-#     links = [ 
+#     links = [
 #         'https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2',
 #         'https://github.com/davisking/dlib-models/raw/master/mmod_human_face_detector.dat.bz2',
 #         'https://github.com/davisking/dlib-models/raw/master/shape_predictor_5_face_landmarks.dat.bz2'

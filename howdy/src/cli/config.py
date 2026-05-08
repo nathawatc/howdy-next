@@ -1,11 +1,13 @@
 # Open the config file in an editor
 
+from __future__ import annotations
+
 # Import required modules
 import os
-import subprocess
 import shutil
-import paths_factory
+import subprocess
 
+import paths_factory
 from i18n import _
 
 # Determine the editor to use
@@ -39,4 +41,8 @@ if editor:
 else:
     print(_("Error: Could not find a suitable text editor."))
     print(_("Please install 'nano' or 'vi', or set the EDITOR environment variable."))
-    print(_("If you are running this command with sudo, try 'sudo -E howdy config' to preserve your EDITOR variable."))
+    print(
+        _(
+            "If you are running this command with sudo, try 'sudo -E howdy config' to preserve your EDITOR variable."
+        )
+    )
