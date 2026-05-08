@@ -28,14 +28,6 @@ from recorders.video_capture import VideoCapture
 
 
 def exit(code=None):
-    """Exit while closing howdy-gtk properly"""
-    global gtk_proc
-
-    # Exit the auth ui process if there is one
-    if "gtk_proc" in globals():
-        gtk_proc.terminate()
-
-    # Exit compare
     if code is not None:
         sys.exit(code)
 
@@ -64,26 +56,6 @@ def make_snapshot(type):
             _("Best certainty value: ") + str(round(lowest_certainty * 10, 1)),
         ],
     )
-
-
-def send_to_ui(type, message):
-    """Send message to the auth ui"""
-    global gtk_proc
-
-    # Only execute of the process started
-    if "gtk_proc" in globals():
-        # Format message so the ui can parse it
-        message = type + "=" + message + " \n"
-
-        # Try to send the message to the auth ui, but it's okay if that fails
-        try:
-            if (
-                gtk_proc.poll() is None
-            ):  # Make sure the gtk_proc is still running before write into the pipe
-                gtk_proc.stdin.write(bytearray(message.encode("utf-8")))
-                gtk_proc.stdin.flush()
-        except IOError:
-            syslog(LOG_ERR, "Failed to send message to howdy-gtk auth UI")
 
 
 # Make sure we were given an username to test against
@@ -133,24 +105,7 @@ video_certainty = config.getfloat("video", "certainty", fallback=3.5) / 10
 end_report = config.getboolean("debug", "end_report", fallback=False)
 save_failed = config.getboolean("snapshots", "save_failed", fallback=False)
 save_successful = config.getboolean("snapshots", "save_successful", fallback=False)
-gtk_stdout = config.getboolean("debug", "gtk_stdout", fallback=False)
 rotate = config.getint("video", "rotate", fallback=0)
-
-# Send the gtk output to the terminal if enabled in the config
-gtk_pipe = sys.stdout if gtk_stdout else subprocess.DEVNULL
-
-try:
-    gtk_proc = subprocess.Popen(
-        ["howdy-gtk", "--start-auth-ui"],
-        stdin=subprocess.PIPE,
-        stdout=gtk_pipe,
-        stderr=gtk_pipe,
-    )
-    atexit.register(exit)
-except FileNotFoundError:
-    syslog(LOG_WARNING, "howdy-gtk binary not found, auth UI disabled")
-
-send_to_ui("M", _("Starting up..."))
 timings["in"] = time.time() - timings["st"]
 
 # Import face recognition, takes some time
@@ -195,9 +150,6 @@ end_report = config.getboolean("debug", "end_report", fallback=False)
 # Initiate histogram equalization
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-# Let the ui know that we're ready
-send_to_ui("M", _("Identifying you..."))
-
 # Start the read loop
 frames = 0
 valid_frames = 0
@@ -207,13 +159,6 @@ dark_running_total = 0
 while True:
     # Increment the frame count every loop
     frames += 1
-
-    # Form a string to let the user know we're real busy
-    ui_subtext = "Scanned " + str(valid_frames - dark_tries) + " frames"
-    if dark_tries > 1:
-        ui_subtext += " (skipped " + str(dark_tries) + " dark frames)"
-    # Show it in the ui as subtext
-    send_to_ui("S", ui_subtext)
 
     # Stop if we've exceeded the time limit
     if time.time() - timings["fr"] > timeout:
@@ -382,14 +327,8 @@ while True:
             if config.getboolean("rubberstamps", "enabled", fallback=False):
                 import rubberstamps
 
-                send_to_ui("S", "")
-
-                if "gtk_proc" not in globals():
-                    gtk_proc = None
-
                 rubberstamps.execute(
                     config,
-                    gtk_proc,
                     {
                         "video_capture": video_capture,
                         "face_model": face_model,

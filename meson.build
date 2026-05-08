@@ -16,6 +16,4 @@ paths_dict = {
     'python_path': pythonpath
 }
 
-# We need to keep this order beause howdy-gtk defines the gtk script path which is used later in howdy
-subdir('howdy-gtk')
 subdir('howdy')

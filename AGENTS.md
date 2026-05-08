@@ -17,7 +17,6 @@ howdy-next/
 │   ├── cli/             # CLI subcommands (add, test, set, disable...)
 │   ├── recorders/       # Camera readers (ffmpeg, v4l2, video_capture)
 │   └── pam/             # C++ PAM authentication module
-├── howdy-gtk/           # GTK3 GUI app (optional auth UI)
 ├── tests/               # pytest test infrastructure
 └── .forgejo/workflows/  # Forgejo CI (migrated from GitHub Actions)
 ```

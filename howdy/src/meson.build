@@ -40,8 +40,6 @@ py_sources = [
     'recorders/v4l2/v4l2.py',
     'recorders/video_capture.py',
     'rubberstamps/__init__.py',
-    'rubberstamps/hotkey.py',
-    'rubberstamps/nod.py',
     'snapshot.py',
     py_paths,
 ]

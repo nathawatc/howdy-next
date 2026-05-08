@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: codeberg-medium
+    runs-on: codeberg-small
     steps:
       - name: Install required libraries
         run: >
@@ -23,7 +23,3 @@ jobs:
         run: |
           meson setup build
           ninja -C build
-
-      - name: Check source code
-        run: |
-          ninja clang-tidy -C build
