@@ -114,7 +114,7 @@ class ffmpeg_reader:
         # and then take numframes of video to fill the buffer for faster recognition.
         if self.init_camera:
             self.init_camera = False
-            self.video = ()
+            self.video = numpy.array([])
             self.record(self.numframes)
             return 0, self.video
 
@@ -137,7 +137,7 @@ class ffmpeg_reader:
 
     def release(self) -> None:
         """Empty our array. If we had a hold on the camera, we would give it back here."""
-        self.video = ()
+        self.video = numpy.array([])
         self.num_frames_read = 0
 
     def grab(self) -> bool:
