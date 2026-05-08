@@ -1,15 +1,15 @@
-import unittest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+import unittest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "howdy", "src"))
 
 mock_ffmpeg = MagicMock()
 sys.modules["ffmpeg"] = mock_ffmpeg
 
-from recorders.ffmpeg_reader import ffmpeg_reader
 from cv2 import CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH
+from recorders.ffmpeg_reader import ffmpeg_reader
 
 
 class TestFfmpegReader(unittest.TestCase):
@@ -25,12 +25,7 @@ class TestFfmpegReader(unittest.TestCase):
         mock_process.communicate.return_value = (b"", b"")
         mock_popen.return_value = mock_process
 
-        mock_probe_result = {
-            "streams": [{
-                "height": 480,
-                "width": 640
-            }]
-        }
+        mock_probe_result = {"streams": [{"height": 480, "width": 640}]}
         mock_ffmpeg_probe.return_value = mock_probe_result
 
         reader = ffmpeg_reader(self.device_path, self.device_format)
@@ -44,10 +39,7 @@ class TestFfmpegReader(unittest.TestCase):
     def test_probe_with_regex_parsing(self, mock_ffmpeg_probe, mock_popen):
         mock_process = MagicMock()
         mock_process.poll.return_value = 1
-        mock_process.communicate.return_value = (
-            b"",
-            b"  Format: YUV420P 640x480"
-        )
+        mock_process.communicate.return_value = (b"", b"  Format: YUV420P 640x480")
         mock_popen.return_value = mock_process
 
         mock_ffmpeg_probe.return_value = {"streams": []}
@@ -67,12 +59,7 @@ class TestFfmpegReader(unittest.TestCase):
         mock_process.communicate.return_value = (b"", b"")
         mock_popen.return_value = mock_process
 
-        mock_probe_result = {
-            "streams": [{
-                "height": 0,
-                "width": 0
-            }]
-        }
+        mock_probe_result = {"streams": [{"height": 0, "width": 0}]}
         mock_ffmpeg_probe.return_value = mock_probe_result
 
         reader = ffmpeg_reader(self.device_path, self.device_format)
@@ -83,18 +70,15 @@ class TestFfmpegReader(unittest.TestCase):
 
     @patch("recorders.ffmpeg_reader.Popen")
     @patch("recorders.ffmpeg_reader.ffmpeg.probe")
-    def test_probe_does_not_override_existing_dimensions(self, mock_ffmpeg_probe, mock_popen):
+    def test_probe_does_not_override_existing_dimensions(
+        self, mock_ffmpeg_probe, mock_popen
+    ):
         mock_process = MagicMock()
         mock_process.poll.return_value = 1
         mock_process.communicate.return_value = (b"", b"")
         mock_popen.return_value = mock_process
 
-        mock_probe_result = {
-            "streams": [{
-                "height": 720,
-                "width": 1280
-            }]
-        }
+        mock_probe_result = {"streams": [{"height": 720, "width": 1280}]}
         mock_ffmpeg_probe.return_value = mock_probe_result
 
         reader = ffmpeg_reader(self.device_path, self.device_format)
