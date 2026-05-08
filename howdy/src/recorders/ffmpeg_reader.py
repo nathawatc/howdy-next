@@ -119,7 +119,7 @@ class ffmpeg_reader:
             return 0, self.video
 
         # If we are called and self.video is empty, we should record self.numframes to fill the video buffer
-        if self.video == ():
+        if self.video.size == 0:
             self.record(self.numframes)
 
         # If we've read max frames, but still are being requested to read more, we simply record another batch.
