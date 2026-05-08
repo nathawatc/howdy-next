@@ -1,7 +1,15 @@
-pkg
-src
-*.tar.gz
+# ---> ArchLinuxPackages
+*.tar
+*.tar.*
+*.jar
+*.exe
+*.msi
+*.deb
 *.zip
-*.tar.xz
-*.patch
-*.dat.bz2
+*.tgz
+*.log
+*.log.*
+*.sig
+
+pkg/
+src/

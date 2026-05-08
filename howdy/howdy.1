@@ -1,47 +1,57 @@
-.\" Please adjust this date whenever revising the manpage.
-.TH HOWDY 1 "April 9, 2018" "Howdy help" "User Commands"
+.\" Updated for Howdy Next
+.TH HOWDY 1 "May 8, 2026" "Howdy Next 1.0.0" "User Commands"
 .SH NAME
-howdy \- Windows Hello style authentication for Linux
+howdy \- facial authentication for Linux via PAM
+.SH SYNOPSIS
+.B howdy
+[\fB\-U\fR \fIUSER\fR] [\fB\-y\fR] [\fB\-\-plain\fR] [\fB\-h\fR] \fIcommand\fR [\fIarguments\fR...]
 .SH DESCRIPTION
-Howdy IR face recognition implements a PAM module to use your face as a authentication method.
-.SS "Usage:"
-.IP
-howdy [\-U USER] [\-y] [\-h] command [argument]
-.SS "Commands:"
-.TP
-add
-Add a new face model for an user.
-.TP
-clear
-Remove all face models for an user.
-.TP
-config
-Open the config file in gedit.
-.TP
-disable
-Disable or enable howdy.
-.TP
-list
-List all saved face models for an user.
-.TP
-remove
-Remove a specific model for an user.
-.TP
-clear
-Remove all face models for an user.
-.TP
-test
-Test the camera and recognition methods.
-.SS "Optional arguments:"
-.TP
-\fB\-U\fR USER, \fB\-\-user\fR USER
-Set the user account to use.
-.TP
-\fB\-y\fR
-Skip all questions.
-.TP
-\fB\-h\fR, \fB\-\-help\fR
-Show this help message and exit.
+Howdy uses your camera and facial recognition as an authentication method
+via PAM. Works with login, lock screen, sudo, su, and more.
 .PP
+This is a modernized fork of the original Howdy project.
+.SH COMMANDS
+.TP
+\fBadd\fR      Add a new face model
+.TP
+\fBclear\fR    Remove all face models
+.TP
+\fBconfig\fR   Open config file in editor
+.TP
+\fBdisable\fR  Enable or disable Howdy
+.TP
+\fBlist\fR     List saved face models
+.TP
+\fBremove\fR   Remove a specific model
+.TP
+\fBset\fR      Set a config option
+.TP
+\fBsnapshot\fR  Take a camera snapshot
+.TP
+\fBtest\fR     Test camera and recognition
+.TP
+\fBversion\fR  Print version number
+.SH OPTIONS
+.TP
+\fB\-U\fR, \fB\-\-user\fR \fIUSER\fR  Set user account
+.TP
+\fB\-y\fR     Skip confirmation questions
+.TP
+\fB\-\-plain\fR  Machine\-friendly output
+.TP
+\fB\-h\fR, \fB\-\-help\fR  Show help message
+.SH FILES
+.TP
+.I /etc/howdy/config.ini
+Main configuration file
+.TP
+.I /etc/howdy/models/
+User face models directory
+.SH "SECURITY NOTES"
+Howdy is NOT as secure as a password. Photos or similar faces can fool it.
+.B Do not use as sole authentication method.
 .SH AUTHOR
-Howdy was written by boltgolt. For more information visit https://github.com/boltgolt/howdy
+Originally written by boltgolt. Howdy Next is maintained by nathawat on codeberg.
+.SH "SEE ALSO"
+.BR pam (8),
+.BR sudo (8)

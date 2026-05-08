@@ -5,7 +5,7 @@ on:
 
 jobs:
   test:
-    runs_on: codeberg-medium
+    runs-on: codeberg-medium
     steps:
       - name: Install required libraries
         run: >

@@ -134,4 +134,4 @@ elif args.command == "snapshot":
 elif args.command == "test":
     import cli.test
 else:
-    print("Howdy 3.0.0 BETA")
+    print("Howdy-Next 1.0.0")

@@ -1,176 +1,49 @@
 # Howdy Next
 
-Howdy provides Windows Hello™ style authentication for Linux. Use your built-in
-IR emitters and camera in combination with facial recognition to prove who you
-are.
+A modernized fork of original Howdy, Facial recognition authentication for Linux.
 
-Using the central authentication system (PAM), this works everywhere you would
-otherwise need your password: Login, lock screen, sudo, su, etc.
+## Building from Source
 
-## Installation
+Dependencies: python3, pip, meson ≥0.64, ninja, libevdev
 
-Howdy is currently available and packaged for Debian/Ubuntu, Arch Linux, Fedora
-and openSUSE. If you’re interested in packaging Howdy for your distro, don’t
-hesitate to open an issue.
-
-> [!NOTE]
-> 
-> The build of dlib can hang on 100% for over a minute, give it time.
-
-### Ubuntu or Linux Mint
-
-Run the installer by pasting (`ctrl+shift+V`) the following commands into the
-terminal one at a time:
+Debian/Ubuntu:
 
 ```text
-sudo add-apt-repository ppa:boltgolt/howdy
-sudo apt update
-sudo apt install howdy
+sudo apt-get install python3 python3-pip cmake make build-essential libpam0g-dev libinih-dev
+libevdev-dev python3-opencv python3-dev libopencv-dev
 ```
 
-This will guide you through the installation.
-
-### Debian
-
-Download the .deb file from the [Releases page](https://github.com/boltgolt/howdy/releases) and install with gdebi.
-
-### Arch Linux
-
-_Maintainer wanted._
-
-Install the `howdy` package from the AUR. For AUR installation instructions,
-take a look at this
-[wiki page](https://wiki.archlinux.org/index.php/Arch_User_Repository#Installing_packages).
-
-You will need to do some additional configuration steps. Please read the
-[ArchWiki entry](https://wiki.archlinux.org/index.php/Howdy) for more
-information.
-
-### Fedora
-
-_Maintainer: [@luyatshimbalanga](https://github.com/luyatshimbalanga)_
-
-The `howdy` package is available as a
-[Fedora COPR repository](https://copr.fedorainfracloud.org/coprs/principis/howdy/),
-install it by simply executing the following commands in a terminal:
-
-```text
-sudo dnf copr enable principis/howdy
-sudo dnf --refresh install howdy
-```
-
-_Note:_ Fedora 41
-[removed support for Python2](https://fedoraproject.org/wiki/Changes/RetirePython2.7),
-but at this point in time Howdy still depends on it. If the install fails, you
-can fix this by installing the beta Repository and removing the release version:
-
-```text
-sudo dnf copr remove principis/howdy
-sudo dnf copr enable principis/howdy-beta
-sudo dnf --refresh install howdy
-```
-
-See the link to the COPR repository for detailed configuration steps.
-
-### openSUSE
-
-_Maintainer: [@dmafanasyev](https://github.com/dmafanasyev)_
-
-Go to the [openSUSE wiki page](https://en.opensuse.org/SDB:Facial_authentication) for detailed installation instructions.
-
-### Building from Source
-
-If you want to build Howdy from source, a few dependencies are required.
-
-#### Dependencies
-
-- Python 3.6 or higher
-  - pip
-  - setuptools
-  - wheel
-- meson version 0.64 or higher
-- ninja
-- INIReader (can be pulled from git automatically if not found)
-- libevdev
-
-To install them on Debian/Ubuntu for example:
-
-```text
-sudo apt-get update && sudo apt-get install -y \
-python3 python3-pip python3-setuptools python3-wheel \
-cmake make build-essential \
-libpam0g-dev libinih-dev libevdev-dev python3-opencv \
-python3-dev libopencv-dev
-```
-
-#### Build
-
-```sh
-meson setup build
-meson compile -C build
-```
-
-You can also install Howdy to your system with `meson install -C build`.
+Build: `meson setup build && meson compile -C build` → Install: `meson install -C build`
 
 ## Setup
 
-After installation. Run `sudo howdy add` to add a face model.
+1. Run `sudo howdy add` to add a face model
+2. Test with `sudo -i`
 
-If nothing went wrong we should be able to run sudo by just showing your face.
-Open a new terminal and run `sudo -i` to see it in action. Please check
-[this wiki page](https://github.com/boltgolt/howdy/wiki/Common-issues) if you're
-experiencing problems or [search](https://github.com/boltgolt/howdy/issues) for
-similar issues.
-
-If you're curious you can run `sudo howdy config` to open the central config
-file and see the options Howdy has to offer. On most systems this will open the
-nano editor, where you have to press `ctrl`+`x` to save your changes.
+Edit config: `sudo howdy config`
 
 ## CLI
 
-The installer adds a `howdy` command to manage face models for the current user.
-Use `howdy --help` or `man howdy` to list the available options.
+`howdy [-U user] [-y] command [argument]`
 
-Usage:
+| Command  | Description           |
+| -------- | --------------------- |
+| add      | Add face model        |
+| clear    | Remove all models     |
+| config   | Edit config           |
+| disable  | Enable/disable        |
+| list     | List models           |
+| remove   | Remove specific model |
+| snapshot | Camera preview        |
+| test     | Test camera           |
+| version  | Show version          |
 
-```text
-howdy [-U user] [-y] command [argument]
-```
+## Troubleshooting
 
-| Command    | Description                                 |
-| ---------- | ------------------------------------------- |
-| `add`      | Add a new face model for a user             |
-| `clear`    | Remove all face models for a user           |
-| `config`   | Open the config file in your default editor |
-| `disable`  | Disable or enable howdy                     |
-| `list`     | List all saved face models for a user       |
-| `remove`   | Remove a specific model for a user          |
-| `snapshot` | Take a snapshot of your camera input        |
-| `test`     | Test the camera and recognition methods     |
-| `version`  | Print the current version number            |
+Errors print to console. Check `/var/log/auth.log` if auth fails silently.
 
-### Troubleshooting
-
-Any Python errors get logged directly into the console and should indicate what
-went wrong. If authentication still fails but no errors are printed, you could
-take a look at the last lines in `/var/log/auth.log` to see if anything has been
-reported there.
-
-Please first check the
-[wiki on common issues](https://github.com/boltgolt/howdy/wiki/Common-issues)
-and if you encounter an error that hasn't been reported yet, don't be afraid to
-open a new issue.
-
-#### A Note on Security
-
-This package is in no way as secure as a password and will never be. Although
-it's harder to fool than normal face recognition, a person who looks similar to
-you, or a well-printed photo of you could be enough to do it. Howdy is a more
-quick and convenient way of logging in, not a more secure one.
-
-To minimize the chance of this program being compromised, it's recommended to
-leave Howdy in `/lib/security` and to keep it read-only.
+See [wiki](https://github.com/boltgolt/howdy/wiki/Common-issues) for common issues.
 
 > [!WARNING]
-> 
-> DO NOT USE HOWDY AS THE SOLE AUTHENTICATION METHOD FOR YOUR SYSTEM.
+> Howdy is NOT as secure as a password. Similar faces or photos can fool it.
+> Keep in `/lib/security` read-only. **Never use as sole auth method.**
