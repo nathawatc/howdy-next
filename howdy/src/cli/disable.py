@@ -76,7 +76,7 @@ else:
     sys.exit(1)
 
 # Don't do anything when the state is already the requested one
-if out_value == config.get("core", "disabled", fallback=True):
+if out_value == config.get("core", "disabled", fallback="true"):
     print(_("The disable option has already been set to ") + out_value)
     sys.exit(1)
 

@@ -2,6 +2,7 @@ import importlib.util
 import os
 import re
 import syslog
+from syslog import LOG_ERR
 
 from i18n import _
 

@@ -39,21 +39,27 @@ def init_detector(lock):
     lock.release()
 
 
-def make_snapshot(type):
+def make_snapshot(
+    type,
+    snapframes_list: list,
+    frames_count: int,
+    lowest_certainty_val: float,
+    frame_time: float,
+):
     """Generate snapshot after detection"""
     snapshot.generate(
-        snapframes,
+        snapframes_list,
         [
             type + _(" LOGIN"),
             _("Date: ") + datetime.now(timezone.utc).strftime("%Y/%m/%d %H:%M:%S UTC"),
-            _("Scan time: ") + str(round(time.time() - timings["fr"], 2)) + "s",
+            _("Scan time: ") + str(round(frame_time, 2)) + "s",
             _("Frames: ")
-            + str(frames)
+            + str(frames_count)
             + " ("
-            + str(round(frames / (time.time() - timings["fr"]), 2))
+            + str(round(frames_count / frame_time, 2))
             + "FPS)",
             _("Hostname: ") + os.uname().nodename,
-            _("Best certainty value: ") + str(round(lowest_certainty * 10, 1)),
+            _("Best certainty value: ") + str(round(lowest_certainty_val * 10, 1)),
         ],
     )
 
@@ -140,7 +146,7 @@ height = video_capture.internal.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1
 if rotate == 2:
     height = video_capture.internal.get(cv2.CAP_PROP_FRAME_WIDTH) or 1
 # Calculate the amount the image has to shrink
-scaling_factor = (max_height / max(height, 1)) or 1
+scaling_factor = max_height / max(height, 1)
 
 # Fetch config settings out of the loop
 timeout = config.getint("video", "timeout", fallback=4)
@@ -164,9 +170,15 @@ while True:
     if time.time() - timings["fr"] > timeout:
         # Create a timeout snapshot if enabled
         if save_failed:
-            make_snapshot(_("FAILED"))
+            make_snapshot(
+                _("FAILED"),
+                snapframes,
+                frames,
+                lowest_certainty,
+                time.time() - timings["fr"],
+            )
 
-        if dark_tries == valid_frames:
+        if dark_tries > 0 and dark_tries == frames:
             print(_("All frames were too dark, please check dark_threshold in config"))
             print(
                 _("Average darkness: {avg}, Threshold: {threshold}").format(
@@ -321,7 +333,13 @@ while True:
 
             # Make snapshot if enabled
             if save_successful:
-                make_snapshot(_("SUCCESSFUL"))
+                make_snapshot(
+                    _("SUCCESSFUL"),
+                    snapframes,
+                    frames,
+                    lowest_certainty,
+                    time.time() - timings["fr"],
+                )
 
             # Run rubberstamps if enabled
             if config.getboolean("rubberstamps", "enabled", fallback=False):

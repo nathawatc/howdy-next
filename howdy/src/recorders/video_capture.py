@@ -42,7 +42,8 @@ class VideoCapture:
             self.config = config
 
         # Check device path
-        if not os.path.exists(self.config.get("video", "device_path")):
+        device_path = self.config.get("video", "device_path")
+        if device_path != "none" and not os.path.exists(device_path):
             if self.config.getboolean("video", "warn_no_device", fallback=True):
                 print(
                     _(

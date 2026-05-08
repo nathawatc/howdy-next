@@ -69,11 +69,11 @@ class ffmpeg_reader:
         out, err = process.communicate()
         return_code = process.poll()
 
-        # Worst case scenario, err will equal en empty byte string, b'', so probe will get set to [] here.
+        # Worst case scenario, err will equal an empty byte string, b'', so probe will get set to [] here.
         regex = re.compile(r"\s\d{3,4}x\d{3,4}")
         probe = regex.findall(str(err.decode("utf-8")))
 
-        if not return_code == 1 or len(probe) < 1:
+        if (return_code != 1) or (len(probe) < 1):
             # Could not determine the resolution from ffmpeg call. Reverting to ffmpeg.probe()
             probe = ffmpeg.probe(self.device_path)
             height = int(probe["streams"][0]["height"])
@@ -104,7 +104,7 @@ class ffmpeg_reader:
             .run(capture_stdout=True, quiet=True)
         )
         self.video = numpy.frombuffer(stream, numpy.uint8).reshape(
-            [-1, self.width, self.height, 3]
+            [-1, self.height, self.width, 3]
         )
 
     def read(self) -> bool:
@@ -142,4 +142,4 @@ class ffmpeg_reader:
 
     def grab(self) -> bool:
         """Redirect grab() to read() for compatibility"""
-        self.read()
+        return self.read()

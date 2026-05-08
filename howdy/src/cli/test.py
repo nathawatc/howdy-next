@@ -96,7 +96,7 @@ slow_mode = False
 total_frames = 0
 # Count all frames per second
 sec_frames = 0
-# Last secands FPS
+# Last seconds FPS
 fps = 0
 # The current second we're counting
 sec = int(time.time())

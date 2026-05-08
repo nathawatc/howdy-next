@@ -6,7 +6,9 @@ import os
 
 # Get the right translation based on locale, falling back to base if none found
 translation = gettext.translation(
-    "core", localedir=os.path.join(os.path.dirname(__file__), "locales"), fallback=True
+    "core",
+    localedir=os.path.join(os.path.dirname(__file__), "..", "..", "po"),
+    fallback=True,
 )
 translation.install()
 
