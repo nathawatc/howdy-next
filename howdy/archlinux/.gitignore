@@ -10,6 +10,8 @@
 *.log
 *.log.*
 *.sig
+*.dat.bz2
 
 pkg/
 src/
+howdy-next-git/howdy-next/
