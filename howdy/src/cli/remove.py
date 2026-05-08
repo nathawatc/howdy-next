@@ -1,5 +1,7 @@
 # Remove a encoding from the models file
 
+from __future__ import annotations
+
 # Import required modules
 import builtins
 import json

@@ -1,5 +1,7 @@
 # Open the config file in an editor
 
+from __future__ import annotations
+
 # Import required modules
 import os
 import shutil

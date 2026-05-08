@@ -1,6 +1,7 @@
 # Show a window with the video stream and testing information
 
-# Import required modules
+from __future__ import annotations
+
 import builtins
 import configparser
 import json
@@ -9,10 +10,10 @@ import sys
 import time
 
 import cv2
-import dlib
 import numpy as np
 import paths_factory
 from i18n import _
+from core.detector import FaceModel
 from recorders.video_capture import VideoCapture
 
 # Read config from disk
@@ -45,7 +46,7 @@ Click on the image to enable or disable slow mode
 )
 
 
-def mouse(event, x, y, flags, param):
+def mouse(event: int, x: int, y: int, flags: int, param: int) -> None:
     """Handle mouse events"""
     global slow_mode
 
@@ -54,7 +55,7 @@ def mouse(event, x, y, flags, param):
         slow_mode = not slow_mode
 
 
-def print_text(line_number, text):
+def print_text(line_number: int, text: str) -> None:
     """Print the status text by line number"""
     cv2.putText(
         overlay,
@@ -69,20 +70,7 @@ def print_text(line_number, text):
 
 
 use_cnn = config.getboolean("core", "use_cnn", fallback=False)
-
-if use_cnn:
-    face_detector = dlib.cnn_face_detection_model_v1(
-        paths_factory.mmod_human_face_detector_path()
-    )
-else:
-    face_detector = dlib.get_frontal_face_detector()
-
-pose_predictor = dlib.shape_predictor(
-    paths_factory.shape_predictor_5_face_landmarks_path()
-)
-face_encoder = dlib.face_recognition_model_v1(
-    paths_factory.dlib_face_recognition_resnet_model_v1_path()
-)
+face_model = FaceModel(use_cnn)
 
 encodings = []
 models = None
@@ -212,7 +200,7 @@ try:
 
             # Get the locations of all faces and their locations
             # Upsample it once
-            face_locations = face_detector(frame, 1)
+            face_locations = face_model.detector(frame, 1)
             rec_tm = time.time() - rec_tm
 
             # Loop though all faces and paint a circle around them
@@ -235,9 +223,9 @@ try:
                 # If we have models defined for the current user
                 if models:
                     # Get the encoding of the face in the frame
-                    face_landmark = pose_predictor(orig_frame, loc)
+                    face_landmark = face_model.predictor(orig_frame, loc)
                     face_encoding = np.array(
-                        face_encoder.compute_face_descriptor(
+                        face_model.encoder.compute_face_descriptor(
                             orig_frame, face_landmark, 1
                         )
                     )

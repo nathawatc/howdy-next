@@ -1,12 +1,16 @@
 # Top level class for a video capture providing simplified API's for common
 # functions
 
+from __future__ import annotations
+
 # Import required modules
 import configparser
 import os
 import sys
+from typing import Optional, Tuple, Union
 
 import cv2
+import numpy
 from i18n import _
 
 # Class to provide boilerplate code to build a video recorder with the
@@ -16,7 +20,13 @@ from i18n import _
 
 
 class VideoCapture:
-    def __init__(self, config):
+    config: configparser.ConfigParser
+    internal: Union[cv2.VideoCapture, "ffmpeg_reader", "pyv4l2_reader"]
+    fw: Optional[int]
+    fh: Optional[int]
+    fps: Optional[int]
+
+    def __init__(self, config: Union[str, configparser.ConfigParser]) -> None:
         """
         Creates a new VideoCapture instance depending on the settings in the
         provided config file.
@@ -59,7 +69,7 @@ class VideoCapture:
         # Request a frame to wake the camera up
         self.internal.grab()
 
-    def __del__(self):
+    def __del__(self) -> None:
         """
         Frees resources when destroyed
         """
@@ -69,14 +79,14 @@ class VideoCapture:
             except AttributeError as err:
                 pass
 
-    def release(self):
+    def release(self) -> None:
         """
         Release cameras
         """
         if self is not None:
             self.internal.release()
 
-    def read_frame(self):
+    def read_frame(self) -> Tuple[numpy.ndarray, numpy.ndarray]:
         """
         Reads a frame, returns the frame and an attempted grayscale conversion of
         the frame in a tuple:
@@ -108,7 +118,7 @@ class VideoCapture:
             raise
         return frame, gsframe
 
-    def _create_reader(self):
+    def _create_reader(self) -> None:
         """
         Sets up the video reader instance
         """

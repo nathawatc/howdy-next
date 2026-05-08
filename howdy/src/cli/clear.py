@@ -1,5 +1,7 @@
 # Clear all models by deleting the whole file
 
+from __future__ import annotations
+
 # Import required modules
 import builtins
 import os

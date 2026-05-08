@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 import numpy
 from cv2 import CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH, COLOR_GRAY2BGR, cvtColor
 from i18n import _
-from recorders import v4l2
+from recorders.v4l2 import v4l2
 
 try:
     from pyv4l2.frame import Frame

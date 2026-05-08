@@ -82,9 +82,9 @@ class ffmpeg_reader:
             (height, width) = [x.strip() for x in probe[0].split("x")]
 
         # Set height and width from probe if they haven't been set already
-        if str(height).isdigit() and self.get(CAP_PROP_FRAME_HEIGHT) == 0:
+        if self.get(CAP_PROP_FRAME_HEIGHT) == 0:
             self.set(CAP_PROP_FRAME_HEIGHT, int(height))
-        if str(width).isdigit() and self.get(CAP_PROP_FRAME_WIDTH) == 0:
+        if self.get(CAP_PROP_FRAME_WIDTH) == 0:
             self.set(CAP_PROP_FRAME_WIDTH, int(width))
 
     def record(self, numframes: int) -> None:

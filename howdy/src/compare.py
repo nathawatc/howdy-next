@@ -18,10 +18,10 @@ import threading
 from datetime import datetime, timezone
 
 import cv2
-import dlib
 import numpy as np
 import paths_factory
 import snapshot
+from core.detector import FaceModel
 from i18n import _
 from recorders.video_capture import VideoCapture
 
@@ -40,36 +40,8 @@ def exit(code=None):
 
 
 def init_detector(lock):
-    """Start face detector, encoder and predictor in a new thread"""
-    global face_detector, pose_predictor, face_encoder
-
-    # Test if at lest 1 of the data files is there and abort if it's not
-    if not os.path.isfile(paths_factory.shape_predictor_5_face_landmarks_path()):
-        print(
-            _("Data files have not been downloaded, please run the following commands:")
-        )
-        print("\n\tcd " + paths_factory.dlib_data_dir_path())
-        print("\tsudo ./install.sh\n")
-        lock.release()
-        exit(1)
-
-    # Use the CNN detector if enabled
-    if use_cnn:
-        face_detector = dlib.cnn_face_detection_model_v1(
-            paths_factory.mmod_human_face_detector_path()
-        )
-    else:
-        face_detector = dlib.get_frontal_face_detector()
-
-    # Start the others regardless
-    pose_predictor = dlib.shape_predictor(
-        paths_factory.shape_predictor_5_face_landmarks_path()
-    )
-    face_encoder = dlib.face_recognition_model_v1(
-        paths_factory.dlib_face_recognition_resnet_model_v1_path()
-    )
-
-    # Note the time it took to initialize detectors
+    global face_model
+    face_model = FaceModel(use_cnn)
     timings["ll"] = time.time() - timings["ll"]
     lock.release()
 
@@ -133,10 +105,7 @@ frames = 0
 snapframes = []
 # Tracks the lowest certainty value in the loop
 lowest_certainty = 10
-# Face recognition/detection instances
-face_detector = None
-pose_predictor = None
-face_encoder = None
+face_model = None
 
 # Try to load the face model from the models folder
 try:
@@ -338,16 +307,14 @@ while True:
 
     # Get all faces from that frame as encodings
     # Upsamples 1 time
-    face_locations = face_detector(gsframe, 1)
-    # Loop through each face
+    face_locations = face_model.detector(gsframe, 1)
     for fl in face_locations:
         if use_cnn:
             fl = fl.rect
 
-        # Fetch the faces in the image
-        face_landmark = pose_predictor(frame, fl)
+        face_landmark = face_model.predictor(frame, fl)
         face_encoding = np.array(
-            face_encoder.compute_face_descriptor(frame, face_landmark, 1)
+            face_model.encoder.compute_face_descriptor(frame, face_landmark, 1)
         )
 
         # Match this found face against a known face
@@ -428,8 +395,7 @@ while True:
                     gtk_proc,
                     {
                         "video_capture": video_capture,
-                        "face_detector": face_detector,
-                        "pose_predictor": pose_predictor,
+                        "face_model": face_model,
                         "clahe": clahe,
                     },
                 )

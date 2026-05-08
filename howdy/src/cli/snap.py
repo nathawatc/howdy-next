@@ -1,5 +1,7 @@
 # Create a snapshot
 
+from __future__ import annotations
+
 # Import required modules
 import configparser
 import os

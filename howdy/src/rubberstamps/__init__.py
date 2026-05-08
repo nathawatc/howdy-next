@@ -74,7 +74,7 @@ def execute(config, gtk_proc, opencv):
 
         # Parse the rule with regex
         regex_result = re.search(
-            "^(\w+)\s+([\w\.]+)\s+([a-z]+)(.*)?$", rule, re.IGNORECASE
+            r"^(\w+)\s+([\w\.]+)\s+([a-z]+)(.*)?$", rule, re.IGNORECASE
         )
 
         # Error out if the regex did not match (invalid line)

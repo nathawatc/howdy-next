@@ -1,5 +1,7 @@
 # List all models for a user
 
+from __future__ import annotations
+
 # Import required modules
 import builtins
 import json
