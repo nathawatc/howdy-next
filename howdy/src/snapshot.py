@@ -32,14 +32,13 @@ def generate(frames, text_lines):
 
     # Add the Howdy logo if there's space to do so
     if len(frames) > 1:
-        # Load the logo from file
         logo = cv2.imread(paths_factory.logo_path())
-        # Calculate the position of the logo
-        logo_y = frame_height + 20
-        logo_x = max(0, frame_width * len(frames) - 210)
-        logo_h, logo_w = logo.shape[:2]
-        if logo_x + logo_w <= snap.shape[1] and logo_y + logo_h <= snap.shape[0]:
-            snap[logo_y : logo_y + logo_h, logo_x : logo_x + logo_w] = logo
+        if logo is not None:
+            logo_y = frame_height + 20
+            logo_x = max(0, frame_width * len(frames) - 210)
+            logo_h, logo_w = logo.shape[:2]
+            if logo_x + logo_w <= snap.shape[1] and logo_y + logo_h <= snap.shape[0]:
+                snap[logo_y : logo_y + logo_h, logo_x : logo_x + logo_w] = logo
 
     # Go through each line
     line_number = 0

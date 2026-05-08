@@ -135,7 +135,7 @@ try:
         # Create a histogram of the image with 8 values
         hist = cv2.calcHist([frame], [0], None, [8], [0, 256])
         # All values combined for percentage calculation
-        hist_total = int(sum(hist)[0])
+        hist_total = int(sum(hist))
         # Fill with the overall containing percentage
         hist_perc = []
 

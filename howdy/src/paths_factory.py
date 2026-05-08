@@ -38,7 +38,8 @@ def snapshots_dir_path() -> str:
 
 
 def snapshot_path(snapshot: str) -> str:
-    return str(snapshots_dir_path() / snapshot)
+    from pathlib import Path
+    return str(Path(snapshots_dir_path()) / snapshot)
 
 
 def user_models_dir_path() -> str:
