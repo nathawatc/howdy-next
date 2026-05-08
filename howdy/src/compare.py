@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import syslog
 import threading
 from datetime import datetime, timezone
 
@@ -82,7 +83,7 @@ def send_to_ui(type, message):
                 gtk_proc.stdin.write(bytearray(message.encode("utf-8")))
                 gtk_proc.stdin.flush()
         except IOError:
-            pass
+            syslog(LOG_ERR, "Failed to send message to howdy-gtk auth UI")
 
 
 # Make sure we were given an username to test against
@@ -138,7 +139,6 @@ rotate = config.getint("video", "rotate", fallback=0)
 # Send the gtk output to the terminal if enabled in the config
 gtk_pipe = sys.stdout if gtk_stdout else subprocess.DEVNULL
 
-# Start the auth ui, register it to be always be closed on exit
 try:
     gtk_proc = subprocess.Popen(
         ["howdy-gtk", "--start-auth-ui"],
@@ -148,12 +148,9 @@ try:
     )
     atexit.register(exit)
 except FileNotFoundError:
-    pass
+    syslog(LOG_WARNING, "howdy-gtk binary not found, auth UI disabled")
 
-# Write to the stdin to redraw ui
 send_to_ui("M", _("Starting up..."))
-
-# Save the time needed to start the script
 timings["in"] = time.time() - timings["st"]
 
 # Import face recognition, takes some time
@@ -387,7 +384,7 @@ while True:
 
                 send_to_ui("S", "")
 
-                if "gtk_proc" not in vars():
+                if "gtk_proc" not in globals():
                     gtk_proc = None
 
                 rubberstamps.execute(

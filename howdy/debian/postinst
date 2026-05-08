@@ -3,12 +3,12 @@
 # Executed after primary apt install
 
 # Import required modules
-import fileinput
 import os
 import re
 import subprocess
 import sys
 import tarfile
+import tempfile
 from shutil import rmtree, which
 
 # Don't run unless we need to configure the install
@@ -188,9 +188,17 @@ print("Temporary dlib files removed")
 log("Configuring howdy")
 
 # Make sure to use CNN if dlib was compiled with CUDA support
-for line in fileinput.input(["/etc/howdy/config.ini"], inplace=1):
-    line = line.replace("use_cnn = false", "use_cnn = " + str(cuda_used).lower())
-    print(line, end="")
+fd, temp_path = tempfile.mkstemp(dir="/etc/howdy", suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as tmp:
+        with open("/etc/howdy/config.ini", "r") as f:
+            for line in f:
+                tmp.write(line.replace("use_cnn = false", "use_cnn = " + str(cuda_used).lower()))
+    os.replace(temp_path, "/etc/howdy/config.ini")
+except Exception:
+    if os.path.exists(temp_path):
+        os.unlink(temp_path)
+    raise
 
 print("CNN saved to config, CUDA " + ("enabled" if cuda_used else "disabled"))
 

@@ -82,7 +82,7 @@ try:
     for model in models:
         encodings += model["data"]
 except FileNotFoundError:
-    pass
+    print(_("Warning: No face model found for this user, detection will run without matching"))
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 

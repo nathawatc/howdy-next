@@ -76,8 +76,8 @@ class VideoCapture:
         if self is not None:
             try:
                 self.internal.release()
-            except AttributeError as err:
-                pass
+            except AttributeError:
+                pass  # Internal was never initialized, nothing to release
 
     def release(self) -> None:
         """
