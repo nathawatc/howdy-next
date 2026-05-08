@@ -56,6 +56,9 @@ def execute(config, opencv):
         spec = importlib.util.spec_from_file_location(
             type, dir_path + "/" + type + ".py"
         )
+        if spec is None:
+            print(_("Stamp error: Could not load spec for {}").format(type))
+            continue
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 

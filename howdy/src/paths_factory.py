@@ -33,16 +33,16 @@ def config_file_path() -> str:
     return str(paths.config_dir / "config.ini")
 
 
-def snapshots_dir_path() -> PurePath:
-    return paths.log_path / "snapshots"
+def snapshots_dir_path() -> str:
+    return str(paths.log_path / "snapshots")
 
 
 def snapshot_path(snapshot: str) -> str:
     return str(snapshots_dir_path() / snapshot)
 
 
-def user_models_dir_path() -> PurePath:
-    return paths.user_models_dir
+def user_models_dir_path() -> str:
+    return str(paths.user_models_dir)
 
 
 def logo_path() -> str:

@@ -261,6 +261,10 @@ while True:
 
     # Get all faces from that frame as encodings
     # Upsamples 1 time
+    if face_model is None:
+        print(_("Face model not initialized"))
+        exit(1)
+
     face_locations = face_model.detector(gsframe, 1)
     for fl in face_locations:
         if use_cnn:

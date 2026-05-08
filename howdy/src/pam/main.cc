@@ -164,7 +164,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
       for (size_t i = 0; i < glob_result.gl_pathc; i++) {
         std::ifstream file(std::string(glob_result.gl_pathv[i]));
         std::string lid_state;
-        std::getline(file, lid_state, static_cast<char>(file.eof()));
+        std::getline(file, lid_state);
 
         if (lid_state.find("closed") != std::string::npos) {
           globfree(&glob_result);
