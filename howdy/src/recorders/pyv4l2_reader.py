@@ -1,7 +1,11 @@
 # Class that simulates the functionality of opencv so howdy can use v4l2 devices seamlessly
 
 # Import required modules. lib4l-dev package is also required.
+from __future__ import annotations
+
 import fcntl
+import sys
+from typing import Optional, Tuple
 import numpy
 import sys
 
@@ -21,29 +25,31 @@ class pyv4l2_reader:
 	""" This class was created to look as similar to the openCV features used in Howdy as possible for overall code cleanliness. """
 
 	# Init
-	def __init__(self, device_name, device_format):
+	def __init__(self, device_name: str, device_format: str) -> None:
 		self.device_name = device_name
 		self.device_format = device_format
-		self.height = 0
-		self.width = 0
+		self.height: int = 0
+		self.width: int = 0
 		self.probe()
-		self.frame = ""
+		self.frame: str = ""
 
-	def set(self, prop, setting):
+	def set(self, prop: int, setting: int) -> bool:
 		""" Setter method for height and width """
 		if prop == CAP_PROP_FRAME_WIDTH:
 			self.width = setting
 		elif prop == CAP_PROP_FRAME_HEIGHT:
 			self.height = setting
+		return True
 
-	def get(self, prop):
+	def get(self, prop: int) -> Optional[int]:
 		""" Getter method for height and width """
 		if prop == CAP_PROP_FRAME_WIDTH:
 			return self.width
 		elif prop == CAP_PROP_FRAME_HEIGHT:
 			return self.height
+		return None
 
-	def probe(self):
+	def probe(self) -> None:
 		""" Probe the video device to get height and width info """
 
 		vd = open(self.device_name, 'r')
@@ -67,15 +73,16 @@ class pyv4l2_reader:
 		if self.get(CAP_PROP_FRAME_WIDTH) == 0:
 			self.set(CAP_PROP_FRAME_WIDTH, int(width))
 
-	def record(self):
+	def record(self) -> None:
 		""" Start recording """
 		self.frame = Frame(self.device_name)
 
-	def grab(self):
+	def grab(self) -> bool:
 		""" Read a single frame from the IR camera. """
 		self.read()
+		return True
 
-	def read(self):
+	def read(self) -> Tuple[int, object]:
 		""" Read a single frame from the IR camera. """
 
 		if not self.frame:
@@ -96,7 +103,7 @@ class pyv4l2_reader:
 		# Return a single frame of video
 		return 0, img2
 
-	def release(self):
+	def release(self) -> None:
 		""" Empty our array. If we had a hold on the camera, we would give it back here. """
 		self.video = ()
 		self.num_frames_read = 0
