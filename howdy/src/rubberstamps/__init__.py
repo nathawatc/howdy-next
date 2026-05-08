@@ -2,6 +2,7 @@ import importlib.util
 import os
 import re
 import syslog
+from syslog import LOG_ERR
 
 from i18n import _
 
@@ -55,6 +56,9 @@ def execute(config, opencv):
         spec = importlib.util.spec_from_file_location(
             type, dir_path + "/" + type + ".py"
         )
+        if spec is None:
+            print(_("Stamp error: Could not load spec for {}").format(type))
+            continue
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
 
@@ -67,7 +71,7 @@ def execute(config, opencv):
         try:
             instance = constructor()
         except Exception as e:
-            syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s", type, str(e))
+            syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s" % (type, str(e)))
             print(_("Stamp error: Class {} failed to initialize").format(type))
             continue
         instance.verbose = verbose

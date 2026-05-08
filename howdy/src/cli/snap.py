@@ -26,7 +26,7 @@ video_capture.read_frame()
 exposure = config.getint("video", "exposure", fallback=-1)
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
 
-# COllection of recorded frames
+# Collection of recorded frames
 frames = []
 
 while True:

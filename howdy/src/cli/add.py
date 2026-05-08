@@ -30,7 +30,6 @@ except ImportError as err:
 import cv2
 
 from core.detector import FaceModel
-from recorders.video_capture import VideoCapture
 
 config = configparser.ConfigParser()
 config.read(paths_factory.config_file_path())
@@ -121,14 +120,15 @@ valid_frames = 0
 dark_tries = 0
 # Track the running darkness total
 dark_running_total = 0
-face_locations = None
+face_locations: list = []
+frame = None
 
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
 
 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
 
-# Loop through frames till we hit a timeout
-while frames < 60:
+# Loop through frames till we hit a timeout or find a face
+while frames < 60 and not face_locations:
     frames += 1
     # Grab a single frame of video
     frame, gsframe = video_capture.read_frame()

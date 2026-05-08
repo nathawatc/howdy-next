@@ -29,7 +29,7 @@ class ffmpeg_reader:
         self.device_path = device_path
         self.device_format = device_format
         self.numframes = numframes
-        self.video: tuple = ()
+        self.video: numpy.ndarray = numpy.array([])
         self.num_frames_read = 0
         self.height = 0
         self.width = 0
@@ -69,11 +69,11 @@ class ffmpeg_reader:
         out, err = process.communicate()
         return_code = process.poll()
 
-        # Worst case scenario, err will equal en empty byte string, b'', so probe will get set to [] here.
+        # Worst case scenario, err will equal an empty byte string, b'', so probe will get set to [] here.
         regex = re.compile(r"\s\d{3,4}x\d{3,4}")
         probe = regex.findall(str(err.decode("utf-8")))
 
-        if not return_code == 1 or len(probe) < 1:
+        if (return_code != 1) or (len(probe) < 1):
             # Could not determine the resolution from ffmpeg call. Reverting to ffmpeg.probe()
             probe = ffmpeg.probe(self.device_path)
             height = int(probe["streams"][0]["height"])
@@ -104,22 +104,22 @@ class ffmpeg_reader:
             .run(capture_stdout=True, quiet=True)
         )
         self.video = numpy.frombuffer(stream, numpy.uint8).reshape(
-            [-1, self.width, self.height, 3]
+            [-1, self.height, self.width, 3]
         )
 
-    def read(self) -> bool:
+    def read(self) -> Tuple[int, numpy.ndarray]:
         """Read a single frame from the self.video array. Will record a video if array is empty."""
 
         # First time we are called, we want to initialize the camera by probing it, to ensure we have height/width
         # and then take numframes of video to fill the buffer for faster recognition.
         if self.init_camera:
             self.init_camera = False
-            self.video = ()
+            self.video = numpy.array([])
             self.record(self.numframes)
             return 0, self.video
 
         # If we are called and self.video is empty, we should record self.numframes to fill the video buffer
-        if self.video == ():
+        if self.video.size == 0:
             self.record(self.numframes)
 
         # If we've read max frames, but still are being requested to read more, we simply record another batch.
@@ -137,9 +137,9 @@ class ffmpeg_reader:
 
     def release(self) -> None:
         """Empty our array. If we had a hold on the camera, we would give it back here."""
-        self.video = ()
+        self.video = numpy.array([])
         self.num_frames_read = 0
 
-    def grab(self) -> bool:
+    def grab(self) -> Tuple[int, numpy.ndarray]:
         """Redirect grab() to read() for compatibility"""
-        self.read()
+        return self.read()

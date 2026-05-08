@@ -42,7 +42,8 @@ class VideoCapture:
             self.config = config
 
         # Check device path
-        if not os.path.exists(self.config.get("video", "device_path")):
+        device_path = self.config.get("video", "device_path")
+        if device_path != "none" and not os.path.exists(device_path):
             if self.config.getboolean("video", "warn_no_device", fallback=True):
                 print(
                     _(
@@ -73,18 +74,16 @@ class VideoCapture:
         """
         Frees resources when destroyed
         """
-        if self is not None:
-            try:
-                self.internal.release()
-            except AttributeError:
-                pass  # Internal was never initialized, nothing to release
+        try:
+            self.internal.release()
+        except AttributeError:
+            pass  # Internal was never initialized, nothing to release
 
     def release(self) -> None:
         """
         Release cameras
         """
-        if self is not None:
-            self.internal.release()
+        self.internal.release()
 
     def read_frame(self) -> Tuple[numpy.ndarray, numpy.ndarray]:
         """

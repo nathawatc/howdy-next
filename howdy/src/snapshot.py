@@ -2,6 +2,7 @@
 
 # Import modules
 import os
+from i18n import _
 from datetime import datetime, timezone
 
 import cv2
@@ -32,14 +33,13 @@ def generate(frames, text_lines):
 
     # Add the Howdy logo if there's space to do so
     if len(frames) > 1:
-        # Load the logo from file
         logo = cv2.imread(paths_factory.logo_path())
-        # Calculate the position of the logo
-        logo_y = frame_height + 20
-        logo_x = frame_width * len(frames) - 210
-
-        # Overlay the logo on top of the image
-        snap[logo_y : logo_y + 57, logo_x : logo_x + 180] = logo
+        if logo is not None:
+            logo_y = frame_height + 20
+            logo_x = max(0, frame_width * len(frames) - 210)
+            logo_h, logo_w = logo.shape[:2]
+            if logo_x + logo_w <= snap.shape[1] and logo_y + logo_h <= snap.shape[0]:
+                snap[logo_y : logo_y + logo_h, logo_x : logo_x + logo_w] = logo
 
     # Go through each line
     line_number = 0
@@ -61,14 +61,15 @@ def generate(frames, text_lines):
         line_number += 1
 
     # Made sure a snapshot folder exist
-    if not os.path.exists(paths_factory.snapshots_dir_path()):
-        os.makedirs(paths_factory.snapshots_dir_path())
+    os.makedirs(paths_factory.snapshots_dir_path(), exist_ok=True)
 
     # Generate a filename based on the current time
     filename = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.jpg")
     filepath = paths_factory.snapshot_path(filename)
     # Write the image to that file
-    cv2.imwrite(filepath, snap)
+    result = cv2.imwrite(filepath, snap)
+    if not result:
+        print(_("Warning: Failed to write snapshot to {}").format(filepath))
 
     # Return the saved file location
     return filepath

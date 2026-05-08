@@ -15,7 +15,7 @@ from i18n import _
 
 
 def _get_disabled_key(config: configparser.ConfigParser) -> str:
-    return "disabled = " + config.get("core", "disabled", fallback=True)
+    return "disabled = " + config.get("core", "disabled", fallback="true")
 
 
 def _get_disabled_value(out_value: str) -> str:
@@ -76,7 +76,7 @@ else:
     sys.exit(1)
 
 # Don't do anything when the state is already the requested one
-if out_value == config.get("core", "disabled", fallback=True):
+if out_value == config.get("core", "disabled", fallback="true"):
     print(_("The disable option has already been set to ") + out_value)
     sys.exit(1)
 

@@ -76,8 +76,8 @@ auto howdy_error(int status,
              "Failure, not possible to open camera at configured path");
       break;
     default:
-      conv_function(PAM_ERROR_MSG,
-                    std::string(S("Unknown error: ") + std::to_string(status)).c_str());
+      auto err_str = std::string(S("Unknown error: ")) + std::to_string(status);
+      conv_function(PAM_ERROR_MSG, err_str.c_str());
       syslog(LOG_ERR, "Failure, unknown error %d", status);
     }
   } else if (WIFSIGNALED(status)) {
@@ -164,7 +164,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
       for (size_t i = 0; i < glob_result.gl_pathc; i++) {
         std::ifstream file(std::string(glob_result.gl_pathv[i]));
         std::string lid_state;
-        std::getline(file, lid_state, static_cast<char>(file.eof()));
+        std::getline(file, lid_state);
 
         if (lid_state.find("closed") != std::string::npos) {
           globfree(&glob_result);
@@ -410,7 +410,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
           conv_function(PAM_ERROR_MSG, S("Failed to send Enter press, waiting "
                                          "for user to press it instead"));
         }
-      } catch (std::runtime_error &err) {
+      } catch (const std::runtime_error &err) {
         syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
         conv_function(PAM_ERROR_MSG, S("Failed to send Enter press, waiting "
                                        "for user to press it instead"));

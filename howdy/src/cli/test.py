@@ -96,7 +96,7 @@ slow_mode = False
 total_frames = 0
 # Count all frames per second
 sec_frames = 0
-# Last secands FPS
+# Last seconds FPS
 fps = 0
 # The current second we're counting
 sec = int(time.time())
@@ -135,7 +135,7 @@ try:
         # Create a histogram of the image with 8 values
         hist = cv2.calcHist([frame], [0], None, [8], [0, 256])
         # All values combined for percentage calculation
-        hist_total = int(sum(hist)[0])
+        hist_total = int(hist.sum())
         # Fill with the overall containing percentage
         hist_perc = []
 

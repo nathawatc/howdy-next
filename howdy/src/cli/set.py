@@ -34,7 +34,8 @@ def _find_and_update_config(config_path: str, set_name: str, set_value: str) -> 
     with open(config_path, "r") as f:
         for i, line in enumerate(f):
             lines.append(line)
-            if line.startswith(set_name + " "):
+            stripped = line.strip()
+            if stripped.startswith(set_name + " =") or stripped.startswith(set_name + " "):
                 found_line = line
                 found_line_index = i
 
