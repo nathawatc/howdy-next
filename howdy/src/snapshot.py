@@ -2,6 +2,7 @@
 
 # Import modules
 import os
+from i18n import _
 from datetime import datetime, timezone
 
 import cv2

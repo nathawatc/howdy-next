@@ -140,6 +140,6 @@ class ffmpeg_reader:
         self.video = numpy.array([])
         self.num_frames_read = 0
 
-    def grab(self) -> bool:
+    def grab(self) -> Tuple[int, numpy.ndarray]:
         """Redirect grab() to read() for compatibility"""
         return self.read()
