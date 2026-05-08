@@ -10,8 +10,8 @@
 	<a href="https://www.buymeacoffee.com/boltgolt">
 		<img src="https://img.shields.io/badge/endpoint.svg?url=https://boltgolt.nl/howdy/shield.json">
 	</a>
-	<a href="https://actions-badge.atrox.dev/boltgolt/howdy/goto?ref=beta">
-		<img src="https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fboltgolt%2Fhowdy%2Fbadge%3Fref%3Dbeta&style=flat&label=build&logo=none">
+	<a href="https://codeberg.org/nathawat/howdy-next">
+		<img src="https://codeberg.org/nathawat/howdy-next/widgets/status.svg">
 	</a>
 	<a href="https://aur.archlinux.org/packages/howdy">
 		<img src="https://img.shields.io/aur/votes/howdy?color=4c1&label=aur%20votes">
