@@ -6,7 +6,9 @@ from __future__ import annotations
 import builtins
 import json
 import os
+import shutil
 import sys
+import tempfile
 
 import paths_factory
 from i18n import _
@@ -33,7 +35,8 @@ enc_file = paths_factory.user_model_path(user)
 
 # Try to load the models file and abort if the user does not have it yet
 try:
-    encodings = json.load(open(enc_file))
+    with open(enc_file) as f:
+        encodings = json.load(f)
 except FileNotFoundError:
     print(_("No face model known for the user {}, please run:").format(user))
     print("\n\thowdy add\n")
@@ -89,7 +92,14 @@ else:
             new_encodings.append(enc)
 
     # Save this new set to disk
-    with open(enc_file, "w") as datafile:
-        json.dump(new_encodings, datafile)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(enc_file), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as datafile:
+            json.dump(new_encodings, datafile)
+        os.replace(tmp_path, enc_file)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
     print(_("Removed model {}").format(id))

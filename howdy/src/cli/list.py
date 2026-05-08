@@ -25,7 +25,8 @@ enc_file = paths_factory.user_model_path(user)
 
 # Try to load the models file and abort if the user does not have it yet
 try:
-    encodings = json.load(open(enc_file))
+    with open(enc_file) as f:
+        encodings = json.load(f)
 except FileNotFoundError:
     if not builtins.howdy_args.plain:
         print(_("No face model known for the user {}, please run:").format(user))

@@ -82,7 +82,7 @@ def on_model_add(self, button):
 
 def execute_add(box, dialog, entered_name):
 
-	status, output = subprocess.getstatusoutput(["howdy add '" + entered_name + "' -y -U " + box.active_user])
+	status, output = subprocess.getstatusoutput(["howdy", "add", entered_name, "-y", "-U", box.active_user])
 
 	dialog.destroy()
 

@@ -77,8 +77,8 @@ models = None
 
 try:
     user = builtins.howdy_user
-    models = json.load(open(paths_factory.user_model_path(user)))
-
+    with open(paths_factory.user_model_path(user)) as f:
+        models = json.load(f)
     for model in models:
         encodings += model["data"]
 except FileNotFoundError:

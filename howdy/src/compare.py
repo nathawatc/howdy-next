@@ -110,8 +110,8 @@ face_model = None
 
 # Try to load the face model from the models folder
 try:
-    models = json.load(open(paths_factory.user_model_path(user)))
-
+    with open(paths_factory.user_model_path(user)) as f:
+        models = json.load(f)
     for model in models:
         encodings += model["data"]
 except FileNotFoundError:
@@ -185,7 +185,7 @@ height = video_capture.internal.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1
 if rotate == 2:
     height = video_capture.internal.get(cv2.CAP_PROP_FRAME_WIDTH) or 1
 # Calculate the amount the image has to shrink
-scaling_factor = (max_height / height) or 1
+scaling_factor = (max_height / max(height, 1)) or 1
 
 # Fetch config settings out of the loop
 timeout = config.getint("video", "timeout", fallback=4)

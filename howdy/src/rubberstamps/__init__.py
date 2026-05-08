@@ -2,6 +2,7 @@ import importlib.util
 import os
 import re
 import sys
+import syslog
 
 from i18n import _
 
@@ -103,8 +104,12 @@ def execute(config, gtk_proc, opencv):
             print(_("Stamp error: Class {} not found").format(type))
             continue
 
-        # Init the class and set common values
-        instance = constructor()
+        try:
+            instance = constructor()
+        except Exception as e:
+            syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s", type, str(e))
+            print(_("Stamp error: Class {} failed to initialize").format(type))
+            continue
         instance.verbose = verbose
         instance.config = config
         instance.gtk_proc = gtk_proc

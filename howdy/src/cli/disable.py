@@ -28,11 +28,9 @@ def _update_config(
     with open(config_path, "r") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         lines: list[str] = f.readlines()
-        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
     disabled_key = _get_disabled_key(config)
     disabled_value = _get_disabled_value(out_value)
-
     new_lines: list[str] = []
     for line in lines:
         if disabled_key in line:
@@ -40,13 +38,15 @@ def _update_config(
         else:
             new_lines.append(line)
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", delete=False, dir=os.path.dirname(config_path)
-    ) as tmp:
-        tmp.writelines(new_lines)
-        tmp_path = tmp.name
-
-    shutil.move(tmp_path, config_path)
+    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(config_path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as tmp:
+            tmp.writelines(new_lines)
+        os.replace(tmp_path, config_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 # Get the absolute filepath

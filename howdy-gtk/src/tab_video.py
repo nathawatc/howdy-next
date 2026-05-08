@@ -72,9 +72,16 @@ def capture_frame(self):
 	retval, buffer = self.cv2.imencode(".png", frame)
 
 	loader = pixbuf.PixbufLoader()
-	loader.write(buffer)
-	loader.close()
-	buffer = loader.get_pixbuf()
+	try:
+		loader.write(buffer)
+		loader.close()
+		buffer = loader.get_pixbuf()
+	except Exception:
+		try:
+			loader.close()
+		except Exception:
+			pass
+		buffer = None
 
 	self.opencvimage.set_from_pixbuf(buffer)
 

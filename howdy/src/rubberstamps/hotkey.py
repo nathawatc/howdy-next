@@ -1,4 +1,5 @@
 import sys
+import syslog
 import time
 
 from i18n import _
@@ -38,14 +39,17 @@ class hotkey(RubberStamp):
         try:
             import keyboard
         except Exception:
-            print("\nMissing module for rubber stamp keyboard!")
-            print("Please run:")
-            print("\t pip3 install keyboard")
+            print(_("\nMissing module for rubber stamp keyboard!"))
+            print(_("Please run: pip3 install keyboard"))
             sys.exit(1)
 
-        # Register hotkeys with the kernel
-        keyboard.add_hotkey(self.options["abort_key"], self.on_key, args=["abort"])
-        keyboard.add_hotkey(self.options["confirm_key"], self.on_key, args=["confirm"])
+        try:
+            keyboard.add_hotkey(self.options["abort_key"], self.on_key, args=["abort"])
+            keyboard.add_hotkey(self.options["confirm_key"], self.on_key, args=["confirm"])
+        except Exception as e:
+            syslog(LOG_WARNING, "Failed to register keyboard hotkeys: %s", str(e))
+            print(_("Warning: Could not register hotkeys, authentication may not be abortable"))
+            return True
 
         # While we have not hit our timeout yet
         while time_left > 0:

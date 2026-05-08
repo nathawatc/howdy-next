@@ -77,7 +77,7 @@ class MainWindow(gtk.Window):
 		if self.active_user: user = self.active_user
 
 		# Execute the list command to get the models
-		status, output = subprocess.getstatusoutput(["howdy list --plain -U " + user])
+		status, output = subprocess.getstatusoutput(["howdy", "list", "--plain", "-U", user])
 
 		# Create a datamodel
 		self.listmodel = gtk.ListStore(str, str, str)

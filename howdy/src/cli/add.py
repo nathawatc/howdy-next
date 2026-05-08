@@ -7,7 +7,9 @@ import builtins
 import configparser
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 import numpy as np
@@ -49,7 +51,8 @@ if not os.path.exists(paths_factory.user_models_dir_path()):
 
 # To try read a premade encodings file if it exists
 try:
-    encodings = json.load(open(enc_file))
+    with open(enc_file) as f:
+        encodings = json.load(f)
 except FileNotFoundError:
     encodings = []
 
@@ -89,7 +92,7 @@ else:
 
     # Set the custom label (if any) and limit it to 24 characters
     if label_in != "":
-        label = label_in[:24]
+        label = label_in[:24].replace("\n", "").replace("\r", "")
 
 # Remove illegal characters
 if "," in label:
@@ -198,8 +201,15 @@ insert_model["data"].append(face_encoding.tolist())
 encodings.append(insert_model)
 
 # Save the new encodings to disk
-with open(enc_file, "w") as datafile:
-    json.dump(encodings, datafile)
+fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(enc_file), suffix=".tmp")
+try:
+    with os.fdopen(fd, "w") as datafile:
+        json.dump(encodings, datafile)
+    os.replace(tmp_path, enc_file)
+except Exception:
+    if os.path.exists(tmp_path):
+        os.unlink(tmp_path)
+    raise
 
 # Give let the user know how it went
 print(
