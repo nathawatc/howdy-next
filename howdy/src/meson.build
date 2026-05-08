@@ -29,12 +29,14 @@ py_sources = [
     'cli/test.py',
     'cli.py',
     'compare.py',
+    'core/__init__.py',
+    'core/detector.py',
     'i18n.py',
     'paths_factory.py',
     'recorders/__init__.py',
     'recorders/ffmpeg_reader.py',
     'recorders/pyv4l2_reader.py',
-    'recorders/v4l2.py',
+    'recorders/v4l2/__init__.py',
     'recorders/video_capture.py',
     'rubberstamps/__init__.py',
     'rubberstamps/hotkey.py',
@@ -87,7 +89,6 @@ else
     )
 endif
 
-install_data('logo.png', install_tag: 'meta')
 autocomplete = configure_file(
     input: 'autocomplete/howdy.in',
     output: 'autocomplete',
