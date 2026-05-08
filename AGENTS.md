@@ -15,7 +15,7 @@ recorder drivers (V4L2/FFmpeg).
 howdy-next/
 ├── howdy/src/           # Python source (CLI, recorders, PAM auth)
 │   ├── cli/             # CLI subcommands (add, test, set, disable...)
-│   ├── recorders/       # Camera readers (ffmpeg, v4l2, video_capture)
+│   ├── recorders/       # Camera readers (ffmpeg, video_capture)
 │   └── pam/             # C++ PAM authentication module
 ├── tests/               # pytest test infrastructure
 └── .forgejo/workflows/  # Forgejo CI (migrated from GitHub Actions)
@@ -27,7 +27,7 @@ howdy-next/
 | --------------- | ---------------------- | -------------------------------------- |
 | CLI commands    | `howdy/src/cli/`       | add.py, test.py, set.py, disable.py... |
 | Face comparison | `howdy/src/compare.py` | Core recognition engine, 444 lines     |
-| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py, v4l2.py              |
+| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py              |
 | PAM module      | `howdy/src/pam/`       | C++ auth, main.cc                      |
 | Auth config     | `howdy/src/config.ini` | device_path, certainty, timeout        |
 
@@ -37,7 +37,6 @@ howdy-next/
 | ------------- | ------ | -------------------------- | ------------------------------ |
 | VideoCapture  | class  | recorders/video_capture.py | Factory for recorder selection |
 | ffmpeg_reader | class  | recorders/ffmpeg_reader.py | FFmpeg-based camera capture    |
-| pyv4l2_reader | class  | recorders/pyv4l2_reader.py | V4L2 direct capture            |
 | compare       | module | compare.py                 | Face comparison engine         |
 | cli.py        | entry  | cli.py                     | Main CLI entry point           |
 
@@ -61,7 +60,7 @@ howdy-next/
 - Recorder selection: VideoCapture factory instantiates based on device
 - Config: INI format, CLI modules import `i18n` for translations
 - PAM exit: Wait for user input (enter), do NOT auto-terminate
-- v4l2.py: DEPRECATED constant mappings at end of file
+- v4l2: Video format option (used by ffmpeg), NOT a recorder backend
 
 ## COMMANDS
 

@@ -21,7 +21,7 @@ from i18n import _
 
 class VideoCapture:
     config: configparser.ConfigParser
-    internal: Union[cv2.VideoCapture, "ffmpeg_reader", "pyv4l2_reader"]
+    internal: Union[cv2.VideoCapture, "ffmpeg_reader"]
     fw: Optional[int]
     fh: Optional[int]
     fps: Optional[int]
@@ -131,15 +131,6 @@ class VideoCapture:
             from recorders.ffmpeg_reader import ffmpeg_reader
 
             self.internal = ffmpeg_reader(
-                self.config.get("video", "device_path"),
-                self.config.get("video", "device_format", fallback="v4l2"),
-            )
-
-        elif recording_plugin == "pyv4l2":
-            # Set the capture source for pyv4l2
-            from recorders.pyv4l2_reader import pyv4l2_reader
-
-            self.internal = pyv4l2_reader(
                 self.config.get("video", "device_path"),
                 self.config.get("video", "device_format", fallback="v4l2"),
             )
