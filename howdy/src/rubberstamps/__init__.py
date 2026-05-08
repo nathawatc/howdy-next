@@ -1,10 +1,9 @@
 import sys
 import os
 import re
+import importlib.util
 
 from i18n import _
-
-from importlib.machinery import SourceFileLoader
 
 
 class RubberStamp:
@@ -88,7 +87,9 @@ def execute(config, gtk_proc, opencv):
 			continue
 
 		# Load the module from file
-		module = SourceFileLoader(type, dir_path + "/" + type + ".py").load_module()
+		spec = importlib.util.spec_from_file_location(type, dir_path + "/" + type + ".py")
+		module = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(module)
 
 		# Try to get the class with the same name
 		try:
