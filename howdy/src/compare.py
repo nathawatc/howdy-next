@@ -178,7 +178,7 @@ while True:
                 time.time() - timings["fr"],
             )
 
-        if dark_tries > 0 and dark_tries == frames:
+        if dark_tries > 0 and valid_frames == 0:
             print(_("All frames were too dark, please check dark_threshold in config"))
             print(
                 _("Average darkness: {avg}, Threshold: {threshold}").format(
@@ -274,6 +274,10 @@ while True:
         face_encoding = np.array(
             face_model.encoder.compute_face_descriptor(frame, face_landmark, 1)
         )
+
+        if not encodings:
+            print(_("No face encodings loaded"))
+            exit(1)
 
         # Match this found face against a known face
         matches = np.linalg.norm(encodings - face_encoding, axis=1)

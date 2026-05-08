@@ -29,7 +29,7 @@ class ffmpeg_reader:
         self.device_path = device_path
         self.device_format = device_format
         self.numframes = numframes
-        self.video: tuple = ()
+        self.video: numpy.ndarray = numpy.array([])
         self.num_frames_read = 0
         self.height = 0
         self.width = 0
@@ -107,7 +107,7 @@ class ffmpeg_reader:
             [-1, self.height, self.width, 3]
         )
 
-    def read(self) -> bool:
+    def read(self) -> Tuple[int, numpy.ndarray]:
         """Read a single frame from the self.video array. Will record a video if array is empty."""
 
         # First time we are called, we want to initialize the camera by probing it, to ensure we have height/width

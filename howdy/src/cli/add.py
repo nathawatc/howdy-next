@@ -30,7 +30,6 @@ except ImportError as err:
 import cv2
 
 from core.detector import FaceModel
-from recorders.video_capture import VideoCapture
 
 config = configparser.ConfigParser()
 config.read(paths_factory.config_file_path())
