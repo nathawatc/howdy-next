@@ -67,7 +67,7 @@ def execute(config, opencv):
         try:
             instance = constructor()
         except Exception as e:
-            syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s", type, str(e))
+            syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s" % (type, str(e)))
             print(_("Stamp error: Class {} failed to initialize").format(type))
             continue
         instance.verbose = verbose

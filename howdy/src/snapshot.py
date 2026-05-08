@@ -61,8 +61,7 @@ def generate(frames, text_lines):
         line_number += 1
 
     # Made sure a snapshot folder exist
-    if not os.path.exists(paths_factory.snapshots_dir_path()):
-        os.makedirs(paths_factory.snapshots_dir_path())
+    os.makedirs(paths_factory.snapshots_dir_path(), exist_ok=True)
 
     # Generate a filename based on the current time
     filename = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.jpg")

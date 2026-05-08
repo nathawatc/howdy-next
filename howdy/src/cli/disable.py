@@ -15,7 +15,7 @@ from i18n import _
 
 
 def _get_disabled_key(config: configparser.ConfigParser) -> str:
-    return "disabled = " + config.get("core", "disabled", fallback=True)
+    return "disabled = " + config.get("core", "disabled", fallback="true")
 
 
 def _get_disabled_value(out_value: str) -> str:
