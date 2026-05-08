@@ -37,6 +37,7 @@ py_sources = [
     'recorders/ffmpeg_reader.py',
     'recorders/pyv4l2_reader.py',
     'recorders/v4l2/__init__.py',
+    'recorders/v4l2/v4l2.py',
     'recorders/video_capture.py',
     'rubberstamps/__init__.py',
     'rubberstamps/hotkey.py',
