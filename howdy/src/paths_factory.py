@@ -36,7 +36,3 @@ def snapshot_path(snapshot: str) -> str:
 
 def user_models_dir_path() -> str:
     return str(paths.user_models_dir)
-
-
-def logo_path() -> str:
-    return str(paths.data_dir / "logo.png")
