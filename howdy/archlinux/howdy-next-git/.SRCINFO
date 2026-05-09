@@ -22,11 +22,7 @@ pkgbase = howdy-next-git
 	replaces = howdy-git
 	backup = etc/howdy/config.ini
 	source = howdy-next::git+https://codeberg.org/nathawat/howdy-next.git
-	source = face_detection_yunet_2023mar_int8bq.onnx::https://huggingface.co/opencv/face_detection_yunet/raw/main/face_detection_yunet_2023mar_int8bq.onnx
-	source = face_recognition_sface_2021dec_int8bq.onnx::https://huggingface.co/opencv/face_recognition_sface/raw/main/face_recognition_sface_2021dec_int8bq.onnx
 	source = polkit-agent-helper-howdy.conf
-	md5sums = SKIP
-	md5sums = SKIP
 	md5sums = SKIP
 	md5sums = 4a3f094d3123029f67a7e6885fcc49bb
 
