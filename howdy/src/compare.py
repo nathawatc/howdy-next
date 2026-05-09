@@ -155,7 +155,7 @@ if face_model is None:
     exit(1)
 assert face_model is not None
 
-active_face_model = cast(FaceModel, face_model)
+active_face_model: FaceModel = face_model
 known_encodings = np.asarray(encodings, dtype=np.float32)
 
 # Fetch the max frame height
