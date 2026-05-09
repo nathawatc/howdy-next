@@ -3,12 +3,11 @@
 
 from __future__ import annotations
 
-from core.detector import FaceModel, check_data_files, init_face_detector, init_face_encoder, init_pose_predictor
+from core.detector import BACKEND_NAME, FaceMatch, FaceModel, check_data_files
 
 __all__ = [
+    "BACKEND_NAME",
+    "FaceMatch",
     "FaceModel",
     "check_data_files",
-    "init_face_detector",
-    "init_face_encoder",
-    "init_pose_predictor",
 ]

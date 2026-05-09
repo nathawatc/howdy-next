@@ -1,8 +1,8 @@
 import importlib.util
 import os
 import re
-import syslog
-from syslog import LOG_ERR
+from syslog import LOG_ERR, syslog
+from typing import Any
 
 from i18n import _
 
@@ -56,7 +56,7 @@ def execute(config, opencv):
         spec = importlib.util.spec_from_file_location(
             type, dir_path + "/" + type + ".py"
         )
-        if spec is None:
+        if spec is None or spec.loader is None:
             print(_("Stamp error: Could not load spec for {}").format(type))
             continue
         module = importlib.util.module_from_spec(spec)
@@ -68,8 +68,12 @@ def execute(config, opencv):
             print(_("Stamp error: Class {} not found").format(type))
             continue
 
+        if not callable(constructor):
+            print(_("Stamp error: Class {} is not callable").format(type))
+            continue
+
         try:
-            instance = constructor()
+            instance: Any = constructor()
         except Exception as e:
             syslog(LOG_ERR, "Rubberstamp %s failed to construct: %s" % (type, str(e)))
             print(_("Stamp error: Class {} failed to initialize").format(type))
@@ -79,8 +83,9 @@ def execute(config, opencv):
         instance.opencv = opencv
 
         instance.video_capture = opencv["video_capture"]
-        instance.face_detector = opencv["face_detector"]
-        instance.pose_predictor = opencv["pose_predictor"]
+        instance.face_model = opencv.get("face_model")
+        instance.face_detector = opencv.get("face_detector", instance.face_model)
+        instance.pose_predictor = opencv.get("pose_predictor")
         instance.clahe = opencv["clahe"]
 
         instance.options = {
@@ -119,5 +124,5 @@ def execute(config, opencv):
         try:
             instance.run()
         except Exception as e:
-            syslog(LOG_ERR, "Rubberstamp %s failed to run: %s", type, str(e))
+            syslog(LOG_ERR, "Rubberstamp %s failed to run: %s" % (type, str(e)))
             print(_("Stamp error: Class {} failed to execute").format(type))

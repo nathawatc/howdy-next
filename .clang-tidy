@@ -1,7 +1,74 @@
-Checks: 'clang-diagnostic-*,clang-analyser-*,-clang-diagnostic-unused-command-line-argument,google-*,bugprone-*,modernize-*,performance-*,portability-*,readability-*,-bugprone-easily-swappable-*,-readability-magic-numbers,-google-readability-todo'
-WarningsAsErrors: 'clang-diagnostic-*,clang-analyser-*,-clang-diagnostic-unused-command-line-argument,google-*,bugprone-*,modernize-*,performance-*,portability-*,readability-*,-bugprone-easily-swappable-*,-readability-magic-numbers,-google-readability-todo'
+# Strict but pragmatic - Rust/Zig inspired
+# Excludes checks that fail on system headers (libevdev)
+
+Checks: '
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -misc-include-cleaner,
+  -misc-unused-aliases,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-non-const-parameter,
+  -readability-convert-member-functions-to-static,
+  -modernize-use-trailing-return-type,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-macro-usage,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -misc-use-internal-linkage,
+  -google-readability-todo,
+  -google-build-using-namespace,
+  -llvm-header-guard,
+  -performance-enum-size,
+  -modernize-use-using
+'
+
+WarningsAsErrors: '
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -misc-include-cleaner,
+  -misc-unused-aliases,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-function-cognitive-complexity,
+  -readability-non-const-parameter,
+  -readability-convert-member-functions-to-static,
+  -modernize-use-trailing-return-type,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-special-member-functions,
+  -cppcoreguidelines-macro-usage,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -misc-use-internal-linkage,
+  -google-readability-todo,
+  -google-build-using-namespace,
+  -llvm-header-guard,
+  -performance-enum-size,
+  -modernize-use-using
+'
+
 CheckOptions:
   - key:             readability-function-cognitive-complexity.Threshold
-    value:           '50'
+    value:           '25'
+  - key:             bugprone-easily-swappable-parameters.MinimumLength
+    value:           '4'
+  - key:             bugprone-easily-swappable-parameters.MaximumDistance
+    value:           '2'
 
 # vim:syntax=yaml

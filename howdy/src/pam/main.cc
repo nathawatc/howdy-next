@@ -36,11 +36,15 @@
 #include "optional_task.hh"
 #include <paths.hh>
 
-const auto DEFAULT_TIMEOUT =
+namespace {
+constexpr auto DEFAULT_TIMEOUT =
     std::chrono::duration<int, std::chrono::milliseconds::period>(100);
-const auto MAX_RETRIES = 5;
+const int MAX_RETRIES = 5;
 
-#define S(msg) gettext(msg)
+constexpr const char *S(const char *msg) {
+  return msg;
+}
+}  // namespace
 
 /**
  * Inspect the status code returned by the compare process

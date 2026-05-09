@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "howdy", 
 mock_ffmpeg = MagicMock()
 sys.modules["ffmpeg"] = mock_ffmpeg
 
-from cv2 import CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH
-from recorders.ffmpeg_reader import ffmpeg_reader
+from cv2 import CAP_PROP_FRAME_HEIGHT, CAP_PROP_FRAME_WIDTH  # noqa: E402
+from recorders.ffmpeg_reader import ffmpeg_reader  # type: ignore[import]
 
 
 class TestFfmpegReader(unittest.TestCase):

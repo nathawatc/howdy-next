@@ -18,8 +18,11 @@ def mock_config():
                 "width": 640,
                 "height": 480,
             },
-            "core": {
-                "use_cnn": False,
+            "face": {
+                "yunet_model": "default",
+                "sface_model": "default",
+                "sface_metric": "cosine",
+                "sface_threshold": "0.363",
             },
         }
     )

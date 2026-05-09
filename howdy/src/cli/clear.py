@@ -11,7 +11,7 @@ import paths_factory
 from i18n import _
 
 # Get the passed user
-user = builtins.howdy_user
+user = getattr(builtins, "howdy_user")
 
 # Check if the models folder is there
 if not os.path.exists(paths_factory.user_models_dir_path()):
@@ -24,7 +24,7 @@ if not os.path.isfile(paths_factory.user_model_path(user)):
     sys.exit(1)
 
 # Only ask the user if there's no -y flag
-if not builtins.howdy_args.y:
+if not getattr(builtins, "howdy_args").y:
     # Double check with the user
     print(_("This will clear all models for ") + user)
     ans = input(_("Do you want to continue [y/N]: "))

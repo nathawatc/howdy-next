@@ -3,19 +3,18 @@
 
 from __future__ import annotations
 
-# Import required modules
 import configparser
 import os
 import sys
-from typing import Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import cv2
 import numpy
 from i18n import _
 
-# Class to provide boilerplate code to build a video recorder with the
-# correct settings from the config file.
-#
+if TYPE_CHECKING:
+    from recorders.ffmpeg_reader import ffmpeg_reader
+
 # The internal recorder can be accessed with 'video_capture.internal'
 
 
@@ -34,14 +33,12 @@ class VideoCapture:
         Config can either be a string to the path, or a pre-setup configparser.
         """
 
-        # Parse config from string if needed
         if isinstance(config, str):
             self.config = configparser.ConfigParser()
             self.config.read(config)
         else:
             self.config = config
 
-        # Check device path
         device_path = self.config.get("video", "device_path")
         if device_path != "none" and not os.path.exists(device_path):
             if self.config.getboolean("video", "warn_no_device", fallback=True):
@@ -58,12 +55,8 @@ class VideoCapture:
                 print("\n\tsudo howdy config\n")
             sys.exit(14)
 
-        # Create reader
-        # The internal video recorder
         self.internal = None
-        # The frame width
         self.fw = None
-        # The frame height
         self.fh = None
         self._create_reader()
 
@@ -71,18 +64,12 @@ class VideoCapture:
         self.internal.grab()
 
     def __del__(self) -> None:
-        """
-        Frees resources when destroyed
-        """
         try:
             self.internal.release()
         except AttributeError:
             pass  # Internal was never initialized, nothing to release
 
     def release(self) -> None:
-        """
-        Release cameras
-        """
         self.internal.release()
 
     def read_frame(self) -> Tuple[numpy.ndarray, numpy.ndarray]:
@@ -95,8 +82,6 @@ class VideoCapture:
         If the grayscale conversion fails, both items in the tuple are identical.
         """
 
-        # Grab a single frame of video
-        # Don't remove ret, it doesn't work without it
         ret, frame = self.internal.read()
         if not ret:
             print(
@@ -107,8 +92,6 @@ class VideoCapture:
             sys.exit(14)
 
         try:
-            # Convert from color to grayscale
-            # First processing of frame, so frame errors show up here
             gsframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         except RuntimeError:
             gsframe = frame
@@ -126,7 +109,6 @@ class VideoCapture:
         )
 
         if recording_plugin == "ffmpeg":
-            # Set the capture source for ffmpeg
             from recorders.ffmpeg_reader import ffmpeg_reader
 
             self.internal = ffmpeg_reader(
@@ -135,20 +117,17 @@ class VideoCapture:
             )
 
         else:
-            # Start video capture on the IR camera through OpenCV
             self.internal = cv2.VideoCapture(
                 self.config.get("video", "device_path"), cv2.CAP_V4L
             )
-            # Set the capture frame rate
-            # Without this the first detected (and possibly lower) frame rate is used, -1 seems to select the highest
-            # Use 0 as a fallback to avoid breaking an existing setup, new installs should default to -1
+            # Without this OpenCV uses the first detected (possibly lower) frame rate.
+            # Use 0 as fallback to avoid breaking existing setups.
             self.fps = self.config.getint("video", "device_fps", fallback=0)
             if self.fps != 0:
                 self.internal.set(cv2.CAP_PROP_FPS, self.fps)
 
-        # Force MJPEG decoding if true
         if self.config.getboolean("video", "force_mjpeg", fallback=False):
-            # Set a magic number, will enable MJPEG but is badly documentated
+            # Magic number enables MJPEG; badly documented in OpenCV.
             self.internal.set(cv2.CAP_PROP_FOURCC, 1196444237)
 
         # Set the frame width and height if requested

@@ -8,21 +8,19 @@ import time
 timings = {"st": time.time()}
 
 # Import required modules
-import atexit
 import configparser
 import json
 import os
-import subprocess
 import sys
-import syslog
 import threading
 from datetime import datetime, timezone
+from typing import cast
 
 import cv2
 import numpy as np
 import paths_factory
 import snapshot
-from core.detector import FaceModel
+from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
 from recorders.video_capture import VideoCapture
 
@@ -34,7 +32,7 @@ def exit(code=None):
 
 def init_detector(lock):
     global face_model
-    face_model = FaceModel(use_cnn)
+    face_model = FaceModel(config)
     timings["ll"] = time.time() - timings["ll"]
     lock.release()
 
@@ -43,7 +41,7 @@ def make_snapshot(
     type,
     snapframes_list: list,
     frames_count: int,
-    lowest_certainty_val: float,
+    best_score_val: float,
     frame_time: float,
 ):
     """Generate snapshot after detection"""
@@ -59,9 +57,17 @@ def make_snapshot(
             + str(round(frames_count / frame_time, 2))
             + "FPS)",
             _("Hostname: ") + os.uname().nodename,
-            _("Best certainty value: ") + str(round(lowest_certainty_val * 10, 1)),
+            _("Best match score: ") + str(round(best_score_val, 3)),
         ],
     )
+
+
+def update_best_score(current: float | None, score: float, metric: str) -> float:
+    if current is None:
+        return score
+    if metric == "cosine":
+        return max(current, score)
+    return min(current, score)
 
 
 # Make sure we were given an username to test against
@@ -74,6 +80,8 @@ user = sys.argv[1]
 models = []
 # Encoded face models
 encodings = []
+# Model metadata per encoding
+encoding_models = []
 # Amount of ignored 100% black frames
 black_tries = 0
 # Amount of ignored dark frames
@@ -82,21 +90,28 @@ dark_tries = 0
 frames = 0
 # Captured frames for snapshot capture
 snapframes = []
-# Tracks the lowest certainty value in the loop
-lowest_certainty = 10
-face_model = None
+# Tracks the best score in the loop
+best_score = None
+face_model: FaceModel | None = None
 
 # Try to load the face model from the models folder
 try:
     with open(paths_factory.user_model_path(user)) as f:
         models = json.load(f)
     for model in models:
-        encodings += model["data"]
+        if model.get("backend") != BACKEND_NAME:
+            print(
+                _("Stored face models use an incompatible backend; re-enroll required")
+            )
+            exit(10)
+        for encoding in model["data"]:
+            encodings.append(encoding)
+            encoding_models.append(model)
 except FileNotFoundError:
     exit(10)
 
 # Check if the file contains a model
-if len(models) < 1:
+if len(models) < 1 or len(encodings) < 1:
     exit(10)
 
 # Read config from disk
@@ -104,10 +119,8 @@ config = configparser.ConfigParser()
 config.read(paths_factory.config_file_path())
 
 # Get all config values needed
-use_cnn = config.getboolean("core", "use_cnn", fallback=False)
 timeout = config.getint("video", "timeout", fallback=4)
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=50.0)
-video_certainty = config.getfloat("video", "certainty", fallback=3.5) / 10
 end_report = config.getboolean("debug", "end_report", fallback=False)
 save_failed = config.getboolean("snapshots", "save_failed", fallback=False)
 save_successful = config.getboolean("snapshots", "save_successful", fallback=False)
@@ -138,6 +151,14 @@ lock.acquire()
 lock.release()
 del lock
 
+if face_model is None:
+    print(_("Face model not initialized"))
+    exit(1)
+assert face_model is not None
+
+active_face_model = cast(FaceModel, face_model)
+known_encodings = np.asarray(encodings, dtype=np.float32)
+
 # Fetch the max frame height
 max_height = config.getfloat("video", "max_height", fallback=320.0)
 
@@ -148,16 +169,10 @@ if rotate == 2:
 # Calculate the amount the image has to shrink
 scaling_factor = max_height / max(height, 1)
 
-# Fetch config settings out of the loop
-timeout = config.getint("video", "timeout", fallback=4)
-dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
-end_report = config.getboolean("debug", "end_report", fallback=False)
-
 # Initiate histogram equalization
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+clahe = create_clahe(config)
 
 # Start the read loop
-frames = 0
 valid_frames = 0
 timings["fr"] = time.time()
 dark_running_total = 0
@@ -174,7 +189,7 @@ while True:
                 _("FAILED"),
                 snapframes,
                 frames,
-                lowest_certainty,
+                best_score or 0.0,
                 time.time() - timings["fr"],
             )
 
@@ -192,25 +207,26 @@ while True:
 
     # Grab a single frame of video
     frame, gsframe = video_capture.read_frame()
-    gsframe = clahe.apply(gsframe)
-
-    # If snapshots have been turned on
-    if save_failed or save_successful:
-        # Start capturing frames for the snapshot
-        if len(snapframes) < 3:
-            snapframes.append(frame)
+    if gsframe.ndim != 2:
+        gsframe = cv2.cvtColor(gsframe, cv2.COLOR_BGR2GRAY)
+    if clahe_enabled(config):
+        gsframe = clahe.apply(gsframe)
 
     # Create a histogram of the image with 8 values
     hist = cv2.calcHist([gsframe], [0], None, [8], [0, 256])
     # All values combined for percentage calculation
     hist_total = np.sum(hist)
 
+    # If the image is fully black due to a bad camera read,
+    # skip to the next frame
+    if hist_total == 0:
+        black_tries += 1
+        continue
+
     # Calculate frame darkness
     darkness = hist[0] / hist_total * 100
 
-    # If the image is fully black due to a bad camera read,
-    # skip to the next frame
-    if (hist_total == 0) or (darkness == 100):
+    if darkness == 100:
         black_tries += 1
         continue
 
@@ -226,13 +242,6 @@ while True:
     # If the height is too high
     if scaling_factor != 1:
         # Apply that factor to the frame
-        frame = cv2.resize(
-            frame,
-            None,
-            fx=scaling_factor,
-            fy=scaling_factor,
-            interpolation=cv2.INTER_AREA,
-        )
         gsframe = cv2.resize(
             gsframe,
             None,
@@ -244,54 +253,36 @@ while True:
     # If camera is configured to rotate = 1, check portrait in addition to landscape
     if rotate == 1:
         if frames % 3 == 1:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
             gsframe = cv2.rotate(gsframe, cv2.ROTATE_90_COUNTERCLOCKWISE)
         if frames % 3 == 2:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             gsframe = cv2.rotate(gsframe, cv2.ROTATE_90_CLOCKWISE)
 
     # If camera is configured to rotate = 2, check portrait orientation
     elif rotate == 2:
         if frames % 2 == 0:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
             gsframe = cv2.rotate(gsframe, cv2.ROTATE_90_COUNTERCLOCKWISE)
         else:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
             gsframe = cv2.rotate(gsframe, cv2.ROTATE_90_CLOCKWISE)
 
+    frame = active_face_model.prepare_frame(gsframe)
+
+    # If snapshots have been turned on
+    if save_failed or save_successful:
+        # Start capturing frames for the snapshot
+        if len(snapframes) < 3:
+            snapframes.append(frame)
+
     # Get all faces from that frame as encodings
-    # Upsamples 1 time
-    if face_model is None:
-        print(_("Face model not initialized"))
-        exit(1)
-
-    face_locations = face_model.detector(gsframe, 1)
-    for fl in face_locations:
-        if use_cnn:
-            fl = fl.rect
-
-        face_landmark = face_model.predictor(frame, fl)
-        face_encoding = np.array(
-            face_model.encoder.compute_face_descriptor(frame, face_landmark, 1)
+    face_locations = active_face_model.detect(frame)
+    for face in face_locations:
+        face_encoding = active_face_model.encode(frame, face)
+        match = active_face_model.best_match(known_encodings, face_encoding)
+        best_score = update_best_score(
+            best_score, match.score, active_face_model.metric
         )
 
-        if not encodings:
-            print(_("No face encodings loaded"))
-            exit(1)
-
-        # Match this found face against a known face
-        matches = np.linalg.norm(encodings - face_encoding, axis=1)
-
-        # Get best match
-        match_index = np.argmin(matches)
-        match = matches[match_index]
-
-        # Update certainty if we have a new low
-        if lowest_certainty > match:
-            lowest_certainty = match
-
         # Check if a match that's confident enough
-        if 0 < match < video_certainty:
+        if match.accepted:
             timings["tt"] = time.time() - timings["st"]
             timings["fl"] = time.time() - timings["fr"]
 
@@ -332,11 +323,12 @@ while True:
                 )
                 print(_("Black frames ignored: %d ") % (black_tries,))
                 print(_("Dark frames ignored: %d ") % (dark_tries,))
-                print(_("Certainty of winning frame: %.3f") % (match * 10,))
+                print(_("Winning score: %.3f") % (match.score,))
 
+                winning_model = encoding_models[match.index]
                 print(
                     _('Winning model: %d ("%s")')
-                    % (match_index, models[match_index]["label"])
+                    % (winning_model["id"], winning_model["label"])
                 )
 
             # Make snapshot if enabled
@@ -345,7 +337,7 @@ while True:
                     _("SUCCESSFUL"),
                     snapframes,
                     frames,
-                    lowest_certainty,
+                    best_score or 0.0,
                     time.time() - timings["fr"],
                 )
 
