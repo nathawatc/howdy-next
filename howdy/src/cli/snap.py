@@ -18,11 +18,6 @@ config.read(paths_factory.config_file_path())
 # Start video capture
 video_capture = VideoCapture(config)
 
-# Read a frame to activate emitters
-video_capture.read_frame()
-
-# Read exposure and dark_thresholds from config to use in the main loop
-exposure = config.getint("video", "exposure", fallback=-1)
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
 
 # Collection of recorded frames

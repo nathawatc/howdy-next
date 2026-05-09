@@ -14,7 +14,6 @@ import os
 import sys
 import threading
 from datetime import datetime, timezone
-from typing import cast
 
 import cv2
 import numpy as np

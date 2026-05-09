@@ -6,8 +6,6 @@ import builtins
 import configparser
 import fcntl
 import os
-import shutil
-import sys
 import tempfile
 
 import paths_factory
