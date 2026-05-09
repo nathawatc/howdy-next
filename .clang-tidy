@@ -1,5 +1,5 @@
 # Strict but pragmatic - Rust/Zig inspired
-# Disabled checks that conflict with PAM API patterns or are impractical
+# Excludes checks that fail on system headers (libevdev)
 
 Checks: '
   clang-diagnostic-*,
@@ -13,6 +13,8 @@ Checks: '
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-function-cognitive-complexity,
+  -readability-non-const-parameter,
+  -readability-convert-member-functions-to-static,
   -modernize-use-trailing-return-type,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
@@ -25,7 +27,9 @@ Checks: '
   -misc-use-internal-linkage,
   -google-readability-todo,
   -google-build-using-namespace,
-  -llvm-header-guard
+  -llvm-header-guard,
+  -performance-enum-size,
+  -modernize-use-using
 '
 
 WarningsAsErrors: '
@@ -40,6 +44,8 @@ WarningsAsErrors: '
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-function-cognitive-complexity,
+  -readability-non-const-parameter,
+  -readability-convert-member-functions-to-static,
   -modernize-use-trailing-return-type,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
@@ -52,7 +58,9 @@ WarningsAsErrors: '
   -misc-use-internal-linkage,
   -google-readability-todo,
   -google-build-using-namespace,
-  -llvm-header-guard
+  -llvm-header-guard,
+  -performance-enum-size,
+  -modernize-use-using
 '
 
 CheckOptions:

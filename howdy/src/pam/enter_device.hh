@@ -1,5 +1,5 @@
-#ifndef ENTER_DEVICE_H_
-#define ENTER_DEVICE_H_
+#ifndef HOWDY_SRC_PAM_ENTER_DEVICE_HH
+#define HOWDY_SRC_PAM_ENTER_DEVICE_HH
 
 #include <libevdev/libevdev-uinput.h>
 #include <libevdev/libevdev.h>
@@ -12,8 +12,10 @@ class EnterDevice {
 
 public:
   EnterDevice();
-  void send_enter_press() const;
+  void send_enter_press();
   ~EnterDevice() = default;
+  EnterDevice(EnterDevice &&) = default;
+  EnterDevice &operator=(EnterDevice &&) = default;
 };
 
-#endif // ENTER_DEVICE_H
+#endif  // HOWDY_SRC_PAM_ENTER_DEVICE_HH
