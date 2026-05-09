@@ -1,6 +1,5 @@
 # CLI directly called by running the howdy command
 
-# Import required modules
 import argparse
 import builtins
 import getpass
@@ -18,12 +17,10 @@ pkexec_user = pwd.getpwuid(int(pkexec_uid))[0] if pkexec_uid else ""
 env_user = getpass.getuser()
 user = next((u for u in [sudo_user, doas_user, pkexec_user, env_user] if u), "")
 
-# If that fails, error out
 if user == "":
     print(_("Could not determine user, please use the --user flag"))
     sys.exit(1)
 
-# Basic command setup
 parser = argparse.ArgumentParser(
     description=_("Command line interface for Howdy face authentication."),
     formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -35,7 +32,6 @@ parser = argparse.ArgumentParser(
     epilog=_("For support please visit\nhttps://github.com/boltgolt/howdy"),
 )
 
-# Add an argument for the command
 parser.add_argument(
     "command",
     help=_(
@@ -57,22 +53,18 @@ parser.add_argument(
     ],
 )
 
-# Add an argument for the extra arguments of disable and remove
 parser.add_argument(
     "arguments",
     help=_("Optional arguments for the add, disable, remove and set commands."),
     nargs="*",
 )
 
-# Add the user flag
 parser.add_argument(
     "-U", "--user", default=user, help=_("Set the user account to use.")
 )
 
-# Add the -y flag
 parser.add_argument("-y", help=_("Skip all questions."), action="store_true")
 
-# Add the --plain flag
 parser.add_argument(
     "--plain", help=_("Print machine-friendly output."), action="store_true"
 )
@@ -86,21 +78,17 @@ parser.add_argument(
     help=_("Show this help message and exit."),
 )
 
-# If we only have 1 argument we print the help text
 if len(sys.argv) < 2:
     print(_("current active user: ") + user + "\n")
     parser.print_help()
     sys.exit(0)
 
-# Parse all arguments above
 args = parser.parse_args()
 
 # Save the args and user as builtins which can be accessed by the imports
 setattr(builtins, "howdy_args", args)
 setattr(builtins, "howdy_user", args.user)
 
-# Check if we have rootish rights
-# This is this far down the file so running the command for help is always possible
 if os.geteuid() != 0:
     print(_("Please run this command as root:\n"))
     print("\tsudo howdy " + " ".join(sys.argv[1:]))
@@ -115,7 +103,6 @@ if args.user == "root":
     )
     sys.exit(1)
 
-# Execute the right command
 if args.command == "add":
     import cli.add
 elif args.command == "clear":
