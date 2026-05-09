@@ -26,17 +26,18 @@ Edit config: `sudo howdy config`
 
 `howdy [-U user] [-y] command [argument]`
 
-| Command  | Description           |
-| -------- | --------------------- |
-| add      | Add face model        |
-| clear    | Remove all models     |
-| config   | Edit config           |
-| disable  | Enable/disable        |
-| list     | List models           |
-| remove   | Remove specific model |
-| snapshot | Camera preview        |
-| test     | Test camera           |
-| version  | Show version          |
+| Command         | Description           |
+| --------------- | --------------------- |
+| add             | Add face model        |
+| clear           | Remove all models     |
+| config          | Edit config           |
+| disable         | Enable/disable        |
+| download-models | Download ONNX models  |
+| list            | List models           |
+| remove          | Remove specific model |
+| snapshot        | Camera preview        |
+| test            | Test camera           |
+| version         | Show version          |
 
 ## Troubleshooting
 

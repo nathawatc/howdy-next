@@ -1,4 +1,4 @@
-project('howdy', 'cpp', license: 'MIT', version: 'beta', meson_version: '>= 0.64.0')
+project('howdy', 'cpp', license: 'MIT', version: '1.0.0', meson_version: '>= 1.1')
 
 modelsdir = get_option('models_dir') != '' ? get_option('models_dir') : join_paths(get_option('prefix'), get_option('datadir'), 'howdy', 'models')
 confdir = get_option('config_dir') != '' ? get_option('config_dir') : join_paths(get_option('prefix'), get_option('sysconfdir'), 'howdy')
