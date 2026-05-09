@@ -269,7 +269,7 @@ class FaceModel:
 
 
 def create_clahe(config: configparser.ConfigParser):
-    clip_limit = config.getfloat("video", "clahe_clip_limit", fallback=2.0)
+    clip_limit = config.getfloat("video", "clahe_clip_limit", fallback=1.25)
     tile_size = config.getint("video", "clahe_tile_grid_size", fallback=8)
     return cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=(tile_size, tile_size))
 
