@@ -286,8 +286,8 @@ try:
             # are captured and even after a delay it does not
             # always work. Setting exposure at every frame is
             # reliable though.
-            video_capture.internal.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1.0)  # 1 = Manual
-            video_capture.internal.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
+            video_capture.internal.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # 1 = Manual
+            video_capture.internal.set(cv2.CAP_PROP_EXPOSURE, int(exposure))
 
 except KeyboardInterrupt:
     cv2.destroyAllWindows()

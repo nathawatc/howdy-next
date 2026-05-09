@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # Import required modules
 import configparser
-import os
 from datetime import datetime, timezone
 
 import paths_factory

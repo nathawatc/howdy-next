@@ -57,12 +57,12 @@ config = configparser.ConfigParser()
 config.read(config_path)
 
 # Check if enough arguments have been passed
-if not builtins.howdy_args.arguments:
+if not getattr(builtins, "howdy_args").arguments:
     print(_("Please add a 0 (enable) or a 1 (disable) as an argument"))
     sys.exit(1)
 
 # Get the cli argument
-argument: str = builtins.howdy_args.arguments[0]
+argument: str = getattr(builtins, "howdy_args").arguments[0]
 
 # Translate the argument to the right string
 out_value: str

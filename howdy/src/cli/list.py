@@ -12,7 +12,7 @@ import time
 import paths_factory
 from i18n import _
 
-user = builtins.howdy_user
+user = getattr(builtins, "howdy_user")
 
 # Check if the models file has been created yet
 if not os.path.exists(paths_factory.user_models_dir_path()):
@@ -28,13 +28,13 @@ try:
     with open(enc_file) as f:
         encodings = json.load(f)
 except FileNotFoundError:
-    if not builtins.howdy_args.plain:
+    if not getattr(builtins, "howdy_args").plain:
         print(_("No face model known for the user {}, please run:").format(user))
         print("\n\tsudo howdy -U " + user + " add\n")
     sys.exit(1)
 
 # Print a header if we're not in plain mode
-if not builtins.howdy_args.plain:
+if not getattr(builtins, "howdy_args").plain:
     print(_("Known face models for {}:").format(user))
     print("\n\033[1;29m" + _("ID  Date                 Label\033[0m"))
 
@@ -44,7 +44,7 @@ for enc in encodings:
     print(str(enc["id"]), end="")
 
     # Add comma for machine reading
-    if builtins.howdy_args.plain:
+    if getattr(builtins, "howdy_args").plain:
         print(",", end="")
     # Print padding spaces after the id for a nice layout
     else:
@@ -54,7 +54,7 @@ for enc in encodings:
     print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(enc["time"])), end="")
 
     # Separate with commas again for machines, spaces otherwise
-    print("," if builtins.howdy_args.plain else "  ", end="")
+    print("," if getattr(builtins, "howdy_args").plain else "  ", end="")
 
     # End with the label
     print(enc["label"])

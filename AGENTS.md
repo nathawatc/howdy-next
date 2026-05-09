@@ -6,8 +6,7 @@
 
 ## OVERVIEW
 
-Linux facial recognition auth (PAM + Python). Beta version. Face comparison engine, CLI management,
-recorder drivers (V4L2/FFmpeg).
+Linux facial recognition auth (PAM + Python). Beta version. OpenCV DNN YuNet detector + SFace encoder, CLI management, recorder drivers (V4L2/FFmpeg).
 
 ## STRUCTURE
 
@@ -27,18 +26,21 @@ howdy-next/
 | --------------- | ---------------------- | -------------------------------------- |
 | CLI commands    | `howdy/src/cli/`       | add.py, test.py, set.py, disable.py... |
 | Face comparison | `howdy/src/compare.py` | Core recognition engine, 444 lines     |
-| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py              |
+| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py                       |
 | PAM module      | `howdy/src/pam/`       | C++ auth, main.cc                      |
 | Auth config     | `howdy/src/config.ini` | device_path, certainty, timeout        |
 
 ## CODE MAP (Key Symbols)
 
-| Symbol        | Type   | Location                   | Role                           |
-| ------------- | ------ | -------------------------- | ------------------------------ |
-| VideoCapture  | class  | recorders/video_capture.py | Factory for recorder selection |
-| ffmpeg_reader | class  | recorders/ffmpeg_reader.py | FFmpeg-based camera capture    |
-| compare       | module | compare.py                 | Face comparison engine         |
-| cli.py        | entry  | cli.py                     | Main CLI entry point           |
+| Symbol              | Type   | Location                   | Role                                  |
+| ------------------- | ------ | -------------------------- | ------------------------------------- |
+| VideoCapture        | class  | recorders/video_capture.py | Factory for recorder selection        |
+| ffmpeg_reader       | class  | recorders/ffmpeg_reader.py | FFmpeg-based camera capture           |
+| compare             | module | compare.py                 | Face comparison engine                |
+| cli.py              | entry  | cli.py                     | Main CLI entry point                  |
+| bad_model_download  | func   | core/detector.py           | Validates ONNX model (LFS/HTML check) |
+| FaceModel           | class  | core/detector.py           | YuNet detector + SFace encoder        |
+| YUNET_URL/SFACE_URL | const  | core/detector.py           | HuggingFace model download URLs       |
 
 ## CONVENTIONS (Deviations from Standard)
 
@@ -47,6 +49,9 @@ howdy-next/
 - **Type hints**: Incremental approach, NOT strict mypy mode
 - **Testing**: pytest with `conftest.py` fixture pattern, mock_config fixture
 - **i18n**: `i18n.py` expects `locales/` dir but project has `po/` files instead
+- **Config**: INI without comment header, comments above each key (config.ini)
+- **Model validation**: `bad_model_download()` checks for LFS pointers/HTML errors
+- **Model URLs**: Use `YUNET_URL`/`SFACE_URL` constants from `core.detector`, not hardcoded
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -76,6 +81,7 @@ howdy add <user>     # Add face
 howdy test           # Test camera
 howdy list           # List users
 howdy disable        # Disable auth
+howdy download-models # Download ONNX models from HuggingFace
 ```
 
 ## NOTES
@@ -84,3 +90,5 @@ howdy disable        # Disable auth
 - FFmpeg probe returns `int` for height/width (NOT string) - cast with `int()`
 - rubberstamps/ uses dynamic plugin loading via `importlib.util`
 - No pyproject.toml (meson-only, no pip packaging)
+- Arch Linux: ONNX models excluded from PKGBUILD (downloaded at runtime)
+- `backend = opencv_dnn_sface` config key removed (only one backend now)

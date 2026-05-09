@@ -6,17 +6,16 @@ from __future__ import annotations
 import builtins
 import json
 import os
-import shutil
 import sys
 import tempfile
 
 import paths_factory
 from i18n import _
 
-user = builtins.howdy_user
+user = getattr(builtins, "howdy_user")
 
 # Check if enough arguments have been passed
-if not builtins.howdy_args.arguments:
+if not getattr(builtins, "howdy_args").arguments:
     print(_("Please add the ID of the model you want to remove as an argument"))
     print(_("For example:"))
     print("\n\thowdy remove 0\n")
@@ -46,13 +45,13 @@ except FileNotFoundError:
 found = False
 
 # Get the ID from the cli arguments
-id = builtins.howdy_args.arguments[0]
+id = getattr(builtins, "howdy_args").arguments[0]
 
 # Loop though all encodings and check if they match the argument
 for enc in encodings:
     if str(enc["id"]) == id:
         # Only ask the user if there's no -y flag
-        if not builtins.howdy_args.y:
+        if not getattr(builtins, "howdy_args").y:
             # Double check with the user
             print(
                 _('This will remove the model called "{label}" for {user}').format(
