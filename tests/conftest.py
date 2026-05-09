@@ -18,9 +18,6 @@ def mock_config():
                 "width": 640,
                 "height": 480,
             },
-            "core": {
-                "backend": "opencv_dnn_sface",
-            },
             "face": {
                 "yunet_model": "default",
                 "sface_model": "default",
