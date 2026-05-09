@@ -7,11 +7,14 @@ from __future__ import annotations
 import configparser
 import os
 import sys
-from typing import Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import cv2
 import numpy
 from i18n import _
+
+if TYPE_CHECKING:
+    from recorders.ffmpeg_reader import ffmpeg_reader
 
 # Class to provide boilerplate code to build a video recorder with the
 # correct settings from the config file.
