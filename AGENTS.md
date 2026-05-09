@@ -88,7 +88,6 @@ howdy download-models # Download ONNX models from HuggingFace
 
 - V4L2 device path: `/dev/video0`
 - FFmpeg probe returns `int` for height/width (NOT string) - cast with `int()`
-- rubberstamps/ uses dynamic plugin loading via `importlib.util`
 - No pyproject.toml (meson-only, no pip packaging)
 - Arch Linux: ONNX models excluded from PKGBUILD (downloaded at runtime)
 - `backend = opencv_dnn_sface` config key removed (only one backend now)

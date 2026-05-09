@@ -37,7 +37,6 @@ py_sources = [
     'recorders/__init__.py',
     'recorders/ffmpeg_reader.py',
     'recorders/video_capture.py',
-    'rubberstamps/__init__.py',
     'snapshot.py',
     py_paths,
 ]

@@ -341,19 +341,6 @@ while True:
                     time.time() - timings["fr"],
                 )
 
-            # Run rubberstamps if enabled
-            if config.getboolean("rubberstamps", "enabled", fallback=False):
-                import rubberstamps
-
-                rubberstamps.execute(
-                    config,
-                    {
-                        "video_capture": video_capture,
-                        "face_model": face_model,
-                        "clahe": clahe,
-                    },
-                )
-
             # End peacefully
             exit(0)
 
