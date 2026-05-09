@@ -15,6 +15,12 @@ from i18n import _
 BACKEND_NAME = "opencv_dnn_sface"
 YUNET_MODEL = "face_detection_yunet_2023mar_int8bq.onnx"
 SFACE_MODEL = "face_recognition_sface_2021dec_int8bq.onnx"
+YUNET_URL = (
+    "https://huggingface.co/opencv/face_detection_yunet/resolve/main/" + YUNET_MODEL
+)
+SFACE_URL = (
+    "https://huggingface.co/opencv/face_recognition_sface/resolve/main/" + SFACE_MODEL
+)
 
 
 @dataclass(frozen=True)
@@ -33,33 +39,54 @@ def _face_detector_create(
     nms_threshold: float,
     top_k: int,
 ):
-    if hasattr(cv2, "FaceDetectorYN") and hasattr(cv2.FaceDetectorYN, "create"):
-        return cv2.FaceDetectorYN.create(
-            model_path,
-            "",
-            input_size,
-            score_threshold,
-            nms_threshold,
-            top_k,
-        )
-    if hasattr(cv2, "FaceDetectorYN_create"):
-        return cv2.FaceDetectorYN_create(
-            model_path,
-            "",
-            input_size,
-            score_threshold,
-            nms_threshold,
-            top_k,
-        )
+    try:
+        if hasattr(cv2, "FaceDetectorYN") and hasattr(cv2.FaceDetectorYN, "create"):
+            return cv2.FaceDetectorYN.create(
+                model_path,
+                "",
+                input_size,
+                score_threshold,
+                nms_threshold,
+                top_k,
+            )
+        if hasattr(cv2, "FaceDetectorYN_create"):
+            return cv2.FaceDetectorYN_create(
+                model_path,
+                "",
+                input_size,
+                score_threshold,
+                nms_threshold,
+                top_k,
+            )
+    except cv2.error as err:
+        _print_model_parse_error(model_path, err)
+        sys.exit(1)
     print(_("OpenCV was built without FaceDetectorYN support"))
     sys.exit(1)
 
 
+def _print_model_parse_error(model_path: str, err: cv2.error) -> None:
+    print(_("OpenCV could not parse face model:") + " " + model_path)
+    print(_("OpenCV version:") + " " + cv2.__version__)
+    if "int8bq" in os.path.basename(model_path).lower():
+        print(
+            _(
+                "INT8BQ OpenCV Zoo models need newer OpenCV DNN support; OpenCV 4.x may fail here."
+            )
+        )
+        print(_("Use OpenCV 5.x-pre/newer, or configure FP32 models instead."))
+    print(str(err))
+
+
 def _face_recognizer_create(model_path: str):
-    if hasattr(cv2, "FaceRecognizerSF") and hasattr(cv2.FaceRecognizerSF, "create"):
-        return cv2.FaceRecognizerSF.create(model_path, "")
-    if hasattr(cv2, "FaceRecognizerSF_create"):
-        return cv2.FaceRecognizerSF_create(model_path, "")
+    try:
+        if hasattr(cv2, "FaceRecognizerSF") and hasattr(cv2.FaceRecognizerSF, "create"):
+            return cv2.FaceRecognizerSF.create(model_path, "")
+        if hasattr(cv2, "FaceRecognizerSF_create"):
+            return cv2.FaceRecognizerSF_create(model_path, "")
+    except cv2.error as err:
+        _print_model_parse_error(model_path, err)
+        sys.exit(1)
     print(_("OpenCV was built without FaceRecognizerSF support"))
     sys.exit(1)
 
@@ -83,25 +110,42 @@ def _model_path(
     return value
 
 
+def bad_model_download(path: str) -> bool:
+    """Return True if path looks like an LFS pointer or HTML error page."""
+    if not os.path.isfile(path):
+        return True
+    with open(path, "rb") as model_file:
+        header = model_file.read(256)
+    return header.startswith(
+        b"version https://git-lfs.github.com/spec/v1"
+    ) or header.lstrip().startswith(b"<")
+
+
 def check_data_files(config: configparser.ConfigParser | None = None) -> bool:
     """Check if required OpenCV ONNX model files exist."""
     config = _read_config(config)
     yunet_model = _model_path(config, "yunet_model", paths_factory.yunet_model_path())
     sface_model = _model_path(config, "sface_model", paths_factory.sface_model_path())
     missing = [path for path in (yunet_model, sface_model) if not os.path.isfile(path)]
-    if not missing:
+    invalid = [
+        path
+        for path in (yunet_model, sface_model)
+        if os.path.isfile(path) and bad_model_download(path)
+    ]
+    if not missing and not invalid:
         return True
 
-    print(_("OpenCV face model files are missing:"))
-    for path in missing:
-        print("\t" + path)
+    if missing:
+        print(_("OpenCV face model files are missing:"))
+        for path in missing:
+            print("\t" + path)
+    if invalid:
+        print(_("OpenCV face model files are invalid downloads:"))
+        for path in invalid:
+            print("\t" + path)
     print(_("Download them from:"))
-    print(
-        "\thttps://huggingface.co/opencv/face_detection_yunet/raw/main/" + YUNET_MODEL
-    )
-    print(
-        "\thttps://huggingface.co/opencv/face_recognition_sface/raw/main/" + SFACE_MODEL
-    )
+    print("\t" + YUNET_URL)
+    print("\t" + SFACE_URL)
     print(_("Place them in:") + " " + paths_factory.models_dir_path())
     return False
 
