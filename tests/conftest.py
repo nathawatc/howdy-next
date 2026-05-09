@@ -19,7 +19,13 @@ def mock_config():
                 "height": 480,
             },
             "core": {
-                "use_cnn": False,
+                "backend": "opencv_dnn_sface",
+            },
+            "face": {
+                "yunet_model": "default",
+                "sface_model": "default",
+                "sface_metric": "cosine",
+                "sface_threshold": "0.363",
             },
         }
     )

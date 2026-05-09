@@ -39,7 +39,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "command",
     help=_(
-        "The command option to execute, can be one of the following: add, clear, config, disable, list, remove, snapshot, set, test or version."
+        "The command option to execute, can be one of the following: add, clear, config, disable, download-models, list, remove, snapshot, set, test or version."
     ),
     metavar="command",
     choices=[
@@ -47,6 +47,7 @@ parser.add_argument(
         "clear",
         "config",
         "disable",
+        "download-models",
         "list",
         "remove",
         "set",
@@ -95,8 +96,8 @@ if len(sys.argv) < 2:
 args = parser.parse_args()
 
 # Save the args and user as builtins which can be accessed by the imports
-builtins.howdy_args = args
-builtins.howdy_user = args.user
+setattr(builtins, "howdy_args", args)
+setattr(builtins, "howdy_user", args.user)
 
 # Check if we have rootish rights
 # This is this far down the file so running the command for help is always possible
@@ -123,6 +124,8 @@ elif args.command == "config":
     import cli.config
 elif args.command == "disable":
     import cli.disable
+elif args.command == "download-models":
+    import cli.download_models
 elif args.command == "list":
     import cli.list
 elif args.command == "remove":

@@ -7,37 +7,24 @@ import builtins
 import configparser
 import json
 import os
-import shutil
 import sys
 import tempfile
 import time
 
+import cv2
 import numpy as np
 import paths_factory
+from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
 from recorders.video_capture import VideoCapture
-
-# Try to import dlib and give a nice error if we can't
-# Add should be the first point where import issues show up
-try:
-    import dlib
-except ImportError as err:
-    print(err)
-    print(_("\nCan't import the dlib module, check the output of"))
-    print("pip3 show dlib")
-    sys.exit(1)
-
-import cv2
-
-from core.detector import FaceModel
 
 config = configparser.ConfigParser()
 config.read(paths_factory.config_file_path())
 
-use_cnn = config.getboolean("core", "use_cnn", fallback=False)
-face_model = FaceModel(use_cnn)
+face_model = FaceModel(config)
 
-user = builtins.howdy_user
+howdy_args = getattr(builtins, "howdy_args")
+user = str(getattr(builtins, "howdy_user"))
 # The permanent file to store the encoded model in
 enc_file = paths_factory.user_model_path(user)
 # Known encodings
@@ -55,6 +42,12 @@ try:
 except FileNotFoundError:
     encodings = []
 
+# Previous backend descriptors are incompatible with SFace descriptors.
+if any(model.get("backend") != BACKEND_NAME for model in encodings):
+    print(_("Existing face models use an incompatible backend."))
+    print(_("Please run `howdy clear` and enroll again with `howdy add`."))
+    sys.exit(1)
+
 # Print a warning if too many encodings are being added
 if len(encodings) > 3:
     print(
@@ -65,7 +58,7 @@ if len(encodings) > 3:
     print(_("Press Ctrl+C to cancel\n"))
 
 # Make clear what we are doing if not human
-if not builtins.howdy_args.plain:
+if not howdy_args.plain:
     print(_("Adding face model for the user ") + user)
 
 # Set the default label
@@ -75,15 +68,15 @@ label = "Initial model"
 next_id = encodings[-1]["id"] + 1 if encodings else 0
 
 # Get the label from the cli arguments if provided
-if builtins.howdy_args.arguments:
-    label = builtins.howdy_args.arguments[0]
+if howdy_args.arguments:
+    label = howdy_args.arguments[0]
 
 # Or set the default label
 else:
     label = _("Model #") + str(next_id)
 
 # Keep de default name if we can't ask questions
-if builtins.howdy_args.y:
+if howdy_args.y:
     print(_('Using default label "%s" because of -y flag') % (label,))
 else:
     # Ask the user for a custom label
@@ -99,7 +92,15 @@ if "," in label:
     label = label.replace(",", "")
 
 # Prepare the metadata for insertion
-insert_model = {"time": int(time.time()), "label": label, "id": next_id, "data": []}
+insert_model = {
+    "time": int(time.time()),
+    "label": label,
+    "id": next_id,
+    "backend": BACKEND_NAME,
+    "metric": face_model.metric,
+    "model": "face_recognition_sface_2021dec_int8bq.onnx",
+    "data": [],
+}
 
 # Set up video_capture
 video_capture = VideoCapture(config)
@@ -109,8 +110,6 @@ print(_("\nPlease look straight into the camera"))
 # Give the user time to read
 time.sleep(2)
 
-# Will contain found face encodings
-enc = []
 # Count the number of read frames
 frames = 0
 # Count the number of illuminated read frames
@@ -120,20 +119,21 @@ valid_frames = 0
 dark_tries = 0
 # Track the running darkness total
 dark_running_total = 0
-face_locations: list = []
+face_locations: list[np.ndarray] = []
 frame = None
 
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
-
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+clahe = create_clahe(config)
 
 # Loop through frames till we hit a timeout or find a face
 while frames < 60 and not face_locations:
     frames += 1
     # Grab a single frame of video
     frame, gsframe = video_capture.read_frame()
-    gsframe = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    gsframe = clahe.apply(gsframe)
+    if gsframe.ndim != 2:
+        gsframe = cv2.cvtColor(gsframe, cv2.COLOR_BGR2GRAY)
+    if clahe_enabled(config):
+        gsframe = clahe.apply(gsframe)
 
     # Create a histogram of the image with 8 values
     hist = cv2.calcHist([gsframe], [0], None, [8], [0, 256])
@@ -158,8 +158,9 @@ while frames < 60 and not face_locations:
         dark_tries += 1
         continue
 
-    # Get all faces from that frame as encodings
-    face_locations = face_model.detector(gsframe, 1)
+    # YuNet expects 3-channel input. IR grayscale is broadcast to BGR.
+    frame = face_model.prepare_frame(gsframe)
+    face_locations = face_model.detect(frame)
 
     # If we've found at least one, we can continue
     if face_locations:
@@ -188,12 +189,12 @@ elif len(face_locations) > 1:
     print(_("Multiple faces detected, aborting"))
     sys.exit(1)
 
-face_location = face_locations[0]
-if use_cnn:
-    face_location = face_location.rect
+if frame is None:
+    print(_("No valid frame captured, aborting"))
+    sys.exit(1)
 
-face_landmark = face_model.predictor(frame, face_location)
-face_encoding = np.array(face_model.encoder.compute_face_descriptor(frame, face_landmark, 1))
+face_location = face_locations[0]
+face_encoding = face_model.encode(frame, face_location)
 
 insert_model["data"].append(face_encoding.tolist())
 

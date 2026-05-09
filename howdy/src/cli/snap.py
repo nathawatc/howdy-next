@@ -48,8 +48,8 @@ file = snapshot.generate(
         _("Date: ") + datetime.now(timezone.utc).strftime("%Y/%m/%d %H:%M:%S UTC"),
         _("Dark threshold config: ")
         + str(config.getfloat("video", "dark_threshold", fallback=60.0)),
-        _("Certainty config: ")
-        + str(config.getfloat("video", "certainty", fallback=3.5)),
+        _("SFace threshold config: ")
+        + str(config.getfloat("face", "sface_threshold", fallback=0.363)),
     ],
 )
 

@@ -13,16 +13,18 @@ from i18n import _
 # Get the absolute filepath
 config_path = paths_factory.config_file_path()
 
+howdy_args = getattr(builtins, "howdy_args")
+
 # Check if enough arguments have been passed
-if len(builtins.howdy_args.arguments) < 2:
+if len(howdy_args.arguments) < 2:
     print(_("Please add a setting you would like to change and the value to set it to"))
     print(_("For example:"))
-    print("\n\thowdy set certainty 3\n")
+    print("\n\thowdy set sface_threshold 0.363\n")
     sys.exit(1)
 
 # Get the name and value from the cli
-set_name: str = builtins.howdy_args.arguments[0]
-set_value: str = builtins.howdy_args.arguments[1]
+set_name: str = howdy_args.arguments[0]
+set_value: str = howdy_args.arguments[1]
 
 
 # Will be filled with the correctly config line to update
@@ -35,7 +37,9 @@ def _find_and_update_config(config_path: str, set_name: str, set_value: str) -> 
         for i, line in enumerate(f):
             lines.append(line)
             stripped = line.strip()
-            if stripped.startswith(set_name + " =") or stripped.startswith(set_name + " "):
+            if stripped.startswith(set_name + " =") or stripped.startswith(
+                set_name + " "
+            ):
                 found_line = line
                 found_line_index = i
 
@@ -56,4 +60,5 @@ def _find_and_update_config(config_path: str, set_name: str, set_value: str) -> 
         raise
 
 
+_find_and_update_config(config_path, set_name, set_value)
 print(_("Config option updated"))

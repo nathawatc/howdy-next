@@ -5,15 +5,14 @@ from __future__ import annotations
 import builtins
 import configparser
 import json
-import os
 import sys
 import time
 
 import cv2
 import numpy as np
 import paths_factory
+from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
-from core.detector import FaceModel
 from recorders.video_capture import VideoCapture
 
 # Read config from disk
@@ -31,7 +30,6 @@ if config.get("video", "recording_plugin", fallback="opencv") != "opencv":
 video_capture = VideoCapture(config)
 
 # Read config values to use in the main loop
-video_certainty = config.getfloat("video", "certainty", fallback=3.5) / 10
 exposure = config.getint("video", "exposure", fallback=-1)
 dark_threshold = config.getfloat("video", "dark_threshold", fallback=60)
 
@@ -69,22 +67,37 @@ def print_text(line_number: int, text: str) -> None:
     )
 
 
-use_cnn = config.getboolean("core", "use_cnn", fallback=False)
-face_model = FaceModel(use_cnn)
+face_model = FaceModel(config)
 
 encodings = []
+encoding_models = []
 models = None
 
 try:
-    user = builtins.howdy_user
+    user = str(getattr(builtins, "howdy_user"))
     with open(paths_factory.user_model_path(user)) as f:
         models = json.load(f)
-    for model in models:
-        encodings += model["data"]
+    if any(model.get("backend") != BACKEND_NAME for model in models):
+        print(
+            _(
+                "Warning: Stored face models use an incompatible backend; matching disabled"
+            )
+        )
+        models = None
+    else:
+        for model in models:
+            for encoding in model["data"]:
+                encodings.append(encoding)
+                encoding_models.append(model)
 except FileNotFoundError:
-    print(_("Warning: No face model found for this user, detection will run without matching"))
+    print(
+        _(
+            "Warning: No face model found for this user, detection will run without matching"
+        )
+    )
 
-clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+known_encodings = np.asarray(encodings, dtype=np.float32) if encodings else None
+clahe = create_clahe(config)
 
 # Open the window and attach a a mouse listener
 cv2.namedWindow("Howdy Test")
@@ -122,12 +135,15 @@ try:
             sec_frames = 0
 
         # Grab a single frame of video
-        orig_frame, frame = video_capture.read_frame()
+        _orig_frame, frame = video_capture.read_frame()
+        if frame.ndim != 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-        frame = clahe.apply(frame)
+        if clahe_enabled(config):
+            frame = clahe.apply(frame)
+
         # Make a frame to put overlays in
-        overlay = frame.copy()
-        overlay = cv2.cvtColor(overlay, cv2.COLOR_GRAY2BGR)
+        overlay = cv2.cvtColor(frame.copy(), cv2.COLOR_GRAY2BGR)
 
         # Fetch the frame height and width
         height, width = frame.shape[:2]
@@ -141,7 +157,7 @@ try:
 
         # Loop though all values to calculate a percentage and add it to the overlay
         for index, value in enumerate(hist):
-            value_perc = float(value[0]) / hist_total * 100
+            value_perc = float(value[0]) / max(hist_total, 1) * 100
             hist_perc.append(value_perc)
 
             # Top left point, 10px margins
@@ -156,6 +172,8 @@ try:
         print_text(1, _("FPS: %d") % (fps,))
         print_text(2, _("FRAMES: %d") % (total_frames,))
         print_text(3, _("RECOGNITION: %dms") % (round(rec_tm * 1000),))
+        print_text(4, _("BACKEND: OpenCV YuNet/SFace"))
+        print_text(5, _("CLAHE: %s") % (_("on") if clahe_enabled(config) else _("off")))
 
         # Show that slow mode is on, if it's on
         if slow_mode:
@@ -197,80 +215,52 @@ try:
             )
 
             rec_tm = time.time()
-
-            # Get the locations of all faces and their locations
-            # Upsample it once
-            face_locations = face_model.detector(frame, 1)
+            face_frame = face_model.prepare_frame(frame)
+            face_locations = face_model.detect(face_frame)
             rec_tm = time.time() - rec_tm
 
-            # Loop though all faces and paint a circle around them
-            for loc in face_locations:
-                if use_cnn:
-                    loc = loc.rect
-
-                # By default the circle around the face is red for no match
+            for face in face_locations:
                 color = (0, 0, 230)
+                x, y, w, h = face_model.detection_box(face)
+                confidence = face_model.detection_confidence(face)
 
-                # Get the center X and Y from the rectangular points
-                x = int((loc.right() - loc.left()) / 2) + loc.left()
-                y = int((loc.bottom() - loc.top()) / 2) + loc.top()
+                if known_encodings is not None:
+                    face_encoding = face_model.encode(face_frame, face)
+                    match = face_model.best_match(known_encodings, face_encoding)
 
-                # Get the raduis from the with of the square
-                r = (loc.right() - loc.left()) / 2
-                # Add 20% padding
-                r = int(r + (r * 0.2))
-
-                # If we have models defined for the current user
-                if models:
-                    # Get the encoding of the face in the frame
-                    face_landmark = face_model.predictor(orig_frame, loc)
-                    face_encoding = np.array(
-                        face_model.encoder.compute_face_descriptor(
-                            orig_frame, face_landmark, 1
+                    if match.accepted:
+                        color = (0, 230, 0)
+                        model = encoding_models[match.index]
+                        face_text = "{} (score: {:.3f})".format(
+                            model["label"], match.score
                         )
+                    else:
+                        face_text = "no match ({:.3f})".format(match.score)
+
+                    cv2.putText(
+                        overlay,
+                        face_text,
+                        (x, max(0, y - 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.3,
+                        color,
+                        0,
+                        cv2.LINE_AA,
                     )
 
-                    # Match this found face against a known face
-                    matches = np.linalg.norm(encodings - face_encoding, axis=1)
-
-                    # Get best match
-                    match_index = np.argmin(matches)
-                    match = matches[match_index]
-
-                    # If a model matches
-                    if 0 < match < video_certainty:
-                        # Turn the circle green
-                        color = (0, 230, 0)
-
-                        # Print the name of the model next to the circle
-                        circle_text = "{} (certainty: {})".format(
-                            models[match_index]["label"], round(match * 10, 3)
-                        )
-                        cv2.putText(
-                            overlay,
-                            circle_text,
-                            (int(x + r / 3), y - r),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.3,
-                            (0, 255, 0),
-                            0,
-                            cv2.LINE_AA,
-                        )
-                    # If no approved matches, show red text
-                    else:
-                        cv2.putText(
-                            overlay,
-                            "no match",
-                            (int(x + r / 3), y - r),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.3,
-                            (0, 0, 255),
-                            0,
-                            cv2.LINE_AA,
-                        )
-
-                # Draw the Circle in green
-                cv2.circle(overlay, (x, y), r, color, 2)
+                cv2.rectangle(overlay, (x, y), (x + w, y + h), color, 2)
+                cv2.putText(
+                    overlay,
+                    "{:.2f}".format(confidence),
+                    (x, min(height - 4, y + h + 12)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.3,
+                    color,
+                    0,
+                    cv2.LINE_AA,
+                )
+                for point in face_model.detection_landmarks(face):
+                    cv2.circle(overlay, point, 2, (0, 255, 255), -1)
 
         # Add the overlay to the frame with some transparency
         alpha = 0.65
@@ -299,10 +289,6 @@ try:
             video_capture.internal.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1.0)  # 1 = Manual
             video_capture.internal.set(cv2.CAP_PROP_EXPOSURE, float(exposure))
 
-# On ctrl+C
 except KeyboardInterrupt:
-    # Let the user know we're stopping
-    print(_("\nClosing window"))
-
-    # Release handle to the webcam
     cv2.destroyAllWindows()
+    video_capture.release()
