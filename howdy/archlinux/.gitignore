@@ -10,7 +10,6 @@
 *.log
 *.log.*
 *.sig
-*.dat.bz2
 
 pkg/
 src/
