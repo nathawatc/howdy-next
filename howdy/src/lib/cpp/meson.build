@@ -42,3 +42,5 @@ test(
     native_capture_smoke,
     args: ['--help'],
 )
+
+subdir('cli')

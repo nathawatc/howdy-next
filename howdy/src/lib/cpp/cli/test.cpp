@@ -8,7 +8,7 @@
 #include <thread>
 #include <chrono>
 
-static constexpr int EXIT_SUCCESS = 0;
+static constexpr int EXIT_OK = 0;
 static constexpr int EXIT_CAMERA_ERROR = 1;
 static constexpr int EXIT_UNSUPPORTED_PLUGIN = 12;
 static constexpr const char* DEFAULT_CONFIG_PATH = "/lib/security/howdy/config.ini";
@@ -115,5 +115,5 @@ int test_main(int argc, char* argv[]) {
 
     std::cout << "\n\nTest completed successfully\n";
     capture.release();
-    return EXIT_SUCCESS;
+    return EXIT_OK;
 }
