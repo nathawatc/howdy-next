@@ -4,21 +4,21 @@ A modernized fork of original Howdy, Facial recognition authentication for Linux
 
 ## Building from Source
 
-Dependencies: python3, pip, meson ≥0.64, ninja, libevdev
+Dependencies: meson, ninja, libevdev, libinih, libopencv, libcurl
 
 Debian/Ubuntu:
 
 ```text
-sudo apt-get install python3 python3-pip cmake make build-essential libpam0g-dev libinih-dev
-libevdev-dev python3-opencv python3-dev libopencv-dev
+sudo apt-get install cmake make build-essential libpam0g-dev libinih-dev
+libevdev-dev libopencv-dev libcurl4-openssl-dev nlohmann-json3-dev meson ninja-build
 ```
 
-Build: `meson setup build && meson compile -C build` → Install: `meson install -C build`
+Build: `meson setup build && ninja -C build` -> Install: `meson install -C build`
 
 ## Setup
 
 1. Run `sudo howdy add` to add a face model
-2. Test with `sudo -i`
+2. Test with `sudo howdy test`
 
 Edit config: `sudo howdy config`
 
@@ -35,6 +35,7 @@ Edit config: `sudo howdy config`
 | download-models | Download ONNX models  |
 | list            | List models           |
 | remove          | Remove specific model |
+| set             | Edit config value     |
 | snapshot        | Camera preview        |
 | test            | Test camera           |
 | version         | Show version          |

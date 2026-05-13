@@ -6,66 +6,69 @@
 
 ## OVERVIEW
 
-Linux facial recognition auth (PAM + Python). Beta version. OpenCV DNN YuNet detector + SFace encoder, CLI management, recorder drivers (V4L2/FFmpeg).
+Linux facial recognition auth (PAM + native C++ CLI/runtime). Beta version. OpenCV DNN YuNet
+detector + SFace encoder, CLI management, recorder driver (OpenCV/V4L2).
 
 ## STRUCTURE
 
 ```text
 howdy-next/
-├── howdy/src/           # Python source (CLI, recorders, PAM auth)
-│   ├── cli/             # CLI subcommands (add, test, set, disable...)
-│   ├── recorders/       # Camera readers (ffmpeg, video_capture)
-│   └── pam/             # C++ PAM authentication module
-├── tests/               # pytest test infrastructure
+├── howdy/src/           # Product-facing sources/resources
+│   ├── cli/              # Native CLI sources
+│   ├── common/           # Shared native constants/types
+│   ├── config/           # Native config/runtime helpers
+│   ├── core/             # Face model implementation
+│   ├── recorders/        # Camera capture implementation
+│   ├── storage/          # Model store implementation
+│   └── autocomplete/    # Shell completion template
+├── howdy/include/       # Public/native headers (.hpp)
+├── pam/                 # PAM module (separate build unit)
+│   ├── howdy.in         # PAM config template
+├── config/              # Config template files
 └── .forgejo/workflows/  # Forgejo CI (migrated from GitHub Actions)
 ```
 
 ## WHERE TO LOOK
 
-| Task            | Location               | Notes                                  |
-| --------------- | ---------------------- | -------------------------------------- |
-| CLI commands    | `howdy/src/cli/`       | add.py, test.py, set.py, disable.py... |
-| Face comparison | `howdy/src/compare.py` | Core recognition engine, 444 lines     |
-| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py                       |
-| PAM module      | `howdy/src/pam/`       | C++ auth, main.cc                      |
-| Auth config     | `howdy/src/config.ini` | device_path, certainty, timeout        |
+| Task            | Location                | Notes                            |
+| --------------- | ----------------------- | -------------------------------- |
+| CLI commands    | `howdy/src/cli/`        | Native subcommands               |
+| Face comparison | `howdy/src/compare.cpp` | Native recognition engine        |
+| Camera drivers  | `howdy/src/recorders/`  | Native OpenCV capture            |
+| PAM module      | `pam/`                  | C++ auth, main.cc                |
+| Auth config     | `config/config.ini`     | device_path, thresholds, timeout |
 
 ## CODE MAP (Key Symbols)
 
-| Symbol              | Type   | Location                   | Role                                  |
-| ------------------- | ------ | -------------------------- | ------------------------------------- |
-| VideoCapture        | class  | recorders/video_capture.py | Factory for recorder selection        |
-| ffmpeg_reader       | class  | recorders/ffmpeg_reader.py | FFmpeg-based camera capture           |
-| compare             | module | compare.py                 | Face comparison engine                |
-| cli.py              | entry  | cli.py                     | Main CLI entry point                  |
-| bad_model_download  | func   | core/detector.py           | Validates ONNX model (LFS/HTML check) |
-| FaceModel           | class  | core/detector.py           | YuNet detector + SFace encoder        |
-| YUNET_URL/SFACE_URL | const  | core/detector.py           | HuggingFace model download URLs       |
+| Symbol        | Type   | Location                                  | Role                              |
+| ------------- | ------ | ----------------------------------------- | --------------------------------- |
+| VideoCapture  | class  | howdy/include/recorders/video_capture.hpp | OpenCV camera wrapper             |
+| FaceModel     | class  | howdy/include/core/face_model.hpp         | YuNet detector + SFace encoder    |
+| UserModels    | module | howdy/include/storage/user_models.hpp     | Native model file loading/writing |
+| howdy         | binary | howdy/src/howdy.cpp                       | CLI dispatcher                    |
+| howdy-compare | binary | howdy/src/compare.cpp                     | PAM compare executable            |
 
 ## CONVENTIONS (Deviations from Standard)
 
 - **Build**: Meson (not CMake), subproject pattern (`if meson.is_subproject()`)
-- **Python**: 3.14 target, `from __future__ import annotations` for all typed files
-- **Type hints**: Incremental approach, NOT strict mypy mode
-- **Testing**: pytest with `conftest.py` fixture pattern, mock_config fixture
-- **i18n**: `i18n.py` expects `locales/` dir but project has `po/` files instead
+- **C++**: C++17/20-native migration with Meson/Ninja build
+- **Testing**: Meson `test()` targets for native binaries
 - **Config**: INI without comment header, comments above each key (config.ini)
-- **Model validation**: `bad_model_download()` checks for LFS pointers/HTML errors
-- **Model URLs**: Use `YUNET_URL`/`SFACE_URL` constants from `core.detector`, not hardcoded
+- **Model validation**: native downloader checks for LFS pointers/HTML errors
+- **Models**: Use the native downloader and packaged ONNX paths
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **MUST NOT** modify PAM C code without understanding auth flow
+- **MUST NOT** modify PAM C++ auth flow without understanding auth behavior
 - **MUST NOT** change config.ini format (CLI parses with configparser)
-- **MUST NOT** use `fileinput.input()` for config editing (race condition - use atomic tempfile pattern)
-- **MUST NOT** use `_thread` module (deprecated) - use `threading` instead
+- **MUST NOT** use non-atomic config rewrites
 
 ## UNIQUE STYLES
 
 - Recorder selection: VideoCapture factory instantiates based on device
-- Config: INI format, CLI modules import `i18n` for translations
+- Config: INI format with native C++ read/write helpers
 - PAM exit: Wait for user input (enter), do NOT auto-terminate
-- v4l2: Video format option (used by ffmpeg), NOT a recorder backend
+- OpenCV/V4L2: no FFmpeg backend in native runtime
 
 ## COMMANDS
 
@@ -73,8 +76,8 @@ howdy-next/
 # Build (Meson/Ninja)
 meson setup build && ninja -C build
 
-# Run tests (pytest)
-python3 -m pytest tests/ -v
+# Run native tests
+meson test -C build native-capture-smoke-help native-compare-help --print-errorlogs
 
 # CLI
 howdy add <user>     # Add face
@@ -87,7 +90,6 @@ howdy download-models # Download ONNX models from HuggingFace
 ## NOTES
 
 - V4L2 device path: `/dev/video0`
-- FFmpeg probe returns `int` for height/width (NOT string) - cast with `int()`
 - No pyproject.toml (meson-only, no pip packaging)
 - Arch Linux: ONNX models excluded from PKGBUILD (downloaded at runtime)
 - `backend = opencv_dnn_sface` config key removed (only one backend now)

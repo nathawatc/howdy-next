@@ -1,0 +1,53 @@
+# Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
+
+pkgname="howdy-next-git"
+pkgver=r88.ddebe69
+pkgrel=1
+pkgdesc="Windows Hello style facial authentication for Linux"
+arch=('x86_64')
+url="https://codeberg.org/nathawat/howdy-next"
+license=('MIT')
+makedepends=('git' 'meson' 'ninja' 'cmake' 'openssl')
+makedepends+=('opencv')
+depends=('libinih' 'libevdev' 'opencv' 'curl' 'openssl')
+provides=('howdy')
+conflicts=('howdy' 'howdy-git')
+replaces=('howdy' 'howdy-git')
+backup=('etc/howdy/config.ini')
+install=howdy-next.install
+source=(
+	"howdy-next::git+https://codeberg.org/nathawat/howdy-next.git"
+	"polkit-agent-helper-howdy.conf"
+)
+b2sums=('SKIP'
+        'ac6c1a82d6b4a00e4d518ad49592d5eb0aa4590e6c584328230fe875af0604b56861235cfbf9cd8a93bc9f1130eafb02392705cfa3a247770eb013da8576922b')
+
+pkgver() {
+	cd howdy-next
+	( set -o pipefail
+		local commit_offset=592
+		local commit_count
+		commit_count=$(( $(git rev-list --count HEAD) - commit_offset ))
+		git describe --long --abbrev=7 2>/dev/null |
+			sed "s/\([^-]*-g\)/r$commit_count.g/;s/-/./g" ||
+		printf "r%s.%s" "$commit_count" "$(git rev-parse --short=7 HEAD)"
+	)
+}
+
+prepare() {
+	arch-meson "$srcdir/howdy-next" "$srcdir/build"
+}
+
+build() {
+	meson compile -C "$srcdir/build"
+}
+
+package() {
+	meson install -C "$srcdir/build" --destdir "$pkgdir"
+	install -Dm644 "$srcdir/howdy-next/config/config.ini" "$pkgdir/etc/howdy/config.ini"
+	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
+
+	# Workaround for polkit 127+ breaking howdy (boltgolt/howdy#1077)
+	install -Dm644 polkit-agent-helper-howdy.conf \
+		"$pkgdir/usr/lib/systemd/system/polkit-agent-helper@.service.d/10-howdy.conf"
+}

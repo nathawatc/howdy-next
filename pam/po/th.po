@@ -1,0 +1,43 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: howdy 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-05-13 00:00+0000\n"
+"PO-Revision-Date: 2026-05-13 00:00+0000\n"
+"Last-Translator: OpenAI Codex\n"
+"Language-Team: Thai\n"
+"Language: th\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/main.cc
+msgid "Attempting facial authentication"
+msgstr "กำลังพยายามยืนยันตัวตนด้วยใบหน้า"
+
+#: src/main.cc
+msgid ""
+"Insufficient permissions to send Enter press, waiting for user to press it "
+"instead"
+msgstr "สิทธิ์ไม่เพียงพอสำหรับการส่งปุ่ม Enter ระบบจะรอให้ผู้ใช้กดเองแทน"
+
+#: src/main.cc
+msgid "Failed to send Enter press, waiting for user to press it instead"
+msgstr "ส่งปุ่ม Enter ไม่สำเร็จ ระบบจะรอให้ผู้ใช้กดเองแทน"
+
+#: src/status_mapping.cc
+msgid "Failure, timeout reached"
+msgstr "ล้มเหลว เนื่องจากหมดเวลา"
+
+#: src/status_mapping.cc
+msgid "Face detection image too dark"
+msgstr "ภาพสำหรับตรวจจับใบหน้ามืดเกินไป"
+
+#: src/status_mapping.cc
+msgid "Identified face as {}"
+msgstr "ระบุใบหน้าเป็น {}"
+
+#: src/status_mapping.cc
+msgid "Unknown error: {}"
+msgstr "ข้อผิดพลาดที่ไม่รู้จัก: {}"

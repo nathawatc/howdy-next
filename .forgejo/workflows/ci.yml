@@ -10,16 +10,15 @@ jobs:
       - name: Install required libraries
         run: >
           sudo apt-get update && sudo apt-get install -y
-          python3 cmake make build-essential clang-tidy
+          cmake make build-essential clang-tidy
           libpam0g-dev libinih-dev libevdev-dev libopencv-dev
-          python3-dev meson ninja-build
+          libcurl4-openssl-dev nlohmann-json3-dev
+          meson ninja-build
 
       - uses: actions/checkout@v6
-
-      - name: Fix python path
-        run: sudo ln -sf /usr/bin/python3 /usr/bin/python
 
       - name: Build
         run: |
           meson setup build
           ninja -C build
+          meson test -C build native-capture-smoke-help native-compare-help --print-errorlogs

@@ -63,6 +63,9 @@ WarningsAsErrors: '
   -modernize-use-using
 '
 
+HeaderFilterRegex: '(^|.*/)(howdy|pam)/'
+ExcludeHeaderFilterRegex: '^/usr/include/'
+
 CheckOptions:
   - key:             readability-function-cognitive-complexity.Threshold
     value:           '25'
