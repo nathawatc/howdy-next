@@ -6,21 +6,18 @@ from __future__ import annotations
 import configparser
 import os
 import sys
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import cv2
 import numpy
 from i18n import _
-
-if TYPE_CHECKING:
-    from recorders.ffmpeg_reader import ffmpeg_reader
 
 # The internal recorder can be accessed with 'video_capture.internal'
 
 
 class VideoCapture:
     config: configparser.ConfigParser
-    internal: Union[cv2.VideoCapture, "ffmpeg_reader"]
+    internal: cv2.VideoCapture
     fw: Optional[int]
     fh: Optional[int]
     fps: Optional[int]
@@ -107,24 +104,21 @@ class VideoCapture:
         recording_plugin = self.config.get(
             "video", "recording_plugin", fallback="opencv"
         )
-
-        if recording_plugin == "ffmpeg":
-            from recorders.ffmpeg_reader import ffmpeg_reader
-
-            self.internal = ffmpeg_reader(
-                self.config.get("video", "device_path"),
-                self.config.get("video", "device_format", fallback="v4l2"),
+        if recording_plugin != "opencv":
+            print(
+                _(
+                    "Only the OpenCV recorder is supported in this version, forcing recording_plugin=opencv"
+                )
             )
 
-        else:
-            self.internal = cv2.VideoCapture(
-                self.config.get("video", "device_path"), cv2.CAP_V4L
-            )
-            # Without this OpenCV uses the first detected (possibly lower) frame rate.
-            # Use 0 as fallback to avoid breaking existing setups.
-            self.fps = self.config.getint("video", "device_fps", fallback=0)
-            if self.fps != 0:
-                self.internal.set(cv2.CAP_PROP_FPS, self.fps)
+        self.internal = cv2.VideoCapture(
+            self.config.get("video", "device_path"), cv2.CAP_V4L
+        )
+        # Without this OpenCV uses the first detected (possibly lower) frame rate.
+        # Use 0 as fallback to avoid breaking existing setups.
+        self.fps = self.config.getint("video", "device_fps", fallback=0)
+        if self.fps != 0:
+            self.internal.set(cv2.CAP_PROP_FPS, self.fps)
 
         if self.config.getboolean("video", "force_mjpeg", fallback=False):
             # Magic number enables MJPEG; badly documented in OpenCV.

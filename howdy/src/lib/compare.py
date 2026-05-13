@@ -10,6 +10,7 @@ timings = {"st": time.time()}
 # Import required modules
 import json
 import os
+import subprocess
 import sys
 import threading
 from datetime import datetime, timezone
@@ -22,6 +23,29 @@ from config_utils import load_config
 from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
 from recorders.video_capture import VideoCapture
+
+
+def _find_native_compare() -> str | None:
+    candidates = []
+    env_path = os.environ.get("HOWDY_COMPARE_BIN")
+    if env_path:
+        candidates.append(env_path)
+    candidates.extend(
+        [
+            "/usr/lib/howdy/howdy-compare",
+            "/usr/lib64/howdy/howdy-compare",
+        ]
+    )
+    for candidate in candidates:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+native_compare = _find_native_compare()
+if native_compare is not None and os.environ.get("HOWDY_FORCE_PYTHON_COMPARE") != "1":
+    result = subprocess.run([native_compare, *sys.argv[1:]], check=False)
+    sys.exit(result.returncode)
 
 
 def exit(code=None):

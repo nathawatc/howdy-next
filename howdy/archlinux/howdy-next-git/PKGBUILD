@@ -1,22 +1,22 @@
 # Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
 
 pkgname="howdy-next-git"
-pkgver=r620.3a5607d
+pkgver=r658.f3701a8
 pkgrel=1
 pkgdesc="Windows Hello style facial authentication for Linux"
 arch=('x86_64')
 url="https://codeberg.org/nathawat/howdy-next"
 license=('MIT')
 makedepends=('git' 'meson' 'ninja' 'cmake')
+makedepends+=('opencv')
 depends=('libinih' 'libevdev' 'python' 'python-opencv')
-optdepends=('python-ffmpeg-python: for ffmpeg backend')
 provides=('howdy')
 conflicts=('howdy' 'howdy-git')
 replaces=('howdy' 'howdy-git')
 backup=('etc/howdy/config.ini')
 install=howdy-next.install
 source=(
-	"howdy-next::git+https://codeberg.org/nathawat/howdy-next.git"
+	"howdy-next::git+https://codeberg.org/nathawat/howdy-next.git#branch=codex/refactor"
 	"polkit-agent-helper-howdy.conf"
 )
 md5sums=('SKIP'
@@ -31,21 +31,17 @@ pkgver() {
 }
 
 prepare() {
-	cd "$srcdir"
-	meson setup --reconfigure "howdy-next" "howdy-next/build"
+	arch-meson "$srcdir/howdy-next" "$srcdir/build"
 }
 
 build() {
-	cd "$srcdir"
-	arch-meson "howdy-next" build
-	meson compile -C build
+	meson compile -C "$srcdir/build"
 }
 
 package() {
-	cd "$srcdir"
-	meson install -C build --destdir "$pkgdir"
-	install -Dm644 "howdy-next/howdy/src/config/config.ini" "$pkgdir/etc/howdy/config.ini"
-	install -Dm644 "howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
+	meson install -C "$srcdir/build" --destdir "$pkgdir"
+	install -Dm644 "$srcdir/howdy-next/howdy/src/config/config.ini" "$pkgdir/etc/howdy/config.ini"
+	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
 
 	# Workaround for polkit 127+ breaking howdy (boltgolt/howdy#1077)
 	install -Dm644 polkit-agent-helper-howdy.conf \

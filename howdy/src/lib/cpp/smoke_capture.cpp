@@ -5,7 +5,7 @@
 
 #include "common/compare_exit.hpp"
 #include "config/config_reader.hpp"
-#include "paths.hpp"
+#include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
 namespace {
@@ -24,15 +24,7 @@ void print_usage(const char *argv0) {
 }
 
 auto resolve_default_config() -> std::string {
-  if (const char *env_config = std::getenv("HOWDY_CONFIG")) {
-    return env_config;
-  }
-
-  if (std::filesystem::exists(kDefaultDevConfigPath)) {
-    return kDefaultDevConfigPath;
-  }
-
-  return kInstalledConfigPath;
+  return howdy::native::resolve_config_path().string();
 }
 
 auto parse_args(int argc, char *argv[]) -> Args {
