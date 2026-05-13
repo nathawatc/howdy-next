@@ -44,21 +44,31 @@ auto find_binary(const std::string &binary_name) -> std::string {
   return {};
 }
 
-void print_help(const std::string &user) {
-  std::cout << "current active user: " << user << "\n\n";
-  std::cout << "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n";
+void print_help() {
+  std::cout << "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n\n";
+  std::cout << "commands:\n";
+  std::cout << "  add              Add face model\n";
+  std::cout << "  clear            Remove all models\n";
+  std::cout << "  config           Edit config\n";
+  std::cout << "  disable          Enable or disable auth\n";
+  std::cout << "  download-models  Download ONNX models\n";
+  std::cout << "  list             List models\n";
+  std::cout << "  remove           Remove a specific model\n";
+  std::cout << "  set              Edit config value\n";
+  std::cout << "  snapshot         Camera preview\n";
+  std::cout << "  test             Test camera\n";
+  std::cout << "  version          Print version\n";
+  std::cout << "\noptions:\n";
+  std::cout << "  -U, --user USER  Target user for model commands\n";
+  std::cout << "  --plain          Disable interactive prompts where supported\n";
+  std::cout << "  -y               Assume yes where supported\n";
+  std::cout << "  -h, --help       Show this help\n";
 }
 
 }  // namespace
 
 int main(int argc, char *argv[]) {
-  const std::string default_user = resolve_user();
-  if (default_user.empty()) {
-    std::cout << "Could not determine user, please use the --user flag\n";
-    return 1;
-  }
-
-  std::string user = default_user;
+  std::string user;
   bool yes = false;
   bool plain = false;
   std::string command;
@@ -80,11 +90,11 @@ int main(int argc, char *argv[]) {
       plain = true;
       continue;
     }
-    if (arg == "-h" || arg == "--help") {
-      print_help(user);
-      return 0;
-    }
     if (command.empty()) {
+      if (arg == "-h" || arg == "--help") {
+        print_help();
+        return 0;
+      }
       command = argv[index];
       continue;
     }
@@ -92,8 +102,16 @@ int main(int argc, char *argv[]) {
   }
 
   if (command.empty()) {
-    print_help(user);
+    print_help();
     return 0;
+  }
+
+  if (user.empty()) {
+    user = resolve_user();
+  }
+  if (user.empty()) {
+    std::cout << "Could not determine user, please use the --user flag\n";
+    return 1;
   }
 
   if (geteuid() != 0) {
