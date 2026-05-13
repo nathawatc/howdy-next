@@ -145,22 +145,14 @@ if args.command in native_commands:
 
 if args.command == "add":
     import cli.add
-elif args.command == "clear":
-    import cli.clear
 elif args.command == "config":
     import cli.config
 elif args.command == "disable":
     import cli.disable
 elif args.command == "download-models":
     import cli.download_models
-elif args.command == "list":
-    import cli.list
-elif args.command == "remove":
-    import cli.remove
 elif args.command == "set":
     import cli.set
-elif args.command == "snapshot":
-    import cli.snap
 elif args.command == "test":
     import cli.test
 else:
