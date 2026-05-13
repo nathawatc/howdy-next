@@ -109,6 +109,10 @@ if args.user == "root":
 
 native_commands = {
     "add": "howdy-add",
+    "clear": "howdy-clear",
+    "list": "howdy-list",
+    "remove": "howdy-remove",
+    "snapshot": "howdy-snapshot",
     "test": "howdy-test",
 }
 
@@ -128,7 +132,9 @@ if args.command in native_commands:
         print(_("Missing native command binary: ") + binary_name)
         sys.exit(1)
 
-    native_args = [binary_path, args.user]
+    native_args = [binary_path]
+    if args.command != "snapshot":
+        native_args.append(args.user)
     native_args.extend(args.arguments)
     if args.plain:
         native_args.append("--plain")
