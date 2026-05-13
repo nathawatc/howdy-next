@@ -1,7 +1,7 @@
 # Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
 
 pkgname="howdy-next-git"
-pkgver=r659.d0b08d9
+pkgver=r667.b6d3133
 pkgrel=1
 pkgdesc="Windows Hello style facial authentication for Linux"
 arch=('x86_64')
@@ -9,7 +9,7 @@ url="https://codeberg.org/nathawat/howdy-next"
 license=('MIT')
 makedepends=('git' 'meson' 'ninja' 'cmake')
 makedepends+=('opencv')
-depends=('libinih' 'libevdev' 'python' 'python-opencv')
+depends=('libinih' 'libevdev' 'opencv' 'curl')
 provides=('howdy')
 conflicts=('howdy' 'howdy-git')
 replaces=('howdy' 'howdy-git')

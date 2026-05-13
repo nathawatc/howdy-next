@@ -1,6 +1,7 @@
 opencv4 = dependency('opencv4')
 inih_cpp = dependency('INIReader', fallback: ['inih', 'INIReader_dep'])
 nlohmann_json = dependency('nlohmann_json')
+libcurl = dependency('libcurl')
 
 native_paths_h = configure_file(
     input: 'config/paths.hpp.in',
@@ -12,6 +13,7 @@ native_cpp_inc = include_directories('.')
 
 native_cpp_sources = [
     'config/config_reader.cpp',
+    'config/config_utils.cpp',
     'config/runtime_paths.cpp',
     'core/face_model.cpp',
     'recorders/video_capture.cpp',
@@ -24,6 +26,7 @@ native_cpp_lib = static_library(
     include_directories: native_cpp_inc,
     dependencies: [
         inih_cpp,
+        libcurl,
         nlohmann_json,
         opencv4,
     ],
@@ -37,6 +40,7 @@ native_capture_smoke = executable(
     link_with: native_cpp_lib,
     dependencies: [
         inih_cpp,
+        libcurl,
         nlohmann_json,
         opencv4,
     ],
@@ -56,6 +60,7 @@ native_compare = executable(
     link_with: native_cpp_lib,
     dependencies: [
         inih_cpp,
+        libcurl,
         nlohmann_json,
         opencv4,
     ],
@@ -165,5 +170,83 @@ native_snapshot = executable(
     ],
     install: true,
     install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_set = executable(
+    'howdy-set',
+    'cli/set.cpp',
+    'cli/set_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_disable = executable(
+    'howdy-disable',
+    'cli/disable.cpp',
+    'cli/disable_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_config = executable(
+    'howdy-config',
+    'cli/config.cpp',
+    'cli/config_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_download_models = executable(
+    'howdy-download-models',
+    'cli/download_models.cpp',
+    'cli/download_models_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_howdy = executable(
+    'howdy',
+    'howdy.cpp',
+    include_directories: native_cpp_inc,
+    dependencies: [],
+    install: true,
+    install_dir: get_option('bindir'),
     install_tag: 'native_cli',
 )

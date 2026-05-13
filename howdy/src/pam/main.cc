@@ -284,7 +284,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   std::condition_variable convar;
   ConfirmationType confirmation_type(ConfirmationType::Unset);
 
-  // This task wait for the status of the python subprocess (we don't want a
+  // This task waits for the compare subprocess status (we don't want a
   // zombie process)
   optional_task<int> child_task([&] {
     int status;
@@ -356,10 +356,10 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   // The compare process has finished its execution
   child_task.stop(false);
 
-  // Get python process status code
+  // Get compare process status code
   int status = child_task.get();
 
-  // If python process ran into a timeout
+  // If the compare process ran into a timeout
   // Do not send enter presses or terminate the PAM function, as the user might
   // still be typing their password
   if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS && ask_pass) {
