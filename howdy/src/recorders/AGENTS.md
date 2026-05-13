@@ -6,8 +6,8 @@ Native OpenCV camera capture layer.
 
 ## WHERE TO LOOK
 
-| File                                    | Role                                   |
-| --------------------------------------- | -------------------------------------- |
+| File                                    | Role                                                      |
+| --------------------------------------- | --------------------------------------------------------- |
 | `howdy/src/recorders/video_capture.cpp` | OpenCV camera wrapper used by native CLI and compare flow |
 
 ## CONVENTIONS

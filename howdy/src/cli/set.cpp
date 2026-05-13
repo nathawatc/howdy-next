@@ -1,7 +1,5 @@
 #include "cli/set_cli.hpp"
 
-#include <cstdlib>
-#include <filesystem>
 #include <iostream>
 #include <string>
 

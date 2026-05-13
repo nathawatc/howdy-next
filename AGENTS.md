@@ -6,7 +6,8 @@
 
 ## OVERVIEW
 
-Linux facial recognition auth (PAM + native C++ CLI/runtime). Beta version. OpenCV DNN YuNet detector + SFace encoder, CLI management, recorder driver (OpenCV/V4L2).
+Linux facial recognition auth (PAM + native C++ CLI/runtime). Beta version. OpenCV DNN YuNet
+detector + SFace encoder, CLI management, recorder driver (OpenCV/V4L2).
 
 ## STRUCTURE
 
@@ -29,23 +30,23 @@ howdy-next/
 
 ## WHERE TO LOOK
 
-| Task            | Location                        | Notes                              |
-| --------------- | ------------------------------- | ---------------------------------- |
-| CLI commands    | `howdy/src/cli/`        | Native subcommands                 |
-| Face comparison | `howdy/src/compare.cpp` | Native recognition engine          |
-| Camera drivers  | `howdy/src/recorders/`   | Native OpenCV capture             |
-| PAM module      | `pam/`                          | C++ auth, main.cc                  |
-| Auth config     | `config/config.ini`             | device_path, thresholds, timeout   |
+| Task            | Location                | Notes                            |
+| --------------- | ----------------------- | -------------------------------- |
+| CLI commands    | `howdy/src/cli/`        | Native subcommands               |
+| Face comparison | `howdy/src/compare.cpp` | Native recognition engine        |
+| Camera drivers  | `howdy/src/recorders/`  | Native OpenCV capture            |
+| PAM module      | `pam/`                  | C++ auth, main.cc                |
+| Auth config     | `config/config.ini`     | device_path, thresholds, timeout |
 
 ## CODE MAP (Key Symbols)
 
-| Symbol              | Type   | Location                              | Role                               |
-| ------------------- | ------ | ------------------------------------- | ---------------------------------- |
-| VideoCapture        | class  | howdy/include/recorders/video_capture.hpp | OpenCV camera wrapper |
-| FaceModel           | class  | howdy/include/core/face_model.hpp | YuNet detector + SFace encoder |
-| UserModels          | module | howdy/include/storage/user_models.hpp | Native model file loading/writing |
-| howdy               | binary | howdy/src/howdy.cpp | CLI dispatcher |
-| howdy-compare       | binary | howdy/src/compare.cpp | PAM compare executable |
+| Symbol        | Type   | Location                                  | Role                              |
+| ------------- | ------ | ----------------------------------------- | --------------------------------- |
+| VideoCapture  | class  | howdy/include/recorders/video_capture.hpp | OpenCV camera wrapper             |
+| FaceModel     | class  | howdy/include/core/face_model.hpp         | YuNet detector + SFace encoder    |
+| UserModels    | module | howdy/include/storage/user_models.hpp     | Native model file loading/writing |
+| howdy         | binary | howdy/src/howdy.cpp                       | CLI dispatcher                    |
+| howdy-compare | binary | howdy/src/compare.cpp                     | PAM compare executable            |
 
 ## CONVENTIONS (Deviations from Standard)
 

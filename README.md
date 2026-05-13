@@ -32,7 +32,7 @@ Edit config: `sudo howdy config`
 | clear           | Remove all models     |
 | config          | Edit config           |
 | disable         | Enable/disable        |
-| download-models  | Download ONNX models  |
+| download-models | Download ONNX models  |
 | list            | List models           |
 | remove          | Remove specific model |
 | set             | Edit config value     |
