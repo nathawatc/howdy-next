@@ -192,6 +192,29 @@ auto FaceModel::best_match(const std::vector<std::vector<float>> &known,
   return match;
 }
 
+auto FaceModel::detection_box(const cv::Mat &face) const
+    -> std::tuple<int, int, int, int> {
+  return {static_cast<int>(face.at<float>(0, 0)),
+          static_cast<int>(face.at<float>(0, 1)),
+          static_cast<int>(face.at<float>(0, 2)),
+          static_cast<int>(face.at<float>(0, 3))};
+}
+
+auto FaceModel::detection_landmarks(const cv::Mat &face) const
+    -> std::vector<cv::Point> {
+  std::vector<cv::Point> points;
+  points.reserve(5);
+  for (int index = 4; index < 14; index += 2) {
+    points.emplace_back(static_cast<int>(face.at<float>(0, index)),
+                        static_cast<int>(face.at<float>(0, index + 1)));
+  }
+  return points;
+}
+
+auto FaceModel::detection_confidence(const cv::Mat &face) const -> float {
+  return face.cols > 14 ? face.at<float>(0, 14) : 0.0F;
+}
+
 void FaceModel::set_input_size_from_frame(const cv::Mat &frame) {
   const cv::Size new_size(frame.cols, frame.rows);
   if (new_size == input_size_) {

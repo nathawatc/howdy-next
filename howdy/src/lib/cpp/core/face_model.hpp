@@ -35,6 +35,11 @@ public:
   auto encode(const cv::Mat &frame, const cv::Mat &face) -> std::vector<float>;
   auto best_match(const std::vector<std::vector<float>> &known,
                   const std::vector<float> &probe) const -> FaceMatch;
+  [[nodiscard]] auto detection_box(const cv::Mat &face) const
+      -> std::tuple<int, int, int, int>;
+  [[nodiscard]] auto detection_landmarks(const cv::Mat &face) const
+      -> std::vector<cv::Point>;
+  [[nodiscard]] auto detection_confidence(const cv::Mat &face) const -> float;
 
 private:
   void set_input_size_from_frame(const cv::Mat &frame);
