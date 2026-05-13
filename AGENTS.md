@@ -13,11 +13,16 @@ Linux facial recognition auth (PAM + native C++ CLI/runtime). Beta version. Open
 ```text
 howdy-next/
 ├── howdy/src/           # Product-facing sources/resources
-│   ├── native/          # Native C++ sources (CLI, core, recorder, storage)
+│   ├── cli/              # Native CLI sources
+│   ├── common/           # Shared native constants/types
+│   ├── config/           # Native config/runtime helpers
+│   ├── core/             # Face model implementation
+│   ├── recorders/        # Camera capture implementation
+│   ├── storage/          # Model store implementation
 │   └── autocomplete/    # Shell completion template
-├── include/howdy/       # Public/native headers (.hpp)
+├── howdy/include/       # Public/native headers (.hpp)
 ├── pam/                 # PAM module (separate build unit)
-├── pam-config/          # PAM config template (separate from module)
+│   ├── howdy.in         # PAM config template
 ├── config/              # Config template files
 └── .forgejo/workflows/  # Forgejo CI (migrated from GitHub Actions)
 ```
@@ -26,9 +31,9 @@ howdy-next/
 
 | Task            | Location                        | Notes                              |
 | --------------- | ------------------------------- | ---------------------------------- |
-| CLI commands    | `howdy/src/native/cli/`        | Native subcommands                 |
-| Face comparison | `howdy/src/native/compare.cpp` | Native recognition engine          |
-| Camera drivers  | `howdy/src/native/recorders/`   | Native OpenCV capture             |
+| CLI commands    | `howdy/src/cli/`        | Native subcommands                 |
+| Face comparison | `howdy/src/compare.cpp` | Native recognition engine          |
+| Camera drivers  | `howdy/src/recorders/`   | Native OpenCV capture             |
 | PAM module      | `pam/`                          | C++ auth, main.cc                  |
 | Auth config     | `config/config.ini`             | device_path, thresholds, timeout   |
 
@@ -36,11 +41,11 @@ howdy-next/
 
 | Symbol              | Type   | Location                              | Role                               |
 | ------------------- | ------ | ------------------------------------- | ---------------------------------- |
-| VideoCapture        | class  | native/recorders/video_capture.hpp   | OpenCV camera wrapper              |
-| FaceModel           | class  | native/core/face_model.hpp          | YuNet detector + SFace encoder     |
-| UserModels          | module | native/storage/user_models.hpp      | Native model file loading/writing   |
-| howdy               | binary | native/howdy.cpp                    | CLI dispatcher                     |
-| howdy-compare       | binary | native/compare.cpp                  | PAM compare executable             |
+| VideoCapture        | class  | howdy/include/recorders/video_capture.hpp | OpenCV camera wrapper |
+| FaceModel           | class  | howdy/include/core/face_model.hpp | YuNet detector + SFace encoder |
+| UserModels          | module | howdy/include/storage/user_models.hpp | Native model file loading/writing |
+| howdy               | binary | howdy/src/howdy.cpp | CLI dispatcher |
+| howdy-compare       | binary | howdy/src/compare.cpp | PAM compare executable |
 
 ## CONVENTIONS (Deviations from Standard)
 

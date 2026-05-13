@@ -21,7 +21,7 @@ pam_module_conf_data.set('config_file_path', config_path)
 subdir('pam')
 if get_option('install_pam_config')
     pam_config = configure_file(
-        input: 'pam-config/howdy.in',
+        input: 'pam/howdy.in',
         output: 'pam-config',
         configuration: {'pamdir': pamdir}
     )

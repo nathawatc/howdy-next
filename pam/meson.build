@@ -19,6 +19,7 @@ shared_library(
 	'pam_howdy',
 	'main.cc',
 	'enter_device.cc',
+	include_directories: include_directories('include'),
 	dependencies: [
 		libpam,
 		inih_cpp,
