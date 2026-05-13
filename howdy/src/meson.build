@@ -16,6 +16,10 @@ py_paths = configure_file(
     configuration: py_conf,
 )
 
+native_cpp_conf = configuration_data(paths_dict)
+native_cpp_conf.set('default_dev_config_path', meson.current_source_dir() / 'config' / 'config.ini')
+native_cpp_conf.set('installed_config_path', config_path)
+
 py_sources = [
     'lib/cli/__init__.py',
     'lib/cli/add.py',
@@ -53,6 +57,7 @@ pam_module_conf_data = configuration_data(paths_dict)
 pam_module_conf_data.set('compare_script_path', join_paths(pysourcesinstalldir, 'lib', 'compare.py'))
 pam_module_conf_data.set('config_file_path', config_path)
 subdir('pam')
+subdir('lib/cpp')
 if get_option('install_pam_config')
     # pamdir is inherited from the pam subproject
     pam_config = configure_file(

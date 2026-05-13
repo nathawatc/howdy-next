@@ -1,0 +1,4 @@
+#pragma once
+
+inline constexpr auto kDefaultDevConfigPath = "@default_dev_config_path@";
+inline constexpr auto kInstalledConfigPath = "@installed_config_path@";
