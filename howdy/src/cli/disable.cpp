@@ -14,7 +14,7 @@ constexpr int kExitAbort = 1;
 
 }  // namespace
 
-int disable_main(int argc, char *argv[]) {
+int disable_main(int argc, char **argv) {
   if (argc < 2) {
     std::cout << "Please add a 0 (enable) or a 1 (disable) as an argument\n";
     return kExitAbort;

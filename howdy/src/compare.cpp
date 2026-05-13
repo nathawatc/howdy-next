@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -25,7 +26,7 @@ struct CompareArgs {
   std::string config_path = howdy::native::resolve_config_path().string();
 };
 
-auto parse_args(int argc, char *argv[]) -> CompareArgs {
+auto parse_args(int argc, char **argv) -> CompareArgs {
   CompareArgs args;
 
   for (int index = 1; index < argc; ++index) {
@@ -38,7 +39,7 @@ auto parse_args(int argc, char *argv[]) -> CompareArgs {
       args.config_path = argv[++index];
       continue;
     }
-    if (arg.starts_with('-')) {
+    if (!arg.empty() && arg.front() == '-') {
       std::cerr << "Unknown argument: " << arg << "\n";
       std::exit(static_cast<int>(CompareExit::kAbort));
     }
@@ -88,7 +89,7 @@ auto apply_rotation(const cv::Mat &frame, int rotate, int frames) -> cv::Mat {
 
 }  // namespace
 
-auto main(int argc, char *argv[]) -> int {
+auto main(int argc, char **argv) -> int {
   const auto start_time = std::chrono::steady_clock::now();
   const CompareArgs args = parse_args(argc, argv);
 
@@ -185,18 +186,19 @@ auto main(int argc, char *argv[]) -> int {
     }
 
     cv::Mat hist;
-    constexpr int hist_size[] = {8};
-    constexpr float hist_range[] = {0.0F, 256.0F};
-    const float *ranges[] = {hist_range};
-    constexpr int channels[] = {0};
-    cv::calcHist(&gray_frame, 1, channels, cv::Mat(), hist, 1, hist_size, ranges);
+    constexpr std::array<int, 1> hist_size{8};
+    constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
+    std::vector<const float *> ranges{hist_range.data()};
+    constexpr std::array<int, 1> channels{0};
+    cv::calcHist(&gray_frame, 1, channels.data(), cv::Mat(), hist, 1,
+                 hist_size.data(), ranges.data());
     const double hist_total = cv::sum(hist)[0];
     if (hist_total == 0.0) {
       black_tries++;
       continue;
     }
 
-    const float darkness =
+    const auto darkness =
         static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
     if (darkness == 100.0F) {
       black_tries++;

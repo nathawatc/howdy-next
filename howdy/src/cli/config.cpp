@@ -10,7 +10,6 @@
 
 namespace {
 
-constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
 
 auto resolve_editor() -> std::string {
@@ -29,7 +28,9 @@ auto resolve_editor() -> std::string {
 
 }  // namespace
 
-int config_main(int, char **) {
+int config_main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
   const auto editor = resolve_editor();
   if (editor.empty()) {
     std::cout << "Error: Could not find a suitable text editor.\n";

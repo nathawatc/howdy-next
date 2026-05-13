@@ -1,5 +1,6 @@
 #include "cli/snapshot_cli.hpp"
 
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
@@ -23,9 +24,10 @@ auto snapshot_path() -> std::filesystem::path {
   const auto time = std::chrono::system_clock::to_time_t(now);
   std::tm buffer {};
   gmtime_r(&time, &buffer);
-  char filename[32] = {0};
-  std::strftime(filename, sizeof(filename), "%Y%m%dT%H%M%S.jpg", &buffer);
-  return howdy::native::resolve_log_path() / "snapshots" / filename;
+  std::array<char, 32> filename{};
+  std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg",
+                &buffer);
+  return howdy::native::resolve_log_path() / "snapshots" / filename.data();
 }
 
 auto generate_snapshot(const std::vector<cv::Mat> &frames,
@@ -36,12 +38,12 @@ auto generate_snapshot(const std::vector<cv::Mat> &frames,
   cv::hconcat(frames, snap);
   cv::Mat padded;
   cv::copyMakeBorder(snap, padded, 0,
-                     static_cast<int>(text_lines.size()) * 20 + 40, 0, 0,
+                     (static_cast<int>(text_lines.size()) * 20) + 40, 0, 0,
                      cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
   snap = padded;
 
   for (std::size_t index = 0; index < text_lines.size(); ++index) {
-    const int padding_top = frame_height + 30 + static_cast<int>(index) * 20;
+    const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
     cv::putText(snap, text_lines[index], cv::Point(30, padding_top),
                 cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 0,
                 cv::LINE_AA);
@@ -55,7 +57,9 @@ auto generate_snapshot(const std::vector<cv::Mat> &frames,
 
 }  // namespace
 
-int snapshot_main(int, char **) {
+int snapshot_main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
   const auto config_path = howdy::native::resolve_config_path();
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
@@ -86,14 +90,15 @@ int snapshot_main(int, char **) {
   const auto time = std::chrono::system_clock::to_time_t(now);
   std::tm buffer {};
   gmtime_r(&time, &buffer);
-  char timestr[64] = {0};
-  std::strftime(timestr, sizeof(timestr), "%Y/%m/%d %H:%M:%S UTC", &buffer);
+  std::array<char, 64> timestr{};
+  std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC",
+                &buffer);
 
   const auto filepath = generate_snapshot(
       frames,
       {
           "GENERATED SNAPSHOT",
-          std::string("Date: ") + timestr,
+          std::string("Date: ") + timestr.data(),
           "Dark threshold config: " +
               std::to_string(config.get_float("video", "dark_threshold", 60.0F)),
           "SFace threshold config: " +

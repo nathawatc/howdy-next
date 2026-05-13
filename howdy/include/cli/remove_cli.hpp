@@ -1,3 +1,3 @@
 #pragma once
 
-int remove_main(int argc, char *argv[]);
+int remove_main(int argc, char **argv);

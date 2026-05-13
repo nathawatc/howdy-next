@@ -91,7 +91,10 @@ auto update_config_value(const std::filesystem::path &config_path,
 
     const auto stripped = line.substr(stripped_pos);
     if (stripped.rfind(key + " =", 0) == 0 || stripped.rfind(key + " ", 0) == 0) {
-      line = key + " = " + value + "\n";
+      line = key;
+      line += " = ";
+      line += value;
+      line += "\n";
       return atomic_write_lines(config_path, lines);
     }
   }

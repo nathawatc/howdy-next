@@ -15,7 +15,7 @@ constexpr int kExitAbort = 1;
 
 }  // namespace
 
-int set_main(int argc, char *argv[]) {
+int set_main(int argc, char **argv) {
   if (argc < 3) {
     std::cout << "Please add a setting you would like to change and the value to set it to\n";
     std::cout << "For example:\n";

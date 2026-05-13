@@ -1,3 +1,3 @@
 #pragma once
 
-int list_main(int argc, char *argv[]);
+int list_main(int argc, char **argv);

@@ -17,7 +17,7 @@ struct ClearArgs {
   bool yes = false;
 };
 
-auto parse_args(int argc, char *argv[]) -> ClearArgs {
+auto parse_args(int argc, char **argv) -> ClearArgs {
   ClearArgs args;
   if (argc < 2) {
     std::exit(kExitAbort);
@@ -33,7 +33,7 @@ auto parse_args(int argc, char *argv[]) -> ClearArgs {
 
 }  // namespace
 
-int clear_main(int argc, char *argv[]) {
+int clear_main(int argc, char **argv) {
   const auto args = parse_args(argc, argv);
   const auto models_dir = howdy::native::resolve_user_models_dir();
   if (!std::filesystem::exists(models_dir)) {

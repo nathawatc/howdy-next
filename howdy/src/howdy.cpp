@@ -22,7 +22,7 @@ auto resolve_user() -> std::string {
       pkexec_uid != nullptr && pkexec_uid[0] != '\0') {
     const auto uid = static_cast<uid_t>(std::stoi(pkexec_uid));
     if (passwd *pwd = getpwuid(uid); pwd != nullptr) {
-      return std::string(pwd->pw_name);
+      return {pwd->pw_name};
     }
   }
 
@@ -67,7 +67,7 @@ void print_help() {
 
 }  // namespace
 
-int main(int argc, char *argv[]) {
+int main(int argc, char **argv) {
   std::string user;
   bool yes = false;
   bool plain = false;

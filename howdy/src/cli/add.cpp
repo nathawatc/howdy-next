@@ -1,5 +1,6 @@
 #include "cli/add_cli.hpp"
 
+#include <array>
 #include <algorithm>
 #include <chrono>
 #include <ctime>
@@ -33,7 +34,7 @@ struct AddArgs {
   bool yes = false;
 };
 
-auto parse_args(int argc, char *argv[]) -> AddArgs {
+auto parse_args(int argc, char **argv) -> AddArgs {
   AddArgs args;
   if (argc < 2) {
     std::cerr << "Usage: howdy-add <user> [label] [--plain] [-y]\n";
@@ -118,18 +119,17 @@ auto save_models_atomic(const std::filesystem::path &path,
 }
 
 auto is_backend_compatible(const nlohmann::json &models) -> bool {
-  for (const auto &entry : models) {
-    const auto backend = entry.value("backend", std::string());
-    if (!backend.empty() && backend != howdy::native::FaceModel::kBackendName) {
-      return false;
-    }
-  }
-  return true;
+  return std::all_of(
+      models.begin(), models.end(), [](const auto &entry) {
+        const auto backend = entry.value("backend", std::string());
+        return backend.empty() ||
+               backend == howdy::native::FaceModel::kBackendName;
+      });
 }
 
 }  // namespace
 
-auto add_main(int argc, char *argv[]) -> int {
+auto add_main(int argc, char **argv) -> int {
   const auto args = parse_args(argc, argv);
   const auto config_path = howdy::native::resolve_config_path();
   howdy::native::ConfigReader config(config_path.string());
@@ -208,17 +208,18 @@ auto add_main(int argc, char *argv[]) -> int {
     }
 
     cv::Mat hist;
-    constexpr int hist_size[] = {8};
-    constexpr float hist_range[] = {0.0F, 256.0F};
-    const float *ranges[] = {hist_range};
-    constexpr int channels[] = {0};
-    cv::calcHist(&gray, 1, channels, cv::Mat(), hist, 1, hist_size, ranges);
+    constexpr std::array<int, 1> hist_size{8};
+    constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
+    std::vector<const float *> ranges{hist_range.data()};
+    constexpr std::array<int, 1> channels{0};
+    cv::calcHist(&gray, 1, channels.data(), cv::Mat(), hist, 1,
+                 hist_size.data(), ranges.data());
     const double hist_total = cv::sum(hist)[0];
     if (hist_total == 0.0) {
       continue;
     }
 
-    const float darkness =
+    const auto darkness =
         static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
     if (darkness >= 100.0F) {
       continue;

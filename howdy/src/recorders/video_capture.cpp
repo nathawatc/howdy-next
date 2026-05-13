@@ -92,9 +92,7 @@ auto VideoCapture::read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
   }
 
   if (gray_frame != nullptr) {
-    if (frame.channels() == 1) {
-      *gray_frame = frame;
-    } else if (frame.channels() == 3) {
+    if (frame.channels() == 3) {
       cv::cvtColor(frame, *gray_frame, cv::COLOR_BGR2GRAY);
     } else if (frame.channels() == 4) {
       cv::cvtColor(frame, *gray_frame, cv::COLOR_BGRA2GRAY);

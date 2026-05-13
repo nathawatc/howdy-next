@@ -1,3 +1,3 @@
 #pragma once
 
-int config_main(int argc, char *argv[]);
+int config_main(int argc, char **argv);

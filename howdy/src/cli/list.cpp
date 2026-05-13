@@ -1,10 +1,13 @@
 #include "cli/list_cli.hpp"
 
+#include <algorithm>
+#include <array>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 
 #include <nlohmann/json.hpp>
 
@@ -20,7 +23,7 @@ struct ListArgs {
   bool plain = false;
 };
 
-auto parse_args(int argc, char *argv[]) -> ListArgs {
+auto parse_args(int argc, char **argv) -> ListArgs {
   ListArgs args;
   if (argc < 2) {
     std::exit(kExitAbort);
@@ -36,7 +39,7 @@ auto parse_args(int argc, char *argv[]) -> ListArgs {
 
 }  // namespace
 
-int list_main(int argc, char *argv[]) {
+int list_main(int argc, char **argv) {
   const auto args = parse_args(argc, argv);
   const auto models_dir = howdy::native::resolve_user_models_dir();
   if (!std::filesystem::exists(models_dir)) {
@@ -67,10 +70,10 @@ int list_main(int argc, char *argv[]) {
     } else {
       std::cout << std::string(std::max(0, 4 - static_cast<int>(std::to_string(id).size())), ' ');
     }
-    char buffer[32] = {0};
-    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S",
+    std::array<char, 32> buffer{};
+    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S",
                   std::localtime(&timestamp));
-    std::cout << buffer;
+    std::cout << buffer.data();
     std::cout << (args.plain ? "," : "  ");
     std::cout << model.value("label", std::string()) << "\n";
   }

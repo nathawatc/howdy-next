@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <array>
 #include <condition_variable>
 #include <cstring>
 #include <fstream>
@@ -267,12 +268,13 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     }
   }
 
-  const char *const args[] = {COMPARE_PROCESS_PATH, username, nullptr};
+  std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
+                                username, nullptr};
   pid_t child_pid;
 
   // Start the compare subprocess
   if (posix_spawnp(&child_pid, COMPARE_PROCESS_PATH, nullptr, nullptr,
-                   const_cast<char *const *>(args), nullptr) != 0) {
+                   args.data(), nullptr) != 0) {
     syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(errno),
            errno);
     return PAM_SYSTEM_ERR;

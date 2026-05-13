@@ -23,7 +23,7 @@ struct RemoveArgs {
   bool yes = false;
 };
 
-auto parse_args(int argc, char *argv[]) -> RemoveArgs {
+auto parse_args(int argc, char **argv) -> RemoveArgs {
   RemoveArgs args;
   if (argc < 2) {
     std::exit(kExitAbort);
@@ -82,7 +82,7 @@ auto save_models_atomic(const std::filesystem::path &path,
 
 }  // namespace
 
-int remove_main(int argc, char *argv[]) {
+int remove_main(int argc, char **argv) {
   const auto args = parse_args(argc, argv);
   if (args.id.empty()) {
     std::cout << "Please add the ID of the model you want to remove as an argument\n";

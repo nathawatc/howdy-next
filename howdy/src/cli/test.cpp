@@ -6,6 +6,7 @@
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
 
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -30,13 +31,17 @@ struct TestArgs {
 
 bool g_slow_mode = false;
 
-void mouse_callback(int event, int, int, int, void *) {
+void mouse_callback(int event, int x, int y, int flags, void *userdata) {
+  (void)x;
+  (void)y;
+  (void)flags;
+  (void)userdata;
   if (event == cv::EVENT_LBUTTONDOWN) {
     g_slow_mode = !g_slow_mode;
   }
 }
 
-auto parse_args(int argc, char *argv[]) -> TestArgs {
+auto parse_args(int argc, char **argv) -> TestArgs {
   TestArgs args;
 
   for (int index = 1; index < argc; ++index) {
@@ -62,7 +67,7 @@ void print_text(cv::Mat &overlay, int line_number, int height,
 
 }  // namespace
 
-int test_main(int argc, char *argv[]) {
+int test_main(int argc, char **argv) {
   const TestArgs args = parse_args(argc, argv);
   const std::string config_path = howdy::native::resolve_config_path().string();
 
@@ -162,23 +167,23 @@ int test_main(int argc, char *argv[]) {
       const int width = gray_frame.cols;
 
       cv::Mat hist;
-      constexpr int hist_size[] = {8};
-      constexpr float hist_range[] = {0.0F, 256.0F};
-      const float *ranges[] = {hist_range};
-      constexpr int channels[] = {0};
-      cv::calcHist(&gray_frame, 1, channels, cv::Mat(), hist, 1, hist_size,
-                   ranges);
+      constexpr std::array<int, 1> hist_size{8};
+      constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
+      std::vector<const float *> ranges{hist_range.data()};
+      constexpr std::array<int, 1> channels{0};
+      cv::calcHist(&gray_frame, 1, channels.data(), cv::Mat(), hist, 1,
+                   hist_size.data(), ranges.data());
 
-      const int hist_total = static_cast<int>(cv::sum(hist)[0]);
+      const auto hist_total = static_cast<float>(cv::sum(hist)[0]);
       std::vector<float> hist_perc;
       hist_perc.reserve(8);
       for (int index = 0; index < hist.rows; ++index) {
         const float value_perc =
-            hist.at<float>(index, 0) / std::max(hist_total, 1) * 100.0F;
+            hist.at<float>(index, 0) / std::max(hist_total, 1.0F) * 100.0F;
         hist_perc.push_back(value_perc);
         const cv::Point p1(20 + (10 * index), 10);
         const cv::Point p2(10 + (10 * index),
-                           static_cast<int>(value_perc / 2.0F + 10.0F));
+                           static_cast<int>((value_perc / 2.0F) + 10.0F));
         cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
       }
 

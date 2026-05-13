@@ -33,8 +33,9 @@ public:
   [[nodiscard]] auto prepare_frame(const cv::Mat &frame) const -> cv::Mat;
   auto detect(const cv::Mat &frame) -> std::vector<cv::Mat>;
   auto encode(const cv::Mat &frame, const cv::Mat &face) -> std::vector<float>;
-  auto best_match(const std::vector<std::vector<float>> &known,
-                  const std::vector<float> &probe) const -> FaceMatch;
+  [[nodiscard]] auto best_match(const std::vector<std::vector<float>> &known,
+                                const std::vector<float> &probe) const
+      -> FaceMatch;
   [[nodiscard]] auto detection_box(const cv::Mat &face) const
       -> std::tuple<int, int, int, int>;
   [[nodiscard]] auto detection_landmarks(const cv::Mat &face) const
@@ -44,9 +45,11 @@ public:
 private:
   void set_input_size_from_frame(const cv::Mat &frame);
   void set_error(std::string message);
-  auto resolve_model_path(const ConfigReader &config, const std::string &option,
-                          const std::string &fallback) const -> std::string;
-  auto bad_model_download(const std::string &path) const -> bool;
+  [[nodiscard]] auto resolve_model_path(const ConfigReader &config,
+                                        const std::string &option,
+                                        const std::string &fallback) const
+      -> std::string;
+  [[nodiscard]] auto bad_model_download(const std::string &path) const -> bool;
 
   bool ok_ = false;
   std::string error_message_;

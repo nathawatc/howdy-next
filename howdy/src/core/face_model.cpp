@@ -33,14 +33,15 @@ FaceModel::FaceModel(const ConfigReader &config) {
   }
 
   const auto score_threshold =
-      static_cast<float>(config.get_float("face", "yunet_score_threshold", 0.9F));
+      config.get_float("face", "yunet_score_threshold", 0.9F);
   const auto nms_threshold =
-      static_cast<float>(config.get_float("face", "yunet_nms_threshold", 0.3F));
+      config.get_float("face", "yunet_nms_threshold", 0.3F);
   const auto top_k = config.get_int("face", "yunet_top_k", 5000);
   metric_ = config.get("face", "sface_metric", "cosine");
   std::transform(metric_.begin(), metric_.end(), metric_.begin(), ::tolower);
-  threshold_ = static_cast<float>(config.get_float(
-      "face", "sface_threshold", metric_ == "cosine" ? 0.363F : 1.128F));
+  threshold_ =
+      config.get_float("face", "sface_threshold",
+                       metric_ == "cosine" ? 0.363F : 1.128F);
 
   try {
     detector_ = cv::FaceDetectorYN::create(yunet_model, "", input_size_,

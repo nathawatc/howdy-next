@@ -1,6 +1,8 @@
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 
 #include "common/compare_exit.hpp"
@@ -27,7 +29,7 @@ auto resolve_default_config() -> std::string {
   return howdy::native::resolve_config_path().string();
 }
 
-auto parse_args(int argc, char *argv[]) -> Args {
+auto parse_args(int argc, char **argv) -> Args {
   Args args{.config_path = resolve_default_config()};
 
   for (int index = 1; index < argc; ++index) {
@@ -41,7 +43,18 @@ auto parse_args(int argc, char *argv[]) -> Args {
       continue;
     }
     if (arg == "--frames" && index + 1 < argc) {
-      args.frames = std::max(1, std::atoi(argv[++index]));
+      char *end = nullptr;
+      errno = 0;
+      const long parsed = std::strtol(argv[++index], &end, 10);
+      if (end == argv[index] || *end != '\0' || errno == ERANGE) {
+        std::cerr << "Invalid --frames value: " << argv[index] << "\n";
+        std::exit(static_cast<int>(CompareExit::kAbort));
+      }
+      if (parsed > std::numeric_limits<int>::max()) {
+        std::cerr << "Invalid --frames value: " << argv[index] << "\n";
+        std::exit(static_cast<int>(CompareExit::kAbort));
+      }
+      args.frames = std::max(1, static_cast<int>(parsed));
       continue;
     }
 
@@ -55,7 +68,7 @@ auto parse_args(int argc, char *argv[]) -> Args {
 
 }  // namespace
 
-auto main(int argc, char *argv[]) -> int {
+auto main(int argc, char **argv) -> int {
   const Args args = parse_args(argc, argv);
 
   howdy::native::ConfigReader config(args.config_path);

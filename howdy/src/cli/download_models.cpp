@@ -68,7 +68,9 @@ auto download_file(const std::string &url, const std::filesystem::path &temp_pat
 
 }  // namespace
 
-int download_models_main(int, char **) {
+int download_models_main(int argc, char **argv) {
+  (void)argc;
+  (void)argv;
   const auto models_dir = howdy::native::resolve_models_dir();
   std::filesystem::create_directories(models_dir);
 
