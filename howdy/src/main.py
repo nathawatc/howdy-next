@@ -5,7 +5,6 @@ import builtins
 import getpass
 import os
 import pwd
-import subprocess
 import sys
 
 lib_path = os.path.join(os.path.dirname(__file__), "lib")
@@ -136,8 +135,7 @@ if args.command in native_commands:
     if args.y:
         native_args.append("-y")
 
-    result = subprocess.run(native_args, check=False)
-    sys.exit(result.returncode)
+    os.execv(binary_path, native_args)
 
 if args.command == "add":
     import cli.add
