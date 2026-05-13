@@ -40,7 +40,7 @@ inline auto get_workaround(const std::string &workaround) -> Workaround {
  * @note This function was created because `getenv` wasn't working properly in
  * some contexts (like sudo).
  */
-auto checkenv(const char *name) -> bool {
+inline auto checkenv(const char *name) -> bool {
   if (std::getenv(name) != nullptr) {
     return true;
   }

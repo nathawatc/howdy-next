@@ -43,8 +43,8 @@ constexpr auto DEFAULT_TIMEOUT =
     std::chrono::duration<int, std::chrono::milliseconds::period>(100);
 const int MAX_RETRIES = 5;
 
-constexpr const char *S(const char *msg) {
-  return msg;
+auto S(const char *msg) -> const char * {
+  return gettext(msg);
 }
 }  // namespace
 

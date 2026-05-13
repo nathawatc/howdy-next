@@ -67,6 +67,8 @@ auto main() -> int {
 
   ok &= expect(build_confirmation_message("alice") == "Identified face as alice",
                "confirmation message is formatted");
+  ok &= expect(build_unknown_error_message(42) == "Unknown error: 42",
+               "unknown error message is formatted");
 
   if (!ok) {
     return 1;

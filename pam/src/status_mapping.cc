@@ -1,5 +1,6 @@
 #include "status_mapping.hh"
 
+#include <libintl.h>
 #include <string>
 #include <sys/wait.h>
 
@@ -19,7 +20,7 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
       break;
     case CompareError::TIMEOUT_REACHED:
       decision.conversation_kind = ConversationKind::Error;
-      decision.conversation_message = "Failure, timeout reached";
+      decision.conversation_message = gettext("Failure, timeout reached");
       decision.log_message = "Failure, timeout reached";
       break;
     case CompareError::ABORT:
@@ -27,7 +28,7 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
       break;
     case CompareError::TOO_DARK:
       decision.conversation_kind = ConversationKind::Error;
-      decision.conversation_message = "Face detection image too dark";
+      decision.conversation_message = gettext("Face detection image too dark");
       decision.log_message = "Failure, image too dark";
       break;
     case CompareError::INVALID_DEVICE:
@@ -35,7 +36,7 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
       break;
     default:
       decision.conversation_kind = ConversationKind::Error;
-      decision.conversation_message = "Unknown error: " + std::to_string(exit_status);
+      decision.conversation_message = build_unknown_error_message(exit_status);
       decision.log_message = "Failure, unknown error";
       break;
     }
@@ -51,5 +52,19 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 }
 
 auto build_confirmation_message(std::string_view username) -> std::string {
-  return "Identified face as " + std::string(username);
+  std::string template_text = gettext("Identified face as {}");
+  const auto placeholder_pos = template_text.find("{}");
+  if (placeholder_pos != std::string::npos) {
+    template_text.replace(placeholder_pos, 2, std::string(username));
+  }
+  return template_text;
+}
+
+auto build_unknown_error_message(int exit_status) -> std::string {
+  std::string template_text = gettext("Unknown error: {}");
+  const auto placeholder_pos = template_text.find("{}");
+  if (placeholder_pos != std::string::npos) {
+    template_text.replace(placeholder_pos, 2, std::to_string(exit_status));
+  }
+  return template_text;
 }

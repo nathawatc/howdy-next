@@ -16,5 +16,6 @@ struct CompareStatusDecision {
 
 auto map_compare_wait_status(int status) -> CompareStatusDecision;
 auto build_confirmation_message(std::string_view username) -> std::string;
+auto build_unknown_error_message(int exit_status) -> std::string;
 
 #endif  // STATUS_MAPPING_H_
