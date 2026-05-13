@@ -141,9 +141,13 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  const bool needs_user_argument =
+      command == "add" || command == "clear" || command == "list" ||
+      command == "remove" || command == "test";
+
   std::vector<std::string> argv_strings;
   argv_strings.push_back(binary_path);
-  if (command != "snapshot" && command != "config" && command != "download-models") {
+  if (needs_user_argument) {
     argv_strings.push_back(user);
   }
   argv_strings.insert(argv_strings.end(), arguments.begin(), arguments.end());
