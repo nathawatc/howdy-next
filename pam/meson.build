@@ -17,8 +17,9 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 
 shared_library(
 	'pam_howdy',
-	'main.cc',
-	'enter_device.cc',
+	'src/main.cc',
+	'src/enter_device.cc',
+	'src/status_mapping.cc',
 	include_directories: include_directories('include'),
 	dependencies: [
 		libpam,
@@ -33,4 +34,23 @@ shared_library(
 	install_dir: pamdir,
 	install_tag: 'pam_module',
 	name_prefix: ''
+)
+
+pam_status_mapping_test = executable(
+	'pam-status-mapping-test',
+	'src/status_mapping.cc',
+	'src/tests/status_mapping_test.cc',
+	include_directories: include_directories('include'),
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-status-mapping',
+	pam_status_mapping_test,
 )

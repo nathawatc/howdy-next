@@ -1,16 +1,13 @@
-#include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
-#include <cstdlib>
 #include <iostream>
 #include <limits>
-#include <string>
-#include <string_view>
 
 #include <opencv2/imgproc.hpp>
 
+#include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
+#include "common/compare_logic.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -20,49 +17,6 @@
 namespace {
 
 using howdy::native::CompareExit;
-
-struct CompareArgs {
-  std::string user;
-  std::string config_path = howdy::native::resolve_config_path().string();
-};
-
-auto parse_args(int argc, char **argv) -> CompareArgs {
-  CompareArgs args;
-
-  for (int index = 1; index < argc; ++index) {
-    const std::string_view arg(argv[index]);
-    if (arg == "--help" || arg == "-h") {
-      std::cout << "Usage: " << argv[0] << " [--config PATH] <user>\n";
-      std::exit(static_cast<int>(CompareExit::kSuccess));
-    }
-    if (arg == "--config" && index + 1 < argc) {
-      args.config_path = argv[++index];
-      continue;
-    }
-    if (!arg.empty() && arg.front() == '-') {
-      std::cerr << "Unknown argument: " << arg << "\n";
-      std::exit(static_cast<int>(CompareExit::kAbort));
-    }
-    args.user = argv[index];
-  }
-
-  if (args.user.empty()) {
-    std::exit(static_cast<int>(CompareExit::kAbort));
-  }
-
-  return args;
-}
-
-auto update_best_score(float current, float score, const std::string &metric)
-    -> float {
-  if (std::isnan(current)) {
-    return score;
-  }
-  if (metric == "cosine") {
-    return std::max(current, score);
-  }
-  return std::min(current, score);
-}
 
 auto apply_rotation(const cv::Mat &frame, int rotate, int frames) -> cv::Mat {
   if (rotate == 1) {
@@ -91,7 +45,19 @@ auto apply_rotation(const cv::Mat &frame, int rotate, int frames) -> cv::Mat {
 
 auto main(int argc, char **argv) -> int {
   const auto start_time = std::chrono::steady_clock::now();
-  const CompareArgs args = parse_args(argc, argv);
+  const auto parse_result = howdy::native::parse_compare_args(
+      argc, argv, howdy::native::resolve_config_path().string());
+  if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
+    std::cout << parse_result.message;
+    return static_cast<int>(parse_result.exit_code);
+  }
+  if (parse_result.status == howdy::native::CompareArgsStatus::kError) {
+    if (!parse_result.message.empty()) {
+      std::cerr << parse_result.message;
+    }
+    return static_cast<int>(parse_result.exit_code);
+  }
+  const auto &args = parse_result.args;
 
   const auto loaded_models =
       howdy::native::load_user_models(args.user, howdy::native::FaceModel::kBackendName);
@@ -164,14 +130,14 @@ auto main(int argc, char **argv) -> int {
             std::chrono::steady_clock::now() - frame_loop_start)
             .count();
     if (elapsed > timeout) {
-      if (dark_tries > 0 && valid_frames == dark_tries) {
+      const auto exit_code = howdy::native::timeout_exit(dark_tries, valid_frames);
+      if (exit_code == CompareExit::kTooDark) {
         std::cerr << "All frames were too dark, please check dark_threshold in config\n";
         std::cerr << "Average darkness: "
                   << (dark_running_total / std::max(valid_frames, 1))
                   << ", Threshold: " << dark_threshold << "\n";
-        return static_cast<int>(CompareExit::kTooDark);
       }
-      return static_cast<int>(CompareExit::kTimeoutReached);
+      return static_cast<int>(exit_code);
     }
 
     cv::Mat frame;
@@ -193,24 +159,23 @@ auto main(int argc, char **argv) -> int {
     cv::calcHist(&gray_frame, 1, channels.data(), cv::Mat(), hist, 1,
                  hist_size.data(), ranges.data());
     const double hist_total = cv::sum(hist)[0];
-    if (hist_total == 0.0) {
-      black_tries++;
-      continue;
-    }
-
     const auto darkness =
-        static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
-    if (darkness == 100.0F) {
+        hist_total == 0.0 ? 100.0F
+                          : static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
+    switch (howdy::native::classify_brightness(hist_total, darkness,
+                                               dark_threshold)) {
+    case howdy::native::BrightnessDecision::kBlackFrame:
       black_tries++;
       continue;
-    }
-
-    dark_running_total += darkness;
-    valid_frames++;
-
-    if (darkness > dark_threshold) {
+    case howdy::native::BrightnessDecision::kTooDark:
+      dark_running_total += darkness;
+      valid_frames++;
       dark_tries++;
       continue;
+    case howdy::native::BrightnessDecision::kProcessFrame:
+      dark_running_total += darkness;
+      valid_frames++;
+      break;
     }
 
     cv::Mat working_frame = gray_frame;
@@ -225,7 +190,8 @@ auto main(int argc, char **argv) -> int {
     for (const auto &face : faces) {
       const auto encoding = face_model.encode(prepared, face);
       const auto match = face_model.best_match(loaded_models.stored.encodings, encoding);
-      best_score = update_best_score(best_score, match.score, face_model.metric());
+      best_score = howdy::native::update_best_score(best_score, match.score,
+                                                    face_model.metric());
 
       if (!match.accepted) {
         continue;

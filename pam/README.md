@@ -22,6 +22,16 @@ meson setup build
 ninja -C build # or meson compile -C build
 ```
 
+## Source Layout
+
+```text
+pam/
+├── include/      # Public/private headers
+├── src/          # PAM module sources
+│   └── tests/    # Native unit tests
+└── po/           # Translations
+```
+
 ## Install
 
 ```sh

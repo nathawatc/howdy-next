@@ -60,6 +60,8 @@ test(
 
 native_compare = executable(
     'howdy-compare',
+    'compare_args.cpp',
+    'compare_logic.cpp',
     'compare.cpp',
     include_directories: native_cpp_inc,
     link_with: native_cpp_lib,
@@ -99,6 +101,44 @@ test(
     args: ['coverage-user'],
     env: ['HOWDY_USER_MODELS_DIR=' + meson.current_build_dir() / 'compare-test-models-empty'],
     should_fail: true,
+)
+
+native_compare_args_test = executable(
+    'howdy-compare-args-test',
+    'compare_args.cpp',
+    'tests/compare_args_test.cpp',
+    include_directories: native_cpp_inc,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-compare-args',
+    native_compare_args_test,
+)
+
+native_compare_logic_test = executable(
+    'howdy-compare-logic-test',
+    'compare_logic.cpp',
+    'tests/compare_logic_test.cpp',
+    include_directories: native_cpp_inc,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-compare-logic',
+    native_compare_logic_test,
 )
 
 native_config_utils_test = executable(

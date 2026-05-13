@@ -35,6 +35,7 @@
 #include "enter_device.hh"
 #include "main.hh"
 #include "optional_task.hh"
+#include "status_mapping.hh"
 #include <paths.hh>
 
 namespace {
@@ -56,41 +57,20 @@ constexpr const char *S(const char *msg) {
 auto howdy_error(int status,
                  const std::function<int(int, const char *)> &conv_function)
     -> int {
-  // If the process has exited
-  if (WIFEXITED(status)) {
-    // Get the status code returned
-    status = WEXITSTATUS(status);
+  const auto decision = map_compare_wait_status(status);
+  if (decision.conversation_kind == ConversationKind::Error) {
+    conv_function(PAM_ERROR_MSG, decision.conversation_message.c_str());
+  } else if (decision.conversation_kind == ConversationKind::Info) {
+    conv_function(PAM_TEXT_INFO, decision.conversation_message.c_str());
+  }
 
-    switch (status) {
-    case CompareError::NO_FACE_MODEL:
-      syslog(LOG_NOTICE, "Failure, no face model known");
-      break;
-    case CompareError::TIMEOUT_REACHED:
-      conv_function(PAM_ERROR_MSG, S("Failure, timeout reached"));
-      syslog(LOG_ERR, "Failure, timeout reached");
-      break;
-    case CompareError::ABORT:
-      syslog(LOG_ERR, "Failure, general abort");
-      break;
-    case CompareError::TOO_DARK:
-      conv_function(PAM_ERROR_MSG, S("Face detection image too dark"));
-      syslog(LOG_ERR, "Failure, image too dark");
-      break;
-    case CompareError::INVALID_DEVICE:
-      syslog(LOG_ERR,
-             "Failure, not possible to open camera at configured path");
-      break;
-    default:
-      auto err_str = std::string(S("Unknown error: ")) + std::to_string(status);
-      conv_function(PAM_ERROR_MSG, err_str.c_str());
-      syslog(LOG_ERR, "Failure, unknown error %d", status);
-    }
+  if (WIFEXITED(status) && WEXITSTATUS(status) == CompareError::NO_FACE_MODEL) {
+    syslog(LOG_NOTICE, "%s", decision.log_message.c_str());
+  } else if (WIFEXITED(status) &&
+             WEXITSTATUS(status) != CompareError::NO_FACE_MODEL) {
+    syslog(LOG_ERR, "%s", decision.log_message.c_str());
   } else if (WIFSIGNALED(status)) {
-    // We get the signal
-    status = WTERMSIG(status);
-
-    syslog(LOG_ERR, "Child killed by signal %s (%d)", strsignal(status),
-           status);
+    syslog(LOG_ERR, "%s (%d)", decision.log_message.c_str(), WTERMSIG(status));
   }
 
   // As this function is only called for error status codes, signal an error to
@@ -115,11 +95,7 @@ auto howdy_status(char *username, int status, const INIReader &config,
   }
 
   if (!config.GetBoolean("core", "no_confirmation", true)) {
-    std::string confirm_text(S("Identified face as {}"));
-    auto placeholder_pos = confirm_text.find("{}");
-    if (placeholder_pos != std::string::npos) {
-      confirm_text.replace(placeholder_pos, 2, std::string(username));
-    }
+    const auto confirm_text = build_confirmation_message(username);
     conv_function(PAM_TEXT_INFO, confirm_text.c_str());
   }
 
