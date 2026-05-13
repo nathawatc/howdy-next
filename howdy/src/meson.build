@@ -80,6 +80,103 @@ test(
     args: ['--help'],
 )
 
+test(
+    'native-compare-unknown-arg',
+    native_compare,
+    args: ['--unknown'],
+    should_fail: true,
+)
+
+test(
+    'native-compare-missing-user',
+    native_compare,
+    should_fail: true,
+)
+
+test(
+    'native-compare-no-model',
+    native_compare,
+    args: ['coverage-user'],
+    env: ['HOWDY_USER_MODELS_DIR=' + meson.current_build_dir() / 'compare-test-models-empty'],
+    should_fail: true,
+)
+
+native_config_utils_test = executable(
+    'howdy-config-utils-test',
+    'tests/config_utils_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-config-utils',
+    native_config_utils_test,
+)
+
+native_user_models_test = executable(
+    'howdy-user-models-test',
+    'tests/user_models_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-user-models',
+    native_user_models_test,
+)
+
+native_runtime_paths_test = executable(
+    'howdy-runtime-paths-test',
+    'tests/runtime_paths_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-runtime-paths',
+    native_runtime_paths_test,
+)
+
+native_config_reader_test = executable(
+    'howdy-config-reader-test',
+    'tests/config_reader_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-config-reader',
+    native_config_reader_test,
+)
+
 subdir('cli')
 
 native_add = executable(
@@ -255,6 +352,31 @@ native_howdy = executable(
     install: true,
     install_dir: get_option('bindir'),
     install_tag: 'native_cli',
+)
+
+test(
+    'native-howdy-help',
+    native_howdy,
+    args: ['--help'],
+)
+
+test(
+    'native-howdy-version',
+    native_howdy,
+    args: ['version'],
+    should_fail: true,
+)
+
+test(
+    'native-howdy-nonroot-path',
+    native_howdy,
+    args: ['-U', 'coverage-user', 'list'],
+    should_fail: true,
+)
+
+test(
+    'native-howdy-empty',
+    native_howdy,
 )
 
 autocomplete = configure_file(
