@@ -2,6 +2,7 @@
 
 #include "../recorders/video_capture.hpp"
 #include "../config/config_reader.hpp"
+#include "../config/runtime_paths.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -10,7 +11,6 @@
 
 static constexpr int EXIT_OK = 0;
 static constexpr int EXIT_CAMERA_ERROR = 1;
-static constexpr const char* DEFAULT_CONFIG_PATH = "/lib/security/howdy/config.ini";
 
 struct TestArgs {
     std::string device_path = "/dev/video0";
@@ -31,10 +31,7 @@ static TestArgs parse_args(int argc, char* argv[]) {
 int test_main(int argc, char* argv[]) {
     TestArgs args = parse_args(argc, argv);
 
-    std::string config_path = getenv("HOWDY_CONFIG") ? getenv("HOWDY_CONFIG") : "";
-    if (config_path.empty()) {
-        config_path = DEFAULT_CONFIG_PATH;
-    }
+    std::string config_path = howdy::native::resolve_config_path().string();
 
     howdy::native::ConfigReader config(config_path);
     if (!config.ok()) {
