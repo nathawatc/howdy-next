@@ -1,399 +1,285 @@
 #include "add_cli.hpp"
 
-#include <nlohmann/json.hpp>
-#include "../exported_headers/face_model.hpp"
-#include "../exported_headers/video_capture.hpp"
-#include "../core/image_utils.hpp"
-#include "../recorders/opencv_capture.hpp"
-
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <sstream>
+#include <string>
+#include <string_view>
+#include <thread>
 #include <vector>
-#include <cstring>
-#include <algorithm>
-#include <ctime>
-#include <iomanip>
-#include <chrono>
-#include <filesystem>
+#include <unistd.h>
 
-namespace fs = std::filesystem;
+#include <nlohmann/json.hpp>
+#include <opencv2/imgproc.hpp>
 
-static constexpr int EXIT_SUCCESS = 0;
-static constexpr int EXIT_ABORT = 1;
-static constexpr const char* DEFAULT_CONFIG_PATH = "/lib/security/howdy/config.ini";
-static constexpr float DEFAULT_DARK_THRESHOLD = 60.0f;
-static constexpr int MAX_FRAMES = 60;
-static constexpr const char* BACKEND_NAME = "opencv_dnn_sface";
+#include "../config/config_reader.hpp"
+#include "../config/runtime_paths.hpp"
+#include "../core/face_model.hpp"
+#include "../recorders/video_capture.hpp"
+
+namespace {
+
+constexpr auto kExitOk = 0;
+constexpr auto kExitAbort = 1;
+constexpr int kMaxFrames = 60;
 
 struct AddArgs {
-    std::string username;
-    std::string label;
-    bool plain = false;
-    bool yes = false;
+  std::string user;
+  std::string label;
+  bool plain = false;
+  bool yes = false;
 };
 
-static AddArgs parse_args(int argc, char* argv[]) {
-    AddArgs args;
+auto parse_args(int argc, char *argv[]) -> AddArgs {
+  AddArgs args;
+  if (argc < 2) {
+    std::cerr << "Usage: howdy-add <user> [label] [--plain] [-y]\n";
+    std::exit(kExitAbort);
+  }
 
-    if (argc < 2) {
-        std::cerr << "Usage: add <username> [--label <label>] [--plain] [-y]\n";
-        std::exit(EXIT_ABORT);
+  args.user = argv[1];
+  for (int index = 2; index < argc; ++index) {
+    std::string_view arg(argv[index]);
+    if (arg == "--plain") {
+      args.plain = true;
+      continue;
     }
-
-    args.username = argv[1];
-
-    for (int i = 2; i < argc; ++i) {
-        if (strcmp(argv[i], "--label") == 0 && i + 1 < argc) {
-            args.label = argv[++i];
-        } else if (strcmp(argv[i], "--plain") == 0) {
-            args.plain = true;
-        } else if (strcmp(argv[i], "-y") == 0) {
-            args.yes = true;
-        }
+    if (arg == "-y") {
+      args.yes = true;
+      continue;
     }
-
-    return args;
+    if (args.label.empty()) {
+      args.label = argv[index];
+    }
+  }
+  return args;
 }
 
-static std::string get_user_models_dir() {
-    return "/lib/security/howdy/user_models";
+auto load_models(const std::filesystem::path &path) -> nlohmann::json {
+  if (!std::filesystem::is_regular_file(path)) {
+    return nlohmann::json::array();
+  }
+
+  std::ifstream input(path);
+  if (!input.is_open()) {
+    return nlohmann::json::array();
+  }
+
+  nlohmann::json models;
+  input >> models;
+  if (!models.is_array()) {
+    return nlohmann::json::array();
+  }
+  return models;
 }
 
-static std::string get_user_model_path(const std::string& username) {
-    return get_user_models_dir() + "/" + username + ".json";
-}
+auto save_models_atomic(const std::filesystem::path &path,
+                        const nlohmann::json &models) -> bool {
+  const auto parent = path.parent_path();
+  std::filesystem::create_directories(parent);
 
-static bool ensure_user_models_dir() {
-    std::string dir = get_user_models_dir();
-    if (!fs::exists(dir)) {
-        std::cerr << "No face model folder found, creating one\n";
-        try {
-            fs::create_directories(dir);
-            return true;
-        } catch (const fs::filesystem_error& e) {
-            std::cerr << "Failed to create directory: " << e.what() << "\n";
-            return false;
-        }
-    }
-    return true;
-}
+  std::string temp = (parent / ".howdy-models-XXXXXX").string();
+  std::vector<char> writable(temp.begin(), temp.end());
+  writable.push_back('\0');
 
-static std::vector<nlohmann::json> load_existing_models(const std::string& path) {
-    std::ifstream f(path);
-    if (!f.is_open()) {
-        return {};
-    }
-    try {
-        return nlohmann::json::parse(f);
-    } catch (const nlohmann::json::parse_error&) {
-        return {};
-    }
-}
-
-static bool has_incompatible_backend(const std::vector<nlohmann::json>& models) {
-    for (const auto& model : models) {
-        if (model.contains("backend")) {
-            std::string backend = model["backend"];
-            if (backend != BACKEND_NAME) {
-                return true;
-            }
-        }
-    }
+  const int fd = mkstemp(writable.data());
+  if (fd < 0) {
     return false;
+  }
+
+  const std::filesystem::path temp_path(writable.data());
+  bool ok = false;
+  {
+    std::ofstream output(temp_path);
+    if (output.is_open()) {
+      output << models.dump();
+      ok = output.good();
+    }
+  }
+  close(fd);
+
+  if (!ok) {
+    std::error_code ec;
+    std::filesystem::remove(temp_path, ec);
+    return false;
+  }
+
+  std::error_code ec;
+  std::filesystem::rename(temp_path, path, ec);
+  if (ec) {
+    std::filesystem::remove(temp_path, ec);
+    return false;
+  }
+
+  return true;
 }
 
-static std::string get_current_timestamp() {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()
-    ) % 1000;
-
-    std::tm tm_buf;
-    gmtime_r(&time_t, &tm_buf);
-
-    std::ostringstream oss;
-    oss << std::put_time(&tm_buf, "%Y-%m-%dT%H:%M:%S");
-    oss << '.' << std::setfill('0') << std::setw(3) << ms.count() << "Z";
-    return oss.str();
+auto is_backend_compatible(const nlohmann::json &models) -> bool {
+  for (const auto &entry : models) {
+    const auto backend = entry.value("backend", std::string());
+    if (!backend.empty() && backend != howdy::native::FaceModel::kBackendName) {
+      return false;
+    }
+  }
+  return true;
 }
 
-static nlohmann::json create_model_entry(
-    const std::string& label,
-    int next_id,
-    const std::string& metric,
-    const std::vector<float>& encoding
-) {
-    nlohmann::json entry;
-    entry["id"] = next_id;
-    entry["label"] = label;
-    entry["backend"] = BACKEND_NAME;
-    entry["metric"] = metric;
-    entry["model"] = "face_recognition_sface_2021dec_int8bq.onnx";
-    entry["time"] = static_cast<long long>(std::time(nullptr));
-    entry["date"] = get_current_timestamp();
-    entry["data"] = encoding;
-    return entry;
-}
+}  // namespace
 
-static bool save_models_atomic(const std::string& path, const nlohmann::json& models) {
-    std::string dir = fs::path(path).parent_path().string();
-    std::string tmp_path = dir + "/.tmp_XXXXXX";
+auto add_main(int argc, char *argv[]) -> int {
+  const auto args = parse_args(argc, argv);
+  const auto config_path = howdy::native::resolve_config_path();
+  howdy::native::ConfigReader config(config_path.string());
+  if (!config.ok()) {
+    std::cerr << "Failed to parse config: " << config_path << "\n";
+    return kExitAbort;
+  }
 
-    int fd = mkstemp(const_cast<char*>(tmp_path.c_str()));
-    if (fd == -1) {
-        std::cerr << "Failed to create temp file\n";
-        return false;
+  howdy::native::FaceModel face_model(config);
+  if (!face_model.ok()) {
+    std::cerr << face_model.error_message() << "\n";
+    return kExitAbort;
+  }
+
+  const auto user_models_dir = howdy::native::resolve_user_models_dir();
+  const auto model_path = user_models_dir / (args.user + ".dat");
+  auto models = load_models(model_path);
+
+  if (!is_backend_compatible(models)) {
+    std::cerr << "Existing face models use an incompatible backend.\n";
+    std::cerr << "Please run `howdy clear` and enroll again with `howdy add`.\n";
+    return kExitAbort;
+  }
+
+  int next_id = 0;
+  if (!models.empty()) {
+    next_id = models.back().value("id", -1) + 1;
+  }
+
+  std::string label = args.label.empty() ? ("Model #" + std::to_string(next_id))
+                                         : args.label;
+  if (!args.yes && args.label.empty() && !args.plain) {
+    std::cout << "Enter a label for this new model [" << label << "]: ";
+    std::string input;
+    std::getline(std::cin, input);
+    if (!input.empty()) {
+      label = input.substr(0, 24);
+    }
+  }
+  label.erase(std::remove(label.begin(), label.end(), ','), label.end());
+
+  howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
+  if (!capture.open()) {
+    std::cerr << capture.error_message() << "\n";
+    return kExitAbort;
+  }
+
+  const float dark_threshold = config.get_float("video", "dark_threshold", 60.0F);
+  const bool use_clahe = config.get_bool("video", "clahe_enabled", true);
+  const auto clip_limit = config.get_float("video", "clahe_clip_limit", 1.25F);
+  const auto tile_size = config.get_int("video", "clahe_tile_grid_size", 8);
+  cv::Ptr<cv::CLAHE> clahe;
+  if (use_clahe) {
+    clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));
+  }
+
+  if (!args.plain) {
+    std::cout << "\nPlease look straight into the camera\n";
+  }
+  std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  cv::Mat frame;
+  cv::Mat gray;
+  std::vector<cv::Mat> faces;
+  int valid_frames = 0;
+  int dark_tries = 0;
+  double dark_running_total = 0.0;
+
+  for (int frame_count = 0; frame_count < kMaxFrames; ++frame_count) {
+    if (!capture.read(frame, &gray)) {
+      continue;
     }
 
-    try {
-        std::ofstream out(fd, std::ios::binary);
-        if (!out.is_open()) {
-            close(fd);
-            unlink(tmp_path.c_str());
-            std::cerr << "Failed to open temp file for writing\n";
-            return false;
-        }
-
-        out << models.dump(2);
-        out.close();
-        close(fd);
-
-        fs::rename(tmp_path, path);
-        return true;
-    } catch (const std::exception& e) {
-        close(fd);
-        unlink(tmp_path.c_str());
-        std::cerr << "Failed to save models: " << e.what() << "\n";
-        return false;
-    }
-}
-
-static float calculate_darkness(const cv::Mat& gray_frame) {
-    if (gray_frame.empty()) {
-        return 100.0f;
+    if (use_clahe) {
+      clahe->apply(gray, gray);
     }
 
     cv::Mat hist;
-    int histSize = 256;
-    float range[] = {0, 256};
-    const float* histRange = {range};
-    cv::calcHist(&gray_frame, 1, nullptr, cv::noArray(), hist, 1, &histSize, &histRange);
-
-    float hist_total = cv::sum(hist)[0];
-    if (hist_total == 0) {
-        return 100.0f;
+    constexpr int hist_size[] = {8};
+    constexpr float hist_range[] = {0.0F, 256.0F};
+    const float *ranges[] = {hist_range};
+    constexpr int channels[] = {0};
+    cv::calcHist(&gray, 1, channels, cv::Mat(), hist, 1, hist_size, ranges);
+    const double hist_total = cv::sum(hist)[0];
+    if (hist_total == 0.0) {
+      continue;
     }
 
-    float dark_pixels = hist.at<float>(0);
-    return (dark_pixels / hist_total) * 100.0f;
-}
-
-int add_main(int argc, char* argv[]) {
-    AddArgs args = parse_args(argc, argv);
-
-    std::string config_path = getenv("HOWDY_CONFIG") ? getenv("HOWDY_CONFIG") : "";
-    if (config_path.empty()) {
-        config_path = DEFAULT_CONFIG_PATH;
+    const float darkness =
+        static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
+    if (darkness >= 100.0F) {
+      continue;
     }
 
-    std::string model_path = get_user_model_path(args.username);
-    std::vector<nlohmann::json> models = load_existing_models(model_path);
-
-    if (has_incompatible_backend(models)) {
-        std::cerr << "Existing face models use an incompatible backend.\n";
-        std::cerr << "Please run `howdy clear` and enroll again with `howdy add`.\n";
-        return EXIT_ABORT;
+    valid_frames++;
+    dark_running_total += darkness;
+    if (darkness > dark_threshold) {
+      dark_tries++;
+      continue;
     }
 
-    if (models.size() > 3) {
-        std::cerr << "NOTICE: Each additional model slows down the face recognition engine slightly\n";
-        std::cerr << "Press Ctrl+C to cancel\n";
+    auto prepared = face_model.prepare_frame(gray);
+    faces = face_model.detect(prepared);
+    if (!faces.empty()) {
+      frame = prepared;
+      break;
     }
+  }
 
-    std::string label;
-    int next_id = models.empty() ? 0 : (models.back()["id"].get<int>() + 1);
+  capture.release();
 
-    if (!args.label.empty()) {
-        label = args.label;
-        if (!args.yes && !args.plain) {
-            std::cout << "Using default label \"" << label << "\" because of -y flag\n";
-        }
+  if (faces.empty()) {
+    if (valid_frames == 0) {
+      std::cerr << "Camera saw only black frames - is IR emitter working?\n";
+    } else if (valid_frames == dark_tries) {
+      std::cerr << "All frames were too dark, please check dark_threshold in config\n";
+      std::cerr << "Average darkness: " << (dark_running_total / valid_frames)
+                << ", Threshold: " << dark_threshold << "\n";
     } else {
-        label = "Model #" + std::to_string(next_id);
+      std::cerr << "No face detected, aborting\n";
     }
+    return kExitAbort;
+  }
 
-    if (!args.plain && !args.yes && args.label.empty()) {
-        std::cout << "Enter a label for this new model [" << label << "]: ";
-        std::string input;
-        std::getline(std::cin, input);
-        if (!input.empty()) {
-            label = input.substr(0, 24);
-            label.erase(std::remove(label.begin(), label.end(), '\n'), label.end());
-            label.erase(std::remove(label.begin(), label.end(), '\r'), label.end());
-        }
-    }
+  if (faces.size() > 1) {
+    std::cerr << "Multiple faces detected, aborting\n";
+    return kExitAbort;
+  }
 
-    if (label.find(',') != std::string::npos) {
-        std::cerr << "NOTICE: Removing illegal character \",\" from model name\n";
-        label.erase(std::remove(label.begin(), label.end(), ','), label.end());
-    }
+  auto encoding = face_model.encode(frame, faces.front());
+  if (encoding.empty()) {
+    std::cerr << "No valid face encoding captured\n";
+    return kExitAbort;
+  }
 
-    if (!ensure_user_models_dir()) {
-        return EXIT_ABORT;
-    }
+  nlohmann::json entry;
+  entry["time"] = static_cast<long long>(std::time(nullptr));
+  entry["label"] = label;
+  entry["id"] = next_id;
+  entry["backend"] = howdy::native::FaceModel::kBackendName;
+  entry["metric"] = face_model.metric();
+  entry["model"] = howdy::native::FaceModel::kSfaceModel;
+  entry["data"] = nlohmann::json::array({encoding});
+  models.push_back(entry);
 
-    ConfigReader config(config_path);
+  if (!save_models_atomic(model_path, models)) {
+    std::cerr << "Failed to save model file\n";
+    return kExitAbort;
+  }
 
-    std::string device_path = config.get("video", "device_path", "/dev/video0");
-    int frame_width = config.get_int("video", "frame_width", -1);
-    int frame_height = config.get_int("video", "frame_height", -1);
-    int device_fps = config.get_int("video", "device_fps", 0);
-    bool force_mjpeg = config.get_bool("video", "force_mjpeg", false);
-    float dark_threshold = config.get_float("video", "dark_threshold", DEFAULT_DARK_THRESHOLD);
-    bool clahe_enabled = config.get_bool("video", "clahe", false);
-
-    auto video_capture = VideoCaptureFactory::create(
-        device_path,
-        "opencv",
-        frame_width,
-        frame_height,
-        device_fps,
-        force_mjpeg
-    );
-
-    if (!video_capture) {
-        std::cerr << "Failed to create video capture\n";
-        return EXIT_ABORT;
-    }
-
-    FaceModel face_model(config_path);
-
-    ImageUtils clahe;
-    if (clahe_enabled) {
-        clahe.createCLAHE(2.0, cv::Size(8, 8));
-    }
-
-    if (!args.plain) {
-        std::cerr << "\nPlease look straight into the camera\n";
-    }
-
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-    cv::Mat frame;
-    std::vector<cv::Mat> face_locations;
-    int frames = 0;
-    int valid_frames = 0;
-    int dark_tries = 0;
-    float dark_running_total = 0.0f;
-
-    while (frames < MAX_FRAMES && face_locations.empty()) {
-        frames++;
-
-        if (!video_capture->read(frame)) {
-            continue;
-        }
-
-        cv::Mat gray_frame;
-        if (frame.channels() == 3) {
-            cv::cvtColor(frame, gray_frame, cv::COLOR_BGR2GRAY);
-        } else {
-            gray_frame = frame;
-        }
-
-        if (clahe_enabled) {
-            clahe.apply(gray_frame);
-        }
-
-        float darkness = calculate_darkness(gray_frame);
-
-        if (darkness > 99.99f) {
-            valid_frames++;
-            continue;
-        }
-
-        valid_frames++;
-        dark_running_total += darkness;
-
-        if (darkness > dark_threshold) {
-            dark_tries++;
-            continue;
-        }
-
-        cv::Mat prepared = face_model.prepare_frame(gray_frame);
-        face_locations = face_model.detect(prepared);
-
-        if (!face_locations.empty()) {
-            break;
-        }
-    }
-
-    video_capture->release();
-
-    if (face_locations.empty()) {
-        if (valid_frames == 0) {
-            std::cerr << "Camera saw only black frames - is IR emitter working?\n";
-        } else if (valid_frames == dark_tries) {
-            std::cerr << "All frames were too dark, please check dark_threshold in config\n";
-            float avg_darkness = (valid_frames > 0) ? (dark_running_total / valid_frames) : 0.0f;
-            std::cerr << "Average darkness: " << avg_darkness
-                      << ", Threshold: " << dark_threshold << "\n";
-        } else {
-            std::cerr << "No face detected, aborting\n";
-        }
-        return EXIT_ABORT;
-    }
-
-    if (face_locations.size() > 1) {
-        std::cerr << "Multiple faces detected, aborting\n";
-        return EXIT_ABORT;
-    }
-
-    if (frame.empty()) {
-        std::cerr << "No valid frame captured, aborting\n";
-        return EXIT_ABORT;
-    }
-
-    cv::Mat face_encoding = face_model.encode(frame, face_locations[0]);
-
-    if (face_encoding.empty()) {
-        std::cerr << "Failed to encode face, aborting\n";
-        return EXIT_ABORT;
-    }
-
-    std::vector<float> encoding_vec;
-    encoding_vec.reserve(128);
-    if (face_encoding.cols >= 128) {
-        for (int i = 0; i < 128; ++i) {
-            encoding_vec.push_back(face_encoding.at<float>(0, i));
-        }
-    } else if (face_encoding.rows >= 128) {
-        for (int i = 0; i < 128; ++i) {
-            encoding_vec.push_back(face_encoding.at<float>(i, 0));
-        }
-    } else {
-        for (int i = 0; i < face_encoding.total() && i < 128; ++i) {
-            encoding_vec.push_back(face_encoding.at<float>(i));
-        }
-    }
-
-    nlohmann::json new_entry = create_model_entry(
-        label,
-        next_id,
-        face_model.metric(),
-        encoding_vec
-    );
-
-    models.push_back(new_entry);
-
-    if (!save_models_atomic(model_path, models)) {
-        std::cerr << "Failed to save face model\n";
-        return EXIT_ABORT;
-    }
-
-    std::cerr << "\nScan complete\n";
-    std::cerr << "Added a new model to " << args.username << "\n";
-
-    return EXIT_SUCCESS;
+  std::cout << "\nScan complete\nAdded a new model to " << args.user << "\n";
+  return kExitOk;
 }

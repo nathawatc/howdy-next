@@ -71,3 +71,35 @@ test(
 )
 
 subdir('cli')
+
+native_add = executable(
+    'howdy-add',
+    'cli/add.cpp',
+    'cli/add_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)
+
+native_test = executable(
+    'howdy-test',
+    'cli/test.cpp',
+    'cli/test_main.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_tag: 'native_cli',
+)

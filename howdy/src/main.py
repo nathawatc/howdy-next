@@ -5,6 +5,7 @@ import builtins
 import getpass
 import os
 import pwd
+import subprocess
 import sys
 
 lib_path = os.path.join(os.path.dirname(__file__), "lib")
@@ -106,6 +107,37 @@ if args.user == "root":
         )
     )
     sys.exit(1)
+
+native_commands = {
+    "add": "howdy-add",
+    "test": "howdy-test",
+}
+
+if args.command in native_commands:
+    libdirs = ["/usr/lib/howdy", "/usr/lib64/howdy", "/usr/local/lib/howdy"]
+    binary_name = native_commands[args.command]
+    binary_path = next(
+        (
+            os.path.join(libdir, binary_name)
+            for libdir in libdirs
+            if os.path.isfile(os.path.join(libdir, binary_name))
+            and os.access(os.path.join(libdir, binary_name), os.X_OK)
+        ),
+        "",
+    )
+    if binary_path == "":
+        print(_("Missing native command binary: ") + binary_name)
+        sys.exit(1)
+
+    native_args = [binary_path, args.user]
+    native_args.extend(args.arguments)
+    if args.plain:
+        native_args.append("--plain")
+    if args.y:
+        native_args.append("-y")
+
+    result = subprocess.run(native_args, check=False)
+    sys.exit(result.returncode)
 
 if args.command == "add":
     import cli.add
