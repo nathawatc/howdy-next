@@ -8,7 +8,6 @@ import time
 timings = {"st": time.time()}
 
 # Import required modules
-import configparser
 import json
 import os
 import sys
@@ -19,6 +18,7 @@ import cv2
 import numpy as np
 import paths_factory
 import snapshot
+from config_utils import load_config
 from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
 from recorders.video_capture import VideoCapture
@@ -114,8 +114,7 @@ if len(models) < 1 or len(encodings) < 1:
     exit(10)
 
 # Read config from disk
-config = configparser.ConfigParser()
-config.read(paths_factory.config_file_path())
+config = load_config()
 
 # Get all config values needed
 timeout = config.getint("video", "timeout", fallback=4)

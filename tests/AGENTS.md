@@ -15,7 +15,7 @@ from project root.
 
 ## CONVENTIONS
 
-- Import path from project root: `sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "howdy", "src"))`
+- Import path from project root: `sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "howdy", "src", "lib"))`
 - Use `unittest.TestCase` for recorder tests
 - Mock modules via `sys.modules["module_name"] = mock_object`
 - ffmpeg_reader uses `@patch` decorators for `Popen` and `ffmpeg.probe`

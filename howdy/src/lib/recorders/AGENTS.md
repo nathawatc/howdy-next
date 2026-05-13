@@ -1,4 +1,4 @@
-# AGENTS.md - Howdy/src/recorders/
+# AGENTS.md - Howdy/src/lib/recorders/
 
 ## OVERVIEW
 

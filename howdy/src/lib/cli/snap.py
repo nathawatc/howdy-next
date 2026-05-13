@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 # Import required modules
-import configparser
 from datetime import datetime, timezone
 
-import paths_factory
 import snapshot
+from config_utils import load_config
 from i18n import _
 from recorders.video_capture import VideoCapture
 
 # Read the config
-config = configparser.ConfigParser()
-config.read(paths_factory.config_file_path())
+config = load_config()
 
 # Start video capture
 video_capture = VideoCapture(config)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import builtins
-import configparser
 import json
 import sys
 import time
@@ -11,12 +10,12 @@ import time
 import cv2
 import numpy as np
 import paths_factory
+from config_utils import load_config
 from core.detector import BACKEND_NAME, FaceModel, clahe_enabled, create_clahe
 from i18n import _
 from recorders.video_capture import VideoCapture
 
-config = configparser.ConfigParser()
-config.read(paths_factory.config_file_path())
+config = load_config()
 
 if config.get("video", "recording_plugin", fallback="opencv") != "opencv":
     print(

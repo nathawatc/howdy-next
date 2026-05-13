@@ -7,6 +7,10 @@ import os
 import pwd
 import sys
 
+lib_path = os.path.join(os.path.dirname(__file__), "lib")
+if lib_path not in sys.path:
+    sys.path.insert(0, lib_path)
+
 from i18n import _
 
 # Try to get the original username (not "root") from shell

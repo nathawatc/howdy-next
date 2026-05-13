@@ -11,33 +11,34 @@ py = import('python').find_installation(paths_dict.get('python_path'))
 py.dependency()
 
 py_paths = configure_file(
-    input: 'paths.py.in',
-    output: 'paths.py',
+    input: 'lib/paths.py.in',
+    output: 'lib/paths.py',
     configuration: py_conf,
 )
 
 py_sources = [
-    'cli/__init__.py',
-    'cli/add.py',
-    'cli/clear.py',
-    'cli/config.py',
-    'cli/disable.py',
-    'cli/download_models.py',
-    'cli/list.py',
-    'cli/remove.py',
-    'cli/set.py',
-    'cli/snap.py',
-    'cli/test.py',
-    'cli.py',
-    'compare.py',
-    'core/__init__.py',
-    'core/detector.py',
-    'i18n.py',
-    'paths_factory.py',
-    'recorders/__init__.py',
-    'recorders/ffmpeg_reader.py',
-    'recorders/video_capture.py',
-    'snapshot.py',
+    'lib/cli/__init__.py',
+    'lib/cli/add.py',
+    'lib/cli/clear.py',
+    'lib/cli/config.py',
+    'lib/cli/disable.py',
+    'lib/cli/download_models.py',
+    'lib/cli/list.py',
+    'lib/cli/remove.py',
+    'lib/cli/set.py',
+    'lib/cli/snap.py',
+    'lib/cli/test.py',
+    'main.py',
+    'lib/compare.py',
+    'lib/config_utils.py',
+    'lib/core/__init__.py',
+    'lib/core/detector.py',
+    'lib/i18n.py',
+    'lib/paths_factory.py',
+    'lib/recorders/__init__.py',
+    'lib/recorders/ffmpeg_reader.py',
+    'lib/recorders/video_capture.py',
+    'lib/snapshot.py',
     py_paths,
 ]
 
@@ -49,7 +50,7 @@ else
 endif
 
 pam_module_conf_data = configuration_data(paths_dict)
-pam_module_conf_data.set('compare_script_path', join_paths(pysourcesinstalldir, 'compare.py'))
+pam_module_conf_data.set('compare_script_path', join_paths(pysourcesinstalldir, 'lib', 'compare.py'))
 pam_module_conf_data.set('config_file_path', config_path)
 subdir('pam')
 if get_option('install_pam_config')
@@ -100,14 +101,14 @@ install_data(
 
 fs = import('fs')
 if not fs.exists(config_path)
-    install_data('config.ini', install_dir: confdir, install_mode: 'rwxr--r--', install_tag: 'config')
+    install_data('config/config.ini', install_dir: confdir, install_mode: 'rwxr--r--', install_tag: 'config')
 endif
 
 install_emptydir(modelsdir, install_tag: 'models')
 
 install_man('../howdy.1')
 
-cli_path = join_paths(pysourcesinstalldir, 'cli.py')
+cli_path = join_paths(pysourcesinstalldir, 'main.py')
 conf_data = configuration_data({ 'script_path': cli_path, 'python_path': py.full_path() })
 
 bin_name = 'howdy'

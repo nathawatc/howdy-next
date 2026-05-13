@@ -44,7 +44,7 @@ build() {
 package() {
 	cd "$srcdir"
 	meson install -C build --destdir "$pkgdir"
-	install -Dm644 "howdy-next/howdy/src/config.ini" "$pkgdir/etc/howdy/config.ini"
+	install -Dm644 "howdy-next/howdy/src/config/config.ini" "$pkgdir/etc/howdy/config.ini"
 	install -Dm644 "howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
 
 	# Workaround for polkit 127+ breaking howdy (boltgolt/howdy#1077)

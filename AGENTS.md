@@ -12,9 +12,12 @@ Linux facial recognition auth (PAM + Python). Beta version. OpenCV DNN YuNet det
 
 ```text
 howdy-next/
-├── howdy/src/           # Python source (CLI, recorders, PAM auth)
-│   ├── cli/             # CLI subcommands (add, test, set, disable...)
-│   ├── recorders/       # Camera readers (ffmpeg, video_capture)
+├── howdy/src/           # Project sources/resources
+│   ├── lib/             # Python source (CLI, recorders, core)
+│   │   ├── cli/         # CLI subcommands (add, test, set, disable...)
+│   │   ├── core/        # Face detection/encoding
+│   │   └── recorders/   # Camera readers (ffmpeg, video_capture)
+│   ├── config/          # Config template
 │   └── pam/             # C++ PAM authentication module
 ├── tests/               # pytest test infrastructure
 └── .forgejo/workflows/  # Forgejo CI (migrated from GitHub Actions)
@@ -22,25 +25,25 @@ howdy-next/
 
 ## WHERE TO LOOK
 
-| Task            | Location               | Notes                                  |
-| --------------- | ---------------------- | -------------------------------------- |
-| CLI commands    | `howdy/src/cli/`       | add.py, test.py, set.py, disable.py... |
-| Face comparison | `howdy/src/compare.py` | Core recognition engine, 444 lines     |
-| Camera drivers  | `howdy/src/recorders/` | ffmpeg_reader.py                       |
-| PAM module      | `howdy/src/pam/`       | C++ auth, main.cc                      |
-| Auth config     | `howdy/src/config.ini` | device_path, certainty, timeout        |
+| Task            | Location                   | Notes                                  |
+| --------------- | -------------------------- | -------------------------------------- |
+| CLI commands    | `howdy/src/lib/cli/`       | add.py, test.py, set.py, disable.py... |
+| Face comparison | `howdy/src/lib/compare.py` | Core recognition engine, 444 lines     |
+| Camera drivers  | `howdy/src/lib/recorders/` | ffmpeg_reader.py                       |
+| PAM module      | `howdy/src/pam/`           | C++ auth, main.cc                      |
+| Auth config     | `howdy/src/config/config.ini` | device_path, certainty, timeout    |
 
 ## CODE MAP (Key Symbols)
 
-| Symbol              | Type   | Location                   | Role                                  |
-| ------------------- | ------ | -------------------------- | ------------------------------------- |
-| VideoCapture        | class  | recorders/video_capture.py | Factory for recorder selection        |
-| ffmpeg_reader       | class  | recorders/ffmpeg_reader.py | FFmpeg-based camera capture           |
-| compare             | module | compare.py                 | Face comparison engine                |
-| cli.py              | entry  | cli.py                     | Main CLI entry point                  |
-| bad_model_download  | func   | core/detector.py           | Validates ONNX model (LFS/HTML check) |
-| FaceModel           | class  | core/detector.py           | YuNet detector + SFace encoder        |
-| YUNET_URL/SFACE_URL | const  | core/detector.py           | HuggingFace model download URLs       |
+| Symbol              | Type   | Location                        | Role                                  |
+| ------------------- | ------ | ------------------------------- | ------------------------------------- |
+| VideoCapture        | class  | lib/recorders/video_capture.py | Factory for recorder selection        |
+| ffmpeg_reader       | class  | lib/recorders/ffmpeg_reader.py | FFmpeg-based camera capture           |
+| compare             | module | lib/compare.py                 | Face comparison engine                |
+| main.py             | entry  | main.py                        | Main CLI entry point                  |
+| bad_model_download  | func   | lib/core/detector.py           | Validates ONNX model (LFS/HTML check) |
+| FaceModel           | class  | lib/core/detector.py           | YuNet detector + SFace encoder        |
+| YUNET_URL/SFACE_URL | const  | lib/core/detector.py           | HuggingFace model download URLs       |
 
 ## CONVENTIONS (Deviations from Standard)
 
