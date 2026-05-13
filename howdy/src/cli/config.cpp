@@ -19,10 +19,7 @@ auto resolve_editor() -> std::string {
       return editor;
     }
   }
-  for (const char *candidate : {"nano", "vi"}) {
-    if (const char *path = std::getenv("PATH")) {
-      (void)path;
-    }
+  for (const char *candidate : {"micro", "nano", "vi"}) {
     if (access(("/usr/bin/" + std::string(candidate)).c_str(), X_OK) == 0) {
       return candidate;
     }
@@ -36,7 +33,7 @@ int config_main(int, char **) {
   const auto editor = resolve_editor();
   if (editor.empty()) {
     std::cout << "Error: Could not find a suitable text editor.\n";
-    std::cout << "Please install 'nano' or 'vi', or set the EDITOR environment variable.\n";
+    std::cout << "Please install 'micro', 'nano', or 'vi', or set the EDITOR environment variable.\n";
     std::cout << "If you are running this command with sudo, try 'sudo -E howdy config' to preserve your EDITOR variable.\n";
     return kExitAbort;
   }
