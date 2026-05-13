@@ -13,7 +13,7 @@ static constexpr int EXIT_OK = 0;
 static constexpr int EXIT_CAMERA_ERROR = 1;
 
 struct TestArgs {
-    std::string device_path = "/dev/video0";
+    std::string device_path;
 };
 
 static TestArgs parse_args(int argc, char* argv[]) {
@@ -39,17 +39,16 @@ int test_main(int argc, char* argv[]) {
         return EXIT_CAMERA_ERROR;
     }
 
-    howdy::native::CaptureSettings settings;
-    settings.device_path = args.device_path;
-    settings.frame_width = config.get_int("video", "frame_width", -1);
-    settings.frame_height = config.get_int("video", "frame_height", -1);
-    settings.device_fps = config.get_int("video", "device_fps", 0);
-    settings.force_mjpeg = config.get_bool("video", "force_mjpeg", false);
+    howdy::native::CaptureSettings settings =
+        howdy::native::load_capture_settings(config);
+    if (!args.device_path.empty()) {
+        settings.device_path = args.device_path;
+    }
 
     howdy::native::VideoCapture capture(settings);
 
     if (!capture.open()) {
-        std::cerr << "Failed to open camera device: " << args.device_path << "\n";
+        std::cerr << "Failed to open camera device: " << settings.device_path << "\n";
         std::cerr << "Error: " << capture.error_message() << "\n";
         return EXIT_CAMERA_ERROR;
     }
