@@ -85,7 +85,8 @@ debian/howdy
 *.vsix
 
 # Meson
-/subprojects/
+/subprojects/*
+!/subprojects/*.wrap
 
 # OpenCode Agent
 .sisyphus/
