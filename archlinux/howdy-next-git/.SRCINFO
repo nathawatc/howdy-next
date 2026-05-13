@@ -1,6 +1,6 @@
 pkgbase = howdy-next-git
 	pkgdesc = Windows Hello style facial authentication for Linux
-	pkgver = r667.b6d3133
+	pkgver = r88.ddebe69
 	pkgrel = 1
 	url = https://codeberg.org/nathawat/howdy-next
 	install = howdy-next.install
@@ -10,20 +10,22 @@ pkgbase = howdy-next-git
 	makedepends = meson
 	makedepends = ninja
 	makedepends = cmake
+	makedepends = openssl
 	makedepends = opencv
 	depends = libinih
 	depends = libevdev
 	depends = opencv
 	depends = curl
+	depends = openssl
 	provides = howdy
 	conflicts = howdy
 	conflicts = howdy-git
 	replaces = howdy
 	replaces = howdy-git
 	backup = etc/howdy/config.ini
-	source = howdy-next::git+https://codeberg.org/nathawat/howdy-next.git#branch=codex/refactor
+	source = howdy-next::git+https://codeberg.org/nathawat/howdy-next.git
 	source = polkit-agent-helper-howdy.conf
-	md5sums = SKIP
-	md5sums = 4a3f094d3123029f67a7e6885fcc49bb
+	b2sums = SKIP
+	b2sums = ac6c1a82d6b4a00e4d518ad49592d5eb0aa4590e6c584328230fe875af0604b56861235cfbf9cd8a93bc9f1130eafb02392705cfa3a247770eb013da8576922b
 
 pkgname = howdy-next-git
