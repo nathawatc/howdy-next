@@ -2,20 +2,16 @@
 
 ## OVERVIEW
 
-Camera capture abstraction using OpenCV only.
+Native OpenCV camera capture layer.
 
 ## WHERE TO LOOK
 
-| File               | Role                                                         |
-| ------------------ | ------------------------------------------------------------ |
-| `video_capture.py` | OpenCV camera wrapper used by CLI and compare flow           |
+| File                                    | Role                                   |
+| --------------------------------------- | -------------------------------------- |
+| `howdy/src/lib/cpp/recorders/video_capture.cpp` | OpenCV camera wrapper used by native CLI and compare flow |
 
 ## CONVENTIONS
 
-- `set()`/`get()` mirror OpenCV CAP_PROP_FRAME_WIDTH/HEIGHT constants
-- `grab()` / `read()` match OpenCV VideoCapture API
-- Config path can be string or pre-parsed configparser object
-
-## ANTI-PATTERNS
-
-- **MUST NOT** assume camera open/read always succeeds; caller must handle exit 14 paths
+- `set()` / `get()` mirror OpenCV `CAP_PROP_FRAME_WIDTH` / `CAP_PROP_FRAME_HEIGHT`.
+- `grab()` / `read()` match the OpenCV `VideoCapture` API.
+- Callers must handle open/read failures explicitly.

@@ -1,36 +1,28 @@
 # CLI KNOWLEDGE BASE
 
-**Generated:** 2026-05-08
-**Commit:** bc03695
+**Generated:** 2026-05-13
 
 ## OVERVIEW
 
-CLI subcommands for face model management, auth toggling, config editing, and camera testing.
+Native C++ CLI subcommands for model management, config editing, snapshot generation, and camera testing.
 
 ## WHERE TO LOOK
 
-| Command     | File         | Role                                    |
-| ----------- | ------------ | --------------------------------------- |
-| Add face    | `add.py`     | Capture and encode face model           |
-| Clear all   | `clear.py`   | Delete all models for user              |
-| Edit config | `config.py`  | Open config.ini in $EDITOR              |
-| Toggle auth | `disable.py` | Enable/disable howdy                    |
-| List models | `list.py`    | Show user's face models with IDs        |
-| Remove one  | `remove.py`  | Delete model by ID                      |
-| Set config  | `set.py`     | Update config value                     |
-| Snapshot    | `snap.py`    | Generate diagnostic image               |
-| Camera test | `test.py`    | Live preview window with face detection |
+| Command      | File                              | Role                               |
+| ------------ | --------------------------------- | ---------------------------------- |
+| Add face     | `howdy/src/lib/cpp/cli/add.cpp`   | Capture and encode face model      |
+| Clear all    | `howdy/src/lib/cpp/cli/clear.cpp` | Delete all models for user         |
+| Edit config  | `howdy/src/lib/cpp/cli/config.cpp`| Open `config.ini` in `$EDITOR`     |
+| Toggle auth  | `howdy/src/lib/cpp/cli/disable.cpp` | Enable/disable howdy             |
+| List models  | `howdy/src/lib/cpp/cli/list.cpp`  | Show user's face models with IDs   |
+| Remove one   | `howdy/src/lib/cpp/cli/remove.cpp`| Delete model by ID                 |
+| Set config   | `howdy/src/lib/cpp/cli/set.cpp`   | Update config value                |
+| Download ONNX | `howdy/src/lib/cpp/cli/download_models.cpp` | Fetch face models        |
+| Snapshot     | `howdy/src/lib/cpp/cli/snapshot.cpp` | Generate diagnostic image       |
+| Camera test  | `howdy/src/lib/cpp/cli/test.cpp`   | Live preview window with compare   |
 
 ## CONVENTIONS
 
-- **Args**: `builtins.howdy_args` global (`.arguments[]`, `.plain`, `.y` flags)
-- **User**: `builtins.howdy_user` for current username
-- **i18n**: `from i18n import _` for translations
-- **Paths**: Use `paths_factory` module, not hardcoded paths
-- **Config write**: Atomic tempfile + `os.replace()` or `shutil.move()`
-- **Future imports**: `from __future__ import annotations` in all files
-
-## ANTI-PATTERNS
-
-- **NEVER** `fileinput.input()` for config editing (race condition)
-- **NEVER** hardcode paths; use `paths_factory`
+- Keep config edits atomic.
+- Keep command behavior aligned with the installed Arch config path.
+- Prefer shared native helpers in `howdy/src/lib/cpp/config` and `howdy/src/lib/cpp/storage`.
