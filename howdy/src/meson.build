@@ -2,6 +2,7 @@ opencv4 = dependency('opencv4')
 inih_cpp = dependency('INIReader', fallback: ['inih', 'INIReader_dep'])
 nlohmann_json = dependency('nlohmann_json')
 libcurl = dependency('libcurl')
+openssl = dependency('openssl')
 datadir = get_option('prefix') / get_option('datadir') / 'howdy'
 native_cpp_conf = configuration_data(paths_dict)
 native_cpp_conf.set('default_dev_config_path', config_path)
@@ -237,6 +238,7 @@ native_download_models = executable(
     dependencies: [
         inih_cpp,
         libcurl,
+        openssl,
         nlohmann_json,
         opencv4,
     ],
