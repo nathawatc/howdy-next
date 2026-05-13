@@ -12,7 +12,7 @@ py.dependency()
 
 py_paths = configure_file(
     input: 'lib/paths.py.in',
-    output: 'lib/paths.py',
+    output: 'paths.py',
     configuration: py_conf,
 )
 
