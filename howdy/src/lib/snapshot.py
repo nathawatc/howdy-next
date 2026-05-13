@@ -1,12 +1,12 @@
 # Create and save snapshots of auth attempts
 
 import os
-from i18n import _
 from datetime import datetime, timezone
 
 import cv2
 import numpy as np
 import paths_factory
+from i18n import _
 
 
 def generate(frames, text_lines):
