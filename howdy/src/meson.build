@@ -40,7 +40,6 @@ py_sources = [
     'lib/i18n.py',
     'lib/paths_factory.py',
     'lib/recorders/__init__.py',
-    'lib/recorders/ffmpeg_reader.py',
     'lib/recorders/video_capture.py',
     'lib/snapshot.py',
     py_paths,

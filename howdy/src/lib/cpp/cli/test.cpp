@@ -10,12 +10,10 @@
 
 static constexpr int EXIT_OK = 0;
 static constexpr int EXIT_CAMERA_ERROR = 1;
-static constexpr int EXIT_UNSUPPORTED_PLUGIN = 12;
 static constexpr const char* DEFAULT_CONFIG_PATH = "/lib/security/howdy/config.ini";
 
 struct TestArgs {
     std::string device_path = "/dev/video0";
-    std::string plugin = "opencv";
 };
 
 static TestArgs parse_args(int argc, char* argv[]) {
@@ -24,8 +22,6 @@ static TestArgs parse_args(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--device") == 0 && i + 1 < argc) {
             args.device_path = argv[++i];
-        } else if (strcmp(argv[i], "--plugin") == 0 && i + 1 < argc) {
-            args.plugin = argv[++i];
         }
     }
 
@@ -34,12 +30,6 @@ static TestArgs parse_args(int argc, char* argv[]) {
 
 int test_main(int argc, char* argv[]) {
     TestArgs args = parse_args(argc, argv);
-
-    if (args.plugin != "opencv") {
-        std::cerr << "Howdy has been configured to use a recorder which doesn't support "
-                  << "the test command yet, aborting\n";
-        return EXIT_UNSUPPORTED_PLUGIN;
-    }
 
     std::string config_path = getenv("HOWDY_CONFIG") ? getenv("HOWDY_CONFIG") : "";
     if (config_path.empty()) {
@@ -54,7 +44,6 @@ int test_main(int argc, char* argv[]) {
 
     howdy::native::CaptureSettings settings;
     settings.device_path = args.device_path;
-    settings.recording_plugin = args.plugin;
     settings.frame_width = config.get_int("video", "frame_width", -1);
     settings.frame_height = config.get_int("video", "frame_height", -1);
     settings.device_fps = config.get_int("video", "device_fps", 0);

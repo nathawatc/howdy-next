@@ -5,7 +5,6 @@
 #include "../exported_headers/video_capture.hpp"
 #include "../core/image_utils.hpp"
 #include "../recorders/opencv_capture.hpp"
-#include "../recorders/ffmpeg_reader.hpp"
 
 #include <fstream>
 #include <iostream>
@@ -252,13 +251,12 @@ int add_main(int argc, char* argv[]) {
     int frame_height = config.get_int("video", "frame_height", -1);
     int device_fps = config.get_int("video", "device_fps", 0);
     bool force_mjpeg = config.get_bool("video", "force_mjpeg", false);
-    std::string recording_plugin = config.get("video", "recording_plugin", "opencv");
     float dark_threshold = config.get_float("video", "dark_threshold", DEFAULT_DARK_THRESHOLD);
     bool clahe_enabled = config.get_bool("video", "clahe", false);
 
     auto video_capture = VideoCaptureFactory::create(
         device_path,
-        recording_plugin,
+        "opencv",
         frame_width,
         frame_height,
         device_fps,

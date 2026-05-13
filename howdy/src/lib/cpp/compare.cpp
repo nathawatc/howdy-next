@@ -112,12 +112,6 @@ auto main(int argc, char *argv[]) -> int {
     return static_cast<int>(CompareExit::kAbort);
   }
 
-  const auto recording_plugin = config.get("video", "recording_plugin", "opencv");
-  if (recording_plugin != "opencv") {
-    std::cerr << "Only the native OpenCV recorder is implemented in C++ so far\n";
-    return static_cast<int>(CompareExit::kAbort);
-  }
-
   howdy::native::FaceModel face_model(config);
   if (!face_model.ok()) {
     std::cerr << face_model.error_message() << "\n";

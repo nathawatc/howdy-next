@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import builtins
 import json
-import sys
 import time
 
 import cv2
@@ -16,14 +15,6 @@ from i18n import _
 from recorders.video_capture import VideoCapture
 
 config = load_config()
-
-if config.get("video", "recording_plugin", fallback="opencv") != "opencv":
-    print(
-        _(
-            "Howdy has been configured to use a recorder which doesn't support the test command yet, aborting"
-        )
-    )
-    sys.exit(12)
 
 video_capture = VideoCapture(config)
 

@@ -11,15 +11,12 @@ namespace howdy::native {
 enum class CaptureError {
   kNone,
   kMissingDevice,
-  kUnsupportedPlugin,
   kOpenFailed,
   kReadFailed,
 };
 
 struct CaptureSettings {
   std::string device_path;
-  std::string recording_plugin;
-  std::string device_format;
   bool warn_no_device = true;
   bool force_mjpeg = false;
   int frame_width = -1;

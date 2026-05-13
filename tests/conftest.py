@@ -14,7 +14,6 @@ def mock_config():
         {
             "video": {
                 "device_path": "/dev/video0",
-                "recording_plugin": "opencv",
                 "width": 640,
                 "height": 480,
             },

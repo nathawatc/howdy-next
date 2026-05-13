@@ -9,7 +9,6 @@ namespace howdy::native {
 
 namespace {
 
-constexpr auto kOpenCvPlugin = "opencv";
 constexpr auto kNoDevice = "none";
 
 }  // namespace
@@ -17,8 +16,6 @@ constexpr auto kNoDevice = "none";
 auto load_capture_settings(const ConfigReader &config) -> CaptureSettings {
   return CaptureSettings{
       .device_path = config.get("video", "device_path", "/dev/video0"),
-      .recording_plugin = config.get("video", "recording_plugin", kOpenCvPlugin),
-      .device_format = config.get("video", "device_format", "v4l2"),
       .warn_no_device = config.get_bool("video", "warn_no_device", true),
       .force_mjpeg = config.get_bool("video", "force_mjpeg", false),
       .frame_width = config.get_int("video", "frame_width", -1),
@@ -34,12 +31,6 @@ auto VideoCapture::open() -> bool {
   release();
   error_ = CaptureError::kNone;
   error_message_.clear();
-
-  if (settings_.recording_plugin != kOpenCvPlugin) {
-    set_error(CaptureError::kUnsupportedPlugin,
-              "Only the native OpenCV recorder is implemented in C++ so far");
-    return false;
-  }
 
   if (settings_.device_path != kNoDevice &&
       !std::filesystem::exists(settings_.device_path)) {

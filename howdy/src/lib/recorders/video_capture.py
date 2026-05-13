@@ -101,16 +101,6 @@ class VideoCapture:
         """
         Sets up the video reader instance
         """
-        recording_plugin = self.config.get(
-            "video", "recording_plugin", fallback="opencv"
-        )
-        if recording_plugin != "opencv":
-            print(
-                _(
-                    "Only the OpenCV recorder is supported in this version, forcing recording_plugin=opencv"
-                )
-            )
-
         self.internal = cv2.VideoCapture(
             self.config.get("video", "device_path"), cv2.CAP_V4L
         )
