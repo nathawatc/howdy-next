@@ -8,15 +8,15 @@ C++ PAM authentication module for facial recognition auth on Linux PAM-enabled s
 
 ## WHERE TO LOOK
 
-| File                               | Role                                                      |
-| ---------------------------------- | --------------------------------------------------------- |
-| `src/main.cpp`                     | PAM entry point, compare process spawning, error handling |
-| `src/enter_device.cpp`             | Virtual keyboard helper that sends Enter                  |
-| `src/status_mapping.cpp`           | Status and confirmation text mapping                      |
-| `src/tests/status_mapping_test.cpp` | Status mapping tests                                     |
-| `main.hpp`                         | `CompareError`, `Workaround`, `checkenv()`                |
-| `optional_task.hpp`                | Async task wrapper with timeout support                   |
-| `meson.build`                      | PAM build configuration                                   |
+| File                                | Role                                                      |
+| ----------------------------------- | --------------------------------------------------------- |
+| `src/main.cpp`                      | PAM entry point, compare process spawning, error handling |
+| `src/enter_device.cpp`              | Virtual keyboard helper that sends Enter                  |
+| `src/status_mapping.cpp`            | Status and confirmation text mapping                      |
+| `src/tests/status_mapping_test.cpp` | Status mapping tests                                      |
+| `main.hpp`                          | `CompareError`, `Workaround`, `checkenv()`                |
+| `optional_task.hpp`                 | Async task wrapper with timeout support                   |
+| `meson.build`                       | PAM build configuration                                   |
 
 ## CONVENTIONS
 

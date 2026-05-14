@@ -5,7 +5,7 @@
 
 struct PromptStopPlan {
   bool stop_prompt = false;
-  bool force_cancel = false;
+  bool abort_prompt = false;
   bool send_enter = false;
 };
 

@@ -21,6 +21,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 
 #include <INIReader.h>
 
@@ -30,10 +31,10 @@
 
 #include "enter_device.hpp"
 #include "main.hpp"
+#include "native_prompt_conversation.hpp"
 #include "optional_task.hpp"
 #include "prompt_workaround.hpp"
 #include "status_mapping.hpp"
-#include "tty_restore.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/config_utils.hpp"
@@ -220,12 +221,18 @@ auto wait_for_compare_process(pid_t child_pid) -> int {
 }
 
 auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-                                  const PromptStopPlan &plan) -> bool {
+                                  const PromptStopPlan &plan,
+                                  NativePromptConversation *native_prompt)
+    -> bool {
   if (!plan.stop_prompt) {
     return false;
   }
 
   bool enter_failed = false;
+  if (plan.abort_prompt && native_prompt != nullptr) {
+    native_prompt->request_abort();
+  }
+
   if (plan.send_enter) {
     if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
       syslog(LOG_WARNING, "Insufficient permissions to create the fake device");
@@ -254,7 +261,7 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
     }
   }
 
-  pass_task.stop(plan.force_cancel);
+  pass_task.stop(plan.abort_prompt && native_prompt == nullptr);
   return enter_failed;
 }
 
@@ -313,7 +320,6 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   const Workaround workaround =
       get_workaround(config.GetString("core", "workaround", "input"));
-  const bool ask_pass = should_ask_for_password(ask_auth_tok, workaround);
 
   std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 username, nullptr};
@@ -345,7 +351,26 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   });
   child_task.activate();
 
-  TtyRestoreContext tty_restore(pamh);
+  std::optional<NativePromptConversation> native_prompt;
+  if (workaround == Workaround::Native && ask_auth_tok) {
+    native_prompt.emplace(pamh);
+    if (!native_prompt->available()) {
+      native_prompt.reset();
+    } else {
+      const int install_result = native_prompt->install();
+      if (install_result != PAM_SUCCESS) {
+        syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
+               install_result);
+        native_prompt.reset();
+      }
+    }
+  }
+
+  const bool ask_pass =
+      workaround == Workaround::Native
+          ? native_prompt.has_value()
+          : should_ask_for_password(ask_auth_tok, workaround);
+
   optional_task<std::tuple<int, char *>> pass_task([&] {
     char *auth_tok_ptr = nullptr;
     const int auth_result = pam_get_authtok(
@@ -406,22 +431,13 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   const auto stop_plan =
       plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), workaround);
-  const bool enter_failed = request_password_prompt_stop(pass_task, stop_plan);
+  const bool enter_failed =
+      request_password_prompt_stop(pass_task, stop_plan,
+                                   native_prompt ? &*native_prompt : nullptr);
   if (enter_failed) {
     send_conversation_message(
         conv_function, PAM_ERROR_MSG,
         S("Failed to send Enter press, waiting for user to press it instead"));
-  }
-
-  if (stop_plan.force_cancel && tty_restore.can_restore()) {
-    std::string error_message;
-    if (!tty_restore.restore_echo(&error_message)) {
-      syslog(LOG_WARNING, "%s", error_message.c_str());
-    }
-    error_message.clear();
-    if (!tty_restore.write_newline(&error_message)) {
-      syslog(LOG_WARNING, "%s", error_message.c_str());
-    }
   }
 
   return howdy_status(username, status, config, conv_function);

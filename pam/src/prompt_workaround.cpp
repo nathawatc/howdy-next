@@ -17,7 +17,7 @@ auto plan_prompt_stop(bool password_prompt_active, bool prompt_ready,
   }
 
   if (workaround == Workaround::Native) {
-    plan.force_cancel = true;
+    plan.abort_prompt = true;
     return plan;
   }
 

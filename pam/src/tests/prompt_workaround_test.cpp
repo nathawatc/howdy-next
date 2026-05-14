@@ -28,28 +28,28 @@ auto main() -> int {
   {
     const auto plan = plan_prompt_stop(false, false, Workaround::Native);
     ok &= expect(!plan.stop_prompt, "inactive prompt is not stopped");
-    ok &= expect(!plan.force_cancel, "inactive prompt is not cancelled");
+    ok &= expect(!plan.abort_prompt, "inactive prompt is not aborted");
     ok &= expect(!plan.send_enter, "inactive prompt does not send enter");
   }
 
   {
     const auto plan = plan_prompt_stop(true, true, Workaround::Input);
     ok &= expect(plan.stop_prompt, "ready prompt is joined");
-    ok &= expect(!plan.force_cancel, "ready prompt is not cancelled");
+    ok &= expect(!plan.abort_prompt, "ready prompt is not aborted");
     ok &= expect(!plan.send_enter, "ready prompt does not receive fake input");
   }
 
   {
     const auto plan = plan_prompt_stop(true, false, Workaround::Native);
     ok &= expect(plan.stop_prompt, "native workaround stops prompt");
-    ok &= expect(plan.force_cancel, "native workaround cancels prompt");
+    ok &= expect(plan.abort_prompt, "native workaround aborts prompt");
     ok &= expect(!plan.send_enter, "native workaround skips fake input");
   }
 
   {
     const auto plan = plan_prompt_stop(true, false, Workaround::Input);
     ok &= expect(plan.stop_prompt, "input workaround stops prompt");
-    ok &= expect(!plan.force_cancel, "input workaround does not cancel");
+    ok &= expect(!plan.abort_prompt, "input workaround does not abort");
     ok &= expect(plan.send_enter, "input workaround injects enter");
   }
 

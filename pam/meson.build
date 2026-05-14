@@ -20,6 +20,7 @@ shared_library(
 	'src/auth_flow.cpp',
 	'src/main.cpp',
 	'src/enter_device.cpp',
+	'src/native_prompt_conversation.cpp',
 	'src/prompt_workaround.cpp',
 	'src/status_mapping.cpp',
 	'src/tty_restore.cpp',
