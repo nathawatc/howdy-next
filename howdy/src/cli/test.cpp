@@ -2,6 +2,7 @@
 
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -124,11 +125,11 @@ int test_main(int argc, char **argv) {
     return kExitCameraError;
   }
 
-  const int exposure = config.get_int("video", "exposure", -1);
-  const float dark_threshold = config.get_float("video", "dark_threshold", 60.0F);
+  const int exposure = howdy::native::config_exposure(config);
+  const float dark_threshold = howdy::native::config_dark_threshold(config);
   const bool use_clahe = config.get_bool("video", "clahe_enabled", true);
-  const auto clip_limit = config.get_float("video", "clahe_clip_limit", 1.25F);
-  const auto tile_size = config.get_int("video", "clahe_tile_grid_size", 8);
+  const auto clip_limit = howdy::native::config_clahe_clip_limit(config);
+  const auto tile_size = howdy::native::config_clahe_tile_grid_size(config);
 
   cv::Ptr<cv::CLAHE> clahe;
   if (use_clahe) {

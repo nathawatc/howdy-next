@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -16,9 +17,11 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -28,6 +31,7 @@ namespace {
 constexpr auto kExitOk = 0;
 constexpr auto kExitAbort = 1;
 constexpr int kMaxFrames = 60;
+constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
 
 struct AddArgs {
   std::string user;
@@ -66,13 +70,22 @@ auto load_models(const std::filesystem::path &path) -> nlohmann::json {
     return nlohmann::json::array();
   }
 
+  std::error_code size_ec;
+  if (std::filesystem::file_size(path, size_ec) > kMaxModelFileBytes || size_ec) {
+    return nlohmann::json::array();
+  }
+
   std::ifstream input(path);
   if (!input.is_open()) {
     return nlohmann::json::array();
   }
 
   nlohmann::json models;
-  input >> models;
+  try {
+    input >> models;
+  } catch (const nlohmann::json::exception &) {
+    return nlohmann::json::array();
+  }
   if (!models.is_array()) {
     return nlohmann::json::array();
   }
@@ -81,43 +94,7 @@ auto load_models(const std::filesystem::path &path) -> nlohmann::json {
 
 auto save_models_atomic(const std::filesystem::path &path,
                         const nlohmann::json &models) -> bool {
-  const auto parent = path.parent_path();
-  std::filesystem::create_directories(parent);
-
-  std::string temp = (parent / ".howdy-models-XXXXXX").string();
-  std::vector<char> writable(temp.begin(), temp.end());
-  writable.push_back('\0');
-
-  const int fd = mkstemp(writable.data());
-  if (fd < 0) {
-    return false;
-  }
-
-  const std::filesystem::path temp_path(writable.data());
-  bool ok = false;
-  {
-    std::ofstream output(temp_path);
-    if (output.is_open()) {
-      output << models.dump();
-      ok = output.good();
-    }
-  }
-  close(fd);
-
-  if (!ok) {
-    std::error_code ec;
-    std::filesystem::remove(temp_path, ec);
-    return false;
-  }
-
-  std::error_code ec;
-  std::filesystem::rename(temp_path, path, ec);
-  if (ec) {
-    std::filesystem::remove(temp_path, ec);
-    return false;
-  }
-
-  return true;
+  return howdy::native::write_atomic_file(path, models.dump());
 }
 
 auto is_backend_compatible(const nlohmann::json &models) -> bool {
@@ -206,10 +183,10 @@ auto add_main(int argc, char **argv) -> int {
     return kExitAbort;
   }
 
-  const float dark_threshold = config.get_float("video", "dark_threshold", 60.0F);
+  const float dark_threshold = howdy::native::config_dark_threshold(config);
   const bool use_clahe = config.get_bool("video", "clahe_enabled", true);
-  const auto clip_limit = config.get_float("video", "clahe_clip_limit", 1.25F);
-  const auto tile_size = config.get_int("video", "clahe_tile_grid_size", 8);
+  const auto clip_limit = howdy::native::config_clahe_clip_limit(config);
+  const auto tile_size = howdy::native::config_clahe_tile_grid_size(config);
   cv::Ptr<cv::CLAHE> clahe;
   if (use_clahe) {
     clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));

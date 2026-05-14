@@ -10,6 +10,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace howdy::native {
@@ -32,16 +33,11 @@ FaceModel::FaceModel(const ConfigReader &config) {
     }
   }
 
-  const auto score_threshold =
-      config.get_float("face", "yunet_score_threshold", 0.9F);
-  const auto nms_threshold =
-      config.get_float("face", "yunet_nms_threshold", 0.3F);
-  const auto top_k = config.get_int("face", "yunet_top_k", 5000);
-  metric_ = config.get("face", "sface_metric", "cosine");
-  std::transform(metric_.begin(), metric_.end(), metric_.begin(), ::tolower);
-  threshold_ =
-      config.get_float("face", "sface_threshold",
-                       metric_ == "cosine" ? 0.363F : 1.128F);
+  const auto score_threshold = config_yunet_score_threshold(config);
+  const auto nms_threshold = config_yunet_nms_threshold(config);
+  const auto top_k = config_yunet_top_k(config);
+  metric_ = config_sface_metric(config);
+  threshold_ = config_sface_threshold(config, metric_);
 
   try {
     detector_ = cv::FaceDetectorYN::create(yunet_model, "", input_size_,

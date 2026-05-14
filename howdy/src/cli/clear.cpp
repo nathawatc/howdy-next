@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
@@ -78,7 +79,10 @@ int clear_main(int argc, char **argv) {
     }
   }
 
-  std::filesystem::remove(*model_path);
+  if (!howdy::native::remove_file_and_sync(*model_path)) {
+    std::cout << "Failed to remove model file\n";
+    return kExitAbort;
+  }
   std::cout << "\nModels cleared\n";
   return kExitOk;
 }

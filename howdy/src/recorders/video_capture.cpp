@@ -1,9 +1,13 @@
 #include "recorders/video_capture.hpp"
 
+#include <sys/stat.h>
+
 #include <filesystem>
 #include <utility>
 
 #include <opencv2/imgproc.hpp>
+
+#include "config/config_values.hpp"
 
 namespace howdy::native {
 
@@ -18,10 +22,29 @@ auto load_capture_settings(const ConfigReader &config) -> CaptureSettings {
       .device_path = config.get("video", "device_path", "/dev/video0"),
       .warn_no_device = config.get_bool("video", "warn_no_device", true),
       .force_mjpeg = config.get_bool("video", "force_mjpeg", false),
-      .frame_width = config.get_int("video", "frame_width", -1),
-      .frame_height = config.get_int("video", "frame_height", -1),
-      .device_fps = config.get_int("video", "device_fps", 0),
+      .frame_width = config_frame_width(config),
+      .frame_height = config_frame_height(config),
+      .device_fps = config_device_fps(config),
   };
+}
+
+auto is_allowed_capture_device_path(std::string_view device_path) -> bool {
+  if (device_path.empty() || device_path == kNoDevice) {
+    return true;
+  }
+
+  const std::string value(device_path);
+  if (value.rfind("/dev/video", 0) != 0 &&
+      value.rfind("/dev/v4l/by-path/", 0) != 0) {
+    return false;
+  }
+
+  struct stat stat_ {};
+  if (stat(value.c_str(), &stat_) != 0) {
+    return true;
+  }
+
+  return S_ISCHR(stat_.st_mode);
 }
 
 VideoCapture::VideoCapture(CaptureSettings settings)
@@ -40,6 +63,13 @@ auto VideoCapture::open() -> bool {
                     settings_.device_path);
       return false;
     }
+  }
+
+  if (!is_allowed_capture_device_path(settings_.device_path)) {
+    set_error(CaptureError::kOpenFailed,
+              "Configured camera device must be a /dev/video* or /dev/v4l/by-path/* character device: " +
+                  settings_.device_path);
+    return false;
   }
 
   capture_.open(settings_.device_path, cv::CAP_V4L);

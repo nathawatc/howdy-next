@@ -10,6 +10,7 @@
 #include "common/compare_logic.hpp"
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -107,15 +108,16 @@ auto main(int argc, char **argv) -> int {
     return static_cast<int>(CompareExit::kInvalidDevice);
   }
 
-  const int timeout = config.get_int("video", "timeout", 4);
-  const float dark_threshold = config.get_float("video", "dark_threshold", 50.0F);
-  const float max_height = config.get_float("video", "max_height", 320.0F);
-  const int rotate = config.get_int("video", "rotate", 0);
-  const int exposure = config.get_int("video", "exposure", -1);
+  const int timeout = howdy::native::config_timeout_seconds(config);
+  const float dark_threshold =
+      howdy::native::config_dark_threshold(config, 50.0F);
+  const float max_height = howdy::native::config_max_height(config);
+  const int rotate = howdy::native::config_rotate_mode(config);
+  const int exposure = howdy::native::config_exposure(config);
   const bool end_report = config.get_bool("debug", "end_report", false);
   const bool use_clahe = config.get_bool("video", "clahe_enabled", true);
-  const double clip_limit = config.get_float("video", "clahe_clip_limit", 1.25F);
-  const int tile_size = config.get_int("video", "clahe_tile_grid_size", 8);
+  const double clip_limit = howdy::native::config_clahe_clip_limit(config);
+  const int tile_size = howdy::native::config_clahe_tile_grid_size(config);
 
   auto native_height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
   if (rotate == 2) {

@@ -133,6 +133,22 @@ auto main() -> int {
   ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
                "restore models dir mode");
 
+  std::string oversized_encoding = R"([{"id":9,"label":"oversized","backend":"opencv_dnn_sface","data":[[)";
+  for (int index = 0; index < 1100; ++index) {
+    if (index > 0) {
+      oversized_encoding += ",";
+    }
+    oversized_encoding += "0.1";
+  }
+  oversized_encoding += "]]}]";
+  ok &= expect(write_file(model_path, oversized_encoding),
+               "write oversized encoding");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+                 "oversized encoding is rejected");
+  }
+
   fs::remove_all(temp_root, ec);
   unsetenv("HOWDY_USER_MODELS_DIR");
 

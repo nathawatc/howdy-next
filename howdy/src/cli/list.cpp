@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -19,6 +20,7 @@ namespace {
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
+constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
 
 struct ListArgs {
   std::string user;
@@ -89,8 +91,24 @@ int list_main(int argc, char **argv) {
     return kExitAbort;
   }
 
+  std::error_code size_ec;
+  if (std::filesystem::file_size(*model_path, size_ec) > kMaxModelFileBytes ||
+      size_ec) {
+    if (!args.plain) {
+      std::cout << "Model file is too large to process safely\n";
+    }
+    return kExitAbort;
+  }
+
   nlohmann::json models;
-  input >> models;
+  try {
+    input >> models;
+  } catch (const nlohmann::json::exception &) {
+    if (!args.plain) {
+      std::cout << "Failed to parse model file\n";
+    }
+    return kExitAbort;
+  }
   for (const auto &model : models) {
     const int id = model.value("id", -1);
     const auto timestamp = static_cast<std::time_t>(model.value("time", 0LL));

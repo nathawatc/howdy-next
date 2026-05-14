@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -10,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
@@ -18,6 +20,7 @@ namespace {
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
+constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
 
 struct RemoveArgs {
   std::string user;
@@ -46,40 +49,7 @@ auto parse_args(int argc, char **argv) -> RemoveArgs {
 
 auto save_models_atomic(const std::filesystem::path &path,
                         const nlohmann::json &models) -> bool {
-  const auto parent = path.parent_path();
-  std::string temp = (parent / ".howdy-models-XXXXXX").string();
-  std::vector<char> writable(temp.begin(), temp.end());
-  writable.push_back('\0');
-
-  const int fd = mkstemp(writable.data());
-  if (fd < 0) {
-    return false;
-  }
-
-  const std::filesystem::path temp_path(writable.data());
-  bool ok = false;
-  {
-    std::ofstream output(temp_path);
-    if (output.is_open()) {
-      output << models.dump();
-      ok = output.good();
-    }
-  }
-  close(fd);
-
-  if (!ok) {
-    std::error_code ec;
-    std::filesystem::remove(temp_path, ec);
-    return false;
-  }
-
-  std::error_code ec;
-  std::filesystem::rename(temp_path, path, ec);
-  if (ec) {
-    std::filesystem::remove(temp_path, ec);
-    return false;
-  }
-  return true;
+  return howdy::native::write_atomic_file(path, models.dump());
 }
 
 }  // namespace
@@ -132,8 +102,20 @@ int remove_main(int argc, char **argv) {
     return kExitAbort;
   }
 
+  std::error_code size_ec;
+  if (std::filesystem::file_size(*model_path, size_ec) > kMaxModelFileBytes ||
+      size_ec) {
+    std::cout << "Model file is too large to process safely\n";
+    return kExitAbort;
+  }
+
   nlohmann::json models;
-  input >> models;
+  try {
+    input >> models;
+  } catch (const nlohmann::json::exception &) {
+    std::cout << "Failed to parse model file\n";
+    return kExitAbort;
+  }
 
   int found_index = -1;
   std::string found_label;
@@ -165,7 +147,10 @@ int remove_main(int argc, char **argv) {
   }
 
   if (models.size() == 1) {
-    std::filesystem::remove(*model_path);
+    if (!howdy::native::remove_file_and_sync(*model_path)) {
+      std::cout << "Failed to remove model file\n";
+      return kExitAbort;
+    }
     std::cout << "Removed last model, howdy disabled for user\n";
     return kExitOk;
   }

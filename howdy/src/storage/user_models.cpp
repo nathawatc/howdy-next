@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <cstdint>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -11,6 +12,15 @@
 #include "config/runtime_paths.hpp"
 
 namespace howdy::native {
+
+namespace {
+
+constexpr std::uintmax_t kMaxUserModelFileBytes = 1024 * 1024;
+constexpr std::size_t kMaxStoredModels = 256;
+constexpr std::size_t kMaxEncodingsPerModel = 32;
+constexpr std::size_t kMaxEncodingLength = 1024;
+
+}  // namespace
 
 auto load_user_models(const std::string &user, const std::string &expected_backend)
     -> UserModelLoadResult {
@@ -45,6 +55,15 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
     return result;
   }
 
+  std::error_code size_ec;
+  const auto file_size = std::filesystem::file_size(*model_path, size_ec);
+  if (size_ec || file_size > kMaxUserModelFileBytes) {
+    result.status = UserModelStatus::kParseError;
+    result.error_message = "User model file is too large or unreadable: " +
+                           model_path->string();
+    return result;
+  }
+
   std::ifstream input(*model_path);
   if (!input.is_open()) {
     result.status = UserModelStatus::kParseError;
@@ -66,40 +85,66 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
     return result;
   }
 
-  for (const auto &model : models) {
-    const auto backend = model.value("backend", std::string());
-    if (!backend.empty() && backend != expected_backend) {
-      result.status = UserModelStatus::kIncompatibleBackend;
-      result.error_message =
-          "Stored face models use an incompatible backend; re-enroll required";
-      return result;
-    }
+  if (models.size() > kMaxStoredModels) {
+    result.status = UserModelStatus::kParseError;
+    result.error_message = "Stored face model list exceeds safety limit";
+    return result;
+  }
 
-    const int id = model.value("id", -1);
-    const std::string label = model.value("label", std::string());
-    const auto data = model.find("data");
-    if (data == model.end() || !data->is_array()) {
-      continue;
-    }
+  try {
+    for (const auto &model : models) {
+      const auto backend = model.value("backend", std::string());
+      if (!backend.empty() && backend != expected_backend) {
+        result.status = UserModelStatus::kIncompatibleBackend;
+        result.error_message =
+            "Stored face models use an incompatible backend; re-enroll required";
+        return result;
+      }
 
-    for (const auto &encoding_json : *data) {
-      if (!encoding_json.is_array()) {
+      const int id = model.value("id", -1);
+      const std::string label = model.value("label", std::string());
+      const auto data = model.find("data");
+      if (data == model.end() || !data->is_array()) {
         continue;
       }
 
-      std::vector<float> encoding;
-      encoding.reserve(encoding_json.size());
-      for (const auto &value : encoding_json) {
-        encoding.push_back(value.get<float>());
+      if (data->size() > kMaxEncodingsPerModel) {
+        result.status = UserModelStatus::kParseError;
+        result.error_message =
+            "Stored face model contains too many encodings";
+        return result;
       }
 
-      if (encoding.empty()) {
-        continue;
-      }
+      for (const auto &encoding_json : *data) {
+        if (!encoding_json.is_array()) {
+          continue;
+        }
 
-      result.stored.encodings.push_back(std::move(encoding));
-      result.stored.models.push_back(EncodingModelInfo{.id = id, .label = label});
+        if (encoding_json.empty() || encoding_json.size() > kMaxEncodingLength) {
+          result.status = UserModelStatus::kParseError;
+          result.error_message =
+              "Stored face encoding exceeds safety limit";
+          return result;
+        }
+
+        std::vector<float> encoding;
+        encoding.reserve(encoding_json.size());
+        for (const auto &value : encoding_json) {
+          encoding.push_back(value.get<float>());
+        }
+
+        if (encoding.empty()) {
+          continue;
+        }
+
+        result.stored.encodings.push_back(std::move(encoding));
+        result.stored.models.push_back(EncodingModelInfo{.id = id, .label = label});
+      }
     }
+  } catch (const nlohmann::json::exception &error) {
+    result.status = UserModelStatus::kParseError;
+    result.error_message = error.what();
+    return result;
   }
 
   result.status = result.stored.encodings.empty() ? UserModelStatus::kNoModel

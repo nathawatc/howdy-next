@@ -10,8 +10,10 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -29,6 +31,41 @@ auto snapshot_path() -> std::filesystem::path {
   std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg",
                 &buffer);
   return howdy::native::resolve_log_path() / "snapshots" / filename.data();
+}
+
+auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool {
+  const auto log_root = directory.parent_path();
+  if (std::filesystem::exists(log_root)) {
+    const auto root_security =
+        howdy::native::check_secure_root_owned_directory(log_root, "Log directory");
+    if (!root_security.ok) {
+      std::cerr << root_security.error_message << "\n";
+      return false;
+    }
+  }
+
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  if (ec) {
+    std::cerr << "Failed to create snapshot directory: " << directory << "\n";
+    return false;
+  }
+
+  const auto root_security =
+      howdy::native::check_secure_root_owned_directory(log_root, "Log directory");
+  if (!root_security.ok) {
+    std::cerr << root_security.error_message << "\n";
+    return false;
+  }
+
+  const auto directory_security =
+      howdy::native::check_secure_root_owned_directory(directory,
+                                                       "Snapshot directory");
+  if (!directory_security.ok) {
+    std::cerr << directory_security.error_message << "\n";
+    return false;
+  }
+  return true;
 }
 
 auto generate_snapshot(const std::vector<cv::Mat> &frames,
@@ -51,8 +88,13 @@ auto generate_snapshot(const std::vector<cv::Mat> &frames,
   }
 
   const auto filepath = snapshot_path();
-  std::filesystem::create_directories(filepath.parent_path());
-  cv::imwrite(filepath.string(), snap);
+  if (!ensure_snapshot_directory(filepath.parent_path())) {
+    return {};
+  }
+  if (!cv::imwrite(filepath.string(), snap)) {
+    return {};
+  }
+  howdy::native::sync_parent_directory(filepath);
   return filepath;
 }
 
@@ -107,10 +149,15 @@ int snapshot_main(int argc, char **argv) {
           "GENERATED SNAPSHOT",
           std::string("Date: ") + timestr.data(),
           "Dark threshold config: " +
-              std::to_string(config.get_float("video", "dark_threshold", 60.0F)),
+              std::to_string(howdy::native::config_dark_threshold(config)),
           "SFace threshold config: " +
-              std::to_string(config.get_float("face", "sface_threshold", 0.363F)),
+              std::to_string(howdy::native::config_sface_threshold(
+                  config, howdy::native::config_sface_metric(config))),
       });
+  if (filepath.empty()) {
+    std::cerr << "Failed to write snapshot\n";
+    return kExitAbort;
+  }
 
   std::cout << "Generated snapshot saved as\n";
   std::cout << filepath.string() << "\n";

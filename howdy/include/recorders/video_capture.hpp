@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include <opencv2/videoio.hpp>
 
@@ -25,6 +26,7 @@ struct CaptureSettings {
 };
 
 auto load_capture_settings(const ConfigReader &config) -> CaptureSettings;
+auto is_allowed_capture_device_path(std::string_view device_path) -> bool;
 
 class VideoCapture {
 public:
