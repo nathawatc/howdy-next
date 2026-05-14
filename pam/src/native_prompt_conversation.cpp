@@ -9,67 +9,10 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <csignal>
-#include <mutex>
 #include <string>
 #include <termios.h>
 
 namespace {
-
-std::mutex g_sigint_handler_mutex;
-volatile sig_atomic_t g_sigint_abort_fd = -1;
-
-void handle_sigint(int /*signum*/) {
-  const sig_atomic_t fd = g_sigint_abort_fd;
-  if (fd < 0) {
-    return;
-  }
-
-  constexpr char kSignal = 'i';
-  if (write(static_cast<int>(fd), &kSignal, 1) < 0) {
-  }
-}
-
-class ScopedSigintAbortHandler {
-public:
-  explicit ScopedSigintAbortHandler(int abort_fd) : abort_fd_(abort_fd) {
-    if (abort_fd_ < 0) {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lock(g_sigint_handler_mutex);
-
-    struct sigaction action {};
-    action.sa_handler = handle_sigint;
-    sigemptyset(&action.sa_mask);
-
-    if (sigaction(SIGINT, &action, &previous_action_) != 0) {
-      return;
-    }
-
-    g_sigint_abort_fd = abort_fd_;
-    installed_ = true;
-  }
-
-  ~ScopedSigintAbortHandler() {
-    if (!installed_) {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lock(g_sigint_handler_mutex);
-    g_sigint_abort_fd = -1;
-    (void)sigaction(SIGINT, &previous_action_, nullptr);
-  }
-
-  ScopedSigintAbortHandler(const ScopedSigintAbortHandler &) = delete;
-  auto operator=(const ScopedSigintAbortHandler &)
-      -> ScopedSigintAbortHandler & = delete;
-
-private:
-  int abort_fd_ = -1;
-  struct sigaction previous_action_ {};
-  bool installed_ = false;
-};
 
 auto open_tty_fd(pam_handle_t *pamh) -> int {
   std::array<std::string, 2> candidates{};
@@ -152,46 +95,6 @@ void drain_abort_pipe(int fd) {
 
 }  // namespace
 
-#ifdef HOWDY_PAM_TESTING
-SigintAbortHandlerForTesting::SigintAbortHandlerForTesting(int abort_fd) {
-  if (abort_fd < 0) {
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(g_sigint_handler_mutex);
-
-  struct sigaction action {};
-  action.sa_handler = handle_sigint;
-  sigemptyset(&action.sa_mask);
-
-  if (sigaction(SIGINT, &action, &previous_action_) != 0) {
-    return;
-  }
-
-  g_sigint_abort_fd = abort_fd;
-  installed_ = true;
-}
-
-SigintAbortHandlerForTesting::~SigintAbortHandlerForTesting() {
-  if (!installed_) {
-    return;
-  }
-
-  std::lock_guard<std::mutex> lock(g_sigint_handler_mutex);
-  g_sigint_abort_fd = -1;
-  (void)sigaction(SIGINT, &previous_action_, nullptr);
-}
-
-auto SigintAbortHandlerForTesting::installed() const -> bool {
-  return installed_;
-}
-
-void trigger_sigint_abort_for_testing() { handle_sigint(SIGINT); }
-auto sigint_abort_handler_ready_for_testing() -> bool {
-  return g_sigint_abort_fd >= 0;
-}
-#endif
-
 NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
     : pamh_(pamh), override_conv_{dispatch, this} {
   const void *conv_ptr = nullptr;
@@ -222,6 +125,13 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
     close_fd(abort_pipe_[1]);
   }
 }
+
+#ifdef HOWDY_PAM_TESTING
+NativePromptConversation::NativePromptConversation(int tty_fd, int abort_read_fd,
+                                                   int abort_write_fd)
+    : override_conv_{dispatch, this}, has_original_conv_(true), tty_fd_(tty_fd),
+      abort_pipe_{{abort_read_fd, abort_write_fd}} {}
+#endif
 
 NativePromptConversation::~NativePromptConversation() {
   if (installed_) {
@@ -363,6 +273,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message,
 
   struct termios prompt_termios = original_termios;
   prompt_termios.c_lflag &= static_cast<tcflag_t>(~ICANON);
+  prompt_termios.c_lflag &= static_cast<tcflag_t>(~ISIG);
   if (hide_input) {
     prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHO);
   } else {
@@ -385,7 +296,6 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message,
       {tty_fd_, POLLIN, 0},
       {abort_pipe_[0], POLLIN, 0},
   }};
-  ScopedSigintAbortHandler sigint_abort_handler(abort_pipe_[1]);
 
   while (true) {
     const int poll_result = poll(fds.data(), fds.size(), -1);
@@ -419,6 +329,10 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message,
 
     if (ch == '\n' || ch == '\r') {
       break;
+    }
+
+    if (ch == 3) {
+      return abort_prompt_input(tty_fd_, original_termios);
     }
 
     if (ch == '\b' || ch == 127) {
