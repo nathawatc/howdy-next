@@ -80,6 +80,13 @@ auto write_newline(int fd) -> void {
   }
 }
 
+auto abort_prompt_input(int tty_fd, const struct termios &original_termios)
+    -> int {
+  (void)tcsetattr(tty_fd, TCSANOW, &original_termios);
+  write_newline(tty_fd);
+  return PAM_CONV_ERR;
+}
+
 void drain_abort_pipe(int fd) {
   std::array<char, 32> buffer{};
   while (read(fd, buffer.data(), buffer.size()) > 0) {
@@ -286,17 +293,14 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message,
     const int poll_result = poll(fds.data(), fds.size(), -1);
     if (poll_result < 0) {
       if (errno == EINTR) {
-        continue;
+        return abort_prompt_input(tty_fd_, original_termios);
       }
-      (void)tcsetattr(tty_fd_, TCSANOW, &original_termios);
-      return PAM_CONV_ERR;
+      return abort_prompt_input(tty_fd_, original_termios);
     }
 
     if ((fds[1].revents & POLLIN) != 0 || abort_requested_.load()) {
       drain_abort_pipe(abort_pipe_[0]);
-      (void)tcsetattr(tty_fd_, TCSANOW, &original_termios);
-      write_newline(tty_fd_);
-      return PAM_CONV_ERR;
+      return abort_prompt_input(tty_fd_, original_termios);
     }
 
     if ((fds[0].revents & POLLIN) == 0) {
@@ -307,10 +311,9 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message,
     const ssize_t bytes_read = read(tty_fd_, &ch, 1);
     if (bytes_read < 0) {
       if (errno == EINTR) {
-        continue;
+        return abort_prompt_input(tty_fd_, original_termios);
       }
-      (void)tcsetattr(tty_fd_, TCSANOW, &original_termios);
-      return PAM_CONV_ERR;
+      return abort_prompt_input(tty_fd_, original_termios);
     }
     if (bytes_read == 0) {
       continue;
