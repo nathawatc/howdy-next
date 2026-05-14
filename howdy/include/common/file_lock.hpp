@@ -60,7 +60,8 @@ inline auto acquire_file_lock(const std::filesystem::path &target_path)
 
   const auto path = lock_file_path(target_path);
   const int fd =
-      open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+      open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+           S_IRUSR | S_IWUSR);
   if (fd < 0) {
     return std::nullopt;
   }

@@ -2,6 +2,7 @@
 #include "config/config_validation.hpp"
 
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
@@ -127,6 +128,12 @@ auto main() -> int {
                "stat protected config");
   ok &= expect((protected_stat.st_mode & 0777) == 0600,
                "atomic write preserves config mode");
+
+  const auto hardlink_path = temp_root / "protected-hardlink.ini";
+  ok &= expect(link(protected_path.c_str(), hardlink_path.c_str()) == 0,
+               "create hard link to protected config");
+  ok &= expect(!howdy::native::update_config_value(hardlink_path, "disabled", "false"),
+               "update_config_value rejects hard-linked config");
 
   howdy::native::ConfigReader validated(config_path.string());
   ok &= expect(validated.ok(), "validated config still parses");

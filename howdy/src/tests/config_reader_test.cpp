@@ -119,6 +119,25 @@ auto main() -> int {
   ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/null"),
                "wrong character device path is rejected");
 
+  const auto malformed_path = temp_root / "malformed.ini";
+  ok &= expect(write_file(malformed_path,
+                          "[video]\n"
+                          "timeout = abc\n"
+                          "dark_threshold = nope\n"
+                          "[face]\n"
+                          "sface_threshold = bad\n"),
+               "write malformed ini");
+  howdy::native::ConfigReader malformed(malformed_path.string());
+  ok &= expect(malformed.ok(), "malformed config should still parse");
+  ok &= expect(howdy::native::validate_runtime_config(malformed).has_value(),
+               "malformed numeric config fails semantic validation");
+  ok &= expect(howdy::native::config_timeout_seconds(malformed) == 4,
+               "malformed timeout falls back");
+  ok &= expect(howdy::native::config_dark_threshold(malformed) == 60.0F,
+               "malformed dark threshold falls back");
+  ok &= expect(howdy::native::config_sface_threshold(malformed, "cosine") == 0.363F,
+               "malformed sface threshold falls back");
+
   fs::remove_all(temp_root, ec);
   if (!ok) {
     return 1;

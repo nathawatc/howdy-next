@@ -30,7 +30,7 @@ auto lock_path_for_config(const std::filesystem::path &config_path)
 
 auto open_lock_file(const std::filesystem::path &config_path) -> int {
   return open(lock_path_for_config(config_path).c_str(),
-              O_RDWR | O_CREAT | O_CLOEXEC, S_IRUSR | S_IWUSR);
+              O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
 }
 
 auto lock_fd(int fd) -> bool {

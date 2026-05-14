@@ -88,6 +88,14 @@ inline auto check_secure_path(
     };
   }
 
+  if (kind == SecurePathKind::kRegularFile && stat_.st_nlink != 1) {
+    return SecurePathCheckResult{
+        .ok = false,
+        .error_message = std::string(label) + " must not be hard-linked: " +
+                         path.string(),
+    };
+  }
+
   return SecurePathCheckResult{.ok = true, .error_message = {}};
 }
 

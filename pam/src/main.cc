@@ -132,7 +132,8 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
 
   // Try to detect the laptop lid state and stop if it's closed
   if (config.GetBoolean("core", "abort_if_lid_closed", true)) {
-    glob_t glob_result;
+    glob_t glob_result{};
+    bool glob_initialized = false;
 
     // Get any files containing lid state
     int return_value =
@@ -144,6 +145,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
         syslog(LOG_ERR, "Underlying error: %s (%d)", strerror(errno), errno);
       }
     } else {
+      glob_initialized = true;
       for (size_t i = 0; i < glob_result.gl_pathc; i++) {
         std::ifstream file(std::string(glob_result.gl_pathv[i]));
         std::string lid_state;
@@ -157,7 +159,9 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
         }
       }
     }
-    globfree(&glob_result);
+    if (glob_initialized) {
+      globfree(&glob_result);
+    }
   }
 
   // pre-check if this user has face model file

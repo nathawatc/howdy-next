@@ -28,7 +28,8 @@ inline auto parse_int_strict(std::string_view value) -> std::optional<int> {
 
   errno = 0;
   char *end = nullptr;
-  const auto parsed = std::strtol(std::string(value).c_str(), &end, 10);
+  const std::string owned_value(value);
+  const auto parsed = std::strtol(owned_value.c_str(), &end, 10);
   if (errno != 0 || end == nullptr || *end != '\0' ||
       parsed < std::numeric_limits<int>::min() ||
       parsed > std::numeric_limits<int>::max()) {
@@ -45,7 +46,8 @@ inline auto parse_float_strict(std::string_view value) -> std::optional<float> {
 
   errno = 0;
   char *end = nullptr;
-  const auto parsed = std::strtof(std::string(value).c_str(), &end);
+  const std::string owned_value(value);
+  const auto parsed = std::strtof(owned_value.c_str(), &end);
   if (errno != 0 || end == nullptr || *end != '\0') {
     return std::nullopt;
   }
