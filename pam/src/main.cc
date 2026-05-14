@@ -38,6 +38,7 @@
 #include "status_mapping.hh"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
+#include "config/config_utils.hpp"
 #include <paths.hh>
 
 namespace {
@@ -208,8 +209,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int {
   const auto config_security =
-      howdy::native::check_secure_root_owned_file(CONFIG_FILE_PATH,
-                                                  "Config file");
+      howdy::native::check_secure_config_path(CONFIG_FILE_PATH);
   if (!config_security.ok) {
     openlog("pam_howdy", 0, LOG_AUTHPRIV);
     syslog(LOG_ERR, "%s", config_security.error_message.c_str());

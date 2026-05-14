@@ -433,8 +433,9 @@ install_data(
 )
 
 fs = import('fs')
+install_emptydir(confdir, install_mode: 'rwxr-x---', install_tag: 'config')
 if not fs.exists(config_path)
-    install_data('../../config/config.ini', install_dir: confdir, install_mode: 'rwxr--r--', install_tag: 'config')
+    install_data('../../config/config.ini', install_dir: confdir, install_mode: 'rw-r-----', install_tag: 'config')
 endif
 
 install_emptydir(modelsdir, install_tag: 'models')

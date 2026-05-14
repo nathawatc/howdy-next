@@ -169,6 +169,38 @@ auto validate_config_content(const std::string &content, std::string *error_mess
 
 }  // namespace
 
+auto check_secure_config_path(const std::filesystem::path &config_path)
+    -> ConfigPathCheckResult {
+  const auto parent = config_path.parent_path();
+  if (parent.empty()) {
+    return ConfigPathCheckResult{
+        .ok = false,
+        .error_message = "Config file must have a parent directory: " +
+                         config_path.string(),
+    };
+  }
+
+  const auto parent_security =
+      check_secure_root_owned_directory(parent, "Config directory");
+  if (!parent_security.ok) {
+    return ConfigPathCheckResult{
+        .ok = false,
+        .error_message = parent_security.error_message,
+    };
+  }
+
+  const auto file_security =
+      check_secure_root_owned_file(config_path, "Config file");
+  if (!file_security.ok) {
+    return ConfigPathCheckResult{
+        .ok = false,
+        .error_message = file_security.error_message,
+    };
+  }
+
+  return ConfigPathCheckResult{.ok = true, .error_message = {}};
+}
+
 auto is_safe_ini_scalar_value(std::string_view value) -> bool {
   if (!value.empty() && value.front() == '[') {
     return false;
@@ -203,8 +235,7 @@ auto read_config_lines(const std::filesystem::path &config_path, bool lock)
     return lines;
   }
 
-  const auto security =
-      check_secure_root_owned_file(config_path, "Config file");
+  const auto security = check_secure_config_path(config_path);
   if (!security.ok) {
     close(fd);
     if (lock_fd_handle >= 0) {
@@ -291,8 +322,7 @@ auto update_config_value(const std::filesystem::path &config_path,
     return false;
   }
 
-  const auto security =
-      check_secure_root_owned_file(config_path, "Config file");
+  const auto security = check_secure_config_path(config_path);
   if (!security.ok) {
     if (error_message != nullptr) {
       *error_message = security.error_message;

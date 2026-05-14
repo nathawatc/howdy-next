@@ -7,6 +7,13 @@
 
 namespace howdy::native {
 
+struct ConfigPathCheckResult {
+  bool ok = false;
+  std::string error_message;
+};
+
+auto check_secure_config_path(const std::filesystem::path &config_path)
+    -> ConfigPathCheckResult;
 auto is_safe_ini_scalar_value(std::string_view value) -> bool;
 auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
     -> std::vector<std::string>;

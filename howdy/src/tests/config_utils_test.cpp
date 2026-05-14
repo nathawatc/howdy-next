@@ -116,6 +116,23 @@ auto main() -> int {
   ok &= expect(chmod(config_path.c_str(), 0644) == 0,
                "restore config permissions");
 
+  const auto insecure_dir = temp_root / "insecure-dir";
+  ok &= expect(fs::create_directories(insecure_dir, ec) || !ec,
+               "create insecure config dir");
+  ok &= expect(!ec, "no error creating insecure config dir");
+  const auto insecure_config_path = insecure_dir / "config.ini";
+  ok &= expect(write_file(insecure_config_path, "[core]\ndisabled = false\n"),
+               "write config in insecure dir");
+  ok &= expect(chmod(insecure_dir.c_str(), 0777) == 0,
+               "make config dir world-writable");
+  ok &= expect(!howdy::native::check_secure_config_path(insecure_config_path).ok,
+               "check_secure_config_path rejects insecure config directory");
+  ok &= expect(!howdy::native::update_config_value(insecure_config_path, "disabled",
+                                                   "true"),
+               "update_config_value rejects insecure config directory");
+  ok &= expect(chmod(insecure_dir.c_str(), 0755) == 0,
+               "restore config dir mode");
+
   const auto protected_path = temp_root / "protected.ini";
   ok &= expect(write_file(protected_path, "[core]\ndisabled = false\n"),
                "write protected config");

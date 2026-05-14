@@ -12,6 +12,7 @@
 #include "common/compare_logic.hpp"
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -106,7 +107,7 @@ auto main(int argc, char **argv) -> int {
   const auto &args = parse_result.args;
 
   const auto config_security =
-      howdy::native::check_secure_root_owned_file(args.config_path, "Config file");
+      howdy::native::check_secure_config_path(args.config_path);
   if (!config_security.ok) {
     std::cerr << config_security.error_message << "\n";
     return static_cast<int>(CompareExit::kAbort);
