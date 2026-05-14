@@ -28,16 +28,16 @@
 #include <security/pam_ext.h>
 #include <security/pam_modules.h>
 
-#include "enter_device.hh"
-#include "main.hh"
-#include "optional_task.hh"
-#include "prompt_workaround.hh"
-#include "status_mapping.hh"
-#include "tty_restore.hh"
+#include "enter_device.hpp"
+#include "main.hpp"
+#include "optional_task.hpp"
+#include "prompt_workaround.hpp"
+#include "status_mapping.hpp"
+#include "tty_restore.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/config_utils.hpp"
-#include <paths.hh>
+#include <paths.hpp>
 
 namespace {
 

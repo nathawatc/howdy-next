@@ -8,8 +8,8 @@ subdir('po')
 
 # Paths
 paths_h = configure_file(
-	input: 'paths.hh.in',
-	output: 'paths.hh',
+	input: 'paths.hpp.in',
+	output: 'paths.hpp',
 	configuration: pam_module_conf_data
 )
 
@@ -17,12 +17,12 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 
 shared_library(
 	'pam_howdy',
-	'src/auth_flow.cc',
-	'src/main.cc',
-	'src/enter_device.cc',
-	'src/prompt_workaround.cc',
-	'src/status_mapping.cc',
-	'src/tty_restore.cc',
+	'src/auth_flow.cpp',
+	'src/main.cpp',
+	'src/enter_device.cpp',
+	'src/prompt_workaround.cpp',
+	'src/status_mapping.cpp',
+	'src/tty_restore.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
@@ -41,8 +41,8 @@ shared_library(
 
 pam_status_mapping_test = executable(
 	'pam-status-mapping-test',
-	'src/status_mapping.cc',
-	'src/tests/status_mapping_test.cc',
+	'src/status_mapping.cpp',
+	'src/tests/status_mapping_test.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
@@ -60,8 +60,8 @@ test(
 
 pam_prompt_workaround_test = executable(
 	'pam-prompt-workaround-test',
-	'src/prompt_workaround.cc',
-	'src/tests/prompt_workaround_test.cc',
+	'src/prompt_workaround.cpp',
+	'src/tests/prompt_workaround_test.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,

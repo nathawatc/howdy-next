@@ -1,4 +1,4 @@
-#include "prompt_workaround.hh"
+#include "prompt_workaround.hpp"
 
 auto should_ask_for_password(bool ask_auth_tok, Workaround workaround) -> bool {
   return ask_auth_tok && workaround != Workaround::Off;

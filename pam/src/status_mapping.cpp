@@ -1,4 +1,4 @@
-#include "status_mapping.hh"
+#include "status_mapping.hpp"
 
 #include <libintl.h>
 #include <string>
@@ -6,7 +6,7 @@
 
 #include <security/pam_modules.h>
 
-#include "main.hh"
+#include "main.hpp"
 
 auto map_compare_wait_status(int status) -> CompareStatusDecision {
   CompareStatusDecision decision;

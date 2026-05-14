@@ -1,7 +1,7 @@
 #ifndef HOWDY_PAM_PROMPT_WORKAROUND_HH
 #define HOWDY_PAM_PROMPT_WORKAROUND_HH
 
-#include "main.hh"
+#include "main.hpp"
 
 struct PromptStopPlan {
   bool stop_prompt = false;

@@ -1,4 +1,4 @@
-#include "tty_restore.hh"
+#include "tty_restore.hpp"
 
 #include <fcntl.h>
 #include <security/pam_appl.h>

@@ -1,4 +1,4 @@
-#include "prompt_workaround.hh"
+#include "prompt_workaround.hpp"
 
 #include <iostream>
 #include <string>

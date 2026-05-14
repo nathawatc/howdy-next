@@ -1,4 +1,4 @@
-#include "main.hh"
+#include "main.hpp"
 
 // Called by PAM when a user needs to be authenticated, for example by running
 // the sudo command.
