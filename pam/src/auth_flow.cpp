@@ -320,6 +320,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   const Workaround workaround =
       get_workaround(config.GetString("core", "workaround", "input"));
+  Workaround effective_workaround = workaround;
 
   std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 username, nullptr};
@@ -355,21 +356,25 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   if (workaround == Workaround::Native && ask_auth_tok) {
     native_prompt.emplace(pamh);
     if (!native_prompt->available()) {
+      syslog(LOG_INFO,
+             "Native prompt conversation unavailable, falling back to input workaround");
       native_prompt.reset();
+      effective_workaround = Workaround::Input;
     } else {
       const int install_result = native_prompt->install();
       if (install_result != PAM_SUCCESS) {
         syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
                install_result);
         native_prompt.reset();
+        effective_workaround = Workaround::Input;
       }
     }
   }
 
   const bool ask_pass =
-      workaround == Workaround::Native
+      effective_workaround == Workaround::Native
           ? native_prompt.has_value()
-          : should_ask_for_password(ask_auth_tok, workaround);
+          : should_ask_for_password(ask_auth_tok, effective_workaround);
 
   optional_task<std::tuple<int, char *>> pass_task([&] {
     char *auth_tok_ptr = nullptr;
@@ -430,7 +435,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   }
 
   const auto stop_plan =
-      plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), workaround);
+      plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(),
+                       effective_workaround);
   const bool enter_failed =
       request_password_prompt_stop(pass_task, stop_plan,
                                    native_prompt ? &*native_prompt : nullptr);
