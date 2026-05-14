@@ -51,8 +51,13 @@ int disable_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  if (!howdy::native::update_config_value(config_path, "disabled", out_value, true)) {
-    std::cout << "Could not find a \"disabled\" config option to set\n";
+  std::string error_message;
+  if (!howdy::native::update_config_value(config_path, "disabled", out_value,
+                                          &error_message, true)) {
+    std::cout << (error_message.empty()
+                      ? "Failed to update \"disabled\" config option"
+                      : error_message)
+              << "\n";
     return kExitAbort;
   }
 

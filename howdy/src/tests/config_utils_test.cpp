@@ -1,4 +1,5 @@
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 
 #include <sys/stat.h>
 
@@ -91,6 +92,11 @@ auto main() -> int {
                "update_config_value rejects newline injection");
   ok &= expect(read_file(config_path) == after_threshold,
                "rejected injection leaves config unchanged");
+  ok &= expect(
+      !howdy::native::update_config_value(config_path, "dark_threshold", "1000"),
+      "update_config_value rejects semantically invalid values");
+  ok &= expect(read_file(config_path) == after_threshold,
+               "semantic validation failure leaves config unchanged");
 
   const auto nested_path = temp_root / "nested" / "generated.ini";
   const std::vector<std::string> write_lines = {
@@ -121,6 +127,11 @@ auto main() -> int {
                "stat protected config");
   ok &= expect((protected_stat.st_mode & 0777) == 0600,
                "atomic write preserves config mode");
+
+  howdy::native::ConfigReader validated(config_path.string());
+  ok &= expect(validated.ok(), "validated config still parses");
+  ok &= expect(!howdy::native::validate_runtime_config(validated).has_value(),
+               "validated config passes semantic validation");
 
   fs::remove_all(temp_root, ec);
   if (!ok) {

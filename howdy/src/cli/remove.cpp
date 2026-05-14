@@ -13,6 +13,7 @@
 
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
+#include "common/file_lock.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -94,6 +95,12 @@ int remove_main(int argc, char **argv) {
       howdy::native::check_secure_root_owned_file(*model_path, "User model file");
   if (!model_security.ok) {
     std::cout << model_security.error_message << "\n";
+    return kExitAbort;
+  }
+
+  const auto model_lock = howdy::native::acquire_file_lock(*model_path);
+  if (!model_lock.has_value()) {
+    std::cout << "Failed to lock model file\n";
     return kExitAbort;
   }
 

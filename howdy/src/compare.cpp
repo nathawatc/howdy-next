@@ -2,6 +2,8 @@
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <sys/prctl.h>
+#include <sys/resource.h>
 
 #include <opencv2/imgproc.hpp>
 
@@ -43,6 +45,48 @@ auto apply_rotation(const cv::Mat &frame, int rotate, int frames) -> cv::Mat {
   return frame;
 }
 
+auto apply_compare_sandbox(int timeout_seconds) -> bool {
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
+    std::cerr << "Failed to enable no_new_privs sandboxing\n";
+    return false;
+  }
+
+  rlimit cpu_limit{};
+  cpu_limit.rlim_cur = static_cast<rlim_t>(std::max(timeout_seconds + 5, 15));
+  cpu_limit.rlim_max = static_cast<rlim_t>(std::max(timeout_seconds + 10, 20));
+  if (setrlimit(RLIMIT_CPU, &cpu_limit) != 0) {
+    std::cerr << "Failed to apply CPU sandbox limit\n";
+    return false;
+  }
+
+  rlimit file_limit{};
+  file_limit.rlim_cur = 64;
+  file_limit.rlim_max = 64;
+  if (setrlimit(RLIMIT_NOFILE, &file_limit) != 0) {
+    std::cerr << "Failed to apply file-descriptor sandbox limit\n";
+    return false;
+  }
+
+  rlimit core_limit{};
+  core_limit.rlim_cur = 0;
+  core_limit.rlim_max = 0;
+  if (setrlimit(RLIMIT_CORE, &core_limit) != 0) {
+    std::cerr << "Failed to disable core dumps\n";
+    return false;
+  }
+
+  rlimit address_space_limit{};
+  address_space_limit.rlim_cur = static_cast<rlim_t>(2ULL * 1024ULL * 1024ULL *
+                                                     1024ULL);
+  address_space_limit.rlim_max = address_space_limit.rlim_cur;
+  if (setrlimit(RLIMIT_AS, &address_space_limit) != 0) {
+    std::cerr << "Failed to apply memory sandbox limit\n";
+    return false;
+  }
+
+  return true;
+}
+
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -68,8 +112,18 @@ auto main(int argc, char **argv) -> int {
     return static_cast<int>(CompareExit::kAbort);
   }
 
-  const auto loaded_models =
-      howdy::native::load_user_models(args.user, howdy::native::FaceModel::kBackendName);
+  howdy::native::ConfigReader config(args.config_path);
+  if (!config.ok()) {
+    std::cerr << "Failed to parse config: " << args.config_path << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
+
+  if (!apply_compare_sandbox(howdy::native::config_timeout_seconds(config))) {
+    return static_cast<int>(CompareExit::kAbort);
+  }
+
+  const auto loaded_models = howdy::native::load_user_models(
+      args.user, howdy::native::FaceModel::kBackendName);
   if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
     std::cerr << loaded_models.error_message << "\n";
     return static_cast<int>(CompareExit::kAbort);
@@ -88,12 +142,6 @@ auto main(int argc, char **argv) -> int {
   }
   if (loaded_models.status != howdy::native::UserModelStatus::kOk) {
     return static_cast<int>(CompareExit::kNoFaceModel);
-  }
-
-  howdy::native::ConfigReader config(args.config_path);
-  if (!config.ok()) {
-    std::cerr << "Failed to parse config: " << args.config_path << "\n";
-    return static_cast<int>(CompareExit::kAbort);
   }
 
   howdy::native::FaceModel face_model(config);

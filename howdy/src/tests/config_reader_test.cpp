@@ -1,4 +1,5 @@
 #include "config/config_reader.hpp"
+#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -50,6 +51,8 @@ auto main() -> int {
 
   howdy::native::ConfigReader valid(valid_path.string());
   ok &= expect(valid.ok(), "valid config should parse");
+  ok &= expect(!howdy::native::validate_runtime_config(valid).has_value(),
+               "valid config passes semantic validation");
   ok &= expect(valid.parse_error() == 0, "parse_error is zero for valid config");
   ok &= expect(valid.path() == valid_path.string(), "path accessor returns input");
   ok &= expect(valid.get("core", "disabled", "false") == "true",
@@ -93,6 +96,8 @@ auto main() -> int {
                "write invalid bounded config");
   howdy::native::ConfigReader invalid(invalid_path.string());
   ok &= expect(invalid.ok(), "invalid bounded config still parses");
+  ok &= expect(howdy::native::validate_runtime_config(invalid).has_value(),
+               "invalid bounded config fails semantic validation");
   ok &= expect(howdy::native::config_timeout_seconds(invalid) == 4,
                "invalid timeout falls back");
   ok &= expect(howdy::native::config_dark_threshold(invalid) == 60.0F,

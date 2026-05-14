@@ -19,6 +19,7 @@
 
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
+#include "common/file_lock.hpp"
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_values.hpp"
@@ -150,6 +151,12 @@ auto add_main(int argc, char **argv) -> int {
       std::cerr << model_security.error_message << "\n";
       return kExitAbort;
     }
+  }
+
+  const auto model_lock = howdy::native::acquire_file_lock(*model_path);
+  if (!model_lock.has_value()) {
+    std::cerr << "Failed to lock model file\n";
+    return kExitAbort;
   }
 
   auto models = load_models(*model_path);

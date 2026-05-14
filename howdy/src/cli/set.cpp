@@ -28,8 +28,13 @@ int set_main(int argc, char **argv) {
     std::cout << "Config values must be single-line scalars and cannot start with [\n";
     return kExitAbort;
   }
-  if (!howdy::native::update_config_value(config_path, key, value, true)) {
-    std::cout << "Could not find a \"" << key << "\" config option to set\n";
+  std::string error_message;
+  if (!howdy::native::update_config_value(config_path, key, value, &error_message,
+                                          true)) {
+    std::cout << (error_message.empty()
+                      ? "Failed to update config option"
+                      : error_message)
+              << "\n";
     return kExitAbort;
   }
 

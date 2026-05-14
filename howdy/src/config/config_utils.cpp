@@ -7,11 +7,13 @@
 
 #include <array>
 #include <filesystem>
-#include <string_view>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "common/file_security.hpp"
+#include "config/config_reader.hpp"
+#include "config/config_validation.hpp"
 
 namespace howdy::native {
 
@@ -113,6 +115,55 @@ auto sync_parent_directory(const std::filesystem::path &path) -> void {
     fsync(dir_fd);
     close(dir_fd);
   }
+}
+
+auto validate_config_content(const std::string &content, std::string *error_message)
+    -> bool {
+  const auto temp_root = std::filesystem::temp_directory_path();
+  std::string temp_template = (temp_root / "howdy-config-validate-XXXXXX").string();
+  std::vector<char> writable(temp_template.begin(), temp_template.end());
+  writable.push_back('\0');
+
+  const int fd = mkstemp(writable.data());
+  if (fd < 0) {
+    if (error_message != nullptr) {
+      *error_message = "Failed to validate updated config";
+    }
+    return false;
+  }
+
+  const std::filesystem::path temp_path(writable.data());
+  bool ok = write_all_to_fd(fd, content);
+  close(fd);
+
+  if (!ok) {
+    std::error_code ec;
+    std::filesystem::remove(temp_path, ec);
+    if (error_message != nullptr) {
+      *error_message = "Failed to validate updated config";
+    }
+    return false;
+  }
+
+  ConfigReader config(temp_path.string());
+  std::error_code ec;
+  std::filesystem::remove(temp_path, ec);
+
+  if (!config.ok()) {
+    if (error_message != nullptr) {
+      *error_message = "Updated config is invalid";
+    }
+    return false;
+  }
+
+  if (const auto validation = validate_runtime_config(config)) {
+    if (error_message != nullptr) {
+      *error_message = *validation;
+    }
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace
@@ -234,14 +285,21 @@ auto atomic_write_lines(const std::filesystem::path &config_path,
 
 auto update_config_value(const std::filesystem::path &config_path,
                          const std::string &key, const std::string &value,
-                         bool lock) -> bool {
+                         std::string *error_message, bool lock) -> bool {
   if (!is_safe_ini_scalar_value(value)) {
+    if (error_message != nullptr) {
+      *error_message =
+          "Config values must be single-line scalars and cannot start with [";
+    }
     return false;
   }
 
   const auto security =
       check_secure_root_owned_file(config_path, "Config file");
   if (!security.ok) {
+    if (error_message != nullptr) {
+      *error_message = security.error_message;
+    }
     return false;
   }
 
@@ -252,6 +310,9 @@ auto update_config_value(const std::filesystem::path &config_path,
       if (lock_fd_handle >= 0) {
         close(lock_fd_handle);
       }
+      if (error_message != nullptr) {
+        *error_message = "Failed to lock config file";
+      }
       return false;
     }
   }
@@ -261,6 +322,9 @@ auto update_config_value(const std::filesystem::path &config_path,
     if (lock_fd_handle >= 0) {
       unlock_fd(lock_fd_handle);
       close(lock_fd_handle);
+    }
+    if (error_message != nullptr) {
+      *error_message = "Failed to open config file";
     }
     return false;
   }
@@ -286,10 +350,26 @@ auto update_config_value(const std::filesystem::path &config_path,
     }
   }
 
-  const bool ok = updated && atomic_write_lines(config_path, lines);
+  if (!updated) {
+    if (error_message != nullptr) {
+      *error_message = "Could not find a \"" + key + "\" config option to set";
+    }
+    if (lock_fd_handle >= 0) {
+      unlock_fd(lock_fd_handle);
+      close(lock_fd_handle);
+    }
+    return false;
+  }
+
+  const auto updated_content = join_lines(lines);
+  const bool validated = validate_config_content(updated_content, error_message);
+  const bool ok = validated && atomic_write_lines(config_path, lines);
   if (lock_fd_handle >= 0) {
     unlock_fd(lock_fd_handle);
     close(lock_fd_handle);
+  }
+  if (!ok && validated && error_message != nullptr && error_message->empty()) {
+    *error_message = "Failed to update config file";
   }
   return ok;
 }

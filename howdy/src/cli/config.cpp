@@ -20,6 +20,7 @@
 
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_validation.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -443,6 +444,11 @@ int config_main(int argc, char **argv) {
   if (!edited_config.ok()) {
     std::cout << "Edited config is invalid and was not installed: " << *temp_path
               << "\n";
+    return kExitAbort;
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(edited_config)) {
+    remove_if_exists(*temp_path);
+    std::cout << *validation << "\n";
     return kExitAbort;
   }
 
