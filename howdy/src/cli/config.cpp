@@ -262,6 +262,40 @@ auto copy_file_contents(int input_fd, int output_fd) -> bool {
   }
 }
 
+auto files_match(const fs::path &left_path, const fs::path &right_path) -> bool {
+  std::ifstream left(left_path, std::ios::binary);
+  std::ifstream right(right_path, std::ios::binary);
+  if (!left.is_open() || !right.is_open()) {
+    return false;
+  }
+
+  std::array<char, 8192> left_buffer{};
+  std::array<char, 8192> right_buffer{};
+  while (true) {
+    left.read(left_buffer.data(), static_cast<std::streamsize>(left_buffer.size()));
+    right.read(right_buffer.data(), static_cast<std::streamsize>(right_buffer.size()));
+
+    const auto left_count = left.gcount();
+    const auto right_count = right.gcount();
+    if (left_count != right_count) {
+      return false;
+    }
+
+    if (left_count == 0) {
+      return true;
+    }
+
+    if (!std::equal(left_buffer.begin(), left_buffer.begin() + left_count,
+                    right_buffer.begin())) {
+      return false;
+    }
+
+    if ((!left.good() && !left.eof()) || (!right.good() && !right.eof())) {
+      return false;
+    }
+  }
+}
+
 auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_path)
     -> bool {
   struct stat current_stat {};
@@ -374,6 +408,12 @@ int config_main(int argc, char **argv) {
     std::cout << "Edited config is invalid and was not installed: " << *temp_path
               << "\n";
     return kExitAbort;
+  }
+
+  if (files_match(config_path, *temp_path)) {
+    remove_if_exists(*temp_path);
+    std::cout << "No config changes made\n";
+    return kExitOk;
   }
 
   if (!replace_config_from_temp(config_path, *temp_path)) {
