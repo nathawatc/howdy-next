@@ -86,13 +86,13 @@ test(
     'native-compare-unknown-arg',
     native_compare,
     args: ['--unknown'],
-    should_fail: true,
+    expected_fail: true,
 )
 
 test(
     'native-compare-missing-user',
     native_compare,
-    should_fail: true,
+    expected_fail: true,
 )
 
 test(
@@ -100,7 +100,7 @@ test(
     native_compare,
     args: ['coverage-user'],
     env: ['HOWDY_USER_MODELS_DIR=' + meson.current_build_dir() / 'compare-test-models-empty'],
-    should_fail: true,
+    expected_fail: true,
 )
 
 native_compare_args_test = executable(
@@ -404,14 +404,14 @@ test(
     'native-howdy-version',
     native_howdy,
     args: ['version'],
-    should_fail: true,
+    expected_fail: true,
 )
 
 test(
     'native-howdy-nonroot-path',
     native_howdy,
     args: ['-U', 'coverage-user', 'list'],
-    should_fail: true,
+    expected_fail: true,
 )
 
 test(

@@ -123,8 +123,7 @@ inline auto check_secure_root_owned_directory_tree(
     current = "/";
   }
 
-  const auto root_security =
-      check_secure_root_owned_directory(current, label);
+  auto root_security = check_secure_root_owned_directory(current, label);
   if (!root_security.ok) {
     return root_security;
   }
@@ -154,7 +153,7 @@ inline auto check_secure_root_owned_file_with_directory(
     };
   }
 
-  const auto directory_security =
+  auto directory_security =
       check_secure_root_owned_directory_tree(parent, directory_label);
   if (!directory_security.ok) {
     return directory_security;

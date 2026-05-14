@@ -3,7 +3,7 @@ project(
     'cpp',
     license: 'MIT',
     version: '1.0.0',
-    meson_version: '>= 1.1',
+    meson_version: '>= 1.11.0',
     default_options: [
         'b_pie=true',
     ],
@@ -11,8 +11,9 @@ project(
 
 cpp = meson.get_compiler('cpp')
 if cpp.get_id() == 'gcc' or cpp.get_id() == 'clang'
+    optimization_level = get_option('optimization')
     security_compile_args = ['-fstack-protector-strong']
-    if get_option('optimization') != '0'
+    if optimization_level != '0' and optimization_level != 'plain'
         security_compile_args += ['-D_FORTIFY_SOURCE=3']
     endif
     add_project_arguments(security_compile_args, language: 'cpp')

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/file_security.hpp"
+
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -12,8 +14,28 @@ struct ConfigPathCheckResult {
   std::string error_message;
 };
 
-auto check_secure_config_path(const std::filesystem::path &config_path)
-    -> ConfigPathCheckResult;
+inline auto check_secure_config_path(const std::filesystem::path &config_path)
+    -> ConfigPathCheckResult {
+  const auto parent = config_path.parent_path();
+  if (parent.empty()) {
+    return ConfigPathCheckResult{
+        .ok = false,
+        .error_message = "Config file must have a parent directory: " +
+                         config_path.string(),
+    };
+  }
+
+  const auto file_security = check_secure_root_owned_file_with_directory(
+      config_path, "Config directory", "Config file");
+  if (!file_security.ok) {
+    return ConfigPathCheckResult{
+        .ok = false,
+        .error_message = file_security.error_message,
+    };
+  }
+
+  return ConfigPathCheckResult{.ok = true, .error_message = {}};
+}
 auto is_safe_ini_scalar_value(std::string_view value) -> bool;
 auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
     -> std::vector<std::string>;
