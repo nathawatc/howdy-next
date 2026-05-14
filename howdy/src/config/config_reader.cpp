@@ -11,8 +11,6 @@ auto ConfigReader::ok() const -> bool { return reader_.ParseError() == 0; }
 
 auto ConfigReader::parse_error() const -> int { return reader_.ParseError(); }
 
-auto ConfigReader::path() const -> const std::string & { return path_; }
-
 auto ConfigReader::get(const std::string &section, const std::string &name,
                        const std::string &fallback) const -> std::string {
   return reader_.Get(section, name, fallback);

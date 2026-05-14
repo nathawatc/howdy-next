@@ -28,7 +28,6 @@ public:
   [[nodiscard]] auto ok() const -> bool;
   [[nodiscard]] auto error_message() const -> const std::string &;
   [[nodiscard]] auto metric() const -> const std::string &;
-  [[nodiscard]] auto threshold() const -> float;
 
   [[nodiscard]] auto prepare_frame(const cv::Mat &frame) const -> cv::Mat;
   auto detect(const cv::Mat &frame) -> std::vector<cv::Mat>;

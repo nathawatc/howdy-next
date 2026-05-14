@@ -54,7 +54,6 @@ auto main() -> int {
   ok &= expect(!howdy::native::validate_runtime_config(valid).has_value(),
                "valid config passes semantic validation");
   ok &= expect(valid.parse_error() == 0, "parse_error is zero for valid config");
-  ok &= expect(valid.path() == valid_path.string(), "path accessor returns input");
   ok &= expect(valid.get("core", "disabled", "false") == "true",
                "get string from valid config");
   ok &= expect(valid.get("core", "missing", "fallback") == "fallback",

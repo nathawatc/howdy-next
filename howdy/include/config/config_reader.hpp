@@ -12,7 +12,6 @@ public:
 
   [[nodiscard]] auto ok() const -> bool;
   [[nodiscard]] auto parse_error() const -> int;
-  [[nodiscard]] auto path() const -> const std::string &;
 
   [[nodiscard]] auto get(const std::string &section, const std::string &name,
                          const std::string &fallback) const -> std::string;

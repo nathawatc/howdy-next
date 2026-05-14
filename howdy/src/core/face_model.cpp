@@ -72,8 +72,6 @@ auto FaceModel::error_message() const -> const std::string & {
 
 auto FaceModel::metric() const -> const std::string & { return metric_; }
 
-auto FaceModel::threshold() const -> float { return threshold_; }
-
 auto FaceModel::prepare_frame(const cv::Mat &frame) const -> cv::Mat {
   if (frame.channels() == 1) {
     cv::Mat converted;
