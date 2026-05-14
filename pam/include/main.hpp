@@ -2,9 +2,10 @@
 #define MAIN_H_
 
 #include <cstring>
+#include <security/pam_modules.h>
 #include <string>
-#include <unistd.h>
 #include <cstdint>
+#include <unistd.h>
 
 enum class ConfirmationType : std::uint8_t { Unset, Howdy, Pam };
 enum class Workaround : std::uint8_t { Off, Input, Native };
@@ -45,15 +46,22 @@ inline auto checkenv(const char *name) -> bool {
     return true;
   }
 
-  auto len = strlen(name);
+  if (environ == nullptr) {
+    return false;
+  }
+
+  const auto len = strlen(name);
 
   for (char **env = environ; *env != nullptr; env++) {
-    if (strncmp(*env, name, len) == 0) {
+    if (strncmp(*env, name, len) == 0 && (*env)[len] == '=') {
       return true;
     }
   }
 
   return false;
 }
+
+auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
+              bool ask_auth_tok) -> int;
 
 #endif // MAIN_H_

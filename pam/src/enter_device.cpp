@@ -1,4 +1,4 @@
-#include "enter_device.hh"
+#include "enter_device.hpp"
 
 #include <stdexcept>
 
@@ -27,8 +27,14 @@ EnterDevice::EnterDevice()
 }
 
 void EnterDevice::send_enter_press() {
-  libevdev_uinput_write_event(raw_uinput_device.get(), EV_KEY, KEY_ENTER, 1);
-  libevdev_uinput_write_event(raw_uinput_device.get(), EV_SYN, SYN_REPORT, 0);
-  libevdev_uinput_write_event(raw_uinput_device.get(), EV_KEY, KEY_ENTER, 0);
-  libevdev_uinput_write_event(raw_uinput_device.get(), EV_SYN, SYN_REPORT, 0);
+  if (libevdev_uinput_write_event(raw_uinput_device.get(), EV_KEY, KEY_ENTER,
+                                  1) != 0 ||
+      libevdev_uinput_write_event(raw_uinput_device.get(), EV_SYN, SYN_REPORT,
+                                  0) != 0 ||
+      libevdev_uinput_write_event(raw_uinput_device.get(), EV_KEY, KEY_ENTER,
+                                  0) != 0 ||
+      libevdev_uinput_write_event(raw_uinput_device.get(), EV_SYN, SYN_REPORT,
+                                  0) != 0) {
+    throw std::runtime_error("Failed to send Enter keypress");
+  }
 }

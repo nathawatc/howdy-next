@@ -19,8 +19,10 @@ public:
   void activate();
   template <typename R, typename P>
   auto wait(std::chrono::duration<R, P> dur) -> std::future_status;
+  [[nodiscard]] auto active() const -> bool;
+  auto ready() -> bool;
   auto get() -> T;
-  void stop(bool force);
+  void stop();
   ~optional_task();
 };
 
@@ -43,6 +45,15 @@ auto optional_task<T>::wait(std::chrono::duration<R, P> dur)
   return future.wait_for(dur);
 }
 
+template <typename T> auto optional_task<T>::active() const -> bool {
+  return is_active;
+}
+
+template <typename T> auto optional_task<T>::ready() -> bool {
+  return spawned &&
+         future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+}
+
 // Get the value.
 // WARNING: The function should be run only if the task has successfully been
 // stopped.
@@ -51,29 +62,22 @@ template <typename T> auto optional_task<T>::get() -> T {
   return future.get();
 }
 
-// Stop the thread:
-// - if `force` is `false`, by joining the thread.
-// - if `force` is `true`, by cancelling the thread using `pthread_cancel`.
-// WARNING: This function should be used with extreme caution when `force` is
-// set to `true`.
-template <typename T> void optional_task<T>::stop(bool force) {
-  if (!(is_active && thread.joinable()) && spawned) {
-    is_active = false;
+// Stop the thread by joining it.
+template <typename T> void optional_task<T>::stop() {
+  if (!spawned) {
     return;
   }
 
-  // We use pthread to cancel the thread
-  if (force) {
-    auto native_hd = thread.native_handle();
-    pthread_cancel(native_hd);
+  if (thread.joinable()) {
+    thread.join();
   }
-  thread.join();
+
   is_active = false;
 }
 
 template <typename T> optional_task<T>::~optional_task() {
   if (is_active && spawned) {
-    stop(false);
+    stop();
   }
 }
 

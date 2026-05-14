@@ -8,8 +8,8 @@ subdir('po')
 
 # Paths
 paths_h = configure_file(
-	input: 'paths.hh.in',
-	output: 'paths.hh',
+	input: 'paths.hpp.in',
+	output: 'paths.hpp',
 	configuration: pam_module_conf_data
 )
 
@@ -17,9 +17,13 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 
 shared_library(
 	'pam_howdy',
-	'src/main.cc',
-	'src/enter_device.cc',
-	'src/status_mapping.cc',
+	'src/auth_flow.cpp',
+	'src/main.cpp',
+	'src/enter_device.cpp',
+	'src/native_prompt_conversation.cpp',
+	'src/prompt_workaround.cpp',
+	'src/status_mapping.cpp',
+	'src/tty_restore.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
@@ -38,8 +42,8 @@ shared_library(
 
 pam_status_mapping_test = executable(
 	'pam-status-mapping-test',
-	'src/status_mapping.cc',
-	'src/tests/status_mapping_test.cc',
+	'src/status_mapping.cpp',
+	'src/tests/status_mapping_test.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
@@ -53,4 +57,62 @@ pam_status_mapping_test = executable(
 test(
 	'pam-status-mapping',
 	pam_status_mapping_test,
+)
+
+pam_prompt_workaround_test = executable(
+	'pam-prompt-workaround-test',
+	'src/prompt_workaround.cpp',
+	'src/tests/prompt_workaround_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-prompt-workaround',
+	pam_prompt_workaround_test,
+)
+
+pam_main_entrypoints_test = executable(
+	'pam-main-entrypoints-test',
+	'src/main.cpp',
+	'src/tests/main_entrypoints_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-main-entrypoints',
+	pam_main_entrypoints_test,
+)
+
+pam_native_prompt_conversation_test = executable(
+	'pam-native-prompt-conversation-test',
+	'src/native_prompt_conversation.cpp',
+	'src/tests/native_prompt_conversation_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	cpp_args: ['-DHOWDY_PAM_TESTING'],
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-native-prompt-conversation',
+	pam_native_prompt_conversation_test,
 )

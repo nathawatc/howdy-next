@@ -1,4 +1,4 @@
-#include "status_mapping.hh"
+#include "status_mapping.hpp"
 
 #include <csignal>
 #include <iostream>
