@@ -19,6 +19,7 @@ public:
 
   auto can_restore() const -> bool;
   auto restore_echo(std::string *error_message = nullptr) const -> bool;
+  auto write_newline(std::string *error_message = nullptr) const -> bool;
 
 private:
   int fd_ = -1;

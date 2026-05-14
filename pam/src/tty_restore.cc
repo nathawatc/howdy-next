@@ -118,3 +118,26 @@ auto TtyRestoreContext::restore_echo(std::string *error_message) const -> bool {
 
   return true;
 }
+
+auto TtyRestoreContext::write_newline(std::string *error_message) const -> bool {
+  if (!valid_) {
+    return true;
+  }
+
+  constexpr char kNewline[] = "\n";
+  const ssize_t bytes_written = write(fd_, kNewline, sizeof(kNewline) - 1);
+  if (bytes_written == static_cast<ssize_t>(sizeof(kNewline) - 1)) {
+    return true;
+  }
+
+  if (error_message != nullptr) {
+    if (bytes_written < 0) {
+      *error_message = "Failed to write terminal newline: " +
+                       std::string(std::strerror(errno));
+    } else {
+      *error_message = "Failed to write terminal newline";
+    }
+  }
+
+  return false;
+}

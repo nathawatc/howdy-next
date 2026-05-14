@@ -418,6 +418,10 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     if (!tty_restore.restore_echo(&error_message)) {
       syslog(LOG_WARNING, "%s", error_message.c_str());
     }
+    error_message.clear();
+    if (!tty_restore.write_newline(&error_message)) {
+      syslog(LOG_WARNING, "%s", error_message.c_str());
+    }
   }
 
   return howdy_status(username, status, config, conv_function);
