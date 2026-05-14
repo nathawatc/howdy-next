@@ -371,6 +371,15 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     }
   }
 
+  if (effective_workaround == Workaround::Input && ask_auth_tok &&
+      euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+    const int access_errno = errno;
+    syslog(LOG_INFO,
+           "Input prompt workaround unavailable, falling back to standard PAM prompt: %s (%d)",
+           strerror(access_errno), access_errno);
+    effective_workaround = Workaround::Off;
+  }
+
   const bool ask_pass =
       effective_workaround == Workaround::Native
           ? native_prompt.has_value()

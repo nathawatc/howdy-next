@@ -53,7 +53,7 @@ inline auto checkenv(const char *name) -> bool {
   const auto len = strlen(name);
 
   for (char **env = environ; *env != nullptr; env++) {
-    if (strncmp(*env, name, len) == 0) {
+    if (strncmp(*env, name, len) == 0 && (*env)[len] == '=') {
       return true;
     }
   }
