@@ -32,6 +32,8 @@ struct InvokingUser {
   uid_t uid = 0;
   gid_t gid = 0;
   std::string name;
+  std::string home;
+  std::string shell;
 };
 
 auto parse_uid_env(const char *value) -> std::optional<uid_t> {
@@ -68,7 +70,13 @@ auto parse_gid_env(const char *value) -> std::optional<gid_t> {
 
 auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override)
     -> InvokingUser {
-  return InvokingUser{.uid = pwd.pw_uid, .gid = gid_override, .name = pwd.pw_name};
+  return InvokingUser{
+      .uid = pwd.pw_uid,
+      .gid = gid_override,
+      .name = pwd.pw_name,
+      .home = pwd.pw_dir != nullptr ? pwd.pw_dir : "",
+      .shell = pwd.pw_shell != nullptr ? pwd.pw_shell : "",
+  };
 }
 
 auto resolve_invoking_user() -> std::optional<InvokingUser> {
@@ -123,6 +131,26 @@ auto resolve_editor(bool allow_env_editor) -> std::string {
 void remove_if_exists(const fs::path &path) {
   std::error_code ec;
   fs::remove(path, ec);
+}
+
+void set_editor_env_var(const char *name, const std::string &value) {
+  if (value.empty()) {
+    unsetenv(name);
+    return;
+  }
+  setenv(name, value.c_str(), 1);
+}
+
+void reset_editor_environment(const InvokingUser &invoking_user) {
+  set_editor_env_var("HOME", invoking_user.home);
+  set_editor_env_var("LOGNAME", invoking_user.name);
+  set_editor_env_var("USER", invoking_user.name);
+  set_editor_env_var("SHELL", invoking_user.shell);
+
+  unsetenv("XDG_CONFIG_HOME");
+  unsetenv("XDG_CACHE_HOME");
+  unsetenv("XDG_DATA_HOME");
+  unsetenv("XDG_STATE_HOME");
 }
 
 auto create_temp_copy(const fs::path &source_path,
@@ -212,6 +240,7 @@ auto run_editor(const std::string &editor, const fs::path &temp_path,
           setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
         _exit(126);
       }
+      reset_editor_environment(*invoking_user);
     }
 
     char *const exec_argv[] = {
