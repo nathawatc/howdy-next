@@ -10,7 +10,6 @@
 #include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
-#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_values.hpp"

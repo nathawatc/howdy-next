@@ -7,7 +7,6 @@
 #include <cerrno>
 #include <filesystem>
 #include <optional>
-#include <string>
 #include <utility>
 
 namespace howdy::native {
