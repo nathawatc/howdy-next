@@ -4,6 +4,10 @@
 #include <array>
 #include <atomic>
 
+#ifdef HOWDY_PAM_TESTING
+#include <csignal>
+#endif
+
 #include <security/pam_appl.h>
 
 class NativePromptConversation {
@@ -39,5 +43,26 @@ private:
   std::array<int, 2> abort_pipe_{{-1, -1}};
   std::atomic<bool> abort_requested_{false};
 };
+
+#ifdef HOWDY_PAM_TESTING
+class SigintAbortHandlerForTesting {
+public:
+  explicit SigintAbortHandlerForTesting(int abort_fd);
+  ~SigintAbortHandlerForTesting();
+
+  SigintAbortHandlerForTesting(const SigintAbortHandlerForTesting &) = delete;
+  auto operator=(const SigintAbortHandlerForTesting &)
+      -> SigintAbortHandlerForTesting & = delete;
+
+  [[nodiscard]] auto installed() const -> bool;
+
+private:
+  struct sigaction previous_action_ {};
+  bool installed_ = false;
+};
+
+void trigger_sigint_abort_for_testing();
+auto sigint_abort_handler_ready_for_testing() -> bool;
+#endif
 
 #endif  // HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP

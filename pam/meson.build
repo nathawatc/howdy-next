@@ -96,3 +96,23 @@ test(
 	'pam-main-entrypoints',
 	pam_main_entrypoints_test,
 )
+
+pam_native_prompt_conversation_test = executable(
+	'pam-native-prompt-conversation-test',
+	'src/native_prompt_conversation.cpp',
+	'src/tests/native_prompt_conversation_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	cpp_args: ['-DHOWDY_PAM_TESTING'],
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-native-prompt-conversation',
+	pam_native_prompt_conversation_test,
+)
