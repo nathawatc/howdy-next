@@ -12,17 +12,17 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/main.cpp
+#: src/auth_flow.cpp
 msgid "Attempting facial authentication"
 msgstr "กำลังยืนยันตัวตนด้วยใบหน้า"
 
-#: src/main.cpp
+#: src/auth_flow.cpp
 msgid ""
 "Insufficient permissions to send Enter press, waiting for user to press it "
 "instead"
 msgstr "สิทธิ์ไม่พอในการส่งคำสั่ง Enter กรุณากด Enter ด้วยตัวเอง"
 
-#: src/main.cpp
+#: src/auth_flow.cpp
 msgid "Failed to send Enter press, waiting for user to press it instead"
 msgstr "ส่งคำสั่ง Enter ไม่สำเร็จ กรุณากด Enter ด้วยตัวเอง"
 
