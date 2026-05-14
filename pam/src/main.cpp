@@ -10,7 +10,11 @@ PAM_EXTERN auto pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc,
 // Called by PAM when a session is started, such as by the su command.
 PAM_EXTERN auto pam_sm_open_session(pam_handle_t *pamh, int flags, int argc,
                                     const char **argv) -> int {
-  return identify(pamh, flags, argc, argv, false);
+  (void)pamh;
+  (void)flags;
+  (void)argc;
+  (void)argv;
+  return PAM_IGNORE;
 }
 
 // The functions below are required by PAM, but not needed in this module.

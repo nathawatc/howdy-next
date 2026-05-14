@@ -77,3 +77,22 @@ test(
 	'pam-prompt-workaround',
 	pam_prompt_workaround_test,
 )
+
+pam_main_entrypoints_test = executable(
+	'pam-main-entrypoints-test',
+	'src/main.cpp',
+	'src/tests/main_entrypoints_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-main-entrypoints',
+	pam_main_entrypoints_test,
+)

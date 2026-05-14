@@ -261,7 +261,7 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
     }
   }
 
-  pass_task.stop(plan.abort_prompt && native_prompt == nullptr);
+  pass_task.stop();
   return enter_failed;
 }
 
@@ -405,9 +405,9 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
       syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)",
              strerror(errno), errno);
     }
-    child_task.stop(false);
+    child_task.stop();
     if (ask_pass) {
-      pass_task.stop(false);
+      pass_task.stop();
       char *password = nullptr;
       std::tie(pam_res, password) = pass_task.get();
       (void)password;
@@ -418,11 +418,11 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     return PAM_IGNORE;
   }
 
-  child_task.stop(false);
+  child_task.stop();
   const int status = child_task.get();
 
   if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS && ask_pass) {
-    pass_task.stop(false);
+    pass_task.stop();
 
     char *password = nullptr;
     std::tie(pam_res, password) = pass_task.get();

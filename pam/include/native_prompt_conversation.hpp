@@ -25,10 +25,10 @@ private:
       -> int;
   auto handle(int num_msg, const struct pam_message **msgm,
               struct pam_response **response) -> int;
-  auto delegate(int num_msg, const struct pam_message **msgm,
-                struct pam_response **response) const -> int;
-  auto prompt_hidden_password(const struct pam_message &message,
-                              struct pam_response **response) -> int;
+  [[nodiscard]] auto write_message_line(const struct pam_message &message) const
+      -> int;
+  auto prompt_input(const struct pam_message &message, char **response,
+                    bool hide_input) -> int;
 
   pam_handle_t *pamh_ = nullptr;
   struct pam_conv original_conv_ {};

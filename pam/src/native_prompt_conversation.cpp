@@ -172,26 +172,78 @@ auto NativePromptConversation::dispatch(int num_msg,
 auto NativePromptConversation::handle(int num_msg,
                                       const struct pam_message **msgm,
                                       struct pam_response **response) -> int {
-  if (num_msg == 1 && msgm != nullptr && msgm[0] != nullptr &&
-      msgm[0]->msg_style == PAM_PROMPT_ECHO_OFF) {
-    return prompt_hidden_password(*msgm[0], response);
-  }
-
-  return delegate(num_msg, msgm, response);
-}
-
-auto NativePromptConversation::delegate(int num_msg,
-                                        const struct pam_message **msgm,
-                                        struct pam_response **response) const
-    -> int {
-  if (!has_original_conv_) {
+  if (num_msg <= 0 || msgm == nullptr || response == nullptr) {
     return PAM_CONV_ERR;
   }
-  return original_conv_.conv(num_msg, msgm, response, original_conv_.appdata_ptr);
+
+  auto *pam_responses = static_cast<struct pam_response *>(
+      calloc(static_cast<std::size_t>(num_msg), sizeof(struct pam_response)));
+  if (pam_responses == nullptr) {
+    return PAM_BUF_ERR;
+  }
+
+  for (int index = 0; index < num_msg; ++index) {
+    if (msgm[index] == nullptr) {
+      continue;
+    }
+
+    const struct pam_message &message = *msgm[index];
+    int result = PAM_SUCCESS;
+    switch (message.msg_style) {
+      case PAM_PROMPT_ECHO_OFF:
+        result = prompt_input(message, &pam_responses[index].resp, true);
+        break;
+      case PAM_PROMPT_ECHO_ON:
+        result = prompt_input(message, &pam_responses[index].resp, false);
+        break;
+      case PAM_TEXT_INFO:
+      case PAM_ERROR_MSG:
+        result = write_message_line(message);
+        break;
+      default:
+        result = PAM_CONV_ERR;
+        break;
+    }
+
+    if (result == PAM_SUCCESS) {
+      continue;
+    }
+
+    for (int cleanup_index = 0; cleanup_index < num_msg; ++cleanup_index) {
+      if (pam_responses[cleanup_index].resp == nullptr) {
+        continue;
+      }
+
+      std::memset(pam_responses[cleanup_index].resp, 0,
+                  std::strlen(pam_responses[cleanup_index].resp));
+      std::free(pam_responses[cleanup_index].resp);
+    }
+    std::free(pam_responses);
+    return result;
+  }
+
+  *response = pam_responses;
+  return PAM_SUCCESS;
 }
 
-auto NativePromptConversation::prompt_hidden_password(
-    const struct pam_message &message, struct pam_response **response) -> int {
+auto NativePromptConversation::write_message_line(
+    const struct pam_message &message) const -> int {
+  if (tty_fd_ < 0) {
+    return PAM_CONV_ERR;
+  }
+
+  const std::string text = message.msg == nullptr ? "" : message.msg;
+  if (!write_all(tty_fd_, text)) {
+    return PAM_CONV_ERR;
+  }
+
+  write_newline(tty_fd_);
+  return PAM_SUCCESS;
+}
+
+auto NativePromptConversation::prompt_input(const struct pam_message &message,
+                                            char **response,
+                                            bool hide_input) -> int {
   if (response == nullptr || tty_fd_ < 0) {
     return PAM_CONV_ERR;
   }
@@ -206,8 +258,12 @@ auto NativePromptConversation::prompt_hidden_password(
   }
 
   struct termios prompt_termios = original_termios;
-  prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHO);
   prompt_termios.c_lflag &= static_cast<tcflag_t>(~ICANON);
+  if (hide_input) {
+    prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHO);
+  } else {
+    prompt_termios.c_lflag |= ECHO;
+  }
   prompt_termios.c_cc[VMIN] = 1;
   prompt_termios.c_cc[VTIME] = 0;
   if (tcsetattr(tty_fd_, TCSANOW, &prompt_termios) != 0) {
@@ -292,6 +348,7 @@ auto NativePromptConversation::prompt_hidden_password(
 
   std::memcpy(pam_response->resp, password.c_str(), password.size());
   pam_response->resp_retcode = 0;
-  *response = pam_response;
+  *response = pam_response->resp;
+  std::free(pam_response);
   return PAM_SUCCESS;
 }
