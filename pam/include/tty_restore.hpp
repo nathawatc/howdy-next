@@ -17,7 +17,7 @@ public:
   TtyRestoreContext(TtyRestoreContext &&other) noexcept;
   auto operator=(TtyRestoreContext &&other) noexcept -> TtyRestoreContext &;
 
-  auto can_restore() const -> bool;
+  [[nodiscard]] auto can_restore() const -> bool;
   auto restore_echo(std::string *error_message = nullptr) const -> bool;
   auto write_newline(std::string *error_message = nullptr) const -> bool;
 

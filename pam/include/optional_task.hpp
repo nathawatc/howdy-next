@@ -20,7 +20,7 @@ public:
   void activate();
   template <typename R, typename P>
   auto wait(std::chrono::duration<R, P> dur) -> std::future_status;
-  auto active() const -> bool;
+  [[nodiscard]] auto active() const -> bool;
   auto ready() -> bool;
   auto get() -> T;
   void stop(bool force);

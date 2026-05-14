@@ -124,9 +124,9 @@ auto TtyRestoreContext::write_newline(std::string *error_message) const -> bool 
     return true;
   }
 
-  constexpr char kNewline[] = "\n";
-  const ssize_t bytes_written = write(fd_, kNewline, sizeof(kNewline) - 1);
-  if (bytes_written == static_cast<ssize_t>(sizeof(kNewline) - 1)) {
+  constexpr char kNewline = '\n';
+  const ssize_t bytes_written = write(fd_, &kNewline, 1);
+  if (bytes_written == 1) {
     return true;
   }
 
