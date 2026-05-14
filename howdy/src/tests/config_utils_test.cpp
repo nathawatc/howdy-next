@@ -68,6 +68,13 @@ auto main() -> int {
   ok &= expect(after_disabled.find("disabled = true\n") != std::string::npos,
                "disabled key updated");
 
+  ok &= expect(howdy::native::is_safe_ini_scalar_value("true"),
+               "is_safe_ini_scalar_value accepts simple scalar");
+  ok &= expect(!howdy::native::is_safe_ini_scalar_value("true\n[video]\ntimeout = 0"),
+               "is_safe_ini_scalar_value rejects newline injection");
+  ok &= expect(!howdy::native::is_safe_ini_scalar_value("[video]"),
+               "is_safe_ini_scalar_value rejects section-like values");
+
   ok &= expect(
       howdy::native::update_config_value(config_path, "dark_threshold", "42"),
       "update_config_value succeeds in later section");
@@ -77,6 +84,11 @@ auto main() -> int {
 
   ok &= expect(!howdy::native::update_config_value(config_path, "missing_key", "x"),
                "update_config_value fails for missing key");
+  ok &= expect(!howdy::native::update_config_value(
+                   config_path, "dark_threshold", "0\n[core]\ndisabled = true"),
+               "update_config_value rejects newline injection");
+  ok &= expect(read_file(config_path) == after_threshold,
+               "rejected injection leaves config unchanged");
 
   const auto nested_path = temp_root / "nested" / "generated.ini";
   const std::vector<std::string> write_lines = {

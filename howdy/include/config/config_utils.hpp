@@ -2,10 +2,12 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace howdy::native {
 
+auto is_safe_ini_scalar_value(std::string_view value) -> bool;
 auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
     -> std::vector<std::string>;
 auto atomic_write_lines(const std::filesystem::path &config_path,

@@ -6,10 +6,25 @@
 
 #include <filesystem>
 #include <fstream>
+#include <string_view>
 #include <string>
 #include <vector>
 
 namespace howdy::native {
+
+auto is_safe_ini_scalar_value(std::string_view value) -> bool {
+  if (!value.empty() && value.front() == '[') {
+    return false;
+  }
+
+  for (const char ch : value) {
+    if (ch == '\0' || ch == '\n' || ch == '\r') {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 auto read_config_lines(const std::filesystem::path &config_path, bool lock)
     -> std::vector<std::string> {
@@ -82,6 +97,10 @@ auto atomic_write_lines(const std::filesystem::path &config_path,
 auto update_config_value(const std::filesystem::path &config_path,
                          const std::string &key, const std::string &value,
                          bool lock) -> bool {
+  if (!is_safe_ini_scalar_value(value)) {
+    return false;
+  }
+
   auto lines = read_config_lines(config_path, lock);
   for (auto &line : lines) {
     const auto stripped_pos = line.find_first_not_of(" \t");
