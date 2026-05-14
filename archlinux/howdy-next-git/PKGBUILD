@@ -35,7 +35,9 @@ pkgver() {
 }
 
 prepare() {
-	arch-meson "$srcdir/howdy-next" "$srcdir/build"
+	arch-meson "$srcdir/howdy-next" "$srcdir/build" \
+		-D config_dir=/etc/howdy \
+		-D user_models_dir=/etc/howdy/models
 }
 
 build() {
@@ -46,7 +48,7 @@ package() {
 	meson install -C "$srcdir/build" --destdir "$pkgdir"
 	install -d -m750 "$pkgdir/etc/howdy"
 	install -m640 "$srcdir/howdy-next/config/config.ini" "$pkgdir/etc/howdy/config.ini"
-	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
+	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
 	# Workaround for polkit 127+ breaking howdy (boltgolt/howdy#1077)
 	install -Dm644 polkit-agent-helper-howdy.conf \
