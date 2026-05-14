@@ -1,41 +1,82 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# ---> C++
+# Prerequisites
+*.d
 
-# C extensions
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
 *.so
+*.dylib
+*.dll
+*.so.*
 
-# Distribution / packaging
-.Python
-env/
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.out
+
+# Build directories
 build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
+Build/
+build-*/
 
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.swp
 
+# debug information files
+*.dwo
 
+# test output & cache
+Testing/
+.cache/
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
+# ---> Ninja
+.ninja_deps
+.ninja_log
+
+# ---> CMake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
+
+# --> Meson
+/subprojects/*
+!/subprojects/*.wrap
 
 # Translations
 *.mo
@@ -43,50 +84,3 @@ coverage.xml
 
 # Logs
 *.log
-
-# dotenv
-.env
-
-# virtualenv
-.venv
-venv/
-ENV/
-
-# mypy
-.mypy_cache/
-
-# generated models
-/howdy/src/models
-/howdy/src/models/*.onnx
-/howdy/src/models/face_detection_yunet_2023mar_int8bq.onnx
-/howdy/src/models/face_recognition_sface_2021dec_int8bq.onnx
-
-# snapshots
-/howdy/src/snapshots
-
-# build files
-debian/howdy.substvars
-debian/files
-debian/debhelper-build-stamp
-debian/howdy
-
-# vscode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
-
-# Local History for Visual Studio Code
-.history/
-
-# Built Visual Studio Code Extensions
-*.vsix
-
-# Meson
-/subprojects/*
-!/subprojects/*.wrap
-
-# OpenCode Agent
-.sisyphus/
