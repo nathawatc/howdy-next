@@ -17,9 +17,12 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 
 shared_library(
 	'pam_howdy',
+	'src/auth_flow.cc',
 	'src/main.cc',
 	'src/enter_device.cc',
+	'src/prompt_workaround.cc',
 	'src/status_mapping.cc',
+	'src/tty_restore.cc',
 	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
@@ -53,4 +56,23 @@ pam_status_mapping_test = executable(
 test(
 	'pam-status-mapping',
 	pam_status_mapping_test,
+)
+
+pam_prompt_workaround_test = executable(
+	'pam-prompt-workaround-test',
+	'src/prompt_workaround.cc',
+	'src/tests/prompt_workaround_test.cc',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-prompt-workaround',
+	pam_prompt_workaround_test,
 )
