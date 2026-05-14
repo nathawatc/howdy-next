@@ -1,9 +1,12 @@
+#ifndef HOWDY_PAM_TESTING
+#define HOWDY_PAM_TESTING
+#endif
+
 #include "native_prompt_conversation.hpp"
 
 #include <unistd.h>
 
-#include <cerrno>
-#include <cstring>
+#include <array>
 #include <iostream>
 #include <string>
 
@@ -22,8 +25,8 @@ auto expect(bool condition, const std::string &message) -> bool {
 auto main() -> int {
   bool ok = true;
 
-  int abort_pipe[2] = {-1, -1};
-  ok &= expect(pipe(abort_pipe) == 0, "creates abort pipe");
+  std::array<int, 2> abort_pipe{{-1, -1}};
+  ok &= expect(pipe(abort_pipe.data()) == 0, "creates abort pipe");
   if (!ok) {
     return 1;
   }
