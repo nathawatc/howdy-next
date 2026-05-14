@@ -1,8 +1,9 @@
 #include "cli/config_cli.hpp"
 
+#include "common/invoking_user.hpp"
+
 #include <fcntl.h>
 #include <grp.h>
-#include <pwd.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -13,8 +14,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <limits>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -29,81 +28,6 @@ namespace fs = std::filesystem;
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
-
-struct InvokingUser {
-  uid_t uid = 0;
-  gid_t gid = 0;
-  std::string name;
-  std::string home;
-  std::string shell;
-};
-
-auto parse_uid_env(const char *value) -> std::optional<uid_t> {
-  if (value == nullptr || value[0] == '\0') {
-    return std::nullopt;
-  }
-
-  errno = 0;
-  char *end = nullptr;
-  const auto raw_uid = std::strtoul(value, &end, 10);
-  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-      raw_uid > std::numeric_limits<uid_t>::max()) {
-    return std::nullopt;
-  }
-
-  return static_cast<uid_t>(raw_uid);
-}
-
-auto parse_gid_env(const char *value) -> std::optional<gid_t> {
-  if (value == nullptr || value[0] == '\0') {
-    return std::nullopt;
-  }
-
-  errno = 0;
-  char *end = nullptr;
-  const auto raw_gid = std::strtoul(value, &end, 10);
-  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-      raw_gid > std::numeric_limits<gid_t>::max()) {
-    return std::nullopt;
-  }
-
-  return static_cast<gid_t>(raw_gid);
-}
-
-auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override)
-    -> InvokingUser {
-  return InvokingUser{
-      .uid = pwd.pw_uid,
-      .gid = gid_override,
-      .name = pwd.pw_name,
-      .home = pwd.pw_dir != nullptr ? pwd.pw_dir : "",
-      .shell = pwd.pw_shell != nullptr ? pwd.pw_shell : "",
-  };
-}
-
-auto resolve_invoking_user() -> std::optional<InvokingUser> {
-  if (const auto sudo_uid = parse_uid_env(std::getenv("SUDO_UID"))) {
-    if (passwd *pwd = getpwuid(*sudo_uid); pwd != nullptr) {
-      const auto sudo_gid = parse_gid_env(std::getenv("SUDO_GID")).value_or(pwd->pw_gid);
-      return invoking_user_from_pwd(*pwd, sudo_gid);
-    }
-  }
-
-  if (const char *doas_user = std::getenv("DOAS_USER");
-      doas_user != nullptr && doas_user[0] != '\0') {
-    if (passwd *pwd = getpwnam(doas_user); pwd != nullptr) {
-      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
-    }
-  }
-
-  if (const auto pkexec_uid = parse_uid_env(std::getenv("PKEXEC_UID"))) {
-    if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
-      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
-    }
-  }
-
-  return std::nullopt;
-}
 
 auto is_safe_editor_path(const fs::path &path) -> bool {
   return path.is_absolute() && fs::is_regular_file(path) &&
@@ -143,7 +67,7 @@ void set_editor_env_var(const char *name, const std::string &value) {
   setenv(name, value.c_str(), 1);
 }
 
-void reset_editor_environment(const InvokingUser &invoking_user) {
+void reset_editor_environment(const howdy::native::InvokingUser &invoking_user) {
   set_editor_env_var("HOME", invoking_user.home);
   set_editor_env_var("LOGNAME", invoking_user.name);
   set_editor_env_var("USER", invoking_user.name);
@@ -156,7 +80,7 @@ void reset_editor_environment(const InvokingUser &invoking_user) {
 }
 
 auto create_temp_copy(const fs::path &source_path,
-                      const std::optional<InvokingUser> &invoking_user)
+                      const std::optional<howdy::native::InvokingUser> &invoking_user)
     -> std::optional<fs::path> {
   std::ifstream input(source_path, std::ios::binary);
   if (!input.is_open()) {
@@ -230,7 +154,7 @@ auto create_temp_copy(const fs::path &source_path,
 }
 
 auto run_editor(const std::string &editor, const fs::path &temp_path,
-                const std::optional<InvokingUser> &invoking_user) -> int {
+                const std::optional<howdy::native::InvokingUser> &invoking_user) -> int {
   const pid_t child_pid = fork();
   if (child_pid < 0) {
     return -1;
@@ -403,7 +327,7 @@ int config_main(int argc, char **argv) {
   (void)argc;
   (void)argv;
 
-  const auto invoking_user = resolve_invoking_user();
+  const auto invoking_user = howdy::native::resolve_invoking_user();
   const auto editor = resolve_editor(invoking_user.has_value());
   if (editor.empty()) {
     std::cout << "Error: Could not find a suitable text editor.\n";

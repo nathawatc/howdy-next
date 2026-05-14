@@ -1,5 +1,6 @@
 #include "cli/test_cli.hpp"
 
+#include "common/invoking_user.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_values.hpp"
@@ -15,9 +16,6 @@
 #include <filesystem>
 #include <grp.h>
 #include <iostream>
-#include <limits>
-#include <optional>
-#include <pwd.h>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -32,14 +30,6 @@ namespace {
 constexpr int kExitOk = 0;
 constexpr int kExitCameraError = 1;
 constexpr auto kWindowName = "Howdy Test";
-
-struct InvokingUser {
-  uid_t uid = 0;
-  gid_t gid = 0;
-  std::string name;
-  std::string home;
-  std::string shell;
-};
 
 struct TestArgs {
   std::string user;
@@ -82,74 +72,6 @@ void print_text(cv::Mat &overlay, int line_number, int height,
               cv::LINE_AA);
 }
 
-auto parse_uid_env(const char *value) -> std::optional<uid_t> {
-  if (value == nullptr || value[0] == '\0') {
-    return std::nullopt;
-  }
-
-  errno = 0;
-  char *end = nullptr;
-  const auto raw_uid = std::strtoul(value, &end, 10);
-  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-      raw_uid > std::numeric_limits<uid_t>::max()) {
-    return std::nullopt;
-  }
-
-  return static_cast<uid_t>(raw_uid);
-}
-
-auto parse_gid_env(const char *value) -> std::optional<gid_t> {
-  if (value == nullptr || value[0] == '\0') {
-    return std::nullopt;
-  }
-
-  errno = 0;
-  char *end = nullptr;
-  const auto raw_gid = std::strtoul(value, &end, 10);
-  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-      raw_gid > std::numeric_limits<gid_t>::max()) {
-    return std::nullopt;
-  }
-
-  return static_cast<gid_t>(raw_gid);
-}
-
-auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override)
-    -> InvokingUser {
-  return InvokingUser{
-      .uid = pwd.pw_uid,
-      .gid = gid_override,
-      .name = pwd.pw_name,
-      .home = pwd.pw_dir != nullptr ? pwd.pw_dir : "",
-      .shell = pwd.pw_shell != nullptr ? pwd.pw_shell : "",
-  };
-}
-
-auto resolve_invoking_user() -> std::optional<InvokingUser> {
-  if (const auto sudo_uid = parse_uid_env(std::getenv("SUDO_UID"))) {
-    if (passwd *pwd = getpwuid(*sudo_uid); pwd != nullptr) {
-      const auto sudo_gid =
-          parse_gid_env(std::getenv("SUDO_GID")).value_or(pwd->pw_gid);
-      return invoking_user_from_pwd(*pwd, sudo_gid);
-    }
-  }
-
-  if (const char *doas_user = std::getenv("DOAS_USER");
-      doas_user != nullptr && doas_user[0] != '\0') {
-    if (passwd *pwd = getpwnam(doas_user); pwd != nullptr) {
-      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
-    }
-  }
-
-  if (const auto pkexec_uid = parse_uid_env(std::getenv("PKEXEC_UID"))) {
-    if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
-      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
-    }
-  }
-
-  return std::nullopt;
-}
-
 void set_gui_env_var(const char *name, const std::string &value) {
   if (value.empty()) {
     unsetenv(name);
@@ -158,7 +80,7 @@ void set_gui_env_var(const char *name, const std::string &value) {
   setenv(name, value.c_str(), 1);
 }
 
-void reset_gui_environment(const InvokingUser &invoking_user) {
+void reset_gui_environment(const howdy::native::InvokingUser &invoking_user) {
   set_gui_env_var("HOME", invoking_user.home);
   set_gui_env_var("LOGNAME", invoking_user.name);
   set_gui_env_var("USER", invoking_user.name);
@@ -195,7 +117,7 @@ auto drop_to_invoking_gui_user() -> bool {
     return true;
   }
 
-  const auto invoking_user = resolve_invoking_user();
+  const auto invoking_user = howdy::native::resolve_invoking_user();
   if (!invoking_user.has_value()) {
     return false;
   }
