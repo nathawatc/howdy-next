@@ -11,11 +11,18 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
+#include <grp.h>
 #include <iostream>
+#include <limits>
+#include <optional>
+#include <pwd.h>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -25,6 +32,14 @@ namespace {
 constexpr int kExitOk = 0;
 constexpr int kExitCameraError = 1;
 constexpr auto kWindowName = "Howdy Test";
+
+struct InvokingUser {
+  uid_t uid = 0;
+  gid_t gid = 0;
+  std::string name;
+  std::string home;
+  std::string shell;
+};
 
 struct TestArgs {
   std::string user;
@@ -65,6 +80,133 @@ void print_text(cv::Mat &overlay, int line_number, int height,
   cv::putText(overlay, text, cv::Point(10, height - 10 - (10 * line_number)),
               cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0,
               cv::LINE_AA);
+}
+
+auto parse_uid_env(const char *value) -> std::optional<uid_t> {
+  if (value == nullptr || value[0] == '\0') {
+    return std::nullopt;
+  }
+
+  errno = 0;
+  char *end = nullptr;
+  const auto raw_uid = std::strtoul(value, &end, 10);
+  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
+      raw_uid > std::numeric_limits<uid_t>::max()) {
+    return std::nullopt;
+  }
+
+  return static_cast<uid_t>(raw_uid);
+}
+
+auto parse_gid_env(const char *value) -> std::optional<gid_t> {
+  if (value == nullptr || value[0] == '\0') {
+    return std::nullopt;
+  }
+
+  errno = 0;
+  char *end = nullptr;
+  const auto raw_gid = std::strtoul(value, &end, 10);
+  if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
+      raw_gid > std::numeric_limits<gid_t>::max()) {
+    return std::nullopt;
+  }
+
+  return static_cast<gid_t>(raw_gid);
+}
+
+auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override)
+    -> InvokingUser {
+  return InvokingUser{
+      .uid = pwd.pw_uid,
+      .gid = gid_override,
+      .name = pwd.pw_name,
+      .home = pwd.pw_dir != nullptr ? pwd.pw_dir : "",
+      .shell = pwd.pw_shell != nullptr ? pwd.pw_shell : "",
+  };
+}
+
+auto resolve_invoking_user() -> std::optional<InvokingUser> {
+  if (const auto sudo_uid = parse_uid_env(std::getenv("SUDO_UID"))) {
+    if (passwd *pwd = getpwuid(*sudo_uid); pwd != nullptr) {
+      const auto sudo_gid =
+          parse_gid_env(std::getenv("SUDO_GID")).value_or(pwd->pw_gid);
+      return invoking_user_from_pwd(*pwd, sudo_gid);
+    }
+  }
+
+  if (const char *doas_user = std::getenv("DOAS_USER");
+      doas_user != nullptr && doas_user[0] != '\0') {
+    if (passwd *pwd = getpwnam(doas_user); pwd != nullptr) {
+      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
+    }
+  }
+
+  if (const auto pkexec_uid = parse_uid_env(std::getenv("PKEXEC_UID"))) {
+    if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
+      return invoking_user_from_pwd(*pwd, pwd->pw_gid);
+    }
+  }
+
+  return std::nullopt;
+}
+
+void set_gui_env_var(const char *name, const std::string &value) {
+  if (value.empty()) {
+    unsetenv(name);
+    return;
+  }
+  setenv(name, value.c_str(), 1);
+}
+
+void reset_gui_environment(const InvokingUser &invoking_user) {
+  set_gui_env_var("HOME", invoking_user.home);
+  set_gui_env_var("LOGNAME", invoking_user.name);
+  set_gui_env_var("USER", invoking_user.name);
+  set_gui_env_var("SHELL", invoking_user.shell);
+
+  unsetenv("XDG_CONFIG_HOME");
+  unsetenv("XDG_CACHE_HOME");
+  unsetenv("XDG_DATA_HOME");
+  unsetenv("XDG_STATE_HOME");
+
+  const auto runtime_dir =
+      std::filesystem::path("/run/user") / std::to_string(invoking_user.uid);
+  if (std::filesystem::is_directory(runtime_dir)) {
+    set_gui_env_var("XDG_RUNTIME_DIR", runtime_dir.string());
+
+    const auto session_bus = runtime_dir / "bus";
+    if (std::filesystem::exists(session_bus)) {
+      set_gui_env_var("DBUS_SESSION_BUS_ADDRESS",
+                      "unix:path=" + session_bus.string());
+    }
+  }
+
+  if (std::getenv("XAUTHORITY") == nullptr && !invoking_user.home.empty()) {
+    const auto xauthority =
+        std::filesystem::path(invoking_user.home) / ".Xauthority";
+    if (std::filesystem::is_regular_file(xauthority)) {
+      set_gui_env_var("XAUTHORITY", xauthority.string());
+    }
+  }
+}
+
+auto drop_to_invoking_gui_user() -> bool {
+  if (geteuid() != 0) {
+    return true;
+  }
+
+  const auto invoking_user = resolve_invoking_user();
+  if (!invoking_user.has_value()) {
+    return false;
+  }
+
+  reset_gui_environment(*invoking_user);
+  if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
+      setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
+    return false;
+  }
+
+  return true;
 }
 
 }  // namespace
@@ -139,6 +281,13 @@ int test_main(int argc, char **argv) {
   std::cout << "\nOpening a window with a test feed\n\n";
   std::cout << "Press ctrl+C in this terminal to quit\n";
   std::cout << "Click on the image to enable or disable slow mode\n\n";
+
+  if (!drop_to_invoking_gui_user()) {
+    std::cerr << "Failed to switch GUI session to the invoking user\n";
+    std::cerr << "Run this command from your desktop session through sudo/doas/pkexec\n";
+    capture.release();
+    return kExitCameraError;
+  }
 
   cv::namedWindow(kWindowName);
   cv::setMouseCallback(kWindowName, mouse_callback);
