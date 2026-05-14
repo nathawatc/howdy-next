@@ -21,6 +21,7 @@
 
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
+#include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 
@@ -45,19 +46,6 @@ struct StagedDownloadFile {
   int fd = -1;
   std::filesystem::path path;
 };
-
-auto bad_model_download(const std::filesystem::path &path) -> bool {
-  if (!std::filesystem::is_regular_file(path)) {
-    return true;
-  }
-
-  std::ifstream input(path, std::ios::binary);
-  std::string header(256, '\0');
-  input.read(header.data(), static_cast<std::streamsize>(header.size()));
-  header.resize(static_cast<std::size_t>(input.gcount()));
-  return header.rfind("version https://git-lfs.github.com/spec/v1", 0) == 0 ||
-         (!header.empty() && header.front() == '<');
-}
 
 auto trim(const std::string &value) -> std::string {
   const auto start = value.find_first_not_of(" \t\r\n");
@@ -362,7 +350,7 @@ int download_models_main(int argc, char **argv) {
     }
 
     if (std::filesystem::exists(model.destination) &&
-        !bad_model_download(model.destination)) {
+        !howdy::native::is_invalid_model_file(model.destination)) {
       std::cout << "Model already exists: " << model.destination.string() << "\n";
       continue;
     }
@@ -387,7 +375,7 @@ int download_models_main(int argc, char **argv) {
       return kExitAbort;
     }
 
-    if (bad_model_download(staged->path)) {
+    if (howdy::native::is_invalid_model_file(staged->path)) {
       cleanup_staged_download(*staged);
       curl_global_cleanup();
       std::cout << "Downloaded file is not an ONNX model: " << model.url << "\n";

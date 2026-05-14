@@ -1,5 +1,6 @@
 #include "cli/config_cli.hpp"
 
+#include "common/invoking_user_env.hpp"
 #include "common/invoking_user.hpp"
 
 #include <fcntl.h>
@@ -10,7 +11,6 @@
 
 #include <array>
 #include <cerrno>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -59,24 +59,8 @@ void remove_if_exists(const fs::path &path) {
   fs::remove(path, ec);
 }
 
-void set_editor_env_var(const char *name, const std::string &value) {
-  if (value.empty()) {
-    unsetenv(name);
-    return;
-  }
-  setenv(name, value.c_str(), 1);
-}
-
 void reset_editor_environment(const howdy::native::InvokingUser &invoking_user) {
-  set_editor_env_var("HOME", invoking_user.home);
-  set_editor_env_var("LOGNAME", invoking_user.name);
-  set_editor_env_var("USER", invoking_user.name);
-  set_editor_env_var("SHELL", invoking_user.shell);
-
-  unsetenv("XDG_CONFIG_HOME");
-  unsetenv("XDG_CACHE_HOME");
-  unsetenv("XDG_DATA_HOME");
-  unsetenv("XDG_STATE_HOME");
+  howdy::native::reset_invoking_user_environment(invoking_user);
 }
 
 auto create_temp_copy(const fs::path &source_path,

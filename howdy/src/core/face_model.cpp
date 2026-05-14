@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <string>
 #include <utility>
@@ -11,6 +10,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include "common/file_security.hpp"
+#include "common/model_file.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -40,7 +40,7 @@ FaceModel::FaceModel(const ConfigReader &config) {
       set_error(model_security.error_message);
       return;
     }
-    if (bad_model_download(model_path)) {
+    if (is_invalid_model_file(model_path)) {
       set_error("OpenCV face model file is invalid: " + model_path);
       return;
     }
@@ -247,19 +247,6 @@ auto FaceModel::resolve_model_path(const ConfigReader &config,
     return fallback;
   }
   return value;
-}
-
-auto FaceModel::bad_model_download(const std::string &path) const -> bool {
-  std::ifstream model_file(path, std::ios::binary);
-  if (!model_file.is_open()) {
-    return true;
-  }
-
-  std::string header(256, '\0');
-  model_file.read(header.data(), static_cast<std::streamsize>(header.size()));
-  header.resize(static_cast<std::size_t>(model_file.gcount()));
-  return header.rfind("version https://git-lfs.github.com/spec/v1", 0) == 0 ||
-         header.find('<') == 0;
 }
 
 }  // namespace howdy::native

@@ -1,5 +1,6 @@
 #include "cli/test_cli.hpp"
 
+#include "common/invoking_user_env.hpp"
 #include "common/invoking_user.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
@@ -12,7 +13,6 @@
 #include <array>
 #include <chrono>
 #include <cstring>
-#include <cstdlib>
 #include <filesystem>
 #include <grp.h>
 #include <iostream>
@@ -72,46 +72,6 @@ void print_text(cv::Mat &overlay, int line_number, int height,
               cv::LINE_AA);
 }
 
-void set_gui_env_var(const char *name, const std::string &value) {
-  if (value.empty()) {
-    unsetenv(name);
-    return;
-  }
-  setenv(name, value.c_str(), 1);
-}
-
-void reset_gui_environment(const howdy::native::InvokingUser &invoking_user) {
-  set_gui_env_var("HOME", invoking_user.home);
-  set_gui_env_var("LOGNAME", invoking_user.name);
-  set_gui_env_var("USER", invoking_user.name);
-  set_gui_env_var("SHELL", invoking_user.shell);
-
-  unsetenv("XDG_CONFIG_HOME");
-  unsetenv("XDG_CACHE_HOME");
-  unsetenv("XDG_DATA_HOME");
-  unsetenv("XDG_STATE_HOME");
-
-  const auto runtime_dir =
-      std::filesystem::path("/run/user") / std::to_string(invoking_user.uid);
-  if (std::filesystem::is_directory(runtime_dir)) {
-    set_gui_env_var("XDG_RUNTIME_DIR", runtime_dir.string());
-
-    const auto session_bus = runtime_dir / "bus";
-    if (std::filesystem::exists(session_bus)) {
-      set_gui_env_var("DBUS_SESSION_BUS_ADDRESS",
-                      "unix:path=" + session_bus.string());
-    }
-  }
-
-  if (std::getenv("XAUTHORITY") == nullptr && !invoking_user.home.empty()) {
-    const auto xauthority =
-        std::filesystem::path(invoking_user.home) / ".Xauthority";
-    if (std::filesystem::is_regular_file(xauthority)) {
-      set_gui_env_var("XAUTHORITY", xauthority.string());
-    }
-  }
-}
-
 auto drop_to_invoking_gui_user() -> bool {
   if (geteuid() != 0) {
     return true;
@@ -122,7 +82,7 @@ auto drop_to_invoking_gui_user() -> bool {
     return false;
   }
 
-  reset_gui_environment(*invoking_user);
+  howdy::native::reset_invoking_user_gui_environment(*invoking_user);
   return initgroups(invoking_user->name.c_str(), invoking_user->gid) == 0 &&
          setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
 }

@@ -48,7 +48,6 @@ private:
                                         const std::string &option,
                                         const std::string &fallback) const
       -> std::string;
-  [[nodiscard]] auto bad_model_download(const std::string &path) const -> bool;
 
   bool ok_ = false;
   std::string error_message_;

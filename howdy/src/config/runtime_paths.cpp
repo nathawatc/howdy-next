@@ -37,7 +37,8 @@ auto select_existing_path(
   }
 
   for (const auto &candidate : candidates) {
-    if (!candidate.empty() && std::filesystem::exists(candidate)) {
+    std::error_code ec;
+    if (!candidate.empty() && std::filesystem::exists(candidate, ec) && !ec) {
       return candidate;
     }
   }
