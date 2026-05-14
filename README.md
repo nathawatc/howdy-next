@@ -4,18 +4,17 @@ A modernized fork of original Howdy, Facial recognition authentication for Linux
 
 ## Building from Source
 
-Dependencies: meson, ninja, libevdev, libinih, libopencv, libcurl
-
-Debian/Ubuntu:
+Dependencies:
 
 ```text
-sudo apt-get install cmake make build-essential libpam0g-dev libinih-dev
-libevdev-dev libopencv-dev libcurl4-openssl-dev nlohmann-json3-dev meson ninja-build
+meson, ninja, clang-tidy, gettext, libevdev, libinih, libopencv, libcurl, openssl, nlohmann-json, pam
 ```
 
-Build: `meson setup build && ninja -C build` -> Install: `meson install -C build`
+- Build: `meson setup build && ninja -C build`
+- Install: `meson install -C build`
+- Verify: `run-clang-tidy -p build`
 
-## Setup
+### Setup
 
 1. Run `sudo howdy add` to add a face model
 2. Test with `sudo howdy test`
@@ -47,5 +46,6 @@ Errors print to console. Check `/var/log/auth.log` if auth fails silently.
 See [wiki](https://github.com/boltgolt/howdy/wiki/Common-issues) for common issues.
 
 > [!WARNING]
-> Howdy is NOT as secure as a password. Similar faces or photos can fool it.
-> Keep in `/lib/security` read-only. **Never use as sole auth method.**
+> Howdy is less secure than a password. Similar faces or photos may fool it.
+> IR can help reduce spoofing. It is invisible in photos and LCD displays.
+> **Never use as the sole auth method.**

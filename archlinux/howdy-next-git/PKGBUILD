@@ -1,14 +1,14 @@
 # Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
 
 pkgname="howdy-next-git"
-pkgver=v1.0.0.r108.g6b55ea2
+pkgver=v1.0.0.r115.g87ce218
 pkgrel=1
 pkgdesc="Windows Hello style facial authentication for Linux"
 arch=('x86_64')
 url="https://codeberg.org/nathawat/howdy-next"
 license=('MIT')
-makedepends=('git' 'meson' 'ninja' 'opencv' 'openssl' 'nlohmann-json')
-depends=('libinih' 'libevdev' 'opencv' 'curl' 'openssl')
+makedepends=('git' 'meson' 'ninja' 'gettext' 'opencv' 'openssl' 'nlohmann-json')
+depends=('libinih' 'libevdev' 'pam' 'opencv' 'curl' 'openssl')
 optdepends=('linux-enable-ir-emitter: Enables infrared cameras that are not directly enabled out-of-the box')
 provides=('howdy')
 conflicts=('howdy' 'howdy-git' 'howdy-beta-git' 'howdy-bin' 'howdy-next')
