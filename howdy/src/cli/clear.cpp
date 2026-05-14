@@ -5,6 +5,10 @@
 #include <string>
 #include <string_view>
 
+#include "common/atomic_files.hpp"
+#include "common/file_security.hpp"
+#include "common/file_lock.hpp"
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -40,10 +44,36 @@ int clear_main(int argc, char **argv) {
     std::cout << "No models created yet, can't clear them if they don't exist\n";
     return kExitAbort;
   }
+  const auto dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "User models directory");
+  if (!dir_security.ok) {
+    std::cout << dir_security.error_message << "\n";
+    return kExitAbort;
+  }
 
-  const auto model_path = models_dir / (args.user + ".dat");
-  if (!std::filesystem::is_regular_file(model_path)) {
+  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+  if (!model_path) {
+    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    return kExitAbort;
+  }
+
+  if (!std::filesystem::is_regular_file(*model_path)) {
     std::cout << args.user << " has no models or they have been cleared already\n";
+    return kExitAbort;
+  }
+
+  const auto model_security =
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
+  if (!model_security.ok) {
+    std::cout << model_security.error_message << "\n";
+    return kExitAbort;
+  }
+
+  const auto model_lock = howdy::native::acquire_file_lock(*model_path);
+  if (!model_lock.has_value()) {
+    std::cout << "Failed to lock model file\n";
     return kExitAbort;
   }
 
@@ -58,7 +88,10 @@ int clear_main(int argc, char **argv) {
     }
   }
 
-  std::filesystem::remove(model_path);
+  if (!howdy::native::remove_file_and_sync(*model_path)) {
+    std::cout << "Failed to remove model file\n";
+    return kExitAbort;
+  }
   std::cout << "\nModels cleared\n";
   return kExitOk;
 }

@@ -32,6 +32,12 @@ int disable_main(int argc, char **argv) {
   }
 
   const auto config_path = howdy::native::resolve_config_path();
+  const auto config_security =
+      howdy::native::check_secure_config_path(config_path);
+  if (!config_security.ok) {
+    std::cout << config_security.error_message << "\n";
+    return kExitAbort;
+  }
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cout << "Failed to read config file: " << config_path << "\n";
@@ -44,8 +50,13 @@ int disable_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  if (!howdy::native::update_config_value(config_path, "disabled", out_value, true)) {
-    std::cout << "Could not find a \"disabled\" config option to set\n";
+  std::string error_message;
+  if (!howdy::native::update_config_value(config_path, "disabled", out_value,
+                                          &error_message, true)) {
+    std::cout << (error_message.empty()
+                      ? "Failed to update \"disabled\" config option"
+                      : error_message)
+              << "\n";
     return kExitAbort;
   }
 

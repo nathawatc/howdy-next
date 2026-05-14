@@ -1,9 +1,14 @@
 #include "storage/user_models.hpp"
 
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+
+#include "common/user_names.hpp"
 
 namespace {
 
@@ -31,7 +36,7 @@ auto main() -> int {
   namespace fs = std::filesystem;
 
   bool ok = true;
-  const auto temp_root = fs::temp_directory_path() / "howdy-user-models-test";
+  const auto temp_root = fs::current_path() / "howdy-user-models-test";
   std::error_code ec;
   fs::remove_all(temp_root, ec);
   fs::create_directories(temp_root, ec);
@@ -43,6 +48,19 @@ auto main() -> int {
   setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
   const std::string backend = "opencv_dnn_sface";
+  ok &= expect(howdy::native::is_valid_model_user_name("alice@example.com"),
+               "domain-style usernames remain valid");
+  ok &= expect(!howdy::native::is_valid_model_user_name("../alice"),
+               "path traversal usernames are rejected");
+  ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "../alice").has_value(),
+               "unsafe model paths are not constructed");
+
+  {
+    const auto result = howdy::native::load_user_models("../alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidUser,
+                 "invalid username returns kInvalidUser");
+  }
+
   {
     const auto result = howdy::native::load_user_models("alice", backend);
     ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
@@ -94,6 +112,56 @@ auto main() -> int {
     ok &= expect(result.stored.models[2].id == 8 &&
                      result.stored.models[2].label == "second",
                  "second model metadata preserved");
+  }
+
+  ok &= expect(chmod(model_path.c_str(), 0666) == 0,
+               "make model file world-writable");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "world-writable model file is rejected");
+  }
+  ok &= expect(chmod(model_path.c_str(), 0644) == 0,
+               "restore model file mode");
+
+  const auto hardlink_path = models_dir / "alice-hardlink.dat";
+  ok &= expect(fs::remove(hardlink_path, ec) || !ec,
+               "remove stale hardlink path");
+  ec.clear();
+  ok &= expect(link(model_path.c_str(), hardlink_path.c_str()) == 0,
+               "create hard-linked model file");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "hard-linked model file is rejected");
+  }
+  ok &= expect(fs::remove(hardlink_path, ec), "remove hard-linked model file");
+  ec.clear();
+
+  ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
+               "make models dir world-writable");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "world-writable model dir is rejected");
+  }
+  ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
+               "restore models dir mode");
+
+  std::string oversized_encoding = R"([{"id":9,"label":"oversized","backend":"opencv_dnn_sface","data":[[)";
+  for (int index = 0; index < 1100; ++index) {
+    if (index > 0) {
+      oversized_encoding += ",";
+    }
+    oversized_encoding += "0.1";
+  }
+  oversized_encoding += "]]}]";
+  ok &= expect(write_file(model_path, oversized_encoding),
+               "write oversized encoding");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+                 "oversized encoding is rejected");
   }
 
   fs::remove_all(temp_root, ec);

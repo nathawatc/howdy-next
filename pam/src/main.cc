@@ -36,6 +36,9 @@
 #include "main.hh"
 #include "optional_task.hh"
 #include "status_mapping.hh"
+#include "common/file_security.hpp"
+#include "common/user_names.hpp"
+#include "config/config_utils.hpp"
 #include <paths.hh>
 
 namespace {
@@ -130,7 +133,8 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
 
   // Try to detect the laptop lid state and stop if it's closed
   if (config.GetBoolean("core", "abort_if_lid_closed", true)) {
-    glob_t glob_result;
+    glob_t glob_result{};
+    bool glob_initialized = false;
 
     // Get any files containing lid state
     int return_value =
@@ -142,6 +146,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
         syslog(LOG_ERR, "Underlying error: %s (%d)", strerror(errno), errno);
       }
     } else {
+      glob_initialized = true;
       for (size_t i = 0; i < glob_result.gl_pathc; i++) {
         std::ifstream file(std::string(glob_result.gl_pathv[i]));
         std::string lid_state;
@@ -155,13 +160,37 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
         }
       }
     }
-    globfree(&glob_result);
+    if (glob_initialized) {
+      globfree(&glob_result);
+    }
   }
 
   // pre-check if this user has face model file
-  auto model_path = std::string(USER_MODELS_DIR) + "/" + username + ".dat";
+  const auto model_path =
+      howdy::native::resolve_user_model_path(USER_MODELS_DIR, username);
+  if (!model_path) {
+    syslog(LOG_WARNING, "Skipped authentication, invalid username");
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
+  const auto models_dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          USER_MODELS_DIR, "User models directory");
+  if (!models_dir_security.ok) {
+    syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
   struct stat stat_;
-  if (stat(model_path.c_str(), &stat_) != 0) {
+  if (lstat(model_path->c_str(), &stat_) != 0) {
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
+  const auto model_file_security =
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
+  if (!model_file_security.ok) {
+    syslog(LOG_ERR, "%s", model_file_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
   }
 
@@ -179,6 +208,14 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
  */
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int {
+  const auto config_security =
+      howdy::native::check_secure_config_path(CONFIG_FILE_PATH);
+  if (!config_security.ok) {
+    openlog("pam_howdy", 0, LOG_AUTHPRIV);
+    syslog(LOG_ERR, "%s", config_security.error_message.c_str());
+    return PAM_SYSTEM_ERR;
+  }
+
   INIReader config(CONFIG_FILE_PATH);
   openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
@@ -246,13 +283,15 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 username, nullptr};
+  std::array<char *, 1> env = {nullptr};
   pid_t child_pid;
 
   // Start the compare subprocess
-  if (posix_spawnp(&child_pid, COMPARE_PROCESS_PATH, nullptr, nullptr,
-                   args.data(), nullptr) != 0) {
-    syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(errno),
-           errno);
+  const int spawn_result = posix_spawn(&child_pid, COMPARE_PROCESS_PATH, nullptr,
+                                       nullptr, args.data(), env.data());
+  if (spawn_result != 0) {
+    syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)",
+           strerror(spawn_result), spawn_result);
     return PAM_SYSTEM_ERR;
   }
 

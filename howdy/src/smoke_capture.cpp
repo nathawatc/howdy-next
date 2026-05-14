@@ -7,6 +7,7 @@
 
 #include "common/compare_exit.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -70,6 +71,13 @@ auto parse_args(int argc, char **argv) -> Args {
 
 auto main(int argc, char **argv) -> int {
   const Args args = parse_args(argc, argv);
+
+  const auto config_security =
+      howdy::native::check_secure_config_path(args.config_path);
+  if (!config_security.ok) {
+    std::cerr << config_security.error_message << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
 
   howdy::native::ConfigReader config(args.config_path);
   if (!config.ok()) {

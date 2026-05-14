@@ -1,4 +1,7 @@
 #include "config/config_reader.hpp"
+#include "config/config_validation.hpp"
+#include "config/config_values.hpp"
+#include "recorders/video_capture.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -48,8 +51,9 @@ auto main() -> int {
 
   howdy::native::ConfigReader valid(valid_path.string());
   ok &= expect(valid.ok(), "valid config should parse");
+  ok &= expect(!howdy::native::validate_runtime_config(valid).has_value(),
+               "valid config passes semantic validation");
   ok &= expect(valid.parse_error() == 0, "parse_error is zero for valid config");
-  ok &= expect(valid.path() == valid_path.string(), "path accessor returns input");
   ok &= expect(valid.get("core", "disabled", "false") == "true",
                "get string from valid config");
   ok &= expect(valid.get("core", "missing", "fallback") == "fallback",
@@ -65,12 +69,83 @@ auto main() -> int {
                "get_bool returns configured true");
   ok &= expect(valid.get_bool("core", "missing_bool", true),
                "get_bool fallback for missing value");
+  ok &= expect(howdy::native::config_timeout_seconds(valid) == 7,
+               "validated timeout keeps configured value");
+  ok &= expect(howdy::native::config_dark_threshold(valid) > 55.4F &&
+                   howdy::native::config_dark_threshold(valid) < 55.6F,
+               "validated dark threshold keeps configured value");
 
   const auto missing_path = temp_root / "does-not-exist.ini";
   howdy::native::ConfigReader missing(missing_path.string());
   ok &= expect(!missing.ok(), "missing config should fail parse");
   ok &= expect(missing.parse_error() != 0,
                "parse_error is non-zero for missing file");
+
+  const auto invalid_path = temp_root / "invalid.ini";
+  ok &= expect(write_file(invalid_path,
+                          "[face]\n"
+                          "sface_metric = weird\n"
+                          "sface_threshold = 9\n"
+                          "yunet_score_threshold = 4\n"
+                          "[video]\n"
+                          "timeout = 0\n"
+                          "dark_threshold = 1000\n"
+                          "frame_width = 4\n"
+                          "device_fps = 9999\n"),
+               "write invalid bounded config");
+  howdy::native::ConfigReader invalid(invalid_path.string());
+  ok &= expect(invalid.ok(), "invalid bounded config still parses");
+  ok &= expect(howdy::native::validate_runtime_config(invalid).has_value(),
+               "invalid bounded config fails semantic validation");
+  ok &= expect(howdy::native::config_timeout_seconds(invalid) == 4,
+               "invalid timeout falls back");
+  ok &= expect(howdy::native::config_dark_threshold(invalid) == 60.0F,
+               "invalid dark threshold falls back");
+  ok &= expect(howdy::native::config_frame_width(invalid) == -1,
+               "invalid frame width falls back");
+  ok &= expect(howdy::native::config_device_fps(invalid) == 0,
+               "invalid device fps falls back");
+  ok &= expect(howdy::native::config_sface_metric(invalid) == "cosine",
+               "invalid sface metric falls back");
+  ok &= expect(howdy::native::config_sface_threshold(invalid, "cosine") == 0.363F,
+               "invalid sface threshold falls back");
+  ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/video0"),
+               "video device path prefix is allowed");
+  ok &= expect(howdy::native::is_allowed_capture_device_path("none"),
+               "none device path remains allowed");
+  ok &= expect(!howdy::native::is_allowed_capture_device_path("/tmp/camera"),
+               "non-device path prefix is rejected");
+  ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/null"),
+               "wrong character device path is rejected");
+
+  const auto relative_model_path = temp_root / "relative-model.ini";
+  ok &= expect(write_file(relative_model_path,
+                          "[face]\n"
+                          "yunet_model = relative.onnx\n"),
+               "write relative model path ini");
+  howdy::native::ConfigReader relative_model(relative_model_path.string());
+  ok &= expect(relative_model.ok(), "relative model path config should parse");
+  ok &= expect(howdy::native::validate_runtime_config(relative_model).has_value(),
+               "relative model path fails semantic validation");
+
+  const auto malformed_path = temp_root / "malformed.ini";
+  ok &= expect(write_file(malformed_path,
+                          "[video]\n"
+                          "timeout = abc\n"
+                          "dark_threshold = nope\n"
+                          "[face]\n"
+                          "sface_threshold = bad\n"),
+               "write malformed ini");
+  howdy::native::ConfigReader malformed(malformed_path.string());
+  ok &= expect(malformed.ok(), "malformed config should still parse");
+  ok &= expect(howdy::native::validate_runtime_config(malformed).has_value(),
+               "malformed numeric config fails semantic validation");
+  ok &= expect(howdy::native::config_timeout_seconds(malformed) == 4,
+               "malformed timeout falls back");
+  ok &= expect(howdy::native::config_dark_threshold(malformed) == 60.0F,
+               "malformed dark threshold falls back");
+  ok &= expect(howdy::native::config_sface_threshold(malformed, "cosine") == 0.363F,
+               "malformed sface threshold falls back");
 
   fs::remove_all(temp_root, ec);
   if (!ok) {

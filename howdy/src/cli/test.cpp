@@ -1,6 +1,10 @@
 #include "cli/test_cli.hpp"
 
+#include "common/invoking_user_env.hpp"
+#include "common/invoking_user.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -9,11 +13,14 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <filesystem>
+#include <grp.h>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -65,11 +72,32 @@ void print_text(cv::Mat &overlay, int line_number, int height,
               cv::LINE_AA);
 }
 
+auto drop_to_invoking_gui_user() -> bool {
+  if (geteuid() != 0) {
+    return true;
+  }
+
+  const auto invoking_user = howdy::native::resolve_invoking_user();
+  if (!invoking_user.has_value()) {
+    return false;
+  }
+
+  howdy::native::reset_invoking_user_gui_environment(*invoking_user);
+  return initgroups(invoking_user->name.c_str(), invoking_user->gid) == 0 &&
+         setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
+}
+
 }  // namespace
 
 int test_main(int argc, char **argv) {
   const TestArgs args = parse_args(argc, argv);
   const std::string config_path = howdy::native::resolve_config_path().string();
+  const auto config_security =
+      howdy::native::check_secure_config_path(config_path);
+  if (!config_security.ok) {
+    std::cerr << config_security.error_message << "\n";
+    return kExitCameraError;
+  }
 
   howdy::native::ConfigReader config(config_path);
   if (!config.ok()) {
@@ -91,11 +119,17 @@ int test_main(int argc, char **argv) {
         howdy::native::UserModelStatus::kIncompatibleBackend) {
       std::cout
           << "Warning: Stored face models use an incompatible backend; matching disabled\n";
+    } else if (loaded_models.status ==
+               howdy::native::UserModelStatus::kInvalidUser) {
+      std::cout << "Warning: Invalid user name; matching disabled\n";
     } else if (loaded_models.status == howdy::native::UserModelStatus::kNoModel) {
       std::cout << "Warning: No face model found for this user, detection will run without matching\n";
     } else if (loaded_models.status ==
                howdy::native::UserModelStatus::kParseError) {
       std::cout << "Warning: Failed to read stored face models, detection will run without matching\n";
+    } else if (loaded_models.status ==
+               howdy::native::UserModelStatus::kInsecurePath) {
+      std::cout << "Warning: Stored face model path is insecure, detection will run without matching\n";
     }
   }
 
@@ -111,11 +145,11 @@ int test_main(int argc, char **argv) {
     return kExitCameraError;
   }
 
-  const int exposure = config.get_int("video", "exposure", -1);
-  const float dark_threshold = config.get_float("video", "dark_threshold", 60.0F);
+  const int exposure = howdy::native::config_exposure(config);
+  const float dark_threshold = howdy::native::config_dark_threshold(config);
   const bool use_clahe = config.get_bool("video", "clahe_enabled", true);
-  const auto clip_limit = config.get_float("video", "clahe_clip_limit", 1.25F);
-  const auto tile_size = config.get_int("video", "clahe_tile_grid_size", 8);
+  const auto clip_limit = howdy::native::config_clahe_clip_limit(config);
+  const auto tile_size = howdy::native::config_clahe_tile_grid_size(config);
 
   cv::Ptr<cv::CLAHE> clahe;
   if (use_clahe) {
@@ -125,6 +159,13 @@ int test_main(int argc, char **argv) {
   std::cout << "\nOpening a window with a test feed\n\n";
   std::cout << "Press ctrl+C in this terminal to quit\n";
   std::cout << "Click on the image to enable or disable slow mode\n\n";
+
+  if (!drop_to_invoking_gui_user()) {
+    std::cerr << "Failed to switch GUI session to the invoking user\n";
+    std::cerr << "Run this command from your desktop session through sudo/doas/pkexec\n";
+    capture.release();
+    return kExitCameraError;
+  }
 
   cv::namedWindow(kWindowName);
   cv::setMouseCallback(kWindowName, mouse_callback);

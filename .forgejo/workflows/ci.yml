@@ -5,20 +5,20 @@ on:
 
 jobs:
   build:
-    runs-on: codeberg-small
+    runs-on: codeberg-medium
     steps:
       - name: Install required libraries
         run: >
           sudo apt-get update && sudo apt-get install -y
-          cmake make build-essential clang-tidy
+          make build-essential clang-tidy gettext pipx
           libpam0g-dev libinih-dev libevdev-dev libopencv-dev
-          libcurl4-openssl-dev nlohmann-json3-dev
-          meson ninja-build
+          libcurl4-openssl-dev libssl-dev nlohmann-json3-dev ninja-build
+          && pipx install meson==1.11.1
 
       - uses: actions/checkout@v6
 
       - name: Build
         run: |
-          meson setup build
+          ~/.local/bin/meson setup build
           ninja -C build
-          meson test -C build native-capture-smoke-help native-compare-help --print-errorlogs
+          ~/.local/bin/meson test -C build --print-errorlogs

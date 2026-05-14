@@ -3,13 +3,15 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <string>
 #include <utility>
 
 #include <opencv2/imgproc.hpp>
 
+#include "common/file_security.hpp"
+#include "common/model_file.hpp"
+#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace howdy::native {
@@ -22,26 +24,33 @@ FaceModel::FaceModel(const ConfigReader &config) {
       config, "sface_model", (models_dir / kSfaceModel).string());
 
   for (const auto &model_path : {yunet_model, sface_model}) {
+    const auto directory_security = check_secure_root_owned_directory_tree(
+        std::filesystem::path(model_path).parent_path(), "Models directory");
+    if (!directory_security.ok) {
+      set_error(directory_security.error_message);
+      return;
+    }
     if (!std::filesystem::is_regular_file(model_path)) {
       set_error("OpenCV face model file is missing: " + model_path);
       return;
     }
-    if (bad_model_download(model_path)) {
+    const auto model_security =
+        check_secure_root_owned_file(model_path, "OpenCV face model file");
+    if (!model_security.ok) {
+      set_error(model_security.error_message);
+      return;
+    }
+    if (is_invalid_model_file(model_path)) {
       set_error("OpenCV face model file is invalid: " + model_path);
       return;
     }
   }
 
-  const auto score_threshold =
-      config.get_float("face", "yunet_score_threshold", 0.9F);
-  const auto nms_threshold =
-      config.get_float("face", "yunet_nms_threshold", 0.3F);
-  const auto top_k = config.get_int("face", "yunet_top_k", 5000);
-  metric_ = config.get("face", "sface_metric", "cosine");
-  std::transform(metric_.begin(), metric_.end(), metric_.begin(), ::tolower);
-  threshold_ =
-      config.get_float("face", "sface_threshold",
-                       metric_ == "cosine" ? 0.363F : 1.128F);
+  const auto score_threshold = config_yunet_score_threshold(config);
+  const auto nms_threshold = config_yunet_nms_threshold(config);
+  const auto top_k = config_yunet_top_k(config);
+  metric_ = config_sface_metric(config);
+  threshold_ = config_sface_threshold(config, metric_);
 
   try {
     detector_ = cv::FaceDetectorYN::create(yunet_model, "", input_size_,
@@ -62,8 +71,6 @@ auto FaceModel::error_message() const -> const std::string & {
 }
 
 auto FaceModel::metric() const -> const std::string & { return metric_; }
-
-auto FaceModel::threshold() const -> float { return threshold_; }
 
 auto FaceModel::prepare_frame(const cv::Mat &frame) const -> cv::Mat {
   if (frame.channels() == 1) {
@@ -240,19 +247,6 @@ auto FaceModel::resolve_model_path(const ConfigReader &config,
     return fallback;
   }
   return value;
-}
-
-auto FaceModel::bad_model_download(const std::string &path) const -> bool {
-  std::ifstream model_file(path, std::ios::binary);
-  if (!model_file.is_open()) {
-    return true;
-  }
-
-  std::string header(256, '\0');
-  model_file.read(header.data(), static_cast<std::streamsize>(header.size()));
-  header.resize(static_cast<std::size_t>(model_file.gcount()));
-  return header.rfind("version https://git-lfs.github.com/spec/v1", 0) == 0 ||
-         header.find('<') == 0;
 }
 
 }  // namespace howdy::native

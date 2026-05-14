@@ -1,14 +1,14 @@
 # Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
 
 pkgname="howdy-next-git"
-pkgver=r88.ddebe69
+pkgver=v1.0.0.r115.g87ce218
 pkgrel=1
 pkgdesc="Windows Hello style facial authentication for Linux"
 arch=('x86_64')
 url="https://codeberg.org/nathawat/howdy-next"
 license=('MIT')
-makedepends=('git' 'meson' 'ninja' 'cmake' 'opencv' 'openssl')
-depends=('libinih' 'libevdev' 'opencv' 'curl' 'openssl')
+makedepends=('git' 'meson' 'ninja' 'gettext' 'opencv' 'openssl' 'nlohmann-json')
+depends=('libinih' 'libevdev' 'pam' 'opencv' 'curl' 'openssl')
 optdepends=('linux-enable-ir-emitter: Enables infrared cameras that are not directly enabled out-of-the box')
 provides=('howdy')
 conflicts=('howdy' 'howdy-git' 'howdy-beta-git' 'howdy-bin' 'howdy-next')
@@ -35,7 +35,9 @@ pkgver() {
 }
 
 prepare() {
-	arch-meson "$srcdir/howdy-next" "$srcdir/build"
+	arch-meson "$srcdir/howdy-next" "$srcdir/build" \
+		-D config_dir=/etc/howdy \
+		-D user_models_dir=/etc/howdy/models
 }
 
 build() {
@@ -44,8 +46,9 @@ build() {
 
 package() {
 	meson install -C "$srcdir/build" --destdir "$pkgdir"
-	install -Dm644 "$srcdir/howdy-next/config/config.ini" "$pkgdir/etc/howdy/config.ini"
-	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/howdy-next/LICENSE"
+	install -d -m750 "$pkgdir/etc/howdy"
+	install -m640 "$srcdir/howdy-next/config/config.ini" "$pkgdir/etc/howdy/config.ini"
+	install -Dm644 "$srcdir/howdy-next/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
 	# Workaround for polkit 127+ breaking howdy (boltgolt/howdy#1077)
 	install -Dm644 polkit-agent-helper-howdy.conf \

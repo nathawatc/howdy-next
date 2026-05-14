@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -11,12 +12,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/file_security.hpp"
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
+constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
 
 struct ListArgs {
   std::string user;
@@ -47,10 +51,25 @@ int list_main(int argc, char **argv) {
     std::cout << "\n\tsudo howdy -U " << args.user << " add\n\n";
     return kExitAbort;
   }
+  const auto dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "User models directory");
+  if (!dir_security.ok) {
+    if (!args.plain) {
+      std::cout << dir_security.error_message << "\n";
+    }
+    return kExitAbort;
+  }
 
-  const auto model_path = models_dir / (args.user + ".dat");
-  std::ifstream input(model_path);
-  if (!input.is_open()) {
+  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+  if (!model_path) {
+    if (!args.plain) {
+      std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    }
+    return kExitAbort;
+  }
+
+  if (!std::filesystem::is_regular_file(*model_path)) {
     if (!args.plain) {
       std::cout << "No face model known for the user " << args.user
                 << ", please run:\n";
@@ -59,8 +78,39 @@ int list_main(int argc, char **argv) {
     return kExitAbort;
   }
 
+  const auto model_security =
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
+  if (!model_security.ok) {
+    if (!args.plain) {
+      std::cout << model_security.error_message << "\n";
+    }
+    return kExitAbort;
+  }
+
+  std::ifstream input(*model_path);
+  if (!input.is_open()) {
+    return kExitAbort;
+  }
+
+  std::error_code size_ec;
+  if (std::filesystem::file_size(*model_path, size_ec) > kMaxModelFileBytes ||
+      size_ec) {
+    if (!args.plain) {
+      std::cout << "Model file is too large to process safely\n";
+    }
+    return kExitAbort;
+  }
+
   nlohmann::json models;
-  input >> models;
+  try {
+    input >> models;
+  } catch (const nlohmann::json::exception &) {
+    if (!args.plain) {
+      std::cout << "Failed to parse model file\n";
+    }
+    return kExitAbort;
+  }
   for (const auto &model : models) {
     const int id = model.value("id", -1);
     const auto timestamp = static_cast<std::time_t>(model.value("time", 0LL));

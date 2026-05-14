@@ -1,5 +1,9 @@
 #include "cli/download_models_cli.hpp"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <curl/curl.h>
 #include <openssl/evp.h>
 
@@ -15,6 +19,9 @@
 #include <string>
 #include <vector>
 
+#include "common/atomic_files.hpp"
+#include "common/file_security.hpp"
+#include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 
@@ -22,6 +29,11 @@ namespace {
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
+constexpr long kConnectTimeoutSeconds = 15;
+constexpr long kTransferTimeoutSeconds = 300;
+constexpr long kLowSpeedBytesPerSecond = 1024;
+constexpr long kLowSpeedTimeoutSeconds = 30;
+constexpr curl_off_t kMaxDownloadBytes = 100 * 1024 * 1024;
 
 struct ModelDownload {
   std::string name;
@@ -30,18 +42,10 @@ struct ModelDownload {
   std::optional<std::string> sha256;
 };
 
-auto bad_model_download(const std::filesystem::path &path) -> bool {
-  if (!std::filesystem::is_regular_file(path)) {
-    return true;
-  }
-
-  std::ifstream input(path, std::ios::binary);
-  std::string header(256, '\0');
-  input.read(header.data(), static_cast<std::streamsize>(header.size()));
-  header.resize(static_cast<std::size_t>(input.gcount()));
-  return header.rfind("version https://git-lfs.github.com/spec/v1", 0) == 0 ||
-         (!header.empty() && header.front() == '<');
-}
+struct StagedDownloadFile {
+  int fd = -1;
+  std::filesystem::path path;
+};
 
 auto trim(const std::string &value) -> std::string {
   const auto start = value.find_first_not_of(" \t\r\n");
@@ -68,11 +72,39 @@ auto lower_hex(std::string value) -> std::string {
   return value;
 }
 
+void configure_transfer_policy(CURL *curl) {
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
+  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedBytesPerSecond);
+  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeoutSeconds);
+  curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, kMaxDownloadBytes);
+#ifdef CURLOPT_PROTOCOLS_STR
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+#endif
+#ifdef CURLOPT_REDIR_PROTOCOLS_STR
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+#endif
+}
+
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-  auto *stream = static_cast<std::ofstream *>(userp);
+  auto *fd = static_cast<int *>(userp);
   const auto total = size * nmemb;
-  stream->write(static_cast<const char *>(contents),
-                static_cast<std::streamsize>(total));
+
+  const char *cursor = static_cast<const char *>(contents);
+  std::size_t remaining = total;
+  while (remaining > 0) {
+    const auto written = write(*fd, cursor, remaining);
+    if (written < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return 0;
+    }
+    cursor += written;
+    remaining -= static_cast<std::size_t>(written);
+  }
   return total;
 }
 
@@ -113,7 +145,7 @@ auto fetch_remote_sha256(const std::string &url) -> std::optional<std::string> {
 
   std::string etag;
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  configure_transfer_policy(curl);
   curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
   curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_capture_callback);
   curl_easy_setopt(curl, CURLOPT_HEADERDATA, &etag);
@@ -180,30 +212,100 @@ auto file_sha256(const std::filesystem::path &path) -> std::optional<std::string
   return out.str();
 }
 
-auto download_file(const std::string &url, const std::filesystem::path &temp_path)
-    -> bool {
+auto cleanup_staged_download(StagedDownloadFile &staged) -> void {
+  if (staged.fd >= 0) {
+    close(staged.fd);
+    staged.fd = -1;
+  }
+  std::error_code ec;
+  std::filesystem::remove(staged.path, ec);
+}
+
+auto prepare_staged_download(const std::filesystem::path &destination)
+    -> std::optional<StagedDownloadFile> {
+  const auto parent = destination.parent_path();
+  std::filesystem::create_directories(parent);
+
+  if (std::filesystem::exists(parent)) {
+    const auto dir_security =
+        howdy::native::check_secure_root_owned_directory_tree(
+            parent, "Models directory");
+    if (!dir_security.ok) {
+      return std::nullopt;
+    }
+  }
+
+  struct stat current_stat {};
+  const bool have_current_stat = lstat(destination.c_str(), &current_stat) == 0;
+  if (have_current_stat && !S_ISREG(current_stat.st_mode)) {
+    return std::nullopt;
+  }
+
+  std::string temp_template = (parent / ".howdy-download-XXXXXX").string();
+  std::vector<char> writable(temp_template.begin(), temp_template.end());
+  writable.push_back('\0');
+
+  const int fd = mkstemp(writable.data());
+  if (fd < 0) {
+    return std::nullopt;
+  }
+
+  if (have_current_stat) {
+    if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
+        fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
+      close(fd);
+      std::error_code ec;
+      std::filesystem::remove(writable.data(), ec);
+      return std::nullopt;
+    }
+  } else if (fchmod(fd, howdy::native::kDefaultAtomicFileMode) != 0) {
+    close(fd);
+    std::error_code ec;
+    std::filesystem::remove(writable.data(), ec);
+    return std::nullopt;
+  }
+
+  return StagedDownloadFile{.fd = fd, .path = writable.data()};
+}
+
+auto install_staged_download(StagedDownloadFile &staged,
+                             const std::filesystem::path &destination) -> bool {
+  std::error_code ec;
+  std::filesystem::rename(staged.path, destination, ec);
+  if (ec) {
+    cleanup_staged_download(staged);
+    return false;
+  }
+  howdy::native::sync_parent_directory(destination);
+  staged.path.clear();
+  return true;
+}
+
+auto download_file(const std::string &url, StagedDownloadFile &staged) -> bool {
   CURL *curl = curl_easy_init();
   if (curl == nullptr) {
     return false;
   }
 
-  std::ofstream output(temp_path, std::ios::binary);
-  if (!output.is_open()) {
-    curl_easy_cleanup(curl);
-    return false;
-  }
-
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  configure_transfer_policy(curl);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &output);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &staged.fd);
   const CURLcode result = curl_easy_perform(curl);
 
   long status_code = 0;
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
   curl_easy_cleanup(curl);
-  output.close();
-  return result == CURLE_OK && status_code >= 200 && status_code < 400;
+  if (result != CURLE_OK || status_code < 200 || status_code >= 400 ||
+      fsync(staged.fd) != 0) {
+    return false;
+  }
+  if (close(staged.fd) != 0) {
+    staged.fd = -1;
+    return false;
+  }
+  staged.fd = -1;
+  return true;
 }
 
 }  // namespace
@@ -213,6 +315,13 @@ int download_models_main(int argc, char **argv) {
   (void)argv;
   const auto models_dir = howdy::native::resolve_models_dir();
   std::filesystem::create_directories(models_dir);
+  const auto models_dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "Models directory");
+  if (!models_dir_security.ok) {
+    std::cout << models_dir_security.error_message << "\n";
+    return kExitAbort;
+  }
 
   const std::vector<ModelDownload> models = {
       {howdy::native::FaceModel::kYunetModel,
@@ -229,8 +338,19 @@ int download_models_main(int argc, char **argv) {
 
   curl_global_init(CURL_GLOBAL_DEFAULT);
   for (const auto &model : models) {
+    if (std::filesystem::exists(model.destination)) {
+      const auto destination_security =
+          howdy::native::check_secure_root_owned_file_with_directory(
+              model.destination, "Models directory", "Model file");
+      if (!destination_security.ok) {
+        curl_global_cleanup();
+        std::cout << destination_security.error_message << "\n";
+        return kExitAbort;
+      }
+    }
+
     if (std::filesystem::exists(model.destination) &&
-        !bad_model_download(model.destination)) {
+        !howdy::native::is_invalid_model_file(model.destination)) {
       std::cout << "Model already exists: " << model.destination.string() << "\n";
       continue;
     }
@@ -240,16 +360,23 @@ int download_models_main(int argc, char **argv) {
     }
 
     std::cout << "Downloading " << model.name << "\n";
-    const auto temp_path = model.destination.string() + ".tmp";
-    if (!download_file(model.url, temp_path)) {
-      std::filesystem::remove(temp_path);
+    auto staged = prepare_staged_download(model.destination);
+    if (!staged.has_value()) {
+      curl_global_cleanup();
+      std::cout << "Failed to prepare destination for model: "
+                << model.destination.string() << "\n";
+      return kExitAbort;
+    }
+
+    if (!download_file(model.url, *staged)) {
+      cleanup_staged_download(*staged);
       curl_global_cleanup();
       std::cout << "Failed to download model: " << model.url << "\n";
       return kExitAbort;
     }
 
-    if (bad_model_download(temp_path)) {
-      std::filesystem::remove(temp_path);
+    if (howdy::native::is_invalid_model_file(staged->path)) {
+      cleanup_staged_download(*staged);
       curl_global_cleanup();
       std::cout << "Downloaded file is not an ONNX model: " << model.url << "\n";
       return kExitAbort;
@@ -260,16 +387,16 @@ int download_models_main(int argc, char **argv) {
       expected_sha256 = fetch_remote_sha256(model.url);
     }
     if (!expected_sha256.has_value()) {
-      std::filesystem::remove(temp_path);
+      cleanup_staged_download(*staged);
       curl_global_cleanup();
       std::cout << "Failed to verify model checksum metadata: " << model.url << "\n";
       return kExitAbort;
     }
 
-    const auto actual_sha256 = file_sha256(temp_path);
+    const auto actual_sha256 = file_sha256(staged->path);
     if (!actual_sha256.has_value() ||
         lower_hex(expected_sha256.value()) != lower_hex(actual_sha256.value())) {
-      std::filesystem::remove(temp_path);
+      cleanup_staged_download(*staged);
       curl_global_cleanup();
       std::cout << "Checksum mismatch for " << model.name << "\n";
       std::cout << "Expected SHA256: " << expected_sha256.value() << "\n";
@@ -279,9 +406,12 @@ int download_models_main(int argc, char **argv) {
       return kExitAbort;
     }
 
-    std::error_code ec;
-    std::filesystem::remove(model.destination, ec);
-    std::filesystem::rename(temp_path, model.destination);
+    if (!install_staged_download(*staged, model.destination)) {
+      curl_global_cleanup();
+      std::cout << "Failed to install downloaded model: "
+                << model.destination.string() << "\n";
+      return kExitAbort;
+    }
   }
   curl_global_cleanup();
 
