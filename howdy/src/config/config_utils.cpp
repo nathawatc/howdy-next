@@ -1,5 +1,6 @@
 #include "config/config_utils.hpp"
 
+#include <algorithm>
 #include <fcntl.h>
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -173,13 +174,9 @@ auto is_safe_ini_scalar_value(std::string_view value) -> bool {
     return false;
   }
 
-  for (const char ch : value) {
-    if (ch == '\0' || ch == '\n' || ch == '\r') {
-      return false;
-    }
-  }
-
-  return true;
+  return std::all_of(value.begin(), value.end(), [](const char ch) {
+    return ch != '\0' && ch != '\n' && ch != '\r';
+  });
 }
 
 auto read_config_lines(const std::filesystem::path &config_path, bool lock)

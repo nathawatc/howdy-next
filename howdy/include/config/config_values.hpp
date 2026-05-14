@@ -107,7 +107,7 @@ inline auto config_sface_threshold(const ConfigReader &config,
   const float fallback =
       metric == "cosine" ? 0.363F : 1.128F;
   const float maximum = metric == "cosine" ? 1.0F : 4.0F;
-  const float minimum = metric == "cosine" ? 0.0F : 0.0F;
+  const float minimum = 0.0F;
   return bounded_float_or_fallback(
       config.get_float("face", "sface_threshold", fallback), fallback, minimum,
       maximum);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <optional>
@@ -20,15 +21,13 @@ inline auto is_valid_model_user_name(const std::string_view user) -> bool {
     return false;
   }
 
-  for (const char raw : user) {
-    const auto ch = static_cast<unsigned char>(raw);
-    if (raw == '/' || raw == '\\' || std::isspace(ch) != 0 ||
-        std::iscntrl(ch) != 0) {
-      return false;
-    }
-  }
-
-  return true;
+  return std::all_of(
+      user.begin(), user.end(),
+      [](const char raw) {
+        const auto ch = static_cast<unsigned char>(raw);
+        return raw != '/' && raw != '\\' && std::isspace(ch) == 0 &&
+               std::iscntrl(ch) == 0;
+      });
 }
 
 inline auto resolve_user_model_path(const std::filesystem::path &base_dir,

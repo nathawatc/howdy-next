@@ -87,7 +87,7 @@ auto generate_snapshot(const std::vector<cv::Mat> &frames,
                 cv::LINE_AA);
   }
 
-  const auto filepath = snapshot_path();
+  auto filepath = snapshot_path();
   if (!ensure_snapshot_directory(filepath.parent_path())) {
     return {};
   }

@@ -201,12 +201,8 @@ auto drop_to_invoking_gui_user() -> bool {
   }
 
   reset_gui_environment(*invoking_user);
-  if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
-      setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
-    return false;
-  }
-
-  return true;
+  return initgroups(invoking_user->name.c_str(), invoking_user->gid) == 0 &&
+         setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
 }
 
 }  // namespace

@@ -173,7 +173,7 @@ auto create_temp_copy(const fs::path &source_path,
     return std::nullopt;
   }
 
-  const fs::path temp_path(writable.data());
+  fs::path temp_path(writable.data());
   bool ok = true;
 
   if (fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
@@ -195,7 +195,7 @@ auto create_temp_copy(const fs::path &source_path,
       }
 
       const char *cursor = buffer.data();
-      std::size_t remaining = static_cast<std::size_t>(bytes_read);
+      auto remaining = static_cast<std::size_t>(bytes_read);
       while (remaining > 0) {
         const auto written = write(fd, cursor, remaining);
         if (written < 0) {
@@ -245,12 +245,12 @@ auto run_editor(const std::string &editor, const fs::path &temp_path,
       reset_editor_environment(*invoking_user);
     }
 
-    char *const exec_argv[] = {
+    std::array<char *, 3> exec_argv = {
         const_cast<char *>(editor.c_str()),
         const_cast<char *>(temp_path.c_str()),
         nullptr,
     };
-    execv(editor.c_str(), exec_argv);
+    execv(editor.c_str(), exec_argv.data());
     _exit(127);
   }
 
@@ -278,7 +278,7 @@ auto copy_file_contents(int input_fd, int output_fd) -> bool {
     }
 
     const char *cursor = buffer.data();
-    std::size_t remaining = static_cast<std::size_t>(bytes_read);
+    auto remaining = static_cast<std::size_t>(bytes_read);
     while (remaining > 0) {
       const auto bytes_written = write(output_fd, cursor, remaining);
       if (bytes_written < 0) {
