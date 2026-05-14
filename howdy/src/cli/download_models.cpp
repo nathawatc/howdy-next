@@ -240,7 +240,8 @@ auto prepare_staged_download(const std::filesystem::path &destination)
 
   if (std::filesystem::exists(parent)) {
     const auto dir_security =
-        howdy::native::check_secure_root_owned_directory(parent, "Models directory");
+        howdy::native::check_secure_root_owned_directory_tree(
+            parent, "Models directory");
     if (!dir_security.ok) {
       return std::nullopt;
     }
@@ -327,8 +328,8 @@ int download_models_main(int argc, char **argv) {
   const auto models_dir = howdy::native::resolve_models_dir();
   std::filesystem::create_directories(models_dir);
   const auto models_dir_security =
-      howdy::native::check_secure_root_owned_directory(models_dir,
-                                                       "Models directory");
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "Models directory");
   if (!models_dir_security.ok) {
     std::cout << models_dir_security.error_message << "\n";
     return kExitAbort;
@@ -351,8 +352,8 @@ int download_models_main(int argc, char **argv) {
   for (const auto &model : models) {
     if (std::filesystem::exists(model.destination)) {
       const auto destination_security =
-          howdy::native::check_secure_root_owned_file(model.destination,
-                                                      "Model file");
+          howdy::native::check_secure_root_owned_file_with_directory(
+              model.destination, "Models directory", "Model file");
       if (!destination_security.ok) {
         curl_global_cleanup();
         std::cout << destination_security.error_message << "\n";

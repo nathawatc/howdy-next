@@ -1,5 +1,6 @@
 #include "cli/add_cli.hpp"
 
+#include <sys/stat.h>
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -22,6 +23,7 @@
 #include "common/file_lock.hpp"
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -33,6 +35,9 @@ constexpr auto kExitOk = 0;
 constexpr auto kExitAbort = 1;
 constexpr int kMaxFrames = 60;
 constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
+constexpr mode_t kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR |
+                                      S_IRGRP | S_IXGRP;
+constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
 
 struct AddArgs {
   std::string user;
@@ -95,7 +100,8 @@ auto load_models(const std::filesystem::path &path) -> nlohmann::json {
 
 auto save_models_atomic(const std::filesystem::path &path,
                         const nlohmann::json &models) -> bool {
-  return howdy::native::write_atomic_file(path, models.dump());
+  return howdy::native::write_atomic_file(path, models.dump(),
+                                          kUserModelFileMode);
 }
 
 auto is_backend_compatible(const nlohmann::json &models) -> bool {
@@ -113,7 +119,7 @@ auto add_main(int argc, char **argv) -> int {
   const auto args = parse_args(argc, argv);
   const auto config_path = howdy::native::resolve_config_path();
   const auto config_security =
-      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+      howdy::native::check_secure_config_path(config_path);
   if (!config_security.ok) {
     std::cerr << config_security.error_message << "\n";
     return kExitAbort;
@@ -131,9 +137,19 @@ auto add_main(int argc, char **argv) -> int {
   }
 
   const auto user_models_dir = howdy::native::resolve_user_models_dir();
+  if (!std::filesystem::exists(user_models_dir)) {
+    std::error_code create_ec;
+    std::filesystem::create_directories(user_models_dir, create_ec);
+    if (create_ec || chmod(user_models_dir.c_str(), kUserModelsDirMode) != 0) {
+      std::cerr << "Failed to create secure user models directory: "
+                << user_models_dir << "\n";
+      return kExitAbort;
+    }
+  }
   if (std::filesystem::exists(user_models_dir)) {
-    const auto dir_security = howdy::native::check_secure_root_owned_directory(
-        user_models_dir, "User models directory");
+    const auto dir_security =
+        howdy::native::check_secure_root_owned_directory_tree(
+            user_models_dir, "User models directory");
     if (!dir_security.ok) {
       std::cerr << dir_security.error_message << "\n";
       return kExitAbort;
@@ -146,7 +162,8 @@ auto add_main(int argc, char **argv) -> int {
   }
   if (std::filesystem::exists(*model_path)) {
     const auto model_security =
-        howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+        howdy::native::check_secure_root_owned_file_with_directory(
+            *model_path, "User models directory", "User model file");
     if (!model_security.ok) {
       std::cerr << model_security.error_message << "\n";
       return kExitAbort;

@@ -180,17 +180,8 @@ auto check_secure_config_path(const std::filesystem::path &config_path)
     };
   }
 
-  const auto parent_security =
-      check_secure_root_owned_directory(parent, "Config directory");
-  if (!parent_security.ok) {
-    return ConfigPathCheckResult{
-        .ok = false,
-        .error_message = parent_security.error_message,
-    };
-  }
-
-  const auto file_security =
-      check_secure_root_owned_file(config_path, "Config file");
+  const auto file_security = check_secure_root_owned_file_with_directory(
+      config_path, "Config directory", "Config file");
   if (!file_security.ok) {
     return ConfigPathCheckResult{
         .ok = false,

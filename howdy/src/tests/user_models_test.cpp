@@ -1,6 +1,7 @@
 #include "storage/user_models.hpp"
 
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <filesystem>
 #include <fstream>
@@ -35,7 +36,7 @@ auto main() -> int {
   namespace fs = std::filesystem;
 
   bool ok = true;
-  const auto temp_root = fs::temp_directory_path() / "howdy-user-models-test";
+  const auto temp_root = fs::current_path() / "howdy-user-models-test";
   std::error_code ec;
   fs::remove_all(temp_root, ec);
   fs::create_directories(temp_root, ec);
@@ -122,6 +123,20 @@ auto main() -> int {
   }
   ok &= expect(chmod(model_path.c_str(), 0644) == 0,
                "restore model file mode");
+
+  const auto hardlink_path = models_dir / "alice-hardlink.dat";
+  ok &= expect(fs::remove(hardlink_path, ec) || !ec,
+               "remove stale hardlink path");
+  ec.clear();
+  ok &= expect(link(model_path.c_str(), hardlink_path.c_str()) == 0,
+               "create hard-linked model file");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "hard-linked model file is rejected");
+  }
+  ok &= expect(fs::remove(hardlink_path, ec), "remove hard-linked model file");
+  ec.clear();
 
   ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
                "make models dir world-writable");

@@ -51,8 +51,9 @@ int list_main(int argc, char **argv) {
     std::cout << "\n\tsudo howdy -U " << args.user << " add\n\n";
     return kExitAbort;
   }
-  const auto dir_security = howdy::native::check_secure_root_owned_directory(
-      models_dir, "User models directory");
+  const auto dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "User models directory");
   if (!dir_security.ok) {
     if (!args.plain) {
       std::cout << dir_security.error_message << "\n";
@@ -78,7 +79,8 @@ int list_main(int argc, char **argv) {
   }
 
   const auto model_security =
-      howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
   if (!model_security.ok) {
     if (!args.plain) {
       std::cout << model_security.error_message << "\n";

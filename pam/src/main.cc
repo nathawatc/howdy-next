@@ -174,8 +174,8 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
   }
 
   const auto models_dir_security =
-      howdy::native::check_secure_root_owned_directory(USER_MODELS_DIR,
-                                                       "User models directory");
+      howdy::native::check_secure_root_owned_directory_tree(
+          USER_MODELS_DIR, "User models directory");
   if (!models_dir_security.ok) {
     syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
@@ -187,8 +187,8 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
   }
 
   const auto model_file_security =
-      howdy::native::check_secure_root_owned_file(*model_path,
-                                                  "User model file");
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
   if (!model_file_security.ok) {
     syslog(LOG_ERR, "%s", model_file_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;

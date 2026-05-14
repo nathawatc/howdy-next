@@ -111,4 +111,56 @@ inline auto check_secure_root_owned_directory(const std::filesystem::path &path,
   return check_secure_path(path, SecurePathKind::kDirectory, label);
 }
 
+inline auto check_secure_root_owned_directory_tree(
+    const std::filesystem::path &path, const std::string_view label)
+    -> SecurePathCheckResult {
+  if (!path.is_absolute()) {
+    return check_secure_root_owned_directory(path, label);
+  }
+
+  auto current = path.root_path();
+  if (current.empty()) {
+    current = "/";
+  }
+
+  const auto root_security =
+      check_secure_root_owned_directory(current, label);
+  if (!root_security.ok) {
+    return root_security;
+  }
+
+  const auto relative = path.lexically_relative(current);
+  for (const auto &component : relative) {
+    current /= component;
+    const auto security =
+        check_secure_root_owned_directory(current, label);
+    if (!security.ok) {
+      return security;
+    }
+  }
+
+  return SecurePathCheckResult{.ok = true, .error_message = {}};
+}
+
+inline auto check_secure_root_owned_file_with_directory(
+    const std::filesystem::path &path, const std::string_view directory_label,
+    const std::string_view file_label) -> SecurePathCheckResult {
+  const auto parent = path.parent_path();
+  if (parent.empty()) {
+    return SecurePathCheckResult{
+        .ok = false,
+        .error_message = std::string(file_label) +
+                         " must have a parent directory: " + path.string(),
+    };
+  }
+
+  const auto directory_security =
+      check_secure_root_owned_directory_tree(parent, directory_label);
+  if (!directory_security.ok) {
+    return directory_security;
+  }
+
+  return check_secure_root_owned_file(path, file_label);
+}
+
 }  // namespace howdy::native

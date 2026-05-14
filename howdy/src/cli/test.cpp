@@ -1,7 +1,7 @@
 #include "cli/test_cli.hpp"
 
-#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -211,7 +211,7 @@ int test_main(int argc, char **argv) {
   const TestArgs args = parse_args(argc, argv);
   const std::string config_path = howdy::native::resolve_config_path().string();
   const auto config_security =
-      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+      howdy::native::check_secure_config_path(config_path);
   if (!config_security.ok) {
     std::cerr << config_security.error_message << "\n";
     return kExitCameraError;

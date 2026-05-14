@@ -40,15 +40,16 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
   }
 
   const auto models_dir_security =
-      check_secure_root_owned_directory(user_models_dir, "User models directory");
+      check_secure_root_owned_directory_tree(user_models_dir,
+                                             "User models directory");
   if (!models_dir_security.ok) {
     result.status = UserModelStatus::kInsecurePath;
     result.error_message = models_dir_security.error_message;
     return result;
   }
 
-  const auto model_file_security =
-      check_secure_root_owned_file(*model_path, "User model file");
+  const auto model_file_security = check_secure_root_owned_file_with_directory(
+      *model_path, "User models directory", "User model file");
   if (!model_file_security.ok) {
     result.status = UserModelStatus::kInsecurePath;
     result.error_message = model_file_security.error_message;

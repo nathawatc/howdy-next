@@ -46,7 +46,7 @@ auto main() -> int {
 
   bool ok = true;
   const auto temp_root =
-      fs::temp_directory_path() / "howdy-config-utils-test-work";
+      fs::current_path() / "howdy-config-utils-test-work";
   std::error_code ec;
   fs::remove_all(temp_root, ec);
   fs::create_directories(temp_root, ec);
@@ -132,6 +132,24 @@ auto main() -> int {
                "update_config_value rejects insecure config directory");
   ok &= expect(chmod(insecure_dir.c_str(), 0755) == 0,
                "restore config dir mode");
+
+  const auto insecure_ancestor_root = temp_root / "insecure-ancestor";
+  const auto nested_config_dir = insecure_ancestor_root / "nested" / "deeper";
+  ok &= expect(fs::create_directories(nested_config_dir, ec) || !ec,
+               "create nested config dir");
+  ok &= expect(!ec, "no error creating nested config dir");
+  const auto nested_config_path = nested_config_dir / "config.ini";
+  ok &= expect(write_file(nested_config_path, "[core]\ndisabled = false\n"),
+               "write config in nested dir");
+  ok &= expect(chmod(insecure_ancestor_root.c_str(), 0777) == 0,
+               "make ancestor config dir world-writable");
+  ok &= expect(!howdy::native::check_secure_config_path(nested_config_path).ok,
+               "check_secure_config_path rejects insecure ancestor directory");
+  ok &= expect(!howdy::native::update_config_value(nested_config_path, "disabled",
+                                                   "true"),
+               "update_config_value rejects insecure ancestor directory");
+  ok &= expect(chmod(insecure_ancestor_root.c_str(), 0755) == 0,
+               "restore ancestor config dir mode");
 
   const auto protected_path = temp_root / "protected.ini";
   ok &= expect(write_file(protected_path, "[core]\ndisabled = false\n"),

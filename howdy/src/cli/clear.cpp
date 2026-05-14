@@ -44,8 +44,9 @@ int clear_main(int argc, char **argv) {
     std::cout << "No models created yet, can't clear them if they don't exist\n";
     return kExitAbort;
   }
-  const auto dir_security = howdy::native::check_secure_root_owned_directory(
-      models_dir, "User models directory");
+  const auto dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "User models directory");
   if (!dir_security.ok) {
     std::cout << dir_security.error_message << "\n";
     return kExitAbort;
@@ -63,7 +64,8 @@ int clear_main(int argc, char **argv) {
   }
 
   const auto model_security =
-      howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
   if (!model_security.ok) {
     std::cout << model_security.error_message << "\n";
     return kExitAbort;

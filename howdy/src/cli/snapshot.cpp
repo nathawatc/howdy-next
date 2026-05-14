@@ -1,5 +1,6 @@
 #include "cli/snapshot_cli.hpp"
 
+#include <sys/stat.h>
 #include <array>
 #include <chrono>
 #include <filesystem>
@@ -13,6 +14,7 @@
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_utils.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
@@ -21,6 +23,9 @@ namespace {
 
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
+constexpr mode_t kSnapshotDirectoryMode =
+    S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
+constexpr mode_t kSnapshotFileMode = S_IRUSR | S_IWUSR;
 
 auto snapshot_path() -> std::filesystem::path {
   const auto now = std::chrono::system_clock::now();
@@ -37,7 +42,8 @@ auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool {
   const auto log_root = directory.parent_path();
   if (std::filesystem::exists(log_root)) {
     const auto root_security =
-        howdy::native::check_secure_root_owned_directory(log_root, "Log directory");
+        howdy::native::check_secure_root_owned_directory_tree(
+            log_root, "Log directory");
     if (!root_security.ok) {
       std::cerr << root_security.error_message << "\n";
       return false;
@@ -50,17 +56,23 @@ auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool {
     std::cerr << "Failed to create snapshot directory: " << directory << "\n";
     return false;
   }
+  if (chmod(log_root.c_str(), kSnapshotDirectoryMode) != 0 ||
+      chmod(directory.c_str(), kSnapshotDirectoryMode) != 0) {
+    std::cerr << "Failed to secure snapshot directory: " << directory << "\n";
+    return false;
+  }
 
   const auto root_security =
-      howdy::native::check_secure_root_owned_directory(log_root, "Log directory");
+      howdy::native::check_secure_root_owned_directory_tree(
+          log_root, "Log directory");
   if (!root_security.ok) {
     std::cerr << root_security.error_message << "\n";
     return false;
   }
 
   const auto directory_security =
-      howdy::native::check_secure_root_owned_directory(directory,
-                                                       "Snapshot directory");
+      howdy::native::check_secure_root_owned_directory_tree(
+          directory, "Snapshot directory");
   if (!directory_security.ok) {
     std::cerr << directory_security.error_message << "\n";
     return false;
@@ -94,6 +106,11 @@ auto generate_snapshot(const std::vector<cv::Mat> &frames,
   if (!cv::imwrite(filepath.string(), snap)) {
     return {};
   }
+  if (chmod(filepath.c_str(), kSnapshotFileMode) != 0) {
+    std::error_code ec;
+    std::filesystem::remove(filepath, ec);
+    return {};
+  }
   howdy::native::sync_parent_directory(filepath);
   return filepath;
 }
@@ -105,7 +122,7 @@ int snapshot_main(int argc, char **argv) {
   (void)argv;
   const auto config_path = howdy::native::resolve_config_path();
   const auto config_security =
-      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+      howdy::native::check_secure_config_path(config_path);
   if (!config_security.ok) {
     std::cerr << config_security.error_message << "\n";
     return kExitAbort;

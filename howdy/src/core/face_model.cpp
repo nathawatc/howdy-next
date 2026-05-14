@@ -10,6 +10,7 @@
 
 #include <opencv2/imgproc.hpp>
 
+#include "common/file_security.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -23,8 +24,20 @@ FaceModel::FaceModel(const ConfigReader &config) {
       config, "sface_model", (models_dir / kSfaceModel).string());
 
   for (const auto &model_path : {yunet_model, sface_model}) {
+    const auto directory_security = check_secure_root_owned_directory_tree(
+        std::filesystem::path(model_path).parent_path(), "Models directory");
+    if (!directory_security.ok) {
+      set_error(directory_security.error_message);
+      return;
+    }
     if (!std::filesystem::is_regular_file(model_path)) {
       set_error("OpenCV face model file is missing: " + model_path);
+      return;
+    }
+    const auto model_security =
+        check_secure_root_owned_file(model_path, "OpenCV face model file");
+    if (!model_security.ok) {
+      set_error(model_security.error_message);
       return;
     }
     if (bad_model_download(model_path)) {

@@ -1,5 +1,6 @@
 #include "cli/remove_cli.hpp"
 
+#include <sys/stat.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -22,6 +23,7 @@ namespace {
 constexpr int kExitOk = 0;
 constexpr int kExitAbort = 1;
 constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
+constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
 
 struct RemoveArgs {
   std::string user;
@@ -50,7 +52,8 @@ auto parse_args(int argc, char **argv) -> RemoveArgs {
 
 auto save_models_atomic(const std::filesystem::path &path,
                         const nlohmann::json &models) -> bool {
-  return howdy::native::write_atomic_file(path, models.dump());
+  return howdy::native::write_atomic_file(path, models.dump(),
+                                          kUserModelFileMode);
 }
 
 }  // namespace
@@ -72,8 +75,9 @@ int remove_main(int argc, char **argv) {
     std::cout << "\n\thowdy add\n\n";
     return kExitAbort;
   }
-  const auto dir_security = howdy::native::check_secure_root_owned_directory(
-      models_dir, "User models directory");
+  const auto dir_security =
+      howdy::native::check_secure_root_owned_directory_tree(
+          models_dir, "User models directory");
   if (!dir_security.ok) {
     std::cout << dir_security.error_message << "\n";
     return kExitAbort;
@@ -92,7 +96,8 @@ int remove_main(int argc, char **argv) {
   }
 
   const auto model_security =
-      howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+      howdy::native::check_secure_root_owned_file_with_directory(
+          *model_path, "User models directory", "User model file");
   if (!model_security.ok) {
     std::cout << model_security.error_message << "\n";
     return kExitAbort;

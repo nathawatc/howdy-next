@@ -3,6 +3,7 @@
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -112,6 +113,13 @@ inline auto validate_known_config_value(const ConfigReader &config,
   if (key == "yunet_model" || key == "sface_model") {
     if (value.empty()) {
       return invalid_config_value_message(key, "must not be empty");
+    }
+    if (value == "default" || value == "none") {
+      return std::nullopt;
+    }
+    if (!std::filesystem::path(std::string(value)).is_absolute()) {
+      return invalid_config_value_message(
+          key, "expected an absolute path, default, or none");
     }
     return std::nullopt;
   }
