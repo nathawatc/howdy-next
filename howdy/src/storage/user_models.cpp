@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -14,8 +15,9 @@ namespace howdy::native {
 auto load_user_models(const std::string &user, const std::string &expected_backend)
     -> UserModelLoadResult {
   UserModelLoadResult result;
+  const auto user_models_dir = resolve_user_models_dir();
 
-  const auto model_path = resolve_user_model_path(resolve_user_models_dir(), user);
+  const auto model_path = resolve_user_model_path(user_models_dir, user);
   if (!model_path) {
     result.status = UserModelStatus::kInvalidUser;
     result.error_message = kInvalidUserNameMessage;
@@ -24,6 +26,22 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
 
   if (!std::filesystem::is_regular_file(*model_path)) {
     result.status = UserModelStatus::kNoModel;
+    return result;
+  }
+
+  const auto models_dir_security =
+      check_secure_root_owned_directory(user_models_dir, "User models directory");
+  if (!models_dir_security.ok) {
+    result.status = UserModelStatus::kInsecurePath;
+    result.error_message = models_dir_security.error_message;
+    return result;
+  }
+
+  const auto model_file_security =
+      check_secure_root_owned_file(*model_path, "User model file");
+  if (!model_file_security.ok) {
+    result.status = UserModelStatus::kInsecurePath;
+    result.error_message = model_file_security.error_message;
     return result;
   }
 

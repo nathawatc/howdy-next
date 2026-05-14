@@ -1,5 +1,7 @@
 #include "config/config_utils.hpp"
 
+#include <sys/stat.h>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -99,6 +101,26 @@ auto main() -> int {
                "atomic_write_lines creates parent dirs and writes file");
   ok &= expect(read_file(nested_path) == "[face]\nsface_threshold = 0.363\n",
                "atomic_write_lines output matches expected content");
+
+  ok &= expect(chmod(config_path.c_str(), 0666) == 0,
+               "make config file world-writable");
+  ok &= expect(!howdy::native::update_config_value(config_path, "disabled", "false"),
+               "update_config_value rejects insecure config permissions");
+  ok &= expect(chmod(config_path.c_str(), 0644) == 0,
+               "restore config permissions");
+
+  const auto protected_path = temp_root / "protected.ini";
+  ok &= expect(write_file(protected_path, "[core]\ndisabled = false\n"),
+               "write protected config");
+  ok &= expect(chmod(protected_path.c_str(), 0600) == 0,
+               "set protected config mode");
+  ok &= expect(howdy::native::update_config_value(protected_path, "disabled", "true"),
+               "update_config_value succeeds on secure config");
+  struct stat protected_stat {};
+  ok &= expect(stat(protected_path.c_str(), &protected_stat) == 0,
+               "stat protected config");
+  ok &= expect((protected_stat.st_mode & 0777) == 0600,
+               "atomic write preserves config mode");
 
   fs::remove_all(temp_root, ec);
   if (!ok) {

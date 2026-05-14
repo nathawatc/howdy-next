@@ -1,5 +1,6 @@
 #include "cli/test_cli.hpp"
 
+#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -70,6 +71,12 @@ void print_text(cv::Mat &overlay, int line_number, int height,
 int test_main(int argc, char **argv) {
   const TestArgs args = parse_args(argc, argv);
   const std::string config_path = howdy::native::resolve_config_path().string();
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+  if (!config_security.ok) {
+    std::cerr << config_security.error_message << "\n";
+    return kExitCameraError;
+  }
 
   howdy::native::ConfigReader config(config_path);
   if (!config.ok()) {
@@ -99,6 +106,9 @@ int test_main(int argc, char **argv) {
     } else if (loaded_models.status ==
                howdy::native::UserModelStatus::kParseError) {
       std::cout << "Warning: Failed to read stored face models, detection will run without matching\n";
+    } else if (loaded_models.status ==
+               howdy::native::UserModelStatus::kInsecurePath) {
+      std::cout << "Warning: Stored face model path is insecure, detection will run without matching\n";
     }
   }
 

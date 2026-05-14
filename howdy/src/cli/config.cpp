@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -410,6 +411,12 @@ int config_main(int argc, char **argv) {
   }
 
   const auto config_path = howdy::native::resolve_config_path();
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+  if (!config_security.ok) {
+    std::cout << config_security.error_message << "\n";
+    return kExitAbort;
+  }
   const auto temp_path = create_temp_copy(config_path, invoking_user);
   if (!temp_path) {
     std::cout << "Failed to prepare a temporary config copy\n";

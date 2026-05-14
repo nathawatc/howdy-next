@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -41,6 +42,12 @@ int clear_main(int argc, char **argv) {
     std::cout << "No models created yet, can't clear them if they don't exist\n";
     return kExitAbort;
   }
+  const auto dir_security = howdy::native::check_secure_root_owned_directory(
+      models_dir, "User models directory");
+  if (!dir_security.ok) {
+    std::cout << dir_security.error_message << "\n";
+    return kExitAbort;
+  }
 
   const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
   if (!model_path) {
@@ -50,6 +57,13 @@ int clear_main(int argc, char **argv) {
 
   if (!std::filesystem::is_regular_file(*model_path)) {
     std::cout << args.user << " has no models or they have been cleared already\n";
+    return kExitAbort;
+  }
+
+  const auto model_security =
+      howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+  if (!model_security.ok) {
+    std::cout << model_security.error_message << "\n";
     return kExitAbort;
   }
 

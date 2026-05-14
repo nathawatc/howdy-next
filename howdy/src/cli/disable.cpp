@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
@@ -32,6 +33,12 @@ int disable_main(int argc, char **argv) {
   }
 
   const auto config_path = howdy::native::resolve_config_path();
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+  if (!config_security.ok) {
+    std::cout << config_security.error_message << "\n";
+    return kExitAbort;
+  }
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cout << "Failed to read config file: " << config_path << "\n";

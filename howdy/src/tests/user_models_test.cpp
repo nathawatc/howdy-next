@@ -1,5 +1,7 @@
 #include "storage/user_models.hpp"
 
+#include <sys/stat.h>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -110,6 +112,26 @@ auto main() -> int {
                      result.stored.models[2].label == "second",
                  "second model metadata preserved");
   }
+
+  ok &= expect(chmod(model_path.c_str(), 0666) == 0,
+               "make model file world-writable");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "world-writable model file is rejected");
+  }
+  ok &= expect(chmod(model_path.c_str(), 0644) == 0,
+               "restore model file mode");
+
+  ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
+               "make models dir world-writable");
+  {
+    const auto result = howdy::native::load_user_models("alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                 "world-writable model dir is rejected");
+  }
+  ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
+               "restore models dir mode");
 
   fs::remove_all(temp_root, ec);
   unsetenv("HOWDY_USER_MODELS_DIR");

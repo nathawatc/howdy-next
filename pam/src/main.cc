@@ -36,6 +36,7 @@
 #include "main.hh"
 #include "optional_task.hh"
 #include "status_mapping.hh"
+#include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include <paths.hh>
 
@@ -167,8 +168,24 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
     return PAM_AUTHINFO_UNAVAIL;
   }
 
+  const auto models_dir_security =
+      howdy::native::check_secure_root_owned_directory(USER_MODELS_DIR,
+                                                       "User models directory");
+  if (!models_dir_security.ok) {
+    syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
   struct stat stat_;
-  if (stat(model_path->c_str(), &stat_) != 0) {
+  if (lstat(model_path->c_str(), &stat_) != 0) {
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
+  const auto model_file_security =
+      howdy::native::check_secure_root_owned_file(*model_path,
+                                                  "User model file");
+  if (!model_file_security.ok) {
+    syslog(LOG_ERR, "%s", model_file_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
   }
 
@@ -186,6 +203,15 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
  */
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int {
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(CONFIG_FILE_PATH,
+                                                  "Config file");
+  if (!config_security.ok) {
+    openlog("pam_howdy", 0, LOG_AUTHPRIV);
+    syslog(LOG_ERR, "%s", config_security.error_message.c_str());
+    return PAM_SYSTEM_ERR;
+  }
+
   INIReader config(CONFIG_FILE_PATH);
   openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
@@ -253,13 +279,15 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 username, nullptr};
+  std::array<char *, 1> env = {nullptr};
   pid_t child_pid;
 
   // Start the compare subprocess
-  if (posix_spawnp(&child_pid, COMPARE_PROCESS_PATH, nullptr, nullptr,
-                   args.data(), nullptr) != 0) {
-    syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(errno),
-           errno);
+  const int spawn_result = posix_spawn(&child_pid, COMPARE_PROCESS_PATH, nullptr,
+                                       nullptr, args.data(), env.data());
+  if (spawn_result != 0) {
+    syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)",
+           strerror(spawn_result), spawn_result);
     return PAM_SYSTEM_ERR;
   }
 

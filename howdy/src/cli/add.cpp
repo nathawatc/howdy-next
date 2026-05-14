@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
@@ -133,6 +134,12 @@ auto is_backend_compatible(const nlohmann::json &models) -> bool {
 auto add_main(int argc, char **argv) -> int {
   const auto args = parse_args(argc, argv);
   const auto config_path = howdy::native::resolve_config_path();
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(config_path, "Config file");
+  if (!config_security.ok) {
+    std::cerr << config_security.error_message << "\n";
+    return kExitAbort;
+  }
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cerr << "Failed to parse config: " << config_path << "\n";
@@ -146,10 +153,26 @@ auto add_main(int argc, char **argv) -> int {
   }
 
   const auto user_models_dir = howdy::native::resolve_user_models_dir();
+  if (std::filesystem::exists(user_models_dir)) {
+    const auto dir_security = howdy::native::check_secure_root_owned_directory(
+        user_models_dir, "User models directory");
+    if (!dir_security.ok) {
+      std::cerr << dir_security.error_message << "\n";
+      return kExitAbort;
+    }
+  }
   const auto model_path = howdy::native::resolve_user_model_path(user_models_dir, args.user);
   if (!model_path) {
     std::cerr << howdy::native::kInvalidUserNameMessage << "\n";
     return kExitAbort;
+  }
+  if (std::filesystem::exists(*model_path)) {
+    const auto model_security =
+        howdy::native::check_secure_root_owned_file(*model_path, "User model file");
+    if (!model_security.ok) {
+      std::cerr << model_security.error_message << "\n";
+      return kExitAbort;
+    }
   }
 
   auto models = load_models(*model_path);

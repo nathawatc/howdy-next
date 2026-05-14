@@ -10,6 +10,7 @@ enum class UserModelStatus {
   kNoModel,
   kIncompatibleBackend,
   kParseError,
+  kInsecurePath,
   kInvalidUser,
 };
 

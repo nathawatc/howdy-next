@@ -8,6 +8,7 @@
 #include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
+#include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -59,6 +60,13 @@ auto main(int argc, char **argv) -> int {
   }
   const auto &args = parse_result.args;
 
+  const auto config_security =
+      howdy::native::check_secure_root_owned_file(args.config_path, "Config file");
+  if (!config_security.ok) {
+    std::cerr << config_security.error_message << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
+
   const auto loaded_models =
       howdy::native::load_user_models(args.user, howdy::native::FaceModel::kBackendName);
   if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
@@ -70,6 +78,10 @@ auto main(int argc, char **argv) -> int {
     return static_cast<int>(CompareExit::kNoFaceModel);
   }
   if (loaded_models.status == howdy::native::UserModelStatus::kParseError) {
+    std::cerr << loaded_models.error_message << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
+  if (loaded_models.status == howdy::native::UserModelStatus::kInsecurePath) {
     std::cerr << loaded_models.error_message << "\n";
     return static_cast<int>(CompareExit::kAbort);
   }
