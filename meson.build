@@ -54,7 +54,7 @@ if get_option('install_pam_config')
     install_data(
         pam_config,
         install_dir: get_option('prefix') / get_option('datadir') / 'pam-configs',
-        install_mode: 'rwxr-xr-x',
+        install_mode: 'rw-r--r--',
         install_tag: 'pam',
         rename: 'howdy',
     )
