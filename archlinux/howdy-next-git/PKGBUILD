@@ -1,7 +1,7 @@
 # Maintainer: nathawat <nathawat at no reply dot codeberg dot org>
 
 pkgname="howdy-next-git"
-pkgver=v1.0.0.r131.gb3e1c94
+pkgver=v1.0.0.r135.ge4af9bf
 pkgrel=1
 pkgdesc="Windows Hello style facial authentication for Linux"
 arch=('x86_64')

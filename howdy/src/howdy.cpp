@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
   };
 
   if (command == "version") {
-    std::cout << "Howdy-Next 1.0.0\n";
+    std::cout << "Howdy-Next 2.0.0\n";
     return 0;
   }
 
