@@ -5,6 +5,8 @@
 #include <iostream>
 #include <string>
 
+#include "common/user_names.hpp"
+
 namespace {
 
 auto write_file(const std::filesystem::path &path, const std::string &content)
@@ -43,6 +45,19 @@ auto main() -> int {
   setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
   const std::string backend = "opencv_dnn_sface";
+  ok &= expect(howdy::native::is_valid_model_user_name("alice@example.com"),
+               "domain-style usernames remain valid");
+  ok &= expect(!howdy::native::is_valid_model_user_name("../alice"),
+               "path traversal usernames are rejected");
+  ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "../alice").has_value(),
+               "unsafe model paths are not constructed");
+
+  {
+    const auto result = howdy::native::load_user_models("../alice", backend);
+    ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidUser,
+                 "invalid username returns kInvalidUser");
+  }
+
   {
     const auto result = howdy::native::load_user_models("alice", backend);
     ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,

@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace howdy::native {
@@ -14,16 +15,22 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
     -> UserModelLoadResult {
   UserModelLoadResult result;
 
-  const auto model_path = resolve_user_models_dir() / (user + ".dat");
-  if (!std::filesystem::is_regular_file(model_path)) {
+  const auto model_path = resolve_user_model_path(resolve_user_models_dir(), user);
+  if (!model_path) {
+    result.status = UserModelStatus::kInvalidUser;
+    result.error_message = kInvalidUserNameMessage;
+    return result;
+  }
+
+  if (!std::filesystem::is_regular_file(*model_path)) {
     result.status = UserModelStatus::kNoModel;
     return result;
   }
 
-  std::ifstream input(model_path);
+  std::ifstream input(*model_path);
   if (!input.is_open()) {
     result.status = UserModelStatus::kParseError;
-    result.error_message = "Failed to open user model file: " + model_path.string();
+    result.error_message = "Failed to open user model file: " + model_path->string();
     return result;
   }
 

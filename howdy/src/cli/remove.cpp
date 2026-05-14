@@ -10,6 +10,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -100,8 +101,13 @@ int remove_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  const auto model_path = models_dir / (args.user + ".dat");
-  std::ifstream input(model_path);
+  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+  if (!model_path) {
+    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    return kExitAbort;
+  }
+
+  std::ifstream input(*model_path);
   if (!input.is_open()) {
     std::cout << "No face model known for the user " << args.user << ", please run:\n";
     std::cout << "\n\thowdy add\n\n";
@@ -141,13 +147,13 @@ int remove_main(int argc, char **argv) {
   }
 
   if (models.size() == 1) {
-    std::filesystem::remove(model_path);
+    std::filesystem::remove(*model_path);
     std::cout << "Removed last model, howdy disabled for user\n";
     return kExitOk;
   }
 
   models.erase(models.begin() + found_index);
-  if (!save_models_atomic(model_path, models)) {
+  if (!save_models_atomic(*model_path, models)) {
     std::cout << "Failed to update model file\n";
     return kExitAbort;
   }

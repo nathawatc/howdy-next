@@ -1,13 +1,17 @@
 #include <pwd.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "common/user_names.hpp"
 
 namespace {
 
@@ -20,9 +24,15 @@ auto resolve_user() -> std::string {
 
   if (const char *pkexec_uid = std::getenv("PKEXEC_UID");
       pkexec_uid != nullptr && pkexec_uid[0] != '\0') {
-    const auto uid = static_cast<uid_t>(std::stoi(pkexec_uid));
-    if (passwd *pwd = getpwuid(uid); pwd != nullptr) {
-      return {pwd->pw_name};
+    errno = 0;
+    char *end = nullptr;
+    const auto raw_uid = std::strtoul(pkexec_uid, &end, 10);
+    if (errno == 0 && end != pkexec_uid && end != nullptr && *end == '\0' &&
+        raw_uid <= std::numeric_limits<uid_t>::max()) {
+      const auto uid = static_cast<uid_t>(raw_uid);
+      if (passwd *pwd = getpwuid(uid); pwd != nullptr) {
+        return {pwd->pw_name};
+      }
     }
   }
 
@@ -162,6 +172,10 @@ int main(int argc, char **argv) {
   const bool needs_user_argument =
       command == "add" || command == "clear" || command == "list" ||
       command == "remove" || command == "test";
+  if (needs_user_argument && !howdy::native::is_valid_model_user_name(user)) {
+    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    return 1;
+  }
 
   std::vector<std::string> argv_strings;
   argv_strings.push_back(binary_path);

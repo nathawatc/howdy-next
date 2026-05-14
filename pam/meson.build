@@ -20,7 +20,7 @@ shared_library(
 	'src/main.cc',
 	'src/enter_device.cc',
 	'src/status_mapping.cc',
-	include_directories: include_directories('include'),
+	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
 		inih_cpp,
@@ -40,7 +40,7 @@ pam_status_mapping_test = executable(
 	'pam-status-mapping-test',
 	'src/status_mapping.cc',
 	'src/tests/status_mapping_test.cc',
-	include_directories: include_directories('include'),
+	include_directories: include_directories('include', '../howdy/include'),
 	dependencies: [
 		libpam,
 		inih_cpp,

@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -41,8 +42,13 @@ int clear_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  const auto model_path = models_dir / (args.user + ".dat");
-  if (!std::filesystem::is_regular_file(model_path)) {
+  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+  if (!model_path) {
+    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    return kExitAbort;
+  }
+
+  if (!std::filesystem::is_regular_file(*model_path)) {
     std::cout << args.user << " has no models or they have been cleared already\n";
     return kExitAbort;
   }
@@ -58,7 +64,7 @@ int clear_main(int argc, char **argv) {
     }
   }
 
-  std::filesystem::remove(model_path);
+  std::filesystem::remove(*model_path);
   std::cout << "\nModels cleared\n";
   return kExitOk;
 }

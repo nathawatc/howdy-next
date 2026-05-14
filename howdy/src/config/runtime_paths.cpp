@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <unistd.h>
 #include <vector>
 
 #include "paths.hpp"
@@ -10,9 +11,19 @@ namespace howdy::native {
 
 namespace {
 
+auto allow_env_path_overrides() -> bool {
+  return geteuid() == getuid() && getegid() == getgid();
+}
+
 auto path_from_env(const char *name) -> std::filesystem::path {
+  if (!allow_env_path_overrides()) {
+    return {};
+  }
+
   if (const char *value = std::getenv(name)) {
-    return value;
+    if (value[0] != '\0') {
+      return value;
+    }
   }
   return {};
 }

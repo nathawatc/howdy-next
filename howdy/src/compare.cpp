@@ -61,6 +61,10 @@ auto main(int argc, char **argv) -> int {
 
   const auto loaded_models =
       howdy::native::load_user_models(args.user, howdy::native::FaceModel::kBackendName);
+  if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
+    std::cerr << loaded_models.error_message << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
   if (loaded_models.status == howdy::native::UserModelStatus::kIncompatibleBackend) {
     std::cerr << loaded_models.error_message << "\n";
     return static_cast<int>(CompareExit::kNoFaceModel);

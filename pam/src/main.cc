@@ -36,6 +36,7 @@
 #include "main.hh"
 #include "optional_task.hh"
 #include "status_mapping.hh"
+#include "common/user_names.hpp"
 #include <paths.hh>
 
 namespace {
@@ -159,9 +160,15 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
   }
 
   // pre-check if this user has face model file
-  auto model_path = std::string(USER_MODELS_DIR) + "/" + username + ".dat";
+  const auto model_path =
+      howdy::native::resolve_user_model_path(USER_MODELS_DIR, username);
+  if (!model_path) {
+    syslog(LOG_WARNING, "Skipped authentication, invalid username");
+    return PAM_AUTHINFO_UNAVAIL;
+  }
+
   struct stat stat_;
-  if (stat(model_path.c_str(), &stat_) != 0) {
+  if (stat(model_path->c_str(), &stat_) != 0) {
     return PAM_AUTHINFO_UNAVAIL;
   }
 

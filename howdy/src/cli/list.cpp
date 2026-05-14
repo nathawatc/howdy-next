@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -48,8 +49,15 @@ int list_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  const auto model_path = models_dir / (args.user + ".dat");
-  std::ifstream input(model_path);
+  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+  if (!model_path) {
+    if (!args.plain) {
+      std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+    }
+    return kExitAbort;
+  }
+
+  std::ifstream input(*model_path);
   if (!input.is_open()) {
     if (!args.plain) {
       std::cout << "No face model known for the user " << args.user

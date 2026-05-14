@@ -91,6 +91,9 @@ int test_main(int argc, char **argv) {
         howdy::native::UserModelStatus::kIncompatibleBackend) {
       std::cout
           << "Warning: Stored face models use an incompatible backend; matching disabled\n";
+    } else if (loaded_models.status ==
+               howdy::native::UserModelStatus::kInvalidUser) {
+      std::cout << "Warning: Invalid user name; matching disabled\n";
     } else if (loaded_models.status == howdy::native::UserModelStatus::kNoModel) {
       std::cout << "Warning: No face model found for this user, detection will run without matching\n";
     } else if (loaded_models.status ==

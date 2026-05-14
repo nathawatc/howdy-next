@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -145,8 +146,13 @@ auto add_main(int argc, char **argv) -> int {
   }
 
   const auto user_models_dir = howdy::native::resolve_user_models_dir();
-  const auto model_path = user_models_dir / (args.user + ".dat");
-  auto models = load_models(model_path);
+  const auto model_path = howdy::native::resolve_user_model_path(user_models_dir, args.user);
+  if (!model_path) {
+    std::cerr << howdy::native::kInvalidUserNameMessage << "\n";
+    return kExitAbort;
+  }
+
+  auto models = load_models(*model_path);
 
   if (!is_backend_compatible(models)) {
     std::cerr << "Existing face models use an incompatible backend.\n";
@@ -276,7 +282,7 @@ auto add_main(int argc, char **argv) -> int {
   entry["data"] = nlohmann::json::array({encoding});
   models.push_back(entry);
 
-  if (!save_models_atomic(model_path, models)) {
+  if (!save_models_atomic(*model_path, models)) {
     std::cerr << "Failed to save model file\n";
     return kExitAbort;
   }

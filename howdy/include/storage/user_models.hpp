@@ -10,6 +10,7 @@ enum class UserModelStatus {
   kNoModel,
   kIncompatibleBackend,
   kParseError,
+  kInvalidUser,
 };
 
 struct EncodingModelInfo {
