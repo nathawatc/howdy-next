@@ -1,0 +1,3 @@
+[submodule "archlinux/howdy-next"]
+	path = archlinux/howdy-next
+	url = https://aur.archlinux.org/howdy-next.git
