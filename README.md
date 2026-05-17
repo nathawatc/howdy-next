@@ -43,7 +43,7 @@ Edit config: `sudo howdy config`
 
 Errors print to console. Check `/var/log/auth.log` if auth fails silently.
 
-See [wiki](https://github.com/boltgolt/howdy/wiki/Common-issues) for common issues.
+See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for common issues.
 
 > [!WARNING]
 > Howdy is less secure than a password. Similar faces or photos may fool it.
