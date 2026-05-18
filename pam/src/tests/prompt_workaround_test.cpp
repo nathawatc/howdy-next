@@ -1,4 +1,5 @@
 #include "prompt_workaround.hpp"
+#include "main.hpp"
 
 #include <iostream>
 #include <string>
@@ -26,6 +27,12 @@ auto main() -> int {
                "does not ask when an auth token already exists");
   ok &= expect(should_ask_for_password(true, Workaround::Native, false),
                "asks when native workaround is enabled");
+  ok &= expect(!auth_token_item_present(nullptr),
+               "null PAM auth token item is absent");
+  ok &= expect(auth_token_item_present(""),
+               "empty PAM auth token item is still present");
+  ok &= expect(auth_token_item_present("password"),
+               "non-empty PAM auth token item is present");
 
   {
     const auto plan = plan_prompt_stop(false, false, Workaround::Native);

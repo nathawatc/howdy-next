@@ -114,7 +114,7 @@ auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function)
 auto auth_token_present(pam_handle_t *pamh) -> bool {
   const void *auth_token = nullptr;
   const int result = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
-  return result == PAM_SUCCESS && auth_token != nullptr;
+  return result == PAM_SUCCESS && auth_token_item_present(auth_token);
 }
 
 auto howdy_error(int status, const ConversationFn &conv_function) -> int {

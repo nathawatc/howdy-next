@@ -61,6 +61,10 @@ inline auto checkenv(const char *name) -> bool {
   return false;
 }
 
+inline auto auth_token_item_present(const void *auth_token) -> bool {
+  return auth_token != nullptr;
+}
+
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int;
 
