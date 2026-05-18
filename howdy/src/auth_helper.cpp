@@ -76,7 +76,7 @@ auto make_private_runtime_dir(uid_t uid, gid_t gid)
     return std::nullopt;
   }
 
-  const std::filesystem::path path(created);
+  std::filesystem::path path(created);
   if (chown(path.c_str(), uid, gid) != 0 || chmod(path.c_str(), 0700) != 0) {
     std::cerr << "Failed to secure private runtime directory: "
               << std::strerror(errno) << "\n";

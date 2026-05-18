@@ -24,7 +24,6 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
-#include <vector>
 
 #include <INIReader.h>
 
@@ -298,8 +297,8 @@ auto wait_for_helper_process(pid_t child_pid) -> int {
 
 auto prepare_runtime_auth_files(const char *username, RuntimeAuthFiles *runtime)
     -> bool {
-  int output_pipe[2] = {-1, -1};
-  if (pipe2(output_pipe, O_CLOEXEC) != 0) {
+  std::array<int, 2> output_pipe = {-1, -1};
+  if (pipe2(output_pipe.data(), O_CLOEXEC) != 0) {
     syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)",
            strerror(errno), errno);
     return false;
