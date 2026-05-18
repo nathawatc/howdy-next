@@ -2,9 +2,11 @@
 
 #include "common/file_security.hpp"
 
+#include <cerrno>
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <vector>
 
 namespace howdy::native {
@@ -12,7 +14,20 @@ namespace howdy::native {
 struct ConfigPathCheckResult {
   bool ok = false;
   std::string error_message;
+  int error_code = 0;
 };
+
+inline auto config_access_error_hint(int error_code) -> std::string {
+  if (error_code != EACCES || geteuid() == 0) {
+    return {};
+  }
+
+  return "; process uid=" + std::to_string(getuid()) +
+         " euid=" + std::to_string(geteuid()) +
+         " cannot inspect the restricted Howdy config path. PAM consumers such "
+         "as lock screens must call pam_howdy from a privileged authentication "
+         "helper; do not make /etc/howdy or config.ini world-readable";
+}
 
 inline auto check_secure_config_path(const std::filesystem::path &config_path)
     -> ConfigPathCheckResult {
@@ -22,6 +37,7 @@ inline auto check_secure_config_path(const std::filesystem::path &config_path)
         .ok = false,
         .error_message = "Config file must have a parent directory: " +
                          config_path.string(),
+        .error_code = 0,
     };
   }
 
@@ -30,11 +46,14 @@ inline auto check_secure_config_path(const std::filesystem::path &config_path)
   if (!file_security.ok) {
     return ConfigPathCheckResult{
         .ok = false,
-        .error_message = file_security.error_message,
+        .error_message =
+            file_security.error_message +
+            config_access_error_hint(file_security.error_code),
+        .error_code = file_security.error_code,
     };
   }
 
-  return ConfigPathCheckResult{.ok = true, .error_message = {}};
+  return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 }
 auto is_safe_ini_scalar_value(std::string_view value) -> bool;
 auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)

@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -150,6 +151,32 @@ auto main() -> int {
                "update_config_value rejects insecure ancestor directory");
   ok &= expect(chmod(insecure_ancestor_root.c_str(), 0755) == 0,
                "restore ancestor config dir mode");
+
+  const auto unreadable_dir = temp_root / "unreadable-dir";
+  ok &= expect(fs::create_directories(unreadable_dir, ec) || !ec,
+               "create unreadable config dir");
+  ok &= expect(!ec, "no error creating unreadable config dir");
+  const auto unreadable_config_path = unreadable_dir / "config.ini";
+  ok &= expect(write_file(unreadable_config_path, "[core]\ndisabled = false\n"),
+               "write config in unreadable dir");
+  ok &= expect(chmod(unreadable_dir.c_str(), 0000) == 0,
+               "make config dir unreadable");
+  if (geteuid() != 0) {
+    const auto unreadable_check =
+        howdy::native::check_secure_config_path(unreadable_config_path);
+    ok &= expect(!unreadable_check.ok,
+                 "check_secure_config_path rejects inaccessible config path");
+    ok &= expect(unreadable_check.error_code == EACCES,
+                 "inaccessible config path preserves EACCES");
+    ok &= expect(unreadable_check.error_message.find("process uid=") !=
+                     std::string::npos,
+                 "inaccessible config path reports process uid");
+    ok &= expect(unreadable_check.error_message.find("do not make /etc/howdy") !=
+                     std::string::npos,
+                 "inaccessible config path warns against insecure permissions");
+  }
+  ok &= expect(chmod(unreadable_dir.c_str(), 0755) == 0,
+               "restore unreadable config dir mode");
 
   const auto protected_path = temp_root / "protected.ini";
   ok &= expect(write_file(protected_path, "[core]\ndisabled = false\n"),

@@ -20,6 +20,7 @@ enum class SecurePathKind {
 struct SecurePathCheckResult {
   bool ok = false;
   std::string error_message;
+  int error_code = 0;
 };
 
 inline auto default_secure_owner_uid() -> std::optional<uid_t> {
@@ -50,6 +51,7 @@ inline auto check_secure_path(
         .ok = false,
         .error_message = "Failed to inspect " + std::string(label) + ": " +
                          path.string() + " (" + std::strerror(errno) + ")",
+        .error_code = errno,
     };
   }
 
@@ -61,6 +63,7 @@ inline auto check_secure_path(
         .ok = false,
         .error_message = std::string(label) + " must be a " +
                          secure_path_kind_name(kind) + ": " + path.string(),
+        .error_code = 0,
     };
   }
 
@@ -69,6 +72,7 @@ inline auto check_secure_path(
         .ok = false,
         .error_message = std::string(label) + " must be owned by root: " +
                          path.string(),
+        .error_code = 0,
     };
   }
 
@@ -77,6 +81,7 @@ inline auto check_secure_path(
         .ok = false,
         .error_message =
             std::string(label) + " must not be group-writable: " + path.string(),
+        .error_code = 0,
     };
   }
 
@@ -85,6 +90,7 @@ inline auto check_secure_path(
         .ok = false,
         .error_message =
             std::string(label) + " must not be world-writable: " + path.string(),
+        .error_code = 0,
     };
   }
 
@@ -93,10 +99,11 @@ inline auto check_secure_path(
         .ok = false,
         .error_message = std::string(label) + " must not be hard-linked: " +
                          path.string(),
+        .error_code = 0,
     };
   }
 
-  return SecurePathCheckResult{.ok = true, .error_message = {}};
+  return SecurePathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 }
 
 inline auto check_secure_root_owned_file(const std::filesystem::path &path,
@@ -150,6 +157,7 @@ inline auto check_secure_root_owned_file_with_directory(
         .ok = false,
         .error_message = std::string(file_label) +
                          " must have a parent directory: " + path.string(),
+        .error_code = 0,
     };
   }
 
