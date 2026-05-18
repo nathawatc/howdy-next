@@ -54,3 +54,19 @@ runtime copies of the protected config and enrolled model before recognition.
 Do not make `/etc/howdy` or `config.ini` world-readable. If lock-screen auth
 fails before recognition starts, verify that `$libdir/howdy/howdy-auth-helper`
 is installed with the setuid bit.
+
+Some lockers, including `waylock`, collect input before calling PAM. With those
+lockers, Howdy cannot run before the locker's password entry screen appears.
+Use a service-specific PAM order that validates the already-submitted password
+first, then falls through to Howdy and fingerprint authentication:
+
+```pam
+auth  optional     pam_exec.so /usr/bin/linux-enable-ir-emitter run --config /etc/linux-enable-ir-emitter.toml
+auth  sufficient   pam_unix.so try_first_pass nullok
+auth  sufficient   pam_howdy.so
+auth  sufficient   pam_fprintd.so
+```
+
+For TTY, sudo, and PAM consumers that call PAM before collecting a password,
+keep `pam_howdy.so` before `pam_unix.so` if face authentication should run
+first.
