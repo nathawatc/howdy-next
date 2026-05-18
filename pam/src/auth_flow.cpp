@@ -112,15 +112,10 @@ auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function)
   return PAM_SUCCESS;
 }
 
-auto auth_token_available(pam_handle_t *pamh) -> bool {
+auto auth_token_present(pam_handle_t *pamh) -> bool {
   const void *auth_token = nullptr;
   const int result = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
-  if (result != PAM_SUCCESS || auth_token == nullptr) {
-    return false;
-  }
-
-  const auto *token = static_cast<const char *>(auth_token);
-  return token[0] != '\0';
+  return result == PAM_SUCCESS && auth_token != nullptr;
 }
 
 auto howdy_error(int status, const ConversationFn &conv_function) -> int {
@@ -472,7 +467,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   const Workaround workaround =
       get_workaround(config.GetString("core", "workaround", "input"));
   Workaround effective_workaround = workaround;
-  const bool existing_auth_token = auth_token_available(pamh);
+  const bool existing_auth_token = auth_token_present(pamh);
 
   std::array<char *, 5> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 const_cast<char *>("--config"),
