@@ -112,6 +112,17 @@ auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function)
   return PAM_SUCCESS;
 }
 
+auto auth_token_available(pam_handle_t *pamh) -> bool {
+  const void *auth_token = nullptr;
+  const int result = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
+  if (result != PAM_SUCCESS || auth_token == nullptr) {
+    return false;
+  }
+
+  const auto *token = static_cast<const char *>(auth_token);
+  return token[0] != '\0';
+}
+
 auto howdy_error(int status, const ConversationFn &conv_function) -> int {
   const auto decision = map_compare_wait_status(status);
   if (decision.conversation_kind == ConversationKind::Error) {
@@ -461,6 +472,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   const Workaround workaround =
       get_workaround(config.GetString("core", "workaround", "input"));
   Workaround effective_workaround = workaround;
+  const bool existing_auth_token = auth_token_available(pamh);
 
   std::array<char *, 5> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
                                 const_cast<char *>("--config"),
@@ -501,7 +513,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   child_task.activate();
 
   std::optional<NativePromptConversation> native_prompt;
-  if (workaround == Workaround::Native && ask_auth_tok) {
+  if (workaround == Workaround::Native && ask_auth_tok &&
+      !existing_auth_token) {
     native_prompt.emplace(pamh);
     if (!native_prompt->available()) {
       syslog(LOG_INFO,
@@ -520,6 +533,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   }
 
   if (effective_workaround == Workaround::Input && ask_auth_tok &&
+      !existing_auth_token &&
       euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
     const int access_errno = errno;
     syslog(LOG_INFO,
@@ -530,8 +544,9 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   const bool ask_pass =
       effective_workaround == Workaround::Native
-          ? native_prompt.has_value()
-          : should_ask_for_password(ask_auth_tok, effective_workaround);
+          ? native_prompt.has_value() && !existing_auth_token
+          : should_ask_for_password(ask_auth_tok, effective_workaround,
+                                    existing_auth_token);
 
   optional_task<std::tuple<int, char *>> pass_task([&] {
     char *auth_tok_ptr = nullptr;

@@ -18,11 +18,13 @@ auto expect(bool condition, const std::string &message) -> bool {
 auto main() -> int {
   bool ok = true;
 
-  ok &= expect(!should_ask_for_password(false, Workaround::Input),
+  ok &= expect(!should_ask_for_password(false, Workaround::Input, false),
                "does not ask when auth token is disabled");
-  ok &= expect(!should_ask_for_password(true, Workaround::Off),
+  ok &= expect(!should_ask_for_password(true, Workaround::Off, false),
                "does not ask when workaround is off");
-  ok &= expect(should_ask_for_password(true, Workaround::Native),
+  ok &= expect(!should_ask_for_password(true, Workaround::Native, true),
+               "does not ask when an auth token already exists");
+  ok &= expect(should_ask_for_password(true, Workaround::Native, false),
                "asks when native workaround is enabled");
 
   {
