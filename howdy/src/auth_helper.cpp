@@ -190,6 +190,10 @@ auto prepare_for_user(const std::string &user) -> int {
   if (entry == nullptr) {
     return fail("Failed to resolve calling user");
   }
+  if (entry->pw_name == nullptr || user != entry->pw_name) {
+    return fail(
+        "howdy-auth-helper can only prepare auth files for the calling user");
+  }
   const gid_t gid = entry->pw_gid;
 
   auto runtime_dir = make_private_runtime_dir(uid, gid);
@@ -244,7 +248,15 @@ auto prepare_for_user(const std::string &user) -> int {
     return 1;
   }
 
-  if (std::filesystem::exists(*source_model_path, ec) && !ec) {
+  const bool source_model_exists = std::filesystem::exists(*source_model_path, ec);
+  if (ec) {
+    std::cerr << "Failed to inspect user model file: " << *source_model_path
+              << " (" << ec.message() << ")\n";
+    std::filesystem::remove_all(prepared.root_dir, ec);
+    return 1;
+  }
+
+  if (source_model_exists) {
     const auto source_model_security =
         howdy::native::check_secure_root_owned_file_with_directory(
             *source_model_path, "User models directory", "User model file");
