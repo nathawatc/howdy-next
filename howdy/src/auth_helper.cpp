@@ -49,6 +49,12 @@ auto validate_runtime_root(const std::filesystem::path &path) -> bool {
     return false;
   }
 
+  if (created && (chown(path.c_str(), 0, 0) != 0 || chmod(path.c_str(), 0711) != 0)) {
+    std::cerr << "Failed to secure runtime directory: " << path << " ("
+              << std::strerror(errno) << ")\n";
+    return false;
+  }
+
   struct stat stat_ {};
   if (lstat(path.c_str(), &stat_) != 0) {
     std::cerr << "Failed to inspect runtime directory: " << path << " ("
@@ -61,22 +67,16 @@ auto validate_runtime_root(const std::filesystem::path &path) -> bool {
     return false;
   }
 
-  if (created &&
-      (chown(path.c_str(), 0, 0) != 0 || chmod(path.c_str(), 0711) != 0)) {
-    std::cerr << "Failed to secure runtime directory: " << path << " ("
-              << std::strerror(errno) << ")\n";
-    return false;
-  }
-  if (created && lstat(path.c_str(), &stat_) != 0) {
-    std::cerr << "Failed to inspect runtime directory: " << path << " ("
-              << std::strerror(errno) << ")\n";
-    return false;
-  }
-
   if (stat_.st_uid != 0 || stat_.st_gid != 0 ||
       (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
     std::cerr << "Runtime directory is not a root-controlled directory: " << path
               << "\n";
+    return false;
+  }
+
+  if (chmod(path.c_str(), 0711) != 0) {
+    std::cerr << "Failed to secure runtime directory: " << path << " ("
+              << std::strerror(errno) << ")\n";
     return false;
   }
 
