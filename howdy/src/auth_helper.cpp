@@ -36,8 +36,7 @@ auto fail(const std::string &message) -> int {
   return 1;
 }
 
-auto runtime_root_for(uid_t uid) -> std::filesystem::path {
-  (void)uid;
+auto runtime_root() -> std::filesystem::path {
   return "/run/howdy";
 }
 
@@ -85,13 +84,13 @@ auto validate_runtime_root(const std::filesystem::path &path) -> bool {
 
 auto make_private_runtime_dir(uid_t uid, gid_t gid)
     -> std::optional<std::filesystem::path> {
-  const auto runtime_root = runtime_root_for(uid);
-  if (!validate_runtime_root(runtime_root)) {
+  const auto root = runtime_root();
+  if (!validate_runtime_root(root)) {
     return std::nullopt;
   }
 
   std::string templ =
-      (runtime_root / ("pam-" + std::to_string(uid) + "-XXXXXX")).string();
+      (root / ("pam-" + std::to_string(uid) + "-XXXXXX")).string();
   std::vector<char> buffer(templ.begin(), templ.end());
   buffer.push_back('\0');
 
@@ -149,7 +148,7 @@ auto write_all(int fd, const char *data, ssize_t size) -> bool {
 
 auto copy_file_for_user(const std::filesystem::path &source,
                         const std::filesystem::path &destination,
-                        const std::string &label, uid_t uid, gid_t gid)
+                        const std::string &label, gid_t gid)
     -> bool {
   const int source_fd = open(source.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
   if (source_fd < 0) {
@@ -193,7 +192,6 @@ auto copy_file_for_user(const std::filesystem::path &source,
     }
   }
 
-  (void)uid;
   if (fchown(destination_fd, 0, gid) != 0 || fchmod(destination_fd, 0440) != 0) {
     ok = false;
   }
@@ -253,7 +251,7 @@ auto prepare_for_user(const std::string &user) -> int {
   }
 
   if (!copy_file_for_user(source_config, prepared.config_path, "Config file",
-                          uid, gid)) {
+                          gid)) {
     std::filesystem::remove_all(prepared.root_dir, ec);
     return 1;
   }
@@ -296,7 +294,7 @@ auto prepare_for_user(const std::string &user) -> int {
     const auto runtime_model_path =
         prepared.user_models_dir / source_model_path->filename();
     if (!copy_file_for_user(*source_model_path, runtime_model_path,
-                            "User model file", uid, gid)) {
+                            "User model file", gid)) {
       std::filesystem::remove_all(prepared.root_dir, ec);
       return 1;
     }
@@ -318,9 +316,9 @@ auto cleanup_for_user(const std::filesystem::path &path) -> int {
     return fail("Failed to resolve calling user");
   }
 
-  const auto runtime_root = runtime_root_for(uid);
+  const auto root = runtime_root();
   std::error_code ec;
-  if (path.parent_path() != runtime_root ||
+  if (path.parent_path() != root ||
       path.filename().string().rfind("pam-" + std::to_string(uid) + "-", 0) !=
           0) {
     return fail("Refusing to clean unexpected runtime directory");

@@ -116,6 +116,11 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  if (command == "version") {
+    std::cout << "Howdy-Next 2.0.0\n";
+    return 0;
+  }
+
   if (user.empty()) {
     user = resolve_user();
   }
@@ -151,11 +156,6 @@ int main(int argc, char **argv) {
       {"snapshot", "howdy-snapshot"},
       {"test", "howdy-test"},
   };
-
-  if (command == "version") {
-    std::cout << "Howdy-Next 2.0.0\n";
-    return 0;
-  }
 
   const auto it = native_commands.find(command);
   if (it == native_commands.end()) {

@@ -422,7 +422,6 @@ test(
     'native-howdy-version',
     native_howdy,
     args: ['version'],
-    expected_fail: true,
 )
 
 test(
