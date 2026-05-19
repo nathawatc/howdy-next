@@ -1,6 +1,7 @@
 #include "prompt_workaround.hpp"
 #include "main.hpp"
 
+#include <array>
 #include <iostream>
 #include <string>
 
@@ -27,6 +28,36 @@ auto main() -> int {
                "does not ask when an auth token already exists");
   ok &= expect(should_ask_for_password(true, Workaround::Native, false),
                "asks when native workaround is enabled");
+  ok &= expect(get_workaround("off") == Workaround::Off,
+               "parses off workaround");
+  ok &= expect(get_workaround("input") == Workaround::Input,
+               "parses input workaround");
+  ok &= expect(get_workaround("native") == Workaround::Native,
+               "parses native workaround");
+  ok &= expect(get_workaround("unknown") == Workaround::Off,
+               "unknown workaround falls back to off");
+  {
+    const std::array<const char *, 1> args = {"workaround=native"};
+    ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                     Workaround::Native,
+                 "parses native workaround from PAM args");
+  }
+  {
+    const std::array<const char *, 2> args = {"debug", "workaround=input"};
+    ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                     Workaround::Input,
+                 "parses input workaround from PAM args");
+  }
+  {
+    const std::array<const char *, 1> args = {"workaround=invalid"};
+    ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                     Workaround::Off,
+                 "invalid PAM workaround falls back to off");
+  }
+  ok &= expect(get_pam_workaround(0, nullptr) == Workaround::Off,
+               "missing PAM workaround defaults to off");
+  ok &= expect(get_pam_workaround(1, nullptr) == Workaround::Off,
+               "null PAM args default to off");
   ok &= expect(!auth_token_item_present(nullptr),
                "null PAM auth token item is absent");
   ok &= expect(auth_token_item_present(""),

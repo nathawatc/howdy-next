@@ -458,4 +458,4 @@ endif
 
 install_emptydir(modelsdir, install_tag: 'models')
 
-install_man('../howdy.1')
+install_man('../howdy.1', '../../pam/pam_howdy.8')

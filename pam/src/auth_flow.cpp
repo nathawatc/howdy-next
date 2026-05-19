@@ -424,8 +424,6 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int {
   (void)flags;
-  (void)argc;
-  (void)argv;
 
   openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
@@ -486,8 +484,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     }
   }
 
-  const Workaround workaround =
-      get_workaround(config.GetString("core", "workaround", "input"));
+  const Workaround workaround = get_pam_workaround(argc, argv);
   Workaround effective_workaround = workaround;
   const bool existing_auth_token = auth_token_present(pamh);
 

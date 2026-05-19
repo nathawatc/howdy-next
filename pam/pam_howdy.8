@@ -1,0 +1,110 @@
+.\" PAM module manual for Howdy Next
+.TH PAM_HOWDY 8 "May 19, 2026" "Howdy Next 2.0.0" "System Administration"
+.SH NAME
+pam_howdy \- PAM facial authentication module for Howdy Next
+.SH SYNOPSIS
+.B pam_howdy.so
+[\fBworkaround=\fR\fIoff|input|native\fR]
+.SH DESCRIPTION
+.B pam_howdy.so
+authenticates a PAM user with Howdy Next facial recognition.
+.PP
+The module reads Howdy configuration from
+.I /etc/howdy/config.ini
+and user face models from
+.IR /etc/howdy/models/ .
+These paths are expected to remain root-controlled and non-user-writable.
+.SH OPTIONS
+.TP
+\fBworkaround=\fR\fIoff|input|native\fR
+Set the password prompt workaround for this PAM service. The default is
+\fBoff\fR.
+.RS
+.TP
+\fBoff\fR
+Do not start or stop a concurrent password prompt.
+.TP
+\fBnative\fR
+Use PAM conversation control to stop Howdy's concurrent password prompt after
+successful face authentication.
+.TP
+\fBinput\fR
+Use a
+.I /dev/uinput
+Enter key workaround to stop the concurrent password prompt. This mode is less
+preferred than
+.B native
+and may be less reliable on some lock screens.
+.RE
+.PP
+This option is intentionally service-local. It is configured on the
+.B pam_howdy.so
+line and is not read from
+.IR config.ini .
+.SH SETUP
+.SS Basic
+For a PAM consumer where Howdy should run as a sufficient authentication method:
+.PP
+.nf
+auth  sufficient  pam_howdy.so
+.fi
+.SS TTY, Login, Sudo, And Polkit
+For services that call PAM before collecting a password, put Howdy before
+.BR pam_unix (8).
+Use
+.B workaround=native
+if Howdy should run concurrently with the password prompt and stop that prompt
+after successful face authentication:
+.PP
+.nf
+auth  optional     pam_exec.so /usr/bin/linux-enable-ir-emitter run --config /etc/linux-enable-ir-emitter.toml
+auth  sufficient   pam_howdy.so workaround=native
+auth  sufficient   pam_unix.so try_first_pass nullok
+auth  sufficient   pam_fprintd.so
+.fi
+.SS Lock Screens That Collect Input Before PAM
+Some lock screens, including
+.BR waylock ,
+collect password input before calling PAM. For those services, validate the
+already-submitted password first, then fall through to Howdy and fingerprint
+authentication:
+.PP
+.nf
+auth  optional     pam_exec.so /usr/bin/linux-enable-ir-emitter run --config /etc/linux-enable-ir-emitter.toml
+auth  sufficient   pam_unix.so try_first_pass nullok
+auth  sufficient   pam_howdy.so workaround=off
+auth  sufficient   pam_fprintd.so
+.fi
+.PP
+When a PAM authentication token already exists,
+.B pam_howdy.so
+does not start the native or input workaround, even if a workaround option is
+configured.
+.SH SECURITY NOTES
+Do not make
+.I /etc/howdy
+or
+.I /etc/howdy/config.ini
+world-readable to support unprivileged lock screens. Howdy Next expects the
+protected source config and model paths to remain root-controlled.
+.PP
+PAM consumers that run authentication as the regular user use the installed
+.B howdy-auth-helper
+setuid helper to prepare temporary root-controlled runtime copies of the
+protected config and enrolled model before recognition.
+.SH FILES
+.TP
+.I /etc/howdy/config.ini
+Main Howdy configuration file.
+.TP
+.I /etc/howdy/models/
+User face models directory.
+.TP
+.I /usr/lib/howdy/howdy-auth-helper
+Setuid helper used for unprivileged PAM consumers. The exact path depends on
+the installation prefix and library directory.
+.SH SEE ALSO
+.BR howdy (1),
+.BR pam (8),
+.BR pam_unix (8),
+.BR pam_fprintd (8)

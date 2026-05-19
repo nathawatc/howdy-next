@@ -86,14 +86,6 @@ inline auto validate_known_config_value(const ConfigReader &config,
     return std::nullopt;
   }
 
-  if (key == "workaround") {
-    const auto lowered = normalized_lower(std::string(value));
-    if (lowered != "off" && lowered != "input" && lowered != "native") {
-      return invalid_config_value_message(key, "expected one of: off, input, native");
-    }
-    return std::nullopt;
-  }
-
   if (key == "device_path") {
     if (value.empty() || !is_allowed_capture_device_path(value)) {
       return invalid_config_value_message(
@@ -219,7 +211,6 @@ inline auto validate_runtime_config(const ConfigReader &config)
       {"core", "abort_if_ssh"},
       {"core", "abort_if_lid_closed"},
       {"core", "disabled"},
-      {"core", "workaround"},
       {"video", "timeout"},
       {"video", "device_path"},
       {"video", "warn_no_device"},
