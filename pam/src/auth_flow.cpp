@@ -63,6 +63,11 @@ struct RuntimeAuthFiles {
   ~RuntimeAuthFiles();
 };
 
+struct PromptStopResult {
+  bool enter_failed = false;
+  bool prompt_stopped = true;
+};
+
 auto send_conversation_message(const ConversationFn &conv_function,
                                int msg_type,
                                const std::string &message) -> void {
@@ -380,15 +385,34 @@ RuntimeAuthFiles::~RuntimeAuthFiles() {
   }
 }
 
-auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-                                  const PromptStopPlan &plan,
-                                  NativePromptConversation *native_prompt)
-    -> bool {
-  if (!plan.stop_prompt) {
+auto input_prompt_workaround_preflight() -> bool {
+  if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+    const int access_errno = errno;
+    syslog(LOG_ERR,
+           "Input prompt workaround unavailable: %s (%d)",
+           strerror(access_errno), access_errno);
     return false;
   }
 
-  bool enter_failed = false;
+  try {
+    EnterDevice probe;
+  } catch (const std::runtime_error &err) {
+    syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
+    return false;
+  }
+
+  return true;
+}
+
+auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
+                                  const PromptStopPlan &plan,
+                                  NativePromptConversation *native_prompt)
+    -> PromptStopResult {
+  PromptStopResult result;
+  if (!plan.stop_prompt) {
+    return result;
+  }
+
   if (plan.abort_prompt && native_prompt != nullptr) {
     native_prompt->request_abort();
   }
@@ -396,7 +420,7 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
   if (plan.send_enter) {
     if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
       syslog(LOG_WARNING, "Insufficient permissions to create the fake device");
-      enter_failed = true;
+      result.enter_failed = true;
     } else {
       try {
         EnterDevice enter_device;
@@ -409,20 +433,28 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
           enter_device.send_enter_press();
         }
 
-        if (retries == kMaxPromptRetries) {
+        if (retries == kMaxPromptRetries &&
+            pass_task.wait(std::chrono::milliseconds(0)) ==
+                std::future_status::timeout) {
           syslog(LOG_WARNING,
                  "Failed to send enter input before the retries limit");
-          enter_failed = true;
+          result.enter_failed = true;
         }
       } catch (const std::runtime_error &err) {
         syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
-        enter_failed = true;
+        result.enter_failed = true;
       }
     }
   }
 
+  if (plan.send_enter &&
+      pass_task.wait(std::chrono::milliseconds(0)) == std::future_status::timeout) {
+    result.prompt_stopped = false;
+    return result;
+  }
+
   pass_task.stop();
-  return enter_failed;
+  return result;
 }
 
 }  // namespace
@@ -559,12 +591,9 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   }
 
   if (effective_workaround == Workaround::Input && ask_auth_tok &&
-      !existing_auth_token &&
-      euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
-    const int access_errno = errno;
-    syslog(LOG_INFO,
-           "Input prompt workaround unavailable, falling back to standard PAM prompt: %s (%d)",
-           strerror(access_errno), access_errno);
+      !existing_auth_token && !input_prompt_workaround_preflight()) {
+    syslog(LOG_WARNING,
+           "Input prompt workaround preflight failed; falling back to standard PAM prompt");
     effective_workaround = Workaround::Off;
   }
 
@@ -635,13 +664,18 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   const auto stop_plan =
       plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(),
                        effective_workaround);
-  const bool enter_failed =
+  const auto stop_result =
       request_password_prompt_stop(pass_task, stop_plan,
                                    native_prompt ? &*native_prompt : nullptr);
-  if (enter_failed) {
+  if (stop_result.enter_failed) {
     send_conversation_message(
         conv_function, PAM_ERROR_MSG,
         S("Failed to send Enter press, waiting for user to press it instead"));
+  }
+  if (!stop_result.prompt_stopped) {
+    syslog(LOG_ERR,
+           "Input prompt workaround cancellation failed; waiting for user/password prompt to complete");
+    pass_task.stop();
   }
 
   return howdy_status(username, status, config, conv_function);
