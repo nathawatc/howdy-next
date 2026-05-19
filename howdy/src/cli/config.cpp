@@ -171,7 +171,12 @@ auto run_editor(const std::string &editor, const fs::path &temp_path,
   return status;
 }
 
-auto copy_file_contents(int input_fd, int output_fd) -> bool {
+auto read_file_contents_from_fd(int input_fd, std::string *content) -> bool {
+  if (content == nullptr) {
+    return false;
+  }
+  content->clear();
+
   std::array<char, 8192> buffer{};
   while (true) {
     const auto bytes_read = read(input_fd, buffer.data(), buffer.size());
@@ -185,63 +190,31 @@ auto copy_file_contents(int input_fd, int output_fd) -> bool {
       return false;
     }
 
-    const char *cursor = buffer.data();
-    auto remaining = static_cast<std::size_t>(bytes_read);
-    while (remaining > 0) {
-      const auto bytes_written = write(output_fd, cursor, remaining);
-      if (bytes_written < 0) {
-        if (errno == EINTR) {
-          continue;
-        }
-        return false;
+    content->append(buffer.data(), static_cast<std::size_t>(bytes_read));
+  }
+}
+
+auto write_file_contents_to_fd(int output_fd, const std::string &content) -> bool {
+  const char *cursor = content.data();
+  auto remaining = content.size();
+  while (remaining > 0) {
+    const auto bytes_written = write(output_fd, cursor, remaining);
+    if (bytes_written < 0) {
+      if (errno == EINTR) {
+        continue;
       }
-      cursor += bytes_written;
-      remaining -= static_cast<std::size_t>(bytes_written);
+      return false;
     }
+    if (bytes_written == 0) {
+      return false;
+    }
+    cursor += bytes_written;
+    remaining -= static_cast<std::size_t>(bytes_written);
   }
+  return true;
 }
 
-auto files_match(const fs::path &left_path, const fs::path &right_path) -> bool {
-  std::ifstream left(left_path, std::ios::binary);
-  std::ifstream right(right_path, std::ios::binary);
-  if (!left.is_open() || !right.is_open()) {
-    return false;
-  }
-
-  std::array<char, 8192> left_buffer{};
-  std::array<char, 8192> right_buffer{};
-  while (true) {
-    left.read(left_buffer.data(), static_cast<std::streamsize>(left_buffer.size()));
-    right.read(right_buffer.data(), static_cast<std::streamsize>(right_buffer.size()));
-
-    const auto left_count = left.gcount();
-    const auto right_count = right.gcount();
-    if (left_count != right_count) {
-      return false;
-    }
-
-    if (left_count == 0) {
-      return true;
-    }
-
-    if (!std::equal(left_buffer.begin(), left_buffer.begin() + left_count,
-                    right_buffer.begin())) {
-      return false;
-    }
-
-    if ((!left.good() && !left.eof()) || (!right.good() && !right.eof())) {
-      return false;
-    }
-  }
-}
-
-auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_path)
-    -> bool {
-  struct stat current_stat {};
-  if (stat(config_path.c_str(), &current_stat) != 0) {
-    return false;
-  }
-
+auto read_temp_config_snapshot(const fs::path &temp_path, std::string *content) -> bool {
   const int input_fd = open(temp_path.c_str(), O_RDONLY | O_NOFOLLOW);
   if (input_fd < 0) {
     return false;
@@ -255,6 +228,89 @@ auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_
     return false;
   }
 
+  const bool ok = read_file_contents_from_fd(input_fd, content);
+  close(input_fd);
+  return ok;
+}
+
+auto validate_edited_config_content(const std::string &edited_content,
+                                    const fs::path &display_path,
+                                    std::string *error_message) -> bool {
+  std::string temp_template =
+      (fs::temp_directory_path() / "howdy-config-validate-XXXXXX").string();
+  std::vector<char> writable(temp_template.begin(), temp_template.end());
+  writable.push_back('\0');
+
+  const int fd = mkstemp(writable.data());
+  if (fd < 0) {
+    return false;
+  }
+
+  const fs::path validation_path(writable.data());
+  struct ValidationTempCleanup {
+    fs::path path;
+    ~ValidationTempCleanup() { remove_if_exists(path); }
+  } cleanup{validation_path};
+
+  bool ok = true;
+  if (fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
+    ok = false;
+  }
+
+  if (ok && !write_file_contents_to_fd(fd, edited_content)) {
+    ok = false;
+  }
+  if (ok && fsync(fd) != 0) {
+    ok = false;
+  }
+  if (close(fd) != 0) {
+    ok = false;
+  }
+
+  if (!ok) {
+    return false;
+  }
+
+  howdy::native::ConfigReader edited_config(validation_path.string());
+  if (!edited_config.ok()) {
+    if (error_message != nullptr) {
+      *error_message = "Edited config is invalid and was not installed: " +
+                       display_path.string();
+    }
+    return false;
+  }
+
+  if (const auto validation =
+          howdy::native::validate_runtime_config(edited_config)) {
+    if (error_message != nullptr) {
+      *error_message = *validation;
+    }
+    return false;
+  }
+
+  return true;
+}
+
+auto file_content_matches(const fs::path &path, const std::string &expected) -> bool {
+  std::ifstream input(path, std::ios::binary);
+  if (!input.is_open()) {
+    return false;
+  }
+
+  std::string current;
+  current.assign(std::istreambuf_iterator<char>(input),
+                 std::istreambuf_iterator<char>());
+  return input.good() || input.eof() ? current == expected : false;
+}
+
+auto replace_config_from_content(const fs::path &config_path,
+                                 const std::string &edited_content)
+    -> bool {
+  struct stat current_stat {};
+  if (stat(config_path.c_str(), &current_stat) != 0) {
+    return false;
+  }
+
   std::string output_template =
       (config_path.parent_path() / ".howdy-config-XXXXXX").string();
   std::vector<char> writable(output_template.begin(), output_template.end());
@@ -262,7 +318,6 @@ auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_
 
   const int output_fd = mkstemp(writable.data());
   if (output_fd < 0) {
-    close(input_fd);
     return false;
   }
 
@@ -273,7 +328,7 @@ auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_
     ok = false;
   }
 
-  if (ok && !copy_file_contents(input_fd, output_fd)) {
+  if (ok && !write_file_contents_to_fd(output_fd, edited_content)) {
     ok = false;
   }
 
@@ -281,8 +336,9 @@ auto replace_config_from_temp(const fs::path &config_path, const fs::path &temp_
     ok = false;
   }
 
-  close(input_fd);
-  close(output_fd);
+  if (close(output_fd) != 0) {
+    ok = false;
+  }
 
   if (!ok) {
     remove_if_exists(staged_path);
@@ -348,25 +404,31 @@ int config_main(int argc, char **argv) {
     return kExitAbort;
   }
 
-  howdy::native::ConfigReader edited_config(temp_path->string());
-  if (!edited_config.ok()) {
-    std::cout << "Edited config is invalid and was not installed: " << *temp_path
-              << "\n";
-    return kExitAbort;
-  }
-  if (const auto validation = howdy::native::validate_runtime_config(edited_config)) {
+  std::string edited_content;
+  if (!read_temp_config_snapshot(*temp_path, &edited_content)) {
     remove_if_exists(*temp_path);
-    std::cout << *validation << "\n";
+    std::cout << "Failed to install edited config\n";
     return kExitAbort;
   }
 
-  if (files_match(config_path, *temp_path)) {
+  std::string validation_error;
+  if (!validate_edited_config_content(edited_content, *temp_path,
+                                      &validation_error)) {
+    if (!validation_error.empty()) {
+      std::cout << validation_error << "\n";
+    } else {
+      std::cout << "Failed to install edited config\n";
+    }
+    return kExitAbort;
+  }
+
+  if (file_content_matches(config_path, edited_content)) {
     remove_if_exists(*temp_path);
     std::cout << "No config changes made\n";
     return kExitOk;
   }
 
-  if (!replace_config_from_temp(config_path, *temp_path)) {
+  if (!replace_config_from_content(config_path, edited_content)) {
     remove_if_exists(*temp_path);
     std::cout << "Failed to install edited config\n";
     return kExitAbort;
