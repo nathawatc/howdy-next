@@ -1,6 +1,5 @@
 #include "config/config_validation.hpp"
 
-#include <algorithm>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
@@ -13,6 +12,7 @@
 #include "common/capture_device_path.hpp"
 
 namespace howdy::native {
+namespace {
 
 auto normalized_lower(std::string value) -> std::string {
   for (char &ch : value) {
@@ -209,6 +209,8 @@ auto validate_known_config_value(const ConfigReader &config,
 
   return std::nullopt;
 }
+
+}  // namespace
 
 auto validate_runtime_config(const ConfigReader &config)
     -> std::optional<std::string> {

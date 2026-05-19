@@ -25,8 +25,6 @@
 #include <mutex>
 #include <optional>
 
-#include <INIReader.h>
-
 #include <security/pam_appl.h>
 #include <security/pam_ext.h>
 #include <security/pam_modules.h>
@@ -136,13 +134,14 @@ auto howdy_error(int status, const ConversationFn &conv_function) -> int {
   return PAM_AUTH_ERR;
 }
 
-auto howdy_status(char *username, int status, const INIReader &config,
+auto howdy_status(char *username, int status,
+                  const howdy::native::ConfigReader &config,
                   const ConversationFn &conv_function) -> int {
   if (status != EXIT_SUCCESS) {
     return howdy_error(status, conv_function);
   }
 
-  if (!config.GetBoolean("core", "no_confirmation", true)) {
+  if (!config.get_bool("core", "no_confirmation", true)) {
     send_conversation_message(conv_function, PAM_TEXT_INFO,
                               build_confirmation_message(username));
   }
@@ -151,14 +150,15 @@ auto howdy_status(char *username, int status, const INIReader &config,
   return PAM_SUCCESS;
 }
 
-auto check_enabled(const INIReader &config, const char *username,
+auto check_enabled(const howdy::native::ConfigReader &config,
+                   const char *username,
                    const std::filesystem::path &user_models_dir) -> int {
-  if (config.GetBoolean("core", "disabled", false)) {
+  if (config.get_bool("core", "disabled", false)) {
     syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
     return PAM_AUTHINFO_UNAVAIL;
   }
 
-  if (config.GetBoolean("core", "abort_if_ssh", true)) {
+  if (config.get_bool("core", "abort_if_ssh", true)) {
     if (checkenv("SSH_CONNECTION") || checkenv("SSH_CLIENT") ||
         checkenv("SSH_TTY") || checkenv("SSHD_OPTS")) {
       syslog(LOG_INFO, "Skipped authentication, SSH session detected");
@@ -166,7 +166,7 @@ auto check_enabled(const INIReader &config, const char *username,
     }
   }
 
-  if (config.GetBoolean("core", "abort_if_lid_closed", true)) {
+  if (config.get_bool("core", "abort_if_lid_closed", true)) {
     glob_t glob_result {};
     const int return_value =
         glob("/proc/acpi/button/lid/*/state", 0, nullptr, &glob_result);
@@ -456,15 +456,13 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     return PAM_SYSTEM_ERR;
   }
 
-  INIReader config(config_path);
-  if (config.ParseError() != 0) {
+  howdy::native::ConfigReader config(config_path);
+  if (!config.ok()) {
     syslog(LOG_ERR, "Failed to parse the configuration file: %d",
-           config.ParseError());
+           config.parse_error());
     return PAM_SYSTEM_ERR;
   }
-  const howdy::native::ConfigReader validated_config(config_path);
-  if (const auto validation =
-          howdy::native::validate_runtime_config(validated_config)) {
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
     syslog(LOG_ERR, "%s", validation->c_str());
     return PAM_SYSTEM_ERR;
   }
@@ -484,7 +482,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
   textdomain(GETTEXT_PACKAGE);
 
-  if (config.GetBoolean("core", "detection_notice", true)) {
+  if (config.get_bool("core", "detection_notice", true)) {
     const int notice_result =
         conv_function(PAM_TEXT_INFO, S("Attempting facial authentication"));
     if (notice_result != PAM_SUCCESS) {
