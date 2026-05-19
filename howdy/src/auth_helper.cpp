@@ -27,7 +27,8 @@ struct PreparedPaths {
 };
 
 auto usage(const char *argv0) -> void {
-  std::cout << "Usage: " << argv0 << " prepare <user>\n";
+  std::cout << "Usage: " << argv0 << " prepare <user>\n"
+            << "       " << argv0 << " cleanup <runtime-dir>\n";
 }
 
 auto fail(const std::string &message) -> int {
@@ -36,21 +37,45 @@ auto fail(const std::string &message) -> int {
 }
 
 auto runtime_root_for(uid_t uid) -> std::filesystem::path {
-  return std::filesystem::path("/run/user") / std::to_string(uid);
+  (void)uid;
+  return "/run/howdy";
 }
 
-auto validate_runtime_root(const std::filesystem::path &path, uid_t uid)
-    -> bool {
+auto validate_runtime_root(const std::filesystem::path &path) -> bool {
+  const bool created = mkdir(path.c_str(), 0711) == 0;
+  if (!created && errno != EEXIST) {
+    std::cerr << "Failed to create runtime directory: " << path << " ("
+              << std::strerror(errno) << ")\n";
+    return false;
+  }
+
   struct stat stat_ {};
-  if (stat(path.c_str(), &stat_) != 0) {
+  if (lstat(path.c_str(), &stat_) != 0) {
     std::cerr << "Failed to inspect runtime directory: " << path << " ("
               << std::strerror(errno) << ")\n";
     return false;
   }
 
-  if (!S_ISDIR(stat_.st_mode) || stat_.st_uid != uid ||
+  if (!S_ISDIR(stat_.st_mode)) {
+    std::cerr << "Runtime path is not a directory: " << path << "\n";
+    return false;
+  }
+
+  if (created &&
+      (chown(path.c_str(), 0, 0) != 0 || chmod(path.c_str(), 0711) != 0)) {
+    std::cerr << "Failed to secure runtime directory: " << path << " ("
+              << std::strerror(errno) << ")\n";
+    return false;
+  }
+  if (created && lstat(path.c_str(), &stat_) != 0) {
+    std::cerr << "Failed to inspect runtime directory: " << path << " ("
+              << std::strerror(errno) << ")\n";
+    return false;
+  }
+
+  if (stat_.st_uid != 0 || stat_.st_gid != 0 ||
       (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
-    std::cerr << "Runtime directory is not a private user directory: " << path
+    std::cerr << "Runtime directory is not a root-controlled directory: " << path
               << "\n";
     return false;
   }
@@ -61,11 +86,12 @@ auto validate_runtime_root(const std::filesystem::path &path, uid_t uid)
 auto make_private_runtime_dir(uid_t uid, gid_t gid)
     -> std::optional<std::filesystem::path> {
   const auto runtime_root = runtime_root_for(uid);
-  if (!validate_runtime_root(runtime_root, uid)) {
+  if (!validate_runtime_root(runtime_root)) {
     return std::nullopt;
   }
 
-  std::string templ = (runtime_root / "howdy-pam-XXXXXX").string();
+  std::string templ =
+      (runtime_root / ("pam-" + std::to_string(uid) + "-XXXXXX")).string();
   std::vector<char> buffer(templ.begin(), templ.end());
   buffer.push_back('\0');
 
@@ -77,7 +103,7 @@ auto make_private_runtime_dir(uid_t uid, gid_t gid)
   }
 
   std::filesystem::path path(created);
-  if (chown(path.c_str(), uid, gid) != 0 || chmod(path.c_str(), 0700) != 0) {
+  if (chown(path.c_str(), 0, gid) != 0 || chmod(path.c_str(), 0550) != 0) {
     std::cerr << "Failed to secure private runtime directory: "
               << std::strerror(errno) << "\n";
     std::error_code ec;
@@ -167,7 +193,8 @@ auto copy_file_for_user(const std::filesystem::path &source,
     }
   }
 
-  if (fchown(destination_fd, uid, gid) != 0 || fchmod(destination_fd, 0600) != 0) {
+  (void)uid;
+  if (fchown(destination_fd, 0, gid) != 0 || fchmod(destination_fd, 0440) != 0) {
     ok = false;
   }
 
@@ -209,8 +236,8 @@ auto prepare_for_user(const std::string &user) -> int {
 
   std::error_code ec;
   std::filesystem::create_directory(prepared.user_models_dir, ec);
-  if (ec || chown(prepared.user_models_dir.c_str(), uid, gid) != 0 ||
-      chmod(prepared.user_models_dir.c_str(), 0700) != 0) {
+  if (ec || chown(prepared.user_models_dir.c_str(), 0, gid) != 0 ||
+      chmod(prepared.user_models_dir.c_str(), 0550) != 0) {
     std::cerr << "Failed to create runtime user models directory\n";
     std::filesystem::remove_all(prepared.root_dir, ec);
     return 1;
@@ -280,6 +307,46 @@ auto prepare_for_user(const std::string &user) -> int {
   return 0;
 }
 
+auto cleanup_for_user(const std::filesystem::path &path) -> int {
+  if (geteuid() != 0) {
+    return fail("howdy-auth-helper must be installed setuid root");
+  }
+
+  const uid_t uid = getuid();
+  const passwd *entry = getpwuid(uid);
+  if (entry == nullptr) {
+    return fail("Failed to resolve calling user");
+  }
+
+  const auto runtime_root = runtime_root_for(uid);
+  std::error_code ec;
+  if (path.parent_path() != runtime_root ||
+      path.filename().string().rfind("pam-" + std::to_string(uid) + "-", 0) !=
+          0) {
+    return fail("Refusing to clean unexpected runtime directory");
+  }
+
+  struct stat stat_ {};
+  if (lstat(path.c_str(), &stat_) != 0) {
+    if (errno == ENOENT) {
+      return 0;
+    }
+    return fail("Failed to inspect runtime directory for cleanup");
+  }
+
+  if (!S_ISDIR(stat_.st_mode) || stat_.st_uid != 0 ||
+      stat_.st_gid != entry->pw_gid ||
+      (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+    return fail("Refusing to clean insecure runtime directory");
+  }
+
+  std::filesystem::remove_all(path, ec);
+  if (ec) {
+    return fail("Failed to clean runtime directory: " + ec.message());
+  }
+  return 0;
+}
+
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -287,6 +354,10 @@ auto main(int argc, char **argv) -> int {
                    std::string(argv[1]) == "-h")) {
     usage(argv[0]);
     return 0;
+  }
+
+  if (argc == 3 && std::string(argv[1]) == "cleanup") {
+    return cleanup_for_user(argv[2]);
   }
 
   if (argc != 3 || std::string(argv[1]) != "prepare") {

@@ -48,8 +48,9 @@ auth  sufficient  pam_howdy.so
 
 Howdy Next keeps `/etc/howdy` locked down with `0750` on `/etc/howdy` and
 `0640` on `config.ini`. PAM consumers that run authentication as the regular
-user use the installed `howdy-auth-helper` setuid helper to prepare private
-runtime copies of the protected config and enrolled model before recognition.
+user use the installed `howdy-auth-helper` setuid helper to prepare temporary
+root-controlled runtime copies of the protected config and enrolled model before
+recognition.
 
 Do not make `/etc/howdy` or `config.ini` world-readable. If lock-screen auth
 fails before recognition starts, verify that `$libdir/howdy/howdy-auth-helper`

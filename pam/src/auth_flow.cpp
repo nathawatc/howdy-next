@@ -60,12 +60,7 @@ struct RuntimeAuthFiles {
   std::string config_path;
   std::string user_models_dir;
 
-  ~RuntimeAuthFiles() {
-    if (active && !root_dir.empty()) {
-      std::error_code ec;
-      std::filesystem::remove_all(root_dir, ec);
-    }
-  }
+  ~RuntimeAuthFiles();
 };
 
 auto send_conversation_message(const ConversationFn &conv_function,
@@ -349,6 +344,34 @@ auto prepare_runtime_auth_files(const char *username, RuntimeAuthFiles *runtime)
   runtime->root_dir = std::filesystem::path(runtime->config_path).parent_path();
   runtime->active = true;
   return true;
+}
+
+auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
+  std::string root_dir_string = root_dir.string();
+  std::array<char *, 4> args = {const_cast<char *>(AUTH_HELPER_PATH),
+                                const_cast<char *>("cleanup"),
+                                const_cast<char *>(root_dir_string.c_str()),
+                                nullptr};
+  std::array<char *, 1> env = {nullptr};
+  pid_t child_pid = -1;
+  const int spawn_result = posix_spawn(&child_pid, AUTH_HELPER_PATH, nullptr,
+                                       nullptr, args.data(), env.data());
+  if (spawn_result != 0) {
+    syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
+           strerror(spawn_result), spawn_result);
+    return;
+  }
+
+  const int status = wait_for_helper_process(child_pid);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+    syslog(LOG_WARNING, "Howdy auth helper cleanup failed");
+  }
+}
+
+RuntimeAuthFiles::~RuntimeAuthFiles() {
+  if (active && !root_dir.empty()) {
+    cleanup_runtime_auth_files(root_dir);
+  }
 }
 
 auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
