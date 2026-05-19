@@ -1,5 +1,8 @@
 #pragma once
 
+#include <sys/types.h>
+
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +34,9 @@ struct UserModelLoadResult {
 };
 
 auto load_user_models(const std::string &user, const std::string &expected_backend)
+    -> UserModelLoadResult;
+auto load_user_models(const std::string &user, const std::string &expected_backend,
+                      std::optional<uid_t> owner_uid)
     -> UserModelLoadResult;
 
 }  // namespace howdy::native

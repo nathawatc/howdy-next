@@ -243,7 +243,8 @@ auto prepare_for_user(const std::string &user) -> int {
 
   const auto source_config = howdy::native::resolve_config_path();
   const auto config_security =
-      howdy::native::check_secure_config_path(source_config);
+      howdy::native::check_secure_config_path(source_config,
+                                              static_cast<uid_t>(0));
   if (!config_security.ok) {
     std::cerr << config_security.error_message << "\n";
     std::filesystem::remove_all(prepared.root_dir, ec);
@@ -266,7 +267,8 @@ auto prepare_for_user(const std::string &user) -> int {
 
   const auto source_models_security =
       howdy::native::check_secure_root_owned_directory_tree(
-          source_user_models_dir, "User models directory");
+          source_user_models_dir, "User models directory",
+          static_cast<uid_t>(0));
   if (!source_models_security.ok) {
     std::cerr << source_models_security.error_message << "\n";
     std::filesystem::remove_all(prepared.root_dir, ec);
@@ -284,7 +286,8 @@ auto prepare_for_user(const std::string &user) -> int {
   if (source_model_exists) {
     const auto source_model_security =
         howdy::native::check_secure_root_owned_file_with_directory(
-            *source_model_path, "User models directory", "User model file");
+            *source_model_path, "User models directory", "User model file",
+            static_cast<uid_t>(0));
     if (!source_model_security.ok) {
       std::cerr << source_model_security.error_message << "\n";
       std::filesystem::remove_all(prepared.root_dir, ec);

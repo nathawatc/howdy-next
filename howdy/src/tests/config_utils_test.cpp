@@ -183,6 +183,19 @@ auto main() -> int {
                "write protected config");
   ok &= expect(chmod(protected_path.c_str(), 0600) == 0,
                "set protected config mode");
+  const auto strict_root_check =
+      howdy::native::check_secure_config_path(protected_path,
+                                              static_cast<uid_t>(0));
+  if (geteuid() != 0) {
+    ok &= expect(!strict_root_check.ok,
+                 "strict root-owned config check rejects non-root-owned config");
+    ok &= expect(strict_root_check.error_message.find("owned by root") !=
+                     std::string::npos,
+                 "strict root-owned config check reports root ownership requirement");
+  } else {
+    ok &= expect(strict_root_check.ok,
+                 "strict root-owned config check accepts root-owned config");
+  }
   ok &= expect(howdy::native::update_config_value(protected_path, "disabled", "true"),
                "update_config_value succeeds on secure config");
   struct stat protected_stat {};

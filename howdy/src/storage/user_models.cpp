@@ -24,6 +24,12 @@ constexpr std::size_t kMaxEncodingLength = 1024;
 
 auto load_user_models(const std::string &user, const std::string &expected_backend)
     -> UserModelLoadResult {
+  return load_user_models(user, expected_backend, default_secure_owner_uid());
+}
+
+auto load_user_models(const std::string &user, const std::string &expected_backend,
+                      std::optional<uid_t> owner_uid)
+    -> UserModelLoadResult {
   UserModelLoadResult result;
   const auto user_models_dir = resolve_user_models_dir();
 
@@ -41,7 +47,8 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
 
   const auto models_dir_security =
       check_secure_root_owned_directory_tree(user_models_dir,
-                                             "User models directory");
+                                             "User models directory",
+                                             owner_uid);
   if (!models_dir_security.ok) {
     result.status = UserModelStatus::kInsecurePath;
     result.error_message = models_dir_security.error_message;
@@ -49,7 +56,7 @@ auto load_user_models(const std::string &user, const std::string &expected_backe
   }
 
   const auto model_file_security = check_secure_root_owned_file_with_directory(
-      *model_path, "User models directory", "User model file");
+      *model_path, "User models directory", "User model file", owner_uid);
   if (!model_file_security.ok) {
     result.status = UserModelStatus::kInsecurePath;
     result.error_message = model_file_security.error_message;

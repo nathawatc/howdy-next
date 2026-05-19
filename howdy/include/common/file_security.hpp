@@ -107,22 +107,27 @@ inline auto check_secure_path(
 }
 
 inline auto check_secure_root_owned_file(const std::filesystem::path &path,
-                                         const std::string_view label)
+                                         const std::string_view label,
+                                         const std::optional<uid_t> owner_uid =
+                                             default_secure_owner_uid())
     -> SecurePathCheckResult {
-  return check_secure_path(path, SecurePathKind::kRegularFile, label);
+  return check_secure_path(path, SecurePathKind::kRegularFile, label, owner_uid);
 }
 
 inline auto check_secure_root_owned_directory(const std::filesystem::path &path,
-                                              const std::string_view label)
+                                              const std::string_view label,
+                                              const std::optional<uid_t> owner_uid =
+                                                  default_secure_owner_uid())
     -> SecurePathCheckResult {
-  return check_secure_path(path, SecurePathKind::kDirectory, label);
+  return check_secure_path(path, SecurePathKind::kDirectory, label, owner_uid);
 }
 
 inline auto check_secure_root_owned_directory_tree(
-    const std::filesystem::path &path, const std::string_view label)
+    const std::filesystem::path &path, const std::string_view label,
+    const std::optional<uid_t> owner_uid = default_secure_owner_uid())
     -> SecurePathCheckResult {
   if (!path.is_absolute()) {
-    return check_secure_root_owned_directory(path, label);
+    return check_secure_root_owned_directory(path, label, owner_uid);
   }
 
   auto current = path.root_path();
@@ -130,7 +135,7 @@ inline auto check_secure_root_owned_directory_tree(
     current = "/";
   }
 
-  auto root_security = check_secure_root_owned_directory(current, label);
+  auto root_security = check_secure_root_owned_directory(current, label, owner_uid);
   if (!root_security.ok) {
     return root_security;
   }
@@ -139,7 +144,7 @@ inline auto check_secure_root_owned_directory_tree(
   for (const auto &component : relative) {
     current /= component;
     const auto security =
-        check_secure_root_owned_directory(current, label);
+        check_secure_root_owned_directory(current, label, owner_uid);
     if (!security.ok) {
       return security;
     }
@@ -150,7 +155,9 @@ inline auto check_secure_root_owned_directory_tree(
 
 inline auto check_secure_root_owned_file_with_directory(
     const std::filesystem::path &path, const std::string_view directory_label,
-    const std::string_view file_label) -> SecurePathCheckResult {
+    const std::string_view file_label,
+    const std::optional<uid_t> owner_uid = default_secure_owner_uid())
+    -> SecurePathCheckResult {
   const auto parent = path.parent_path();
   if (parent.empty()) {
     return SecurePathCheckResult{
@@ -162,12 +169,12 @@ inline auto check_secure_root_owned_file_with_directory(
   }
 
   auto directory_security =
-      check_secure_root_owned_directory_tree(parent, directory_label);
+      check_secure_root_owned_directory_tree(parent, directory_label, owner_uid);
   if (!directory_security.ok) {
     return directory_security;
   }
 
-  return check_secure_root_owned_file(path, file_label);
+  return check_secure_root_owned_file(path, file_label, owner_uid);
 }
 
 }  // namespace howdy::native

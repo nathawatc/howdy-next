@@ -201,7 +201,7 @@ auto check_enabled(const howdy::native::ConfigReader &config,
 
   const auto models_dir_security =
       howdy::native::check_secure_root_owned_directory_tree(
-          user_models_dir, "User models directory");
+          user_models_dir, "User models directory", static_cast<uid_t>(0));
   if (!models_dir_security.ok) {
     syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
@@ -217,7 +217,8 @@ auto check_enabled(const howdy::native::ConfigReader &config,
 
   const auto model_file_security =
       howdy::native::check_secure_root_owned_file_with_directory(
-          *model_path, "User models directory", "User model file");
+          *model_path, "User models directory", "User model file",
+          static_cast<uid_t>(0));
   if (!model_file_security.ok) {
     syslog(LOG_ERR, "%s", model_file_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
@@ -443,7 +444,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   std::string config_path = CONFIG_FILE_PATH;
   std::string user_models_dir = USER_MODELS_DIR;
 
-  auto config_security = howdy::native::check_secure_config_path(config_path);
+  auto config_security = howdy::native::check_secure_config_path(
+      config_path, static_cast<uid_t>(0));
   if (!config_security.ok && config_security.error_code == EACCES &&
       geteuid() != 0) {
     if (!prepare_runtime_auth_files(username, &runtime_auth_files)) {
@@ -451,7 +453,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     }
     config_path = runtime_auth_files.config_path;
     user_models_dir = runtime_auth_files.user_models_dir;
-    config_security = howdy::native::check_secure_config_path(config_path);
+    config_security = howdy::native::check_secure_config_path(
+        config_path, static_cast<uid_t>(0));
   }
 
   if (!config_security.ok) {

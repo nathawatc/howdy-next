@@ -25,7 +25,8 @@ FaceModel::FaceModel(const ConfigReader &config) {
 
   for (const auto &model_path : {yunet_model, sface_model}) {
     const auto directory_security = check_secure_root_owned_directory_tree(
-        std::filesystem::path(model_path).parent_path(), "Models directory");
+        std::filesystem::path(model_path).parent_path(), "Models directory",
+        static_cast<uid_t>(0));
     if (!directory_security.ok) {
       set_error(directory_security.error_message);
       return;
@@ -35,7 +36,8 @@ FaceModel::FaceModel(const ConfigReader &config) {
       return;
     }
     const auto model_security =
-        check_secure_root_owned_file(model_path, "OpenCV face model file");
+        check_secure_root_owned_file(model_path, "OpenCV face model file",
+                                     static_cast<uid_t>(0));
     if (!model_security.ok) {
       set_error(model_security.error_message);
       return;

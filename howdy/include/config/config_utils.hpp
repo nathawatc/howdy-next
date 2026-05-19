@@ -30,6 +30,11 @@ inline auto config_access_error_hint(int error_code) -> std::string {
 }
 
 inline auto check_secure_config_path(const std::filesystem::path &config_path)
+    -> ConfigPathCheckResult;
+
+inline auto check_secure_config_path(
+    const std::filesystem::path &config_path,
+    const std::optional<uid_t> owner_uid)
     -> ConfigPathCheckResult {
   const auto parent = config_path.parent_path();
   if (parent.empty()) {
@@ -42,7 +47,7 @@ inline auto check_secure_config_path(const std::filesystem::path &config_path)
   }
 
   const auto file_security = check_secure_root_owned_file_with_directory(
-      config_path, "Config directory", "Config file");
+      config_path, "Config directory", "Config file", owner_uid);
   if (!file_security.ok) {
     return ConfigPathCheckResult{
         .ok = false,
@@ -54,6 +59,11 @@ inline auto check_secure_config_path(const std::filesystem::path &config_path)
   }
 
   return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
+}
+
+inline auto check_secure_config_path(const std::filesystem::path &config_path)
+    -> ConfigPathCheckResult {
+  return check_secure_config_path(config_path, default_secure_owner_uid());
 }
 auto is_safe_ini_scalar_value(std::string_view value) -> bool;
 auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
