@@ -127,13 +127,22 @@ int remove_main(int argc, char **argv) {
     std::cout << "Failed to parse model file\n";
     return kExitAbort;
   }
+  if (!models.is_array()) {
+    std::cout << "Model file is not a valid model list\n";
+    return kExitAbort;
+  }
 
   int found_index = -1;
   std::string found_label;
   for (std::size_t index = 0; index < models.size(); ++index) {
-    if (std::to_string(models[index].value("id", -1)) == args.id) {
+    const auto &model = models[index];
+    if (!model.is_object()) {
+      std::cout << "Model file contains an invalid model entry\n";
+      return kExitAbort;
+    }
+    if (std::to_string(model.value("id", -1)) == args.id) {
       found_index = static_cast<int>(index);
-      found_label = models[index].value("label", std::string());
+      found_label = model.value("label", std::string());
       break;
     }
   }

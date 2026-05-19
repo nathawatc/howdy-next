@@ -19,6 +19,7 @@ native_cpp_inc = include_directories('.', '../include')
 native_cpp_sources = [
     'config/config_reader.cpp',
     'config/config_utils.cpp',
+    'config/config_validation.cpp',
     'config/runtime_paths.cpp',
     'core/face_model.cpp',
     'recorders/video_capture.cpp',

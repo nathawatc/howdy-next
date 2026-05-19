@@ -111,7 +111,19 @@ int list_main(int argc, char **argv) {
     }
     return kExitAbort;
   }
+  if (!models.is_array()) {
+    if (!args.plain) {
+      std::cout << "Model file is not a valid model list\n";
+    }
+    return kExitAbort;
+  }
   for (const auto &model : models) {
+    if (!model.is_object()) {
+      if (!args.plain) {
+        std::cout << "Model file contains an invalid model entry\n";
+      }
+      return kExitAbort;
+    }
     const int id = model.value("id", -1);
     const auto timestamp = static_cast<std::time_t>(model.value("time", 0LL));
     std::cout << id;

@@ -17,6 +17,8 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 
 shared_library(
 	'pam_howdy',
+	'../howdy/src/config/config_reader.cpp',
+	'../howdy/src/config/config_validation.cpp',
 	'src/auth_flow.cpp',
 	'src/main.cpp',
 	'src/enter_device.cpp',

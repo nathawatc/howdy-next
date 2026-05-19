@@ -5,6 +5,7 @@
 
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -41,6 +42,10 @@ int disable_main(int argc, char **argv) {
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cout << "Failed to read config file: " << config_path << "\n";
+    return kExitAbort;
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cout << *validation << "\n";
     return kExitAbort;
   }
 

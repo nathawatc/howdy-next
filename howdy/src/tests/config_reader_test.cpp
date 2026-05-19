@@ -1,4 +1,5 @@
 #include "config/config_reader.hpp"
+#include "common/capture_device_path.hpp"
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "recorders/video_capture.hpp"

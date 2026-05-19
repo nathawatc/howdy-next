@@ -15,6 +15,7 @@
 #include "common/file_security.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
@@ -130,6 +131,10 @@ int snapshot_main(int argc, char **argv) {
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cerr << "Failed to parse config: " << config_path << "\n";
+    return kExitAbort;
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cerr << *validation << "\n";
     return kExitAbort;
   }
 

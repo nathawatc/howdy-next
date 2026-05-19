@@ -1,12 +1,11 @@
 #include "recorders/video_capture.hpp"
 
-#include <sys/stat.h>
-
 #include <filesystem>
 #include <utility>
 
 #include <opencv2/imgproc.hpp>
 
+#include "common/capture_device_path.hpp"
 #include "config/config_values.hpp"
 
 namespace howdy::native {
@@ -26,25 +25,6 @@ auto load_capture_settings(const ConfigReader &config) -> CaptureSettings {
       .frame_height = config_frame_height(config),
       .device_fps = config_device_fps(config),
   };
-}
-
-auto is_allowed_capture_device_path(std::string_view device_path) -> bool {
-  if (device_path.empty() || device_path == kNoDevice) {
-    return true;
-  }
-
-  const std::string value(device_path);
-  if (value.rfind("/dev/video", 0) != 0 &&
-      value.rfind("/dev/v4l/by-path/", 0) != 0) {
-    return false;
-  }
-
-  struct stat stat_ {};
-  if (stat(value.c_str(), &stat_) != 0) {
-    return true;
-  }
-
-  return S_ISCHR(stat_.st_mode);
 }
 
 VideoCapture::VideoCapture(CaptureSettings settings)

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -24,6 +25,7 @@
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -71,29 +73,35 @@ auto parse_args(int argc, char **argv) -> AddArgs {
   return args;
 }
 
-auto load_models(const std::filesystem::path &path) -> nlohmann::json {
+auto load_models(const std::filesystem::path &path)
+    -> std::optional<nlohmann::json> {
   if (!std::filesystem::is_regular_file(path)) {
     return nlohmann::json::array();
   }
 
   std::error_code size_ec;
   if (std::filesystem::file_size(path, size_ec) > kMaxModelFileBytes || size_ec) {
-    return nlohmann::json::array();
+    return std::nullopt;
   }
 
   std::ifstream input(path);
   if (!input.is_open()) {
-    return nlohmann::json::array();
+    return std::nullopt;
   }
 
   nlohmann::json models;
   try {
     input >> models;
   } catch (const nlohmann::json::exception &) {
-    return nlohmann::json::array();
+    return std::nullopt;
   }
   if (!models.is_array()) {
-    return nlohmann::json::array();
+    return std::nullopt;
+  }
+  for (const auto &entry : models) {
+    if (!entry.is_object()) {
+      return std::nullopt;
+    }
   }
   return models;
 }
@@ -127,6 +135,10 @@ auto add_main(int argc, char **argv) -> int {
   howdy::native::ConfigReader config(config_path.string());
   if (!config.ok()) {
     std::cerr << "Failed to parse config: " << config_path << "\n";
+    return kExitAbort;
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cerr << *validation << "\n";
     return kExitAbort;
   }
 
@@ -176,7 +188,12 @@ auto add_main(int argc, char **argv) -> int {
     return kExitAbort;
   }
 
-  auto models = load_models(*model_path);
+  auto loaded_models = load_models(*model_path);
+  if (!loaded_models.has_value()) {
+    std::cerr << "Model file is not a valid model list\n";
+    return kExitAbort;
+  }
+  auto models = std::move(*loaded_models);
 
   if (!is_backend_compatible(models)) {
     std::cerr << "Existing face models use an incompatible backend.\n";

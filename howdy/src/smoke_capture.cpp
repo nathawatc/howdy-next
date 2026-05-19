@@ -8,6 +8,7 @@
 #include "common/compare_exit.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -83,6 +84,10 @@ auto main(int argc, char **argv) -> int {
   if (!config.ok()) {
     std::cerr << "Failed to parse config: " << args.config_path
               << " (error " << config.parse_error() << ")\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cerr << *validation << "\n";
     return static_cast<int>(CompareExit::kAbort);
   }
 

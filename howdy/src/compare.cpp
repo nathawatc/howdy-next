@@ -12,6 +12,7 @@
 #include "common/compare_logic.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -115,6 +116,10 @@ auto main(int argc, char **argv) -> int {
   howdy::native::ConfigReader config(args.config_path);
   if (!config.ok()) {
     std::cerr << "Failed to parse config: " << args.config_path << "\n";
+    return static_cast<int>(CompareExit::kAbort);
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cerr << *validation << "\n";
     return static_cast<int>(CompareExit::kAbort);
   }
 

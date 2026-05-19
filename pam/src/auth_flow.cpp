@@ -39,7 +39,9 @@
 #include "status_mapping.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
+#include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include <paths.hpp>
 
 namespace {
@@ -458,6 +460,12 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   if (config.ParseError() != 0) {
     syslog(LOG_ERR, "Failed to parse the configuration file: %d",
            config.ParseError());
+    return PAM_SYSTEM_ERR;
+  }
+  const howdy::native::ConfigReader validated_config(config_path);
+  if (const auto validation =
+          howdy::native::validate_runtime_config(validated_config)) {
+    syslog(LOG_ERR, "%s", validation->c_str());
     return PAM_SYSTEM_ERR;
   }
 

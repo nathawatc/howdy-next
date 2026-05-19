@@ -4,6 +4,7 @@
 #include "common/invoking_user.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -102,6 +103,10 @@ int test_main(int argc, char **argv) {
   howdy::native::ConfigReader config(config_path);
   if (!config.ok()) {
     std::cerr << "Failed to read config file: " << config_path << "\n";
+    return kExitCameraError;
+  }
+  if (const auto validation = howdy::native::validate_runtime_config(config)) {
+    std::cerr << *validation << "\n";
     return kExitCameraError;
   }
 
