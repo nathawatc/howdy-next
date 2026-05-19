@@ -13,6 +13,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <grp.h>
@@ -88,6 +89,40 @@ auto drop_to_invoking_gui_user() -> bool {
          setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
 }
 
+auto has_graphical_display_environment() -> bool {
+  const char *display = std::getenv("DISPLAY");
+  if (display != nullptr && display[0] != '\0') {
+    return true;
+  }
+
+  const char *wayland_display = std::getenv("WAYLAND_DISPLAY");
+  const char *runtime_dir = std::getenv("XDG_RUNTIME_DIR");
+  return wayland_display != nullptr && wayland_display[0] != '\0' &&
+         runtime_dir != nullptr && runtime_dir[0] != '\0';
+}
+
+void print_missing_graphical_environment_diagnostic() {
+  std::cerr
+      << "Cannot open the interactive test preview because no graphical display "
+         "environment is available.\n";
+  std::cerr
+      << "The preview needs display/session variables from your graphical login "
+         "session.\n\n";
+  std::cerr << "If using sudo, preserve only the display variables, for example:\n";
+  std::cerr << "  sudo "
+               "--preserve-env=DISPLAY,XAUTHORITY,WAYLAND_DISPLAY,XDG_RUNTIME_DIR "
+               "howdy test\n\n";
+  std::cerr << "If using run0, pass the display variables explicitly, for example:\n";
+  std::cerr << "  run0 --setenv=DISPLAY=\"$DISPLAY\" "
+               "--setenv=XAUTHORITY=\"$XAUTHORITY\" "
+               "--setenv=WAYLAND_DISPLAY=\"$WAYLAND_DISPLAY\" "
+               "--setenv=XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" howdy test\n\n";
+  std::cerr << "For headless testing, use:\n";
+  std::cerr << "  sudo howdy snapshot\n\n";
+  std::cerr << "Note: preserving these variables may still fail if your session's "
+               "display access controls deny root access.\n";
+}
+
 }  // namespace
 
 int test_main(int argc, char **argv) {
@@ -141,6 +176,11 @@ int test_main(int argc, char **argv) {
   auto settings = howdy::native::load_capture_settings(config);
   if (!args.device_path.empty()) {
     settings.device_path = args.device_path;
+  }
+
+  if (!has_graphical_display_environment()) {
+    print_missing_graphical_environment_diagnostic();
+    return kExitCameraError;
   }
 
   howdy::native::VideoCapture capture(settings);
