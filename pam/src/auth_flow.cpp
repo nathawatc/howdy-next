@@ -501,7 +501,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     return PAM_SYSTEM_ERR;
   }
   if (const auto validation = howdy::native::validate_runtime_config(config)) {
-    syslog(LOG_ERR, "%s", validation->c_str());
+    syslog(LOG_ERR, "Invalid runtime config in %s: %s", config_path.c_str(),
+           validation->c_str());
     return PAM_SYSTEM_ERR;
   }
 

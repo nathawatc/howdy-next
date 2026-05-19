@@ -167,8 +167,16 @@ auto main() -> int {
                "write negative fps config");
   howdy::native::ConfigReader negative_fps(negative_fps_path.string());
   ok &= expect(negative_fps.ok(), "negative fps config should parse");
-  ok &= expect(howdy::native::validate_runtime_config(negative_fps).has_value(),
+  const auto negative_fps_validation =
+      howdy::native::validate_runtime_config(negative_fps);
+  ok &= expect(negative_fps_validation.has_value(),
                "negative fps fails semantic validation");
+  if (negative_fps_validation.has_value()) {
+    ok &= expect(negative_fps_validation->find("device_fps") != std::string::npos,
+                 "negative fps validation reports key name");
+    ok &= expect(negative_fps_validation->find("-1") != std::string::npos,
+                 "negative fps validation reports offending value");
+  }
   ok &= expect(howdy::native::config_device_fps(negative_fps) == 0,
                "negative fps still falls back to runtime default");
 

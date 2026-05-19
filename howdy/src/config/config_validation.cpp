@@ -64,10 +64,11 @@ auto is_valid_bool_text(std::string_view value) -> bool {
          lowered == "on" || lowered == "off";
 }
 
-auto invalid_config_value_message(std::string_view key, std::string_view rule)
+auto invalid_config_value_message(std::string_view key, std::string_view value,
+                                  std::string_view rule)
     -> std::string {
-  return "Invalid config value for " + std::string(key) + ": " +
-         std::string(rule);
+  return "Invalid config value for " + std::string(key) + "=\"" +
+         std::string(value) + "\": " + std::string(rule);
 }
 
 auto validate_known_config_value(const ConfigReader &config,
@@ -81,7 +82,7 @@ auto validate_known_config_value(const ConfigReader &config,
       key == "save_failed" || key == "save_successful" ||
       key == "end_report") {
     if (!is_valid_bool_text(value)) {
-      return invalid_config_value_message(key, "expected a boolean");
+      return invalid_config_value_message(key, value, "expected a boolean");
     }
     return std::nullopt;
   }
@@ -89,7 +90,7 @@ auto validate_known_config_value(const ConfigReader &config,
   if (key == "device_path") {
     if (value.empty() || !is_allowed_capture_device_path(value)) {
       return invalid_config_value_message(
-          key, "expected none, /dev/video*, or /dev/v4l/by-path/*");
+          key, value, "expected none, /dev/video*, or /dev/v4l/by-path/*");
     }
     return std::nullopt;
   }
@@ -97,7 +98,7 @@ auto validate_known_config_value(const ConfigReader &config,
   if (key == "sface_metric") {
     const auto lowered = normalized_lower(std::string(value));
     if (lowered != "cosine" && lowered != "l2" && lowered != "l2norm") {
-      return invalid_config_value_message(key,
+      return invalid_config_value_message(key, value,
                                           "expected one of: cosine, l2, l2norm");
     }
     return std::nullopt;
@@ -105,14 +106,14 @@ auto validate_known_config_value(const ConfigReader &config,
 
   if (key == "yunet_model" || key == "sface_model") {
     if (value.empty()) {
-      return invalid_config_value_message(key, "must not be empty");
+      return invalid_config_value_message(key, value, "must not be empty");
     }
     if (value == "default" || value == "none") {
       return std::nullopt;
     }
     if (!std::filesystem::path(std::string(value)).is_absolute()) {
       return invalid_config_value_message(
-          key, "expected an absolute path, default, or none");
+          key, value, "expected an absolute path, default, or none");
     }
     return std::nullopt;
   }
@@ -122,7 +123,7 @@ auto validate_known_config_value(const ConfigReader &config,
           std::string_view rule) -> std::optional<std::string> {
     const auto parsed = parse_int_strict(value);
     if (!parsed.has_value() || *parsed < minimum || *parsed > maximum) {
-      return invalid_config_value_message(key, rule);
+      return invalid_config_value_message(key, value, rule);
     }
     return std::nullopt;
   };
@@ -132,7 +133,7 @@ auto validate_known_config_value(const ConfigReader &config,
           std::string_view rule) -> std::optional<std::string> {
     const auto parsed = parse_float_strict(value);
     if (!parsed.has_value() || *parsed < minimum || *parsed > maximum) {
-      return invalid_config_value_message(key, rule);
+      return invalid_config_value_message(key, value, rule);
     }
     return std::nullopt;
   };
@@ -167,7 +168,7 @@ auto validate_known_config_value(const ConfigReader &config,
     if (!parsed.has_value() ||
         (*parsed != -1 && (*parsed < 16 || *parsed > 8192))) {
       return invalid_config_value_message(
-          key, "expected -1 or integer range 16..8192");
+          key, value, "expected -1 or integer range 16..8192");
     }
     return std::nullopt;
   }
@@ -175,7 +176,8 @@ auto validate_known_config_value(const ConfigReader &config,
   if (key == "device_fps") {
     const auto parsed = parse_int_strict(value);
     if (!parsed.has_value() || *parsed < 0 || *parsed > 480) {
-      return invalid_config_value_message(key, "expected integer range 0..480");
+      return invalid_config_value_message(key, value,
+                                          "expected integer range 0..480");
     }
     return std::nullopt;
   }
@@ -185,7 +187,7 @@ auto validate_known_config_value(const ConfigReader &config,
     if (!parsed.has_value() ||
         (*parsed != -1 && (*parsed < 0 || *parsed > 10000))) {
       return invalid_config_value_message(
-          key, "expected -1 or integer range 0..10000");
+          key, value, "expected -1 or integer range 0..10000");
     }
     return std::nullopt;
   }
@@ -193,7 +195,7 @@ auto validate_known_config_value(const ConfigReader &config,
   if (key == "sface_threshold") {
     const auto parsed = parse_float_strict(value);
     if (!parsed.has_value()) {
-      return invalid_config_value_message(key,
+      return invalid_config_value_message(key, value,
                                           "expected a floating-point value");
     }
     const auto metric =
@@ -201,8 +203,8 @@ auto validate_known_config_value(const ConfigReader &config,
     const float maximum = metric == "cosine" ? 1.0F : 4.0F;
     if (*parsed < 0.0F || *parsed > maximum) {
       return invalid_config_value_message(
-          key, metric == "cosine" ? "expected range 0..1"
-                                  : "expected range 0..4");
+          key, value, metric == "cosine" ? "expected range 0..1"
+                                         : "expected range 0..4");
     }
     return std::nullopt;
   }

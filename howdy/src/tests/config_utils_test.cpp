@@ -99,6 +99,11 @@ auto main() -> int {
       "update_config_value rejects semantically invalid values");
   ok &= expect(read_file(config_path) == after_threshold,
                "semantic validation failure leaves config unchanged");
+  ok &= expect(
+      !howdy::native::update_config_value(config_path, "device_fps", "-1"),
+      "update_config_value rejects invalid device_fps values");
+  ok &= expect(read_file(config_path) == after_threshold,
+               "invalid device_fps update leaves config unchanged");
 
   ok &= expect(write_file(config_path,
                           "[core]\n"
