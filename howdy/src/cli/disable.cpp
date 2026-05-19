@@ -3,9 +3,7 @@
 #include <iostream>
 #include <string>
 
-#include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
 #include "config/runtime_paths.hpp"
 
 namespace {
@@ -39,25 +37,9 @@ int disable_main(int argc, char **argv) {
     std::cout << config_security.error_message << "\n";
     return kExitAbort;
   }
-  howdy::native::ConfigReader config(config_path.string());
-  if (!config.ok()) {
-    std::cout << "Failed to read config file: " << config_path << "\n";
-    return kExitAbort;
-  }
-  if (const auto validation = howdy::native::validate_runtime_config(config)) {
-    std::cout << *validation << "\n";
-    return kExitAbort;
-  }
-
-  if (out_value == config.get("core", "disabled", "true")) {
-    std::cout << "The disable option has already been set to " << out_value
-              << "\n";
-    return kExitAbort;
-  }
-
   std::string error_message;
   if (!howdy::native::update_config_value(config_path, "disabled", out_value,
-                                          &error_message, true)) {
+                                          &error_message, true, false)) {
     std::cout << (error_message.empty()
                       ? "Failed to update \"disabled\" config option"
                       : error_message)

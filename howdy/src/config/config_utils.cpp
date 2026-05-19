@@ -95,6 +95,9 @@ auto write_all_to_fd(int fd, const std::string &content) -> bool {
       }
       return false;
     }
+    if (bytes_written == 0) {
+      return false;
+    }
     cursor += bytes_written;
     remaining -= static_cast<std::size_t>(bytes_written);
   }
@@ -134,7 +137,9 @@ auto validate_config_content(const std::string &content, std::string *error_mess
 
   const std::filesystem::path temp_path(writable.data());
   bool ok = write_all_to_fd(fd, content);
-  close(fd);
+  if (close(fd) != 0) {
+    ok = false;
+  }
 
   if (!ok) {
     std::error_code ec;
@@ -260,7 +265,9 @@ auto atomic_write_lines(const std::filesystem::path &config_path,
   if (ok && fsync(fd) != 0) {
     ok = false;
   }
-  close(fd);
+  if (close(fd) != 0) {
+    ok = false;
+  }
 
   if (!ok) {
     std::error_code ec;
@@ -280,7 +287,8 @@ auto atomic_write_lines(const std::filesystem::path &config_path,
 
 auto update_config_value(const std::filesystem::path &config_path,
                          const std::string &key, const std::string &value,
-                         std::string *error_message, bool lock) -> bool {
+                         std::string *error_message, bool lock,
+                         bool validate_runtime) -> bool {
   if (!is_safe_ini_scalar_value(value)) {
     if (error_message != nullptr) {
       *error_message =
@@ -356,7 +364,10 @@ auto update_config_value(const std::filesystem::path &config_path,
   }
 
   const auto updated_content = join_lines(lines);
-  const bool validated = validate_config_content(updated_content, error_message);
+  bool validated = true;
+  if (validate_runtime) {
+    validated = validate_config_content(updated_content, error_message);
+  }
   const bool ok = validated && atomic_write_lines(config_path, lines);
   if (lock_fd_handle >= 0) {
     unlock_fd(lock_fd_handle);

@@ -100,6 +100,26 @@ auto main() -> int {
   ok &= expect(read_file(config_path) == after_threshold,
                "semantic validation failure leaves config unchanged");
 
+  ok &= expect(write_file(config_path,
+                          "[core]\n"
+                          "disabled = false\n"
+                          "\n"
+                          "[video]\n"
+                          "timeout = 0\n"),
+               "write config with invalid timeout");
+  ok &= expect(howdy::native::update_config_value(config_path, "disabled", "true",
+                                                  nullptr, false, false),
+               "update_config_value can bypass runtime validation for recovery writes");
+  const auto after_disable_recovery = read_file(config_path);
+  ok &= expect(after_disable_recovery.find("disabled = true\n") != std::string::npos,
+               "recovery write updates disabled key");
+  howdy::native::ConfigReader still_invalid(config_path.string());
+  ok &= expect(still_invalid.ok(), "recovery-write config still parses");
+  ok &= expect(howdy::native::validate_runtime_config(still_invalid).has_value(),
+               "recovery write does not mask unrelated invalid config values");
+  ok &= expect(write_file(config_path, after_threshold),
+               "restore valid config after recovery-write test");
+
   const auto nested_path = temp_root / "nested" / "generated.ini";
   const std::vector<std::string> write_lines = {
       "[face]\n",
