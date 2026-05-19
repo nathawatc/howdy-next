@@ -3,9 +3,9 @@
 
 #include <cstring>
 #include <security/pam_modules.h>
-#include <string>
 #include <string_view>
 #include <cstdint>
+#include <cstdlib>
 #include <unistd.h>
 
 enum class ConfirmationType : std::uint8_t { Unset, Howdy, Pam };

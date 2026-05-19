@@ -37,19 +37,19 @@ auto main() -> int {
   ok &= expect(get_workaround("unknown") == Workaround::Off,
                "unknown workaround falls back to off");
   {
-    const std::array<const char *, 1> args = {"workaround=native"};
+    std::array<const char *, 1> args = {"workaround=native"};
     ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
                      Workaround::Native,
                  "parses native workaround from PAM args");
   }
   {
-    const std::array<const char *, 2> args = {"debug", "workaround=input"};
+    std::array<const char *, 2> args = {"debug", "workaround=input"};
     ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
                      Workaround::Input,
                  "parses input workaround from PAM args");
   }
   {
-    const std::array<const char *, 1> args = {"workaround=invalid"};
+    std::array<const char *, 1> args = {"workaround=invalid"};
     ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
                      Workaround::Off,
                  "invalid PAM workaround falls back to off");
