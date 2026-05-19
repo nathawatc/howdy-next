@@ -209,6 +209,8 @@ auto check_enabled(const howdy::native::ConfigReader &config,
 
   struct stat stat_ {};
   if (lstat(model_path->c_str(), &stat_) != 0) {
+    syslog(LOG_WARNING, "Skipped authentication, failed to inspect model file %s: %s (%d)",
+           model_path->c_str(), strerror(errno), errno);
     return PAM_AUTHINFO_UNAVAIL;
   }
 

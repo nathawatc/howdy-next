@@ -217,6 +217,24 @@ test(
     native_runtime_paths_test,
 )
 
+native_invoking_user_env_test = executable(
+    'howdy-invoking-user-env-test',
+    'tests/invoking_user_env_test.cpp',
+    include_directories: native_cpp_inc,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-invoking-user-env',
+    native_invoking_user_env_test,
+)
+
 native_config_reader_test = executable(
     'howdy-config-reader-test',
     'tests/config_reader_test.cpp',

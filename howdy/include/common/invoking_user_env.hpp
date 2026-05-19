@@ -32,14 +32,18 @@ inline void reset_invoking_user_environment(const InvokingUser &invoking_user) {
 inline void reset_invoking_user_gui_environment(
     const InvokingUser &invoking_user) {
   reset_invoking_user_environment(invoking_user);
+  unsetenv("XDG_RUNTIME_DIR");
+  unsetenv("DBUS_SESSION_BUS_ADDRESS");
 
   const auto runtime_dir =
       std::filesystem::path("/run/user") / std::to_string(invoking_user.uid);
-  if (std::filesystem::is_directory(runtime_dir)) {
+  std::error_code ec;
+  if (std::filesystem::is_directory(runtime_dir, ec) && !ec) {
     set_user_env_var("XDG_RUNTIME_DIR", runtime_dir.string());
 
     const auto session_bus = runtime_dir / "bus";
-    if (std::filesystem::exists(session_bus)) {
+    ec.clear();
+    if (std::filesystem::exists(session_bus, ec) && !ec) {
       set_user_env_var("DBUS_SESSION_BUS_ADDRESS",
                        "unix:path=" + session_bus.string());
     }
@@ -48,7 +52,8 @@ inline void reset_invoking_user_gui_environment(
   if (std::getenv("XAUTHORITY") == nullptr && !invoking_user.home.empty()) {
     const auto xauthority =
         std::filesystem::path(invoking_user.home) / ".Xauthority";
-    if (std::filesystem::is_regular_file(xauthority)) {
+    ec.clear();
+    if (std::filesystem::is_regular_file(xauthority, ec) && !ec) {
       set_user_env_var("XAUTHORITY", xauthority.string());
     }
   }

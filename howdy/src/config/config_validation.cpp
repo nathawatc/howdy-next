@@ -1,5 +1,6 @@
 #include "config/config_validation.hpp"
 
+#include <cmath>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
@@ -48,7 +49,8 @@ auto parse_float_strict(std::string_view value) -> std::optional<float> {
   char *end = nullptr;
   const std::string owned_value(value);
   const auto parsed = std::strtof(owned_value.c_str(), &end);
-  if (errno != 0 || end == nullptr || *end != '\0') {
+  if (errno != 0 || end == nullptr || *end != '\0' ||
+      !std::isfinite(parsed)) {
     return std::nullopt;
   }
 
@@ -172,10 +174,8 @@ auto validate_known_config_value(const ConfigReader &config,
 
   if (key == "device_fps") {
     const auto parsed = parse_int_strict(value);
-    if (!parsed.has_value() ||
-        (*parsed != -1 && (*parsed < 0 || *parsed > 480))) {
-      return invalid_config_value_message(
-          key, "expected -1 or integer range 0..480");
+    if (!parsed.has_value() || *parsed < 0 || *parsed > 480) {
+      return invalid_config_value_message(key, "expected integer range 0..480");
     }
     return std::nullopt;
   }

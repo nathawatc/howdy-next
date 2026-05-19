@@ -2,7 +2,6 @@
 #include "common/capture_device_path.hpp"
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
-#include "recorders/video_capture.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -147,6 +146,31 @@ auto main() -> int {
                "malformed dark threshold falls back");
   ok &= expect(howdy::native::config_sface_threshold(malformed, "cosine") == 0.363F,
                "malformed sface threshold falls back");
+
+  const auto non_finite_path = temp_root / "non-finite.ini";
+  ok &= expect(write_file(non_finite_path,
+                          "[video]\n"
+                          "dark_threshold = nan\n"
+                          "[face]\n"
+                          "yunet_score_threshold = +inf\n"
+                          "sface_threshold = -inf\n"),
+               "write non-finite numeric config");
+  howdy::native::ConfigReader non_finite(non_finite_path.string());
+  ok &= expect(non_finite.ok(), "non-finite config should still parse");
+  ok &= expect(howdy::native::validate_runtime_config(non_finite).has_value(),
+               "non-finite numeric values fail semantic validation");
+
+  const auto negative_fps_path = temp_root / "negative-fps.ini";
+  ok &= expect(write_file(negative_fps_path,
+                          "[video]\n"
+                          "device_fps = -1\n"),
+               "write negative fps config");
+  howdy::native::ConfigReader negative_fps(negative_fps_path.string());
+  ok &= expect(negative_fps.ok(), "negative fps config should parse");
+  ok &= expect(howdy::native::validate_runtime_config(negative_fps).has_value(),
+               "negative fps fails semantic validation");
+  ok &= expect(howdy::native::config_device_fps(negative_fps) == 0,
+               "negative fps still falls back to runtime default");
 
   fs::remove_all(temp_root, ec);
   if (!ok) {
