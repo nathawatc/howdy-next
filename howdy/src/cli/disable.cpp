@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+#include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -37,6 +38,14 @@ int disable_main(int argc, char **argv) {
     std::cout << config_security.error_message << "\n";
     return kExitAbort;
   }
+
+  howdy::native::ConfigReader config(config_path.string());
+  if (config.ok() && out_value == config.get("core", "disabled", "true")) {
+    std::cout << "The disable option has already been set to " << out_value
+              << "\n";
+    return kExitAbort;
+  }
+
   std::string error_message;
   if (!howdy::native::update_config_value(config_path, "disabled", out_value,
                                           &error_message, true, false)) {
