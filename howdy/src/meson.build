@@ -76,9 +76,27 @@ native_compare = executable(
     install_tag: 'native_compare',
 )
 
+native_auth_helper = executable(
+    'howdy-auth-helper',
+    'auth_helper.cpp',
+    'config/runtime_paths.cpp',
+    include_directories: native_cpp_inc,
+    dependencies: [],
+    install: true,
+    install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+    install_mode: 'rwsr-xr-x',
+    install_tag: 'native_compare',
+)
+
 test(
     'native-compare-help',
     native_compare,
+    args: ['--help'],
+)
+
+test(
+    'native-auth-helper-help',
+    native_auth_helper,
     args: ['--help'],
 )
 
@@ -440,4 +458,4 @@ endif
 
 install_emptydir(modelsdir, install_tag: 'models')
 
-install_man('../howdy.1')
+install_man('../howdy.1', '../../pam/pam_howdy.8')

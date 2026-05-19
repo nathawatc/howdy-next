@@ -3,6 +3,8 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <glob.h>
@@ -52,6 +54,15 @@ auto make_wait_exit_status(int exit_code) -> int { return exit_code << 8; }
 
 using ConversationFn = std::function<int(int, const char *)>;
 
+struct RuntimeAuthFiles {
+  bool active = false;
+  std::filesystem::path root_dir;
+  std::string config_path;
+  std::string user_models_dir;
+
+  ~RuntimeAuthFiles();
+};
+
 auto send_conversation_message(const ConversationFn &conv_function,
                                int msg_type,
                                const std::string &message) -> void {
@@ -95,6 +106,12 @@ auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function)
   return PAM_SUCCESS;
 }
 
+auto auth_token_present(pam_handle_t *pamh) -> bool {
+  const void *auth_token = nullptr;
+  const int result = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
+  return result == PAM_SUCCESS && auth_token_item_present(auth_token);
+}
+
 auto howdy_error(int status, const ConversationFn &conv_function) -> int {
   const auto decision = map_compare_wait_status(status);
   if (decision.conversation_kind == ConversationKind::Error) {
@@ -132,7 +149,8 @@ auto howdy_status(char *username, int status, const INIReader &config,
   return PAM_SUCCESS;
 }
 
-auto check_enabled(const INIReader &config, const char *username) -> int {
+auto check_enabled(const INIReader &config, const char *username,
+                   const std::filesystem::path &user_models_dir) -> int {
   if (config.GetBoolean("core", "disabled", false)) {
     syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
     return PAM_AUTHINFO_UNAVAIL;
@@ -173,7 +191,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
   }
 
   const auto model_path =
-      howdy::native::resolve_user_model_path(USER_MODELS_DIR, username);
+      howdy::native::resolve_user_model_path(user_models_dir, username);
   if (!model_path) {
     syslog(LOG_WARNING, "Skipped authentication, invalid username");
     return PAM_AUTHINFO_UNAVAIL;
@@ -181,7 +199,7 @@ auto check_enabled(const INIReader &config, const char *username) -> int {
 
   const auto models_dir_security =
       howdy::native::check_secure_root_owned_directory_tree(
-          USER_MODELS_DIR, "User models directory");
+          user_models_dir, "User models directory");
   if (!models_dir_security.ok) {
     syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
     return PAM_AUTHINFO_UNAVAIL;
@@ -217,6 +235,142 @@ auto wait_for_compare_process(pid_t child_pid) -> int {
     syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)",
            strerror(errno), errno);
     return make_wait_exit_status(CompareError::ABORT);
+  }
+}
+
+auto read_fd_to_string(int fd) -> std::string {
+  std::string output;
+  std::array<char, 1024> buffer {};
+  while (true) {
+    const ssize_t result = read(fd, buffer.data(), buffer.size());
+    if (result < 0 && errno == EINTR) {
+      continue;
+    }
+    if (result <= 0) {
+      break;
+    }
+    output.append(buffer.data(), static_cast<std::size_t>(result));
+    if (output.size() > 8192) {
+      break;
+    }
+  }
+  return output;
+}
+
+auto helper_output_value(const std::string &output, const std::string &key)
+    -> std::string {
+  std::size_t offset = 0;
+  while (offset < output.size()) {
+    const auto next = output.find('\n', offset);
+    const auto end = next == std::string::npos ? output.size() : next;
+    const auto line = output.substr(offset, end - offset);
+    const auto prefix = key + "=";
+    if (line.rfind(prefix, 0) == 0) {
+      return line.substr(prefix.size());
+    }
+    if (next == std::string::npos) {
+      break;
+    }
+    offset = next + 1;
+  }
+  return {};
+}
+
+auto wait_for_helper_process(pid_t child_pid) -> int {
+  while (true) {
+    int status = 0;
+    const pid_t wait_result = waitpid(child_pid, &status, 0);
+    if (wait_result == child_pid) {
+      return status;
+    }
+    if (wait_result < 0 && errno == EINTR) {
+      continue;
+    }
+    return make_wait_exit_status(CompareError::ABORT);
+  }
+}
+
+auto prepare_runtime_auth_files(const char *username, RuntimeAuthFiles *runtime)
+    -> bool {
+  std::array<int, 2> output_pipe = {-1, -1};
+  if (pipe2(output_pipe.data(), O_CLOEXEC) != 0) {
+    syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)",
+           strerror(errno), errno);
+    return false;
+  }
+
+  posix_spawn_file_actions_t actions {};
+  posix_spawn_file_actions_init(&actions);
+  posix_spawn_file_actions_adddup2(&actions, output_pipe[1], STDOUT_FILENO);
+  posix_spawn_file_actions_adddup2(&actions, output_pipe[1], STDERR_FILENO);
+  posix_spawn_file_actions_addclose(&actions, output_pipe[0]);
+  posix_spawn_file_actions_addclose(&actions, output_pipe[1]);
+
+  std::array<char *, 4> args = {const_cast<char *>(AUTH_HELPER_PATH),
+                                const_cast<char *>("prepare"),
+                                const_cast<char *>(username), nullptr};
+  std::array<char *, 1> env = {nullptr};
+  pid_t child_pid = -1;
+  const int spawn_result = posix_spawn(&child_pid, AUTH_HELPER_PATH, &actions,
+                                       nullptr, args.data(), env.data());
+  posix_spawn_file_actions_destroy(&actions);
+  close(output_pipe[1]);
+
+  if (spawn_result != 0) {
+    close(output_pipe[0]);
+    syslog(LOG_ERR, "Can't spawn the howdy auth helper: %s (%d)",
+           strerror(spawn_result), spawn_result);
+    return false;
+  }
+
+  const std::string helper_output = read_fd_to_string(output_pipe[0]);
+  close(output_pipe[0]);
+
+  const int status = wait_for_helper_process(child_pid);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+    syslog(LOG_ERR, "Howdy auth helper failed: %s", helper_output.c_str());
+    return false;
+  }
+
+  runtime->config_path = helper_output_value(helper_output, "CONFIG_PATH");
+  runtime->user_models_dir =
+      helper_output_value(helper_output, "USER_MODELS_DIR");
+  if (runtime->config_path.empty() || runtime->user_models_dir.empty()) {
+    syslog(LOG_ERR, "Howdy auth helper returned incomplete output: %s",
+           helper_output.c_str());
+    return false;
+  }
+
+  runtime->root_dir = std::filesystem::path(runtime->config_path).parent_path();
+  runtime->active = true;
+  return true;
+}
+
+auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
+  std::string root_dir_string = root_dir.string();
+  std::array<char *, 4> args = {const_cast<char *>(AUTH_HELPER_PATH),
+                                const_cast<char *>("cleanup"),
+                                const_cast<char *>(root_dir_string.c_str()),
+                                nullptr};
+  std::array<char *, 1> env = {nullptr};
+  pid_t child_pid = -1;
+  const int spawn_result = posix_spawn(&child_pid, AUTH_HELPER_PATH, nullptr,
+                                       nullptr, args.data(), env.data());
+  if (spawn_result != 0) {
+    syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
+           strerror(spawn_result), spawn_result);
+    return;
+  }
+
+  const int status = wait_for_helper_process(child_pid);
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+    syslog(LOG_WARNING, "Howdy auth helper cleanup failed");
+  }
+}
+
+RuntimeAuthFiles::~RuntimeAuthFiles() {
+  if (active && !root_dir.empty()) {
+    cleanup_runtime_auth_files(root_dir);
   }
 }
 
@@ -270,23 +424,8 @@ auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_t
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
               bool ask_auth_tok) -> int {
   (void)flags;
-  (void)argc;
-  (void)argv;
 
-  const auto config_security =
-      howdy::native::check_secure_config_path(CONFIG_FILE_PATH);
   openlog("pam_howdy", 0, LOG_AUTHPRIV);
-  if (!config_security.ok) {
-    syslog(LOG_ERR, "%s", config_security.error_message.c_str());
-    return PAM_SYSTEM_ERR;
-  }
-
-  INIReader config(CONFIG_FILE_PATH);
-  if (config.ParseError() != 0) {
-    syslog(LOG_ERR, "Failed to parse the configuration file: %d",
-           config.ParseError());
-    return PAM_SYSTEM_ERR;
-  }
 
   char *username = nullptr;
   int pam_res = pam_get_user(pamh, const_cast<const char **>(&username), nullptr);
@@ -295,7 +434,34 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     return pam_res == PAM_SUCCESS ? PAM_USER_UNKNOWN : pam_res;
   }
 
-  pam_res = check_enabled(config, username);
+  RuntimeAuthFiles runtime_auth_files;
+  std::string config_path = CONFIG_FILE_PATH;
+  std::string user_models_dir = USER_MODELS_DIR;
+
+  auto config_security = howdy::native::check_secure_config_path(config_path);
+  if (!config_security.ok && config_security.error_code == EACCES &&
+      geteuid() != 0) {
+    if (!prepare_runtime_auth_files(username, &runtime_auth_files)) {
+      return PAM_SYSTEM_ERR;
+    }
+    config_path = runtime_auth_files.config_path;
+    user_models_dir = runtime_auth_files.user_models_dir;
+    config_security = howdy::native::check_secure_config_path(config_path);
+  }
+
+  if (!config_security.ok) {
+    syslog(LOG_ERR, "%s", config_security.error_message.c_str());
+    return PAM_SYSTEM_ERR;
+  }
+
+  INIReader config(config_path);
+  if (config.ParseError() != 0) {
+    syslog(LOG_ERR, "Failed to parse the configuration file: %d",
+           config.ParseError());
+    return PAM_SYSTEM_ERR;
+  }
+
+  pam_res = check_enabled(config, username, user_models_dir);
   if (pam_res != PAM_SUCCESS) {
     return pam_res;
   }
@@ -318,17 +484,25 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
     }
   }
 
-  const Workaround workaround =
-      get_workaround(config.GetString("core", "workaround", "input"));
+  const Workaround workaround = get_pam_workaround(argc, argv);
   Workaround effective_workaround = workaround;
+  const bool existing_auth_token = auth_token_present(pamh);
 
-  std::array<char *, 3> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
+  std::array<char *, 5> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
+                                const_cast<char *>("--config"),
+                                const_cast<char *>(config_path.c_str()),
                                 username, nullptr};
-  std::array<char *, 1> env = {nullptr};
+  std::string user_models_env =
+      "HOWDY_USER_MODELS_DIR=" + user_models_dir;
+  std::array<char *, 2> runtime_env = {
+      const_cast<char *>(user_models_env.c_str()), nullptr};
+  std::array<char *, 1> empty_env = {nullptr};
+  char **compare_env =
+      runtime_auth_files.active ? runtime_env.data() : empty_env.data();
   pid_t child_pid = -1;
 
   const int spawn_result = posix_spawn(&child_pid, COMPARE_PROCESS_PATH, nullptr,
-                                       nullptr, args.data(), env.data());
+                                       nullptr, args.data(), compare_env);
   if (spawn_result != 0) {
     syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)",
            strerror(spawn_result), spawn_result);
@@ -353,7 +527,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   child_task.activate();
 
   std::optional<NativePromptConversation> native_prompt;
-  if (workaround == Workaround::Native && ask_auth_tok) {
+  if (workaround == Workaround::Native && ask_auth_tok &&
+      !existing_auth_token) {
     native_prompt.emplace(pamh);
     if (!native_prompt->available()) {
       syslog(LOG_INFO,
@@ -372,6 +547,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
   }
 
   if (effective_workaround == Workaround::Input && ask_auth_tok &&
+      !existing_auth_token &&
       euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
     const int access_errno = errno;
     syslog(LOG_INFO,
@@ -382,8 +558,9 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
 
   const bool ask_pass =
       effective_workaround == Workaround::Native
-          ? native_prompt.has_value()
-          : should_ask_for_password(ask_auth_tok, effective_workaround);
+          ? native_prompt.has_value() && !existing_auth_token
+          : should_ask_for_password(ask_auth_tok, effective_workaround,
+                                    existing_auth_token);
 
   optional_task<std::tuple<int, char *>> pass_task([&] {
     char *auth_tok_ptr = nullptr;

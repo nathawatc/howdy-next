@@ -78,18 +78,9 @@ inline auto validate_known_config_value(const ConfigReader &config,
       key == "abort_if_ssh" || key == "abort_if_lid_closed" ||
       key == "disabled" || key == "warn_no_device" ||
       key == "clahe_enabled" || key == "force_mjpeg" ||
-      key == "save_failed" || key == "save_successful" ||
-      key == "end_report" || key == "gtk_stdout") {
+      key == "save_failed" || key == "save_successful" || key == "end_report") {
     if (!is_valid_bool_text(value)) {
       return invalid_config_value_message(key, "expected a boolean");
-    }
-    return std::nullopt;
-  }
-
-  if (key == "workaround") {
-    const auto lowered = normalized_lower(std::string(value));
-    if (lowered != "off" && lowered != "input" && lowered != "native") {
-      return invalid_config_value_message(key, "expected one of: off, input, native");
     }
     return std::nullopt;
   }
@@ -219,7 +210,6 @@ inline auto validate_runtime_config(const ConfigReader &config)
       {"core", "abort_if_ssh"},
       {"core", "abort_if_lid_closed"},
       {"core", "disabled"},
-      {"core", "workaround"},
       {"video", "timeout"},
       {"video", "device_path"},
       {"video", "warn_no_device"},
@@ -244,7 +234,6 @@ inline auto validate_runtime_config(const ConfigReader &config)
       {"snapshots", "save_failed"},
       {"snapshots", "save_successful"},
       {"debug", "end_report"},
-      {"debug", "gtk_stdout"},
   };
 
   for (const auto &[section, key] : keys) {

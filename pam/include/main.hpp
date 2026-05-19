@@ -3,8 +3,9 @@
 
 #include <cstring>
 #include <security/pam_modules.h>
-#include <string>
+#include <string_view>
 #include <cstdint>
+#include <cstdlib>
 #include <unistd.h>
 
 enum class ConfirmationType : std::uint8_t { Unset, Howdy, Pam };
@@ -20,7 +21,7 @@ enum CompareError : std::uint8_t {
   RUBBERSTAMP = 15
 };
 
-inline auto get_workaround(const std::string &workaround) -> Workaround {
+inline auto get_workaround(std::string_view workaround) -> Workaround {
   if (workaround == "input") {
     return Workaround::Input;
   }
@@ -29,6 +30,24 @@ inline auto get_workaround(const std::string &workaround) -> Workaround {
     return Workaround::Native;
   }
 
+  return Workaround::Off;
+}
+
+inline auto get_pam_workaround(int argc, const char *const *argv) -> Workaround {
+  if (argv == nullptr) {
+    return Workaround::Off;
+  }
+
+  constexpr std::string_view kPrefix = "workaround=";
+  for (int index = 0; index < argc; ++index) {
+    if (argv[index] == nullptr) {
+      continue;
+    }
+    const std::string_view argument(argv[index]);
+    if (argument.rfind(kPrefix, 0) == 0) {
+      return get_workaround(argument.substr(kPrefix.size()));
+    }
+  }
   return Workaround::Off;
 }
 
@@ -59,6 +78,10 @@ inline auto checkenv(const char *name) -> bool {
   }
 
   return false;
+}
+
+inline auto auth_token_item_present(const void *auth_token) -> bool {
+  return auth_token != nullptr;
 }
 
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,

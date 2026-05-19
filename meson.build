@@ -42,6 +42,7 @@ paths_dict = {
 
 pam_module_conf_data = configuration_data(paths_dict)
 pam_module_conf_data.set('compare_process_path', join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-compare'))
+pam_module_conf_data.set('auth_helper_path', join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-auth-helper'))
 pam_module_conf_data.set('config_file_path', config_path)
 
 subdir('pam')
