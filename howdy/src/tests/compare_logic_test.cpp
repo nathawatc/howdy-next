@@ -2,6 +2,8 @@
 
 #include <iostream>
 #include <limits>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -53,6 +55,42 @@ auto main() -> int {
   ok &= expect(howdy::native::timeout_exit(1, 2) ==
                    howdy::native::CompareExit::kTimeoutReached,
                "mixed valid frames returns timeout exit");
+
+  {
+    std::ostringstream stream;
+    const cv::Exception error(cv::Error::StsError, "simulated OpenCV failure",
+                              "detect", "compare.cpp", 42);
+    ok &= expect(howdy::native::compare_abort_from_cv_exception(
+                     error, stream, "test compare path") ==
+                     howdy::native::CompareExit::kAbort,
+                 "OpenCV exception maps to abort");
+    ok &= expect(stream.str().find("OpenCV exception during test compare path") !=
+                     std::string::npos,
+                 "OpenCV exception context is logged");
+  }
+
+  {
+    std::ostringstream stream;
+    const std::runtime_error error("simulated std failure");
+    ok &= expect(howdy::native::compare_abort_from_exception(
+                     error, stream, "test compare path") ==
+                     howdy::native::CompareExit::kAbort,
+                 "std exception maps to abort");
+    ok &= expect(stream.str().find("Unhandled exception during test compare path") !=
+                     std::string::npos,
+                 "std exception context is logged");
+  }
+
+  {
+    std::ostringstream stream;
+    ok &= expect(howdy::native::compare_abort_from_unknown_exception(
+                     stream, "test compare path") ==
+                     howdy::native::CompareExit::kAbort,
+                 "unknown exception maps to abort");
+    ok &= expect(stream.str().find("Unknown exception during test compare path") !=
+                     std::string::npos,
+                 "unknown exception context is logged");
+  }
 
   if (!ok) {
     return 1;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ostream>
 
 namespace howdy::native {
 
@@ -32,6 +33,29 @@ auto timeout_exit(int dark_tries, int valid_frames) -> CompareExit {
     return CompareExit::kTooDark;
   }
   return CompareExit::kTimeoutReached;
+}
+
+auto compare_abort_from_cv_exception(const cv::Exception &error,
+                                     std::ostream &stream,
+                                     std::string_view context) -> CompareExit {
+  stream << "OpenCV exception during " << context << ": " << error.what()
+         << "\n";
+  return CompareExit::kAbort;
+}
+
+auto compare_abort_from_exception(const std::exception &error,
+                                  std::ostream &stream,
+                                  std::string_view context) -> CompareExit {
+  stream << "Unhandled exception during " << context << ": " << error.what()
+         << "\n";
+  return CompareExit::kAbort;
+}
+
+auto compare_abort_from_unknown_exception(std::ostream &stream,
+                                          std::string_view context)
+    -> CompareExit {
+  stream << "Unknown exception during " << context << "\n";
+  return CompareExit::kAbort;
 }
 
 }  // namespace howdy::native
