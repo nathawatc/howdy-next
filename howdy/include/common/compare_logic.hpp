@@ -24,6 +24,8 @@ auto classify_brightness(double hist_total, float darkness, float dark_threshold
     -> BrightnessDecision;
 
 auto timeout_exit(int dark_tries, int valid_frames) -> CompareExit;
+auto compare_resize_scale(int frame_width, int frame_height, int rotate,
+                          float max_height) -> double;
 auto compare_abort_from_cv_exception(const cv::Exception &error,
                                      std::ostream &stream,
                                      std::string_view context) -> CompareExit;

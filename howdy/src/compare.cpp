@@ -187,12 +187,6 @@ auto main(int argc, char **argv) -> int {
     const double clip_limit = howdy::native::config_clahe_clip_limit(config);
     const int tile_size = howdy::native::config_clahe_tile_grid_size(config);
 
-    auto native_height = capture.get(cv::CAP_PROP_FRAME_HEIGHT);
-    if (rotate == 2) {
-      native_height = capture.get(cv::CAP_PROP_FRAME_WIDTH);
-    }
-    const double scaling_factor = max_height / std::max(native_height, 1.0);
-
     cv::Ptr<cv::CLAHE> clahe;
     if (use_clahe) {
       clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));
@@ -281,7 +275,9 @@ auto main(int argc, char **argv) -> int {
       }
 
       cv::Mat working_frame = gray_frame;
-      if (scaling_factor != 1.0) {
+      const double scaling_factor = howdy::native::compare_resize_scale(
+          gray_frame.cols, gray_frame.rows, rotate, max_height);
+      if (scaling_factor < 1.0) {
         cv::resize(gray_frame, working_frame, cv::Size(), scaling_factor,
                    scaling_factor, cv::INTER_AREA);
       }

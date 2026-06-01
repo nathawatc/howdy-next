@@ -1,5 +1,6 @@
 #include "common/compare_logic.hpp"
 
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -14,6 +15,11 @@ auto expect(bool condition, const std::string &message) -> bool {
     return false;
   }
   return true;
+}
+
+auto expect_near(double actual, double expected, double tolerance,
+                 const std::string &message) -> bool {
+  return expect(std::fabs(actual - expected) <= tolerance, message);
 }
 
 }  // namespace
@@ -55,6 +61,18 @@ auto main() -> int {
   ok &= expect(howdy::native::timeout_exit(1, 2) ==
                    howdy::native::CompareExit::kTimeoutReached,
                "mixed valid frames returns timeout exit");
+
+  ok &= expect_near(howdy::native::compare_resize_scale(640, 480, 0, 320.0F),
+                    320.0 / 480.0, 0.000001,
+                    "landscape resize caps by frame height");
+  ok &= expect_near(howdy::native::compare_resize_scale(640, 480, 2, 320.0F),
+                    320.0 / 640.0, 0.000001,
+                    "portrait resize caps by rotated frame height");
+  ok &= expect(howdy::native::compare_resize_scale(340, 340, 0, 1024.0F) ==
+                   1.0,
+               "resize cap does not upscale small Brio frames");
+  ok &= expect(howdy::native::compare_resize_scale(640, 0, 0, 320.0F) == 1.0,
+               "invalid capture height does not force huge upscale");
 
   {
     std::ostringstream stream;
