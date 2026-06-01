@@ -40,6 +40,14 @@ auto main() -> int {
   }
 
   {
+    const auto decision = map_compare_wait_status(12 << 8);
+    ok &= expect(decision.conversation_kind == ConversationKind::None,
+                 "abort has no conversation");
+    ok &= expect(decision.log_message == "Failure, general abort",
+                 "abort log message");
+  }
+
+  {
     const auto decision = map_compare_wait_status(13 << 8);
     ok &= expect(decision.conversation_kind == ConversationKind::Error,
                  "too-dark returns error conversation");
