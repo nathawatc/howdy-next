@@ -100,7 +100,8 @@ auto main() -> int {
                  "strict float parser accepts dot decimal");
     ok &= expect(near(howdy::native::parse_config_float_strict("+1.25").value_or(0.0F), 1.25F),
                  "strict float parser accepts leading plus");
-    for (const auto value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf", " 1.25", "1.25 "}) {
+    for (const auto *const value :
+         {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf", " 1.25", "1.25 "}) {
         ok &= expect(!howdy::native::parse_config_float_strict(value).has_value(),
                      std::string("strict float parser rejects ") + value);
     }

@@ -85,6 +85,12 @@ find howdy pam -type f \
   -print0 | xargs -0 clang-format -i
 ```
 
+### STATIC ANALYSIS
+
+```bash
+run-clang-tidy -p build
+```
+
 ## NOTES
 
 - Default camera device path: `/dev/video0`.

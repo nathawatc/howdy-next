@@ -72,7 +72,7 @@ auto main() -> int {
                          "clahe_clip_limit"),
                  "invalid float values are rejected");
 
-    for (const auto value : {"nan", "+inf", "-inf"}) {
+    for (const auto *const value : {"nan", "+inf", "-inf"}) {
         ok &= expect(rejects(temp_root / (std::string("non-finite-") + value + ".ini"),
                              "[face]\nyunet_score_threshold = " + std::string(value) + "\n",
                              "yunet_score_threshold"),
