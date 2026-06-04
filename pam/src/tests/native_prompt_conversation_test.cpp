@@ -403,6 +403,175 @@ namespace {
         return ok;
     }
 
+    auto expect_prompt_input_returns_password_after_retry(NativePromptConversation *conversation,
+                                                          int master_fd, const std::string &message)
+        -> bool {
+        bool ok = true;
+
+        const struct pam_message prompt = {
+            .msg_style = PAM_PROMPT_ECHO_OFF,
+            .msg       = "Password: ",
+        };
+
+        int         prompt_result = PAM_SUCCESS;
+        char       *response      = nullptr;
+        std::thread prompt_thread([&] {
+            prompt_result = conversation->prompt_input(prompt, &response, true);
+        });
+
+        std::array<char, 64> prompt_buffer{};
+        const ssize_t prompt_bytes = read_with_timeout(master_fd, prompt_buffer.data(),
+                                                       prompt_buffer.size(), kPromptReadTimeoutMs);
+        ok &= expect(prompt_bytes > 0, message + ": prompt is written to tty");
+
+        constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
+        ok &= expect(write(master_fd, kPassword.data(), kPassword.size()) ==
+                         static_cast<ssize_t>(kPassword.size()),
+                     message + ": writes password response");
+
+        prompt_thread.join();
+
+        ok &= expect(prompt_result == PAM_SUCCESS, message + ": prompt succeeds after EINTR");
+        ok &= expect(response != nullptr, message + ": prompt returns response");
+        if (response != nullptr) {
+            ok &= expect(std::string(response) == "secret", message + ": response matches input");
+            std::free(response);
+        }
+        return ok;
+    }
+
+    auto expect_poll_eintr_without_abort_does_not_abort_prompt() -> bool {
+        bool                    ok = true;
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+                     "poll EINTR retry test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "poll EINTR retry test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+                                              abort_pipe[1].release());
+        conversation.set_test_poll_eintr_count(1);
+        return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
+                                                                "poll EINTR retry test");
+    }
+
+    auto expect_poll_eintr_with_abort_fails_closed() -> bool {
+        bool                    ok = true;
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+                     "poll EINTR abort test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "poll EINTR abort test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        const struct pam_message prompt = {
+            .msg_style = PAM_PROMPT_ECHO_OFF,
+            .msg       = "Password: ",
+        };
+
+        NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+                                              abort_pipe[1].release());
+        conversation.set_test_poll_eintr_count(1);
+        conversation.set_test_abort_on_poll_eintr(true);
+
+        int         prompt_result = PAM_SUCCESS;
+        char       *response      = nullptr;
+        std::thread prompt_thread([&] {
+            prompt_result = conversation.prompt_input(prompt, &response, true);
+        });
+
+        std::array<char, 64> prompt_buffer{};
+        const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+                                                       prompt_buffer.size(), kPromptReadTimeoutMs);
+        ok &= expect(prompt_bytes > 0, "poll EINTR abort test prompt is written to tty");
+
+        prompt_thread.join();
+
+        ok &= expect(prompt_result == PAM_CONV_ERR, "poll EINTR abort test fails closed");
+        ok &= expect(response == nullptr, "poll EINTR abort test returns no response");
+        if (response != nullptr) {
+            std::free(response);
+        }
+        return ok;
+    }
+
+    auto expect_read_eintr_retries_and_accepts_input() -> bool {
+        bool                    ok = true;
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+                     "read EINTR retry test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "read EINTR retry test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+                                              abort_pipe[1].release());
+        conversation.set_test_read_eintr_count(1);
+        return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
+                                                                "read EINTR retry test");
+    }
+
+    auto expect_read_eintr_with_abort_fails_closed() -> bool {
+        bool                    ok = true;
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+                     "read EINTR abort test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "read EINTR abort test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        const struct pam_message prompt = {
+            .msg_style = PAM_PROMPT_ECHO_OFF,
+            .msg       = "Password: ",
+        };
+
+        NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+                                              abort_pipe[1].release());
+        conversation.set_test_read_eintr_count(1);
+        conversation.set_test_abort_on_read_eintr(true);
+
+        int         prompt_result = PAM_SUCCESS;
+        char       *response      = nullptr;
+        std::thread prompt_thread([&] {
+            prompt_result = conversation.prompt_input(prompt, &response, true);
+        });
+
+        std::array<char, 64> prompt_buffer{};
+        const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+                                                       prompt_buffer.size(), kPromptReadTimeoutMs);
+        ok &= expect(prompt_bytes > 0, "read EINTR abort test prompt is written to tty");
+
+        constexpr char kPassword = 's';
+        ok &= expect(write(master_fd.get(), &kPassword, 1) == 1,
+                     "read EINTR abort test makes tty readable");
+
+        prompt_thread.join();
+
+        ok &= expect(prompt_result == PAM_CONV_ERR, "read EINTR abort test fails closed");
+        ok &= expect(response == nullptr, "read EINTR abort test returns no response");
+        if (response != nullptr) {
+            std::free(response);
+        }
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -461,6 +630,10 @@ auto main() -> int {
     ok &= expect_original_conversation_restored();
     ok &= expect_abort_request_unblocks_without_pipe_wakeup();
     ok &= expect_pty_hangup_aborts_prompt();
+    ok &= expect_poll_eintr_without_abort_does_not_abort_prompt();
+    ok &= expect_poll_eintr_with_abort_fails_closed();
+    ok &= expect_read_eintr_retries_and_accepts_input();
+    ok &= expect_read_eintr_with_abort_fails_closed();
     ok &= expect_restore_handles_null_pam();
     ok &= expect_dispatch_throw_cleanup(1, "std exception after response allocation");
     ok &= expect_dispatch_throw_cleanup(2, "unknown exception after response allocation");

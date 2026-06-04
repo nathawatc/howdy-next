@@ -17,6 +17,10 @@ public:
 #ifdef HOWDY_PAM_TESTING
     NativePromptConversation(int tty_fd, int abort_read_fd, int abort_write_fd);
     void set_test_throw_mode(int mode);
+    void set_test_poll_eintr_count(int count);
+    void set_test_read_eintr_count(int count);
+    void set_test_abort_on_poll_eintr(bool enabled);
+    void set_test_abort_on_read_eintr(bool enabled);
 #endif
 
     [[nodiscard]] auto available() const -> bool;
@@ -41,7 +45,11 @@ private:
     std::array<int, 2> abort_pipe_{{-1, -1}};
     std::atomic<bool>  abort_requested_{false};
 #ifdef HOWDY_PAM_TESTING
-    int test_throw_mode_ = 0;
+    int  test_throw_mode_          = 0;
+    int  test_poll_eintr_count_    = 0;
+    int  test_read_eintr_count_    = 0;
+    bool test_abort_on_poll_eintr_ = false;
+    bool test_abort_on_read_eintr_ = false;
 #endif
 };
 

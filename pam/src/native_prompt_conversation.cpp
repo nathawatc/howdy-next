@@ -164,6 +164,22 @@ NativePromptConversation::NativePromptConversation(int tty_fd, int abort_read_fd
 void NativePromptConversation::set_test_throw_mode(int mode) {
     test_throw_mode_ = mode;
 }
+
+void NativePromptConversation::set_test_poll_eintr_count(int count) {
+    test_poll_eintr_count_ = count < 0 ? 0 : count;
+}
+
+void NativePromptConversation::set_test_read_eintr_count(int count) {
+    test_read_eintr_count_ = count < 0 ? 0 : count;
+}
+
+void NativePromptConversation::set_test_abort_on_poll_eintr(bool enabled) {
+    test_abort_on_poll_eintr_ = enabled;
+}
+
+void NativePromptConversation::set_test_abort_on_read_eintr(bool enabled) {
+    test_abort_on_read_eintr_ = enabled;
+}
 #endif
 
 NativePromptConversation::~NativePromptConversation() {
@@ -384,10 +400,23 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
     }};
 
     while (true) {
+#ifdef HOWDY_PAM_TESTING
+        int poll_result = -1;
+        if (test_poll_eintr_count_ > 0) {
+            --test_poll_eintr_count_;
+            if (test_abort_on_poll_eintr_) {
+                abort_requested_.store(true);
+            }
+            errno = EINTR;
+        } else {
+            poll_result = poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
+        }
+#else
         const int poll_result = poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
+#endif
         if (poll_result < 0) {
-            if (errno == EINTR) {
-                return abort_prompt_input(tty_fd_, original_termios);
+            if (errno == EINTR && !abort_requested_.load()) {
+                continue;
             }
             return abort_prompt_input(tty_fd_, original_termios);
         }
@@ -411,11 +440,25 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
             continue;
         }
 
-        char          ch         = '\0';
+        char ch = '\0';
+#ifdef HOWDY_PAM_TESTING
+        ssize_t bytes_read = -1;
+        if (test_read_eintr_count_ > 0) {
+            --test_read_eintr_count_;
+            if (test_abort_on_read_eintr_) {
+                abort_requested_.store(true);
+            }
+            errno      = EINTR;
+            bytes_read = -1;
+        } else {
+            bytes_read = read(tty_fd_, &ch, 1);
+        }
+#else
         const ssize_t bytes_read = read(tty_fd_, &ch, 1);
+#endif
         if (bytes_read < 0) {
-            if (errno == EINTR) {
-                return abort_prompt_input(tty_fd_, original_termios);
+            if (errno == EINTR && !abort_requested_.load()) {
+                continue;
             }
             return abort_prompt_input(tty_fd_, original_termios);
         }
