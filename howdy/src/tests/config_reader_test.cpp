@@ -2,11 +2,16 @@
 #include "config/config_reader.hpp"
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
+#include "config/number_parsing.hpp"
 
+#include <clocale>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -25,6 +30,27 @@ namespace {
             return false;
         }
         return true;
+    }
+
+    auto near(float value, float expected) -> bool {
+        constexpr float tolerance = 0.0001F;
+        return value > expected - tolerance && value < expected + tolerance;
+    }
+
+    auto get_env_value(const char *name) -> std::optional<std::string> {
+        const char *value = std::getenv(name);
+        if (value == nullptr) {
+            return std::nullopt;
+        }
+        return std::string(value);
+    }
+
+    void restore_env_value(const char *name, const std::optional<std::string> &value) {
+        if (value.has_value()) {
+            setenv(name, value->c_str(), 1);
+            return;
+        }
+        unsetenv(name);
     }
 
 }  // namespace
@@ -69,6 +95,81 @@ auto main() -> int {
     ok &= expect(howdy::native::config_dark_threshold(valid) > 55.4F &&
                      howdy::native::config_dark_threshold(valid) < 55.6F,
                  "validated dark threshold keeps configured value");
+
+    ok &= expect(near(howdy::native::parse_config_float_strict("1.25").value_or(0.0F), 1.25F),
+                 "strict float parser accepts dot decimal");
+    ok &= expect(near(howdy::native::parse_config_float_strict("+1.25").value_or(0.0F), 1.25F),
+                 "strict float parser accepts leading plus");
+    for (const auto value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf", " 1.25", "1.25 "}) {
+        ok &= expect(!howdy::native::parse_config_float_strict(value).has_value(),
+                     std::string("strict float parser rejects ") + value);
+    }
+
+    const auto default_floats_path = temp_root / "default-floats.ini";
+    ok &= expect(write_file(default_floats_path, "[video]\n"
+                                                 "clahe_clip_limit = 1.25\n"
+                                                 "[face]\n"
+                                                 "yunet_score_threshold = 0.8845\n"
+                                                 "yunet_nms_threshold = 0.3\n"
+                                                 "sface_threshold = 0.6942\n"),
+                 "write default float config");
+
+    auto expect_default_float_config = [&](const std::string &label) -> bool {
+        bool                        defaults_ok = true;
+        howdy::native::ConfigReader defaults(default_floats_path.string());
+        defaults_ok &= expect(defaults.ok(), label + ": default float config parses");
+        defaults_ok &= expect(!howdy::native::validate_runtime_config(defaults).has_value(),
+                              label + ": default float config validates");
+        defaults_ok &= expect(near(howdy::native::config_clahe_clip_limit(defaults), 1.25F),
+                              label + ": clahe_clip_limit keeps dot decimal value");
+        defaults_ok &= expect(near(howdy::native::config_yunet_score_threshold(defaults), 0.8845F),
+                              label + ": yunet_score_threshold keeps dot decimal value");
+        defaults_ok &= expect(near(howdy::native::config_yunet_nms_threshold(defaults), 0.3F),
+                              label + ": yunet_nms_threshold keeps dot decimal value");
+        defaults_ok &=
+            expect(near(howdy::native::config_sface_threshold(defaults, "cosine"), 0.6942F),
+                   label + ": sface_threshold keeps dot decimal value");
+        return defaults_ok;
+    };
+
+    ok &= expect_default_float_config("C locale");
+
+    const char *current_locale = std::setlocale(LC_ALL, nullptr);
+    const auto  previous_locale =
+        current_locale == nullptr ? std::optional<std::string>() : std::string(current_locale);
+    const auto previous_lc_all     = get_env_value("LC_ALL");
+    const auto previous_lc_numeric = get_env_value("LC_NUMERIC");
+    const auto previous_lang       = get_env_value("LANG");
+    unsetenv("LC_ALL");
+    setenv("LANG", "C", 1);
+    setenv("LC_NUMERIC", "nl_NL.UTF-8", 1);
+    if (std::setlocale(LC_ALL, "") != nullptr) {
+        ok &= expect_default_float_config("LC_NUMERIC=nl_NL.UTF-8");
+    } else {
+        std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+    }
+    restore_env_value("LC_ALL", previous_lc_all);
+    restore_env_value("LC_NUMERIC", previous_lc_numeric);
+    restore_env_value("LANG", previous_lang);
+    if (previous_locale.has_value()) {
+        std::setlocale(LC_ALL, previous_locale->c_str());
+    }
+
+    const std::vector<std::string> invalid_float_values = {"1,25", "1.25abc", "nan",
+                                                           "+inf", "-inf",    "inf"};
+    for (const auto &value : invalid_float_values) {
+        const auto invalid_float_path = temp_root / ("invalid-float-" + value + ".ini");
+        ok &= expect(write_file(invalid_float_path, "[video]\n"
+                                                    "clahe_clip_limit = " +
+                                                        value + "\n"),
+                     "write invalid float config for " + value);
+        howdy::native::ConfigReader invalid_float(invalid_float_path.string());
+        ok &= expect(invalid_float.ok(), "invalid float config still parses for " + value);
+        const auto validation = howdy::native::validate_runtime_config(invalid_float);
+        ok &= expect(validation.has_value(), "invalid float validation rejects " + value);
+        ok &= expect(near(howdy::native::config_clahe_clip_limit(invalid_float), 1.25F),
+                     "invalid float getter falls back for " + value);
+    }
 
     const auto                  missing_path = temp_root / "does-not-exist.ini";
     howdy::native::ConfigReader missing(missing_path.string());

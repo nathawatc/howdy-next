@@ -1,10 +1,10 @@
 #include "config/config_validation.hpp"
 
 #include "common/capture_device_path.hpp"
+#include "config/number_parsing.hpp"
 
 #include <cctype>
 #include <cerrno>
-#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
@@ -38,22 +38,6 @@ namespace howdy::native {
             }
 
             return static_cast<int>(parsed);
-        }
-
-        auto parse_float_strict(std::string_view value) -> std::optional<float> {
-            if (value.empty()) {
-                return std::nullopt;
-            }
-
-            errno                 = 0;
-            char             *end = nullptr;
-            const std::string owned_value(value);
-            const auto        parsed = std::strtof(owned_value.c_str(), &end);
-            if (errno != 0 || end == nullptr || *end != '\0' || !std::isfinite(parsed)) {
-                return std::nullopt;
-            }
-
-            return parsed;
         }
 
         auto is_valid_bool_text(std::string_view value) -> bool {
@@ -122,7 +106,7 @@ namespace howdy::native {
 
             auto validate_float_range = [&](float minimum, float maximum,
                                             std::string_view rule) -> std::optional<std::string> {
-                const auto parsed = parse_float_strict(value);
+                const auto parsed = parse_config_float_strict(value);
                 if (!parsed.has_value() || *parsed < minimum || *parsed > maximum) {
                     return invalid_config_value_message(key, value, rule);
                 }
@@ -182,7 +166,7 @@ namespace howdy::native {
             }
 
             if (key == "sface_threshold") {
-                const auto parsed = parse_float_strict(value);
+                const auto parsed = parse_config_float_strict(value);
                 if (!parsed.has_value()) {
                     return invalid_config_value_message(key, value,
                                                         "expected a floating-point value");

@@ -1,5 +1,7 @@
 #include "config/config_reader.hpp"
 
+#include "config/number_parsing.hpp"
+
 #include <utility>
 
 namespace howdy::native {
@@ -28,7 +30,11 @@ namespace howdy::native {
 
     auto ConfigReader::get_float(const std::string &section, const std::string &name,
                                  float fallback) const -> float {
-        return static_cast<float>(reader_.GetReal(section, name, fallback));
+        const auto value = reader_.Get(section, name, "");
+        if (const auto parsed = parse_config_float_strict(value)) {
+            return *parsed;
+        }
+        return fallback;
     }
 
     auto ConfigReader::get_bool(const std::string &section, const std::string &name,
