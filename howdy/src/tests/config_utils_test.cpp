@@ -2,9 +2,12 @@
 #include "config/config_validation.hpp"
 
 #include <cerrno>
+#include <clocale>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <unistd.h>
 #include <vector>
@@ -36,6 +39,22 @@ namespace {
             return false;
         }
         return true;
+    }
+
+    auto get_env_value(const char *name) -> std::optional<std::string> {
+        const char *value = std::getenv(name);
+        if (value == nullptr) {
+            return std::nullopt;
+        }
+        return std::string(value);
+    }
+
+    void restore_env_value(const char *name, const std::optional<std::string> &value) {
+        if (value.has_value()) {
+            setenv(name, value->c_str(), 1);
+            return;
+        }
+        unsetenv(name);
     }
 
 }  // namespace
@@ -96,6 +115,79 @@ auto main() -> int {
                  "update_config_value rejects invalid device_fps values");
     ok &= expect(read_file(config_path) == after_threshold,
                  "invalid device_fps update leaves config unchanged");
+
+    auto write_float_config = [&]() -> bool {
+        return write_file(config_path, "[video]\n"
+                                       "clahe_clip_limit = 2\n"
+                                       "\n"
+                                       "[face]\n"
+                                       "yunet_score_threshold = 0.9\n"
+                                       "yunet_nms_threshold = 0.4\n"
+                                       "sface_threshold = 0.5\n");
+    };
+
+    auto expect_float_write_path = [&](const std::string &label) -> bool {
+        bool write_ok = true;
+        write_ok &= expect(write_float_config(), label + ": write baseline float config");
+        write_ok &=
+            expect(howdy::native::update_config_value(config_path, "clahe_clip_limit", "1.25"),
+                   label + ": update_config_value accepts clahe_clip_limit dot decimal");
+        write_ok &=
+            expect(read_file(config_path).find("clahe_clip_limit = 1.25\n") != std::string::npos,
+                   label + ": clahe_clip_limit written unchanged");
+        write_ok &= expect(
+            howdy::native::update_config_value(config_path, "yunet_score_threshold", "0.8845"),
+            label + ": update_config_value accepts yunet_score_threshold dot decimal");
+        write_ok &= expect(read_file(config_path).find("yunet_score_threshold = 0.8845\n") !=
+                               std::string::npos,
+                           label + ": yunet_score_threshold written unchanged");
+        write_ok &=
+            expect(howdy::native::update_config_value(config_path, "yunet_nms_threshold", "0.3"),
+                   label + ": update_config_value accepts yunet_nms_threshold dot decimal");
+        write_ok &=
+            expect(read_file(config_path).find("yunet_nms_threshold = 0.3\n") != std::string::npos,
+                   label + ": yunet_nms_threshold written unchanged");
+        write_ok &=
+            expect(howdy::native::update_config_value(config_path, "sface_threshold", "0.6942"),
+                   label + ": update_config_value accepts sface_threshold dot decimal");
+        write_ok &=
+            expect(read_file(config_path).find("sface_threshold = 0.6942\n") != std::string::npos,
+                   label + ": sface_threshold written unchanged");
+
+        for (const auto value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
+            const auto before_invalid = read_file(config_path);
+            write_ok &=
+                expect(!howdy::native::update_config_value(config_path, "clahe_clip_limit", value),
+                       label + ": update_config_value rejects invalid float " + std::string(value));
+            write_ok &= expect(read_file(config_path) == before_invalid,
+                               label + ": invalid float update leaves config unchanged for " +
+                                   std::string(value));
+        }
+        return write_ok;
+    };
+
+    ok &= expect_float_write_path("C locale");
+
+    const char *current_locale = std::setlocale(LC_ALL, nullptr);
+    const auto  previous_locale =
+        current_locale == nullptr ? std::optional<std::string>() : std::string(current_locale);
+    const auto previous_lc_all     = get_env_value("LC_ALL");
+    const auto previous_lc_numeric = get_env_value("LC_NUMERIC");
+    const auto previous_lang       = get_env_value("LANG");
+    unsetenv("LC_ALL");
+    setenv("LANG", "C", 1);
+    setenv("LC_NUMERIC", "nl_NL.UTF-8", 1);
+    if (std::setlocale(LC_ALL, "") != nullptr) {
+        ok &= expect_float_write_path("LC_NUMERIC=nl_NL.UTF-8");
+    } else {
+        std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+    }
+    restore_env_value("LC_ALL", previous_lc_all);
+    restore_env_value("LC_NUMERIC", previous_lc_numeric);
+    restore_env_value("LANG", previous_lang);
+    if (previous_locale.has_value()) {
+        std::setlocale(LC_ALL, previous_locale->c_str());
+    }
 
     ok &= expect(write_file(config_path, "[core]\n"
                                          "disabled = false\n"
