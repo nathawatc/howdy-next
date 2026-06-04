@@ -101,11 +101,12 @@ namespace {
             return PAM_SYSTEM_ERR;
         }
 
-        *conv_function = [conv](int msg_type, const char *msg_str) {
-            const struct pam_message  msg         = {.msg_style = msg_type, .msg = msg_str};
-            const struct pam_message *msgp        = &msg;
-            struct pam_response      *resp        = nullptr;
-            const int                 conv_result = conv->conv(1, &msgp, &resp, conv->appdata_ptr);
+        const struct pam_conv original_conv = *conv;
+        *conv_function                      = [original_conv](int msg_type, const char *msg_str) {
+            const struct pam_message  msg  = {.msg_style = msg_type, .msg = msg_str};
+            const struct pam_message *msgp = &msg;
+            struct pam_response      *resp = nullptr;
+            const int conv_result = original_conv.conv(1, &msgp, &resp, original_conv.appdata_ptr);
             if (resp != nullptr) {
                 if (resp->resp != nullptr) {
                     std::memset(resp->resp, 0, std::strlen(resp->resp));

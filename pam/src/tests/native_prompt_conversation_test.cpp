@@ -17,6 +17,8 @@
 #include <thread>
 #include <unistd.h>
 
+#include <security/pam_appl.h>
+
 namespace {
 
     constexpr int kPromptReadTimeoutMs = 1000;
@@ -140,6 +142,81 @@ namespace {
         }
     }
 
+    auto test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+                   struct pam_response **response, void *appdata_ptr) -> int {
+        if (response != nullptr) {
+            *response = nullptr;
+        }
+        return appdata_ptr == nullptr ? PAM_CONV_ERR : PAM_SUCCESS;
+    }
+
+    auto expect_dispatch_rejects_invalid_state() -> bool {
+        bool ok = true;
+
+        const struct pam_message message = {
+            .msg_style = PAM_TEXT_INFO,
+            .msg       = "notice",
+        };
+        const struct pam_message *message_ptr = &message;
+        auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
+
+        ok &= expect(NativePromptConversation::dispatch(1, &message_ptr, &responses, nullptr) ==
+                         PAM_CONV_ERR,
+                     "dispatch rejects null appdata");
+        ok &= expect(responses == nullptr, "dispatch clears response on null appdata");
+        ok &= expect(NativePromptConversation::dispatch(1, &message_ptr, nullptr, nullptr) ==
+                         PAM_CONV_ERR,
+                     "dispatch rejects null response pointer");
+
+        return ok;
+    }
+
+    auto expect_original_conversation_restored() -> bool {
+        bool ok = true;
+
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd), "restore test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "restore test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        int             appdata = 42;
+        struct pam_conv original_conv{
+            .conv        = test_conv,
+            .appdata_ptr = &appdata,
+        };
+        pam_handle_t *pamh = nullptr;
+        if (pam_start("howdy-native-test", "test-user", &original_conv, &pamh) != PAM_SUCCESS ||
+            pamh == nullptr) {
+            return expect(false, "restore test starts PAM handle");
+        }
+
+        {
+            NativePromptConversation conversation(pamh);
+            conversation.tty_fd_        = slave_fd.release();
+            conversation.abort_pipe_[0] = abort_pipe[0].release();
+            conversation.abort_pipe_[1] = abort_pipe[1].release();
+            ok &= expect(conversation.available(), "restore test native prompt is available");
+            ok &= expect(conversation.install() == PAM_SUCCESS,
+                         "restore test installs native conversation");
+        }
+
+        const void *restored_item = nullptr;
+        ok &= expect(pam_get_item(pamh, PAM_CONV, &restored_item) == PAM_SUCCESS,
+                     "restore test reads PAM conversation");
+        const auto *restored_conv = static_cast<const struct pam_conv *>(restored_item);
+        ok &= expect(restored_conv != nullptr, "restore test returns restored PAM conversation");
+        ok &= expect(restored_conv->conv == original_conv.conv,
+                     "restore test restores original PAM conversation callback");
+        ok &= expect(restored_conv->appdata_ptr == original_conv.appdata_ptr,
+                     "restore test restores original PAM conversation appdata");
+        pam_end(pamh, PAM_SUCCESS);
+        return ok;
+    }
+
     auto expect_dispatch_throw_cleanup(int throw_mode, const std::string &message) -> bool {
         bool                    ok = true;
         ScopedFd                master_fd;
@@ -244,6 +321,8 @@ auto main() -> int {
         std::free(response);
     }
 
+    ok &= expect_dispatch_rejects_invalid_state();
+    ok &= expect_original_conversation_restored();
     ok &= expect_dispatch_throw_cleanup(1, "std exception after response allocation");
     ok &= expect_dispatch_throw_cleanup(2, "unknown exception after response allocation");
 

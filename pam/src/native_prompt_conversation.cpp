@@ -157,13 +157,20 @@ void NativePromptConversation::set_test_throw_mode(int mode) {
 #endif
 
 NativePromptConversation::~NativePromptConversation() {
-    if (installed_) {
-        (void)pam_set_item(pamh_, PAM_CONV, &original_conv_);
-    }
+    restore_original();
 
     close_fd(tty_fd_);
     close_fd(abort_pipe_[0]);
     close_fd(abort_pipe_[1]);
+}
+
+void NativePromptConversation::restore_original() {
+    if (!installed_) {
+        return;
+    }
+
+    (void)pam_set_item(pamh_, PAM_CONV, &original_conv_);
+    installed_ = false;
 }
 
 auto NativePromptConversation::available() const -> bool {
