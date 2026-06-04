@@ -1,75 +1,34 @@
-# PROJECT KNOWLEDGE BASE
+# Repository Guidelines
 
-**Generated:** 2026-06-04
-**Commit:** a51dbbd
-**Branch:** master
+**Updated:** 2026-06-04  
+**Base commit:** b06c8dd
 
-## OVERVIEW
+## Project Structure & Module Organization
 
-Linux facial recognition auth for PAM + native C++ CLI/runtime. OpenCV DNN YuNet
-detector with SFace encoder, Meson/Ninja build, Arch packaging support.
+This repository builds Howdy Next, a Linux facial-recognition authentication stack with a native C++ CLI/runtime and PAM module.
 
-## STRUCTURE
+- `howdy/src/`: CLI entrypoints, compare runtime, config, storage, recorders, core face model code, and unit tests in `howdy/src/tests/`.
+- `howdy/include/`: shared headers for CLI, config, common helpers, storage, recorders, and model code.
+- `pam/`: PAM module sources, headers, translations, man page, and tests in `pam/src/tests/`.
+- `config/config.ini`: packaged default configuration template.
+- `archlinux/`: Arch Linux packaging files for release and `-git` packages.
+- `subprojects/`: Meson wraps, including `inih`.
 
-```text
-howdy-next/
-├── howdy/src/           # Native runtime, CLI, config, core, storage, tests
-├── howdy/include/       # Shared native headers
-├── pam/                 # PAM module and tests
-├── config/              # Packaged config template
-└── archlinux/           # Arch PKGBUILD and packaging sources
-```
+## Build, Test, and Development Commands
 
-## WHERE TO LOOK
-
-| Task            | Location                        | Notes                                      |
-| --------------- | ------------------------------- | ------------------------------------------ |
-| CLI commands    | `howdy/src/cli/`                | Native subcommands and editor/config flows |
-| Face comparison | `howdy/src/compare.cpp`         | Native recognition engine                  |
-| Camera drivers  | `howdy/src/recorders/`          | OpenCV/V4L2 capture wrapper                |
-| Model handling  | `howdy/src/core/face_model.cpp` | YuNet/SFace loading and validation         |
-| Config runtime  | `howdy/src/config/`             | Config reader, rewrite, path resolution    |
-| PAM module      | `pam/`                          | Auth flow and status mapping               |
-
-## CODE MAP
-
-| Symbol          | Type   | Location                                    | Role                             |
-| --------------- | ------ | ------------------------------------------- | -------------------------------- |
-| `VideoCapture`  | class  | `howdy/include/recorders/video_capture.hpp` | OpenCV camera wrapper            |
-| `FaceModel`     | class  | `howdy/include/core/face_model.hpp`         | Detector + encoder pipeline      |
-| `UserModels`    | module | `howdy/include/storage/user_models.hpp`     | User model file loading/writing  |
-| `CompareExit`   | enum   | `howdy/include/common/compare_exit.hpp`     | Compare binary exit codes        |
-| `compare_logic` | module | `howdy/include/common/compare_logic.hpp`    | Frame resize + exception helpers |
-| `compare_args`  | module | `howdy/include/common/compare_args.hpp`     | Compare arg parsing              |
-| `howdy`         | binary | `howdy/src/howdy.cpp`                       | CLI dispatcher                   |
-| `howdy-compare` | binary | `howdy/src/compare.cpp`                     | Auth compare executable          |
-
-## CONVENTIONS
-
-- Build with Meson/Ninja, not CMake.
-- Config reads + writes atomic.
-- PAM + config paths: secure ownership + directory checks.
-- `/etc/howdy` installed `root:root` `0750`; `config.ini` `0640`.
-- Model files validated before load; custom model paths absolute.
-- Prefer shared helpers in `howdy/include/common/` + `howdy/include/config/`.
-
-## ANTI-PATTERNS
-
-- Don't change `config.ini` format.
-- Don't bypass PAM auth flow without understanding session behavior.
-- Don't replace atomic config rewrite logic with in-place edits.
-
-## UNIQUE STYLES
-
-- Recorder selection uses `VideoCapture` factory based on device path.
-- PAM exits wait for user input after success; not auto-terminate.
-- OpenCV/V4L2 runtime lacks FFmpeg backend.
-
-## COMMANDS
+Use Meson and Ninja; this project does not use CMake.
 
 ```bash
-meson setup build && ninja -C build
+meson setup build
+ninja -C build
 meson test -C build --print-errorlogs
+```
+
+`meson setup build` configures the build directory, `ninja -C build` compiles the CLI, compare binary, and PAM module, and `meson test` runs the native test suite with failure logs.
+
+Useful local commands after install include:
+
+```bash
 howdy add <user>
 howdy test
 howdy list
@@ -77,23 +36,34 @@ howdy disable
 howdy download-models
 ```
 
-### FORMAT
+## Coding Style & Naming Conventions
+
+C++ code is formatted with the repository `.clang-format` policy. Use snake_case for files, functions, and test names, matching existing files such as `compare_logic.cpp` and `config_reader_test.cpp`. Keep shared helpers in `howdy/include/common/` or `howdy/include/config/` when behavior crosses modules.
+
+Format C/C++ changes with:
 
 ```bash
-find howdy pam -type f \
-  \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) \
-  -print0 | xargs -0 clang-format -i
+find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
-### STATIC ANALYSIS
+Run static analysis when practical:
 
 ```bash
 run-clang-tidy -p build
 ```
 
-## NOTES
+## Testing Guidelines
 
-- Default camera device path: `/dev/video0`.
-- Arch packaging installs config under `/etc/howdy`.
-- `backend = opencv_dnn_sface` removed; only one backend remains.
-- #12: `compare_resize_scale` prevents auth-frame upscaling; compare and camera capture paths convert OpenCV/std exceptions to controlled failures.
+Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add focused tests beside the module being changed, using the `*_test.cpp` naming pattern. For security-sensitive code, cover failure paths as well as success paths, especially file ownership checks, config validation, PAM status mapping, and exception handling.
+
+Run all tests with `meson test -C build --print-errorlogs`. For a single test, use `meson test -C build <test-name> --print-errorlogs`.
+
+## Commit & Pull Request Guidelines
+
+Recent history uses Conventional Commits, for example `fix(pam): ...`, `test(config): ...`, `style(format): ...`, and `build(release): ...`. Keep subjects imperative and scoped.
+
+Pull requests should include a clear problem statement, a concise change summary, linked issues when applicable, and test results. Include screenshots or terminal output only when they clarify CLI, PAM prompt, or packaging behavior.
+
+## Security & Configuration Tips
+
+Do not change the `config.ini` format casually. Preserve atomic config rewrites, secure path validation, and ownership expectations for `/etc/howdy`, `config.ini`, user model files, and custom model paths. PAM authentication should fail closed on unexpected errors.
