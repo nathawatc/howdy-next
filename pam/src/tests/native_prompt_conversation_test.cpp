@@ -8,9 +8,12 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <fcntl.h>
+#include <future>
 #include <iostream>
+#include <memory>
 #include <poll.h>
 #include <string>
 #include <termios.h>
@@ -217,6 +220,139 @@ namespace {
         return ok;
     }
 
+    auto expect_abort_request_unblocks_without_pipe_wakeup() -> bool {
+        bool ok = true;
+
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd), "abort wake test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "abort wake test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        const struct pam_message message = {
+            .msg_style = PAM_PROMPT_ECHO_OFF,
+            .msg       = "Password: ",
+        };
+
+        auto conversation = std::make_shared<NativePromptConversation>(
+            slave_fd.release(), abort_pipe[0].release(), abort_pipe[1].release());
+        close(conversation->abort_pipe_[1]);
+        conversation->abort_pipe_[1] = -1;
+
+        auto        response       = std::make_shared<char *>(nullptr);
+        auto        result_promise = std::make_shared<std::promise<int>>();
+        auto        result_future  = result_promise->get_future();
+        std::thread prompt_thread([conversation, message, response, result_promise] {
+            result_promise->set_value(conversation->prompt_input(message, response.get(), true));
+        });
+
+        std::array<char, 64> prompt_buffer{};
+        const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+                                                       prompt_buffer.size(), kPromptReadTimeoutMs);
+        ok &= expect(prompt_bytes > 0, "abort wake test prompt is written to tty");
+
+        conversation->request_abort();
+        if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            master_fd.reset();
+            conversation->request_abort();
+        }
+        if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            ok &= expect(false, "abort wake test prompt thread stops before timeout");
+            // Test is already failed. Detached prompt owns every object it can touch via
+            // shared_ptr/value captures, so returning cannot leave stack-owned dangling state.
+            prompt_thread.detach();
+            return ok;
+        }
+        prompt_thread.join();
+
+        const int prompt_result = result_future.get();
+        ok &= expect(prompt_result == PAM_CONV_ERR,
+                     "abort wake test request abort unblocks prompt without pipe write");
+        ok &= expect(*response == nullptr, "abort wake test returns no response");
+        if (*response != nullptr) {
+            std::free(*response);
+        }
+        return ok;
+    }
+
+    auto expect_pty_hangup_aborts_prompt() -> bool {
+        bool ok = true;
+
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+        ok &= expect(open_pty_pair(&master_fd, &slave_fd), "hangup test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "hangup test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        const struct pam_message message = {
+            .msg_style = PAM_PROMPT_ECHO_OFF,
+            .msg       = "Password: ",
+        };
+
+        auto conversation = std::make_shared<NativePromptConversation>(
+            slave_fd.release(), abort_pipe[0].release(), abort_pipe[1].release());
+
+        auto        response       = std::make_shared<char *>(nullptr);
+        auto        result_promise = std::make_shared<std::promise<int>>();
+        auto        result_future  = result_promise->get_future();
+        std::thread prompt_thread([conversation, message, response, result_promise] {
+            result_promise->set_value(conversation->prompt_input(message, response.get(), true));
+        });
+
+        std::array<char, 64> prompt_buffer{};
+        const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+                                                       prompt_buffer.size(), kPromptReadTimeoutMs);
+        ok &= expect(prompt_bytes > 0, "hangup test prompt is written to tty");
+
+        master_fd.reset();
+        if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            conversation->request_abort();
+        }
+        if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            ok &= expect(false, "PTY hangup prompt thread stops before timeout");
+            // Test is already failed. Detached prompt owns every object it can touch via
+            // shared_ptr/value captures, so returning cannot leave stack-owned dangling state.
+            prompt_thread.detach();
+            return ok;
+        }
+        prompt_thread.join();
+
+        const int prompt_result = result_future.get();
+        ok &= expect(prompt_result == PAM_CONV_ERR, "PTY hangup aborts prompt");
+        ok &= expect(*response == nullptr, "PTY hangup returns no response");
+        if (*response != nullptr) {
+            std::free(*response);
+        }
+        return ok;
+    }
+
+    auto expect_restore_handles_null_pam() -> bool {
+        bool                    ok = true;
+        ScopedFd                master_fd;
+        ScopedFd                slave_fd;
+        std::array<ScopedFd, 2> abort_pipe;
+
+        ok &=
+            expect(open_pty_pair(&master_fd, &slave_fd), "null restore test opens pseudo terminal");
+        ok &= expect(open_pipe(&abort_pipe), "null restore test creates abort pipe");
+        if (!ok) {
+            return false;
+        }
+
+        NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+                                              abort_pipe[1].release());
+        conversation.installed_ = true;
+        conversation.restore_original();
+        ok &= expect(!conversation.installed_, "null PAM restore clears installed state");
+        return ok;
+    }
+
     auto expect_dispatch_throw_cleanup(int throw_mode, const std::string &message) -> bool {
         bool                    ok = true;
         ScopedFd                master_fd;
@@ -323,6 +459,9 @@ auto main() -> int {
 
     ok &= expect_dispatch_rejects_invalid_state();
     ok &= expect_original_conversation_restored();
+    ok &= expect_abort_request_unblocks_without_pipe_wakeup();
+    ok &= expect_pty_hangup_aborts_prompt();
+    ok &= expect_restore_handles_null_pam();
     ok &= expect_dispatch_throw_cleanup(1, "std exception after response allocation");
     ok &= expect_dispatch_throw_cleanup(2, "unknown exception after response allocation");
 

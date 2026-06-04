@@ -79,6 +79,27 @@ namespace {
         bool prompt_stopped = true;
     };
 
+    struct NativePromptCleanupGuard {
+        optional_task<std::tuple<int, char *>> *pass_task     = nullptr;
+        NativePromptConversation               *native_prompt = nullptr;
+
+        ~NativePromptCleanupGuard() {
+            if (pass_task == nullptr || native_prompt == nullptr || !pass_task->active()) {
+                return;
+            }
+
+            try {
+                native_prompt->request_abort();
+                pass_task->stop();
+                native_prompt->restore_original();
+            } catch (const std::exception &error) {
+                syslog(LOG_CRIT, "Native prompt cleanup failed: %s", error.what());
+            } catch (...) {
+                syslog(LOG_CRIT, "Native prompt cleanup failed with non-standard exception");
+            }
+        }
+    };
+
     auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
                                    const std::string &message) -> void {
         const int result = conv_function(msg_type, message.c_str());
@@ -603,6 +624,11 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
     if (ask_pass) {
         pass_task.activate();
     }
+
+    NativePromptCleanupGuard native_cleanup{
+        .pass_task     = &pass_task,
+        .native_prompt = native_prompt ? &*native_prompt : nullptr,
+    };
 
     {
         std::unique_lock<std::mutex> lock(mutx);

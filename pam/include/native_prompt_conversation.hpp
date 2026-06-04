@@ -22,9 +22,9 @@ public:
     [[nodiscard]] auto available() const -> bool;
     auto               install() -> int;
     void               request_abort();
+    void               restore_original();
 
 private:
-    void        restore_original();
     static auto dispatch(int num_msg, const struct pam_message **msgm,
                          struct pam_response **response, void *appdata_ptr) -> int;
     auto        handle(int num_msg, const struct pam_message **msgm, struct pam_response **response)

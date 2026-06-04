@@ -16,6 +16,16 @@
 
 namespace {
 
+    constexpr int kAbortPollTimeoutMs = 100;
+
+    auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+                              struct pam_response **response, void * /*appdata_ptr*/) -> int {
+        if (response != nullptr) {
+            *response = nullptr;
+        }
+        return PAM_CONV_ERR;
+    }
+
     auto open_tty_fd(pam_handle_t *pamh) -> int {
         std::array<std::string, 2> candidates{};
         std::size_t                candidate_count = 0;
@@ -169,7 +179,29 @@ void NativePromptConversation::restore_original() {
         return;
     }
 
-    (void)pam_set_item(pamh_, PAM_CONV, &original_conv_);
+    if (pamh_ == nullptr) {
+        syslog(LOG_CRIT, "Cannot restore PAM conversation: null PAM handle");
+        installed_ = false;
+        return;
+    }
+
+    const int restore_result = pam_set_item(pamh_, PAM_CONV, &original_conv_);
+    if (restore_result == PAM_SUCCESS) {
+        installed_ = false;
+        return;
+    }
+
+    syslog(LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
+    static const struct pam_conv fail_closed_conv = {fail_closed_dispatch, nullptr};
+    const int fail_closed_result = pam_set_item(pamh_, PAM_CONV, &fail_closed_conv);
+    if (fail_closed_result != PAM_SUCCESS) {
+        syslog(LOG_CRIT, "Failed to install fail-closed PAM conversation: %d", fail_closed_result);
+        syslog(LOG_CRIT, "PAM_CONV may remain unsafe after native prompt restore failure");
+        // Both PAM_CONV writes failed. There is no safe destructor-path recovery left;
+        // make this object's state explicit so no later restore retry is implied.
+        installed_ = false;
+        return;
+    }
     installed_ = false;
 }
 
@@ -196,8 +228,18 @@ void NativePromptConversation::request_abort() {
     }
 
     constexpr char kSignal = 'x';
-    if (write(abort_pipe_[1], &kSignal, 1) < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
-        errno != EINTR) {
+    while (true) {
+        const ssize_t result = write(abort_pipe_[1], &kSignal, 1);
+        if (result == 1) {
+            return;
+        }
+        if (result < 0 && errno == EINTR) {
+            continue;
+        }
+        if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            return;
+        }
+        return;
     }
 }
 
@@ -332,8 +374,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 
     const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
     if (!write_all(tty_fd_, prompt_text)) {
-        (void)tcsetattr(tty_fd_, TCSANOW, &original_termios);
-        return PAM_CONV_ERR;
+        return abort_prompt_input(tty_fd_, original_termios);
     }
 
     std::string                  password;
@@ -343,7 +384,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
     }};
 
     while (true) {
-        const int poll_result = poll(fds.data(), fds.size(), -1);
+        const int poll_result = poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
         if (poll_result < 0) {
             if (errno == EINTR) {
                 return abort_prompt_input(tty_fd_, original_termios);
@@ -351,12 +392,22 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
             return abort_prompt_input(tty_fd_, original_termios);
         }
 
-        if ((fds[1].revents & POLLIN) != 0 || abort_requested_.load()) {
+        if (abort_requested_.load()) {
             drain_abort_pipe(abort_pipe_[0]);
             return abort_prompt_input(tty_fd_, original_termios);
         }
 
-        if ((fds[0].revents & POLLIN) == 0) {
+        constexpr short kFdFailureEvents = POLLHUP | POLLERR | POLLNVAL;
+        if ((fds[0].revents & kFdFailureEvents) != 0 || (fds[1].revents & kFdFailureEvents) != 0) {
+            return abort_prompt_input(tty_fd_, original_termios);
+        }
+
+        if ((fds[1].revents & POLLIN) != 0) {
+            drain_abort_pipe(abort_pipe_[0]);
+            return abort_prompt_input(tty_fd_, original_termios);
+        }
+
+        if (poll_result == 0 || (fds[0].revents & POLLIN) == 0) {
             continue;
         }
 
