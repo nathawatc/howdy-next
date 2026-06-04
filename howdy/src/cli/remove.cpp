@@ -1,186 +1,181 @@
 #include "cli/remove_cli.hpp"
+#include "common/atomic_files.hpp"
+#include "common/file_lock.hpp"
+#include "common/file_security.hpp"
+#include "common/user_names.hpp"
+#include "config/runtime_paths.hpp"
 
-#include <sys/stat.h>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unistd.h>
 
-#include <nlohmann/json.hpp>
+#include <sys/stat.h>
 
-#include "common/atomic_files.hpp"
-#include "common/file_security.hpp"
-#include "common/file_lock.hpp"
-#include "common/user_names.hpp"
-#include "config/runtime_paths.hpp"
+#include <nlohmann/json.hpp>
 
 namespace {
 
-constexpr int kExitOk = 0;
-constexpr int kExitAbort = 1;
-constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
-constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
+    constexpr int            kExitOk            = 0;
+    constexpr int            kExitAbort         = 1;
+    constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
+    constexpr mode_t         kUserModelFileMode = S_IRUSR | S_IWUSR;
 
-struct RemoveArgs {
-  std::string user;
-  std::string id;
-  bool yes = false;
-};
+    struct RemoveArgs {
+        std::string user;
+        std::string id;
+        bool        yes = false;
+    };
 
-auto parse_args(int argc, char **argv) -> RemoveArgs {
-  RemoveArgs args;
-  if (argc < 2) {
-    std::exit(kExitAbort);
-  }
-  args.user = argv[1];
-  for (int index = 2; index < argc; ++index) {
-    const std::string_view arg(argv[index]);
-    if (arg == "-y") {
-      args.yes = true;
-      continue;
+    auto parse_args(int argc, char **argv) -> RemoveArgs {
+        RemoveArgs args;
+        if (argc < 2) {
+            std::exit(kExitAbort);
+        }
+        args.user = argv[1];
+        for (int index = 2; index < argc; ++index) {
+            const std::string_view arg(argv[index]);
+            if (arg == "-y") {
+                args.yes = true;
+                continue;
+            }
+            if (args.id.empty()) {
+                args.id = argv[index];
+            }
+        }
+        return args;
     }
-    if (args.id.empty()) {
-      args.id = argv[index];
-    }
-  }
-  return args;
-}
 
-auto save_models_atomic(const std::filesystem::path &path,
-                        const nlohmann::json &models) -> bool {
-  return howdy::native::write_atomic_file(path, models.dump(),
-                                          kUserModelFileMode);
-}
+    auto save_models_atomic(const std::filesystem::path &path, const nlohmann::json &models)
+        -> bool {
+        return howdy::native::write_atomic_file(path, models.dump(), kUserModelFileMode);
+    }
 
 }  // namespace
 
 int remove_main(int argc, char **argv) {
-  const auto args = parse_args(argc, argv);
-  if (args.id.empty()) {
-    std::cout << "Please add the ID of the model you want to remove as an argument\n";
-    std::cout << "For example:\n";
-    std::cout << "\n\thowdy remove 0\n\n";
-    std::cout << "You can find the IDs by running:\n";
-    std::cout << "\n\thowdy list\n\n";
-    return kExitAbort;
-  }
-
-  const auto models_dir = howdy::native::resolve_user_models_dir();
-  if (!std::filesystem::exists(models_dir)) {
-    std::cout << "Face models have not been initialized yet, please run:\n";
-    std::cout << "\n\thowdy add\n\n";
-    return kExitAbort;
-  }
-  const auto dir_security =
-      howdy::native::check_secure_root_owned_directory_tree(
-          models_dir, "User models directory");
-  if (!dir_security.ok) {
-    std::cout << dir_security.error_message << "\n";
-    return kExitAbort;
-  }
-
-  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
-  if (!model_path) {
-    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
-    return kExitAbort;
-  }
-
-  if (!std::filesystem::is_regular_file(*model_path)) {
-    std::cout << "No face model known for the user " << args.user << ", please run:\n";
-    std::cout << "\n\thowdy add\n\n";
-    return kExitAbort;
-  }
-
-  const auto model_security =
-      howdy::native::check_secure_root_owned_file_with_directory(
-          *model_path, "User models directory", "User model file");
-  if (!model_security.ok) {
-    std::cout << model_security.error_message << "\n";
-    return kExitAbort;
-  }
-
-  const auto model_lock = howdy::native::acquire_file_lock(*model_path);
-  if (!model_lock.has_value()) {
-    std::cout << "Failed to lock model file\n";
-    return kExitAbort;
-  }
-
-  std::ifstream input(*model_path);
-  if (!input.is_open()) {
-    return kExitAbort;
-  }
-
-  std::error_code size_ec;
-  if (std::filesystem::file_size(*model_path, size_ec) > kMaxModelFileBytes ||
-      size_ec) {
-    std::cout << "Model file is too large to process safely\n";
-    return kExitAbort;
-  }
-
-  nlohmann::json models;
-  try {
-    input >> models;
-  } catch (const nlohmann::json::exception &) {
-    std::cout << "Failed to parse model file\n";
-    return kExitAbort;
-  }
-  if (!models.is_array()) {
-    std::cout << "Model file is not a valid model list\n";
-    return kExitAbort;
-  }
-
-  int found_index = -1;
-  std::string found_label;
-  for (std::size_t index = 0; index < models.size(); ++index) {
-    const auto &model = models[index];
-    if (!model.is_object()) {
-      std::cout << "Model file contains an invalid model entry\n";
-      return kExitAbort;
+    const auto args = parse_args(argc, argv);
+    if (args.id.empty()) {
+        std::cout << "Please add the ID of the model you want to remove as an argument\n";
+        std::cout << "For example:\n";
+        std::cout << "\n\thowdy remove 0\n\n";
+        std::cout << "You can find the IDs by running:\n";
+        std::cout << "\n\thowdy list\n\n";
+        return kExitAbort;
     }
-    if (std::to_string(model.value("id", -1)) == args.id) {
-      found_index = static_cast<int>(index);
-      found_label = model.value("label", std::string());
-      break;
-    }
-  }
 
-  if (found_index < 0) {
-    std::cout << "No model with ID " << args.id << " exists for " << args.user
-              << "\n";
-    return kExitAbort;
-  }
-
-  if (!args.yes) {
-    std::cout << "This will remove the model called \"" << found_label
-              << "\" for " << args.user << "\n";
-    std::cout << "Do you want to continue [y/N]: ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    if (answer != "y" && answer != "Y") {
-      std::cout << "\nInterpreting as a \"NO\", aborting\n";
-      return kExitAbort;
+    const auto models_dir = howdy::native::resolve_user_models_dir();
+    if (!std::filesystem::exists(models_dir)) {
+        std::cout << "Face models have not been initialized yet, please run:\n";
+        std::cout << "\n\thowdy add\n\n";
+        return kExitAbort;
     }
-    std::cout << "\n";
-  }
-
-  if (models.size() == 1) {
-    if (!howdy::native::remove_file_and_sync(*model_path)) {
-      std::cout << "Failed to remove model file\n";
-      return kExitAbort;
+    const auto dir_security =
+        howdy::native::check_secure_root_owned_directory_tree(models_dir, "User models directory");
+    if (!dir_security.ok) {
+        std::cout << dir_security.error_message << "\n";
+        return kExitAbort;
     }
-    std::cout << "Removed last model, howdy disabled for user\n";
+
+    const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+    if (!model_path) {
+        std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+        return kExitAbort;
+    }
+
+    if (!std::filesystem::is_regular_file(*model_path)) {
+        std::cout << "No face model known for the user " << args.user << ", please run:\n";
+        std::cout << "\n\thowdy add\n\n";
+        return kExitAbort;
+    }
+
+    const auto model_security = howdy::native::check_secure_root_owned_file_with_directory(
+        *model_path, "User models directory", "User model file");
+    if (!model_security.ok) {
+        std::cout << model_security.error_message << "\n";
+        return kExitAbort;
+    }
+
+    const auto model_lock = howdy::native::acquire_file_lock(*model_path);
+    if (!model_lock.has_value()) {
+        std::cout << "Failed to lock model file\n";
+        return kExitAbort;
+    }
+
+    std::ifstream input(*model_path);
+    if (!input.is_open()) {
+        return kExitAbort;
+    }
+
+    std::error_code size_ec;
+    if (std::filesystem::file_size(*model_path, size_ec) > kMaxModelFileBytes || size_ec) {
+        std::cout << "Model file is too large to process safely\n";
+        return kExitAbort;
+    }
+
+    nlohmann::json models;
+    try {
+        input >> models;
+    } catch (const nlohmann::json::exception &) {
+        std::cout << "Failed to parse model file\n";
+        return kExitAbort;
+    }
+    if (!models.is_array()) {
+        std::cout << "Model file is not a valid model list\n";
+        return kExitAbort;
+    }
+
+    int         found_index = -1;
+    std::string found_label;
+    for (std::size_t index = 0; index < models.size(); ++index) {
+        const auto &model = models[index];
+        if (!model.is_object()) {
+            std::cout << "Model file contains an invalid model entry\n";
+            return kExitAbort;
+        }
+        if (std::to_string(model.value("id", -1)) == args.id) {
+            found_index = static_cast<int>(index);
+            found_label = model.value("label", std::string());
+            break;
+        }
+    }
+
+    if (found_index < 0) {
+        std::cout << "No model with ID " << args.id << " exists for " << args.user << "\n";
+        return kExitAbort;
+    }
+
+    if (!args.yes) {
+        std::cout << "This will remove the model called \"" << found_label << "\" for " << args.user
+                  << "\n";
+        std::cout << "Do you want to continue [y/N]: ";
+        std::string answer;
+        std::getline(std::cin, answer);
+        if (answer != "y" && answer != "Y") {
+            std::cout << "\nInterpreting as a \"NO\", aborting\n";
+            return kExitAbort;
+        }
+        std::cout << "\n";
+    }
+
+    if (models.size() == 1) {
+        if (!howdy::native::remove_file_and_sync(*model_path)) {
+            std::cout << "Failed to remove model file\n";
+            return kExitAbort;
+        }
+        std::cout << "Removed last model, howdy disabled for user\n";
+        return kExitOk;
+    }
+
+    models.erase(models.begin() + found_index);
+    if (!save_models_atomic(*model_path, models)) {
+        std::cout << "Failed to update model file\n";
+        return kExitAbort;
+    }
+
+    std::cout << "Removed model " << args.id << "\n";
     return kExitOk;
-  }
-
-  models.erase(models.begin() + found_index);
-  if (!save_models_atomic(*model_path, models)) {
-    std::cout << "Failed to update model file\n";
-    return kExitAbort;
-  }
-
-  std::cout << "Removed model " << args.id << "\n";
-  return kExitOk;
 }

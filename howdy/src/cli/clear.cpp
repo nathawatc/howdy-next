@@ -1,97 +1,94 @@
 #include "cli/clear_cli.hpp"
+#include "common/atomic_files.hpp"
+#include "common/file_lock.hpp"
+#include "common/file_security.hpp"
+#include "common/user_names.hpp"
+#include "config/runtime_paths.hpp"
 
 #include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
 
-#include "common/atomic_files.hpp"
-#include "common/file_security.hpp"
-#include "common/file_lock.hpp"
-#include "common/user_names.hpp"
-#include "config/runtime_paths.hpp"
-
 namespace {
 
-constexpr int kExitOk = 0;
-constexpr int kExitAbort = 1;
+    constexpr int kExitOk    = 0;
+    constexpr int kExitAbort = 1;
 
-struct ClearArgs {
-  std::string user;
-  bool yes = false;
-};
+    struct ClearArgs {
+        std::string user;
+        bool        yes = false;
+    };
 
-auto parse_args(int argc, char **argv) -> ClearArgs {
-  ClearArgs args;
-  if (argc < 2) {
-    std::exit(kExitAbort);
-  }
-  args.user = argv[1];
-  for (int index = 2; index < argc; ++index) {
-    if (std::string_view(argv[index]) == "-y") {
-      args.yes = true;
+    auto parse_args(int argc, char **argv) -> ClearArgs {
+        ClearArgs args;
+        if (argc < 2) {
+            std::exit(kExitAbort);
+        }
+        args.user = argv[1];
+        for (int index = 2; index < argc; ++index) {
+            if (std::string_view(argv[index]) == "-y") {
+                args.yes = true;
+            }
+        }
+        return args;
     }
-  }
-  return args;
-}
 
 }  // namespace
 
 int clear_main(int argc, char **argv) {
-  const auto args = parse_args(argc, argv);
-  const auto models_dir = howdy::native::resolve_user_models_dir();
-  if (!std::filesystem::exists(models_dir)) {
-    std::cout << "No models created yet, can't clear them if they don't exist\n";
-    return kExitAbort;
-  }
-  const auto dir_security =
-      howdy::native::check_secure_root_owned_directory_tree(
-          models_dir, "User models directory");
-  if (!dir_security.ok) {
-    std::cout << dir_security.error_message << "\n";
-    return kExitAbort;
-  }
-
-  const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
-  if (!model_path) {
-    std::cout << howdy::native::kInvalidUserNameMessage << "\n";
-    return kExitAbort;
-  }
-
-  if (!std::filesystem::is_regular_file(*model_path)) {
-    std::cout << args.user << " has no models or they have been cleared already\n";
-    return kExitAbort;
-  }
-
-  const auto model_security =
-      howdy::native::check_secure_root_owned_file_with_directory(
-          *model_path, "User models directory", "User model file");
-  if (!model_security.ok) {
-    std::cout << model_security.error_message << "\n";
-    return kExitAbort;
-  }
-
-  const auto model_lock = howdy::native::acquire_file_lock(*model_path);
-  if (!model_lock.has_value()) {
-    std::cout << "Failed to lock model file\n";
-    return kExitAbort;
-  }
-
-  if (!args.yes) {
-    std::cout << "This will clear all models for " << args.user << "\n";
-    std::cout << "Do you want to continue [y/N]: ";
-    std::string answer;
-    std::getline(std::cin, answer);
-    if (answer != "y" && answer != "Y") {
-      std::cout << "\nInterpreting as a \"NO\", aborting\n";
-      return kExitAbort;
+    const auto args       = parse_args(argc, argv);
+    const auto models_dir = howdy::native::resolve_user_models_dir();
+    if (!std::filesystem::exists(models_dir)) {
+        std::cout << "No models created yet, can't clear them if they don't exist\n";
+        return kExitAbort;
     }
-  }
+    const auto dir_security =
+        howdy::native::check_secure_root_owned_directory_tree(models_dir, "User models directory");
+    if (!dir_security.ok) {
+        std::cout << dir_security.error_message << "\n";
+        return kExitAbort;
+    }
 
-  if (!howdy::native::remove_file_and_sync(*model_path)) {
-    std::cout << "Failed to remove model file\n";
-    return kExitAbort;
-  }
-  std::cout << "\nModels cleared\n";
-  return kExitOk;
+    const auto model_path = howdy::native::resolve_user_model_path(models_dir, args.user);
+    if (!model_path) {
+        std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+        return kExitAbort;
+    }
+
+    if (!std::filesystem::is_regular_file(*model_path)) {
+        std::cout << args.user << " has no models or they have been cleared already\n";
+        return kExitAbort;
+    }
+
+    const auto model_security = howdy::native::check_secure_root_owned_file_with_directory(
+        *model_path, "User models directory", "User model file");
+    if (!model_security.ok) {
+        std::cout << model_security.error_message << "\n";
+        return kExitAbort;
+    }
+
+    const auto model_lock = howdy::native::acquire_file_lock(*model_path);
+    if (!model_lock.has_value()) {
+        std::cout << "Failed to lock model file\n";
+        return kExitAbort;
+    }
+
+    if (!args.yes) {
+        std::cout << "This will clear all models for " << args.user << "\n";
+        std::cout << "Do you want to continue [y/N]: ";
+        std::string answer;
+        std::getline(std::cin, answer);
+        if (answer != "y" && answer != "Y") {
+            std::cout << "\nInterpreting as a \"NO\", aborting\n";
+            return kExitAbort;
+        }
+    }
+
+    if (!howdy::native::remove_file_and_sync(*model_path)) {
+        std::cout << "Failed to remove model file\n";
+        return kExitAbort;
+    }
+    std::cout << "\nModels cleared\n";
+    return kExitOk;
 }

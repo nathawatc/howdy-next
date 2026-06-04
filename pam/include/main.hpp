@@ -1,44 +1,53 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-#include <cstring>
-#include <security/pam_modules.h>
-#include <string_view>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <string_view>
 #include <unistd.h>
 
-enum class ConfirmationType : std::uint8_t { Unset, Howdy, Pam };
-enum class Workaround : std::uint8_t { Off, Input, Native };
+#include <security/pam_modules.h>
+
+enum class ConfirmationType : std::uint8_t {
+    Unset,
+    Howdy,
+    Pam
+};
+enum class Workaround : std::uint8_t {
+    Off,
+    Input,
+    Native
+};
 
 inline auto get_workaround(std::string_view workaround) -> Workaround {
-  if (workaround == "input") {
-    return Workaround::Input;
-  }
+    if (workaround == "input") {
+        return Workaround::Input;
+    }
 
-  if (workaround == "native") {
-    return Workaround::Native;
-  }
+    if (workaround == "native") {
+        return Workaround::Native;
+    }
 
-  return Workaround::Off;
+    return Workaround::Off;
 }
 
 inline auto get_pam_workaround(int argc, const char *const *argv) -> Workaround {
-  if (argv == nullptr) {
-    return Workaround::Off;
-  }
+    if (argv == nullptr) {
+        return Workaround::Off;
+    }
 
-  constexpr std::string_view kPrefix = "workaround=";
-  for (int index = 0; index < argc; ++index) {
-    if (argv[index] == nullptr) {
-      continue;
+    constexpr std::string_view kPrefix = "workaround=";
+    for (int index = 0; index < argc; ++index) {
+        if (argv[index] == nullptr) {
+            continue;
+        }
+        const std::string_view argument(argv[index]);
+        if (argument.rfind(kPrefix, 0) == 0) {
+            return get_workaround(argument.substr(kPrefix.size()));
+        }
     }
-    const std::string_view argument(argv[index]);
-    if (argument.rfind(kPrefix, 0) == 0) {
-      return get_workaround(argument.substr(kPrefix.size()));
-    }
-  }
-  return Workaround::Off;
+    return Workaround::Off;
 }
 
 /**
@@ -51,30 +60,29 @@ inline auto get_pam_workaround(int argc, const char *const *argv) -> Workaround 
  * some contexts (like sudo).
  */
 inline auto checkenv(const char *name) -> bool {
-  if (std::getenv(name) != nullptr) {
-    return true;
-  }
-
-  if (environ == nullptr) {
-    return false;
-  }
-
-  const auto len = strlen(name);
-
-  for (char **env = environ; *env != nullptr; env++) {
-    if (strncmp(*env, name, len) == 0 && (*env)[len] == '=') {
-      return true;
+    if (std::getenv(name) != nullptr) {
+        return true;
     }
-  }
 
-  return false;
+    if (environ == nullptr) {
+        return false;
+    }
+
+    const auto len = strlen(name);
+
+    for (char **env = environ; *env != nullptr; env++) {
+        if (strncmp(*env, name, len) == 0 && (*env)[len] == '=') {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 inline auto auth_token_item_present(const void *auth_token) -> bool {
-  return auth_token != nullptr;
+    return auth_token != nullptr;
 }
 
-auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv,
-              bool ask_auth_tok) -> int;
+auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool ask_auth_tok) -> int;
 
-#endif // MAIN_H_
+#endif  // MAIN_H_
