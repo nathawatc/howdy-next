@@ -7,16 +7,20 @@
 #undef private
 
 #include <fcntl.h>
+#include <poll.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include <array>
+#include <cerrno>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 #include <thread>
 
 namespace {
+
+constexpr int kPromptReadTimeoutMs = 1000;
 
 class ScopedFd {
 public:
@@ -99,6 +103,34 @@ auto open_pipe(std::array<ScopedFd, 2> *fds) -> bool {
   return true;
 }
 
+auto read_with_timeout(int fd, char *buffer, std::size_t buffer_size,
+                       int timeout_ms) -> ssize_t {
+  struct pollfd poll_fd {
+    .fd = fd, .events = POLLIN, .revents = 0
+  };
+
+  while (true) {
+    const int poll_result = poll(&poll_fd, 1, timeout_ms);
+    if (poll_result < 0 && errno == EINTR) {
+      continue;
+    }
+    if (poll_result == 0) {
+      return 0;
+    }
+    if (poll_result < 0 || (poll_fd.revents & POLLIN) == 0) {
+      return -1;
+    }
+
+    while (true) {
+      const ssize_t bytes_read = read(fd, buffer, buffer_size);
+      if (bytes_read < 0 && errno == EINTR) {
+        continue;
+      }
+      return bytes_read;
+    }
+  }
+}
+
 auto expect_dispatch_throw_cleanup(int throw_mode, const std::string &message)
     -> bool {
   bool ok = true;
@@ -132,8 +164,9 @@ auto expect_dispatch_throw_cleanup(int throw_mode, const std::string &message)
   });
 
   std::array<char, 64> prompt_buffer{};
-  const ssize_t prompt_bytes = read(master_fd.get(), prompt_buffer.data(),
-                                    static_cast<size_t>(prompt_buffer.size()));
+  const ssize_t prompt_bytes = read_with_timeout(
+      master_fd.get(), prompt_buffer.data(), prompt_buffer.size(),
+      kPromptReadTimeoutMs);
   ok &= expect(prompt_bytes > 0, message + ": prompt is written to tty");
 
   constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
@@ -185,8 +218,9 @@ auto main() -> int {
   });
 
   std::array<char, 64> prompt_buffer{};
-  const ssize_t prompt_bytes = read(master_fd.get(), prompt_buffer.data(),
-                                    static_cast<size_t>(prompt_buffer.size()));
+  const ssize_t prompt_bytes = read_with_timeout(
+      master_fd.get(), prompt_buffer.data(), prompt_buffer.size(),
+      kPromptReadTimeoutMs);
   ok &= expect(prompt_bytes > 0, "prompt is written to tty");
 
   constexpr char kCtrlC = 3;
