@@ -17,6 +17,10 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
     if (WIFEXITED(status)) {
         const int exit_status = WEXITSTATUS(status);
         switch (static_cast<howdy::native::CompareExit>(exit_status)) {
+            case howdy::native::CompareExit::kSuccess:
+                decision.pam_result  = PAM_SUCCESS;
+                decision.log_message = "Login approved";
+                break;
             case howdy::native::CompareExit::kNoFaceModel:
                 decision.log_message = "Failure, no face model known";
                 break;

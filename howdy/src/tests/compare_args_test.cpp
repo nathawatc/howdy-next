@@ -85,6 +85,28 @@ auto main() -> int {
         ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "missing user aborts");
     }
 
+    {
+        std::vector<std::string> args = {"howdy-compare", "../alice"};
+        auto                     argv = argv_from(args);
+        const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
+                                                              argv.data(), "/tmp/config.ini");
+        ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+                     "compare rejects path traversal username input");
+        ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,
+                     "compare rejects malformed username input with abort");
+    }
+
+    {
+        std::vector<std::string> args = {"howdy-compare", "alice..bob"};
+        auto                     argv = argv_from(args);
+        const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
+                                                              argv.data(), "/tmp/config.ini");
+        ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+                     "compare rejects malformed dot-dot username input");
+        ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,
+                     "compare rejects malformed dot-dot username input with abort");
+    }
+
     if (!ok) {
         return 1;
     }

@@ -49,9 +49,13 @@ auto main() -> int {
     ok &= expect(howdy::native::is_valid_model_user_name("alice@example.com"),
                  "domain-style usernames remain valid");
     ok &= expect(!howdy::native::is_valid_model_user_name("../alice"),
-                 "path traversal usernames are rejected");
+                 "malformed path-traversal username input is rejected");
+    ok &= expect(!howdy::native::is_valid_model_user_name("alice..bob"),
+                 "malformed username containing dot-dot is rejected");
     ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "../alice").has_value(),
                  "unsafe model paths are not constructed");
+    ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "alice..bob").has_value(),
+                 "dot-dot username input is rejected before model path construction");
 
     {
         const auto result = howdy::native::load_user_models("../alice", backend);
@@ -108,6 +112,63 @@ auto main() -> int {
                      "second model metadata preserved");
     }
 
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":9,"label":"bad/name","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "write unsafe label model");
+    {
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+                     "model label containing path separator is rejected");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":9,"label":"bad\nname","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "write control-character label model");
+    {
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+                     "model label containing newline is rejected");
+    }
+
+    ok &= expect(
+        write_file(model_path,
+                   R"([{"id":7,"label":"first","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "restore valid model after unsafe label");
+
+    const auto symlink_target = models_dir / "target.dat";
+    ok &= expect(
+        write_file(
+            symlink_target,
+            R"([{"id":10,"label":"target","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "write symlink target model");
+    fs::remove(model_path, ec);
+    ec.clear();
+    if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                     "symlinked model file is rejected");
+        ok &= expect(fs::remove(model_path, ec), "remove symlinked model path");
+        ec.clear();
+    } else {
+        std::cerr << "SKIP: model symlink creation failed\n";
+    }
+    ok &= expect(
+        write_file(model_path,
+                   R"([{"id":7,"label":"first","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "restore valid model after symlink");
+
+    ok &= expect(chmod(model_path.c_str(), 0664) == 0, "make model file group-writable");
+    {
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                     "group-writable model file is rejected");
+    }
+    ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restore model file mode");
+
     ok &= expect(chmod(model_path.c_str(), 0666) == 0, "make model file world-writable");
     {
         const auto result = howdy::native::load_user_models("alice", backend);
@@ -128,6 +189,24 @@ auto main() -> int {
     }
     ok &= expect(fs::remove(hardlink_path, ec), "remove hard-linked model file");
     ec.clear();
+
+    if (geteuid() != 0) {
+        ok &= expect(chmod(model_path.c_str(), 0000) == 0, "make model file unreadable");
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status != howdy::native::UserModelStatus::kOk,
+                     "unreadable model file fails safely");
+        ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restore unreadable model file");
+    } else {
+        std::cerr << "SKIP: unreadable model file check while running as root\n";
+    }
+
+    ok &= expect(chmod(models_dir.c_str(), 0775) == 0, "make models dir group-writable");
+    {
+        const auto result = howdy::native::load_user_models("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                     "group-writable model dir is rejected");
+    }
+    ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "restore models dir mode");
 
     ok &= expect(chmod(models_dir.c_str(), 0777) == 0, "make models dir world-writable");
     {

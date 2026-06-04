@@ -108,7 +108,12 @@ namespace howdy::native {
 
                 const int         id    = model.value("id", -1);
                 const std::string label = model.value("label", std::string());
-                const auto        data  = model.find("data");
+                if (!is_valid_model_label(label)) {
+                    result.status        = UserModelStatus::kParseError;
+                    result.error_message = "Model label contains unsafe path characters";
+                    return result;
+                }
+                const auto data = model.find("data");
                 if (data == model.end() || !data->is_array()) {
                     continue;
                 }

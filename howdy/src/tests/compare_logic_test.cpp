@@ -67,6 +67,26 @@ auto main() -> int {
                  "resize cap does not upscale small Brio frames");
     ok &= expect(howdy::native::compare_resize_scale(640, 0, 0, 320.0F) == 1.0,
                  "invalid capture height does not force huge upscale");
+    ok &= expect(howdy::native::compare_resize_scale(640, 480, 0, -1.0F) == 1.0,
+                 "negative resize cap is ignored");
+    ok &= expect(howdy::native::compare_resize_scale(640, 480, 0,
+                                                     std::numeric_limits<float>::infinity()) == 1.0,
+                 "non-finite resize cap is ignored");
+
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kSuccess) == 0,
+                 "success exit code remains stable");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kNoFaceModel) == 10,
+                 "no-face-model exit code remains stable for PAM");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kTimeoutReached) == 11,
+                 "timeout exit code remains stable for PAM");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kAbort) == 12,
+                 "abort exit code remains stable for PAM");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kTooDark) == 13,
+                 "too-dark exit code remains stable for PAM");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kInvalidDevice) == 14,
+                 "invalid-device exit code remains stable for PAM");
+    ok &= expect(static_cast<int>(howdy::native::CompareExit::kRubberstamp) == 15,
+                 "rubberstamp exit code remains stable for PAM");
 
     {
         std::ostringstream  stream;

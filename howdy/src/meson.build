@@ -179,6 +179,49 @@ test(
     native_config_utils_test,
 )
 
+native_file_security_test = executable(
+    'howdy-file-security-test',
+    'tests/file_security_test.cpp',
+    include_directories: native_cpp_inc,
+    install: false,
+)
+
+test(
+    'native-file-security',
+    native_file_security_test,
+)
+
+native_capture_device_path_test = executable(
+    'howdy-capture-device-path-test',
+    'tests/capture_device_path_test.cpp',
+    include_directories: native_cpp_inc,
+    install: false,
+)
+
+test(
+    'native-capture-device-path',
+    native_capture_device_path_test,
+)
+
+native_config_validation_test = executable(
+    'howdy-config-validation-test',
+    'tests/config_validation_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-config-validation',
+    native_config_validation_test,
+)
+
 native_user_models_test = executable(
     'howdy-user-models-test',
     'tests/user_models_test.cpp',
@@ -196,6 +239,18 @@ native_user_models_test = executable(
 test(
     'native-user-models',
     native_user_models_test,
+)
+
+native_user_names_test = executable(
+    'howdy-user-names-test',
+    'tests/user_names_test.cpp',
+    include_directories: native_cpp_inc,
+    install: false,
+)
+
+test(
+    'native-user-names',
+    native_user_names_test,
 )
 
 native_runtime_paths_test = executable(

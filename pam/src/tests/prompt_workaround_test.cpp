@@ -33,6 +33,8 @@ auto main() -> int {
     ok &= expect(get_workaround("native") == Workaround::Native, "parses native workaround");
     ok &= expect(get_workaround("unknown") == Workaround::Off,
                  "unknown workaround falls back to off");
+    ok &= expect(get_workaround("input=extra") == Workaround::Off,
+                 "malformed workaround value falls back to off");
     {
         std::array<const char *, 1> args = {"workaround=native"};
         ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
@@ -50,6 +52,24 @@ auto main() -> int {
         ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
                          Workaround::Off,
                      "invalid PAM workaround falls back to off");
+    }
+    {
+        std::array<const char *, 2> args = {"workaround=input", "workaround=native"};
+        ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                         Workaround::Input,
+                     "duplicate PAM workaround uses first option");
+    }
+    {
+        std::array<const char *, 2> args = {"workaround=native", "workaround=input"};
+        ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                         Workaround::Native,
+                     "duplicate PAM workaround order remains explicit");
+    }
+    {
+        std::array<const char *, 1> args = {"core.workaround=input"};
+        ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                         Workaround::Off,
+                     "config-style workaround key is not a PAM option");
     }
     ok &= expect(get_pam_workaround(0, nullptr) == Workaround::Off,
                  "missing PAM workaround defaults to off");

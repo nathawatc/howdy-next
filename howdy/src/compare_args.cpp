@@ -1,5 +1,7 @@
 #include "common/compare_args.hpp"
 
+#include "common/user_names.hpp"
+
 #include <string_view>
 
 namespace howdy::native {
@@ -33,6 +35,12 @@ namespace howdy::native {
         if (result.args.user.empty()) {
             result.status    = CompareArgsStatus::kError;
             result.exit_code = CompareExit::kAbort;
+            return result;
+        }
+        if (!is_valid_model_user_name(result.args.user)) {
+            result.status    = CompareArgsStatus::kError;
+            result.exit_code = CompareExit::kAbort;
+            result.message   = kInvalidUserNameMessage;
             return result;
         }
 

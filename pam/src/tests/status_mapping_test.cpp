@@ -28,6 +28,15 @@ auto main() -> int {
 
     {
         const auto decision =
+            map_compare_wait_status(make_status(howdy::native::CompareExit::kSuccess));
+        ok &= expect(decision.pam_result == PAM_SUCCESS, "success returns PAM_SUCCESS");
+        ok &= expect(decision.conversation_kind == ConversationKind::None,
+                     "success has no conversation");
+        ok &= expect(decision.log_message == "Login approved", "success log message");
+    }
+
+    {
+        const auto decision =
             map_compare_wait_status(make_status(howdy::native::CompareExit::kNoFaceModel));
         ok &= expect(decision.pam_result == PAM_AUTH_ERR, "no-model returns PAM_AUTH_ERR");
         ok &= expect(decision.conversation_kind == ConversationKind::None,
@@ -64,7 +73,19 @@ auto main() -> int {
 
     {
         const auto decision =
+            map_compare_wait_status(make_status(howdy::native::CompareExit::kInvalidDevice));
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR, "invalid-device fails closed");
+        ok &= expect(decision.conversation_kind == ConversationKind::None,
+                     "invalid-device has no conversation");
+        ok &= expect(decision.log_message ==
+                         "Failure, not possible to open camera at configured path",
+                     "invalid-device log message");
+    }
+
+    {
+        const auto decision =
             map_compare_wait_status(make_status(howdy::native::CompareExit::kRubberstamp));
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR, "rubberstamp fails closed");
         ok &= expect(decision.conversation_kind == ConversationKind::None,
                      "rubberstamp has no conversation");
         ok &= expect(decision.log_message == "Failure, rubberstamp mode rejected",
@@ -73,6 +94,7 @@ auto main() -> int {
 
     {
         const auto decision = map_compare_wait_status(99 << 8);
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
         ok &= expect(decision.conversation_kind == ConversationKind::Error,
                      "unknown exit returns error conversation");
         ok &= expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
@@ -81,9 +103,18 @@ auto main() -> int {
 
     {
         const auto decision = map_compare_wait_status(SIGTERM);
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR, "signal exit fails closed");
         ok &= expect(decision.conversation_kind == ConversationKind::None,
                      "signal exit has no conversation");
         ok &= expect(decision.log_message.find("Child killed by signal") == 0, "signal exit log");
+    }
+
+    {
+        const auto decision = map_compare_wait_status(127 << 8);
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR,
+                     "helper execution-style failure fails closed");
+        ok &= expect(decision.conversation_kind == ConversationKind::Error,
+                     "helper execution-style failure reports controlled error");
     }
 
     ok &= expect(build_confirmation_message("alice") == "Identified face as alice",
