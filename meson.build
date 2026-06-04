@@ -2,7 +2,7 @@ project(
     'howdy',
     'cpp',
     license: 'MIT',
-    version: '3.0.0',
+    version: '3.0.1',
     meson_version: '>= 1.11.0',
     default_options: [
         'b_pie=true',
