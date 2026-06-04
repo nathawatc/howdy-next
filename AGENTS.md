@@ -1,7 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
 **Generated:** 2026-06-04
-**Commit:** 051d84c
+**Commit:** a51dbbd
 **Branch:** master
 
 ## OVERVIEW
@@ -75,6 +75,14 @@ howdy test
 howdy list
 howdy disable
 howdy download-models
+```
+
+### FORMAT
+
+```bash
+find howdy pam -type f \
+  \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) \
+  -print0 | xargs -0 clang-format -i
 ```
 
 ## NOTES
