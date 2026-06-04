@@ -2,6 +2,24 @@
 
 A modernized fork of original Howdy, Facial recognition authentication for Linux.
 
+## Install from AUR
+
+> [!WARNING]
+>
+> Do not install Howdy Next manually with Meson.
+> Use the AUR package to avoid mixed files under `/usr` and `/usr/local`.
+
+Packages:
+
+- `howdy-next`
+- `howdy-next-git`
+
+Example with an AUR helper:
+
+```bash
+paru -S howdy-next
+```
+
 ## Building from Source
 
 Dependencies:
