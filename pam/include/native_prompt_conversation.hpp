@@ -17,6 +17,7 @@ public:
 
 #ifdef HOWDY_PAM_TESTING
   NativePromptConversation(int tty_fd, int abort_read_fd, int abort_write_fd);
+  void set_test_throw_mode(int mode);
 #endif
 
   [[nodiscard]] auto available() const -> bool;
@@ -42,6 +43,9 @@ private:
   int tty_fd_ = -1;
   std::array<int, 2> abort_pipe_{{-1, -1}};
   std::atomic<bool> abort_requested_{false};
+#ifdef HOWDY_PAM_TESTING
+  int test_throw_mode_ = 0;
+#endif
 };
 
 #endif  // HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP

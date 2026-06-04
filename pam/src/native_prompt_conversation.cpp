@@ -9,7 +9,9 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <string>
+#include <syslog.h>
 #include <termios.h>
 
 namespace {
@@ -93,6 +95,23 @@ void drain_abort_pipe(int fd) {
   }
 }
 
+void free_pam_responses(struct pam_response *responses, int num_msg) {
+  if (responses == nullptr || num_msg <= 0) {
+    return;
+  }
+
+  for (int index = 0; index < num_msg; ++index) {
+    if (responses[index].resp == nullptr) {
+      continue;
+    }
+
+    std::memset(responses[index].resp, 0, std::strlen(responses[index].resp));
+    std::free(responses[index].resp);
+    responses[index].resp = nullptr;
+  }
+  std::free(responses);
+}
+
 }  // namespace
 
 NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
@@ -131,6 +150,10 @@ NativePromptConversation::NativePromptConversation(int tty_fd, int abort_read_fd
                                                    int abort_write_fd)
     : override_conv_{dispatch, this}, has_original_conv_(true), tty_fd_(tty_fd),
       abort_pipe_{{abort_read_fd, abort_write_fd}} {}
+
+void NativePromptConversation::set_test_throw_mode(int mode) {
+  test_throw_mode_ = mode;
+}
 #endif
 
 NativePromptConversation::~NativePromptConversation() {
@@ -176,11 +199,32 @@ auto NativePromptConversation::dispatch(int num_msg,
                                         const struct pam_message **msgm,
                                         struct pam_response **response,
                                         void *appdata_ptr) -> int {
-  auto *self = static_cast<NativePromptConversation *>(appdata_ptr);
-  if (self == nullptr) {
+  if (response != nullptr) {
+    *response = nullptr;
+  }
+
+  try {
+    auto *self = static_cast<NativePromptConversation *>(appdata_ptr);
+    if (self == nullptr || response == nullptr) {
+      return PAM_CONV_ERR;
+    }
+    return self->handle(num_msg, msgm, response);
+  } catch (const std::exception &error) {
+    syslog(LOG_ERR, "Unhandled C++ exception in native PAM conversation: %s",
+           error.what());
+    if (response != nullptr) {
+      free_pam_responses(*response, num_msg);
+      *response = nullptr;
+    }
+    return PAM_CONV_ERR;
+  } catch (...) {
+    syslog(LOG_ERR, "Unhandled non-standard exception in native PAM conversation");
+    if (response != nullptr) {
+      free_pam_responses(*response, num_msg);
+      *response = nullptr;
+    }
     return PAM_CONV_ERR;
   }
-  return self->handle(num_msg, msgm, response);
 }
 
 auto NativePromptConversation::handle(int num_msg,
@@ -195,6 +239,7 @@ auto NativePromptConversation::handle(int num_msg,
   if (pam_responses == nullptr) {
     return PAM_BUF_ERR;
   }
+  *response = pam_responses;
 
   for (int index = 0; index < num_msg; ++index) {
     if (msgm[index] == nullptr) {
@@ -219,24 +264,24 @@ auto NativePromptConversation::handle(int num_msg,
         break;
     }
 
+#ifdef HOWDY_PAM_TESTING
+    if (test_throw_mode_ == 1) {
+      throw std::exception();
+    }
+    if (test_throw_mode_ == 2) {
+      throw 1;
+    }
+#endif
+
     if (result == PAM_SUCCESS) {
       continue;
     }
 
-    for (int cleanup_index = 0; cleanup_index < num_msg; ++cleanup_index) {
-      if (pam_responses[cleanup_index].resp == nullptr) {
-        continue;
-      }
-
-      std::memset(pam_responses[cleanup_index].resp, 0,
-                  std::strlen(pam_responses[cleanup_index].resp));
-      std::free(pam_responses[cleanup_index].resp);
-    }
-    std::free(pam_responses);
+    free_pam_responses(pam_responses, num_msg);
+    *response = nullptr;
     return result;
   }
 
-  *response = pam_responses;
   return PAM_SUCCESS;
 }
 
