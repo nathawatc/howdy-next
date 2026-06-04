@@ -11,16 +11,6 @@
 enum class ConfirmationType : std::uint8_t { Unset, Howdy, Pam };
 enum class Workaround : std::uint8_t { Off, Input, Native };
 
-// Exit status codes returned by the compare process
-enum CompareError : std::uint8_t {
-  NO_FACE_MODEL = 10,
-  TIMEOUT_REACHED = 11,
-  ABORT = 12,
-  TOO_DARK = 13,
-  INVALID_DEVICE = 14,
-  RUBBERSTAMP = 15
-};
-
 inline auto get_workaround(std::string_view workaround) -> Workaround {
   if (workaround == "input") {
     return Workaround::Input;

@@ -1,12 +1,13 @@
 #include "status_mapping.hpp"
 
+#include <cstring>
 #include <libintl.h>
 #include <string>
 #include <sys/wait.h>
 
 #include <security/pam_modules.h>
 
-#include "main.hpp"
+#include "common/compare_exit.hpp"
 
 auto map_compare_wait_status(int status) -> CompareStatusDecision {
   CompareStatusDecision decision;
@@ -14,27 +15,27 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 
   if (WIFEXITED(status)) {
     const int exit_status = WEXITSTATUS(status);
-    switch (exit_status) {
-    case CompareError::NO_FACE_MODEL:
+    switch (static_cast<howdy::native::CompareExit>(exit_status)) {
+    case howdy::native::CompareExit::kNoFaceModel:
       decision.log_message = "Failure, no face model known";
       break;
-    case CompareError::TIMEOUT_REACHED:
+    case howdy::native::CompareExit::kTimeoutReached:
       decision.conversation_kind = ConversationKind::Error;
       decision.conversation_message = gettext("Failure, timeout reached");
       decision.log_message = "Failure, timeout reached";
       break;
-    case CompareError::ABORT:
+    case howdy::native::CompareExit::kAbort:
       decision.log_message = "Failure, general abort";
       break;
-    case CompareError::TOO_DARK:
+    case howdy::native::CompareExit::kTooDark:
       decision.conversation_kind = ConversationKind::Error;
       decision.conversation_message = gettext("Face detection image too dark");
       decision.log_message = "Failure, image too dark";
       break;
-    case CompareError::INVALID_DEVICE:
+    case howdy::native::CompareExit::kInvalidDevice:
       decision.log_message = "Failure, not possible to open camera at configured path";
       break;
-    case CompareError::RUBBERSTAMP:
+    case howdy::native::CompareExit::kRubberstamp:
       decision.log_message = "Failure, rubberstamp mode rejected";
       break;
     default:
@@ -47,8 +48,14 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
   }
 
   if (WIFSIGNALED(status)) {
-    decision.log_message =
-        "Child killed by signal " + std::string(strsignal(WTERMSIG(status)));
+    const int signal_number = WTERMSIG(status);
+    const char *signal_text = strsignal(signal_number);
+    if (signal_text != nullptr) {
+      decision.log_message = "Child killed by signal " +
+                             std::string(signal_text, std::strlen(signal_text));
+    } else {
+      decision.log_message = "Child killed by signal " + std::to_string(signal_number);
+    }
   }
 
   return decision;

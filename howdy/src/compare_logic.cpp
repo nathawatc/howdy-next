@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ostream>
 
 namespace howdy::native {
 
@@ -32,6 +33,44 @@ auto timeout_exit(int dark_tries, int valid_frames) -> CompareExit {
     return CompareExit::kTooDark;
   }
   return CompareExit::kTimeoutReached;
+}
+
+auto compare_resize_scale(int frame_width, int frame_height, int rotate,
+                          float max_height) -> double {
+  const int scaling_axis = rotate == 2 ? frame_width : frame_height;
+  if (scaling_axis <= 0 || max_height <= 0.0F) {
+    return 1.0;
+  }
+
+  const double scale =
+      static_cast<double>(max_height) / static_cast<double>(scaling_axis);
+  if (!std::isfinite(scale) || scale >= 1.0) {
+    return 1.0;
+  }
+  return scale;
+}
+
+auto compare_abort_from_cv_exception(const cv::Exception &error,
+                                     std::ostream &stream,
+                                     std::string_view context) -> CompareExit {
+  stream << "OpenCV exception during " << context << ": " << error.what()
+         << "\n";
+  return CompareExit::kAbort;
+}
+
+auto compare_abort_from_exception(const std::exception &error,
+                                  std::ostream &stream,
+                                  std::string_view context) -> CompareExit {
+  stream << "Unhandled exception during " << context << ": " << error.what()
+         << "\n";
+  return CompareExit::kAbort;
+}
+
+auto compare_abort_from_unknown_exception(std::ostream &stream,
+                                          std::string_view context)
+    -> CompareExit {
+  stream << "Unknown exception during " << context << "\n";
+  return CompareExit::kAbort;
 }
 
 }  // namespace howdy::native

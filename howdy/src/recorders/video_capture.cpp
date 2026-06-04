@@ -1,6 +1,7 @@
 #include "recorders/video_capture.hpp"
 
 #include <filesystem>
+#include <string>
 #include <utility>
 
 #include <opencv2/imgproc.hpp>
@@ -52,29 +53,40 @@ auto VideoCapture::open() -> bool {
     return false;
   }
 
-  capture_.open(settings_.device_path, cv::CAP_V4L);
-  if (!capture_.isOpened()) {
+  try {
+    capture_.open(settings_.device_path, cv::CAP_V4L);
+    if (!capture_.isOpened()) {
+      set_error(CaptureError::kOpenFailed,
+                "Failed to open camera device: " + settings_.device_path);
+      return false;
+    }
+
+    if (settings_.device_fps > 0) {
+      capture_.set(cv::CAP_PROP_FPS, settings_.device_fps);
+    }
+    if (settings_.force_mjpeg) {
+      capture_.set(cv::CAP_PROP_FOURCC,
+                   cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+    }
+    if (settings_.frame_width != -1) {
+      capture_.set(cv::CAP_PROP_FRAME_WIDTH, settings_.frame_width);
+    }
+    if (settings_.frame_height != -1) {
+      capture_.set(cv::CAP_PROP_FRAME_HEIGHT, settings_.frame_height);
+    }
+
+    // Keep a warm-up grab for compatibility with existing behavior; some
+    // devices may fail the first grab immediately after open and recover on
+    // subsequent reads.
+    (void)grab();
+    return true;
+  } catch (const cv::Exception &error) {
+    release();
     set_error(CaptureError::kOpenFailed,
-              "Failed to open camera device: " + settings_.device_path);
+              "OpenCV failed while opening camera device " +
+                  settings_.device_path + ": " + error.what());
     return false;
   }
-
-  if (settings_.device_fps > 0) {
-    capture_.set(cv::CAP_PROP_FPS, settings_.device_fps);
-  }
-  if (settings_.force_mjpeg) {
-    capture_.set(cv::CAP_PROP_FOURCC,
-                 cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-  }
-  if (settings_.frame_width != -1) {
-    capture_.set(cv::CAP_PROP_FRAME_WIDTH, settings_.frame_width);
-  }
-  if (settings_.frame_height != -1) {
-    capture_.set(cv::CAP_PROP_FRAME_HEIGHT, settings_.frame_height);
-  }
-
-  grab();
-  return true;
 }
 
 auto VideoCapture::grab() -> bool {
@@ -96,22 +108,38 @@ auto VideoCapture::read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
     return false;
   }
 
-  if (!capture_.read(frame) || frame.empty()) {
-    set_error(CaptureError::kReadFailed, "Failed to read a frame from camera");
+  try {
+    if (!capture_.read(frame) || frame.empty()) {
+      set_error(CaptureError::kReadFailed, "Failed to read a frame from camera");
+      return false;
+    }
+    if (frame.rows <= 0 || frame.cols <= 0) {
+      set_error(CaptureError::kReadFailed, "Camera returned invalid frame dimensions");
+      return false;
+    }
+
+    if (gray_frame != nullptr) {
+      if (frame.channels() == 3) {
+        cv::cvtColor(frame, *gray_frame, cv::COLOR_BGR2GRAY);
+      } else if (frame.channels() == 4) {
+        cv::cvtColor(frame, *gray_frame, cv::COLOR_BGRA2GRAY);
+      } else if (frame.channels() == 1) {
+        *gray_frame = frame;
+      } else {
+        set_error(CaptureError::kReadFailed,
+                  "Camera returned unsupported frame channel count: " +
+                      std::to_string(frame.channels()));
+        return false;
+      }
+    }
+
+    return true;
+  } catch (const cv::Exception &error) {
+    set_error(CaptureError::kReadFailed,
+              "OpenCV failed while reading camera frame: " +
+                  std::string(error.what()));
     return false;
   }
-
-  if (gray_frame != nullptr) {
-    if (frame.channels() == 3) {
-      cv::cvtColor(frame, *gray_frame, cv::COLOR_BGR2GRAY);
-    } else if (frame.channels() == 4) {
-      cv::cvtColor(frame, *gray_frame, cv::COLOR_BGRA2GRAY);
-    } else {
-      *gray_frame = frame;
-    }
-  }
-
-  return true;
 }
 
 void VideoCapture::release() {

@@ -6,6 +6,8 @@
 
 #include <security/pam_modules.h>
 
+#include "common/compare_exit.hpp"
+
 namespace {
 
 auto expect(bool condition, const std::string &message) -> bool {
@@ -16,13 +18,18 @@ auto expect(bool condition, const std::string &message) -> bool {
   return true;
 }
 
+auto make_status(howdy::native::CompareExit exit_code) -> int {
+  return static_cast<int>(exit_code) << 8;
+}
+
 }  // namespace
 
 auto main() -> int {
   bool ok = true;
 
   {
-    const auto decision = map_compare_wait_status(10 << 8);
+    const auto decision =
+        map_compare_wait_status(make_status(howdy::native::CompareExit::kNoFaceModel));
     ok &= expect(decision.pam_result == PAM_AUTH_ERR,
                  "no-model returns PAM_AUTH_ERR");
     ok &= expect(decision.conversation_kind == ConversationKind::None,
@@ -32,7 +39,8 @@ auto main() -> int {
   }
 
   {
-    const auto decision = map_compare_wait_status(11 << 8);
+    const auto decision = map_compare_wait_status(
+        make_status(howdy::native::CompareExit::kTimeoutReached));
     ok &= expect(decision.conversation_kind == ConversationKind::Error,
                  "timeout returns error conversation");
     ok &= expect(decision.conversation_message == "Failure, timeout reached",
@@ -40,7 +48,17 @@ auto main() -> int {
   }
 
   {
-    const auto decision = map_compare_wait_status(13 << 8);
+    const auto decision =
+        map_compare_wait_status(make_status(howdy::native::CompareExit::kAbort));
+    ok &= expect(decision.conversation_kind == ConversationKind::None,
+                 "abort has no conversation");
+    ok &= expect(decision.log_message == "Failure, general abort",
+                 "abort log message");
+  }
+
+  {
+    const auto decision =
+        map_compare_wait_status(make_status(howdy::native::CompareExit::kTooDark));
     ok &= expect(decision.conversation_kind == ConversationKind::Error,
                  "too-dark returns error conversation");
     ok &= expect(decision.conversation_message == "Face detection image too dark",
@@ -48,7 +66,8 @@ auto main() -> int {
   }
 
   {
-    const auto decision = map_compare_wait_status(15 << 8);
+    const auto decision =
+        map_compare_wait_status(make_status(howdy::native::CompareExit::kRubberstamp));
     ok &= expect(decision.conversation_kind == ConversationKind::None,
                  "rubberstamp has no conversation");
     ok &= expect(decision.log_message == "Failure, rubberstamp mode rejected",

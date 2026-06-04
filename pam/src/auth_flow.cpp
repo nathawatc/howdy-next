@@ -35,6 +35,7 @@
 #include "optional_task.hpp"
 #include "prompt_workaround.hpp"
 #include "status_mapping.hpp"
+#include "common/compare_exit.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/config_reader.hpp"
@@ -50,7 +51,16 @@ constexpr int kMaxPromptRetries = 5;
 
 auto S(const char *msg) -> const char * { return gettext(msg); }
 
-auto make_wait_exit_status(int exit_code) -> int { return exit_code << 8; }
+using howdy::native::CompareExit;
+
+auto make_wait_exit_status(CompareExit exit_code) -> int {
+  return static_cast<int>(exit_code) << 8;
+}
+
+auto compare_status_is(int status, CompareExit exit_code) -> bool {
+  return WIFEXITED(status) &&
+         WEXITSTATUS(status) == static_cast<int>(exit_code);
+}
 
 using ConversationFn = std::function<int(int, const char *)>;
 
@@ -127,10 +137,9 @@ auto howdy_error(int status, const ConversationFn &conv_function) -> int {
                               decision.conversation_message);
   }
 
-  if (WIFEXITED(status) && WEXITSTATUS(status) == CompareError::NO_FACE_MODEL) {
+  if (compare_status_is(status, CompareExit::kNoFaceModel)) {
     syslog(LOG_NOTICE, "%s", decision.log_message.c_str());
-  } else if (WIFEXITED(status) &&
-             WEXITSTATUS(status) != CompareError::NO_FACE_MODEL) {
+  } else if (WIFEXITED(status)) {
     syslog(LOG_ERR, "%s", decision.log_message.c_str());
   } else if (WIFSIGNALED(status)) {
     syslog(LOG_ERR, "%s (%d)", decision.log_message.c_str(), WTERMSIG(status));
@@ -245,7 +254,7 @@ auto wait_for_compare_process(pid_t child_pid) -> int {
 
     syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)",
            strerror(errno), errno);
-    return make_wait_exit_status(CompareError::ABORT);
+    return make_wait_exit_status(CompareExit::kAbort);
   }
 }
 
@@ -297,7 +306,7 @@ auto wait_for_helper_process(pid_t child_pid) -> int {
     if (wait_result < 0 && errno == EINTR) {
       continue;
     }
-    return make_wait_exit_status(CompareError::ABORT);
+    return make_wait_exit_status(CompareExit::kAbort);
   }
 }
 

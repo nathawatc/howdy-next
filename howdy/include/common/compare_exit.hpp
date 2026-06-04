@@ -4,7 +4,7 @@ namespace howdy::native {
 
 enum class CompareExit {
   kSuccess = 0,
-  kAbort = 1,
+  kAbort = 12,
   kNoFaceModel = 10,
   kTimeoutReached = 11,
   kTooDark = 13,
