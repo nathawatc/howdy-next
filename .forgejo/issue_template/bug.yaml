@@ -1,5 +1,5 @@
 name: Bug report
-about: Report a reproducible Howdy Next bug
+about: Report a reproducible Howdy Next bug.
 title: "bug: "
 ref: master
 labels:

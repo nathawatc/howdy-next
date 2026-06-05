@@ -1,5 +1,5 @@
 name: PAM authentication issue
-about: Report sudo, login, polkit, lock-screen, or pam_howdy problems
+about: Report sudo, login, polkit, lock-screen, or pam_howdy problems.
 title: "bug(pam): "
 ref: master
 labels:
