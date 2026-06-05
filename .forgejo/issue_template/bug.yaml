@@ -1,0 +1,117 @@
+name: Bug report
+about: Report a reproducible Howdy Next bug
+title: "bug: "
+ref: master
+labels:
+  - kind/bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for reproducible bugs in the CLI, camera runtime, face recognition, packaging, or tests.
+
+        Before filing:
+        - Run `sudo howdy test` outside PAM.
+        - Check the troubleshooting wiki.
+        - Include logs as text, not screenshots, unless the UI itself is relevant.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the bug and the expected behavior.
+      placeholder: What failed? What did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable reproduction.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include exact terminal output, error messages, or observed behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: input
+    id: howdy-version
+    attributes:
+      label: Howdy Next version
+      description: Output of `howdy version`, package version, or commit hash.
+      placeholder: 3.0.1-1, howdy-next-git r..., or commit hash
+    validations:
+      required: true
+
+  - type: input
+    id: install-source
+    attributes:
+      label: Installation source
+      description: Package or build method used.
+      placeholder: AUR howdy-next, AUR howdy-next-git, local package build
+    validations:
+      required: true
+
+  - type: textarea
+    id: system-info
+    attributes:
+      label: System information
+      description: Include distro, kernel, desktop/session, display server, camera, and PAM consumer if relevant.
+      value: |
+        - Distro:
+        - Kernel:
+        - Session/display server:
+        - Camera device/path:
+        - PAM consumer, if relevant:
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Include only relevant `/etc/howdy/config.ini` keys and PAM lines. Remove private data.
+      render: ini
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and command output
+      description: Include `sudo howdy test`, `sudo howdy snapshot`, or `journalctl -b` output as relevant. Remove private data.
+      placeholder: |
+        sudo journalctl -b --no-pager | grep -Ei 'howdy|pam_howdy|howdy-auth-helper|opencv|segfault|coredump'
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested recognition outside PAM with `sudo howdy test` when applicable.
+          required: false
+        - label: I checked existing issues and the troubleshooting wiki.
+          required: true
+        - label: I removed private information from logs and configuration snippets.
+          required: true

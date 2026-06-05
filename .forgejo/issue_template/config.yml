@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting wiki
+    url: https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting
+    about: Check common camera, model, PAM, and configuration problems before filing an issue.
+  - name: PAM integration wiki
+    url: https://codeberg.org/nathawat/howdy-next/wiki/PAM-integration
+    about: Read PAM ordering and lock-screen guidance before reporting authentication issues.

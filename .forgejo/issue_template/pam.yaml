@@ -1,0 +1,125 @@
+name: PAM authentication issue
+about: Report sudo, login, polkit, lock-screen, or pam_howdy problems
+title: "bug(pam): "
+ref: master
+labels:
+  - kind/bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for `pam_howdy.so` issues, including sudo/login/polkit/lock-screen behavior, password prompt interaction, helper failures, or PAM ordering.
+
+        Keep a root shell open while changing PAM files. Test `sudo howdy test` outside PAM first; camera/model/config failures should be fixed before debugging PAM.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the authentication failure or unexpected PAM behavior.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pam-consumer
+    attributes:
+      label: PAM consumer
+      description: Which program/service is failing?
+      options:
+        - sudo
+        - login/TTY
+        - polkit
+        - login manager
+        - display manager
+        - lock screen
+        - system-auth/common stack
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: pam-config
+    attributes:
+      label: PAM configuration
+      description: Include the relevant file from `/etc/pam.d/`. Do not paste unrelated secrets.
+      render: shell
+      placeholder: |
+        auth [success=4 default=ignore] pam_howdy.so workaround=native
+        auth [success=3 default=ignore] pam_unix.so  try_first_pass nullok
+    validations:
+      required: true
+
+  - type: dropdown
+    id: workaround
+    attributes:
+      label: pam_howdy workaround mode
+      description: Which service-local option is used on the `pam_howdy.so` line?
+      options:
+        - workaround=off
+        - workaround=input
+        - workaround=native
+        - not specified
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: outside-pam-test
+    attributes:
+      label: Outside-PAM test result
+      description: Paste `sudo howdy test` output, or explain why it cannot be run.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: auth-log
+    attributes:
+      label: Authentication logs
+      description: Paste relevant `journalctl -b` or auth log lines around the failed attempt. Remove private data.
+      placeholder: |
+        sudo journalctl -b --no-pager | grep -Ei 'howdy|pam_howdy|howdy-auth-helper|sudo|login|polkit|waylock|greetd|sddm|gdm|lightdm|pam|conversation|segfault|coredump|opencv'
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: helper-paths
+    attributes:
+      label: Helper and path checks
+      description: Include helper permissions and relevant `/etc/howdy` ownership when lock-screen or unprivileged PAM is involved.
+      render: shell
+      value: |
+        ls -ld /etc/howdy /etc/howdy/models
+        ls -l /etc/howdy/config.ini
+        ls -l /usr/lib/howdy/howdy-auth-helper
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - Howdy Next version:
+        - Distro/package:
+        - Kernel:
+        - Desktop/session:
+        - Display server:
+        - Lock screen/display manager, if relevant:
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I kept a root shell open while testing PAM changes.
+          required: false
+        - label: I tested `sudo howdy test` outside PAM first.
+          required: true
+        - label: I included the relevant `/etc/pam.d/` service file or stack snippet.
+          required: true
+        - label: I removed private information from logs and configuration snippets.
+          required: true

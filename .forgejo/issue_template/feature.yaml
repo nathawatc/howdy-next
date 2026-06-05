@@ -1,0 +1,83 @@
+name: Feature request
+about: Propose a new Howdy Next feature or behavior change
+title: "feat: "
+ref: master
+labels:
+  - kind/feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for new features or intentional behavior changes.
+
+        Keep requests focused. Explain the problem first, then the proposed behavior. For security-sensitive authentication changes, describe the trust boundary and failure behavior.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user-visible problem or limitation does this solve?
+      placeholder: Describe the workflow that is currently difficult, unsafe, unreliable, or unsupported.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the desired behavior. Include CLI/config/PAM examples if useful.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Howdy Next would this affect most?
+      options:
+        - CLI
+        - PAM authentication
+        - Camera/runtime recognition
+        - Configuration
+        - Model storage/download
+        - Packaging
+        - Documentation
+        - Tests/CI
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds, rejected designs, or why current behavior is not enough.
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Compatibility and security impact
+      description: Note possible config migration, PAM ordering, lock-screen behavior, path ownership, or fail-closed concerns.
+      placeholder: No known compatibility or security impact.
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Links, logs, related issues, screenshots, or downstream packaging constraints.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked existing issues and wiki pages for the same request.
+          required: true
+        - label: This request is scoped to Howdy Next, not original Howdy behavior alone.
+          required: true
