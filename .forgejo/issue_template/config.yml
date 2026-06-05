@@ -1,8 +1,12 @@
 blank_issues_enabled: true
+
 contact_links:
   - name: Troubleshooting wiki
     url: https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting
-    about: Check common camera, model, PAM, and configuration problems before filing an issue.
+    about: Check common camera, model, PAM, configuration, and polkit problems before filing an issue.
   - name: PAM integration wiki
     url: https://codeberg.org/nathawat/howdy-next/wiki/PAM-integration
     about: Read PAM ordering and lock-screen guidance before reporting authentication issues.
+  - name: Polkit integration wiki
+    url: https://codeberg.org/nathawat/howdy-next/wiki/Polkit-integration
+    about: Read polkit 127+ sandbox compatibility notes before reporting graphical authorization prompt issues.
