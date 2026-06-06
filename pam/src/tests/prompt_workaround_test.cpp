@@ -28,6 +28,10 @@ auto main() -> int {
                  "does not ask when an auth token already exists");
     ok &= expect(should_ask_for_password(true, Workaround::Native, false),
                  "asks when native workaround is enabled");
+    ok &= expect(should_ask_for_password(true, Workaround::Input, false),
+                 "asks when input workaround is enabled");
+    ok &= expect(!should_ask_for_password(true, Workaround::Input, true),
+                 "input workaround does not ask when an auth token already exists");
     ok &= expect(get_workaround("off") == Workaround::Off, "parses off workaround");
     ok &= expect(get_workaround("input") == Workaround::Input, "parses input workaround");
     ok &= expect(get_workaround("native") == Workaround::Native, "parses native workaround");
@@ -105,6 +109,13 @@ auto main() -> int {
     }
 
     {
+        const auto plan = plan_prompt_stop(true, true, Workaround::Native);
+        ok &= expect(plan.stop_prompt, "ready native prompt is joined");
+        ok &= expect(!plan.abort_prompt, "ready native prompt is not aborted");
+        ok &= expect(!plan.send_enter, "ready native prompt does not receive fake input");
+    }
+
+    {
         const auto plan = plan_prompt_stop(true, false, Workaround::Native);
         ok &= expect(plan.stop_prompt, "native workaround stops prompt");
         ok &= expect(plan.abort_prompt, "native workaround aborts prompt");
@@ -116,6 +127,13 @@ auto main() -> int {
         ok &= expect(plan.stop_prompt, "input workaround stops prompt");
         ok &= expect(!plan.abort_prompt, "input workaround does not abort");
         ok &= expect(plan.send_enter, "input workaround injects enter");
+    }
+
+    {
+        const auto plan = plan_prompt_stop(true, false, Workaround::Off);
+        ok &= expect(plan.stop_prompt, "off workaround stops pending prompt");
+        ok &= expect(!plan.abort_prompt, "off workaround does not abort prompt");
+        ok &= expect(!plan.send_enter, "off workaround does not inject enter");
     }
 
     return ok ? 0 : 1;
