@@ -149,3 +149,32 @@ test(
 	'pam-tty-restore',
 	pam_tty_restore_test,
 )
+
+pam_auth_flow_helpers_test = executable(
+	'pam-auth-flow-helpers-test',
+	'../howdy/src/config/config_reader.cpp',
+	'../howdy/src/config/config_validation.cpp',
+	'src/auth_flow.cpp',
+	'src/enter_device.cpp',
+	'src/native_prompt_conversation.cpp',
+	'src/prompt_workaround.cpp',
+	'src/status_mapping.cpp',
+	'src/tests/auth_flow_helpers_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	cpp_args: ['-DHOWDY_PAM_TESTING'],
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	link_depends: [
+		paths_h,
+	],
+	install: false,
+)
+
+test(
+	'pam-auth-flow-helpers',
+	pam_auth_flow_helpers_test,
+)

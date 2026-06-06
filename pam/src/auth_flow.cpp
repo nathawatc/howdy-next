@@ -4,6 +4,9 @@
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
+#ifdef HOWDY_PAM_TESTING
+#    include "auth_flow_testing.hpp"
+#endif
 #include "enter_device.hpp"
 #include "main.hpp"
 #include "native_prompt_conversation.hpp"
@@ -469,6 +472,16 @@ namespace {
     }
 
 }  // namespace
+
+#ifdef HOWDY_PAM_TESTING
+namespace howdy::pam::testing {
+
+    auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
+        return ::helper_output_value(output, key);
+    }
+
+}  // namespace howdy::pam::testing
+#endif
 
 auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool ask_auth_tok)
     -> int {
