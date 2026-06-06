@@ -154,7 +154,7 @@ auto main() -> int {
             expect(read_file(config_path).find("sface_threshold = 0.6942\n") != std::string::npos,
                    label + ": sface_threshold written unchanged");
 
-        for (const auto value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
+        for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
             const auto before_invalid = read_file(config_path);
             write_ok &=
                 expect(!howdy::native::update_config_value(config_path, "clahe_clip_limit", value),

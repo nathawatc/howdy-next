@@ -118,3 +118,18 @@ test(
 	'pam-native-prompt-conversation',
 	pam_native_prompt_conversation_test,
 )
+
+pam_optional_task_test = executable(
+	'pam-optional-task-test',
+	'src/tests/optional_task_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		threads,
+	],
+	install: false,
+)
+
+test(
+	'pam-optional-task',
+	pam_optional_task_test,
+)
