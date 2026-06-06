@@ -283,6 +283,26 @@ test(
     native_user_models_test,
 )
 
+native_clear_cli_test = executable(
+    'howdy-clear-cli-test',
+    'cli/clear.cpp',
+    'tests/clear_cli_test.cpp',
+    include_directories: native_cpp_inc,
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-clear-cli',
+    native_clear_cli_test,
+)
+
 native_user_names_test = executable(
     'howdy-user-names-test',
     'tests/user_names_test.cpp',

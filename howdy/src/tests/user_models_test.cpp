@@ -1,10 +1,15 @@
 #include "common/user_names.hpp"
 #include "storage/user_models.hpp"
 
+#include <array>
+#include <chrono>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
+#include <thread>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -28,6 +33,18 @@ namespace {
         return true;
     }
 
+    auto expectation_from_entry(const howdy::native::UserModelEntry &entry)
+        -> howdy::native::UserModelEntryExpectation {
+        return howdy::native::UserModelEntryExpectation{
+            .id      = entry.id,
+            .time    = entry.time,
+            .label   = entry.label,
+            .backend = entry.backend,
+            .metric  = entry.metric,
+            .model   = entry.model,
+        };
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -36,14 +53,25 @@ auto main() -> int {
     bool            ok        = true;
     const auto      temp_root = fs::current_path() / "howdy-user-models-test";
     std::error_code ec;
+    unlink((temp_root / "models" / "alice.dat").c_str());
     fs::remove_all(temp_root, ec);
     fs::create_directories(temp_root, ec);
     ok &= expect(!ec, "create temp root");
 
     const auto models_dir = temp_root / "models";
+    setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", {});
+        ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
+                     "missing model directory returns kNoModelDirectory");
+    }
+    {
+        const auto result = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
+                     "inspect returns kNoModelDirectory");
+    }
     fs::create_directories(models_dir, ec);
     ok &= expect(!ec, "create models dir");
-    setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
     const std::string backend = "opencv_dnn_sface";
     ok &= expect(howdy::native::is_valid_model_user_name("alice@example.com"),
@@ -68,9 +96,19 @@ auto main() -> int {
         ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
                      "missing file returns kNoModel");
     }
+    {
+        const auto result = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
+                     "inspect returns kNoModel");
+    }
 
     const auto model_path = models_dir / "alice.dat";
     ok &= expect(write_file(model_path, "not-json"), "write malformed model file");
+    {
+        const auto result = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "inspect accepts malformed JSON without parsing");
+    }
     {
         const auto result = howdy::native::load_user_models("alice", backend);
         ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
@@ -161,6 +199,22 @@ auto main() -> int {
                    R"([{"id":7,"label":"first","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
         "restore valid model after symlink");
 
+    fs::remove(model_path, ec);
+    ec.clear();
+    if (symlink(model_path.c_str(), model_path.c_str()) == 0) {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+                     "model path exists errors are reported");
+        ok &= expect(unlink(model_path.c_str()) == 0, "remove self-referential model symlink");
+        ec.clear();
+    } else {
+        std::cerr << "SKIP: model symlink loop creation failed\n";
+    }
+    ok &= expect(
+        write_file(model_path,
+                   R"([{"id":7,"label":"first","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
+        "restore valid model after symlink loop");
+
     ok &= expect(chmod(model_path.c_str(), 0664) == 0, "make model file group-writable");
     {
         const auto result = howdy::native::load_user_models("alice", backend);
@@ -230,6 +284,455 @@ auto main() -> int {
         const auto result = howdy::native::load_user_models("alice", backend);
         ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
                      "oversized encoding is rejected");
+    }
+
+    ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong top-level JSON shape");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects wrong top-level JSON shape");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":-1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
+        "write negative ID model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects negative model IDs");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":1,"label":"first","backend":"opencv_dnn_sface","data":[[0.1]]},{"id":1,"time":2,"label":"second","backend":"opencv_dnn_sface","data":[[0.2]]}])"),
+        "write duplicate ID models");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects duplicate model IDs");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":"1","time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
+        "write non-integer ID model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects non-integer model IDs");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":2147483647,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
+        "write max-int ID model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects max-int model IDs");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":"now","label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
+        "write non-integer timestamp model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects non-integer timestamps");
+    }
+
+    ok &= expect(
+        write_file(model_path,
+                   R"([{"id":1,"time":1,"label":7,"backend":"opencv_dnn_sface","data":[[0.1]]}])"),
+        "write non-string label model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects non-string labels");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,"bad"]]}])"),
+        "write non-numeric encoding value model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects non-numeric encoding values");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,[0.2]]]}])"),
+        "write nested encoding array model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects nested encoding arrays");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,{}]]}])"),
+        "write nested encoding object model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "lifecycle listing rejects nested encoding objects");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[1e999]]}])"),
+        "write non-finite encoding value model");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status != howdy::native::UserModelStatus::kOk,
+                     "lifecycle listing rejects non-finite encoding values when representable");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","metric":"l2","model":"sface.onnx","data":[[0.1]]}])"),
+        "write incompatible metric model");
+    {
+        const auto result =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleMetric,
+                     "lifecycle listing rejects incompatible metric");
+    }
+    {
+        const auto result =
+            howdy::native::list_user_model_entries("alice", backend, "l2", "other.onnx");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleModel,
+                     "lifecycle listing rejects incompatible model metadata");
+    }
+
+    std::string oversized_json = R"json([{"id":1,"label":"large","data":[[0.1]],"padding":")json";
+    oversized_json.append((1024 * 1024) + 1, 'x');
+    oversized_json += "\"}]";
+    ok &= expect(write_file(model_path, oversized_json), "write oversized model JSON");
+    {
+        const auto result = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
+                     "lifecycle listing rejects oversized model JSON");
+    }
+
+    fs::remove(model_path, ec);
+    ec.clear();
+    {
+        const auto result = howdy::native::clear_user_model_entries("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
+                     "clear reports no model file without parsing");
+    }
+
+    ok &= expect(write_file(model_path, "not-json"), "write malformed model before clear");
+    {
+        const auto result = howdy::native::clear_user_model_entries("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "clear removes malformed JSON");
+        ok &= expect(!fs::exists(model_path), "clear deletes malformed JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, oversized_json), "write oversized model before clear");
+    {
+        const auto result = howdy::native::clear_user_model_entries("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "clear removes oversized JSON");
+        ok &= expect(!fs::exists(model_path), "clear deletes oversized JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong-shape model before clear");
+    {
+        const auto result = howdy::native::clear_user_model_entries("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "clear removes wrong-shape JSON");
+        ok &= expect(!fs::exists(model_path), "clear deletes wrong-shape JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, "not-json"), "write malformed model before verified clear");
+    {
+        const auto inspection = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
+                         inspection.snapshot.has_value(),
+                     "verified clear inspects malformed JSON without parsing");
+        if (inspection.snapshot.has_value()) {
+            const auto result =
+                howdy::native::clear_user_model_entries_if_unchanged("alice", *inspection.snapshot);
+            ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                         "verified clear removes unchanged malformed JSON");
+        }
+        ok &= expect(!fs::exists(model_path), "verified clear deletes malformed JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, oversized_json),
+                 "write oversized model before verified clear");
+    {
+        const auto inspection = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
+                         inspection.snapshot.has_value(),
+                     "verified clear inspects oversized JSON without parsing");
+        if (inspection.snapshot.has_value()) {
+            const auto result =
+                howdy::native::clear_user_model_entries_if_unchanged("alice", *inspection.snapshot);
+            ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                         "verified clear removes unchanged oversized JSON");
+        }
+        ok &= expect(!fs::exists(model_path), "verified clear deletes oversized JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, R"({"id":1})"),
+                 "write wrong-shape model before verified clear");
+    {
+        const auto inspection = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
+                         inspection.snapshot.has_value(),
+                     "verified clear inspects wrong-shape JSON without parsing");
+        if (inspection.snapshot.has_value()) {
+            const auto result =
+                howdy::native::clear_user_model_entries_if_unchanged("alice", *inspection.snapshot);
+            ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                         "verified clear removes unchanged wrong-shape JSON");
+        }
+        ok &= expect(!fs::exists(model_path), "verified clear deletes wrong-shape JSON model file");
+    }
+
+    ok &= expect(write_file(model_path, "not-json"), "write model before stale verified clear");
+    {
+        const auto inspection = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
+                         inspection.snapshot.has_value(),
+                     "verified clear captures file snapshot");
+        ok &=
+            expect(write_file(model_path, "changed-json"), "rewrite model after clear inspection");
+        if (inspection.snapshot.has_value()) {
+            const auto result =
+                howdy::native::clear_user_model_entries_if_unchanged("alice", *inspection.snapshot);
+            ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+                         "verified clear aborts when model file changes after inspection");
+        }
+        ok &= expect(fs::exists(model_path), "stale verified clear leaves changed model file");
+    }
+
+    ok &= expect(write_file(model_path, R"([{"id":0,"time":1,"label":"one","data":[[1.0]]}])"),
+                 "write same-size model before stale clear");
+    {
+        const auto inspection = howdy::native::inspect_user_model_file("alice");
+        ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
+                         inspection.snapshot.has_value(),
+                     "verified clear captures snapshot before same-size rewrite");
+        std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+        ok &= expect(write_file(model_path, R"([{"id":0,"time":1,"label":"two","data":[[1.0]]}])"),
+                     "rewrite model with same-size content after clear inspection");
+        if (inspection.snapshot.has_value()) {
+            const std::array<timespec, 2> times{
+                timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
+                         .tv_nsec = inspection.snapshot->mtime_nanosecs},
+                timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
+                         .tv_nsec = inspection.snapshot->mtime_nanosecs},
+            };
+            ok &= expect(utimensat(AT_FDCWD, model_path.c_str(), times.data(), 0) == 0,
+                         "restore old model mtime after same-size rewrite");
+            const auto result =
+                howdy::native::clear_user_model_entries_if_unchanged("alice", *inspection.snapshot);
+            ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+                         "verified clear detects same-size rewrite with restored mtime");
+        }
+        ok &= expect(fs::exists(model_path), "stale same-size verified clear leaves model file");
+    }
+
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":10,"time":1,"label":"existing","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])"),
+        "write existing model before default-label append");
+    {
+        const howdy::native::NewUserModelEntry default_label_entry{
+            .label     = "",
+            .backend   = backend,
+            .metric    = "cosine",
+            .model     = "sface.onnx",
+            .encodings = {{0.3F, 0.4F}},
+        };
+        const auto result = howdy::native::append_user_model_entry("alice", default_label_entry);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "append assigns actual ID from locked storage state");
+        ok &= expect(result.entry.id == 11, "append returns actual created model ID");
+        ok &= expect(result.entry.label == "Model #11",
+                     "append default label matches actual created model ID");
+        const auto listing =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
+                         listing.entries.size() == 2 && listing.entries[1].id == 11 &&
+                         listing.entries[1].label == "Model #11",
+                     "stored default label matches actual created model ID");
+    }
+
+    fs::remove(model_path, ec);
+    ec.clear();
+    const howdy::native::NewUserModelEntry first_entry{
+        .label     = "first",
+        .backend   = backend,
+        .metric    = "cosine",
+        .model     = "sface.onnx",
+        .encodings = {{0.1F, 0.2F}},
+    };
+    const auto first_append = howdy::native::append_user_model_entry("alice", first_entry);
+    ok &= expect(first_append.status == howdy::native::UserModelStatus::kOk,
+                 "append creates first model entry");
+    ok &= expect(first_append.entry.id == 0, "append allocates first model ID");
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"}])"),
+        "add unknown field to existing model entry");
+
+    const howdy::native::NewUserModelEntry second_entry{
+        .label     = "second",
+        .backend   = backend,
+        .metric    = "cosine",
+        .model     = "sface.onnx",
+        .encodings = {{0.3F, 0.4F}},
+    };
+    const howdy::native::NewUserModelEntry invalid_encoding_entry{
+        .label     = "invalid",
+        .backend   = backend,
+        .metric    = "cosine",
+        .model     = "sface.onnx",
+        .encodings = {{std::numeric_limits<float>::infinity()}},
+    };
+    {
+        const auto result = howdy::native::append_user_model_entry("alice", invalid_encoding_entry);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+                     "append rejects invalid new-entry encodings before writing");
+        std::ifstream     persisted(model_path);
+        const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
+                                         std::istreambuf_iterator<char>());
+        ok &= expect(persisted_text.find("invalid") == std::string::npos,
+                     "append does not write invalid new-entry encodings");
+    }
+    const auto second_append = howdy::native::append_user_model_entry("alice", second_entry);
+    ok &= expect(second_append.status == howdy::native::UserModelStatus::kOk,
+                 "append adds second model entry");
+    ok &= expect(second_append.entry.id == 1, "append allocates next model ID");
+    {
+        const auto result =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "lifecycle listing loads appended entries");
+        ok &= expect(result.entries.size() == 2, "append preserves existing entries");
+        ok &= expect(result.entries[0].label == "first" && result.entries[1].label == "second",
+                     "lifecycle listing preserves entry order");
+        ok &= expect(result.next_id == 2, "lifecycle listing reports next model ID");
+        std::ifstream     persisted(model_path);
+        const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
+                                         std::istreambuf_iterator<char>());
+        ok &= expect(persisted_text.find("future_field") != std::string::npos,
+                     "append preserves unknown fields in existing entries");
+    }
+
+    {
+        const auto result = howdy::native::remove_user_model_entry("alice", 99);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kModelNotFound,
+                     "remove reports missing model ID");
+    }
+    {
+        const auto listing =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
+                         listing.entries.size() == 2,
+                     "list entries before verified stale remove");
+        const auto expected = expectation_from_entry(listing.entries[0]);
+        ok &= expect(
+            write_file(
+                model_path,
+                R"([{"id":0,"time":2,"label":"changed","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
+            "rewrite model entry after remove listing");
+        const auto result = howdy::native::remove_user_model_entry_if_matches("alice", expected);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+                     "verified remove aborts when model entry changes after listing");
+        const auto after =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(after.status == howdy::native::UserModelStatus::kOk &&
+                         after.entries.size() == 2 && after.entries[0].label == "changed",
+                     "stale verified remove leaves changed model entry");
+    }
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
+        "restore unchanged entries before verified remove");
+    {
+        const auto listing =
+            howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+        ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
+                         listing.entries.size() == 2,
+                     "list entries before verified remove");
+        const auto expected = expectation_from_entry(listing.entries[0]);
+        const auto result   = howdy::native::remove_user_model_entry_if_matches("alice", expected);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk && !result.removed_last,
+                     "verified remove succeeds when model entry is unchanged");
+        ok &= expect(result.entry.id == 0 && result.entry.label == "first",
+                     "verified remove returns actual removed entry");
+        const auto remaining = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(remaining.entries.size() == 1 && remaining.entries[0].id == 1,
+                     "verified remove preserves other model entries");
+    }
+    ok &= expect(
+        write_file(
+            model_path,
+            R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
+        "restore entries before legacy remove");
+    {
+        const auto result = howdy::native::remove_user_model_entry("alice", 0);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk && !result.removed_last,
+                     "remove deletes existing model ID");
+        ok &= expect(result.entry.id == 0 && result.entry.label == "first",
+                     "remove returns actual removed entry");
+        const auto remaining = howdy::native::list_user_model_entries("alice", backend);
+        ok &= expect(remaining.entries.size() == 1 && remaining.entries[0].id == 1,
+                     "remove preserves other model entries");
+    }
+    {
+        const auto result = howdy::native::remove_user_model_entry("alice", 1);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk && result.removed_last,
+                     "remove deletes last model entry");
+        ok &= expect(!fs::exists(model_path), "remove last entry deletes model file");
+    }
+
+    ok &= expect(howdy::native::append_user_model_entry("alice", first_entry).status ==
+                     howdy::native::UserModelStatus::kOk,
+                 "append recreates model before clear");
+    {
+        const auto result = howdy::native::clear_user_model_entries("alice");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+                     "clear removes all model entries");
+        ok &= expect(!fs::exists(model_path), "clear deletes model file");
+    }
+
+    const auto lock_path = fs::path(model_path.string() + ".lock");
+    fs::remove(lock_path, ec);
+    ec.clear();
+    if (symlink("/tmp", lock_path.c_str()) == 0) {
+        const auto result = howdy::native::append_user_model_entry("alice", first_entry);
+        ok &= expect(result.status == howdy::native::UserModelStatus::kLockFailed,
+                     "append fails closed when model lock cannot be acquired");
+        ok &= expect(fs::remove(lock_path, ec), "remove lock failure symlink");
+        ec.clear();
+    } else {
+        std::cerr << "SKIP: lock symlink creation failed\n";
     }
 
     fs::remove_all(temp_root, ec);

@@ -1,8 +1,4 @@
 #include "cli/add_cli.hpp"
-#include "common/atomic_files.hpp"
-#include "common/file_lock.hpp"
-#include "common/file_security.hpp"
-#include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
@@ -10,36 +6,24 @@
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
+#include "storage/user_models.hpp"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstdint>
-#include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
 #include <opencv2/imgproc.hpp>
 
-#include <sys/stat.h>
-
-#include <nlohmann/json.hpp>
-
 namespace {
 
-    constexpr auto           kExitOk            = 0;
-    constexpr auto           kExitAbort         = 1;
-    constexpr int            kMaxFrames         = 60;
-    constexpr std::uintmax_t kMaxModelFileBytes = 1024 * 1024;
-    constexpr mode_t         kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
-    constexpr mode_t         kUserModelFileMode = S_IRUSR | S_IWUSR;
+    constexpr auto kExitOk    = 0;
+    constexpr auto kExitAbort = 1;
+    constexpr int  kMaxFrames = 60;
 
     struct AddArgs {
         std::string user;
@@ -73,50 +57,6 @@ namespace {
         return args;
     }
 
-    auto load_models(const std::filesystem::path &path) -> std::optional<nlohmann::json> {
-        if (!std::filesystem::is_regular_file(path)) {
-            return nlohmann::json::array();
-        }
-
-        std::error_code size_ec;
-        if (std::filesystem::file_size(path, size_ec) > kMaxModelFileBytes || size_ec) {
-            return std::nullopt;
-        }
-
-        std::ifstream input(path);
-        if (!input.is_open()) {
-            return std::nullopt;
-        }
-
-        nlohmann::json models;
-        try {
-            input >> models;
-        } catch (const nlohmann::json::exception &) {
-            return std::nullopt;
-        }
-        if (!models.is_array()) {
-            return std::nullopt;
-        }
-        for (const auto &entry : models) {
-            if (!entry.is_object()) {
-                return std::nullopt;
-            }
-        }
-        return models;
-    }
-
-    auto save_models_atomic(const std::filesystem::path &path, const nlohmann::json &models)
-        -> bool {
-        return howdy::native::write_atomic_file(path, models.dump(), kUserModelFileMode);
-    }
-
-    auto is_backend_compatible(const nlohmann::json &models) -> bool {
-        return std::all_of(models.begin(), models.end(), [](const auto &entry) {
-            const auto backend = entry.value("backend", std::string());
-            return backend.empty() || backend == howdy::native::FaceModel::kBackendName;
-        });
-    }
-
 }  // namespace
 
 auto add_main(int argc, char **argv) -> int {
@@ -143,65 +83,25 @@ auto add_main(int argc, char **argv) -> int {
         return kExitAbort;
     }
 
-    const auto user_models_dir = howdy::native::resolve_user_models_dir();
-    if (!std::filesystem::exists(user_models_dir)) {
-        std::error_code create_ec;
-        std::filesystem::create_directories(user_models_dir, create_ec);
-        if (create_ec || chmod(user_models_dir.c_str(), kUserModelsDirMode) != 0) {
-            std::cerr << "Failed to create secure user models directory: " << user_models_dir
-                      << "\n";
-            return kExitAbort;
-        }
-    }
-    if (std::filesystem::exists(user_models_dir)) {
-        const auto dir_security = howdy::native::check_secure_root_owned_directory_tree(
-            user_models_dir, "User models directory");
-        if (!dir_security.ok) {
-            std::cerr << dir_security.error_message << "\n";
-            return kExitAbort;
-        }
-    }
-    const auto model_path = howdy::native::resolve_user_model_path(user_models_dir, args.user);
-    if (!model_path) {
-        std::cerr << howdy::native::kInvalidUserNameMessage << "\n";
-        return kExitAbort;
-    }
-    if (std::filesystem::exists(*model_path)) {
-        const auto model_security = howdy::native::check_secure_root_owned_file_with_directory(
-            *model_path, "User models directory", "User model file");
-        if (!model_security.ok) {
-            std::cerr << model_security.error_message << "\n";
-            return kExitAbort;
-        }
-    }
-
-    const auto model_lock = howdy::native::acquire_file_lock(*model_path);
-    if (!model_lock.has_value()) {
-        std::cerr << "Failed to lock model file\n";
-        return kExitAbort;
-    }
-
-    auto loaded_models = load_models(*model_path);
-    if (!loaded_models.has_value()) {
-        std::cerr << "Model file is not a valid model list\n";
-        return kExitAbort;
-    }
-    auto models = std::move(*loaded_models);
-
-    if (!is_backend_compatible(models)) {
-        std::cerr << "Existing face models use an incompatible backend.\n";
+    const auto entries = howdy::native::list_user_model_entries(
+        args.user, howdy::native::FaceModel::kBackendName, face_model.metric(),
+        howdy::native::FaceModel::kSfaceModel);
+    if (entries.status == howdy::native::UserModelStatus::kIncompatibleBackend ||
+        entries.status == howdy::native::UserModelStatus::kIncompatibleMetric ||
+        entries.status == howdy::native::UserModelStatus::kIncompatibleModel) {
+        std::cerr << "Existing face models use incompatible face-recognition metadata.\n";
         std::cerr << "Please run `howdy clear` and enroll again with `howdy add`.\n";
         return kExitAbort;
     }
-
-    int next_id = 0;
-    if (!models.empty()) {
-        next_id = models.back().value("id", -1) + 1;
+    if (entries.status != howdy::native::UserModelStatus::kOk &&
+        entries.status != howdy::native::UserModelStatus::kNoModel &&
+        entries.status != howdy::native::UserModelStatus::kNoModelDirectory) {
+        std::cerr << entries.error_message << "\n";
+        return kExitAbort;
     }
-
-    std::string label = args.label.empty() ? ("Model #" + std::to_string(next_id)) : args.label;
+    std::string label = args.label;
     if (!args.yes && args.label.empty() && !args.plain) {
-        std::cout << "Enter a label for this new model [" << label << "]: ";
+        std::cout << "Enter a label for this new model [automatic]: ";
         std::string input;
         std::getline(std::cin, input);
         if (!input.empty()) {
@@ -304,18 +204,16 @@ auto add_main(int argc, char **argv) -> int {
         return kExitAbort;
     }
 
-    nlohmann::json entry;
-    entry["time"]    = static_cast<long long>(std::time(nullptr));
-    entry["label"]   = label;
-    entry["id"]      = next_id;
-    entry["backend"] = howdy::native::FaceModel::kBackendName;
-    entry["metric"]  = face_model.metric();
-    entry["model"]   = howdy::native::FaceModel::kSfaceModel;
-    entry["data"]    = nlohmann::json::array({encoding});
-    models.push_back(entry);
-
-    if (!save_models_atomic(*model_path, models)) {
-        std::cerr << "Failed to save model file\n";
+    const auto append_result = howdy::native::append_user_model_entry(
+        args.user, howdy::native::NewUserModelEntry{
+                       .label     = label,
+                       .backend   = howdy::native::FaceModel::kBackendName,
+                       .metric    = face_model.metric(),
+                       .model     = howdy::native::FaceModel::kSfaceModel,
+                       .encodings = {std::move(encoding)},
+                   });
+    if (append_result.status != howdy::native::UserModelStatus::kOk) {
+        std::cerr << append_result.error_message << "\n";
         return kExitAbort;
     }
 
