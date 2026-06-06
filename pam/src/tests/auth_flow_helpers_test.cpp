@@ -3,10 +3,14 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <unistd.h>
+
+#include <security/pam_appl.h>
 
 #include <sys/wait.h>
 
@@ -57,12 +61,82 @@ namespace {
         int fd_ = -1;
     };
 
+    class ScopedPamHandle {
+    public:
+        ScopedPamHandle() = default;
+
+        ScopedPamHandle(const ScopedPamHandle &)                     = delete;
+        auto operator=(const ScopedPamHandle &) -> ScopedPamHandle & = delete;
+
+        ~ScopedPamHandle() {
+            if (pamh_ != nullptr) {
+                pam_end(pamh_, PAM_SUCCESS);
+            }
+        }
+
+        auto start(const struct pam_conv *conversation) -> int {
+            return pam_start("howdy-auth-flow-test", "test-user", conversation, &pamh_);
+        }
+
+        [[nodiscard]] auto get() const -> pam_handle_t * {
+            return pamh_;
+        }
+
+    private:
+        pam_handle_t *pamh_ = nullptr;
+    };
+
+    enum class ResponseMode {
+        None,
+        Empty,
+        Secret,
+    };
+
+    struct ConversationState {
+        int          result        = PAM_SUCCESS;
+        int          calls         = 0;
+        int          last_msg_type = 0;
+        std::string  last_message;
+        ResponseMode response_mode = ResponseMode::None;
+    };
+
     auto expect(bool condition, const std::string &message) -> bool {
         if (!condition) {
             std::cerr << "FAIL: " << message << "\n";
             return false;
         }
         return true;
+    }
+
+    auto test_conversation(int num_msg, const struct pam_message **messages,
+                           struct pam_response **response, void *appdata_ptr) -> int {
+        auto *state = static_cast<ConversationState *>(appdata_ptr);
+        if (state == nullptr || num_msg != 1 || messages == nullptr || messages[0] == nullptr ||
+            response == nullptr) {
+            return PAM_CONV_ERR;
+        }
+
+        ++state->calls;
+        state->last_msg_type = messages[0]->msg_style;
+        state->last_message  = messages[0]->msg == nullptr ? "" : messages[0]->msg;
+        *response            = nullptr;
+
+        if (state->response_mode != ResponseMode::None) {
+            *response = static_cast<struct pam_response *>(calloc(1, sizeof(struct pam_response)));
+            if (*response == nullptr) {
+                return PAM_BUF_ERR;
+            }
+            if (state->response_mode == ResponseMode::Secret) {
+                (*response)->resp = strdup("temporary-secret");
+                if ((*response)->resp == nullptr) {
+                    free(*response);
+                    *response = nullptr;
+                    return PAM_BUF_ERR;
+                }
+            }
+        }
+
+        return state->result;
     }
 
     auto open_pipe(std::array<ScopedFd, 2> *fds) -> bool {
@@ -165,6 +239,81 @@ namespace {
         return ok;
     }
 
+    auto expect_conversation_helpers() -> bool {
+        using howdy::pam::testing::auth_token_present;
+        using howdy::pam::testing::ConversationFn;
+        using howdy::pam::testing::make_conversation;
+        using howdy::pam::testing::send_conversation_message;
+
+        bool                 ok            = true;
+        int                  direct_calls  = 0;
+        int                  direct_type   = 0;
+        int                  direct_result = PAM_CONV_ERR;
+        std::string          direct_message;
+        const ConversationFn direct_conversation = [&](int msg_type, const char *message) -> int {
+            ++direct_calls;
+            direct_type    = msg_type;
+            direct_message = message == nullptr ? "" : message;
+            return direct_result;
+        };
+        send_conversation_message(direct_conversation, PAM_ERROR_MSG, "direct message");
+        ok &= expect(direct_calls == 1 && direct_type == PAM_ERROR_MSG &&
+                         direct_message == "direct message",
+                     "message helper invokes conversation despite conversation failure");
+        direct_result = PAM_SUCCESS;
+        send_conversation_message(direct_conversation, PAM_TEXT_INFO, "successful message");
+        ok &= expect(direct_calls == 2 && direct_type == PAM_TEXT_INFO &&
+                         direct_message == "successful message",
+                     "message helper invokes successful conversation");
+
+        ConversationState state;
+        struct pam_conv   conversation{
+            .conv        = test_conversation,
+            .appdata_ptr = &state,
+        };
+        ScopedPamHandle pam_handle;
+        ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS, "starts PAM handle");
+        if (pam_handle.get() == nullptr) {
+            return false;
+        }
+
+        ConversationFn wrapped_conversation;
+        ok &= expect(make_conversation(pam_handle.get(), &wrapped_conversation) == PAM_SUCCESS,
+                     "acquires PAM conversation");
+
+        state.response_mode = ResponseMode::None;
+        ok &= expect(wrapped_conversation(PAM_TEXT_INFO, "no response") == PAM_SUCCESS,
+                     "wrapped conversation accepts null response");
+        state.response_mode = ResponseMode::Empty;
+        ok &= expect(wrapped_conversation(PAM_ERROR_MSG, "empty response") == PAM_SUCCESS,
+                     "wrapped conversation frees response without text");
+        state.response_mode = ResponseMode::Secret;
+        state.result        = PAM_CONV_ERR;
+        ok &= expect(wrapped_conversation(PAM_PROMPT_ECHO_OFF, "secret response") == PAM_CONV_ERR,
+                     "wrapped conversation preserves callback result");
+        ok &= expect(state.calls == 3 && state.last_msg_type == PAM_PROMPT_ECHO_OFF &&
+                         state.last_message == "secret response",
+                     "wrapped conversation forwards message fields");
+
+        ok &= expect(!auth_token_present(pam_handle.get()), "missing auth token is absent");
+        ok &= expect(!auth_token_present(nullptr), "invalid PAM handle reports absent auth token");
+
+        struct pam_conv unavailable_conversation{
+            .conv        = nullptr,
+            .appdata_ptr = nullptr,
+        };
+        ok &= expect(pam_set_item(pam_handle.get(), PAM_CONV, &unavailable_conversation) ==
+                         PAM_SUCCESS,
+                     "sets unavailable PAM conversation");
+        ConversationFn unavailable_wrapper;
+        ok &= expect(make_conversation(pam_handle.get(), &unavailable_wrapper) == PAM_SYSTEM_ERR,
+                     "rejects unavailable PAM conversation callback");
+        ok &= expect(make_conversation(nullptr, &unavailable_wrapper) != PAM_SUCCESS,
+                     "propagates PAM conversation acquisition failure");
+
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -174,6 +323,7 @@ auto main() -> int {
 
     ok &= expect_fd_reading();
     ok &= expect_process_waiting();
+    ok &= expect_conversation_helpers();
 
     const std::string output =
         "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";

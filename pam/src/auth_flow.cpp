@@ -476,6 +476,19 @@ namespace {
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
 
+    auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
+                                   const std::string &message) -> void {
+        ::send_conversation_message(conv_function, msg_type, message);
+    }
+
+    auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int {
+        return ::make_conversation(pamh, conv_function);
+    }
+
+    auto auth_token_present(pam_handle_t *pamh) -> bool {
+        return ::auth_token_present(pamh);
+    }
+
     auto wait_for_compare_process(pid_t child_pid) -> int {
         return ::wait_for_compare_process(child_pid);
     }

@@ -3,12 +3,21 @@
 
 #ifdef HOWDY_PAM_TESTING
 
+#    include <functional>
 #    include <string>
+
+#    include <security/pam_appl.h>
 
 #    include <sys/types.h>
 
 namespace howdy::pam::testing {
 
+    using ConversationFn = std::function<int(int, const char *)>;
+
+    auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
+                                   const std::string &message) -> void;
+    auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int;
+    auto auth_token_present(pam_handle_t *pamh) -> bool;
     auto wait_for_compare_process(pid_t child_pid) -> int;
     auto read_fd_to_string(int fd) -> std::string;
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string;
