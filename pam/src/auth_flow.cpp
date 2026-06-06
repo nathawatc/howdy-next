@@ -476,6 +476,10 @@ namespace {
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
 
+    auto read_fd_to_string(int fd) -> std::string {
+        return ::read_fd_to_string(fd);
+    }
+
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
         return ::helper_output_value(output, key);
     }

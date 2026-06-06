@@ -7,6 +7,7 @@
 
 namespace howdy::pam::testing {
 
+    auto read_fd_to_string(int fd) -> std::string;
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string;
 
 }  // namespace howdy::pam::testing
