@@ -3,9 +3,13 @@
 
 #ifdef HOWDY_PAM_TESTING
 
+#    include "optional_task.hpp"
+#    include "prompt_workaround.hpp"
+
 #    include <filesystem>
 #    include <functional>
 #    include <string>
+#    include <tuple>
 
 #    include <security/pam_appl.h>
 
@@ -28,6 +32,14 @@ namespace howdy::pam::testing {
                       const ConversationFn &conv_function) -> int;
     auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
                        const std::filesystem::path &user_models_dir) -> int;
+
+    struct PromptStopResult {
+        bool enter_failed   = false;
+        bool prompt_stopped = true;
+    };
+
+    auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
+                                      const PromptStopPlan &plan) -> PromptStopResult;
     auto wait_for_compare_process(pid_t child_pid) -> int;
     auto read_fd_to_string(int fd) -> std::string;
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string;

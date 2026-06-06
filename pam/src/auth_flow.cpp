@@ -503,6 +503,13 @@ namespace howdy::pam::testing {
         return ::check_enabled(config, username, user_models_dir);
     }
 
+    auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
+                                      const PromptStopPlan &plan) -> PromptStopResult {
+        const auto result = ::request_password_prompt_stop(pass_task, plan, nullptr);
+        return PromptStopResult{.enter_failed   = result.enter_failed,
+                                .prompt_stopped = result.prompt_stopped};
+    }
+
     auto wait_for_compare_process(pid_t child_pid) -> int {
         return ::wait_for_compare_process(child_pid);
     }

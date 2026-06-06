@@ -13,6 +13,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <unistd.h>
 
 #include <security/pam_appl.h>
@@ -518,6 +519,84 @@ namespace {
         return ok;
     }
 
+    auto expect_prompt_stop_helpers() -> bool {
+        using howdy::pam::testing::request_password_prompt_stop;
+
+        bool ok = true;
+
+        optional_task<std::tuple<int, char *>> inactive_task([] {
+            return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+        });
+        const PromptStopPlan                   no_stop_plan{
+            .stop_prompt  = false,
+            .abort_prompt = false,
+            .send_enter   = false,
+        };
+        const auto no_stop_result = request_password_prompt_stop(inactive_task, no_stop_plan);
+        ok &= expect(!no_stop_result.enter_failed && no_stop_result.prompt_stopped,
+                     "no-stop plan returns default prompt stop result");
+        ok &= expect(!inactive_task.active(), "no-stop plan leaves inactive task inactive");
+
+        optional_task<std::tuple<int, char *>> ready_task([] {
+            return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+        });
+        ready_task.activate();
+        ok &= expect(ready_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
+                     "ready prompt task finishes before stop");
+        const PromptStopPlan stop_plan{
+            .stop_prompt  = true,
+            .abort_prompt = false,
+            .send_enter   = false,
+        };
+        const auto stop_result = request_password_prompt_stop(ready_task, stop_plan);
+        ok &= expect(!stop_result.enter_failed && stop_result.prompt_stopped,
+                     "stop plan stops ready prompt without input");
+        ok &= expect(!ready_task.active(), "stop plan deactivates ready prompt task");
+        ok &= expect(std::get<0>(ready_task.get()) == PAM_SUCCESS,
+                     "stopped ready prompt keeps task result");
+
+        optional_task<std::tuple<int, char *>> abort_without_native_prompt([] {
+            return std::tuple<int, char *>(PAM_CONV_ERR, nullptr);
+        });
+        abort_without_native_prompt.activate();
+        ok &= expect(abort_without_native_prompt.wait(std::chrono::seconds(1)) ==
+                         std::future_status::ready,
+                     "abort prompt task finishes before stop");
+        const PromptStopPlan abort_plan{
+            .stop_prompt  = true,
+            .abort_prompt = true,
+            .send_enter   = false,
+        };
+        const auto abort_result =
+            request_password_prompt_stop(abort_without_native_prompt, abort_plan);
+        ok &= expect(!abort_result.enter_failed && abort_result.prompt_stopped,
+                     "abort plan without native prompt stops task safely");
+        ok &= expect(!abort_without_native_prompt.active(),
+                     "abort plan deactivates prompt task without native prompt");
+
+        if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+            optional_task<std::tuple<int, char *>> input_task([] {
+                return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+            });
+            input_task.activate();
+            ok &= expect(input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
+                         "input prompt task finishes before stop");
+            const PromptStopPlan input_plan{
+                .stop_prompt  = true,
+                .abort_prompt = false,
+                .send_enter   = true,
+            };
+            const auto input_result = request_password_prompt_stop(input_task, input_plan);
+            ok &= expect(input_result.enter_failed && input_result.prompt_stopped,
+                         "input plan reports enter failure when uinput is unavailable");
+            ok &= expect(!input_task.active(), "input plan deactivates ready prompt task");
+        } else {
+            std::cerr << "SKIP: prompt stop input failure requires unavailable /dev/uinput\n";
+        }
+
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -530,6 +609,7 @@ auto main() -> int {
     ok &= expect_conversation_helpers();
     ok &= expect_status_helpers();
     ok &= expect_enabled_decisions();
+    ok &= expect_prompt_stop_helpers();
 
     const std::string output =
         "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";
