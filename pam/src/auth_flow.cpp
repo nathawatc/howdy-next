@@ -489,6 +489,15 @@ namespace howdy::pam::testing {
         return ::auth_token_present(pamh);
     }
 
+    auto howdy_error(int status, const ConversationFn &conv_function) -> int {
+        return ::howdy_error(status, conv_function);
+    }
+
+    auto howdy_status(char *username, int status, const howdy::native::ConfigReader &config,
+                      const ConversationFn &conv_function) -> int {
+        return ::howdy_status(username, status, config, conv_function);
+    }
+
     auto wait_for_compare_process(pid_t child_pid) -> int {
         return ::wait_for_compare_process(child_pid);
     }

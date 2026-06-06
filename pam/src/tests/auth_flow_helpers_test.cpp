@@ -1,10 +1,13 @@
 #include "auth_flow_testing.hpp"
 #include "common/compare_exit.hpp"
+#include "config/config_reader.hpp"
 
 #include <array>
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -164,6 +167,12 @@ namespace {
         return true;
     }
 
+    auto write_file(const std::string &path, const std::string &content) -> bool {
+        std::ofstream output(path);
+        output << content;
+        return output.good();
+    }
+
     auto expect_fd_reading() -> bool {
         using howdy::pam::testing::read_fd_to_string;
 
@@ -314,6 +323,91 @@ namespace {
         return ok;
     }
 
+    auto expect_status_helpers() -> bool {
+        using howdy::pam::testing::ConversationFn;
+        using howdy::pam::testing::howdy_error;
+        using howdy::pam::testing::howdy_status;
+
+        bool                 ok            = true;
+        int                  calls         = 0;
+        int                  last_msg_type = 0;
+        std::string          last_message;
+        const ConversationFn conversation = [&](int msg_type, const char *message) -> int {
+            ++calls;
+            last_msg_type = msg_type;
+            last_message  = message == nullptr ? "" : message;
+            return PAM_SUCCESS;
+        };
+
+        const auto make_status = [](howdy::native::CompareExit exit_code) {
+            return static_cast<int>(exit_code) << 8;
+        };
+
+        ok &= expect(howdy_error(make_status(howdy::native::CompareExit::kTimeoutReached),
+                                 conversation) == PAM_AUTH_ERR,
+                     "timeout status fails closed");
+        ok &= expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
+                         last_message == "Failure, timeout reached",
+                     "timeout status sends error conversation");
+
+        calls = 0;
+        ok &= expect(howdy_error(make_status(howdy::native::CompareExit::kNoFaceModel),
+                                 conversation) == PAM_AUTH_ERR,
+                     "no-model status fails closed");
+        ok &= expect(calls == 0, "no-model status sends no conversation");
+        ok &= expect(howdy_error(SIGTERM, conversation) == PAM_AUTH_ERR,
+                     "signaled status fails closed");
+        ok &= expect(calls == 0, "signaled status sends no conversation");
+        ok &= expect(howdy_error(W_STOPCODE(SIGSTOP), conversation) == PAM_AUTH_ERR,
+                     "stopped status fails closed");
+        ok &= expect(calls == 0, "stopped status sends no conversation");
+
+        std::string confirmation_path = "/tmp/howdy-auth-flow-confirmation-XXXXXX";
+        ScopedFd    confirmation_fd(mkstemp(confirmation_path.data()));
+        ok &= expect(confirmation_fd.get() >= 0, "creates confirmation config");
+        confirmation_fd.reset();
+        ok &= expect(write_file(confirmation_path, "[core]\nno_confirmation = false\n"),
+                     "writes confirmation config");
+        const howdy::native::ConfigReader confirmation_config(confirmation_path);
+        unlink(confirmation_path.c_str());
+        ok &= expect(confirmation_config.ok(), "parses confirmation config");
+
+        calls                = 0;
+        std::string username = "alice";
+        ok &= expect(howdy_status(username.data(), EXIT_SUCCESS, confirmation_config,
+                                  conversation) == PAM_SUCCESS,
+                     "successful status approves login");
+        ok &= expect(calls == 1 && last_msg_type == PAM_TEXT_INFO &&
+                         last_message == "Identified face as alice",
+                     "successful status sends enabled confirmation");
+
+        std::string quiet_path = "/tmp/howdy-auth-flow-quiet-XXXXXX";
+        ScopedFd    quiet_fd(mkstemp(quiet_path.data()));
+        ok &= expect(quiet_fd.get() >= 0, "creates quiet config");
+        quiet_fd.reset();
+        ok &= expect(write_file(quiet_path, "[core]\nno_confirmation = true\n"),
+                     "writes quiet config");
+        const howdy::native::ConfigReader quiet_config(quiet_path);
+        unlink(quiet_path.c_str());
+        ok &= expect(quiet_config.ok(), "parses quiet config");
+
+        calls = 0;
+        ok &= expect(howdy_status(username.data(), EXIT_SUCCESS, quiet_config, conversation) ==
+                         PAM_SUCCESS,
+                     "quiet successful status approves login");
+        ok &= expect(calls == 0, "quiet successful status sends no confirmation");
+
+        ok &=
+            expect(howdy_status(username.data(), make_status(howdy::native::CompareExit::kTooDark),
+                                quiet_config, conversation) == PAM_AUTH_ERR,
+                   "failed status delegates to error handling");
+        ok &= expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
+                         last_message == "Face detection image too dark",
+                     "failed status sends mapped error conversation");
+
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -324,6 +418,7 @@ auto main() -> int {
     ok &= expect_fd_reading();
     ok &= expect_process_waiting();
     ok &= expect_conversation_helpers();
+    ok &= expect_status_helpers();
 
     const std::string output =
         "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";
