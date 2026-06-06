@@ -133,3 +133,19 @@ test(
 	'pam-optional-task',
 	pam_optional_task_test,
 )
+
+pam_tty_restore_test = executable(
+	'pam-tty-restore-test',
+	'src/tty_restore.cpp',
+	'src/tests/tty_restore_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	dependencies: [
+		libpam,
+	],
+	install: false,
+)
+
+test(
+	'pam-tty-restore',
+	pam_tty_restore_test,
+)
