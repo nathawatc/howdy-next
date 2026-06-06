@@ -48,6 +48,18 @@ auto main() -> int {
                      "parses input workaround from PAM args");
     }
     {
+        std::array<const char *, 2> args = {nullptr, "workaround=native"};
+        ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                         Workaround::Native,
+                     "skips null PAM args");
+    }
+    {
+        std::array<const char *, 1> args = {"workaround="};
+        ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+                         Workaround::Off,
+                     "empty PAM workaround falls back to off");
+    }
+    {
         std::array<const char *, 1> args = {"workaround=invalid"};
         ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
                          Workaround::Off,
