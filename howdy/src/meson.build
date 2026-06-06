@@ -101,6 +101,33 @@ test(
     args: ['--help'],
 )
 
+test(
+    'native-auth-helper-empty',
+    native_auth_helper,
+    expected_fail: true,
+)
+
+test(
+    'native-auth-helper-unknown-command',
+    native_auth_helper,
+    args: ['unknown', 'alice'],
+    expected_fail: true,
+)
+
+test(
+    'native-auth-helper-prepare-guard',
+    native_auth_helper,
+    args: ['prepare', '../alice'],
+    expected_fail: true,
+)
+
+test(
+    'native-auth-helper-cleanup-guard',
+    native_auth_helper,
+    args: ['cleanup', '/tmp/not-howdy-runtime'],
+    expected_fail: true,
+)
+
 native_auth_helper_test = executable(
     'howdy-auth-helper-test',
     'auth_helper.cpp',
