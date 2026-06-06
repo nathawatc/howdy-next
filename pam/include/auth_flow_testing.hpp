@@ -3,6 +3,7 @@
 
 #ifdef HOWDY_PAM_TESTING
 
+#    include <filesystem>
 #    include <functional>
 #    include <string>
 
@@ -25,6 +26,8 @@ namespace howdy::pam::testing {
     auto howdy_error(int status, const ConversationFn &conv_function) -> int;
     auto howdy_status(char *username, int status, const howdy::native::ConfigReader &config,
                       const ConversationFn &conv_function) -> int;
+    auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
+                       const std::filesystem::path &user_models_dir) -> int;
     auto wait_for_compare_process(pid_t child_pid) -> int;
     auto read_fd_to_string(int fd) -> std::string;
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string;

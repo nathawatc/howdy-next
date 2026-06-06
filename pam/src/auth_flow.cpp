@@ -498,6 +498,11 @@ namespace howdy::pam::testing {
         return ::howdy_status(username, status, config, conv_function);
     }
 
+    auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
+                       const std::filesystem::path &user_models_dir) -> int {
+        return ::check_enabled(config, username, user_models_dir);
+    }
+
     auto wait_for_compare_process(pid_t child_pid) -> int {
         return ::wait_for_compare_process(child_pid);
     }

@@ -7,14 +7,18 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <string>
 #include <unistd.h>
 
 #include <security/pam_appl.h>
+#include <security/pam_modules.h>
 
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 namespace {
@@ -87,6 +91,32 @@ namespace {
 
     private:
         pam_handle_t *pamh_ = nullptr;
+    };
+
+    class ScopedEnv {
+    public:
+        explicit ScopedEnv(const char *name)
+            : name_(name) {
+            const char *value = getenv(name_.c_str());
+            if (value != nullptr) {
+                original_ = value;
+            }
+        }
+
+        ScopedEnv(const ScopedEnv &)                     = delete;
+        auto operator=(const ScopedEnv &) -> ScopedEnv & = delete;
+
+        ~ScopedEnv() {
+            if (original_.has_value()) {
+                setenv(name_.c_str(), original_->c_str(), 1);
+                return;
+            }
+            unsetenv(name_.c_str());
+        }
+
+    private:
+        std::string                name_;
+        std::optional<std::string> original_;
     };
 
     enum class ResponseMode {
@@ -171,6 +201,17 @@ namespace {
         std::ofstream output(path);
         output << content;
         return output.good();
+    }
+
+    auto config_from_contents(const std::string &label, const std::string &content,
+                              std::string *path) -> bool {
+        *path = "/tmp/howdy-auth-flow-" + label + "-XXXXXX";
+        ScopedFd config_fd(mkstemp(path->data()));
+        if (config_fd.get() < 0) {
+            return false;
+        }
+        config_fd.reset();
+        return write_file(*path, content);
     }
 
     auto expect_fd_reading() -> bool {
@@ -408,6 +449,75 @@ namespace {
         return ok;
     }
 
+    auto expect_enabled_decisions() -> bool {
+        using howdy::pam::testing::check_enabled;
+
+        bool ok = true;
+
+        std::string disabled_path;
+        ok &= expect(config_from_contents("disabled", "[core]\ndisabled = true\n", &disabled_path),
+                     "writes disabled config");
+        const howdy::native::ConfigReader disabled_config(disabled_path);
+        unlink(disabled_path.c_str());
+        ok &= expect(disabled_config.ok(), "parses disabled config");
+        ok &= expect(check_enabled(disabled_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
+                     "disabled config skips authentication");
+
+        std::string ssh_path;
+        ok &= expect(config_from_contents("ssh", "[core]\nabort_if_ssh = true\n", &ssh_path),
+                     "writes ssh config");
+        const howdy::native::ConfigReader ssh_config(ssh_path);
+        unlink(ssh_path.c_str());
+        ok &= expect(ssh_config.ok(), "parses ssh config");
+        ScopedEnv ssh_connection("SSH_CONNECTION");
+        setenv("SSH_CONNECTION", "client server", 1);
+        ok &= expect(check_enabled(ssh_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
+                     "ssh environment skips authentication");
+        unsetenv("SSH_CONNECTION");
+
+        std::string base_path;
+        ok &= expect(config_from_contents("base",
+                                          "[core]\n"
+                                          "abort_if_ssh = false\n"
+                                          "abort_if_lid_closed = false\n",
+                                          &base_path),
+                     "writes base config");
+        const howdy::native::ConfigReader base_config(base_path);
+        unlink(base_path.c_str());
+        ok &= expect(base_config.ok(), "parses base config");
+
+        ok &= expect(check_enabled(base_config, "../alice", "/") == PAM_AUTHINFO_UNAVAIL,
+                     "invalid username skips authentication");
+        ok &= expect(check_enabled(base_config, "howdy_missing_model_for_test", "/") ==
+                         PAM_AUTHINFO_UNAVAIL,
+                     "missing model file skips authentication");
+        ok &= expect(check_enabled(base_config, "alice", "/tmp") == PAM_AUTHINFO_UNAVAIL,
+                     "insecure models directory skips authentication");
+
+        if (geteuid() == 0) {
+            namespace fs                = std::filesystem;
+            std::string models_template = "/run/howdy-auth-flow-models-XXXXXX";
+            char       *models_dir_name = mkdtemp(models_template.data());
+            ok &= expect(models_dir_name != nullptr, "creates root-owned models directory");
+            if (models_dir_name != nullptr) {
+                const fs::path models_dir = models_dir_name;
+                const fs::path model_path = models_dir / "alice.dat";
+                ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
+                             "sets secure models directory mode");
+                ok &= expect(write_file(model_path.string(), "[]"), "writes model file");
+                ok &= expect(chmod(model_path.c_str(), 0644) == 0, "sets secure model file mode");
+                ok &= expect(check_enabled(base_config, "alice", models_dir) == PAM_SUCCESS,
+                             "secure model path allows authentication");
+                std::error_code ec;
+                fs::remove_all(models_dir, ec);
+            }
+        } else {
+            std::cerr << "SKIP: check_enabled success path requires root-owned fixture\n";
+        }
+
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -419,6 +529,7 @@ auto main() -> int {
     ok &= expect_process_waiting();
     ok &= expect_conversation_helpers();
     ok &= expect_status_helpers();
+    ok &= expect_enabled_decisions();
 
     const std::string output =
         "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";
