@@ -1,10 +1,14 @@
 #include "auth_flow_testing.hpp"
+#include "common/compare_exit.hpp"
 
 #include <array>
 #include <cerrno>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <unistd.h>
+
+#include <sys/wait.h>
 
 namespace {
 
@@ -120,6 +124,47 @@ namespace {
         return ok;
     }
 
+    auto spawn_exiting_child(int exit_code) -> pid_t {
+        const pid_t child_pid = fork();
+        if (child_pid == 0) {
+            _exit(exit_code);
+        }
+        return child_pid;
+    }
+
+    auto expect_process_waiting() -> bool {
+        using howdy::pam::testing::wait_for_compare_process;
+        using howdy::pam::testing::wait_for_helper_process;
+
+        bool        ok                = true;
+        const pid_t compare_child_pid = spawn_exiting_child(7);
+        ok &= expect(compare_child_pid > 0, "spawns compare child");
+        if (compare_child_pid > 0) {
+            const int status = wait_for_compare_process(compare_child_pid);
+            ok &= expect(WIFEXITED(status) && WEXITSTATUS(status) == 7,
+                         "compare wait preserves child exit status");
+        }
+
+        const pid_t helper_child_pid = spawn_exiting_child(9);
+        ok &= expect(helper_child_pid > 0, "spawns helper child");
+        if (helper_child_pid > 0) {
+            const int status = wait_for_helper_process(helper_child_pid);
+            ok &= expect(WIFEXITED(status) && WEXITSTATUS(status) == 9,
+                         "helper wait preserves child exit status");
+        }
+
+        constexpr pid_t kNonexistentChild = std::numeric_limits<pid_t>::max();
+        const int       compare_failure   = wait_for_compare_process(kNonexistentChild);
+        const auto      abort_code        = static_cast<int>(howdy::native::CompareExit::kAbort);
+        ok &= expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
+                     "compare wait failure returns abort status");
+        const int helper_failure = wait_for_helper_process(kNonexistentChild);
+        ok &= expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
+                     "helper wait failure returns abort status");
+
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -128,6 +173,7 @@ auto main() -> int {
     bool ok = true;
 
     ok &= expect_fd_reading();
+    ok &= expect_process_waiting();
 
     const std::string output =
         "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";

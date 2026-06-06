@@ -476,12 +476,20 @@ namespace {
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
 
+    auto wait_for_compare_process(pid_t child_pid) -> int {
+        return ::wait_for_compare_process(child_pid);
+    }
+
     auto read_fd_to_string(int fd) -> std::string {
         return ::read_fd_to_string(fd);
     }
 
     auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
         return ::helper_output_value(output, key);
+    }
+
+    auto wait_for_helper_process(pid_t child_pid) -> int {
+        return ::wait_for_helper_process(child_pid);
     }
 
 }  // namespace howdy::pam::testing
