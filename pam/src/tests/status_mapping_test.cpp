@@ -7,6 +7,8 @@
 
 #include <security/pam_modules.h>
 
+#include <sys/wait.h>
+
 namespace {
 
     auto expect(bool condition, const std::string &message) -> bool {
@@ -107,6 +109,14 @@ auto main() -> int {
         ok &= expect(decision.conversation_kind == ConversationKind::None,
                      "signal exit has no conversation");
         ok &= expect(decision.log_message.find("Child killed by signal") == 0, "signal exit log");
+    }
+
+    {
+        const auto decision = map_compare_wait_status(W_STOPCODE(SIGSTOP));
+        ok &= expect(decision.pam_result == PAM_AUTH_ERR, "stopped status fails closed");
+        ok &= expect(decision.conversation_kind == ConversationKind::None,
+                     "stopped status has no conversation");
+        ok &= expect(decision.log_message.empty(), "stopped status has no misleading log");
     }
 
     {
