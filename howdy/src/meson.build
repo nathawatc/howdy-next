@@ -101,6 +101,21 @@ test(
     args: ['--help'],
 )
 
+native_auth_helper_test = executable(
+    'howdy-auth-helper-test',
+    'auth_helper.cpp',
+    'config/runtime_paths.cpp',
+    'tests/auth_helper_test.cpp',
+    include_directories: native_cpp_inc,
+    cpp_args: ['-DHOWDY_AUTH_HELPER_TESTING'],
+    install: false,
+)
+
+test(
+    'native-auth-helper',
+    native_auth_helper_test,
+)
+
 test(
     'native-compare-unknown-arg',
     native_compare,

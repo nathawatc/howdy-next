@@ -1,5 +1,8 @@
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
+#ifdef HOWDY_AUTH_HELPER_TESTING
+#    include "auth_helper_testing.hpp"
+#endif
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -26,10 +29,12 @@ namespace {
         std::filesystem::path user_models_dir;
     };
 
+#ifndef HOWDY_AUTH_HELPER_TESTING
     auto usage(const char *argv0) -> void {
         std::cout << "Usage: " << argv0 << " prepare <user>\n"
                   << "       " << argv0 << " cleanup <runtime-dir>\n";
     }
+#endif
 
     auto fail(const std::string &message) -> int {
         std::cerr << message << "\n";
@@ -336,6 +341,41 @@ namespace {
 
 }  // namespace
 
+#ifdef HOWDY_AUTH_HELPER_TESTING
+namespace howdy::native::testing {
+
+    auto runtime_root() -> std::filesystem::path {
+        return ::runtime_root();
+    }
+
+    auto validate_runtime_root(const std::filesystem::path &path) -> bool {
+        return ::validate_runtime_root(path);
+    }
+
+    auto secure_source_file_stat(int fd, const std::string &label) -> bool {
+        return ::secure_source_file_stat(fd, label);
+    }
+
+    auto write_all(int fd, const char *data, ssize_t size) -> bool {
+        return ::write_all(fd, data, size);
+    }
+
+    auto copy_file_for_user(const std::filesystem::path &source,
+                            const std::filesystem::path &destination, const std::string &label,
+                            gid_t gid) -> bool {
+        return ::copy_file_for_user(source, destination, label, gid);
+    }
+
+    auto prepare_for_user(const std::string &user) -> int {
+        return ::prepare_for_user(user);
+    }
+
+    auto cleanup_for_user(const std::filesystem::path &path) -> int {
+        return ::cleanup_for_user(path);
+    }
+
+}  // namespace howdy::native::testing
+#else
 auto main(int argc, char **argv) -> int {
     if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
         usage(argv[0]);
@@ -353,3 +393,4 @@ auto main(int argc, char **argv) -> int {
 
     return prepare_for_user(argv[2]);
 }
+#endif
