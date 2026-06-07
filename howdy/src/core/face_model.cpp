@@ -1,6 +1,5 @@
 #include "core/face_model.hpp"
 
-#include "common/file_security.hpp"
 #include "common/model_file.hpp"
 #include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
@@ -24,25 +23,10 @@ namespace howdy::native {
             resolve_model_path(config, "sface_model", (models_dir / kSfaceModel).string());
 
         for (const auto &model_path : {yunet_model, sface_model}) {
-            const auto directory_security = check_secure_root_owned_directory_tree(
-                std::filesystem::path(model_path).parent_path(), "Models directory",
-                static_cast<uid_t>(0));
-            if (!directory_security.ok) {
-                set_error(directory_security.error_message);
-                return;
-            }
-            if (!std::filesystem::is_regular_file(model_path)) {
-                set_error("OpenCV face model file is missing: " + model_path);
-                return;
-            }
-            const auto model_security = check_secure_root_owned_file(
-                model_path, "OpenCV face model file", static_cast<uid_t>(0));
-            if (!model_security.ok) {
-                set_error(model_security.error_message);
-                return;
-            }
-            if (is_invalid_model_file(model_path)) {
-                set_error("OpenCV face model file is invalid: " + model_path);
+            const auto readiness =
+                check_opencv_face_model_readiness(model_path, static_cast<uid_t>(0));
+            if (readiness.status != OpenCvModelStatus::kOk) {
+                set_error(readiness.error_message);
                 return;
             }
         }

@@ -238,6 +238,18 @@ test(
     native_file_security_test,
 )
 
+native_model_file_test = executable(
+    'howdy-model-file-test',
+    'tests/model_file_test.cpp',
+    include_directories: native_cpp_inc,
+    install: false,
+)
+
+test(
+    'native-model-file',
+    native_model_file_test,
+)
+
 native_capture_device_path_test = executable(
     'howdy-capture-device-path-test',
     'tests/capture_device_path_test.cpp',
@@ -327,6 +339,26 @@ native_config_cli_test = executable(
 test(
     'native-config-cli',
     native_config_cli_test,
+)
+
+native_download_models_test = executable(
+    'howdy-download-models-test',
+    'cli/download_models.cpp',
+    'config/runtime_paths.cpp',
+    'tests/download_models_test.cpp',
+    include_directories: native_cpp_inc,
+    cpp_args: ['-DHOWDY_DOWNLOAD_MODELS_TESTING'],
+    dependencies: [
+        libcurl,
+        openssl,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-download-models',
+    native_download_models_test,
 )
 
 native_user_names_test = executable(
