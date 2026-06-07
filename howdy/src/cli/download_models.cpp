@@ -1,4 +1,5 @@
 #include "cli/download_models_cli.hpp"
+#include "cli/download_models_internal.hpp"
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "common/model_file.hpp"
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cctype>
 #include <fcntl.h>
 #include <filesystem>
@@ -23,22 +25,6 @@
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
-
-#ifdef HOWDY_DOWNLOAD_MODELS_TESTING
-namespace howdy::native::testing {
-
-    int download_models_test_download_attempts = 0;
-
-    void reset_download_models_test_state() {
-        download_models_test_download_attempts = 0;
-    }
-
-    auto download_models_test_attempted_downloads() -> int {
-        return download_models_test_download_attempts;
-    }
-
-}  // namespace howdy::native::testing
-#endif
 
 namespace {
 
@@ -57,10 +43,7 @@ namespace {
         std::optional<std::string> sha256;
     };
 
-    struct StagedDownloadFile {
-        int                   fd = -1;
-        std::filesystem::path path;
-    };
+    using howdy::native::download_models_internal::StagedDownloadFile;
 
     auto trim(const std::string &value) -> std::string {
         const auto start = value.find_first_not_of(" \t\r\n");
@@ -87,12 +70,8 @@ namespace {
         return value;
     }
 
-    auto model_file_owner_uid() -> std::optional<uid_t> {
-#ifdef HOWDY_DOWNLOAD_MODELS_TESTING
-        return std::nullopt;
-#else
+    auto root_model_file_owner_uid() -> std::optional<uid_t> {
         return static_cast<uid_t>(0);
-#endif
     }
 
     void configure_transfer_policy(CURL *curl) {
@@ -111,7 +90,6 @@ namespace {
 #endif
     }
 
-#ifndef HOWDY_DOWNLOAD_MODELS_TESTING
     size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
         auto      *fd    = static_cast<int *>(userp);
         const auto total = size * nmemb;
@@ -131,7 +109,6 @@ namespace {
         }
         return total;
     }
-#endif
 
     size_t header_capture_callback(char *buffer, size_t size, size_t nitems, void *userdata) {
         auto       *etag  = static_cast<std::string *>(userdata);
@@ -305,12 +282,6 @@ namespace {
     }
 
     auto download_file(const std::string &url, StagedDownloadFile &staged) -> bool {
-#ifdef HOWDY_DOWNLOAD_MODELS_TESTING
-        (void)url;
-        (void)staged;
-        ++howdy::native::testing::download_models_test_download_attempts;
-        return false;
-#else
         CURL *curl = curl_easy_init();
         if (curl == nullptr) {
             return false;
@@ -335,12 +306,15 @@ namespace {
         }
         staged.fd = -1;
         return true;
-#endif
     }
 
 }  // namespace
 
-int download_models_main(int argc, char **argv) {
+auto howdy::native::download_models_internal::download_models_main_with_dependencies(
+    int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
+    assert(dependencies.download_file != nullptr);
+    assert(dependencies.model_file_owner_uid != nullptr);
+
     (void)argc;
     (void)argv;
     const auto models_dir = howdy::native::resolve_models_dir();
@@ -368,7 +342,7 @@ int download_models_main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
     for (const auto &model : models) {
         const auto readiness = howdy::native::check_opencv_model_readiness_with_label(
-            model.destination, "Model file", model_file_owner_uid());
+            model.destination, "Model file", dependencies.model_file_owner_uid());
         if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
             curl_global_cleanup();
             std::cout << readiness.error_message << "\n";
@@ -391,7 +365,7 @@ int download_models_main(int argc, char **argv) {
             return kExitAbort;
         }
 
-        if (!download_file(model.url, *staged)) {
+        if (!dependencies.download_file(model.url, *staged)) {
             cleanup_staged_download(*staged);
             curl_global_cleanup();
             std::cout << "Failed to download model: " << model.url << "\n";
@@ -440,4 +414,13 @@ int download_models_main(int argc, char **argv) {
 
     std::cout << "OpenCV face models ready in: " << models_dir.string() << "\n";
     return kExitOk;
+}
+
+int download_models_main(int argc, char **argv) {
+    return howdy::native::download_models_internal::download_models_main_with_dependencies(
+        argc, argv,
+        howdy::native::download_models_internal::DownloadModelsDependencies{
+            .download_file        = download_file,
+            .model_file_owner_uid = root_model_file_owner_uid,
+        });
 }

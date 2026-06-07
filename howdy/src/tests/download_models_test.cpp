@@ -1,4 +1,4 @@
-#include "cli/download_models_cli.hpp"
+#include "cli/download_models_internal.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -13,12 +13,30 @@
 
 #include <sys/stat.h>
 
-namespace howdy::native::testing {
-    void reset_download_models_test_state();
-    auto download_models_test_attempted_downloads() -> int;
-}  // namespace howdy::native::testing
-
 namespace {
+
+    int download_attempts = 0;
+
+    void reset_download_attempts() {
+        download_attempts = 0;
+    }
+
+    auto attempted_downloads() -> int {
+        return download_attempts;
+    }
+
+    auto fake_download_file(const std::string                                           &url,
+                            howdy::native::download_models_internal::StagedDownloadFile &staged)
+        -> bool {
+        (void)url;
+        (void)staged;
+        ++download_attempts;
+        return false;
+    }
+
+    auto test_model_file_owner_uid() -> std::optional<uid_t> {
+        return std::nullopt;
+    }
 
     auto read_file(const std::filesystem::path &path) -> std::string {
         std::ifstream in(path);
@@ -126,7 +144,13 @@ namespace {
             const_cast<char *>("howdy-download-models"),
             nullptr,
         };
-        *exit_code = download_models_main(1, argv.data());
+        *exit_code =
+            howdy::native::download_models_internal::download_models_main_with_dependencies(
+                1, argv.data(),
+                howdy::native::download_models_internal::DownloadModelsDependencies{
+                    .download_file        = fake_download_file,
+                    .model_file_owner_uid = test_model_file_owner_uid,
+                });
         return true;
     }
 
@@ -142,7 +166,7 @@ namespace {
                                     const std::filesystem::path &output_path, int *exit_code)
         -> bool {
         EnvVarGuard models_env("HOWDY_MODELS_DIR", models_dir.string());
-        howdy::native::testing::reset_download_models_test_state();
+        reset_download_attempts();
         return capture_download_models_stdout(output_path, exit_code);
     }
 
@@ -171,7 +195,7 @@ auto main() -> int {
                  "capture existing-directory download-models output");
     const auto existing_stdout = read_file(existing_output);
     ok &= expect(existing_exit == 1, "stubbed download aborts after readiness passes");
-    ok &= expect(howdy::native::testing::download_models_test_attempted_downloads() == 1,
+    ok &= expect(attempted_downloads() == 1,
                  "missing model in existing secure directory reaches download");
     ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
                  "existing secure directory starts first model download");
@@ -189,8 +213,8 @@ auto main() -> int {
     ok &= expect(missing_parent_exit == 1, "stubbed download aborts after missing parent creation");
     ok &= expect(fs::is_directory(missing_parent_models_dir, ec) && !ec,
                  "download-models creates missing models directory before readiness checks");
-    ok &= expect(howdy::native::testing::download_models_test_attempted_downloads() == 1,
-                 "missing model after parent creation reaches download");
+    ok &=
+        expect(attempted_downloads() == 1, "missing model after parent creation reaches download");
     ok &= expect(
         missing_parent_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
         "missing parent path starts first model download");

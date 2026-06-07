@@ -347,7 +347,6 @@ native_download_models_test = executable(
     'config/runtime_paths.cpp',
     'tests/download_models_test.cpp',
     include_directories: native_cpp_inc,
-    cpp_args: ['-DHOWDY_DOWNLOAD_MODELS_TESTING'],
     dependencies: [
         libcurl,
         openssl,
