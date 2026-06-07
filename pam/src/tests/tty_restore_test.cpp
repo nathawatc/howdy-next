@@ -122,7 +122,7 @@ namespace {
     auto create_regular_file(std::string *path) -> bool {
         constexpr std::string_view kTemplatePath = "/tmp/howdy-tty-restore-test-XXXXXX";
         std::array<char, kTemplatePath.size() + 1> template_path{};
-        std::copy(kTemplatePath.begin(), kTemplatePath.end(), template_path.begin());
+        std::ranges::copy(kTemplatePath, template_path.begin());
 
         const int fd = mkstemp(template_path.data());
         if (fd < 0) {

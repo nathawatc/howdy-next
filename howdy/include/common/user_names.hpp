@@ -17,11 +17,11 @@ namespace howdy::native {
             return false;
         }
 
-        if (user.front() == '.' || user.find("..") != std::string_view::npos) {
+        if (user.front() == '.' || user.contains("..")) {
             return false;
         }
 
-        return std::all_of(user.begin(), user.end(), [](const char raw) {
+        return std::ranges::all_of(user, [](const char raw) {
             const auto ch = static_cast<unsigned char>(raw);
             return raw != '/' && raw != '\\' && std::isspace(ch) == 0 && std::iscntrl(ch) == 0;
         });
@@ -38,7 +38,7 @@ namespace howdy::native {
     }
 
     inline auto is_valid_model_label(const std::string_view label) -> bool {
-        return std::all_of(label.begin(), label.end(), [](const char raw) {
+        return std::ranges::all_of(label, [](const char raw) {
             const auto ch = static_cast<unsigned char>(raw);
             return raw != '/' && raw != '\\' && std::iscntrl(ch) == 0;
         });

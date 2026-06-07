@@ -784,7 +784,7 @@ auto main() -> int {
         std::ifstream     persisted(model_path);
         const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
                                          std::istreambuf_iterator<char>());
-        ok &= expect(persisted_text.find("invalid") == std::string::npos,
+        ok &= expect(!persisted_text.contains("invalid"),
                      "append does not write invalid new-entry encodings");
     }
     const auto second_append = howdy::native::append_user_model_entry("alice", second_entry);
@@ -803,7 +803,7 @@ auto main() -> int {
         std::ifstream     persisted(model_path);
         const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
                                          std::istreambuf_iterator<char>());
-        ok &= expect(persisted_text.find("future_field") != std::string::npos,
+        ok &= expect(persisted_text.contains("future_field"),
                      "append preserves unknown fields in existing entries");
     }
 

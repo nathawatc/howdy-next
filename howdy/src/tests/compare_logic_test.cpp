@@ -95,8 +95,7 @@ auto main() -> int {
         ok &= expect(howdy::native::compare_abort_from_cv_exception(
                          error, stream, "test compare path") == howdy::native::CompareExit::kAbort,
                      "OpenCV exception maps to abort");
-        ok &= expect(stream.str().find("OpenCV exception during test compare path") !=
-                         std::string::npos,
+        ok &= expect(stream.str().contains("OpenCV exception during test compare path"),
                      "OpenCV exception context is logged");
     }
 
@@ -106,8 +105,7 @@ auto main() -> int {
         ok &= expect(howdy::native::compare_abort_from_exception(
                          error, stream, "test compare path") == howdy::native::CompareExit::kAbort,
                      "std exception maps to abort");
-        ok &= expect(stream.str().find("Unhandled exception during test compare path") !=
-                         std::string::npos,
+        ok &= expect(stream.str().contains("Unhandled exception during test compare path"),
                      "std exception context is logged");
     }
 
@@ -116,8 +114,7 @@ auto main() -> int {
         ok &= expect(howdy::native::compare_abort_from_unknown_exception(
                          stream, "test compare path") == howdy::native::CompareExit::kAbort,
                      "unknown exception maps to abort");
-        ok &= expect(stream.str().find("Unknown exception during test compare path") !=
-                         std::string::npos,
+        ok &= expect(stream.str().contains("Unknown exception during test compare path"),
                      "unknown exception context is logged");
     }
 

@@ -136,7 +136,7 @@ namespace howdy::native {
             return false;
         }
 
-        return std::all_of(value.begin(), value.end(), [](const char ch) {
+        return std::ranges::all_of(value, [](const char ch) {
             return ch != '\0' && ch != '\n' && ch != '\r';
         });
     }
@@ -458,7 +458,7 @@ namespace howdy::native {
             }
 
             const auto stripped = line.substr(stripped_pos);
-            if (stripped.rfind(key + " =", 0) == 0 || stripped.rfind(key + " ", 0) == 0) {
+            if (stripped.starts_with(key + " =") || stripped.starts_with(key + " ")) {
                 line = key;
                 line += " = ";
                 line += value;

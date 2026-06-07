@@ -89,7 +89,7 @@ namespace howdy::native {
 
     inline auto config_sface_metric(const ConfigReader &config) -> std::string {
         auto metric = config.get("face", "sface_metric", "cosine");
-        std::transform(metric.begin(), metric.end(), metric.begin(), [](unsigned char ch) {
+        std::ranges::transform(metric, metric.begin(), [](unsigned char ch) {
             return static_cast<char>(std::tolower(ch));
         });
         if (metric == "cosine" || metric == "l2" || metric == "l2norm") {

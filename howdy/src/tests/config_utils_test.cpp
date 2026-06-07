@@ -94,8 +94,7 @@ auto main() -> int {
     ok &= expect(howdy::native::update_config_value(config_path, "disabled", "true"),
                  "update_config_value succeeds for existing key");
     const auto after_disabled = read_file(config_path);
-    ok &= expect(after_disabled.find("disabled = true\n") != std::string::npos,
-                 "disabled key updated");
+    ok &= expect(after_disabled.contains("disabled = true\n"), "disabled key updated");
 
     ok &= expect(howdy::native::is_safe_ini_scalar_value("true"),
                  "is_safe_ini_scalar_value accepts simple scalar");
@@ -107,8 +106,7 @@ auto main() -> int {
     ok &= expect(howdy::native::update_config_value(config_path, "dark_threshold", "42"),
                  "update_config_value succeeds in later section");
     const auto after_threshold = read_file(config_path);
-    ok &= expect(after_threshold.find("dark_threshold = 42\n") != std::string::npos,
-                 "dark_threshold key updated");
+    ok &= expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
 
     ok &= expect(!howdy::native::update_config_value(config_path, "missing_key", "x"),
                  "update_config_value fails for missing key");
@@ -142,27 +140,23 @@ auto main() -> int {
         write_ok &=
             expect(howdy::native::update_config_value(config_path, "clahe_clip_limit", "1.25"),
                    label + ": update_config_value accepts clahe_clip_limit dot decimal");
-        write_ok &=
-            expect(read_file(config_path).find("clahe_clip_limit = 1.25\n") != std::string::npos,
-                   label + ": clahe_clip_limit written unchanged");
+        write_ok &= expect(read_file(config_path).contains("clahe_clip_limit = 1.25\n"),
+                           label + ": clahe_clip_limit written unchanged");
         write_ok &= expect(
             howdy::native::update_config_value(config_path, "yunet_score_threshold", "0.8845"),
             label + ": update_config_value accepts yunet_score_threshold dot decimal");
-        write_ok &= expect(read_file(config_path).find("yunet_score_threshold = 0.8845\n") !=
-                               std::string::npos,
+        write_ok &= expect(read_file(config_path).contains("yunet_score_threshold = 0.8845\n"),
                            label + ": yunet_score_threshold written unchanged");
         write_ok &=
             expect(howdy::native::update_config_value(config_path, "yunet_nms_threshold", "0.3"),
                    label + ": update_config_value accepts yunet_nms_threshold dot decimal");
-        write_ok &=
-            expect(read_file(config_path).find("yunet_nms_threshold = 0.3\n") != std::string::npos,
-                   label + ": yunet_nms_threshold written unchanged");
+        write_ok &= expect(read_file(config_path).contains("yunet_nms_threshold = 0.3\n"),
+                           label + ": yunet_nms_threshold written unchanged");
         write_ok &=
             expect(howdy::native::update_config_value(config_path, "sface_threshold", "0.6942"),
                    label + ": update_config_value accepts sface_threshold dot decimal");
-        write_ok &=
-            expect(read_file(config_path).find("sface_threshold = 0.6942\n") != std::string::npos,
-                   label + ": sface_threshold written unchanged");
+        write_ok &= expect(read_file(config_path).contains("sface_threshold = 0.6942\n"),
+                           label + ": sface_threshold written unchanged");
 
         for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
             const auto before_invalid = read_file(config_path);
@@ -209,7 +203,7 @@ auto main() -> int {
         howdy::native::update_config_value(config_path, "disabled", "true", nullptr, false, false),
         "update_config_value can bypass runtime validation for recovery writes");
     const auto after_disable_recovery = read_file(config_path);
-    ok &= expect(after_disable_recovery.find("disabled = true\n") != std::string::npos,
+    ok &= expect(after_disable_recovery.contains("disabled = true\n"),
                  "recovery write updates disabled key");
     howdy::native::ConfigReader still_invalid(config_path.string());
     ok &= expect(still_invalid.ok(), "recovery-write config still parses");
@@ -289,7 +283,7 @@ auto main() -> int {
     ok &= expect(read_file(replace_path) == recovery_content,
                  "runtime-validation bypass installs content");
 
-    const auto stale_expected_content = recovery_content;
+    const auto &stale_expected_content = recovery_content;
     ok &= expect(write_file(replace_path, valid_content), "write changed config before stale edit");
     ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore changed config mode");
     ok &= expect(!howdy::native::replace_config_content_atomically(
@@ -372,10 +366,9 @@ auto main() -> int {
                      "check_secure_config_path rejects inaccessible config path");
         ok &= expect(unreadable_check.error_code == EACCES,
                      "inaccessible config path preserves EACCES");
-        ok &= expect(unreadable_check.error_message.find("process uid=") != std::string::npos,
+        ok &= expect(unreadable_check.error_message.contains("process uid="),
                      "inaccessible config path reports process uid");
-        ok &= expect(unreadable_check.error_message.find("do not make /etc/howdy") !=
-                         std::string::npos,
+        ok &= expect(unreadable_check.error_message.contains("do not make /etc/howdy"),
                      "inaccessible config path warns against insecure permissions");
     }
     ok &= expect(chmod(unreadable_dir.c_str(), 0755) == 0, "restore unreadable config dir mode");
@@ -389,7 +382,7 @@ auto main() -> int {
     if (geteuid() != 0) {
         ok &= expect(!strict_root_check.ok,
                      "strict root-owned config check rejects non-root-owned config");
-        ok &= expect(strict_root_check.error_message.find("owned by root") != std::string::npos,
+        ok &= expect(strict_root_check.error_message.contains("owned by root"),
                      "strict root-owned config check reports root ownership requirement");
     } else {
         ok &= expect(strict_root_check.ok,

@@ -262,7 +262,7 @@ namespace howdy::native {
                 return failure(UserModelStatus::kOversized,
                                "Stored face encoding exceeds safety limit");
             }
-            if (!std::all_of(encoding.begin(), encoding.end(), [](float value) {
+            if (!std::ranges::all_of(encoding, [](float value) {
                     return std::isfinite(value);
                 })) {
                 return failure(UserModelStatus::kInvalidShape,
@@ -752,10 +752,9 @@ namespace howdy::native {
             return mutation_failure(entries.status, entries.error_message);
         }
 
-        const auto found = std::find_if(entries.entries.begin(), entries.entries.end(),
-                                        [id](const UserModelEntry &entry) {
-                                            return entry.id == id;
-                                        });
+        const auto found = std::ranges::find_if(entries.entries, [id](const UserModelEntry &entry) {
+            return entry.id == id;
+        });
         if (found == entries.entries.end()) {
             return mutation_failure(UserModelStatus::kModelNotFound, "Model ID was not found");
         }
@@ -777,10 +776,10 @@ namespace howdy::native {
             return mutation_failure(entries.status, entries.error_message);
         }
 
-        const auto found = std::find_if(entries.entries.begin(), entries.entries.end(),
-                                        [&expected](const UserModelEntry &entry) {
-                                            return entry.id == expected.id;
-                                        });
+        const auto found =
+            std::ranges::find_if(entries.entries, [&expected](const UserModelEntry &entry) {
+                return entry.id == expected.id;
+            });
         if (found == entries.entries.end()) {
             return model_changed_failure();
         }

@@ -124,7 +124,7 @@ namespace {
 
 NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
     : pamh_(pamh)
-    , override_conv_{dispatch, this} {
+    , override_conv_{.conv = dispatch, .appdata_ptr = this} {
     const void *conv_ptr = nullptr;
     if (pam_get_item(pamh_, PAM_CONV, &conv_ptr) != PAM_SUCCESS || conv_ptr == nullptr) {
         return;
@@ -156,7 +156,7 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 #ifdef HOWDY_PAM_TESTING
 NativePromptConversation::NativePromptConversation(int tty_fd, int abort_read_fd,
                                                    int abort_write_fd)
-    : override_conv_{dispatch, this}
+    : override_conv_{.conv = dispatch, .appdata_ptr = this}
     , has_original_conv_(true)
     , tty_fd_(tty_fd)
     , abort_pipe_{{abort_read_fd, abort_write_fd}} {}
@@ -208,7 +208,8 @@ void NativePromptConversation::restore_original() {
     }
 
     syslog(LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
-    static const struct pam_conv fail_closed_conv = {fail_closed_dispatch, nullptr};
+    static const struct pam_conv fail_closed_conv = {.conv        = fail_closed_dispatch,
+                                                     .appdata_ptr = nullptr};
     const int fail_closed_result = pam_set_item(pamh_, PAM_CONV, &fail_closed_conv);
     if (fail_closed_result != PAM_SUCCESS) {
         syslog(LOG_CRIT, "Failed to install fail-closed PAM conversation: %d", fail_closed_result);
@@ -395,8 +396,8 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 
     std::string                  password;
     std::array<struct pollfd, 2> fds{{
-        {tty_fd_, POLLIN, 0},
-        {abort_pipe_[0], POLLIN, 0},
+        {.fd = tty_fd_, .events = POLLIN, .revents = 0},
+        {.fd = abort_pipe_[0], .events = POLLIN, .revents = 0},
     }};
 
     while (true) {

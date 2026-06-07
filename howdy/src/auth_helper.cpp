@@ -317,7 +317,7 @@ namespace {
         const auto      root = runtime_root();
         std::error_code ec;
         if (path.parent_path() != root ||
-            path.filename().string().rfind("pam-" + std::to_string(uid) + "-", 0) != 0) {
+            !path.filename().string().starts_with("pam-" + std::to_string(uid) + "-")) {
             return fail("Refusing to clean unexpected runtime directory");
         }
 

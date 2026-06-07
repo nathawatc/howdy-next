@@ -59,7 +59,7 @@ namespace {
         if (value.size() != 64) {
             return false;
         }
-        return std::all_of(value.begin(), value.end(), [](unsigned char ch) {
+        return std::ranges::all_of(value, [](unsigned char ch) {
             return std::isxdigit(ch) != 0;
         });
     }
@@ -125,7 +125,7 @@ namespace {
         }
 
         auto value = trim(line.substr(colon_pos + 1));
-        if (value.rfind("W/", 0) == 0) {
+        if (value.starts_with("W/")) {
             value = value.substr(2);
         }
         if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
@@ -320,16 +320,16 @@ int download_models_main(int argc, char **argv) {
     }
 
     const std::vector<ModelDownload> models = {
-        {howdy::native::FaceModel::kYunetModel,
-         "https://huggingface.co/opencv/face_detection_yunet/resolve/main/" +
-             std::string(howdy::native::FaceModel::kYunetModel),
-         models_dir / howdy::native::FaceModel::kYunetModel,
-         "49f000ec501fef24739071fc7e68267d32209045b6822c0c72dce1da25726f10"},
-        {howdy::native::FaceModel::kSfaceModel,
-         "https://huggingface.co/opencv/face_recognition_sface/resolve/main/" +
-             std::string(howdy::native::FaceModel::kSfaceModel),
-         models_dir / howdy::native::FaceModel::kSfaceModel,
-         "fb143eea07838aa532d1c95df5f69899974ea0140e1fba05e94204be13ed74ee"},
+        {.name        = howdy::native::FaceModel::kYunetModel,
+         .url         = "https://huggingface.co/opencv/face_detection_yunet/resolve/main/" +
+                        std::string(howdy::native::FaceModel::kYunetModel),
+         .destination = models_dir / howdy::native::FaceModel::kYunetModel,
+         .sha256      = "49f000ec501fef24739071fc7e68267d32209045b6822c0c72dce1da25726f10"},
+        {.name        = howdy::native::FaceModel::kSfaceModel,
+         .url         = "https://huggingface.co/opencv/face_recognition_sface/resolve/main/" +
+                        std::string(howdy::native::FaceModel::kSfaceModel),
+         .destination = models_dir / howdy::native::FaceModel::kSfaceModel,
+         .sha256      = "fb143eea07838aa532d1c95df5f69899974ea0140e1fba05e94204be13ed74ee"},
     };
 
     curl_global_init(CURL_GLOBAL_DEFAULT);

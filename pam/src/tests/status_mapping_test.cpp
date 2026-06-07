@@ -108,7 +108,7 @@ auto main() -> int {
         ok &= expect(decision.pam_result == PAM_AUTH_ERR, "signal exit fails closed");
         ok &= expect(decision.conversation_kind == ConversationKind::None,
                      "signal exit has no conversation");
-        ok &= expect(decision.log_message.find("Child killed by signal") == 0, "signal exit log");
+        ok &= expect(decision.log_message.starts_with("Child killed by signal"), "signal exit log");
     }
 
     {

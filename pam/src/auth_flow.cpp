@@ -213,7 +213,7 @@ namespace {
                     std::string   lid_state;
                     std::getline(file, lid_state);
 
-                    if (lid_state.find("closed") != std::string::npos) {
+                    if (lid_state.contains("closed")) {
                         globfree(&glob_result);
                         syslog(LOG_INFO, "Skipped authentication, closed lid detected");
                         return PAM_AUTHINFO_UNAVAIL;
@@ -287,7 +287,7 @@ namespace {
             const auto end    = next == std::string::npos ? output.size() : next;
             const auto line   = output.substr(offset, end - offset);
             const auto prefix = key + "=";
-            if (line.rfind(prefix, 0) == 0) {
+            if (line.starts_with(prefix)) {
                 return line.substr(prefix.size());
             }
             if (next == std::string::npos) {

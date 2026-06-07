@@ -45,7 +45,7 @@ namespace {
             return false;
         }
         const auto validation = howdy::native::validate_runtime_config(config);
-        return validation.has_value() && validation->find(needle) != std::string::npos;
+        return validation.has_value() && validation->contains(needle);
     }
 
 }  // namespace

@@ -17,6 +17,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <opencv2/imgproc.hpp>
@@ -311,7 +312,7 @@ auto main(int argc, char **argv) -> int {
                     std::cout << "Dark frames ignored: " << dark_tries << "\n";
                     std::cout << "Winning score: " << winning_score << "\n";
                     if (winning_index >= 0 &&
-                        winning_index < static_cast<int>(loaded_models.stored.models.size())) {
+                        std::cmp_less(winning_index, loaded_models.stored.models.size())) {
                         const auto &winner =
                             loaded_models.stored.models[static_cast<std::size_t>(winning_index)];
                         std::cout << "Winning model: " << winner.id << " (\"" << winner.label

@@ -43,7 +43,7 @@ inline auto get_pam_workaround(int argc, const char *const *argv) -> Workaround 
             continue;
         }
         const std::string_view argument(argv[index]);
-        if (argument.rfind(kPrefix, 0) == 0) {
+        if (argument.starts_with(kPrefix)) {
             return get_workaround(argument.substr(kPrefix.size()));
         }
     }

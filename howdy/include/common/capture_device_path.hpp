@@ -13,7 +13,7 @@ namespace howdy::native {
         }
 
         const std::string value(device_path);
-        if (value.rfind("/dev/video", 0) != 0 && value.rfind("/dev/v4l/by-path/", 0) != 0) {
+        if (!value.starts_with("/dev/video") && !value.starts_with("/dev/v4l/by-path/")) {
             return false;
         }
 

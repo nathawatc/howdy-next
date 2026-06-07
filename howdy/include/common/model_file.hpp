@@ -19,7 +19,7 @@ namespace howdy::native {
         std::string header(256, '\0');
         input.read(header.data(), static_cast<std::streamsize>(header.size()));
         header.resize(static_cast<std::size_t>(input.gcount()));
-        return header.rfind("version https://git-lfs.github.com/spec/v1", 0) == 0 ||
+        return header.starts_with("version https://git-lfs.github.com/spec/v1") ||
                (!header.empty() && header.front() == '<');
     }
 

@@ -108,7 +108,7 @@ auto add_main(int argc, char **argv) -> int {
             label = input.substr(0, 24);
         }
     }
-    label.erase(std::remove(label.begin(), label.end(), ','), label.end());
+    std::erase(label, ',');
 
     howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
     if (!capture.open()) {

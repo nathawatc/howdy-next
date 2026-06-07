@@ -259,9 +259,9 @@ auto main() -> int {
     const auto negative_fps_validation = howdy::native::validate_runtime_config(negative_fps);
     ok &= expect(negative_fps_validation.has_value(), "negative fps fails semantic validation");
     if (negative_fps_validation.has_value()) {
-        ok &= expect(negative_fps_validation->find("device_fps") != std::string::npos,
+        ok &= expect(negative_fps_validation->contains("device_fps"),
                      "negative fps validation reports key name");
-        ok &= expect(negative_fps_validation->find("-1") != std::string::npos,
+        ok &= expect(negative_fps_validation->contains("-1"),
                      "negative fps validation reports offending value");
     }
     ok &= expect(howdy::native::config_device_fps(negative_fps) == 0,

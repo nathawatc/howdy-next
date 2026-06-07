@@ -59,8 +59,7 @@ auto main() -> int {
                      "help produces help status");
         ok &= expect(result.exit_code == howdy::native::CompareExit::kSuccess,
                      "help returns success");
-        ok &= expect(result.message.find("Usage: howdy-compare") != std::string::npos,
-                     "help text populated");
+        ok &= expect(result.message.contains("Usage: howdy-compare"), "help text populated");
     }
 
     {
@@ -71,7 +70,7 @@ auto main() -> int {
         ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
                      "unknown arg is error");
         ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "unknown arg aborts");
-        ok &= expect(result.message.find("Unknown argument: --bad") != std::string::npos,
+        ok &= expect(result.message.contains("Unknown argument: --bad"),
                      "unknown arg message populated");
     }
 
