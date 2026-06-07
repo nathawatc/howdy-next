@@ -49,7 +49,7 @@ find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name
 Run static analysis when practical:
 
 ```bash
-run-clang-tidy -p build
+run-clang-tidy -p build -quiet
 ```
 
 ## Testing Guidelines
