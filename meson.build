@@ -5,6 +5,7 @@ project(
     version: '3.0.1',
     meson_version: '>= 1.11.0',
     default_options: [
+        'cpp_std=c++23',
         'b_pie=true',
     ],
 )
