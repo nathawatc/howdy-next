@@ -5,6 +5,7 @@
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
+#include "storage/user_model_readiness.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -78,6 +79,15 @@ namespace howdy::native {
         auto resolve_model_path(const std::string &user, bool create_directory,
                                 std::optional<uid_t> owner_uid) -> ModelPathResult {
             const auto models_dir = resolve_user_models_dir();
+            if (!create_directory) {
+                const auto readiness = check_user_model_readiness(models_dir, user, owner_uid);
+                return ModelPathResult{
+                    .status        = readiness.status,
+                    .error_message = readiness.error_message,
+                    .path          = readiness.path,
+                };
+            }
+
             const auto model_path = resolve_user_model_path(models_dir, user);
             if (!model_path) {
                 return ModelPathResult{
@@ -88,13 +98,11 @@ namespace howdy::native {
 
             std::error_code ec;
             if (!std::filesystem::exists(models_dir, ec)) {
-                if (ec || !create_directory) {
+                if (ec) {
                     return ModelPathResult{
-                        .status =
-                            ec ? UserModelStatus::kParseError : UserModelStatus::kNoModelDirectory,
+                        .status = UserModelStatus::kParseError,
                         .error_message =
-                            ec ? "Failed to inspect user models directory: " + models_dir.string()
-                               : std::string(),
+                            "Failed to inspect user models directory: " + models_dir.string(),
                     };
                 }
                 std::filesystem::create_directories(models_dir, ec);

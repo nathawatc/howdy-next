@@ -23,6 +23,7 @@ native_cpp_sources = [
     'config/runtime_paths.cpp',
     'core/face_model.cpp',
     'recorders/video_capture.cpp',
+    'storage/user_model_readiness.cpp',
     'storage/user_models.cpp',
 ]
 

@@ -1,9 +1,8 @@
 #include "common/compare_exit.hpp"
-#include "common/file_security.hpp"
-#include "common/user_names.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
+#include "storage/user_model_readiness.hpp"
 #ifdef HOWDY_PAM_TESTING
 #    include "auth_flow_testing.hpp"
 #endif
@@ -42,7 +41,6 @@
 #include <security/pam_ext.h>
 #include <security/pam_modules.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -225,32 +223,23 @@ namespace {
             globfree(&glob_result);
         }
 
-        const auto model_path = howdy::native::resolve_user_model_path(user_models_dir, username);
-        if (!model_path) {
-            syslog(LOG_WARNING, "Skipped authentication, invalid username");
-            return PAM_AUTHINFO_UNAVAIL;
-        }
-
-        const auto models_dir_security = howdy::native::check_secure_root_owned_directory_tree(
-            user_models_dir, "User models directory", static_cast<uid_t>(0));
-        if (!models_dir_security.ok) {
-            syslog(LOG_ERR, "%s", models_dir_security.error_message.c_str());
-            return PAM_AUTHINFO_UNAVAIL;
-        }
-
-        struct stat stat_{};
-        if (lstat(model_path->c_str(), &stat_) != 0) {
-            const int lstat_errno = errno;
-            syslog(LOG_WARNING, "Skipped authentication, failed to inspect model file %s: %s (%d)",
-                   model_path->c_str(), strerror(lstat_errno), lstat_errno);
-            return PAM_AUTHINFO_UNAVAIL;
-        }
-
-        const auto model_file_security = howdy::native::check_secure_root_owned_file_with_directory(
-            *model_path, "User models directory", "User model file", static_cast<uid_t>(0));
-        if (!model_file_security.ok) {
-            syslog(LOG_ERR, "%s", model_file_security.error_message.c_str());
-            return PAM_AUTHINFO_UNAVAIL;
+        const auto readiness = howdy::native::check_user_model_readiness(user_models_dir, username,
+                                                                         static_cast<uid_t>(0));
+        switch (readiness.status) {
+            case howdy::native::UserModelStatus::kOk:
+                break;
+            case howdy::native::UserModelStatus::kInvalidUser:
+                syslog(LOG_WARNING, "Skipped authentication, invalid username");
+                return PAM_AUTHINFO_UNAVAIL;
+            case howdy::native::UserModelStatus::kNoModel:
+            case howdy::native::UserModelStatus::kNoModelDirectory:
+                syslog(LOG_WARNING, "Skipped authentication, no face model found for user");
+                return PAM_AUTHINFO_UNAVAIL;
+            default:
+                if (!readiness.error_message.empty()) {
+                    syslog(LOG_ERR, "%s", readiness.error_message.c_str());
+                }
+                return PAM_AUTHINFO_UNAVAIL;
         }
 
         return PAM_SUCCESS;

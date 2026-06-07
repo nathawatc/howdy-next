@@ -1,5 +1,7 @@
 #pragma once
 
+#include "storage/user_model_status.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -8,26 +10,6 @@
 #include <sys/types.h>
 
 namespace howdy::native {
-
-    enum class UserModelStatus {
-        kOk,
-        kNoModel,
-        kNoModelDirectory,
-        kIncompatibleBackend,
-        kIncompatibleMetric,
-        kIncompatibleModel,
-        kParseError,
-        kInvalidShape,
-        kOversized,
-        kInsecurePath,
-        kInvalidUser,
-        kLockFailed,
-        kWriteFailed,
-        kDeleteFailed,
-        kDirectoryCreateFailed,
-        kModelNotFound,
-        kModelChanged,
-    };
 
     struct UserModelEntry {
         int                             id   = -1;

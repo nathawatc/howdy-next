@@ -1,4 +1,5 @@
 #include "common/user_names.hpp"
+#include "storage/user_model_readiness.hpp"
 #include "storage/user_models.hpp"
 
 #include <array>
@@ -45,6 +46,168 @@ namespace {
         };
     }
 
+    auto expect_readiness_checks(const std::filesystem::path &temp_root) -> bool {
+        namespace fs = std::filesystem;
+        using howdy::native::UserModelStatus;
+
+        bool            ok = true;
+        std::error_code ec;
+        const auto      models_dir = temp_root / "explicit-readiness-models";
+        const auto      model_path = models_dir / "readiness-user.dat";
+
+        fs::remove_all(models_dir, ec);
+        ec.clear();
+        {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kNoModelDirectory,
+                         "readiness missing model directory returns kNoModelDirectory");
+        }
+        {
+            const auto result =
+                howdy::native::check_user_model_readiness(models_dir, "../alice", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInvalidUser,
+                         "readiness invalid username returns kInvalidUser");
+        }
+
+        const auto real_models_dir    = temp_root / "real-readiness-models";
+        const auto symlink_models_dir = temp_root / "symlink-readiness-models";
+        fs::remove_all(real_models_dir, ec);
+        fs::remove(symlink_models_dir, ec);
+        ec.clear();
+        fs::create_directories(real_models_dir, ec);
+        ok &= expect(!ec, "create real readiness models directory");
+        ok &= expect(chmod(real_models_dir.c_str(), 0755) == 0,
+                     "set real readiness models directory mode");
+        if (symlink(real_models_dir.c_str(), symlink_models_dir.c_str()) == 0) {
+            const auto result = howdy::native::check_user_model_readiness(
+                symlink_models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInsecurePath,
+                         "readiness rejects symlinked models directory");
+            fs::remove(symlink_models_dir, ec);
+            ec.clear();
+        } else {
+            std::cerr << "SKIP: readiness models directory symlink creation failed\n";
+        }
+        fs::remove_all(real_models_dir, ec);
+        ec.clear();
+
+        const auto dangling_models_dir   = temp_root / "dangling-readiness-models";
+        const auto missing_models_target = temp_root / "missing-readiness-target";
+        fs::remove(dangling_models_dir, ec);
+        ec.clear();
+        if (symlink(missing_models_target.c_str(), dangling_models_dir.c_str()) == 0) {
+            const auto result = howdy::native::check_user_model_readiness(
+                dangling_models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInsecurePath,
+                         "readiness rejects dangling symlinked models directory");
+            fs::remove(dangling_models_dir, ec);
+            ec.clear();
+        } else {
+            std::cerr << "SKIP: dangling readiness models directory symlink creation failed\n";
+        }
+
+        fs::create_directories(models_dir, ec);
+        ok &= expect(!ec, "create explicit readiness models directory");
+        ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
+                     "set explicit readiness models directory mode");
+        {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kNoModel,
+                         "readiness missing model file returns kNoModel");
+        }
+
+        ok &= expect(write_file(model_path, "not-json"), "write readiness model file");
+        ok &= expect(chmod(model_path.c_str(), 0644) == 0, "set readiness model file mode");
+        {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kOk,
+                         "readiness accepts secure model without parsing JSON");
+            ok &= expect(result.path == model_path, "readiness respects explicit models directory");
+        }
+
+        const auto symlink_target = models_dir / "readiness-target.dat";
+        ok &= expect(write_file(symlink_target, "not-json"), "write readiness symlink target");
+        fs::remove(model_path, ec);
+        ec.clear();
+        if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInsecurePath,
+                         "readiness rejects symlinked model file");
+            ok &= expect(fs::remove(model_path, ec), "remove readiness model symlink");
+            ec.clear();
+        } else {
+            std::cerr << "SKIP: readiness model symlink creation failed\n";
+        }
+
+        const auto missing_target = models_dir / "readiness-missing-target.dat";
+        if (symlink(missing_target.c_str(), model_path.c_str()) == 0) {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInsecurePath,
+                         "readiness rejects dangling model symlink");
+            ok &= expect(fs::remove(model_path, ec), "remove dangling readiness model symlink");
+            ec.clear();
+        } else {
+            std::cerr << "SKIP: dangling readiness model symlink creation failed\n";
+        }
+
+        ok &= expect(write_file(model_path, "not-json"), "restore readiness model after symlink");
+        const auto hardlink_path = models_dir / "readiness-hardlink.dat";
+        if (link(model_path.c_str(), hardlink_path.c_str()) == 0) {
+            const auto result = howdy::native::check_user_model_readiness(
+                models_dir, "readiness-user", std::nullopt);
+            ok &= expect(result.status == UserModelStatus::kInsecurePath,
+                         "readiness rejects hard-linked model file");
+            ok &= expect(fs::remove(hardlink_path, ec), "remove readiness hardlink");
+            ec.clear();
+        } else {
+            std::cerr << "SKIP: readiness model hardlink creation failed\n";
+        }
+
+        ok &= expect(chmod(model_path.c_str(), 0664) == 0, "make readiness model group-writable");
+        ok &= expect(
+            howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+                    .status == UserModelStatus::kInsecurePath,
+            "readiness rejects group-writable model file");
+        ok &= expect(chmod(model_path.c_str(), 0666) == 0, "make readiness model world-writable");
+        ok &= expect(
+            howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+                    .status == UserModelStatus::kInsecurePath,
+            "readiness rejects world-writable model file");
+        ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restore readiness model file mode");
+
+        ok &= expect(chmod(models_dir.c_str(), 0775) == 0,
+                     "make readiness models directory group-writable");
+        ok &= expect(
+            howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+                    .status == UserModelStatus::kInsecurePath,
+            "readiness rejects group-writable models directory");
+        ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
+                     "make readiness models directory world-writable");
+        ok &= expect(
+            howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+                    .status == UserModelStatus::kInsecurePath,
+            "readiness rejects world-writable models directory");
+        ok &=
+            expect(chmod(models_dir.c_str(), 0755) == 0, "restore readiness models directory mode");
+
+        fs::remove(model_path, ec);
+        ec.clear();
+        fs::create_directory(model_path, ec);
+        ok &= expect(!ec, "create non-regular readiness model path");
+        ok &= expect(
+            howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+                    .status == UserModelStatus::kInsecurePath,
+            "readiness rejects non-regular model file");
+
+        fs::remove_all(models_dir, ec);
+        return ok;
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -60,6 +223,7 @@ auto main() -> int {
 
     const auto models_dir = temp_root / "models";
     setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
+    ok &= expect_readiness_checks(temp_root);
     {
         const auto result = howdy::native::list_user_model_entries("alice", {});
         ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
@@ -203,8 +367,8 @@ auto main() -> int {
     ec.clear();
     if (symlink(model_path.c_str(), model_path.c_str()) == 0) {
         const auto result = howdy::native::list_user_model_entries("alice", backend);
-        ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
-                     "model path exists errors are reported");
+        ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+                     "self-referential model symlink is rejected");
         ok &= expect(unlink(model_path.c_str()) == 0, "remove self-referential model symlink");
         ec.clear();
     } else {
