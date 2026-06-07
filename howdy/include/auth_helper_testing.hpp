@@ -8,6 +8,8 @@
 #    include <string>
 #    include <unistd.h>
 
+#    include <sys/types.h>
+
 namespace howdy::native::testing {
 
     auto runtime_root() -> std::filesystem::path;
@@ -17,6 +19,9 @@ namespace howdy::native::testing {
     auto copy_file_for_user(const std::filesystem::path &source,
                             const std::filesystem::path &destination, const std::string &label,
                             gid_t gid) -> bool;
+    auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
+                                  const std::string &user, std::optional<uid_t> owner_uid,
+                                  std::optional<std::filesystem::path> &source_model_path) -> bool;
     auto prepare_for_user(const std::string &user) -> int;
     auto cleanup_for_user(const std::filesystem::path &path) -> int;
 

@@ -5,6 +5,7 @@
 #endif
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
+#include "storage/user_model_readiness.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -199,6 +200,33 @@ namespace {
         return ok;
     }
 
+    auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
+                                  const std::string &user, std::optional<uid_t> owner_uid,
+                                  std::optional<std::filesystem::path> &source_model_path) -> bool {
+        source_model_path.reset();
+
+        const auto readiness =
+            howdy::native::check_user_model_readiness(source_user_models_dir, user, owner_uid);
+        switch (readiness.status) {
+            case howdy::native::UserModelStatus::kOk:
+                source_model_path = readiness.path;
+                return true;
+            case howdy::native::UserModelStatus::kNoModel:
+            case howdy::native::UserModelStatus::kNoModelDirectory:
+                // Missing source storage means prepare continues without staging a model; compare
+                // later decides whether authentication is unavailable.
+                return true;
+            case howdy::native::UserModelStatus::kInvalidUser:
+                std::cerr << howdy::native::kInvalidUserNameMessage << "\n";
+                return false;
+            default:
+                std::cerr << (readiness.error_message.empty() ? "Failed to validate user model file"
+                                                              : readiness.error_message)
+                          << "\n";
+                return false;
+        }
+    }
+
     auto prepare_for_user(const std::string &user) -> int {
         if (geteuid() != 0) {
             return fail("howdy-auth-helper must be installed setuid root");
@@ -253,40 +281,14 @@ namespace {
         }
 
         const auto source_user_models_dir = howdy::native::resolve_user_models_dir();
-        const auto source_model_path =
-            howdy::native::resolve_user_model_path(source_user_models_dir, user);
-        if (!source_model_path.has_value()) {
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return fail(howdy::native::kInvalidUserNameMessage);
-        }
-
-        const auto source_models_security = howdy::native::check_secure_root_owned_directory_tree(
-            source_user_models_dir, "User models directory", static_cast<uid_t>(0));
-        if (!source_models_security.ok) {
-            std::cerr << source_models_security.error_message << "\n";
+        std::optional<std::filesystem::path> source_model_path;
+        if (!select_source_model_path(source_user_models_dir, user, static_cast<uid_t>(0),
+                                      source_model_path)) {
             std::filesystem::remove_all(prepared.root_dir, ec);
             return 1;
         }
 
-        const bool source_model_exists = std::filesystem::exists(*source_model_path, ec);
-        if (ec) {
-            std::cerr << "Failed to inspect user model file: " << *source_model_path << " ("
-                      << ec.message() << ")\n";
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return 1;
-        }
-
-        if (source_model_exists) {
-            const auto source_model_security =
-                howdy::native::check_secure_root_owned_file_with_directory(
-                    *source_model_path, "User models directory", "User model file",
-                    static_cast<uid_t>(0));
-            if (!source_model_security.ok) {
-                std::cerr << source_model_security.error_message << "\n";
-                std::filesystem::remove_all(prepared.root_dir, ec);
-                return 1;
-            }
-
+        if (source_model_path.has_value()) {
             const auto runtime_model_path =
                 prepared.user_models_dir / source_model_path->filename();
             if (!copy_file_for_user(*source_model_path, runtime_model_path, "User model file",
@@ -364,6 +366,13 @@ namespace howdy::native::testing {
                             const std::filesystem::path &destination, const std::string &label,
                             gid_t gid) -> bool {
         return ::copy_file_for_user(source, destination, label, gid);
+    }
+
+    auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
+                                  const std::string &user, std::optional<uid_t> owner_uid,
+                                  std::optional<std::filesystem::path> &source_model_path) -> bool {
+        return ::select_source_model_path(source_user_models_dir, user, owner_uid,
+                                          source_model_path);
     }
 
     auto prepare_for_user(const std::string &user) -> int {
