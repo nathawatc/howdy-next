@@ -81,6 +81,7 @@ native_compare = executable(
 native_auth_helper = executable(
     'howdy-auth-helper',
     'auth_helper.cpp',
+    'auth_helper_runtime.cpp',
     'config/runtime_paths.cpp',
     'storage/user_model_readiness.cpp',
     include_directories: native_cpp_inc,
@@ -133,6 +134,7 @@ test(
 native_auth_helper_test = executable(
     'howdy-auth-helper-test',
     'auth_helper.cpp',
+    'auth_helper_runtime.cpp',
     'config/runtime_paths.cpp',
     'storage/user_model_readiness.cpp',
     'tests/auth_helper_test.cpp',

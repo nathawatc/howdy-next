@@ -1,34 +1,19 @@
-#include "common/file_security.hpp"
+#include "auth_helper_runtime.hpp"
 #include "common/user_names.hpp"
 #ifdef HOWDY_AUTH_HELPER_TESTING
 #    include "auth_helper_testing.hpp"
 #endif
-#include "config/config_utils.hpp"
-#include "config/runtime_paths.hpp"
-#include "storage/user_model_readiness.hpp"
 
 #include <cerrno>
-#include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
-#include <optional>
 #include <pwd.h>
 #include <string>
 #include <unistd.h>
-#include <vector>
 
 #include <sys/stat.h>
 
 namespace {
-
-    constexpr std::size_t kCopyBufferSize = 64 * 1024;
-
-    struct PreparedPaths {
-        std::filesystem::path root_dir;
-        std::filesystem::path config_path;
-        std::filesystem::path user_models_dir;
-    };
 
 #ifndef HOWDY_AUTH_HELPER_TESTING
     auto usage(const char *argv0) -> void {
@@ -42,189 +27,10 @@ namespace {
         return 1;
     }
 
-    auto runtime_root() -> std::filesystem::path {
-        return "/run/howdy";
-    }
-
-    auto validate_runtime_root(const std::filesystem::path &path) -> bool {
-        const bool created = mkdir(path.c_str(), 0711) == 0;
-        if (!created && errno != EEXIST) {
-            std::cerr << "Failed to create runtime directory: " << path << " ("
-                      << std::strerror(errno) << ")\n";
-            return false;
-        }
-
-        if (created && (chown(path.c_str(), 0, 0) != 0 || chmod(path.c_str(), 0711) != 0)) {
-            std::cerr << "Failed to secure runtime directory: " << path << " ("
-                      << std::strerror(errno) << ")\n";
-            return false;
-        }
-
-        struct stat stat_{};
-        if (lstat(path.c_str(), &stat_) != 0) {
-            std::cerr << "Failed to inspect runtime directory: " << path << " ("
-                      << std::strerror(errno) << ")\n";
-            return false;
-        }
-
-        if (!S_ISDIR(stat_.st_mode)) {
-            std::cerr << "Runtime path is not a directory: " << path << "\n";
-            return false;
-        }
-
-        if (stat_.st_uid != 0 || stat_.st_gid != 0 || (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
-            std::cerr << "Runtime directory is not a root-controlled directory: " << path << "\n";
-            return false;
-        }
-
-        if (chmod(path.c_str(), 0711) != 0) {
-            std::cerr << "Failed to secure runtime directory: " << path << " ("
-                      << std::strerror(errno) << ")\n";
-            return false;
-        }
-
-        return true;
-    }
-
-    auto make_private_runtime_dir(uid_t uid, gid_t gid) -> std::optional<std::filesystem::path> {
-        const auto root = runtime_root();
-        if (!validate_runtime_root(root)) {
-            return std::nullopt;
-        }
-
-        std::string       templ = (root / ("pam-" + std::to_string(uid) + "-XXXXXX")).string();
-        std::vector<char> buffer(templ.begin(), templ.end());
-        buffer.push_back('\0');
-
-        char *created = mkdtemp(buffer.data());
-        if (created == nullptr) {
-            std::cerr << "Failed to create private runtime directory: " << std::strerror(errno)
-                      << "\n";
-            return std::nullopt;
-        }
-
-        std::filesystem::path path(created);
-        if (chown(path.c_str(), 0, gid) != 0 || chmod(path.c_str(), 0550) != 0) {
-            std::cerr << "Failed to secure private runtime directory: " << std::strerror(errno)
-                      << "\n";
-            std::error_code ec;
-            std::filesystem::remove_all(path, ec);
-            return std::nullopt;
-        }
-
-        return path;
-    }
-
-    auto secure_source_file_stat(int fd, const std::string &label) -> bool {
-        struct stat stat_{};
-        if (fstat(fd, &stat_) != 0) {
-            std::cerr << "Failed to inspect " << label << ": " << std::strerror(errno) << "\n";
-            return false;
-        }
-
-        if (!S_ISREG(stat_.st_mode) || stat_.st_uid != 0 ||
-            (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0 || stat_.st_nlink != 1) {
-            std::cerr << label << " failed secure file validation\n";
-            return false;
-        }
-
-        return true;
-    }
-
-    auto write_all(int fd, const char *data, ssize_t size) -> bool {
-        ssize_t written = 0;
-        while (written < size) {
-            const ssize_t result =
-                write(fd, data + written, static_cast<std::size_t>(size - written));
-            if (result < 0 && errno == EINTR) {
-                continue;
-            }
-            if (result <= 0) {
-                return false;
-            }
-            written += result;
-        }
-        return true;
-    }
-
-    auto copy_file_for_user(const std::filesystem::path &source,
-                            const std::filesystem::path &destination, const std::string &label,
-                            gid_t gid) -> bool {
-        const int source_fd = open(source.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-        if (source_fd < 0) {
-            std::cerr << "Failed to open " << label << ": " << source << " ("
-                      << std::strerror(errno) << ")\n";
-            return false;
-        }
-
-        if (!secure_source_file_stat(source_fd, label)) {
-            close(source_fd);
-            return false;
-        }
-
-        const int destination_fd =
-            open(destination.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-        if (destination_fd < 0) {
-            std::cerr << "Failed to create runtime " << label << ": " << destination << " ("
-                      << std::strerror(errno) << ")\n";
-            close(source_fd);
-            return false;
-        }
-
-        bool              ok = true;
-        std::vector<char> buffer(kCopyBufferSize);
-        while (true) {
-            const ssize_t read_size = read(source_fd, buffer.data(), buffer.size());
-            if (read_size < 0 && errno == EINTR) {
-                continue;
-            }
-            if (read_size < 0) {
-                ok = false;
-                break;
-            }
-            if (read_size == 0) {
-                break;
-            }
-            if (!write_all(destination_fd, buffer.data(), read_size)) {
-                ok = false;
-                break;
-            }
-        }
-
-        if (fchown(destination_fd, 0, gid) != 0 || fchmod(destination_fd, 0440) != 0) {
-            ok = false;
-        }
-
-        close(destination_fd);
-        close(source_fd);
-        return ok;
-    }
-
-    auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
-                                  const std::string &user, std::optional<uid_t> owner_uid,
-                                  std::optional<std::filesystem::path> &source_model_path) -> bool {
-        source_model_path.reset();
-
-        const auto readiness =
-            howdy::native::check_user_model_readiness(source_user_models_dir, user, owner_uid);
-        switch (readiness.status) {
-            case howdy::native::UserModelStatus::kOk:
-                source_model_path = readiness.path;
-                return true;
-            case howdy::native::UserModelStatus::kNoModel:
-            case howdy::native::UserModelStatus::kNoModelDirectory:
-                // Missing source storage means prepare continues without staging a model; compare
-                // later decides whether authentication is unavailable.
-                return true;
-            case howdy::native::UserModelStatus::kInvalidUser:
-                std::cerr << howdy::native::kInvalidUserNameMessage << "\n";
-                return false;
-            default:
-                std::cerr << (readiness.error_message.empty() ? "Failed to validate user model file"
-                                                              : readiness.error_message)
-                          << "\n";
-                return false;
-        }
+    auto print_prepared_paths(const std::filesystem::path &config_path,
+                              const std::filesystem::path &user_models_dir) -> void {
+        std::cout << "CONFIG_PATH=" << config_path.string() << "\n";
+        std::cout << "USER_MODELS_DIR=" << user_models_dir.string() << "\n";
     }
 
     auto prepare_for_user(const std::string &user) -> int {
@@ -244,62 +50,14 @@ namespace {
         if (entry->pw_name == nullptr || user != entry->pw_name) {
             return fail("howdy-auth-helper can only prepare auth files for the calling user");
         }
-        const gid_t gid = entry->pw_gid;
 
-        auto runtime_dir = make_private_runtime_dir(uid, gid);
-        if (!runtime_dir.has_value()) {
+        const auto prepared =
+            howdy::native::auth_helper::prepare_runtime_auth_files(user, uid, entry->pw_gid);
+        if (!prepared.has_value()) {
             return 1;
         }
 
-        PreparedPaths prepared{
-            .root_dir        = *runtime_dir,
-            .config_path     = *runtime_dir / "config.ini",
-            .user_models_dir = *runtime_dir / "models",
-        };
-
-        std::error_code ec;
-        std::filesystem::create_directory(prepared.user_models_dir, ec);
-        if (ec || chown(prepared.user_models_dir.c_str(), 0, gid) != 0 ||
-            chmod(prepared.user_models_dir.c_str(), 0550) != 0) {
-            std::cerr << "Failed to create runtime user models directory\n";
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return 1;
-        }
-
-        const auto source_config = howdy::native::resolve_config_path();
-        const auto config_security =
-            howdy::native::check_secure_config_path(source_config, static_cast<uid_t>(0));
-        if (!config_security.ok) {
-            std::cerr << config_security.error_message << "\n";
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return 1;
-        }
-
-        if (!copy_file_for_user(source_config, prepared.config_path, "Config file", gid)) {
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return 1;
-        }
-
-        const auto source_user_models_dir = howdy::native::resolve_user_models_dir();
-        std::optional<std::filesystem::path> source_model_path;
-        if (!select_source_model_path(source_user_models_dir, user, static_cast<uid_t>(0),
-                                      source_model_path)) {
-            std::filesystem::remove_all(prepared.root_dir, ec);
-            return 1;
-        }
-
-        if (source_model_path.has_value()) {
-            const auto runtime_model_path =
-                prepared.user_models_dir / source_model_path->filename();
-            if (!copy_file_for_user(*source_model_path, runtime_model_path, "User model file",
-                                    gid)) {
-                std::filesystem::remove_all(prepared.root_dir, ec);
-                return 1;
-            }
-        }
-
-        std::cout << "CONFIG_PATH=" << prepared.config_path.string() << "\n";
-        std::cout << "USER_MODELS_DIR=" << prepared.user_models_dir.string() << "\n";
+        print_prepared_paths(prepared->config_path, prepared->user_models_dir);
         return 0;
     }
 
@@ -314,7 +72,7 @@ namespace {
             return fail("Failed to resolve calling user");
         }
 
-        const auto      root = runtime_root();
+        const auto      root = howdy::native::auth_helper::runtime_root();
         std::error_code ec;
         if (path.parent_path() != root ||
             !path.filename().string().starts_with("pam-" + std::to_string(uid) + "-")) {
@@ -347,32 +105,37 @@ namespace {
 namespace howdy::native::testing {
 
     auto runtime_root() -> std::filesystem::path {
-        return ::runtime_root();
+        return auth_helper::runtime_root();
     }
 
     auto validate_runtime_root(const std::filesystem::path &path) -> bool {
-        return ::validate_runtime_root(path);
+        return auth_helper::validate_runtime_root(path);
     }
 
     auto secure_source_file_stat(int fd, const std::string &label) -> bool {
-        return ::secure_source_file_stat(fd, label);
+        return auth_helper::secure_source_file_stat(fd, label);
     }
 
     auto write_all(int fd, const char *data, ssize_t size) -> bool {
-        return ::write_all(fd, data, size);
+        return auth_helper::write_all(fd, data, size);
     }
 
     auto copy_file_for_user(const std::filesystem::path &source,
                             const std::filesystem::path &destination, const std::string &label,
                             gid_t gid) -> bool {
-        return ::copy_file_for_user(source, destination, label, gid);
+        return auth_helper::copy_file_for_user(source, destination, label, gid);
     }
 
     auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
                                   const std::string &user, std::optional<uid_t> owner_uid,
                                   std::optional<std::filesystem::path> &source_model_path) -> bool {
-        return ::select_source_model_path(source_user_models_dir, user, owner_uid,
-                                          source_model_path);
+        return auth_helper::select_source_model_path(source_user_models_dir, user, owner_uid,
+                                                     source_model_path);
+    }
+
+    auto print_prepared_paths(const std::filesystem::path &config_path,
+                              const std::filesystem::path &user_models_dir) -> void {
+        ::print_prepared_paths(config_path, user_models_dir);
     }
 
     auto prepare_for_user(const std::string &user) -> int {

@@ -22,6 +22,8 @@ namespace howdy::native::testing {
     auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
                                   const std::string &user, std::optional<uid_t> owner_uid,
                                   std::optional<std::filesystem::path> &source_model_path) -> bool;
+    auto print_prepared_paths(const std::filesystem::path &config_path,
+                              const std::filesystem::path &user_models_dir) -> void;
     auto prepare_for_user(const std::string &user) -> int;
     auto cleanup_for_user(const std::filesystem::path &path) -> int;
 

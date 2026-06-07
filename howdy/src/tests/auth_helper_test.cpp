@@ -1,3 +1,4 @@
+#include "auth_helper_runtime.hpp"
 #include "auth_helper_testing.hpp"
 
 #include <cerrno>
@@ -6,6 +7,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <set>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 
@@ -76,6 +80,21 @@ namespace {
     auto read_file(const std::filesystem::path &path) -> std::string {
         std::ifstream input(path);
         return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    }
+
+    auto runtime_dirs_for_uid(const std::filesystem::path &runtime_root, uid_t uid)
+        -> std::set<std::filesystem::path> {
+        namespace fs = std::filesystem;
+
+        std::set<fs::path> paths;
+        std::error_code    ec;
+        const auto         prefix = "pam-" + std::to_string(uid) + "-";
+        for (const auto &entry : fs::directory_iterator(runtime_root, ec)) {
+            if (entry.path().filename().string().starts_with(prefix)) {
+                paths.insert(entry.path());
+            }
+        }
+        return paths;
     }
 
     auto expect_runtime_root_validation(const std::filesystem::path &temp_root) -> bool {
@@ -374,6 +393,128 @@ namespace {
         return ok;
     }
 
+    auto expect_prepare_runtime_auth_files(const std::filesystem::path &temp_root) -> bool {
+        namespace fs = std::filesystem;
+        using howdy::native::auth_helper::prepare_runtime_auth_files_for_test;
+
+        bool            ok = true;
+        std::error_code ec;
+        const auto      fixture_dir  = temp_root / "prepare-runtime-auth-files";
+        const auto      runtime_root = fixture_dir / "runtime-root";
+        const auto      source_dir   = fixture_dir / "source";
+        const auto      config_path  = fs::relative(source_dir / "config.ini", fs::current_path());
+        const auto      models_dir   = fs::relative(source_dir / "models", fs::current_path());
+        const auto      model_path   = models_dir / "alice.dat";
+        const uid_t     owner_uid    = geteuid();
+        fs::remove_all(fixture_dir, ec);
+        fs::create_directories(runtime_root, ec);
+        ok &= expect(!ec, "creates injected runtime root");
+        ok &= expect(chmod(runtime_root.c_str(), 0711) == 0, "secures injected runtime root");
+        fs::create_directories(models_dir, ec);
+        ok &= expect(!ec, "creates prepare runtime auth files fixtures");
+        ok &= expect(write_file(config_path, "config-content"), "writes secure source config");
+        ok &= expect(chmod(fixture_dir.c_str(), 0755) == 0, "secures source fixture directory");
+        ok &= expect(chmod(source_dir.c_str(), 0755) == 0, "secures source directory");
+        ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures source config");
+        ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
+
+        const auto before_success = runtime_dirs_for_uid(runtime_root, getuid());
+        const auto prepared       = prepare_runtime_auth_files_for_test(
+            "alice", getuid(), getgid(), runtime_root, config_path, models_dir, owner_uid);
+        ok &= expect(prepared.has_value(), "missing source user model still prepares auth files");
+        if (prepared.has_value()) {
+            const auto prefix = "pam-" + std::to_string(getuid()) + "-";
+            ok &= expect(prepared->runtime_dir.parent_path() == runtime_root,
+                         "prepared runtime directory uses injected runtime root");
+            ok &= expect(prepared->runtime_dir.filename().string().starts_with(prefix),
+                         "prepared runtime directory uses pam uid prefix");
+            ok &= expect(prepared->config_path == prepared->runtime_dir / "config.ini",
+                         "prepared config path uses runtime directory");
+            ok &= expect(prepared->user_models_dir == prepared->runtime_dir / "models",
+                         "prepared models path uses runtime directory");
+            ok &= expect(fs::is_directory(prepared->runtime_dir),
+                         "successful prepare creates runtime directory");
+            ok &= expect(read_file(prepared->config_path) == "config-content",
+                         "successful prepare stages config.ini");
+            ok &= expect(fs::is_directory(prepared->user_models_dir),
+                         "successful prepare creates models directory");
+            ok &= expect(!fs::exists(prepared->user_models_dir / "alice.dat"),
+                         "missing source user model remains unstaged");
+            fs::remove_all(prepared->runtime_dir, ec);
+            ok &= expect(!ec, "cleans successful prepared runtime directory");
+        }
+        ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_success,
+                     "successful prepare fixture leaves no runtime directory");
+
+        const auto before_config_failure = runtime_dirs_for_uid(runtime_root, getuid());
+        ok &= expect(!prepare_runtime_auth_files_for_test("alice", getuid(), getgid(), runtime_root,
+                                                          source_dir / "missing.ini", models_dir,
+                                                          owner_uid)
+                          .has_value(),
+                     "failed config staging rejects prepare");
+        ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_config_failure,
+                     "failed config staging removes private runtime directory");
+
+        if (geteuid() == 0) {
+            std::cerr << "SKIP: config copy permission failure requires non-root test process\n";
+        } else {
+            ok &= expect(chmod(config_path.c_str(), 0000) == 0, "makes source config unreadable");
+            const auto before_config_copy_failure = runtime_dirs_for_uid(runtime_root, getuid());
+            ok &= expect(!prepare_runtime_auth_files_for_test("alice", getuid(), getgid(),
+                                                              runtime_root, config_path, models_dir,
+                                                              owner_uid)
+                              .has_value(),
+                         "failed config copy rejects prepare");
+            ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_config_copy_failure,
+                         "failed config copy removes private runtime directory");
+            ok &= expect(chmod(config_path.c_str(), 0644) == 0, "restores source config");
+        }
+
+        ok &= expect(write_file(model_path, "model-content"), "writes secure source model");
+        ok &= expect(chmod(model_path.c_str(), 0644) == 0, "secures source model");
+        const auto before_model_success = runtime_dirs_for_uid(runtime_root, getuid());
+        const auto prepared_with_model  = prepare_runtime_auth_files_for_test(
+            "alice", getuid(), getgid(), runtime_root, config_path, models_dir, owner_uid);
+        ok &= expect(prepared_with_model.has_value(), "secure source model prepares auth files");
+        if (prepared_with_model.has_value()) {
+            ok &= expect(read_file(prepared_with_model->user_models_dir / "alice.dat") ==
+                             "model-content",
+                         "successful prepare stages user model");
+            fs::remove_all(prepared_with_model->runtime_dir, ec);
+            ok &= expect(!ec, "cleans prepared runtime directory with model");
+        }
+        ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_model_success,
+                     "successful model prepare fixture leaves no runtime directory");
+
+        ok &= expect(write_file(model_path, "model-content"), "writes insecure source model");
+        ok &= expect(chmod(model_path.c_str(), 0664) == 0, "makes source model insecure");
+        const auto before_model_failure = runtime_dirs_for_uid(runtime_root, getuid());
+        ok &= expect(!prepare_runtime_auth_files_for_test("alice", getuid(), getgid(), runtime_root,
+                                                          config_path, models_dir, owner_uid)
+                          .has_value(),
+                     "insecure source model rejects prepare");
+        ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_model_failure,
+                     "insecure source model failure removes private runtime directory");
+
+        fs::remove_all(fixture_dir, ec);
+        ok &= expect(!ec, "cleans prepare runtime auth files fixtures");
+        return ok;
+    }
+
+    auto expect_stdout_protocol() -> bool {
+        using howdy::native::testing::print_prepared_paths;
+
+        std::ostringstream output;
+        auto              *previous = std::cout.rdbuf(output.rdbuf());
+        print_prepared_paths("/run/howdy/pam-1000-example/config.ini",
+                             "/run/howdy/pam-1000-example/models");
+        std::cout.rdbuf(previous);
+
+        return expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-example/config.ini\n"
+                                      "USER_MODELS_DIR=/run/howdy/pam-1000-example/models\n",
+                      "prepare stdout protocol remains unchanged");
+    }
+
 }  // namespace
 
 auto main() -> int {
@@ -393,6 +534,8 @@ auto main() -> int {
     ok &= expect_copy_file_for_user(temp_root);
     ok &= expect_source_model_readiness(temp_root);
     ok &= expect_prepare_cleanup_guards();
+    ok &= expect_prepare_runtime_auth_files(temp_root);
+    ok &= expect_stdout_protocol();
 
     fs::remove_all(temp_root, ec);
     return ok ? 0 : 1;
