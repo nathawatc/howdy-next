@@ -68,6 +68,13 @@ namespace howdy::native {
         -> std::vector<std::string>;
     auto atomic_write_lines(const std::filesystem::path    &config_path,
                             const std::vector<std::string> &lines) -> bool;
+    auto validate_config_content(const std::string &content, std::string *error_message) -> bool;
+    auto replace_config_content_atomically(const std::filesystem::path &config_path,
+                                           const std::string           &content,
+                                           std::string *error_message = nullptr, bool lock = true,
+                                           bool               validate_runtime         = true,
+                                           const std::string *expected_current_content = nullptr)
+        -> bool;
     auto update_config_value(const std::filesystem::path &config_path, const std::string &key,
                              const std::string &value, std::string *error_message,
                              bool lock = false, bool validate_runtime = true) -> bool;

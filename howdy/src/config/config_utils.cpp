@@ -45,6 +45,17 @@ namespace howdy::native {
             }
         }
 
+        struct ConfigLockGuard {
+            int fd = -1;
+
+            ~ConfigLockGuard() {
+                if (fd >= 0) {
+                    unlock_fd(fd);
+                    close(fd);
+                }
+            }
+        };
+
         auto read_all_from_fd(int fd) -> std::string {
             if (lseek(fd, 0, SEEK_SET) < 0) {
                 return {};
@@ -116,57 +127,6 @@ namespace howdy::native {
                 fsync(dir_fd);
                 close(dir_fd);
             }
-        }
-
-        auto validate_config_content(const std::string &content, std::string *error_message)
-            -> bool {
-            const auto        temp_root     = std::filesystem::temp_directory_path();
-            std::string       temp_template = (temp_root / "howdy-config-validate-XXXXXX").string();
-            std::vector<char> writable(temp_template.begin(), temp_template.end());
-            writable.push_back('\0');
-
-            const int fd = mkstemp(writable.data());
-            if (fd < 0) {
-                if (error_message != nullptr) {
-                    *error_message = "Failed to validate updated config";
-                }
-                return false;
-            }
-
-            const std::filesystem::path temp_path(writable.data());
-            bool                        ok = write_all_to_fd(fd, content);
-            if (close(fd) != 0) {
-                ok = false;
-            }
-
-            if (!ok) {
-                std::error_code ec;
-                std::filesystem::remove(temp_path, ec);
-                if (error_message != nullptr) {
-                    *error_message = "Failed to validate updated config";
-                }
-                return false;
-            }
-
-            ConfigReader    config(temp_path.string());
-            std::error_code ec;
-            std::filesystem::remove(temp_path, ec);
-
-            if (!config.ok()) {
-                if (error_message != nullptr) {
-                    *error_message = "Updated config is invalid";
-                }
-                return false;
-            }
-
-            if (const auto validation = validate_runtime_config(config)) {
-                if (error_message != nullptr) {
-                    *error_message = *validation;
-                }
-                return false;
-            }
-
-            return true;
         }
 
     }  // namespace
@@ -280,6 +240,165 @@ namespace howdy::native {
             return false;
         }
         sync_parent_directory(config_path);
+        return true;
+    }
+
+    auto validate_config_content(const std::string &content, std::string *error_message) -> bool {
+        const auto        temp_root     = std::filesystem::temp_directory_path();
+        std::string       temp_template = (temp_root / "howdy-config-validate-XXXXXX").string();
+        std::vector<char> writable(temp_template.begin(), temp_template.end());
+        writable.push_back('\0');
+
+        const int fd = mkstemp(writable.data());
+        if (fd < 0) {
+            if (error_message != nullptr) {
+                *error_message = "Failed to validate updated config";
+            }
+            return false;
+        }
+
+        const std::filesystem::path temp_path(writable.data());
+        bool                        ok = write_all_to_fd(fd, content);
+        if (close(fd) != 0) {
+            ok = false;
+        }
+
+        if (!ok) {
+            std::error_code ec;
+            std::filesystem::remove(temp_path, ec);
+            if (error_message != nullptr) {
+                *error_message = "Failed to validate updated config";
+            }
+            return false;
+        }
+
+        ConfigReader    config(temp_path.string());
+        std::error_code ec;
+        std::filesystem::remove(temp_path, ec);
+
+        if (!config.ok()) {
+            if (error_message != nullptr) {
+                *error_message = "Updated config is invalid";
+            }
+            return false;
+        }
+
+        if (const auto validation = validate_runtime_config(config)) {
+            if (error_message != nullptr) {
+                *error_message = *validation;
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    auto replace_config_content_atomically(const std::filesystem::path &config_path,
+                                           const std::string &content, std::string *error_message,
+                                           bool lock, bool validate_runtime,
+                                           const std::string *expected_current_content) -> bool {
+        if (error_message != nullptr) {
+            error_message->clear();
+        }
+
+        const auto fail = [error_message](const std::string &message) {
+            if (error_message != nullptr) {
+                *error_message = message;
+            }
+            return false;
+        };
+
+        const auto initial_security = check_secure_config_path(config_path);
+        if (!initial_security.ok) {
+            return fail(initial_security.error_message);
+        }
+
+        ConfigLockGuard config_lock;
+        if (lock) {
+            config_lock.fd = open_lock_file(config_path);
+            if (config_lock.fd < 0 || !lock_fd(config_lock.fd)) {
+                if (config_lock.fd >= 0) {
+                    close(config_lock.fd);
+                    config_lock.fd = -1;
+                }
+                return fail("Failed to lock config file");
+            }
+        }
+
+        if (validate_runtime && !validate_config_content(content, error_message)) {
+            return false;
+        }
+
+        const auto final_security = check_secure_config_path(config_path);
+        if (!final_security.ok) {
+            return fail(final_security.error_message);
+        }
+
+        struct stat current_stat{};
+        if (lstat(config_path.c_str(), &current_stat) != 0 || !S_ISREG(current_stat.st_mode)) {
+            return fail("Failed to inspect config file");
+        }
+
+        if (expected_current_content != nullptr) {
+            const int input_fd = open(config_path.c_str(), O_RDONLY | O_NOFOLLOW);
+            if (input_fd < 0) {
+                return fail("Failed to open config file");
+            }
+
+            struct stat opened_stat{};
+            const bool  opened_ok =
+                fstat(input_fd, &opened_stat) == 0 && S_ISREG(opened_stat.st_mode);
+            const auto current_content = opened_ok ? read_all_from_fd(input_fd) : std::string();
+            close(input_fd);
+            if (!opened_ok) {
+                return fail("Failed to inspect config file");
+            }
+            if (current_content != *expected_current_content) {
+                return fail("Config changed while editing; not installing stale edited config");
+            }
+        }
+
+        std::string       temp = (config_path.parent_path() / ".howdy-config-XXXXXX").string();
+        std::vector<char> writable(temp.begin(), temp.end());
+        writable.push_back('\0');
+
+        const int fd = mkstemp(writable.data());
+        if (fd < 0) {
+            return fail("Failed to stage updated config");
+        }
+
+        const std::filesystem::path temp_path(writable.data());
+        bool                        ok = true;
+        if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
+            fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
+            ok = false;
+        }
+        if (ok && !write_all_to_fd(fd, content)) {
+            ok = false;
+        }
+        if (ok && fsync(fd) != 0) {
+            ok = false;
+        }
+        if (close(fd) != 0) {
+            ok = false;
+        }
+
+        if (ok) {
+            std::error_code ec;
+            std::filesystem::rename(temp_path, config_path, ec);
+            ok = !ec;
+            if (ok) {
+                sync_parent_directory(config_path);
+            }
+        }
+
+        if (!ok) {
+            std::error_code ec;
+            std::filesystem::remove(temp_path, ec);
+        }
+        if (!ok) {
+            return fail("Failed to install edited config");
+        }
         return true;
     }
 

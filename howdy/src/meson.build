@@ -306,6 +306,27 @@ test(
     native_clear_cli_test,
 )
 
+native_config_cli_test = executable(
+    'howdy-config-cli-test',
+    'cli/config.cpp',
+    'tests/config_cli_test.cpp',
+    include_directories: native_cpp_inc,
+    cpp_args: ['-DHOWDY_CONFIG_CLI_TESTING'],
+    link_with: native_cpp_lib,
+    dependencies: [
+        inih_cpp,
+        libcurl,
+        nlohmann_json,
+        opencv4,
+    ],
+    install: false,
+)
+
+test(
+    'native-config-cli',
+    native_config_cli_test,
+)
+
 native_user_names_test = executable(
     'howdy-user-names-test',
     'tests/user_names_test.cpp',

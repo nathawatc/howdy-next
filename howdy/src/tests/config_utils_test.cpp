@@ -33,6 +33,16 @@ namespace {
         return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
     }
 
+    auto count_staged_configs(const std::filesystem::path &directory) -> std::size_t {
+        std::size_t count = 0;
+        for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+            if (entry.path().filename().string().starts_with(".howdy-config-")) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
     auto expect(bool condition, const std::string &message) -> bool {
         if (!condition) {
             std::cerr << "FAIL: " << message << "\n";
@@ -217,6 +227,102 @@ auto main() -> int {
                  "atomic_write_lines creates parent dirs and writes file");
     ok &= expect(read_file(nested_path) == "[face]\nsface_threshold = 0.363\n",
                  "atomic_write_lines output matches expected content");
+
+    const std::string valid_content = "[core]\n"
+                                      "disabled = false\n"
+                                      "\n"
+                                      "[video]\n"
+                                      "dark_threshold = 50\n";
+    std::string       validation_error;
+    ok &= expect(howdy::native::validate_config_content(valid_content, &validation_error),
+                 "validate_config_content accepts valid config");
+    validation_error.clear();
+    ok &= expect(!howdy::native::validate_config_content("[core\n", &validation_error),
+                 "validate_config_content rejects invalid syntax");
+    ok &= expect(validation_error == "Updated config is invalid",
+                 "invalid config syntax reports stable invalid-config error");
+    validation_error.clear();
+    ok &=
+        expect(!howdy::native::validate_config_content("[video]\ntimeout = 0\n", &validation_error),
+               "validate_config_content rejects invalid runtime semantics");
+    ok &= expect(!validation_error.empty(), "invalid runtime config reports an error message");
+    ok &= expect(validation_error != "Updated config is invalid",
+                 "invalid runtime config reports runtime validation error");
+
+    const auto replace_path = temp_root / "replace.ini";
+    ok &= expect(write_file(replace_path, valid_content), "write replace config baseline");
+    ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "set replace config mode");
+    const std::string replacement_content = "[core]\n"
+                                            "disabled = true\n"
+                                            "\n"
+                                            "[video]\n"
+                                            "dark_threshold = 55\n";
+    std::string       install_error;
+    ok &= expect(howdy::native::replace_config_content_atomically(replace_path, replacement_content,
+                                                                  &install_error, true, true),
+                 "replace_config_content_atomically installs valid content with lock");
+    ok &= expect(read_file(replace_path) == replacement_content,
+                 "replace_config_content_atomically writes expected content");
+    struct stat replace_stat{};
+    ok &= expect(stat(replace_path.c_str(), &replace_stat) == 0, "stat replaced config");
+    ok &= expect((replace_stat.st_mode & 0777) == 0600,
+                 "replace_config_content_atomically preserves config mode");
+
+    const auto before_invalid_replace = read_file(replace_path);
+    const auto staged_before          = count_staged_configs(temp_root);
+    ok &= expect(!howdy::native::replace_config_content_atomically(
+                     replace_path, "[video]\ntimeout = 0\n", &install_error, true, true),
+                 "replace_config_content_atomically rejects invalid content with lock");
+    ok &= expect(read_file(replace_path) == before_invalid_replace,
+                 "invalid replacement leaves old config unchanged");
+    ok &= expect(count_staged_configs(temp_root) == staged_before,
+                 "invalid replacement leaves no staged config");
+
+    const std::string recovery_content = "[core]\n"
+                                         "disabled = true\n"
+                                         "\n"
+                                         "[video]\n"
+                                         "timeout = 0\n";
+    ok &= expect(howdy::native::replace_config_content_atomically(replace_path, recovery_content,
+                                                                  &install_error, true, false),
+                 "replace_config_content_atomically releases lock and can bypass validation");
+    ok &= expect(read_file(replace_path) == recovery_content,
+                 "runtime-validation bypass installs content");
+
+    const auto stale_expected_content = recovery_content;
+    ok &= expect(write_file(replace_path, valid_content), "write changed config before stale edit");
+    ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore changed config mode");
+    ok &= expect(!howdy::native::replace_config_content_atomically(
+                     replace_path, replacement_content, &install_error, true, false,
+                     &stale_expected_content),
+                 "replace_config_content_atomically rejects stale expected content");
+    ok &= expect(read_file(replace_path) == valid_content,
+                 "stale expected content leaves current config unchanged");
+
+    ok &= expect(chmod(replace_path.c_str(), 0666) == 0, "make replace config world-writable");
+    ok &= expect(!howdy::native::replace_config_content_atomically(replace_path, valid_content,
+                                                                   &install_error, true, true),
+                 "replace_config_content_atomically rejects insecure config permissions with lock");
+    ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore replace config permissions");
+
+    const auto replace_insecure_dir = temp_root / "replace-insecure-dir";
+    ok &= expect(fs::create_directories(replace_insecure_dir, ec) || !ec,
+                 "create insecure replace dir");
+    ok &= expect(!ec, "no error creating insecure replace dir");
+    const auto replace_insecure_path = replace_insecure_dir / "config.ini";
+    ok &= expect(write_file(replace_insecure_path, valid_content), "write insecure replace config");
+    ok &= expect(chmod(replace_insecure_dir.c_str(), 0777) == 0,
+                 "make replace config dir world-writable");
+    ok &= expect(!howdy::native::replace_config_content_atomically(
+                     replace_insecure_path, replacement_content, &install_error, false, true),
+                 "replace_config_content_atomically rejects insecure parent directory");
+    ok &= expect(chmod(replace_insecure_dir.c_str(), 0755) == 0, "restore replace config dir mode");
+
+    const auto non_regular_path = temp_root / "non-regular.ini";
+    ok &= expect(fs::create_directory(non_regular_path, ec), "create non-regular config target");
+    ok &= expect(!howdy::native::replace_config_content_atomically(non_regular_path, valid_content,
+                                                                   &install_error, false, true),
+                 "replace_config_content_atomically rejects non-regular config target");
 
     ok &= expect(chmod(config_path.c_str(), 0666) == 0, "make config file world-writable");
     ok &= expect(!howdy::native::update_config_value(config_path, "disabled", "false"),
