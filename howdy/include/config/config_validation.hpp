@@ -7,6 +7,6 @@
 
 namespace howdy::native {
 
-    auto validate_runtime_config(const ConfigReader &config) -> std::optional<std::string>;
+	auto validate_runtime_config(const ConfigReader &config) -> std::optional<std::string>;
 
 }  // namespace howdy::native

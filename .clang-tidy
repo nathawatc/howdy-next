@@ -1,7 +1,7 @@
 # Strict but pragmatic - Rust/Zig inspired
 # Excludes checks that fail on system headers (libevdev)
 
-Checks: '
+Checks: "
   clang-diagnostic-*,
   clang-analyzer-*,
   bugprone-*,
@@ -29,10 +29,9 @@ Checks: '
   -google-build-using-namespace,
   -llvm-header-guard,
   -performance-enum-size,
-  -modernize-use-using
-'
+  -modernize-use-using"
 
-WarningsAsErrors: '
+WarningsAsErrors: "
   clang-diagnostic-*,
   clang-analyzer-*,
   bugprone-*,
@@ -60,18 +59,17 @@ WarningsAsErrors: '
   -google-build-using-namespace,
   -llvm-header-guard,
   -performance-enum-size,
-  -modernize-use-using
-'
+  -modernize-use-using"
 
-HeaderFilterRegex: '(^|.*/)(howdy|pam)/'
-ExcludeHeaderFilterRegex: '^/usr/include/'
+HeaderFilterRegex: "(^|.*/)(howdy|pam)/"
+ExcludeHeaderFilterRegex: "^/usr/include/"
 
 CheckOptions:
-  - key:             readability-function-cognitive-complexity.Threshold
-    value:           '25'
-  - key:             bugprone-easily-swappable-parameters.MinimumLength
-    value:           '4'
-  - key:             bugprone-easily-swappable-parameters.MaximumDistance
-    value:           '2'
+  - key: readability-function-cognitive-complexity.Threshold
+    value: "25"
+  - key: bugprone-easily-swappable-parameters.MinimumLength
+    value: "4"
+  - key: bugprone-easily-swappable-parameters.MaximumDistance
+    value: "2"
 
 # vim:syntax=yaml

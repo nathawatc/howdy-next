@@ -3,7 +3,7 @@ BasedOnStyle: LLVM
 Standard: c++20
 
 # Indentation
-UseTab: Never
+UseTab: ForIndentation
 IndentWidth: 4
 TabWidth: 4
 ContinuationIndentWidth: 4

@@ -1,5 +1,5 @@
 #include "cli/config_cli.hpp"
 
 int main(int argc, char **argv) {
-    return config_main(argc, argv);
+	return config_main(argc, argv);
 }

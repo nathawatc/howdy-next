@@ -10,14 +10,14 @@
 
 namespace howdy::native {
 
-    struct UserModelReadinessResult {
-        UserModelStatus       status = UserModelStatus::kNoModel;
-        std::string           error_message;
-        std::filesystem::path path;
-    };
+	struct UserModelReadinessResult {
+		UserModelStatus       status = UserModelStatus::kNoModel;
+		std::string           error_message;
+		std::filesystem::path path;
+	};
 
-    auto check_user_model_readiness(const std::filesystem::path &models_dir,
-                                    const std::string &user, std::optional<uid_t> owner_uid)
-        -> UserModelReadinessResult;
+	auto check_user_model_readiness(const std::filesystem::path &models_dir,
+	                                const std::string &user, std::optional<uid_t> owner_uid)
+	    -> UserModelReadinessResult;
 
 }  // namespace howdy::native

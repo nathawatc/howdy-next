@@ -6,16 +6,16 @@
 #include <string_view>
 
 enum class ConversationKind : std::uint8_t {
-    None,
-    Error,
-    Info
+	None,
+	Error,
+	Info
 };
 
 struct CompareStatusDecision {
-    int              pam_result        = 0;
-    ConversationKind conversation_kind = ConversationKind::None;
-    std::string      conversation_message;
-    std::string      log_message;
+	int              pam_result        = 0;
+	ConversationKind conversation_kind = ConversationKind::None;
+	std::string      conversation_message;
+	std::string      log_message;
 };
 
 auto map_compare_wait_status(int status) -> CompareStatusDecision;
