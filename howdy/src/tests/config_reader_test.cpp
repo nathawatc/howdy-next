@@ -96,6 +96,36 @@ auto main() -> int {
 	                 howdy::native::config_dark_threshold(valid) < 55.6F,
 	             "validated dark threshold keeps configured value");
 
+	const auto empty_path = temp_root / "empty.ini";
+	ok &= expect(write_file(empty_path, ""), "write empty ini");
+	howdy::native::ConfigReader empty(empty_path.string());
+	ok &= expect(empty.ok(), "empty config should parse");
+	ok &= expect(howdy::native::config_timeout_seconds(empty) == 4, "timeout default is used");
+	ok &= expect(near(howdy::native::config_dark_threshold(empty), 60.0F),
+	             "dark threshold default is used");
+	ok &=
+	    expect(near(howdy::native::config_max_height(empty), 320.0F), "max height default is used");
+	ok &= expect(howdy::native::config_rotate_mode(empty) == 0, "rotate default is used");
+	ok &= expect(howdy::native::config_exposure(empty) == -1, "exposure default is used");
+	ok &= expect(near(howdy::native::config_clahe_clip_limit(empty), 1.25F),
+	             "clahe clip limit default is used");
+	ok &= expect(howdy::native::config_clahe_tile_grid_size(empty) == 8,
+	             "clahe tile grid size default is used");
+	ok &= expect(howdy::native::config_frame_width(empty) == -1, "frame width default is used");
+	ok &= expect(howdy::native::config_frame_height(empty) == -1, "frame height default is used");
+	ok &= expect(howdy::native::config_device_fps(empty) == 0, "device fps default is used");
+	ok &= expect(near(howdy::native::config_yunet_score_threshold(empty), 0.9F),
+	             "yunet score threshold default is used");
+	ok &= expect(near(howdy::native::config_yunet_nms_threshold(empty), 0.3F),
+	             "yunet nms threshold default is used");
+	ok &= expect(howdy::native::config_yunet_top_k(empty) == 5000, "yunet top k default is used");
+	ok &= expect(howdy::native::config_sface_metric(empty) == "cosine",
+	             "sface metric default is used");
+	ok &= expect(near(howdy::native::config_sface_threshold(empty, "cosine"), 0.363F),
+	             "cosine sface threshold default is used");
+	ok &= expect(near(howdy::native::config_sface_threshold(empty, "l2"), 1.128F),
+	             "l2 sface threshold default is used");
+
 	ok &= expect(near(howdy::native::parse_config_float_strict("1.25").value_or(0.0F), 1.25F),
 	             "strict float parser accepts dot decimal");
 	ok &= expect(near(howdy::native::parse_config_float_strict("+1.25").value_or(0.0F), 1.25F),
@@ -182,10 +212,18 @@ auto main() -> int {
 	                                      "sface_metric = weird\n"
 	                                      "sface_threshold = 9\n"
 	                                      "yunet_score_threshold = 4\n"
+	                                      "yunet_nms_threshold = 4\n"
+	                                      "yunet_top_k = 0\n"
 	                                      "[video]\n"
 	                                      "timeout = 0\n"
 	                                      "dark_threshold = 1000\n"
+	                                      "max_height = 0\n"
+	                                      "rotate = 3\n"
+	                                      "exposure = -2\n"
+	                                      "clahe_clip_limit = 0\n"
+	                                      "clahe_tile_grid_size = 0\n"
 	                                      "frame_width = 4\n"
+	                                      "frame_height = 4\n"
 	                                      "device_fps = 9999\n"),
 	             "write invalid bounded config");
 	howdy::native::ConfigReader invalid(invalid_path.string());
@@ -193,15 +231,33 @@ auto main() -> int {
 	ok &= expect(howdy::native::validate_runtime_config(invalid).has_value(),
 	             "invalid bounded config fails semantic validation");
 	ok &= expect(howdy::native::config_timeout_seconds(invalid) == 4, "invalid timeout falls back");
-	ok &= expect(howdy::native::config_dark_threshold(invalid) == 60.0F,
+	ok &= expect(near(howdy::native::config_dark_threshold(invalid), 60.0F),
 	             "invalid dark threshold falls back");
+	ok &= expect(near(howdy::native::config_max_height(invalid), 320.0F),
+	             "invalid max height falls back");
+	ok &= expect(howdy::native::config_rotate_mode(invalid) == 0, "invalid rotate falls back");
+	ok &= expect(howdy::native::config_exposure(invalid) == -1, "invalid exposure falls back");
+	ok &= expect(near(howdy::native::config_clahe_clip_limit(invalid), 1.25F),
+	             "invalid clahe clip limit falls back");
+	ok &= expect(howdy::native::config_clahe_tile_grid_size(invalid) == 8,
+	             "invalid clahe tile grid size falls back");
 	ok &=
 	    expect(howdy::native::config_frame_width(invalid) == -1, "invalid frame width falls back");
+	ok &= expect(howdy::native::config_frame_height(invalid) == -1,
+	             "invalid frame height falls back");
 	ok &= expect(howdy::native::config_device_fps(invalid) == 0, "invalid device fps falls back");
+	ok &= expect(near(howdy::native::config_yunet_score_threshold(invalid), 0.9F),
+	             "invalid yunet score threshold falls back");
+	ok &= expect(near(howdy::native::config_yunet_nms_threshold(invalid), 0.3F),
+	             "invalid yunet nms threshold falls back");
+	ok &= expect(howdy::native::config_yunet_top_k(invalid) == 5000,
+	             "invalid yunet top k falls back");
 	ok &= expect(howdy::native::config_sface_metric(invalid) == "cosine",
 	             "invalid sface metric falls back");
-	ok &= expect(howdy::native::config_sface_threshold(invalid, "cosine") == 0.363F,
+	ok &= expect(near(howdy::native::config_sface_threshold(invalid, "cosine"), 0.363F),
 	             "invalid sface threshold falls back");
+	ok &= expect(near(howdy::native::config_sface_threshold(invalid, "l2"), 1.128F),
+	             "invalid l2 sface threshold falls back");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/video0"),
 	             "video device path prefix is allowed");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("none"),
@@ -233,9 +289,9 @@ auto main() -> int {
 	             "malformed numeric config fails semantic validation");
 	ok &= expect(howdy::native::config_timeout_seconds(malformed) == 4,
 	             "malformed timeout falls back");
-	ok &= expect(howdy::native::config_dark_threshold(malformed) == 60.0F,
+	ok &= expect(near(howdy::native::config_dark_threshold(malformed), 60.0F),
 	             "malformed dark threshold falls back");
-	ok &= expect(howdy::native::config_sface_threshold(malformed, "cosine") == 0.363F,
+	ok &= expect(near(howdy::native::config_sface_threshold(malformed, "cosine"), 0.363F),
 	             "malformed sface threshold falls back");
 
 	const auto non_finite_path = temp_root / "non-finite.ini";

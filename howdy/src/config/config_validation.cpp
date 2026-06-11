@@ -1,16 +1,17 @@
 #include "config/config_validation.hpp"
 
 #include "common/capture_device_path.hpp"
+#include "config/config_schema.hpp"
 #include "config/number_parsing.hpp"
 
+#include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <limits>
 #include <string>
-#include <utility>
-#include <vector>
 
 namespace howdy::native {
 	namespace {
@@ -52,179 +53,102 @@ namespace howdy::native {
 			       "\": " + std::string(rule);
 		}
 
-		auto validate_known_config_value(const ConfigReader &config, std::string_view key,
+		auto validate_known_config_value(const ConfigReader          &config,
+		                                 const config_schema::Option &option,
 		                                 std::string_view value) -> std::optional<std::string> {
-			if (key == "detection_notice" || key == "no_confirmation" || key == "abort_if_ssh" ||
-			    key == "abort_if_lid_closed" || key == "disabled" || key == "warn_no_device" ||
-			    key == "clahe_enabled" || key == "force_mjpeg" || key == "save_failed" ||
-			    key == "save_successful" || key == "end_report") {
-				if (!is_valid_bool_text(value)) {
-					return invalid_config_value_message(key, value, "expected a boolean");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "device_path") {
-				if (value.empty() || !is_allowed_capture_device_path(value)) {
-					return invalid_config_value_message(
-					    key, value, "expected none, /dev/video*, or /dev/v4l/by-path/*");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "sface_metric") {
-				const auto lowered = normalized_lower(std::string(value));
-				if (lowered != "cosine" && lowered != "l2" && lowered != "l2norm") {
-					return invalid_config_value_message(key, value,
-					                                    "expected one of: cosine, l2, l2norm");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "yunet_model" || key == "sface_model") {
-				if (value.empty()) {
-					return invalid_config_value_message(key, value, "must not be empty");
-				}
-				if (value == "default" || value == "none") {
+			switch (option.type) {
+				case config_schema::ValueType::boolean:
+					if (!is_valid_bool_text(value)) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
+					return std::nullopt;
+				case config_schema::ValueType::integer: {
+					const auto parsed = parse_int_strict(value);
+					if (!parsed.has_value()) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
+					if (option.range.has_allowed_value &&
+					    *parsed == static_cast<int>(option.range.allowed_value)) {
+						return std::nullopt;
+					}
+					if (*parsed < static_cast<int>(option.range.minimum) ||
+					    *parsed > static_cast<int>(option.range.maximum)) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
 					return std::nullopt;
 				}
-				if (!std::filesystem::path(std::string(value)).is_absolute()) {
-					return invalid_config_value_message(
-					    key, value, "expected an absolute path, default, or none");
+				case config_schema::ValueType::floating_point: {
+					const auto parsed = parse_config_float_strict(value);
+					if (!parsed.has_value()) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
+					if (option.special_rule == config_schema::SpecialRule::sface_threshold) {
+						const auto *metric_option =
+						    config_schema::runtime_config_option("face", "sface_metric");
+						assert(metric_option != nullptr);
+						if (metric_option == nullptr) {
+							std::abort();
+						}
+						const auto  metric  = normalized_lower(config.get(
+						    std::string(metric_option->section), std::string(metric_option->key),
+						    std::string(metric_option->fallback.string)));
+						const float maximum = metric == "cosine"
+						                          ? config_schema::sface_cosine_threshold_maximum
+						                          : option.range.maximum;
+						if (*parsed < option.range.minimum || *parsed > maximum) {
+							return invalid_config_value_message(
+							    option.key, value,
+							    metric == "cosine" ? "expected range 0..1" : "expected range 0..4");
+						}
+						return std::nullopt;
+					}
+					if (*parsed < option.range.minimum || *parsed > option.range.maximum) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
+					return std::nullopt;
 				}
-				return std::nullopt;
+				case config_schema::ValueType::string:
+					if (option.special_rule == config_schema::SpecialRule::device_path) {
+						if (std::ranges::find(option.choices, value) != option.choices.end()) {
+							return std::nullopt;
+						}
+						if (value.empty() || !is_allowed_capture_device_path(value)) {
+							return invalid_config_value_message(option.key, value,
+							                                    option.invalid_rule);
+						}
+						return std::nullopt;
+					}
+					if (option.special_rule == config_schema::SpecialRule::model_path) {
+						if (std::ranges::find(option.choices, value) != option.choices.end()) {
+							return std::nullopt;
+						}
+						if (!std::filesystem::path(std::string(value)).is_absolute()) {
+							return invalid_config_value_message(option.key, value,
+							                                    option.invalid_rule);
+						}
+						return std::nullopt;
+					}
+					if (!option.choices.empty() &&
+					    std::ranges::find(option.choices, normalized_lower(std::string(value))) ==
+					        option.choices.end()) {
+						return invalid_config_value_message(option.key, value, option.invalid_rule);
+					}
+					return std::nullopt;
 			}
-
-			auto validate_int_range = [&](int minimum, int maximum,
-			                              std::string_view rule) -> std::optional<std::string> {
-				const auto parsed = parse_int_strict(value);
-				if (!parsed.has_value() || *parsed < minimum || *parsed > maximum) {
-					return invalid_config_value_message(key, value, rule);
-				}
-				return std::nullopt;
-			};
-
-			auto validate_float_range = [&](float minimum, float maximum,
-			                                std::string_view rule) -> std::optional<std::string> {
-				const auto parsed = parse_config_float_strict(value);
-				if (!parsed.has_value() || *parsed < minimum || *parsed > maximum) {
-					return invalid_config_value_message(key, value, rule);
-				}
-				return std::nullopt;
-			};
-
-			if (key == "timeout") {
-				return validate_int_range(1, 300, "expected integer range 1..300");
-			}
-			if (key == "max_height") {
-				return validate_float_range(32.0F, 4096.0F, "expected range 32..4096");
-			}
-			if (key == "rotate") {
-				return validate_int_range(0, 2, "expected integer range 0..2");
-			}
-			if (key == "dark_threshold") {
-				return validate_float_range(0.0F, 99.9F, "expected range 0..99.9");
-			}
-			if (key == "clahe_clip_limit") {
-				return validate_float_range(0.01F, 100.0F, "expected range 0.01..100");
-			}
-			if (key == "clahe_tile_grid_size") {
-				return validate_int_range(1, 64, "expected integer range 1..64");
-			}
-			if (key == "yunet_score_threshold" || key == "yunet_nms_threshold") {
-				return validate_float_range(0.0F, 1.0F, "expected range 0..1");
-			}
-			if (key == "yunet_top_k") {
-				return validate_int_range(1, 10000, "expected integer range 1..10000");
-			}
-
-			if (key == "frame_width" || key == "frame_height") {
-				const auto parsed = parse_int_strict(value);
-				if (!parsed.has_value() || (*parsed != -1 && (*parsed < 16 || *parsed > 8192))) {
-					return invalid_config_value_message(key, value,
-					                                    "expected -1 or integer range 16..8192");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "device_fps") {
-				const auto parsed = parse_int_strict(value);
-				if (!parsed.has_value() || *parsed < 0 || *parsed > 480) {
-					return invalid_config_value_message(key, value,
-					                                    "expected integer range 0..480");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "exposure") {
-				const auto parsed = parse_int_strict(value);
-				if (!parsed.has_value() || (*parsed != -1 && (*parsed < 0 || *parsed > 10000))) {
-					return invalid_config_value_message(key, value,
-					                                    "expected -1 or integer range 0..10000");
-				}
-				return std::nullopt;
-			}
-
-			if (key == "sface_threshold") {
-				const auto parsed = parse_config_float_strict(value);
-				if (!parsed.has_value()) {
-					return invalid_config_value_message(key, value,
-					                                    "expected a floating-point value");
-				}
-				const auto  metric = normalized_lower(config.get("face", "sface_metric", "cosine"));
-				const float maximum = metric == "cosine" ? 1.0F : 4.0F;
-				if (*parsed < 0.0F || *parsed > maximum) {
-					return invalid_config_value_message(key, value,
-					                                    metric == "cosine" ? "expected range 0..1"
-					                                                       : "expected range 0..4");
-				}
-				return std::nullopt;
-			}
-
 			return std::nullopt;
 		}
 
 	}  // namespace
 
 	auto validate_runtime_config(const ConfigReader &config) -> std::optional<std::string> {
-		const std::vector<std::pair<const char *, const char *>> keys = {
-		    {"core", "detection_notice"},
-		    {"core", "no_confirmation"},
-		    {"core", "abort_if_ssh"},
-		    {"core", "abort_if_lid_closed"},
-		    {"core", "disabled"},
-		    {"video", "timeout"},
-		    {"video", "device_path"},
-		    {"video", "warn_no_device"},
-		    {"video", "max_height"},
-		    {"video", "frame_width"},
-		    {"video", "frame_height"},
-		    {"video", "clahe_enabled"},
-		    {"video", "clahe_clip_limit"},
-		    {"video", "clahe_tile_grid_size"},
-		    {"video", "dark_threshold"},
-		    {"video", "force_mjpeg"},
-		    {"video", "exposure"},
-		    {"video", "device_fps"},
-		    {"video", "rotate"},
-		    {"face", "yunet_model"},
-		    {"face", "sface_model"},
-		    {"face", "yunet_score_threshold"},
-		    {"face", "yunet_nms_threshold"},
-		    {"face", "yunet_top_k"},
-		    {"face", "sface_metric"},
-		    {"face", "sface_threshold"},
-		    {"snapshots", "save_failed"},
-		    {"snapshots", "save_successful"},
-		    {"debug", "end_report"},
-		};
-
-		for (const auto &[section, key] : keys) {
-			const auto value = config.get(section, key, "");
+		for (const auto &option : config_schema::runtime_config_options()) {
+			const auto value = config.get(std::string(option.section), std::string(option.key), "");
 			if (value.empty()) {
+				// Empty values preserve existing behavior: they are treated like unset values
+				// and fall back to runtime defaults.
 				continue;
 			}
-			if (const auto validation = validate_known_config_value(config, key, value)) {
+			if (const auto validation = validate_known_config_value(config, option, value)) {
 				return validation;
 			}
 		}
