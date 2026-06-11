@@ -1,20 +1,17 @@
 # Repository Guidelines
 
-**Updated:** 2026-06-04  
-**Base commit:** b06c8dd
+**Updated:** 2026-06-11
 
-## Project Structure & Module Organization
+## Scope
 
-This repository builds Howdy Next, a Linux facial-recognition authentication stack with a native C++ CLI/runtime and PAM module.
+Root rules for whole repo. Read nearest `AGENTS.md` for local overrides.
 
-- `howdy/src/`: CLI entrypoints, compare runtime, config, storage, recorders, core face model code, and unit tests in `howdy/src/tests/`.
-- `howdy/include/`: shared headers for CLI, config, common helpers, storage, recorders, and model code.
-- `pam/`: PAM module sources, headers, translations, man page, and tests in `pam/src/tests/`.
-- `config/config.ini`: packaged default configuration template.
-- `archlinux/`: Arch Linux packaging files for release and `-git` packages.
-- `subprojects/`: Meson wraps, including `inih`.
+- `howdy/src/AGENTS.md`: shared runtime, storage, config, model, and helper code
+- `howdy/src/cli/AGENTS.md`: CLI entrypoints and download/config commands
+- `howdy/src/recorders/AGENTS.md`: camera capture layer
+- `pam/AGENTS.md`: PAM module and auth flow
 
-## Build, Test, and Development Commands
+## Build, Test, Development
 
 Use Meson and Ninja; this project does not use CMake.
 
@@ -24,9 +21,9 @@ ninja -C build
 meson test -C build --print-errorlogs
 ```
 
-`meson setup build` configures the build directory, `ninja -C build` compiles the CLI, compare binary, and PAM module, and `meson test` runs the native test suite with failure logs.
+`meson setup build` configures build dir, `ninja -C build` compiles CLI, compare binary, PAM module, `meson test` runs native suite with failure logs.
 
-Useful local commands after install include:
+Useful local commands after install:
 
 ```bash
 howdy add <user>
@@ -36,9 +33,14 @@ howdy disable
 howdy download-models
 ```
 
-## Coding Style & Naming Conventions
+## Code Style
 
-C++ code is formatted with the repository `.clang-format` policy. Use snake_case for files, functions, and test names, matching existing files such as `compare_logic.cpp` and `config_reader_test.cpp`. Keep shared helpers in `howdy/include/common/` or `howdy/include/config/` when behavior crosses modules.
+- Target C++23.
+- Follow repository `.clang-format`.
+- Keep snake_case for files, functions, and tests.
+- Preserve tabs indentation in touched C/C++ files.
+- Reuse shared helpers for storage, config, readiness, and model checks.
+- Keep changes small and local to module boundaries.
 
 Format C/C++ changes with:
 
@@ -52,18 +54,20 @@ Run static analysis when practical:
 run-clang-tidy -p build -quiet
 ```
 
-## Testing Guidelines
+## Testing
 
-Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add focused tests beside the module being changed, using the `*_test.cpp` naming pattern. For security-sensitive code, cover failure paths as well as success paths, especially file ownership checks, config validation, PAM status mapping, and exception handling.
+Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add focused tests beside changed code, using `*_test.cpp`.
+
+For security-sensitive code, cover failure paths and success paths. Watch file ownership checks, config validation, PAM status mapping, runtime staging, and exception handling.
 
 Run all tests with `meson test -C build --print-errorlogs`. For a single test, use `meson test -C build <test-name> --print-errorlogs`.
 
-## Commit & Pull Request Guidelines
+## Security
+
+Do not change `config.ini` format casually. Preserve atomic config rewrites, secure path validation, and ownership expectations for `/etc/howdy`, `config.ini`, user model files, and custom model paths. PAM auth should fail closed on unexpected errors.
+
+## Commit / PR
 
 Recent history uses Conventional Commits, for example `fix(pam): ...`, `test(config): ...`, `style(format): ...`, and `build(release): ...`. Keep subjects imperative and scoped.
 
-Pull requests should include a clear problem statement, a concise change summary, linked issues when applicable, and test results. Include screenshots or terminal output only when they clarify CLI, PAM prompt, or packaging behavior.
-
-## Security & Configuration Tips
-
-Do not change the `config.ini` format casually. Preserve atomic config rewrites, secure path validation, and ownership expectations for `/etc/howdy`, `config.ini`, user model files, and custom model paths. PAM authentication should fail closed on unexpected errors.
+PRs should include problem statement, concise change summary, linked issues when applicable, and test results. Include screenshots or terminal output only when they clarify CLI, PAM prompt, or packaging behavior.

@@ -1,17 +1,16 @@
-# CLI KNOWLEDGE BASE
+# CLI Knowledge Base
 
-**Generated:** 2026-05-14
+**Updated:** 2026-06-11
 
-## OVERVIEW
+## Scope
 
-Native C++ CLI commands for model management, config editing, camera testing,
-and snapshot generation.
+Native C++ CLI commands for model management, config editing, camera testing, and snapshot generation.
 
-## WHERE TO LOOK
+## Where To Look
 
 | Command       | File                                | Role                               |
 | ------------- | ----------------------------------- | ---------------------------------- |
-| Add face      | `howdy/src/cli/add.cpp`             | Capture and encode a user model    |
+| Add face      | `howdy/src/cli/add.cpp`             | Capture and encode user model      |
 | Clear all     | `howdy/src/cli/clear.cpp`           | Delete all user models             |
 | Edit config   | `howdy/src/cli/config.cpp`          | Open config in `$EDITOR` safely    |
 | Toggle auth   | `howdy/src/cli/disable.cpp`         | Enable or disable auth             |
@@ -19,13 +18,22 @@ and snapshot generation.
 | Remove one    | `howdy/src/cli/remove.cpp`          | Delete one model by ID             |
 | Set config    | `howdy/src/cli/set.cpp`             | Update one config value atomically |
 | Download ONNX | `howdy/src/cli/download_models.cpp` | Fetch packaged face models         |
-| Snapshot      | `howdy/src/cli/snapshot.cpp`        | Generate a diagnostic frame        |
+| Snapshot      | `howdy/src/cli/snapshot.cpp`        | Generate diagnostic frame          |
 | Camera test   | `howdy/src/cli/test.cpp`            | Live preview and compare flow      |
 
-## CONVENTIONS
+## Recent Changes
+
+- CLI download flow now gets model dependencies injected.
+- Config edit path uses centralized edited-config installation.
+- Runtime config loading and schema validation live in shared helpers.
+- User model readiness checks live in shared storage helpers.
+- OpenCV model file checks live in shared helpers.
+- Tabs indentation and C++23 idioms apply to touched CLI code.
+
+## Conventions
 
 - Keep config edits atomic and secure.
-- `config.cpp` and `test.cpp` share invoking-user helpers from `common/invoking_user*.hpp`.
-- Model corruption checks are shared in `common/model_file.hpp`.
-- Keep command behavior aligned with the installed `/etc/howdy` layout.
+- Reuse `common/invoking_user*.hpp` for invoking-user helpers.
+- Reuse `common/model_file.hpp` for model integrity checks.
+- Keep command behavior aligned with installed `/etc/howdy` layout.
 - Prefer shared helpers in `howdy/src/config`, `howdy/src/storage`, and `howdy/include/common`.
