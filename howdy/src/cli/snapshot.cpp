@@ -1,10 +1,8 @@
 #include "cli/snapshot_cli.hpp"
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
-#include "config/config_reader.hpp"
-#include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -113,21 +111,12 @@ namespace {
 int snapshot_main(int argc, char **argv) {
 	(void)argc;
 	(void)argv;
-	const auto config_path     = howdy::native::resolve_config_path();
-	const auto config_security = howdy::native::check_secure_config_path(config_path);
-	if (!config_security.ok) {
-		std::cerr << config_security.error_message << "\n";
+	auto config_result = howdy::native::load_runtime_config();
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		std::cerr << config_result.error_message << "\n";
 		return kExitAbort;
 	}
-	howdy::native::ConfigReader config(config_path.string());
-	if (!config.ok()) {
-		std::cerr << "Failed to parse config: " << config_path << "\n";
-		return kExitAbort;
-	}
-	if (const auto validation = howdy::native::validate_runtime_config(config)) {
-		std::cerr << *validation << "\n";
-		return kExitAbort;
-	}
+	const auto &config = *config_result.config;
 
 	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
 	if (!capture.open()) {

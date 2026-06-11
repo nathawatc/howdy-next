@@ -1,7 +1,6 @@
 #include "common/compare_exit.hpp"
 #include "config/config_reader.hpp"
-#include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "storage/user_model_readiness.hpp"
 #ifdef HOWDY_PAM_TESTING
 #	include "auth_flow_testing.hpp"
@@ -535,33 +534,22 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	std::string      config_path     = CONFIG_FILE_PATH;
 	std::string      user_models_dir = USER_MODELS_DIR;
 
-	auto config_security =
-	    howdy::native::check_secure_config_path(config_path, static_cast<uid_t>(0));
-	if (!config_security.ok && config_security.error_code == EACCES && geteuid() != 0) {
+	auto config_result = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
+	if (config_result.status == howdy::native::RuntimeConfigLoadStatus::kPathError &&
+	    config_result.error_code == EACCES && geteuid() != 0) {
 		if (!prepare_runtime_auth_files(username, &runtime_auth_files)) {
 			return PAM_SYSTEM_ERR;
 		}
 		config_path     = runtime_auth_files.config_path;
 		user_models_dir = runtime_auth_files.user_models_dir;
-		config_security =
-		    howdy::native::check_secure_config_path(config_path, static_cast<uid_t>(0));
+		config_result   = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
 	}
 
-	if (!config_security.ok) {
-		syslog(LOG_ERR, "%s", config_security.error_message.c_str());
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		syslog(LOG_ERR, "%s", config_result.error_message.c_str());
 		return PAM_SYSTEM_ERR;
 	}
-
-	howdy::native::ConfigReader config(config_path);
-	if (!config.ok()) {
-		syslog(LOG_ERR, "Failed to parse the configuration file: %d", config.parse_error());
-		return PAM_SYSTEM_ERR;
-	}
-	if (const auto validation = howdy::native::validate_runtime_config(config)) {
-		syslog(LOG_ERR, "Invalid runtime config in %s: %s", config_path.c_str(),
-		       validation->c_str());
-		return PAM_SYSTEM_ERR;
-	}
+	const auto &config = *config_result.config;
 
 	pam_res = check_enabled(config, username, user_models_dir);
 	if (pam_res != PAM_SUCCESS) {

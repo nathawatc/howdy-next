@@ -1,10 +1,8 @@
 #include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
-#include "config/config_reader.hpp"
-#include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -119,22 +117,13 @@ auto main(int argc, char **argv) -> int {
 		}
 		const auto &args = parse_result.args;
 
-		const auto config_security =
-		    howdy::native::check_secure_config_path(args.config_path, static_cast<uid_t>(0));
-		if (!config_security.ok) {
-			std::cerr << config_security.error_message << "\n";
+		auto config_result =
+		    howdy::native::load_runtime_config(args.config_path, static_cast<uid_t>(0));
+		if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+			std::cerr << config_result.error_message << "\n";
 			return static_cast<int>(CompareExit::kAbort);
 		}
-
-		howdy::native::ConfigReader config(args.config_path);
-		if (!config.ok()) {
-			std::cerr << "Failed to parse config: " << args.config_path << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		if (const auto validation = howdy::native::validate_runtime_config(config)) {
-			std::cerr << *validation << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
+		const auto &config = *config_result.config;
 
 		if (!apply_compare_sandbox(howdy::native::config_timeout_seconds(config))) {
 			return static_cast<int>(CompareExit::kAbort);

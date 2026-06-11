@@ -1,7 +1,5 @@
 #include "common/compare_exit.hpp"
-#include "config/config_reader.hpp"
-#include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -11,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -73,22 +72,12 @@ namespace {
 auto main(int argc, char **argv) -> int {
 	const Args args = parse_args(argc, argv);
 
-	const auto config_security = howdy::native::check_secure_config_path(args.config_path);
-	if (!config_security.ok) {
-		std::cerr << config_security.error_message << "\n";
+	auto config_result = howdy::native::load_runtime_config(args.config_path);
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		std::cerr << config_result.error_message << "\n";
 		return static_cast<int>(CompareExit::kAbort);
 	}
-
-	howdy::native::ConfigReader config(args.config_path);
-	if (!config.ok()) {
-		std::cerr << "Failed to parse config: " << args.config_path << " (error "
-		          << config.parse_error() << ")\n";
-		return static_cast<int>(CompareExit::kAbort);
-	}
-	if (const auto validation = howdy::native::validate_runtime_config(config)) {
-		std::cerr << *validation << "\n";
-		return static_cast<int>(CompareExit::kAbort);
-	}
+	const auto &config = *config_result.config;
 
 	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
 	if (!capture.open()) {

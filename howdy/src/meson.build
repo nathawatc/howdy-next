@@ -18,6 +18,8 @@ native_cpp_inc = include_directories('.', '../include')
 
 native_cpp_sources = [
 	'config/config_reader.cpp',
+	'config/runtime_config_loader.cpp',
+	'config/runtime_config_loader_resolved.cpp',
 	'config/config_schema.cpp',
 	'config/config_utils.cpp',
 	'config/config_validation.cpp',
@@ -390,6 +392,26 @@ native_runtime_paths_test = executable(
 test(
 	'native-runtime-paths',
 	native_runtime_paths_test,
+)
+
+native_runtime_config_loader_test = executable(
+	'howdy-runtime-config-loader-test',
+	'tests/runtime_config_loader_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		libcurl,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-runtime-config-loader',
+	native_runtime_config_loader_test,
+	env: ['TMPDIR=' + meson.current_build_dir()],
 )
 
 native_invoking_user_env_test = executable(

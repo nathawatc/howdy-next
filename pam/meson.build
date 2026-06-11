@@ -18,6 +18,7 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 shared_library(
 	'pam_howdy',
 	'../howdy/src/config/config_reader.cpp',
+	'../howdy/src/config/runtime_config_loader.cpp',
 	'../howdy/src/config/config_schema.cpp',
 	'../howdy/src/config/config_validation.cpp',
 	'../howdy/src/storage/user_model_readiness.cpp',
@@ -155,6 +156,7 @@ test(
 pam_auth_flow_helpers_test = executable(
 	'pam-auth-flow-helpers-test',
 	'../howdy/src/config/config_reader.cpp',
+	'../howdy/src/config/runtime_config_loader.cpp',
 	'../howdy/src/config/config_schema.cpp',
 	'../howdy/src/config/config_validation.cpp',
 	'../howdy/src/storage/user_model_readiness.cpp',

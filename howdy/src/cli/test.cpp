@@ -1,11 +1,8 @@
 #include "cli/test_cli.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
-#include "config/config_reader.hpp"
-#include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
 #include "config/config_values.hpp"
-#include "config/runtime_paths.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
@@ -14,7 +11,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <grp.h>
 #include <iostream>
 #include <string>
@@ -121,23 +117,13 @@ namespace {
 }  // namespace
 
 int test_main(int argc, char **argv) {
-	const TestArgs    args            = parse_args(argc, argv);
-	const std::string config_path     = howdy::native::resolve_config_path().string();
-	const auto        config_security = howdy::native::check_secure_config_path(config_path);
-	if (!config_security.ok) {
-		std::cerr << config_security.error_message << "\n";
+	const TestArgs args          = parse_args(argc, argv);
+	auto           config_result = howdy::native::load_runtime_config();
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		std::cerr << config_result.error_message << "\n";
 		return kExitCameraError;
 	}
-
-	howdy::native::ConfigReader config(config_path);
-	if (!config.ok()) {
-		std::cerr << "Failed to read config file: " << config_path << "\n";
-		return kExitCameraError;
-	}
-	if (const auto validation = howdy::native::validate_runtime_config(config)) {
-		std::cerr << *validation << "\n";
-		return kExitCameraError;
-	}
+	const auto &config = *config_result.config;
 
 	howdy::native::FaceModel face_model(config);
 	if (!face_model.ok()) {
