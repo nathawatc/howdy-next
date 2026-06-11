@@ -1,8 +1,7 @@
 #include "cli/test_cli.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
-#include "config/config_values.hpp"
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
@@ -119,13 +118,14 @@ namespace {
 int test_main(int argc, char **argv) {
 	const TestArgs args          = parse_args(argc, argv);
 	auto           config_result = howdy::native::load_runtime_config();
-	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
 		return kExitCameraError;
 	}
 	const auto &config = *config_result.config;
 
-	howdy::native::FaceModel face_model(config);
+	howdy::native::FaceModel face_model(config.face);
 	if (!face_model.ok()) {
 		std::cerr << face_model.error_message() << "\n";
 		return kExitCameraError;
@@ -152,7 +152,7 @@ int test_main(int argc, char **argv) {
 		}
 	}
 
-	auto settings = howdy::native::load_capture_settings(config);
+	auto settings = howdy::native::load_capture_settings(config.video);
 	if (!args.device_path.empty()) {
 		settings.device_path = args.device_path;
 	}
@@ -169,11 +169,11 @@ int test_main(int argc, char **argv) {
 		return kExitCameraError;
 	}
 
-	const int   exposure       = howdy::native::config_exposure(config);
-	const float dark_threshold = howdy::native::config_dark_threshold(config);
-	const bool  use_clahe      = config.get_bool("video", "clahe_enabled", true);
-	const auto  clip_limit     = howdy::native::config_clahe_clip_limit(config);
-	const auto  tile_size      = howdy::native::config_clahe_tile_grid_size(config);
+	const int   exposure       = config.video.exposure;
+	const float dark_threshold = config.video.dark_threshold;
+	const bool  use_clahe      = config.video.clahe_enabled;
+	const auto  clip_limit     = config.video.clahe_clip_limit;
+	const auto  tile_size      = config.video.clahe_tile_grid_size;
 
 	cv::Ptr<cv::CLAHE> clahe;
 	if (use_clahe) {

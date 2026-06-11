@@ -25,7 +25,7 @@ Native C++ CLI commands for model management, config editing, camera testing, an
 
 - CLI download flow now gets model dependencies injected.
 - Config edit path uses centralized edited-config installation.
-- Runtime config loading and schema validation live in shared helpers.
+- Runtime config loading, schema validation, and typed runtime values live in shared helpers.
 - User model readiness checks live in shared storage helpers.
 - OpenCV model file checks live in shared helpers.
 - Tabs indentation and C++23 idioms apply to touched CLI code.
@@ -35,5 +35,6 @@ Native C++ CLI commands for model management, config editing, camera testing, an
 - Keep config edits atomic and secure.
 - Reuse `common/invoking_user*.hpp` for invoking-user helpers.
 - Reuse `common/model_file.hpp` for model integrity checks.
+- For runtime commands such as add, test, and snapshot, prefer typed `RuntimeConfig` fields over raw `ConfigReader` access.
 - Keep command behavior aligned with installed `/etc/howdy` layout.
 - Prefer shared helpers in `howdy/src/config`, `howdy/src/storage`, and `howdy/include/common`.

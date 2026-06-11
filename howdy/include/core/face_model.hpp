@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/config_reader.hpp"
+#include "config/runtime_config.hpp"
 
 #include <string>
 #include <vector>
@@ -22,7 +22,7 @@ namespace howdy::native {
 		static constexpr auto kYunetModel  = "face_detection_yunet_2023mar_int8bq.onnx";
 		static constexpr auto kSfaceModel  = "face_recognition_sface_2021dec_int8bq.onnx";
 
-		explicit FaceModel(const ConfigReader &config);
+		explicit FaceModel(const FaceConfig &config);
 
 		[[nodiscard]] auto ok() const -> bool;
 		[[nodiscard]] auto error_message() const -> const std::string &;
@@ -41,7 +41,7 @@ namespace howdy::native {
 	private:
 		void               set_input_size_from_frame(const cv::Mat &frame);
 		void               set_error(std::string message);
-		[[nodiscard]] auto resolve_model_path(const ConfigReader &config, const std::string &option,
+		[[nodiscard]] auto resolve_model_path(const std::string &value,
 		                                      const std::string &fallback) const -> std::string;
 
 		bool                          ok_ = false;

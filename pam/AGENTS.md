@@ -23,7 +23,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 - Auth helper now reuses user model readiness checks.
 - Runtime auth file staging is split into smaller steps.
 - Storage hardening now applies before PAM-visible auth flows touch user models.
-- Runtime config loading and schema validation live in shared helpers.
+- Runtime config loading, schema validation, and typed runtime values live in shared helpers.
 - C++23 target and tabs indentation apply to touched PAM code.
 
 ## Conventions
@@ -32,4 +32,5 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 - Never auto-terminate on success; PAM waits for user input.
 - Use `WIFEXITED` and `WIFSIGNALED` to inspect child status.
 - Keep every `conv_function` and syslog path fully handled.
+- Treat runtime config load failures or missing typed config values as `PAM_SYSTEM_ERR`.
 - Prefer pthread and standard C++ synchronization over `_thread`.

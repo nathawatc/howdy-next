@@ -1,6 +1,5 @@
 #include "common/compare_exit.hpp"
-#include "config/config_reader.hpp"
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 #include "storage/user_model_readiness.hpp"
 #ifdef HOWDY_PAM_TESTING
 #	include "auth_flow_testing.hpp"
@@ -166,13 +165,13 @@ namespace {
 		return PAM_AUTH_ERR;
 	}
 
-	auto howdy_status(char *username, int status, const howdy::native::ConfigReader &config,
+	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int {
 		if (status != EXIT_SUCCESS) {
 			return howdy_error(status, conv_function);
 		}
 
-		if (!config.get_bool("core", "no_confirmation", true)) {
+		if (!config.core.no_confirmation) {
 			send_conversation_message(conv_function, PAM_TEXT_INFO,
 			                          build_confirmation_message(username));
 		}
@@ -181,14 +180,14 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
+	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int {
-		if (config.get_bool("core", "disabled", false)) {
+		if (config.core.disabled) {
 			syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
 			return PAM_AUTHINFO_UNAVAIL;
 		}
 
-		if (config.get_bool("core", "abort_if_ssh", true)) {
+		if (config.core.abort_if_ssh) {
 			if (checkenv("SSH_CONNECTION") || checkenv("SSH_CLIENT") || checkenv("SSH_TTY") ||
 			    checkenv("SSHD_OPTS")) {
 				syslog(LOG_INFO, "Skipped authentication, SSH session detected");
@@ -196,7 +195,7 @@ namespace {
 			}
 		}
 
-		if (config.get_bool("core", "abort_if_lid_closed", true)) {
+		if (config.core.abort_if_lid_closed) {
 			glob_t    glob_result{};
 			const int return_value =
 			    glob("/proc/acpi/button/lid/*/state", 0, nullptr, &glob_result);
@@ -481,12 +480,12 @@ namespace howdy::pam::testing {
 		return ::howdy_error(status, conv_function);
 	}
 
-	auto howdy_status(char *username, int status, const howdy::native::ConfigReader &config,
+	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int {
 		return ::howdy_status(username, status, config, conv_function);
 	}
 
-	auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
+	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int {
 		return ::check_enabled(config, username, user_models_dir);
 	}
@@ -545,7 +544,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		config_result   = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
 	}
 
-	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+	    !config_result.config.has_value()) {
 		syslog(LOG_ERR, "%s", config_result.error_message.c_str());
 		return PAM_SYSTEM_ERR;
 	}
@@ -566,7 +566,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
 	textdomain(GETTEXT_PACKAGE);
 
-	if (config.get_bool("core", "detection_notice", true)) {
+	if (config.core.detection_notice) {
 		const int notice_result =
 		    conv_function(PAM_TEXT_INFO, S("Attempting facial authentication"));
 		if (notice_result != PAM_SUCCESS) {

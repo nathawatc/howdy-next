@@ -1,4 +1,4 @@
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -33,7 +33,8 @@ namespace {
 	    -> bool {
 		bool ok = true;
 		ok &= expect(result.status == status, message + " status");
-		ok &= expect(result.config == nullptr, message + " has no partial config");
+		ok &= expect(!result.ok, message + " is not ok");
+		ok &= expect(!result.config.has_value(), message + " has no config");
 		ok &= expect(!result.error_message.empty(), message + " has stable caller error");
 		return ok;
 	}
@@ -49,7 +50,7 @@ namespace {
 
 	auto create_temp_directory() -> std::optional<std::filesystem::path> {
 		const auto template_path =
-		    std::filesystem::temp_directory_path() / "howdy-runtime-config-loader-test-XXXXXX";
+		    std::filesystem::temp_directory_path() / "howdy-runtime-config-load-test-XXXXXX";
 		const auto        template_string = template_path.string();
 		std::vector<char> path_buffer(template_string.begin(), template_string.end());
 		path_buffer.push_back('\0');
@@ -84,9 +85,9 @@ auto main() -> int {
 	setenv("HOWDY_CONFIG", valid_path.c_str(), 1);
 	auto valid = howdy::native::load_runtime_config();
 	unsetenv("HOWDY_CONFIG");
-	ok &= expect(valid.status == RuntimeConfigLoadStatus::kOk, "valid config loads");
+	ok &= expect(valid.ok && valid.status == RuntimeConfigLoadStatus::kOk, "valid config loads");
+	ok &= expect(valid.config.has_value(), "valid config has config");
 	ok &= expect(valid.path == valid_path, "default loader resolves config path");
-	ok &= expect(valid.config != nullptr, "valid config returns reader");
 	ok &= expect(valid.error_message.empty(), "valid config has no error");
 
 	const auto missing_path = temp_root / "missing.ini";

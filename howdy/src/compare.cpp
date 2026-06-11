@@ -1,8 +1,7 @@
 #include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
-#include "config/config_values.hpp"
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -119,13 +118,14 @@ auto main(int argc, char **argv) -> int {
 
 		auto config_result =
 		    howdy::native::load_runtime_config(args.config_path, static_cast<uid_t>(0));
-		if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+		    !config_result.config.has_value()) {
 			std::cerr << config_result.error_message << "\n";
 			return static_cast<int>(CompareExit::kAbort);
 		}
 		const auto &config = *config_result.config;
 
-		if (!apply_compare_sandbox(howdy::native::config_timeout_seconds(config))) {
+		if (!apply_compare_sandbox(config.video.timeout)) {
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
@@ -151,27 +151,27 @@ auto main(int argc, char **argv) -> int {
 			return static_cast<int>(CompareExit::kNoFaceModel);
 		}
 
-		howdy::native::FaceModel face_model(config);
+		howdy::native::FaceModel face_model(config.face);
 		if (!face_model.ok()) {
 			std::cerr << face_model.error_message() << "\n";
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
-		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
+		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
 		if (!capture.open()) {
 			std::cerr << capture.error_message() << "\n";
 			return static_cast<int>(CompareExit::kInvalidDevice);
 		}
 
-		const int    timeout        = howdy::native::config_timeout_seconds(config);
-		const float  dark_threshold = howdy::native::config_dark_threshold(config, 50.0F);
-		const float  max_height     = howdy::native::config_max_height(config);
-		const int    rotate         = howdy::native::config_rotate_mode(config);
-		const int    exposure       = howdy::native::config_exposure(config);
-		const bool   end_report     = config.get_bool("debug", "end_report", false);
-		const bool   use_clahe      = config.get_bool("video", "clahe_enabled", true);
-		const double clip_limit     = howdy::native::config_clahe_clip_limit(config);
-		const int    tile_size      = howdy::native::config_clahe_tile_grid_size(config);
+		const int    timeout        = config.video.timeout;
+		const float  dark_threshold = config.video.dark_threshold;
+		const float  max_height     = config.video.max_height;
+		const int    rotate         = config.video.rotate;
+		const int    exposure       = config.video.exposure;
+		const bool   end_report     = config.debug.end_report;
+		const bool   use_clahe      = config.video.clahe_enabled;
+		const double clip_limit     = config.video.clahe_clip_limit;
+		const int    tile_size      = config.video.clahe_tile_grid_size;
 
 		cv::Ptr<cv::CLAHE> clahe;
 		if (use_clahe) {

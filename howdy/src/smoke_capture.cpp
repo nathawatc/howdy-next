@@ -1,5 +1,5 @@
 #include "common/compare_exit.hpp"
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -73,13 +73,14 @@ auto main(int argc, char **argv) -> int {
 	const Args args = parse_args(argc, argv);
 
 	auto config_result = howdy::native::load_runtime_config(args.config_path);
-	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
 		return static_cast<int>(CompareExit::kAbort);
 	}
 	const auto &config = *config_result.config;
 
-	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
+	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
 	if (!capture.open()) {
 		std::cerr << capture.error_message() << "\n";
 		if (capture.error() == howdy::native::CaptureError::kMissingDevice ||

@@ -1,8 +1,7 @@
 #include "cli/snapshot_cli.hpp"
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
-#include "config/config_values.hpp"
-#include "config/runtime_config_loader.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
@@ -112,13 +111,14 @@ int snapshot_main(int argc, char **argv) {
 	(void)argc;
 	(void)argv;
 	auto config_result = howdy::native::load_runtime_config();
-	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
 		return kExitAbort;
 	}
 	const auto &config = *config_result.config;
 
-	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config));
+	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
 	if (!capture.open()) {
 		std::cerr << capture.error_message() << "\n";
 		return kExitAbort;
@@ -145,15 +145,12 @@ int snapshot_main(int argc, char **argv) {
 	std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer);
 
 	const auto filepath = generate_snapshot(
-	    frames,
-	    {
-	        "GENERATED SNAPSHOT",
-	        std::string("Date: ") + timestr.data(),
-	        "Dark threshold config: " +
-	            std::to_string(howdy::native::config_dark_threshold(config)),
-	        "SFace threshold config: " + std::to_string(howdy::native::config_sface_threshold(
-	                                         config, howdy::native::config_sface_metric(config))),
-	    });
+	    frames, {
+	                "GENERATED SNAPSHOT",
+	                std::string("Date: ") + timestr.data(),
+	                "Dark threshold config: " + std::to_string(config.video.dark_threshold),
+	                "SFace threshold config: " + std::to_string(config.face.sface_threshold),
+	            });
 	if (filepath.empty()) {
 		std::cerr << "Failed to write snapshot\n";
 		return kExitAbort;

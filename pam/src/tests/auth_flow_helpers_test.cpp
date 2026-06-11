@@ -1,6 +1,6 @@
 #include "auth_flow_testing.hpp"
 #include "common/compare_exit.hpp"
-#include "config/config_reader.hpp"
+#include "config/runtime_config.hpp"
 
 #include <array>
 #include <cerrno>
@@ -235,17 +235,6 @@ namespace {
 		return std::filesystem::path(created);
 	}
 
-	auto config_from_contents(const std::string &label, const std::string &content,
-	                          std::string *path) -> bool {
-		auto temp_file = create_temp_file(label);
-		if (!temp_file.has_value()) {
-			return false;
-		}
-		*path = temp_file->path;
-		temp_file->fd.reset();
-		return write_file(*path, content);
-	}
-
 	auto expect_fd_reading() -> bool {
 		using howdy::pam::testing::read_fd_to_string;
 
@@ -435,17 +424,8 @@ namespace {
 		             "stopped status fails closed");
 		ok &= expect(calls == 0, "stopped status sends no conversation");
 
-		auto confirmation_file = create_temp_file("confirmation");
-		ok &= expect(confirmation_file.has_value(), "creates confirmation config");
-		if (!confirmation_file.has_value()) {
-			return false;
-		}
-		confirmation_file->fd.reset();
-		ok &= expect(write_file(confirmation_file->path, "[core]\nno_confirmation = false\n"),
-		             "writes confirmation config");
-		const howdy::native::ConfigReader confirmation_config(confirmation_file->path);
-		unlink(confirmation_file->path.c_str());
-		ok &= expect(confirmation_config.ok(), "parses confirmation config");
+		howdy::native::RuntimeConfig confirmation_config;
+		confirmation_config.core.no_confirmation = false;
 
 		calls                = 0;
 		std::string username = "alice";
@@ -456,17 +436,7 @@ namespace {
 		                 last_message == "Identified face as alice",
 		             "successful status sends enabled confirmation");
 
-		auto quiet_file = create_temp_file("quiet");
-		ok &= expect(quiet_file.has_value(), "creates quiet config");
-		if (!quiet_file.has_value()) {
-			return false;
-		}
-		quiet_file->fd.reset();
-		ok &= expect(write_file(quiet_file->path, "[core]\nno_confirmation = true\n"),
-		             "writes quiet config");
-		const howdy::native::ConfigReader quiet_config(quiet_file->path);
-		unlink(quiet_file->path.c_str());
-		ok &= expect(quiet_config.ok(), "parses quiet config");
+		const howdy::native::RuntimeConfig quiet_config;
 
 		calls = 0;
 		ok &= expect(howdy_status(username.data(), EXIT_SUCCESS, quiet_config, conversation) ==
@@ -490,37 +460,21 @@ namespace {
 
 		bool ok = true;
 
-		std::string disabled_path;
-		ok &= expect(config_from_contents("disabled", "[core]\ndisabled = true\n", &disabled_path),
-		             "writes disabled config");
-		const howdy::native::ConfigReader disabled_config(disabled_path);
-		unlink(disabled_path.c_str());
-		ok &= expect(disabled_config.ok(), "parses disabled config");
+		howdy::native::RuntimeConfig disabled_config;
+		disabled_config.core.disabled = true;
 		ok &= expect(check_enabled(disabled_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
 		             "disabled config skips authentication");
 
-		std::string ssh_path;
-		ok &= expect(config_from_contents("ssh", "[core]\nabort_if_ssh = true\n", &ssh_path),
-		             "writes ssh config");
-		const howdy::native::ConfigReader ssh_config(ssh_path);
-		unlink(ssh_path.c_str());
-		ok &= expect(ssh_config.ok(), "parses ssh config");
-		ScopedEnv ssh_connection("SSH_CONNECTION");
+		const howdy::native::RuntimeConfig ssh_config;
+		ScopedEnv                          ssh_connection("SSH_CONNECTION");
 		setenv("SSH_CONNECTION", "client server", 1);
 		ok &= expect(check_enabled(ssh_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
 		             "ssh environment skips authentication");
 		unsetenv("SSH_CONNECTION");
 
-		std::string base_path;
-		ok &= expect(config_from_contents("base",
-		                                  "[core]\n"
-		                                  "abort_if_ssh = false\n"
-		                                  "abort_if_lid_closed = false\n",
-		                                  &base_path),
-		             "writes base config");
-		const howdy::native::ConfigReader base_config(base_path);
-		unlink(base_path.c_str());
-		ok &= expect(base_config.ok(), "parses base config");
+		howdy::native::RuntimeConfig base_config;
+		base_config.core.abort_if_ssh        = false;
+		base_config.core.abort_if_lid_closed = false;
 
 		ok &= expect(check_enabled(base_config, "../alice", "/") == PAM_AUTHINFO_UNAVAIL,
 		             "invalid username skips authentication");

@@ -1,7 +1,6 @@
 #include "core/face_model.hpp"
 
 #include "common/model_file.hpp"
-#include "config/config_values.hpp"
 #include "config/runtime_paths.hpp"
 
 #include <algorithm>
@@ -15,12 +14,12 @@
 
 namespace howdy::native {
 
-	FaceModel::FaceModel(const ConfigReader &config) {
+	FaceModel::FaceModel(const FaceConfig &config) {
 		const auto models_dir = resolve_models_dir();
 		const auto yunet_model =
-		    resolve_model_path(config, "yunet_model", (models_dir / kYunetModel).string());
+		    resolve_model_path(config.yunet_model, (models_dir / kYunetModel).string());
 		const auto sface_model =
-		    resolve_model_path(config, "sface_model", (models_dir / kSfaceModel).string());
+		    resolve_model_path(config.sface_model, (models_dir / kSfaceModel).string());
 
 		for (const auto &model_path : {yunet_model, sface_model}) {
 			const auto readiness =
@@ -31,11 +30,11 @@ namespace howdy::native {
 			}
 		}
 
-		const auto score_threshold = config_yunet_score_threshold(config);
-		const auto nms_threshold   = config_yunet_nms_threshold(config);
-		const auto top_k           = config_yunet_top_k(config);
-		metric_                    = config_sface_metric(config);
-		threshold_                 = config_sface_threshold(config, metric_);
+		const auto score_threshold = config.yunet_score_threshold;
+		const auto nms_threshold   = config.yunet_nms_threshold;
+		const auto top_k           = config.yunet_top_k;
+		metric_                    = config.sface_metric;
+		threshold_                 = config.sface_threshold;
 
 		try {
 			detector_   = cv::FaceDetectorYN::create(yunet_model, "", input_size_, score_threshold,
@@ -222,9 +221,8 @@ namespace howdy::native {
 		ok_            = false;
 	}
 
-	auto FaceModel::resolve_model_path(const ConfigReader &config, const std::string &option,
-	                                   const std::string &fallback) const -> std::string {
-		std::string value = config.get("face", option, fallback);
+	auto FaceModel::resolve_model_path(const std::string &value, const std::string &fallback) const
+	    -> std::string {
 		if (value.empty() || value == "default" || value == "none") {
 			return fallback;
 		}

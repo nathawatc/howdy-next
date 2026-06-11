@@ -40,6 +40,7 @@ howdy download-models
 - Keep snake_case for files, functions, and tests.
 - Preserve tabs indentation in touched C/C++ files.
 - Reuse shared helpers for storage, config, readiness, and model checks.
+- Runtime code should load typed `RuntimeConfig` via `load_runtime_config()` instead of repeatedly reading raw config keys through `ConfigReader`.
 - Keep changes small and local to module boundaries.
 
 Format C/C++ changes with:
@@ -58,13 +59,13 @@ run-clang-tidy -p build -quiet
 
 Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add focused tests beside changed code, using `*_test.cpp`.
 
-For security-sensitive code, cover failure paths and success paths. Watch file ownership checks, config validation, PAM status mapping, runtime staging, and exception handling.
+For security-sensitive code, cover failure paths and success paths. Watch file ownership checks, config validation, typed runtime config loading, PAM status mapping, runtime staging, and exception handling.
 
 Run all tests with `meson test -C build --print-errorlogs`. For a single test, use `meson test -C build <test-name> --print-errorlogs`.
 
 ## Security
 
-Do not change `config.ini` format casually. Preserve atomic config rewrites, secure path validation, and ownership expectations for `/etc/howdy`, `config.ini`, user model files, and custom model paths. PAM auth should fail closed on unexpected errors.
+Do not change `config.ini` format casually. Preserve atomic config rewrites, secure path validation, typed runtime config validation, and ownership expectations for `/etc/howdy`, `config.ini`, user model files, and custom model paths. PAM auth should fail closed on unexpected errors.
 
 ## Commit / PR
 

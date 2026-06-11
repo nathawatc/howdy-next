@@ -1,7 +1,6 @@
 #include "recorders/video_capture.hpp"
 
 #include "common/capture_device_path.hpp"
-#include "config/config_values.hpp"
 
 #include <filesystem>
 #include <string>
@@ -17,14 +16,14 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto load_capture_settings(const ConfigReader &config) -> CaptureSettings {
+	auto load_capture_settings(const VideoConfig &config) -> CaptureSettings {
 		return CaptureSettings{
-		    .device_path    = config.get("video", "device_path", "/dev/video0"),
-		    .warn_no_device = config.get_bool("video", "warn_no_device", true),
-		    .force_mjpeg    = config.get_bool("video", "force_mjpeg", false),
-		    .frame_width    = config_frame_width(config),
-		    .frame_height   = config_frame_height(config),
-		    .device_fps     = config_device_fps(config),
+		    .device_path    = config.device_path,
+		    .warn_no_device = config.warn_no_device,
+		    .force_mjpeg    = config.force_mjpeg,
+		    .frame_width    = config.frame_width,
+		    .frame_height   = config.frame_height,
+		    .device_fps     = config.device_fps,
 		};
 	}
 

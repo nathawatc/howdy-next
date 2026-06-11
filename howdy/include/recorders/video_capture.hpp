@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/config_reader.hpp"
+#include "config/runtime_config.hpp"
 
 #include <string>
 
@@ -24,7 +24,7 @@ namespace howdy::native {
 		int         device_fps     = 0;
 	};
 
-	auto load_capture_settings(const ConfigReader &config) -> CaptureSettings;
+	auto load_capture_settings(const VideoConfig &config) -> CaptureSettings;
 
 	class VideoCapture {
 	public:

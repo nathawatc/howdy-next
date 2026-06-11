@@ -16,7 +16,7 @@
 #	include <sys/types.h>
 
 namespace howdy::native {
-	class ConfigReader;
+	struct RuntimeConfig;
 }
 
 namespace howdy::pam::testing {
@@ -28,9 +28,9 @@ namespace howdy::pam::testing {
 	auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int;
 	auto auth_token_present(pam_handle_t *pamh) -> bool;
 	auto howdy_error(int status, const ConversationFn &conv_function) -> int;
-	auto howdy_status(char *username, int status, const howdy::native::ConfigReader &config,
+	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int;
-	auto check_enabled(const howdy::native::ConfigReader &config, const char *username,
+	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int;
 
 	struct PromptStopResult {

@@ -18,7 +18,7 @@ pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_op
 shared_library(
 	'pam_howdy',
 	'../howdy/src/config/config_reader.cpp',
-	'../howdy/src/config/runtime_config_loader.cpp',
+	'../howdy/src/config/runtime_config.cpp',
 	'../howdy/src/config/config_schema.cpp',
 	'../howdy/src/config/config_validation.cpp',
 	'../howdy/src/storage/user_model_readiness.cpp',
@@ -30,6 +30,7 @@ shared_library(
 	'src/status_mapping.cpp',
 	'src/tty_restore.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
+	cpp_args: ['-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
 	dependencies: [
 		libpam,
 		inih_cpp,
@@ -156,7 +157,7 @@ test(
 pam_auth_flow_helpers_test = executable(
 	'pam-auth-flow-helpers-test',
 	'../howdy/src/config/config_reader.cpp',
-	'../howdy/src/config/runtime_config_loader.cpp',
+	'../howdy/src/config/runtime_config.cpp',
 	'../howdy/src/config/config_schema.cpp',
 	'../howdy/src/config/config_validation.cpp',
 	'../howdy/src/storage/user_model_readiness.cpp',
@@ -167,7 +168,7 @@ pam_auth_flow_helpers_test = executable(
 	'src/status_mapping.cpp',
 	'src/tests/auth_flow_helpers_test.cpp',
 	include_directories: include_directories('include', '../howdy/include'),
-	cpp_args: ['-DHOWDY_PAM_TESTING'],
+	cpp_args: ['-DHOWDY_PAM_TESTING', '-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
 	dependencies: [
 		libpam,
 		inih_cpp,
