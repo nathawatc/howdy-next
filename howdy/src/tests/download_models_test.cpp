@@ -241,6 +241,21 @@ auto main() -> int {
 	    missing_parent_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
 	    "missing parent path starts first model download");
 
+	const auto blocked_models_dir = temp_root / "blocked-models";
+	const auto blocked_output      = temp_root / "blocked-output.txt";
+	ok &= expect(write_file(blocked_models_dir, "not a directory"),
+	             "create file blocking models directory");
+
+	int blocked_exit = 0;
+	ok &= expect(run_first_download_attempt(blocked_models_dir, blocked_output, &blocked_exit),
+	             "capture blocked models-dir download-models output");
+	const auto blocked_stdout = read_file(blocked_output);
+	ok &= expect(blocked_exit == 1, "blocked models directory aborts cleanly");
+	ok &= expect(attempted_downloads() == 0,
+	             "blocked models directory stops before first download");
+	ok &= expect(blocked_stdout.contains("Failed to create models directory:"),
+	             "blocked models directory reports setup failure");
+
 	howdy::native::StagedFile empty_path_install{
 	    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY)),
 	    .path = {},

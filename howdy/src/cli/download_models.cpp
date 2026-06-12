@@ -19,6 +19,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include <curl/curl.h>
@@ -211,7 +212,11 @@ namespace {
 	auto prepare_staged_download(const std::filesystem::path &destination)
 	    -> std::optional<StagedDownloadFile> {
 		const auto parent = destination.parent_path();
-		std::filesystem::create_directories(parent);
+		std::error_code ec;
+		std::filesystem::create_directories(parent, ec);
+		if (ec) {
+			return std::nullopt;
+		}
 
 		if (std::filesystem::exists(parent)) {
 			const auto dir_security =
@@ -253,7 +258,13 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 	(void)argc;
 	(void)argv;
 	const auto models_dir = howdy::native::resolve_models_dir();
-	std::filesystem::create_directories(models_dir);
+	std::error_code models_dir_ec;
+	std::filesystem::create_directories(models_dir, models_dir_ec);
+	if (models_dir_ec) {
+		std::cout << "Failed to create models directory: " << models_dir.string() << " ("
+		          << models_dir_ec.message() << ")\n";
+		return kExitAbort;
+	}
 	const auto models_dir_security =
 	    howdy::native::check_secure_root_owned_directory_tree(models_dir, "Models directory");
 	if (!models_dir_security.ok) {
