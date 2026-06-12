@@ -1,6 +1,7 @@
 #include "cli/download_models_cli.hpp"
 #include "cli/download_models_internal.hpp"
 #include "common/atomic_files.hpp"
+#include "common/fd_io.hpp"
 #include "common/file_security.hpp"
 #include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
@@ -17,7 +18,6 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <unistd.h>
 #include <vector>
 
 #include <curl/curl.h>
@@ -88,23 +88,11 @@ namespace {
 	}
 
 	size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-		auto      *staged = static_cast<StagedDownloadFile *>(userp);
-		const auto total  = size * nmemb;
+		auto       *staged = static_cast<StagedDownloadFile *>(userp);
+		const auto  total  = size * nmemb;
+		const auto *data   = static_cast<const char *>(contents);
 
-		const char *cursor    = static_cast<const char *>(contents);
-		std::size_t remaining = total;
-		while (remaining > 0) {
-			const auto written = write(staged->fd.get(), cursor, remaining);
-			if (written < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				return 0;
-			}
-			cursor += written;
-			remaining -= static_cast<std::size_t>(written);
-		}
-		return total;
+		return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
 	}
 
 	size_t header_capture_callback(char *buffer, size_t size, size_t nitems, void *userdata) {
