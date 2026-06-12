@@ -353,8 +353,6 @@ namespace howdy::native::auth_helper {
 				return true;
 			case howdy::native::UserModelStatus::kNoModel:
 			case howdy::native::UserModelStatus::kNoModelDirectory:
-				// Missing source storage means prepare continues without staging a model; compare
-				// later decides whether authentication is unavailable.
 				return true;
 			case howdy::native::UserModelStatus::kInvalidUser:
 				std::cerr << howdy::native::kInvalidUserNameMessage << "\n";

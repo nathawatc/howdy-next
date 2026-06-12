@@ -16,12 +16,6 @@
 namespace howdy::native {
 	namespace {
 
-#ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-		auto get_trusted_config_owner_uid() -> std::optional<uid_t> {
-			return default_secure_owner_uid();
-		}
-#endif
-
 		auto failure_result(RuntimeConfigLoadStatus status, const std::filesystem::path &path,
 		                    std::string error_message, int error_code = 0)
 		    -> RuntimeConfigLoadResult {
@@ -126,9 +120,8 @@ namespace howdy::native {
 	}
 
 #ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-	// PAM always supplies a secured explicit path and does not link native runtime-path helpers.
 	auto load_runtime_config(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult {
-		return load_runtime_config(config_path, get_trusted_config_owner_uid());
+		return load_runtime_config(config_path, default_secure_owner_uid());
 	}
 
 	auto load_runtime_config() -> RuntimeConfigLoadResult {
