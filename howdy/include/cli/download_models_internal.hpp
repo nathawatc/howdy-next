@@ -2,6 +2,7 @@
 
 #include "common/atomic_files.hpp"
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -18,6 +19,9 @@ namespace howdy::native::download_models_internal {
 		DownloadFileFn      download_file;
 		ModelFileOwnerUidFn model_file_owner_uid;
 	};
+
+	auto download_models_write_callback(void *contents, std::size_t size, std::size_t nmemb,
+	                                    void *userp) -> std::size_t;
 
 	auto download_models_main_with_dependencies(int argc, char **argv,
 	                                            const DownloadModelsDependencies &dependencies)

@@ -88,16 +88,22 @@ namespace {
 #endif
 	}
 
-	size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-		auto       *staged = static_cast<StagedDownloadFile *>(userp);
-		const auto *data   = static_cast<const char *>(contents);
-		if (size != 0 && nmemb > std::numeric_limits<std::size_t>::max() / size) {
-			return 0;
-		}
-		const auto total = size * nmemb;
+}  // namespace
 
-		return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
+auto howdy::native::download_models_internal::download_models_write_callback(
+    void *contents, size_t size, size_t nmemb, void *userp) -> size_t {
+	auto *staged =
+	    static_cast<howdy::native::download_models_internal::StagedDownloadFile *>(userp);
+	const auto *data = static_cast<const char *>(contents);
+	if (size != 0 && nmemb > std::numeric_limits<std::size_t>::max() / size) {
+		return 0;
 	}
+	const auto total = size * nmemb;
+
+	return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
+}
+
+namespace {
 
 	size_t header_capture_callback(char *buffer, size_t size, size_t nitems, void *userdata) {
 		auto       *etag  = static_cast<std::string *>(userdata);
@@ -226,7 +232,8 @@ namespace {
 
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		configure_transfer_policy(curl);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+		                 howdy::native::download_models_internal::download_models_write_callback);
 		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &staged);
 		const CURLcode result = curl_easy_perform(curl);
 

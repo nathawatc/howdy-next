@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <string>
 #include <unistd.h>
@@ -256,6 +257,22 @@ auto main() -> int {
 	                                                 ".howdy-download-")
 	                  .has_value(),
 	             "prepare staged file returns nullopt when parent creation fails");
+
+	const auto overflow_destination = temp_root / "overflow-write.onnx";
+	auto       overflow_staged =
+	    howdy::native::prepare_staged_file(overflow_destination, ".howdy-download-");
+	ok &= expect(overflow_staged.has_value(), "prepare staged file for overflow write callback");
+	if (overflow_staged.has_value()) {
+		std::array<char, 2> payload        = {'x', 'y'};
+		const auto          overflow_size  = (std::numeric_limits<std::size_t>::max() / 2) + 2;
+		const auto          overflow_count = static_cast<std::size_t>(2);
+		const auto result = howdy::native::download_models_internal::download_models_write_callback(
+		    payload.data(), overflow_size, overflow_count, &*overflow_staged);
+		ok &= expect(result == 0, "overflowing write callback returns 0");
+		ok &= expect(read_file(overflow_staged->path).empty(),
+		             "overflowing write callback leaves staged file empty");
+		howdy::native::cleanup_staged_file(*overflow_staged);
+	}
 
 	const auto successful_install_destination = temp_root / "successful-install.onnx";
 	auto       successful_install =
