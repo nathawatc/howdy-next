@@ -1,6 +1,6 @@
 #include "cli/disable_cli.hpp"
-#include "config/config_reader.hpp"
 #include "config/config_utils.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 
 #include <iostream>
@@ -21,24 +21,27 @@ int disable_main(int argc, char **argv) {
 
 	const std::string argument = argv[1];
 	std::string       out_value;
+	bool              disabled;
 	if (argument == "1" || argument == "true") {
 		out_value = "true";
+		disabled  = true;
 	} else if (argument == "0" || argument == "false") {
 		out_value = "false";
+		disabled  = false;
 	} else {
 		std::cout << "Please only use 0 (enable) or 1 (disable) as an argument\n";
 		return kExitAbort;
 	}
 
-	const auto config_path     = howdy::native::resolve_config_path();
-	const auto config_security = howdy::native::check_secure_config_path(config_path);
-	if (!config_security.ok) {
-		std::cout << config_security.error_message << "\n";
+	const auto config_path   = howdy::native::resolve_config_path();
+	auto       config_result = howdy::native::load_runtime_config(config_path);
+	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+	    !config_result.config.has_value()) {
+		std::cerr << config_result.error_message << "\n";
 		return kExitAbort;
 	}
 
-	howdy::native::ConfigReader config(config_path.string());
-	if (config.ok() && out_value == config.get("core", "disabled", "true")) {
+	if (disabled == config_result.config->core.disabled) {
 		std::cout << "The disable option has already been set to " << out_value << "\n";
 		return kExitAbort;
 	}
