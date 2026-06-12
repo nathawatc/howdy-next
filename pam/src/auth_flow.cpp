@@ -1,5 +1,6 @@
 #include "common/auth_helper_protocol.hpp"
 #include "common/compare_exit.hpp"
+#include "common/fd_io.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_model_readiness.hpp"
 #ifdef HOWDY_PAM_TESTING
@@ -54,6 +55,8 @@ namespace {
 	}
 
 	using howdy::native::CompareExit;
+
+	constexpr std::size_t kAuthHelperOutputLimit = 9216;
 
 	auto make_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
@@ -260,25 +263,6 @@ namespace {
 		}
 	}
 
-	auto read_fd_to_string(int fd) -> std::string {
-		std::string            output;
-		std::array<char, 1024> buffer{};
-		while (true) {
-			const ssize_t result = read(fd, buffer.data(), buffer.size());
-			if (result < 0 && errno == EINTR) {
-				continue;
-			}
-			if (result <= 0) {
-				break;
-			}
-			output.append(buffer.data(), static_cast<std::size_t>(result));
-			if (output.size() > 8192) {
-				break;
-			}
-		}
-		return output;
-	}
-
 	auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
 		std::size_t offset = 0;
 		while (offset < output.size()) {
@@ -342,7 +326,8 @@ namespace {
 			return false;
 		}
 
-		const std::string helper_output = read_fd_to_string(output_pipe[0]);
+		const std::string helper_output =
+		    howdy::native::read_fd_to_string_bounded(output_pipe[0], kAuthHelperOutputLimit);
 		close(output_pipe[0]);
 
 		const int status = wait_for_helper_process(child_pid);
@@ -505,7 +490,7 @@ namespace howdy::pam::testing {
 	}
 
 	auto read_fd_to_string(int fd) -> std::string {
-		return ::read_fd_to_string(fd);
+		return howdy::native::read_fd_to_string_bounded(fd, kAuthHelperOutputLimit);
 	}
 
 	auto helper_output_value(const std::string &output, const std::string &key) -> std::string {

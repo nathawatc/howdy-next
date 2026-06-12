@@ -1,7 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstddef>
+#include <string>
 #include <string_view>
 #include <unistd.h>
 
@@ -32,6 +35,32 @@ namespace howdy::native {
 
 	inline auto write_all_to_fd(int fd, std::string_view content) -> bool {
 		return write_all_to_fd(fd, content.data(), content.size());
+	}
+
+	inline auto read_fd_to_string_bounded(int fd, std::size_t max_bytes) -> std::string {
+		std::string output;
+		if (max_bytes == 0) {
+			return output;
+		}
+
+		std::array<char, 1024> buffer{};
+		while (output.size() < max_bytes) {
+			const std::size_t remaining     = max_bytes - output.size();
+			const std::size_t bytes_to_read = std::min(remaining, buffer.size());
+			const ssize_t     result        = read(fd, buffer.data(), bytes_to_read);
+			if (result < 0) {
+				if (errno == EINTR) {
+					continue;
+				}
+				break;
+			}
+			if (result == 0) {
+				break;
+			}
+
+			output.append(buffer.data(), static_cast<std::size_t>(result));
+		}
+		return output;
 	}
 
 }  // namespace howdy::native
