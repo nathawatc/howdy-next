@@ -264,10 +264,13 @@ test(
 	native_capture_device_path_test,
 )
 
+packaged_config_cpp_arg = '-DHOWDY_PACKAGED_CONFIG_PATH="' + meson.project_source_root() / 'config/config.ini' + '"'
+
 native_config_validation_test = executable(
 	'howdy-config-validation-test',
 	'tests/config_validation_test.cpp',
 	include_directories: native_cpp_inc,
+	cpp_args: [packaged_config_cpp_arg],
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,

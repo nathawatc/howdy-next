@@ -1,6 +1,8 @@
 #include "config/config_schema.hpp"
 
 #include <array>
+#include <cassert>
+#include <cstdlib>
 
 namespace howdy::native::config_schema {
 	namespace {
@@ -38,165 +40,198 @@ namespace howdy::native::config_schema {
 		inline constexpr std::array<std::string_view, 2> model_path_choices  = {"default", "none"};
 
 		inline constexpr auto kRuntimeConfigOptions = std::to_array<Option>({
-		    Option{.section      = "core",
+		    Option{.id           = OptionId::core_detection_notice,
+		           .section      = "core",
 		           .key          = "detection_notice",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "core",
+		    Option{.id           = OptionId::core_no_confirmation,
+		           .section      = "core",
 		           .key          = "no_confirmation",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "core",
+		    Option{.id           = OptionId::core_abort_if_ssh,
+		           .section      = "core",
 		           .key          = "abort_if_ssh",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "core",
+		    Option{.id           = OptionId::core_abort_if_lid_closed,
+		           .section      = "core",
 		           .key          = "abort_if_lid_closed",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "core",
+		    Option{.id           = OptionId::core_disabled,
+		           .section      = "core",
 		           .key          = "disabled",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_timeout,
+		           .section      = "video",
 		           .key          = "timeout",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(4),
 		           .range        = timeout_range,
 		           .invalid_rule = "expected integer range 1..300"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_device_path,
+		           .section      = "video",
 		           .key          = "device_path",
 		           .type         = ValueType::string,
 		           .fallback     = string_default("/dev/video0"),
 		           .choices      = device_path_choices,
 		           .special_rule = SpecialRule::device_path,
 		           .invalid_rule = "expected none, /dev/video*, or /dev/v4l/by-path/*"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_warn_no_device,
+		           .section      = "video",
 		           .key          = "warn_no_device",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_max_height,
+		           .section      = "video",
 		           .key          = "max_height",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(320.0F),
 		           .range        = max_height_range,
 		           .invalid_rule = "expected range 32..4096"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_frame_width,
+		           .section      = "video",
 		           .key          = "frame_width",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(-1),
 		           .range        = frame_size_range,
 		           .invalid_rule = "expected -1 or integer range 16..8192"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_frame_height,
+		           .section      = "video",
 		           .key          = "frame_height",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(-1),
 		           .range        = frame_size_range,
 		           .invalid_rule = "expected -1 or integer range 16..8192"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_clahe_enabled,
+		           .section      = "video",
 		           .key          = "clahe_enabled",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_clahe_clip_limit,
+		           .section      = "video",
 		           .key          = "clahe_clip_limit",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(1.25F),
 		           .range        = clahe_clip_limit_range,
 		           .invalid_rule = "expected range 0.01..100"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_clahe_tile_grid_size,
+		           .section      = "video",
 		           .key          = "clahe_tile_grid_size",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(8),
 		           .range        = clahe_tile_grid_size_range,
 		           .invalid_rule = "expected integer range 1..64"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_dark_threshold,
+		           .section      = "video",
 		           .key          = "dark_threshold",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(60.0F),
 		           .range        = dark_threshold_range,
 		           .invalid_rule = "expected range 0..99.9"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_force_mjpeg,
+		           .section      = "video",
 		           .key          = "force_mjpeg",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_exposure,
+		           .section      = "video",
 		           .key          = "exposure",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(-1),
 		           .range        = exposure_range,
 		           .invalid_rule = "expected -1 or integer range 0..10000"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_device_fps,
+		           .section      = "video",
 		           .key          = "device_fps",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(0),
 		           .range        = device_fps_range,
 		           .invalid_rule = "expected integer range 0..480"},
-		    Option{.section      = "video",
+		    Option{.id           = OptionId::video_rotate,
+		           .section      = "video",
 		           .key          = "rotate",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(0),
 		           .range        = rotate_range,
 		           .invalid_rule = "expected integer range 0..2"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_yunet_model,
+		           .section      = "face",
 		           .key          = "yunet_model",
 		           .type         = ValueType::string,
+		           .fallback     = string_default(""),
 		           .choices      = model_path_choices,
 		           .special_rule = SpecialRule::model_path,
 		           .invalid_rule = "expected an absolute path, default, or none"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_sface_model,
+		           .section      = "face",
 		           .key          = "sface_model",
 		           .type         = ValueType::string,
+		           .fallback     = string_default(""),
 		           .choices      = model_path_choices,
 		           .special_rule = SpecialRule::model_path,
 		           .invalid_rule = "expected an absolute path, default, or none"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_yunet_score_threshold,
+		           .section      = "face",
 		           .key          = "yunet_score_threshold",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(0.9F),
 		           .range        = yunet_score_threshold_range,
 		           .invalid_rule = "expected range 0..1"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_yunet_nms_threshold,
+		           .section      = "face",
 		           .key          = "yunet_nms_threshold",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(0.3F),
 		           .range        = yunet_nms_threshold_range,
 		           .invalid_rule = "expected range 0..1"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_yunet_top_k,
+		           .section      = "face",
 		           .key          = "yunet_top_k",
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(5000),
 		           .range        = yunet_top_k_range,
 		           .invalid_rule = "expected integer range 1..10000"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_sface_metric,
+		           .section      = "face",
 		           .key          = "sface_metric",
 		           .type         = ValueType::string,
 		           .fallback     = string_default("cosine"),
 		           .choices      = sface_metric_choices,
 		           .invalid_rule = "expected one of: cosine, l2, l2norm"},
-		    Option{.section      = "face",
+		    Option{.id           = OptionId::face_sface_threshold,
+		           .section      = "face",
 		           .key          = "sface_threshold",
 		           .type         = ValueType::floating_point,
 		           .fallback     = float_default(sface_cosine_threshold_default),
 		           .range        = sface_threshold_range,
 		           .special_rule = SpecialRule::sface_threshold,
 		           .invalid_rule = "expected a floating-point value"},
-		    Option{.section      = "snapshots",
+		    Option{.id           = OptionId::snapshots_save_failed,
+		           .section      = "snapshots",
 		           .key          = "save_failed",
 		           .type         = ValueType::boolean,
+		           .fallback     = bool_default(false),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "snapshots",
+		    Option{.id           = OptionId::snapshots_save_successful,
+		           .section      = "snapshots",
 		           .key          = "save_successful",
 		           .type         = ValueType::boolean,
+		           .fallback     = bool_default(false),
 		           .invalid_rule = "expected a boolean"},
-		    Option{.section      = "debug",
+		    Option{.id           = OptionId::debug_end_report,
+		           .section      = "debug",
 		           .key          = "end_report",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
@@ -209,6 +244,16 @@ namespace howdy::native::config_schema {
 		return kRuntimeConfigOptions;
 	}
 
+	auto runtime_config_option(OptionId id) -> const Option & {
+		for (const auto &option : kRuntimeConfigOptions) {
+			if (option.id == id) {
+				return option;
+			}
+		}
+		assert(false);
+		std::abort();
+	}
+
 	auto runtime_config_option(std::string_view section, std::string_view key) -> const Option * {
 		for (const auto &option : kRuntimeConfigOptions) {
 			if (option.section == section && option.key == key) {
@@ -216,6 +261,42 @@ namespace howdy::native::config_schema {
 			}
 		}
 		return nullptr;
+	}
+
+	auto runtime_default_bool(OptionId id) -> bool {
+		const auto &fallback = runtime_config_option(id).fallback;
+		assert(fallback.has_boolean);
+		if (!fallback.has_boolean) {
+			std::abort();
+		}
+		return fallback.boolean;
+	}
+
+	auto runtime_default_int(OptionId id) -> int {
+		const auto &fallback = runtime_config_option(id).fallback;
+		assert(fallback.has_integer);
+		if (!fallback.has_integer) {
+			std::abort();
+		}
+		return fallback.integer;
+	}
+
+	auto runtime_default_float(OptionId id) -> float {
+		const auto &fallback = runtime_config_option(id).fallback;
+		assert(fallback.has_floating_point);
+		if (!fallback.has_floating_point) {
+			std::abort();
+		}
+		return fallback.floating_point;
+	}
+
+	auto runtime_default_string(OptionId id) -> std::string_view {
+		const auto &fallback = runtime_config_option(id).fallback;
+		assert(fallback.has_string);
+		if (!fallback.has_string) {
+			std::abort();
+		}
+		return fallback.string;
 	}
 
 }  // namespace howdy::native::config_schema

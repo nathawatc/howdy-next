@@ -11,6 +11,7 @@
 #endif
 
 #include <cassert>
+#include <string>
 
 namespace howdy::native {
 	namespace {
@@ -44,51 +45,56 @@ namespace howdy::native {
 			};
 		}
 
+		auto read_runtime_bool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
+			const auto &option = config_schema::runtime_config_option(id);
+			return reader.get_bool(std::string(option.section), std::string(option.key),
+			                       config_schema::runtime_default_bool(id));
+		}
+
+		auto read_runtime_string(const ConfigReader &reader, config_schema::OptionId id)
+		    -> std::string {
+			const auto &option = config_schema::runtime_config_option(id);
+			return reader.get(std::string(option.section), std::string(option.key),
+			                  std::string(config_schema::runtime_default_string(id)));
+		}
+
 		auto populate_runtime_config(const ConfigReader &reader) -> RuntimeConfig {
+			using enum config_schema::OptionId;
+
 			RuntimeConfig config;
 
-			config.core.detection_notice =
-			    reader.get_bool("core", "detection_notice", config.core.detection_notice);
-			config.core.no_confirmation =
-			    reader.get_bool("core", "no_confirmation", config.core.no_confirmation);
-			config.core.abort_if_ssh =
-			    reader.get_bool("core", "abort_if_ssh", config.core.abort_if_ssh);
-			config.core.abort_if_lid_closed =
-			    reader.get_bool("core", "abort_if_lid_closed", config.core.abort_if_lid_closed);
-			config.core.disabled = reader.get_bool("core", "disabled", config.core.disabled);
+			config.core.detection_notice    = read_runtime_bool(reader, core_detection_notice);
+			config.core.no_confirmation     = read_runtime_bool(reader, core_no_confirmation);
+			config.core.abort_if_ssh        = read_runtime_bool(reader, core_abort_if_ssh);
+			config.core.abort_if_lid_closed = read_runtime_bool(reader, core_abort_if_lid_closed);
+			config.core.disabled            = read_runtime_bool(reader, core_disabled);
 
-			config.video.timeout     = config_timeout_seconds(reader);
-			config.video.device_path = reader.get("video", "device_path", config.video.device_path);
-			config.video.warn_no_device =
-			    reader.get_bool("video", "warn_no_device", config.video.warn_no_device);
-			config.video.max_height   = config_max_height(reader);
-			config.video.frame_width  = config_frame_width(reader);
-			config.video.frame_height = config_frame_height(reader);
-			config.video.clahe_enabled =
-			    reader.get_bool("video", "clahe_enabled", config.video.clahe_enabled);
+			config.video.timeout              = config_timeout_seconds(reader);
+			config.video.device_path          = read_runtime_string(reader, video_device_path);
+			config.video.warn_no_device       = read_runtime_bool(reader, video_warn_no_device);
+			config.video.max_height           = config_max_height(reader);
+			config.video.frame_width          = config_frame_width(reader);
+			config.video.frame_height         = config_frame_height(reader);
+			config.video.clahe_enabled        = read_runtime_bool(reader, video_clahe_enabled);
 			config.video.clahe_clip_limit     = config_clahe_clip_limit(reader);
 			config.video.clahe_tile_grid_size = config_clahe_tile_grid_size(reader);
 			config.video.dark_threshold       = config_dark_threshold(reader);
-			config.video.force_mjpeg =
-			    reader.get_bool("video", "force_mjpeg", config.video.force_mjpeg);
-			config.video.exposure   = config_exposure(reader);
-			config.video.device_fps = config_device_fps(reader);
-			config.video.rotate     = config_rotate_mode(reader);
+			config.video.force_mjpeg          = read_runtime_bool(reader, video_force_mjpeg);
+			config.video.exposure             = config_exposure(reader);
+			config.video.device_fps           = config_device_fps(reader);
+			config.video.rotate               = config_rotate_mode(reader);
 
-			config.face.yunet_model = reader.get("face", "yunet_model", config.face.yunet_model);
-			config.face.sface_model = reader.get("face", "sface_model", config.face.sface_model);
+			config.face.yunet_model           = read_runtime_string(reader, face_yunet_model);
+			config.face.sface_model           = read_runtime_string(reader, face_sface_model);
 			config.face.yunet_score_threshold = config_yunet_score_threshold(reader);
 			config.face.yunet_nms_threshold   = config_yunet_nms_threshold(reader);
 			config.face.yunet_top_k           = config_yunet_top_k(reader);
 			config.face.sface_metric          = config_sface_metric(reader);
 			config.face.sface_threshold = config_sface_threshold(reader, config.face.sface_metric);
 
-			config.snapshots.save_failed =
-			    reader.get_bool("snapshots", "save_failed", config.snapshots.save_failed);
-			config.snapshots.save_successful =
-			    reader.get_bool("snapshots", "save_successful", config.snapshots.save_successful);
-			config.debug.end_report =
-			    reader.get_bool("debug", "end_report", config.debug.end_report);
+			config.snapshots.save_failed     = read_runtime_bool(reader, snapshots_save_failed);
+			config.snapshots.save_successful = read_runtime_bool(reader, snapshots_save_successful);
+			config.debug.end_report          = read_runtime_bool(reader, debug_end_report);
 
 			return config;
 		}

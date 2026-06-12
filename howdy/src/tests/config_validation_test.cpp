@@ -4,11 +4,18 @@
 #include "config/number_parsing.hpp"
 
 #include <array>
+#include <cctype>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <utility>
+
+#ifndef HOWDY_PACKAGED_CONFIG_PATH
+#	define HOWDY_PACKAGED_CONFIG_PATH "config/config.ini"
+#endif
 
 namespace {
 
@@ -27,6 +34,87 @@ namespace {
 			return false;
 		}
 		return true;
+	}
+
+	auto trim(std::string_view value) -> std::string_view {
+		while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
+			value.remove_prefix(1);
+		}
+		while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
+			value.remove_suffix(1);
+		}
+		return value;
+	}
+
+	auto option_name(const howdy::native::config_schema::Option &option) -> std::string {
+		return std::string(option.section) + "." + std::string(option.key);
+	}
+
+	auto schema_option_ids_are_unique_and_resolvable() -> bool {
+		using howdy::native::config_schema::OptionId;
+
+		bool           ok           = true;
+		const auto     options      = howdy::native::config_schema::runtime_config_options();
+		constexpr auto option_count = static_cast<std::size_t>(OptionId::count);
+		auto           seen         = std::array<bool, option_count>{};
+
+		ok &= expect(options.size() == option_count, "schema option count matches OptionId::count");
+		for (const auto &option : options) {
+			const auto index = static_cast<std::size_t>(std::to_underlying(option.id));
+			const auto name  = option_name(option);
+			ok &= expect(index < option_count, "schema option id is in range: " + name);
+			if (index >= option_count) {
+				continue;
+			}
+			ok &= expect(!seen[index], "schema option id is unique: " + name);
+			seen[index] = true;
+
+			const auto &resolved = howdy::native::config_schema::runtime_config_option(option.id);
+			ok &= expect(&resolved == &option, "schema option id resolves same option: " + name);
+		}
+
+		for (std::size_t index = 0; index < option_count; ++index) {
+			ok &= expect(seen[index], "schema option id is covered: " + std::to_string(index));
+		}
+		return ok;
+	}
+
+	auto packaged_config_keys_are_known(const std::filesystem::path &path) -> bool {
+		std::ifstream input(path);
+		if (!input.is_open()) {
+			std::cerr << "FAIL: open packaged config: " << path << "\n";
+			return false;
+		}
+
+		bool        ok = true;
+		std::string section;
+		std::string line;
+		while (std::getline(input, line)) {
+			const auto comment = line.find('#');
+			if (comment != std::string::npos) {
+				line.resize(comment);
+			}
+			const auto stripped = trim(line);
+			if (stripped.empty()) {
+				continue;
+			}
+			if (stripped.front() == '[' && stripped.back() == ']') {
+				section = std::string(trim(stripped.substr(1, stripped.size() - 2)));
+				continue;
+			}
+
+			const auto separator = stripped.find('=');
+			if (separator == std::string_view::npos) {
+				ok &= expect(false, "packaged config line is not section or key-value: " +
+				                        std::string(stripped));
+				continue;
+			}
+			const auto key = trim(stripped.substr(0, separator));
+			ok &= expect(
+			    howdy::native::config_schema::runtime_config_option(section, key) != nullptr,
+			    "packaged config key is known by schema: " + section + "." + std::string(key));
+		}
+		return ok;
 	}
 
 	auto validates(const std::filesystem::path &path, const std::string &content) -> bool {
@@ -55,12 +143,24 @@ namespace {
 auto main() -> int {
 	namespace fs = std::filesystem;
 
-	bool            ok        = true;
-	const auto      temp_root = fs::current_path() / "howdy-config-validation-test";
+	bool            ok              = true;
+	const auto      packaged_config = fs::path(HOWDY_PACKAGED_CONFIG_PATH);
+	const auto      temp_root       = fs::current_path() / "howdy-config-validation-test";
 	std::error_code ec;
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
 	ok &= expect(!ec, "create temp root");
+
+	ok &= expect(schema_option_ids_are_unique_and_resolvable(),
+	             "schema option ids are unique and resolvable");
+	ok &= expect(packaged_config_keys_are_known(packaged_config),
+	             "all packaged config keys are known by schema");
+	const howdy::native::ConfigReader packaged_reader(packaged_config.string());
+	ok &= expect(packaged_reader.ok(), "packaged config parses");
+	if (packaged_reader.ok()) {
+		ok &= expect(!howdy::native::validate_runtime_config(packaged_reader).has_value(),
+		             "packaged config values validate against schema");
+	}
 
 	ok &= expect(validates(temp_root / "device-fps-zero.ini", "[video]\ndevice_fps = 0\n"),
 	             "device_fps zero is valid");

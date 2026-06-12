@@ -5,7 +5,6 @@
 #include "config/number_parsing.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
@@ -83,15 +82,11 @@ namespace howdy::native {
 						return invalid_config_value_message(option.key, value, option.invalid_rule);
 					}
 					if (option.special_rule == config_schema::SpecialRule::sface_threshold) {
-						const auto *metric_option =
-						    config_schema::runtime_config_option("face", "sface_metric");
-						assert(metric_option != nullptr);
-						if (metric_option == nullptr) {
-							std::abort();
-						}
+						const auto &metric_option = config_schema::runtime_config_option(
+						    config_schema::OptionId::face_sface_metric);
 						const auto  metric  = normalized_lower(config.get(
-						    std::string(metric_option->section), std::string(metric_option->key),
-						    std::string(metric_option->fallback.string)));
+						    std::string(metric_option.section), std::string(metric_option.key),
+						    std::string(config_schema::runtime_default_string(metric_option.id))));
 						const float maximum = metric == "cosine"
 						                          ? config_schema::sface_cosine_threshold_maximum
 						                          : option.range.maximum;
