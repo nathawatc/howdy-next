@@ -5,6 +5,7 @@
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
+#include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
 
 #include <algorithm>
@@ -28,10 +29,6 @@ namespace howdy::native {
 
 	namespace {
 
-		constexpr std::uintmax_t kMaxUserModelFileBytes = 1024 * 1024;
-		constexpr std::size_t    kMaxStoredModels       = 256;
-		constexpr std::size_t    kMaxEncodingsPerModel  = 32;
-		constexpr std::size_t    kMaxEncodingLength     = 1024;
 		constexpr mode_t kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 		constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
 
@@ -258,7 +255,7 @@ namespace howdy::native {
 		}
 
 		auto validate_encoding_values(const std::vector<float> &encoding) -> UserModelListResult {
-			if (encoding.empty() || encoding.size() > kMaxEncodingLength) {
+			if (encoding.empty() || encoding.size() > user_model_limits::kMaxEncodingLength) {
 				return failure(UserModelStatus::kOversized,
 				               "Stored face encoding exceeds safety limit");
 			}
@@ -283,7 +280,8 @@ namespace howdy::native {
 				                      "Stored face encoding is not an array"),
 				};
 			}
-			if (encoding_json.empty() || encoding_json.size() > kMaxEncodingLength) {
+			if (encoding_json.empty() ||
+			    encoding_json.size() > user_model_limits::kMaxEncodingLength) {
 				return EncodingParseResult{
 				    .result = failure(UserModelStatus::kOversized,
 				                      "Stored face encoding exceeds safety limit"),
@@ -398,7 +396,7 @@ namespace howdy::native {
 				}
 				return EntryParseResult{.entry = std::move(entry)};
 			}
-			if (data->size() > kMaxEncodingsPerModel) {
+			if (data->size() > user_model_limits::kMaxEncodingsPerModel) {
 				return EntryParseResult{
 				    .result = failure(UserModelStatus::kOversized,
 				                      "Stored face model contains too many encodings"),
@@ -435,7 +433,7 @@ namespace howdy::native {
 			if (models.empty()) {
 				return UserModelListResult{.status = UserModelStatus::kNoModel};
 			}
-			if (models.size() > kMaxStoredModels) {
+			if (models.size() > user_model_limits::kMaxStoredModels) {
 				return failure(UserModelStatus::kOversized,
 				               "Stored face model list exceeds safety limit");
 			}
@@ -488,7 +486,7 @@ namespace howdy::native {
 
 			std::error_code size_ec;
 			const auto      file_size = std::filesystem::file_size(path, size_ec);
-			if (size_ec || file_size > kMaxUserModelFileBytes) {
+			if (size_ec || file_size > user_model_limits::kMaxUserModelFileBytes) {
 				return ModelDocument{
 				    .result =
 				        failure(UserModelStatus::kOversized,
@@ -690,11 +688,11 @@ namespace howdy::native {
 			return mutation_failure(UserModelStatus::kInvalidShape,
 			                        "New face model entry is invalid");
 		}
-		if (new_entry.encodings.size() > kMaxEncodingsPerModel) {
+		if (new_entry.encodings.size() > user_model_limits::kMaxEncodingsPerModel) {
 			return mutation_failure(UserModelStatus::kOversized,
 			                        "Stored face model contains too many encodings");
 		}
-		if (entries.entries.size() >= kMaxStoredModels) {
+		if (entries.entries.size() >= user_model_limits::kMaxStoredModels) {
 			return mutation_failure(UserModelStatus::kOversized,
 			                        "Stored face model list exceeds safety limit");
 		}
