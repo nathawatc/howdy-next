@@ -240,6 +240,18 @@ test(
 	native_file_security_test,
 )
 
+native_fd_io_test = executable(
+	'howdy-fd-io-test',
+	'tests/fd_io_test.cpp',
+	include_directories: native_cpp_inc,
+	install: false,
+)
+
+test(
+	'native-fd-io',
+	native_fd_io_test,
+)
+
 native_model_file_test = executable(
 	'howdy-model-file-test',
 	'tests/model_file_test.cpp',

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cerrno>
+#include "common/fd_io.hpp"
+
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
@@ -13,23 +14,6 @@
 namespace howdy::native {
 
 	inline constexpr mode_t kDefaultAtomicFileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-
-	inline auto write_all_to_fd(int fd, std::string_view content) -> bool {
-		const char *cursor    = content.data();
-		std::size_t remaining = content.size();
-		while (remaining > 0) {
-			const auto bytes_written = write(fd, cursor, remaining);
-			if (bytes_written < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				return false;
-			}
-			cursor += bytes_written;
-			remaining -= static_cast<std::size_t>(bytes_written);
-		}
-		return true;
-	}
 
 	inline void sync_parent_directory(const std::filesystem::path &path) {
 		const int dir_fd = open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY);

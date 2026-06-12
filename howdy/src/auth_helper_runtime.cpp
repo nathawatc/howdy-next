@@ -1,5 +1,6 @@
 #include "auth_helper_runtime.hpp"
 
+#include "common/fd_io.hpp"
 #include "common/user_names.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
@@ -355,19 +356,10 @@ namespace howdy::native::auth_helper {
 	}
 
 	auto write_all(int fd, const char *data, ssize_t size) -> bool {
-		ssize_t written = 0;
-		while (written < size) {
-			const ssize_t result =
-			    write(fd, data + written, static_cast<std::size_t>(size - written));
-			if (result < 0 && errno == EINTR) {
-				continue;
-			}
-			if (result <= 0) {
-				return false;
-			}
-			written += result;
+		if (size <= 0) {
+			return true;
 		}
-		return true;
+		return howdy::native::write_all_to_fd(fd, data, static_cast<std::size_t>(size));
 	}
 
 	auto copy_file_for_user(const std::filesystem::path &source,

@@ -1,13 +1,12 @@
 #include "auth_flow_testing.hpp"
 #include "common/auth_helper_protocol.hpp"
 #include "common/compare_exit.hpp"
+#include "common/fd_io.hpp"
 #include "config/runtime_config.hpp"
 
 #include <array>
-#include <cerrno>
 #include <csignal>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -192,18 +191,7 @@ namespace {
 	}
 
 	auto write_all(int fd, const std::string &data) -> bool {
-		std::size_t offset = 0;
-		while (offset < data.size()) {
-			const ssize_t result = write(fd, data.data() + offset, data.size() - offset);
-			if (result < 0 && errno == EINTR) {
-				continue;
-			}
-			if (result <= 0) {
-				return false;
-			}
-			offset += static_cast<std::size_t>(result);
-		}
-		return true;
+		return howdy::native::write_all_to_fd(fd, data);
 	}
 
 	auto write_file(const std::string &path, const std::string &content) -> bool {

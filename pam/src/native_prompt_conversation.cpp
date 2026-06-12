@@ -1,5 +1,7 @@
 #include "native_prompt_conversation.hpp"
 
+#include "common/fd_io.hpp"
+
 #include <array>
 #include <cerrno>
 #include <cstdlib>
@@ -69,20 +71,7 @@ namespace {
 	}
 
 	auto write_all(int fd, const std::string &text) -> bool {
-		const char *cursor    = text.c_str();
-		std::size_t remaining = text.size();
-		while (remaining > 0) {
-			const ssize_t bytes_written = write(fd, cursor, remaining);
-			if (bytes_written < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				return false;
-			}
-			cursor += bytes_written;
-			remaining -= static_cast<std::size_t>(bytes_written);
-		}
-		return true;
+		return howdy::native::write_all_to_fd(fd, text);
 	}
 
 	auto write_newline(int fd) -> void {

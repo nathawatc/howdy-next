@@ -1,5 +1,6 @@
 #include "config/config_utils.hpp"
 
+#include "common/fd_io.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_validation.hpp"
 
@@ -91,26 +92,6 @@ namespace howdy::native {
 				start = end + 1;
 			}
 			return lines;
-		}
-
-		auto write_all_to_fd(int fd, const std::string &content) -> bool {
-			const char *cursor    = content.data();
-			std::size_t remaining = content.size();
-			while (remaining > 0) {
-				const auto bytes_written = write(fd, cursor, remaining);
-				if (bytes_written < 0) {
-					if (errno == EINTR) {
-						continue;
-					}
-					return false;
-				}
-				if (bytes_written == 0) {
-					return false;
-				}
-				cursor += bytes_written;
-				remaining -= static_cast<std::size_t>(bytes_written);
-			}
-			return true;
 		}
 
 		auto join_lines(const std::vector<std::string> &lines) -> std::string {
