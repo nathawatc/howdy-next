@@ -11,8 +11,7 @@ Fedora     - inih-devel libevdev-devel
 OpenSUSE   - inih libevdev-devel
 ```
 
-If the distribution does not provide `INIReader`, Meson will fetch the pinned
-subproject version.
+Install the `INIReader` package from your distribution.
 
 ## Build
 

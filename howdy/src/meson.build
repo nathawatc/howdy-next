@@ -1,5 +1,5 @@
 opencv4 = dependency('opencv4')
-inih_cpp = dependency('INIReader', fallback: ['inih', 'INIReader_dep'])
+inih_cpp = dependency('INIReader')
 nlohmann_json = dependency('nlohmann_json')
 libcurl = dependency('libcurl')
 openssl = dependency('openssl')
