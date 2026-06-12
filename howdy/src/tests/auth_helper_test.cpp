@@ -1,5 +1,6 @@
 #include "auth_helper_runtime.hpp"
 #include "auth_helper_testing.hpp"
+#include "common/auth_helper_protocol.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -502,7 +503,14 @@ namespace {
 	}
 
 	auto expect_stdout_protocol() -> bool {
+		using namespace howdy::native::auth_helper_protocol;
 		using howdy::native::testing::print_prepared_paths;
+
+		bool ok = true;
+		ok &= expect(std::string(kConfigPathKey) == "CONFIG_PATH",
+		             "config path protocol key remains unchanged");
+		ok &= expect(std::string(kUserModelsDirKey) == "USER_MODELS_DIR",
+		             "user models directory protocol key remains unchanged");
 
 		std::ostringstream output;
 		auto              *previous = std::cout.rdbuf(output.rdbuf());
@@ -510,9 +518,10 @@ namespace {
 		                     "/run/howdy/pam-1000-example/models");
 		std::cout.rdbuf(previous);
 
-		return expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-example/config.ini\n"
-		                              "USER_MODELS_DIR=/run/howdy/pam-1000-example/models\n",
-		              "prepare stdout protocol remains unchanged");
+		ok &= expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-example/config.ini\n"
+		                             "USER_MODELS_DIR=/run/howdy/pam-1000-example/models\n",
+		             "prepare stdout protocol remains unchanged");
+		return ok;
 	}
 
 }  // namespace

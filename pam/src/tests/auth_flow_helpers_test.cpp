@@ -1,4 +1,5 @@
 #include "auth_flow_testing.hpp"
+#include "common/auth_helper_protocol.hpp"
 #include "common/compare_exit.hpp"
 #include "config/runtime_config.hpp"
 
@@ -247,12 +248,11 @@ namespace {
 
 		std::array<ScopedFd, 2> small_pipe;
 		ok &= expect(open_pipe(&small_pipe), "creates small input pipe");
-		ok &= expect(write_all(small_pipe[1].get(), "CONFIG_PATH=/run/howdy/config.ini\n"),
-		             "writes small helper output");
+		const std::string small_output = "small helper output\n";
+		ok &= expect(write_all(small_pipe[1].get(), small_output), "writes small helper output");
 		small_pipe[1].reset();
-		ok &=
-		    expect(read_fd_to_string(small_pipe[0].get()) == "CONFIG_PATH=/run/howdy/config.ini\n",
-		           "reads complete small helper output");
+		ok &= expect(read_fd_to_string(small_pipe[0].get()) == small_output,
+		             "reads complete small helper output");
 
 		auto bounded_file = create_temp_file("output");
 		ok &= expect(bounded_file.has_value(), "creates bounded input file");
@@ -587,6 +587,7 @@ namespace {
 }  // namespace
 
 auto main() -> int {
+	using namespace howdy::native::auth_helper_protocol;
 	using howdy::pam::testing::helper_output_value;
 
 	bool ok = true;
@@ -598,20 +599,25 @@ auto main() -> int {
 	ok &= expect_enabled_decisions();
 	ok &= expect_prompt_stop_helpers();
 
+	ok &= expect(std::string(kConfigPathKey) == "CONFIG_PATH",
+	             "config path protocol key remains unchanged");
+	ok &= expect(std::string(kUserModelsDirKey) == "USER_MODELS_DIR",
+	             "user models directory protocol key remains unchanged");
+
 	const std::string output =
 	    "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";
-	ok &= expect(helper_output_value(output, "CONFIG_PATH") == "/run/howdy/config.ini",
+	ok &= expect(helper_output_value(output, kConfigPathKey) == "/run/howdy/config.ini",
 	             "extracts config path");
-	ok &= expect(helper_output_value(output, "USER_MODELS_DIR") == "/run/howdy/models",
+	ok &= expect(helper_output_value(output, kUserModelsDirKey) == "/run/howdy/models",
 	             "extracts user models directory");
-	ok &= expect(helper_output_value("CONFIG_PATH=/run/howdy=config.ini\n", "CONFIG_PATH") ==
+	ok &= expect(helper_output_value("CONFIG_PATH=/run/howdy=config.ini\n", kConfigPathKey) ==
 	                 "/run/howdy=config.ini",
 	             "preserves equals characters in value");
-	ok &= expect(helper_output_value("CONFIG_PATH_EXTRA=wrong\nCONFIG_PATH=right", "CONFIG_PATH") ==
-	                 "right",
+	ok &= expect(helper_output_value("CONFIG_PATH_EXTRA=wrong\nCONFIG_PATH=right",
+	                                 kConfigPathKey) == "right",
 	             "matches exact key and parses final line");
 	ok &= expect(helper_output_value(output, "MISSING").empty(), "missing key returns empty value");
-	ok &= expect(helper_output_value("CONFIG_PATH=\n", "CONFIG_PATH").empty(),
+	ok &= expect(helper_output_value("CONFIG_PATH=\n", kConfigPathKey).empty(),
 	             "empty helper value remains empty");
 
 	return ok ? 0 : 1;

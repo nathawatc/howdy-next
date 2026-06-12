@@ -1,4 +1,5 @@
 #include "auth_helper_runtime.hpp"
+#include "common/auth_helper_protocol.hpp"
 #include "common/user_names.hpp"
 #ifdef HOWDY_AUTH_HELPER_TESTING
 #	include "auth_helper_testing.hpp"
@@ -29,8 +30,10 @@ namespace {
 
 	auto print_prepared_paths(const std::filesystem::path &config_path,
 	                          const std::filesystem::path &user_models_dir) -> void {
-		std::cout << "CONFIG_PATH=" << config_path.string() << "\n";
-		std::cout << "USER_MODELS_DIR=" << user_models_dir.string() << "\n";
+		using namespace howdy::native::auth_helper_protocol;
+
+		std::cout << kConfigPathKey << "=" << config_path.string() << "\n";
+		std::cout << kUserModelsDirKey << "=" << user_models_dir.string() << "\n";
 	}
 
 	auto prepare_for_user(const std::string &user) -> int {

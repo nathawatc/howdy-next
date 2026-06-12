@@ -1,3 +1,4 @@
+#include "common/auth_helper_protocol.hpp"
 #include "common/compare_exit.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_model_readiness.hpp"
@@ -350,8 +351,10 @@ namespace {
 			return false;
 		}
 
-		runtime->config_path     = helper_output_value(helper_output, "CONFIG_PATH");
-		runtime->user_models_dir = helper_output_value(helper_output, "USER_MODELS_DIR");
+		runtime->config_path =
+		    helper_output_value(helper_output, howdy::native::auth_helper_protocol::kConfigPathKey);
+		runtime->user_models_dir = helper_output_value(
+		    helper_output, howdy::native::auth_helper_protocol::kUserModelsDirKey);
 		if (runtime->config_path.empty() || runtime->user_models_dir.empty()) {
 			syslog(LOG_ERR, "Howdy auth helper returned incomplete output: %s",
 			       helper_output.c_str());
