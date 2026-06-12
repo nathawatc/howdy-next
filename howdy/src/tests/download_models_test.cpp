@@ -46,6 +46,25 @@ namespace {
 		return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 	}
 
+	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
+		std::ofstream out(path);
+		if (!out.is_open()) {
+			return false;
+		}
+		out << content;
+		return out.good();
+	}
+
+	auto count_staged_downloads(const std::filesystem::path &directory) -> std::size_t {
+		std::size_t count = 0;
+		for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+			if (entry.path().filename().string().starts_with(".howdy-download-")) {
+				++count;
+			}
+		}
+		return count;
+	}
+
 	auto get_env_value(const char *name) -> std::optional<std::string> {
 		const char *value = std::getenv(name);
 		if (value == nullptr) {
@@ -199,6 +218,8 @@ auto main() -> int {
 	             "missing model in existing secure directory reaches download");
 	ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
 	             "existing secure directory starts first model download");
+	ok &= expect(count_staged_downloads(existing_models_dir) == 0,
+	             "failed download removes staged file");
 
 	const auto missing_parent_models_dir = temp_root / "missing-parent" / "models";
 	const auto missing_parent_output     = temp_root / "missing-parent-output.txt";
@@ -218,6 +239,59 @@ auto main() -> int {
 	ok &= expect(
 	    missing_parent_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
 	    "missing parent path starts first model download");
+
+	howdy::native::StagedFile empty_path_install{
+	    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY)),
+	    .path = {},
+	};
+	ok &= expect(empty_path_install.fd.get() >= 0, "open fd for empty-path staged install");
+	ok &= expect(!howdy::native::install_staged_file(empty_path_install, temp_root / "unused"),
+	             "staged install rejects empty path");
+	ok &= expect(empty_path_install.fd.get() < 0, "empty-path staged install closes fd");
+
+	const auto blocked_parent = temp_root / "blocked-parent";
+	ok &= expect(write_file(blocked_parent, "not a directory"),
+	             "create file blocking staged parent directory");
+	ok &= expect(!howdy::native::prepare_staged_file(blocked_parent / "models" / "model.onnx",
+	                                                 ".howdy-download-")
+	                  .has_value(),
+	             "prepare staged file returns nullopt when parent creation fails");
+
+	const auto successful_install_destination = temp_root / "successful-install.onnx";
+	auto       successful_install =
+	    howdy::native::prepare_staged_file(successful_install_destination, ".howdy-download-");
+	ok &= expect(successful_install.has_value(), "prepare staged file for successful install");
+	if (successful_install.has_value()) {
+		const auto staged_path = successful_install->path;
+		ok &= expect(howdy::native::write_all_to_fd(successful_install->fd.get(), "model"),
+		             "download-like write leaves staged fd open before install");
+		ok &= expect(successful_install->fd.get() >= 0,
+		             "download-like staged fd remains open until install");
+		ok &= expect(
+		    howdy::native::install_staged_file(*successful_install, successful_install_destination),
+		    "install staged file fsyncs and closes download-like open fd");
+		ok &= expect(successful_install->fd.get() < 0, "successful install closes staged fd");
+		ok &= expect(successful_install->path.empty(), "successful install clears staged path");
+		ok &= expect(fs::exists(successful_install_destination, ec) && !ec,
+		             "successful install creates destination");
+		ok &= expect(read_file(successful_install_destination) == "model",
+		             "successful install preserves staged content");
+		ok &= expect(!fs::exists(staged_path, ec) && !ec,
+		             "successful install removes staged temp path");
+	}
+
+	const auto failed_install_destination = temp_root / "failed-install.onnx";
+	auto       failed_install =
+	    howdy::native::prepare_staged_file(failed_install_destination, ".howdy-download-");
+	ok &= expect(failed_install.has_value(), "prepare staged file for failed install");
+	if (failed_install.has_value()) {
+		const auto staged_path = failed_install->path;
+		ok &= expect(
+		    !howdy::native::install_staged_file(*failed_install, temp_root / "missing" / "model"),
+		    "staged install fails for missing destination parent");
+		ok &= expect(!fs::exists(staged_path, ec) && !ec,
+		             "failed staged install removes staged file");
+	}
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

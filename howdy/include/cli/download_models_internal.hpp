@@ -1,6 +1,7 @@
 #pragma once
 
-#include <filesystem>
+#include "common/atomic_files.hpp"
+
 #include <optional>
 #include <string>
 
@@ -8,10 +9,7 @@
 
 namespace howdy::native::download_models_internal {
 
-	struct StagedDownloadFile {
-		int                   fd = -1;
-		std::filesystem::path path;
-	};
+	using StagedDownloadFile = StagedFile;
 
 	using DownloadFileFn      = bool (*)(const std::string &url, StagedDownloadFile &staged);
 	using ModelFileOwnerUidFn = std::optional<uid_t> (*)();

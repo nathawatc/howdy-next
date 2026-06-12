@@ -10,7 +10,6 @@
 #include <array>
 #include <cassert>
 #include <cctype>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -20,8 +19,6 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-
-#include <sys/stat.h>
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
@@ -91,13 +88,13 @@ namespace {
 	}
 
 	size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
-		auto      *fd    = static_cast<int *>(userp);
-		const auto total = size * nmemb;
+		auto      *staged = static_cast<StagedDownloadFile *>(userp);
+		const auto total  = size * nmemb;
 
 		const char *cursor    = static_cast<const char *>(contents);
 		std::size_t remaining = total;
 		while (remaining > 0) {
-			const auto written = write(*fd, cursor, remaining);
+			const auto written = write(staged->fd.get(), cursor, remaining);
 			if (written < 0) {
 				if (errno == EINTR) {
 					continue;
@@ -213,15 +210,6 @@ namespace {
 		return out.str();
 	}
 
-	auto cleanup_staged_download(StagedDownloadFile &staged) -> void {
-		if (staged.fd >= 0) {
-			close(staged.fd);
-			staged.fd = -1;
-		}
-		std::error_code ec;
-		std::filesystem::remove(staged.path, ec);
-	}
-
 	auto prepare_staged_download(const std::filesystem::path &destination)
 	    -> std::optional<StagedDownloadFile> {
 		const auto parent = destination.parent_path();
@@ -235,50 +223,7 @@ namespace {
 			}
 		}
 
-		struct stat current_stat{};
-		const bool  have_current_stat = lstat(destination.c_str(), &current_stat) == 0;
-		if (have_current_stat && !S_ISREG(current_stat.st_mode)) {
-			return std::nullopt;
-		}
-
-		std::string       temp_template = (parent / ".howdy-download-XXXXXX").string();
-		std::vector<char> writable(temp_template.begin(), temp_template.end());
-		writable.push_back('\0');
-
-		const int fd = mkstemp(writable.data());
-		if (fd < 0) {
-			return std::nullopt;
-		}
-
-		if (have_current_stat) {
-			if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
-			    fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
-				close(fd);
-				std::error_code ec;
-				std::filesystem::remove(writable.data(), ec);
-				return std::nullopt;
-			}
-		} else if (fchmod(fd, howdy::native::kDefaultAtomicFileMode) != 0) {
-			close(fd);
-			std::error_code ec;
-			std::filesystem::remove(writable.data(), ec);
-			return std::nullopt;
-		}
-
-		return StagedDownloadFile{.fd = fd, .path = writable.data()};
-	}
-
-	auto install_staged_download(StagedDownloadFile          &staged,
-	                             const std::filesystem::path &destination) -> bool {
-		std::error_code ec;
-		std::filesystem::rename(staged.path, destination, ec);
-		if (ec) {
-			cleanup_staged_download(staged);
-			return false;
-		}
-		howdy::native::sync_parent_directory(destination);
-		staged.path.clear();
-		return true;
+		return howdy::native::prepare_staged_file(destination, ".howdy-download-");
 	}
 
 	auto download_file(const std::string &url, StagedDownloadFile &staged) -> bool {
@@ -290,22 +235,13 @@ namespace {
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		configure_transfer_policy(curl);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &staged.fd);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &staged);
 		const CURLcode result = curl_easy_perform(curl);
 
 		long status_code = 0;
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
 		curl_easy_cleanup(curl);
-		if (result != CURLE_OK || status_code < 200 || status_code >= 400 ||
-		    fsync(staged.fd) != 0) {
-			return false;
-		}
-		if (close(staged.fd) != 0) {
-			staged.fd = -1;
-			return false;
-		}
-		staged.fd = -1;
-		return true;
+		return result == CURLE_OK && status_code >= 200 && status_code < 400;
 	}
 
 }  // namespace
@@ -366,14 +302,14 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		}
 
 		if (!dependencies.download_file(model.url, *staged)) {
-			cleanup_staged_download(*staged);
+			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Failed to download model: " << model.url << "\n";
 			return kExitAbort;
 		}
 
 		if (howdy::native::is_invalid_model_file(staged->path)) {
-			cleanup_staged_download(*staged);
+			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Downloaded file is not an ONNX model: " << model.url << "\n";
 			return kExitAbort;
@@ -384,7 +320,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 			expected_sha256 = fetch_remote_sha256(model.url);
 		}
 		if (!expected_sha256.has_value()) {
-			cleanup_staged_download(*staged);
+			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Failed to verify model checksum metadata: " << model.url << "\n";
 			return kExitAbort;
@@ -393,7 +329,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		const auto actual_sha256 = file_sha256(staged->path);
 		if (!actual_sha256.has_value() ||
 		    lower_hex(expected_sha256.value()) != lower_hex(actual_sha256.value())) {
-			cleanup_staged_download(*staged);
+			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Checksum mismatch for " << model.name << "\n";
 			std::cout << "Expected SHA256: " << expected_sha256.value() << "\n";
@@ -403,7 +339,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 			return kExitAbort;
 		}
 
-		if (!install_staged_download(*staged, model.destination)) {
+		if (!howdy::native::install_staged_file(*staged, model.destination)) {
 			curl_global_cleanup();
 			std::cout << "Failed to install downloaded model: " << model.destination.string()
 			          << "\n";
