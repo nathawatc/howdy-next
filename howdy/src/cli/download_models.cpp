@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -89,8 +90,11 @@ namespace {
 
 	size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp) {
 		auto       *staged = static_cast<StagedDownloadFile *>(userp);
-		const auto  total  = size * nmemb;
 		const auto *data   = static_cast<const char *>(contents);
+		if (size != 0 && nmemb > std::numeric_limits<std::size_t>::max() / size) {
+			return 0;
+		}
+		const auto total = size * nmemb;
 
 		return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
 	}
