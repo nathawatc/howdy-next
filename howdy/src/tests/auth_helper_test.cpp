@@ -460,17 +460,18 @@ namespace {
 		    chown(privileged_probe.c_str(), non_root_uid, gid) == 0 &&
 		    chown(privileged_probe.c_str(), 0, wrong_gid) == 0 &&
 		    chown(privileged_probe.c_str(), 0, gid) == 0;
-		(void)chown(privileged_probe.c_str(), uid, gid);
+		const bool      restored_privileged_probe = chown(privileged_probe.c_str(), uid, gid) == 0;
 		std::error_code privileged_probe_cleanup_ec;
 		fs::remove_all(privileged_probe, privileged_probe_cleanup_ec);
-		const bool removed_privileged_probe = !privileged_probe_cleanup_ec;
+		const bool cleaned_up_privileged_probe =
+		    restored_privileged_probe && !privileged_probe_cleanup_ec;
 		ec.clear();
 
 		if (!can_setup_privileged_cleanup) {
 			std::cerr << "SKIP: cleanup ownership/mode cases need required chown capabilities\n";
 		} else {
 			const bool privileged_probe_cleanup_ok =
-			    expect(removed_privileged_probe, "removes privileged cleanup probe");
+			    expect(cleaned_up_privileged_probe, "cleans up privileged cleanup probe");
 			ok &= privileged_probe_cleanup_ok;
 			if (privileged_probe_cleanup_ok) {
 				const auto group_writable_dir = runtime_root / (prefix + "group-writable");
