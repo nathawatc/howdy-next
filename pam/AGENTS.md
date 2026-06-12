@@ -18,14 +18,6 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `optional_task.hpp`                 | Async task wrapper with timeout support                   |
 | `meson.build`                       | PAM build configuration                                   |
 
-## Recent Changes
-
-- Auth helper now reuses user model readiness checks.
-- Runtime auth file staging is split into smaller steps.
-- Storage hardening now applies before PAM-visible auth flows touch user models.
-- Runtime config loading, schema validation, and typed runtime values live in shared helpers.
-- C++23 target and tabs indentation apply to touched PAM code.
-
 ## Conventions
 
 - Do not change PAM auth flow without understanding session behavior.

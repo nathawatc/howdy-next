@@ -21,15 +21,6 @@ Native C++ CLI commands for model management, config editing, camera testing, an
 | Snapshot      | `howdy/src/cli/snapshot.cpp`        | Generate diagnostic frame          |
 | Camera test   | `howdy/src/cli/test.cpp`            | Live preview and compare flow      |
 
-## Recent Changes
-
-- CLI download flow now gets model dependencies injected.
-- Config edit path uses centralized edited-config installation.
-- Runtime config loading, schema validation, and typed runtime values live in shared helpers.
-- User model readiness checks live in shared storage helpers.
-- OpenCV model file checks live in shared helpers.
-- Tabs indentation and C++23 idioms apply to touched CLI code.
-
 ## Conventions
 
 - Keep config edits atomic and secure.
