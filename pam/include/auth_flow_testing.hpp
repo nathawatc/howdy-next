@@ -8,6 +8,7 @@
 
 #	include <filesystem>
 #	include <functional>
+#	include <cstddef>
 #	include <string>
 #	include <tuple>
 
@@ -41,7 +42,9 @@ namespace howdy::pam::testing {
 	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
 	                                  const PromptStopPlan &plan) -> PromptStopResult;
 	auto wait_for_compare_process(pid_t child_pid) -> int;
+	auto auth_helper_output_limit() -> std::size_t;
 	auto read_fd_to_string(int fd) -> std::string;
+	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool;
 	auto helper_output_value(const std::string &output, const std::string &key) -> std::string;
 	auto wait_for_helper_process(pid_t child_pid) -> int;
 

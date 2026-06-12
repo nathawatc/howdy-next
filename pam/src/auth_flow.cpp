@@ -295,6 +295,58 @@ namespace {
 		}
 	}
 
+	auto terminate_and_reap_helper_process(pid_t child_pid) -> int {
+		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
+			syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)", strerror(errno),
+			       errno);
+		}
+
+		for (int attempts = 0; attempts < 50; ++attempts) {
+			int         status      = 0;
+			const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
+			if (wait_result == child_pid) {
+				return status;
+			}
+			if (wait_result < 0) {
+				if (errno == EINTR) {
+					continue;
+				}
+				return make_wait_exit_status(CompareExit::kAbort);
+			}
+			usleep(10000);
+		}
+
+		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
+			syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)", strerror(errno),
+			       errno);
+		}
+		return wait_for_helper_process(child_pid);
+	}
+
+	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool {
+		if (output == nullptr) {
+			terminate_and_reap_helper_process(child_pid);
+			return false;
+		}
+
+		const auto helper_output =
+		    howdy::native::read_fd_to_string_bounded(output_fd, kAuthHelperOutputLimit);
+		*output = helper_output.output;
+
+		if (helper_output.hit_limit) {
+			syslog(LOG_ERR, "Howdy auth helper reached output limit");
+			terminate_and_reap_helper_process(child_pid);
+			return false;
+		}
+
+		const int status = wait_for_helper_process(child_pid);
+		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
+			syslog(LOG_ERR, "Howdy auth helper failed: %s", output->c_str());
+			return false;
+		}
+		return true;
+	}
+
 	auto prepare_runtime_auth_files(const char *username, RuntimeAuthFiles *runtime) -> bool {
 		std::array<int, 2> output_pipe = {-1, -1};
 		if (pipe2(output_pipe.data(), O_CLOEXEC) != 0) {
@@ -326,13 +378,10 @@ namespace {
 			return false;
 		}
 
-		const std::string helper_output =
-		    howdy::native::read_fd_to_string_bounded(output_pipe[0], kAuthHelperOutputLimit);
+		std::string helper_output;
+		const bool  helper_ok = read_auth_helper_output(child_pid, output_pipe[0], &helper_output);
 		close(output_pipe[0]);
-
-		const int status = wait_for_helper_process(child_pid);
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_ERR, "Howdy auth helper failed: %s", helper_output.c_str());
+		if (!helper_ok) {
 			return false;
 		}
 
@@ -489,8 +538,16 @@ namespace howdy::pam::testing {
 		return ::wait_for_compare_process(child_pid);
 	}
 
+	auto auth_helper_output_limit() -> std::size_t {
+		return kAuthHelperOutputLimit;
+	}
+
 	auto read_fd_to_string(int fd) -> std::string {
-		return howdy::native::read_fd_to_string_bounded(fd, kAuthHelperOutputLimit);
+		return howdy::native::read_fd_to_string_bounded(fd, kAuthHelperOutputLimit).output;
+	}
+
+	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool {
+		return ::read_auth_helper_output(child_pid, output_fd, output);
 	}
 
 	auto helper_output_value(const std::string &output, const std::string &key) -> std::string {

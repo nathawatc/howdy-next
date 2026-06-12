@@ -1,6 +1,9 @@
 #include "common/fd_io.hpp"
 
 #include <array>
+#include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -9,6 +12,8 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
+
+#include <sys/wait.h>
 
 namespace {
 
@@ -122,15 +127,35 @@ namespace {
 		return true;
 	}
 
+	auto wait_for_child(pid_t child_pid) -> bool {
+		while (true) {
+			int         status = 0;
+			const pid_t result = waitpid(child_pid, &status, 0);
+			if (result == child_pid) {
+				return WIFEXITED(status) || WIFSIGNALED(status);
+			}
+			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+	}
+
 	auto expect_bounded_reading(const std::filesystem::path &temp_root) -> bool {
-		bool                    ok = true;
+		bool                    ok     = true;
+		constexpr std::size_t   kBound = 1500;
+		const std::string       exact_output(kBound, 'a');
+		const std::string       oversized_output(4096, 'x');
 		std::array<ScopedFd, 2> empty_pipe;
 		ok &= expect(open_pipe(&empty_pipe), "creates empty read pipe");
 		empty_pipe[1].reset();
-		ok &= expect(howdy::native::read_fd_to_string_bounded(empty_pipe[0].get(), 1024).empty(),
-		             "reads empty input");
-		ok &= expect(howdy::native::read_fd_to_string_bounded(-1, 1024).empty(),
-		             "invalid fd returns collected empty output");
+		const auto empty_result =
+		    howdy::native::read_fd_to_string_bounded(empty_pipe[0].get(), kBound);
+		ok &= expect(empty_result.output.empty(), "reads empty input");
+		ok &= expect(!empty_result.hit_limit, "empty input does not hit limit");
+		const auto invalid_result = howdy::native::read_fd_to_string_bounded(-1, kBound);
+		ok &= expect(invalid_result.output.empty(), "invalid fd returns collected empty output");
+		ok &= expect(!invalid_result.hit_limit, "invalid fd does not hit limit");
 
 		std::array<ScopedFd, 2> small_pipe;
 		ok &= expect(open_pipe(&small_pipe), "creates small read pipe");
@@ -138,26 +163,79 @@ namespace {
 		ok &= expect(howdy::native::write_all_to_fd(small_pipe[1].get(), small_output),
 		             "writes small helper output");
 		small_pipe[1].reset();
-		ok &= expect(howdy::native::read_fd_to_string_bounded(small_pipe[0].get(), 1024) ==
-		                 small_output,
-		             "reads complete small helper output");
+		const auto small_result =
+		    howdy::native::read_fd_to_string_bounded(small_pipe[0].get(), kBound);
+		ok &= expect(small_result.output == small_output, "reads complete small helper output");
+		ok &= expect(!small_result.hit_limit, "small helper output does not hit limit");
 
-		auto bounded_file = create_temp_file(temp_root, "bounded");
-		ok &= expect(bounded_file.has_value(), "creates bounded input file");
-		if (!bounded_file.has_value()) {
+		auto exact_file = create_temp_file(temp_root, "exact");
+		ok &= expect(exact_file.has_value(), "creates exact-bounded input file");
+		if (!exact_file.has_value()) {
 			return false;
 		}
-		unlink(bounded_file->path.c_str());
-		const std::string oversized_output(16384, 'x');
-		ok &= expect(howdy::native::write_all_to_fd(bounded_file->fd.get(), oversized_output),
-		             "writes oversized helper output");
-		ok &= expect(lseek(bounded_file->fd.get(), 0, SEEK_SET) == 0,
-		             "rewinds oversized helper output");
-		const std::string bounded_output =
-		    howdy::native::read_fd_to_string_bounded(bounded_file->fd.get(), 9216);
-		ok &= expect(bounded_output == oversized_output.substr(0, 9216),
-		             "stops reading after bounded output threshold");
+		unlink(exact_file->path.c_str());
+		ok &= expect(howdy::native::write_all_to_fd(exact_file->fd.get(), exact_output),
+		             "writes exact bounded helper output");
+		ok &= expect(lseek(exact_file->fd.get(), 0, SEEK_SET) == 0,
+		             "rewinds exact bounded helper output");
+		const auto exact_result =
+		    howdy::native::read_fd_to_string_bounded(exact_file->fd.get(), kBound);
+		ok &= expect(exact_result.output == exact_output, "reads exact bounded helper output");
+		ok &= expect(exact_result.hit_limit, "exact bounded helper output hits limit");
 
+		auto oversized_file = create_temp_file(temp_root, "oversized");
+		ok &= expect(oversized_file.has_value(), "creates oversized input file");
+		if (!oversized_file.has_value()) {
+			return false;
+		}
+		unlink(oversized_file->path.c_str());
+		ok &= expect(howdy::native::write_all_to_fd(oversized_file->fd.get(), oversized_output),
+		             "writes oversized helper output");
+		ok &= expect(lseek(oversized_file->fd.get(), 0, SEEK_SET) == 0,
+		             "rewinds oversized helper output");
+		const auto oversized_result =
+		    howdy::native::read_fd_to_string_bounded(oversized_file->fd.get(), kBound);
+		ok &= expect(oversized_result.output == oversized_output.substr(0, kBound),
+		             "stops reading after bounded output threshold");
+		ok &= expect(oversized_result.hit_limit, "oversized helper output hits limit");
+
+		return ok;
+	}
+
+	auto expect_bounded_read_does_not_probe_open_pipe() -> bool {
+		bool                    ok     = true;
+		constexpr std::size_t   kBound = 1500;
+		const std::string       exact_output(kBound, 'p');
+		std::array<ScopedFd, 2> pipe_fds;
+		ok &= expect(open_pipe(&pipe_fds), "creates exact-bound open pipe");
+		if (!ok) {
+			return false;
+		}
+
+		const pid_t child_pid = fork();
+		ok &= expect(child_pid >= 0, "forks exact-bound pipe writer");
+		if (child_pid < 0) {
+			return false;
+		}
+		if (child_pid == 0) {
+			pipe_fds[0].reset();
+			const bool wrote = howdy::native::write_all_to_fd(pipe_fds[1].get(), exact_output);
+			usleep(2000000);
+			_exit(wrote ? 0 : 1);
+		}
+
+		pipe_fds[1].reset();
+		const auto start   = std::chrono::steady_clock::now();
+		const auto result  = howdy::native::read_fd_to_string_bounded(pipe_fds[0].get(), kBound);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+
+		ok &= expect(result.output == exact_output, "reads exact-bound open pipe output");
+		ok &= expect(result.hit_limit, "exact-bound open pipe hits limit");
+		ok &= expect(elapsed < std::chrono::milliseconds(1500),
+		             "exact-bound open pipe read returns without blocking probe");
+
+		kill(child_pid, SIGTERM);
+		ok &= expect(wait_for_child(child_pid), "reaps exact-bound pipe writer");
 		return ok;
 	}
 
@@ -194,6 +272,7 @@ auto main() -> int {
 	ok &= expect_invalid_fd_failure();
 	ok &= expect_full_write(temp_root);
 	ok &= expect_bounded_reading(temp_root);
+	ok &= expect_bounded_read_does_not_probe_open_pipe();
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

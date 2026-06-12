@@ -5,6 +5,8 @@
 #include "config/runtime_config.hpp"
 
 #include <array>
+#include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
@@ -248,13 +250,13 @@ namespace {
 			return false;
 		}
 		unlink(bounded_file->path.c_str());
-		const std::string oversized_output(16384, 'x');
-		ok &= expect(write_all(bounded_file->fd.get(), oversized_output),
+		const std::string limit_output(16384, 'x');
+		ok &= expect(write_all(bounded_file->fd.get(), limit_output),
 		             "writes oversized helper output");
 		ok &= expect(lseek(bounded_file->fd.get(), 0, SEEK_SET) == 0,
 		             "rewinds oversized helper output");
 		const std::string bounded_output = read_fd_to_string(bounded_file->fd.get());
-		ok &= expect(bounded_output == oversized_output.substr(0, 9216),
+		ok &= expect(bounded_output == limit_output.substr(0, 9216),
 		             "stops reading after bounded output threshold");
 
 		return ok;
@@ -297,6 +299,50 @@ namespace {
 		const int helper_failure = wait_for_helper_process(kNonexistentChild);
 		ok &= expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
 		             "helper wait failure returns abort status");
+
+		return ok;
+	}
+
+	auto expect_auth_helper_output_limit_terminates_child() -> bool {
+		using howdy::pam::testing::auth_helper_output_limit;
+		using howdy::pam::testing::read_auth_helper_output;
+
+		bool                    ok = true;
+		std::array<ScopedFd, 2> output_pipe;
+		ok &= expect(open_pipe(&output_pipe), "creates output-limit auth-helper pipe");
+		if (!ok) {
+			return false;
+		}
+
+		const std::string limit_output(auth_helper_output_limit(), 'h');
+		const pid_t       child_pid = fork();
+		ok &= expect(child_pid >= 0, "forks output-limit auth-helper child");
+		if (child_pid < 0) {
+			return false;
+		}
+		if (child_pid == 0) {
+			output_pipe[0].reset();
+			const bool wrote = write_all(output_pipe[1].get(), limit_output);
+			usleep(2000000);
+			_exit(wrote ? 0 : 1);
+		}
+
+		output_pipe[1].reset();
+		std::string helper_output;
+		const auto  start = std::chrono::steady_clock::now();
+		const bool  helper_ok =
+		    read_auth_helper_output(child_pid, output_pipe[0].get(), &helper_output);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+
+		ok &= expect(!helper_ok, "auth-helper output limit fails closed");
+		ok &= expect(helper_output == limit_output, "auth-helper output-limit data is collected");
+		ok &= expect(elapsed < std::chrono::milliseconds(1500),
+		             "auth-helper output limit returns before sleeping helper exits");
+
+		int         status      = 0;
+		const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
+		ok &=
+		    expect(wait_result < 0 && errno == ECHILD, "output-limit auth-helper child is reaped");
 
 		return ok;
 	}
@@ -582,6 +628,7 @@ auto main() -> int {
 
 	ok &= expect_fd_reading();
 	ok &= expect_process_waiting();
+	ok &= expect_auth_helper_output_limit_terminates_child();
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
 	ok &= expect_enabled_decisions();
