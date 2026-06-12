@@ -3,6 +3,7 @@
 
 #include <cerrno>
 #include <clocale>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 #include <unistd.h>
 #include <vector>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace {
@@ -43,6 +45,10 @@ namespace {
 		return count;
 	}
 
+	auto lock_path_for_config(const std::filesystem::path &config_path) -> std::filesystem::path {
+		return config_path.string() + ".lock";
+	}
+
 	auto expect(bool condition, const std::string &message) -> bool {
 		if (!condition) {
 			std::cerr << "FAIL: " << message << "\n";
@@ -66,6 +72,60 @@ namespace {
 		}
 		unsetenv(name);
 	}
+
+	struct FileSizeLimitGuard {
+		using SignalHandler = void (*)(int);
+
+		rlimit        original{};
+		bool          have_original    = false;
+		bool          limit_changed    = false;
+		SignalHandler previous_sigxfsz = SIG_DFL;
+		bool          signal_changed   = false;
+
+		FileSizeLimitGuard() {
+			have_original = getrlimit(RLIMIT_FSIZE, &original) == 0;
+			if (have_original) {
+				previous_sigxfsz = std::signal(SIGXFSZ, SIG_IGN);
+				signal_changed   = previous_sigxfsz != SIG_ERR;
+			}
+		}
+
+		[[nodiscard]] auto ready() const -> bool {
+			return have_original && signal_changed;
+		}
+
+		auto set_zero() -> bool {
+			if (!ready()) {
+				return false;
+			}
+
+			auto zero_limit     = original;
+			zero_limit.rlim_cur = 0;
+			if (setrlimit(RLIMIT_FSIZE, &zero_limit) != 0) {
+				return false;
+			}
+
+			limit_changed = true;
+			return true;
+		}
+
+		auto restore() -> bool {
+			bool ok = true;
+			if (limit_changed) {
+				ok            = setrlimit(RLIMIT_FSIZE, &original) == 0;
+				limit_changed = false;
+			}
+			if (signal_changed) {
+				ok             = std::signal(SIGXFSZ, previous_sigxfsz) != SIG_ERR && ok;
+				signal_changed = false;
+			}
+			return ok;
+		}
+
+		~FileSizeLimitGuard() {
+			(void)restore();
+		}
+	};
 
 }  // namespace
 
@@ -318,9 +378,46 @@ auto main() -> int {
 	                                                               &install_error, false, true),
 	             "replace_config_content_atomically rejects non-regular config target");
 
+	const auto install_failure_dir = temp_root / "install-failure";
+	ok &= expect(fs::create_directories(install_failure_dir, ec) || !ec,
+	             "create install-failure directory");
+	ok &= expect(!ec, "no error creating install-failure directory");
+	const auto install_failure_path = install_failure_dir / "config.ini";
+	ok &= expect(write_file(install_failure_path, "[core]\ndisabled = false\n"),
+	             "write install-failure config");
+	std::string update_error;
+	bool        update_failed = false;
+	const auto  install_failure_security =
+	    howdy::native::check_secure_config_path(install_failure_path);
+	ok &= expect(install_failure_security.ok,
+	             "install-failure config passes secure path check before update");
+	FileSizeLimitGuard file_size_limit_guard;
+	const bool         have_file_size_limit = file_size_limit_guard.have_original;
+	ok &= expect(have_file_size_limit, "read file-size limit for install-failure test");
+	const bool set_file_size_limit = file_size_limit_guard.set_zero();
+	ok &= expect(set_file_size_limit, "set file-size limit for install-failure test");
+	if (install_failure_security.ok && set_file_size_limit) {
+		update_failed = !howdy::native::update_config_value(install_failure_path, "disabled",
+		                                                    "true", &update_error, false, false);
+	}
+	if (set_file_size_limit) {
+		ok &= expect(file_size_limit_guard.restore(),
+		             "restore file-size limit after install-failure test");
+	}
+	ok &= expect(update_failed, "update_config_value returns false when install fails");
+	ok &= expect(update_error == "Failed to update config file",
+	             "failed update_config_value install reports fallback error: " + update_error);
+
+	const auto config_lock_path = lock_path_for_config(config_path);
+	fs::remove(config_lock_path, ec);
+	ok &= expect(!ec && !fs::exists(config_lock_path),
+	             "config lock absent before insecure config update");
 	ok &= expect(chmod(config_path.c_str(), 0666) == 0, "make config file world-writable");
-	ok &= expect(!howdy::native::update_config_value(config_path, "disabled", "false"),
-	             "update_config_value rejects insecure config permissions");
+	ok &=
+	    expect(!howdy::native::update_config_value(config_path, "disabled", "false", nullptr, true),
+	           "update_config_value rejects insecure config permissions");
+	ok &= expect(!fs::exists(config_lock_path),
+	             "update_config_value rejects insecure config before creating lock");
 	ok &= expect(chmod(config_path.c_str(), 0644) == 0, "restore config permissions");
 
 	const auto insecure_dir = temp_root / "insecure-dir";
@@ -329,11 +426,18 @@ auto main() -> int {
 	const auto insecure_config_path = insecure_dir / "config.ini";
 	ok &= expect(write_file(insecure_config_path, "[core]\ndisabled = false\n"),
 	             "write config in insecure dir");
+	const auto insecure_config_lock_path = lock_path_for_config(insecure_config_path);
+	fs::remove(insecure_config_lock_path, ec);
+	ok &= expect(!ec && !fs::exists(insecure_config_lock_path),
+	             "config lock absent before insecure directory update");
 	ok &= expect(chmod(insecure_dir.c_str(), 0777) == 0, "make config dir world-writable");
 	ok &= expect(!howdy::native::check_secure_config_path(insecure_config_path).ok,
 	             "check_secure_config_path rejects insecure config directory");
-	ok &= expect(!howdy::native::update_config_value(insecure_config_path, "disabled", "true"),
+	ok &= expect(!howdy::native::update_config_value(insecure_config_path, "disabled", "true",
+	                                                 nullptr, true),
 	             "update_config_value rejects insecure config directory");
+	ok &= expect(!fs::exists(insecure_config_lock_path),
+	             "update_config_value rejects insecure directory before creating lock");
 	ok &= expect(chmod(insecure_dir.c_str(), 0755) == 0, "restore config dir mode");
 
 	const auto insecure_ancestor_root = temp_root / "insecure-ancestor";
@@ -343,12 +447,19 @@ auto main() -> int {
 	const auto nested_config_path = nested_config_dir / "config.ini";
 	ok &= expect(write_file(nested_config_path, "[core]\ndisabled = false\n"),
 	             "write config in nested dir");
+	const auto nested_config_lock_path = lock_path_for_config(nested_config_path);
+	fs::remove(nested_config_lock_path, ec);
+	ok &= expect(!ec && !fs::exists(nested_config_lock_path),
+	             "config lock absent before insecure ancestor update");
 	ok &= expect(chmod(insecure_ancestor_root.c_str(), 0777) == 0,
 	             "make ancestor config dir world-writable");
 	ok &= expect(!howdy::native::check_secure_config_path(nested_config_path).ok,
 	             "check_secure_config_path rejects insecure ancestor directory");
-	ok &= expect(!howdy::native::update_config_value(nested_config_path, "disabled", "true"),
-	             "update_config_value rejects insecure ancestor directory");
+	ok &= expect(
+	    !howdy::native::update_config_value(nested_config_path, "disabled", "true", nullptr, true),
+	    "update_config_value rejects insecure ancestor directory");
+	ok &= expect(!fs::exists(nested_config_lock_path),
+	             "update_config_value rejects insecure ancestor before creating lock");
 	ok &= expect(chmod(insecure_ancestor_root.c_str(), 0755) == 0,
 	             "restore ancestor config dir mode");
 

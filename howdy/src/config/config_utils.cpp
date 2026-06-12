@@ -413,20 +413,21 @@ namespace howdy::native {
 			return false;
 		}
 
-		const auto security = check_secure_config_path(config_path);
-		if (!security.ok) {
+		const auto initial_security = check_secure_config_path(config_path);
+		if (!initial_security.ok) {
 			if (error_message != nullptr) {
-				*error_message = security.error_message;
+				*error_message = initial_security.error_message;
 			}
 			return false;
 		}
 
-		int lock_fd_handle = -1;
+		ConfigLockGuard config_lock;
 		if (lock) {
-			lock_fd_handle = open_lock_file(config_path);
-			if (lock_fd_handle < 0 || !lock_fd(lock_fd_handle)) {
-				if (lock_fd_handle >= 0) {
-					close(lock_fd_handle);
+			config_lock.fd = open_lock_file(config_path);
+			if (config_lock.fd < 0 || !lock_fd(config_lock.fd)) {
+				if (config_lock.fd >= 0) {
+					close(config_lock.fd);
+					config_lock.fd = -1;
 				}
 				if (error_message != nullptr) {
 					*error_message = "Failed to lock config file";
@@ -435,20 +436,25 @@ namespace howdy::native {
 			}
 		}
 
+		const auto security = check_secure_config_path(config_path);
+		if (!security.ok) {
+			if (error_message != nullptr) {
+				*error_message = security.error_message;
+			}
+			return false;
+		}
+
 		const int fd = open(config_path.c_str(), O_RDONLY | O_NOFOLLOW);
 		if (fd < 0) {
-			if (lock_fd_handle >= 0) {
-				unlock_fd(lock_fd_handle);
-				close(lock_fd_handle);
-			}
 			if (error_message != nullptr) {
 				*error_message = "Failed to open config file";
 			}
 			return false;
 		}
 
-		auto lines = split_lines_preserve_newlines(read_all_from_fd(fd));
+		const auto current_content = read_all_from_fd(fd);
 		close(fd);
+		auto lines = split_lines_preserve_newlines(current_content);
 
 		bool updated = false;
 		for (auto &line : lines) {
@@ -472,25 +478,23 @@ namespace howdy::native {
 			if (error_message != nullptr) {
 				*error_message = "Could not find a \"" + key + "\" config option to set";
 			}
-			if (lock_fd_handle >= 0) {
-				unlock_fd(lock_fd_handle);
-				close(lock_fd_handle);
-			}
 			return false;
 		}
 
 		const auto updated_content = join_lines(lines);
-		bool       validated       = true;
-		if (validate_runtime) {
-			validated = validate_config_content(updated_content, error_message);
+		if (validate_runtime && !validate_config_content(updated_content, error_message)) {
+			return false;
 		}
-		const bool ok = validated && atomic_write_lines(config_path, lines);
-		if (lock_fd_handle >= 0) {
-			unlock_fd(lock_fd_handle);
-			close(lock_fd_handle);
-		}
-		if (!ok && validated && error_message != nullptr && error_message->empty()) {
-			*error_message = "Failed to update config file";
+
+		std::string install_error;
+		const bool  ok = replace_config_content_atomically(
+		    config_path, updated_content, error_message == nullptr ? nullptr : &install_error,
+		    false, false, &current_content);
+		if (!ok && error_message != nullptr) {
+			*error_message =
+			    install_error.empty() || install_error == "Failed to install edited config"
+			        ? "Failed to update config file"
+			        : install_error;
 		}
 		return ok;
 	}
