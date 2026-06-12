@@ -33,8 +33,14 @@ usermodelsdir = get_option('user_models_dir') != '' ? get_option('user_models_di
 logpath = get_option('log_path')
 
 config_path = join_paths(confdir, 'config.ini')
+compare_process_path = join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-compare')
+auth_helper_path = join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-auth-helper')
 
 paths_dict = {
+	'auth_helper_path': auth_helper_path,
+	'compare_process_path': compare_process_path,
+	'default_dev_config_path': config_path,
+	'installed_config_path': config_path,
 	'config_dir': confdir,
 	'models_dir': modelsdir,
 	'user_models_dir': usermodelsdir,
@@ -42,9 +48,6 @@ paths_dict = {
 }
 
 pam_module_conf_data = configuration_data(paths_dict)
-pam_module_conf_data.set('compare_process_path', join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-compare'))
-pam_module_conf_data.set('auth_helper_path', join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-auth-helper'))
-pam_module_conf_data.set('config_file_path', config_path)
 
 subdir('pam')
 if get_option('install_pam_config')

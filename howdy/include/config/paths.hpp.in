@@ -5,3 +5,5 @@ inline constexpr auto kConfiguredConfigPath = "@installed_config_path@";
 inline constexpr auto kConfiguredModelsDir = "@models_dir@";
 inline constexpr auto kConfiguredUserModelsDir = "@user_models_dir@";
 inline constexpr auto kConfiguredLogPath = "@log_path@";
+inline constexpr auto kCompareProcessPath = "@compare_process_path@";
+inline constexpr auto kAuthHelperPath = "@auth_helper_path@";

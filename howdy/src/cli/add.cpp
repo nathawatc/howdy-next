@@ -1,10 +1,11 @@
 #include "cli/add_cli.hpp"
+#include "common/compare_logic.hpp"
+#include "common/frame_processing.hpp"
 #include "config/runtime_config.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
 
-#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -104,14 +105,8 @@ auto add_main(int argc, char **argv) -> int {
 		return kExitAbort;
 	}
 
-	const float        dark_threshold = config.video.dark_threshold;
-	const bool         use_clahe      = config.video.clahe_enabled;
-	const auto         clip_limit     = config.video.clahe_clip_limit;
-	const auto         tile_size      = config.video.clahe_tile_grid_size;
-	cv::Ptr<cv::CLAHE> clahe;
-	if (use_clahe) {
-		clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));
-	}
+	const float dark_threshold = config.video.dark_threshold;
+	auto        clahe          = howdy::native::make_clahe(config.video);
 
 	if (!args.plain) {
 		std::cout << "\nPlease look straight into the camera\n";
@@ -130,32 +125,25 @@ auto add_main(int argc, char **argv) -> int {
 			continue;
 		}
 
-		if (use_clahe) {
-			clahe->apply(gray, gray);
-		}
+		howdy::native::apply_clahe_if_enabled(gray, config.video, clahe);
 
-		cv::Mat                        hist;
-		constexpr std::array<int, 1>   hist_size{8};
-		constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
-		std::vector<const float *>     ranges{hist_range.data()};
-		constexpr std::array<int, 1>   channels{0};
-		cv::calcHist(&gray, 1, channels.data(), cv::Mat(), hist, 1, hist_size.data(),
-		             ranges.data());
-		const double hist_total = cv::sum(hist)[0];
-		if (hist_total == 0.0) {
+		const auto brightness = howdy::native::measure_brightness(gray);
+		if (brightness.hist_total == 0.0 || brightness.darkness >= 100.0F) {
 			continue;
 		}
-
-		const auto darkness = static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
-		if (darkness >= 100.0F) {
-			continue;
-		}
-
-		valid_frames++;
-		dark_running_total += darkness;
-		if (darkness > dark_threshold) {
-			dark_tries++;
-			continue;
+		switch (howdy::native::classify_brightness(brightness.hist_total, brightness.darkness,
+		                                           dark_threshold)) {
+			case howdy::native::BrightnessDecision::kBlackFrame:
+				continue;
+			case howdy::native::BrightnessDecision::kTooDark:
+				valid_frames++;
+				dark_running_total += brightness.darkness;
+				dark_tries++;
+				continue;
+			case howdy::native::BrightnessDecision::kProcessFrame:
+				valid_frames++;
+				dark_running_total += brightness.darkness;
+				break;
 		}
 
 		auto prepared = face_model.prepare_frame(gray);

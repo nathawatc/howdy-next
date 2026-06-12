@@ -361,13 +361,13 @@ namespace {
 		posix_spawn_file_actions_addclose(&actions, output_pipe[0]);
 		posix_spawn_file_actions_addclose(&actions, output_pipe[1]);
 
-		std::array<char *, 4> args = {const_cast<char *>(AUTH_HELPER_PATH),
+		std::array<char *, 4> args = {const_cast<char *>(kAuthHelperPath),
 		                              const_cast<char *>("prepare"), const_cast<char *>(username),
 		                              nullptr};
 		std::array<char *, 1> env  = {nullptr};
 		pid_t                 child_pid = -1;
 		const int             spawn_result =
-		    posix_spawn(&child_pid, AUTH_HELPER_PATH, &actions, nullptr, args.data(), env.data());
+		    posix_spawn(&child_pid, kAuthHelperPath, &actions, nullptr, args.data(), env.data());
 		posix_spawn_file_actions_destroy(&actions);
 		close(output_pipe[1]);
 
@@ -402,13 +402,13 @@ namespace {
 
 	auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
 		std::string           root_dir_string = root_dir.string();
-		std::array<char *, 4> args      = {const_cast<char *>(AUTH_HELPER_PATH),
+		std::array<char *, 4> args      = {const_cast<char *>(kAuthHelperPath),
 		                                   const_cast<char *>("cleanup"),
 		                                   const_cast<char *>(root_dir_string.c_str()), nullptr};
 		std::array<char *, 1> env       = {nullptr};
 		pid_t                 child_pid = -1;
 		const int             spawn_result =
-		    posix_spawn(&child_pid, AUTH_HELPER_PATH, nullptr, nullptr, args.data(), env.data());
+		    posix_spawn(&child_pid, kAuthHelperPath, nullptr, nullptr, args.data(), env.data());
 		if (spawn_result != 0) {
 			syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
 			       strerror(spawn_result), spawn_result);
@@ -575,8 +575,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	}
 
 	RuntimeAuthFiles runtime_auth_files;
-	std::string      config_path     = CONFIG_FILE_PATH;
-	std::string      user_models_dir = USER_MODELS_DIR;
+	std::string      config_path     = kConfiguredConfigPath;
+	std::string      user_models_dir = kConfiguredUserModelsDir;
 
 	auto config_result = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
 	if (config_result.status == howdy::native::RuntimeConfigLoadStatus::kPathError &&
@@ -623,7 +623,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	Workaround       effective_workaround = workaround;
 	const bool       existing_auth_token  = auth_token_present(pamh);
 
-	std::array<char *, 5> args = {const_cast<char *>(COMPARE_PROCESS_PATH),
+	std::array<char *, 5> args = {const_cast<char *>(kCompareProcessPath),
 	                              const_cast<char *>("--config"),
 	                              const_cast<char *>(config_path.c_str()), username, nullptr};
 	std::string           user_models_env = "HOWDY_USER_MODELS_DIR=" + user_models_dir;
@@ -633,7 +633,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	pid_t  child_pid   = -1;
 
 	const int spawn_result =
-	    posix_spawn(&child_pid, COMPARE_PROCESS_PATH, nullptr, nullptr, args.data(), compare_env);
+	    posix_spawn(&child_pid, kCompareProcessPath, nullptr, nullptr, args.data(), compare_env);
 	if (spawn_result != 0) {
 		syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(spawn_result),
 		       spawn_result);

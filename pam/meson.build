@@ -8,7 +8,7 @@ subdir('po')
 
 # Paths
 paths_h = configure_file(
-	input: 'paths.hpp.in',
+	input: '../howdy/include/config/paths.hpp.in',
 	output: 'paths.hpp',
 	configuration: pam_module_conf_data
 )

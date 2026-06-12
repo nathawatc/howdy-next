@@ -1,6 +1,7 @@
 #include "common/compare_args.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
+#include "common/frame_processing.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -8,14 +9,12 @@
 #include "storage/user_models.hpp"
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <exception>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include <opencv2/imgproc.hpp>
 
@@ -163,20 +162,13 @@ auto main(int argc, char **argv) -> int {
 			return static_cast<int>(CompareExit::kInvalidDevice);
 		}
 
-		const int    timeout        = config.video.timeout;
-		const float  dark_threshold = config.video.dark_threshold;
-		const float  max_height     = config.video.max_height;
-		const int    rotate         = config.video.rotate;
-		const int    exposure       = config.video.exposure;
-		const bool   end_report     = config.debug.end_report;
-		const bool   use_clahe      = config.video.clahe_enabled;
-		const double clip_limit     = config.video.clahe_clip_limit;
-		const int    tile_size      = config.video.clahe_tile_grid_size;
-
-		cv::Ptr<cv::CLAHE> clahe;
-		if (use_clahe) {
-			clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));
-		}
+		const int   timeout        = config.video.timeout;
+		const float dark_threshold = config.video.dark_threshold;
+		const float max_height     = config.video.max_height;
+		const int   rotate         = config.video.rotate;
+		const int   exposure       = config.video.exposure;
+		const bool  end_report     = config.debug.end_report;
+		auto        clahe          = howdy::native::make_clahe(config.video);
 
 		int    frames             = 0;
 		int    black_tries        = 0;
@@ -228,32 +220,21 @@ auto main(int argc, char **argv) -> int {
 				return static_cast<int>(CompareExit::kInvalidDevice);
 			}
 
-			if (use_clahe) {
-				clahe->apply(gray_frame, gray_frame);
-			}
+			howdy::native::apply_clahe_if_enabled(gray_frame, config.video, clahe);
 
-			cv::Mat                        hist;
-			constexpr std::array<int, 1>   hist_size{8};
-			constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
-			std::vector<const float *>     ranges{hist_range.data()};
-			constexpr std::array<int, 1>   channels{0};
-			cv::calcHist(&gray_frame, 1, channels.data(), cv::Mat(), hist, 1, hist_size.data(),
-			             ranges.data());
-			const double hist_total = cv::sum(hist)[0];
-			const auto darkness = hist_total == 0.0
-			                          ? 100.0F
-			                          : static_cast<float>(hist.at<float>(0) / hist_total * 100.0);
-			switch (howdy::native::classify_brightness(hist_total, darkness, dark_threshold)) {
+			const auto brightness = howdy::native::measure_brightness(gray_frame);
+			switch (howdy::native::classify_brightness(brightness.hist_total, brightness.darkness,
+			                                           dark_threshold)) {
 				case howdy::native::BrightnessDecision::kBlackFrame:
 					black_tries++;
 					continue;
 				case howdy::native::BrightnessDecision::kTooDark:
-					dark_running_total += darkness;
+					dark_running_total += brightness.darkness;
 					valid_frames++;
 					dark_tries++;
 					continue;
 				case howdy::native::BrightnessDecision::kProcessFrame:
-					dark_running_total += darkness;
+					dark_running_total += brightness.darkness;
 					valid_frames++;
 					break;
 			}

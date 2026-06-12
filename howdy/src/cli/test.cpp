@@ -1,4 +1,5 @@
 #include "cli/test_cli.hpp"
+#include "common/frame_processing.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
 #include "config/runtime_config.hpp"
@@ -6,7 +7,6 @@
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
 
-#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -16,7 +16,6 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
-#include <vector>
 
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
@@ -171,14 +170,7 @@ int test_main(int argc, char **argv) {
 
 	const int   exposure       = config.video.exposure;
 	const float dark_threshold = config.video.dark_threshold;
-	const bool  use_clahe      = config.video.clahe_enabled;
-	const auto  clip_limit     = config.video.clahe_clip_limit;
-	const auto  tile_size      = config.video.clahe_tile_grid_size;
-
-	cv::Ptr<cv::CLAHE> clahe;
-	if (use_clahe) {
-		clahe = cv::createCLAHE(clip_limit, cv::Size(tile_size, tile_size));
-	}
+	auto        clahe          = howdy::native::make_clahe(config.video);
 
 	std::cout << "\nOpening a window with a test feed\n\n";
 	std::cout << "Press ctrl+C in this terminal to quit\n";
@@ -221,33 +213,19 @@ int test_main(int argc, char **argv) {
 				return kExitCameraError;
 			}
 
-			if (use_clahe) {
-				clahe->apply(gray_frame, gray_frame);
-			}
+			howdy::native::apply_clahe_if_enabled(gray_frame, config.video, clahe);
 
 			cv::Mat overlay;
 			cv::cvtColor(gray_frame.clone(), overlay, cv::COLOR_GRAY2BGR);
 			const int height = gray_frame.rows;
 			const int width  = gray_frame.cols;
 
-			cv::Mat                        hist;
-			constexpr std::array<int, 1>   hist_size{8};
-			constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
-			std::vector<const float *>     ranges{hist_range.data()};
-			constexpr std::array<int, 1>   channels{0};
-			cv::calcHist(&gray_frame, 1, channels.data(), cv::Mat(), hist, 1, hist_size.data(),
-			             ranges.data());
-
-			const auto         hist_total = static_cast<float>(cv::sum(hist)[0]);
-			std::vector<float> hist_perc;
-			hist_perc.reserve(8);
-			for (int index = 0; index < hist.rows; ++index) {
-				const float value_perc =
-				    hist.at<float>(index, 0) / std::max(hist_total, 1.0F) * 100.0F;
-				hist_perc.push_back(value_perc);
-				const cv::Point p1(20 + (10 * index), 10);
-				const cv::Point p2(10 + (10 * index),
-				                   static_cast<int>((value_perc / 2.0F) + 10.0F));
+			const auto brightness = howdy::native::measure_brightness(gray_frame);
+			for (std::size_t index = 0; index < brightness.bins_percent.size(); ++index) {
+				const float     value_perc = brightness.bins_percent[index];
+				const int       bin_offset = 10 * static_cast<int>(index);
+				const cv::Point p1(20 + bin_offset, 10);
+				const cv::Point p2(10 + bin_offset, static_cast<int>((value_perc / 2.0F) + 10.0F));
 				cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
 			}
 
@@ -258,14 +236,15 @@ int test_main(int argc, char **argv) {
 			print_text(overlay, 3, height,
 			           "RECOGNITION: " + std::to_string(static_cast<int>(recognition_ms)) + "ms");
 			print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
-			print_text(overlay, 5, height, std::string("CLAHE: ") + (use_clahe ? "on" : "off"));
+			print_text(overlay, 5, height,
+			           std::string("CLAHE: ") + (config.video.clahe_enabled ? "on" : "off"));
 
 			if (g_slow_mode) {
 				cv::putText(overlay, "SLOW MODE", cv::Point(width - 66, height - 10),
 				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
 			}
 
-			if (!hist_perc.empty() && hist_perc[0] > dark_threshold) {
+			if (brightness.darkness > dark_threshold) {
 				cv::putText(overlay, "DARK FRAME", cv::Point(width - 68, 16),
 				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
 			} else {

@@ -5,8 +5,6 @@ libcurl = dependency('libcurl')
 openssl = dependency('openssl')
 datadir = get_option('prefix') / get_option('datadir') / 'howdy'
 native_cpp_conf = configuration_data(paths_dict)
-native_cpp_conf.set('default_dev_config_path', config_path)
-native_cpp_conf.set('installed_config_path', config_path)
 
 native_paths_h = configure_file(
 	input: '../include/config/paths.hpp.in',
@@ -15,6 +13,26 @@ native_paths_h = configure_file(
 )
 
 native_cpp_inc = include_directories('.', '../include')
+
+native_compare_logic_lib = static_library(
+	'howdy_compare_logic',
+	'compare_logic.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+native_frame_processing_lib = static_library(
+	'howdy_frame_processing',
+	'frame_processing.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
 
 native_cpp_sources = [
 	'config/config_reader.cpp',
@@ -25,6 +43,7 @@ native_cpp_sources = [
 	'config/runtime_paths.cpp',
 	'core/face_model.cpp',
 	'recorders/video_capture.cpp',
+	'storage/user_model_codec.cpp',
 	'storage/user_model_readiness.cpp',
 	'storage/user_models.cpp',
 ]
@@ -65,10 +84,13 @@ test(
 native_compare = executable(
 	'howdy-compare',
 	'compare_args.cpp',
-	'compare_logic.cpp',
 	'compare.cpp',
 	include_directories: native_cpp_inc,
-	link_with: native_cpp_lib,
+	link_with: [
+		native_cpp_lib,
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
 	dependencies: [
 		inih_cpp,
 		libcurl,
@@ -192,13 +214,10 @@ test(
 
 native_compare_logic_test = executable(
 	'howdy-compare-logic-test',
-	'compare_logic.cpp',
 	'tests/compare_logic_test.cpp',
 	include_directories: native_cpp_inc,
+	link_with: native_compare_logic_lib,
 	dependencies: [
-		inih_cpp,
-		libcurl,
-		nlohmann_json,
 		opencv4,
 	],
 	install: false,
@@ -207,6 +226,25 @@ native_compare_logic_test = executable(
 test(
 	'native-compare-logic',
 	native_compare_logic_test,
+)
+
+native_frame_processing_test = executable(
+	'howdy-frame-processing-test',
+	'tests/frame_processing_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-frame-processing',
+	native_frame_processing_test,
 )
 
 native_config_utils_test = executable(
@@ -512,7 +550,11 @@ native_add = executable(
 	'cli/add.cpp',
 	'cli/add_main.cpp',
 	include_directories: native_cpp_inc,
-	link_with: native_cpp_lib,
+	link_with: [
+		native_cpp_lib,
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
 	dependencies: [
 		inih_cpp,
 		nlohmann_json,
@@ -528,7 +570,10 @@ native_test = executable(
 	'cli/test.cpp',
 	'cli/test_main.cpp',
 	include_directories: native_cpp_inc,
-	link_with: native_cpp_lib,
+	link_with: [
+		native_cpp_lib,
+		native_frame_processing_lib,
+	],
 	dependencies: [
 		inih_cpp,
 		nlohmann_json,
