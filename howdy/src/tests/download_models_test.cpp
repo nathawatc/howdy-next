@@ -242,7 +242,7 @@ auto main() -> int {
 	    "missing parent path starts first model download");
 
 	const auto blocked_models_dir = temp_root / "blocked-models";
-	const auto blocked_output      = temp_root / "blocked-output.txt";
+	const auto blocked_output     = temp_root / "blocked-output.txt";
 	ok &= expect(write_file(blocked_models_dir, "not a directory"),
 	             "create file blocking models directory");
 
@@ -251,8 +251,8 @@ auto main() -> int {
 	             "capture blocked models-dir download-models output");
 	const auto blocked_stdout = read_file(blocked_output);
 	ok &= expect(blocked_exit == 1, "blocked models directory aborts cleanly");
-	ok &= expect(attempted_downloads() == 0,
-	             "blocked models directory stops before first download");
+	ok &=
+	    expect(attempted_downloads() == 0, "blocked models directory stops before first download");
 	ok &= expect(blocked_stdout.contains("Failed to create models directory:"),
 	             "blocked models directory reports setup failure");
 

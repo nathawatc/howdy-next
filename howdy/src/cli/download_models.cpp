@@ -211,7 +211,7 @@ namespace {
 
 	auto prepare_staged_download(const std::filesystem::path &destination)
 	    -> std::optional<StagedDownloadFile> {
-		const auto parent = destination.parent_path();
+		const auto      parent = destination.parent_path();
 		std::error_code ec;
 		std::filesystem::create_directories(parent, ec);
 		if (ec) {
@@ -257,7 +257,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 
 	(void)argc;
 	(void)argv;
-	const auto models_dir = howdy::native::resolve_models_dir();
+	const auto      models_dir = howdy::native::resolve_models_dir();
 	std::error_code models_dir_ec;
 	std::filesystem::create_directories(models_dir, models_dir_ec);
 	if (models_dir_ec) {
