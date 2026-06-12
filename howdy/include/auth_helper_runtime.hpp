@@ -15,9 +15,16 @@ namespace howdy::native::auth_helper {
 		std::filesystem::path user_models_dir;
 	};
 
+	struct CleanupRuntimeResult {
+		bool        ok = false;
+		std::string error_message;
+	};
+
 	auto runtime_root() -> std::filesystem::path;
 	auto prepare_runtime_auth_files(const std::string &user, uid_t uid, gid_t gid)
 	    -> std::optional<PreparedPaths>;
+	auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid, gid_t gid)
+	    -> CleanupRuntimeResult;
 
 #ifdef HOWDY_AUTH_HELPER_TESTING
 	auto validate_runtime_root(const std::filesystem::path &path) -> bool;
@@ -29,6 +36,9 @@ namespace howdy::native::auth_helper {
 	auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
 	                              const std::string &user, std::optional<uid_t> owner_uid,
 	                              std::optional<std::filesystem::path> &source_model_path) -> bool;
+	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path, uid_t uid,
+	                                         gid_t gid, const std::filesystem::path &runtime_root)
+	    -> CleanupRuntimeResult;
 	auto prepare_runtime_auth_files_for_test(const std::string &user, uid_t uid, gid_t gid,
 	                                         const std::filesystem::path &runtime_root,
 	                                         const std::filesystem::path &source_config,

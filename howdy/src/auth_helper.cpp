@@ -5,14 +5,11 @@
 #	include "auth_helper_testing.hpp"
 #endif
 
-#include <cerrno>
 #include <filesystem>
 #include <iostream>
 #include <pwd.h>
 #include <string>
 #include <unistd.h>
-
-#include <sys/stat.h>
 
 namespace {
 
@@ -75,29 +72,10 @@ namespace {
 			return fail("Failed to resolve calling user");
 		}
 
-		const auto      root = howdy::native::auth_helper::runtime_root();
-		std::error_code ec;
-		if (path.parent_path() != root ||
-		    !path.filename().string().starts_with("pam-" + std::to_string(uid) + "-")) {
-			return fail("Refusing to clean unexpected runtime directory");
-		}
-
-		struct stat stat_{};
-		if (lstat(path.c_str(), &stat_) != 0) {
-			if (errno == ENOENT) {
-				return 0;
-			}
-			return fail("Failed to inspect runtime directory for cleanup");
-		}
-
-		if (!S_ISDIR(stat_.st_mode) || stat_.st_uid != 0 || stat_.st_gid != entry->pw_gid ||
-		    (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
-			return fail("Refusing to clean insecure runtime directory");
-		}
-
-		std::filesystem::remove_all(path, ec);
-		if (ec) {
-			return fail("Failed to clean runtime directory: " + ec.message());
+		const auto cleanup_result =
+		    howdy::native::auth_helper::cleanup_runtime_auth_files(path, uid, entry->pw_gid);
+		if (!cleanup_result.ok) {
+			return fail(cleanup_result.error_message);
 		}
 		return 0;
 	}

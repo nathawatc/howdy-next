@@ -12,6 +12,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -304,6 +305,41 @@ namespace howdy::native::auth_helper {
 			return prepared;
 		}
 
+		auto cleanup_runtime_auth_files_from(const std::filesystem::path &path, uid_t uid,
+		                                     gid_t gid, const std::filesystem::path &root)
+		    -> CleanupRuntimeResult {
+			const auto expected_prefix = "pam-" + std::to_string(uid) + "-";
+			if (path.parent_path() != root ||
+			    !path.filename().string().starts_with(expected_prefix)) {
+				return {.ok            = false,
+				        .error_message = "Refusing to clean unexpected runtime directory"};
+			}
+
+			struct stat stat_{};
+			if (lstat(path.c_str(), &stat_) != 0) {
+				if (errno == ENOENT) {
+					return {.ok = true};
+				}
+				return {.ok            = false,
+				        .error_message = "Failed to inspect runtime directory for cleanup"};
+			}
+
+			if (!S_ISDIR(stat_.st_mode) || stat_.st_uid != 0 || stat_.st_gid != gid ||
+			    (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+				return {.ok            = false,
+				        .error_message = "Refusing to clean insecure runtime directory"};
+			}
+
+			std::error_code ec;
+			std::filesystem::remove_all(path, ec);
+			if (ec) {
+				return {.ok            = false,
+				        .error_message = "Failed to clean runtime directory: " + ec.message()};
+			}
+
+			return {.ok = true};
+		}
+
 	}  // namespace
 
 	auto runtime_root() -> std::filesystem::path {
@@ -372,7 +408,18 @@ namespace howdy::native::auth_helper {
 		                                       howdy::native::resolve_user_models_dir(), 0, 0);
 	}
 
+	auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid, gid_t gid)
+	    -> CleanupRuntimeResult {
+		return cleanup_runtime_auth_files_from(path, uid, gid, runtime_root());
+	}
+
 #ifdef HOWDY_AUTH_HELPER_TESTING
+	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path, uid_t uid,
+	                                         gid_t gid, const std::filesystem::path &runtime_root)
+	    -> CleanupRuntimeResult {
+		return cleanup_runtime_auth_files_from(path, uid, gid, runtime_root);
+	}
+
 	auto prepare_runtime_auth_files_for_test(const std::string &user, uid_t uid, gid_t gid,
 	                                         const std::filesystem::path &runtime_root,
 	                                         const std::filesystem::path &source_config,

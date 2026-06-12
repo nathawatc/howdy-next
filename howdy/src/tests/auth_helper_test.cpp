@@ -394,6 +394,156 @@ namespace {
 		return ok;
 	}
 
+	auto expect_cleanup_runtime_auth_files(const std::filesystem::path &temp_root) -> bool {
+		namespace fs = std::filesystem;
+		using howdy::native::auth_helper::cleanup_runtime_auth_files_for_test;
+
+		bool            ok = true;
+		std::error_code ec;
+		const auto      fixture_root = temp_root / "cleanup-runtime-auth-files";
+		const auto      runtime_root = fixture_root / "runtime-root";
+		const auto      uid          = getuid();
+		const auto      gid          = getgid();
+		const auto      prefix       = "pam-" + std::to_string(uid) + "-";
+		const uid_t     non_root_uid = 1;
+		const gid_t     wrong_gid    = gid == 0 ? static_cast<gid_t>(1) : static_cast<gid_t>(0);
+
+		fs::remove_all(fixture_root, ec);
+		fs::create_directories(runtime_root, ec);
+		ok &= expect(!ec, "creates cleanup runtime fixtures");
+		ok &= expect(chmod(runtime_root.c_str(), 0711) == 0, "secures cleanup runtime root");
+
+		const auto wrong_parent = fixture_root / "wrong-parent" / (prefix + "wrong-parent");
+		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_parent, uid, gid, runtime_root).ok,
+		             "wrong cleanup parent is rejected");
+
+		const auto wrong_prefix = runtime_root / ("pam-" + std::to_string(uid + 1) + "-wrong");
+		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_prefix, uid, gid, runtime_root).ok,
+		             "wrong pam uid prefix is rejected");
+
+		const auto missing_runtime_dir = runtime_root / (prefix + "missing");
+		ok &= expect(
+		    cleanup_runtime_auth_files_for_test(missing_runtime_dir, uid, gid, runtime_root).ok,
+		    "missing expected runtime dir succeeds");
+		ok &=
+		    expect(!fs::exists(missing_runtime_dir), "missing expected runtime dir stays missing");
+
+		const auto regular_file = runtime_root / (prefix + "regular");
+		ok &= expect(write_file(regular_file, "cleanup"), "writes runtime cleanup file");
+		ok &= expect(!cleanup_runtime_auth_files_for_test(regular_file, uid, gid, runtime_root).ok,
+		             "regular file is rejected for cleanup");
+		ok &= expect(fs::exists(regular_file), "regular file remains after rejected cleanup");
+		fs::remove(regular_file, ec);
+		ec.clear();
+
+		const auto symlink_target = fixture_root / "cleanup-target";
+		const auto symlink_path   = runtime_root / (prefix + "symlink");
+		ok &= expect(write_file(symlink_target, "target"), "writes cleanup symlink target");
+		if (symlink(symlink_target.c_str(), symlink_path.c_str()) == 0) {
+			ok &= expect(
+			    !cleanup_runtime_auth_files_for_test(symlink_path, uid, gid, runtime_root).ok,
+			    "symlink is rejected for cleanup");
+			ok &= expect(fs::exists(symlink_path), "symlink remains after rejected cleanup");
+			fs::remove(symlink_path, ec);
+			ec.clear();
+		} else {
+			std::cerr << "SKIP: cleanup symlink fixture creation failed: " << std::strerror(errno)
+			          << "\n";
+		}
+		fs::remove(symlink_target, ec);
+		ec.clear();
+
+		const auto privileged_probe = fixture_root / "privileged-cleanup-probe";
+		fs::create_directories(privileged_probe, ec);
+		ok &= expect(!ec, "creates privileged cleanup probe");
+		const bool can_setup_privileged_cleanup =
+		    chown(privileged_probe.c_str(), non_root_uid, gid) == 0 &&
+		    chown(privileged_probe.c_str(), 0, wrong_gid) == 0 &&
+		    chown(privileged_probe.c_str(), 0, gid) == 0;
+		(void)chown(privileged_probe.c_str(), uid, gid);
+		std::error_code privileged_probe_cleanup_ec;
+		fs::remove_all(privileged_probe, privileged_probe_cleanup_ec);
+		const bool removed_privileged_probe = !privileged_probe_cleanup_ec;
+		ec.clear();
+
+		if (!can_setup_privileged_cleanup) {
+			std::cerr << "SKIP: cleanup ownership/mode cases need required chown capabilities\n";
+		} else {
+			const bool privileged_probe_cleanup_ok =
+			    expect(removed_privileged_probe, "removes privileged cleanup probe");
+			ok &= privileged_probe_cleanup_ok;
+			if (privileged_probe_cleanup_ok) {
+				const auto group_writable_dir = runtime_root / (prefix + "group-writable");
+				fs::create_directories(group_writable_dir, ec);
+				ok &= expect(!ec, "creates group-writable cleanup directory");
+				ok &= expect(chown(group_writable_dir.c_str(), 0, gid) == 0,
+				             "sets root-owned group-writable cleanup directory");
+				ok &= expect(chmod(group_writable_dir.c_str(), 0770) == 0,
+				             "makes cleanup directory group-writable");
+				ok &= expect(
+				    !cleanup_runtime_auth_files_for_test(group_writable_dir, uid, gid, runtime_root)
+				         .ok,
+				    "group-writable directory is rejected");
+				fs::remove_all(group_writable_dir, ec);
+				ec.clear();
+
+				const auto world_writable_dir = runtime_root / (prefix + "world-writable");
+				fs::create_directories(world_writable_dir, ec);
+				ok &= expect(!ec, "creates world-writable cleanup directory");
+				ok &= expect(chown(world_writable_dir.c_str(), 0, gid) == 0,
+				             "sets root-owned world-writable cleanup directory");
+				ok &= expect(chmod(world_writable_dir.c_str(), 0777) == 0,
+				             "makes cleanup directory world-writable");
+				ok &= expect(
+				    !cleanup_runtime_auth_files_for_test(world_writable_dir, uid, gid, runtime_root)
+				         .ok,
+				    "world-writable directory is rejected");
+				fs::remove_all(world_writable_dir, ec);
+				ec.clear();
+
+				const auto valid_runtime_dir = runtime_root / (prefix + "valid");
+				fs::create_directories(valid_runtime_dir, ec);
+				ok &= expect(!ec, "creates valid cleanup directory");
+				ok &= expect(chown(valid_runtime_dir.c_str(), 0, gid) == 0,
+				             "sets root-owned valid cleanup directory");
+				ok &= expect(chmod(valid_runtime_dir.c_str(), 0711) == 0,
+				             "secures valid cleanup directory");
+				ok &= expect(
+				    cleanup_runtime_auth_files_for_test(valid_runtime_dir, uid, gid, runtime_root)
+				        .ok,
+				    "valid runtime directory is removed");
+				ok &= expect(!fs::exists(valid_runtime_dir), "valid runtime directory is gone");
+
+				const auto wrong_owner_dir = runtime_root / (prefix + "wrong-owner");
+				fs::create_directories(wrong_owner_dir, ec);
+				ok &= expect(!ec, "creates wrong-owner cleanup directory");
+				ok &= expect(chown(wrong_owner_dir.c_str(), non_root_uid, gid) == 0,
+				             "sets wrong-owner cleanup directory");
+				ok &= expect(
+				    !cleanup_runtime_auth_files_for_test(wrong_owner_dir, uid, gid, runtime_root)
+				         .ok,
+				    "wrong owner is rejected");
+				fs::remove_all(wrong_owner_dir, ec);
+				ec.clear();
+
+				const auto wrong_gid_dir = runtime_root / (prefix + "wrong-gid");
+				fs::create_directories(wrong_gid_dir, ec);
+				ok &= expect(!ec, "creates wrong-gid cleanup directory");
+				ok &= expect(chown(wrong_gid_dir.c_str(), 0, wrong_gid) == 0,
+				             "sets wrong-gid cleanup directory");
+				ok &= expect(
+				    !cleanup_runtime_auth_files_for_test(wrong_gid_dir, uid, gid, runtime_root).ok,
+				    "wrong gid is rejected");
+				fs::remove_all(wrong_gid_dir, ec);
+				ec.clear();
+			}
+		}
+
+		fs::remove_all(fixture_root, ec);
+		ok &= expect(!ec, "cleans cleanup runtime fixtures");
+		return ok;
+	}
+
 	auto expect_prepare_runtime_auth_files(const std::filesystem::path &temp_root) -> bool {
 		namespace fs = std::filesystem;
 		using howdy::native::auth_helper::prepare_runtime_auth_files_for_test;
@@ -543,6 +693,7 @@ auto main() -> int {
 	ok &= expect_copy_file_for_user(temp_root);
 	ok &= expect_source_model_readiness(temp_root);
 	ok &= expect_prepare_cleanup_guards();
+	ok &= expect_cleanup_runtime_auth_files(temp_root);
 	ok &= expect_prepare_runtime_auth_files(temp_root);
 	ok &= expect_stdout_protocol();
 
