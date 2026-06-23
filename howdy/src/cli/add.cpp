@@ -1,6 +1,5 @@
 #include "cli/add_cli.hpp"
-#include "common/compare_logic.hpp"
-#include "common/frame_processing.hpp"
+#include "cli/enrollment_capture.hpp"
 #include "config/runtime_config.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -12,9 +11,6 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <vector>
-
-#include <opencv2/imgproc.hpp>
 
 namespace {
 
@@ -106,75 +102,47 @@ auto add_main(int argc, char **argv) -> int {
 	}
 
 	const float dark_threshold = config.video.dark_threshold;
-	auto        clahe          = howdy::native::make_clahe(config.video);
 
 	if (!args.plain) {
 		std::cout << "\nPlease look straight into the camera\n";
 	}
 	std::this_thread::sleep_for(std::chrono::seconds(2));
 
-	cv::Mat              frame;
-	cv::Mat              gray;
-	std::vector<cv::Mat> faces;
-	int                  valid_frames       = 0;
-	int                  dark_tries         = 0;
-	double               dark_running_total = 0.0;
-
-	for (int frame_count = 0; frame_count < kMaxFrames; ++frame_count) {
-		if (!capture.read(frame, &gray)) {
-			continue;
-		}
-
-		howdy::native::apply_clahe_if_enabled(gray, config.video, clahe);
-
-		const auto brightness = howdy::native::measure_brightness(gray);
-		if (brightness.hist_total == 0.0 || brightness.darkness >= 100.0F) {
-			continue;
-		}
-		switch (howdy::native::classify_brightness(brightness.hist_total, brightness.darkness,
-		                                           dark_threshold)) {
-			case howdy::native::BrightnessDecision::kBlackFrame:
-				continue;
-			case howdy::native::BrightnessDecision::kTooDark:
-				valid_frames++;
-				dark_running_total += brightness.darkness;
-				dark_tries++;
-				continue;
-			case howdy::native::BrightnessDecision::kProcessFrame:
-				valid_frames++;
-				dark_running_total += brightness.darkness;
-				break;
-		}
-
-		auto prepared = face_model.prepare_frame(gray);
-		faces         = face_model.detect(prepared);
-		if (!faces.empty()) {
-			frame = prepared;
-			break;
-		}
-	}
+	auto capture_result =
+	    howdy::native::capture_enrollment_sample(capture, face_model, config.video, kMaxFrames);
 
 	capture.release();
 
-	if (faces.empty()) {
-		if (valid_frames == 0) {
-			std::cerr << "Camera saw only black frames - is IR emitter working?\n";
-		} else if (valid_frames == dark_tries) {
-			std::cerr << "All frames were too dark, please check dark_threshold in config\n";
-			std::cerr << "Average darkness: " << (dark_running_total / valid_frames)
-			          << ", Threshold: " << dark_threshold << "\n";
-		} else {
-			std::cerr << "No face detected, aborting\n";
+	if (capture_result.faces.empty()) {
+		switch (howdy::native::classify_enrollment_capture_failure(capture_result)) {
+			case howdy::native::EnrollmentCaptureFailure::kOnlyBlackFrames:
+				std::cerr << "Camera saw only black frames - is IR emitter working?\n";
+				break;
+			case howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames:
+				std::cerr << "All frames were too dark, please check dark_threshold in config\n";
+				std::cerr << "Average darkness: "
+				          << (capture_result.dark_running_total / capture_result.valid_frames)
+				          << ", Threshold: " << dark_threshold << "\n";
+				break;
+			case howdy::native::EnrollmentCaptureFailure::kNoSufficientlyBrightFrames:
+				std::cerr << "No sufficiently bright frames captured, aborting\n";
+				break;
+			case howdy::native::EnrollmentCaptureFailure::kNoUsableFrames:
+				std::cerr << "No usable frames captured, aborting\n";
+				break;
+			case howdy::native::EnrollmentCaptureFailure::kNoFaceDetected:
+				std::cerr << "No face detected, aborting\n";
+				break;
 		}
 		return kExitAbort;
 	}
 
-	if (faces.size() > 1) {
+	if (capture_result.faces.size() > 1) {
 		std::cerr << "Multiple faces detected, aborting\n";
 		return kExitAbort;
 	}
 
-	auto encoding = face_model.encode(frame, faces.front());
+	auto encoding = face_model.encode(capture_result.frame, capture_result.faces.front());
 	if (encoding.empty()) {
 		std::cerr << "No valid face encoding captured\n";
 		return kExitAbort;

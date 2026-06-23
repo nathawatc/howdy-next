@@ -1,7 +1,6 @@
 #include "cli/clear_cli.hpp"
 
 #include <array>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>

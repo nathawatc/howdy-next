@@ -314,6 +314,25 @@ test(
 	native_capture_device_path_test,
 )
 
+native_enrollment_capture_test = executable(
+	'howdy-enrollment-capture-test',
+	'tests/enrollment_capture_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-enrollment-capture',
+	native_enrollment_capture_test,
+)
+
 packaged_config_cpp_arg = '-DHOWDY_PACKAGED_CONFIG_PATH="' + meson.project_source_root() / 'config/config.ini' + '"'
 
 native_config_validation_test = executable(
