@@ -46,9 +46,16 @@ namespace howdy::pam::testing {
 	auto wait_for_compare_process(pid_t child_pid) -> int;
 	auto auth_helper_output_limit() -> std::size_t;
 	auto set_auth_helper_output_reader(AuthHelperOutputReader reader) -> AuthHelperOutputReader;
+
+	struct AuthHelperOutput {
+		std::string config_path;
+		std::string user_models_dir;
+		bool        valid = false;
+	};
+
 	auto read_fd_to_string(int fd) -> std::string;
 	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool;
-	auto helper_output_value(const std::string &output, const std::string &key) -> std::string;
+	auto parse_auth_helper_output(const std::string &output) -> AuthHelperOutput;
 	auto wait_for_helper_process(pid_t child_pid) -> int;
 
 }  // namespace howdy::pam::testing

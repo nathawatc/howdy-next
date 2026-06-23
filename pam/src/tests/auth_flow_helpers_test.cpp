@@ -469,6 +469,140 @@ namespace {
 		return ok;
 	}
 
+	auto read_clean_auth_helper_output(const std::string &child_output, std::string *read_output,
+	                                   int child_exit_status = EXIT_SUCCESS)
+	    -> std::optional<bool> {
+		std::array<ScopedFd, 2> output_pipe;
+		if (!open_pipe(&output_pipe)) {
+			return std::nullopt;
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			return std::nullopt;
+		}
+		if (child_pid == 0) {
+			output_pipe[0].reset();
+			const bool wrote = write_all(output_pipe[1].get(), child_output);
+			output_pipe[1].reset();
+			_exit(wrote ? child_exit_status : EXIT_FAILURE);
+		}
+
+		output_pipe[1].reset();
+		return howdy::pam::testing::read_auth_helper_output(child_pid, output_pipe[0].get(),
+		                                                    read_output);
+	}
+
+	auto expect_auth_helper_output_child_failure_discards_output() -> bool {
+		const std::string child_output  = "CONFIG_PATH=/run/howdy/config.ini\n"
+		                                  "USER_MODELS_DIR=/run/howdy/models\n";
+		std::string       actual_output = "previous output";
+		const auto        read_result =
+		    read_clean_auth_helper_output(child_output, &actual_output, EXIT_FAILURE);
+
+		bool ok = true;
+		ok &= expect(read_result.has_value(), "failed auth-helper child exits cleanly");
+		if (!read_result.has_value()) {
+			return false;
+		}
+		ok &= expect(!*read_result, "failed auth-helper child output is rejected");
+		ok &= expect(actual_output.empty(), "failed auth-helper child output is discarded");
+		return ok;
+	}
+
+	auto expect_auth_helper_output_protocol_validation() -> bool {
+		using howdy::pam::testing::parse_auth_helper_output;
+
+		struct ProtocolCase {
+			std::string name;
+			std::string output;
+			bool        expected_ok;
+			std::string config_path;
+			std::string user_models_dir;
+		};
+
+		const std::vector<ProtocolCase> cases = {
+		    {.name            = "valid required auth-helper output is accepted",
+		     .output          = "CONFIG_PATH=/run/howdy/config.ini\n"
+		                        "USER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok     = true,
+		     .config_path     = "/run/howdy/config.ini",
+		     .user_models_dir = "/run/howdy/models"},
+		    {.name        = "duplicate CONFIG_PATH is rejected",
+		     .output      = "CONFIG_PATH=/run/howdy/pam-1000-a/config.ini\n"
+		                    "CONFIG_PATH=/run/howdy/pam-1000-b/config.ini\n"
+		                    "USER_MODELS_DIR=/run/howdy/pam-1000-a/models\n",
+		     .expected_ok = false},
+		    {.name        = "duplicate USER_MODELS_DIR is rejected",
+		     .output      = "CONFIG_PATH=/run/howdy/pam-1000-a/config.ini\n"
+		                    "USER_MODELS_DIR=/run/howdy/pam-1000-a/models\n"
+		                    "USER_MODELS_DIR=/run/howdy/pam-1000-b/models\n",
+		     .expected_ok = false},
+		    {.name        = "missing CONFIG_PATH is rejected",
+		     .output      = "USER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok = false},
+		    {.name        = "missing USER_MODELS_DIR is rejected",
+		     .output      = "CONFIG_PATH=/run/howdy/config.ini\n",
+		     .expected_ok = false},
+		    {.name        = "empty CONFIG_PATH is rejected",
+		     .output      = "CONFIG_PATH=\nUSER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok = false},
+		    {.name        = "empty USER_MODELS_DIR is rejected",
+		     .output      = "CONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=\n",
+		     .expected_ok = false},
+		    {.name        = "NOTICE line with valid required keys is rejected",
+		     .output      = "NOTICE=ignored\n"
+		                    "CONFIG_PATH=/run/howdy/config.ini\n"
+		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok = false},
+		    {.name        = "unknown key with valid required keys is rejected",
+		     .output      = "UNKNOWN=ignored\n"
+		                    "CONFIG_PATH=/run/howdy/config.ini\n"
+		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok = false},
+		    {.name        = "line without separator with valid required keys is rejected",
+		     .output      = "CONFIG_PATH=/run/howdy/config.ini\n"
+		                    "helper wrote stderr noise\n"
+		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .expected_ok = false},
+		    {.name            = "required value containing equals is preserved and accepted",
+		     .output          = "CONFIG_PATH=/run/howdy/config=debug.ini\n"
+		                        "USER_MODELS_DIR=/run/howdy/models=primary\n",
+		     .expected_ok     = true,
+		     .config_path     = "/run/howdy/config=debug.ini",
+		     .user_models_dir = "/run/howdy/models=primary"},
+		};
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			std::string actual_output;
+			const auto  read_result =
+			    read_clean_auth_helper_output(test_case.output, &actual_output);
+			ok &= expect(read_result.has_value(), test_case.name + " helper exits cleanly");
+			if (!read_result.has_value()) {
+				continue;
+			}
+
+			ok &= expect(*read_result == test_case.expected_ok, test_case.name);
+			if (!test_case.expected_ok) {
+				ok &= expect(actual_output.empty(), test_case.name + " discards malformed output");
+			}
+			const auto parsed = parse_auth_helper_output(test_case.output);
+			ok &=
+			    expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
+			if (test_case.expected_ok) {
+				ok &= expect(actual_output == test_case.output,
+				             test_case.name + " exposes unchanged helper output");
+				ok &= expect(parsed.config_path == test_case.config_path,
+				             test_case.name + " config path parsed");
+				ok &= expect(parsed.user_models_dir == test_case.user_models_dir,
+				             test_case.name + " user models directory parsed");
+			}
+		}
+
+		return ok;
+	}
+
 	auto expect_conversation_helpers() -> bool {
 		using howdy::pam::testing::auth_token_present;
 		using howdy::pam::testing::ConversationFn;
@@ -744,7 +878,6 @@ namespace {
 
 auto main() -> int {
 	using namespace howdy::native::auth_helper_protocol;
-	using howdy::pam::testing::helper_output_value;
 
 	bool ok = true;
 
@@ -753,6 +886,8 @@ auto main() -> int {
 	ok &= expect_auth_helper_output_limit_terminates_child();
 	ok &= expect_auth_helper_output_read_error_terminates_child();
 	ok &= expect_auth_helper_output_partial_read_error_discards_output();
+	ok &= expect_auth_helper_output_child_failure_discards_output();
+	ok &= expect_auth_helper_output_protocol_validation();
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
 	ok &= expect_enabled_decisions();
@@ -762,22 +897,6 @@ auto main() -> int {
 	             "config path protocol key remains unchanged");
 	ok &= expect(std::string(kUserModelsDirKey) == "USER_MODELS_DIR",
 	             "user models directory protocol key remains unchanged");
-
-	const std::string output =
-	    "NOTICE=ignored\nCONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=/run/howdy/models\n";
-	ok &= expect(helper_output_value(output, kConfigPathKey) == "/run/howdy/config.ini",
-	             "extracts config path");
-	ok &= expect(helper_output_value(output, kUserModelsDirKey) == "/run/howdy/models",
-	             "extracts user models directory");
-	ok &= expect(helper_output_value("CONFIG_PATH=/run/howdy=config.ini\n", kConfigPathKey) ==
-	                 "/run/howdy=config.ini",
-	             "preserves equals characters in value");
-	ok &= expect(helper_output_value("CONFIG_PATH_EXTRA=wrong\nCONFIG_PATH=right",
-	                                 kConfigPathKey) == "right",
-	             "matches exact key and parses final line");
-	ok &= expect(helper_output_value(output, "MISSING").empty(), "missing key returns empty value");
-	ok &= expect(helper_output_value("CONFIG_PATH=\n", kConfigPathKey).empty(),
-	             "empty helper value remains empty");
 
 	return ok ? 0 : 1;
 }

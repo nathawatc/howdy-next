@@ -277,22 +277,62 @@ namespace {
 		}
 	}
 
-	auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
+	struct AuthHelperOutput {
+		std::string config_path;
+		std::string user_models_dir;
+		bool        valid = false;
+	};
+
+	auto set_required_helper_output_value(bool *seen, std::string *target, const std::string &value)
+	    -> bool {
+		if (*seen || value.empty()) {
+			return false;
+		}
+		*seen   = true;
+		*target = value;
+		return true;
+	}
+
+	auto parse_auth_helper_output(const std::string &output) -> AuthHelperOutput {
+		AuthHelperOutput result;
+		bool             saw_config_path     = false;
+		bool             saw_user_models_dir = false;
+
 		std::size_t offset = 0;
 		while (offset < output.size()) {
-			const auto next   = output.find('\n', offset);
-			const auto end    = next == std::string::npos ? output.size() : next;
-			const auto line   = output.substr(offset, end - offset);
-			const auto prefix = key + "=";
-			if (line.starts_with(prefix)) {
-				return line.substr(prefix.size());
+			const auto next      = output.find('\n', offset);
+			const auto end       = next == std::string::npos ? output.size() : next;
+			const auto line      = output.substr(offset, end - offset);
+			const auto separator = line.find('=');
+
+			if (separator == std::string::npos) {
+				return result;
 			}
+
+			const auto key   = line.substr(0, separator);
+			const auto value = line.substr(separator + 1);
+			if (key == howdy::native::auth_helper_protocol::kConfigPathKey) {
+				if (!set_required_helper_output_value(&saw_config_path, &result.config_path,
+				                                      value)) {
+					return result;
+				}
+			} else if (key == howdy::native::auth_helper_protocol::kUserModelsDirKey) {
+				if (!set_required_helper_output_value(&saw_user_models_dir, &result.user_models_dir,
+				                                      value)) {
+					return result;
+				}
+			} else {
+				return result;
+			}
+
 			if (next == std::string::npos) {
 				break;
 			}
 			offset = next + 1;
 		}
-		return {};
+
+		result.valid = saw_config_path && saw_user_models_dir;
+		return result;
 	}
 
 	auto wait_for_helper_process(pid_t child_pid) -> int {
@@ -363,7 +403,18 @@ namespace {
 		*output          = helper_output.output;
 		const int status = wait_for_helper_process(child_pid);
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_ERR, "Howdy auth helper failed: %s", output->c_str());
+			const auto failed_output = *output;
+			output->clear();
+			syslog(LOG_ERR, "Howdy auth helper failed: %s", failed_output.c_str());
+			return false;
+		}
+
+		const auto auth_output = parse_auth_helper_output(*output);
+		if (!auth_output.valid) {
+			const auto malformed_output = *output;
+			output->clear();
+			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s",
+			       malformed_output.c_str());
 			return false;
 		}
 		return true;
@@ -407,15 +458,14 @@ namespace {
 			return false;
 		}
 
-		runtime->config_path =
-		    helper_output_value(helper_output, howdy::native::auth_helper_protocol::kConfigPathKey);
-		runtime->user_models_dir = helper_output_value(
-		    helper_output, howdy::native::auth_helper_protocol::kUserModelsDirKey);
-		if (runtime->config_path.empty() || runtime->user_models_dir.empty()) {
-			syslog(LOG_ERR, "Howdy auth helper returned incomplete output: %s",
+		const auto auth_output = parse_auth_helper_output(helper_output);
+		if (!auth_output.valid) {
+			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s",
 			       helper_output.c_str());
 			return false;
 		}
+		runtime->config_path     = auth_output.config_path;
+		runtime->user_models_dir = auth_output.user_models_dir;
 
 		runtime->root_dir = std::filesystem::path(runtime->config_path).parent_path();
 		runtime->active   = true;
@@ -578,8 +628,11 @@ namespace howdy::pam::testing {
 		return ::read_auth_helper_output(child_pid, output_fd, output);
 	}
 
-	auto helper_output_value(const std::string &output, const std::string &key) -> std::string {
-		return ::helper_output_value(output, key);
+	auto parse_auth_helper_output(const std::string &output) -> AuthHelperOutput {
+		const auto parsed = ::parse_auth_helper_output(output);
+		return AuthHelperOutput{.config_path     = parsed.config_path,
+		                        .user_models_dir = parsed.user_models_dir,
+		                        .valid           = parsed.valid};
 	}
 
 	auto wait_for_helper_process(pid_t child_pid) -> int {
