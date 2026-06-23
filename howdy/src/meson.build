@@ -374,6 +374,22 @@ test(
 	native_user_models_test,
 )
 
+native_user_model_codec_test = executable(
+	'howdy-user-model-codec-test',
+	'storage/user_model_codec.cpp',
+	'tests/user_model_codec_test.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		nlohmann_json,
+	],
+	install: false,
+)
+
+test(
+	'native-user-model-codec',
+	native_user_model_codec_test,
+)
+
 native_clear_cli_test = executable(
 	'howdy-clear-cli-test',
 	'cli/clear.cpp',
