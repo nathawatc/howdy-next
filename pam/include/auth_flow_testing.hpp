@@ -3,6 +3,7 @@
 
 #ifdef HOWDY_PAM_TESTING
 
+#	include "common/fd_io.hpp"
 #	include "optional_task.hpp"
 #	include "prompt_workaround.hpp"
 
@@ -22,7 +23,8 @@ namespace howdy::native {
 
 namespace howdy::pam::testing {
 
-	using ConversationFn = std::function<int(int, const char *)>;
+	using ConversationFn         = std::function<int(int, const char *)>;
+	using AuthHelperOutputReader = howdy::native::BoundedReadResult (*)(int, std::size_t);
 
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void;
@@ -43,6 +45,7 @@ namespace howdy::pam::testing {
 	                                  const PromptStopPlan &plan) -> PromptStopResult;
 	auto wait_for_compare_process(pid_t child_pid) -> int;
 	auto auth_helper_output_limit() -> std::size_t;
+	auto set_auth_helper_output_reader(AuthHelperOutputReader reader) -> AuthHelperOutputReader;
 	auto read_fd_to_string(int fd) -> std::string;
 	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool;
 	auto helper_output_value(const std::string &output, const std::string &key) -> std::string;

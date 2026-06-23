@@ -12,7 +12,9 @@ namespace howdy::native {
 
 	struct BoundedReadResult {
 		std::string output;
-		bool        hit_limit = false;
+		bool        hit_limit    = false;
+		bool        read_error   = false;
+		int         error_number = 0;
 	};
 
 	inline auto write_all_to_fd(int fd, const char *data, std::size_t size) -> bool {
@@ -57,6 +59,8 @@ namespace howdy::native {
 				if (errno == EINTR) {
 					continue;
 				}
+				result.read_error   = true;
+				result.error_number = errno;
 				break;
 			}
 			if (bytes_read == 0) {

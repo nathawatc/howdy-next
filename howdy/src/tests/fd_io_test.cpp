@@ -153,9 +153,13 @@ namespace {
 		    howdy::native::read_fd_to_string_bounded(empty_pipe[0].get(), kBound);
 		ok &= expect(empty_result.output.empty(), "reads empty input");
 		ok &= expect(!empty_result.hit_limit, "empty input does not hit limit");
+		ok &= expect(!empty_result.read_error, "empty input does not report read error");
+		ok &= expect(empty_result.error_number == 0, "empty input leaves errno unset");
 		const auto invalid_result = howdy::native::read_fd_to_string_bounded(-1, kBound);
 		ok &= expect(invalid_result.output.empty(), "invalid fd returns collected empty output");
 		ok &= expect(!invalid_result.hit_limit, "invalid fd does not hit limit");
+		ok &= expect(invalid_result.read_error, "invalid fd reports read error");
+		ok &= expect(invalid_result.error_number == EBADF, "invalid fd records EBADF");
 
 		std::array<ScopedFd, 2> small_pipe;
 		ok &= expect(open_pipe(&small_pipe), "creates small read pipe");
@@ -167,6 +171,8 @@ namespace {
 		    howdy::native::read_fd_to_string_bounded(small_pipe[0].get(), kBound);
 		ok &= expect(small_result.output == small_output, "reads complete small helper output");
 		ok &= expect(!small_result.hit_limit, "small helper output does not hit limit");
+		ok &= expect(!small_result.read_error, "small helper output does not report read error");
+		ok &= expect(small_result.error_number == 0, "small helper output leaves errno unset");
 
 		auto exact_file = create_temp_file(temp_root, "exact");
 		ok &= expect(exact_file.has_value(), "creates exact-bounded input file");

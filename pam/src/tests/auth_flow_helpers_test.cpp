@@ -28,6 +28,32 @@
 
 namespace {
 
+	auto fake_partial_read_error([[maybe_unused]] int fd, [[maybe_unused]] std::size_t max_bytes)
+	    -> howdy::native::BoundedReadResult {
+		howdy::native::BoundedReadResult result;
+		result.output       = "CONFIG_PATH=/tmp/partial\n";
+		result.read_error   = true;
+		result.error_number = EIO;
+		return result;
+	}
+
+	class ScopedAuthHelperOutputReader {
+	public:
+		explicit ScopedAuthHelperOutputReader(howdy::pam::testing::AuthHelperOutputReader reader)
+		    : previous_reader_(howdy::pam::testing::set_auth_helper_output_reader(reader)) {}
+
+		ScopedAuthHelperOutputReader(const ScopedAuthHelperOutputReader &) = delete;
+		auto operator=(const ScopedAuthHelperOutputReader &)
+		    -> ScopedAuthHelperOutputReader & = delete;
+
+		~ScopedAuthHelperOutputReader() {
+			howdy::pam::testing::set_auth_helper_output_reader(previous_reader_);
+		}
+
+	private:
+		howdy::pam::testing::AuthHelperOutputReader previous_reader_ = nullptr;
+	};
+
 	class ScopedFd {
 	public:
 		ScopedFd() = default;
@@ -335,14 +361,110 @@ namespace {
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 
 		ok &= expect(!helper_ok, "auth-helper output limit fails closed");
-		ok &= expect(helper_output == limit_output, "auth-helper output-limit data is collected");
+		ok &= expect(helper_output.empty(), "auth-helper output-limit data is not exposed");
 		ok &= expect(elapsed < std::chrono::milliseconds(1500),
 		             "auth-helper output limit returns before sleeping helper exits");
 
-		int         status      = 0;
+		int status              = 0;
+		errno                   = 0;
 		const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
-		ok &=
-		    expect(wait_result < 0 && errno == ECHILD, "output-limit auth-helper child is reaped");
+		const int   wait_errno  = errno;
+		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		             "output-limit auth-helper child is reaped");
+
+		return ok;
+	}
+
+	auto expect_auth_helper_output_read_error_terminates_child() -> bool {
+		using howdy::pam::testing::read_auth_helper_output;
+
+		bool        ok        = true;
+		const pid_t child_pid = fork();
+		ok &= expect(child_pid >= 0, "forks read-error auth-helper child");
+		if (child_pid < 0) {
+			return false;
+		}
+		if (child_pid == 0) {
+			usleep(2000000);
+			_exit(0);
+		}
+
+		std::string helper_output;
+		const auto  start     = std::chrono::steady_clock::now();
+		const bool  helper_ok = read_auth_helper_output(child_pid, -1, &helper_output);
+		const auto  elapsed   = std::chrono::steady_clock::now() - start;
+
+		ok &= expect(!helper_ok, "auth-helper read error fails closed");
+		ok &= expect(helper_output.empty(), "auth-helper read error collects empty output");
+		ok &= expect(elapsed < std::chrono::milliseconds(1500),
+		             "auth-helper read error returns before sleeping helper exits");
+
+		int   status      = 0;
+		pid_t wait_result = 0;
+		do {
+			errno       = 0;
+			wait_result = waitpid(child_pid, &status, WNOHANG);
+		} while (wait_result < 0 && errno == EINTR);
+		const int wait_errno = errno;
+		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		             "read-error auth-helper child is reaped");
+
+		if (wait_result == 0) {
+			kill(child_pid, SIGKILL);
+			do {
+				errno       = 0;
+				wait_result = waitpid(child_pid, &status, 0);
+			} while (wait_result < 0 && errno == EINTR);
+			ok &= expect(wait_result == child_pid,
+			             "read-error auth-helper child cleanup reaps child");
+		} else if (wait_result < 0 && wait_errno != ECHILD) {
+			kill(child_pid, SIGKILL);
+			do {
+				errno       = 0;
+				wait_result = waitpid(child_pid, &status, 0);
+			} while (wait_result < 0 && errno == EINTR);
+		}
+
+		return ok;
+	}
+
+	auto expect_auth_helper_output_partial_read_error_discards_output() -> bool {
+		using howdy::pam::testing::read_auth_helper_output;
+
+		bool        ok        = true;
+		const pid_t child_pid = fork();
+		ok &= expect(child_pid >= 0, "forks partial-read-error auth-helper child");
+		if (child_pid < 0) {
+			return false;
+		}
+		if (child_pid == 0) {
+			usleep(2000000);
+			_exit(0);
+		}
+
+		ScopedAuthHelperOutputReader reader_override(fake_partial_read_error);
+		std::string                  helper_output = "previous output";
+		const bool helper_ok = read_auth_helper_output(child_pid, -1, &helper_output);
+
+		ok &= expect(!helper_ok, "auth-helper partial read error fails closed");
+		ok &= expect(helper_output.empty(), "auth-helper partial read error discards output");
+
+		int   status      = 0;
+		pid_t wait_result = 0;
+		do {
+			errno       = 0;
+			wait_result = waitpid(child_pid, &status, WNOHANG);
+		} while (wait_result < 0 && errno == EINTR);
+		const int wait_errno = errno;
+		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		             "partial-read-error auth-helper child is reaped");
+		if (wait_result == 0) {
+			kill(child_pid, SIGKILL);
+			do {
+				errno       = 0;
+				wait_result = waitpid(child_pid, &status, 0);
+			} while (wait_result < 0 && errno == EINTR);
+		}
 
 		return ok;
 	}
@@ -629,6 +751,8 @@ auto main() -> int {
 	ok &= expect_fd_reading();
 	ok &= expect_process_waiting();
 	ok &= expect_auth_helper_output_limit_terminates_child();
+	ok &= expect_auth_helper_output_read_error_terminates_child();
+	ok &= expect_auth_helper_output_partial_read_error_discards_output();
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
 	ok &= expect_enabled_decisions();

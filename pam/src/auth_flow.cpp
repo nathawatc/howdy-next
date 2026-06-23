@@ -58,6 +58,20 @@ namespace {
 
 	constexpr std::size_t kAuthHelperOutputLimit = 9216;
 
+#ifdef HOWDY_PAM_TESTING
+	using AuthHelperOutputReader = howdy::native::BoundedReadResult (*)(int, std::size_t);
+	AuthHelperOutputReader g_auth_helper_output_reader = nullptr;
+#endif
+
+	auto read_bounded_auth_helper_output(int output_fd) -> howdy::native::BoundedReadResult {
+#ifdef HOWDY_PAM_TESTING
+		if (g_auth_helper_output_reader != nullptr) {
+			return g_auth_helper_output_reader(output_fd, kAuthHelperOutputLimit);
+		}
+#endif
+		return howdy::native::read_fd_to_string_bounded(output_fd, kAuthHelperOutputLimit);
+	}
+
 	auto make_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
@@ -329,16 +343,24 @@ namespace {
 			return false;
 		}
 
-		const auto helper_output =
-		    howdy::native::read_fd_to_string_bounded(output_fd, kAuthHelperOutputLimit);
-		*output = helper_output.output;
+		const auto helper_output = read_bounded_auth_helper_output(output_fd);
+
+		if (helper_output.read_error) {
+			output->clear();
+			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)",
+			       strerror(helper_output.error_number), helper_output.error_number);
+			terminate_and_reap_helper_process(child_pid);
+			return false;
+		}
 
 		if (helper_output.hit_limit) {
+			output->clear();
 			syslog(LOG_ERR, "Howdy auth helper reached output limit");
 			terminate_and_reap_helper_process(child_pid);
 			return false;
 		}
 
+		*output          = helper_output.output;
 		const int status = wait_for_helper_process(child_pid);
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
 			syslog(LOG_ERR, "Howdy auth helper failed: %s", output->c_str());
@@ -540,6 +562,12 @@ namespace howdy::pam::testing {
 
 	auto auth_helper_output_limit() -> std::size_t {
 		return kAuthHelperOutputLimit;
+	}
+
+	auto set_auth_helper_output_reader(AuthHelperOutputReader reader) -> AuthHelperOutputReader {
+		const auto previous_reader  = g_auth_helper_output_reader;
+		g_auth_helper_output_reader = reader;
+		return previous_reader;
 	}
 
 	auto read_fd_to_string(int fd) -> std::string {
