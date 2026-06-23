@@ -451,6 +451,29 @@ test(
 	native_disable_cli_test,
 )
 
+native_add_cli_test = executable(
+	'howdy-add-cli-test',
+	'cli/add.cpp',
+	'tests/add_cli_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_cpp_lib,
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
+	dependencies: [
+		inih_cpp,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-add-cli',
+	native_add_cli_test,
+)
+
 native_download_models_test = executable(
 	'howdy-download-models-test',
 	'cli/download_models.cpp',
