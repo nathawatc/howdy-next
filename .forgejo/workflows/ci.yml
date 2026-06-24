@@ -22,3 +22,6 @@ jobs:
           ~/.local/bin/meson setup build
           ninja -C build
           ~/.local/bin/meson test -C build --print-errorlogs
+
+      - name: Static analysis
+        run: run-clang-tidy -p build
