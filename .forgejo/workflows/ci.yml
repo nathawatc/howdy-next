@@ -6,22 +6,17 @@ on:
 jobs:
   build:
     runs-on: codeberg-medium
-    steps:
-      - name: Install required libraries
-        run: >
-          sudo apt-get update && sudo apt-get install -y
-          make build-essential clang-tidy gettext pipx
-          libpam0g-dev libinih-dev libevdev-dev libopencv-dev
-          libcurl4-openssl-dev libssl-dev nlohmann-json3-dev ninja-build
-          && pipx install meson==1.11.1
+    container:
+      image: codeberg.org/nathawat/howdy-next:ci-1
 
+    steps:
       - uses: actions/checkout@v7
 
-      - name: Build
+      - name: Build and test
         run: |
-          ~/.local/bin/meson setup build
+          meson setup build --wrap-mode=nodownload
           ninja -C build
-          ~/.local/bin/meson test -C build --print-errorlogs
+          meson test -C build --print-errorlogs
 
       - name: Static analysis
-        run: run-clang-tidy -p build
+        run: run-clang-tidy -p build -j 2

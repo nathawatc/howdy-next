@@ -1,0 +1,27 @@
+FROM debian:sid-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends \
+		build-essential \
+		ca-certificates \
+		clang-tidy \
+		gettext \
+		git \
+		libcurl4-openssl-dev \
+		libevdev-dev \
+		libinih-dev \
+		libopencv-dev \
+		libpam0g-dev \
+		libssl-dev \
+		meson \
+		ninja-build \
+		nodejs \
+		nlohmann-json3-dev \
+		pkg-config \
+	&& rm -rf /var/lib/apt/lists/*
+
+LABEL org.opencontainers.image.source="https://codeberg.org/nathawat/howdy-next" \
+	  org.opencontainers.image.description="Howdy Next CI build image" \
+	  org.opencontainers.image.licenses="MIT"
