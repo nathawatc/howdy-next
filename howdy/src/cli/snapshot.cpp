@@ -1,4 +1,5 @@
 #include "cli/snapshot_cli.hpp"
+#include "cli/snapshot_internal.hpp"
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 #include "config/runtime_config.hpp"
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <opencv2/imgcodecs.hpp>
@@ -19,10 +21,13 @@
 
 namespace {
 
-	constexpr int    kExitOk                = 0;
-	constexpr int    kExitAbort             = 1;
-	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
-	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
+	constexpr int         kExitOk                = 0;
+	constexpr int         kExitAbort             = 1;
+	constexpr std::size_t kSnapshotFrameCount    = 4;
+	constexpr mode_t      kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
+	constexpr mode_t      kSnapshotFileMode      = S_IRUSR | S_IWUSR;
+
+	namespace snapshot_internal = howdy::native::snapshot_internal;
 
 	auto snapshot_path() -> std::filesystem::path {
 		const auto now  = std::chrono::system_clock::now();
@@ -105,12 +110,84 @@ namespace {
 		return filepath;
 	}
 
+	auto load_runtime_config_dependency(void *context) -> howdy::native::RuntimeConfigLoadResult {
+		(void)context;
+		return howdy::native::load_runtime_config();
+	}
+
+	auto capture_frames_dependency(void *context, const howdy::native::RuntimeConfig &config)
+	    -> snapshot_internal::SnapshotCaptureResult {
+		(void)context;
+
+		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
+		if (!capture.open()) {
+			return snapshot_internal::SnapshotCaptureResult{
+			    .status        = snapshot_internal::SnapshotCaptureStatus::kOpenError,
+			    .error_message = capture.error_message(),
+			};
+		}
+
+		std::vector<cv::Mat> frames;
+		frames.reserve(kSnapshotFrameCount);
+		while (frames.size() < kSnapshotFrameCount) {
+			cv::Mat frame;
+			if (!capture.read(frame)) {
+				capture.release();
+				return snapshot_internal::SnapshotCaptureResult{
+				    .status = snapshot_internal::SnapshotCaptureStatus::kReadError,
+				};
+			}
+			frames.push_back(frame);
+		}
+		capture.release();
+
+		return snapshot_internal::SnapshotCaptureResult{
+		    .status = snapshot_internal::SnapshotCaptureStatus::kOk,
+		    .frames = std::move(frames),
+		};
+	}
+
+	auto write_snapshot_dependency(void *context, const std::vector<cv::Mat> &frames,
+	                               const howdy::native::RuntimeConfig &config)
+	    -> snapshot_internal::SnapshotWriteResult {
+		(void)context;
+
+		const auto now  = std::chrono::system_clock::now();
+		const auto time = std::chrono::system_clock::to_time_t(now);
+		std::tm    buffer{};
+		gmtime_r(&time, &buffer);
+		std::array<char, 64> timestr{};
+		std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer);
+
+		const auto filepath = generate_snapshot(
+		    frames, {
+		                "GENERATED SNAPSHOT",
+		                std::string("Date: ") + timestr.data(),
+		                "Dark threshold config: " + std::to_string(config.video.dark_threshold),
+		                "SFace threshold config: " + std::to_string(config.face.sface_threshold),
+		            });
+		if (filepath.empty()) {
+			return snapshot_internal::SnapshotWriteResult{};
+		}
+		return snapshot_internal::SnapshotWriteResult{
+		    .ok   = true,
+		    .path = filepath,
+		};
+	}
+
 }  // namespace
 
-int snapshot_main(int argc, char **argv) {
+auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
+    int argc, char **argv, const SnapshotDependencies &dependencies) -> int {
 	(void)argc;
 	(void)argv;
-	auto config_result = howdy::native::load_runtime_config();
+
+	if (dependencies.load_runtime_config == nullptr || dependencies.capture_frames == nullptr ||
+	    dependencies.write_snapshot == nullptr) {
+		return kExitAbort;
+	}
+
+	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
@@ -118,45 +195,44 @@ int snapshot_main(int argc, char **argv) {
 	}
 	const auto &config = *config_result.config;
 
-	howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
-	if (!capture.open()) {
-		std::cerr << capture.error_message() << "\n";
+	auto capture_result = dependencies.capture_frames(dependencies.context, config);
+	switch (capture_result.status) {
+		case SnapshotCaptureStatus::kOk:
+			break;
+		case SnapshotCaptureStatus::kOpenError:
+			std::cerr << capture_result.error_message << "\n";
+			return kExitAbort;
+		case SnapshotCaptureStatus::kReadError:
+			std::cerr << "Failed to read frame from camera\n";
+			return kExitAbort;
+		default:
+			std::cerr << "Internal error: unknown snapshot capture status\n";
+			return kExitAbort;
+	}
+
+	if (capture_result.frames.size() != kSnapshotFrameCount) {
+		std::cerr << "Internal error: snapshot capture returned unexpected frame count\n";
 		return kExitAbort;
 	}
 
-	std::vector<cv::Mat> frames;
-	frames.reserve(4);
-	while (frames.size() < 4) {
-		cv::Mat frame;
-		if (!capture.read(frame)) {
-			capture.release();
-			std::cerr << "Failed to read frame from camera\n";
-			return kExitAbort;
-		}
-		frames.push_back(frame);
-	}
-	capture.release();
-
-	const auto now  = std::chrono::system_clock::now();
-	const auto time = std::chrono::system_clock::to_time_t(now);
-	std::tm    buffer{};
-	gmtime_r(&time, &buffer);
-	std::array<char, 64> timestr{};
-	std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer);
-
-	const auto filepath = generate_snapshot(
-	    frames, {
-	                "GENERATED SNAPSHOT",
-	                std::string("Date: ") + timestr.data(),
-	                "Dark threshold config: " + std::to_string(config.video.dark_threshold),
-	                "SFace threshold config: " + std::to_string(config.face.sface_threshold),
-	            });
-	if (filepath.empty()) {
+	const auto write_result =
+	    dependencies.write_snapshot(dependencies.context, capture_result.frames, config);
+	if (!write_result.ok || write_result.path.empty()) {
 		std::cerr << "Failed to write snapshot\n";
 		return kExitAbort;
 	}
 
 	std::cout << "Generated snapshot saved as\n";
-	std::cout << filepath.string() << "\n";
+	std::cout << write_result.path.string() << "\n";
 	return kExitOk;
+}
+
+auto snapshot_main(int argc, char **argv) -> int {
+	return howdy::native::snapshot_internal::snapshot_main_with_dependencies(
+	    argc, argv,
+	    howdy::native::snapshot_internal::SnapshotDependencies{
+	        .load_runtime_config = load_runtime_config_dependency,
+	        .capture_frames      = capture_frames_dependency,
+	        .write_snapshot      = write_snapshot_dependency,
+	    });
 }

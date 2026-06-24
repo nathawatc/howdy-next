@@ -474,6 +474,25 @@ test(
 	native_add_cli_test,
 )
 
+native_snapshot_cli_test = executable(
+	'howdy-snapshot-cli-test',
+	'cli/snapshot.cpp',
+	'tests/snapshot_cli_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-snapshot-cli',
+	native_snapshot_cli_test,
+)
+
 native_download_models_test = executable(
 	'howdy-download-models-test',
 	'cli/download_models.cpp',
