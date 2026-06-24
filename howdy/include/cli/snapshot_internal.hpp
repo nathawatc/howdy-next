@@ -8,6 +8,8 @@
 
 #include <opencv2/core/mat.hpp>
 
+#include <sys/stat.h>
+
 namespace howdy::native::snapshot_internal {
 
 	enum class SnapshotCaptureStatus {
@@ -40,6 +42,26 @@ namespace howdy::native::snapshot_internal {
 		CaptureFramesFn     capture_frames      = nullptr;
 		WriteSnapshotFn     write_snapshot      = nullptr;
 	};
+
+	using SnapshotWriteImageFn = bool (*)(void *context, const std::filesystem::path &path,
+	                                      const cv::Mat &image);
+	using SnapshotChmodPathFn  = int (*)(void *context, const std::filesystem::path &path,
+	                                     mode_t mode);
+	using SnapshotSyncParentFn = void (*)(void *context, const std::filesystem::path &path);
+
+	struct SnapshotWriterDependencies {
+		void                *context     = nullptr;
+		SnapshotWriteImageFn write_image = nullptr;
+		SnapshotChmodPathFn  chmod_path  = nullptr;
+		SnapshotSyncParentFn sync_parent = nullptr;
+	};
+
+	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool;
+
+	auto write_snapshot_at_path(const std::vector<cv::Mat>       &frames,
+	                            const std::vector<std::string>   &text_lines,
+	                            const std::filesystem::path      &path,
+	                            const SnapshotWriterDependencies &dependencies) -> bool;
 
 	auto snapshot_main_with_dependencies(int argc, char **argv,
 	                                     const SnapshotDependencies &dependencies) -> int;

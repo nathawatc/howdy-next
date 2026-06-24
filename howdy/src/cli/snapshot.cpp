@@ -39,74 +39,36 @@ namespace {
 		return howdy::native::resolve_log_path() / "snapshots" / filename.data();
 	}
 
-	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool {
-		const auto log_root = directory.parent_path();
-		if (std::filesystem::exists(log_root)) {
-			const auto root_security =
-			    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
-			if (!root_security.ok) {
-				std::cerr << root_security.error_message << "\n";
-				return false;
-			}
-		}
+	auto write_image_dependency(void *context, const std::filesystem::path &path,
+	                            const cv::Mat &image) -> bool {
+		(void)context;
+		return cv::imwrite(path.string(), image);
+	}
 
-		std::error_code ec;
-		std::filesystem::create_directories(directory, ec);
-		if (ec) {
-			std::cerr << "Failed to create snapshot directory: " << directory << "\n";
-			return false;
-		}
-		if (chmod(log_root.c_str(), kSnapshotDirectoryMode) != 0 ||
-		    chmod(directory.c_str(), kSnapshotDirectoryMode) != 0) {
-			std::cerr << "Failed to secure snapshot directory: " << directory << "\n";
-			return false;
-		}
+	auto chmod_path_dependency(void *context, const std::filesystem::path &path, mode_t mode)
+	    -> int {
+		(void)context;
+		return chmod(path.c_str(), mode);
+	}
 
-		const auto root_security =
-		    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
-		if (!root_security.ok) {
-			std::cerr << root_security.error_message << "\n";
-			return false;
-		}
-
-		const auto directory_security =
-		    howdy::native::check_secure_root_owned_directory_tree(directory, "Snapshot directory");
-		if (!directory_security.ok) {
-			std::cerr << directory_security.error_message << "\n";
-			return false;
-		}
-		return true;
+	auto sync_parent_dependency(void *context, const std::filesystem::path &path) -> void {
+		(void)context;
+		howdy::native::sync_parent_directory(path);
 	}
 
 	auto generate_snapshot(const std::vector<cv::Mat>     &frames,
 	                       const std::vector<std::string> &text_lines) -> std::filesystem::path {
-		const int frame_height = frames.front().rows;
-		cv::Mat   snap;
-		cv::hconcat(frames, snap);
-		cv::Mat padded;
-		cv::copyMakeBorder(snap, padded, 0, (static_cast<int>(text_lines.size()) * 20) + 40, 0, 0,
-		                   cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
-		snap = padded;
-
-		for (std::size_t index = 0; index < text_lines.size(); ++index) {
-			const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
-			cv::putText(snap, text_lines[index], cv::Point(30, padding_top),
-			            cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
-		}
-
-		auto filepath = snapshot_path();
-		if (!ensure_snapshot_directory(filepath.parent_path())) {
+		auto       filepath     = snapshot_path();
+		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
+		    .context     = nullptr,
+		    .write_image = write_image_dependency,
+		    .chmod_path  = chmod_path_dependency,
+		    .sync_parent = sync_parent_dependency,
+		};
+		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath,
+		                                               dependencies)) {
 			return {};
 		}
-		if (!cv::imwrite(filepath.string(), snap)) {
-			return {};
-		}
-		if (chmod(filepath.c_str(), kSnapshotFileMode) != 0) {
-			std::error_code ec;
-			std::filesystem::remove(filepath, ec);
-			return {};
-		}
-		howdy::native::sync_parent_directory(filepath);
 		return filepath;
 	}
 
@@ -176,6 +138,86 @@ namespace {
 	}
 
 }  // namespace
+
+auto howdy::native::snapshot_internal::ensure_snapshot_directory(
+    const std::filesystem::path &directory) -> bool {
+	const auto log_root = directory.parent_path();
+	if (std::filesystem::exists(log_root)) {
+		const auto root_security =
+		    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
+		if (!root_security.ok) {
+			std::cerr << root_security.error_message << "\n";
+			return false;
+		}
+	}
+
+	std::error_code ec;
+	std::filesystem::create_directories(directory, ec);
+	if (ec) {
+		std::cerr << "Failed to create snapshot directory: " << directory << "\n";
+		return false;
+	}
+	if (chmod(log_root.c_str(), kSnapshotDirectoryMode) != 0 ||
+	    chmod(directory.c_str(), kSnapshotDirectoryMode) != 0) {
+		std::cerr << "Failed to secure snapshot directory: " << directory << "\n";
+		return false;
+	}
+
+	const auto root_security =
+	    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
+	if (!root_security.ok) {
+		std::cerr << root_security.error_message << "\n";
+		return false;
+	}
+
+	const auto directory_security =
+	    howdy::native::check_secure_root_owned_directory_tree(directory, "Snapshot directory");
+	if (!directory_security.ok) {
+		std::cerr << directory_security.error_message << "\n";
+		return false;
+	}
+	return true;
+}
+
+auto howdy::native::snapshot_internal::write_snapshot_at_path(
+    const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
+    const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies) -> bool {
+	if (frames.empty() || dependencies.write_image == nullptr ||
+	    dependencies.chmod_path == nullptr || dependencies.sync_parent == nullptr) {
+		return false;
+	}
+
+	if (!ensure_snapshot_directory(path.parent_path())) {
+		return false;
+	}
+
+	const int frame_height = frames.front().rows;
+	cv::Mat   snap;
+	cv::hconcat(frames, snap);
+	cv::Mat padded;
+	cv::copyMakeBorder(snap, padded, 0, (static_cast<int>(text_lines.size()) * 20) + 40, 0, 0,
+	                   cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
+	snap = padded;
+
+	for (std::size_t index = 0; index < text_lines.size(); ++index) {
+		const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
+		cv::putText(snap, text_lines[index], cv::Point(30, padding_top), cv::FONT_HERSHEY_SIMPLEX,
+		            0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
+	}
+
+	if (!dependencies.write_image(dependencies.context, path, snap)) {
+		std::error_code ec;
+		std::filesystem::remove(path, ec);
+		return false;
+	}
+	if (dependencies.chmod_path(dependencies.context, path, kSnapshotFileMode) != 0) {
+		std::error_code ec;
+		std::filesystem::remove(path, ec);
+		return false;
+	}
+	dependencies.sync_parent(dependencies.context, path);
+	return true;
+}
 
 auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
     int argc, char **argv, const SnapshotDependencies &dependencies) -> int {
