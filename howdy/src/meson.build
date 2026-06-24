@@ -1,4 +1,4 @@
-opencv4 = dependency('opencv4')
+opencv4 = dependency('opencv4', include_type: 'system')
 inih_cpp = dependency('INIReader')
 nlohmann_json = dependency('nlohmann_json')
 libcurl = dependency('libcurl')
