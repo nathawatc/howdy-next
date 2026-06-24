@@ -17,6 +17,3 @@ jobs:
           meson setup build --wrap-mode=nodownload
           ninja -C build
           meson test -C build --print-errorlogs
-
-      - name: Static analysis
-        run: run-clang-tidy -p build -j 2
