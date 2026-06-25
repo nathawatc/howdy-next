@@ -1,4 +1,4 @@
-#include "cli/test_internal.hpp"
+#include "cli/test_cli_internal.hpp"
 #include "common/compare_logic.hpp"
 
 #include <iostream>
@@ -106,18 +106,18 @@ namespace {
 
 	auto face_model_ready_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
 	                               const std::string &user)
-	    -> howdy::native::test_internal::TestPreflightOperationResult {
+	    -> howdy::native::test_cli_internal::TestPreflightOperationResult {
 		(void)config;
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->face_calls;
 		context->sequence.emplace_back("face");
 		context->face_user = user;
 		if (!context->face_model_ok) {
-			return howdy::native::test_internal::TestPreflightOperationResult{
+			return howdy::native::test_cli_internal::TestPreflightOperationResult{
 			    .error_message = context->face_model_error,
 			};
 		}
-		return howdy::native::test_internal::TestPreflightOperationResult{.ok = true};
+		return howdy::native::test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
 	auto has_graphical_display_callback(void *raw_context) -> bool {
@@ -129,18 +129,18 @@ namespace {
 
 	auto open_camera_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
 	                          const std::string &device_path)
-	    -> howdy::native::test_internal::TestPreflightOperationResult {
+	    -> howdy::native::test_cli_internal::TestPreflightOperationResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->open_calls;
 		context->sequence.emplace_back("open");
 		context->open_config        = config;
 		context->opened_device_path = device_path;
 		if (!context->camera_open_ok) {
-			return howdy::native::test_internal::TestPreflightOperationResult{
+			return howdy::native::test_cli_internal::TestPreflightOperationResult{
 			    .error_message = context->camera_open_error,
 			};
 		}
-		return howdy::native::test_internal::TestPreflightOperationResult{.ok = true};
+		return howdy::native::test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
 	auto read_camera_callback(void *raw_context) -> bool {
@@ -164,8 +164,8 @@ namespace {
 	}
 
 	auto preflight_dependencies(TestCliTestContext &context)
-	    -> howdy::native::test_internal::TestPreviewPreflightDependencies {
-		return howdy::native::test_internal::TestPreviewPreflightDependencies{
+	    -> howdy::native::test_cli_internal::TestPreviewPreflightDependencies {
+		return howdy::native::test_cli_internal::TestPreviewPreflightDependencies{
 		    .context               = &context,
 		    .face_model_ready      = face_model_ready_callback,
 		    .has_graphical_display = has_graphical_display_callback,
@@ -178,33 +178,33 @@ namespace {
 
 	auto run_preview_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
 	                          const std::string &user, const std::string &device_path)
-	    -> howdy::native::test_internal::TestPreviewResult {
+	    -> howdy::native::test_cli_internal::TestPreviewResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->preview_calls;
 		context->preview_config      = config;
 		context->preview_user        = user;
 		context->preview_device_path = device_path;
-		return howdy::native::test_internal::run_preview_preflight(
+		return howdy::native::test_cli_internal::run_preview_preflight(
 		    config, user, device_path, preflight_dependencies(*context));
 	}
 
 	auto test_dependencies(TestCliTestContext &context)
-	    -> howdy::native::test_internal::TestDependencies {
-		return howdy::native::test_internal::TestDependencies{
+	    -> howdy::native::test_cli_internal::TestDependencies {
+		return howdy::native::test_cli_internal::TestDependencies{
 		    .context             = &context,
 		    .load_runtime_config = load_runtime_config_callback,
 		    .run_preview         = run_preview_callback,
 		};
 	}
 
-	auto run_test_with_dependencies(howdy::native::test_internal::TestDependencies dependencies,
+	auto run_test_with_dependencies(howdy::native::test_cli_internal::TestDependencies dependencies,
 	                                std::vector<std::string> arguments) -> int {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
 			argv.push_back(argument.data());
 		}
-		return howdy::native::test_internal::test_main_with_dependencies(
+		return howdy::native::test_cli_internal::test_main_with_dependencies(
 		    static_cast<int>(argv.size()), argv.data(), dependencies);
 	}
 
@@ -433,13 +433,13 @@ namespace {
 	}
 
 	auto preview_brightness_presentation_maps_classifier_to_overlay_behavior() -> bool {
-		namespace test_internal = howdy::native::test_internal;
+		namespace test_cli_internal = howdy::native::test_cli_internal;
 
-		const auto black = test_internal::preview_brightness_presentation(
+		const auto black = test_cli_internal::preview_brightness_presentation(
 		    howdy::native::BrightnessDecision::kBlackFrame);
-		const auto too_dark = test_internal::preview_brightness_presentation(
+		const auto too_dark = test_cli_internal::preview_brightness_presentation(
 		    howdy::native::BrightnessDecision::kTooDark);
-		const auto process = test_internal::preview_brightness_presentation(
+		const auto process = test_cli_internal::preview_brightness_presentation(
 		    howdy::native::BrightnessDecision::kProcessFrame);
 
 		bool ok = true;
@@ -456,20 +456,21 @@ namespace {
 	}
 
 	auto graphical_environment_helper_checks_display_values() -> bool {
-		namespace test_internal = howdy::native::test_internal;
+		namespace test_cli_internal = howdy::native::test_cli_internal;
 
 		bool ok = true;
-		ok &= expect(!test_internal::has_graphical_display_environment("", "", ""),
+		ok &= expect(!test_cli_internal::has_graphical_display_environment("", "", ""),
 		             "empty display values are not graphical");
-		ok &= expect(test_internal::has_graphical_display_environment(":0", "", ""),
+		ok &= expect(test_cli_internal::has_graphical_display_environment(":0", "", ""),
 		             "DISPLAY enables graphical environment");
-		ok &= expect(!test_internal::has_graphical_display_environment("", "wayland-0", ""),
+		ok &= expect(!test_cli_internal::has_graphical_display_environment("", "wayland-0", ""),
 		             "Wayland display without runtime dir is not graphical");
 		ok &= expect(
-		    test_internal::has_graphical_display_environment("", "wayland-0", "/run/user/1000"),
+		    test_cli_internal::has_graphical_display_environment("", "wayland-0", "/run/user/1000"),
 		    "Wayland display with runtime dir is graphical");
-		ok &= expect(!test_internal::has_graphical_display_environment("", "", "/run/user/1000"),
-		             "empty DISPLAY does not count as graphical");
+		ok &=
+		    expect(!test_cli_internal::has_graphical_display_environment("", "", "/run/user/1000"),
+		           "empty DISPLAY does not count as graphical");
 		return ok;
 	}
 
@@ -480,10 +481,10 @@ namespace {
 		auto run_missing_preflight = [&](auto clear_callback, const std::string &message) -> bool {
 			auto missing_dependencies = dependencies;
 			clear_callback(missing_dependencies);
-			const auto result = howdy::native::test_internal::run_preview_preflight(
+			const auto result = howdy::native::test_cli_internal::run_preview_preflight(
 			    *context.config_result.config, "", "", missing_dependencies);
 			return expect(result.status ==
-			                  howdy::native::test_internal::TestPreviewStatus::kFaceModelError,
+			                  howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
 			              message + " returns face model error") &&
 			       expect(
 			           result.error_message.contains("missing test preview preflight dependency"),
@@ -551,7 +552,7 @@ namespace {
 		}
 		{
 			const int result = run_test_with_dependencies(
-			    howdy::native::test_internal::TestDependencies{}, {"howdy-test"});
+			    howdy::native::test_cli_internal::TestDependencies{}, {"howdy-test"});
 
 			ok &= expect(result == 1, "empty dependencies return 1");
 		}

@@ -9,7 +9,7 @@ namespace howdy::native {
 	enum class BrightnessDecision;
 }
 
-namespace howdy::native::test_internal {
+namespace howdy::native::test_cli_internal {
 
 	enum class TestPreviewStatus {
 		kOk,
@@ -26,7 +26,7 @@ namespace howdy::native::test_internal {
 		std::string       device_path;
 	};
 
-	struct TestBrightnessPresentation {
+	struct PreviewBrightnessPresentation {
 		const char *frame_label  = "";
 		bool        detect_faces = false;
 	};
@@ -69,9 +69,8 @@ namespace howdy::native::test_internal {
 
 	auto test_main_with_dependencies(int argc, char **argv, const TestDependencies &dependencies)
 	    -> int;
-
 	auto preview_brightness_presentation(howdy::native::BrightnessDecision decision)
-	    -> TestBrightnessPresentation;
+	    -> PreviewBrightnessPresentation;
 
 	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                           const std::string                      &device_path,
@@ -82,4 +81,4 @@ namespace howdy::native::test_internal {
 	                                       std::string_view wayland_display,
 	                                       std::string_view runtime_dir) -> bool;
 
-}  // namespace howdy::native::test_internal
+}  // namespace howdy::native::test_cli_internal
