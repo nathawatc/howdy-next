@@ -82,8 +82,8 @@ namespace {
 		SignalHandler previous_sigxfsz = SIG_DFL;
 		bool          signal_changed   = false;
 
-		FileSizeLimitGuard() {
-			have_original = getrlimit(RLIMIT_FSIZE, &original) == 0;
+		FileSizeLimitGuard()
+		    : have_original(getrlimit(RLIMIT_FSIZE, &original) == 0) {
 			if (have_original) {
 				previous_sigxfsz = std::signal(SIGXFSZ, SIG_IGN);
 				signal_changed   = previous_sigxfsz != SIG_ERR;

@@ -1,5 +1,6 @@
-# Strict but pragmatic - Rust/Zig inspired
-# Excludes checks that fail on system headers (libevdev)
+# Strict, selective policy.
+# Explicit misc/cppcoreguidelines checks prevent future clang-tidy releases
+# from silently widening CI policy. System headers stay excluded.
 
 Checks: "
   clang-diagnostic-*,
@@ -8,8 +9,14 @@ Checks: "
   modernize-*,
   performance-*,
   readability-*,
-  -misc-include-cleaner,
-  -misc-unused-aliases,
+  misc-throw-by-value-catch-by-reference,
+  misc-static-assert,
+  misc-uniqueptr-reset-release,
+  misc-header-include-cycle,
+  misc-definitions-in-headers,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-prefer-member-initializer,
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-function-cognitive-complexity,
@@ -18,16 +25,6 @@ Checks: "
   -modernize-use-trailing-return-type,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
-  -cppcoreguidelines-pro-type-vararg,
-  -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-special-member-functions,
-  -cppcoreguidelines-macro-usage,
-  -llvm-prefer-static-over-anonymous-namespace,
-  -misc-use-internal-linkage,
-  -google-readability-todo,
-  -google-build-using-namespace,
-  -llvm-header-guard,
   -performance-enum-size,
   -modernize-use-using"
 
@@ -38,8 +35,13 @@ WarningsAsErrors: "
   modernize-*,
   performance-*,
   readability-*,
-  -misc-include-cleaner,
-  -misc-unused-aliases,
+  misc-throw-by-value-catch-by-reference,
+  misc-static-assert,
+  misc-uniqueptr-reset-release,
+  misc-header-include-cycle,
+  misc-definitions-in-headers,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-pro-type-cstyle-cast,
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-function-cognitive-complexity,
@@ -48,16 +50,6 @@ WarningsAsErrors: "
   -modernize-use-trailing-return-type,
   -bugprone-easily-swappable-parameters,
   -bugprone-implicit-widening-of-multiplication-result,
-  -cppcoreguidelines-pro-type-vararg,
-  -cppcoreguidelines-pro-type-reinterpret-cast,
-  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
-  -cppcoreguidelines-special-member-functions,
-  -cppcoreguidelines-macro-usage,
-  -llvm-prefer-static-over-anonymous-namespace,
-  -misc-use-internal-linkage,
-  -google-readability-todo,
-  -google-build-using-namespace,
-  -llvm-header-guard,
   -performance-enum-size,
   -modernize-use-using"
 

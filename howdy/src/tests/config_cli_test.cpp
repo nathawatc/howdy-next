@@ -64,8 +64,8 @@ namespace {
 		int  saved_stdout = -1;
 		bool active       = false;
 
-		explicit StdoutRedirectGuard(const std::filesystem::path &path) {
-			saved_stdout = dup(STDOUT_FILENO);
+		explicit StdoutRedirectGuard(const std::filesystem::path &path)
+		    : saved_stdout(dup(STDOUT_FILENO)) {
 			if (saved_stdout < 0) {
 				return;
 			}

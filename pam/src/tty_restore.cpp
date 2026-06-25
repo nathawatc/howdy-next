@@ -40,8 +40,8 @@ namespace {
 
 }  // namespace
 
-TtyRestoreContext::TtyRestoreContext(pam_handle *pamh) {
-	fd_ = open_tty_fd(pamh);
+TtyRestoreContext::TtyRestoreContext(pam_handle *pamh)
+    : fd_(open_tty_fd(pamh)) {
 	if (fd_ < 0) {
 		return;
 	}

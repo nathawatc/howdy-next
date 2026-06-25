@@ -14,7 +14,9 @@
 
 namespace howdy::native {
 
-	FaceModel::FaceModel(const FaceConfig &config) {
+	FaceModel::FaceModel(const FaceConfig &config)
+	    : metric_(config.sface_metric)
+	    , threshold_(config.sface_threshold) {
 		const auto models_dir = resolve_models_dir();
 		const auto yunet_model =
 		    resolve_model_path(config.yunet_model, (models_dir / kYunetModel).string());
@@ -33,8 +35,6 @@ namespace howdy::native {
 		const auto score_threshold = config.yunet_score_threshold;
 		const auto nms_threshold   = config.yunet_nms_threshold;
 		const auto top_k           = config.yunet_top_k;
-		metric_                    = config.sface_metric;
-		threshold_                 = config.sface_threshold;
 
 		try {
 			detector_   = cv::FaceDetectorYN::create(yunet_model, "", input_size_, score_threshold,
