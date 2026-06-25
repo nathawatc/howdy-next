@@ -1,6 +1,6 @@
 # Howdy Next
 
-A modernized fork of original Howdy, Facial recognition authentication for Linux.
+Security-focused C++ rewrite of Howdy for facial-recognition authentication on Linux
 
 ## Install from AUR
 
