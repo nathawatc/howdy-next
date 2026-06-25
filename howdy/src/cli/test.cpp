@@ -1,5 +1,6 @@
 #include "cli/test_cli.hpp"
 #include "cli/test_internal.hpp"
+#include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
@@ -337,14 +338,18 @@ namespace {
 					            cv::LINE_AA);
 				}
 
-				if (brightness.darkness > dark_threshold) {
-					cv::putText(overlay, "DARK FRAME", cv::Point(width - 68, 16),
-					            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0,
-					            cv::LINE_AA);
+				const auto brightness_decision = howdy::native::classify_brightness(
+				    brightness.hist_total, brightness.darkness, dark_threshold);
+				const auto brightness_presentation =
+				    test_internal::preview_brightness_presentation(brightness_decision);
+				if (!brightness_presentation.detect_faces) {
+					cv::putText(overlay, brightness_presentation.frame_label,
+					            cv::Point(width - 68, 16), cv::FONT_HERSHEY_SIMPLEX, 0.3,
+					            cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
 				} else {
-					cv::putText(overlay, "SCAN FRAME", cv::Point(width - 68, 16),
-					            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0,
-					            cv::LINE_AA);
+					cv::putText(overlay, brightness_presentation.frame_label,
+					            cv::Point(width - 68, 16), cv::FONT_HERSHEY_SIMPLEX, 0.3,
+					            cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
 
 					const auto recognition_start = std::chrono::steady_clock::now();
 					auto       face_frame        = face_model.prepare_frame(gray_frame);
@@ -424,6 +429,20 @@ namespace {
 	}
 
 }  // namespace
+
+auto howdy::native::test_internal::preview_brightness_presentation(
+    howdy::native::BrightnessDecision decision) -> TestBrightnessPresentation {
+	if (decision == howdy::native::BrightnessDecision::kProcessFrame) {
+		return TestBrightnessPresentation{
+		    .frame_label  = "SCAN FRAME",
+		    .detect_faces = true,
+		};
+	}
+	return TestBrightnessPresentation{
+	    .frame_label  = "DARK FRAME",
+	    .detect_faces = false,
+	};
+}
 
 auto howdy::native::test_internal::run_preview_preflight(
     const howdy::native::RuntimeConfig &config, const std::string &user,

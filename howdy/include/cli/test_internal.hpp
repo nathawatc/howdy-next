@@ -5,6 +5,10 @@
 #include <string>
 #include <string_view>
 
+namespace howdy::native {
+	enum class BrightnessDecision;
+}
+
 namespace howdy::native::test_internal {
 
 	enum class TestPreviewStatus {
@@ -20,6 +24,11 @@ namespace howdy::native::test_internal {
 		TestPreviewStatus status = TestPreviewStatus::kFaceModelError;
 		std::string       error_message;
 		std::string       device_path;
+	};
+
+	struct TestBrightnessPresentation {
+		const char *frame_label  = "";
+		bool        detect_faces = false;
 	};
 
 	struct TestPreflightOperationResult {
@@ -60,6 +69,9 @@ namespace howdy::native::test_internal {
 
 	auto test_main_with_dependencies(int argc, char **argv, const TestDependencies &dependencies)
 	    -> int;
+
+	auto preview_brightness_presentation(howdy::native::BrightnessDecision decision)
+	    -> TestBrightnessPresentation;
 
 	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                           const std::string                      &device_path,

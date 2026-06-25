@@ -482,6 +482,7 @@ native_test_cli_test = executable(
 	link_with: [
 		native_cpp_lib,
 		native_frame_processing_lib,
+		native_compare_logic_lib,
 	],
 	dependencies: [
 		inih_cpp,
@@ -691,6 +692,7 @@ native_test = executable(
 	link_with: [
 		native_cpp_lib,
 		native_frame_processing_lib,
+		native_compare_logic_lib,
 	],
 	dependencies: [
 		inih_cpp,

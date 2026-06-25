@@ -1,4 +1,5 @@
 #include "cli/test_internal.hpp"
+#include "common/compare_logic.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -431,6 +432,29 @@ namespace {
 		return ok;
 	}
 
+	auto preview_brightness_presentation_maps_classifier_to_overlay_behavior() -> bool {
+		namespace test_internal = howdy::native::test_internal;
+
+		const auto black = test_internal::preview_brightness_presentation(
+		    howdy::native::BrightnessDecision::kBlackFrame);
+		const auto too_dark = test_internal::preview_brightness_presentation(
+		    howdy::native::BrightnessDecision::kTooDark);
+		const auto process = test_internal::preview_brightness_presentation(
+		    howdy::native::BrightnessDecision::kProcessFrame);
+
+		bool ok = true;
+		ok &= expect(std::string(black.frame_label) == "DARK FRAME",
+		             "black frame uses dark overlay label");
+		ok &= expect(!black.detect_faces, "black frame skips face detection");
+		ok &= expect(std::string(too_dark.frame_label) == "DARK FRAME",
+		             "too-dark frame uses dark overlay label");
+		ok &= expect(!too_dark.detect_faces, "too-dark frame skips face detection");
+		ok &= expect(std::string(process.frame_label) == "SCAN FRAME",
+		             "processable frame uses scan overlay label");
+		ok &= expect(process.detect_faces, "processable frame runs face detection");
+		return ok;
+	}
+
 	auto graphical_environment_helper_checks_display_values() -> bool {
 		namespace test_internal = howdy::native::test_internal;
 
@@ -548,6 +572,7 @@ auto main() -> int {
 	ok &= configured_device_default_is_used_for_camera_open();
 	ok &= device_override_is_used_for_camera_open();
 	ok &= gui_initialization_runs_before_first_camera_read();
+	ok &= preview_brightness_presentation_maps_classifier_to_overlay_behavior();
 	ok &= graphical_environment_helper_checks_display_values();
 	ok &= missing_preflight_dependency_callbacks_fail_closed();
 	ok &= missing_dependency_callbacks_fail_closed();

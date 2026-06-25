@@ -45,6 +45,9 @@ auto main() -> int {
 	ok &= expect(howdy::native::classify_brightness(5.0, 100.0F, 50.0F) ==
 	                 howdy::native::BrightnessDecision::kBlackFrame,
 	             "100 percent darkness is black frame");
+	ok &= expect(howdy::native::classify_brightness(5.0, 100.0F, 100.0F) ==
+	                 howdy::native::BrightnessDecision::kBlackFrame,
+	             "black frame classification wins at maximum threshold");
 	ok &= expect(howdy::native::classify_brightness(5.0, 70.0F, 50.0F) ==
 	                 howdy::native::BrightnessDecision::kTooDark,
 	             "above threshold is too dark");
