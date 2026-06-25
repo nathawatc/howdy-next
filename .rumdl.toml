@@ -26,10 +26,10 @@ extend-enable = ["MD060", "MD063"]
 # ]
 
 # List of file/directory patterns to exclude from linting
-exclude = [
-    "AGENTS.md",
-    "**/AGENTS.md",
-]
+# exclude = [
+#    "AGENTS.md",
+#    "**/AGENTS.md"
+# ]
 
 # Respect .gitignore files when scanning directories (default: true)
 respect-gitignore = true

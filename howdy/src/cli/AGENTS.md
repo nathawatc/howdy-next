@@ -1,12 +1,12 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-06-11
+**Updated:** 2026-06-25
 
 ## Scope
 
 Native C++ CLI commands for model management, config editing, camera testing, and snapshot generation.
 
-## Where To Look
+## Where to Look
 
 | Command       | File                                | Role                               |
 | ------------- | ----------------------------------- | ---------------------------------- |
@@ -21,11 +21,29 @@ Native C++ CLI commands for model management, config editing, camera testing, an
 | Snapshot      | `howdy/src/cli/snapshot.cpp`        | Generate diagnostic frame          |
 | Camera test   | `howdy/src/cli/test.cpp`            | Live preview and compare flow      |
 
+## Internal Headers (Testability)
+
+CLI commands are refactored for testability via dependency-injection structs:
+
+| Header                                     | Exposes                                                                                                               |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `include/cli/add_internal.hpp`             | `AddDependencies`, `add_main_with_dependencies()`                                                                     |
+| `include/cli/test_internal.hpp`            | `TestDependencies`, `test_main_with_dependencies()`, `run_preview_preflight()`, `has_graphical_display_environment()` |
+| `include/cli/snapshot_internal.hpp`        | `SnapshotDependencies`, `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, `write_snapshot_at_path()` |
+| `include/cli/enrollment_capture.hpp`       | `capture_enrollment_sample()` template, `EnrollmentCaptureResult`, `classify_enrollment_capture_failure()`            |
+| `include/cli/download_models_internal.hpp` | Download models internals                                                                                             |
+
 ## Conventions
 
 - Keep config edits atomic and secure.
 - Reuse `common/invoking_user*.hpp` for invoking-user helpers.
 - Reuse `common/model_file.hpp` for model integrity checks.
-- For runtime commands such as add, test, and snapshot, prefer typed `RuntimeConfig` fields over raw `ConfigReader` access.
+- For runtime commands such as add, test, and snapshot, prefer typed
+  `RuntimeConfig` fields over raw `ConfigReader` access.
 - Keep command behavior aligned with installed `/etc/howdy` layout.
 - Prefer shared helpers in `howdy/src/config`, `howdy/src/storage`, and `howdy/include/common`.
+- Add, test, and snapshot commands are split into production `*_main.cpp`
+  plus shared implementation for testability; avoid duplicating the
+  dependency-injection seam.
+- Capture failure diagnostics use `classify_enrollment_capture_failure()`
+  for granular error messages (black frames, too dark, no face, etc.).
