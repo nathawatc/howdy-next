@@ -110,7 +110,7 @@ namespace {
 		(void)config;
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->face_calls;
-		context->sequence.push_back("face");
+		context->sequence.emplace_back("face");
 		context->face_user = user;
 		if (!context->face_model_ok) {
 			return howdy::native::test_internal::TestPreflightOperationResult{
@@ -123,7 +123,7 @@ namespace {
 	auto has_graphical_display_callback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->display_calls;
-		context->sequence.push_back("display");
+		context->sequence.emplace_back("display");
 		return context->graphical_display;
 	}
 
@@ -132,7 +132,7 @@ namespace {
 	    -> howdy::native::test_internal::TestPreflightOperationResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->open_calls;
-		context->sequence.push_back("open");
+		context->sequence.emplace_back("open");
 		context->open_config        = config;
 		context->opened_device_path = device_path;
 		if (!context->camera_open_ok) {
@@ -146,21 +146,21 @@ namespace {
 	auto read_camera_callback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->read_calls;
-		context->sequence.push_back("read");
+		context->sequence.emplace_back("read");
 		return context->camera_read_ok;
 	}
 
 	auto switch_gui_user_callback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->gui_calls;
-		context->sequence.push_back("switch_gui_user");
+		context->sequence.emplace_back("switch_gui_user");
 		return context->gui_user_ok;
 	}
 
 	void initialize_gui_callback(void *raw_context) {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->gui_init_calls;
-		context->sequence.push_back("initialize_gui");
+		context->sequence.emplace_back("initialize_gui");
 	}
 
 	auto preflight_dependencies(TestCliTestContext &context)
