@@ -56,7 +56,7 @@ fix(pam): handle helper setup failure
 perf(compare): reduce frame resize overhead
 test(config): cover invalid float values
 docs(wiki): update PAM integration examples
-build(release): prepare 3.1.0
+build(release): prepare 3.1.1
 style(format): apply clang-format
 ```
 
