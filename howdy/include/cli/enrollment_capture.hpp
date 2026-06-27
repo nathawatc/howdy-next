@@ -2,6 +2,7 @@
 
 #include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
+#include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
 
 #include <vector>
@@ -66,7 +67,7 @@ namespace howdy::native {
 				continue;
 			}
 
-			if (gray.empty()) {
+			if (validate_frame(gray, FrameChannelPolicy::kGray) != FrameValidationStatus::kValid) {
 				result.empty_frames++;
 				continue;
 			}

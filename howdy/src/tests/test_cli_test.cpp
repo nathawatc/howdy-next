@@ -1,5 +1,6 @@
 #include "cli/test_cli_internal.hpp"
 #include "common/compare_logic.hpp"
+#include "common/frame_validation.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -432,6 +433,30 @@ namespace {
 		return ok;
 	}
 
+	auto invalid_prefetched_gray_frame_returns_camera_read_failure() -> bool {
+		namespace test_cli_internal = howdy::native::test_cli_internal;
+
+		const auto valid = test_cli_internal::validate_preview_gray_frame(cv::Mat(4, 4, CV_8UC1));
+		const auto unsupported =
+		    test_cli_internal::validate_preview_gray_frame(cv::Mat(4, 4, CV_8UC3));
+		const auto oversized = test_cli_internal::validate_preview_gray_frame(
+		    cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1));
+		const auto unsupported_type =
+		    test_cli_internal::validate_preview_gray_frame(cv::Mat(4, 4, CV_32FC1));
+
+		bool ok = true;
+		ok &= expect(valid.status == test_cli_internal::TestPreviewStatus::kOk,
+		             "valid prefetched gray frame passes preview validation");
+		ok &= expect(unsupported.status == test_cli_internal::TestPreviewStatus::kCameraReadError,
+		             "unsupported prefetched gray channels return camera read failure");
+		ok &= expect(oversized.status == test_cli_internal::TestPreviewStatus::kCameraReadError,
+		             "oversized prefetched gray frame returns camera read failure");
+		ok &= expect(unsupported_type.status ==
+		                 test_cli_internal::TestPreviewStatus::kCameraReadError,
+		             "CV_32FC1 prefetched gray frame returns camera read failure");
+		return ok;
+	}
+
 	auto preview_brightness_presentation_maps_classifier_to_overlay_behavior() -> bool {
 		namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -573,6 +598,7 @@ auto main() -> int {
 	ok &= configured_device_default_is_used_for_camera_open();
 	ok &= device_override_is_used_for_camera_open();
 	ok &= gui_initialization_runs_before_first_camera_read();
+	ok &= invalid_prefetched_gray_frame_returns_camera_read_failure();
 	ok &= preview_brightness_presentation_maps_classifier_to_overlay_behavior();
 	ok &= graphical_environment_helper_checks_display_values();
 	ok &= missing_preflight_dependency_callbacks_fail_closed();

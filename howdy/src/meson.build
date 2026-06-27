@@ -314,6 +314,23 @@ test(
 	native_capture_device_path_test,
 )
 
+native_video_capture_test = executable(
+	'howdy-video-capture-test',
+	'recorders/video_capture.cpp',
+	'tests/video_capture_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-video-capture',
+	native_video_capture_test,
+)
+
 native_enrollment_capture_test = executable(
 	'howdy-enrollment-capture-test',
 	'tests/enrollment_capture_test.cpp',

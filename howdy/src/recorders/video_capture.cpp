@@ -1,6 +1,7 @@
 #include "recorders/video_capture.hpp"
 
 #include "common/capture_device_path.hpp"
+#include "common/frame_validation.hpp"
 
 #include <filesystem>
 #include <string>
@@ -29,6 +30,10 @@ namespace howdy::native {
 
 	VideoCapture::VideoCapture(CaptureSettings settings)
 	    : settings_(std::move(settings)) {}
+
+	VideoCapture::VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader)
+	    : settings_(std::move(settings))
+	    , frame_reader_(std::move(frame_reader)) {}
 
 	auto VideoCapture::open() -> bool {
 		release();
@@ -98,19 +103,46 @@ namespace howdy::native {
 	}
 
 	auto VideoCapture::read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
-		if (!capture_.isOpened()) {
+		if (!frame_reader_ && !capture_.isOpened()) {
 			set_error(CaptureError::kOpenFailed, "Camera is not open");
 			return false;
 		}
 
 		try {
-			if (!capture_.read(frame) || frame.empty()) {
+			const bool read_ok = frame_reader_ ? frame_reader_->read(frame) : capture_.read(frame);
+			if (!read_ok) {
 				set_error(CaptureError::kReadFailed, "Failed to read a frame from camera");
 				return false;
 			}
-			if (frame.rows <= 0 || frame.cols <= 0) {
-				set_error(CaptureError::kReadFailed, "Camera returned invalid frame dimensions");
-				return false;
+
+			switch (validate_frame(frame, FrameChannelPolicy::kCameraInput)) {
+				case FrameValidationStatus::kValid:
+					break;
+				case FrameValidationStatus::kEmpty:
+					set_error(CaptureError::kReadFailed, "Camera returned an empty frame");
+					return false;
+				case FrameValidationStatus::kUnsupportedDimensions:
+					set_error(CaptureError::kReadFailed,
+					          "Camera returned unsupported frame dimensions: " +
+					              std::to_string(frame.dims));
+					return false;
+				case FrameValidationStatus::kOversizedDimensions:
+					set_error(CaptureError::kReadFailed,
+					          "Camera returned oversized frame dimensions: " +
+					              std::to_string(frame.cols) + "x" + std::to_string(frame.rows) +
+					              " (max supported dimension: " +
+					              std::to_string(kMaxFrameDimension) + ")");
+					return false;
+				case FrameValidationStatus::kUnsupportedChannelCount:
+					set_error(CaptureError::kReadFailed,
+					          "Camera returned unsupported frame channel count: " +
+					              std::to_string(frame.channels()));
+					return false;
+				case FrameValidationStatus::kUnsupportedPixelType:
+					set_error(CaptureError::kReadFailed,
+					          "Camera returned unsupported frame pixel type: " +
+					              std::to_string(frame.type()));
+					return false;
 			}
 
 			if (gray_frame != nullptr) {
@@ -120,11 +152,6 @@ namespace howdy::native {
 					cv::cvtColor(frame, *gray_frame, cv::COLOR_BGRA2GRAY);
 				} else if (frame.channels() == 1) {
 					*gray_frame = frame;
-				} else {
-					set_error(CaptureError::kReadFailed,
-					          "Camera returned unsupported frame channel count: " +
-					              std::to_string(frame.channels()));
-					return false;
 				}
 			}
 

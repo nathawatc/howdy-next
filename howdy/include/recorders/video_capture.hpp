@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 
+#include <memory>
 #include <string>
 
 #include <opencv2/videoio.hpp>
@@ -26,6 +27,8 @@ namespace howdy::native {
 
 	auto load_capture_settings(const VideoConfig &config) -> CaptureSettings;
 
+	class VideoCaptureTestAccess;
+
 	class VideoCapture {
 	public:
 		explicit VideoCapture(CaptureSettings settings);
@@ -44,12 +47,23 @@ namespace howdy::native {
 		[[nodiscard]] auto settings() const -> const CaptureSettings &;
 
 	private:
+		class FrameReader {
+		public:
+			virtual ~FrameReader()                    = default;
+			virtual auto read(cv::Mat &frame) -> bool = 0;
+		};
+
+		VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader);
+
 		void set_error(CaptureError error, std::string message);
 
-		CaptureSettings  settings_;
-		cv::VideoCapture capture_;
-		CaptureError     error_ = CaptureError::kNone;
-		std::string      error_message_;
+		friend class VideoCaptureTestAccess;
+
+		CaptureSettings              settings_;
+		cv::VideoCapture             capture_;
+		std::shared_ptr<FrameReader> frame_reader_;
+		CaptureError                 error_ = CaptureError::kNone;
+		std::string                  error_message_;
 	};
 
 }  // namespace howdy::native

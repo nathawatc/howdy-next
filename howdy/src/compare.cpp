@@ -2,6 +2,7 @@
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
+#include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -24,7 +25,6 @@
 namespace {
 
 	using howdy::native::CompareExit;
-	constexpr int    kMaxFrameDimension = 8192;
 	constexpr rlim_t kAddressSpaceLimitBytes =
 	    static_cast<rlim_t>(3ULL * 1024ULL * 1024ULL * 1024ULL);
 
@@ -91,9 +91,26 @@ namespace {
 		return true;
 	}
 
-	auto has_sane_frame_dimensions(const cv::Mat &frame) -> bool {
-		return frame.rows > 0 && frame.cols > 0 && frame.rows <= kMaxFrameDimension &&
-		       frame.cols <= kMaxFrameDimension;
+	auto frame_validation_message(const std::string &subject, const cv::Mat &frame,
+	                              howdy::native::FrameValidationStatus status) -> std::string {
+		switch (status) {
+			case howdy::native::FrameValidationStatus::kValid:
+				return {};
+			case howdy::native::FrameValidationStatus::kEmpty:
+				return subject + " is empty";
+			case howdy::native::FrameValidationStatus::kUnsupportedDimensions:
+				return subject + " has unsupported frame dimensions: " + std::to_string(frame.dims);
+			case howdy::native::FrameValidationStatus::kOversizedDimensions:
+				return subject + " has oversized frame dimensions: " + std::to_string(frame.cols) +
+				       "x" + std::to_string(frame.rows) + " (max supported dimension: " +
+				       std::to_string(howdy::native::kMaxFrameDimension) + ")";
+			case howdy::native::FrameValidationStatus::kUnsupportedChannelCount:
+				return subject +
+				       " has unsupported channel count: " + std::to_string(frame.channels());
+			case howdy::native::FrameValidationStatus::kUnsupportedPixelType:
+				return subject + " has unsupported pixel type: " + std::to_string(frame.type());
+		}
+		return subject + " is invalid";
 	}
 
 }  // namespace
@@ -205,18 +222,12 @@ auto main(int argc, char **argv) -> int {
 				return static_cast<int>(CompareExit::kInvalidDevice);
 			}
 
-			if (gray_frame.empty()) {
-				std::cerr << "Camera returned an empty grayscale frame\n";
-				return static_cast<int>(CompareExit::kInvalidDevice);
-			}
-			if (gray_frame.channels() != 1) {
-				std::cerr << "Camera returned unsupported grayscale channel count: "
-				          << gray_frame.channels() << "\n";
-				return static_cast<int>(CompareExit::kInvalidDevice);
-			}
-			if (!has_sane_frame_dimensions(gray_frame)) {
-				std::cerr << "Camera returned invalid frame dimensions: " << gray_frame.cols << "x"
-				          << gray_frame.rows << "\n";
+			const auto gray_validation =
+			    howdy::native::validate_frame(gray_frame, howdy::native::FrameChannelPolicy::kGray);
+			if (gray_validation != howdy::native::FrameValidationStatus::kValid) {
+				std::cerr << frame_validation_message("Camera grayscale frame", gray_frame,
+				                                      gray_validation)
+				          << "\n";
 				return static_cast<int>(CompareExit::kInvalidDevice);
 			}
 
@@ -246,16 +257,23 @@ auto main(int argc, char **argv) -> int {
 				cv::resize(gray_frame, working_frame, cv::Size(), scaling_factor, scaling_factor,
 				           cv::INTER_AREA);
 			}
-			working_frame = apply_rotation(working_frame, rotate, frames);
-			if (!has_sane_frame_dimensions(working_frame)) {
-				std::cerr << "Frame dimensions became invalid after preprocessing: "
-				          << working_frame.cols << "x" << working_frame.rows << "\n";
+			working_frame                 = apply_rotation(working_frame, rotate, frames);
+			const auto working_validation = howdy::native::validate_frame(
+			    working_frame, howdy::native::FrameChannelPolicy::kGray);
+			if (working_validation != howdy::native::FrameValidationStatus::kValid) {
+				std::cerr << frame_validation_message("Frame after preprocessing", working_frame,
+				                                      working_validation)
+				          << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
 
-			cv::Mat prepared = face_model.prepare_frame(working_frame);
-			if (prepared.empty() || !has_sane_frame_dimensions(prepared)) {
-				std::cerr << "Prepared frame is invalid for face detection\n";
+			cv::Mat    prepared = face_model.prepare_frame(working_frame);
+			const auto prepared_validation =
+			    howdy::native::validate_frame(prepared, howdy::native::FrameChannelPolicy::kBgr);
+			if (prepared_validation != howdy::native::FrameValidationStatus::kValid) {
+				std::cerr << frame_validation_message("Prepared frame for face detection", prepared,
+				                                      prepared_validation)
+				          << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
 			const auto faces = face_model.detect(prepared);

@@ -2,6 +2,7 @@
 #include "cli/test_cli_internal.hpp"
 #include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
+#include "common/frame_validation.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
 #include "config/runtime_config.hpp"
@@ -304,6 +305,13 @@ namespace {
 					};
 				}
 
+				const auto gray_validation =
+				    test_cli_internal::validate_preview_gray_frame(gray_frame);
+				if (gray_validation.status != test_cli_internal::TestPreviewStatus::kOk) {
+					capture.release();
+					return gray_validation;
+				}
+
 				howdy::native::apply_clahe_if_enabled(gray_frame, config.video, clahe);
 
 				cv::Mat overlay;
@@ -443,6 +451,15 @@ auto howdy::native::test_cli_internal::preview_brightness_presentation(
 	    .frame_label  = "DARK FRAME",
 	    .detect_faces = false,
 	};
+}
+
+auto howdy::native::test_cli_internal::validate_preview_gray_frame(const cv::Mat &gray_frame)
+    -> TestPreviewResult {
+	if (howdy::native::validate_frame(gray_frame, howdy::native::FrameChannelPolicy::kGray) !=
+	    howdy::native::FrameValidationStatus::kValid) {
+		return TestPreviewResult{.status = TestPreviewStatus::kCameraReadError};
+	}
+	return TestPreviewResult{.status = TestPreviewStatus::kOk};
 }
 
 auto howdy::native::test_cli_internal::run_preview_preflight(

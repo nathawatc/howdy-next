@@ -1,6 +1,8 @@
 #include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
+#include "common/frame_validation.hpp"
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <string>
@@ -86,6 +88,74 @@ auto main() -> int {
 	ok &= expect(empty_enabled_frame.rows == 8 && empty_enabled_frame.cols == 8 &&
 	                 empty_enabled_frame.type() == CV_8UC1,
 	             "enabled CLAHE with empty processor preserves frame shape and type");
+
+	ok &= expect(
+	    howdy::native::validate_frame(cv::Mat(), howdy::native::FrameChannelPolicy::kCameraInput) ==
+	        howdy::native::FrameValidationStatus::kEmpty,
+	    "empty frame validation reports empty");
+
+	const std::array<int, 3> three_d_sizes{2, 2, 2};
+	const cv::Mat            three_d_frame(3, three_d_sizes.data(), CV_8UC1, cv::Scalar(0));
+	ok &= expect(
+	    howdy::native::validate_frame(three_d_frame, howdy::native::FrameChannelPolicy::kGray) ==
+	        howdy::native::FrameValidationStatus::kUnsupportedDimensions,
+	    "non-empty 3-D frame validation rejects unsupported dimensions");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_32FC1, cv::Scalar(0.0F)),
+	                                           howdy::native::FrameChannelPolicy::kGray) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedPixelType,
+	             "grayscale validation rejects CV_32FC1");
+
+	const cv::Mat max_boundary_frame(howdy::native::kMaxFrameDimension, 1, CV_8UC1, cv::Scalar(0));
+	ok &= expect(howdy::native::validate_frame(max_boundary_frame,
+	                                           howdy::native::FrameChannelPolicy::kGray) ==
+	                 howdy::native::FrameValidationStatus::kValid,
+	             "8192x1 grayscale frame is valid");
+	ok &= expect(
+	    howdy::native::validate_frame(cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1),
+	                                  howdy::native::FrameChannelPolicy::kGray) ==
+	        howdy::native::FrameValidationStatus::kOversizedDimensions,
+	    "8193x1 grayscale frame is oversized");
+	ok &= expect(
+	    howdy::native::validate_frame(cv::Mat(1, howdy::native::kMaxFrameDimension + 1, CV_8UC1),
+	                                  howdy::native::FrameChannelPolicy::kGray) ==
+	        howdy::native::FrameValidationStatus::kOversizedDimensions,
+	    "1x8193 grayscale frame is oversized");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC1),
+	                                           howdy::native::FrameChannelPolicy::kCameraInput) ==
+	                 howdy::native::FrameValidationStatus::kValid,
+	             "raw validation accepts 1 channel");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC3),
+	                                           howdy::native::FrameChannelPolicy::kCameraInput) ==
+	                 howdy::native::FrameValidationStatus::kValid,
+	             "raw validation accepts 3 channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC4),
+	                                           howdy::native::FrameChannelPolicy::kCameraInput) ==
+	                 howdy::native::FrameValidationStatus::kValid,
+	             "raw validation accepts 4 channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC2),
+	                                           howdy::native::FrameChannelPolicy::kCameraInput) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedChannelCount,
+	             "raw validation rejects unsupported channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC3),
+	                                           howdy::native::FrameChannelPolicy::kGray) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedChannelCount,
+	             "grayscale validation rejects 3 channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC4),
+	                                           howdy::native::FrameChannelPolicy::kGray) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedChannelCount,
+	             "grayscale validation rejects 4 channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC3),
+	                                           howdy::native::FrameChannelPolicy::kBgr) ==
+	                 howdy::native::FrameValidationStatus::kValid,
+	             "BGR validation accepts 3 channels");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC1),
+	                                           howdy::native::FrameChannelPolicy::kBgr) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedChannelCount,
+	             "BGR validation rejects 1 channel");
+	ok &= expect(howdy::native::validate_frame(cv::Mat(1, 1, CV_8UC4),
+	                                           howdy::native::FrameChannelPolicy::kBgr) ==
+	                 howdy::native::FrameValidationStatus::kUnsupportedChannelCount,
+	             "BGR validation rejects 4 channels");
 
 	const auto empty_brightness = howdy::native::measure_brightness(cv::Mat());
 	ok &= expect(empty_brightness.hist_total == 0.0 && empty_brightness.darkness == 100.0F,

@@ -52,12 +52,12 @@ namespace {
 	public:
 		auto prepare_frame(const cv::Mat &frame) -> cv::Mat {
 			prepare_calls++;
-			return frame.clone();
+			return clone_frames ? frame.clone() : frame;
 		}
 
 		auto detect(const cv::Mat &frame) -> std::vector<cv::Mat> {
 			detect_calls++;
-			seen_frames.push_back(frame.clone());
+			seen_frames.push_back(clone_frames ? frame.clone() : frame);
 			if (!return_face || detect_calls <= misses_before_face) {
 				return {};
 			}
@@ -65,6 +65,7 @@ namespace {
 		}
 
 		bool                 return_face        = true;
+		bool                 clone_frames       = true;
 		int                  misses_before_face = 0;
 		int                  prepare_calls      = 0;
 		int                  detect_calls       = 0;
@@ -132,6 +133,22 @@ namespace {
 
 	auto empty_successful_read() -> FrameRead {
 		return FrameRead{.ok = true};
+	}
+
+	auto oversized_gray_read() -> FrameRead {
+		return FrameRead{
+		    .ok    = true,
+		    .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		    .gray  = cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1, cv::Scalar(128)),
+		};
+	}
+
+	auto unsupported_gray_channel_read() -> FrameRead {
+		return FrameRead{
+		    .ok    = true,
+		    .frame = cv::Mat(4, 4, CV_8UC3, cv::Scalar(128, 128, 128)),
+		    .gray  = cv::Mat(4, 4, CV_8UC3, cv::Scalar(128, 128, 128)),
+		};
 	}
 
 	auto black_frame_is_skipped_without_progress() -> bool {
@@ -298,6 +315,67 @@ namespace {
 		return ok;
 	}
 
+	auto invalid_gray_frame_counts_as_empty_without_model_work(FrameRead          read,
+	                                                           const std::string &label) -> bool {
+		FakeCapture   capture({std::move(read)});
+		FakeFaceModel face_model;
+
+		const auto result =
+		    howdy::native::capture_enrollment_sample(capture, face_model, test_config(), 1);
+
+		bool ok = true;
+		ok &= expect(result.faces.empty(), label + " has no accepted sample to store");
+		ok &= expect(result.empty_frames == 1, label + " is counted as empty frame");
+		ok &= expect(result.black_frames == 0, label + " is not classified as black");
+		ok &= expect(result.valid_frames == 0, label + " does not increment valid frames");
+		ok &= expect(face_model.prepare_calls == 0, label + " does not reach preparation");
+		ok &= expect(face_model.detect_calls == 0, label + " does not reach detection");
+		return ok;
+	}
+
+	auto oversized_gray_frame_counts_as_empty_without_model_work() -> bool {
+		return invalid_gray_frame_counts_as_empty_without_model_work(oversized_gray_read(),
+		                                                             "oversized gray frame");
+	}
+
+	auto unsupported_gray_channel_count_counts_as_empty_without_model_work() -> bool {
+		return invalid_gray_frame_counts_as_empty_without_model_work(
+		    unsupported_gray_channel_read(), "unsupported gray channel count");
+	}
+
+	auto frame_validation_boundaries_are_applied_to_enrollment_gray_frames() -> bool {
+		FakeCapture   capture({FrameRead{
+		    .ok    = true,
+		    .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		    .gray  = cv::Mat(howdy::native::kMaxFrameDimension, 1, CV_8UC1, cv::Scalar(128)),
+		}});
+		FakeFaceModel face_model;
+		face_model.clone_frames = false;
+
+		const auto accepted =
+		    howdy::native::capture_enrollment_sample(capture, face_model, test_config(), 1);
+
+		bool ok = true;
+		ok &= expect(accepted.empty_frames == 0, "8192x1 gray frame is not rejected");
+		ok &= expect(accepted.valid_frames == 1, "8192x1 gray frame remains valid");
+		ok &= expect(face_model.prepare_calls == 1, "8192x1 gray frame reaches preparation");
+		ok &= expect(face_model.detect_calls == 1, "8192x1 gray frame reaches detection");
+
+		ok &= invalid_gray_frame_counts_as_empty_without_model_work(
+		    FrameRead{.ok    = true,
+		              .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		              .gray  = cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1,
+		                               cv::Scalar(128))},
+		    "8193x1 gray frame");
+		ok &= invalid_gray_frame_counts_as_empty_without_model_work(
+		    FrameRead{.ok    = true,
+		              .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		              .gray  = cv::Mat(1, howdy::native::kMaxFrameDimension + 1, CV_8UC1,
+		                               cv::Scalar(128))},
+		    "1x8193 gray frame");
+		return ok;
+	}
+
 	auto read_failure_is_distinct_from_black_frame_and_empty_read() -> bool {
 		FakeCapture   capture({failed_read(), empty_successful_read(), black_read(), valid_read()});
 		FakeFaceModel face_model;
@@ -359,6 +437,9 @@ int main() {
 	ok &= processable_frames_without_faces_report_no_face_detected();
 	ok &= repeated_black_frames_timeout_without_acceptance();
 	ok &= empty_successful_read_is_safely_skipped();
+	ok &= oversized_gray_frame_counts_as_empty_without_model_work();
+	ok &= unsupported_gray_channel_count_counts_as_empty_without_model_work();
+	ok &= frame_validation_boundaries_are_applied_to_enrollment_gray_frames();
 	ok &= read_failure_is_distinct_from_black_frame_and_empty_read();
 	ok &= all_read_failures_do_not_report_black_frame_failure();
 	ok &= all_empty_successful_reads_do_not_report_black_frame_failure();

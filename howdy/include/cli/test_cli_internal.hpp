@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include <opencv2/core.hpp>
+
 namespace howdy::native {
 	enum class BrightnessDecision;
 }
@@ -71,6 +73,7 @@ namespace howdy::native::test_cli_internal {
 	    -> int;
 	auto preview_brightness_presentation(howdy::native::BrightnessDecision decision)
 	    -> PreviewBrightnessPresentation;
+	auto validate_preview_gray_frame(const cv::Mat &gray_frame) -> TestPreviewResult;
 
 	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                           const std::string                      &device_path,
