@@ -247,6 +247,18 @@ test(
 	native_frame_processing_test,
 )
 
+native_face_matching_test = executable(
+	'howdy-face-matching-test',
+	'tests/face_matching_test.cpp',
+	include_directories: native_cpp_inc,
+	install: false,
+)
+
+test(
+	'native-face-matching',
+	native_face_matching_test,
+)
+
 native_config_utils_test = executable(
 	'howdy-config-utils-test',
 	'tests/config_utils_test.cpp',

@@ -3,10 +3,7 @@
 #include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <filesystem>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -118,73 +115,7 @@ namespace howdy::native {
 
 	auto FaceModel::best_match(const std::vector<std::vector<float>> &known,
 	                           const std::vector<float>              &probe) const -> FaceMatch {
-		FaceMatch match;
-		if (known.empty() || probe.empty()) {
-			match.score = metric_ == "cosine" ? -1.0F : std::numeric_limits<float>::max();
-			return match;
-		}
-
-		if (metric_ == "cosine") {
-			float best_score = -1.0F;
-			int   best_index = -1;
-			float probe_norm = 0.0F;
-			for (float value : probe) {
-				probe_norm += value * value;
-			}
-			probe_norm = std::sqrt(std::max(probe_norm, 1.0e-12F));
-
-			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto &candidate = known[index];
-				if (candidate.size() != probe.size()) {
-					continue;
-				}
-
-				float dot        = 0.0F;
-				float known_norm = 0.0F;
-				for (std::size_t element = 0; element < probe.size(); ++element) {
-					dot += candidate[element] * probe[element];
-					known_norm += candidate[element] * candidate[element];
-				}
-
-				known_norm        = std::sqrt(std::max(known_norm, 1.0e-12F));
-				const float score = dot / std::max(known_norm * probe_norm, 1.0e-12F);
-				if (score > best_score) {
-					best_score = score;
-					best_index = static_cast<int>(index);
-				}
-			}
-
-			match.index    = best_index;
-			match.score    = best_score;
-			match.accepted = best_index >= 0 && best_score >= threshold_;
-			return match;
-		}
-
-		float best_score = std::numeric_limits<float>::max();
-		int   best_index = -1;
-		for (std::size_t index = 0; index < known.size(); ++index) {
-			const auto &candidate = known[index];
-			if (candidate.size() != probe.size()) {
-				continue;
-			}
-
-			float sum = 0.0F;
-			for (std::size_t element = 0; element < probe.size(); ++element) {
-				const float delta = candidate[element] - probe[element];
-				sum += delta * delta;
-			}
-
-			const float score = std::sqrt(sum);
-			if (score < best_score) {
-				best_score = score;
-				best_index = static_cast<int>(index);
-			}
-		}
-
-		match.index    = best_index;
-		match.score    = best_score;
-		match.accepted = best_index >= 0 && best_score > 0.0F && best_score <= threshold_;
-		return match;
+		return find_best_face_match(known, probe, metric_, threshold_);
 	}
 
 	auto FaceModel::detection_box(const cv::Mat &face) const -> std::tuple<int, int, int, int> {

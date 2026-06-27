@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/runtime_config.hpp"
+#include "core/face_matching.hpp"
 
 #include <string>
 #include <vector>
@@ -9,12 +10,6 @@
 #include <opencv2/objdetect/face.hpp>
 
 namespace howdy::native {
-
-	struct FaceMatch {
-		int   index    = -1;
-		float score    = 0.0F;
-		bool  accepted = false;
-	};
 
 	class FaceModel {
 	public:

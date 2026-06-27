@@ -1,0 +1,182 @@
+#include "core/face_matching.hpp"
+
+#include <cmath>
+#include <iostream>
+#include <limits>
+#include <numbers>
+#include <string>
+#include <vector>
+
+namespace {
+
+	auto expect(bool condition, const std::string &message) -> bool {
+		if (!condition) {
+			std::cerr << "FAIL: " << message << "\n";
+			return false;
+		}
+		return true;
+	}
+
+	auto expect_near(float actual, float expected, float tolerance, const std::string &message)
+	    -> bool {
+		return expect(std::fabs(actual - expected) <= tolerance, message);
+	}
+
+}  // namespace
+
+auto main() -> int {
+	bool ok = true;
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F, 2.0F}}, {1.0F, 2.0F}, "cosine", 0.9F);
+		ok &= expect(match.index == 0, "cosine exact positive match has valid index");
+		ok &= expect_near(match.score, 1.0F, 1.0e-6F, "cosine exact positive match scores one");
+		ok &= expect(match.accepted, "cosine exact positive match is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{0.0F, 1.0F}}, {1.0F, 0.0F}, "cosine", 0.0F);
+		ok &= expect(match.score == 0.0F, "cosine threshold boundary has exact score");
+		ok &= expect(match.accepted, "cosine threshold boundary is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{0.0F, 1.0F}}, {1.0F, 0.0F}, "cosine", 0.1F);
+		ok &= expect(!match.accepted, "cosine below threshold is rejected");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match({{-1.0F}}, {1.0F}, "cosine", -1.0F);
+		ok &= expect(match.score == -1.0F, "antiparallel cosine match scores negative one");
+		ok &= expect(match.index == 0, "antiparallel cosine match has valid index");
+		ok &= expect(match.accepted, "antiparallel cosine match is accepted at threshold boundary");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match({{-1.0F}}, {1.0F}, "cosine", -0.9F);
+		ok &= expect(!match.accepted, "antiparallel cosine match below threshold is rejected");
+	}
+
+	{
+		const auto nan   = std::numeric_limits<float>::quiet_NaN();
+		const auto match = howdy::native::find_best_face_match({{nan, 0.0F}, {1.0F, 0.0F}},
+		                                                       {1.0F, 0.0F}, "cosine", 0.9F);
+		ok &= expect(match.index == 1, "cosine candidate containing NaN is skipped");
+		ok &= expect(match.score == 1.0F, "valid cosine candidate after NaN candidate is scored");
+		ok &= expect(match.accepted, "valid cosine candidate after NaN candidate is accepted");
+	}
+
+	{
+		const auto infinity = std::numeric_limits<float>::infinity();
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F, 0.0F}}, {infinity, 0.0F}, "cosine", -1.0F);
+		ok &= expect(match.index == -1, "non-finite cosine probe keeps sentinel index");
+		ok &= expect(match.score == -1.0F, "non-finite cosine probe keeps sentinel score");
+		ok &= expect(!match.accepted, "non-finite cosine probe is rejected");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F, 0.0F}}, {0.0F, 0.0F}, "cosine", -1.0F);
+		ok &= expect(match.index == -1, "zero-norm cosine probe keeps sentinel index");
+		ok &= expect(match.score == -1.0F, "zero-norm cosine probe keeps sentinel score");
+		ok &= expect(!match.accepted, "zero-norm cosine probe is rejected at negative threshold");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{0.0F, 0.0F}}, {1.0F, 0.0F}, "cosine", 0.0F);
+		ok &= expect(match.index == -1, "zero-norm cosine candidate keeps sentinel index");
+		ok &= expect(match.score == -1.0F, "zero-norm cosine candidate keeps sentinel score");
+		ok &= expect(!match.accepted, "zero-norm cosine candidate is rejected at zero threshold");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F, 2.0F}}, {1.0F, 2.0F}, "l2", 0.5F);
+		ok &= expect(match.score == 0.0F, "l2 exact match scores zero");
+		ok &= expect(match.index == 0, "l2 exact match has valid index");
+		ok &= expect(match.accepted, "l2 exact match is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{3.0F, 4.0F}}, {0.0F, 0.0F}, "l2", 5.0F);
+		ok &= expect(match.score == 5.0F, "l2 threshold boundary has exact score");
+		ok &= expect(match.accepted, "l2 threshold boundary is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{3.0F, 4.0F}}, {0.0F, 0.0F}, "l2", 4.9F);
+		ok &= expect(!match.accepted, "l2 above threshold is rejected");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F, 2.0F}}, {1.0F, 2.0F}, "l2norm", 0.5F);
+		ok &= expect(match.score == 0.0F, "l2norm exact match scores zero");
+		ok &= expect(match.index == 0, "l2norm exact match has valid index");
+		ok &= expect(match.accepted, "l2norm exact match is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{0.0F, 2.0F}}, {0.0F, 0.0F}, "l2norm", 2.0F);
+		ok &= expect(match.score == 2.0F, "l2norm threshold boundary has exact score");
+		ok &= expect(match.accepted, "l2norm threshold boundary is accepted");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match(
+		    {{5.0F, 5.0F}, {1.0F, 1.0F}, {3.0F, 3.0F}}, {0.0F, 0.0F}, "l2", 2.0F);
+		ok &= expect(match.index == 1, "best candidate is selected across valid candidates");
+		ok &= expect_near(match.score, std::numbers::sqrt2_v<float>, 1.0e-6F,
+		                  "best candidate has lowest distance");
+		ok &= expect(match.accepted, "best candidate within threshold is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{0.0F}, {1.0F, 1.0F}}, {1.0F, 1.0F}, "l2", 0.0F);
+		ok &= expect(match.index == 1, "mismatched-dimension candidate is skipped");
+		ok &= expect(match.score == 0.0F, "valid candidate after mismatch is scored");
+		ok &= expect(match.accepted, "valid candidate after mismatch is accepted");
+	}
+
+	{
+		const auto match =
+		    howdy::native::find_best_face_match({{1.0F}}, {1.0F, 2.0F}, "cosine", 0.0F);
+		ok &= expect(match.index == -1, "all cosine dimension mismatches keep sentinel index");
+		ok &= expect(match.score == -1.0F, "all cosine dimension mismatches keep sentinel score");
+		ok &= expect(!match.accepted, "all cosine dimension mismatches are rejected");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match({{1.0F}}, {1.0F, 2.0F}, "l2", 1.0F);
+		ok &= expect(match.index == -1, "all l2 dimension mismatches keep sentinel index");
+		ok &= expect(match.score == std::numeric_limits<float>::max(),
+		             "all l2 dimension mismatches keep sentinel score");
+		ok &= expect(!match.accepted, "all l2 dimension mismatches are rejected");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match({}, {1.0F}, "cosine", 0.0F);
+		ok &= expect(match.index == -1, "empty cosine known list keeps sentinel index");
+		ok &= expect(match.score == -1.0F, "empty cosine known list keeps sentinel score");
+		ok &= expect(!match.accepted, "empty cosine known list is rejected");
+	}
+
+	{
+		const auto match = howdy::native::find_best_face_match({{1.0F}}, {}, "l2norm", 1.0F);
+		ok &= expect(match.index == -1, "empty l2norm probe keeps sentinel index");
+		ok &= expect(match.score == std::numeric_limits<float>::max(),
+		             "empty l2norm probe keeps sentinel score");
+		ok &= expect(!match.accepted, "empty l2norm probe is rejected");
+	}
+
+	return ok ? 0 : 1;
+}
