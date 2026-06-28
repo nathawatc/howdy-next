@@ -89,9 +89,22 @@ namespace howdy::native {
 
 		float best_score = std::numeric_limits<float>::max();
 		int   best_index = -1;
+		if (!std::ranges::all_of(probe, [](float value) {
+			    return std::isfinite(value);
+		    })) {
+			match.index    = -1;
+			match.score    = std::numeric_limits<float>::max();
+			match.accepted = false;
+			return match;
+		}
 		for (std::size_t index = 0; index < known.size(); ++index) {
 			const auto &candidate = known[index];
 			if (candidate.size() != probe.size()) {
+				continue;
+			}
+			if (!std::ranges::all_of(candidate, [](float value) {
+				    return std::isfinite(value);
+			    })) {
 				continue;
 			}
 

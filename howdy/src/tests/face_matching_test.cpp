@@ -102,6 +102,23 @@ auto main() -> int {
 		ok &= expect(match.accepted, "l2 exact match is accepted");
 	}
 
+	// Behavioral regression only: IEEE comparisons can also skip non-finite distance scores.
+	{
+		const auto               infinity          = std::numeric_limits<float>::infinity();
+		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
+		                                              infinity, -infinity};
+		for (const float non_finite : non_finite_values) {
+			const auto match = howdy::native::find_best_face_match(
+			    {{non_finite, 0.0F}, {1.0F, 2.0F}}, {1.0F, 2.0F}, "l2", 0.5F);
+			ok &= expect(match.index == 1,
+			             "valid l2 candidate after non-finite candidate is selected");
+			ok &= expect(match.score == 0.0F,
+			             "valid l2 candidate after non-finite candidate scores zero");
+			ok &=
+			    expect(match.accepted, "valid l2 candidate after non-finite candidate is accepted");
+		}
+	}
+
 	{
 		const auto match =
 		    howdy::native::find_best_face_match({{3.0F, 4.0F}}, {0.0F, 0.0F}, "l2", 5.0F);
@@ -121,6 +138,65 @@ auto main() -> int {
 		ok &= expect(match.score == 0.0F, "l2norm exact match scores zero");
 		ok &= expect(match.index == 0, "l2norm exact match has valid index");
 		ok &= expect(match.accepted, "l2norm exact match is accepted");
+	}
+
+	// Behavioral regression only: IEEE comparisons can also skip non-finite distance scores.
+	{
+		const auto               infinity          = std::numeric_limits<float>::infinity();
+		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
+		                                              infinity, -infinity};
+		for (const float non_finite : non_finite_values) {
+			const auto match = howdy::native::find_best_face_match(
+			    {{1.0F, 2.0F}, {non_finite, 0.0F}}, {1.0F, 2.0F}, "l2norm", 0.5F);
+			ok &= expect(match.index == 0,
+			             "valid l2norm candidate before non-finite candidate remains selected");
+			ok &=
+			    expect(match.score == 0.0F, "l2norm score remains zero after non-finite candidate");
+			ok &= expect(match.accepted,
+			             "l2norm exact match before non-finite candidate is accepted");
+		}
+	}
+
+	{
+		const auto               infinity          = std::numeric_limits<float>::infinity();
+		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
+		                                              infinity, -infinity};
+		for (const float non_finite : non_finite_values) {
+			const auto match =
+			    howdy::native::find_best_face_match({{1.0F, 2.0F}}, {non_finite, 2.0F}, "l2", 0.5F);
+			ok &= expect(match.index == -1, "non-finite l2 probe keeps sentinel index");
+			ok &= expect(match.score == std::numeric_limits<float>::max(),
+			             "non-finite l2 probe keeps sentinel score");
+			ok &= expect(!match.accepted, "non-finite l2 probe is rejected");
+		}
+	}
+
+	{
+		const auto               infinity          = std::numeric_limits<float>::infinity();
+		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
+		                                              infinity, -infinity};
+		for (const float non_finite : non_finite_values) {
+			const auto match = howdy::native::find_best_face_match(
+			    {{1.0F, 2.0F}}, {non_finite, 2.0F}, "l2norm", infinity);
+			ok &= expect(match.index == -1, "non-finite l2norm probe keeps sentinel index");
+			ok &= expect(match.score == std::numeric_limits<float>::max(),
+			             "non-finite l2norm probe keeps sentinel score");
+			ok &= expect(!match.accepted,
+			             "non-finite l2norm probe is rejected at infinite threshold");
+		}
+	}
+
+	{
+		const auto nan               = std::numeric_limits<float>::quiet_NaN();
+		const auto infinity          = std::numeric_limits<float>::infinity();
+		const auto negative_infinity = -infinity;
+		const auto match             = howdy::native::find_best_face_match(
+		    {{nan, infinity}, {negative_infinity, nan}}, {1.0F, 2.0F}, "l2", infinity);
+		ok &= expect(match.index == -1, "all non-finite l2 candidates keep sentinel index");
+		ok &= expect(match.score == std::numeric_limits<float>::max(),
+		             "all non-finite l2 candidates keep sentinel score");
+		ok &= expect(!match.accepted,
+		             "all non-finite l2 candidates are rejected at infinite threshold");
 	}
 
 	{
