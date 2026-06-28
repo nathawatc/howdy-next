@@ -48,12 +48,15 @@ namespace howdy::native::snapshot_internal {
 	using SnapshotChmodPathFn  = int (*)(void *context, const std::filesystem::path &path,
 	                                     mode_t mode);
 	using SnapshotSyncParentFn = void (*)(void *context, const std::filesystem::path &path);
+	// Callback consumes fd on every outcome, including error return or exception.
+	using SnapshotCloseFdFn = int (*)(void *context, int fd);
 
 	struct SnapshotWriterDependencies {
-		void                *context     = nullptr;
-		SnapshotWriteImageFn write_image = nullptr;
-		SnapshotChmodPathFn  chmod_path  = nullptr;
-		SnapshotSyncParentFn sync_parent = nullptr;
+		void                *context       = nullptr;
+		SnapshotWriteImageFn write_image   = nullptr;
+		SnapshotChmodPathFn  chmod_path    = nullptr;
+		SnapshotSyncParentFn sync_parent   = nullptr;
+		SnapshotCloseFdFn    close_temp_fd = nullptr;
 	};
 
 	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool;

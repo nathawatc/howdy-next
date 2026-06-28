@@ -2,15 +2,19 @@
 #include "cli/snapshot_internal.hpp"
 #include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
+#include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "recorders/video_capture.hpp"
 
 #include <array>
 #include <chrono>
+#include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -56,14 +60,133 @@ namespace {
 		howdy::native::sync_parent_directory(path);
 	}
 
+	auto close_temp_fd_dependency(void *context, int fd) -> int {
+		(void)context;
+		return close(fd);
+	}
+
+	[[nodiscard]] auto has_valid_snapshot_frames(const std::vector<cv::Mat> &frames) -> bool {
+		if (frames.empty()) {
+			return false;
+		}
+
+		const auto expected_rows  = frames.front().rows;
+		const auto expected_type  = frames.front().type();
+		int        combined_width = 0;
+
+		for (const auto &frame : frames) {
+			if (howdy::native::validate_frame(frame, howdy::native::FrameChannelPolicy::kBgr) !=
+			    howdy::native::FrameValidationStatus::kValid) {
+				return false;
+			}
+			if (frame.rows != expected_rows || frame.type() != expected_type) {
+				return false;
+			}
+			if (frame.cols > howdy::native::kMaxFrameDimension - combined_width) {
+				return false;
+			}
+			combined_width += frame.cols;
+		}
+		return true;
+	}
+
+	class RawSnapshotTempPathGuard {
+	public:
+		explicit RawSnapshotTempPathGuard(const char *path) noexcept
+		    : path_(path) {}
+
+		~RawSnapshotTempPathGuard() {
+			if (active_) {
+				unlink(path_);
+			}
+		}
+
+		RawSnapshotTempPathGuard(const RawSnapshotTempPathGuard &)                     = delete;
+		auto operator=(const RawSnapshotTempPathGuard &) -> RawSnapshotTempPathGuard & = delete;
+
+		void release() noexcept {
+			active_ = false;
+		}
+
+	private:
+		const char *path_;
+		bool        active_ = true;
+	};
+
+	auto make_snapshot_temp_path(const std::filesystem::path &path, void *context,
+	                             snapshot_internal::SnapshotCloseFdFn close_temp_fd)
+	    -> std::filesystem::path {
+		try {
+			const auto filename     = path.filename().string();
+			const auto suffix_start = filename.rfind('.');
+			const auto suffix =
+			    suffix_start == std::string::npos ? std::string{} : filename.substr(suffix_start);
+			std::string temp_template =
+			    (path.parent_path() / ("." + filename + ".tmp-XXXXXX" + suffix)).string();
+			std::vector<char> writable(temp_template.begin(), temp_template.end());
+			writable.push_back('\0');
+
+			const int fd = mkstemps(writable.data(), static_cast<int>(suffix.size()));
+			if (fd < 0) {
+				return {};
+			}
+			RawSnapshotTempPathGuard cleanup(writable.data());
+			if (close_temp_fd(context, fd) != 0) {
+				return {};
+			}
+
+			std::filesystem::path temp_path(writable.data());
+			cleanup.release();
+			return temp_path;
+		} catch (...) {
+			return {};
+		}
+	}
+
+	auto fsync_file_at_path(const std::filesystem::path &path) -> bool {
+		const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+		if (fd < 0) {
+			return false;
+		}
+		const bool ok = fsync(fd) == 0;
+		close(fd);
+		return ok;
+	}
+
+	class SnapshotTempPathGuard {
+	public:
+		explicit SnapshotTempPathGuard(const std::filesystem::path &path) noexcept
+		    : path_(path) {}
+
+		~SnapshotTempPathGuard() {
+			if (!active_) {
+				return;
+			}
+			std::error_code ec;
+			std::filesystem::remove(path_, ec);
+		}
+
+		SnapshotTempPathGuard(const SnapshotTempPathGuard &)                     = delete;
+		auto operator=(const SnapshotTempPathGuard &) -> SnapshotTempPathGuard & = delete;
+
+		void release() noexcept {
+			active_ = false;
+		}
+
+	private:
+		const std::filesystem::path &path_;
+		bool                         active_ = true;
+	};
+
 	auto generate_snapshot(const std::vector<cv::Mat>     &frames,
 	                       const std::vector<std::string> &text_lines) -> std::filesystem::path {
 		auto       filepath     = snapshot_path();
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
-		    .context     = nullptr,
-		    .write_image = write_image_dependency,
-		    .chmod_path  = chmod_path_dependency,
-		    .sync_parent = sync_parent_dependency,
+		    .context       = nullptr,
+		    .write_image   = write_image_dependency,
+		    .chmod_path    = chmod_path_dependency,
+		    .sync_parent   = sync_parent_dependency,
+		    .close_temp_fd = close_temp_fd_dependency,
 		};
 		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath,
 		                                               dependencies)) {
@@ -182,8 +305,11 @@ auto howdy::native::snapshot_internal::ensure_snapshot_directory(
 auto howdy::native::snapshot_internal::write_snapshot_at_path(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
     const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies) -> bool {
-	if (frames.empty() || dependencies.write_image == nullptr ||
-	    dependencies.chmod_path == nullptr || dependencies.sync_parent == nullptr) {
+	if (dependencies.write_image == nullptr || dependencies.chmod_path == nullptr ||
+	    dependencies.sync_parent == nullptr || dependencies.close_temp_fd == nullptr) {
+		return false;
+	}
+	if (!has_valid_snapshot_frames(frames)) {
 		return false;
 	}
 
@@ -191,31 +317,48 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 		return false;
 	}
 
-	const int frame_height = frames.front().rows;
-	cv::Mat   snap;
-	cv::hconcat(frames, snap);
-	cv::Mat padded;
-	cv::copyMakeBorder(snap, padded, 0, (static_cast<int>(text_lines.size()) * 20) + 40, 0, 0,
-	                   cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
-	snap = padded;
-
-	for (std::size_t index = 0; index < text_lines.size(); ++index) {
-		const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
-		cv::putText(snap, text_lines[index], cv::Point(30, padding_top), cv::FONT_HERSHEY_SIMPLEX,
-		            0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
-	}
-
-	if (!dependencies.write_image(dependencies.context, path, snap)) {
-		std::error_code ec;
-		std::filesystem::remove(path, ec);
+	const auto temp_path =
+	    make_snapshot_temp_path(path, dependencies.context, dependencies.close_temp_fd);
+	if (temp_path.empty()) {
 		return false;
 	}
-	if (dependencies.chmod_path(dependencies.context, path, kSnapshotFileMode) != 0) {
-		std::error_code ec;
-		std::filesystem::remove(path, ec);
+	SnapshotTempPathGuard temp_path_guard(temp_path);
+
+	try {
+		const int frame_height = frames.front().rows;
+		cv::Mat   snap;
+		cv::hconcat(frames, snap);
+		cv::Mat padded;
+		cv::copyMakeBorder(snap, padded, 0, (static_cast<int>(text_lines.size()) * 20) + 40, 0, 0,
+		                   cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
+		snap = padded;
+
+		for (std::size_t index = 0; index < text_lines.size(); ++index) {
+			const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
+			cv::putText(snap, text_lines[index], cv::Point(30, padding_top),
+			            cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
+		}
+
+		if (!dependencies.write_image(dependencies.context, temp_path, snap)) {
+			return false;
+		}
+		if (dependencies.chmod_path(dependencies.context, temp_path, kSnapshotFileMode) != 0) {
+			return false;
+		}
+		if (!fsync_file_at_path(temp_path)) {
+			return false;
+		}
+
+		std::filesystem::rename(temp_path, path);
+		temp_path_guard.release();
+	} catch (...) {
 		return false;
 	}
-	dependencies.sync_parent(dependencies.context, path);
+	try {
+		dependencies.sync_parent(dependencies.context, path);
+	} catch (...) {
+		return false;
+	}
 	return true;
 }
 
