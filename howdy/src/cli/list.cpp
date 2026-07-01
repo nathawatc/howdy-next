@@ -1,10 +1,13 @@
 #include "cli/list_cli.hpp"
+#include "cli/list_internal.hpp"
 #include "storage/user_models.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -18,10 +21,10 @@ namespace {
 		bool        plain = false;
 	};
 
-	auto parse_args(int argc, char **argv) -> ListArgs {
+	auto parse_args(int argc, char **argv) -> std::optional<ListArgs> {
 		ListArgs args;
 		if (argc < 2) {
-			std::exit(kExitAbort);
+			return std::nullopt;
 		}
 		args.user = argv[1];
 		for (int index = 2; index < argc; ++index) {
@@ -32,25 +35,39 @@ namespace {
 		return args;
 	}
 
+	auto list_user_model_entries_dependency([[maybe_unused]] void *context, const std::string &user)
+	    -> howdy::native::UserModelListResult {
+		return howdy::native::list_user_model_entries(user, {});
+	}
+
 }  // namespace
 
-int list_main(int argc, char **argv) {
-	const auto args   = parse_args(argc, argv);
-	const auto models = howdy::native::list_user_model_entries(args.user, {});
+auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **argv,
+                                                               const ListDependencies &dependencies)
+    -> int {
+	if (dependencies.list_user_model_entries == nullptr) {
+		return kExitAbort;
+	}
+
+	const auto args = parse_args(argc, argv);
+	if (!args.has_value()) {
+		return kExitAbort;
+	}
+	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << "Face models have not been initialized yet, please run:\n";
-		std::cout << "\n\tsudo howdy -U " << args.user << " add\n\n";
+		std::cout << "\n\tsudo howdy -U " << args->user << " add\n\n";
 		return kExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
-		if (!args.plain) {
-			std::cout << "No face model known for the user " << args.user << ", please run:\n";
-			std::cout << "\n\tsudo howdy -U " << args.user << " add\n\n";
+		if (!args->plain) {
+			std::cout << "No face model known for the user " << args->user << ", please run:\n";
+			std::cout << "\n\tsudo howdy -U " << args->user << " add\n\n";
 		}
 		return kExitAbort;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
-		if (!args.plain) {
+		if (!args->plain) {
 			std::cout << models.error_message << "\n";
 		}
 		return kExitAbort;
@@ -58,7 +75,7 @@ int list_main(int argc, char **argv) {
 	for (const auto &model : models.entries) {
 		const auto timestamp = static_cast<std::time_t>(model.time);
 		std::cout << model.id;
-		if (args.plain) {
+		if (args->plain) {
 			std::cout << ",";
 		} else {
 			std::cout << std::string(
@@ -68,10 +85,21 @@ int list_main(int argc, char **argv) {
 		std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S",
 		              std::localtime(&timestamp));
 		std::cout << buffer.data();
-		std::cout << (args.plain ? "," : "  ");
+		std::cout << (args->plain ? "," : "  ");
 		std::cout << model.label << "\n";
 	}
 
 	std::cout << "\n";
 	return kExitOk;
+}
+
+int list_main(int argc, char **argv) {
+	if (argc < 2) {
+		std::exit(kExitAbort);
+	}
+	return howdy::native::list_internal::list_main_with_dependencies(
+	    argc, argv,
+	    howdy::native::list_internal::ListDependencies{
+	        .list_user_model_entries = list_user_model_entries_dependency,
+	    });
 }

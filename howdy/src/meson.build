@@ -499,6 +499,25 @@ test(
 	native_set_cli_test,
 )
 
+native_list_cli_test = executable(
+	'howdy-list-cli-test',
+	'cli/list.cpp',
+	'tests/list_cli_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-list-cli',
+	native_list_cli_test,
+)
+
 native_add_cli_test = executable(
 	'howdy-add-cli-test',
 	'cli/add.cpp',
