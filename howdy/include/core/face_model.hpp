@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/runtime_config.hpp"
+#include "core/face_detection.hpp"
 #include "core/face_matching.hpp"
 
 #include <string>
@@ -24,14 +25,10 @@ namespace howdy::native {
 		[[nodiscard]] auto metric() const -> const std::string &;
 
 		[[nodiscard]] auto prepare_frame(const cv::Mat &frame) const -> cv::Mat;
-		auto               detect(const cv::Mat &frame) -> std::vector<cv::Mat>;
-		auto               encode(const cv::Mat &frame, const cv::Mat &face) -> std::vector<float>;
+		auto               detect(const cv::Mat &frame) -> FaceDetectionResult;
+		auto encode(const cv::Mat &frame, const FaceDetection &face) -> std::vector<float>;
 		[[nodiscard]] auto best_match(const std::vector<std::vector<float>> &known,
 		                              const std::vector<float> &probe) const -> FaceMatch;
-		[[nodiscard]] auto detection_box(const cv::Mat &face) const
-		    -> std::tuple<int, int, int, int>;
-		[[nodiscard]] auto detection_landmarks(const cv::Mat &face) const -> std::vector<cv::Point>;
-		[[nodiscard]] auto detection_confidence(const cv::Mat &face) const -> float;
 
 	private:
 		void               set_input_size_from_frame(const cv::Mat &frame);

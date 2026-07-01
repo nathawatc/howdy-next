@@ -162,6 +162,14 @@ namespace {
 
 		capture.release();
 
+		if (capture_result.detector_status != howdy::native::FaceDetectionStatus::kOk) {
+			return howdy::native::add_internal::AddEnrollmentResult{
+			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kFaceModelError,
+			    .error_message  = capture_result.detector_error_message,
+			    .capture_result = std::move(capture_result),
+			};
+		}
+
 		if (capture_result.faces.empty()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kCaptureFailure,

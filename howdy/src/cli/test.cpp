@@ -305,8 +305,7 @@ namespace {
 					};
 				}
 
-				const auto gray_validation =
-				    test_cli_internal::validate_preview_gray_frame(gray_frame);
+				auto gray_validation = test_cli_internal::validate_preview_gray_frame(gray_frame);
 				if (gray_validation.status != test_cli_internal::TestPreviewStatus::kOk) {
 					capture.release();
 					return gray_validation;
@@ -361,16 +360,26 @@ namespace {
 
 					const auto recognition_start = std::chrono::steady_clock::now();
 					auto       face_frame        = face_model.prepare_frame(gray_frame);
-					const auto face_locations    = face_model.detect(face_frame);
+					const auto detection_result  = face_model.detect(face_frame);
 					recognition_ms               = static_cast<double>(
 					    std::chrono::duration_cast<std::chrono::milliseconds>(
 					        std::chrono::steady_clock::now() - recognition_start)
 					        .count());
 
-					for (const auto &face : face_locations) {
+					if (!detection_result.ok()) {
+						capture.release();
+						return test_cli_internal::TestPreviewResult{
+						    .status        = test_cli_internal::TestPreviewStatus::kFaceModelError,
+						    .error_message = detection_result.error_message,
+						};
+					}
+
+					for (const auto &face : detection_result.detections) {
 						cv::Scalar color(0, 0, 230);
-						const auto [x, y, w, h] = face_model.detection_box(face);
-						const float confidence  = face_model.detection_confidence(face);
+						const int  x = static_cast<int>(face.box.x);
+						const int  y = static_cast<int>(face.box.y);
+						const int  w = static_cast<int>(face.box.width);
+						const int  h = static_cast<int>(face.box.height);
 
 						if (loaded_models.status == howdy::native::UserModelStatus::kOk) {
 							const auto face_encoding = face_model.encode(face_frame, face);
@@ -394,11 +403,14 @@ namespace {
 						}
 
 						cv::rectangle(overlay, cv::Rect(x, y, w, h), color, 2);
-						cv::putText(overlay, cv::format("%.2f", confidence),
+						cv::putText(overlay, cv::format("%.2f", face.confidence),
 						            cv::Point(x, std::min(height - 4, y + h + 12)),
 						            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-						for (const auto &point : face_model.detection_landmarks(face)) {
-							cv::circle(overlay, point, 2, cv::Scalar(0, 255, 255), -1);
+						for (const auto &point : face.landmarks) {
+							cv::circle(
+							    overlay,
+							    cv::Point(static_cast<int>(point.x), static_cast<int>(point.y)), 2,
+							    cv::Scalar(0, 255, 255), -1);
 						}
 					}
 				}

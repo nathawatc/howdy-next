@@ -55,16 +55,27 @@ namespace {
 			return clone_frames ? frame.clone() : frame;
 		}
 
-		auto detect(const cv::Mat &frame) -> std::vector<cv::Mat> {
+		auto detect(const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
 			detect_calls++;
 			seen_frames.push_back(clone_frames ? frame.clone() : frame);
-			if (!return_face || detect_calls <= misses_before_face) {
-				return {};
+			if (fail_detection) {
+				return howdy::native::FaceDetectionResult{
+				    .status        = howdy::native::FaceDetectionStatus::kInvalidOutput,
+				    .error_message = "malformed detector output",
+				};
 			}
-			return {cv::Mat(1, 15, CV_32F, cv::Scalar(1.0F))};
+			if (!return_face || detect_calls <= misses_before_face) {
+				return howdy::native::FaceDetectionResult{};
+			}
+			return howdy::native::FaceDetectionResult{
+			    .detections = {howdy::native::FaceDetection{
+			        .box = cv::Rect2f(1.0F, 1.0F, 1.0F, 1.0F),
+			    }},
+			};
 		}
 
 		bool                 return_face        = true;
+		bool                 fail_detection     = false;
 		bool                 clone_frames       = true;
 		int                  misses_before_face = 0;
 		int                  prepare_calls      = 0;
@@ -424,6 +435,25 @@ namespace {
 		return ok;
 	}
 
+	auto detector_failure_stops_capture_and_remains_distinct() -> bool {
+		FakeCapture   capture({valid_read(), valid_read()});
+		FakeFaceModel face_model;
+		face_model.fail_detection = true;
+
+		const auto result =
+		    howdy::native::capture_enrollment_sample(capture, face_model, test_config(), 2);
+
+		bool ok = true;
+		ok &= expect(result.detector_status == howdy::native::FaceDetectionStatus::kInvalidOutput,
+		             "detector failure status is retained");
+		ok &= expect(!result.detector_error_message.empty(),
+		             "detector failure diagnostic is retained");
+		ok &= expect(result.faces.empty(), "failed detection produces no enrollment faces");
+		ok &= expect(capture.read_calls == 1, "capture stops before consuming a later frame");
+		ok &= expect(face_model.detect_calls == 1, "detector is not called after failure");
+		return ok;
+	}
+
 }  // namespace
 
 int main() {
@@ -443,5 +473,6 @@ int main() {
 	ok &= read_failure_is_distinct_from_black_frame_and_empty_read();
 	ok &= all_read_failures_do_not_report_black_frame_failure();
 	ok &= all_empty_successful_reads_do_not_report_black_frame_failure();
+	ok &= detector_failure_stops_capture_and_remains_distinct();
 	return ok ? 0 : 1;
 }

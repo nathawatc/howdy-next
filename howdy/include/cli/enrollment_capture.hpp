@@ -4,6 +4,7 @@
 #include "common/frame_processing.hpp"
 #include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
+#include "core/face_detection.hpp"
 
 #include <vector>
 
@@ -13,14 +14,16 @@
 namespace howdy::native {
 
 	struct EnrollmentCaptureResult {
-		cv::Mat              frame;
-		std::vector<cv::Mat> faces;
-		int                  valid_frames       = 0;
-		int                  dark_tries         = 0;
-		int                  black_frames       = 0;
-		int                  empty_frames       = 0;
-		int                  read_failures      = 0;
-		double               dark_running_total = 0.0;
+		cv::Mat                    frame;
+		std::vector<FaceDetection> faces;
+		FaceDetectionStatus        detector_status = FaceDetectionStatus::kOk;
+		std::string                detector_error_message;
+		int                        valid_frames       = 0;
+		int                        dark_tries         = 0;
+		int                        black_frames       = 0;
+		int                        empty_frames       = 0;
+		int                        read_failures      = 0;
+		double                     dark_running_total = 0.0;
 	};
 
 	enum class EnrollmentCaptureFailure {
@@ -95,8 +98,14 @@ namespace howdy::native {
 					break;
 			}
 
-			auto prepared = face_model.prepare_frame(gray);
-			result.faces  = face_model.detect(prepared);
+			auto       prepared         = face_model.prepare_frame(gray);
+			const auto detection_result = face_model.detect(prepared);
+			if (!detection_result.ok()) {
+				result.detector_status        = detection_result.status;
+				result.detector_error_message = detection_result.error_message;
+				break;
+			}
+			result.faces = detection_result.detections;
 			if (!result.faces.empty()) {
 				result.frame = prepared;
 				break;

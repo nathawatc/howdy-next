@@ -276,8 +276,12 @@ auto main(int argc, char **argv) -> int {
 				          << "\n";
 				return static_cast<int>(CompareExit::kAbort);
 			}
-			const auto faces = face_model.detect(prepared);
-			for (const auto &face : faces) {
+			const auto detection_result = face_model.detect(prepared);
+			if (!detection_result.ok()) {
+				std::cerr << detection_result.error_message << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			for (const auto &face : detection_result.detections) {
 				const auto encoding = face_model.encode(prepared, face);
 				const auto match = face_model.best_match(loaded_models.stored.encodings, encoding);
 				best_score =

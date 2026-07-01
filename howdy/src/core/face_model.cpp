@@ -71,31 +71,40 @@ namespace howdy::native {
 		return frame;
 	}
 
-	auto FaceModel::detect(const cv::Mat &frame) -> std::vector<cv::Mat> {
-		std::vector<cv::Mat> result;
-		cv::Mat              prepared = prepare_frame(frame);
-		set_input_size_from_frame(prepared);
+	auto FaceModel::detect(const cv::Mat &frame) -> FaceDetectionResult {
+		try {
+			cv::Mat prepared = prepare_frame(frame);
+			set_input_size_from_frame(prepared);
 
-		cv::Mat faces;
-		detector_->detect(prepared, faces);
-		if (faces.empty()) {
-			return result;
+			cv::Mat faces;
+			detector_->detect(prepared, faces);
+			return parse_yunet_detections(faces);
+		} catch (const cv::Exception &error) {
+			return FaceDetectionResult{
+			    .status        = FaceDetectionStatus::kInferenceError,
+			    .error_message = std::string("YuNet inference failed: ") + error.what(),
+			};
 		}
-
-		result.reserve(static_cast<std::size_t>(faces.rows));
-		for (int row = 0; row < faces.rows; ++row) {
-			result.push_back(faces.row(row).clone());
-		}
-		return result;
 	}
 
-	auto FaceModel::encode(const cv::Mat &frame, const cv::Mat &face) -> std::vector<float> {
+	auto FaceModel::encode(const cv::Mat &frame, const FaceDetection &face) -> std::vector<float> {
 		std::vector<float> result;
 		cv::Mat            prepared = prepare_frame(frame);
+		cv::Mat            row(1, 15, CV_32FC1);
 		cv::Mat            aligned;
 		cv::Mat            feature;
+		row.at<float>(0, 0) = face.box.x;
+		row.at<float>(0, 1) = face.box.y;
+		row.at<float>(0, 2) = face.box.width;
+		row.at<float>(0, 3) = face.box.height;
+		for (std::size_t index = 0; index < face.landmarks.size(); ++index) {
+			const int column             = 4 + static_cast<int>(index * 2);
+			row.at<float>(0, column)     = face.landmarks[index].x;
+			row.at<float>(0, column + 1) = face.landmarks[index].y;
+		}
+		row.at<float>(0, 14) = face.confidence;
 
-		recognizer_->alignCrop(prepared, face, aligned);
+		recognizer_->alignCrop(prepared, row, aligned);
 		if (aligned.empty()) {
 			return result;
 		}
@@ -116,25 +125,6 @@ namespace howdy::native {
 	auto FaceModel::best_match(const std::vector<std::vector<float>> &known,
 	                           const std::vector<float>              &probe) const -> FaceMatch {
 		return find_best_face_match(known, probe, metric_, threshold_);
-	}
-
-	auto FaceModel::detection_box(const cv::Mat &face) const -> std::tuple<int, int, int, int> {
-		return {static_cast<int>(face.at<float>(0, 0)), static_cast<int>(face.at<float>(0, 1)),
-		        static_cast<int>(face.at<float>(0, 2)), static_cast<int>(face.at<float>(0, 3))};
-	}
-
-	auto FaceModel::detection_landmarks(const cv::Mat &face) const -> std::vector<cv::Point> {
-		std::vector<cv::Point> points;
-		points.reserve(5);
-		for (int index = 4; index < 14; index += 2) {
-			points.emplace_back(static_cast<int>(face.at<float>(0, index)),
-			                    static_cast<int>(face.at<float>(0, index + 1)));
-		}
-		return points;
-	}
-
-	auto FaceModel::detection_confidence(const cv::Mat &face) const -> float {
-		return face.cols > 14 ? face.at<float>(0, 14) : 0.0F;
 	}
 
 	void FaceModel::set_input_size_from_frame(const cv::Mat &frame) {
