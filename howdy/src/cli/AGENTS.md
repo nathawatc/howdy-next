@@ -1,6 +1,6 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-06-25
+**Updated:** 2026-07-01
 
 ## Scope
 
@@ -28,6 +28,7 @@ CLI commands are refactored for testability via dependency-injection structs:
 | Header                                     | Exposes                                                                                                               |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | `include/cli/add_internal.hpp`             | `AddDependencies`, `add_main_with_dependencies()`                                                                     |
+| `include/cli/remove_internal.hpp`          | `RemoveDependencies`, `remove_main_with_dependencies()`                                                               |
 | `include/cli/test_cli_internal.hpp`        | `TestDependencies`, `test_main_with_dependencies()`, `run_preview_preflight()`, `has_graphical_display_environment()` |
 | `include/cli/snapshot_internal.hpp`        | `SnapshotDependencies`, `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, `write_snapshot_at_path()` |
 | `include/cli/enrollment_capture.hpp`       | `capture_enrollment_sample()` template, `EnrollmentCaptureResult`, `classify_enrollment_capture_failure()`            |

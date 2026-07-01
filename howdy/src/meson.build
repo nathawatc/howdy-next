@@ -503,6 +503,25 @@ test(
 	native_add_cli_test,
 )
 
+native_remove_cli_test = executable(
+	'howdy-remove-cli-test',
+	'cli/remove.cpp',
+	'tests/remove_cli_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-remove-cli',
+	native_remove_cli_test,
+)
+
 native_test_cli_test = executable(
 	'howdy-test-cli-test',
 	'cli/test.cpp',
