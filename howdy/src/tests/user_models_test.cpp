@@ -29,7 +29,7 @@ namespace {
 
 	auto read_file(const std::filesystem::path &path) -> std::string {
 		std::ifstream input(path, std::ios::binary);
-		return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 	}
 
 	auto nested_array(std::size_t depth) -> std::string {
