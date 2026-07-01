@@ -27,14 +27,31 @@ if cpp.get_id() == 'gcc' or cpp.get_id() == 'clang'
 	)
 endif
 
-modelsdir = get_option('models_dir') != '' ? get_option('models_dir') : join_paths(get_option('prefix'), get_option('datadir'), 'howdy', 'models')
-confdir = get_option('config_dir') != '' ? get_option('config_dir') : join_paths(get_option('prefix'), get_option('sysconfdir'), 'howdy')
-usermodelsdir = get_option('user_models_dir') != '' ? get_option('user_models_dir') : join_paths(confdir, 'models')
+prefix = get_option('prefix')
+datadir = get_option('datadir')
+sysconfdir = get_option('sysconfdir')
+libdir = get_option('libdir')
+
+modelsdir = get_option('models_dir')
+if modelsdir == ''
+	modelsdir = prefix / datadir / 'howdy' / 'models'
+endif
+
+confdir = get_option('config_dir')
+if confdir == ''
+	confdir = prefix / sysconfdir / 'howdy'
+endif
+
+usermodelsdir = get_option('user_models_dir')
+if usermodelsdir == ''
+	usermodelsdir = confdir / 'models'
+endif
+
 logpath = get_option('log_path')
 
-config_path = join_paths(confdir, 'config.ini')
-compare_process_path = join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-compare')
-auth_helper_path = join_paths(get_option('prefix'), get_option('libdir'), 'howdy', 'howdy-auth-helper')
+config_path = confdir / 'config.ini'
+compare_process_path = prefix / libdir / 'howdy' / 'howdy-compare'
+auth_helper_path = prefix / libdir / 'howdy' / 'howdy-auth-helper'
 
 paths_dict = {
 	'auth_helper_path': auth_helper_path,
@@ -58,7 +75,7 @@ if get_option('install_pam_config')
 	)
 	install_data(
 		pam_config,
-		install_dir: get_option('prefix') / get_option('datadir') / 'pam-configs',
+		install_dir: prefix / datadir / 'pam-configs',
 		install_mode: 'rw-r--r--',
 		install_tag: 'pam',
 		rename: 'howdy',
