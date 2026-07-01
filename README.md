@@ -25,7 +25,7 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, nlohmann-json, pam
+meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, yyjson, pam
 ```
 
 - Build: `meson setup build && ninja -C build`

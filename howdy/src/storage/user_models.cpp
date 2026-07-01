@@ -1,6 +1,7 @@
 #include "storage/user_models.hpp"
 
 #include "common/atomic_files.hpp"
+#include "common/fd_io.hpp"
 #include "common/file_lock.hpp"
 #include "common/file_security.hpp"
 #include "common/user_names.hpp"
@@ -10,18 +11,17 @@
 #include "storage/user_model_readiness.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <ctime>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include <sys/stat.h>
-
-#include <nlohmann/json.hpp>
 
 namespace howdy::native {
 
@@ -189,41 +189,65 @@ namespace howdy::native {
 			return UserModelStatus::kNoModel;
 		}
 
+		auto opened_model_file_is_secure(const struct stat &opened_file) -> bool {
+			const auto owner_uid = default_secure_owner_uid();
+			return S_ISREG(opened_file.st_mode) &&
+			       (!owner_uid.has_value() || opened_file.st_uid == *owner_uid) &&
+			       (opened_file.st_mode & (S_IWGRP | S_IWOTH)) == 0 && opened_file.st_nlink == 1;
+		}
+
 		auto load_document_from_path(const std::filesystem::path &path,
 		                             const std::string           &expected_backend,
 		                             const std::string           &expected_metric,
 		                             const std::string &expected_model, bool strict_shape = true)
 		    -> ModelDocument {
-			std::string regular_error;
-			const auto  regular_status = inspect_regular_file_status(path, &regular_error);
-			if (regular_status != UserModelStatus::kOk) {
+			ScopedFd input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			if (input.get() < 0) {
+				if (errno == ENOENT) {
+					return ModelDocument(UserModelListResult{.status = UserModelStatus::kNoModel});
+				}
 				return ModelDocument{
-				    .result = regular_status == UserModelStatus::kParseError
-				                  ? failure(regular_status, regular_error)
-				                  : UserModelListResult{.status = UserModelStatus::kNoModel},
+				    failure(UserModelStatus::kParseError,
+				            "Failed to open user model file: " + path.string()),
+				};
+			}
+			struct stat opened_file{};
+			if (fstat(input.get(), &opened_file) != 0) {
+				return ModelDocument{
+				    failure(UserModelStatus::kParseError,
+				            "Failed to inspect opened user model file: " + path.string()),
+				};
+			}
+			if (!opened_model_file_is_secure(opened_file)) {
+				return ModelDocument{
+				    failure(UserModelStatus::kInsecurePath,
+				            "Opened user model file failed security validation: " + path.string()),
+				};
+			}
+			if (opened_file.st_size < 0 ||
+			    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
+				return ModelDocument(
+				    failure(UserModelStatus::kOversized,
+				            "User model file is too large or unreadable: " + path.string()));
+			}
+
+			const auto content = read_fd_to_string_bounded(
+			    input.get(), user_model_limits::kMaxUserModelFileBytes + 1);
+			if (content.read_error) {
+				return ModelDocument{
+				    failure(UserModelStatus::kParseError,
+				            "Failed to read user model file: " + path.string()),
+				};
+			}
+			if (content.hit_limit) {
+				return ModelDocument{
+				    failure(UserModelStatus::kOversized,
+				            "User model file is too large or unreadable: " + path.string()),
 				};
 			}
 
-			std::error_code size_ec;
-			const auto      file_size = std::filesystem::file_size(path, size_ec);
-			if (size_ec || file_size > user_model_limits::kMaxUserModelFileBytes) {
-				return ModelDocument{
-				    .result =
-				        failure(UserModelStatus::kOversized,
-				                "User model file is too large or unreadable: " + path.string()),
-				};
-			}
-
-			std::ifstream input(path);
-			if (!input.is_open()) {
-				return ModelDocument{
-				    .result = failure(UserModelStatus::kParseError,
-				                      "Failed to open user model file: " + path.string()),
-				};
-			}
-
-			return user_model_codec::decode_document(input, expected_backend, expected_metric,
-			                                         expected_model, strict_shape);
+			return user_model_codec::decode_document(content.output, expected_backend,
+			                                         expected_metric, expected_model, strict_shape);
 		}
 
 		auto load_entries_from_path(const std::filesystem::path &path,
@@ -236,32 +260,29 @@ namespace howdy::native {
 			    .result;
 		}
 
-		auto write_models(const std::filesystem::path &path, const nlohmann::json &models) -> bool {
-			return write_atomic_file(path, user_model_codec::serialize_document(models),
-			                         kUserModelFileMode);
+		auto write_models(const std::filesystem::path &path, const ModelDocument &document)
+		    -> bool {
+			const auto serialized = user_model_codec::serialize_document(document);
+			return serialized.has_value() &&
+			       write_atomic_file(path, *serialized, kUserModelFileMode);
 		}
 
 		auto load_for_mutation(const std::string &user, ModelPathResult *path_result,
 		                       std::optional<ScopedFileLock> *lock) -> ModelDocument {
 			*path_result = resolve_model_path(user, true, default_secure_owner_uid());
 			if (path_result->status != UserModelStatus::kOk) {
-				return ModelDocument{
-				    .result = failure(path_result->status, path_result->error_message),
-				};
+				return ModelDocument(failure(path_result->status, path_result->error_message));
 			}
 
 			*lock = acquire_file_lock(path_result->path);
 			if (!lock->has_value()) {
-				return ModelDocument{
-				    .result = failure(UserModelStatus::kLockFailed, "Failed to lock model file"),
-				};
+				return ModelDocument(
+				    failure(UserModelStatus::kLockFailed, "Failed to lock model file"));
 			}
 
 			const auto secured_path = resolve_model_path(user, true, default_secure_owner_uid());
 			if (secured_path.status != UserModelStatus::kOk) {
-				return ModelDocument{
-				    .result = failure(secured_path.status, secured_path.error_message),
-				};
+				return ModelDocument(failure(secured_path.status, secured_path.error_message));
 			}
 			return load_document_from_path(path_result->path, {}, {}, {});
 		}
@@ -305,8 +326,11 @@ namespace howdy::native {
 		                                UserModelEntry                               removed,
 		                                std::vector<UserModelEntry>::difference_type found_index)
 		    -> UserModelMutationResult {
-			document->models.erase(document->models.begin() + found_index);
-			if (document->models.empty()) {
+			if (!user_model_codec::erase_entry(*document, static_cast<std::size_t>(found_index))) {
+				return mutation_failure(UserModelStatus::kWriteFailed,
+				                        "Failed to update model file");
+			}
+			if (user_model_codec::is_empty(*document)) {
 				if (!remove_file_and_sync(path)) {
 					return mutation_failure(UserModelStatus::kDeleteFailed,
 					                        "Failed to remove model file");
@@ -317,7 +341,7 @@ namespace howdy::native {
 				    .removed_last = true,
 				};
 			}
-			if (!write_models(path, document->models)) {
+			if (!write_models(path, *document)) {
 				return mutation_failure(UserModelStatus::kWriteFailed,
 				                        "Failed to update model file");
 			}
@@ -425,8 +449,8 @@ namespace howdy::native {
 		    .model     = new_entry.model,
 		    .encodings = new_entry.encodings,
 		};
-		document.models.push_back(user_model_codec::encode_entry(entry));
-		if (!write_models(path_result.path, document.models)) {
+		if (!user_model_codec::append_entry(document, entry) ||
+		    !write_models(path_result.path, document)) {
 			return mutation_failure(UserModelStatus::kWriteFailed, "Failed to save model file");
 		}
 		return UserModelMutationResult{.status = UserModelStatus::kOk, .entry = std::move(entry)};

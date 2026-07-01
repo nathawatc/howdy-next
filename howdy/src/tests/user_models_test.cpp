@@ -1,4 +1,5 @@
 #include "common/user_names.hpp"
+#include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_models.hpp"
 
@@ -24,6 +25,15 @@ namespace {
 		}
 		out << content;
 		return out.good();
+	}
+
+	auto read_file(const std::filesystem::path &path) -> std::string {
+		std::ifstream input(path, std::ios::binary);
+		return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+	}
+
+	auto nested_array(std::size_t depth) -> std::string {
+		return std::string(depth, '[') + "0" + std::string(depth, ']');
 	}
 
 	auto expect(bool condition, const std::string &message) -> bool {
@@ -267,6 +277,19 @@ auto main() -> int {
 	}
 
 	const auto model_path = models_dir / "alice.dat";
+	if (mkfifo(model_path.c_str(), 0600) == 0) {
+		const auto started = std::chrono::steady_clock::now();
+		const auto result  = howdy::native::load_user_models("alice", backend);
+		const auto elapsed = std::chrono::steady_clock::now() - started;
+		ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
+		             "FIFO model target is rejected");
+		ok &= expect(elapsed < std::chrono::seconds(1),
+		             "FIFO model target is rejected without blocking");
+		ok &= expect(fs::remove(model_path, ec), "remove FIFO model target");
+		ec.clear();
+	} else {
+		std::cerr << "SKIP: FIFO model target creation failed\n";
+	}
 	ok &= expect(write_file(model_path, "not-json"), "write malformed model file");
 	{
 		const auto result = howdy::native::inspect_user_model_file("alice");
@@ -753,6 +776,62 @@ auto main() -> int {
 	    .model     = "sface.onnx",
 	    .encodings = {{0.1F, 0.2F}},
 	};
+	ok &= expect(write_file(model_path, "not-json"),
+	             "write malformed existing file before mutations");
+	const auto malformed_before_mutation = read_file(model_path);
+	{
+		const auto result = howdy::native::append_user_model_entry("alice", first_entry);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+		             "append rejects malformed existing file");
+		ok &= expect(read_file(model_path) == malformed_before_mutation,
+		             "failed append leaves malformed existing file unchanged");
+	}
+	{
+		const auto result = howdy::native::remove_user_model_entry("alice", 0);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+		             "remove rejects malformed existing file");
+		ok &= expect(read_file(model_path) == malformed_before_mutation,
+		             "failed remove leaves malformed existing file unchanged");
+	}
+	ok &= expect(write_file(model_path, R"({"id":1})"),
+	             "write invalid-shape existing file before mutations");
+	const auto invalid_shape_before_mutation = read_file(model_path);
+	{
+		const auto result = howdy::native::append_user_model_entry("alice", first_entry);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+		             "append rejects invalid-shape existing file");
+		ok &= expect(read_file(model_path) == invalid_shape_before_mutation,
+		             "failed append leaves invalid-shape existing file unchanged");
+	}
+	{
+		const auto result = howdy::native::remove_user_model_entry("alice", 0);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
+		             "remove rejects invalid-shape existing file");
+		ok &= expect(read_file(model_path) == invalid_shape_before_mutation,
+		             "failed remove leaves invalid-shape existing file unchanged");
+	}
+	const auto deeply_nested_model =
+	    R"([{"id":0,"time":1,"label":"deep","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1]],"unknown":)" +
+	    nested_array(howdy::native::user_model_limits::kMaxJsonNestingDepth) + "}]";
+	ok &= expect(write_file(model_path, deeply_nested_model),
+	             "write deeply nested unknown field before mutations");
+	const auto deeply_nested_before_mutation = read_file(model_path);
+	{
+		const auto result = howdy::native::append_user_model_entry("alice", first_entry);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
+		             "append rejects deeply nested unknown field");
+		ok &= expect(read_file(model_path) == deeply_nested_before_mutation,
+		             "deep nesting append failure leaves model file unchanged");
+	}
+	{
+		const auto result = howdy::native::remove_user_model_entry("alice", 0);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
+		             "remove rejects deeply nested unknown field");
+		ok &= expect(read_file(model_path) == deeply_nested_before_mutation,
+		             "deep nesting remove failure leaves model file unchanged");
+	}
+	fs::remove(model_path, ec);
+	ec.clear();
 	const auto first_append = howdy::native::append_user_model_entry("alice", first_entry);
 	ok &= expect(first_append.status == howdy::native::UserModelStatus::kOk,
 	             "append creates first model entry");
@@ -806,6 +885,25 @@ auto main() -> int {
 		ok &= expect(persisted_text.contains("future_field"),
 		             "append preserves unknown fields in existing entries");
 	}
+	if (geteuid() != 0) {
+		const auto before_failed_writes = read_file(model_path);
+		ok &= expect(chmod(models_dir.c_str(), 0555) == 0,
+		             "make models directory unwritable for failed-write checks");
+		const auto append_result = howdy::native::append_user_model_entry("alice", second_entry);
+		ok &= expect(append_result.status == howdy::native::UserModelStatus::kWriteFailed,
+		             "append reports atomic write failure");
+		ok &= expect(read_file(model_path) == before_failed_writes,
+		             "failed append write leaves model file unchanged");
+		const auto remove_result = howdy::native::remove_user_model_entry("alice", 0);
+		ok &= expect(remove_result.status == howdy::native::UserModelStatus::kWriteFailed,
+		             "remove reports atomic write failure");
+		ok &= expect(read_file(model_path) == before_failed_writes,
+		             "failed remove write leaves model file unchanged");
+		ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
+		             "restore models directory after failed-write checks");
+	} else {
+		std::cerr << "SKIP: atomic write failure checks while running as root\n";
+	}
 
 	{
 		const auto result = howdy::native::remove_user_model_entry("alice", 99);
@@ -857,7 +955,7 @@ auto main() -> int {
 	ok &= expect(
 	    write_file(
 	        model_path,
-	        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
+	        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]],"future_field":{"revision":2}}])"),
 	    "restore entries before legacy remove");
 	{
 		const auto result = howdy::native::remove_user_model_entry("alice", 0);
@@ -868,6 +966,9 @@ auto main() -> int {
 		const auto remaining = howdy::native::list_user_model_entries("alice", backend);
 		ok &= expect(remaining.entries.size() == 1 && remaining.entries[0].id == 1,
 		             "remove preserves other model entries");
+		const auto persisted = read_file(model_path);
+		ok &= expect(persisted.contains("\"future_field\"") && persisted.contains("\"revision\":2"),
+		             "remove preserves unknown fields in another entry");
 	}
 	{
 		const auto result = howdy::native::remove_user_model_entry("alice", 1);

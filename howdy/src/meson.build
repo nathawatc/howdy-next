@@ -1,6 +1,6 @@
 opencv4 = dependency('opencv4', include_type: 'system')
 inih_cpp = dependency('INIReader')
-nlohmann_json = dependency('nlohmann_json')
+yyjson = dependency('yyjson', version: '>=0.12.0')
 libcurl = dependency('libcurl')
 openssl = dependency('openssl')
 datadir = get_option('prefix') / get_option('datadir') / 'howdy'
@@ -56,7 +56,7 @@ native_cpp_lib = static_library(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -70,7 +70,7 @@ native_capture_smoke = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -95,7 +95,7 @@ native_compare = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: true,
@@ -202,7 +202,7 @@ native_compare_args_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -284,7 +284,7 @@ native_config_utils_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -390,7 +390,7 @@ native_config_validation_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -409,7 +409,7 @@ native_user_models_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -426,7 +426,7 @@ native_user_model_codec_test = executable(
 	'tests/user_model_codec_test.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		nlohmann_json,
+		yyjson,
 	],
 	install: false,
 )
@@ -445,7 +445,7 @@ native_clear_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -466,7 +466,7 @@ native_config_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -486,7 +486,7 @@ native_disable_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -505,7 +505,7 @@ native_set_cli_test = executable(
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -524,7 +524,7 @@ native_list_cli_test = executable(
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -547,7 +547,7 @@ native_add_cli_test = executable(
 	],
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -566,7 +566,7 @@ native_remove_cli_test = executable(
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -589,7 +589,7 @@ native_test_cli_test = executable(
 	],
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -608,7 +608,7 @@ native_snapshot_cli_test = executable(
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -627,7 +627,7 @@ native_snapshot_writer_test = executable(
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -677,7 +677,7 @@ native_runtime_paths_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -696,7 +696,7 @@ native_runtime_config_load_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -716,7 +716,7 @@ native_runtime_config_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -735,7 +735,7 @@ native_invoking_user_env_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -754,7 +754,7 @@ native_config_reader_test = executable(
 	dependencies: [
 		inih_cpp,
 		libcurl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -790,7 +790,7 @@ native_cli_lib = static_library(
 		inih_cpp,
 		libcurl,
 		openssl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
@@ -805,7 +805,7 @@ native_howdy = executable(
 		inih_cpp,
 		libcurl,
 		openssl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: true,
@@ -846,7 +846,7 @@ native_howdy_dispatch_test = executable(
 		inih_cpp,
 		libcurl,
 		openssl,
-		nlohmann_json,
+		yyjson,
 		opencv4,
 	],
 	install: false,
