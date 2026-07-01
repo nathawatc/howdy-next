@@ -104,35 +104,39 @@ auto howdy::native::download_models_internal::download_models_write_callback(
 	return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
 }
 
-namespace {
-
-	size_t header_capture_callback(char *buffer, size_t size, size_t nitems, void *userdata) {
-		auto       *etag  = static_cast<std::string *>(userdata);
-		const auto  total = size * nitems;
-		std::string line(buffer, total);
-		const auto  colon_pos = line.find(':');
-		if (colon_pos == std::string::npos) {
-			return total;
-		}
-
-		auto key = line.substr(0, colon_pos);
-		for (char &ch : key) {
-			ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-		}
-		if (key != "etag") {
-			return total;
-		}
-
-		auto value = trim(line.substr(colon_pos + 1));
-		if (value.starts_with("W/")) {
-			value = value.substr(2);
-		}
-		if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-			value = value.substr(1, value.size() - 2);
-		}
-		*etag = trim(value);
+auto howdy::native::download_models_internal::download_models_header_capture_callback(
+    char *buffer, std::size_t size, std::size_t nitems, void *userdata) -> std::size_t {
+	auto *etag = static_cast<std::string *>(userdata);
+	if (size != 0 && nitems > std::numeric_limits<std::size_t>::max() / size) {
+		return 0;
+	}
+	const auto  total = size * nitems;
+	std::string line(buffer, total);
+	const auto  colon_pos = line.find(':');
+	if (colon_pos == std::string::npos) {
 		return total;
 	}
+
+	auto key = line.substr(0, colon_pos);
+	for (char &ch : key) {
+		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+	}
+	if (key != "etag") {
+		return total;
+	}
+
+	auto value = trim(line.substr(colon_pos + 1));
+	if (value.starts_with("W/")) {
+		value = value.substr(2);
+	}
+	if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+		value = value.substr(1, value.size() - 2);
+	}
+	*etag = trim(value);
+	return total;
+}
+
+namespace {
 
 	auto fetch_remote_sha256(const std::string &url) -> std::optional<std::string> {
 		CURL *curl = curl_easy_init();
@@ -144,7 +148,9 @@ namespace {
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		configure_transfer_policy(curl);
 		curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-		curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_capture_callback);
+		curl_easy_setopt(
+		    curl, CURLOPT_HEADERFUNCTION,
+		    howdy::native::download_models_internal::download_models_header_capture_callback);
 		curl_easy_setopt(curl, CURLOPT_HEADERDATA, &etag);
 		const CURLcode result = curl_easy_perform(curl);
 

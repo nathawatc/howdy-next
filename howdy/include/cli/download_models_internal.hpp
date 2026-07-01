@@ -22,6 +22,8 @@ namespace howdy::native::download_models_internal {
 
 	auto download_models_write_callback(void *contents, std::size_t size, std::size_t nmemb,
 	                                    void *userp) -> std::size_t;
+	auto download_models_header_capture_callback(char *buffer, std::size_t size, std::size_t nitems,
+	                                             void *userdata) -> std::size_t;
 
 	auto download_models_main_with_dependencies(int argc, char **argv,
 	                                            const DownloadModelsDependencies &dependencies)
