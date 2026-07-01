@@ -16,14 +16,20 @@
 
 namespace {
 
-	int download_attempts = 0;
+	int download_attempts  = 0;
+	int owner_uid_attempts = 0;
 
-	void reset_download_attempts() {
-		download_attempts = 0;
+	void reset_dependency_attempts() {
+		download_attempts  = 0;
+		owner_uid_attempts = 0;
 	}
 
 	auto attempted_downloads() -> int {
 		return download_attempts;
+	}
+
+	auto attempted_owner_uid_lookups() -> int {
+		return owner_uid_attempts;
 	}
 
 	auto fake_download_file(const std::string                                           &url,
@@ -36,6 +42,7 @@ namespace {
 	}
 
 	auto test_model_file_owner_uid() -> std::optional<uid_t> {
+		++owner_uid_attempts;
 		return std::nullopt;
 	}
 
@@ -154,7 +161,10 @@ namespace {
 		}
 	};
 
-	auto capture_download_models_stdout(const std::filesystem::path &path, int *exit_code) -> bool {
+	auto capture_download_models_stdout(
+	    const std::filesystem::path &path, int *exit_code,
+	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
+	    -> bool {
 		StdoutRedirectGuard stdout_redirect(path);
 		if (!stdout_redirect.ok()) {
 			return false;
@@ -166,11 +176,7 @@ namespace {
 		};
 		*exit_code =
 		    howdy::native::download_models_internal::download_models_main_with_dependencies(
-		        1, argv.data(),
-		        howdy::native::download_models_internal::DownloadModelsDependencies{
-		            .download_file        = fake_download_file,
-		            .model_file_owner_uid = test_model_file_owner_uid,
-		        });
+		        1, argv.data(), dependencies);
 		return true;
 	}
 
@@ -186,8 +192,13 @@ namespace {
 	                                const std::filesystem::path &output_path, int *exit_code)
 	    -> bool {
 		EnvVarGuard models_env("HOWDY_MODELS_DIR", models_dir.string());
-		reset_download_attempts();
-		return capture_download_models_stdout(output_path, exit_code);
+		reset_dependency_attempts();
+		return capture_download_models_stdout(
+		    output_path, exit_code,
+		    howdy::native::download_models_internal::DownloadModelsDependencies{
+		        .download_file        = fake_download_file,
+		        .model_file_owner_uid = test_model_file_owner_uid,
+		    });
 	}
 
 }  // namespace
@@ -203,6 +214,53 @@ auto main() -> int {
 	fs::create_directories(temp_root, ec);
 	ok &= expect(!ec, "create temp root");
 
+	const auto null_download_models_dir = temp_root / "null-download-file" / "models";
+	const auto null_download_output     = temp_root / "null-download-file-output.txt";
+	ok &= expect(!fs::exists(null_download_models_dir, ec) && !ec,
+	             "null download callback models directory starts absent");
+	int null_download_exit = 0;
+	{
+		EnvVarGuard models_env("HOWDY_MODELS_DIR", null_download_models_dir.string());
+		reset_dependency_attempts();
+		ok &= expect(capture_download_models_stdout(
+		                 null_download_output, &null_download_exit,
+		                 howdy::native::download_models_internal::DownloadModelsDependencies{
+		                     .download_file        = nullptr,
+		                     .model_file_owner_uid = test_model_file_owner_uid,
+		                 }),
+		             "capture null download callback output");
+	}
+	ok &= expect(null_download_exit == EXIT_FAILURE, "null download callback aborts");
+	ok &= expect(read_file(null_download_output).empty(), "null download callback emits no output");
+	ok &= expect(attempted_downloads() == 0, "null download callback invokes no download");
+	ok &= expect(attempted_owner_uid_lookups() == 0,
+	             "null download callback invokes no owner lookup");
+	ok &= expect(!fs::exists(null_download_models_dir, ec) && !ec,
+	             "null download callback creates no models directory");
+
+	const auto null_owner_models_dir = temp_root / "null-owner-uid" / "models";
+	const auto null_owner_output     = temp_root / "null-owner-uid-output.txt";
+	ok &= expect(!fs::exists(null_owner_models_dir, ec) && !ec,
+	             "null owner callback models directory starts absent");
+	int null_owner_exit = 0;
+	{
+		EnvVarGuard models_env("HOWDY_MODELS_DIR", null_owner_models_dir.string());
+		reset_dependency_attempts();
+		ok &= expect(capture_download_models_stdout(
+		                 null_owner_output, &null_owner_exit,
+		                 howdy::native::download_models_internal::DownloadModelsDependencies{
+		                     .download_file        = fake_download_file,
+		                     .model_file_owner_uid = nullptr,
+		                 }),
+		             "capture null owner callback output");
+	}
+	ok &= expect(null_owner_exit == EXIT_FAILURE, "null owner callback aborts");
+	ok &= expect(read_file(null_owner_output).empty(), "null owner callback emits no output");
+	ok &= expect(attempted_downloads() == 0, "null owner callback invokes no download");
+	ok &= expect(attempted_owner_uid_lookups() == 0, "null owner callback invokes no owner lookup");
+	ok &= expect(!fs::exists(null_owner_models_dir, ec) && !ec,
+	             "null owner callback creates no models directory");
+
 	const auto existing_models_dir = temp_root / "existing-models";
 	const auto existing_output     = temp_root / "existing-output.txt";
 	fs::create_directories(existing_models_dir, ec);
@@ -214,7 +272,7 @@ auto main() -> int {
 	ok &= expect(run_first_download_attempt(existing_models_dir, existing_output, &existing_exit),
 	             "capture existing-directory download-models output");
 	const auto existing_stdout = read_file(existing_output);
-	ok &= expect(existing_exit == 1, "stubbed download aborts after readiness passes");
+	ok &= expect(existing_exit == EXIT_FAILURE, "stubbed download aborts after readiness passes");
 	ok &= expect(attempted_downloads() == 1,
 	             "missing model in existing secure directory reaches download");
 	ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
@@ -232,7 +290,8 @@ auto main() -> int {
 	                                        &missing_parent_exit),
 	             "capture missing-parent download-models output");
 	const auto missing_parent_stdout = read_file(missing_parent_output);
-	ok &= expect(missing_parent_exit == 1, "stubbed download aborts after missing parent creation");
+	ok &= expect(missing_parent_exit == EXIT_FAILURE,
+	             "stubbed download aborts after missing parent creation");
 	ok &= expect(fs::is_directory(missing_parent_models_dir, ec) && !ec,
 	             "download-models creates missing models directory before readiness checks");
 	ok &=
@@ -250,7 +309,7 @@ auto main() -> int {
 	ok &= expect(run_first_download_attempt(blocked_models_dir, blocked_output, &blocked_exit),
 	             "capture blocked models-dir download-models output");
 	const auto blocked_stdout = read_file(blocked_output);
-	ok &= expect(blocked_exit == 1, "blocked models directory aborts cleanly");
+	ok &= expect(blocked_exit == EXIT_FAILURE, "blocked models directory aborts cleanly");
 	ok &=
 	    expect(attempted_downloads() == 0, "blocked models directory stops before first download");
 	ok &= expect(blocked_stdout.contains("Failed to create models directory:"),

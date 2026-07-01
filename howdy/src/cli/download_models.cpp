@@ -9,8 +9,8 @@
 
 #include <algorithm>
 #include <array>
-#include <cassert>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -28,7 +28,7 @@
 namespace {
 
 	constexpr int        kExitOk                 = 0;
-	constexpr int        kExitAbort              = 1;
+	constexpr int        kExitAbort              = EXIT_FAILURE;
 	constexpr long       kConnectTimeoutSeconds  = 15;
 	constexpr long       kTransferTimeoutSeconds = 300;
 	constexpr long       kLowSpeedBytesPerSecond = 1024;
@@ -258,8 +258,9 @@ namespace {
 
 auto howdy::native::download_models_internal::download_models_main_with_dependencies(
     int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
-	assert(dependencies.download_file != nullptr);
-	assert(dependencies.model_file_owner_uid != nullptr);
+	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr) {
+		return kExitAbort;
+	}
 
 	(void)argc;
 	(void)argv;
