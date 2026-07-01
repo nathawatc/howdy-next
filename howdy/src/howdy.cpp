@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
 	}
 
 	if (command == "version") {
-		std::cout << "Howdy-Next 3.1.1\n";
+		std::cout << "Howdy-Next 3.1.2\n";
 		return 0;
 	}
 
