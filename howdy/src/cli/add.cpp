@@ -7,7 +7,6 @@
 #include "storage/user_models.hpp"
 
 #include <chrono>
-#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -32,11 +31,11 @@ namespace {
 		std::optional<howdy::native::FaceModel> face_model;
 	};
 
-	auto parse_args(int argc, char **argv) -> AddArgs {
+	auto parse_args(int argc, char **argv) -> std::optional<AddArgs> {
 		AddArgs args;
 		if (argc < 2) {
 			std::cerr << "Usage: howdy-add <user> [label] [--plain] [-y]\n";
-			std::exit(kExitAbort);
+			return std::nullopt;
 		}
 
 		args.user = argv[1];
@@ -235,8 +234,12 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 		return kExitAbort;
 	}
 
-	const auto args          = parse_args(argc, argv);
-	auto       config_result = dependencies.load_runtime_config(dependencies.context);
+	const auto args = parse_args(argc, argv);
+	if (!args.has_value()) {
+		return kExitAbort;
+	}
+
+	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
@@ -245,7 +248,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	const auto &config = *config_result.config;
 
 	auto preflight_result =
-	    dependencies.preflight_enrollment(dependencies.context, args.user, config);
+	    dependencies.preflight_enrollment(dependencies.context, args->user, config);
 	switch (preflight_result.status) {
 		case AddPreflightStatus::kOk:
 			break;
@@ -262,8 +265,8 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 			return kExitAbort;
 	}
 
-	std::string label = args.label;
-	if (!args.yes && args.label.empty() && !args.plain) {
+	std::string label = args->label;
+	if (!args->yes && args->label.empty() && !args->plain) {
 		std::cout << "Enter a label for this new model [automatic]: ";
 		std::string input;
 		std::getline(std::cin, input);
@@ -273,8 +276,8 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	}
 	std::erase(label, ',');
 
-	auto enrollment_result =
-	    dependencies.capture_enrollment(dependencies.context, args.user, config, args.plain, label);
+	auto enrollment_result = dependencies.capture_enrollment(dependencies.context, args->user,
+	                                                         config, args->plain, label);
 	switch (enrollment_result.status) {
 		case AddEnrollmentStatus::kOk:
 			break;
@@ -297,7 +300,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	}
 
 	const auto append_result =
-	    dependencies.append_user_model(dependencies.context, args.user,
+	    dependencies.append_user_model(dependencies.context, args->user,
 	                                   howdy::native::NewUserModelEntry{
 	                                       .label     = label,
 	                                       .backend   = howdy::native::FaceModel::kBackendName,
@@ -310,7 +313,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 		return kExitAbort;
 	}
 
-	std::cout << "\nScan complete\nAdded a new model to " << args.user << "\n";
+	std::cout << "\nScan complete\nAdded a new model to " << args->user << "\n";
 	return kExitOk;
 }
 

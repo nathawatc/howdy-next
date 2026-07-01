@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
 #include <ctime>
 #include <iostream>
 #include <optional>
@@ -95,7 +94,7 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 
 int list_main(int argc, char **argv) {
 	if (argc < 2) {
-		std::exit(kExitAbort);
+		return kExitAbort;
 	}
 	return howdy::native::list_internal::list_main_with_dependencies(
 	    argc, argv,

@@ -2,7 +2,6 @@
 #include "cli/clear_internal.hpp"
 
 #include <array>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -10,11 +9,8 @@
 #include <sstream>
 #include <string>
 #include <tuple>
-#include <unistd.h>
 #include <utility>
 #include <vector>
-
-#include <sys/wait.h>
 
 namespace {
 
@@ -143,24 +139,10 @@ namespace {
 		              "missing user skips callbacks");
 	}
 
-	auto public_missing_user_terminates_process() -> bool {
-		const pid_t child_pid = fork();
-		if (!expect(child_pid >= 0, "fork public clear child")) {
-			return false;
-		}
-		if (child_pid == 0) {
-			auto                  command = std::to_array("howdy-clear");
-			std::array<char *, 1> argv{command.data()};
-			clear_main(1, argv.data());
-			_exit(42);
-		}
-
-		int status = 0;
-		if (!expect(waitpid(child_pid, &status, 0) == child_pid, "wait for public clear child")) {
-			return false;
-		}
-		return expect(WIFEXITED(status) && WEXITSTATUS(status) == 1,
-		              "public missing user terminates with status 1");
+	auto public_missing_user_returns_error() -> bool {
+		auto                  command = std::to_array("howdy-clear");
+		std::array<char *, 1> argv{command.data()};
+		return expect(clear_main(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
 	auto incomplete_dependencies_abort_without_callbacks() -> bool {
@@ -361,7 +343,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= missing_user_returns_without_callbacks();
-	ok &= public_missing_user_terminates_process();
+	ok &= public_missing_user_returns_error();
 	ok &= incomplete_dependencies_abort_without_callbacks();
 	ok &= inspection_outcomes_preserve_messages();
 	ok &= rejected_confirmation_aborts();

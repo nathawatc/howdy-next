@@ -3,7 +3,6 @@
 #include "storage/user_models.hpp"
 
 #include <charconv>
-#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -149,7 +148,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 
 int remove_main(int argc, char **argv) {
 	if (argc < 2) {
-		std::exit(kExitAbort);
+		return kExitAbort;
 	}
 	return howdy::native::remove_internal::remove_main_with_dependencies(
 	    argc, argv,

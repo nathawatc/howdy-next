@@ -2,7 +2,6 @@
 #include "cli/clear_internal.hpp"
 #include "storage/user_models.hpp"
 
-#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -107,7 +106,7 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 
 int clear_main(int argc, char **argv) {
 	if (argc < 2) {
-		std::exit(kExitAbort);
+		return kExitAbort;
 	}
 	return howdy::native::clear_internal::clear_main_with_dependencies(
 	    argc, argv,
