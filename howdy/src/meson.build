@@ -480,6 +480,25 @@ test(
 	native_disable_cli_test,
 )
 
+native_set_cli_test = executable(
+	'howdy-set-cli-test',
+	'cli/set.cpp',
+	'tests/set_cli_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		nlohmann_json,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-set-cli',
+	native_set_cli_test,
+)
+
 native_add_cli_test = executable(
 	'howdy-add-cli-test',
 	'cli/add.cpp',
