@@ -13,12 +13,12 @@ resolve_dir() {
 }
 
 bindir=$(resolve_dir "$prefix" "$3")
-libdir=$(resolve_dir "$prefix" "$4")
+libexecdir=$(resolve_dir "$prefix" "$4")
 
 howdy_path="$bindir/howdy"
-compare_path="$libdir/howdy/howdy-compare"
-auth_helper_path="$libdir/howdy/howdy-auth-helper"
-command_dir="$libdir/howdy"
+compare_path="$libexecdir/howdy/howdy-compare"
+auth_helper_path="$libexecdir/howdy/howdy-auth-helper"
+command_dir="$libexecdir/howdy"
 
 require_path() {
 	if ! printf '%s\n' "$installed" | grep -Fq '"'"$1"'"'; then

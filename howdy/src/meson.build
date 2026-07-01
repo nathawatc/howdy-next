@@ -99,7 +99,7 @@ native_compare = executable(
 		opencv4,
 	],
 	install: true,
-	install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+	install_dir: helperdir,
 	install_tag: 'native_compare',
 )
 
@@ -112,7 +112,7 @@ native_auth_helper = executable(
 	include_directories: native_cpp_inc,
 	dependencies: [],
 	install: true,
-	install_dir: join_paths(get_option('prefix'), get_option('libdir'), 'howdy'),
+	install_dir: helperdir,
 	install_mode: 'rwsr-xr-x',
 	install_tag: 'native_compare',
 )
@@ -865,7 +865,7 @@ test(
 		meson.project_build_root(),
 		get_option('prefix'),
 		get_option('bindir'),
-		get_option('libdir'),
+		get_option('libexecdir'),
 	],
 )
 

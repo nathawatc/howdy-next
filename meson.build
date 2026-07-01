@@ -30,7 +30,7 @@ endif
 prefix = get_option('prefix')
 datadir = get_option('datadir')
 sysconfdir = get_option('sysconfdir')
-libdir = get_option('libdir')
+libexecdir = get_option('libexecdir')
 
 modelsdir = get_option('models_dir')
 if modelsdir == ''
@@ -50,8 +50,9 @@ endif
 logpath = get_option('log_path')
 
 config_path = confdir / 'config.ini'
-compare_process_path = prefix / libdir / 'howdy' / 'howdy-compare'
-auth_helper_path = prefix / libdir / 'howdy' / 'howdy-auth-helper'
+helperdir = prefix / libexecdir / 'howdy'
+compare_process_path = helperdir / 'howdy-compare'
+auth_helper_path = helperdir / 'howdy-auth-helper'
 
 paths_dict = {
 	'auth_helper_path': auth_helper_path,
