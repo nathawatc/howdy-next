@@ -6,6 +6,7 @@
 
 Root rules for whole repo. Read nearest `AGENTS.md` for local overrides.
 
+- `ci/AGENTS.md`: CI container build and validation rules
 - `howdy/src/AGENTS.md`: shared runtime, storage, config, model, and helper code
 - `howdy/src/cli/AGENTS.md`: CLI entrypoints and download/config commands
 - `howdy/src/recorders/AGENTS.md`: camera capture layer
