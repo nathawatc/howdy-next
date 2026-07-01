@@ -33,10 +33,10 @@ Format C/C++ changes with the repository `.clang-format` policy:
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
-Run static analysis when practical:
+Contributors must run static analysis before submitting changes:
 
 ```bash
-run-clang-tidy -p build
+run-clang-tidy -p build -quiet
 ```
 
 ## Pull Requests

@@ -25,12 +25,14 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-meson, ninja, clang-tidy, gettext, libevdev, libinih, libopencv, libcurl, openssl, nlohmann-json, pam
+meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, nlohmann-json, pam
 ```
 
 - Build: `meson setup build && ninja -C build`
 - Install: `meson install -C build`
-- Verify: `run-clang-tidy -p build`
+- Test: `meson test -C build --print-errorlogs`
+
+See [Contributing](CONTRIBUTING.md) for developer workflow and project guidelines.
 
 ### Setup
 
