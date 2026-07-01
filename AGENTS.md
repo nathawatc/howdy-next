@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-06-25
+**Updated:** 2026-07-01
 
 ## Scope
 
@@ -53,7 +53,7 @@ Format C/C++ changes with:
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
-Static analysis (`clang-tidy`) was removed from CI; run manually when practical:
+CI does not run `clang-tidy`; contributors must run it before submitting changes:
 
 ```bash
 run-clang-tidy -p build -quiet
@@ -64,15 +64,16 @@ run-clang-tidy -p build -quiet
 Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add
 focused tests beside changed code, using `*_test.cpp`.
 
-| Test area                  | Key files                                                         |
-| -------------------------- | ----------------------------------------------------------------- |
-| Add CLI                    | `add_cli_test.cpp`, `enrollment_capture_test.cpp`                 |
-| Snapshot CLI               | `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`               |
-| Test CLI                   | `test_cli_test.cpp`                                               |
-| User model codec           | `user_model_codec_test.cpp`                                       |
-| Compare logic / frames     | `compare_logic_test.cpp`, `frame_processing_test.cpp`             |
-| Auth helper                | `auth_helper_test.cpp`, `auth_flow_helpers_test.cpp`              |
-| Config / runtime / storage | `config_*_test.cpp`, `runtime_*_test.cpp`, `user_models_test.cpp` |
+| Test area                  | Key files                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| Add CLI                    | `add_cli_test.cpp`, `enrollment_capture_test.cpp`                               |
+| List / remove / set CLI    | `list_cli_test.cpp`, `remove_cli_test.cpp`, `set_cli_test.cpp`                  |
+| Snapshot CLI               | `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`                             |
+| Test CLI                   | `test_cli_test.cpp`                                                             |
+| User model codec           | `user_model_codec_test.cpp`                                                     |
+| Compare logic / frames     | `compare_logic_test.cpp`, `frame_processing_test.cpp`, `face_matching_test.cpp` |
+| Auth helper                | `auth_helper_test.cpp`, `auth_flow_helpers_test.cpp`                            |
+| Config / runtime / storage | `config_*_test.cpp`, `runtime_*_test.cpp`, `user_models_test.cpp`               |
 
 For security-sensitive code, cover failure paths and success paths. Watch file ownership checks,
 config validation, typed runtime config loading, PAM status mapping, runtime staging, and exception

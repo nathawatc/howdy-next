@@ -28,7 +28,9 @@ CLI commands are refactored for testability via dependency-injection structs:
 | Header                                     | Exposes                                                                                                               |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | `include/cli/add_internal.hpp`             | `AddDependencies`, `add_main_with_dependencies()`                                                                     |
+| `include/cli/list_internal.hpp`            | `ListDependencies`, `list_main_with_dependencies()`                                                                   |
 | `include/cli/remove_internal.hpp`          | `RemoveDependencies`, `remove_main_with_dependencies()`                                                               |
+| `include/cli/set_internal.hpp`             | `SetDependencies`, `set_main_with_dependencies()`                                                                     |
 | `include/cli/test_cli_internal.hpp`        | `TestDependencies`, `test_main_with_dependencies()`, `run_preview_preflight()`, `has_graphical_display_environment()` |
 | `include/cli/snapshot_internal.hpp`        | `SnapshotDependencies`, `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, `write_snapshot_at_path()` |
 | `include/cli/enrollment_capture.hpp`       | `capture_enrollment_sample()` template, `EnrollmentCaptureResult`, `classify_enrollment_capture_failure()`            |
@@ -46,5 +48,8 @@ CLI commands are refactored for testability via dependency-injection structs:
 - Add, test, and snapshot commands are split into production `*_main.cpp`
   plus shared implementation for testability; avoid duplicating the
   dependency-injection seam.
+- List, remove, and set public wrappers retain production behavior while injected
+  `*_main_with_dependencies()` runners support tests.
+- Snapshot writer validates BGR frame batches and atomically installs output.
 - Capture failure diagnostics use `classify_enrollment_capture_failure()`
   for granular error messages (black frames, too dark, no face, etc.).

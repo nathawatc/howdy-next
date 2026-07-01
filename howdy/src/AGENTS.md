@@ -1,6 +1,6 @@
 # Howdy Source Guidelines
 
-**Updated:** 2026-06-25
+**Updated:** 2026-07-01
 
 ## Scope
 
@@ -17,6 +17,10 @@ Shared runtime code under `howdy/src/` and headers under `howdy/include/`.
 - Use C++23 idioms when editing shared runtime code.
 - Use centralized `read_fd_to_string_bounded()` and `write_fd_from_buffer()`
   from `common/fd_io.hpp` for bounded FD I/O.
+- Use `common/frame_validation.hpp` to validate OpenCV frame shape, dimensions, channels, and
+  element type before transformations or inference.
+- Use `core/face_matching.hpp` for pure embedding candidate selection; do not duplicate metric or
+  finite-value logic.
 - Enrollment capture logic lives in `cli/enrollment_capture.hpp`
   (template `capture_enrollment_sample()`); classify failures
   with `classify_enrollment_capture_failure()`.
