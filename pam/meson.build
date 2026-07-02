@@ -24,6 +24,7 @@ shared_library(
 	'../howdy/src/storage/user_model_readiness.cpp',
 	'src/auth_flow.cpp',
 	'src/main.cpp',
+	'src/runtime_session.cpp',
 	'src/enter_device.cpp',
 	'src/native_prompt_conversation.cpp',
 	'src/prompt_workaround.cpp',
@@ -162,6 +163,7 @@ pam_auth_flow_helpers_test = executable(
 	'../howdy/src/config/config_validation.cpp',
 	'../howdy/src/storage/user_model_readiness.cpp',
 	'src/auth_flow.cpp',
+	'src/runtime_session.cpp',
 	'src/enter_device.cpp',
 	'src/native_prompt_conversation.cpp',
 	'src/prompt_workaround.cpp',
@@ -184,4 +186,31 @@ pam_auth_flow_helpers_test = executable(
 test(
 	'pam-auth-flow-helpers',
 	pam_auth_flow_helpers_test,
+)
+
+pam_runtime_session_test = executable(
+	'pam-runtime-session-test',
+	'../howdy/src/config/config_reader.cpp',
+	'../howdy/src/config/runtime_config.cpp',
+	'../howdy/src/config/config_schema.cpp',
+	'../howdy/src/config/config_validation.cpp',
+	'src/runtime_session.cpp',
+	'src/tests/runtime_session_test.cpp',
+	include_directories: include_directories('include', '../howdy/include'),
+	cpp_args: ['-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
+	dependencies: [
+		libpam,
+		inih_cpp,
+		threads,
+		libevdev,
+	],
+	link_depends: [
+		paths_h,
+	],
+	install: false,
+)
+
+test(
+	'pam-runtime-session',
+	pam_runtime_session_test,
 )

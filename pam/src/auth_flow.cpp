@@ -1,7 +1,4 @@
-#include "common/auth_helper_protocol.hpp"
 #include "common/compare_exit.hpp"
-#include "common/fd_io.hpp"
-#include "config/runtime_config.hpp"
 #include "storage/user_model_readiness.hpp"
 #ifdef HOWDY_PAM_TESTING
 #	include "auth_flow_testing.hpp"
@@ -11,6 +8,7 @@
 #include "native_prompt_conversation.hpp"
 #include "optional_task.hpp"
 #include "prompt_workaround.hpp"
+#include "runtime_session.hpp"
 #include "status_mapping.hpp"
 
 #include <array>
@@ -21,7 +19,6 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -56,22 +53,6 @@ namespace {
 
 	using howdy::native::CompareExit;
 
-	constexpr std::size_t kAuthHelperOutputLimit = 9216;
-
-#ifdef HOWDY_PAM_TESTING
-	using AuthHelperOutputReader = howdy::native::BoundedReadResult (*)(int, std::size_t);
-	AuthHelperOutputReader g_auth_helper_output_reader = nullptr;
-#endif
-
-	auto read_bounded_auth_helper_output(int output_fd) -> howdy::native::BoundedReadResult {
-#ifdef HOWDY_PAM_TESTING
-		if (g_auth_helper_output_reader != nullptr) {
-			return g_auth_helper_output_reader(output_fd, kAuthHelperOutputLimit);
-		}
-#endif
-		return howdy::native::read_fd_to_string_bounded(output_fd, kAuthHelperOutputLimit);
-	}
-
 	auto make_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
@@ -81,15 +62,6 @@ namespace {
 	}
 
 	using ConversationFn = std::function<int(int, const char *)>;
-
-	struct RuntimeAuthFiles {
-		bool                  active = false;
-		std::filesystem::path root_dir;
-		std::string           config_path;
-		std::string           user_models_dir;
-
-		~RuntimeAuthFiles();
-	};
 
 	struct PromptStopResult {
 		bool enter_failed   = false;
@@ -277,228 +249,6 @@ namespace {
 		}
 	}
 
-	struct AuthHelperOutput {
-		std::string config_path;
-		std::string user_models_dir;
-		bool        valid = false;
-	};
-
-	auto set_required_helper_output_value(bool *seen, std::string *target, const std::string &value)
-	    -> bool {
-		if (*seen || value.empty()) {
-			return false;
-		}
-		*seen   = true;
-		*target = value;
-		return true;
-	}
-
-	auto parse_auth_helper_output(const std::string &output) -> AuthHelperOutput {
-		AuthHelperOutput result;
-		bool             saw_config_path     = false;
-		bool             saw_user_models_dir = false;
-
-		std::size_t offset = 0;
-		while (offset < output.size()) {
-			const auto next      = output.find('\n', offset);
-			const auto end       = next == std::string::npos ? output.size() : next;
-			const auto line      = output.substr(offset, end - offset);
-			const auto separator = line.find('=');
-
-			if (separator == std::string::npos) {
-				return result;
-			}
-
-			const auto key   = line.substr(0, separator);
-			const auto value = line.substr(separator + 1);
-			if (key == howdy::native::auth_helper_protocol::kConfigPathKey) {
-				if (!set_required_helper_output_value(&saw_config_path, &result.config_path,
-				                                      value)) {
-					return result;
-				}
-			} else if (key == howdy::native::auth_helper_protocol::kUserModelsDirKey) {
-				if (!set_required_helper_output_value(&saw_user_models_dir, &result.user_models_dir,
-				                                      value)) {
-					return result;
-				}
-			} else {
-				return result;
-			}
-
-			if (next == std::string::npos) {
-				break;
-			}
-			offset = next + 1;
-		}
-
-		result.valid = saw_config_path && saw_user_models_dir;
-		return result;
-	}
-
-	auto wait_for_helper_process(pid_t child_pid) -> int {
-		while (true) {
-			int         status      = 0;
-			const pid_t wait_result = waitpid(child_pid, &status, 0);
-			if (wait_result == child_pid) {
-				return status;
-			}
-			if (wait_result < 0 && errno == EINTR) {
-				continue;
-			}
-			return make_wait_exit_status(CompareExit::kAbort);
-		}
-	}
-
-	auto terminate_and_reap_helper_process(pid_t child_pid) -> int {
-		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)", strerror(errno),
-			       errno);
-		}
-
-		for (int attempts = 0; attempts < 50; ++attempts) {
-			int         status      = 0;
-			const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
-			if (wait_result == child_pid) {
-				return status;
-			}
-			if (wait_result < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				return make_wait_exit_status(CompareExit::kAbort);
-			}
-			usleep(10000);
-		}
-
-		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)", strerror(errno),
-			       errno);
-		}
-		return wait_for_helper_process(child_pid);
-	}
-
-	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool {
-		if (output == nullptr) {
-			terminate_and_reap_helper_process(child_pid);
-			return false;
-		}
-
-		const auto helper_output = read_bounded_auth_helper_output(output_fd);
-
-		if (helper_output.read_error) {
-			output->clear();
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)",
-			       strerror(helper_output.error_number), helper_output.error_number);
-			terminate_and_reap_helper_process(child_pid);
-			return false;
-		}
-
-		if (helper_output.hit_limit) {
-			output->clear();
-			syslog(LOG_ERR, "Howdy auth helper reached output limit");
-			terminate_and_reap_helper_process(child_pid);
-			return false;
-		}
-
-		*output          = helper_output.output;
-		const int status = wait_for_helper_process(child_pid);
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			const auto failed_output = *output;
-			output->clear();
-			syslog(LOG_ERR, "Howdy auth helper failed: %s", failed_output.c_str());
-			return false;
-		}
-
-		const auto auth_output = parse_auth_helper_output(*output);
-		if (!auth_output.valid) {
-			const auto malformed_output = *output;
-			output->clear();
-			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s",
-			       malformed_output.c_str());
-			return false;
-		}
-		return true;
-	}
-
-	auto prepare_runtime_auth_files(const char *username, RuntimeAuthFiles *runtime) -> bool {
-		std::array<int, 2> output_pipe = {-1, -1};
-		if (pipe2(output_pipe.data(), O_CLOEXEC) != 0) {
-			syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)", strerror(errno), errno);
-			return false;
-		}
-
-		posix_spawn_file_actions_t actions{};
-		posix_spawn_file_actions_init(&actions);
-		posix_spawn_file_actions_adddup2(&actions, output_pipe[1], STDOUT_FILENO);
-		posix_spawn_file_actions_adddup2(&actions, output_pipe[1], STDERR_FILENO);
-		posix_spawn_file_actions_addclose(&actions, output_pipe[0]);
-		posix_spawn_file_actions_addclose(&actions, output_pipe[1]);
-
-		std::array<char *, 4> args = {const_cast<char *>(kAuthHelperPath),
-		                              const_cast<char *>("prepare"), const_cast<char *>(username),
-		                              nullptr};
-		std::array<char *, 1> env  = {nullptr};
-		pid_t                 child_pid = -1;
-		const int             spawn_result =
-		    posix_spawn(&child_pid, kAuthHelperPath, &actions, nullptr, args.data(), env.data());
-		posix_spawn_file_actions_destroy(&actions);
-		close(output_pipe[1]);
-
-		if (spawn_result != 0) {
-			close(output_pipe[0]);
-			syslog(LOG_ERR, "Can't spawn the howdy auth helper: %s (%d)", strerror(spawn_result),
-			       spawn_result);
-			return false;
-		}
-
-		std::string helper_output;
-		const bool  helper_ok = read_auth_helper_output(child_pid, output_pipe[0], &helper_output);
-		close(output_pipe[0]);
-		if (!helper_ok) {
-			return false;
-		}
-
-		const auto auth_output = parse_auth_helper_output(helper_output);
-		if (!auth_output.valid) {
-			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s",
-			       helper_output.c_str());
-			return false;
-		}
-		runtime->config_path     = auth_output.config_path;
-		runtime->user_models_dir = auth_output.user_models_dir;
-
-		runtime->root_dir = std::filesystem::path(runtime->config_path).parent_path();
-		runtime->active   = true;
-		return true;
-	}
-
-	auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
-		std::string           root_dir_string = root_dir.string();
-		std::array<char *, 4> args      = {const_cast<char *>(kAuthHelperPath),
-		                                   const_cast<char *>("cleanup"),
-		                                   const_cast<char *>(root_dir_string.c_str()), nullptr};
-		std::array<char *, 1> env       = {nullptr};
-		pid_t                 child_pid = -1;
-		const int             spawn_result =
-		    posix_spawn(&child_pid, kAuthHelperPath, nullptr, nullptr, args.data(), env.data());
-		if (spawn_result != 0) {
-			syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
-			       strerror(spawn_result), spawn_result);
-			return;
-		}
-
-		const int status = wait_for_helper_process(child_pid);
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_WARNING, "Howdy auth helper cleanup failed");
-		}
-	}
-
-	RuntimeAuthFiles::~RuntimeAuthFiles() {
-		if (active && !root_dir.empty()) {
-			cleanup_runtime_auth_files(root_dir);
-		}
-	}
-
 	auto input_prompt_workaround_preflight() -> bool {
 		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
 			const int access_errno = errno;
@@ -610,35 +360,6 @@ namespace howdy::pam::testing {
 		return ::wait_for_compare_process(child_pid);
 	}
 
-	auto auth_helper_output_limit() -> std::size_t {
-		return kAuthHelperOutputLimit;
-	}
-
-	auto set_auth_helper_output_reader(AuthHelperOutputReader reader) -> AuthHelperOutputReader {
-		const auto previous_reader  = g_auth_helper_output_reader;
-		g_auth_helper_output_reader = reader;
-		return previous_reader;
-	}
-
-	auto read_fd_to_string(int fd) -> std::string {
-		return howdy::native::read_fd_to_string_bounded(fd, kAuthHelperOutputLimit).output;
-	}
-
-	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool {
-		return ::read_auth_helper_output(child_pid, output_fd, output);
-	}
-
-	auto parse_auth_helper_output(const std::string &output) -> AuthHelperOutput {
-		const auto parsed = ::parse_auth_helper_output(output);
-		return AuthHelperOutput{.config_path     = parsed.config_path,
-		                        .user_models_dir = parsed.user_models_dir,
-		                        .valid           = parsed.valid};
-	}
-
-	auto wait_for_helper_process(pid_t child_pid) -> int {
-		return ::wait_for_helper_process(child_pid);
-	}
-
 }  // namespace howdy::pam::testing
 #endif
 
@@ -655,29 +376,24 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		return pam_res == PAM_SUCCESS ? PAM_USER_UNKNOWN : pam_res;
 	}
 
-	RuntimeAuthFiles runtime_auth_files;
-	std::string      config_path     = kConfiguredConfigPath;
-	std::string      user_models_dir = kConfiguredUserModelsDir;
+	howdy::pam::RuntimeSession runtime_session(
+	    kConfiguredConfigPath, kConfiguredUserModelsDir,
+	    howdy::pam::production_runtime_session_dependencies());
 
-	auto config_result = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
-	if (config_result.status == howdy::native::RuntimeConfigLoadStatus::kPathError &&
-	    config_result.error_code == EACCES && geteuid() != 0) {
-		if (!prepare_runtime_auth_files(username, &runtime_auth_files)) {
-			return PAM_SYSTEM_ERR;
-		}
-		config_path     = runtime_auth_files.config_path;
-		user_models_dir = runtime_auth_files.user_models_dir;
-		config_result   = howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
-	}
-
-	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
-	    !config_result.config.has_value()) {
-		syslog(LOG_ERR, "%s", config_result.error_message.c_str());
+	const auto runtime_result = runtime_session.load_for_user(username);
+	if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
+	    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies ||
+	    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
 		return PAM_SYSTEM_ERR;
 	}
-	const auto &config = *config_result.config;
 
-	pam_res = check_enabled(config, username, user_models_dir);
+	if (!runtime_result.ok()) {
+		syslog(LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
+		return PAM_SYSTEM_ERR;
+	}
+	const auto &config = *runtime_result.config_result.config;
+
+	pam_res = check_enabled(config, username, runtime_session.user_models_dir());
 	if (pam_res != PAM_SUCCESS) {
 		return pam_res;
 	}
@@ -704,13 +420,13 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	Workaround       effective_workaround = workaround;
 	const bool       existing_auth_token  = auth_token_present(pamh);
 
-	std::array<char *, 5> args = {const_cast<char *>(kCompareProcessPath),
-	                              const_cast<char *>("--config"),
-	                              const_cast<char *>(config_path.c_str()), username, nullptr};
-	std::string           user_models_env = "HOWDY_USER_MODELS_DIR=" + user_models_dir;
-	std::array<char *, 2> runtime_env     = {const_cast<char *>(user_models_env.c_str()), nullptr};
-	std::array<char *, 1> empty_env       = {nullptr};
-	char **compare_env = runtime_auth_files.active ? runtime_env.data() : empty_env.data();
+	std::array<char *, 5> args = {
+	    const_cast<char *>(kCompareProcessPath), const_cast<char *>("--config"),
+	    const_cast<char *>(runtime_session.config_path().c_str()), username, nullptr};
+	std::string user_models_env = "HOWDY_USER_MODELS_DIR=" + runtime_session.user_models_dir();
+	std::array<char *, 2> runtime_env = {const_cast<char *>(user_models_env.c_str()), nullptr};
+	std::array<char *, 1> empty_env   = {nullptr};
+	char **compare_env = runtime_session.staged() ? runtime_env.data() : empty_env.data();
 	pid_t  child_pid   = -1;
 
 	const int spawn_result =
