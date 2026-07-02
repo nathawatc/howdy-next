@@ -27,6 +27,7 @@ shared_library(
 	'src/runtime_session.cpp',
 	'src/enter_device.cpp',
 	'src/native_prompt_conversation.cpp',
+	'src/prompt_coordinator.cpp',
 	'src/prompt_workaround.cpp',
 	'src/status_mapping.cpp',
 	'src/tty_restore.cpp',
@@ -166,6 +167,7 @@ pam_auth_flow_helpers_test = executable(
 	'src/runtime_session.cpp',
 	'src/enter_device.cpp',
 	'src/native_prompt_conversation.cpp',
+	'src/prompt_coordinator.cpp',
 	'src/prompt_workaround.cpp',
 	'src/status_mapping.cpp',
 	'src/tests/auth_flow_helpers_test.cpp',
@@ -186,6 +188,28 @@ pam_auth_flow_helpers_test = executable(
 test(
 	'pam-auth-flow-helpers',
 	pam_auth_flow_helpers_test,
+)
+
+pam_prompt_coordinator_test = executable(
+	'pam-prompt-coordinator-test',
+	'src/prompt_coordinator.cpp',
+	'src/enter_device.cpp',
+	'src/native_prompt_conversation.cpp',
+	'src/prompt_workaround.cpp',
+	'src/tests/prompt_coordinator_test.cpp',
+	include_directories: pam_inc,
+	cpp_args: ['-DHOWDY_PAM_TESTING'],
+	dependencies: [
+		libpam,
+		threads,
+		libevdev,
+	],
+	install: false,
+)
+
+test(
+	'pam-prompt-coordinator',
+	pam_prompt_coordinator_test,
 )
 
 pam_runtime_session_test = executable(

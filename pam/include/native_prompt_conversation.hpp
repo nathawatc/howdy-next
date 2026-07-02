@@ -21,6 +21,9 @@ public:
 	void set_test_read_eintr_count(int count);
 	void set_test_abort_on_poll_eintr(bool enabled);
 	void set_test_abort_on_read_eintr(bool enabled);
+
+	static void set_test_available_result(int result);
+	static void set_test_install_result(int result);
 #endif
 
 	[[nodiscard]] auto available() const -> bool;

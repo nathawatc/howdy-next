@@ -20,6 +20,11 @@ namespace {
 
 	constexpr int kAbortPollTimeoutMs = 100;
 
+#ifdef HOWDY_PAM_TESTING
+	std::atomic<int> g_test_available_result{-1};
+	std::atomic<int> g_test_install_result{-1};
+#endif
+
 	auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
 	                          struct pam_response **response, void * /*appdata_ptr*/) -> int {
 		if (response != nullptr) {
@@ -169,6 +174,14 @@ void NativePromptConversation::set_test_abort_on_poll_eintr(bool enabled) {
 void NativePromptConversation::set_test_abort_on_read_eintr(bool enabled) {
 	test_abort_on_read_eintr_ = enabled;
 }
+
+void NativePromptConversation::set_test_available_result(int result) {
+	g_test_available_result.store(result);
+}
+
+void NativePromptConversation::set_test_install_result(int result) {
+	g_test_install_result.store(result);
+}
 #endif
 
 NativePromptConversation::~NativePromptConversation() {
@@ -212,6 +225,12 @@ void NativePromptConversation::restore_original() {
 }
 
 auto NativePromptConversation::available() const -> bool {
+#ifdef HOWDY_PAM_TESTING
+	const int test_result = g_test_available_result.load();
+	if (test_result >= 0) {
+		return test_result != 0;
+	}
+#endif
 	return has_original_conv_ && tty_fd_ >= 0 && abort_pipe_[0] >= 0 && abort_pipe_[1] >= 0;
 }
 
@@ -219,6 +238,13 @@ auto NativePromptConversation::install() -> int {
 	if (!available()) {
 		return PAM_SYSTEM_ERR;
 	}
+
+#ifdef HOWDY_PAM_TESTING
+	const int test_result = g_test_install_result.load();
+	if (test_result >= 0) {
+		return test_result;
+	}
+#endif
 
 	const int pam_res = pam_set_item(pamh_, PAM_CONV, &override_conv_);
 	if (pam_res == PAM_SUCCESS) {

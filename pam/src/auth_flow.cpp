@@ -3,20 +3,14 @@
 #ifdef HOWDY_PAM_TESTING
 #	include "auth_flow_testing.hpp"
 #endif
-#include "enter_device.hpp"
 #include "main.hpp"
-#include "native_prompt_conversation.hpp"
-#include "optional_task.hpp"
-#include "prompt_workaround.hpp"
+#include "prompt_coordinator.hpp"
 #include "runtime_session.hpp"
 #include "status_mapping.hpp"
 
 #include <array>
 #include <cerrno>
-#include <chrono>
 #include <clocale>
-#include <condition_variable>
-#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -24,14 +18,10 @@
 #include <functional>
 #include <glob.h>
 #include <libintl.h>
-#include <mutex>
-#include <optional>
 #include <paths.hpp>
 #include <spawn.h>
-#include <stdexcept>
 #include <string>
 #include <syslog.h>
-#include <tuple>
 #include <unistd.h>
 
 #include <security/pam_appl.h>
@@ -43,51 +33,17 @@
 
 namespace {
 
-	constexpr auto kPromptRetryDelay =
-	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
-	constexpr int kMaxPromptRetries = 5;
-
 	auto S(const char *msg) -> const char * {
 		return gettext(msg);
 	}
 
 	using howdy::native::CompareExit;
 
-	auto make_wait_exit_status(CompareExit exit_code) -> int {
-		return static_cast<int>(exit_code) << 8;
-	}
-
 	auto compare_status_is(int status, CompareExit exit_code) -> bool {
 		return WIFEXITED(status) && WEXITSTATUS(status) == static_cast<int>(exit_code);
 	}
 
 	using ConversationFn = std::function<int(int, const char *)>;
-
-	struct PromptStopResult {
-		bool enter_failed   = false;
-		bool prompt_stopped = true;
-	};
-
-	struct NativePromptCleanupGuard {
-		optional_task<std::tuple<int, char *>> *pass_task     = nullptr;
-		NativePromptConversation               *native_prompt = nullptr;
-
-		~NativePromptCleanupGuard() {
-			if (pass_task == nullptr || native_prompt == nullptr || !pass_task->active()) {
-				return;
-			}
-
-			try {
-				native_prompt->request_abort();
-				pass_task->stop();
-				native_prompt->restore_original();
-			} catch (const std::exception &error) {
-				syslog(LOG_CRIT, "Native prompt cleanup failed: %s", error.what());
-			} catch (...) {
-				syslog(LOG_CRIT, "Native prompt cleanup failed with non-standard exception");
-			}
-		}
-	};
 
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void {
@@ -233,90 +189,6 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	auto wait_for_compare_process(pid_t child_pid) -> int {
-		while (true) {
-			int         status      = 0;
-			const pid_t wait_result = waitpid(child_pid, &status, 0);
-			if (wait_result == child_pid) {
-				return status;
-			}
-			if (wait_result < 0 && errno == EINTR) {
-				continue;
-			}
-
-			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
-			return make_wait_exit_status(CompareExit::kAbort);
-		}
-	}
-
-	auto input_prompt_workaround_preflight() -> bool {
-		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
-			const int access_errno = errno;
-			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
-			       access_errno);
-			return false;
-		}
-
-		try {
-			EnterDevice probe;
-		} catch (const std::runtime_error &err) {
-			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
-			return false;
-		}
-
-		return true;
-	}
-
-	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-	                                  const PromptStopPlan                   &plan,
-	                                  NativePromptConversation *native_prompt) -> PromptStopResult {
-		PromptStopResult result;
-		if (!plan.stop_prompt) {
-			return result;
-		}
-
-		if (plan.abort_prompt && native_prompt != nullptr) {
-			native_prompt->request_abort();
-		}
-
-		if (plan.send_enter) {
-			if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
-				syslog(LOG_WARNING, "Insufficient permissions to create the fake device");
-				result.enter_failed = true;
-			} else {
-				try {
-					EnterDevice enter_device;
-					enter_device.send_enter_press();
-
-					int retries = 0;
-					for (; retries < kMaxPromptRetries &&
-					       pass_task.wait(kPromptRetryDelay) == std::future_status::timeout;
-					     retries++) {
-						enter_device.send_enter_press();
-					}
-
-					if (retries == kMaxPromptRetries && pass_task.wait(std::chrono::milliseconds(
-					                                        0)) == std::future_status::timeout) {
-						syslog(LOG_WARNING, "Failed to send enter input before the retries limit");
-						result.enter_failed = true;
-					}
-				} catch (const std::runtime_error &err) {
-					syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
-					result.enter_failed = true;
-				}
-			}
-		}
-
-		if (plan.send_enter &&
-		    pass_task.wait(std::chrono::milliseconds(0)) == std::future_status::timeout) {
-			result.prompt_stopped = false;
-			return result;
-		}
-
-		pass_task.stop();
-		return result;
-	}
-
 }  // namespace
 
 #ifdef HOWDY_PAM_TESTING
@@ -347,17 +219,6 @@ namespace howdy::pam::testing {
 	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int {
 		return ::check_enabled(config, username, user_models_dir);
-	}
-
-	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-	                                  const PromptStopPlan &plan) -> PromptStopResult {
-		const auto result = ::request_password_prompt_stop(pass_task, plan, nullptr);
-		return PromptStopResult{.enter_failed   = result.enter_failed,
-		                        .prompt_stopped = result.prompt_stopped};
-	}
-
-	auto wait_for_compare_process(pid_t child_pid) -> int {
-		return ::wait_for_compare_process(child_pid);
 	}
 
 }  // namespace howdy::pam::testing
@@ -416,9 +277,16 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		}
 	}
 
-	const Workaround workaround           = get_pam_workaround(argc, argv);
-	Workaround       effective_workaround = workaround;
-	const bool       existing_auth_token  = auth_token_present(pamh);
+	const Workaround workaround          = get_pam_workaround(argc, argv);
+	const bool       existing_auth_token = auth_token_present(pamh);
+
+	howdy::pam::PromptCoordinator coordinator(
+	    pamh, workaround, ask_auth_tok, existing_auth_token,
+	    howdy::pam::production_prompt_coordinator_dependencies());
+
+	if (!coordinator.valid()) {
+		return PAM_SYSTEM_ERR;
+	}
 
 	std::array<char *, 5> args = {
 	    const_cast<char *>(kCompareProcessPath), const_cast<char *>("--config"),
@@ -437,132 +305,32 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		return PAM_SYSTEM_ERR;
 	}
 
-	std::mutex              mutx;
-	std::condition_variable convar;
-	ConfirmationType        confirmation_type(ConfirmationType::Unset);
-
-	optional_task<int> child_task([&] {
-		const int status = wait_for_compare_process(child_pid);
-		{
-			std::unique_lock<std::mutex> lock(mutx);
-			if (confirmation_type == ConfirmationType::Unset) {
-				confirmation_type = ConfirmationType::Howdy;
+	const auto prompt_result = coordinator.run(child_pid);
+	switch (prompt_result.decision) {
+		case howdy::pam::PromptCoordinatorDecision::kPamResult:
+			if (prompt_result.pam_status != PAM_SUCCESS) {
+				return prompt_result.pam_status;
 			}
-		}
-		convar.notify_one();
-		return status;
-	});
-	child_task.activate();
+			return PAM_IGNORE;
 
-	std::optional<NativePromptConversation> native_prompt;
-	if (workaround == Workaround::Native && ask_auth_tok && !existing_auth_token) {
-		native_prompt.emplace(pamh);
-		if (!native_prompt->available()) {
-			syslog(LOG_INFO,
-			       "Native prompt conversation unavailable, falling back to input workaround");
-			native_prompt.reset();
-			effective_workaround = Workaround::Input;
-		} else {
-			const int install_result = native_prompt->install();
-			if (install_result != PAM_SUCCESS) {
-				syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
-				       install_result);
-				native_prompt.reset();
-				effective_workaround = Workaround::Input;
+		case howdy::pam::PromptCoordinatorDecision::kPasswordFallback:
+			if (prompt_result.pam_status != PAM_SUCCESS) {
+				return howdy_status(username, prompt_result.compare_status, config, conv_function);
 			}
-		}
-	}
+			return PAM_IGNORE;
 
-	if (effective_workaround == Workaround::Input && ask_auth_tok && !existing_auth_token &&
-	    !input_prompt_workaround_preflight()) {
-		syslog(LOG_WARNING,
-		       "Input prompt workaround preflight failed; falling back to standard PAM prompt");
-		effective_workaround = Workaround::Off;
-	}
-
-	const bool ask_pass =
-	    effective_workaround == Workaround::Native
-	        ? native_prompt.has_value() && !existing_auth_token
-	        : should_ask_for_password(ask_auth_tok, effective_workaround, existing_auth_token);
-
-	optional_task<std::tuple<int, char *>> pass_task([&] {
-		char     *auth_tok_ptr = nullptr;
-		const int auth_result =
-		    pam_get_authtok(pamh, PAM_AUTHTOK, const_cast<const char **>(&auth_tok_ptr), nullptr);
-		{
-			std::unique_lock<std::mutex> lock(mutx);
-			if (confirmation_type == ConfirmationType::Unset) {
-				confirmation_type = ConfirmationType::Pam;
+		case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
+			if (prompt_result.enter_failed) {
+				send_conversation_message(
+				    conv_function, PAM_ERROR_MSG,
+				    S("Failed to send Enter press, waiting for user to press it instead"));
 			}
-		}
-		convar.notify_one();
-		return std::tuple<int, char *>(auth_result, auth_tok_ptr);
-	});
+			return howdy_status(username, prompt_result.compare_status, config, conv_function);
 
-	if (ask_pass) {
-		pass_task.activate();
+		case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
+		case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
+			return PAM_SYSTEM_ERR;
 	}
 
-	NativePromptCleanupGuard native_cleanup{
-	    .pass_task     = &pass_task,
-	    .native_prompt = native_prompt ? &*native_prompt : nullptr,
-	};
-
-	{
-		std::unique_lock<std::mutex> lock(mutx);
-		convar.wait(lock, [&] {
-			return confirmation_type != ConfirmationType::Unset;
-		});
-	}
-
-	if (confirmation_type == ConfirmationType::Pam) {
-		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)", strerror(errno),
-			       errno);
-		}
-		child_task.stop();
-		if (ask_pass) {
-			pass_task.stop();
-			char *password              = nullptr;
-			std::tie(pam_res, password) = pass_task.get();
-			(void)password;
-			if (pam_res != PAM_SUCCESS) {
-				return pam_res;
-			}
-		}
-		return PAM_IGNORE;
-	}
-
-	child_task.stop();
-	const int status = child_task.get();
-
-	if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS && ask_pass) {
-		pass_task.stop();
-
-		char *password              = nullptr;
-		std::tie(pam_res, password) = pass_task.get();
-		(void)password;
-		if (pam_res != PAM_SUCCESS) {
-			return howdy_status(username, status, config, conv_function);
-		}
-
-		return PAM_IGNORE;
-	}
-
-	const auto stop_plan =
-	    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround);
-	const auto stop_result = request_password_prompt_stop(
-	    pass_task, stop_plan, native_prompt ? &*native_prompt : nullptr);
-	if (stop_result.enter_failed) {
-		send_conversation_message(
-		    conv_function, PAM_ERROR_MSG,
-		    S("Failed to send Enter press, waiting for user to press it instead"));
-	}
-	if (!stop_result.prompt_stopped) {
-		syslog(LOG_ERR, "Input prompt workaround cancellation failed; waiting for user/password "
-		                "prompt to complete");
-		pass_task.stop();
-	}
-
-	return howdy_status(username, status, config, conv_function);
+	return PAM_SYSTEM_ERR;
 }
