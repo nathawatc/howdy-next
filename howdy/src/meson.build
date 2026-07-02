@@ -3,10 +3,9 @@ inih_cpp = dependency('INIReader')
 yyjson = dependency('yyjson', version: '>=0.12.0')
 libcurl = dependency('libcurl')
 openssl = dependency('openssl')
-datadir = get_option('prefix') / get_option('datadir') / 'howdy'
 native_cpp_conf = configuration_data(paths_dict)
 
-native_paths_h = configure_file(
+configure_file(
 	input: '../include/config/paths.hpp.in',
 	output: 'paths.hpp',
 	configuration: native_cpp_conf,
@@ -100,7 +99,7 @@ native_compare = executable(
 	],
 	install: true,
 	install_dir: helperdir,
-	install_tag: 'native_compare',
+	install_tag: 'native_helpers',
 )
 
 native_auth_helper = executable(
@@ -110,11 +109,10 @@ native_auth_helper = executable(
 	'config/runtime_paths.cpp',
 	'storage/user_model_readiness.cpp',
 	include_directories: native_cpp_inc,
-	dependencies: [],
 	install: true,
 	install_dir: helperdir,
 	install_mode: 'rwsr-xr-x',
-	install_tag: 'native_compare',
+	install_tag: 'native_helpers',
 )
 
 test(
@@ -765,8 +763,6 @@ test(
 	native_config_reader_test,
 )
 
-subdir('cli')
-
 native_cli_lib = static_library(
 	'howdy_cli',
 	'howdy.cpp',
@@ -872,12 +868,12 @@ test(
 autocomplete = configure_file(
 	input: 'autocomplete/howdy.in',
 	output: 'autocomplete',
-	configuration: configuration_data({ 'config_path': config_path })
+	configuration: configuration_data({'config_path': config_path}),
 )
 install_data(
 	autocomplete,
-	install_dir: join_paths(get_option('prefix'), get_option('datadir'), 'bash-completion', 'completions'),
-	install_mode: 'rwxr--r--',
+	install_dir: prefix / datadir / 'bash-completion' / 'completions',
+	install_mode: 'rw-r--r--',
 	install_tag: 'bash_completion',
 	rename: 'howdy',
 )

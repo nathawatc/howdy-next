@@ -3,17 +3,17 @@ libevdev = dependency('libevdev')
 libpam = meson.get_compiler('cpp').find_library('pam')
 threads = dependency('threads')
 
-# Translations
 subdir('po')
 
-# Paths
 paths_h = configure_file(
 	input: '../howdy/include/config/paths.hpp.in',
 	output: 'paths.hpp',
-	configuration: pam_module_conf_data
+	configuration: pam_module_conf_data,
 )
 
-pamdir = get_option('pam_dir') != '' ? get_option('pam_dir') : join_paths(get_option('prefix'), get_option('libdir'), 'security')
+pamdir_option = get_option('pam_dir')
+pamdir = pamdir_option != '' ? pamdir_option : prefix / get_option('libdir') / 'security'
+pam_inc = include_directories('include', '../howdy/include')
 
 shared_library(
 	'pam_howdy',
@@ -30,7 +30,7 @@ shared_library(
 	'src/prompt_workaround.cpp',
 	'src/status_mapping.cpp',
 	'src/tty_restore.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	cpp_args: ['-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
 	dependencies: [
 		libpam,
@@ -44,14 +44,14 @@ shared_library(
 	install: true,
 	install_dir: pamdir,
 	install_tag: 'pam_module',
-	name_prefix: ''
+	name_prefix: '',
 )
 
 pam_status_mapping_test = executable(
 	'pam-status-mapping-test',
 	'src/status_mapping.cpp',
 	'src/tests/status_mapping_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	dependencies: [
 		libpam,
 		inih_cpp,
@@ -70,7 +70,7 @@ pam_prompt_workaround_test = executable(
 	'pam-prompt-workaround-test',
 	'src/prompt_workaround.cpp',
 	'src/tests/prompt_workaround_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	dependencies: [
 		libpam,
 		inih_cpp,
@@ -89,7 +89,7 @@ pam_main_entrypoints_test = executable(
 	'pam-main-entrypoints-test',
 	'src/main.cpp',
 	'src/tests/main_entrypoints_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	dependencies: [
 		libpam,
 		inih_cpp,
@@ -108,7 +108,7 @@ pam_native_prompt_conversation_test = executable(
 	'pam-native-prompt-conversation-test',
 	'src/native_prompt_conversation.cpp',
 	'src/tests/native_prompt_conversation_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	cpp_args: ['-DHOWDY_PAM_TESTING'],
 	dependencies: [
 		libpam,
@@ -127,7 +127,7 @@ test(
 pam_optional_task_test = executable(
 	'pam-optional-task-test',
 	'src/tests/optional_task_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	dependencies: [
 		threads,
 	],
@@ -143,7 +143,7 @@ pam_tty_restore_test = executable(
 	'pam-tty-restore-test',
 	'src/tty_restore.cpp',
 	'src/tests/tty_restore_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	dependencies: [
 		libpam,
 	],
@@ -169,7 +169,7 @@ pam_auth_flow_helpers_test = executable(
 	'src/prompt_workaround.cpp',
 	'src/status_mapping.cpp',
 	'src/tests/auth_flow_helpers_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	cpp_args: ['-DHOWDY_PAM_TESTING', '-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
 	dependencies: [
 		libpam,
@@ -196,7 +196,7 @@ pam_runtime_session_test = executable(
 	'../howdy/src/config/config_validation.cpp',
 	'src/runtime_session.cpp',
 	'src/tests/runtime_session_test.cpp',
-	include_directories: include_directories('include', '../howdy/include'),
+	include_directories: pam_inc,
 	cpp_args: ['-DHOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY'],
 	dependencies: [
 		libpam,

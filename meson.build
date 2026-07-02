@@ -72,7 +72,7 @@ if get_option('install_pam_config')
 	pam_config = configure_file(
 		input: 'pam/howdy.in',
 		output: 'pam-config',
-		configuration: {'pamdir': pamdir}
+		configuration: {'pamdir': pamdir},
 	)
 	install_data(
 		pam_config,
