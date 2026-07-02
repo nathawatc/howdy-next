@@ -75,6 +75,11 @@ namespace howdy::native {
 		std::filesystem::path path;
 	};
 
+	enum class StagedFileMetadataPolicy {
+		kPreserveExisting,
+		kUseDefaultMode,
+	};
+
 	inline void sync_parent_directory(const std::filesystem::path &path) {
 		const int dir_fd = open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY);
 		if (dir_fd >= 0) {
@@ -99,9 +104,10 @@ namespace howdy::native {
 		std::filesystem::remove(staged.path, ec);
 	}
 
-	inline auto prepare_staged_file(const std::filesystem::path &destination,
-	                                std::string_view             temp_prefix,
-	                                mode_t default_mode = kDefaultAtomicFileMode)
+	inline auto prepare_staged_file(
+	    const std::filesystem::path &destination, std::string_view temp_prefix,
+	    mode_t                   default_mode    = kDefaultAtomicFileMode,
+	    StagedFileMetadataPolicy metadata_policy = StagedFileMetadataPolicy::kPreserveExisting)
 	    -> std::optional<StagedFile> {
 		const auto      parent = destination.parent_path();
 		std::error_code create_ec;
@@ -126,7 +132,7 @@ namespace howdy::native {
 		}
 
 		const std::filesystem::path temp_path(writable.data());
-		if (have_current_stat) {
+		if (have_current_stat && metadata_policy == StagedFileMetadataPolicy::kPreserveExisting) {
 			if (fchmod(fd.get(), current_stat.st_mode & 07777) != 0 ||
 			    fchown(fd.get(), current_stat.st_uid, current_stat.st_gid) != 0) {
 				fd.reset();

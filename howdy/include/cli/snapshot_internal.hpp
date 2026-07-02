@@ -4,11 +4,10 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include <opencv2/core/mat.hpp>
-
-#include <sys/stat.h>
+#include <opencv2/core.hpp>
 
 namespace howdy::native::snapshot_internal {
 
@@ -43,20 +42,12 @@ namespace howdy::native::snapshot_internal {
 		WriteSnapshotFn     write_snapshot      = nullptr;
 	};
 
-	using SnapshotWriteImageFn = bool (*)(void *context, const std::filesystem::path &path,
-	                                      const cv::Mat &image);
-	using SnapshotChmodPathFn  = int (*)(void *context, const std::filesystem::path &path,
-	                                     mode_t mode);
-	using SnapshotSyncParentFn = void (*)(void *context, const std::filesystem::path &path);
-	// Callback consumes fd on every outcome, including error return or exception.
-	using SnapshotCloseFdFn = int (*)(void *context, int fd);
+	using SnapshotEncodeImageFn = bool (*)(void *context, std::string_view extension,
+	                                       const cv::Mat &image, std::vector<uchar> *encoded);
 
 	struct SnapshotWriterDependencies {
-		void                *context       = nullptr;
-		SnapshotWriteImageFn write_image   = nullptr;
-		SnapshotChmodPathFn  chmod_path    = nullptr;
-		SnapshotSyncParentFn sync_parent   = nullptr;
-		SnapshotCloseFdFn    close_temp_fd = nullptr;
+		void                 *context      = nullptr;
+		SnapshotEncodeImageFn encode_image = nullptr;
 	};
 
 	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool;

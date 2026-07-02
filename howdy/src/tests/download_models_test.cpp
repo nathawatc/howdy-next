@@ -438,6 +438,31 @@ auto main() -> int {
 	ok &= expect(count_staged_files(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
 	             "atomic writer removes staged file after replacement");
 
+	const auto default_mode_path = temp_root / "default-mode-existing";
+	ok &= expect(write_file(default_mode_path, "old"), "create default-mode policy target");
+	ok &=
+	    expect(chmod(default_mode_path.c_str(), 0600) == 0, "set default-mode policy target mode");
+	auto default_mode_staged = howdy::native::prepare_staged_file(
+	    default_mode_path, ".howdy-default-mode-", S_IRUSR | S_IWUSR | S_IRGRP,
+	    howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+	ok &= expect(default_mode_staged.has_value(), "prepare default-mode policy staged file");
+	if (default_mode_staged.has_value()) {
+		ok &= expect(howdy::native::write_all_to_fd(default_mode_staged->fd.get(), "new"),
+		             "write default-mode policy staged file");
+		ok &= expect(howdy::native::install_staged_file(*default_mode_staged, default_mode_path),
+		             "install default-mode policy staged file");
+		ok &= expect(read_file(default_mode_path) == "new",
+		             "default-mode policy installs replacement content");
+		struct stat default_mode_stat{};
+		ok &= expect(stat(default_mode_path.c_str(), &default_mode_stat) == 0,
+		             "stat default-mode policy target");
+		ok &= expect((default_mode_stat.st_mode & 07777) == 0640,
+		             "default-mode policy applies requested mode to existing file");
+		ok &=
+		    expect(count_staged_files(default_mode_path.parent_path(), ".howdy-default-mode-") == 0,
+		           "default-mode policy removes staged file after replacement");
+	}
+
 	const auto atomic_directory_target = temp_root / "atomic-directory-target";
 	fs::create_directory(atomic_directory_target, ec);
 	ok &= expect(!ec, "create directory atomic writer target");

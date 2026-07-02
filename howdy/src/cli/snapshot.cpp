@@ -10,11 +10,10 @@
 #include <array>
 #include <chrono>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <unistd.h>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -43,26 +42,10 @@ namespace {
 		return howdy::native::resolve_log_path() / "snapshots" / filename.data();
 	}
 
-	auto write_image_dependency(void *context, const std::filesystem::path &path,
-	                            const cv::Mat &image) -> bool {
+	auto encode_image_dependency(void *context, std::string_view extension, const cv::Mat &image,
+	                             std::vector<uchar> *encoded) -> bool {
 		(void)context;
-		return cv::imwrite(path.string(), image);
-	}
-
-	auto chmod_path_dependency(void *context, const std::filesystem::path &path, mode_t mode)
-	    -> int {
-		(void)context;
-		return chmod(path.c_str(), mode);
-	}
-
-	auto sync_parent_dependency(void *context, const std::filesystem::path &path) -> void {
-		(void)context;
-		howdy::native::sync_parent_directory(path);
-	}
-
-	auto close_temp_fd_dependency(void *context, int fd) -> int {
-		(void)context;
-		return close(fd);
+		return cv::imencode(std::string(extension), image, *encoded);
 	}
 
 	[[nodiscard]] auto has_valid_snapshot_frames(const std::vector<cv::Mat> &frames) -> bool {
@@ -90,103 +73,18 @@ namespace {
 		return true;
 	}
 
-	class RawSnapshotTempPathGuard {
-	public:
-		explicit RawSnapshotTempPathGuard(const char *path) noexcept
-		    : path_(path) {}
-
-		~RawSnapshotTempPathGuard() {
-			if (active_) {
-				unlink(path_);
-			}
-		}
-
-		RawSnapshotTempPathGuard(const RawSnapshotTempPathGuard &)                     = delete;
-		auto operator=(const RawSnapshotTempPathGuard &) -> RawSnapshotTempPathGuard & = delete;
-
-		void release() noexcept {
-			active_ = false;
-		}
-
-	private:
-		const char *path_;
-		bool        active_ = true;
-	};
-
-	auto make_snapshot_temp_path(const std::filesystem::path &path, void *context,
-	                             snapshot_internal::SnapshotCloseFdFn close_temp_fd)
-	    -> std::filesystem::path {
-		try {
-			const auto filename     = path.filename().string();
-			const auto suffix_start = filename.rfind('.');
-			const auto suffix =
-			    suffix_start == std::string::npos ? std::string{} : filename.substr(suffix_start);
-			std::string temp_template =
-			    (path.parent_path() / ("." + filename + ".tmp-XXXXXX" + suffix)).string();
-			std::vector<char> writable(temp_template.begin(), temp_template.end());
-			writable.push_back('\0');
-
-			const int fd = mkstemps(writable.data(), static_cast<int>(suffix.size()));
-			if (fd < 0) {
-				return {};
-			}
-			RawSnapshotTempPathGuard cleanup(writable.data());
-			if (close_temp_fd(context, fd) != 0) {
-				return {};
-			}
-
-			std::filesystem::path temp_path(writable.data());
-			cleanup.release();
-			return temp_path;
-		} catch (...) {
-			return {};
-		}
+	[[nodiscard]] auto snapshot_image_extension(const std::filesystem::path &path) -> std::string {
+		const auto filename     = path.filename().string();
+		const auto suffix_start = filename.rfind('.');
+		return suffix_start == std::string::npos ? std::string{} : filename.substr(suffix_start);
 	}
-
-	auto fsync_file_at_path(const std::filesystem::path &path) -> bool {
-		const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
-		if (fd < 0) {
-			return false;
-		}
-		const bool ok = fsync(fd) == 0;
-		close(fd);
-		return ok;
-	}
-
-	class SnapshotTempPathGuard {
-	public:
-		explicit SnapshotTempPathGuard(const std::filesystem::path &path) noexcept
-		    : path_(path) {}
-
-		~SnapshotTempPathGuard() {
-			if (!active_) {
-				return;
-			}
-			std::error_code ec;
-			std::filesystem::remove(path_, ec);
-		}
-
-		SnapshotTempPathGuard(const SnapshotTempPathGuard &)                     = delete;
-		auto operator=(const SnapshotTempPathGuard &) -> SnapshotTempPathGuard & = delete;
-
-		void release() noexcept {
-			active_ = false;
-		}
-
-	private:
-		const std::filesystem::path &path_;
-		bool                         active_ = true;
-	};
 
 	auto generate_snapshot(const std::vector<cv::Mat>     &frames,
 	                       const std::vector<std::string> &text_lines) -> std::filesystem::path {
 		auto       filepath     = snapshot_path();
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
-		    .context       = nullptr,
-		    .write_image   = write_image_dependency,
-		    .chmod_path    = chmod_path_dependency,
-		    .sync_parent   = sync_parent_dependency,
-		    .close_temp_fd = close_temp_fd_dependency,
+		    .context      = nullptr,
+		    .encode_image = encode_image_dependency,
 		};
 		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath,
 		                                               dependencies)) {
@@ -305,11 +203,14 @@ auto howdy::native::snapshot_internal::ensure_snapshot_directory(
 auto howdy::native::snapshot_internal::write_snapshot_at_path(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
     const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies) -> bool {
-	if (dependencies.write_image == nullptr || dependencies.chmod_path == nullptr ||
-	    dependencies.sync_parent == nullptr || dependencies.close_temp_fd == nullptr) {
+	if (dependencies.encode_image == nullptr) {
 		return false;
 	}
 	if (!has_valid_snapshot_frames(frames)) {
+		return false;
+	}
+	const auto extension = snapshot_image_extension(path);
+	if (extension.empty()) {
 		return false;
 	}
 
@@ -317,12 +218,12 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 		return false;
 	}
 
-	const auto temp_path =
-	    make_snapshot_temp_path(path, dependencies.context, dependencies.close_temp_fd);
-	if (temp_path.empty()) {
+	auto staged = howdy::native::prepare_staged_file(
+	    path, ".howdy-snapshot-", kSnapshotFileMode,
+	    howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+	if (!staged.has_value()) {
 		return false;
 	}
-	SnapshotTempPathGuard temp_path_guard(temp_path);
 
 	try {
 		const int frame_height = frames.front().rows;
@@ -339,27 +240,20 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 			            cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
 		}
 
-		if (!dependencies.write_image(dependencies.context, temp_path, snap)) {
+		std::vector<uchar> encoded_bytes;
+		if (!dependencies.encode_image(dependencies.context, extension, snap, &encoded_bytes) ||
+		    encoded_bytes.empty() ||
+		    !howdy::native::write_all_to_fd(staged->fd.get(),
+		                                    reinterpret_cast<const char *>(encoded_bytes.data()),
+		                                    encoded_bytes.size())) {
+			howdy::native::cleanup_staged_file(*staged);
 			return false;
 		}
-		if (dependencies.chmod_path(dependencies.context, temp_path, kSnapshotFileMode) != 0) {
-			return false;
-		}
-		if (!fsync_file_at_path(temp_path)) {
-			return false;
-		}
-
-		std::filesystem::rename(temp_path, path);
-		temp_path_guard.release();
 	} catch (...) {
+		howdy::native::cleanup_staged_file(*staged);
 		return false;
 	}
-	try {
-		dependencies.sync_parent(dependencies.context, path);
-	} catch (...) {
-		return false;
-	}
-	return true;
+	return howdy::native::install_staged_file(*staged, path);
 }
 
 auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
