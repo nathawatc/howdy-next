@@ -1,6 +1,7 @@
 #include "cli/download_models_internal.hpp"
 
 #include <array>
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
@@ -10,8 +11,10 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 
+#include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace {
@@ -63,10 +66,11 @@ namespace {
 		return out.good();
 	}
 
-	auto count_staged_downloads(const std::filesystem::path &directory) -> std::size_t {
+	auto count_staged_files(const std::filesystem::path &directory, std::string_view prefix)
+	    -> std::size_t {
 		std::size_t count = 0;
 		for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-			if (entry.path().filename().string().starts_with(".howdy-download-")) {
+			if (entry.path().filename().string().starts_with(prefix)) {
 				++count;
 			}
 		}
@@ -277,7 +281,7 @@ auto main() -> int {
 	             "missing model in existing secure directory reaches download");
 	ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
 	             "existing secure directory starts first model download");
-	ok &= expect(count_staged_downloads(existing_models_dir) == 0,
+	ok &= expect(count_staged_files(existing_models_dir, ".howdy-download-") == 0,
 	             "failed download removes staged file");
 
 	const auto missing_parent_models_dir = temp_root / "missing-parent" / "models";
@@ -401,6 +405,91 @@ auto main() -> int {
 		ok &= expect(!fs::exists(staged_path, ec) && !ec,
 		             "failed staged install removes staged file");
 	}
+
+	const auto atomic_new_path = temp_root / "atomic" / "new-file";
+	ok &=
+	    expect(howdy::native::write_atomic_file(atomic_new_path, "new content", S_IRUSR | S_IWUSR),
+	           "atomic writer creates new file");
+	ok &=
+	    expect(read_file(atomic_new_path) == "new content", "atomic writer preserves new content");
+	struct stat atomic_new_stat{};
+	ok &=
+	    expect(stat(atomic_new_path.c_str(), &atomic_new_stat) == 0, "stat atomic writer new file");
+	ok &= expect(S_ISREG(atomic_new_stat.st_mode), "atomic writer new target is regular file");
+	ok &= expect((atomic_new_stat.st_mode & 07777) == 0600,
+	             "atomic writer applies requested new-file mode");
+	ok &= expect(count_staged_files(atomic_new_path.parent_path(), ".howdy-atomic-") == 0,
+	             "atomic writer removes staged file after new-file install");
+
+	const auto atomic_existing_path = temp_root / "atomic-existing";
+	ok &=
+	    expect(write_file(atomic_existing_path, "initial"), "create existing atomic writer target");
+	ok &= expect(chmod(atomic_existing_path.c_str(), 0640) == 0,
+	             "set existing atomic writer target mode");
+	ok &= expect(howdy::native::write_atomic_file(atomic_existing_path, "replacement", 0600),
+	             "atomic writer replaces existing file");
+	ok &= expect(read_file(atomic_existing_path) == "replacement",
+	             "atomic writer preserves replacement content");
+	struct stat atomic_existing_stat{};
+	ok &= expect(stat(atomic_existing_path.c_str(), &atomic_existing_stat) == 0,
+	             "stat replaced atomic writer file");
+	ok &= expect((atomic_existing_stat.st_mode & 07777) == 0640,
+	             "atomic writer preserves existing-file mode");
+	ok &= expect(count_staged_files(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
+	             "atomic writer removes staged file after replacement");
+
+	const auto atomic_directory_target = temp_root / "atomic-directory-target";
+	fs::create_directory(atomic_directory_target, ec);
+	ok &= expect(!ec, "create directory atomic writer target");
+	ok &= expect(!howdy::native::write_atomic_file(atomic_directory_target, "must not replace"),
+	             "atomic writer rejects directory target");
+	ok &= expect(fs::is_directory(atomic_directory_target, ec) && !ec,
+	             "atomic writer leaves directory target unchanged");
+	ok &= expect(count_staged_files(atomic_directory_target.parent_path(), ".howdy-atomic-") == 0,
+	             "atomic writer creates no staged file for directory target");
+
+	const auto atomic_blocked_parent = temp_root / "atomic-blocked-parent";
+	ok &= expect(write_file(atomic_blocked_parent, "blocking content"),
+	             "create file blocking atomic writer parent");
+	const auto atomic_blocked_path = atomic_blocked_parent / "child" / "file";
+	ok &= expect(!howdy::native::write_atomic_file(atomic_blocked_path, "must not write"),
+	             "atomic writer rejects blocked parent path");
+	ok &= expect(!fs::exists(atomic_blocked_parent / "child", ec) && !ec,
+	             "atomic writer creates no child under blocked parent");
+	ok &= expect(read_file(atomic_blocked_parent) == "blocking content",
+	             "atomic writer preserves blocking file content");
+
+	const auto atomic_write_failure_path = temp_root / "atomic-write-failure";
+	ok &= expect(write_file(atomic_write_failure_path, "original content"),
+	             "create atomic writer write-failure target");
+	struct rlimit original_file_size_limit{};
+	const bool    have_file_size_limit = getrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0;
+	ok &= expect(have_file_size_limit, "read file-size resource limit");
+	const auto previous_sigxfsz_handler = std::signal(SIGXFSZ, SIG_IGN);
+	const bool have_sigxfsz_handler     = previous_sigxfsz_handler != SIG_ERR;
+	ok &= expect(have_sigxfsz_handler, "ignore file-size signal for failed atomic write");
+	bool atomic_write_failed = false;
+	if (have_file_size_limit && have_sigxfsz_handler) {
+		auto zero_file_size_limit     = original_file_size_limit;
+		zero_file_size_limit.rlim_cur = 0;
+		const bool limited_file_size  = setrlimit(RLIMIT_FSIZE, &zero_file_size_limit) == 0;
+		ok &= expect(limited_file_size, "limit file size for failed atomic write");
+		if (limited_file_size) {
+			atomic_write_failed =
+			    !howdy::native::write_atomic_file(atomic_write_failure_path, "replacement");
+			ok &= expect(setrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0,
+			             "restore file-size resource limit");
+		}
+	}
+	if (have_sigxfsz_handler) {
+		ok &= expect(std::signal(SIGXFSZ, previous_sigxfsz_handler) != SIG_ERR,
+		             "restore file-size signal handler");
+	}
+	ok &= expect(atomic_write_failed, "atomic writer reports staged content write failure");
+	ok &= expect(read_file(atomic_write_failure_path) == "original content",
+	             "failed atomic write preserves existing target");
+	ok &= expect(count_staged_files(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
+	             "failed atomic write removes staged file");
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

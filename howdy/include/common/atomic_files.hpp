@@ -174,59 +174,17 @@ namespace howdy::native {
 
 	inline auto write_atomic_file(const std::filesystem::path &path, std::string_view content,
 	                              mode_t default_mode = kDefaultAtomicFileMode) -> bool {
-		const auto parent = path.parent_path();
-		std::filesystem::create_directories(parent);
-
-		struct stat current_stat{};
-		const bool  have_current_stat = lstat(path.c_str(), &current_stat) == 0;
-		if (have_current_stat && !S_ISREG(current_stat.st_mode)) {
+		auto staged = prepare_staged_file(path, ".howdy-atomic-", default_mode);
+		if (!staged.has_value()) {
 			return false;
 		}
 
-		std::string       temp_template = (parent / ".howdy-atomic-XXXXXX").string();
-		std::vector<char> writable(temp_template.begin(), temp_template.end());
-		writable.push_back('\0');
-
-		const int fd = mkstemp(writable.data());
-		if (fd < 0) {
+		if (!write_all_to_fd(staged->fd.get(), content)) {
+			cleanup_staged_file(*staged);
 			return false;
 		}
 
-		const std::filesystem::path temp_path(writable.data());
-		bool                        ok = true;
-		if (have_current_stat) {
-			if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
-			    fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
-				ok = false;
-			}
-		} else if (fchmod(fd, default_mode) != 0) {
-			ok = false;
-		}
-
-		if (ok && !write_all_to_fd(fd, content)) {
-			ok = false;
-		}
-
-		if (ok && fsync(fd) != 0) {
-			ok = false;
-		}
-		close(fd);
-
-		if (!ok) {
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
-			return false;
-		}
-
-		std::error_code ec;
-		std::filesystem::rename(temp_path, path, ec);
-		if (ec) {
-			std::filesystem::remove(temp_path, ec);
-			return false;
-		}
-
-		sync_parent_directory(path);
-		return true;
+		return install_staged_file(*staged, path);
 	}
 
 }  // namespace howdy::native
