@@ -21,6 +21,20 @@ Shared runtime code under `howdy/src/` and headers under `howdy/include/`.
   element type before transformations or inference.
 - Use `core/face_matching.hpp` for pure embedding candidate selection; do not duplicate metric or
   finite-value logic.
+- Use `core/face_detection.hpp` as detector-output boundary. `FaceModel::detect()` returns
+  `FaceDetectionResult`; distinguish valid zero detections from `kInferenceError` and
+  `kInvalidOutput`.
+- Consume semantic `FaceDetection` fields (`box`, `landmarks`, `confidence`); do not pass raw
+  YuNet `cv::Mat` rows outside face-model internals or reimplement detector-row parsing.
+- User-model JSON parsing and serialization live in `storage/user_model_codec.*` and use yyjson.
+  Preserve strict parsing, duplicate direct-key rejection, nesting limits, numeric bounds, and
+  finite-encoding validation.
+- Keep codec mutations through `user_model_codec::Document`; do not add ad hoc JSON parsing or
+  serialization in storage callers.
+- Reuse `common/atomic_files.hpp` staged-file helpers for atomic writes. Do not duplicate temporary
+  file creation, metadata preservation, fsync, rename, cleanup, or parent-directory sync logic.
+- Use `face_detection_test.cpp` for pure YuNet-result parsing and
+  `user_model_codec_test.cpp` for codec grammar/security regressions; neither requires real ONNX inference.
 - Enrollment capture logic lives in `cli/enrollment_capture.hpp`
   (template `capture_enrollment_sample()`); classify failures
   with `classify_enrollment_capture_failure()`.

@@ -22,8 +22,12 @@ ninja -C build
 meson test -C build --print-errorlogs
 ```
 
-`meson setup build` configures build dir, `ninja -C build` compiles CLI, compare binary, PAM module,
-`meson test` runs native suite with failure logs.
+`meson setup build` configures build dir, `ninja -C build` compiles unified `howdy` CLI, native helper
+binaries, compare process, and PAM module. `meson test` runs native suite with failure logs.
+
+- Install user-facing commands through `howdy`; do not reintroduce standalone command executables.
+- Keep privileged/internal helpers under `<libexecdir>/howdy`; do not expose them as normal user commands.
+  This includes `howdy-compare` and setuid `howdy-auth-helper`.
 
 CI runs in container (`ci/Containerfile`); prebuilt image at `codeberg.org/nathawat/howdy-next:ci-1`.
 
@@ -67,14 +71,20 @@ focused tests beside changed code, using `*_test.cpp`.
 
 | Test area                  | Key files                                                                       |
 | -------------------------- | ------------------------------------------------------------------------------- |
+| Unified CLI dispatch       | `howdy_dispatch_test.cpp`                                                       |
 | Add CLI                    | `add_cli_test.cpp`, `enrollment_capture_test.cpp`                               |
 | List / remove / set CLI    | `list_cli_test.cpp`, `remove_cli_test.cpp`, `set_cli_test.cpp`                  |
 | Snapshot CLI               | `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`                             |
 | Test CLI                   | `test_cli_test.cpp`                                                             |
+| Face detection parsing     | `face_detection_test.cpp`                                                       |
+| Atomic file lifecycle      | `download_models_test.cpp`                                                      |
 | User model codec           | `user_model_codec_test.cpp`                                                     |
 | Compare logic / frames     | `compare_logic_test.cpp`, `frame_processing_test.cpp`, `face_matching_test.cpp` |
 | Auth helper                | `auth_helper_test.cpp`, `auth_flow_helpers_test.cpp`                            |
 | Config / runtime / storage | `config_*_test.cpp`, `runtime_*_test.cpp`, `user_models_test.cpp`               |
+
+Unified dispatcher and install-layout coverage are registered as `native-howdy-dispatch` and
+`native-howdy-install-layout`.
 
 For security-sensitive code, cover failure paths and success paths. Watch file ownership checks,
 config validation, typed runtime config loading, PAM status mapping, runtime staging, and exception
