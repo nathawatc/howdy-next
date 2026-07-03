@@ -68,19 +68,5 @@ paths_dict = {
 pam_module_conf_data = configuration_data(paths_dict)
 
 subdir('pam')
-if get_option('install_pam_config')
-	pam_config = configure_file(
-		input: 'pam/howdy.in',
-		output: 'pam-config',
-		configuration: {'pamdir': pamdir},
-	)
-	install_data(
-		pam_config,
-		install_dir: prefix / datadir / 'pam-configs',
-		install_mode: 'rw-r--r--',
-		install_tag: 'pam',
-		rename: 'howdy',
-	)
-endif
 
 subdir('howdy')
