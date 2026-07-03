@@ -1,6 +1,6 @@
 # Howdy Source Guidelines
 
-**Updated:** 2026-07-01
+**Updated:** 2026-07-03
 
 ## Scope
 
@@ -40,3 +40,21 @@ Shared runtime code under `howdy/src/` and headers under `howdy/include/`.
   with `classify_enrollment_capture_failure()`.
 - Auth helper protocol keys are shared via `common/auth_helper_protocol.hpp`.
 - Build requires `opencv4` with `include_type: 'system'` for system OpenCV.
+
+## Compare Runtime Boundaries
+
+- `common/compare_capture_session.hpp` owns `VideoCapture` lifecycle, open/read
+  results, timeout clock, frame numbering, capture statistics, and exposure
+  restore.
+- `common/compare_engine.hpp` owns deterministic grayscale preprocessing,
+  CLAHE, brightness classification, resize/rotation, prepared-frame
+  validation, face detection, embedding, and first accepted match selection.
+- `compare.cpp` remains composition layer: arguments, runtime config and
+  user-model load, sandbox, `FaceModel` adapters, session/engine orchestration,
+  timeout/output/report policy, `CompareExit` mapping, and outer exception
+  boundary.
+- Do not move user-visible output, PAM-facing exit mapping, or policy
+  decisions into either helper.
+- `compare_capture_session_test.cpp` must remain camera-free through injected
+  capture/clock callbacks.
+- `compare_engine_test.cpp` must remain ONNX-free through injected inference callbacks.

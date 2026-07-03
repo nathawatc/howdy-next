@@ -1,6 +1,6 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-07-01
+**Updated:** 2026-07-03
 
 ## Scope
 
@@ -35,6 +35,8 @@ CLI commands are refactored for testability via dependency-injection structs:
 | `include/cli/list_internal.hpp`            | `ListDependencies`, `list_main_with_dependencies()`                                                                   |
 | `include/cli/remove_internal.hpp`          | `RemoveDependencies`, `remove_main_with_dependencies()`                                                               |
 | `include/cli/set_internal.hpp`             | `SetDependencies`, `set_main_with_dependencies()`                                                                     |
+| `include/cli/config_internal.hpp`          | `ConfigDependencies`, `TempConfigCopy`                                                                                |
+| `include/cli/config_internal.hpp`          | `config_main_with_dependencies()`                                                                                     |
 | `include/cli/test_cli_internal.hpp`        | `TestDependencies`, `test_main_with_dependencies()`, `run_preview_preflight()`, `has_graphical_display_environment()` |
 | `include/cli/snapshot_internal.hpp`        | `SnapshotDependencies`, `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, `write_snapshot_at_path()` |
 | `include/cli/enrollment_capture.hpp`       | `capture_enrollment_sample()` template, `EnrollmentCaptureResult`, `classify_enrollment_capture_failure()`            |
@@ -70,3 +72,15 @@ CLI commands are refactored for testability via dependency-injection structs:
 - Snapshot writer validates BGR frame batches and atomically installs output.
 - Capture failure diagnostics use `classify_enrollment_capture_failure()`
   for granular error messages (black frames, too dark, no face, etc.).
+- Config CLI uses `config_main_with_dependencies()` for deterministic tests;
+  do not restore test-only environment variables, fake editor scripts, or
+  filesystem-dependent integration harnesses.
+- Preserve config command flow and cleanup semantics:
+  - invalid edited content keeps temporary file;
+  - editor-launch failure, snapshot-read failure, unchanged edit, and
+    successful install remove it exactly once;
+  - stale config detection passes original content as
+    `expected_current_content`;
+  - install keeps `lock = true` and `validate_runtime = false`.
+- Production editor behavior remains in production adapters; injected tests
+  must not alter `$EDITOR` policy.

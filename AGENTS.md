@@ -1,12 +1,11 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-01
+**Updated:** 2026-07-03
 
 ## Scope
 
 Root rules for whole repo. Read nearest `AGENTS.md` for local overrides.
 
-- `ci/AGENTS.md`: CI container build and validation rules
 - `howdy/src/AGENTS.md`: shared runtime, storage, config, model, and helper code
 - `howdy/src/cli/AGENTS.md`: CLI entrypoints and download/config commands
 - `howdy/src/recorders/AGENTS.md`: camera capture layer
@@ -69,19 +68,19 @@ run-clang-tidy -p build -quiet
 Tests are Meson-registered native executables under `howdy/src/tests/` and `pam/src/tests/`. Add
 focused tests beside changed code, using `*_test.cpp`.
 
-| Test area                  | Key files                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------- |
-| Unified CLI dispatch       | `howdy_dispatch_test.cpp`                                                       |
-| Add CLI                    | `add_cli_test.cpp`, `enrollment_capture_test.cpp`                               |
-| List / remove / set CLI    | `list_cli_test.cpp`, `remove_cli_test.cpp`, `set_cli_test.cpp`                  |
-| Snapshot CLI               | `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`                             |
-| Test CLI                   | `test_cli_test.cpp`                                                             |
-| Face detection parsing     | `face_detection_test.cpp`                                                       |
-| Atomic file lifecycle      | `download_models_test.cpp`                                                      |
-| User model codec           | `user_model_codec_test.cpp`                                                     |
-| Compare logic / frames     | `compare_logic_test.cpp`, `frame_processing_test.cpp`, `face_matching_test.cpp` |
-| Auth helper                | `auth_helper_test.cpp`, `auth_flow_helpers_test.cpp`                            |
-| Config / runtime / storage | `config_*_test.cpp`, `runtime_*_test.cpp`, `user_models_test.cpp`               |
+| Test area                  | Key files                                                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unified CLI dispatch       | `howdy_dispatch_test.cpp`                                                                                                                      |
+| Add CLI                    | `add_cli_test.cpp`, `enrollment_capture_test.cpp`                                                                                              |
+| List / remove / set CLI    | `list_cli_test.cpp`, `remove_cli_test.cpp`, `set_cli_test.cpp`                                                                                 |
+| Snapshot CLI               | `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`                                                                                            |
+| Test CLI                   | `test_cli_test.cpp`                                                                                                                            |
+| Face detection parsing     | `face_detection_test.cpp`                                                                                                                      |
+| Atomic file lifecycle      | `download_models_test.cpp`                                                                                                                     |
+| User model codec           | `user_model_codec_test.cpp`                                                                                                                    |
+| Compare runtime / frames   | `compare_engine_test.cpp`, `compare_capture_session_test.cpp`, `compare_logic_test.cpp`, `frame_processing_test.cpp`, `face_matching_test.cpp` |
+| PAM runtime / prompting    | `auth_helper_test.cpp`, `auth_flow_helpers_test.cpp`, `runtime_session_test.cpp`, `prompt_coordinator_test.cpp`                                |
+| Config / runtime / storage | `config_*_test.cpp`, `runtime_*_test.cpp`, `user_models_test.cpp`                                                                              |
 
 Unified dispatcher and install-layout coverage are registered as `native-howdy-dispatch` and
 `native-howdy-install-layout`.
