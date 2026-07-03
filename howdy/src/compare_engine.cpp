@@ -55,6 +55,30 @@ namespace {
 		return subject + " is invalid";
 	}
 
+	auto prepared_frame_validation_message(const cv::Mat                       &frame,
+	                                       howdy::native::FrameValidationStatus status)
+	    -> std::string {
+		const std::string subject = "Prepared frame for face detection";
+		switch (status) {
+			case howdy::native::FrameValidationStatus::kValid:
+				return {};
+			case howdy::native::FrameValidationStatus::kEmpty:
+				return subject + " is empty";
+			case howdy::native::FrameValidationStatus::kUnsupportedDimensions:
+				return subject + " has unsupported frame dimensions: " + std::to_string(frame.dims);
+			case howdy::native::FrameValidationStatus::kOversizedDimensions:
+				return subject + " has oversized frame dimensions: " + std::to_string(frame.cols) +
+				       "x" + std::to_string(frame.rows) + " (max supported dimension: " +
+				       std::to_string(howdy::native::kMaxFrameDimension) + ")";
+			case howdy::native::FrameValidationStatus::kUnsupportedChannelCount:
+				return subject +
+				       " has unsupported channel count: " + std::to_string(frame.channels());
+			case howdy::native::FrameValidationStatus::kUnsupportedPixelType:
+				return subject + " has unsupported pixel type: " + std::to_string(frame.type());
+		}
+		return subject + " is invalid";
+	}
+
 }  // namespace
 
 namespace howdy::native {
@@ -64,6 +88,16 @@ namespace howdy::native {
 	CompareEngine::CompareEngine(const VideoConfig &config)
 	    : config_(config)
 	    , clahe_(make_clahe(config_)) {}
+
+	// Public API accepts a const reference; engine intentionally owns a config copy.
+	// NOLINTNEXTLINE(modernize-pass-by-value)
+	CompareEngine::CompareEngine(const VideoConfig              &config,
+	                             CompareInferenceDependencies    inference_dependencies,
+	                             std::vector<std::vector<float>> known_encodings)
+	    : config_(config)
+	    , clahe_(make_clahe(config_))
+	    , inference_dependencies_(inference_dependencies)
+	    , known_encodings_(std::move(known_encodings)) {}
 
 	auto CompareEngine::process_gray_frame(cv::Mat gray_frame, int frame_number)
 	    -> CompareFrameResult {
@@ -121,6 +155,55 @@ namespace howdy::native {
 		    .status        = CompareFrameStatus::kReady,
 		    .brightness    = brightness,
 		    .working_frame = std::move(working_frame),
+		};
+	}
+
+	auto CompareEngine::process_face_frame(const cv::Mat &working_frame) -> CompareInferenceResult {
+		if (inference_dependencies_.context == nullptr ||
+		    inference_dependencies_.prepare_face_frame == nullptr ||
+		    inference_dependencies_.detect_faces == nullptr ||
+		    inference_dependencies_.encode_face == nullptr ||
+		    inference_dependencies_.find_best_match == nullptr) {
+			return {
+			    .status = CompareInferenceStatus::kInvalidDependencies,
+			};
+		}
+
+		const auto prepared = inference_dependencies_.prepare_face_frame(
+		    inference_dependencies_.context, working_frame);
+		const auto prepared_validation = validate_frame(prepared, FrameChannelPolicy::kBgr);
+		if (prepared_validation != FrameValidationStatus::kValid) {
+			return {
+			    .status        = CompareInferenceStatus::kInvalidPreparedFrame,
+			    .error_message = prepared_frame_validation_message(prepared, prepared_validation),
+			};
+		}
+
+		const auto detection_result =
+		    inference_dependencies_.detect_faces(inference_dependencies_.context, prepared);
+		if (!detection_result.ok()) {
+			return {
+			    .status        = CompareInferenceStatus::kDetectionFailed,
+			    .error_message = detection_result.error_message,
+			};
+		}
+
+		for (const auto &face : detection_result.detections) {
+			const auto encoding = inference_dependencies_.encode_face(
+			    inference_dependencies_.context, prepared, face);
+			const auto match = inference_dependencies_.find_best_match(
+			    inference_dependencies_.context, known_encodings_, encoding);
+			if (match.accepted) {
+				return {
+				    .status        = CompareInferenceStatus::kMatch,
+				    .winning_index = match.index,
+				    .winning_score = match.score,
+				};
+			}
+		}
+
+		return {
+		    .status = CompareInferenceStatus::kNoMatch,
 		};
 	}
 

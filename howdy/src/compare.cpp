@@ -2,7 +2,6 @@
 #include "common/compare_engine.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
-#include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -13,7 +12,6 @@
 #include <chrono>
 #include <exception>
 #include <iostream>
-#include <limits>
 #include <string>
 #include <utility>
 
@@ -67,28 +65,23 @@ namespace {
 		return true;
 	}
 
-	auto prepared_frame_validation_message(const cv::Mat                       &frame,
-	                                       howdy::native::FrameValidationStatus status)
-	    -> std::string {
-		const std::string subject = "Prepared frame for face detection";
-		switch (status) {
-			case howdy::native::FrameValidationStatus::kValid:
-				return {};
-			case howdy::native::FrameValidationStatus::kEmpty:
-				return subject + " is empty";
-			case howdy::native::FrameValidationStatus::kUnsupportedDimensions:
-				return subject + " has unsupported frame dimensions: " + std::to_string(frame.dims);
-			case howdy::native::FrameValidationStatus::kOversizedDimensions:
-				return subject + " has oversized frame dimensions: " + std::to_string(frame.cols) +
-				       "x" + std::to_string(frame.rows) + " (max supported dimension: " +
-				       std::to_string(howdy::native::kMaxFrameDimension) + ")";
-			case howdy::native::FrameValidationStatus::kUnsupportedChannelCount:
-				return subject +
-				       " has unsupported channel count: " + std::to_string(frame.channels());
-			case howdy::native::FrameValidationStatus::kUnsupportedPixelType:
-				return subject + " has unsupported pixel type: " + std::to_string(frame.type());
-		}
-		return subject + " is invalid";
+	auto prepare_face_frame_dependency(void *context, const cv::Mat &frame) -> cv::Mat {
+		return static_cast<howdy::native::FaceModel *>(context)->prepare_frame(frame);
+	}
+
+	auto detect_faces_dependency(void *context, const cv::Mat &frame)
+	    -> howdy::native::FaceDetectionResult {
+		return static_cast<howdy::native::FaceModel *>(context)->detect(frame);
+	}
+
+	auto encode_face_dependency(void *context, const cv::Mat &frame,
+	                            const howdy::native::FaceDetection &face) -> std::vector<float> {
+		return static_cast<howdy::native::FaceModel *>(context)->encode(frame, face);
+	}
+
+	auto find_best_match_dependency(void *context, const std::vector<std::vector<float>> &known,
+	                                const std::vector<float> &probe) -> howdy::native::FaceMatch {
+		return static_cast<howdy::native::FaceModel *>(context)->best_match(known, probe);
 	}
 
 }  // namespace
@@ -160,14 +153,22 @@ auto main(int argc, char **argv) -> int {
 		const int                    timeout    = config.video.timeout;
 		const int                    exposure   = config.video.exposure;
 		const bool                   end_report = config.debug.end_report;
-		howdy::native::CompareEngine compare_engine(config.video);
+		howdy::native::CompareEngine compare_engine(
+		    config.video,
+		    {
+		        .context            = &face_model,
+		        .prepare_face_frame = prepare_face_frame_dependency,
+		        .detect_faces       = detect_faces_dependency,
+		        .encode_face        = encode_face_dependency,
+		        .find_best_match    = find_best_match_dependency,
+		    },
+		    loaded_models.stored.encodings);
 
 		int    frames             = 0;
 		int    black_tries        = 0;
 		int    dark_tries         = 0;
 		int    valid_frames       = 0;
 		double dark_running_total = 0.0;
-		float  best_score         = std::numeric_limits<float>::quiet_NaN();
 		float  winning_score      = 0.0F;
 		int    winning_index      = -1;
 		auto   frame_loop_start   = std::chrono::steady_clock::now();
@@ -225,53 +226,45 @@ auto main(int argc, char **argv) -> int {
 					break;
 			}
 
-			cv::Mat working_frame = frame_result.working_frame;
+			const auto inference_result =
+			    compare_engine.process_face_frame(frame_result.working_frame);
 
-			cv::Mat    prepared = face_model.prepare_frame(working_frame);
-			const auto prepared_validation =
-			    howdy::native::validate_frame(prepared, howdy::native::FrameChannelPolicy::kBgr);
-			if (prepared_validation != howdy::native::FrameValidationStatus::kValid) {
-				std::cerr << prepared_frame_validation_message(prepared, prepared_validation)
-				          << "\n";
-				return static_cast<int>(CompareExit::kAbort);
-			}
-			const auto detection_result = face_model.detect(prepared);
-			if (!detection_result.ok()) {
-				std::cerr << detection_result.error_message << "\n";
-				return static_cast<int>(CompareExit::kAbort);
-			}
-			for (const auto &face : detection_result.detections) {
-				const auto encoding = face_model.encode(prepared, face);
-				const auto match = face_model.best_match(loaded_models.stored.encodings, encoding);
-				best_score =
-				    howdy::native::update_best_score(best_score, match.score, face_model.metric());
+			switch (inference_result.status) {
+				case howdy::native::CompareInferenceStatus::kNoMatch:
+					break;
 
-				if (!match.accepted) {
-					continue;
-				}
+				case howdy::native::CompareInferenceStatus::kMatch:
+					winning_index = inference_result.winning_index;
+					winning_score = inference_result.winning_score;
 
-				winning_index = match.index;
-				winning_score = match.score;
-
-				if (end_report) {
-					const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-					                          std::chrono::steady_clock::now() - start_time)
-					                          .count();
-					std::cout << "Total time: " << total_ms << "ms\n";
-					std::cout << "Frames searched: " << frames << "\n";
-					std::cout << "Black frames ignored: " << black_tries << "\n";
-					std::cout << "Dark frames ignored: " << dark_tries << "\n";
-					std::cout << "Winning score: " << winning_score << "\n";
-					if (winning_index >= 0 &&
-					    std::cmp_less(winning_index, loaded_models.stored.models.size())) {
-						const auto &winner =
-						    loaded_models.stored.models[static_cast<std::size_t>(winning_index)];
-						std::cout << "Winning model: " << winner.id << " (\"" << winner.label
-						          << "\")\n";
+					if (end_report) {
+						const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+						                          std::chrono::steady_clock::now() - start_time)
+						                          .count();
+						std::cout << "Total time: " << total_ms << "ms\n";
+						std::cout << "Frames searched: " << frames << "\n";
+						std::cout << "Black frames ignored: " << black_tries << "\n";
+						std::cout << "Dark frames ignored: " << dark_tries << "\n";
+						std::cout << "Winning score: " << winning_score << "\n";
+						if (winning_index >= 0 &&
+						    std::cmp_less(winning_index, loaded_models.stored.models.size())) {
+							const auto &winner =
+							    loaded_models.stored
+							        .models[static_cast<std::size_t>(winning_index)];
+							std::cout << "Winning model: " << winner.id << " (\"" << winner.label
+							          << "\")\n";
+						}
 					}
-				}
 
-				return static_cast<int>(CompareExit::kSuccess);
+					return static_cast<int>(CompareExit::kSuccess);
+
+				case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
+				case howdy::native::CompareInferenceStatus::kDetectionFailed:
+					std::cerr << inference_result.error_message << "\n";
+					return static_cast<int>(CompareExit::kAbort);
+
+				case howdy::native::CompareInferenceStatus::kInvalidDependencies:
+					return static_cast<int>(CompareExit::kAbort);
 			}
 
 			if (exposure != -1) {
