@@ -2,6 +2,7 @@
 
 #include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
+#include "core/face_encoding_internal.hpp"
 
 #include <filesystem>
 #include <string>
@@ -10,6 +11,16 @@
 #include <opencv2/imgproc.hpp>
 
 namespace howdy::native {
+	namespace {
+		void align_face(void *context, const cv::Mat &frame, const cv::Mat &face,
+		                cv::Mat &aligned) {
+			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(frame, face, aligned);
+		}
+
+		void extract_feature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
+			static_cast<cv::FaceRecognizerSF *>(context)->feature(aligned, feature);
+		}
+	}  // namespace
 
 	FaceModel::FaceModel(const FaceConfig &config)
 	    : metric_(config.sface_metric)
@@ -87,39 +98,30 @@ namespace howdy::native {
 		}
 	}
 
-	auto FaceModel::encode(const cv::Mat &frame, const FaceDetection &face) -> std::vector<float> {
-		std::vector<float> result;
-		cv::Mat            prepared = prepare_frame(frame);
-		cv::Mat            row(1, 15, CV_32FC1);
-		cv::Mat            aligned;
-		cv::Mat            feature;
-		row.at<float>(0, 0) = face.box.x;
-		row.at<float>(0, 1) = face.box.y;
-		row.at<float>(0, 2) = face.box.width;
-		row.at<float>(0, 3) = face.box.height;
-		for (std::size_t index = 0; index < face.landmarks.size(); ++index) {
-			const int column             = 4 + static_cast<int>(index * 2);
-			row.at<float>(0, column)     = face.landmarks[index].x;
-			row.at<float>(0, column + 1) = face.landmarks[index].y;
-		}
-		row.at<float>(0, 14) = face.confidence;
-
-		recognizer_->alignCrop(prepared, row, aligned);
-		if (aligned.empty()) {
-			return result;
+	auto FaceModel::encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult {
+		cv::Mat prepared;
+		try {
+			prepared = prepare_frame(frame);
+		} catch (const cv::Exception &) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = "Face encoding failed during frame preparation",
+			};
 		}
 
-		recognizer_->feature(aligned, feature);
-		if (feature.empty()) {
-			return result;
+		try {
+			return encode_sface(prepared, face,
+			                    {
+			                        .context         = recognizer_.get(),
+			                        .align_face      = align_face,
+			                        .extract_feature = extract_feature,
+			                    });
+		} catch (const cv::Exception &) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = "Face encoding failed while processing camera frame",
+			};
 		}
-
-		const cv::Mat flattened = feature.reshape(1, 1);
-		result.reserve(flattened.cols);
-		for (int index = 0; index < flattened.cols; ++index) {
-			result.push_back(flattened.at<float>(0, index));
-		}
-		return result;
 	}
 
 	auto FaceModel::best_match(const std::vector<std::vector<float>> &known,

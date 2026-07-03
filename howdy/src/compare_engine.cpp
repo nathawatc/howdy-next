@@ -188,11 +188,22 @@ namespace howdy::native {
 			};
 		}
 
+		std::string first_encoding_error;
+		bool        reached_matching = false;
 		for (const auto &face : detection_result.detections) {
-			const auto encoding = inference_dependencies_.encode_face(
+			const auto encoding_result = inference_dependencies_.encode_face(
 			    inference_dependencies_.context, prepared, face);
+			if (!encoding_result.ok()) {
+				if (first_encoding_error.empty()) {
+					first_encoding_error = encoding_result.error_message.empty()
+					                           ? "Face encoding returned invalid embedding"
+					                           : encoding_result.error_message;
+				}
+				continue;
+			}
+			reached_matching = true;
 			const auto match = inference_dependencies_.find_best_match(
-			    inference_dependencies_.context, known_encodings_, encoding);
+			    inference_dependencies_.context, known_encodings_, encoding_result.encoding);
 			if (match.accepted) {
 				return {
 				    .status        = CompareInferenceStatus::kMatch,
@@ -200,6 +211,12 @@ namespace howdy::native {
 				    .winning_score = match.score,
 				};
 			}
+		}
+		if (!reached_matching && !first_encoding_error.empty()) {
+			return {
+			    .status        = CompareInferenceStatus::kEncodingFailed,
+			    .error_message = std::move(first_encoding_error),
+			};
 		}
 
 		return {

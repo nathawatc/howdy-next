@@ -75,7 +75,8 @@ namespace {
 	}
 
 	auto encode_face_dependency(void *context, const cv::Mat &frame,
-	                            const howdy::native::FaceDetection &face) -> std::vector<float> {
+	                            const howdy::native::FaceDetection &face)
+	    -> howdy::native::FaceEncodingResult {
 		return static_cast<howdy::native::FaceModel *>(context)->encode(frame, face);
 	}
 
@@ -267,6 +268,7 @@ auto main(int argc, char **argv) -> int {
 
 				case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
 				case howdy::native::CompareInferenceStatus::kDetectionFailed:
+				case howdy::native::CompareInferenceStatus::kEncodingFailed:
 					std::cerr << inference_result.error_message << "\n";
 					return static_cast<int>(CompareExit::kAbort);
 

@@ -183,10 +183,12 @@ namespace {
 			};
 		}
 
-		auto encoding = face_model.encode(capture_result.frame, capture_result.faces.front());
-		if (encoding.empty()) {
+		auto encoding_result =
+		    face_model.encode(capture_result.frame, capture_result.faces.front());
+		if (!encoding_result.ok()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
+			    .error_message  = std::move(encoding_result.error_message),
 			    .capture_result = std::move(capture_result),
 			};
 		}
@@ -195,7 +197,7 @@ namespace {
 		    .status         = howdy::native::add_internal::AddEnrollmentStatus::kOk,
 		    .capture_result = std::move(capture_result),
 		    .metric         = face_model.metric(),
-		    .encoding       = std::move(encoding),
+		    .encoding       = std::move(encoding_result.encoding),
 		};
 	}
 
@@ -292,7 +294,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 			std::cerr << "Multiple faces detected, aborting\n";
 			return kExitAbort;
 		case AddEnrollmentStatus::kEncodingError:
-			std::cerr << "No valid face encoding captured\n";
+			std::cerr << enrollment_result.error_message << "\n";
 			return kExitAbort;
 		default:
 			std::cerr << "Internal error: unknown add enrollment status\n";

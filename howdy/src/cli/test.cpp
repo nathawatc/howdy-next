@@ -80,6 +80,17 @@ namespace {
 		            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
 	}
 
+	auto encode_preview_face(void *context, const cv::Mat &frame,
+	                         const howdy::native::FaceDetection &face)
+	    -> howdy::native::FaceEncodingResult {
+		return static_cast<howdy::native::FaceModel *>(context)->encode(frame, face);
+	}
+
+	auto match_preview_face(void *context, const std::vector<std::vector<float>> &known,
+	                        const std::vector<float> &probe) -> howdy::native::FaceMatch {
+		return static_cast<howdy::native::FaceModel *>(context)->best_match(known, probe);
+	}
+
 	auto drop_to_invoking_gui_user() -> bool {
 		if (geteuid() != 0) {
 			return true;
@@ -374,28 +385,55 @@ namespace {
 						};
 					}
 
-					for (const auto &face : detection_result.detections) {
-						cv::Scalar color(0, 0, 230);
-						const int  x = static_cast<int>(face.box.x);
-						const int  y = static_cast<int>(face.box.y);
-						const int  w = static_cast<int>(face.box.width);
-						const int  h = static_cast<int>(face.box.height);
+					test_cli_internal::PreviewFaceMatchingResult matching_result{
+					    .status = test_cli_internal::TestPreviewStatus::kOk,
+					};
+					if (loaded_models.status == howdy::native::UserModelStatus::kOk) {
+						matching_result = test_cli_internal::match_preview_faces(
+						    face_frame, detection_result.detections, loaded_models.stored.encodings,
+						    {
+						        .context     = &face_model,
+						        .encode_face = encode_preview_face,
+						        .match_face  = match_preview_face,
+						    });
+						if (!matching_result.ok()) {
+							capture.release();
+							return test_cli_internal::TestPreviewResult{
+							    .status        = matching_result.status,
+							    .error_message = std::move(matching_result.error_message),
+							};
+						}
+					}
+
+					for (std::size_t face_index = 0;
+					     face_index < detection_result.detections.size(); ++face_index) {
+						const auto &face = detection_result.detections[face_index];
+						cv::Scalar  color(0, 0, 230);
+						const int   x = static_cast<int>(face.box.x);
+						const int   y = static_cast<int>(face.box.y);
+						const int   w = static_cast<int>(face.box.width);
+						const int   h = static_cast<int>(face.box.height);
 
 						if (loaded_models.status == howdy::native::UserModelStatus::kOk) {
-							const auto face_encoding = face_model.encode(face_frame, face);
-							const auto match = face_model.best_match(loaded_models.stored.encodings,
-							                                         face_encoding);
-
+							const auto &face_match = matching_result.matches[face_index];
 							std::string face_text;
-							if (match.accepted) {
-								color = cv::Scalar(0, 230, 0);
-								const auto &model =
-								    loaded_models.stored
-								        .models[static_cast<std::size_t>(match.index)];
-								face_text = model.label +
-								            " (score: " + cv::format("%.3f", match.score) + ")";
-							} else {
-								face_text = "no match (" + cv::format("%.3f", match.score) + ")";
+							switch (test_cli_internal::preview_face_display_state(face_match)) {
+								case test_cli_internal::PreviewFaceDisplayState::kEncodingFailed:
+									face_text = "encoding failed";
+									break;
+								case test_cli_internal::PreviewFaceDisplayState::kNoMatch:
+									face_text =
+									    "no match (" + cv::format("%.3f", face_match->score) + ")";
+									break;
+								case test_cli_internal::PreviewFaceDisplayState::kMatch: {
+									color = cv::Scalar(0, 230, 0);
+									const auto &model =
+									    loaded_models.stored
+									        .models[static_cast<std::size_t>(face_match->index)];
+									face_text = model.label + " (score: " +
+									            cv::format("%.3f", face_match->score) + ")";
+									break;
+								}
 							}
 
 							cv::putText(overlay, face_text, cv::Point(x, std::max(0, y - 8)),
@@ -465,6 +503,14 @@ auto howdy::native::test_cli_internal::preview_brightness_presentation(
 	};
 }
 
+auto howdy::native::test_cli_internal::preview_face_display_state(
+    const std::optional<howdy::native::FaceMatch> &match) -> PreviewFaceDisplayState {
+	if (!match.has_value()) {
+		return PreviewFaceDisplayState::kEncodingFailed;
+	}
+	return match->accepted ? PreviewFaceDisplayState::kMatch : PreviewFaceDisplayState::kNoMatch;
+}
+
 auto howdy::native::test_cli_internal::validate_preview_gray_frame(const cv::Mat &gray_frame)
     -> TestPreviewResult {
 	if (howdy::native::validate_frame(gray_frame, howdy::native::FrameChannelPolicy::kGray) !=
@@ -472,6 +518,48 @@ auto howdy::native::test_cli_internal::validate_preview_gray_frame(const cv::Mat
 		return TestPreviewResult{.status = TestPreviewStatus::kCameraReadError};
 	}
 	return TestPreviewResult{.status = TestPreviewStatus::kOk};
+}
+
+auto howdy::native::test_cli_internal::match_preview_faces(
+    const cv::Mat &frame, const std::vector<howdy::native::FaceDetection> &faces,
+    const std::vector<std::vector<float>> &known,
+    const PreviewFaceMatchingDependencies &dependencies) -> PreviewFaceMatchingResult {
+	if (dependencies.context == nullptr || dependencies.encode_face == nullptr ||
+	    dependencies.match_face == nullptr) {
+		return {
+		    .status        = TestPreviewStatus::kFaceModelError,
+		    .error_message = "Internal error: missing test preview face matching dependency",
+		};
+	}
+
+	PreviewFaceMatchingResult result{.status = TestPreviewStatus::kOk};
+	result.matches.reserve(faces.size());
+	std::string first_encoding_error;
+	bool        reached_matching = false;
+	for (const auto &face : faces) {
+		const auto encoding_result = dependencies.encode_face(dependencies.context, frame, face);
+		if (!encoding_result.ok()) {
+			if (first_encoding_error.empty()) {
+				first_encoding_error = encoding_result.error_message.empty()
+				                           ? "Face encoding returned invalid embedding"
+				                           : encoding_result.error_message;
+			}
+			result.matches.emplace_back(std::nullopt);
+			continue;
+		}
+
+		reached_matching = true;
+		result.matches.emplace_back(
+		    dependencies.match_face(dependencies.context, known, encoding_result.encoding));
+	}
+
+	if (!reached_matching && !first_encoding_error.empty()) {
+		return {
+		    .status        = TestPreviewStatus::kFaceModelError,
+		    .error_message = std::move(first_encoding_error),
+		};
+	}
+	return result;
 }
 
 auto howdy::native::test_cli_internal::run_preview_preflight(

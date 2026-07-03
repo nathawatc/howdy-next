@@ -3,7 +3,10 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <limits>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <opencv2/imgproc.hpp>
@@ -58,16 +61,23 @@ namespace {
 		return frame;
 	}
 
+	auto make_encoding(float value) -> std::vector<float> {
+		return std::vector<float>(howdy::native::kSfaceEmbeddingSize, value);
+	}
+
 	struct FakeInferenceContext {
 		int prepare_calls = 0;
 		int detect_calls  = 0;
 		int encode_calls  = 0;
 		int match_calls   = 0;
 
-		cv::Mat                               prepared_frame;
-		howdy::native::FaceDetectionResult    detection_result;
-		std::vector<std::vector<float>>       encoded_results;
-		std::vector<howdy::native::FaceMatch> match_results;
+		cv::Mat                                          prepared_frame;
+		howdy::native::FaceDetectionResult               detection_result;
+		std::vector<std::vector<float>>                  encoded_results;
+		std::vector<howdy::native::FaceEncodingResult>   encoding_results;
+		std::vector<howdy::native::FaceMatch>            match_results;
+		std::string                                      encoding_error_message;
+		std::optional<howdy::native::FaceEncodingResult> forced_encoding_result;
 
 		std::vector<howdy::native::FaceDetection>    encoded_faces;
 		std::vector<std::vector<std::vector<float>>> received_known;
@@ -98,15 +108,35 @@ namespace {
 	}
 
 	auto encode_face(void *opaque, [[maybe_unused]] const cv::Mat &frame,
-	                 const howdy::native::FaceDetection &face) -> std::vector<float> {
+	                 const howdy::native::FaceDetection &face)
+	    -> howdy::native::FaceEncodingResult {
 		if (opaque == nullptr) {
 			callback_calls_without_context++;
-			return {};
+			return {
+			    .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+			    .error_message = "missing context",
+			};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
 		context.encode_calls++;
 		context.encoded_faces.push_back(face);
-		return context.encoded_results[context.next_encoding++];
+		if (context.forced_encoding_result.has_value()) {
+			return *context.forced_encoding_result;
+		}
+		if (!context.encoding_results.empty()) {
+			return context.encoding_results[context.next_encoding++];
+		}
+		if (!context.encoding_error_message.empty()) {
+			return {
+			    .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+			    .error_message = context.encoding_error_message,
+			};
+		}
+		return {
+		    .status        = howdy::native::FaceEncodingStatus::kOk,
+		    .encoding      = context.encoded_results[context.next_encoding++],
+		    .error_message = {},
+		};
 	}
 
 	auto find_best_match(void *opaque, const std::vector<std::vector<float>> &known,
@@ -365,7 +395,65 @@ auto main() -> int {
 		            .status     = howdy::native::FaceDetectionStatus::kOk,
 		            .detections = {make_detection(1.0F)},
 		        },
-		    .encoded_results = {{0.1F, 0.2F}},
+		    .forced_encoding_result = howdy::native::FaceEncodingResult{},
+		};
+		howdy::native::CompareEngine engine(make_video_config(),
+		                                    make_inference_dependencies(context), known);
+		const auto                   result = engine.process_face_frame(working_frame);
+		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		             "default empty encoding fails closed");
+		ok &= expect(result.error_message == "Face encoding returned no data",
+		             "default empty encoding preserves fallback diagnostic");
+		ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+		             "default empty encoding stops before matching");
+	}
+
+	{
+		std::vector<howdy::native::FaceEncodingResult> malformed_results;
+		malformed_results.push_back({
+		    .status        = howdy::native::FaceEncodingStatus::kOk,
+		    .encoding      = std::vector<float>(howdy::native::kSfaceEmbeddingSize - 1, 0.25F),
+		    .error_message = {},
+		});
+		auto non_finite = howdy::native::FaceEncodingResult{
+		    .status        = howdy::native::FaceEncodingStatus::kOk,
+		    .encoding      = make_encoding(0.25F),
+		    .error_message = {},
+		};
+		non_finite.encoding[0] = std::numeric_limits<float>::quiet_NaN();
+		malformed_results.push_back(std::move(non_finite));
+
+		for (const auto &malformed : malformed_results) {
+			FakeInferenceContext context{
+			    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+			    .detection_result =
+			        {
+			            .status     = howdy::native::FaceDetectionStatus::kOk,
+			            .detections = {make_detection(1.0F)},
+			        },
+			    .forced_encoding_result = malformed,
+			};
+			howdy::native::CompareEngine engine(make_video_config(),
+			                                    make_inference_dependencies(context), known);
+			const auto                   result = engine.process_face_frame(working_frame);
+			ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+			             "malformed claimed-success encoding fails closed");
+			ok &= expect(!result.error_message.empty(),
+			             "malformed claimed-success encoding returns diagnostic");
+			ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+			             "malformed claimed-success encoding stops before matching");
+		}
+	}
+
+	{
+		FakeInferenceContext context{
+		    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result =
+		        {
+		            .status     = howdy::native::FaceDetectionStatus::kOk,
+		            .detections = {make_detection(1.0F)},
+		        },
+		    .encoded_results = {make_encoding(0.1F)},
 		    .match_results   = {{.index = 1, .score = 0.9F, .accepted = true}},
 		};
 		std::vector<std::vector<float>> caller_known = {
@@ -421,6 +509,90 @@ auto main() -> int {
 
 	{
 		FakeInferenceContext context{
+		    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result =
+		        {
+		            .status     = howdy::native::FaceDetectionStatus::kOk,
+		            .detections = {make_detection(1.0F)},
+		        },
+		    .encoding_error_message = "SFace feature extraction failed: synthetic failure",
+		};
+		howdy::native::CompareEngine engine(make_video_config(),
+		                                    make_inference_dependencies(context), known);
+		const auto                   result = engine.process_face_frame(working_frame);
+		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		             "encoding failure aborts inference instead of returning no match");
+		ok &= expect(result.error_message == context.encoding_error_message,
+		             "encoding failure error is preserved");
+		ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+		             "encoding failure stops before matching");
+	}
+
+	{
+		FakeInferenceContext context{
+		    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result =
+		        {
+		            .status     = howdy::native::FaceDetectionStatus::kOk,
+		            .detections = {make_detection(1.0F), make_detection(20.0F)},
+		        },
+		    .encoding_results =
+		        {
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+		                .error_message = "First face encoding failed",
+		            },
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kOk,
+		                .encoding      = make_encoding(0.3F),
+		                .error_message = {},
+		            },
+		        },
+		    .match_results = {{.index = 1, .score = 0.9F, .accepted = true}},
+		};
+		howdy::native::CompareEngine engine(make_video_config(),
+		                                    make_inference_dependencies(context), known);
+		const auto                   result = engine.process_face_frame(working_frame);
+		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
+		             "failed first encoding does not hide matching second face");
+		ok &= expect(result.winning_index == 1, "second face match index is returned");
+		ok &= expect(context.encode_calls == 2 && context.match_calls == 1,
+		             "failed first encoding advances to second face and matches once");
+	}
+
+	{
+		FakeInferenceContext context{
+		    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result =
+		        {
+		            .status     = howdy::native::FaceDetectionStatus::kOk,
+		            .detections = {make_detection(1.0F), make_detection(20.0F)},
+		        },
+		    .encoding_results =
+		        {
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+		                .error_message = "First face encoding failed",
+		            },
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kInvalidOutput,
+		                .error_message = "Second face encoding failed",
+		            },
+		        },
+		};
+		howdy::native::CompareEngine engine(make_video_config(),
+		                                    make_inference_dependencies(context), known);
+		const auto                   result = engine.process_face_frame(working_frame);
+		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		             "all failed encodings return encoding failure");
+		ok &= expect(result.error_message == "First face encoding failed",
+		             "all failed encodings preserve first actionable error");
+		ok &= expect(context.encode_calls == 2 && context.match_calls == 0,
+		             "all failed encodings skip matching");
+	}
+
+	{
+		FakeInferenceContext context{
 		    .prepared_frame   = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
 		    .detection_result = {.status = howdy::native::FaceDetectionStatus::kOk},
 		};
@@ -444,7 +616,7 @@ auto main() -> int {
 		            .status     = howdy::native::FaceDetectionStatus::kOk,
 		            .detections = {first_detection, second_detection},
 		        },
-		    .encoded_results = {{0.1F, 0.2F}, {0.3F, 0.4F}},
+		    .encoded_results = {make_encoding(0.1F), make_encoding(0.3F)},
 		    .match_results =
 		        {
 		            {.index = 0, .score = 0.2F, .accepted = false},
@@ -466,7 +638,7 @@ auto main() -> int {
 		                 same_detection(context.encoded_faces[1], second_detection),
 		             "detections are encoded in original order");
 		ok &= expect(context.received_probes.size() == 2 &&
-		                 context.received_probes[1] == std::vector<float>({0.3F, 0.4F}),
+		                 context.received_probes[1] == make_encoding(0.3F),
 		             "second encoding is passed to second match");
 	}
 
@@ -478,7 +650,7 @@ auto main() -> int {
 		            .status     = howdy::native::FaceDetectionStatus::kOk,
 		            .detections = {make_detection(1.0F), make_detection(20.0F)},
 		        },
-		    .encoded_results = {{0.1F, 0.2F}, {0.3F, 0.4F}},
+		    .encoded_results = {make_encoding(0.1F), make_encoding(0.3F)},
 		    .match_results =
 		        {
 		            {.index = 0, .score = 0.8F, .accepted = true},
@@ -505,7 +677,7 @@ auto main() -> int {
 		            .status     = howdy::native::FaceDetectionStatus::kOk,
 		            .detections = {make_detection(1.0F), make_detection(20.0F)},
 		        },
-		    .encoded_results = {{0.1F, 0.2F}, {0.3F, 0.4F}},
+		    .encoded_results = {make_encoding(0.1F), make_encoding(0.3F)},
 		    .match_results =
 		        {
 		            {.index = 0, .score = 0.2F, .accepted = false},

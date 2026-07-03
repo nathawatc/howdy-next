@@ -3,12 +3,14 @@
 #include "common/frame_validation.hpp"
 
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
+	int preview_callbacks_without_context = 0;
 
 	struct StreamRedirect {
 		std::ostream   &output;
@@ -53,6 +55,15 @@ namespace {
 		howdy::native::RuntimeConfig open_config;
 	};
 
+	struct PreviewFaceMatchingTestContext {
+		std::vector<howdy::native::FaceEncodingResult> encoding_results;
+		std::vector<howdy::native::FaceMatch>          match_results;
+		std::size_t                                    next_encoding = 0;
+		std::size_t                                    next_match    = 0;
+		int                                            encode_calls  = 0;
+		int                                            match_calls   = 0;
+	};
+
 	auto expect(bool condition, const std::string &message) -> bool {
 		if (!condition) {
 			std::cerr << "FAIL: " << message << "\n";
@@ -78,6 +89,39 @@ namespace {
 		}
 		std::cerr << "\n";
 		return false;
+	}
+
+	auto encode_preview_face(void *raw_context, [[maybe_unused]] const cv::Mat &frame,
+	                         [[maybe_unused]] const howdy::native::FaceDetection &face)
+	    -> howdy::native::FaceEncodingResult {
+		if (raw_context == nullptr) {
+			preview_callbacks_without_context++;
+			return {};
+		}
+		auto &context = *static_cast<PreviewFaceMatchingTestContext *>(raw_context);
+		context.encode_calls++;
+		return context.encoding_results[context.next_encoding++];
+	}
+
+	auto match_preview_face(void                                                   *raw_context,
+	                        [[maybe_unused]] const std::vector<std::vector<float>> &known,
+	                        [[maybe_unused]] const std::vector<float>              &probe)
+	    -> howdy::native::FaceMatch {
+		if (raw_context == nullptr) {
+			preview_callbacks_without_context++;
+			return {};
+		}
+		auto &context = *static_cast<PreviewFaceMatchingTestContext *>(raw_context);
+		context.match_calls++;
+		return context.match_results[context.next_match++];
+	}
+
+	auto valid_encoding(float value) -> howdy::native::FaceEncodingResult {
+		return {
+		    .status        = howdy::native::FaceEncodingStatus::kOk,
+		    .encoding      = std::vector<float>(howdy::native::kSfaceEmbeddingSize, value),
+		    .error_message = {},
+		};
 	}
 
 	auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
@@ -480,6 +524,28 @@ namespace {
 		return ok;
 	}
 
+	auto preview_face_display_state_preserves_encoding_failures() -> bool {
+		namespace test_cli_internal = howdy::native::test_cli_internal;
+
+		const std::optional<howdy::native::FaceMatch> encoding_failed;
+		const std::optional<howdy::native::FaceMatch> no_match{
+		    howdy::native::FaceMatch{.accepted = false}};
+		const std::optional<howdy::native::FaceMatch> match{
+		    howdy::native::FaceMatch{.accepted = true}};
+
+		bool ok = true;
+		ok &= expect(test_cli_internal::preview_face_display_state(encoding_failed) ==
+		                 test_cli_internal::PreviewFaceDisplayState::kEncodingFailed,
+		             "missing face match maps to encoding-failed display state");
+		ok &= expect(test_cli_internal::preview_face_display_state(no_match) ==
+		                 test_cli_internal::PreviewFaceDisplayState::kNoMatch,
+		             "rejected face match maps to no-match display state");
+		ok &= expect(test_cli_internal::preview_face_display_state(match) ==
+		                 test_cli_internal::PreviewFaceDisplayState::kMatch,
+		             "accepted face match maps to match display state");
+		return ok;
+	}
+
 	auto graphical_environment_helper_checks_display_values() -> bool {
 		namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -551,6 +617,115 @@ namespace {
 		return ok;
 	}
 
+	auto failed_first_preview_encoding_allows_matching_second_face() -> bool {
+		PreviewFaceMatchingTestContext context{
+		    .encoding_results =
+		        {
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+		                .error_message = "First preview face encoding failed",
+		            },
+		            valid_encoding(0.25F),
+		        },
+		    .match_results = {{.index = 1, .score = 0.9F, .accepted = true}},
+		};
+		const std::vector<howdy::native::FaceDetection> faces(2);
+		const auto result = howdy::native::test_cli_internal::match_preview_faces(
+		    cv::Mat(2, 2, CV_8UC3, cv::Scalar(1, 2, 3)), faces, {},
+		    {
+		        .context     = &context,
+		        .encode_face = encode_preview_face,
+		        .match_face  = match_preview_face,
+		    });
+
+		bool ok = true;
+		ok &= expect(result.ok(), "failed first preview encoding still succeeds");
+		ok &= expect(result.matches.size() == 2 && !result.matches[0].has_value() &&
+		                 result.matches[1].has_value() && result.matches[1]->accepted,
+		             "failed first preview face is skipped and second face matches");
+		ok &= expect(context.encode_calls == 2 && context.match_calls == 1,
+		             "preview advances after encoding failure and matches once");
+		return ok;
+	}
+
+	auto all_preview_encodings_fail_with_first_error() -> bool {
+		PreviewFaceMatchingTestContext context{
+		    .encoding_results =
+		        {
+		            {
+		                .status        = howdy::native::FaceEncodingStatus::kInferenceError,
+		                .error_message = "First preview face encoding failed",
+		            },
+		            {
+		                .error_message = "Second preview face encoding failed",
+		            },
+		        },
+		};
+		const std::vector<howdy::native::FaceDetection> faces(2);
+		const auto result = howdy::native::test_cli_internal::match_preview_faces(
+		    cv::Mat(2, 2, CV_8UC3, cv::Scalar(1, 2, 3)), faces, {},
+		    {
+		        .context     = &context,
+		        .encode_face = encode_preview_face,
+		        .match_face  = match_preview_face,
+		    });
+
+		bool ok = true;
+		ok &= expect(result.status ==
+		                 howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
+		             "all failed preview encodings return face model error");
+		ok &= expect(result.error_message == "First preview face encoding failed",
+		             "all failed preview encodings preserve first actionable error");
+		ok &= expect(context.encode_calls == 2 && context.match_calls == 0,
+		             "all failed preview encodings skip matching");
+		return ok;
+	}
+
+	auto invalid_preview_face_matching_dependencies_fail_closed() -> bool {
+		auto run_missing_dependency = [](auto clear_dependency, const std::string &subject) {
+			PreviewFaceMatchingTestContext context;
+			auto dependencies = howdy::native::test_cli_internal::PreviewFaceMatchingDependencies{
+			    .context     = &context,
+			    .encode_face = encode_preview_face,
+			    .match_face  = match_preview_face,
+			};
+			clear_dependency(dependencies);
+			preview_callbacks_without_context = 0;
+
+			const auto result = howdy::native::test_cli_internal::match_preview_faces(
+			    cv::Mat(2, 2, CV_8UC3, cv::Scalar(1, 2, 3)),
+			    std::vector<howdy::native::FaceDetection>(1), {}, dependencies);
+
+			bool ok = true;
+			ok &= expect(result.status ==
+			                 howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
+			             subject + " returns face model error");
+			ok &= expect(!result.error_message.empty(), subject + " returns diagnostic");
+			ok &= expect(context.encode_calls == 0 && context.match_calls == 0 &&
+			                 preview_callbacks_without_context == 0,
+			             subject + " invokes no callbacks");
+			return ok;
+		};
+
+		bool ok = true;
+		ok &= run_missing_dependency(
+		    [](auto &dependencies) {
+			    dependencies.context = nullptr;
+		    },
+		    "null preview context");
+		ok &= run_missing_dependency(
+		    [](auto &dependencies) {
+			    dependencies.encode_face = nullptr;
+		    },
+		    "null preview encoding callback");
+		ok &= run_missing_dependency(
+		    [](auto &dependencies) {
+			    dependencies.match_face = nullptr;
+		    },
+		    "null preview matching callback");
+		return ok;
+	}
+
 	auto missing_dependency_callbacks_fail_closed() -> bool {
 		bool ok = true;
 		{
@@ -600,8 +775,12 @@ auto main() -> int {
 	ok &= gui_initialization_runs_before_first_camera_read();
 	ok &= invalid_prefetched_gray_frame_returns_camera_read_failure();
 	ok &= preview_brightness_presentation_maps_classifier_to_overlay_behavior();
+	ok &= preview_face_display_state_preserves_encoding_failures();
 	ok &= graphical_environment_helper_checks_display_values();
 	ok &= missing_preflight_dependency_callbacks_fail_closed();
+	ok &= failed_first_preview_encoding_allows_matching_second_face();
+	ok &= all_preview_encodings_fail_with_first_error();
+	ok &= invalid_preview_face_matching_dependencies_fail_closed();
 	ok &= missing_dependency_callbacks_fail_closed();
 	return ok ? 0 : 1;
 }

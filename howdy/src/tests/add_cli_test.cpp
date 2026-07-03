@@ -532,8 +532,22 @@ namespace {
 	}
 
 	auto encoding_failure_stops_before_append() -> bool {
-		return enrollment_failure_status_stops_before_append(
-		    howdy::native::add_internal::AddEnrollmentStatus::kEncodingError, "encoding failure");
+		auto context           = make_success_context();
+		context.capture_result = howdy::native::add_internal::AddEnrollmentResult{
+		    .status        = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
+		    .error_message = "SFace feature extraction failed: synthetic failure",
+		};
+		std::ostringstream error;
+		ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+
+		const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+
+		bool ok = true;
+		ok &= expect(result == 1, "encoding failure returns 1");
+		ok &= expect(context.append_calls == 0, "encoding failure skips append");
+		ok &= expect(error.str().contains(context.capture_result.error_message),
+		             "encoding failure prints actionable diagnostic");
+		return ok;
 	}
 
 	auto unknown_enrollment_status_fails_closed_before_append() -> bool {

@@ -1,9 +1,14 @@
 #pragma once
 
 #include "config/runtime_config.hpp"
+#include "core/face_detection.hpp"
+#include "core/face_encoding.hpp"
+#include "core/face_matching.hpp"
 
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <opencv2/core.hpp>
 
@@ -31,6 +36,34 @@ namespace howdy::native::test_cli_internal {
 	struct PreviewBrightnessPresentation {
 		const char *frame_label  = "";
 		bool        detect_faces = false;
+	};
+
+	using EncodePreviewFaceFn = howdy::native::FaceEncodingResult (*)(
+	    void *context, const cv::Mat &frame, const howdy::native::FaceDetection &face);
+	using MatchPreviewFaceFn =
+	    howdy::native::FaceMatch (*)(void *context, const std::vector<std::vector<float>> &known,
+	                                 const std::vector<float> &probe);
+
+	struct PreviewFaceMatchingDependencies {
+		void               *context     = nullptr;
+		EncodePreviewFaceFn encode_face = nullptr;
+		MatchPreviewFaceFn  match_face  = nullptr;
+	};
+
+	struct PreviewFaceMatchingResult {
+		TestPreviewStatus status = TestPreviewStatus::kFaceModelError;
+		std::vector<std::optional<howdy::native::FaceMatch>> matches;
+		std::string                                          error_message;
+
+		[[nodiscard]] auto ok() const -> bool {
+			return status == TestPreviewStatus::kOk;
+		}
+	};
+
+	enum class PreviewFaceDisplayState {
+		kEncodingFailed,
+		kNoMatch,
+		kMatch,
 	};
 
 	struct TestPreflightOperationResult {
@@ -74,6 +107,13 @@ namespace howdy::native::test_cli_internal {
 	auto preview_brightness_presentation(howdy::native::BrightnessDecision decision)
 	    -> PreviewBrightnessPresentation;
 	auto validate_preview_gray_frame(const cv::Mat &gray_frame) -> TestPreviewResult;
+	auto match_preview_faces(const cv::Mat                                   &frame,
+	                         const std::vector<howdy::native::FaceDetection> &faces,
+	                         const std::vector<std::vector<float>>           &known,
+	                         const PreviewFaceMatchingDependencies           &dependencies)
+	    -> PreviewFaceMatchingResult;
+	auto preview_face_display_state(const std::optional<howdy::native::FaceMatch> &match)
+	    -> PreviewFaceDisplayState;
 
 	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                           const std::string                      &device_path,

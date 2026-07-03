@@ -61,6 +61,7 @@ native_cpp_sources = [
 	'config/config_validation.cpp',
 	'config/runtime_paths.cpp',
 	'core/face_detection.cpp',
+	'core/face_encoding.cpp',
 	'core/face_model.cpp',
 	'recorders/video_capture.cpp',
 	'storage/user_model_codec.cpp',
@@ -316,6 +317,22 @@ native_face_detection_test = executable(
 test(
 	'native-face-detection',
 	native_face_detection_test,
+)
+
+native_face_encoding_test = executable(
+	'howdy-face-encoding-test',
+	'tests/face_encoding_test.cpp',
+	'core/face_encoding.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-face-encoding',
+	native_face_encoding_test,
 )
 
 native_config_utils_test = executable(

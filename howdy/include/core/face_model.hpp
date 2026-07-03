@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 #include "core/face_detection.hpp"
+#include "core/face_encoding.hpp"
 #include "core/face_matching.hpp"
 
 #include <string>
@@ -26,7 +27,7 @@ namespace howdy::native {
 
 		[[nodiscard]] auto prepare_frame(const cv::Mat &frame) const -> cv::Mat;
 		auto               detect(const cv::Mat &frame) -> FaceDetectionResult;
-		auto encode(const cv::Mat &frame, const FaceDetection &face) -> std::vector<float>;
+		auto encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
 		[[nodiscard]] auto best_match(const std::vector<std::vector<float>> &known,
 		                              const std::vector<float> &probe) const -> FaceMatch;
 

@@ -3,6 +3,7 @@
 #include "common/frame_processing.hpp"
 #include "config/runtime_config.hpp"
 #include "core/face_detection.hpp"
+#include "core/face_encoding.hpp"
 #include "core/face_matching.hpp"
 
 #include <string>
@@ -31,7 +32,7 @@ namespace howdy::native {
 
 	using DetectFacesFn = FaceDetectionResult (*)(void *context, const cv::Mat &frame);
 
-	using EncodeFaceFn = std::vector<float> (*)(void *context, const cv::Mat &frame,
+	using EncodeFaceFn = FaceEncodingResult (*)(void *context, const cv::Mat &frame,
 	                                            const FaceDetection &face);
 
 	using FindBestMatchFn = FaceMatch (*)(void                                  *context,
@@ -51,6 +52,7 @@ namespace howdy::native {
 		kMatch,
 		kInvalidPreparedFrame,
 		kDetectionFailed,
+		kEncodingFailed,
 		kInvalidDependencies,
 	};
 
