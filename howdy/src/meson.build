@@ -81,26 +81,6 @@ native_cpp_lib = static_library(
 	install: false,
 )
 
-native_capture_smoke = executable(
-	'howdy-capture-smoke',
-	'smoke_capture.cpp',
-	include_directories: native_cpp_inc,
-	link_with: native_cpp_lib,
-	dependencies: [
-		inih_cpp,
-		libcurl,
-		yyjson,
-		opencv4,
-	],
-	install: false,
-)
-
-test(
-	'native-capture-smoke-help',
-	native_capture_smoke,
-	args: ['--help'],
-)
-
 native_compare = executable(
 	'howdy-compare',
 	'compare_args.cpp',
