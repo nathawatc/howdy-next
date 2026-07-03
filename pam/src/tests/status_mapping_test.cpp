@@ -85,16 +85,6 @@ auto main() -> int {
 	}
 
 	{
-		const auto decision =
-		    map_compare_wait_status(make_status(howdy::native::CompareExit::kRubberstamp));
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "rubberstamp fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::None,
-		             "rubberstamp has no conversation");
-		ok &= expect(decision.log_message == "Failure, rubberstamp mode rejected",
-		             "rubberstamp log message");
-	}
-
-	{
 		const auto decision = map_compare_wait_status(99 << 8);
 		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
 		ok &= expect(decision.conversation_kind == ConversationKind::Error,

@@ -88,8 +88,6 @@ auto main() -> int {
 	             "too-dark exit code remains stable for PAM");
 	ok &= expect(static_cast<int>(howdy::native::CompareExit::kInvalidDevice) == 14,
 	             "invalid-device exit code remains stable for PAM");
-	ok &= expect(static_cast<int>(howdy::native::CompareExit::kRubberstamp) == 15,
-	             "rubberstamp exit code remains stable for PAM");
 
 	{
 		std::ostringstream  stream;

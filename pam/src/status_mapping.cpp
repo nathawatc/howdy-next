@@ -40,9 +40,6 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 			case howdy::native::CompareExit::kInvalidDevice:
 				decision.log_message = "Failure, not possible to open camera at configured path";
 				break;
-			case howdy::native::CompareExit::kRubberstamp:
-				decision.log_message = "Failure, rubberstamp mode rejected";
-				break;
 			default:
 				decision.conversation_kind    = ConversationKind::Error;
 				decision.conversation_message = build_unknown_error_message(exit_status);

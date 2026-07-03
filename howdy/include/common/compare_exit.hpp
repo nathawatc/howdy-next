@@ -9,7 +9,6 @@ namespace howdy::native {
 		kTimeoutReached = 11,
 		kTooDark        = 13,
 		kInvalidDevice  = 14,
-		kRubberstamp    = 15,
 	};
 
 }  // namespace howdy::native
