@@ -7,20 +7,20 @@ Security-focused C++ rewrite of Howdy for facial-recognition authentication on L
 > [!WARNING]
 >
 > Do not install Howdy Next manually with Meson.
-> Use the AUR package to avoid mixed files under `/usr` and `/usr/local`.
+> Use AUR package to avoid mixed files under `/usr` and `/usr/local`.
 
 Packages:
 
 - `howdy-next`
 - `howdy-next-git`
 
-Example with an AUR helper:
+Example:
 
 ```bash
 paru -S howdy-next
 ```
 
-## Building from Source
+## Build from Source
 
 Dependencies:
 
@@ -32,14 +32,13 @@ meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, yyjson, p
 - Install: `meson install -C build`
 - Test: `meson test -C build --print-errorlogs`
 
-See [Contributing](CONTRIBUTING.md) for developer workflow and project guidelines.
+See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ### Setup
 
-1. Run `sudo howdy add` to add a face model
-2. Test with `sudo howdy test`
-
-Edit config: `sudo howdy config`
+1. Run `sudo howdy add` to add face model.
+2. Test with `sudo howdy test`.
+3. Edit config with `sudo howdy config`.
 
 ## CLI
 
@@ -61,11 +60,12 @@ Edit config: `sudo howdy config`
 
 ## Troubleshooting
 
-Errors print to console. Check `/var/log/auth.log` if auth fails silently.
+Errors print to console. Check `/var/log/auth.log` if auth fails quietly.
 
-See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for common issues.
+See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for
+common issues.
 
 > [!WARNING]
-> Howdy is less secure than a password. Similar faces or photos may fool it.
-> IR can help reduce spoofing. It is invisible in photos and LCD displays.
-> **Never use as the sole auth method.**
+> Howdy is weaker than a password. Similar faces or photos may fool it.
+> IR helps reduce spoofing. It is invisible in photos and LCD displays.
+> Never use as sole auth method.
