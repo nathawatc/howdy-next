@@ -33,6 +33,16 @@ native_frame_processing_lib = static_library(
 	install: false,
 )
 
+native_compare_engine_lib = static_library(
+	'howdy_compare_engine',
+	'compare_engine.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
 native_cpp_sources = [
 	'config/config_reader.cpp',
 	'config/runtime_config.cpp',
@@ -88,6 +98,7 @@ native_compare = executable(
 	include_directories: native_cpp_inc,
 	link_with: [
 		native_cpp_lib,
+		native_compare_engine_lib,
 		native_frame_processing_lib,
 		native_compare_logic_lib,
 	],
@@ -244,6 +255,26 @@ native_frame_processing_test = executable(
 test(
 	'native-frame-processing',
 	native_frame_processing_test,
+)
+
+native_compare_engine_test = executable(
+	'howdy-compare-engine-test',
+	'tests/compare_engine_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_compare_engine_lib,
+		native_frame_processing_lib,
+		native_compare_logic_lib,
+	],
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-compare-engine',
+	native_compare_engine_test,
 )
 
 native_face_matching_test = executable(
