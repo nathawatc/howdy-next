@@ -8,7 +8,6 @@
 #include "runtime_session.hpp"
 #include "status_mapping.hpp"
 
-#include <array>
 #include <cerrno>
 #include <clocale>
 #include <cstdlib>
@@ -19,7 +18,6 @@
 #include <glob.h>
 #include <libintl.h>
 #include <paths.hpp>
-#include <spawn.h>
 #include <string>
 #include <syslog.h>
 #include <unistd.h>
@@ -288,24 +286,14 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		return PAM_SYSTEM_ERR;
 	}
 
-	std::array<char *, 5> args = {
-	    const_cast<char *>(kCompareProcessPath), const_cast<char *>("--config"),
-	    const_cast<char *>(runtime_session.config_path().c_str()), username, nullptr};
-	std::string user_models_env = "HOWDY_USER_MODELS_DIR=" + runtime_session.user_models_dir();
-	std::array<char *, 2> runtime_env = {const_cast<char *>(user_models_env.c_str()), nullptr};
-	std::array<char *, 1> empty_env   = {nullptr};
-	char **compare_env = runtime_session.staged() ? runtime_env.data() : empty_env.data();
-	pid_t  child_pid   = -1;
+	const howdy::pam::CompareLaunchRequest compare_request = {
+	    .config_path     = runtime_session.config_path(),
+	    .username        = username,
+	    .user_models_dir = runtime_session.user_models_dir(),
+	    .staged_runtime  = runtime_session.staged(),
+	};
 
-	const int spawn_result =
-	    posix_spawn(&child_pid, kCompareProcessPath, nullptr, nullptr, args.data(), compare_env);
-	if (spawn_result != 0) {
-		syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(spawn_result),
-		       spawn_result);
-		return PAM_SYSTEM_ERR;
-	}
-
-	const auto prompt_result = coordinator.run(child_pid);
+	const auto prompt_result = coordinator.run(compare_request);
 	switch (prompt_result.decision) {
 		case howdy::pam::PromptCoordinatorDecision::kPamResult:
 			if (prompt_result.pam_status != PAM_SUCCESS) {
@@ -328,6 +316,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 			return howdy_status(username, prompt_result.compare_status, config, conv_function);
 
 		case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
+		case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
 		case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
 			return PAM_SYSTEM_ERR;
 	}

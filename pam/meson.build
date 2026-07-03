@@ -204,6 +204,9 @@ pam_prompt_coordinator_test = executable(
 		threads,
 		libevdev,
 	],
+	link_depends: [
+		paths_h,
+	],
 	install: false,
 )
 

@@ -6,8 +6,10 @@
 #	include "prompt_coordinator_testing.hpp"
 #endif
 #include "enter_device.hpp"
+#include "paths.hpp"
 #include "prompt_workaround.hpp"
 
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <csignal>
@@ -15,7 +17,9 @@
 #include <cstring>
 #include <exception>
 #include <future>
+#include <spawn.h>
 #include <stdexcept>
+#include <string>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -25,6 +29,8 @@
 #include <sys/wait.h>
 
 namespace {
+	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
+	                             char *const *argv, char *const *envp);
 
 	constexpr auto kPromptRetryDelay =
 	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
@@ -158,6 +164,48 @@ namespace {
 		return wait_for_compare_process(child_pid);
 	}
 
+	auto call_posix_spawn(void *context, pid_t *child_pid, const char *path, char *const *argv,
+	                      char *const *envp) -> int {
+		(void)context;
+		return posix_spawn(child_pid, path, nullptr, nullptr, argv, envp);
+	}
+
+	auto spawn_compare_process(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
+	                           PosixSpawnFn posix_spawn_fn, void *context) -> int {
+		const std::string config_path(request.config_path);
+		const std::string username(request.username);
+
+		std::array<char *, 5> args = {
+		    const_cast<char *>(kCompareProcessPath),
+		    const_cast<char *>("--config"),
+		    const_cast<char *>(config_path.data()),
+		    const_cast<char *>(username.data()),
+		    nullptr,
+		};
+
+		const std::string user_models_env =
+		    "HOWDY_USER_MODELS_DIR=" + std::string(request.user_models_dir);
+
+		std::array<char *, 2> runtime_env = {
+		    const_cast<char *>(user_models_env.data()),
+		    nullptr,
+		};
+		std::array<char *, 1> empty_env = {
+		    nullptr,
+		};
+
+		char **compare_env = request.staged_runtime ? runtime_env.data() : empty_env.data();
+
+		return posix_spawn_fn(context, child_pid, kCompareProcessPath, args.data(), compare_env);
+	}
+
+	auto spawn_compare_process_dependency(void                                   *context,
+	                                      const howdy::pam::CompareLaunchRequest &request,
+	                                      pid_t *child_pid) -> int {
+		(void)context;
+		return spawn_compare_process(request, child_pid, call_posix_spawn, nullptr);
+	}
+
 	auto terminate_compare_process_dependency(void *context, pid_t child_pid) -> void {
 		(void)context;
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
@@ -203,13 +251,14 @@ namespace howdy::pam {
 	}
 
 	auto PromptCoordinator::valid() const -> bool {
-		return dependencies_.wait_for_compare_process != nullptr &&
+		return dependencies_.spawn_compare_process != nullptr &&
+		       dependencies_.wait_for_compare_process != nullptr &&
 		       dependencies_.terminate_compare != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
 		       dependencies_.request_auth_token != nullptr;
 	}
 
-	auto PromptCoordinator::run(pid_t compare_child_pid) -> PromptCoordinatorResult {
+	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
 		}
@@ -219,9 +268,25 @@ namespace howdy::pam {
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 
-		child_task_.emplace([this, compare_child_pid] {
+		pid_t     child_pid = -1;
+		const int spawn_result =
+		    dependencies_.spawn_compare_process(dependencies_.context, request, &child_pid);
+
+		if (spawn_result != 0 || child_pid <= 0) {
+			if (spawn_result != 0) {
+				syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(spawn_result),
+				       spawn_result);
+			} else {
+				syslog(LOG_ERR, "Can't spawn the howdy process: invalid child pid");
+			}
+			return {
+			    .decision = PromptCoordinatorDecision::kCompareSpawnFailed,
+			};
+		}
+
+		child_task_.emplace([this, child_pid] {
 			const int status =
-			    dependencies_.wait_for_compare_process(dependencies_.context, compare_child_pid);
+			    dependencies_.wait_for_compare_process(dependencies_.context, child_pid);
 
 			{
 				std::unique_lock<std::mutex> lock(mutex_);
@@ -290,7 +355,7 @@ namespace howdy::pam {
 		}
 
 		if (confirmation_type_ == ConfirmationType::Pam) {
-			dependencies_.terminate_compare(dependencies_.context, compare_child_pid);
+			dependencies_.terminate_compare(dependencies_.context, child_pid);
 			child_task_->stop();
 			if (ask_pass) {
 				pass_task_->stop();
@@ -337,6 +402,7 @@ namespace howdy::pam {
 
 	auto production_prompt_coordinator_dependencies() -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
+		    .spawn_compare_process    = spawn_compare_process_dependency,
 		    .wait_for_compare_process = wait_for_compare_process_dependency,
 		    .terminate_compare        = terminate_compare_process_dependency,
 		    .input_prompt_preflight   = input_prompt_preflight_dependency,
@@ -363,6 +429,11 @@ namespace howdy::pam::testing {
 
 	auto wait_for_compare_process(pid_t child_pid) -> int {
 		return ::wait_for_compare_process(child_pid);
+	}
+
+	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
+	                           PosixSpawnFn posix_spawn_fn, void *context) -> int {
+		return ::spawn_compare_process(request, child_pid, posix_spawn_fn, context);
 	}
 
 }  // namespace howdy::pam::testing

@@ -1,4 +1,5 @@
 #include "common/compare_exit.hpp"
+#include "paths.hpp"
 #include "prompt_coordinator.hpp"
 #include "prompt_coordinator_testing.hpp"
 
@@ -15,9 +16,11 @@
 #include <mutex>
 #include <poll.h>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <unistd.h>
+#include <vector>
 
 #include <security/pam_appl.h>
 
@@ -31,6 +34,8 @@ namespace {
 	using howdy::pam::PromptCoordinatorDependencies;
 
 	struct FakeContext {
+		std::atomic<int>          spawn_calls{0};
+		std::atomic<pid_t>        spawned_pid{-1};
 		std::atomic<int>          wait_calls{0};
 		std::atomic<pid_t>        waited_pid{-1};
 		std::atomic<int>          terminate_calls{0};
@@ -49,6 +54,12 @@ namespace {
 		std::atomic<bool>         native_prompt_completed{false};
 		std::atomic<bool>         pam_completion_observed_by_waiter{false};
 		std::atomic<int>          original_conversation_calls{0};
+		int                       spawn_result = 0;
+		std::string               spawned_config_path;
+		std::string               spawned_username;
+		std::string               spawned_user_models_dir;
+		bool                      spawned_staged_runtime = false;
+		pid_t                     next_child_pid         = -1;
 		std::mutex                native_prompt_mutex;
 		std::condition_variable   native_prompt_condition;
 	};
@@ -81,6 +92,33 @@ namespace {
 	private:
 		int fd_ = -1;
 	};
+
+	struct PosixSpawnCapture {
+		int                      calls        = 0;
+		int                      spawn_result = 0;
+		pid_t                    next_pid     = 4242;
+		std::string              path;
+		std::vector<std::string> argv;
+		std::vector<std::string> environment;
+	};
+
+	auto capture_posix_spawn(void *context, pid_t *child_pid, const char *path, char *const *argv,
+	                         char *const *envp) -> int {
+		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+		++capture.calls;
+		capture.path = path;
+		for (char *const *argument = argv; *argument != nullptr; ++argument) {
+			capture.argv.emplace_back(*argument);
+		}
+		for (char *const *entry = envp; *entry != nullptr; ++entry) {
+			capture.environment.emplace_back(*entry);
+		}
+
+		if (capture.spawn_result == 0) {
+			*child_pid = capture.next_pid;
+		}
+		return capture.spawn_result;
+	}
 
 	auto original_conversation(int num_msg, const struct pam_message **messages,
 	                           struct pam_response **response, void *appdata_ptr) -> int {
@@ -170,6 +208,7 @@ namespace {
 	};
 
 	struct CallbackCounts {
+		int spawn     = 0;
 		int wait      = 0;
 		int terminate = 0;
 		int preflight = 0;
@@ -184,6 +223,25 @@ namespace {
 			return false;
 		}
 		return true;
+	}
+
+	auto spawn_compare_process(void *context, const howdy::pam::CompareLaunchRequest &request,
+	                           pid_t *child_pid) -> int {
+		auto &fake = *static_cast<FakeContext *>(context);
+
+		++fake.spawn_calls;
+		fake.spawned_config_path     = std::string(request.config_path);
+		fake.spawned_username        = std::string(request.username);
+		fake.spawned_user_models_dir = std::string(request.user_models_dir);
+		fake.spawned_staged_runtime  = request.staged_runtime;
+
+		if (fake.spawn_result != 0) {
+			return fake.spawn_result;
+		}
+
+		*child_pid       = fake.next_child_pid;
+		fake.spawned_pid = *child_pid;
+		return 0;
 	}
 
 	auto wait_for_compare(void *context, pid_t child_pid) -> int {
@@ -295,6 +353,7 @@ namespace {
 	auto dependencies(FakeContext *context) -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
 		    .context                  = context,
+		    .spawn_compare_process    = spawn_compare_process,
 		    .wait_for_compare_process = wait_for_compare,
 		    .terminate_compare        = terminate_compare,
 		    .input_prompt_preflight   = input_preflight,
@@ -304,10 +363,23 @@ namespace {
 
 	auto callback_counts(const FakeContext &context) -> CallbackCounts {
 		return CallbackCounts{
+		    .spawn     = context.spawn_calls.load(),
 		    .wait      = context.wait_calls.load(),
 		    .terminate = context.terminate_calls.load(),
 		    .preflight = context.preflight_calls.load(),
 		    .auth      = context.auth_token_calls.load(),
+		};
+	}
+
+	auto make_compare_request(std::string_view config_path     = "/etc/howdy/config.ini",
+	                          std::string_view username        = "alice",
+	                          std::string_view user_models_dir = "/etc/howdy/models",
+	                          bool staged_runtime = false) -> howdy::pam::CompareLaunchRequest {
+		return {
+		    .config_path     = std::string(config_path),
+		    .username        = std::string(username),
+		    .user_models_dir = std::string(user_models_dir),
+		    .staged_runtime  = staged_runtime,
 		};
 	}
 
@@ -342,13 +414,16 @@ namespace {
 		if (!expect(child_pid > 0, "compare-winner child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
 		                              dependencies(&context));
-		const auto        result = coordinator.run(child_pid);
+		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "compare winner returns Howdy result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "compare winner spawns child once") &&
 		       expect(result.compare_status == 0,
 		              "compare winner preserves exact successful wait status") &&
 		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
@@ -365,13 +440,18 @@ namespace {
 		if (!expect(child_pid > 0, "PAM-winner child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context));
-		const auto        result = coordinator.run(child_pid);
+		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM winner returns PAM result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "PAM winner spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "PAM winner waits for spawned child") &&
 		       expect(result.pam_status == PAM_SUCCESS, "PAM winner preserves PAM success") &&
 		       expect(context.preflight_calls == 1, "PAM winner runs input preflight once") &&
 		       expect(context.auth_token_calls == 1, "PAM winner requests token once") &&
@@ -389,14 +469,19 @@ namespace {
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context));
-		const auto        result          = coordinator.run(child_pid);
+		const auto        result          = coordinator.run(make_compare_request());
 		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
 		const bool        reaped          = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " returns password fallback") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              label + " spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              label + " waits for spawned child") &&
 		       expect(result.compare_status == expected_status,
 		              label + " preserves exact compare status") &&
 		       expect(result.pam_status == pam_result, label + " preserves PAM result") &&
@@ -411,13 +496,18 @@ namespace {
 		if (!expect(child_pid > 0, "preflight-fallback child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context));
-		const auto        result = coordinator.run(child_pid);
+		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "preflight fallback returns compare result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "preflight fallback spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "preflight fallback waits for spawned child") &&
 		       expect(context.preflight_calls == 1, "preflight fallback checks input once") &&
 		       expect(context.auth_token_calls == 0,
 		              "off fallback preserves standard non-parallel password behavior") &&
@@ -441,12 +531,17 @@ namespace {
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
 		                              dependencies(&context));
-		const auto        result = coordinator.run(child_pid);
+		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " falls back to input password task") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              label + " spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              label + " waits for spawned child") &&
 		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
 		       expect(context.auth_token_calls == 1, label + " requests token once") &&
 		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
@@ -493,16 +588,21 @@ namespace {
 		if (!expect(child_pid > 0, "blocked native prompt child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
 			                              dependencies(&context));
-			result = coordinator.run(child_pid);
+			result = coordinator.run(make_compare_request());
 		}
 
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "blocked native prompt returns compare result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "blocked native prompt spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "blocked native prompt waits for spawned child") &&
 		       expect(result.compare_status == 0,
 		              "blocked native prompt preserves successful compare status") &&
 		       expect(result.prompt_stopped, "blocked native prompt task joins after abort") &&
@@ -531,15 +631,20 @@ namespace {
 		if (!expect(child_pid > 0, "native PAM winner child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
 			                              dependencies(&context));
-			result = coordinator.run(child_pid);
+			result = coordinator.run(make_compare_request());
 		}
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native PAM winner returns PAM result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "native PAM winner spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "native PAM winner waits for spawned child") &&
 		       expect(result.pam_status == PAM_SUCCESS,
 		              "native PAM winner preserves PAM success") &&
 		       expect(context.native_prompt_installed,
@@ -564,22 +669,178 @@ namespace {
 		              "native PAM winner leaves no blocked native prompt task");
 	}
 
+	auto test_launch_request(const howdy::pam::CompareLaunchRequest &request,
+	                         const std::string                      &expected_config_path,
+	                         const std::string                      &expected_username,
+	                         const std::string                      &expected_user_models_dir,
+	                         bool expected_staged_runtime, const std::string &label) -> bool {
+		FakeContext context;
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
+		                              dependencies(&context));
+		const auto        result = coordinator.run(request);
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              label + " returns Howdy result") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              label + " spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              label + " waits for spawned child") &&
+		       expect(context.spawned_config_path == expected_config_path,
+		              label + " preserves config path") &&
+		       expect(context.spawned_username == expected_username,
+		              label + " preserves username") &&
+		       expect(context.spawned_user_models_dir == expected_user_models_dir,
+		              label + " preserves models directory") &&
+		       expect(context.spawned_staged_runtime == expected_staged_runtime,
+		              label + " preserves staged-runtime selection") &&
+		       expect(child_reaped(child_pid), label + " reaps child");
+	}
+
+	auto test_direct_runtime_launch_request() -> bool {
+		return test_launch_request(
+		    make_compare_request("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
+		    "/etc/howdy/config.ini", "alice", "/etc/howdy/models", false, "direct runtime request");
+	}
+
+	auto test_staged_runtime_launch_request() -> bool {
+		return test_launch_request(make_compare_request("/run/howdy/runtime/config.ini", "alice",
+		                                                "/run/howdy/runtime/models", true),
+		                           "/run/howdy/runtime/config.ini", "alice",
+		                           "/run/howdy/runtime/models", true, "staged runtime request");
+	}
+
+	auto test_production_spawn_adapter(const howdy::pam::CompareLaunchRequest &request,
+	                                   const std::vector<std::string>         &expected_argv,
+	                                   const std::vector<std::string>         &expected_environment,
+	                                   const std::string                      &label) -> bool {
+		PosixSpawnCapture capture;
+		pid_t             child_pid = -1;
+		const int         result    = howdy::pam::testing::spawn_compare_process(
+		    request, &child_pid, capture_posix_spawn, &capture);
+
+		return expect(result == 0, label + " returns spawn success") &&
+		       expect(capture.calls == 1, label + " calls posix_spawn once") &&
+		       expect(child_pid == capture.next_pid, label + " preserves spawned PID") &&
+		       expect(capture.path == kCompareProcessPath, label + " preserves executable path") &&
+		       expect(capture.argv == expected_argv, label + " preserves exact argv") &&
+		       expect(capture.environment == expected_environment,
+		              label + " preserves exact environment");
+	}
+
+	auto test_production_direct_runtime_environment() -> bool {
+		return test_production_spawn_adapter(
+		    make_compare_request("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
+		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"}, {},
+		    "production direct runtime");
+	}
+
+	auto test_production_staged_runtime_environment() -> bool {
+		return test_production_spawn_adapter(
+		    make_compare_request("/run/howdy/runtime/config.ini", "alice",
+		                         "/run/howdy/runtime/models", true),
+		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
+		    {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"}, "production staged runtime");
+	}
+
+	auto test_owned_launch_request_from_temporaries() -> bool {
+		const howdy::pam::CompareLaunchRequest request = {
+		    .config_path     = std::string("/run/howdy/temporary/config.ini"),
+		    .username        = std::string("temporary-user"),
+		    .user_models_dir = std::string("/run/howdy/temporary/models"),
+		    .staged_runtime  = true,
+		};
+
+		return test_production_spawn_adapter(
+		    request,
+		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
+		    {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"}, "owned temporary request");
+	}
+
+	auto test_production_spawn_failure() -> bool {
+		PosixSpawnCapture capture;
+		capture.spawn_result = EACCES;
+		pid_t     child_pid  = -1;
+		const int result     = howdy::pam::testing::spawn_compare_process(
+		    make_compare_request(), &child_pid, capture_posix_spawn, &capture);
+
+		return expect(result == EACCES, "production spawn failure preserves error") &&
+		       expect(capture.calls == 1, "production spawn failure calls posix_spawn once") &&
+		       expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
+		       expect(capture.path == kCompareProcessPath,
+		              "production spawn failure preserves executable path") &&
+		       expect(capture.argv == std::vector<std::string>{kCompareProcessPath, "--config",
+		                                                       "/etc/howdy/config.ini", "alice"},
+		              "production spawn failure preserves exact argv") &&
+		       expect(capture.environment.empty(),
+		              "production spawn failure preserves empty direct environment");
+	}
+
+	auto test_spawn_failure() -> bool {
+		FakeContext       context{.spawn_result = EACCES};
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context));
+
+		const auto result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
+		              "spawn failure returns compare-spawn-failed result") &&
+		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		              "spawn failure invokes no downstream callbacks") &&
+		       expect(context.spawned_pid == -1, "spawn failure creates no child task");
+	}
+
+	auto test_invalid_spawn_pid() -> bool {
+		FakeContext context;
+		context.next_child_pid = -1;
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context));
+
+		const auto result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
+		              "invalid spawn PID returns compare-spawn-failed result") &&
+		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		              "invalid spawn PID invokes no downstream callbacks");
+	}
+
+	auto test_one_shot_after_spawn_failure() -> bool {
+		FakeContext       context{.spawn_result = EACCES};
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context));
+
+		const auto first  = coordinator.run(make_compare_request());
+		const auto second = coordinator.run(
+		    make_compare_request("/different/config.ini", "bob", "/different/models", true));
+		return expect(first.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
+		              "spawn-failure one-shot first run reports spawn failure") &&
+		       expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
+		              "spawn-failure one-shot second run is rejected") &&
+		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		              "spawn-failure one-shot invokes spawn only once");
+	}
+
 	auto test_invalid_dependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 4; ++missing) {
+		for (int missing = 0; missing < 5; ++missing) {
 			FakeContext context;
 			auto        deps = dependencies(&context);
 			switch (missing) {
 				case 0:
-					deps.wait_for_compare_process = nullptr;
+					deps.spawn_compare_process = nullptr;
 					break;
 				case 1:
-					deps.terminate_compare = nullptr;
+					deps.wait_for_compare_process = nullptr;
 					break;
 				case 2:
-					deps.input_prompt_preflight = nullptr;
+					deps.terminate_compare = nullptr;
 					break;
 				case 3:
+					deps.input_prompt_preflight = nullptr;
+					break;
+				case 4:
 					deps.request_auth_token = nullptr;
 					break;
 				default:
@@ -589,7 +850,7 @@ namespace {
 			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps);
 			ok &= expect(!coordinator.valid(), "missing dependency is invalid");
 			const auto before = callback_counts(context);
-			const auto result = coordinator.run(-1);
+			const auto result = coordinator.run(make_compare_request());
 			ok &= expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
 			             "invalid coordinator returns invalid-dependencies result");
 			ok &= expect(callback_counts(context) == before,
@@ -604,18 +865,23 @@ namespace {
 		if (!expect(child_pid > 0, "one-shot child spawned")) {
 			return false;
 		}
+		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
 		                              dependencies(&context));
-		const auto        first = coordinator.run(child_pid);
+		const auto        first = coordinator.run(make_compare_request());
 		if (!expect(first.decision == PromptCoordinatorDecision::kHowdyResult,
 		            "one-shot first run succeeds")) {
 			return false;
 		}
 		const auto before = callback_counts(context);
-		const auto second = coordinator.run(-1);
+		const auto second = coordinator.run(make_compare_request("/different/config.ini"));
 		return expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "one-shot second run is rejected") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "one-shot first run spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "one-shot first run waits for spawned child") &&
 		       expect(callback_counts(context) == before,
 		              "one-shot second run invokes no callback") &&
 		       expect(child_reaped(child_pid), "one-shot first run reaps child");
@@ -635,6 +901,15 @@ auto main() -> int {
 	ok &= test_cleanup_restores_after_stopped_task();
 	ok &= test_native_blocked_prompt_cleanup();
 	ok &= test_native_pam_wins();
+	ok &= test_direct_runtime_launch_request();
+	ok &= test_staged_runtime_launch_request();
+	ok &= test_production_direct_runtime_environment();
+	ok &= test_production_staged_runtime_environment();
+	ok &= test_owned_launch_request_from_temporaries();
+	ok &= test_production_spawn_failure();
+	ok &= test_spawn_failure();
+	ok &= test_invalid_spawn_pid();
+	ok &= test_one_shot_after_spawn_failure();
 	ok &= test_invalid_dependencies();
 	ok &= test_one_shot();
 	return ok ? 0 : 1;

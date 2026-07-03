@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <tuple>
 
 #include <security/pam_appl.h>
@@ -14,6 +15,15 @@
 #include <sys/types.h>
 
 namespace howdy::pam {
+	struct CompareLaunchRequest {
+		std::string config_path;
+		std::string username;
+		std::string user_models_dir;
+		bool        staged_runtime = false;
+	};
+
+	using SpawnCompareProcessFn = int (*)(void *context, const CompareLaunchRequest &request,
+	                                      pid_t *child_pid);
 
 	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid);
 
@@ -25,6 +35,7 @@ namespace howdy::pam {
 
 	struct PromptCoordinatorDependencies {
 		void                     *context                  = nullptr;
+		SpawnCompareProcessFn     spawn_compare_process    = nullptr;
 		WaitForCompareProcessFn   wait_for_compare_process = nullptr;
 		TerminateCompareProcessFn terminate_compare        = nullptr;
 		InputPromptPreflightFn    input_prompt_preflight   = nullptr;
@@ -36,6 +47,7 @@ namespace howdy::pam {
 		kPamResult,
 		kPasswordFallback,
 		kInvalidDependencies,
+		kCompareSpawnFailed,
 		kAlreadyRun,
 	};
 
@@ -61,7 +73,7 @@ namespace howdy::pam {
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		auto run(pid_t compare_child_pid) -> PromptCoordinatorResult;
+		auto run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
 	private:
 		pam_handle_t                           *pamh_                 = nullptr;
