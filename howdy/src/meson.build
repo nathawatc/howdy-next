@@ -43,6 +43,16 @@ native_compare_engine_lib = static_library(
 	install: false,
 )
 
+native_compare_capture_session_lib = static_library(
+	'howdy_compare_capture_session',
+	'compare_capture_session.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
 native_cpp_sources = [
 	'config/config_reader.cpp',
 	'config/runtime_config.cpp',
@@ -97,6 +107,7 @@ native_compare = executable(
 	'compare.cpp',
 	include_directories: native_cpp_inc,
 	link_with: [
+		native_compare_capture_session_lib,
 		native_cpp_lib,
 		native_compare_engine_lib,
 		native_frame_processing_lib,
@@ -275,6 +286,28 @@ native_compare_engine_test = executable(
 test(
 	'native-compare-engine',
 	native_compare_engine_test,
+)
+
+native_compare_capture_session_test = executable(
+	'howdy-compare-capture-session-test',
+	'tests/compare_capture_session_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_compare_capture_session_lib,
+		native_cpp_lib,
+	],
+	dependencies: [
+		inih_cpp,
+		libcurl,
+		yyjson,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-compare-capture-session',
+	native_compare_capture_session_test,
 )
 
 native_face_matching_test = executable(

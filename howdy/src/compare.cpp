@@ -1,11 +1,11 @@
 #include "common/compare_args.hpp"
+#include "common/compare_capture_session.hpp"
 #include "common/compare_engine.hpp"
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
-#include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
 
 #include <algorithm>
@@ -144,14 +144,21 @@ auto main(int argc, char **argv) -> int {
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
-		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
-		if (!capture.open()) {
-			std::cerr << capture.error_message() << "\n";
-			return static_cast<int>(CompareExit::kInvalidDevice);
+		howdy::native::CompareCaptureSession capture_session(config.video);
+
+		const auto capture_open = capture_session.open();
+		switch (capture_open.status) {
+			case howdy::native::CompareCaptureOpenStatus::kOk:
+				break;
+
+			case howdy::native::CompareCaptureOpenStatus::kOpenFailed:
+				std::cerr << capture_open.error_message << "\n";
+				return static_cast<int>(CompareExit::kInvalidDevice);
+
+			case howdy::native::CompareCaptureOpenStatus::kInvalidDependencies:
+				return static_cast<int>(CompareExit::kAbort);
 		}
 
-		const int                    timeout    = config.video.timeout;
-		const int                    exposure   = config.video.exposure;
 		const bool                   end_report = config.debug.end_report;
 		howdy::native::CompareEngine compare_engine(
 		    config.video,
@@ -163,53 +170,53 @@ auto main(int argc, char **argv) -> int {
 		        .find_best_match    = find_best_match_dependency,
 		    },
 		    loaded_models.stored.encodings);
+		capture_session.reset_timeout_clock();
 
-		int    frames             = 0;
-		int    black_tries        = 0;
-		int    dark_tries         = 0;
-		int    valid_frames       = 0;
-		double dark_running_total = 0.0;
-		float  winning_score      = 0.0F;
-		int    winning_index      = -1;
-		auto   frame_loop_start   = std::chrono::steady_clock::now();
+		float winning_score = 0.0F;
+		int   winning_index = -1;
 
 		while (true) {
-			frames++;
+			auto capture_result = capture_session.next_frame();
 
-			const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-			                         std::chrono::steady_clock::now() - frame_loop_start)
-			                         .count();
-			if (elapsed > timeout) {
-				const auto exit_code = howdy::native::timeout_exit(dark_tries, valid_frames);
-				if (exit_code == CompareExit::kTooDark) {
-					std::cerr
-					    << "All frames were too dark, please check dark_threshold in config\n";
-					std::cerr << "Average darkness: "
-					          << (dark_running_total / std::max(valid_frames, 1))
-					          << ", Threshold: " << config.video.dark_threshold << "\n";
+			switch (capture_result.status) {
+				case howdy::native::CompareCaptureFrameStatus::kFrameReady:
+					break;
+
+				case howdy::native::CompareCaptureFrameStatus::kTimeout: {
+					const auto &stats = capture_session.stats();
+					const auto  exit_code =
+					    howdy::native::timeout_exit(stats.dark_frames, stats.valid_frames);
+
+					if (exit_code == CompareExit::kTooDark) {
+						std::cerr
+						    << "All frames were too dark, please check dark_threshold in config\n";
+						std::cerr << "Average darkness: "
+						          << (stats.dark_running_total / std::max(stats.valid_frames, 1))
+						          << ", Threshold: " << config.video.dark_threshold << "\n";
+					}
+
+					return static_cast<int>(exit_code);
 				}
-				return static_cast<int>(exit_code);
+
+				case howdy::native::CompareCaptureFrameStatus::kReadFailed:
+					std::cerr << capture_result.error_message << "\n";
+					return static_cast<int>(CompareExit::kInvalidDevice);
+
+				case howdy::native::CompareCaptureFrameStatus::kNotOpen:
+				case howdy::native::CompareCaptureFrameStatus::kInvalidDependencies:
+					return static_cast<int>(CompareExit::kAbort);
 			}
 
-			cv::Mat frame;
-			cv::Mat gray_frame;
-			if (!capture.read(frame, &gray_frame)) {
-				std::cerr << capture.error_message() << "\n";
-				return static_cast<int>(CompareExit::kInvalidDevice);
-			}
-
-			const auto frame_result =
-			    compare_engine.process_gray_frame(std::move(gray_frame), frames);
+			const auto frame_result = compare_engine.process_gray_frame(
+			    std::move(capture_result.gray_frame), capture_result.frame_number);
 
 			switch (frame_result.status) {
 				case howdy::native::CompareFrameStatus::kBlackFrame:
-					black_tries++;
+					capture_session.record_black_frame();
 					continue;
 
 				case howdy::native::CompareFrameStatus::kTooDark:
-					dark_running_total += frame_result.brightness.darkness;
-					valid_frames++;
-					dark_tries++;
+					capture_session.record_dark_frame(frame_result.brightness.darkness);
 					continue;
 
 				case howdy::native::CompareFrameStatus::kInvalidInput:
@@ -221,8 +228,7 @@ auto main(int argc, char **argv) -> int {
 					return static_cast<int>(CompareExit::kAbort);
 
 				case howdy::native::CompareFrameStatus::kReady:
-					dark_running_total += frame_result.brightness.darkness;
-					valid_frames++;
+					capture_session.record_ready_frame(frame_result.brightness.darkness);
 					break;
 			}
 
@@ -238,13 +244,14 @@ auto main(int argc, char **argv) -> int {
 					winning_score = inference_result.winning_score;
 
 					if (end_report) {
+						const auto &stats   = capture_session.stats();
 						const auto total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 						                          std::chrono::steady_clock::now() - start_time)
 						                          .count();
 						std::cout << "Total time: " << total_ms << "ms\n";
-						std::cout << "Frames searched: " << frames << "\n";
-						std::cout << "Black frames ignored: " << black_tries << "\n";
-						std::cout << "Dark frames ignored: " << dark_tries << "\n";
+						std::cout << "Frames searched: " << stats.frames << "\n";
+						std::cout << "Black frames ignored: " << stats.black_frames << "\n";
+						std::cout << "Dark frames ignored: " << stats.dark_frames << "\n";
 						std::cout << "Winning score: " << winning_score << "\n";
 						if (winning_index >= 0 &&
 						    std::cmp_less(winning_index, loaded_models.stored.models.size())) {
@@ -267,10 +274,7 @@ auto main(int argc, char **argv) -> int {
 					return static_cast<int>(CompareExit::kAbort);
 			}
 
-			if (exposure != -1) {
-				capture.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-				capture.set(cv::CAP_PROP_EXPOSURE, static_cast<double>(exposure));
-			}
+			capture_session.restore_exposure();
 		}
 	} catch (const cv::Exception &error) {
 		return static_cast<int>(howdy::native::compare_abort_from_cv_exception(
