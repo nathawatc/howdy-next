@@ -459,7 +459,7 @@ native_config_cli_test = executable(
 	'cli/config.cpp',
 	'tests/config_cli_test.cpp',
 	include_directories: native_cpp_inc,
-	cpp_args: ['-DHOWDY_CONFIG_CLI_TESTING'],
+	link_args: ['-Wl,--wrap=initgroups'],
 	link_with: native_cpp_lib,
 	dependencies: [
 		inih_cpp,

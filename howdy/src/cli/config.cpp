@@ -1,4 +1,5 @@
 #include "cli/config_cli.hpp"
+#include "cli/config_internal.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
 #include "config/config_utils.hpp"
@@ -30,9 +31,6 @@ namespace {
 	}
 
 	auto resolve_editor(bool allow_env_editor) -> std::string {
-#ifdef HOWDY_CONFIG_CLI_TESTING
-		allow_env_editor = true;
-#endif
 		if (allow_env_editor) {
 			if (const char *editor = std::getenv("EDITOR");
 			    editor != nullptr && editor[0] != '\0') {
@@ -243,25 +241,104 @@ namespace {
 		}
 	}
 
-	auto validate_edited_config_or_report(const std::string &edited_content,
-	                                      const fs::path    &temp_path) -> bool {
-		std::string validation_error;
-		if (howdy::native::validate_config_content(edited_content, &validation_error)) {
-			return true;
-		}
+	auto resolve_invoking_user_dependency(void *context)
+	    -> std::optional<howdy::native::InvokingUser> {
+		(void)context;
+		return howdy::native::resolve_invoking_user();
+	}
 
-		print_config_install_error(validation_error, temp_path);
-		return false;
+	auto resolve_editor_dependency(void *context, bool allow_env_editor) -> std::string {
+		(void)context;
+		return resolve_editor(allow_env_editor);
+	}
+
+	auto resolve_config_path_dependency(void *context) -> fs::path {
+		(void)context;
+		return howdy::native::resolve_config_path();
+	}
+
+	auto check_secure_config_path_dependency(void *context, const fs::path &config_path)
+	    -> howdy::native::ConfigPathCheckResult {
+		(void)context;
+		return howdy::native::check_secure_config_path(config_path);
+	}
+
+	auto
+	create_temp_copy_dependency(void *context, const fs::path &source_path,
+	                            const std::optional<howdy::native::InvokingUser> &invoking_user)
+	    -> std::optional<howdy::native::config_internal::TempConfigCopy> {
+		(void)context;
+		std::string original_content;
+		const auto  path = create_temp_copy(source_path, invoking_user, &original_content);
+		if (!path) {
+			return std::nullopt;
+		}
+		return howdy::native::config_internal::TempConfigCopy{
+		    .path = *path, .original_content = std::move(original_content)};
+	}
+
+	auto run_editor_dependency(void *context, const std::string &editor, const fs::path &temp_path,
+	                           const std::optional<howdy::native::InvokingUser> &invoking_user)
+	    -> int {
+		(void)context;
+		return run_editor(editor, temp_path, invoking_user);
+	}
+
+	auto read_temp_config_snapshot_dependency(void *context, const fs::path &temp_path,
+	                                          std::string *content) -> bool {
+		(void)context;
+		return read_temp_config_snapshot(temp_path, content);
+	}
+
+	auto validate_config_content_dependency(void *context, const std::string &content,
+	                                        std::string *error_message) -> bool {
+		(void)context;
+		return howdy::native::validate_config_content(content, error_message);
+	}
+
+	auto file_content_matches_dependency(void *context, const fs::path &path,
+	                                     const std::string &expected) -> bool {
+		(void)context;
+		return file_content_matches(path, expected);
+	}
+
+	auto replace_config_content_atomically_dependency(void *context, const fs::path &config_path,
+	                                                  const std::string &content,
+	                                                  std::string *error_message, bool lock,
+	                                                  bool               validate_runtime,
+	                                                  const std::string *expected_current_content)
+	    -> bool {
+		(void)context;
+		return howdy::native::replace_config_content_atomically(
+		    config_path, content, error_message, lock, validate_runtime, expected_current_content);
+	}
+
+	auto remove_if_exists_dependency(void *context, const fs::path &path) -> void {
+		(void)context;
+		remove_if_exists(path);
 	}
 
 }  // namespace
 
-int config_main(int argc, char **argv) {
+auto howdy::native::config_internal::config_main_with_dependencies(
+    int argc, char **argv, const ConfigDependencies &dependencies) -> int {
 	(void)argc;
 	(void)argv;
+	if (dependencies.resolve_invoking_user == nullptr || dependencies.resolve_editor == nullptr ||
+	    dependencies.resolve_config_path == nullptr ||
+	    dependencies.check_secure_config_path == nullptr ||
+	    dependencies.create_temp_copy == nullptr || dependencies.run_editor == nullptr ||
+	    dependencies.read_temp_config_snapshot == nullptr ||
+	    dependencies.validate_config_content == nullptr ||
+	    dependencies.file_content_matches == nullptr ||
+	    dependencies.replace_config_content_atomically == nullptr ||
+	    dependencies.remove_if_exists == nullptr) {
+		return kExitAbort;
+	}
 
-	const auto invoking_user = howdy::native::resolve_invoking_user();
-	const auto editor        = resolve_editor(invoking_user.has_value());
+	const auto invoking_user = dependencies.resolve_invoking_user(dependencies.context);
+	const auto editor =
+	    dependencies.resolve_editor(dependencies.context, invoking_user.has_value());
 	if (editor.empty()) {
 		std::cout << "Error: Could not find a suitable text editor.\n";
 		std::cout
@@ -269,60 +346,85 @@ int config_main(int argc, char **argv) {
 		return kExitAbort;
 	}
 
-	const auto config_path     = howdy::native::resolve_config_path();
-	const auto config_security = howdy::native::check_secure_config_path(config_path);
+	const auto config_path = dependencies.resolve_config_path(dependencies.context);
+	const auto config_security =
+	    dependencies.check_secure_config_path(dependencies.context, config_path);
 	if (!config_security.ok) {
 		std::cout << config_security.error_message << "\n";
 		return kExitAbort;
 	}
-	std::string original_content;
-	const auto  temp_path = create_temp_copy(config_path, invoking_user, &original_content);
-	if (!temp_path) {
+	const auto temp_copy =
+	    dependencies.create_temp_copy(dependencies.context, config_path, invoking_user);
+	if (!temp_copy) {
 		std::cout << "Failed to prepare a temporary config copy\n";
 		return kExitAbort;
 	}
 
 	std::cout << "Editing config.ini in " << fs::path(editor).filename().string() << "\n";
 
-	const int status = run_editor(editor, *temp_path, invoking_user);
+	const int status =
+	    dependencies.run_editor(dependencies.context, editor, temp_copy->path, invoking_user);
 	if (status < 0) {
-		remove_if_exists(*temp_path);
+		dependencies.remove_if_exists(dependencies.context, temp_copy->path);
 		std::cout << "Failed to launch editor\n";
 		return kExitAbort;
 	}
 
 	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-		remove_if_exists(*temp_path);
+		dependencies.remove_if_exists(dependencies.context, temp_copy->path);
 		std::cout << "Editor exited unsuccessfully; config not updated\n";
 		return kExitAbort;
 	}
 
 	std::string edited_content;
-	if (!read_temp_config_snapshot(*temp_path, &edited_content)) {
-		remove_if_exists(*temp_path);
+	if (!dependencies.read_temp_config_snapshot(dependencies.context, temp_copy->path,
+	                                            &edited_content)) {
+		dependencies.remove_if_exists(dependencies.context, temp_copy->path);
 		std::cout << "Failed to install edited config\n";
 		return kExitAbort;
 	}
 
-	if (!validate_edited_config_or_report(edited_content, *temp_path)) {
+	std::string validation_error;
+	if (!dependencies.validate_config_content(dependencies.context, edited_content,
+	                                          &validation_error)) {
+		print_config_install_error(validation_error, temp_copy->path);
 		return kExitAbort;
 	}
 
-	if (file_content_matches(config_path, edited_content)) {
-		remove_if_exists(*temp_path);
+	if (dependencies.file_content_matches(dependencies.context, config_path, edited_content)) {
+		dependencies.remove_if_exists(dependencies.context, temp_copy->path);
 		std::cout << "No config changes made\n";
 		return kExitOk;
 	}
 
 	std::string install_error;
-	if (!howdy::native::replace_config_content_atomically(
-	        config_path, edited_content, &install_error, true, false, &original_content)) {
-		remove_if_exists(*temp_path);
-		print_config_install_error(install_error, *temp_path);
+	if (!dependencies.replace_config_content_atomically(dependencies.context, config_path,
+	                                                    edited_content, &install_error, true, false,
+	                                                    &temp_copy->original_content)) {
+		dependencies.remove_if_exists(dependencies.context, temp_copy->path);
+		print_config_install_error(install_error, temp_copy->path);
 		return kExitAbort;
 	}
 
-	remove_if_exists(*temp_path);
+	dependencies.remove_if_exists(dependencies.context, temp_copy->path);
 	std::cout << "Config updated\n";
 	return kExitOk;
+}
+
+int config_main(int argc, char **argv) {
+	return howdy::native::config_internal::config_main_with_dependencies(
+	    argc, argv,
+	    {
+	        .resolve_invoking_user             = resolve_invoking_user_dependency,
+	        .resolve_editor                    = resolve_editor_dependency,
+	        .resolve_config_path               = resolve_config_path_dependency,
+	        .check_secure_config_path          = check_secure_config_path_dependency,
+	        .create_temp_copy                  = create_temp_copy_dependency,
+	        .run_editor                        = run_editor_dependency,
+	        .read_temp_config_snapshot         = read_temp_config_snapshot_dependency,
+	        .validate_config_content           = validate_config_content_dependency,
+	        .file_content_matches              = file_content_matches_dependency,
+	        .replace_config_content_atomically = replace_config_content_atomically_dependency,
+	        .remove_if_exists                  = remove_if_exists_dependency,
+	    });
 }
