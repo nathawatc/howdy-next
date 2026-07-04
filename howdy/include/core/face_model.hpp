@@ -5,6 +5,7 @@
 #include "core/face_encoding.hpp"
 #include "core/face_matching.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,12 @@
 #include <opencv2/objdetect/face.hpp>
 
 namespace howdy::native {
+	enum class FaceModelErrorCategory {
+		kNone,
+		kModelNotReady,
+		kDetectorInitialization,
+		kRecognizerInitialization,
+	};
 
 	class FaceModel {
 	public:
@@ -22,6 +29,7 @@ namespace howdy::native {
 		explicit FaceModel(const FaceConfig &config);
 
 		[[nodiscard]] auto ok() const -> bool;
+		[[nodiscard]] auto error_category() const -> FaceModelErrorCategory;
 		[[nodiscard]] auto error_message() const -> const std::string &;
 		[[nodiscard]] auto metric() const -> const std::string &;
 
@@ -32,18 +40,26 @@ namespace howdy::native {
 		                              const std::vector<float> &probe) const -> FaceMatch;
 
 	private:
+		struct Backend;
+
+		friend class FaceModelBackendFactory;
+
+		FaceModel(const FaceConfig &config, Backend backend);
+		void               initialize(const FaceConfig &config);
 		void               set_input_size_from_frame(const cv::Mat &frame);
-		void               set_error(std::string message);
+		void               set_error(FaceModelErrorCategory category, std::string message);
 		[[nodiscard]] auto resolve_model_path(const std::string &value,
 		                                      const std::string &fallback) const -> std::string;
 
-		bool                          ok_ = false;
+		bool                          ok_             = false;
+		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;
 		std::string                   error_message_;
 		std::string                   metric_    = "cosine";
 		float                         threshold_ = 0.363F;
 		cv::Size                      input_size_{320, 320};
 		cv::Ptr<cv::FaceDetectorYN>   detector_;
 		cv::Ptr<cv::FaceRecognizerSF> recognizer_;
+		std::shared_ptr<Backend>      backend_;
 	};
 
 }  // namespace howdy::native

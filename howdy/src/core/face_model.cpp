@@ -3,8 +3,10 @@
 #include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_encoding_internal.hpp"
+#include "core/face_model_internal.hpp"
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -24,7 +26,39 @@ namespace howdy::native {
 
 	FaceModel::FaceModel(const FaceConfig &config)
 	    : metric_(config.sface_metric)
-	    , threshold_(config.sface_threshold) {
+	    , threshold_(config.sface_threshold)
+	    , backend_(std::make_shared<Backend>()) {
+		backend_->check_readiness = [](const std::filesystem::path &path) {
+			return check_opencv_face_model_readiness(path, static_cast<uid_t>(0));
+		};
+		backend_->create_detector = [](const std::string &path, const cv::Size &size,
+		                               float score_threshold, float nms_threshold, int top_k) {
+			return cv::FaceDetectorYN::create(path, "", size, score_threshold, nms_threshold,
+			                                  top_k);
+		};
+		backend_->create_recognizer = [](const std::string &path) {
+			return cv::FaceRecognizerSF::create(path, "");
+		};
+		initialize(config);
+		if (ok_) {
+			const auto detector      = detector_;
+			backend_->set_input_size = [detector](const cv::Size &size) {
+				detector->setInputSize(size);
+			};
+			backend_->detect = [detector](const cv::Mat &frame, cv::Mat &faces) {
+				detector->detect(frame, faces);
+			};
+		}
+	}
+
+	FaceModel::FaceModel(const FaceConfig &config, Backend backend)
+	    : metric_(config.sface_metric)
+	    , threshold_(config.sface_threshold)
+	    , backend_(std::make_shared<Backend>(std::move(backend))) {
+		initialize(config);
+	}
+
+	void FaceModel::initialize(const FaceConfig &config) {
 		const auto models_dir = resolve_models_dir();
 		const auto yunet_model =
 		    resolve_model_path(config.yunet_model, (models_dir / kYunetModel).string());
@@ -32,10 +66,9 @@ namespace howdy::native {
 		    resolve_model_path(config.sface_model, (models_dir / kSfaceModel).string());
 
 		for (const auto &model_path : {yunet_model, sface_model}) {
-			const auto readiness =
-			    check_opencv_face_model_readiness(model_path, static_cast<uid_t>(0));
+			const auto readiness = backend_->check_readiness(model_path);
 			if (readiness.status != OpenCvModelStatus::kOk) {
-				set_error(readiness.error_message);
+				set_error(FaceModelErrorCategory::kModelNotReady, "Face model is not ready");
 				return;
 			}
 		}
@@ -45,11 +78,29 @@ namespace howdy::native {
 		const auto top_k           = config.yunet_top_k;
 
 		try {
-			detector_   = cv::FaceDetectorYN::create(yunet_model, "", input_size_, score_threshold,
-			                                         nms_threshold, top_k);
-			recognizer_ = cv::FaceRecognizerSF::create(sface_model, "");
-		} catch (const cv::Exception &error) {
-			set_error(error.what());
+			detector_ = backend_->create_detector(yunet_model, input_size_, score_threshold,
+			                                      nms_threshold, top_k);
+		} catch (const cv::Exception &) {
+			set_error(FaceModelErrorCategory::kDetectorInitialization,
+			          "Failed to initialize face detector");
+			return;
+		}
+		if (detector_.empty()) {
+			set_error(FaceModelErrorCategory::kDetectorInitialization,
+			          "Failed to initialize face detector");
+			return;
+		}
+
+		try {
+			recognizer_ = backend_->create_recognizer(sface_model);
+		} catch (const cv::Exception &) {
+			set_error(FaceModelErrorCategory::kRecognizerInitialization,
+			          "Failed to initialize face recognizer");
+			return;
+		}
+		if (recognizer_.empty()) {
+			set_error(FaceModelErrorCategory::kRecognizerInitialization,
+			          "Failed to initialize face recognizer");
 			return;
 		}
 
@@ -58,6 +109,10 @@ namespace howdy::native {
 
 	auto FaceModel::ok() const -> bool {
 		return ok_;
+	}
+
+	auto FaceModel::error_category() const -> FaceModelErrorCategory {
+		return error_category_;
 	}
 
 	auto FaceModel::error_message() const -> const std::string & {
@@ -88,12 +143,12 @@ namespace howdy::native {
 			set_input_size_from_frame(prepared);
 
 			cv::Mat faces;
-			detector_->detect(prepared, faces);
+			backend_->detect(prepared, faces);
 			return parse_yunet_detections(faces);
-		} catch (const cv::Exception &error) {
+		} catch (const cv::Exception &) {
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInferenceError,
-			    .error_message = std::string("YuNet inference failed: ") + error.what(),
+			    .error_message = "Face detection failed",
 			};
 		}
 	}
@@ -135,13 +190,14 @@ namespace howdy::native {
 			return;
 		}
 
-		detector_->setInputSize(new_size);
+		backend_->set_input_size(new_size);
 		input_size_ = new_size;
 	}
 
-	void FaceModel::set_error(std::string message) {
-		error_message_ = std::move(message);
-		ok_            = false;
+	void FaceModel::set_error(FaceModelErrorCategory category, std::string message) {
+		error_category_ = category;
+		error_message_  = std::move(message);
+		ok_             = false;
 	}
 
 	auto FaceModel::resolve_model_path(const std::string &value, const std::string &fallback) const

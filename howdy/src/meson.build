@@ -345,6 +345,25 @@ test(
 	native_face_encoding_test,
 )
 
+native_face_model_test = executable(
+	'howdy-face-model-test',
+	'tests/face_model_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: native_cpp_lib,
+	dependencies: [
+		inih_cpp,
+		libcurl,
+		yyjson,
+		opencv4,
+	],
+	install: false,
+)
+
+test(
+	'native-face-model',
+	native_face_model_test,
+)
+
 native_config_utils_test = executable(
 	'howdy-config-utils-test',
 	'tests/config_utils_test.cpp',
