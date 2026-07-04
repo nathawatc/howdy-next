@@ -607,6 +607,43 @@ auto main() -> int {
 	}
 
 	{
+		const std::vector<howdy::native::FaceMatch> invalid_matches = {
+		    {.index = -1, .score = 0.9F, .accepted = true},
+		    {.index = static_cast<int>(known.size()), .score = 0.9F, .accepted = true},
+		    {.index = 0, .score = std::numeric_limits<float>::quiet_NaN(), .accepted = true},
+		    {.index = 0, .score = std::numeric_limits<float>::infinity(), .accepted = true},
+		    {.index = 0, .score = -std::numeric_limits<float>::infinity(), .accepted = true},
+		};
+
+		for (const auto &invalid_match : invalid_matches) {
+			FakeInferenceContext context{
+			    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+			    .detection_result =
+			        {
+			            .status     = howdy::native::FaceDetectionStatus::kOk,
+			            .detections = {make_detection(1.0F), make_detection(20.0F)},
+			        },
+			    .encoded_results = {make_encoding(0.1F), make_encoding(0.3F)},
+			    .match_results   = {invalid_match},
+			};
+			howdy::native::CompareEngine engine(make_video_config(),
+			                                    make_inference_dependencies(context), known);
+			const auto                   result = engine.process_face_frame(working_frame);
+			ok &=
+			    expect(result.status == howdy::native::CompareInferenceStatus::kInvalidMatchResult,
+			           "invalid accepted matcher result fails closed");
+			ok &= expect(result.error_message == "Face matcher returned invalid match result",
+			             "invalid accepted matcher result returns stable diagnostic");
+			ok &= expect(result.winning_index == -1,
+			             "invalid accepted matcher result exposes no winner");
+			ok &= expect(result.winning_score == 0.0F,
+			             "invalid accepted matcher result exposes no winning score");
+			ok &= expect(context.encode_calls == 1 && context.match_calls == 1,
+			             "invalid accepted matcher result stops before later face");
+		}
+	}
+
+	{
 		const auto           first_detection  = make_detection(1.0F);
 		const auto           second_detection = make_detection(20.0F);
 		FakeInferenceContext context{
@@ -680,8 +717,12 @@ auto main() -> int {
 		    .encoded_results = {make_encoding(0.1F), make_encoding(0.3F)},
 		    .match_results =
 		        {
-		            {.index = 0, .score = 0.2F, .accepted = false},
-		            {.index = 1, .score = 0.3F, .accepted = false},
+		            {.index    = -1,
+		             .score    = std::numeric_limits<float>::quiet_NaN(),
+		             .accepted = false},
+		            {.index    = -1,
+		             .score    = std::numeric_limits<float>::infinity(),
+		             .accepted = false},
 		        },
 		};
 		howdy::native::CompareEngine engine(make_video_config(),
@@ -689,6 +730,8 @@ auto main() -> int {
 		const auto                   result = engine.process_face_frame(working_frame);
 		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
 		             "all rejected detections return no match");
+		ok &= expect(result.winning_index == -1,
+		             "rejected matcher results retain negative index behavior");
 		ok &= expect(context.encode_calls == 2 && context.match_calls == 2,
 		             "all rejected detections are evaluated");
 		ok &= expect(result.error_message.empty(), "all rejected detections return no error");

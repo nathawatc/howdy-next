@@ -53,6 +53,7 @@ namespace howdy::native {
 		kInvalidPreparedFrame,
 		kDetectionFailed,
 		kEncodingFailed,
+		kInvalidMatchResult,
 		kInvalidDependencies,
 	};
 

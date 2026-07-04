@@ -269,6 +269,7 @@ auto main(int argc, char **argv) -> int {
 				case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
 				case howdy::native::CompareInferenceStatus::kDetectionFailed:
 				case howdy::native::CompareInferenceStatus::kEncodingFailed:
+				case howdy::native::CompareInferenceStatus::kInvalidMatchResult:
 					std::cerr << inference_result.error_message << "\n";
 					return static_cast<int>(CompareExit::kAbort);
 

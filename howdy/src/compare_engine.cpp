@@ -3,6 +3,7 @@
 #include "common/compare_logic.hpp"
 #include "common/frame_validation.hpp"
 
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -205,6 +206,13 @@ namespace howdy::native {
 			const auto match = inference_dependencies_.find_best_match(
 			    inference_dependencies_.context, known_encodings_, encoding_result.encoding);
 			if (match.accepted) {
+				if (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
+				    !std::isfinite(match.score)) {
+					return {
+					    .status        = CompareInferenceStatus::kInvalidMatchResult,
+					    .error_message = "Face matcher returned invalid match result",
+					};
+				}
 				return {
 				    .status        = CompareInferenceStatus::kMatch,
 				    .winning_index = match.index,
