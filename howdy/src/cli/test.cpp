@@ -467,7 +467,10 @@ auto howdy::native::test_cli_internal::map_preview_frame_failure(
     const howdy::native::PreviewFrameResult &result) -> TestPreviewResult {
 	switch (result.status) {
 		case howdy::native::PreviewFrameStatus::kInvalidFrame:
-			return {.status = TestPreviewStatus::kCameraReadError};
+			return {
+			    .status        = TestPreviewStatus::kCameraReadError,
+			    .error_message = result.error_message,
+			};
 		case howdy::native::PreviewFrameStatus::kDetectionFailed:
 		case howdy::native::PreviewFrameStatus::kEncodingFailed:
 		case howdy::native::PreviewFrameStatus::kInvalidMatchResult:

@@ -258,16 +258,63 @@ namespace {
 		return ok;
 	}
 
-	auto all_encodings_failed_maps_to_face_model_error() -> bool {
-		const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
-		    .status        = howdy::native::PreviewFrameStatus::kEncodingFailed,
-		    .error_message = "first encoder failed",
+	auto preview_frame_failures_map_to_cli_stop_status() -> bool {
+		const auto invalid_frame = howdy::native::test_cli_internal::map_preview_frame_failure({
+		    .status        = howdy::native::PreviewFrameStatus::kInvalidFrame,
+		    .error_message = "invalid camera frame",
 		});
-		return expect(result.status ==
-		                  howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
-		              "all encoding failures map to face model error") &&
-		       expect(result.error_message == "first encoder failed",
-		              "all encoding failures preserve first diagnostic");
+		bool ok = expect(invalid_frame.status ==
+		                     howdy::native::test_cli_internal::TestPreviewStatus::kCameraReadError,
+		                 "invalid preview frame maps to camera read error");
+		ok &= expect(invalid_frame.error_message == "invalid camera frame",
+		             "invalid preview frame preserves diagnostic");
+
+		auto expect_face_model_error = [](howdy::native::PreviewFrameStatus status,
+		                                  const std::string                &diagnostic,
+		                                  const std::string                &subject) {
+			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
+			    .status        = status,
+			    .error_message = diagnostic,
+			});
+			return expect(result.status ==
+			                  howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
+			              subject + " maps to face model error") &&
+			       expect(result.error_message == diagnostic, subject + " preserves diagnostic");
+		};
+
+		ok &= expect_face_model_error(howdy::native::PreviewFrameStatus::kDetectionFailed,
+		                              "detector failed", "preview preprocessing/detection failure");
+		ok &= expect_face_model_error(howdy::native::PreviewFrameStatus::kEncodingFailed,
+		                              "first encoder failed", "all preview encodings failed");
+		ok &= expect_face_model_error(howdy::native::PreviewFrameStatus::kInvalidMatchResult,
+		                              "matcher returned invalid model index",
+		                              "invalid preview match result");
+		ok &= expect_face_model_error(howdy::native::PreviewFrameStatus::kInvalidDependencies,
+		                              "preview dependency missing", "invalid preview dependencies");
+		return ok;
+	}
+
+	auto preview_non_terminal_frames_map_to_ok() -> bool {
+		auto expect_continue = [](howdy::native::PreviewFrameStatus status,
+		                          const std::string                &subject) {
+			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
+			    .status = status,
+			});
+			return expect(result.status == howdy::native::test_cli_internal::TestPreviewStatus::kOk,
+			              subject + " keeps preview running");
+		};
+
+		bool ok = true;
+		ok &= expect_continue(howdy::native::PreviewFrameStatus::kBlackFrame, "black frame");
+		ok &= expect_continue(howdy::native::PreviewFrameStatus::kTooDark, "too-dark frame");
+		ok &= expect_continue(howdy::native::PreviewFrameStatus::kNoFace, "no-face frame");
+		ok &= expect_continue(howdy::native::PreviewFrameStatus::kFacesDetected,
+		                      "detected-only frame");
+		ok &= expect_continue(howdy::native::PreviewFrameStatus::kUnmatchedFace,
+		                      "unmatched-face frame");
+		ok &=
+		    expect_continue(howdy::native::PreviewFrameStatus::kMatchedFace, "matched-face frame");
+		return ok;
 	}
 
 	auto missing_graphical_environment_prints_diagnostic() -> bool {
@@ -553,7 +600,8 @@ auto main() -> int {
 	bool ok = true;
 	ok &= invalid_runtime_config_stops_before_preview();
 	ok &= face_model_failure_returns_error();
-	ok &= all_encodings_failed_maps_to_face_model_error();
+	ok &= preview_frame_failures_map_to_cli_stop_status();
+	ok &= preview_non_terminal_frames_map_to_ok();
 	ok &= missing_graphical_environment_prints_diagnostic();
 	ok &= camera_open_failure_prints_device_and_capture_error();
 	ok &= camera_read_failure_prints_diagnostic();
