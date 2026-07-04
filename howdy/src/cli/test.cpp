@@ -1,10 +1,8 @@
 #include "cli/test_cli.hpp"
 #include "cli/test_cli_internal.hpp"
-#include "common/compare_logic.hpp"
-#include "common/frame_processing.hpp"
-#include "common/frame_validation.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
+#include "common/preview_engine.hpp"
 #include "config/runtime_config.hpp"
 #include "core/face_model.hpp"
 #include "recorders/video_capture.hpp"
@@ -44,6 +42,27 @@ namespace {
 		howdy::native::UserModelLoadResult         loaded_models;
 		cv::Mat                                    prefetched_frame;
 		cv::Mat                                    prefetched_gray_frame;
+		bool                                       gui_initialized = false;
+	};
+
+	struct PreviewCleanup {
+		TestProductionContext &context;
+
+		~PreviewCleanup() noexcept {
+			try {
+				if (context.gui_initialized) {
+					cv::destroyAllWindows();
+				}
+			} catch (...) {  // NOLINT(bugprone-empty-catch)
+			}
+
+			try {
+				if (context.capture.has_value()) {
+					context.capture->release();
+				}
+			} catch (...) {  // NOLINT(bugprone-empty-catch)
+			}
+		}
 	};
 
 	bool g_slow_mode = false;
@@ -78,6 +97,15 @@ namespace {
 	void print_text(cv::Mat &overlay, int line_number, int height, const std::string &text) {
 		cv::putText(overlay, text, cv::Point(10, height - 10 - (10 * line_number)),
 		            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
+	}
+
+	auto prepare_preview_frame(void *context, const cv::Mat &frame) -> cv::Mat {
+		return static_cast<howdy::native::FaceModel *>(context)->prepare_frame(frame);
+	}
+
+	auto detect_preview_faces(void *context, const cv::Mat &frame)
+	    -> howdy::native::FaceDetectionResult {
+		return static_cast<howdy::native::FaceModel *>(context)->detect(frame);
 	}
 
 	auto encode_preview_face(void *context, const cv::Mat &frame,
@@ -227,25 +255,21 @@ namespace {
 		}
 		if (!production_context->capture->read(production_context->prefetched_frame,
 		                                       &production_context->prefetched_gray_frame)) {
-			production_context->capture->release();
 			return false;
 		}
 		return true;
 	}
 
 	auto switch_gui_user_dependency(void *context) -> bool {
-		auto *production_context = static_cast<TestProductionContext *>(context);
-		if (drop_to_invoking_gui_user()) {
-			return true;
-		}
-		if (production_context != nullptr && production_context->capture.has_value()) {
-			production_context->capture->release();
-		}
-		return false;
+		(void)context;
+		return drop_to_invoking_gui_user();
 	}
 
 	void initialize_gui_dependency(void *context) {
-		(void)context;
+		auto *production_context = static_cast<TestProductionContext *>(context);
+		if (production_context != nullptr) {
+			production_context->gui_initialized = true;
+		}
 		cv::namedWindow(kWindowName);
 		cv::setMouseCallback(kWindowName, mouse_callback);
 	}
@@ -260,6 +284,7 @@ namespace {
 			    .error_message = "Face model was not initialized",
 			};
 		}
+		PreviewCleanup cleanup{*production_context};
 
 		auto preflight_result = test_cli_internal::run_preview_preflight(
 		    config, user, device_path,
@@ -276,290 +301,184 @@ namespace {
 			return preflight_result;
 		}
 
-		auto       &face_model     = *production_context->face_model;
-		auto       &loaded_models  = production_context->loaded_models;
-		auto       &capture        = *production_context->capture;
-		const int   exposure       = config.video.exposure;
-		const float dark_threshold = config.video.dark_threshold;
-		auto        clahe          = howdy::native::make_clahe(config.video);
-		bool        has_prefetched = true;
+		auto                        &face_model     = *production_context->face_model;
+		auto                        &loaded_models  = production_context->loaded_models;
+		auto                        &capture        = *production_context->capture;
+		const int                    exposure       = config.video.exposure;
+		bool                         has_prefetched = true;
+		howdy::native::PreviewEngine preview_engine(
+		    config.video,
+		    {
+		        .context       = &face_model,
+		        .prepare_frame = prepare_preview_frame,
+		        .detect_faces  = detect_preview_faces,
+		        .encode_face   = encode_preview_face,
+		        .match_face    = match_preview_face,
+		    },
+		    loaded_models.stored.encodings, loaded_models.stored.models.size(),
+		    loaded_models.status == howdy::native::UserModelStatus::kOk);
 
-		int    total_frames   = 0;
-		int    sec_frames     = 0;
-		int    fps            = 0;
-		auto   second_anchor  = std::chrono::steady_clock::now();
-		double recognition_ms = 0.0;
+		int                       total_frames  = 0;
+		int                       sec_frames    = 0;
+		int                       fps           = 0;
+		auto                      second_anchor = std::chrono::steady_clock::now();
+		std::chrono::milliseconds recognition_time{0};
 
-		try {
-			while (true) {
-				const auto frame_start = std::chrono::steady_clock::now();
-				total_frames++;
-				sec_frames++;
+		while (true) {
+			const auto frame_start = std::chrono::steady_clock::now();
+			total_frames++;
+			sec_frames++;
 
-				if (std::chrono::duration_cast<std::chrono::seconds>(frame_start - second_anchor)
-				        .count() >= 1) {
-					fps           = sec_frames;
-					sec_frames    = 0;
-					second_anchor = frame_start;
-				}
+			if (std::chrono::duration_cast<std::chrono::seconds>(frame_start - second_anchor)
+			        .count() >= 1) {
+				fps           = sec_frames;
+				sec_frames    = 0;
+				second_anchor = frame_start;
+			}
 
-				cv::Mat frame;
-				cv::Mat gray_frame;
-				if (has_prefetched) {
-					frame          = production_context->prefetched_frame;
-					gray_frame     = production_context->prefetched_gray_frame;
-					has_prefetched = false;
-				} else if (!capture.read(frame, &gray_frame)) {
-					capture.release();
-					return test_cli_internal::TestPreviewResult{
-					    .status = test_cli_internal::TestPreviewStatus::kCameraReadError,
-					};
-				}
+			cv::Mat frame;
+			cv::Mat gray_frame;
+			if (has_prefetched) {
+				frame          = production_context->prefetched_frame;
+				gray_frame     = production_context->prefetched_gray_frame;
+				has_prefetched = false;
+			} else if (!capture.read(frame, &gray_frame)) {
+				return test_cli_internal::TestPreviewResult{
+				    .status = test_cli_internal::TestPreviewStatus::kCameraReadError,
+				};
+			}
 
-				auto gray_validation = test_cli_internal::validate_preview_gray_frame(gray_frame);
-				if (gray_validation.status != test_cli_internal::TestPreviewStatus::kOk) {
-					capture.release();
-					return gray_validation;
-				}
+			auto frame_result        = preview_engine.process_gray_frame(std::move(gray_frame));
+			recognition_time         = frame_result.recognition_time;
+			const auto frame_failure = test_cli_internal::map_preview_frame_failure(frame_result);
+			if (frame_failure.status != test_cli_internal::TestPreviewStatus::kOk) {
+				return frame_failure;
+			}
+			gray_frame = frame_result.gray_frame;
 
-				howdy::native::apply_clahe_if_enabled(gray_frame, config.video, clahe);
+			cv::Mat overlay;
+			cv::cvtColor(gray_frame.clone(), overlay, cv::COLOR_GRAY2BGR);
+			const int height = gray_frame.rows;
+			const int width  = gray_frame.cols;
 
-				cv::Mat overlay;
-				cv::cvtColor(gray_frame.clone(), overlay, cv::COLOR_GRAY2BGR);
-				const int height = gray_frame.rows;
-				const int width  = gray_frame.cols;
+			const auto &brightness = frame_result.brightness;
+			for (std::size_t index = 0; index < brightness.bins_percent.size(); ++index) {
+				const float     value_perc = brightness.bins_percent[index];
+				const int       bin_offset = 10 * static_cast<int>(index);
+				const cv::Point p1(20 + bin_offset, 10);
+				const cv::Point p2(10 + bin_offset, static_cast<int>((value_perc / 2.0F) + 10.0F));
+				cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
+			}
 
-				const auto brightness = howdy::native::measure_brightness(gray_frame);
-				for (std::size_t index = 0; index < brightness.bins_percent.size(); ++index) {
-					const float     value_perc = brightness.bins_percent[index];
-					const int       bin_offset = 10 * static_cast<int>(index);
-					const cv::Point p1(20 + bin_offset, 10);
-					const cv::Point p2(10 + bin_offset,
-					                   static_cast<int>((value_perc / 2.0F) + 10.0F));
-					cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
-				}
+			print_text(overlay, 0, height,
+			           "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
+			print_text(overlay, 1, height, "FPS: " + std::to_string(fps));
+			print_text(overlay, 2, height, "FRAMES: " + std::to_string(total_frames));
+			print_text(overlay, 3, height,
+			           "INFERENCE: " + std::to_string(recognition_time.count()) + "ms");
+			print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
+			print_text(overlay, 5, height,
+			           std::string("CLAHE: ") + (config.video.clahe_enabled ? "on" : "off"));
 
-				print_text(overlay, 0, height,
-				           "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
-				print_text(overlay, 1, height, "FPS: " + std::to_string(fps));
-				print_text(overlay, 2, height, "FRAMES: " + std::to_string(total_frames));
-				print_text(overlay, 3, height,
-				           "RECOGNITION: " + std::to_string(static_cast<int>(recognition_ms)) +
-				               "ms");
-				print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
-				print_text(overlay, 5, height,
-				           std::string("CLAHE: ") + (config.video.clahe_enabled ? "on" : "off"));
+			if (g_slow_mode) {
+				cv::putText(overlay, "SLOW MODE", cv::Point(width - 66, height - 10),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
+			}
 
-				if (g_slow_mode) {
-					cv::putText(overlay, "SLOW MODE", cv::Point(width - 66, height - 10),
-					            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0,
-					            cv::LINE_AA);
-				}
+			const bool dark_frame =
+			    frame_result.status == howdy::native::PreviewFrameStatus::kBlackFrame ||
+			    frame_result.status == howdy::native::PreviewFrameStatus::kTooDark;
+			if (dark_frame) {
+				cv::putText(overlay, "DARK FRAME", cv::Point(width - 68, 16),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
+			} else {
+				cv::putText(overlay, "SCAN FRAME", cv::Point(width - 68, 16),
+				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
+				for (const auto &face_result : frame_result.faces) {
+					const auto &face = face_result.detection;
+					cv::Scalar  color(0, 0, 230);
+					const int   x = static_cast<int>(face.box.x);
+					const int   y = static_cast<int>(face.box.y);
+					const int   w = static_cast<int>(face.box.width);
+					const int   h = static_cast<int>(face.box.height);
 
-				const auto brightness_decision = howdy::native::classify_brightness(
-				    brightness.hist_total, brightness.darkness, dark_threshold);
-				const auto brightness_presentation =
-				    test_cli_internal::preview_brightness_presentation(brightness_decision);
-				if (!brightness_presentation.detect_faces) {
-					cv::putText(overlay, brightness_presentation.frame_label,
-					            cv::Point(width - 68, 16), cv::FONT_HERSHEY_SIMPLEX, 0.3,
-					            cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
-				} else {
-					cv::putText(overlay, brightness_presentation.frame_label,
-					            cv::Point(width - 68, 16), cv::FONT_HERSHEY_SIMPLEX, 0.3,
-					            cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
-
-					const auto recognition_start = std::chrono::steady_clock::now();
-					auto       face_frame        = face_model.prepare_frame(gray_frame);
-					const auto detection_result  = face_model.detect(face_frame);
-					recognition_ms               = static_cast<double>(
-					    std::chrono::duration_cast<std::chrono::milliseconds>(
-					        std::chrono::steady_clock::now() - recognition_start)
-					        .count());
-
-					if (!detection_result.ok()) {
-						capture.release();
-						return test_cli_internal::TestPreviewResult{
-						    .status        = test_cli_internal::TestPreviewStatus::kFaceModelError,
-						    .error_message = detection_result.error_message,
-						};
-					}
-
-					test_cli_internal::PreviewFaceMatchingResult matching_result{
-					    .status = test_cli_internal::TestPreviewStatus::kOk,
-					};
-					if (loaded_models.status == howdy::native::UserModelStatus::kOk) {
-						matching_result = test_cli_internal::match_preview_faces(
-						    face_frame, detection_result.detections, loaded_models.stored.encodings,
-						    {
-						        .context     = &face_model,
-						        .encode_face = encode_preview_face,
-						        .match_face  = match_preview_face,
-						    });
-						if (!matching_result.ok()) {
-							capture.release();
-							return test_cli_internal::TestPreviewResult{
-							    .status        = matching_result.status,
-							    .error_message = std::move(matching_result.error_message),
-							};
-						}
-					}
-
-					for (std::size_t face_index = 0;
-					     face_index < detection_result.detections.size(); ++face_index) {
-						const auto &face = detection_result.detections[face_index];
-						cv::Scalar  color(0, 0, 230);
-						const int   x = static_cast<int>(face.box.x);
-						const int   y = static_cast<int>(face.box.y);
-						const int   w = static_cast<int>(face.box.width);
-						const int   h = static_cast<int>(face.box.height);
-
-						if (loaded_models.status == howdy::native::UserModelStatus::kOk) {
-							const auto &face_match = matching_result.matches[face_index];
-							std::string face_text;
-							switch (test_cli_internal::preview_face_display_state(face_match)) {
-								case test_cli_internal::PreviewFaceDisplayState::kEncodingFailed:
-									face_text = "encoding failed";
-									break;
-								case test_cli_internal::PreviewFaceDisplayState::kNoMatch:
-									face_text =
-									    "no match (" + cv::format("%.3f", face_match->score) + ")";
-									break;
-								case test_cli_internal::PreviewFaceDisplayState::kMatch: {
-									color = cv::Scalar(0, 230, 0);
-									const auto &model =
-									    loaded_models.stored
-									        .models[static_cast<std::size_t>(face_match->index)];
-									face_text = model.label + " (score: " +
-									            cv::format("%.3f", face_match->score) + ")";
-									break;
-								}
-							}
-
-							cv::putText(overlay, face_text, cv::Point(x, std::max(0, y - 8)),
-							            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-						}
-
-						cv::rectangle(overlay, cv::Rect(x, y, w, h), color, 2);
-						cv::putText(overlay, cv::format("%.2f", face.confidence),
-						            cv::Point(x, std::min(height - 4, y + h + 12)),
+					if (face_result.status == howdy::native::PreviewFaceStatus::kEncodingFailed) {
+						cv::putText(overlay, "encoding failed", cv::Point(x, std::max(0, y - 8)),
 						            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-						for (const auto &point : face.landmarks) {
-							cv::circle(
-							    overlay,
-							    cv::Point(static_cast<int>(point.x), static_cast<int>(point.y)), 2,
-							    cv::Scalar(0, 255, 255), -1);
+					} else if (face_result.matching_attempted) {
+						const auto &face_match = face_result.match;
+						std::string face_text;
+						if (!face_match.accepted) {
+							face_text = "no match (" + cv::format("%.3f", face_match.score) + ")";
+						} else {
+							color = cv::Scalar(0, 230, 0);
+							const auto &model =
+							    loaded_models.stored
+							        .models[static_cast<std::size_t>(face_match.index)];
+							face_text = model.label +
+							            " (score: " + cv::format("%.3f", face_match.score) + ")";
 						}
+
+						cv::putText(overlay, face_text, cv::Point(x, std::max(0, y - 8)),
+						            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
 					}
-				}
 
-				cv::Mat display_frame;
-				cv::cvtColor(gray_frame, display_frame, cv::COLOR_GRAY2BGR);
-				cv::addWeighted(overlay, 0.65, display_frame, 0.35, 0, display_frame);
-				cv::imshow(kWindowName, display_frame);
-
-				if (cv::waitKey(1) != -1) {
-					break;
-				}
-
-				const auto frame_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-				                            std::chrono::steady_clock::now() - frame_start)
-				                            .count();
-				if (g_slow_mode) {
-					const auto sleep_ms = std::max(0LL, 500LL - frame_time);
-					std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-				}
-
-				if (exposure != -1) {
-					capture.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-					capture.set(cv::CAP_PROP_EXPOSURE, static_cast<double>(exposure));
+					cv::rectangle(overlay, cv::Rect(x, y, w, h), color, 2);
+					cv::putText(overlay, cv::format("%.2f", face.confidence),
+					            cv::Point(x, std::min(height - 4, y + h + 12)),
+					            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
+					for (const auto &point : face.landmarks) {
+						cv::circle(overlay,
+						           cv::Point(static_cast<int>(point.x), static_cast<int>(point.y)),
+						           2, cv::Scalar(0, 255, 255), -1);
+					}
 				}
 			}
-		} catch (...) {
-			cv::destroyAllWindows();
-			capture.release();
-			throw;
-		}
 
-		cv::destroyAllWindows();
-		capture.release();
+			cv::Mat display_frame;
+			cv::cvtColor(gray_frame, display_frame, cv::COLOR_GRAY2BGR);
+			cv::addWeighted(overlay, 0.65, display_frame, 0.35, 0, display_frame);
+			cv::imshow(kWindowName, display_frame);
+
+			if (cv::waitKey(1) != -1) {
+				break;
+			}
+
+			const auto frame_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+			                            std::chrono::steady_clock::now() - frame_start)
+			                            .count();
+			if (g_slow_mode) {
+				const auto sleep_ms = std::max(0LL, 500LL - frame_time);
+				std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+			}
+
+			if (exposure != -1) {
+				capture.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
+				capture.set(cv::CAP_PROP_EXPOSURE, static_cast<double>(exposure));
+			}
+		}
 		return test_cli_internal::TestPreviewResult{.status =
 		                                                test_cli_internal::TestPreviewStatus::kOk};
 	}
 
 }  // namespace
 
-auto howdy::native::test_cli_internal::preview_brightness_presentation(
-    howdy::native::BrightnessDecision decision) -> PreviewBrightnessPresentation {
-	if (decision == howdy::native::BrightnessDecision::kProcessFrame) {
-		return PreviewBrightnessPresentation{
-		    .frame_label  = "SCAN FRAME",
-		    .detect_faces = true,
-		};
+auto howdy::native::test_cli_internal::map_preview_frame_failure(
+    const howdy::native::PreviewFrameResult &result) -> TestPreviewResult {
+	switch (result.status) {
+		case howdy::native::PreviewFrameStatus::kInvalidFrame:
+			return {.status = TestPreviewStatus::kCameraReadError};
+		case howdy::native::PreviewFrameStatus::kDetectionFailed:
+		case howdy::native::PreviewFrameStatus::kEncodingFailed:
+		case howdy::native::PreviewFrameStatus::kInvalidMatchResult:
+		case howdy::native::PreviewFrameStatus::kInvalidDependencies:
+			return {
+			    .status        = TestPreviewStatus::kFaceModelError,
+			    .error_message = result.error_message,
+			};
+		default:
+			return {.status = TestPreviewStatus::kOk};
 	}
-	return PreviewBrightnessPresentation{
-	    .frame_label  = "DARK FRAME",
-	    .detect_faces = false,
-	};
-}
-
-auto howdy::native::test_cli_internal::preview_face_display_state(
-    const std::optional<howdy::native::FaceMatch> &match) -> PreviewFaceDisplayState {
-	if (!match.has_value()) {
-		return PreviewFaceDisplayState::kEncodingFailed;
-	}
-	return match->accepted ? PreviewFaceDisplayState::kMatch : PreviewFaceDisplayState::kNoMatch;
-}
-
-auto howdy::native::test_cli_internal::validate_preview_gray_frame(const cv::Mat &gray_frame)
-    -> TestPreviewResult {
-	if (howdy::native::validate_frame(gray_frame, howdy::native::FrameChannelPolicy::kGray) !=
-	    howdy::native::FrameValidationStatus::kValid) {
-		return TestPreviewResult{.status = TestPreviewStatus::kCameraReadError};
-	}
-	return TestPreviewResult{.status = TestPreviewStatus::kOk};
-}
-
-auto howdy::native::test_cli_internal::match_preview_faces(
-    const cv::Mat &frame, const std::vector<howdy::native::FaceDetection> &faces,
-    const std::vector<std::vector<float>> &known,
-    const PreviewFaceMatchingDependencies &dependencies) -> PreviewFaceMatchingResult {
-	if (dependencies.context == nullptr || dependencies.encode_face == nullptr ||
-	    dependencies.match_face == nullptr) {
-		return {
-		    .status        = TestPreviewStatus::kFaceModelError,
-		    .error_message = "Internal error: missing test preview face matching dependency",
-		};
-	}
-
-	PreviewFaceMatchingResult result{.status = TestPreviewStatus::kOk};
-	result.matches.reserve(faces.size());
-	std::string first_encoding_error;
-	bool        reached_matching = false;
-	for (const auto &face : faces) {
-		const auto encoding_result = dependencies.encode_face(dependencies.context, frame, face);
-		if (!encoding_result.ok()) {
-			if (first_encoding_error.empty()) {
-				first_encoding_error = encoding_result.error_message.empty()
-				                           ? "Face encoding returned invalid embedding"
-				                           : encoding_result.error_message;
-			}
-			result.matches.emplace_back(std::nullopt);
-			continue;
-		}
-
-		reached_matching = true;
-		result.matches.emplace_back(
-		    dependencies.match_face(dependencies.context, known, encoding_result.encoding));
-	}
-
-	if (!reached_matching && !first_encoding_error.empty()) {
-		return {
-		    .status        = TestPreviewStatus::kFaceModelError,
-		    .error_message = std::move(first_encoding_error),
-		};
-	}
-	return result;
 }
 
 auto howdy::native::test_cli_internal::run_preview_preflight(

@@ -33,6 +33,16 @@ native_frame_processing_lib = static_library(
 	install: false,
 )
 
+native_preview_engine_lib = static_library(
+	'howdy_preview_engine',
+	'preview_engine.cpp',
+	include_directories: native_cpp_inc,
+	dependencies: [
+		opencv4,
+	],
+	install: false,
+)
+
 native_compare_engine_lib = static_library(
 	'howdy_compare_engine',
 	'compare_engine.cpp',
@@ -643,8 +653,8 @@ native_test_cli_test = executable(
 	include_directories: native_cpp_inc,
 	link_with: [
 		native_cpp_lib,
+		native_preview_engine_lib,
 		native_frame_processing_lib,
-		native_compare_logic_lib,
 	],
 	dependencies: [
 		inih_cpp,
@@ -657,6 +667,24 @@ native_test_cli_test = executable(
 test(
 	'native-test-cli',
 	native_test_cli_test,
+)
+
+native_preview_engine_test = executable(
+	'howdy-preview-engine-test',
+	'tests/preview_engine_test.cpp',
+	include_directories: native_cpp_inc,
+	link_with: [
+		native_cpp_lib,
+		native_preview_engine_lib,
+		native_frame_processing_lib,
+	],
+	dependencies: [opencv4],
+	install: false,
+)
+
+test(
+	'native-preview-engine',
+	native_preview_engine_test,
 )
 
 native_snapshot_cli_test = executable(
@@ -840,6 +868,7 @@ native_cli_lib = static_library(
 	include_directories: native_cpp_inc,
 	link_with: [
 		native_cpp_lib,
+		native_preview_engine_lib,
 		native_frame_processing_lib,
 		native_compare_logic_lib,
 	],
