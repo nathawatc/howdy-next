@@ -63,10 +63,10 @@ namespace howdy::native {
 		auto prepared = dependencies_.prepare_frame(dependencies_.context, gray_frame);
 		if (validate_frame(prepared, FrameChannelPolicy::kBgr) != FrameValidationStatus::kValid) {
 			return {
-			    .status           = PreviewFrameStatus::kDetectionFailed,
-			    .brightness       = brightness,
-			    .gray_frame       = std::move(gray_frame),
-			    .error_message    = "Prepared frame for face detection is invalid",
+			    .status         = PreviewFrameStatus::kDetectionFailed,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
+			    .error_message  = "Prepared frame for face detection is invalid",
 			    .inference_time = inference_elapsed(),
 			};
 		}
@@ -74,20 +74,20 @@ namespace howdy::native {
 		auto detection_result = dependencies_.detect_faces(dependencies_.context, prepared);
 		if (!detection_result.ok()) {
 			return {
-			    .status           = PreviewFrameStatus::kDetectionFailed,
-			    .brightness       = brightness,
-			    .gray_frame       = std::move(gray_frame),
-			    .error_message    = detection_result.error_message.empty()
-			                            ? "Face detection failed"
-			                            : std::move(detection_result.error_message),
+			    .status         = PreviewFrameStatus::kDetectionFailed,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
+			    .error_message  = detection_result.error_message.empty()
+			                          ? "Face detection failed"
+			                          : std::move(detection_result.error_message),
 			    .inference_time = inference_elapsed(),
 			};
 		}
 		if (detection_result.detections.empty()) {
 			return {
-			    .status           = PreviewFrameStatus::kNoFace,
-			    .brightness       = brightness,
-			    .gray_frame       = std::move(gray_frame),
+			    .status         = PreviewFrameStatus::kNoFace,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
 			    .inference_time = inference_elapsed(),
 			};
 		}
@@ -99,10 +99,10 @@ namespace howdy::native {
 		}
 		if (!matching_enabled_) {
 			return {
-			    .status           = PreviewFrameStatus::kFacesDetected,
-			    .brightness       = brightness,
-			    .gray_frame       = std::move(gray_frame),
-			    .faces            = std::move(faces),
+			    .status         = PreviewFrameStatus::kFacesDetected,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
+			    .faces          = std::move(faces),
 			    .inference_time = inference_elapsed(),
 			};
 		}
@@ -132,11 +132,11 @@ namespace howdy::native {
 
 		if (encodings.empty()) {
 			return {
-			    .status           = PreviewFrameStatus::kEncodingFailed,
-			    .brightness       = brightness,
-			    .gray_frame       = std::move(gray_frame),
-			    .faces            = std::move(faces),
-			    .error_message    = std::move(first_encoding_error),
+			    .status         = PreviewFrameStatus::kEncodingFailed,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
+			    .faces          = std::move(faces),
+			    .error_message  = std::move(first_encoding_error),
 			    .inference_time = inference_elapsed(),
 			};
 		}
@@ -149,10 +149,10 @@ namespace howdy::native {
 			    (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
 			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
 				return {
-				    .status           = PreviewFrameStatus::kInvalidMatchResult,
-				    .brightness       = brightness,
-				    .gray_frame       = std::move(gray_frame),
-				    .error_message    = "Face matcher returned invalid match result",
+				    .status         = PreviewFrameStatus::kInvalidMatchResult,
+				    .brightness     = brightness,
+				    .gray_frame     = std::move(gray_frame),
+				    .error_message  = "Face matcher returned invalid match result",
 				    .inference_time = inference_elapsed(),
 				};
 			}
@@ -167,9 +167,9 @@ namespace howdy::native {
 		return {
 		    .status =
 		        matched ? PreviewFrameStatus::kMatchedFace : PreviewFrameStatus::kUnmatchedFace,
-		    .brightness       = brightness,
-		    .gray_frame       = std::move(gray_frame),
-		    .faces            = std::move(faces),
+		    .brightness     = brightness,
+		    .gray_frame     = std::move(gray_frame),
+		    .faces          = std::move(faces),
 		    .inference_time = inference_elapsed(),
 		};
 	}
