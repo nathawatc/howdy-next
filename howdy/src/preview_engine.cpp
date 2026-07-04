@@ -54,10 +54,10 @@ namespace howdy::native {
 			};
 		}
 
-		const auto recognition_start   = dependencies_.now(dependencies_.context);
-		const auto recognition_elapsed = [this, &recognition_start]() {
+		const auto inference_start   = dependencies_.now(dependencies_.context);
+		const auto inference_elapsed = [this, &inference_start]() {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(
-			    dependencies_.now(dependencies_.context) - recognition_start);
+			    dependencies_.now(dependencies_.context) - inference_start);
 		};
 
 		auto prepared = dependencies_.prepare_frame(dependencies_.context, gray_frame);
@@ -67,7 +67,7 @@ namespace howdy::native {
 			    .brightness       = brightness,
 			    .gray_frame       = std::move(gray_frame),
 			    .error_message    = "Prepared frame for face detection is invalid",
-			    .recognition_time = recognition_elapsed(),
+			    .inference_time = inference_elapsed(),
 			};
 		}
 
@@ -80,7 +80,7 @@ namespace howdy::native {
 			    .error_message    = detection_result.error_message.empty()
 			                            ? "Face detection failed"
 			                            : std::move(detection_result.error_message),
-			    .recognition_time = recognition_elapsed(),
+			    .inference_time = inference_elapsed(),
 			};
 		}
 		if (detection_result.detections.empty()) {
@@ -88,7 +88,7 @@ namespace howdy::native {
 			    .status           = PreviewFrameStatus::kNoFace,
 			    .brightness       = brightness,
 			    .gray_frame       = std::move(gray_frame),
-			    .recognition_time = recognition_elapsed(),
+			    .inference_time = inference_elapsed(),
 			};
 		}
 
@@ -103,7 +103,7 @@ namespace howdy::native {
 			    .brightness       = brightness,
 			    .gray_frame       = std::move(gray_frame),
 			    .faces            = std::move(faces),
-			    .recognition_time = recognition_elapsed(),
+			    .inference_time = inference_elapsed(),
 			};
 		}
 
@@ -137,7 +137,7 @@ namespace howdy::native {
 			    .gray_frame       = std::move(gray_frame),
 			    .faces            = std::move(faces),
 			    .error_message    = std::move(first_encoding_error),
-			    .recognition_time = recognition_elapsed(),
+			    .inference_time = inference_elapsed(),
 			};
 		}
 
@@ -153,7 +153,7 @@ namespace howdy::native {
 				    .brightness       = brightness,
 				    .gray_frame       = std::move(gray_frame),
 				    .error_message    = "Face matcher returned invalid match result",
-				    .recognition_time = recognition_elapsed(),
+				    .inference_time = inference_elapsed(),
 				};
 			}
 			matched |= match.accepted;
@@ -170,7 +170,7 @@ namespace howdy::native {
 		    .brightness       = brightness,
 		    .gray_frame       = std::move(gray_frame),
 		    .faces            = std::move(faces),
-		    .recognition_time = recognition_elapsed(),
+		    .inference_time = inference_elapsed(),
 		};
 	}
 

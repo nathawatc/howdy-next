@@ -191,7 +191,7 @@ namespace {
 		return ok;
 	}
 
-	auto normal_inference_reports_recognition_time() -> bool {
+	auto normal_inference_reports_inference_time() -> bool {
 		auto context                        = make_context();
 		context.detection_result.detections = {face()};
 		const auto start                    = std::chrono::steady_clock::time_point{};
@@ -206,13 +206,13 @@ namespace {
 		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		              "normal inference completes") &&
-		       expect(result.recognition_time == std::chrono::milliseconds(37),
+		       expect(result.inference_time == std::chrono::milliseconds(37),
 		              "normal inference reports deterministic inference time") &&
 		       expect(context.next_now == 2,
 		              "normal inference reads clock at inference boundaries") &&
 		       expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
 		                  context.encode_calls == 1 && context.match_calls == 1,
-		              "recognition timing covers full inference path");
+		              "inference timing covers full inference path");
 	}
 
 	auto detection_failure_does_not_degrade() -> bool {
@@ -459,7 +459,7 @@ auto main() -> int {
 	ok &= too_dark_frame_is_distinct();
 	ok &= no_face_is_successful_detection();
 	ok &= matching_states_preserve_payload();
-	ok &= normal_inference_reports_recognition_time();
+	ok &= normal_inference_reports_inference_time();
 	ok &= detection_failure_does_not_degrade();
 	ok &= empty_detection_failure_gets_fallback_diagnostic();
 	ok &= invalid_prepared_frame_stops_before_detector();

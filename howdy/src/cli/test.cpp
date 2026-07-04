@@ -322,7 +322,7 @@ namespace {
 		int                       sec_frames    = 0;
 		int                       fps           = 0;
 		auto                      second_anchor = std::chrono::steady_clock::now();
-		std::chrono::milliseconds recognition_time{0};
+		std::chrono::milliseconds inference_time{0};
 
 		while (true) {
 			const auto frame_start = std::chrono::steady_clock::now();
@@ -349,7 +349,7 @@ namespace {
 			}
 
 			auto frame_result        = preview_engine.process_gray_frame(std::move(gray_frame));
-			recognition_time         = frame_result.recognition_time;
+			inference_time           = frame_result.inference_time;
 			const auto frame_failure = test_cli_internal::map_preview_frame_failure(frame_result);
 			if (frame_failure.status != test_cli_internal::TestPreviewStatus::kOk) {
 				return frame_failure;
@@ -375,7 +375,7 @@ namespace {
 			print_text(overlay, 1, height, "FPS: " + std::to_string(fps));
 			print_text(overlay, 2, height, "FRAMES: " + std::to_string(total_frames));
 			print_text(overlay, 3, height,
-			           "INFERENCE: " + std::to_string(recognition_time.count()) + "ms");
+			           "INFERENCE: " + std::to_string(inference_time.count()) + "ms");
 			print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
 			print_text(overlay, 5, height,
 			           std::string("CLAHE: ") + (config.video.clahe_enabled ? "on" : "off"));

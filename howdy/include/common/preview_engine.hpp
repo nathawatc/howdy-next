@@ -72,7 +72,7 @@ namespace howdy::native {
 		cv::Mat                        gray_frame;
 		std::vector<PreviewFaceResult> faces;
 		std::string                    error_message;
-		std::chrono::milliseconds      recognition_time{0};
+		std::chrono::milliseconds      inference_time{0};
 	};
 
 	class PreviewEngine {
