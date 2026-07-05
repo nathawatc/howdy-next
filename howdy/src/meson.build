@@ -563,6 +563,7 @@ test(
 native_config_cli_test = executable(
 	'howdy-config-cli-test',
 	'cli/config.cpp',
+	'cli/config_edit_session.cpp',
 	'tests/config_cli_test.cpp',
 	include_directories: native_cpp_inc,
 	link_args: ['-Wl,--wrap=initgroups'],
@@ -914,6 +915,7 @@ native_cli_lib = static_library(
 	'cli/add.cpp',
 	'cli/clear.cpp',
 	'cli/config.cpp',
+	'cli/config_edit_session.cpp',
 	'cli/disable.cpp',
 	'cli/download_models.cpp',
 	'cli/list.cpp',

@@ -32,6 +32,8 @@ extern "C" auto wrap_initgroups(const char *user, gid_t group) -> int {
 namespace {
 
 	using howdy::native::config_internal::ConfigDependencies;
+	using howdy::native::config_internal::ConfigEditSession;
+	using howdy::native::config_internal::ConfigEditStatus;
 	using howdy::native::config_internal::TempConfigCopy;
 
 	constexpr std::string_view kConfigPath      = "/test/howdy/config.ini";
@@ -84,7 +86,7 @@ namespace {
 	};
 
 	struct TestContext {
-		std::array<int, 11>                        calls{};
+		std::array<int, 12>                        calls{};
 		std::vector<int>                           order;
 		std::optional<howdy::native::InvokingUser> invoking_user =
 		    howdy::native::InvokingUser{.uid = 1000, .gid = 1000, .name = "alice"};
@@ -110,6 +112,8 @@ namespace {
 		bool                               installer_expected_nonnull = false;
 		std::string                        installer_expected_content;
 		std::vector<std::filesystem::path> removed_paths;
+		int                                editor_ready_calls = 0;
+		std::string                        editor_ready_editor;
 	};
 
 	struct RunResult {
@@ -224,6 +228,13 @@ namespace {
 		context.removed_paths.push_back(path);
 	}
 
+	void editor_ready(void *raw, const std::string &editor) {
+		auto &context = *static_cast<TestContext *>(raw);
+		record(context, 11);
+		++context.editor_ready_calls;
+		context.editor_ready_editor = editor;
+	}
+
 	auto dependencies_for(TestContext &context) -> ConfigDependencies {
 		return {
 		    .context                           = &context,
@@ -239,6 +250,46 @@ namespace {
 		    .replace_config_content_atomically = install,
 		    .remove_if_exists                  = remove_path,
 		};
+	}
+
+	void remove_dependency(ConfigDependencies &dependencies, std::size_t missing) {
+		switch (missing) {
+			case 0:
+				dependencies.resolve_invoking_user = nullptr;
+				break;
+			case 1:
+				dependencies.resolve_editor = nullptr;
+				break;
+			case 2:
+				dependencies.resolve_config_path = nullptr;
+				break;
+			case 3:
+				dependencies.check_secure_config_path = nullptr;
+				break;
+			case 4:
+				dependencies.create_temp_copy = nullptr;
+				break;
+			case 5:
+				dependencies.run_editor = nullptr;
+				break;
+			case 6:
+				dependencies.read_temp_config_snapshot = nullptr;
+				break;
+			case 7:
+				dependencies.validate_config_content = nullptr;
+				break;
+			case 8:
+				dependencies.file_content_matches = nullptr;
+				break;
+			case 9:
+				dependencies.replace_config_content_atomically = nullptr;
+				break;
+			case 10:
+				dependencies.remove_if_exists = nullptr;
+				break;
+			default:
+				break;
+		}
 	}
 
 	auto run_config(TestContext &context, const ConfigDependencies &dependencies) -> RunResult {
@@ -345,8 +396,7 @@ namespace {
 		ok &= expect(fs::exists(reported_temp_path, error) && !error,
 		             "integration preserves invalid temp file");
 		ok &= expect(read_file(reported_temp_path) == "[core\n",
-		             "integration preserved invalid content");
-
+		             "integration keeps malformed content");
 		fs::remove(reported_temp_path, error);
 		fs::remove_all(temp_root, error);
 		return ok;
@@ -379,46 +429,54 @@ auto main() -> int {
 
 	ok &= public_entrypoint_preserves_invalid_edit();
 
+	{
+		TestContext             context;
+		const ConfigEditSession session(dependencies_for(context));
+		const auto result = session.run({.context = &context, .editor_ready = editor_ready});
+		ok &= expect(result.status == ConfigEditStatus::kOk,
+		             "temporary dependencies session succeeds");
+		ok &= expect(result.error.empty() && result.temp_path == kTempPath &&
+		                 result.editor == context.editor,
+		             "temporary dependencies result matches success path");
+		ok &= expect(context.order == std::vector{0, 1, 2, 3, 4, 11, 5, 6, 7, 8, 9, 10},
+		             "temporary dependencies invokes callbacks once in order");
+		ok &=
+		    expect(context.editor_ready_calls == 1 && context.editor_ready_editor == context.editor,
+		           "temporary dependencies invokes ready callback");
+		ok &= expect_removed_once(context, "temporary dependencies removes temp once");
+		ok &=
+		    expect_installer_arguments(context, "temporary dependencies installer arguments exact");
+	}
+
+	{
+		TestContext             context;
+		const ConfigEditSession session(ConfigDependencies{});
+		const auto result = session.run({.context = &context, .editor_ready = editor_ready});
+		ok &= expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
+		             "empty dependencies session reports unavailable dependencies");
+		ok &= expect(context.order.empty(), "empty dependencies session invokes no callbacks");
+	}
+
 	for (std::size_t missing = 0; missing < 11; ++missing) {
 		TestContext context;
 		auto        dependencies = dependencies_for(context);
-		switch (missing) {
-			case 0:
-				dependencies.resolve_invoking_user = nullptr;
-				break;
-			case 1:
-				dependencies.resolve_editor = nullptr;
-				break;
-			case 2:
-				dependencies.resolve_config_path = nullptr;
-				break;
-			case 3:
-				dependencies.check_secure_config_path = nullptr;
-				break;
-			case 4:
-				dependencies.create_temp_copy = nullptr;
-				break;
-			case 5:
-				dependencies.run_editor = nullptr;
-				break;
-			case 6:
-				dependencies.read_temp_config_snapshot = nullptr;
-				break;
-			case 7:
-				dependencies.validate_config_content = nullptr;
-				break;
-			case 8:
-				dependencies.file_content_matches = nullptr;
-				break;
-			case 9:
-				dependencies.replace_config_content_atomically = nullptr;
-				break;
-			case 10:
-				dependencies.remove_if_exists = nullptr;
-				break;
-			default:
-				break;
-		}
+		remove_dependency(dependencies, missing);
+
+		const ConfigEditSession session(dependencies);
+		const auto result = session.run({.context = &context, .editor_ready = editor_ready});
+		ok &= expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
+		             "incomplete dependencies session reports unavailable dependencies");
+		ok &= expect(result.error.empty() && result.temp_path.empty() && result.editor.empty(),
+		             "incomplete dependencies result has no side effects");
+		ok &= expect(context.order.empty(), "incomplete dependencies session invokes no callbacks");
+		ok &= expect(context.editor_ready_calls == 0,
+		             "incomplete dependencies session skips ready callback");
+	}
+
+	for (std::size_t missing = 0; missing < 11; ++missing) {
+		TestContext context;
+		auto        dependencies = dependencies_for(context);
+		remove_dependency(dependencies, missing);
 		const auto result = run_config(context, dependencies);
 		ok &= expect(result.exit_code == 1 && result.output.empty(),
 		             "null dependency aborts silently");
