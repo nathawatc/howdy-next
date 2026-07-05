@@ -1,10 +1,10 @@
 # CI Container Rules
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-05
 
 ## Image Identity
 
-- Registry image: `codeberg.org/nathawat/howdy-next/ci-1`
+- Registry image: `codeberg.org/nathawat/howdy-next/ci-1:latest`
 - CI config must reference `codeberg.org/nathawat/howdy-next/ci-1:latest`.
 - Use `latest` tag for CI image. Re-push replaces previous image for that tag.
 

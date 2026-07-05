@@ -1,6 +1,6 @@
 # PAM Module Knowledge Base
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-05
 
 ## Scope
 
@@ -21,7 +21,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `src/tests/runtime_session_test.cpp` | Runtime staging, config, cleanup, one-shot tests |
 | `src/tests/prompt_coordinator_test.cpp` | Prompt, compare-process, cleanup, one-shot tests |
 | `src/tests/auth_flow_helpers_test.cpp` | Auth-flow helpers and policy-adjacent tests |
-| `main.hpp` | `ConfirmationType`, `Workaround`, `checkenv()` |
+| `main.hpp` | `ConfirmationType`, `Workaround` (`off`, `input`, `native`), `checkenv()` |
 | `optional_task.hpp` | Async task wrapper with timeout support |
 | `meson.build` | PAM build configuration |
 

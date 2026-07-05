@@ -1,6 +1,6 @@
 # Howdy Next
 
-Security-focused C++ rewrite of Howdy for facial-recognition authentication on Linux
+C++ rewrite of Howdy facial-recognition authentication on Linux
 
 ## Install from AUR
 
@@ -29,9 +29,9 @@ meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, yyjson, p
 ```
 
 > [!NOTE]
-> 
-> Atomic user model writes require `renameat2(..., RENAME_EXCHANGE)` support
-> from Linux kernel and filesystem containing configured user model directory.
+>
+> Atomic user-model writes require `renameat2(..., RENAME_EXCHANGE)` support
+> from Linux kernel and filesystem containing configured user-model directory.
 > Unsupported write configurations fail closed; clear/delete uses direct unlink.
 
 - Build: `meson setup build && ninja -C build`
@@ -48,7 +48,7 @@ See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ## CLI
 
-`howdy [-U user] [-y] command [argument]`
+`howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]`
 
 | Command         | Description           |
 | --------------- | --------------------- |

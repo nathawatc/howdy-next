@@ -1,6 +1,6 @@
 # Howdy Source Guidelines
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-05
 
 ## Scope
 
@@ -50,11 +50,11 @@ Shared runtime code under `howdy/src/` and headers under `howdy/include/`.
 ## Compare Runtime Boundaries
 
 - `common/compare_capture_session.hpp` owns `VideoCapture` lifecycle, open/read
-  results, timeout clock, frame numbering, capture stats, and exposure
-  restore.
+  results, timeout clock, frame numbering, black/dark/valid frame stats, and
+  exposure restore.
 - `common/compare_engine.hpp` owns grayscale preprocessing, CLAHE, brightness
-  classification, resize/rotation, prepared-frame validation, face detection,
-  embedding, and first accepted match selection.
+  classification, black-frame filtering, resize/rotation, prepared-frame
+  validation, face detection, embedding, and first accepted match selection.
 - `compare.cpp` stays composition layer: args, runtime config and user-model
   load, sandbox, `FaceModel` adapters, session/engine orchestration,
   timeout/output/report policy, `CompareExit` mapping, and outer exception

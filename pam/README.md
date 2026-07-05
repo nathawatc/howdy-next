@@ -17,10 +17,9 @@ Install `INIReader` package from your distro.
 
 ```sh
 meson setup build
-meson compile -C build
+ninja -C build
+meson test -C build --print-errorlogs
 ```
-
-`ninja -C build` may also replace `meson compile -C build`.
 
 ## Source Layout
 
@@ -65,11 +64,11 @@ PAM consumers that authenticate as regular user use installed
 `howdy-auth-helper` setuid helper to prepare temp root-controlled runtime copies
 of protected config and enrolled model before recognition.
 
-If lock-screen auth fails before recognition starts, verify helper has setuid
-bit:
+If lock-screen auth fails before recognition starts, verify installed helper
+mode with:
 
 ```sh
-ls -l $libdir/howdy/howdy-auth-helper
+find /usr -path '*/howdy/howdy-auth-helper' -exec ls -l {} +
 ```
 
 ## PAM Ordering
@@ -181,7 +180,7 @@ If Howdy does not start from lock screen, check:
 ```sh
 ls -ld /etc/howdy
 ls -l /etc/howdy/config.ini
-ls -l $libdir/howdy/howdy-auth-helper
+find /usr -path '*/howdy/howdy-auth-helper' -exec ls -l {} +
 journalctl -b --no-pager | grep -i howdy
 ```
 
