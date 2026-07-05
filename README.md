@@ -28,6 +28,12 @@ Dependencies:
 meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, yyjson, pam
 ```
 
+> [!NOTE]
+> 
+> Atomic user model writes require `renameat2(..., RENAME_EXCHANGE)` support
+> from Linux kernel and filesystem containing configured user model directory.
+> Unsupported write configurations fail closed; clear/delete uses direct unlink.
+
 - Build: `meson setup build && ninja -C build`
 - Install: `meson install -C build`
 - Test: `meson test -C build --print-errorlogs`

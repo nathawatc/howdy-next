@@ -20,17 +20,23 @@ namespace howdy::native {
 		UserModelStoreTransaction(UserModelStoreTransaction &&) noexcept = default;
 		auto operator=(UserModelStoreTransaction &&) noexcept
 		    -> UserModelStoreTransaction & = default;
+		~UserModelStoreTransaction();
 
 		[[nodiscard]] auto write_document(const user_model_codec::Document &document) const -> bool;
 		[[nodiscard]] auto remove_file() const -> bool;
 
 	private:
 		std::filesystem::path path_;
+		ScopedFileLock        namespace_lock_;
 		ScopedFileLock        lock_;
+		bool                  created_empty_file_ = false;
+		mutable bool          completed_          = false;
 
-		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock lock);
+		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock namespace_lock,
+		                          ScopedFileLock lock, bool created_empty_file);
 
 		[[nodiscard]] auto path() const -> const std::filesystem::path &;
+		[[nodiscard]] auto path_matches_locked_file() const -> bool;
 		[[nodiscard]] auto snapshot() const -> std::optional<UserModelFileSnapshot>;
 		[[nodiscard]] auto snapshot_matches(const UserModelFileSnapshot &expected) const
 		    -> std::optional<bool>;
@@ -55,6 +61,8 @@ namespace howdy::native {
 
 	class UserModelStore {
 	public:
+		UserModelStore() = default;
+
 		[[nodiscard]] auto begin_mutation(const std::string &user) const
 		    -> UserModelStoreMutationResult;
 		[[nodiscard]] auto lock_existing(const std::string &user) const
@@ -81,6 +89,10 @@ namespace howdy::native {
 		                                           const std::string           &expected_model,
 		                                           bool                         strict_shape) const
 		    -> user_model_codec::Document;
+		[[nodiscard]] auto load_document_from_fd(
+		    int fd, const std::filesystem::path &path, const std::string &expected_backend,
+		    const std::string &expected_metric, const std::string &expected_model,
+		    bool strict_shape, bool treat_empty_as_no_model) const -> user_model_codec::Document;
 		[[nodiscard]] auto inspect_regular_file_status(const std::filesystem::path &path,
 		                                               std::string                 *message) const
 		    -> UserModelStatus;

@@ -7,6 +7,7 @@
 #include "config/runtime_paths.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
+#include "storage/user_model_store_test_hooks.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -16,6 +17,9 @@
 #include <utility>
 
 #include <sys/stat.h>
+#include <sys/syscall.h>
+
+#include <linux/fs.h>
 
 namespace howdy::native {
 
@@ -23,6 +27,7 @@ namespace howdy::native {
 
 		constexpr mode_t kUserModelsDirMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 		constexpr mode_t kUserModelFileMode = S_IRUSR | S_IWUSR;
+		constexpr std::string_view kUserModelTempPrefix = ".howdy-user-model-";
 
 		auto failure(UserModelStatus status, std::string message) -> UserModelListResult {
 			return UserModelListResult{
@@ -72,19 +77,222 @@ namespace howdy::native {
 			       left.ctime_nanosecs == right.ctime_nanosecs;
 		}
 
-		auto write_models(const std::filesystem::path      &path,
-		                  const user_model_codec::Document &document) -> bool {
+		auto same_file_identity(const struct stat &left, const struct stat &right) -> bool {
+			return left.st_dev == right.st_dev && left.st_ino == right.st_ino;
+		}
+
+		auto path_identifies_fd(const std::filesystem::path &path, int fd) -> bool {
+			struct stat fd_stat{};
+			struct stat path_stat{};
+			return fd >= 0 && fstat(fd, &fd_stat) == 0 && lstat(path.c_str(), &path_stat) == 0 &&
+			       same_file_identity(fd_stat, path_stat);
+		}
+
+		auto exchange_paths(const std::filesystem::path &left, const std::filesystem::path &right)
+		    -> bool {
+#ifdef SYS_renameat2
+			while (syscall(SYS_renameat2, AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(),
+			               RENAME_EXCHANGE) != 0) {
+				if (errno != EINTR) {
+					return false;
+				}
+			}
+			return true;
+#else
+			errno = ENOSYS;
+			return false;
+#endif
+		}
+
+		auto cleanup_stale_write_artifacts(const std::filesystem::path &path) -> bool {
+			std::error_code ec;
+			for (std::filesystem::directory_iterator entries(path.parent_path(), ec), end;
+			     !ec && entries != end; entries.increment(ec)) {
+				const auto filename = entries->path().filename().string();
+				if (filename.starts_with(kUserModelTempPrefix) &&
+				    unlink(entries->path().c_str()) != 0) {
+					return false;
+				}
+			}
+			return !ec;
+		}
+
+		auto write_models_atomically(const std::filesystem::path      &path,
+		                             const user_model_codec::Document &document, int locked_fd)
+		    -> bool {
 			const auto serialized = user_model_codec::serialize_document(document);
-			return serialized.has_value() &&
-			       write_atomic_file(path, *serialized, kUserModelFileMode);
+			if (!serialized.has_value() || !cleanup_stale_write_artifacts(path)) {
+				return false;
+			}
+			auto staged = prepare_staged_file(path, kUserModelTempPrefix, kUserModelFileMode);
+			if (!staged.has_value()) {
+				return false;
+			}
+			auto &hooks = user_model_store_test_hooks::current();
+			if (hooks.fail_write || !write_all_to_fd(staged->fd.get(), *serialized)) {
+				cleanup_staged_file(*staged);
+				return false;
+			}
+			if (hooks.fail_fsync || fsync(staged->fd.get()) != 0) {
+				cleanup_staged_file(*staged);
+				return false;
+			}
+			if (hooks.before_write_commit) {
+				hooks.before_write_commit(path);
+			}
+			if (!path_identifies_fd(path, locked_fd)) {
+				cleanup_staged_file(*staged);
+				return false;
+			}
+			if (hooks.after_write_identity_check) {
+				hooks.after_write_identity_check(path);
+			}
+			if (!staged->fd.close() || !exchange_paths(staged->path, path)) {
+				cleanup_staged_file(*staged);
+				return false;
+			}
+			if (!path_identifies_fd(staged->path, locked_fd)) {
+				if (exchange_paths(staged->path, path)) {
+					cleanup_staged_file(*staged);
+				}
+				return false;
+			}
+
+			// Exchange commits the canonical write; old-file removal is cleanup only.
+			std::error_code ec;
+			if (!hooks.fail_write_cleanup) {
+				std::filesystem::remove(staged->path, ec);
+			}
+			sync_parent_directory(path);
+			staged->path.clear();
+			return true;
+		}
+
+		auto remove_locked_file(const std::filesystem::path &path, int fd) -> bool {
+			if (!path_identifies_fd(path, fd)) {
+				return false;
+			}
+			auto &hooks = user_model_store_test_hooks::current();
+			if (hooks.before_delete_commit) {
+				hooks.before_delete_commit(path);
+			}
+
+			std::error_code ec;
+			if (hooks.fail_delete_unlink) {
+				ec = std::make_error_code(std::errc::permission_denied);
+			} else {
+				std::filesystem::remove(path, ec);
+			}
+			if (ec) {
+				return false;
+			}
+			sync_parent_directory(path);
+			return true;
+		}
+
+		struct LockedUserModelFile {
+			ScopedFileLock namespace_lock;
+			ScopedFileLock lock;
+			bool           created_empty_file = false;
+		};
+
+		auto lock_model_namespace(const std::filesystem::path &path)
+		    -> std::optional<ScopedFileLock> {
+			// Serializes cooperating UserModelStore writers only. Parent-directory write
+			// permission still allows uncooperative actors to rename or unlink entries.
+			const int fd =
+			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+			if (fd < 0) {
+				return std::nullopt;
+			}
+			while (flock(fd, LOCK_EX) != 0) {
+				if (errno != EINTR) {
+					close(fd);
+					return std::nullopt;
+				}
+			}
+
+			ScopedFileLock lock;
+			lock.fd   = fd;
+			lock.path = path.parent_path();
+			return lock;
+		}
+
+		auto open_and_lock_model_file(const std::filesystem::path &path, bool create_if_missing)
+		    -> std::optional<LockedUserModelFile> {
+			auto namespace_lock = lock_model_namespace(path);
+			if (!namespace_lock.has_value()) {
+				return std::nullopt;
+			}
+			int  fd                 = open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+			bool created_empty_file = false;
+			if (fd < 0 && errno == ENOENT && create_if_missing) {
+				fd = open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+				          kUserModelFileMode);
+				created_empty_file = fd >= 0;
+			}
+			if (fd < 0) {
+				return std::nullopt;
+			}
+			struct stat opened_file{};
+			if (fstat(fd, &opened_file) != 0 || !opened_model_file_is_secure(opened_file)) {
+				close(fd);
+				return std::nullopt;
+			}
+			while (flock(fd, LOCK_EX) != 0) {
+				if (errno != EINTR) {
+					close(fd);
+					return std::nullopt;
+				}
+			}
+
+			ScopedFileLock lock;
+			lock.fd   = fd;
+			lock.path = path;
+			return LockedUserModelFile{.namespace_lock     = std::move(*namespace_lock),
+			                           .lock               = std::move(lock),
+			                           .created_empty_file = created_empty_file};
 		}
 
 	}  // namespace
 
+	namespace user_model_store_test_hooks {
+
+		auto current() -> Hooks & {
+			static Hooks hooks;
+			return hooks;
+		}
+
+		ScopedHooks::ScopedHooks(Hooks hooks)
+		    : previous_(std::move(current())) {
+			current() = std::move(hooks);
+		}
+
+		ScopedHooks::~ScopedHooks() {
+			current() = std::move(previous_);
+		}
+
+	}  // namespace user_model_store_test_hooks
+
 	UserModelStoreTransaction::UserModelStoreTransaction(std::filesystem::path path,
-	                                                     ScopedFileLock        lock)
+	                                                     ScopedFileLock        namespace_lock,
+	                                                     ScopedFileLock        lock,
+	                                                     bool                  created_empty_file)
 	    : path_(std::move(path))
-	    , lock_(std::move(lock)) {}
+	    , namespace_lock_(std::move(namespace_lock))
+	    , lock_(std::move(lock))
+	    , created_empty_file_(created_empty_file) {}
+
+	UserModelStoreTransaction::~UserModelStoreTransaction() {
+		if (!created_empty_file_ || completed_ || !path_matches_locked_file()) {
+			return;
+		}
+		struct stat opened_file{};
+		if (fstat(lock_.fd, &opened_file) != 0 || opened_file.st_size != 0) {
+			return;
+		}
+		remove_locked_file(path_, lock_.fd);
+	}
 
 	auto UserModelStoreTransaction::path() const -> const std::filesystem::path & {
 		return path_;
@@ -103,13 +311,25 @@ namespace howdy::native {
 		return snapshots_match(*current, expected);
 	}
 
+	auto UserModelStoreTransaction::path_matches_locked_file() const -> bool {
+		return path_identifies_fd(path_, lock_.fd);
+	}
+
 	auto UserModelStoreTransaction::write_document(const user_model_codec::Document &document) const
 	    -> bool {
-		return write_models(path_, document);
+		if (!path_matches_locked_file() || !write_models_atomically(path_, document, lock_.fd)) {
+			return false;
+		}
+		completed_ = true;
+		return true;
 	}
 
 	auto UserModelStoreTransaction::remove_file() const -> bool {
-		return remove_file_and_sync(path_);
+		if (!remove_locked_file(path_, lock_.fd)) {
+			return false;
+		}
+		completed_ = true;
+		return true;
 	}
 
 	auto UserModelStore::resolve(const std::string &user, bool create_directory,
@@ -202,6 +422,61 @@ namespace howdy::native {
 		return UserModelStatus::kNoModel;
 	}
 
+	auto UserModelStore::load_document_from_fd(int fd, const std::filesystem::path &path,
+	                                           const std::string &expected_backend,
+	                                           const std::string &expected_metric,
+	                                           const std::string &expected_model, bool strict_shape,
+	                                           bool treat_empty_as_no_model) const
+	    -> user_model_codec::Document {
+		struct stat opened_file{};
+		if (fd < 0 || fstat(fd, &opened_file) != 0) {
+			return user_model_codec::Document{
+			    failure(UserModelStatus::kParseError,
+			            "Failed to inspect opened user model file: " + path.string()),
+			};
+		}
+		if (!opened_model_file_is_secure(opened_file)) {
+			return user_model_codec::Document{
+			    failure(UserModelStatus::kInsecurePath,
+			            "Opened user model file failed security validation: " + path.string()),
+			};
+		}
+		if (opened_file.st_size == 0 && treat_empty_as_no_model) {
+			return user_model_codec::Document(
+			    UserModelListResult{.status = UserModelStatus::kNoModel});
+		}
+		if (opened_file.st_size < 0 ||
+		    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
+			return user_model_codec::Document(
+			    failure(UserModelStatus::kOversized,
+			            "User model file is too large or unreadable: " + path.string()));
+		}
+		if (lseek(fd, 0, SEEK_SET) < 0) {
+			return user_model_codec::Document{
+			    failure(UserModelStatus::kParseError,
+			            "Failed to read user model file: " + path.string()),
+			};
+		}
+
+		const auto content =
+		    read_fd_to_string_bounded(fd, user_model_limits::kMaxUserModelFileBytes + 1);
+		if (content.read_error) {
+			return user_model_codec::Document{
+			    failure(UserModelStatus::kParseError,
+			            "Failed to read user model file: " + path.string()),
+			};
+		}
+		if (content.hit_limit) {
+			return user_model_codec::Document{
+			    failure(UserModelStatus::kOversized,
+			            "User model file is too large or unreadable: " + path.string()),
+			};
+		}
+
+		return user_model_codec::decode_document(content.output, expected_backend, expected_metric,
+		                                         expected_model, strict_shape);
+	}
+
 	auto UserModelStore::load_document_from_path(const std::filesystem::path &path,
 	                                             const std::string           &expected_backend,
 	                                             const std::string           &expected_metric,
@@ -219,43 +494,8 @@ namespace howdy::native {
 			            "Failed to open user model file: " + path.string()),
 			};
 		}
-		struct stat opened_file{};
-		if (fstat(input.get(), &opened_file) != 0) {
-			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            "Failed to inspect opened user model file: " + path.string()),
-			};
-		}
-		if (!opened_model_file_is_secure(opened_file)) {
-			return user_model_codec::Document{
-			    failure(UserModelStatus::kInsecurePath,
-			            "Opened user model file failed security validation: " + path.string()),
-			};
-		}
-		if (opened_file.st_size < 0 ||
-		    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
-			return user_model_codec::Document(
-			    failure(UserModelStatus::kOversized,
-			            "User model file is too large or unreadable: " + path.string()));
-		}
-
-		const auto content =
-		    read_fd_to_string_bounded(input.get(), user_model_limits::kMaxUserModelFileBytes + 1);
-		if (content.read_error) {
-			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            "Failed to read user model file: " + path.string()),
-			};
-		}
-		if (content.hit_limit) {
-			return user_model_codec::Document{
-			    failure(UserModelStatus::kOversized,
-			            "User model file is too large or unreadable: " + path.string()),
-			};
-		}
-
-		return user_model_codec::decode_document(content.output, expected_backend, expected_metric,
-		                                         expected_model, strict_shape);
+		return load_document_from_fd(input.get(), path, expected_backend, expected_metric,
+		                             expected_model, strict_shape, false);
 	}
 
 	auto UserModelStore::load_document(const std::string &user, const std::string &expected_backend,
@@ -303,13 +543,18 @@ namespace howdy::native {
 			        failure(path_result.status, path_result.error_message)),
 			};
 		}
-
-		auto lock = acquire_file_lock(path_result.path);
-		if (!lock.has_value()) {
+		if (user_model_store_test_hooks::current().before_lock) {
+			user_model_store_test_hooks::current().before_lock(path_result.path);
+		}
+		auto locked_file = open_and_lock_model_file(path_result.path, true);
+		if (!locked_file.has_value()) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
 			        failure(UserModelStatus::kLockFailed, "Failed to lock model file")),
 			};
+		}
+		if (user_model_store_test_hooks::current().after_lock_before_revalidate) {
+			user_model_store_test_hooks::current().after_lock_before_revalidate(path_result.path);
 		}
 
 		const auto secured_path = resolve(user, true, default_secure_owner_uid());
@@ -319,10 +564,20 @@ namespace howdy::native {
 			        failure(secured_path.status, secured_path.error_message)),
 			};
 		}
-		auto document = load_document_from_path(path_result.path, {}, {}, {}, true);
+		if (!path_identifies_fd(path_result.path, locked_file->lock.fd)) {
+			return UserModelStoreMutationResult{
+			    .document = user_model_codec::Document(
+			        failure(UserModelStatus::kModelChanged,
+			                "User model file changed, please rerun the command")),
+			};
+		}
+		auto document = load_document_from_fd(locked_file->lock.fd, path_result.path, {}, {}, {},
+		                                      true, locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
-		    .transaction = UserModelStoreTransaction(path_result.path, std::move(*lock)),
-		    .document    = std::move(document),
+		    .transaction = UserModelStoreTransaction(
+		        path_result.path, std::move(locked_file->namespace_lock),
+		        std::move(locked_file->lock), locked_file->created_empty_file),
+		    .document = std::move(document),
 		};
 	}
 
@@ -343,13 +598,18 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
-
-		auto lock = acquire_file_lock(path_result.path);
-		if (!lock.has_value()) {
+		if (user_model_store_test_hooks::current().before_lock) {
+			user_model_store_test_hooks::current().before_lock(path_result.path);
+		}
+		auto locked_file = open_and_lock_model_file(path_result.path, false);
+		if (!locked_file.has_value()) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kLockFailed,
 			    .error_message = "Failed to lock model file",
 			};
+		}
+		if (user_model_store_test_hooks::current().after_lock_before_revalidate) {
+			user_model_store_test_hooks::current().after_lock_before_revalidate(path_result.path);
 		}
 
 		const auto secured_path = resolve(user, false, default_secure_owner_uid());
@@ -368,9 +628,17 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
+		if (!path_identifies_fd(path_result.path, locked_file->lock.fd)) {
+			return UserModelStoreTransactionResult{
+			    .status        = UserModelStatus::kModelChanged,
+			    .error_message = "User model file changed, please rerun the command",
+			};
+		}
 		return UserModelStoreTransactionResult{
 		    .status      = UserModelStatus::kOk,
-		    .transaction = UserModelStoreTransaction(path_result.path, std::move(*lock)),
+		    .transaction = UserModelStoreTransaction(
+		        path_result.path, std::move(locked_file->namespace_lock),
+		        std::move(locked_file->lock), locked_file->created_empty_file),
 		};
 	}
 
