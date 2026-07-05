@@ -60,10 +60,10 @@ Format C/C++ changes with:
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
-CI does not run `clang-tidy`; run it before submit:
+CI does not run `clang-tidy`; do not use `run-clang-tidy`; use `clang-tidy-diff.py` only:
 
 ```bash
-run-clang-tidy -p build -quiet -hide-progress
+git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py -p1 -path build -quiet -hide-progress
 ```
 
 ## Testing
