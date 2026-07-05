@@ -1,5 +1,7 @@
 #include "cli/test_cli.hpp"
 #include "cli/test_cli_internal.hpp"
+#include "cli/test_preview_renderer.hpp"
+#include "cli/test_preview_session.hpp"
 #include "common/invoking_user.hpp"
 #include "common/invoking_user_env.hpp"
 #include "common/preview_engine.hpp"
@@ -8,10 +10,8 @@
 #include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
 
-#include <algorithm>
 #include <chrono>
 #include <cstdlib>
-#include <cstring>
 #include <grp.h>
 #include <iostream>
 #include <optional>
@@ -19,15 +19,12 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
-
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+#include <vector>
 
 namespace {
 
-	constexpr int  kExitOk          = 0;
-	constexpr int  kExitCameraError = 1;
-	constexpr auto kWindowName      = "Howdy Test";
+	constexpr int kExitOk          = 0;
+	constexpr int kExitCameraError = 1;
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -37,45 +34,37 @@ namespace {
 	};
 
 	struct TestProductionContext {
-		std::optional<howdy::native::FaceModel>    face_model;
-		std::optional<howdy::native::VideoCapture> capture;
-		howdy::native::UserModelLoadResult         loaded_models;
-		cv::Mat                                    prefetched_frame;
-		cv::Mat                                    prefetched_gray_frame;
-		bool                                       gui_initialized = false;
+		std::optional<howdy::native::FaceModel>               face_model;
+		std::optional<howdy::native::VideoCapture>            capture;
+		std::optional<test_cli_internal::TestPreviewRenderer> renderer;
+		howdy::native::UserModelLoadResult                    loaded_models;
+		cv::Mat                                               prefetched_gray_frame;
+		int                                                   exposure = -1;
 	};
 
 	struct PreviewCleanup {
-		TestProductionContext &context;
+		std::optional<howdy::native::VideoCapture>   &capture;
+		test_cli_internal::TestPreviewRendererCleanup renderer_cleanup;
+
+		PreviewCleanup(std::optional<test_cli_internal::TestPreviewRenderer> &renderer,
+		               std::optional<howdy::native::VideoCapture>            &preview_capture)
+		    : capture(preview_capture)
+		    , renderer_cleanup(renderer) {}
 
 		~PreviewCleanup() noexcept {
 			try {
-				if (context.gui_initialized) {
-					cv::destroyAllWindows();
-				}
+				renderer_cleanup.cleanup();
 			} catch (...) {  // NOLINT(bugprone-empty-catch)
 			}
 
 			try {
-				if (context.capture.has_value()) {
-					context.capture->release();
+				if (capture.has_value()) {
+					capture->release();
 				}
 			} catch (...) {  // NOLINT(bugprone-empty-catch)
 			}
 		}
 	};
-
-	bool g_slow_mode = false;
-
-	void mouse_callback(int event, int x, int y, int flags, void *userdata) {
-		(void)x;
-		(void)y;
-		(void)flags;
-		(void)userdata;
-		if (event == cv::EVENT_LBUTTONDOWN) {
-			g_slow_mode = !g_slow_mode;
-		}
-	}
 
 	auto parse_args(int argc, char **argv) -> TestArgs {
 		TestArgs args;
@@ -92,11 +81,6 @@ namespace {
 		}
 
 		return args;
-	}
-
-	void print_text(cv::Mat &overlay, int line_number, int height, const std::string &text) {
-		cv::putText(overlay, text, cv::Point(10, height - 10 - (10 * line_number)),
-		            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
 	}
 
 	auto prepare_preview_frame(void *context, const cv::Mat &frame) -> cv::Mat {
@@ -219,6 +203,9 @@ namespace {
 			}
 		}
 
+		test_cli_internal::replace_test_preview_renderer(
+		    production_context->renderer, config.video,
+		    production_context->loaded_models.stored.models);
 		return test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
@@ -253,11 +240,27 @@ namespace {
 		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return false;
 		}
-		if (!production_context->capture->read(production_context->prefetched_frame,
-		                                       &production_context->prefetched_gray_frame)) {
+		cv::Mat frame;
+		return production_context->capture->read(frame, &production_context->prefetched_gray_frame);
+	}
+
+	auto read_preview_gray_frame_dependency(void *context, cv::Mat &gray_frame) -> bool {
+		auto *production_context = static_cast<TestProductionContext *>(context);
+		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return false;
 		}
-		return true;
+		cv::Mat frame;
+		return production_context->capture->read(frame, &gray_frame);
+	}
+
+	void restore_preview_exposure_dependency(void *context) {
+		auto *production_context = static_cast<TestProductionContext *>(context);
+		if (production_context == nullptr || !production_context->capture.has_value()) {
+			return;
+		}
+		(void)production_context->capture->set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
+		(void)production_context->capture->set(cv::CAP_PROP_EXPOSURE,
+		                                       static_cast<double>(production_context->exposure));
 	}
 
 	auto switch_gui_user_dependency(void *context) -> bool {
@@ -267,11 +270,31 @@ namespace {
 
 	void initialize_gui_dependency(void *context) {
 		auto *production_context = static_cast<TestProductionContext *>(context);
-		if (production_context != nullptr) {
-			production_context->gui_initialized = true;
+		if (production_context != nullptr && production_context->renderer.has_value()) {
+			production_context->renderer->initialize();
 		}
-		cv::namedWindow(kWindowName);
-		cv::setMouseCallback(kWindowName, mouse_callback);
+	}
+
+	auto present_preview_frame_dependency(void                                    *context,
+	                                      const howdy::native::PreviewFrameResult &frame_result,
+	                                      const test_cli_internal::TestPreviewFrameStats &stats)
+	    -> bool {
+		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->present(frame_result,
+		                                                                               stats);
+	}
+
+	auto preview_slow_mode_dependency(void *context) -> bool {
+		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->slow_mode();
+	}
+
+	auto preview_now_dependency(void *context) -> std::chrono::steady_clock::time_point {
+		(void)context;
+		return std::chrono::steady_clock::now();
+	}
+
+	void preview_sleep_dependency(void *context, std::chrono::milliseconds duration) {
+		(void)context;
+		std::this_thread::sleep_for(duration);
 	}
 
 	auto run_preview_dependency(void *context, const howdy::native::RuntimeConfig &config,
@@ -284,7 +307,7 @@ namespace {
 			    .error_message = "Face model was not initialized",
 			};
 		}
-		PreviewCleanup cleanup{*production_context};
+		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
 
 		auto preflight_result = test_cli_internal::run_preview_preflight(
 		    config, user, device_path,
@@ -300,12 +323,17 @@ namespace {
 		if (preflight_result.status != test_cli_internal::TestPreviewStatus::kOk) {
 			return preflight_result;
 		}
+		if (!production_context->face_model.has_value() ||
+		    !production_context->capture.has_value() || !production_context->renderer.has_value()) {
+			return {
+			    .status        = test_cli_internal::TestPreviewStatus::kFaceModelError,
+			    .error_message = "Test preview was not initialized",
+			};
+		}
 
-		auto                        &face_model     = *production_context->face_model;
-		auto                        &loaded_models  = production_context->loaded_models;
-		auto                        &capture        = *production_context->capture;
-		const int                    exposure       = config.video.exposure;
-		bool                         has_prefetched = true;
+		production_context->exposure               = config.video.exposure;
+		auto                        &face_model    = *production_context->face_model;
+		auto                        &loaded_models = production_context->loaded_models;
 		howdy::native::PreviewEngine preview_engine(
 		    config.video,
 		    {
@@ -318,170 +346,31 @@ namespace {
 		    loaded_models.stored.encodings, loaded_models.stored.models.size(),
 		    loaded_models.status == howdy::native::UserModelStatus::kOk);
 
-		int                       total_frames  = 0;
-		int                       sec_frames    = 0;
-		int                       fps           = 0;
-		auto                      second_anchor = std::chrono::steady_clock::now();
-		std::chrono::milliseconds inference_time{0};
-
-		while (true) {
-			const auto frame_start = std::chrono::steady_clock::now();
-			total_frames++;
-			sec_frames++;
-
-			if (std::chrono::duration_cast<std::chrono::seconds>(frame_start - second_anchor)
-			        .count() >= 1) {
-				fps           = sec_frames;
-				sec_frames    = 0;
-				second_anchor = frame_start;
-			}
-
-			cv::Mat frame;
-			cv::Mat gray_frame;
-			if (has_prefetched) {
-				frame          = production_context->prefetched_frame;
-				gray_frame     = production_context->prefetched_gray_frame;
-				has_prefetched = false;
-			} else if (!capture.read(frame, &gray_frame)) {
-				return test_cli_internal::TestPreviewResult{
-				    .status = test_cli_internal::TestPreviewStatus::kCameraReadError,
-				};
-			}
-
-			auto frame_result        = preview_engine.process_gray_frame(std::move(gray_frame));
-			inference_time           = frame_result.inference_time;
-			const auto frame_failure = test_cli_internal::map_preview_frame_failure(frame_result);
-			if (frame_failure.status != test_cli_internal::TestPreviewStatus::kOk) {
-				return frame_failure;
-			}
-			gray_frame = frame_result.gray_frame;
-
-			cv::Mat overlay;
-			cv::cvtColor(gray_frame.clone(), overlay, cv::COLOR_GRAY2BGR);
-			const int height = gray_frame.rows;
-			const int width  = gray_frame.cols;
-
-			const auto &brightness = frame_result.brightness;
-			for (std::size_t index = 0; index < brightness.bins_percent.size(); ++index) {
-				const float     value_perc = brightness.bins_percent[index];
-				const int       bin_offset = 10 * static_cast<int>(index);
-				const cv::Point p1(20 + bin_offset, 10);
-				const cv::Point p2(10 + bin_offset, static_cast<int>((value_perc / 2.0F) + 10.0F));
-				cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
-			}
-
-			print_text(overlay, 0, height,
-			           "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
-			print_text(overlay, 1, height, "FPS: " + std::to_string(fps));
-			print_text(overlay, 2, height, "FRAMES: " + std::to_string(total_frames));
-			print_text(overlay, 3, height,
-			           "INFERENCE: " + std::to_string(inference_time.count()) + "ms");
-			print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
-			print_text(overlay, 5, height,
-			           std::string("CLAHE: ") + (config.video.clahe_enabled ? "on" : "off"));
-
-			if (g_slow_mode) {
-				cv::putText(overlay, "SLOW MODE", cv::Point(width - 66, height - 10),
-				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
-			}
-
-			const bool dark_frame =
-			    frame_result.status == howdy::native::PreviewFrameStatus::kBlackFrame ||
-			    frame_result.status == howdy::native::PreviewFrameStatus::kTooDark;
-			if (dark_frame) {
-				cv::putText(overlay, "DARK FRAME", cv::Point(width - 68, 16),
-				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 0, 255), 0, cv::LINE_AA);
-			} else {
-				cv::putText(overlay, "SCAN FRAME", cv::Point(width - 68, 16),
-				            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
-				for (const auto &face_result : frame_result.faces) {
-					const auto &face = face_result.detection;
-					cv::Scalar  color(0, 0, 230);
-					const int   x = static_cast<int>(face.box.x);
-					const int   y = static_cast<int>(face.box.y);
-					const int   w = static_cast<int>(face.box.width);
-					const int   h = static_cast<int>(face.box.height);
-
-					if (face_result.status == howdy::native::PreviewFaceStatus::kEncodingFailed) {
-						cv::putText(overlay, "encoding failed", cv::Point(x, std::max(0, y - 8)),
-						            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-					} else if (face_result.matching_attempted) {
-						const auto &face_match = face_result.match;
-						std::string face_text;
-						if (!face_match.accepted) {
-							face_text = "no match (" + cv::format("%.3f", face_match.score) + ")";
-						} else {
-							color = cv::Scalar(0, 230, 0);
-							const auto &model =
-							    loaded_models.stored
-							        .models[static_cast<std::size_t>(face_match.index)];
-							face_text = model.label +
-							            " (score: " + cv::format("%.3f", face_match.score) + ")";
-						}
-
-						cv::putText(overlay, face_text, cv::Point(x, std::max(0, y - 8)),
-						            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-					}
-
-					cv::rectangle(overlay, cv::Rect(x, y, w, h), color, 2);
-					cv::putText(overlay, cv::format("%.2f", face.confidence),
-					            cv::Point(x, std::min(height - 4, y + h + 12)),
-					            cv::FONT_HERSHEY_SIMPLEX, 0.3, color, 0, cv::LINE_AA);
-					for (const auto &point : face.landmarks) {
-						cv::circle(overlay,
-						           cv::Point(static_cast<int>(point.x), static_cast<int>(point.y)),
-						           2, cv::Scalar(0, 255, 255), -1);
-					}
-				}
-			}
-
-			cv::Mat display_frame;
-			cv::cvtColor(gray_frame, display_frame, cv::COLOR_GRAY2BGR);
-			cv::addWeighted(overlay, 0.65, display_frame, 0.35, 0, display_frame);
-			cv::imshow(kWindowName, display_frame);
-
-			if (cv::waitKey(1) != -1) {
-				break;
-			}
-
-			const auto frame_time = std::chrono::duration_cast<std::chrono::milliseconds>(
-			                            std::chrono::steady_clock::now() - frame_start)
-			                            .count();
-			if (g_slow_mode) {
-				const auto sleep_ms = std::max(0LL, 500LL - frame_time);
-				std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
-			}
-
-			if (exposure != -1) {
-				capture.set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-				capture.set(cv::CAP_PROP_EXPOSURE, static_cast<double>(exposure));
-			}
-		}
-		return test_cli_internal::TestPreviewResult{.status =
-		                                                test_cli_internal::TestPreviewStatus::kOk};
+		test_cli_internal::TestPreviewSession preview_session(
+		    config.video, preview_engine,
+		    {
+		        .capture_context  = production_context,
+		        .read_gray_frame  = read_preview_gray_frame_dependency,
+		        .restore_exposure = restore_preview_exposure_dependency,
+		        .renderer_context = &*production_context->renderer,
+		        .present          = present_preview_frame_dependency,
+		        .slow_mode        = preview_slow_mode_dependency,
+		        .clock_context    = nullptr,
+		        .now              = preview_now_dependency,
+		        .sleep_context    = nullptr,
+		        .sleep            = preview_sleep_dependency,
+		    });
+		return test_cli_internal::run_preview_session_with_retained_frame(
+		    preview_session, production_context->prefetched_gray_frame);
 	}
 
 }  // namespace
 
-auto howdy::native::test_cli_internal::map_preview_frame_failure(
-    const howdy::native::PreviewFrameResult &result) -> TestPreviewResult {
-	switch (result.status) {
-		case howdy::native::PreviewFrameStatus::kInvalidFrame:
-			return {
-			    .status        = TestPreviewStatus::kCameraReadError,
-			    .error_message = result.error_message,
-			};
-		case howdy::native::PreviewFrameStatus::kDetectionFailed:
-		case howdy::native::PreviewFrameStatus::kEncodingFailed:
-		case howdy::native::PreviewFrameStatus::kInvalidMatchResult:
-		case howdy::native::PreviewFrameStatus::kInvalidDependencies:
-			return {
-			    .status        = TestPreviewStatus::kFaceModelError,
-			    .error_message = result.error_message,
-			};
-		default:
-			return {.status = TestPreviewStatus::kOk};
-	}
+void howdy::native::test_cli_internal::run_with_preview_cleanup(
+    std::optional<TestPreviewRenderer> &renderer, void *context, PreviewCleanupBodyFn body) {
+	std::optional<howdy::native::VideoCapture> capture;
+	PreviewCleanup                             cleanup(renderer, capture);
+	body(context);
 }
 
 auto howdy::native::test_cli_internal::run_preview_preflight(

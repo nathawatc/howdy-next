@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -12,6 +13,7 @@ namespace howdy::native {
 }
 
 namespace howdy::native::test_cli_internal {
+	class TestPreviewRenderer;
 
 	enum class TestPreviewStatus {
 		kOk,
@@ -39,9 +41,10 @@ namespace howdy::native::test_cli_internal {
 	using HasGraphicalDisplayFn = bool (*)(void *context);
 	using OpenCameraFn          = TestPreflightOperationResult (*)(
 	    void *context, const howdy::native::RuntimeConfig &config, const std::string &device_path);
-	using ReadCameraFn    = bool (*)(void *context);
-	using SwitchGuiUserFn = bool (*)(void *context);
-	using InitializeGuiFn = void (*)(void *context);
+	using ReadCameraFn         = bool (*)(void *context);
+	using SwitchGuiUserFn      = bool (*)(void *context);
+	using InitializeGuiFn      = void (*)(void *context);
+	using PreviewCleanupBodyFn = void (*)(void *context);
 
 	struct TestPreviewPreflightDependencies {
 		void                 *context               = nullptr;
@@ -72,6 +75,8 @@ namespace howdy::native::test_cli_internal {
 	                           const std::string                      &device_path,
 	                           const TestPreviewPreflightDependencies &dependencies)
 	    -> TestPreviewResult;
+	void run_with_preview_cleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
+	                              PreviewCleanupBodyFn body);
 
 	auto has_graphical_display_environment(std::string_view display,
 	                                       std::string_view wayland_display,
