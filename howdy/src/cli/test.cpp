@@ -413,7 +413,7 @@ auto howdy::native::test_cli_internal::run_preview_preflight(
 	}
 
 	std::cout << "\nOpening a window with a test feed\n\n";
-	std::cout << "Press ctrl+C in this terminal to quit\n";
+	std::cout << "Press Ctrl+C here or Q in preview window to quit\n";
 	std::cout << "Click on the image to enable or disable slow mode\n\n";
 
 	if (!dependencies.switch_gui_user(dependencies.context)) {
