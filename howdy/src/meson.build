@@ -91,6 +91,7 @@ native_cpp_sources = [
 	'recorders/video_capture.cpp',
 	'storage/user_model_codec.cpp',
 	'storage/user_model_readiness.cpp',
+	'storage/user_model_store.cpp',
 	'storage/user_models.cpp',
 ]
 

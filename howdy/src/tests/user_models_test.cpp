@@ -240,6 +240,11 @@ auto main() -> int {
 		             "missing model directory returns kNoModelDirectory");
 	}
 	{
+		const auto result = howdy::native::load_user_models("alice", "opencv_dnn_sface");
+		ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
+		             "load remaps missing model directory to kNoModel");
+	}
+	{
 		const auto result = howdy::native::inspect_user_model_file("alice");
 		ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
 		             "inspect returns kNoModelDirectory");
@@ -479,6 +484,11 @@ auto main() -> int {
 		ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 		             "lifecycle listing rejects wrong top-level JSON shape");
 	}
+	{
+		const auto result = howdy::native::load_user_models("alice", backend);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+		             "load remaps invalid-shape model JSON to kParseError");
+	}
 
 	ok &= expect(
 	    write_file(
@@ -615,6 +625,11 @@ auto main() -> int {
 		const auto result = howdy::native::list_user_model_entries("alice", backend);
 		ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
 		             "lifecycle listing rejects oversized model JSON");
+	}
+	{
+		const auto result = howdy::native::load_user_models("alice", backend);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
+		             "load remaps oversized model JSON to kParseError");
 	}
 
 	fs::remove(model_path, ec);
@@ -986,6 +1001,30 @@ auto main() -> int {
 		             "clear removes all model entries");
 		ok &= expect(!fs::exists(model_path), "clear deletes model file");
 	}
+
+	const auto created_models_dir = temp_root / "created-store-models";
+	fs::remove_all(created_models_dir, ec);
+	ec.clear();
+	setenv("HOWDY_USER_MODELS_DIR", created_models_dir.c_str(), 1);
+	{
+		const auto result = howdy::native::append_user_model_entry("created-user", first_entry);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
+		             "append creates missing secure models directory");
+		struct stat dir_stat{};
+		struct stat file_stat{};
+		const auto  created_model_path = created_models_dir / "created-user.dat";
+		ok &= expect(stat(created_models_dir.c_str(), &dir_stat) == 0,
+		             "stat append-created models directory");
+		ok &= expect(stat(created_model_path.c_str(), &file_stat) == 0,
+		             "stat append-created model file");
+		ok &= expect((dir_stat.st_mode & 0777) == 0750,
+		             "append-created models directory uses 0750 mode");
+		ok &=
+		    expect((file_stat.st_mode & 0777) == 0600, "append-created model file uses 0600 mode");
+	}
+	fs::remove_all(created_models_dir, ec);
+	ec.clear();
+	setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
 	const auto lock_path = fs::path(model_path.string() + ".lock");
 	fs::remove(lock_path, ec);
