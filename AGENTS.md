@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-05
 
 ## Scope
 
@@ -18,8 +18,8 @@ Use Meson + Ninja; no CMake.
 
 ```bash
 meson setup build
-ninja -C build
-meson test -C build --print-errorlogs
+ninja -C build --quiet
+meson test -C build -q --print-errorlogs
 ```
 
 `meson setup build` configures build dir. `ninja -C build` builds unified
@@ -63,7 +63,7 @@ find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name
 CI does not run `clang-tidy`; run it before submit:
 
 ```bash
-run-clang-tidy -p build -quiet
+run-clang-tidy -p build -quiet -hide-progress
 ```
 
 ## Testing
