@@ -269,7 +269,7 @@ auto main() -> int {
 		             "small frame is not upscaled");
 	}
 
-	const cv::Mat source = (cv::Mat_<uchar>(2, 3) << 32, 64, 96, 128, 160, 192);
+	const cv::Mat source = cv::Mat_<uchar>({2, 3}, {32, 64, 96, 128, 160, 192});
 
 	{
 		cv::Mat expected;

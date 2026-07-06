@@ -1,6 +1,6 @@
 # CI Container Rules
 
-**Updated:** 2026-07-05
+**Updated:** 2026-07-06
 
 ## Image Identity
 
@@ -10,14 +10,15 @@
 
 ## Containerfile
 
-- Use fully qualified base image: `FROM docker.io/library/debian:sid-slim`
+- Use fully qualified base image: `docker.io/library/archlinux:latest`.
+- Install dependencies through pacman. Do not build OpenCV from source.
+- Install `gcc`; Arch `base` image does not include a C++ compiler.
+- Require `opencv >= 5.0.0` from Arch stable repositories.
+- Install `qt6-base`; Arch OpenCV HighGUI links against Qt 6.
+- Keep package install minimal. Clear pacman package and sync caches in same
+  layer with `pacman -Scc --noconfirm`.
 - Keep OCI metadata only in `Containerfile`. Do not repeat identical
   `org.opencontainers.image.*` labels in `podman build` commands.
-- Prefer Debian sid packages. Do not add third-party repos or source builds
-  unless required dependency or API is missing in sid.
-- Keep package install minimal and remove APT lists in same layer:
-  `rm -rf /var/lib/apt/lists/*`.
-- Keep container non-interactive with `DEBIAN_FRONTEND=noninteractive`.
 
 ## Validation
 

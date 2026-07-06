@@ -1,25 +1,22 @@
-FROM docker.io/library/debian:sid-slim
+FROM docker.io/library/archlinux:latest
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends \
-		build-essential \
-		ca-certificates \
+RUN pacman -Syu --noconfirm --needed \
+		curl \
+		gcc \
 		gettext \
 		git \
-		libcurl4-openssl-dev \
-		libevdev-dev \
-		libinih-dev \
-		libopencv-dev \
-		libpam0g-dev \
-		libssl-dev \
-		meson \
-		ninja-build \
+		libevdev \
+		libinih \
+		'meson>=1.11.0' \
+		ninja \
 		nodejs \
-		libyyjson-dev \
-		pkg-config \
-	&& rm -rf /var/lib/apt/lists/*
+		openssl \
+		'opencv>=5.0.0' \
+		pam \
+		pkgconf \
+		qt6-base \
+		'yyjson>=0.12.0' \
+	&& pacman -Scc --noconfirm
 
 LABEL org.opencontainers.image.source="https://codeberg.org/nathawat/howdy-next" \
 	  org.opencontainers.image.description="Howdy Next CI build image" \

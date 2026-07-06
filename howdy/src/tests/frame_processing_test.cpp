@@ -193,16 +193,16 @@ auto main() -> int {
 	ok &= expect(black_brightness.bins_percent[0] == 100.0F,
 	             "black frame fills darkest histogram bin");
 
-	cv::Mat normal_frame(4, 4, CV_8UC1);
-	normal_frame.rowRange(0, 1).setTo(cv::Scalar(0));
-	normal_frame.rowRange(1, 4).setTo(cv::Scalar(128));
+	const cv::Mat normal_frame = cv::Mat_<unsigned char>(
+	    {4, 4}, {0, 0, 0, 0, 32, 64, 64, 96, 128, 128, 160, 192, 192, 224, 224, 224});
 	const auto normal_brightness = howdy::native::measure_brightness(normal_frame);
 	ok &= expect_near(normal_brightness.darkness, 25.0, 0.0001,
 	                  "normal frame darkness uses darkest histogram bin");
-	ok &= expect_near(normal_brightness.bins_percent[0], 25.0, 0.0001,
-	                  "normal frame darkest bin percentage is stable");
-	ok &= expect_near(normal_brightness.bins_percent[4], 75.0, 0.0001,
-	                  "normal frame middle bin percentage is stable");
+	constexpr std::array<double, 8> expected_bins{25.0, 6.25, 12.5, 6.25, 12.5, 6.25, 12.5, 18.75};
+	for (std::size_t index = 0; index < expected_bins.size(); ++index) {
+		ok &= expect_near(normal_brightness.bins_percent[index], expected_bins[index], 0.0001,
+		                  "normal frame histogram bin percentage is stable");
+	}
 	ok &= expect(howdy::native::classify_brightness(normal_brightness.hist_total,
 	                                                normal_brightness.darkness, 30.0F) ==
 	                 howdy::native::BrightnessDecision::kProcessFrame,

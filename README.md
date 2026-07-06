@@ -25,7 +25,7 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-meson, ninja, gettext, libevdev, libinih, libopencv, libcurl, openssl, yyjson, pam
+gcc, meson>=1.11.0, ninja, gettext, libevdev, libinih, opencv>=5.0.0, qt6-base, libcurl, openssl, yyjson>=0.12.0, pam
 ```
 
 > [!NOTE]

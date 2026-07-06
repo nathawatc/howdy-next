@@ -1,4 +1,4 @@
-opencv4 = dependency('opencv4', include_type: 'system')
+opencv5 = dependency('opencv5', version: '>=5.0.0', include_type: 'system')
 inih_cpp = dependency('INIReader')
 yyjson = dependency('yyjson', version: '>=0.12.0')
 libcurl = dependency('libcurl')
@@ -18,7 +18,7 @@ native_compare_logic_lib = static_library(
 	'compare_logic.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -28,7 +28,7 @@ native_frame_processing_lib = static_library(
 	'frame_processing.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -38,7 +38,7 @@ native_preview_engine_lib = static_library(
 	'preview_engine.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -53,7 +53,7 @@ native_test_preview_lib = static_library(
 		native_frame_processing_lib,
 	],
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -63,7 +63,7 @@ native_compare_engine_lib = static_library(
 	'compare_engine.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -73,7 +73,7 @@ native_compare_capture_session_lib = static_library(
 	'compare_capture_session.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -103,7 +103,7 @@ native_cpp_lib = static_library(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -124,7 +124,7 @@ native_compare = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: true,
 	install_dir: helperdir,
@@ -230,7 +230,7 @@ native_compare_args_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -246,7 +246,7 @@ native_compare_logic_test = executable(
 	include_directories: native_cpp_inc,
 	link_with: native_compare_logic_lib,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -265,7 +265,7 @@ native_frame_processing_test = executable(
 		native_compare_logic_lib,
 	],
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -285,7 +285,7 @@ native_compare_engine_test = executable(
 		native_compare_logic_lib,
 	],
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -307,7 +307,7 @@ native_compare_capture_session_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -335,7 +335,7 @@ native_face_detection_test = executable(
 	'core/face_detection.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -351,7 +351,7 @@ native_face_encoding_test = executable(
 	'core/face_encoding.cpp',
 	include_directories: native_cpp_inc,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -370,7 +370,7 @@ native_face_model_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -389,7 +389,7 @@ native_config_utils_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -454,7 +454,7 @@ native_video_capture_test = executable(
 	include_directories: native_cpp_inc,
 	link_with: native_cpp_lib,
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -473,7 +473,7 @@ native_enrollment_capture_test = executable(
 		native_compare_logic_lib,
 	],
 	dependencies: [
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -495,7 +495,7 @@ native_config_validation_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -514,7 +514,7 @@ native_user_models_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -550,7 +550,7 @@ native_clear_cli_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -572,7 +572,7 @@ native_config_cli_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -592,7 +592,7 @@ native_disable_cli_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -611,7 +611,7 @@ native_set_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -630,7 +630,7 @@ native_list_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -653,7 +653,7 @@ native_add_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -672,7 +672,7 @@ native_remove_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -696,7 +696,7 @@ native_test_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -717,7 +717,7 @@ native_test_preview_session_test = executable(
 		native_preview_engine_lib,
 		native_frame_processing_lib,
 	],
-	dependencies: [opencv4],
+	dependencies: [opencv5],
 	install: false,
 )
 
@@ -735,7 +735,7 @@ native_preview_engine_test = executable(
 		native_preview_engine_lib,
 		native_frame_processing_lib,
 	],
-	dependencies: [opencv4],
+	dependencies: [opencv5],
 	install: false,
 )
 
@@ -753,7 +753,7 @@ native_snapshot_cli_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -772,7 +772,7 @@ native_snapshot_writer_test = executable(
 	dependencies: [
 		inih_cpp,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -791,7 +791,7 @@ native_download_models_test = executable(
 	dependencies: [
 		libcurl,
 		openssl,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -822,7 +822,7 @@ native_runtime_paths_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -841,7 +841,7 @@ native_runtime_config_load_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -861,7 +861,7 @@ native_runtime_config_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -880,7 +880,7 @@ native_invoking_user_env_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -899,7 +899,7 @@ native_config_reader_test = executable(
 		inih_cpp,
 		libcurl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -936,7 +936,7 @@ native_cli_lib = static_library(
 		libcurl,
 		openssl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )
@@ -951,7 +951,7 @@ native_howdy = executable(
 		libcurl,
 		openssl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: true,
 	install_dir: get_option('bindir'),
@@ -992,7 +992,7 @@ native_howdy_dispatch_test = executable(
 		libcurl,
 		openssl,
 		yyjson,
-		opencv4,
+		opencv5,
 	],
 	install: false,
 )

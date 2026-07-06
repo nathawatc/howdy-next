@@ -181,7 +181,7 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		capture.next_gray_frame   = (cv::Mat_<unsigned char>(2, 3) << 2, 7, 1, 8, 2, 8);
+		capture.next_gray_frame   = cv::Mat_<unsigned char>({2, 3}, {2, 7, 1, 8, 2, 8});
 		auto dependencies         = make_dependencies(capture, clock);
 		dependencies.set_property = nullptr;
 		howdy::native::CompareCaptureSession session(make_video_config(), dependencies);
@@ -243,7 +243,7 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		capture.next_gray_frame = (cv::Mat_<unsigned char>(2, 3) << 1, 2, 3, 4, 5, 6);
+		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {1, 2, 3, 4, 5, 6});
 		howdy::native::CompareCaptureSession session(make_video_config(),
 		                                             make_dependencies(capture, clock));
 
@@ -260,7 +260,7 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		capture.next_gray_frame = (cv::Mat_<unsigned char>(2, 3) << 8, 6, 7, 5, 3, 0);
+		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {8, 6, 7, 5, 3, 0});
 		howdy::native::CompareCaptureSession session(make_video_config(),
 		                                             make_dependencies(capture, clock));
 
@@ -328,7 +328,7 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		capture.next_gray_frame = (cv::Mat_<unsigned char>(2, 3) << 3, 1, 4, 1, 5, 9);
+		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {3, 1, 4, 1, 5, 9});
 		howdy::native::CompareCaptureSession session(make_video_config(),
 		                                             make_dependencies(capture, clock));
 

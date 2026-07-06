@@ -45,7 +45,7 @@ Shared runtime code under `howdy/src/` and headers under `howdy/include/`.
   `capture_enrollment_sample()`); classify failures with
   `classify_enrollment_capture_failure()`.
 - Auth helper protocol keys are shared via `common/auth_helper_protocol.hpp`.
-- Build requires `opencv4` with `include_type: 'system'` for system OpenCV.
+- Build requires `opencv5` with `include_type: 'system'` for system OpenCV.
 
 ## Compare Runtime Boundaries
 

@@ -1,7 +1,6 @@
 #include "common/frame_processing.hpp"
 
 #include <algorithm>
-#include <array>
 #include <vector>
 
 namespace howdy::native {
@@ -27,13 +26,12 @@ namespace howdy::native {
 			return stats;
 		}
 
-		cv::Mat                        hist;
-		constexpr std::array<int, 1>   hist_size{8};
-		constexpr std::array<float, 2> hist_range{0.0F, 256.0F};
-		std::vector<const float *>     ranges{hist_range.data()};
-		constexpr std::array<int, 1>   channels{0};
-		cv::calcHist(&gray, 1, channels.data(), cv::Mat(), hist, 1, hist_size.data(),
-		             ranges.data());
+		cv::Mat                         hist;
+		static const std::vector<int>   hist_size{8};
+		static const std::vector<float> hist_range{0.0F, 256.0F};
+		static const std::vector<int>   channels{0};
+		const std::vector<cv::Mat>      images{gray};
+		cv::calcHist(images, channels, cv::Mat(), hist, hist_size, hist_range);
 
 		stats.hist_total = cv::sum(hist)[0];
 		if (stats.hist_total != 0.0) {
@@ -43,7 +41,7 @@ namespace howdy::native {
 		const auto bins_denominator = std::max(static_cast<float>(stats.hist_total), 1.0F);
 		for (std::size_t index = 0; index < stats.bins_percent.size(); ++index) {
 			stats.bins_percent[index] =
-			    hist.at<float>(static_cast<int>(index), 0) / bins_denominator * 100.0F;
+			    hist.at<float>(static_cast<int>(index)) / bins_denominator * 100.0F;
 		}
 		return stats;
 	}
