@@ -14,6 +14,13 @@
 
 namespace howdy::native {
 	namespace {
+		// Temporary OpenCV 5 workaround: force New DNN graph engine and forbid
+		// Classic-engine fallback, which cannot load Howdy's supported ONNX models.
+		// Remove after upstream makes New engine selection/failure behavior suitable.
+		auto force_opencv_new_dnn_engine() -> bool {
+			return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
+		}
+
 		void align_face(void *context, const cv::Mat &frame, const cv::Mat &face,
 		                cv::Mat &aligned) {
 			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(frame, face, aligned);
@@ -59,11 +66,12 @@ namespace howdy::native {
 	}
 
 	void FaceModel::initialize(const FaceConfig &config) {
-		const auto models_dir = resolve_models_dir();
-		const auto yunet_model =
-		    resolve_model_path(config.yunet_model, (models_dir / kYunetModel).string());
-		const auto sface_model =
-		    resolve_model_path(config.sface_model, (models_dir / kSfaceModel).string());
+		const auto models_dir      = resolve_models_dir();
+		const auto yunet_model     = (models_dir / kYunetModel).string();
+		const auto sface_model     = (models_dir / kSfaceModel).string();
+		const auto score_threshold = config.yunet_score_threshold;
+		const auto nms_threshold   = config.yunet_nms_threshold;
+		const auto top_k           = config.yunet_top_k;
 
 		for (const auto &model_path : {yunet_model, sface_model}) {
 			const auto readiness = backend_->check_readiness(model_path);
@@ -73,9 +81,11 @@ namespace howdy::native {
 			}
 		}
 
-		const auto score_threshold = config.yunet_score_threshold;
-		const auto nms_threshold   = config.yunet_nms_threshold;
-		const auto top_k           = config.yunet_top_k;
+		if (!force_opencv_new_dnn_engine()) {
+			set_error(FaceModelErrorCategory::kDetectorInitialization,
+			          "OpenCV New DNN graph engine could not be configured");
+			return;
+		}
 
 		try {
 			detector_ = backend_->create_detector(yunet_model, input_size_, score_threshold,
@@ -198,14 +208,6 @@ namespace howdy::native {
 		error_category_ = category;
 		error_message_  = std::move(message);
 		ok_             = false;
-	}
-
-	auto FaceModel::resolve_model_path(const std::string &value, const std::string &fallback) const
-	    -> std::string {
-		if (value.empty() || value == "default" || value == "none") {
-			return fallback;
-		}
-		return value;
 	}
 
 }  // namespace howdy::native

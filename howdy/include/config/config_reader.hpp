@@ -11,7 +11,6 @@ namespace howdy::native {
 
 		[[nodiscard]] auto ok() const -> bool;
 		[[nodiscard]] auto parse_error() const -> int;
-
 		[[nodiscard]] auto get(const std::string &section, const std::string &name,
 		                       const std::string &fallback) const -> std::string;
 		[[nodiscard]] auto get_int(const std::string &section, const std::string &name,

@@ -135,10 +135,6 @@ auto main() -> int {
 	                         "video device_fps struct default matches schema");
 	ok &= expect_int_default(defaults.video.rotate, video_rotate,
 	                         "video rotate struct default matches schema");
-	ok &= expect_string_default(defaults.face.yunet_model, face_yunet_model,
-	                            "face yunet_model struct default matches schema");
-	ok &= expect_string_default(defaults.face.sface_model, face_sface_model,
-	                            "face sface_model struct default matches schema");
 	ok &= expect_float_default(defaults.face.yunet_score_threshold, face_yunet_score_threshold,
 	                           "face yunet_score_threshold struct default matches schema");
 	ok &= expect_float_default(defaults.face.yunet_nms_threshold, face_yunet_nms_threshold,
@@ -199,8 +195,6 @@ auto main() -> int {
 	                                "device_fps = 30\n"
 	                                "rotate = 2\n"
 	                                "[face]\n"
-	                                "yunet_model = /opt/howdy/yunet.onnx\n"
-	                                "sface_model = /opt/howdy/sface.onnx\n"
 	                                "yunet_score_threshold = 0.8\n"
 	                                "yunet_nms_threshold = 0.2\n"
 	                                "yunet_top_k = 1000\n"

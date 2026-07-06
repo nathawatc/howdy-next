@@ -7,9 +7,7 @@
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -20,7 +18,6 @@
 #include <sstream>
 #include <string>
 #include <system_error>
-#include <vector>
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
@@ -36,38 +33,13 @@ namespace {
 	constexpr curl_off_t kMaxDownloadBytes       = 100 * 1024 * 1024;
 
 	struct ModelDownload {
-		std::string                name;
-		std::string                url;
-		std::filesystem::path      destination;
-		std::optional<std::string> sha256;
+		std::string           name;
+		std::string           url;
+		std::filesystem::path destination;
+		std::string           sha256;
 	};
 
 	using howdy::native::download_models_internal::StagedDownloadFile;
-
-	auto trim(const std::string &value) -> std::string {
-		const auto start = value.find_first_not_of(" \t\r\n");
-		if (start == std::string::npos) {
-			return {};
-		}
-		const auto end = value.find_last_not_of(" \t\r\n");
-		return value.substr(start, end - start + 1);
-	}
-
-	auto is_hex_sha256(const std::string &value) -> bool {
-		if (value.size() != 64) {
-			return false;
-		}
-		return std::ranges::all_of(value, [](unsigned char ch) {
-			return std::isxdigit(ch) != 0;
-		});
-	}
-
-	auto lower_hex(std::string value) -> std::string {
-		for (char &ch : value) {
-			ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-		}
-		return value;
-	}
 
 	auto root_model_file_owner_uid() -> std::optional<uid_t> {
 		return static_cast<uid_t>(0);
@@ -104,69 +76,7 @@ auto howdy::native::download_models_internal::download_models_write_callback(
 	return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
 }
 
-auto howdy::native::download_models_internal::download_models_header_capture_callback(
-    char *buffer, std::size_t size, std::size_t nitems, void *userdata) -> std::size_t {
-	auto *etag = static_cast<std::string *>(userdata);
-	if (size != 0 && nitems > std::numeric_limits<std::size_t>::max() / size) {
-		return 0;
-	}
-	const auto  total = size * nitems;
-	std::string line(buffer, total);
-	const auto  colon_pos = line.find(':');
-	if (colon_pos == std::string::npos) {
-		return total;
-	}
-
-	auto key = line.substr(0, colon_pos);
-	for (char &ch : key) {
-		ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-	}
-	if (key != "etag") {
-		return total;
-	}
-
-	auto value = trim(line.substr(colon_pos + 1));
-	if (value.starts_with("W/")) {
-		value = value.substr(2);
-	}
-	if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
-		value = value.substr(1, value.size() - 2);
-	}
-	*etag = trim(value);
-	return total;
-}
-
 namespace {
-
-	auto fetch_remote_sha256(const std::string &url) -> std::optional<std::string> {
-		CURL *curl = curl_easy_init();
-		if (curl == nullptr) {
-			return std::nullopt;
-		}
-
-		std::string etag;
-		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-		configure_transfer_policy(curl);
-		curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-		curl_easy_setopt(
-		    curl, CURLOPT_HEADERFUNCTION,
-		    howdy::native::download_models_internal::download_models_header_capture_callback);
-		curl_easy_setopt(curl, CURLOPT_HEADERDATA, &etag);
-		const CURLcode result = curl_easy_perform(curl);
-
-		long status_code = 0;
-		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
-		curl_easy_cleanup(curl);
-		if (result != CURLE_OK || status_code < 200 || status_code >= 400) {
-			return std::nullopt;
-		}
-
-		etag = trim(etag);
-		if (!is_hex_sha256(etag)) {
-			return std::nullopt;
-		}
-		return lower_hex(etag);
-	}
 
 	auto file_sha256(const std::filesystem::path &path) -> std::optional<std::string> {
 		std::ifstream input(path, std::ios::binary);
@@ -279,17 +189,25 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		return kExitAbort;
 	}
 
-	const std::vector<ModelDownload> models = {
-	    {.name        = howdy::native::FaceModel::kYunetModel,
-	     .url         = "https://huggingface.co/opencv/face_detection_yunet/resolve/main/" +
-	                    std::string(howdy::native::FaceModel::kYunetModel),
-	     .destination = models_dir / howdy::native::FaceModel::kYunetModel,
-	     .sha256      = "49f000ec501fef24739071fc7e68267d32209045b6822c0c72dce1da25726f10"},
-	    {.name        = howdy::native::FaceModel::kSfaceModel,
-	     .url         = "https://huggingface.co/opencv/face_recognition_sface/resolve/main/" +
-	                    std::string(howdy::native::FaceModel::kSfaceModel),
-	     .destination = models_dir / howdy::native::FaceModel::kSfaceModel,
-	     .sha256      = "fb143eea07838aa532d1c95df5f69899974ea0140e1fba05e94204be13ed74ee"},
+	const std::array<ModelDownload, 2> models = {
+	    ModelDownload{
+	        .name = howdy::native::FaceModel::kYunetModel,
+	        .url =
+	            "https://github.com/opencv/opencv_zoo/raw/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/"
+	            "models/face_detection_yunet/" +
+	            std::string(howdy::native::FaceModel::kYunetModel),
+	        .destination = models_dir / howdy::native::FaceModel::kYunetModel,
+	        .sha256      = "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
+	    },
+	    ModelDownload{
+	        .name = howdy::native::FaceModel::kSfaceModel,
+	        .url =
+	            "https://github.com/opencv/opencv_zoo/raw/088c3571ec70df15100a5e4c26894d95951e92e9/"
+	            "models/face_recognition_sface/" +
+	            std::string(howdy::native::FaceModel::kSfaceModel),
+	        .destination = models_dir / howdy::native::FaceModel::kSfaceModel,
+	        .sha256      = "2b0e941e6f16cc048c20aee0c8e31f569118f65d702914540f7bfdc14048d78a",
+	    },
 	};
 
 	curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -332,24 +250,12 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 			return kExitAbort;
 		}
 
-		auto expected_sha256 = model.sha256;
-		if (!expected_sha256.has_value()) {
-			expected_sha256 = fetch_remote_sha256(model.url);
-		}
-		if (!expected_sha256.has_value()) {
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Failed to verify model checksum metadata: " << model.url << "\n";
-			return kExitAbort;
-		}
-
 		const auto actual_sha256 = file_sha256(staged->path);
-		if (!actual_sha256.has_value() ||
-		    lower_hex(expected_sha256.value()) != lower_hex(actual_sha256.value())) {
+		if (!actual_sha256.has_value() || model.sha256 != actual_sha256.value()) {
 			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Checksum mismatch for " << model.name << "\n";
-			std::cout << "Expected SHA256: " << expected_sha256.value() << "\n";
+			std::cout << "Expected SHA256: " << model.sha256 << "\n";
 			if (actual_sha256.has_value()) {
 				std::cout << "Actual SHA256:   " << actual_sha256.value() << "\n";
 			}

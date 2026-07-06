@@ -51,10 +51,6 @@ namespace howdy::native {
 	};
 
 	struct FaceConfig {
-		std::string yunet_model = std::string(
-		    config_schema::runtime_default_string(config_schema::OptionId::face_yunet_model));
-		std::string sface_model = std::string(
-		    config_schema::runtime_default_string(config_schema::OptionId::face_sface_model));
 		float yunet_score_threshold = config_schema::runtime_default_float(
 		    config_schema::OptionId::face_yunet_score_threshold);
 		float yunet_nms_threshold =

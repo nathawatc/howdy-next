@@ -78,8 +78,6 @@ namespace howdy::native {
 			config.video.device_fps           = config_device_fps(reader);
 			config.video.rotate               = config_rotate_mode(reader);
 
-			config.face.yunet_model           = read_runtime_string(reader, face_yunet_model);
-			config.face.sface_model           = read_runtime_string(reader, face_sface_model);
 			config.face.yunet_score_threshold = config_yunet_score_threshold(reader);
 			config.face.yunet_nms_threshold   = config_yunet_nms_threshold(reader);
 			config.face.yunet_top_k           = config_yunet_top_k(reader);

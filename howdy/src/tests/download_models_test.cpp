@@ -279,7 +279,7 @@ auto main() -> int {
 	ok &= expect(existing_exit == EXIT_FAILURE, "stubbed download aborts after readiness passes");
 	ok &= expect(attempted_downloads() == 1,
 	             "missing model in existing secure directory reaches download");
-	ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
+	ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
 	             "existing secure directory starts first model download");
 	ok &= expect(count_staged_files(existing_models_dir, ".howdy-download-") == 0,
 	             "failed download removes staged file");
@@ -300,9 +300,8 @@ auto main() -> int {
 	             "download-models creates missing models directory before readiness checks");
 	ok &=
 	    expect(attempted_downloads() == 1, "missing model after parent creation reaches download");
-	ok &= expect(
-	    missing_parent_stdout.contains("Downloading face_detection_yunet_2023mar_int8bq.onnx"),
-	    "missing parent path starts first model download");
+	ok &= expect(missing_parent_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
+	             "missing parent path starts first model download");
 
 	const auto blocked_models_dir = temp_root / "blocked-models";
 	const auto blocked_output     = temp_root / "blocked-output.txt";
@@ -351,24 +350,6 @@ auto main() -> int {
 		             "overflowing write callback leaves staged file empty");
 		howdy::native::cleanup_staged_file(*overflow_staged);
 	}
-
-	std::array<char, 2> header_payload        = {'x', 'y'};
-	std::string         etag                  = "unchanged";
-	const auto          header_overflow_size  = (std::numeric_limits<std::size_t>::max() / 2) + 2;
-	const auto          header_overflow_count = static_cast<std::size_t>(2);
-	const auto          header_overflow_result =
-	    howdy::native::download_models_internal::download_models_header_capture_callback(
-	        header_payload.data(), header_overflow_size, header_overflow_count, &etag);
-	ok &= expect(header_overflow_result == 0, "overflowing header callback returns 0");
-	ok &= expect(etag == "unchanged", "overflowing header callback leaves ETag unchanged");
-
-	std::string valid_header = "ETag: W/\"ABC123\"\r\n";
-	const auto  valid_header_result =
-	    howdy::native::download_models_internal::download_models_header_capture_callback(
-	        valid_header.data(), 1, valid_header.size(), &etag);
-	ok &= expect(valid_header_result == valid_header.size(),
-	             "valid ETag header callback returns byte count");
-	ok &= expect(etag == "ABC123", "valid ETag header callback normalizes weak quoted ETag");
 
 	const auto successful_install_destination = temp_root / "successful-install.onnx";
 	auto       successful_install =

@@ -8,7 +8,6 @@
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
-#include <filesystem>
 #include <limits>
 #include <string>
 
@@ -108,16 +107,6 @@ namespace howdy::native {
 							return std::nullopt;
 						}
 						if (value.empty() || !is_allowed_capture_device_path(value)) {
-							return invalid_config_value_message(option.key, value,
-							                                    option.invalid_rule);
-						}
-						return std::nullopt;
-					}
-					if (option.special_rule == config_schema::SpecialRule::model_path) {
-						if (std::ranges::find(option.choices, value) != option.choices.end()) {
-							return std::nullopt;
-						}
-						if (!std::filesystem::path(std::string(value)).is_absolute()) {
 							return invalid_config_value_message(option.key, value,
 							                                    option.invalid_rule);
 						}

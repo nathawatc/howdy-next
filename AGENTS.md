@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-05
+**Updated:** 2026-07-06
 
 ## Scope
 
@@ -11,6 +11,7 @@ Root rules. Read nearest `AGENTS.md` for overrides.
 - `howdy/src/cli/AGENTS.md`: CLI entrypoints and download/config commands
 - `howdy/src/recorders/AGENTS.md`: camera capture layer
 - `pam/AGENTS.md`: PAM module and auth flow
+- `howdy/src/core/AGENTS.md`: OpenCV 5 DNN engine compatibility
 
 ## Build, Test, Development
 
@@ -109,9 +110,9 @@ Run all tests with `meson test -C build --print-errorlogs`. For one test, use
 
 Do not change `config.ini` format casually. Preserve atomic config rewrites,
 secure path validation, typed runtime config validation, and ownership
-expectations for `/etc/howdy`, `config.ini`, user model files, and custom model
-paths. PAM auth should fail closed on unexpected errors; validate helper output
-protocol via shared keys in `common/auth_helper_protocol.hpp`.
+expectations for `/etc/howdy`, `config.ini`, downloaded ONNX model files, and
+user model files. PAM auth should fail closed on unexpected errors; validate
+helper output protocol via shared keys in `common/auth_helper_protocol.hpp`.
 
 ## Commit / PR
 

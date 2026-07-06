@@ -1,8 +1,11 @@
+#include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
 #include "tests/include/core/face_model_test_access.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -12,6 +15,32 @@ namespace {
 	constexpr auto kRawError        = "raw backend failure";
 	constexpr auto kOpenCvSource    = "/opencv/modules/objdetect/src/face_detect.cpp";
 	constexpr auto kOpenCvFunction  = "FaceDetectorYNImpl::detect";
+	constexpr auto kDnnEngineEnv    = "OPENCV_FORCE_DNN_ENGINE";
+
+	class ScopedEnvironment final {
+	public:
+		explicit ScopedEnvironment(const char *name)
+		    : name_(name) {
+			if (const auto *value = std::getenv(name); value != nullptr) {
+				original_value_ = value;
+			}
+		}
+
+		~ScopedEnvironment() {
+			if (original_value_.has_value()) {
+				setenv(name_, original_value_->c_str(), 1);
+			} else {
+				unsetenv(name_);
+			}
+		}
+
+		ScopedEnvironment(const ScopedEnvironment &)            = delete;
+		ScopedEnvironment &operator=(const ScopedEnvironment &) = delete;
+
+	private:
+		const char                *name_;
+		std::optional<std::string> original_value_;
+	};
 
 	auto expect(bool condition, const std::string &message) -> bool {
 		if (!condition) {
@@ -91,13 +120,6 @@ namespace {
 		}
 	};
 
-	auto config() -> howdy::native::FaceConfig {
-		auto value        = howdy::native::FaceConfig{};
-		value.yunet_model = kYunetSecretPath;
-		value.sface_model = kSfaceSecretPath;
-		return value;
-	}
-
 	auto successful_backend() -> howdy::native::FaceModelTestAccess::Backend {
 		return {
 		    .check_readiness =
@@ -158,12 +180,70 @@ auto main() -> int {
 	bool ok = true;
 
 	{
+		std::string detector_path;
+		std::string recognizer_path;
+		auto        backend     = successful_backend();
+		backend.create_detector = [&detector_path](const std::string &path, const cv::Size &, float,
+		                                           float, int) {
+			detector_path = path;
+			return cv::makePtr<FakeDetector>();
+		};
+		backend.create_recognizer = [&recognizer_path](const std::string &path) {
+			recognizer_path = path;
+			return cv::makePtr<FakeRecognizer>();
+		};
+		auto       model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                              std::move(backend));
+		const auto models_dir = howdy::native::resolve_models_dir();
+		ok &= expect(model.ok(), "default config model initializes");
+		ok &= expect(detector_path == (models_dir / howdy::native::FaceModel::kYunetModel).string(),
+		             "default config uses canonical YuNet path");
+		ok &=
+		    expect(recognizer_path == (models_dir / howdy::native::FaceModel::kSfaceModel).string(),
+		           "default config uses canonical SFace path");
+	}
+
+	{
+		const ScopedEnvironment environment(kDnnEngineEnv);
+		setenv(kDnnEngineEnv, "1", 1);
+
+		std::string readiness_engine;
+		std::string detector_engine;
+		auto        backend     = successful_backend();
+		backend.check_readiness = [&readiness_engine](const std::filesystem::path &) {
+			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
+				readiness_engine = value;
+			}
+			return howdy::native::OpenCvModelReadiness{
+			    .status = howdy::native::OpenCvModelStatus::kOk,
+			};
+		};
+		backend.create_detector = [&detector_engine](const std::string &, const cv::Size &, float,
+		                                             float, int) {
+			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
+				detector_engine = value;
+			}
+			return cv::makePtr<FakeDetector>();
+		};
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
+		ok &= expect(model.ok(), "engine override model initializes");
+		const auto *engine = std::getenv(kDnnEngineEnv);
+		ok &= expect(engine != nullptr && std::string(engine) == "2",
+		             "New DNN graph engine overrides conflicting environment");
+		ok &=
+		    expect(readiness_engine == "1", "DNN engine remains unchanged during readiness checks");
+		ok &= expect(detector_engine == "2", "New DNN graph engine is forced before factory call");
+	}
+
+	{
 		auto backend            = successful_backend();
 		backend.create_detector = [](const std::string &, const cv::Size &, float, float,
 		                             int) -> cv::Ptr<cv::FaceDetectorYN> {
 			throw_cv_error();
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model,
 		                          howdy::native::FaceModelErrorCategory::kDetectorInitialization,
 		                          "Failed to initialize face detector");
@@ -174,7 +254,8 @@ auto main() -> int {
 		backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
 			throw_cv_error();
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model,
 		                          howdy::native::FaceModelErrorCategory::kRecognizerInitialization,
 		                          "Failed to initialize face recognizer");
@@ -185,7 +266,8 @@ auto main() -> int {
 		backend.create_detector = [](const std::string &, const cv::Size &, float, float, int) {
 			return cv::Ptr<cv::FaceDetectorYN>{};
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model,
 		                          howdy::native::FaceModelErrorCategory::kDetectorInitialization,
 		                          "Failed to initialize face detector");
@@ -196,7 +278,8 @@ auto main() -> int {
 		backend.create_recognizer = [](const std::string &) {
 			return cv::Ptr<cv::FaceRecognizerSF>{};
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model,
 		                          howdy::native::FaceModelErrorCategory::kRecognizerInitialization,
 		                          "Failed to initialize face recognizer");
@@ -210,7 +293,8 @@ auto main() -> int {
 			    .error_message = std::string(kYunetSecretPath) + ": " + kRawError,
 			};
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
 	}
@@ -218,7 +302,7 @@ auto main() -> int {
 	{
 		auto backend            = successful_backend();
 		backend.check_readiness = [](const std::filesystem::path &path) {
-			if (path == kSfaceSecretPath) {
+			if (path.filename() == howdy::native::FaceModel::kSfaceModel) {
 				return howdy::native::OpenCvModelReadiness{
 				    .status        = howdy::native::OpenCvModelStatus::kInvalid,
 				    .error_message = std::string(kSfaceSecretPath) + ": " + kRawError,
@@ -228,7 +312,8 @@ auto main() -> int {
 			    .status = howdy::native::OpenCvModelStatus::kOk,
 			};
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
 	}
@@ -238,7 +323,8 @@ auto main() -> int {
 		backend.set_input_size = [](const cv::Size &) {
 			throw_cv_error();
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect(model.ok(), "setInputSize failure model initializes");
 		ok &= expect_detection_failure(model);
 	}
@@ -248,7 +334,8 @@ auto main() -> int {
 		backend.detect = [](const cv::Mat &, cv::Mat &) {
 			throw_cv_error();
 		};
-		auto model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                        std::move(backend));
 		ok &= expect(model.ok(), "detector failure model initializes");
 		ok &= expect_detection_failure(model);
 	}
@@ -267,7 +354,8 @@ auto main() -> int {
 				faces.at<float>(0, column) = static_cast<float>(column + 1);
 			}
 		};
-		auto       model = howdy::native::FaceModelTestAccess::create(config(), std::move(backend));
+		auto       model  = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
+		                                                               std::move(backend));
 		const auto result = model.detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
 		ok &= expect(model.ok(), "success backend initializes");
 		ok &= expect(model.error_category() == howdy::native::FaceModelErrorCategory::kNone,

@@ -37,7 +37,6 @@ namespace howdy::native::config_schema {
 		    "l2norm",
 		};
 		inline constexpr std::array<std::string_view, 1> device_path_choices = {"none"};
-		inline constexpr std::array<std::string_view, 2> model_path_choices  = {"default", "none"};
 
 		inline constexpr auto kRuntimeConfigOptions = std::to_array<Option>({
 		    Option{.id           = OptionId::core_detection_notice,
@@ -166,22 +165,6 @@ namespace howdy::native::config_schema {
 		           .fallback     = int_default(0),
 		           .range        = rotate_range,
 		           .invalid_rule = "expected integer range 0..2"},
-		    Option{.id           = OptionId::face_yunet_model,
-		           .section      = "face",
-		           .key          = "yunet_model",
-		           .type         = ValueType::string,
-		           .fallback     = string_default(""),
-		           .choices      = model_path_choices,
-		           .special_rule = SpecialRule::model_path,
-		           .invalid_rule = "expected an absolute path, default, or none"},
-		    Option{.id           = OptionId::face_sface_model,
-		           .section      = "face",
-		           .key          = "sface_model",
-		           .type         = ValueType::string,
-		           .fallback     = string_default(""),
-		           .choices      = model_path_choices,
-		           .special_rule = SpecialRule::model_path,
-		           .invalid_rule = "expected an absolute path, default, or none"},
 		    Option{.id           = OptionId::face_yunet_score_threshold,
 		           .section      = "face",
 		           .key          = "yunet_score_threshold",

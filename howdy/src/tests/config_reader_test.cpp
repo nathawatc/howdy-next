@@ -267,15 +267,6 @@ auto main() -> int {
 	ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/null"),
 	             "wrong character device path is rejected");
 
-	const auto relative_model_path = temp_root / "relative-model.ini";
-	ok &= expect(write_file(relative_model_path, "[face]\n"
-	                                             "yunet_model = relative.onnx\n"),
-	             "write relative model path ini");
-	howdy::native::ConfigReader relative_model(relative_model_path.string());
-	ok &= expect(relative_model.ok(), "relative model path config should parse");
-	ok &= expect(howdy::native::validate_runtime_config(relative_model).has_value(),
-	             "relative model path fails semantic validation");
-
 	const auto malformed_path = temp_root / "malformed.ini";
 	ok &= expect(write_file(malformed_path, "[video]\n"
 	                                        "timeout = abc\n"

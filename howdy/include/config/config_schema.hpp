@@ -15,7 +15,6 @@ namespace howdy::native::config_schema {
 	enum class SpecialRule {
 		none,
 		device_path,
-		model_path,
 		sface_threshold,
 	};
 
@@ -39,8 +38,6 @@ namespace howdy::native::config_schema {
 		video_exposure,
 		video_device_fps,
 		video_rotate,
-		face_yunet_model,
-		face_sface_model,
 		face_yunet_score_threshold,
 		face_yunet_nms_threshold,
 		face_yunet_top_k,

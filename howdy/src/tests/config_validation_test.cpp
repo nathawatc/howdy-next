@@ -355,27 +355,10 @@ auto main() -> int {
 	                     "[video]\ndevice_path = /tmp/camera\n", "device_path"),
 	             "unrelated device path is rejected");
 
-	ok &= expect(validates(temp_root / "absolute-model-path.ini",
-	                       "[face]\nyunet_model = /opt/howdy/yunet.onnx\n"
-	                       "sface_model = /opt/howdy/sface.onnx\n"),
-	             "absolute custom model paths are accepted by validation");
-	ok &= expect(validates(temp_root / "model-sentinels.ini",
-	                       "[face]\nyunet_model = default\nsface_model = none\n"),
-	             "model sentinels are accepted");
-	ok &= expect(
-	    validates(temp_root / "empty-model-paths.ini", "[face]\nyunet_model = \nsface_model = \n"),
-	    "empty model path values remain accepted");
-	ok &= expect(rejects(temp_root / "relative-yunet-path.ini",
-	                     "[face]\nyunet_model = models/yunet.onnx\n", "yunet_model"),
-	             "relative YuNet model path is rejected");
-	ok &= expect(rejects(temp_root / "relative-sface-path.ini",
-	                     "[face]\nsface_model = models/sface.onnx\n", "sface_model"),
-	             "relative SFace model path is rejected");
-
 	const std::array<std::pair<const char *, const char *>, 5> known_runtime_options = {{
 	    {"core", "detection_notice"},
 	    {"video", "timeout"},
-	    {"face", "yunet_model"},
+	    {"face", "yunet_score_threshold"},
 	    {"snapshots", "save_failed"},
 	    {"debug", "end_report"},
 	}};
@@ -383,7 +366,6 @@ auto main() -> int {
 		ok &= expect(howdy::native::config_schema::runtime_config_option(section, key) != nullptr,
 		             std::string("runtime config option present: ") + section + "." + key);
 	}
-
 	ok &= expect(validates(temp_root / "obsolete-keys.ini",
 	                       "[core]\nworkaround = input\ngtk_stdout = true\n"),
 	             "obsolete workaround and gtk_stdout config keys remain ignored");

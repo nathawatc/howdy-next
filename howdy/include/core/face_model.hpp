@@ -23,8 +23,8 @@ namespace howdy::native {
 	class FaceModel {
 	public:
 		static constexpr auto kBackendName = "opencv_dnn_sface";
-		static constexpr auto kYunetModel  = "face_detection_yunet_2023mar_int8bq.onnx";
-		static constexpr auto kSfaceModel  = "face_recognition_sface_2021dec_int8bq.onnx";
+		static constexpr auto kYunetModel  = "face_detection_yunet_2026may.onnx";
+		static constexpr auto kSfaceModel  = "face_recognition_sface_2021dec_int8.onnx";
 
 		explicit FaceModel(const FaceConfig &config);
 
@@ -45,11 +45,9 @@ namespace howdy::native {
 		friend class FaceModelBackendFactory;
 
 		FaceModel(const FaceConfig &config, Backend backend);
-		void               initialize(const FaceConfig &config);
-		void               set_input_size_from_frame(const cv::Mat &frame);
-		void               set_error(FaceModelErrorCategory category, std::string message);
-		[[nodiscard]] auto resolve_model_path(const std::string &value,
-		                                      const std::string &fallback) const -> std::string;
+		void initialize(const FaceConfig &config);
+		void set_input_size_from_frame(const cv::Mat &frame);
+		void set_error(FaceModelErrorCategory category, std::string message);
 
 		bool                          ok_             = false;
 		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;

@@ -1,6 +1,6 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-07-03
+**Updated:** 2026-07-06
 
 ## Scope
 
@@ -66,6 +66,10 @@ CLI commands use dependency injection for tests.
 - Keep config edits atomic and secure.
 - Reuse `common/invoking_user*.hpp` for invoking-user helpers.
 - Reuse `common/model_file.hpp` for model integrity checks.
+- `download-models` owns pinned packaged-model fetch policy: fixed upstream
+  URLs, fixed SHA-256, and canonical OpenCV 5 model pair
+  `face_detection_yunet_2026may.onnx` plus
+  `face_recognition_sface_2021dec_int8.onnx`.
 - For runtime commands such as add, test, and snapshot, prefer typed
   `RuntimeConfig` fields over raw `ConfigReader` access.
 - Keep command behavior aligned with installed `/etc/howdy` layout.
