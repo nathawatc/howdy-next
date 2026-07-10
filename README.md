@@ -66,7 +66,7 @@ See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ## Troubleshooting
 
-Errors print to console. Check `/var/log/auth.log` if auth fails quietly.
+Errors print to console. Check `journalctl -b -t pam_howdy` if auth fails quietly.
 
 See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for
 common issues.
