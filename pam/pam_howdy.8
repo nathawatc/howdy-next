@@ -1,10 +1,10 @@
 .\" PAM module manual for Howdy Next
-.TH PAM_HOWDY 8 "July 6, 2026" "Howdy Next 3.3.0" "System Administration"
+.TH PAM_HOWDY 8 "July 9, 2026" "Howdy Next 3.3.0" "System Administration"
 .SH NAME
 pam_howdy \- PAM facial authentication module for Howdy Next
 .SH SYNOPSIS
 .B pam_howdy.so
-[\fBworkaround=\fR\fIoff|input|native\fR]
+[\fBworkaround=\fR\fIoff|input|native|native-input\fR]
 .SH DESCRIPTION
 .B pam_howdy.so
 authenticates a PAM user with Howdy Next facial recognition.
@@ -16,7 +16,7 @@ and user face models from
 These paths are expected to remain root-controlled and non-user-writable.
 .SH OPTIONS
 .TP
-\fBworkaround=\fR\fIoff|input|native\fR
+\fBworkaround=\fR\fIoff|input|native|native-input\fR
 Set the password prompt workaround for this PAM service. The default is
 \fBoff\fR.
 .RS
@@ -26,7 +26,11 @@ Do not start or stop a concurrent password prompt.
 .TP
 \fBnative\fR
 Use PAM conversation control to stop Howdy's concurrent password prompt after
-successful face authentication.
+successful face authentication. This mode does not fall back to input injection.
+.TP
+\fBnative-input\fR
+Try native prompt handling first, then fall back to the input workaround when
+native prompt handling is unavailable or cannot be installed.
 .TP
 \fBinput\fR
 Use a

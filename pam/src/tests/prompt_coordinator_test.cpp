@@ -516,8 +516,72 @@ namespace {
 		       expect(reaped, "preflight fallback reaps child");
 	}
 
-	auto test_native_setup_fallback(int available_result, int install_result,
-	                                const std::string &label) -> bool {
+	auto test_native_setup_without_input_fallback(int available_result, int install_result,
+	                                              const std::string &label) -> bool {
+		FakeContext      context;
+		NativePamFixture fixture(&context);
+		if (!expect(fixture.start(false), label + " starts PAM handle")) {
+			return false;
+		}
+		ScopedNativePromptResults prompt_results(available_result, install_result);
+		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+		                              dependencies(&context));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              label + " returns compare result without input fallback") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              label + " spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              label + " waits for spawned child") &&
+		       expect(context.preflight_calls == 0, label + " skips input preflight") &&
+		       expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
+		       expect(context.original_conversation_calls == 0,
+		              label + " does not invoke original conversation") &&
+		       expect(child_reaped(child_pid), label + " reaps child");
+	}
+
+	auto test_native_input_success_uses_native_path() -> bool {
+		FakeContext      context;
+		NativePamFixture fixture(&context);
+		if (!expect(fixture.start(false), "native-input success starts PAM handle")) {
+			return false;
+		}
+		ScopedNativePromptResults prompt_results(1, PAM_SUCCESS);
+		const pid_t               child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "native-input success child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
+		                              dependencies(&context));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              "native-input success uses native password task") &&
+		       expect(result.pam_status == PAM_SUCCESS,
+		              "native-input success preserves PAM success") &&
+		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		              "native-input success spawns child once") &&
+		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		              "native-input success waits for spawned child") &&
+		       expect(context.preflight_calls == 0, "native-input success skips input preflight") &&
+		       expect(context.auth_token_calls == 1, "native-input success requests token once") &&
+		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
+		              "native-input success terminates blocked compare child once") &&
+		       expect(context.original_conversation_calls == 0,
+		              "native-input success does not invoke original conversation") &&
+		       expect(child_reaped(child_pid), "native-input success reaps compare child");
+	}
+
+	auto test_native_input_setup_fallback(int available_result, int install_result,
+	                                      const std::string &label) -> bool {
 		FakeContext context{
 		    .token_result = PAM_SUCCESS,
 		    .token_delay  = std::chrono::milliseconds(100),
@@ -533,7 +597,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
 		                              dependencies(&context));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
@@ -896,8 +960,11 @@ auto main() -> int {
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_input_preflight_fallback();
-	ok &= test_native_setup_fallback(0, -1, "native unavailable");
-	ok &= test_native_setup_fallback(1, PAM_CONV_ERR, "native install failure");
+	ok &= test_native_setup_without_input_fallback(0, -1, "native unavailable");
+	ok &= test_native_setup_without_input_fallback(1, PAM_CONV_ERR, "native install failure");
+	ok &= test_native_input_success_uses_native_path();
+	ok &= test_native_input_setup_fallback(0, -1, "native-input unavailable");
+	ok &= test_native_input_setup_fallback(1, PAM_CONV_ERR, "native-input install failure");
 	ok &= test_cleanup_restores_after_stopped_task();
 	ok &= test_native_blocked_prompt_cleanup();
 	ok &= test_native_pam_wins();

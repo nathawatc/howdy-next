@@ -17,7 +17,8 @@ enum class ConfirmationType : std::uint8_t {
 enum class Workaround : std::uint8_t {
 	Off,
 	Input,
-	Native
+	Native,
+	NativeInput
 };
 
 inline auto get_workaround(std::string_view workaround) -> Workaround {
@@ -27,6 +28,10 @@ inline auto get_workaround(std::string_view workaround) -> Workaround {
 
 	if (workaround == "native") {
 		return Workaround::Native;
+	}
+
+	if (workaround == "native-input") {
+		return Workaround::NativeInput;
 	}
 
 	return Workaround::Off;

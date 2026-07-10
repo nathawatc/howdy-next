@@ -35,6 +35,8 @@ auto main() -> int {
 	ok &= expect(get_workaround("off") == Workaround::Off, "parses off workaround");
 	ok &= expect(get_workaround("input") == Workaround::Input, "parses input workaround");
 	ok &= expect(get_workaround("native") == Workaround::Native, "parses native workaround");
+	ok &= expect(get_workaround("native-input") == Workaround::NativeInput,
+	             "parses native-input workaround");
 	ok &= expect(get_workaround("unknown") == Workaround::Off,
 	             "unknown workaround falls back to off");
 	ok &= expect(get_workaround("input=extra") == Workaround::Off,
@@ -56,6 +58,12 @@ auto main() -> int {
 		ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
 		                 Workaround::Native,
 		             "skips null PAM args");
+	}
+	{
+		std::array<const char *, 1> args = {"workaround=native-input"};
+		ok &= expect(get_pam_workaround(static_cast<int>(args.size()), args.data()) ==
+		                 Workaround::NativeInput,
+		             "parses native-input workaround from PAM args");
 	}
 	{
 		std::array<const char *, 1> args = {"workaround="};

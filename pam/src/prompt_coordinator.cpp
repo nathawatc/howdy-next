@@ -299,21 +299,36 @@ namespace howdy::pam {
 		});
 		child_task_->activate();
 
-		if (requested_workaround_ == Workaround::Native && ask_auth_tok_ && !existing_auth_token_) {
+		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
+		                                 requested_workaround_ == Workaround::NativeInput;
+		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
 			native_prompt_.emplace(pamh_);
 
 			if (!native_prompt_->available()) {
-				syslog(LOG_INFO,
-				       "Native prompt conversation unavailable, falling back to input workaround");
+				if (requested_workaround_ == Workaround::NativeInput) {
+					syslog(
+					    LOG_INFO,
+					    "Native prompt conversation unavailable, falling back to input workaround");
+					effective_workaround_ = Workaround::Input;
+				} else {
+					syslog(LOG_INFO,
+					       "Native prompt conversation unavailable, disabling prompt workaround");
+					effective_workaround_ = Workaround::Off;
+				}
 				native_prompt_.reset();
-				effective_workaround_ = Workaround::Input;
 			} else {
 				const int install_result = native_prompt_->install();
-				if (install_result != PAM_SUCCESS) {
+				if (install_result == PAM_SUCCESS) {
+					effective_workaround_ = Workaround::Native;
+				} else {
 					syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
 					       install_result);
+					if (requested_workaround_ == Workaround::NativeInput) {
+						effective_workaround_ = Workaround::Input;
+					} else {
+						effective_workaround_ = Workaround::Off;
+					}
 					native_prompt_.reset();
-					effective_workaround_ = Workaround::Input;
 				}
 			}
 		}

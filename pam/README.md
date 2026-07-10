@@ -53,12 +53,14 @@ auth  sufficient  pam_howdy.so
 auth  sufficient  pam_howdy.so workaround=off
 auth  sufficient  pam_howdy.so workaround=input
 auth  sufficient  pam_howdy.so workaround=native
+auth  sufficient  pam_howdy.so workaround=native-input
 ```
 
 Default is `workaround=off`. `native` uses PAM conversation control to stop
-Howdy's concurrent password prompt after face auth succeeds. `input` uses
-`/dev/uinput` as fallback Enter key workaround. Option is PAM-local; it is not
-read from `config.ini`.
+Howdy's concurrent password prompt after face auth succeeds and does not fall
+back to input injection. `input` uses `/dev/uinput` as an Enter key workaround.
+`native-input` tries native first, then falls back to input. Option is
+PAM-local; it is not read from `config.ini`.
 
 PAM consumers that authenticate as regular user use installed
 `howdy-auth-helper` setuid helper to prepare temp root-controlled runtime copies
