@@ -251,9 +251,9 @@ auto main() -> int {
 		             "timeout-boundary session opens");
 		clock.now         = std::chrono::steady_clock::time_point{} + 2s;
 		const auto result = session.next_frame();
-		ok &= expect(result.status == CompareCaptureFrameStatus::kFrameReady,
-		             "exact timeout boundary still reads");
-		ok &= expect(capture.read_calls == 1, "exact timeout boundary calls read once");
+		ok &= expect(result.status == CompareCaptureFrameStatus::kTimeout,
+		             "exact timeout boundary times out");
+		ok &= expect(capture.read_calls == 0, "exact timeout boundary does not call read");
 		ok &= expect(result.frame_number == 1, "exact timeout boundary returns frame one");
 	}
 
@@ -275,16 +275,16 @@ auto main() -> int {
 
 		clock.now        = std::chrono::steady_clock::time_point{} + 4s;
 		const auto ready = session.next_frame();
-		ok &= expect(ready.status == CompareCaptureFrameStatus::kFrameReady,
-		             "reset timeout boundary still reads");
-		ok &= expect(ready.frame_number == 1, "ready frame after reset is frame one");
+		ok &= expect(ready.status == CompareCaptureFrameStatus::kTimeout,
+		             "reset timeout boundary times out");
+		ok &= expect(ready.frame_number == 1, "timeout after reset is frame one");
 
 		clock.now          = std::chrono::steady_clock::time_point{} + 5s;
 		const auto timeout = session.next_frame();
 		ok &= expect(timeout.status == CompareCaptureFrameStatus::kTimeout,
-		             "elapsed time above reset boundary times out");
-		ok &= expect(timeout.frame_number == 2, "timeout after reset is frame two");
-		ok &= expect(capture.read_calls == 1, "timeout reset sequence reads exactly once");
+		             "elapsed time after reset boundary times out");
+		ok &= expect(timeout.frame_number == 2, "second timeout after reset is frame two");
+		ok &= expect(capture.read_calls == 0, "timeout reset sequence never reads");
 		ok &= expect(capture.property_calls.empty(),
 		             "timeout reset sequence does not set capture properties");
 	}

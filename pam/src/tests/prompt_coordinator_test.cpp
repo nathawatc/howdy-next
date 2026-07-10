@@ -3,6 +3,7 @@
 #include "prompt_coordinator.hpp"
 #include "prompt_coordinator_testing.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
@@ -32,12 +33,14 @@ namespace {
 	using howdy::pam::PromptCoordinator;
 	using howdy::pam::PromptCoordinatorDecision;
 	using howdy::pam::PromptCoordinatorDependencies;
+	using namespace std::chrono_literals;
 
 	struct FakeContext {
 		std::atomic<int>          spawn_calls{0};
 		std::atomic<pid_t>        spawned_pid{-1};
 		std::atomic<int>          wait_calls{0};
 		std::atomic<pid_t>        waited_pid{-1};
+		std::atomic<int>          last_wait_status{0};
 		std::atomic<int>          terminate_calls{0};
 		std::atomic<pid_t>        terminated_pid{-1};
 		std::atomic<int>          preflight_calls{0};
@@ -244,7 +247,8 @@ namespace {
 		return 0;
 	}
 
-	auto wait_for_compare(void *context, pid_t child_pid) -> int {
+	auto wait_for_compare(void *context, pid_t child_pid,
+	                      [[maybe_unused]] std::chrono::steady_clock::time_point deadline) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
 		fake.waited_pid = child_pid;
@@ -294,6 +298,7 @@ namespace {
 			int         status = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
+				fake.last_wait_status = status;
 				return status;
 			}
 			if (result < 0 && errno == EINTR) {
@@ -301,6 +306,18 @@ namespace {
 			}
 			return static_cast<int>(CompareExit::kAbort) << 8;
 		}
+	}
+
+	auto watchdog_wait_for_compare(void *context, pid_t child_pid,
+	                               std::chrono::steady_clock::time_point deadline) -> int {
+		auto &fake = *static_cast<FakeContext *>(context);
+		++fake.wait_calls;
+		fake.waited_pid       = child_pid;
+		const auto remaining  = std::max(deadline - std::chrono::steady_clock::now(),
+		                                 std::chrono::steady_clock::duration::zero());
+		const int  status     = howdy::pam::testing::wait_for_compare_process(child_pid, remaining);
+		fake.last_wait_status = status;
+		return status;
 	}
 
 	auto terminate_compare(void *context, pid_t child_pid) -> void {
@@ -411,10 +428,148 @@ namespace {
 		return child_pid;
 	}
 
+	void ignore_sigterm([[maybe_unused]] int signal_number) {}
+
+	auto spawn_sigterm_ignoring_child() -> pid_t {
+		std::array<int, 2> ready_pipe = {-1, -1};
+		if (pipe(ready_pipe.data()) != 0) {
+			return -1;
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			close(ready_pipe[0]);
+			struct sigaction action = {};
+			action.sa_handler       = ignore_sigterm;
+			sigemptyset(&action.sa_mask);
+			if (sigaction(SIGTERM, &action, nullptr) != 0) {
+				_exit(EXIT_FAILURE);
+			}
+			const char ready = '1';
+			(void)write(ready_pipe[1], &ready, 1);
+			while (true) {
+				pause();
+			}
+		}
+
+		close(ready_pipe[1]);
+		char ready = '\0';
+		while (read(ready_pipe[0], &ready, 1) < 0 && errno == EINTR) {
+		}
+		close(ready_pipe[0]);
+		if (child_pid <= 0 || ready != '1') {
+			if (child_pid > 0) {
+				(void)kill(child_pid, SIGKILL);
+				(void)waitpid(child_pid, nullptr, 0);
+			}
+			return -1;
+		}
+		return child_pid;
+	}
+
 	auto child_reaped(pid_t child_pid) -> bool {
 		errno                   = 0;
 		const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
 		return wait_result == -1 && errno == ECHILD;
+	}
+
+	auto timeout_wait_status() -> int {
+		return static_cast<int>(CompareExit::kTimeoutReached) << 8;
+	}
+
+	auto test_watchdog_timeout_reaps_blocked_child() -> bool {
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "watchdog timeout child spawned")) {
+			return false;
+		}
+
+		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 40ms);
+		return expect(status == timeout_wait_status(),
+		              "watchdog timeout returns synthetic timeout status") &&
+		       expect(child_reaped(child_pid), "watchdog timeout reaps blocked child");
+	}
+
+	auto test_watchdog_kills_sigterm_ignoring_child() -> bool {
+		const pid_t child_pid = spawn_sigterm_ignoring_child();
+		if (!expect(child_pid > 0, "SIGTERM-ignoring watchdog child spawned")) {
+			return false;
+		}
+
+		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 40ms);
+		return expect(status == timeout_wait_status(),
+		              "SIGTERM-ignoring child returns synthetic timeout status") &&
+		       expect(child_reaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
+	}
+
+	auto test_watchdog_preserves_natural_exit_status() -> bool {
+		const pid_t child_pid = spawn_child(17, 10ms);
+		if (!expect(child_pid > 0, "natural watchdog child spawned")) {
+			return false;
+		}
+
+		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 1s);
+		return expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
+		       expect(child_reaped(child_pid), "watchdog reaps naturally exited child");
+	}
+
+	auto test_watchdog_timeout_keeps_password_fallback() -> bool {
+		FakeContext context{
+		    .token_result = PAM_SUCCESS,
+		    .token_delay  = 100ms,
+		};
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "watchdog fallback child spawned")) {
+			return false;
+		}
+		context.next_child_pid        = child_pid;
+		auto deps                     = dependencies(&context);
+		deps.wait_for_compare_process = watchdog_wait_for_compare;
+
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps, 40ms);
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		              "watchdog timeout keeps password fallback") &&
+		       expect(result.compare_status == timeout_wait_status(),
+		              "password fallback preserves watchdog timeout status") &&
+		       expect(result.pam_status == PAM_SUCCESS,
+		              "password fallback preserves PAM success") &&
+		       expect(child_reaped(child_pid), "password fallback reaps watchdog child");
+	}
+
+	auto test_pam_success_reaps_before_watchdog() -> bool {
+		FakeContext context;
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "PAM-before-watchdog child spawned")) {
+			return false;
+		}
+		context.next_child_pid        = child_pid;
+		auto deps                     = dependencies(&context);
+		deps.wait_for_compare_process = watchdog_wait_for_compare;
+
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps, 1s);
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              "PAM success wins before watchdog") &&
+		       expect(context.terminate_calls == 1, "PAM success terminates compare child") &&
+		       expect(context.last_wait_status != timeout_wait_status(),
+		              "PAM success does not use watchdog timeout status") &&
+		       expect(child_reaped(child_pid), "PAM success reaps compare child");
+	}
+
+	auto test_invalid_hard_timeout_fails_closed() -> bool {
+		bool ok = true;
+		for (const auto timeout : {std::chrono::milliseconds::zero(), -1ms}) {
+			FakeContext       context;
+			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+			                              dependencies(&context), timeout);
+			const auto        result = coordinator.run(make_compare_request());
+			ok &= expect(!coordinator.valid(), "nonpositive hard timeout is invalid");
+			ok &= expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
+			             "nonpositive hard timeout fails closed");
+			ok &= expect(callback_counts(context) == CallbackCounts{},
+			             "nonpositive hard timeout starts no callbacks");
+		}
+		return ok;
 	}
 
 	auto test_compare_wins_without_password_prompt() -> bool {
@@ -426,7 +581,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -452,7 +607,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -481,7 +636,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result          = coordinator.run(make_compare_request());
 		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
 		const bool        reaped          = child_reaped(child_pid);
@@ -511,7 +666,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "signaled compare returns password fallback") &&
@@ -536,7 +691,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -568,7 +723,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result without input fallback") &&
@@ -598,7 +753,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native-input success uses native password task") &&
@@ -635,7 +790,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " falls back to input password task") &&
@@ -694,7 +849,7 @@ namespace {
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
-			                              dependencies(&context));
+			                              dependencies(&context), std::chrono::seconds(5));
 			result = coordinator.run(make_compare_request());
 		}
 
@@ -737,7 +892,7 @@ namespace {
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
-			                              dependencies(&context));
+			                              dependencies(&context), std::chrono::seconds(5));
 			result = coordinator.run(make_compare_request());
 		}
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -783,7 +938,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(request);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns Howdy result") &&
@@ -884,7 +1039,7 @@ namespace {
 	auto test_spawn_failure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
@@ -898,7 +1053,7 @@ namespace {
 		FakeContext context;
 		context.next_child_pid = -1;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
@@ -910,7 +1065,7 @@ namespace {
 	auto test_one_shot_after_spawn_failure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto first  = coordinator.run(make_compare_request());
 		const auto second = coordinator.run(
@@ -948,7 +1103,8 @@ namespace {
 					break;
 			}
 
-			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps);
+			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps,
+			                              std::chrono::seconds(5));
 			ok &= expect(!coordinator.valid(), "missing dependency is invalid");
 			const auto before = callback_counts(context);
 			const auto result = coordinator.run(make_compare_request());
@@ -969,7 +1125,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
-		                              dependencies(&context));
+		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        first = coordinator.run(make_compare_request());
 		if (!expect(first.decision == PromptCoordinatorDecision::kHowdyResult,
 		            "one-shot first run succeeds")) {
@@ -992,6 +1148,12 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
+	ok &= test_watchdog_timeout_reaps_blocked_child();
+	ok &= test_watchdog_kills_sigterm_ignoring_child();
+	ok &= test_watchdog_preserves_natural_exit_status();
+	ok &= test_watchdog_timeout_keeps_password_fallback();
+	ok &= test_pam_success_reaps_before_watchdog();
+	ok &= test_invalid_hard_timeout_fails_closed();
 	ok &= test_compare_wins_without_password_prompt();
 	ok &= test_pam_wins();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");

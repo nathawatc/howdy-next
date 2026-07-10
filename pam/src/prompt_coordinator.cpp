@@ -9,6 +9,7 @@
 #include "paths.hpp"
 #include "prompt_workaround.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -21,6 +22,7 @@
 #include <stdexcept>
 #include <string>
 #include <syslog.h>
+#include <thread>
 #include <unistd.h>
 
 #include <security/pam_appl.h>
@@ -34,7 +36,10 @@ namespace {
 
 	constexpr auto kPromptRetryDelay =
 	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
-	constexpr int kMaxPromptRetries = 5;
+	constexpr int  kMaxPromptRetries        = 5;
+	constexpr auto kCompareWaitPollInterval = std::chrono::milliseconds(10);
+	// Lets compare process perform SIGTERM cleanup without extending scan deadline.
+	constexpr auto kCompareTerminationGrace = std::chrono::milliseconds(250);
 
 	using howdy::native::CompareExit;
 
@@ -75,19 +80,83 @@ namespace {
 		}
 	};
 
-	auto wait_for_compare_process(pid_t child_pid) -> int {
+	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::time_point deadline)
+	    -> int {
+		using Clock = std::chrono::steady_clock;
+
+		auto try_wait = [child_pid](int *status) -> bool {
+			while (true) {
+				const pid_t result = waitpid(child_pid, status, WNOHANG);
+				if (result == child_pid) {
+					return true;
+				}
+				if (result == 0) {
+					return false;
+				}
+				if (errno == EINTR) {
+					continue;
+				}
+
+				syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno),
+				       errno);
+				*status = make_wait_exit_status(CompareExit::kAbort);
+				return true;
+			}
+		};
+
+		auto wait_until = [&try_wait](Clock::time_point deadline) -> std::optional<int> {
+			while (true) {
+				int status = 0;
+				if (try_wait(&status)) {
+					return status;
+				}
+
+				const auto now = Clock::now();
+				if (now >= deadline) {
+					return std::nullopt;
+				}
+				const auto remaining = deadline - now;
+				std::this_thread::sleep_for(
+				    std::min(std::chrono::duration_cast<Clock::duration>(kCompareWaitPollInterval),
+				             remaining));
+			}
+		};
+
+		if (const auto status = wait_until(deadline); status.has_value()) {
+			return *status;
+		}
+
+		int status = 0;
+		if (try_wait(&status)) {
+			return status;
+		}
+		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
+			syslog(LOG_WARNING, "Failed to terminate timed-out compare process: %s (%d)",
+			       strerror(errno), errno);
+		}
+
+		if (wait_until(Clock::now() + kCompareTerminationGrace).has_value()) {
+			return make_wait_exit_status(CompareExit::kTimeoutReached);
+		}
+		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
+			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
+			       strerror(errno), errno);
+		}
+
 		while (true) {
-			int         status = 0;
+			status             = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
-				return status;
+				return make_wait_exit_status(CompareExit::kTimeoutReached);
 			}
 			if (result < 0 && errno == EINTR) {
 				continue;
 			}
-
-			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
-			return make_wait_exit_status(CompareExit::kAbort);
+			if (result < 0 && errno != ECHILD) {
+				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
+				       strerror(errno), errno);
+			}
+			return make_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 	}
 
@@ -159,9 +228,11 @@ namespace {
 		return result;
 	}
 
-	auto wait_for_compare_process_dependency(void *context, pid_t child_pid) -> int {
+	auto wait_for_compare_process_dependency(void *context, pid_t child_pid,
+	                                         std::chrono::steady_clock::time_point deadline)
+	    -> int {
 		(void)context;
-		return wait_for_compare_process(child_pid);
+		return wait_for_compare_process(child_pid, deadline);
 	}
 
 	auto call_posix_spawn(void *context, pid_t *child_pid, const char *path, char *const *argv,
@@ -235,11 +306,13 @@ namespace howdy::pam {
 
 	PromptCoordinator::PromptCoordinator(pam_handle_t *pamh, Workaround workaround,
 	                                     bool ask_auth_tok, bool existing_auth_token,
-	                                     PromptCoordinatorDependencies dependencies)
+	                                     PromptCoordinatorDependencies       dependencies,
+	                                     std::chrono::steady_clock::duration hard_timeout)
 	    : pamh_(pamh)
 	    , requested_workaround_(workaround)
 	    , ask_auth_tok_(ask_auth_tok)
 	    , existing_auth_token_(existing_auth_token)
+	    , hard_timeout_(hard_timeout)
 	    , dependencies_(dependencies)
 	    , effective_workaround_(workaround) {}
 
@@ -255,7 +328,8 @@ namespace howdy::pam {
 		       dependencies_.wait_for_compare_process != nullptr &&
 		       dependencies_.terminate_compare != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
-		       dependencies_.request_auth_token != nullptr;
+		       dependencies_.request_auth_token != nullptr &&
+		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
 
 	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
@@ -268,8 +342,9 @@ namespace howdy::pam {
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 
-		pid_t     child_pid = -1;
-		const int spawn_result =
+		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
+		pid_t      child_pid        = -1;
+		const int  spawn_result =
 		    dependencies_.spawn_compare_process(dependencies_.context, request, &child_pid);
 
 		if (spawn_result != 0 || child_pid <= 0) {
@@ -284,9 +359,9 @@ namespace howdy::pam {
 			};
 		}
 
-		child_task_.emplace([this, child_pid] {
-			const int status =
-			    dependencies_.wait_for_compare_process(dependencies_.context, child_pid);
+		child_task_.emplace([this, child_pid, compare_deadline] {
+			const int status = dependencies_.wait_for_compare_process(dependencies_.context,
+			                                                          child_pid, compare_deadline);
 
 			{
 				std::unique_lock<std::mutex> lock(mutex_);
@@ -444,7 +519,14 @@ namespace howdy::pam::testing {
 	}
 
 	auto wait_for_compare_process(pid_t child_pid) -> int {
-		return ::wait_for_compare_process(child_pid);
+		return ::wait_for_compare_process(child_pid, std::chrono::steady_clock::now() +
+		                                                 std::chrono::seconds(1));
+	}
+
+	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::duration hard_timeout)
+	    -> int {
+		return ::wait_for_compare_process(child_pid,
+		                                  std::chrono::steady_clock::now() + hard_timeout);
 	}
 
 	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,

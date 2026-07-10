@@ -4,6 +4,7 @@
 #include "native_prompt_conversation.hpp"
 #include "optional_task.hpp"
 
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -25,7 +26,8 @@ namespace howdy::pam {
 	using SpawnCompareProcessFn = int (*)(void *context, const CompareLaunchRequest &request,
 	                                      pid_t *child_pid);
 
-	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid);
+	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid,
+	                                        std::chrono::steady_clock::time_point deadline);
 
 	using TerminateCompareProcessFn = void (*)(void *context, pid_t child_pid);
 
@@ -62,7 +64,8 @@ namespace howdy::pam {
 	class PromptCoordinator {
 	public:
 		PromptCoordinator(pam_handle_t *pamh, Workaround workaround, bool ask_auth_tok,
-		                  bool existing_auth_token, PromptCoordinatorDependencies dependencies);
+		                  bool existing_auth_token, PromptCoordinatorDependencies dependencies,
+		                  std::chrono::steady_clock::duration hard_timeout);
 
 		PromptCoordinator(const PromptCoordinator &)                     = delete;
 		auto operator=(const PromptCoordinator &) -> PromptCoordinator & = delete;
@@ -80,6 +83,7 @@ namespace howdy::pam {
 		Workaround                              requested_workaround_ = Workaround::Off;
 		bool                                    ask_auth_tok_         = false;
 		bool                                    existing_auth_token_  = false;
+		std::chrono::steady_clock::duration     hard_timeout_{};
 		PromptCoordinatorDependencies           dependencies_;
 		std::mutex                              mutex_;
 		std::condition_variable                 condition_;

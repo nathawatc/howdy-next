@@ -9,6 +9,7 @@
 #include "status_mapping.hpp"
 
 #include <cerrno>
+#include <chrono>
 #include <clocale>
 #include <cstdlib>
 #include <cstring>
@@ -30,6 +31,8 @@
 #include <sys/wait.h>
 
 namespace {
+	// Covers exec, model loading, and camera setup before configured scan timeout begins.
+	constexpr auto kCompareStartupGrace = std::chrono::seconds(3);
 
 	auto S(const char *msg) -> const char * {
 		return gettext(msg);
@@ -280,7 +283,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 
 	howdy::pam::PromptCoordinator coordinator(
 	    pamh, workaround, ask_auth_tok, existing_auth_token,
-	    howdy::pam::production_prompt_coordinator_dependencies());
+	    howdy::pam::production_prompt_coordinator_dependencies(),
+	    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
 
 	if (!coordinator.valid()) {
 		return PAM_SYSTEM_ERR;

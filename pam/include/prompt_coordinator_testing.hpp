@@ -7,6 +7,7 @@
 #	include "prompt_coordinator.hpp"
 
 #	include <tuple>
+#	include <chrono>
 
 namespace howdy::pam::testing {
 	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
@@ -17,6 +18,8 @@ namespace howdy::pam::testing {
 
 	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
 	                           PosixSpawnFn posix_spawn_fn, void *context) -> int;
+	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::duration hard_timeout)
+	    -> int;
 
 }  // namespace howdy::pam::testing
 

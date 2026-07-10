@@ -98,10 +98,8 @@ namespace howdy::native {
 		}
 
 		stats_.frames++;
-		const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-		                         dependencies_.now(dependencies_.clock_context) - loop_start_)
-		                         .count();
-		if (elapsed > config_.timeout) {
+		if (dependencies_.now(dependencies_.clock_context) - loop_start_ >=
+		    std::chrono::seconds(config_.timeout)) {
 			return {
 			    .status       = CompareCaptureFrameStatus::kTimeout,
 			    .frame_number = stats_.frames,
