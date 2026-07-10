@@ -11,10 +11,12 @@ namespace howdy::native::user_model_store_test_hooks {
 		std::function<void(const std::filesystem::path &)> before_write_commit;
 		std::function<void(const std::filesystem::path &)> after_write_identity_check;
 		std::function<void(const std::filesystem::path &)> before_delete_commit;
-		bool                                               fail_write         = false;
-		bool                                               fail_fsync         = false;
-		bool                                               fail_write_cleanup = false;
-		bool                                               fail_delete_unlink = false;
+		bool                                               fail_write          = false;
+		bool                                               fail_fsync          = false;
+		bool                                               fail_parent_sync    = false;
+		bool                                               fail_write_cleanup  = false;
+		bool                                               fail_write_rollback = false;
+		bool                                               fail_delete_unlink  = false;
 	};
 
 	[[nodiscard]] auto current() -> Hooks &;

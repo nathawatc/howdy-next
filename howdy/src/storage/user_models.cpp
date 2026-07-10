@@ -43,6 +43,29 @@ namespace howdy::native {
 			                        "Internal user model store invariant failed");
 		}
 
+		auto commit_failure(AtomicFileCommitResult result, UserModelStatus failure_status,
+		                    std::string failure_message, std::string committed_message,
+		                    UserModelEntry entry = {}, bool removed_last = false)
+		    -> UserModelMutationResult {
+			if (result == AtomicFileCommitResult::kStateUncertain) {
+				return UserModelMutationResult{
+				    .status        = UserModelStatus::kCommitStateUncertain,
+				    .error_message = "User model namespace changed during commit and recovery "
+				                     "failed; inspect state "
+				                     "before retrying",
+				};
+			}
+			if (result == AtomicFileCommitResult::kCommittedSyncFailed) {
+				return UserModelMutationResult{
+				    .status        = UserModelStatus::kDurabilityUncertain,
+				    .error_message = std::move(committed_message),
+				    .entry         = std::move(entry),
+				    .removed_last  = removed_last,
+				};
+			}
+			return mutation_failure(failure_status, std::move(failure_message));
+		}
+
 		auto entry_matches(const UserModelEntry &entry, const UserModelEntryExpectation &expected)
 		    -> bool {
 			return entry.id == expected.id && entry.time == expected.time &&
@@ -70,9 +93,14 @@ namespace howdy::native {
 				                        "Failed to update model file");
 			}
 			if (user_model_codec::is_empty(*document)) {
-				if (!transaction.remove_file()) {
-					return mutation_failure(UserModelStatus::kDeleteFailed,
-					                        "Failed to remove model file");
+				const auto commit_result = transaction.remove_file();
+				if (!atomic_file_commit_is_durable(commit_result)) {
+					return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
+					                      "Failed to remove model file",
+					                      "Model file was removed, but its directory could not be "
+					                      "synced; verify state "
+					                      "before retrying",
+					                      std::move(removed), true);
 				}
 				return UserModelMutationResult{
 				    .status       = UserModelStatus::kOk,
@@ -80,9 +108,13 @@ namespace howdy::native {
 				    .removed_last = true,
 				};
 			}
-			if (!transaction.write_document(*document)) {
-				return mutation_failure(UserModelStatus::kWriteFailed,
-				                        "Failed to update model file");
+			const auto commit_result = transaction.write_document(*document);
+			if (!atomic_file_commit_is_durable(commit_result)) {
+				return commit_failure(
+				    commit_result, UserModelStatus::kWriteFailed, "Failed to update model file",
+				    "Model file was updated, but its directory could not be synced; verify state "
+				    "before retrying",
+				    std::move(removed));
 			}
 			return UserModelMutationResult{
 			    .status = UserModelStatus::kOk,
@@ -175,9 +207,17 @@ namespace howdy::native {
 		    .model     = new_entry.model,
 		    .encodings = new_entry.encodings,
 		};
-		if (!user_model_codec::append_entry(mutation.document, entry) ||
-		    !mutation.transaction->write_document(mutation.document)) {
+		if (!user_model_codec::append_entry(mutation.document, entry)) {
 			return mutation_failure(UserModelStatus::kWriteFailed, "Failed to save model file");
+		}
+		const auto commit_result = mutation.transaction->write_document(mutation.document);
+		if (!atomic_file_commit_is_durable(commit_result)) {
+			return commit_failure(commit_result, UserModelStatus::kWriteFailed,
+			                      "Failed to save model file",
+			                      "Model file was updated, but its directory could not be synced; "
+			                      "verify state before "
+			                      "retrying",
+			                      entry);
 		}
 		return UserModelMutationResult{.status = UserModelStatus::kOk, .entry = std::move(entry)};
 	}
@@ -245,8 +285,14 @@ namespace howdy::native {
 		if (!transaction.transaction.has_value()) {
 			return internal_invariant_failure();
 		}
-		if (!transaction.transaction->remove_file()) {
-			return mutation_failure(UserModelStatus::kDeleteFailed, "Failed to remove model file");
+		const auto commit_result = transaction.transaction->remove_file();
+		if (!atomic_file_commit_is_durable(commit_result)) {
+			return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
+			                      "Failed to remove model file",
+			                      "Model file was removed, but its directory could not be synced; "
+			                      "verify state before "
+			                      "retrying",
+			                      {}, true);
 		}
 		return UserModelMutationResult{
 		    .status       = UserModelStatus::kOk,
@@ -278,8 +324,14 @@ namespace howdy::native {
 		if (!*unchanged) {
 			return model_changed_failure();
 		}
-		if (!transaction.transaction->remove_file()) {
-			return mutation_failure(UserModelStatus::kDeleteFailed, "Failed to remove model file");
+		const auto commit_result = transaction.transaction->remove_file();
+		if (!atomic_file_commit_is_durable(commit_result)) {
+			return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
+			                      "Failed to remove model file",
+			                      "Model file was removed, but its directory could not be synced; "
+			                      "verify state before "
+			                      "retrying",
+			                      {}, true);
 		}
 		return UserModelMutationResult{
 		    .status       = UserModelStatus::kOk,

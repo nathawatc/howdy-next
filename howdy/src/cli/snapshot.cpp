@@ -86,8 +86,13 @@ namespace {
 		    .context      = nullptr,
 		    .encode_image = encode_image_dependency,
 		};
-		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath,
-		                                               dependencies)) {
+		howdy::native::AtomicFileCommitResult commit_result;
+		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath, dependencies,
+		                                               &commit_result)) {
+			if (howdy::native::atomic_file_may_have_committed(commit_result)) {
+				std::cerr << "Snapshot was written, but its directory could not be synced; verify "
+				             "the file before retrying\n";
+			}
 			return {};
 		}
 		return filepath;
@@ -202,8 +207,12 @@ auto howdy::native::snapshot_internal::ensure_snapshot_directory(
 
 auto howdy::native::snapshot_internal::write_snapshot_at_path(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
-    const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies) -> bool {
-	if (dependencies.encode_image == nullptr) {
+    const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies,
+    AtomicFileCommitResult *commit_result) -> bool {
+	if (commit_result != nullptr) {
+		*commit_result = AtomicFileCommitResult::kNotCommitted;
+	}
+	if (dependencies.encode_image == nullptr || dependencies.sync_parent == nullptr) {
 		return false;
 	}
 	if (!has_valid_snapshot_frames(frames)) {
@@ -253,7 +262,11 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 		howdy::native::cleanup_staged_file(*staged);
 		return false;
 	}
-	return howdy::native::install_staged_file(*staged, path);
+	const auto result = howdy::native::install_staged_file(*staged, path, dependencies.sync_parent);
+	if (commit_result != nullptr) {
+		*commit_result = result;
+	}
+	return howdy::native::atomic_file_commit_is_durable(result);
 }
 
 auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(

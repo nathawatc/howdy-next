@@ -44,6 +44,19 @@ namespace howdy::native {
 		return write_all_to_fd(fd, content.data(), content.size());
 	}
 
+	inline auto sync_fd(int fd) -> bool {
+		if (fd < 0) {
+			return false;
+		}
+
+		while (fsync(fd) != 0) {
+			if (errno != EINTR) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	inline auto read_fd_to_string_bounded(int fd, std::size_t max_bytes) -> BoundedReadResult {
 		BoundedReadResult result;
 		if (max_bytes == 0) {

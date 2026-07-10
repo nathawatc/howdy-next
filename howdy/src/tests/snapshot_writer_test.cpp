@@ -174,6 +174,10 @@ namespace {
 		return {.context = &context, .encode_image = real_encode};
 	}
 
+	auto fail_parent_sync(const std::filesystem::path & /*path*/) -> bool {
+		return false;
+	}
+
 	auto expect_invalid_batch_rejected(const std::string &name, const std::vector<cv::Mat> &frames)
 	    -> bool {
 		bool                  ok        = true;
@@ -411,6 +415,23 @@ namespace {
 		return cleanup_temp_root(temp_root, ok);
 	}
 
+	auto committed_sync_failure_is_reported() -> bool {
+		bool                  ok        = true;
+		const auto            temp_root = make_temp_root("committed-sync-failure", ok);
+		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
+		WriterCallbackContext context;
+		auto                  dependencies = fake_dependencies(context);
+		dependencies.sync_parent           = fail_parent_sync;
+		howdy::native::AtomicFileCommitResult commit_result;
+		const bool                            result = snapshot_internal::write_snapshot_at_path(
+		    tiny_frames(), text_lines(), output, dependencies, &commit_result);
+		ok &= expect(!result, "committed sync failure returns false");
+		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
+		             "committed sync failure preserves exact commit state");
+		ok &= expect(fs::exists(output), "committed sync failure leaves snapshot visible");
+		return cleanup_temp_root(temp_root, ok);
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -432,5 +453,6 @@ auto main() -> int {
 	ok &= insecure_existing_log_root_rejects_before_encoding();
 	ok &= missing_directories_are_created_and_secured();
 	ok &= mixed_width_frames_are_supported();
+	ok &= committed_sync_failure_is_reported();
 	return ok ? 0 : 1;
 }

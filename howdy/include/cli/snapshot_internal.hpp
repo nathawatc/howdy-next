@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/atomic_files.hpp"
 #include "config/runtime_config.hpp"
 
 #include <filesystem>
@@ -48,6 +49,7 @@ namespace howdy::native::snapshot_internal {
 	struct SnapshotWriterDependencies {
 		void                 *context      = nullptr;
 		SnapshotEncodeImageFn encode_image = nullptr;
+		SyncParentDirectoryFn sync_parent  = sync_parent_directory;
 	};
 
 	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool;
@@ -55,7 +57,8 @@ namespace howdy::native::snapshot_internal {
 	auto write_snapshot_at_path(const std::vector<cv::Mat>       &frames,
 	                            const std::vector<std::string>   &text_lines,
 	                            const std::filesystem::path      &path,
-	                            const SnapshotWriterDependencies &dependencies) -> bool;
+	                            const SnapshotWriterDependencies &dependencies,
+	                            AtomicFileCommitResult           *commit_result = nullptr) -> bool;
 
 	auto snapshot_main_with_dependencies(int argc, char **argv,
 	                                     const SnapshotDependencies &dependencies) -> int;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/atomic_files.hpp"
 #include "common/file_security.hpp"
 
 #include <cerrno>
@@ -67,14 +68,15 @@ namespace howdy::native {
 	auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
 	    -> std::vector<std::string>;
 	auto atomic_write_lines(const std::filesystem::path    &config_path,
-	                        const std::vector<std::string> &lines) -> bool;
+	                        const std::vector<std::string> &lines,
+	                        SyncParentDirectoryFn           sync_parent = sync_parent_directory)
+	    -> AtomicFileCommitResult;
 	auto validate_config_content(const std::string &content, std::string *error_message) -> bool;
-	auto replace_config_content_atomically(const std::filesystem::path &config_path,
-	                                       const std::string           &content,
-	                                       std::string *error_message = nullptr, bool lock = true,
-	                                       bool               validate_runtime         = true,
-	                                       const std::string *expected_current_content = nullptr)
-	    -> bool;
+	auto replace_config_content_atomically(
+	    const std::filesystem::path &config_path, const std::string &content,
+	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,
+	    const std::string    *expected_current_content = nullptr,
+	    SyncParentDirectoryFn sync_parent              = sync_parent_directory) -> bool;
 	auto update_config_value(const std::filesystem::path &config_path, const std::string &key,
 	                         const std::string &value, std::string *error_message,
 	                         bool lock = false, bool validate_runtime = true) -> bool;

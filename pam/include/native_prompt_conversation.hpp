@@ -3,6 +3,7 @@
 
 #include <array>
 #include <atomic>
+#include <termios.h>
 
 #include <security/pam_appl.h>
 
@@ -21,6 +22,7 @@ public:
 	void set_test_read_eintr_count(int count);
 	void set_test_abort_on_poll_eintr(bool enabled);
 	void set_test_abort_on_read_eintr(bool enabled);
+	void set_test_restore_failure(bool enabled);
 
 	static void set_test_available_result(int result);
 	static void set_test_install_result(int result);
@@ -38,6 +40,8 @@ private:
 	    -> int;
 	[[nodiscard]] auto write_message_line(const struct pam_message &message) const -> int;
 	auto prompt_input(const struct pam_message &message, char **response, bool hide_input) -> int;
+	[[nodiscard]] auto restore_prompt_terminal(const struct termios &original_termios) const
+	    -> bool;
 
 	pam_handle_t      *pamh_ = nullptr;
 	struct pam_conv    original_conv_{};
@@ -53,6 +57,7 @@ private:
 	int  test_read_eintr_count_    = 0;
 	bool test_abort_on_poll_eintr_ = false;
 	bool test_abort_on_read_eintr_ = false;
+	bool test_restore_failure_     = false;
 #endif
 };
 

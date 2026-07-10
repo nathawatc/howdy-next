@@ -45,6 +45,10 @@ namespace {
 		return count;
 	}
 
+	auto fail_parent_sync(const std::filesystem::path & /*path*/) -> bool {
+		return false;
+	}
+
 	auto lock_path_for_config(const std::filesystem::path &config_path) -> std::filesystem::path {
 		return config_path.string() + ".lock";
 	}
@@ -277,10 +281,19 @@ auto main() -> int {
 	    "[face]\n",
 	    "sface_threshold = 0.363\n",
 	};
-	ok &= expect(howdy::native::atomic_write_lines(nested_path, write_lines),
+	ok &= expect(howdy::native::atomic_file_commit_is_durable(
+	                 howdy::native::atomic_write_lines(nested_path, write_lines)),
 	             "atomic_write_lines creates parent dirs and writes file");
 	ok &= expect(read_file(nested_path) == "[face]\nsface_threshold = 0.363\n",
 	             "atomic_write_lines output matches expected content");
+	const auto uncertain_lines_path = temp_root / "uncertain-lines.ini";
+	const auto uncertain_lines_result =
+	    howdy::native::atomic_write_lines(uncertain_lines_path, write_lines, fail_parent_sync);
+	ok &= expect(uncertain_lines_result ==
+	                 howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
+	             "atomic_write_lines reports committed parent-sync failure");
+	ok &= expect(read_file(uncertain_lines_path) == "[face]\nsface_threshold = 0.363\n",
+	             "atomic_write_lines leaves committed content visible after sync failure");
 
 	const std::string valid_content = "[core]\n"
 	                                  "disabled = false\n"
@@ -321,6 +334,27 @@ auto main() -> int {
 	ok &= expect(stat(replace_path.c_str(), &replace_stat) == 0, "stat replaced config");
 	ok &= expect((replace_stat.st_mode & 0777) == 0600,
 	             "replace_config_content_atomically preserves config mode");
+
+	const std::string uncertain_replacement = "[core]\n"
+	                                          "disabled = false\n"
+	                                          "\n"
+	                                          "[video]\n"
+	                                          "dark_threshold = 60\n";
+	ok &= expect(!howdy::native::replace_config_content_atomically(
+	                 replace_path, uncertain_replacement, &install_error, true, true, nullptr,
+	                 fail_parent_sync),
+	             "replace_config_content_atomically reports parent-sync failure");
+	ok &= expect(install_error ==
+	                 "Config was installed, but its directory could not be synced; verify state "
+	                 "before retrying",
+	             "replace config parent-sync failure reports committed state");
+	ok &= expect(read_file(replace_path) == uncertain_replacement,
+	             "replace config parent-sync failure leaves committed content visible");
+	ok &= expect(count_staged_configs(temp_root) == 0,
+	             "replace config parent-sync failure leaves no staged file");
+	ok &= expect(howdy::native::replace_config_content_atomically(replace_path, replacement_content,
+	                                                              &install_error, true, true),
+	             "replace config recovers after parent-sync failure test");
 
 	const auto before_invalid_replace = read_file(replace_path);
 	const auto staged_before          = count_staged_configs(temp_root);

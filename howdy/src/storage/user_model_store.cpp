@@ -119,43 +119,45 @@ namespace howdy::native {
 
 		auto write_models_atomically(const std::filesystem::path      &path,
 		                             const user_model_codec::Document &document, int locked_fd)
-		    -> bool {
+		    -> AtomicFileCommitResult {
 			const auto serialized = user_model_codec::serialize_document(document);
 			if (!serialized.has_value() || !cleanup_stale_write_artifacts(path)) {
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			auto staged = prepare_staged_file(path, kUserModelTempPrefix, kUserModelFileMode);
 			if (!staged.has_value()) {
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			auto &hooks = user_model_store_test_hooks::current();
 			if (hooks.fail_write || !write_all_to_fd(staged->fd.get(), *serialized)) {
 				cleanup_staged_file(*staged);
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
-			if (hooks.fail_fsync || fsync(staged->fd.get()) != 0) {
+			if (hooks.fail_fsync || !sync_fd(staged->fd.get())) {
 				cleanup_staged_file(*staged);
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			if (hooks.before_write_commit) {
 				hooks.before_write_commit(path);
 			}
 			if (!path_identifies_fd(path, locked_fd)) {
 				cleanup_staged_file(*staged);
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			if (hooks.after_write_identity_check) {
 				hooks.after_write_identity_check(path);
 			}
 			if (!staged->fd.close() || !exchange_paths(staged->path, path)) {
 				cleanup_staged_file(*staged);
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			if (!path_identifies_fd(staged->path, locked_fd)) {
-				if (exchange_paths(staged->path, path)) {
+				if (!hooks.fail_write_rollback && exchange_paths(staged->path, path)) {
 					cleanup_staged_file(*staged);
+					return AtomicFileCommitResult::kNotCommitted;
 				}
-				return false;
+				staged->path.clear();
+				return AtomicFileCommitResult::kStateUncertain;
 			}
 
 			// Exchange commits the canonical write; old-file removal is cleanup only.
@@ -163,14 +165,16 @@ namespace howdy::native {
 			if (!hooks.fail_write_cleanup) {
 				std::filesystem::remove(staged->path, ec);
 			}
-			const bool parent_synced = sync_parent_directory(path);
+			const bool parent_synced = !hooks.fail_parent_sync && sync_parent_directory(path);
 			staged->path.clear();
-			return parent_synced;
+			return parent_synced ? AtomicFileCommitResult::kCommitted
+			                     : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
-		auto remove_locked_file(const std::filesystem::path &path, int fd) -> bool {
+		auto remove_locked_file(const std::filesystem::path &path, int fd)
+		    -> AtomicFileCommitResult {
 			if (!path_identifies_fd(path, fd)) {
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
 			auto &hooks = user_model_store_test_hooks::current();
 			if (hooks.before_delete_commit) {
@@ -184,9 +188,11 @@ namespace howdy::native {
 				std::filesystem::remove(path, ec);
 			}
 			if (ec) {
-				return false;
+				return AtomicFileCommitResult::kNotCommitted;
 			}
-			return sync_parent_directory(path);
+			return !hooks.fail_parent_sync && sync_parent_directory(path)
+			           ? AtomicFileCommitResult::kCommitted
+			           : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
 		struct LockedUserModelFile {
@@ -290,7 +296,7 @@ namespace howdy::native {
 		if (fstat(lock_.fd, &opened_file) != 0 || opened_file.st_size != 0) {
 			return;
 		}
-		remove_locked_file(path_, lock_.fd);
+		(void)remove_locked_file(path_, lock_.fd);
 	}
 
 	auto UserModelStoreTransaction::path() const -> const std::filesystem::path & {
@@ -315,20 +321,23 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::write_document(const user_model_codec::Document &document) const
-	    -> bool {
-		if (!path_matches_locked_file() || !write_models_atomically(path_, document, lock_.fd)) {
-			return false;
+	    -> AtomicFileCommitResult {
+		if (!path_matches_locked_file()) {
+			return AtomicFileCommitResult::kNotCommitted;
 		}
-		completed_ = true;
-		return true;
+		const auto result = write_models_atomically(path_, document, lock_.fd);
+		if (atomic_file_may_have_committed(result)) {
+			completed_ = true;
+		}
+		return result;
 	}
 
-	auto UserModelStoreTransaction::remove_file() const -> bool {
-		if (!remove_locked_file(path_, lock_.fd)) {
-			return false;
+	auto UserModelStoreTransaction::remove_file() const -> AtomicFileCommitResult {
+		const auto result = remove_locked_file(path_, lock_.fd);
+		if (atomic_file_may_have_committed(result)) {
+			completed_ = true;
 		}
-		completed_ = true;
-		return true;
+		return result;
 	}
 
 	auto UserModelStore::resolve(const std::string &user, bool create_directory,

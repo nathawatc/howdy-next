@@ -44,22 +44,25 @@ namespace {
 		return static_cast<uid_t>(0);
 	}
 
-	void configure_transfer_policy(CURL *curl) {
-		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-		curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
-		curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
-		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedBytesPerSecond);
-		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeoutSeconds);
-		curl_easy_setopt(
-		    curl, CURLOPT_MAXFILESIZE_LARGE,
-		    static_cast<curl_off_t>(howdy::native::download_models_internal::kMaxDownloadBytes));
+	auto configure_transfer_policy(CURL *curl) -> bool {
+		bool ok =
+		    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedBytesPerSecond) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeoutSeconds) == CURLE_OK &&
+		    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE,
+		                     static_cast<curl_off_t>(
+		                         howdy::native::download_models_internal::kMaxDownloadBytes)) ==
+		        CURLE_OK;
 #ifdef CURLOPT_PROTOCOLS_STR
-		curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+		ok = ok && curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https") == CURLE_OK;
 #endif
 #ifdef CURLOPT_REDIR_PROTOCOLS_STR
-		curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+		ok = ok && curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https") == CURLE_OK;
 #endif
+		return ok;
 	}
 
 }  // namespace
@@ -117,6 +120,10 @@ namespace {
 				}
 			}
 		}
+		if (input.bad()) {
+			EVP_MD_CTX_free(context);
+			return std::nullopt;
+		}
 
 		std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
 		unsigned int                               digest_length = 0;
@@ -163,20 +170,29 @@ namespace {
 			return false;
 		}
 
-		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-		configure_transfer_policy(curl);
+		if (curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) != CURLE_OK ||
+		    !configure_transfer_policy(curl)) {
+			curl_easy_cleanup(curl);
+			return false;
+		}
 		howdy::native::download_models_internal::DownloadWriteContext write_context{
 		    .staged = &staged,
 		};
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-		                 howdy::native::download_models_internal::download_models_write_callback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_context);
+		if (curl_easy_setopt(
+		        curl, CURLOPT_WRITEFUNCTION,
+		        howdy::native::download_models_internal::download_models_write_callback) !=
+		        CURLE_OK ||
+		    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_context) != CURLE_OK) {
+			curl_easy_cleanup(curl);
+			return false;
+		}
 		const CURLcode result = curl_easy_perform(curl);
 
-		long status_code = 0;
-		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
+		long           status_code = 0;
+		const CURLcode info_result = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
 		curl_easy_cleanup(curl);
-		return result == CURLE_OK && status_code >= 200 && status_code < 400;
+		return result == CURLE_OK && info_result == CURLE_OK && status_code >= 200 &&
+		       status_code < 400;
 	}
 
 }  // namespace
@@ -225,7 +241,10 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 	    },
 	};
 
-	curl_global_init(CURL_GLOBAL_DEFAULT);
+	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+		std::cout << "Failed to initialize download backend\n";
+		return kExitAbort;
+	}
 	for (const auto &model : models) {
 		const auto readiness = howdy::native::check_opencv_model_readiness_with_label(
 		    model.destination, "Model file", dependencies.model_file_owner_uid());
@@ -277,10 +296,17 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 			return kExitAbort;
 		}
 
-		if (!howdy::native::install_staged_file(*staged, model.destination)) {
+		const auto install_result = howdy::native::install_staged_file(*staged, model.destination);
+		if (!howdy::native::atomic_file_commit_is_durable(install_result)) {
 			curl_global_cleanup();
-			std::cout << "Failed to install downloaded model: " << model.destination.string()
-			          << "\n";
+			if (howdy::native::atomic_file_may_have_committed(install_result)) {
+				std::cout
+				    << "Downloaded model was installed, but its directory could not be synced: "
+				    << model.destination.string() << "\n";
+			} else {
+				std::cout << "Failed to install downloaded model: " << model.destination.string()
+				          << "\n";
+			}
 			return kExitAbort;
 		}
 	}

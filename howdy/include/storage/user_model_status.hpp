@@ -17,6 +17,8 @@ namespace howdy::native {
 		kLockFailed,
 		kWriteFailed,
 		kDeleteFailed,
+		kDurabilityUncertain,
+		kCommitStateUncertain,
 		kDirectoryCreateFailed,
 		kModelNotFound,
 		kModelChanged,

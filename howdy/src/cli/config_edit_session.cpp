@@ -1,5 +1,6 @@
 #include "cli/config_edit_session.hpp"
 
+#include "common/fd_io.hpp"
 #include "common/invoking_user_env.hpp"
 #include "config/runtime_paths.hpp"
 
@@ -75,7 +76,7 @@ namespace howdy::native::config_internal {
 			std::vector<char> writable(temp_template.begin(), temp_template.end());
 			writable.push_back('\0');
 
-			const int fd = mkstemp(writable.data());
+			const int fd = mkostemp(writable.data(), O_CLOEXEC);
 			if (fd < 0) {
 				return std::nullopt;
 			}
@@ -126,11 +127,13 @@ namespace howdy::native::config_internal {
 				}
 			}
 
-			if (ok && fsync(fd) != 0) {
+			if (ok && !howdy::native::sync_fd(fd)) {
 				ok = false;
 			}
 
-			close(fd);
+			if (close(fd) != 0) {
+				ok = false;
+			}
 
 			if (!ok || (!input.good() && !input.eof())) {
 				remove_if_exists(temp_path);
@@ -201,7 +204,7 @@ namespace howdy::native::config_internal {
 		}
 
 		auto read_temp_config_snapshot(const fs::path &temp_path, std::string *content) -> bool {
-			const int input_fd = open(temp_path.c_str(), O_RDONLY | O_NOFOLLOW);
+			const int input_fd = open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			if (input_fd < 0) {
 				return false;
 			}

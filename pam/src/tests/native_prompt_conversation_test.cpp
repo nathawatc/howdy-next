@@ -111,7 +111,7 @@ namespace {
 
 	auto open_pipe(std::array<ScopedFd, 2> *fds) -> bool {
 		std::array<int, 2> raw_fds{{-1, -1}};
-		if (pipe(raw_fds.data()) != 0) {
+		if (pipe2(raw_fds.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
 			return false;
 		}
 		(*fds)[0].reset(raw_fds[0]);
@@ -143,6 +143,21 @@ namespace {
 				return bytes_read;
 			}
 		}
+	}
+
+	auto write_all(int fd, const char *data, std::size_t size) -> bool {
+		std::size_t written = 0;
+		while (written < size) {
+			const ssize_t result = write(fd, data + written, size - written);
+			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			if (result <= 0) {
+				return false;
+			}
+			written += static_cast<std::size_t>(result);
+		}
+		return true;
 	}
 
 	auto test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
@@ -580,6 +595,103 @@ namespace {
 		return ok;
 	}
 
+	auto expect_oversized_prompt_fails_closed() -> bool {
+		bool                    ok = true;
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+
+		ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+		             "oversized prompt test opens pseudo terminal");
+		ok &= expect(open_pipe(&abort_pipe), "oversized prompt test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		const struct pam_message prompt = {
+		    .msg_style = PAM_PROMPT_ECHO_OFF,
+		    .msg       = "Password: ",
+		};
+		const int                slave_raw_fd = slave_fd.get();
+		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+		                                      abort_pipe[1].release());
+
+		int         prompt_result = PAM_SUCCESS;
+		char       *response      = nullptr;
+		std::thread prompt_thread([&] {
+			prompt_result = conversation.prompt_input(prompt, &response, true);
+		});
+
+		std::array<char, 64> prompt_buffer{};
+		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		ok &= expect(prompt_bytes > 0, "oversized prompt test writes prompt to tty");
+
+		const std::string oversized_response = std::string(513, 'x') + "\n";
+		ok &=
+		    expect(write_all(master_fd.get(), oversized_response.data(), oversized_response.size()),
+		           "oversized prompt test writes over-limit response");
+		prompt_thread.join();
+
+		ok &= expect(prompt_result == PAM_CONV_ERR,
+		             "oversized prompt test rejects over-limit response");
+		ok &= expect(response == nullptr, "oversized prompt test returns no response");
+		struct termios restored_termios{};
+		ok &= expect(tcgetattr(slave_raw_fd, &restored_termios) == 0,
+		             "oversized prompt test can inspect restored terminal");
+		ok &= expect((restored_termios.c_lflag & (ICANON | ECHO | ISIG)) == (ICANON | ECHO | ISIG),
+		             "oversized prompt test restores terminal flags");
+		if (response != nullptr) {
+			std::free(response);
+		}
+		return ok;
+	}
+
+	auto expect_restore_failure_fails_closed() -> bool {
+		bool                    ok = true;
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+
+		ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+		             "restore failure test opens pseudo terminal");
+		ok &= expect(open_pipe(&abort_pipe), "restore failure test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		const struct pam_message prompt = {
+		    .msg_style = PAM_PROMPT_ECHO_OFF,
+		    .msg       = "Password: ",
+		};
+		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
+		                                      abort_pipe[1].release());
+		conversation.set_test_restore_failure(true);
+
+		int         prompt_result = PAM_SUCCESS;
+		char       *response      = nullptr;
+		std::thread prompt_thread([&] {
+			prompt_result = conversation.prompt_input(prompt, &response, true);
+		});
+
+		std::array<char, 64> prompt_buffer{};
+		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
+		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		ok &= expect(prompt_bytes > 0, "restore failure test writes prompt to tty");
+		constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
+		ok &= expect(write_all(master_fd.get(), kPassword.data(), kPassword.size()),
+		             "restore failure test writes password response");
+		prompt_thread.join();
+
+		ok &= expect(prompt_result == PAM_CONV_ERR,
+		             "restore failure test fails closed after terminal restore error");
+		ok &= expect(response == nullptr, "restore failure test returns no response");
+		if (response != nullptr) {
+			std::free(response);
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -642,6 +754,8 @@ auto main() -> int {
 	ok &= expect_poll_eintr_with_abort_fails_closed();
 	ok &= expect_read_eintr_retries_and_accepts_input();
 	ok &= expect_read_eintr_with_abort_fails_closed();
+	ok &= expect_oversized_prompt_fails_closed();
+	ok &= expect_restore_failure_fails_closed();
 	ok &= expect_restore_handles_null_pam();
 	ok &= expect_dispatch_throw_cleanup(1, "std exception after response allocation");
 	ok &= expect_dispatch_throw_cleanup(2, "unknown exception after response allocation");

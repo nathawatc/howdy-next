@@ -1252,6 +1252,27 @@ auto main() -> int {
 		             "staged fsync failure leaves previous model bytes unchanged");
 	}
 	{
+		const auto before_parent_sync_failure = read_file(model_path);
+		const auto before =
+		    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+		const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+		    .fail_parent_sync = true,
+		});
+		const auto result = howdy::native::append_user_model_entry("alice", second_entry);
+		const auto after =
+		    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+		ok &= expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
+		             "append distinguishes committed parent-sync failure");
+		ok &= expect(result.error_message.contains("verify state before retrying"),
+		             "append parent-sync failure warns before retry");
+		ok &= expect(before.status == howdy::native::UserModelStatus::kOk &&
+		                 after.status == howdy::native::UserModelStatus::kOk &&
+		                 after.entries.size() == before.entries.size() + 1,
+		             "append parent-sync failure leaves committed model visible");
+		ok &= expect(write_file(model_path, before_parent_sync_failure),
+		             "restore model after append parent-sync failure test");
+	}
+	{
 		const auto original_content = read_file(model_path);
 		const auto before =
 		    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
@@ -1346,6 +1367,52 @@ auto main() -> int {
 		             "restore model after post-check write swap test");
 	}
 	{
+		const auto original_content  = read_file(model_path);
+		const auto replacement_model = std::string(
+		    R"([{"id":0,"time":1,"label":"rollback-failure-replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.8,0.9]]}])");
+		PreservingRegularFileSwap hook{
+		    .replacement_path = temp_root / "rollback-failure-replacement.dat",
+		    .displaced_path   = temp_root / "rollback-failure-original.dat",
+		};
+		ok &= expect(write_file(hook.replacement_path, replacement_model),
+		             "write replacement before rollback-failure test");
+		const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+		    .after_write_identity_check =
+		        [&hook](const std::filesystem::path &path) {
+			        replace_path_preserving_original(&hook, path);
+		        },
+		    .fail_write_rollback = true,
+		});
+		const auto result = howdy::native::append_user_model_entry("alice", second_entry);
+		ok &= expect(hook.calls == 1 && hook.swapped,
+		             "rollback-failure hook replaces model after final identity check");
+		ok &= expect(result.status == howdy::native::UserModelStatus::kCommitStateUncertain,
+		             "append distinguishes failed post-commit recovery");
+		ok &= expect(result.error_message.contains("inspect state before retrying"),
+		             "failed post-commit recovery requires state inspection");
+		ok &= expect(result.entry.id == -1 && !result.removed_last,
+		             "uncertain commit result makes no mutation-state claim");
+		ok &= expect(read_file(model_path) != replacement_model,
+		             "failed rollback leaves changed canonical namespace visible");
+
+		std::vector<fs::path> staged_paths;
+		for (const auto &entry : fs::directory_iterator(models_dir)) {
+			if (entry.path().filename().string().starts_with(".howdy-user-model-")) {
+				staged_paths.push_back(entry.path());
+			}
+		}
+		for (const auto &staged_path : staged_paths) {
+			fs::remove(staged_path, ec);
+			ec.clear();
+		}
+		fs::remove(model_path, ec);
+		ec.clear();
+		fs::remove(hook.displaced_path, ec);
+		ec.clear();
+		ok &= expect(write_file(model_path, original_content),
+		             "restore model after rollback-failure test");
+	}
+	{
 		const auto original_content = read_file(model_path);
 		std::latch clear_paused(1);
 		std::latch allow_clear(1);
@@ -1387,6 +1454,21 @@ auto main() -> int {
 		             "clear reports injected unlink failure");
 		ok &= expect(read_file(model_path) == original_content,
 		             "unlink failure leaves original model at canonical path");
+	}
+	{
+		const auto original_content = read_file(model_path);
+		const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+		    .fail_parent_sync = true,
+		});
+		const auto result = howdy::native::clear_user_model_entries("alice");
+		ok &= expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
+		             "clear distinguishes committed parent-sync failure");
+		ok &= expect(result.removed_last,
+		             "clear parent-sync failure reports committed removal state");
+		ok &= expect(!fs::exists(model_path),
+		             "clear parent-sync failure leaves model removed from namespace");
+		ok &= expect(write_file(model_path, original_content),
+		             "restore model after clear parent-sync failure test");
 	}
 	if (geteuid() != 0) {
 		const auto before_failed_writes = read_file(model_path);

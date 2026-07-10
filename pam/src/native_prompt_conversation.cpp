@@ -18,7 +18,53 @@
 
 namespace {
 
-	constexpr int kAbortPollTimeoutMs = 100;
+	constexpr int         kAbortPollTimeoutMs     = 100;
+	constexpr std::size_t kMaxPromptResponseBytes = 512;
+
+	class SensitivePromptBuffer {
+	public:
+		SensitivePromptBuffer()                                                  = default;
+		SensitivePromptBuffer(const SensitivePromptBuffer &)                     = delete;
+		auto operator=(const SensitivePromptBuffer &) -> SensitivePromptBuffer & = delete;
+
+		~SensitivePromptBuffer() {
+			volatile char *cursor = data_.data();
+			for (std::size_t index = 0; index < data_.size(); ++index) {
+				cursor[index] = '\0';
+			}
+			length_ = 0;
+		}
+
+		[[nodiscard]] auto empty() const -> bool {
+			return length_ == 0;
+		}
+
+		[[nodiscard]] auto full() const -> bool {
+			return length_ == data_.size();
+		}
+
+		void push_back(char value) {
+			data_[length_++] = value;
+		}
+
+		void pop_back() {
+			if (length_ > 0) {
+				data_[--length_] = '\0';
+			}
+		}
+
+		[[nodiscard]] auto data() const -> const char * {
+			return data_.data();
+		}
+
+		[[nodiscard]] auto size() const -> std::size_t {
+			return length_;
+		}
+
+	private:
+		std::array<char, kMaxPromptResponseBytes> data_{};
+		std::size_t                               length_ = 0;
+	};
 
 #ifdef HOWDY_PAM_TESTING
 	std::atomic<int> g_test_available_result{-1};
@@ -67,14 +113,6 @@ namespace {
 		}
 	}
 
-	auto set_nonblocking(int fd) -> bool {
-		const int flags = fcntl(fd, F_GETFL);
-		if (flags < 0) {
-			return false;
-		}
-		return fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-	}
-
 	auto write_all(int fd, const std::string &text) -> bool {
 		return howdy::native::write_all_to_fd(fd, text);
 	}
@@ -83,12 +121,6 @@ namespace {
 		constexpr char kNewline = '\n';
 		while (write(fd, &kNewline, 1) < 0 && errno == EINTR) {
 		}
-	}
-
-	auto abort_prompt_input(int tty_fd, const struct termios &original_termios) -> int {
-		(void)tcsetattr(tty_fd, TCSANOW, &original_termios);
-		write_newline(tty_fd);
-		return PAM_CONV_ERR;
 	}
 
 	void drain_abort_pipe(int fd) {
@@ -135,15 +167,9 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 		return;
 	}
 
-	if (pipe(abort_pipe_.data()) != 0) {
+	if (pipe2(abort_pipe_.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
 		close_fd(tty_fd_);
 		return;
-	}
-
-	if (!set_nonblocking(abort_pipe_[0]) || !set_nonblocking(abort_pipe_[1])) {
-		close_fd(tty_fd_);
-		close_fd(abort_pipe_[0]);
-		close_fd(abort_pipe_[1]);
 	}
 }
 
@@ -173,6 +199,10 @@ void NativePromptConversation::set_test_abort_on_poll_eintr(bool enabled) {
 
 void NativePromptConversation::set_test_abort_on_read_eintr(bool enabled) {
 	test_abort_on_read_eintr_ = enabled;
+}
+
+void NativePromptConversation::set_test_restore_failure(bool enabled) {
+	test_restore_failure_ = enabled;
 }
 
 void NativePromptConversation::set_test_available_result(int result) {
@@ -377,6 +407,20 @@ auto NativePromptConversation::write_message_line(const struct pam_message &mess
 	return PAM_SUCCESS;
 }
 
+auto NativePromptConversation::restore_prompt_terminal(const struct termios &original_termios) const
+    -> bool {
+	while (tcsetattr(tty_fd_, TCSANOW, &original_termios) != 0) {
+		if (errno != EINTR) {
+			return false;
+		}
+	}
+#ifdef HOWDY_PAM_TESTING
+	return !test_restore_failure_;
+#else
+	return true;
+#endif
+}
+
 auto NativePromptConversation::prompt_input(const struct pam_message &message, char **response,
                                             bool hide_input) -> int {
 	if (response == nullptr || tty_fd_ < 0) {
@@ -405,13 +449,19 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 	if (tcsetattr(tty_fd_, TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
+	const auto abort_prompt = [this, &original_termios] {
+		(void)restore_prompt_terminal(original_termios);
+		write_newline(tty_fd_);
+		return PAM_CONV_ERR;
+	};
 
 	const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
 	if (!write_all(tty_fd_, prompt_text)) {
-		return abort_prompt_input(tty_fd_, original_termios);
+		return abort_prompt();
 	}
 
-	std::string                  password;
+	SensitivePromptBuffer        password;
+	bool                         response_too_long = false;
 	std::array<struct pollfd, 2> fds{{
 	    {.fd = tty_fd_, .events = POLLIN, .revents = 0},
 	    {.fd = abort_pipe_[0], .events = POLLIN, .revents = 0},
@@ -436,22 +486,22 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 			if (errno == EINTR && !abort_requested_.load()) {
 				continue;
 			}
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 
 		if (abort_requested_.load()) {
 			drain_abort_pipe(abort_pipe_[0]);
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 
 		constexpr short kFdFailureEvents = POLLHUP | POLLERR | POLLNVAL;
 		if ((fds[0].revents & kFdFailureEvents) != 0 || (fds[1].revents & kFdFailureEvents) != 0) {
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 
 		if ((fds[1].revents & POLLIN) != 0) {
 			drain_abort_pipe(abort_pipe_[0]);
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 
 		if (poll_result == 0 || (fds[0].revents & POLLIN) == 0) {
@@ -478,7 +528,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 			if (errno == EINTR && !abort_requested_.load()) {
 				continue;
 			}
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 		if (bytes_read == 0) {
 			continue;
@@ -489,7 +539,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 		}
 
 		if (ch == 3) {
-			return abort_prompt_input(tty_fd_, original_termios);
+			return abort_prompt();
 		}
 
 		if (ch == '\b' || ch == 127) {
@@ -499,11 +549,24 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 			continue;
 		}
 
+		if (response_too_long) {
+			continue;
+		}
+		if (password.full()) {
+			response_too_long = true;
+			continue;
+		}
 		password.push_back(ch);
 	}
 
-	(void)tcsetattr(tty_fd_, TCSANOW, &original_termios);
+	if (!restore_prompt_terminal(original_termios)) {
+		write_newline(tty_fd_);
+		return PAM_CONV_ERR;
+	}
 	write_newline(tty_fd_);
+	if (response_too_long) {
+		return PAM_CONV_ERR;
+	}
 
 	auto *pam_response = static_cast<struct pam_response *>(calloc(1, sizeof(struct pam_response)));
 	if (pam_response == nullptr) {
@@ -516,7 +579,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 		return PAM_BUF_ERR;
 	}
 
-	std::memcpy(pam_response->resp, password.c_str(), password.size());
+	std::memcpy(pam_response->resp, password.data(), password.size());
 	pam_response->resp_retcode = 0;
 	*response                  = pam_response->resp;
 	std::free(pam_response);

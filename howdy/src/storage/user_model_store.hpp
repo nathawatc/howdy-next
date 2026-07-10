@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/atomic_files.hpp"
 #include "common/file_lock.hpp"
 #include "storage/user_model_codec.hpp"
 #include "storage/user_models.hpp"
@@ -22,8 +23,9 @@ namespace howdy::native {
 		    -> UserModelStoreTransaction & = default;
 		~UserModelStoreTransaction();
 
-		[[nodiscard]] auto write_document(const user_model_codec::Document &document) const -> bool;
-		[[nodiscard]] auto remove_file() const -> bool;
+		[[nodiscard]] auto write_document(const user_model_codec::Document &document) const
+		    -> AtomicFileCommitResult;
+		[[nodiscard]] auto remove_file() const -> AtomicFileCommitResult;
 
 	private:
 		std::filesystem::path path_;

@@ -130,7 +130,7 @@ namespace howdy::native {
 			}
 		}
 
-		const int fd = open(config_path.c_str(), O_RDONLY | O_NOFOLLOW);
+		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 		if (fd < 0) {
 			if (lock_fd_handle >= 0) {
 				unlock_fd(lock_fd_handle);
@@ -159,61 +159,18 @@ namespace howdy::native {
 	}
 
 	auto atomic_write_lines(const std::filesystem::path    &config_path,
-	                        const std::vector<std::string> &lines) -> bool {
-		const auto parent = config_path.parent_path();
-		std::filesystem::create_directories(parent);
-
-		struct stat current_stat{};
-		const bool  have_current_stat = lstat(config_path.c_str(), &current_stat) == 0;
-		if (have_current_stat && !S_ISREG(current_stat.st_mode)) {
-			return false;
+	                        const std::vector<std::string> &lines,
+	                        SyncParentDirectoryFn           sync_parent) -> AtomicFileCommitResult {
+		auto staged = prepare_staged_file(config_path, ".howdy-config-", kDefaultConfigMode);
+		if (!staged.has_value()) {
+			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		std::string       temp = (parent / ".howdy-config-XXXXXX").string();
-		std::vector<char> writable(temp.begin(), temp.end());
-		writable.push_back('\0');
-
-		const int fd = mkstemp(writable.data());
-		if (fd < 0) {
-			return false;
+		if (!write_all_to_fd(staged->fd.get(), join_lines(lines))) {
+			cleanup_staged_file(*staged);
+			return AtomicFileCommitResult::kNotCommitted;
 		}
-
-		const std::filesystem::path temp_path(writable.data());
-		bool                        ok = true;
-		if (have_current_stat) {
-			if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
-			    fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
-				ok = false;
-			}
-		} else if (fchmod(fd, kDefaultConfigMode) != 0) {
-			ok = false;
-		}
-
-		const auto content = join_lines(lines);
-		if (ok && !write_all_to_fd(fd, content)) {
-			ok = false;
-		}
-
-		if (ok && fsync(fd) != 0) {
-			ok = false;
-		}
-		if (close(fd) != 0) {
-			ok = false;
-		}
-
-		if (!ok) {
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
-			return false;
-		}
-
-		std::error_code ec;
-		std::filesystem::rename(temp_path, config_path, ec);
-		if (ec) {
-			std::filesystem::remove(temp_path, ec);
-			return false;
-		}
-		return sync_parent_directory(config_path);
+		return install_staged_file(*staged, config_path, sync_parent);
 	}
 
 	auto validate_config_content(const std::string &content, std::string *error_message) -> bool {
@@ -222,7 +179,7 @@ namespace howdy::native {
 		std::vector<char> writable(temp_template.begin(), temp_template.end());
 		writable.push_back('\0');
 
-		const int fd = mkstemp(writable.data());
+		const int fd = mkostemp(writable.data(), O_CLOEXEC);
 		if (fd < 0) {
 			if (error_message != nullptr) {
 				*error_message = "Failed to validate updated config";
@@ -269,7 +226,8 @@ namespace howdy::native {
 	auto replace_config_content_atomically(const std::filesystem::path &config_path,
 	                                       const std::string &content, std::string *error_message,
 	                                       bool lock, bool validate_runtime,
-	                                       const std::string *expected_current_content) -> bool {
+	                                       const std::string    *expected_current_content,
+	                                       SyncParentDirectoryFn sync_parent) -> bool {
 		if (error_message != nullptr) {
 			error_message->clear();
 		}
@@ -313,7 +271,7 @@ namespace howdy::native {
 		}
 
 		if (expected_current_content != nullptr) {
-			const int input_fd = open(config_path.c_str(), O_RDONLY | O_NOFOLLOW);
+			const int input_fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			if (input_fd < 0) {
 				return fail("Failed to open config file");
 			}
@@ -335,41 +293,47 @@ namespace howdy::native {
 		std::vector<char> writable(temp.begin(), temp.end());
 		writable.push_back('\0');
 
-		const int fd = mkstemp(writable.data());
+		const int fd = mkostemp(writable.data(), O_CLOEXEC);
 		if (fd < 0) {
 			return fail("Failed to stage updated config");
 		}
 
 		const std::filesystem::path temp_path(writable.data());
 		bool                        ok = true;
-		if (fchmod(fd, current_stat.st_mode & 07777) != 0 ||
-		    fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0) {
+		if (fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0 ||
+		    fchmod(fd, current_stat.st_mode & 07777) != 0) {
 			ok = false;
 		}
 		if (ok && !write_all_to_fd(fd, content)) {
 			ok = false;
 		}
-		if (ok && fsync(fd) != 0) {
+		if (ok && !sync_fd(fd)) {
 			ok = false;
 		}
 		if (close(fd) != 0) {
 			ok = false;
 		}
 
+		bool committed = false;
 		if (ok) {
 			std::error_code ec;
 			std::filesystem::rename(temp_path, config_path, ec);
 			ok = !ec;
 			if (ok) {
-				ok = sync_parent_directory(config_path);
+				committed = true;
+				ok        = sync_parent != nullptr && sync_parent(config_path);
 			}
 		}
 
-		if (!ok) {
+		if (!ok && !committed) {
 			std::error_code ec;
 			std::filesystem::remove(temp_path, ec);
 		}
 		if (!ok) {
+			if (committed) {
+				return fail("Config was installed, but its directory could not be synced; verify "
+				            "state before retrying");
+			}
 			return fail("Failed to install edited config");
 		}
 		return true;
@@ -417,7 +381,7 @@ namespace howdy::native {
 			return false;
 		}
 
-		const int fd = open(config_path.c_str(), O_RDONLY | O_NOFOLLOW);
+		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 		if (fd < 0) {
 			if (error_message != nullptr) {
 				*error_message = "Failed to open config file";
