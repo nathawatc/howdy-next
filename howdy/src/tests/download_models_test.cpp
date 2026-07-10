@@ -334,21 +334,53 @@ auto main() -> int {
 	                                                 ".howdy-download-")
 	                  .has_value(),
 	             "prepare staged file returns nullopt when parent creation fails");
+	ok &= expect(!howdy::native::sync_parent_directory(blocked_parent / "model.onnx"),
+	             "parent-directory sync reports open failure");
 
 	const auto overflow_destination = temp_root / "overflow-write.onnx";
 	auto       overflow_staged =
 	    howdy::native::prepare_staged_file(overflow_destination, ".howdy-download-");
 	ok &= expect(overflow_staged.has_value(), "prepare staged file for overflow write callback");
 	if (overflow_staged.has_value()) {
+		howdy::native::download_models_internal::DownloadWriteContext write_context{
+		    .staged = &*overflow_staged,
+		};
 		std::array<char, 2> payload        = {'x', 'y'};
 		const auto          overflow_size  = (std::numeric_limits<std::size_t>::max() / 2) + 2;
 		const auto          overflow_count = static_cast<std::size_t>(2);
 		const auto result = howdy::native::download_models_internal::download_models_write_callback(
-		    payload.data(), overflow_size, overflow_count, &*overflow_staged);
+		    payload.data(), overflow_size, overflow_count, &write_context);
 		ok &= expect(result == 0, "overflowing write callback returns 0");
 		ok &= expect(read_file(overflow_staged->path).empty(),
 		             "overflowing write callback leaves staged file empty");
 		howdy::native::cleanup_staged_file(*overflow_staged);
+	}
+
+	const auto limited_destination = temp_root / "limited-write.onnx";
+	auto       limited_staged =
+	    howdy::native::prepare_staged_file(limited_destination, ".howdy-download-");
+	ok &= expect(limited_staged.has_value(), "prepare staged file for cumulative write limit");
+	if (limited_staged.has_value()) {
+		howdy::native::download_models_internal::DownloadWriteContext write_context{
+		    .staged    = &*limited_staged,
+		    .max_bytes = 3,
+		};
+		std::array<char, 2> first_payload  = {'x', 'y'};
+		std::array<char, 2> second_payload = {'z', '!'};
+		const auto          first_result =
+		    howdy::native::download_models_internal::download_models_write_callback(
+		        first_payload.data(), 1, first_payload.size(), &write_context);
+		const auto second_result =
+		    howdy::native::download_models_internal::download_models_write_callback(
+		        second_payload.data(), 1, second_payload.size(), &write_context);
+		ok &= expect(first_result == first_payload.size(),
+		             "write callback accepts data within cumulative limit");
+		ok &= expect(second_result == 0, "write callback rejects data exceeding cumulative limit");
+		ok &= expect(write_context.bytes_written == first_payload.size(),
+		             "write callback tracks only committed bytes");
+		ok &= expect(read_file(limited_staged->path) == "xy",
+		             "write callback leaves rejected chunk unwritten");
+		howdy::native::cleanup_staged_file(*limited_staged);
 	}
 
 	const auto successful_install_destination = temp_root / "successful-install.onnx";

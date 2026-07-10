@@ -2,6 +2,7 @@
 
 #include "common/fd_io.hpp"
 
+#include <cerrno>
 #include <fcntl.h>
 #include <filesystem>
 #include <optional>
@@ -80,12 +81,20 @@ namespace howdy::native {
 		kUseDefaultMode,
 	};
 
-	inline void sync_parent_directory(const std::filesystem::path &path) {
-		const int dir_fd = open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY);
-		if (dir_fd >= 0) {
-			fsync(dir_fd);
-			close(dir_fd);
+	inline auto sync_parent_directory(const std::filesystem::path &path) -> bool {
+		const auto parent =
+		    path.parent_path().empty() ? std::filesystem::path(".") : path.parent_path();
+		ScopedFd dir_fd(open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+		if (dir_fd.get() < 0) {
+			return false;
 		}
+
+		while (fsync(dir_fd.get()) != 0) {
+			if (errno != EINTR) {
+				return false;
+			}
+		}
+		return dir_fd.close();
 	}
 
 	inline auto remove_file_and_sync(const std::filesystem::path &path) -> bool {
@@ -94,8 +103,7 @@ namespace howdy::native {
 		if (ec) {
 			return false;
 		}
-		sync_parent_directory(path);
-		return true;
+		return sync_parent_directory(path);
 	}
 
 	inline void cleanup_staged_file(StagedFile &staged) {
@@ -173,9 +181,9 @@ namespace howdy::native {
 			cleanup_staged_file(staged);
 			return false;
 		}
-		sync_parent_directory(destination);
+		const bool parent_synced = sync_parent_directory(destination);
 		staged.path.clear();
-		return true;
+		return parent_synced;
 	}
 
 	inline auto write_atomic_file(const std::filesystem::path &path, std::string_view content,

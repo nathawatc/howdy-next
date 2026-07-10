@@ -163,9 +163,9 @@ namespace howdy::native {
 			if (!hooks.fail_write_cleanup) {
 				std::filesystem::remove(staged->path, ec);
 			}
-			sync_parent_directory(path);
+			const bool parent_synced = sync_parent_directory(path);
 			staged->path.clear();
-			return true;
+			return parent_synced;
 		}
 
 		auto remove_locked_file(const std::filesystem::path &path, int fd) -> bool {
@@ -186,8 +186,7 @@ namespace howdy::native {
 			if (ec) {
 				return false;
 			}
-			sync_parent_directory(path);
-			return true;
+			return sync_parent_directory(path);
 		}
 
 		struct LockedUserModelFile {

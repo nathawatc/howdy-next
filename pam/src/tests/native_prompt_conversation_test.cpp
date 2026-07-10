@@ -171,6 +171,14 @@ namespace {
 		                 PAM_CONV_ERR,
 		             "dispatch rejects null response pointer");
 
+		NativePromptConversation  conversation(-1, -1, -1);
+		const struct pam_message *null_message = nullptr;
+		responses                              = reinterpret_cast<struct pam_response *>(0x1);
+		ok &= expect(NativePromptConversation::dispatch(1, &null_message, &responses,
+		                                                &conversation) == PAM_CONV_ERR,
+		             "dispatch rejects null message entry");
+		ok &= expect(responses == nullptr, "dispatch clears response for null message entry");
+
 		return ok;
 	}
 

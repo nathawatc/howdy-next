@@ -24,13 +24,12 @@
 
 namespace {
 
-	constexpr int        kExitOk                 = 0;
-	constexpr int        kExitAbort              = EXIT_FAILURE;
-	constexpr long       kConnectTimeoutSeconds  = 15;
-	constexpr long       kTransferTimeoutSeconds = 300;
-	constexpr long       kLowSpeedBytesPerSecond = 1024;
-	constexpr long       kLowSpeedTimeoutSeconds = 30;
-	constexpr curl_off_t kMaxDownloadBytes       = 100 * 1024 * 1024;
+	constexpr int  kExitOk                 = 0;
+	constexpr int  kExitAbort              = EXIT_FAILURE;
+	constexpr long kConnectTimeoutSeconds  = 15;
+	constexpr long kTransferTimeoutSeconds = 300;
+	constexpr long kLowSpeedBytesPerSecond = 1024;
+	constexpr long kLowSpeedTimeoutSeconds = 30;
 
 	struct ModelDownload {
 		std::string           name;
@@ -52,7 +51,9 @@ namespace {
 		curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds);
 		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedBytesPerSecond);
 		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeoutSeconds);
-		curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE, kMaxDownloadBytes);
+		curl_easy_setopt(
+		    curl, CURLOPT_MAXFILESIZE_LARGE,
+		    static_cast<curl_off_t>(howdy::native::download_models_internal::kMaxDownloadBytes));
 #ifdef CURLOPT_PROTOCOLS_STR
 		curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
 #endif
@@ -65,15 +66,26 @@ namespace {
 
 auto howdy::native::download_models_internal::download_models_write_callback(
     void *contents, size_t size, size_t nmemb, void *userp) -> size_t {
-	auto *staged =
-	    static_cast<howdy::native::download_models_internal::StagedDownloadFile *>(userp);
+	auto *context =
+	    static_cast<howdy::native::download_models_internal::DownloadWriteContext *>(userp);
+	if (context == nullptr || context->staged == nullptr) {
+		return 0;
+	}
 	const auto *data = static_cast<const char *>(contents);
 	if (size != 0 && nmemb > std::numeric_limits<std::size_t>::max() / size) {
 		return 0;
 	}
 	const auto total = size * nmemb;
+	if (context->bytes_written > context->max_bytes ||
+	    total > context->max_bytes - context->bytes_written) {
+		return 0;
+	}
 
-	return howdy::native::write_all_to_fd(staged->fd.get(), data, total) ? total : 0;
+	if (!howdy::native::write_all_to_fd(context->staged->fd.get(), data, total)) {
+		return 0;
+	}
+	context->bytes_written += total;
+	return total;
 }
 
 namespace {
@@ -153,9 +165,12 @@ namespace {
 
 		curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
 		configure_transfer_policy(curl);
+		howdy::native::download_models_internal::DownloadWriteContext write_context{
+		    .staged = &staged,
+		};
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
 		                 howdy::native::download_models_internal::download_models_write_callback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &staged);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &write_context);
 		const CURLcode result = curl_easy_perform(curl);
 
 		long status_code = 0;

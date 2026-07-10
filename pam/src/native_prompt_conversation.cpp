@@ -319,7 +319,9 @@ auto NativePromptConversation::handle(int num_msg, const struct pam_message **ms
 
 	for (int index = 0; index < num_msg; ++index) {
 		if (msgm[index] == nullptr) {
-			continue;
+			free_pam_responses(pam_responses, num_msg);
+			*response = nullptr;
+			return PAM_CONV_ERR;
 		}
 
 		const struct pam_message &message = *msgm[index];

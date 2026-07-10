@@ -10,7 +10,14 @@
 
 namespace howdy::native::download_models_internal {
 
-	using StagedDownloadFile = StagedFile;
+	using StagedDownloadFile                       = StagedFile;
+	inline constexpr std::size_t kMaxDownloadBytes = 100U * 1024U * 1024U;
+
+	struct DownloadWriteContext {
+		StagedDownloadFile *staged        = nullptr;
+		std::size_t         bytes_written = 0;
+		std::size_t         max_bytes     = kMaxDownloadBytes;
+	};
 
 	using DownloadFileFn      = bool (*)(const std::string &url, StagedDownloadFile &staged);
 	using ModelFileOwnerUidFn = std::optional<uid_t> (*)();

@@ -392,6 +392,15 @@ namespace {
 		return child_pid;
 	}
 
+	auto spawn_signaled_child(int signal_number) -> pid_t {
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			raise(signal_number);
+			_exit(EXIT_FAILURE);
+		}
+		return child_pid;
+	}
+
 	auto spawn_blocked_child() -> pid_t {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
@@ -488,6 +497,34 @@ namespace {
 		       expect(context.auth_token_calls == 1, label + " requests token once") &&
 		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
 		       expect(reaped, label + " reaps child");
+	}
+
+	auto test_compare_signal_password_fallback() -> bool {
+		FakeContext context{
+		    .token_result = PAM_SUCCESS,
+		    .token_delay  = std::chrono::milliseconds(100),
+		};
+		const pid_t child_pid = spawn_signaled_child(SIGTERM);
+		if (!expect(child_pid > 0, "signaled compare child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		              "signaled compare returns password fallback") &&
+		       expect(WIFSIGNALED(result.compare_status),
+		              "signaled compare preserves signaled wait status") &&
+		       expect(WTERMSIG(result.compare_status) == SIGTERM,
+		              "signaled compare preserves terminating signal") &&
+		       expect(result.pam_status == PAM_SUCCESS, "signaled compare preserves PAM result") &&
+		       expect(context.auth_token_calls == 1,
+		              "signaled compare waits for password result") &&
+		       expect(context.terminate_calls == 0,
+		              "signaled compare does not terminate reaped child") &&
+		       expect(child_reaped(child_pid), "signaled compare reaps child");
 	}
 
 	auto test_input_preflight_fallback() -> bool {
@@ -959,6 +996,7 @@ auto main() -> int {
 	ok &= test_pam_wins();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
+	ok &= test_compare_signal_password_fallback();
 	ok &= test_input_preflight_fallback();
 	ok &= test_native_setup_without_input_fallback(0, -1, "native unavailable");
 	ok &= test_native_setup_without_input_fallback(1, PAM_CONV_ERR, "native install failure");

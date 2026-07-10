@@ -386,7 +386,8 @@ namespace howdy::pam {
 		child_task_->stop();
 		const int status = child_task_->get();
 
-		if (WIFEXITED(status) && WEXITSTATUS(status) != EXIT_SUCCESS && ask_pass) {
+		const bool compare_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
+		if (!compare_succeeded && ask_pass) {
 			pass_task_->stop();
 			const auto [pam_result, password] = pass_task_->get();
 			(void)password;

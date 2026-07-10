@@ -1,5 +1,6 @@
 #include "config/config_utils.hpp"
 
+#include "common/atomic_files.hpp"
 #include "common/fd_io.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_validation.hpp"
@@ -100,14 +101,6 @@ namespace howdy::native {
 				content += line;
 			}
 			return content;
-		}
-
-		auto sync_parent_directory(const std::filesystem::path &path) -> void {
-			const int dir_fd = open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY);
-			if (dir_fd >= 0) {
-				fsync(dir_fd);
-				close(dir_fd);
-			}
 		}
 
 	}  // namespace
@@ -220,8 +213,7 @@ namespace howdy::native {
 			std::filesystem::remove(temp_path, ec);
 			return false;
 		}
-		sync_parent_directory(config_path);
-		return true;
+		return sync_parent_directory(config_path);
 	}
 
 	auto validate_config_content(const std::string &content, std::string *error_message) -> bool {
@@ -369,7 +361,7 @@ namespace howdy::native {
 			std::filesystem::rename(temp_path, config_path, ec);
 			ok = !ec;
 			if (ok) {
-				sync_parent_directory(config_path);
+				ok = sync_parent_directory(config_path);
 			}
 		}
 
