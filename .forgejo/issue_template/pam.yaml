@@ -58,6 +58,7 @@ body:
         - workaround=off
         - workaround=input
         - workaround=native
+        - workaround=native-input
         - not specified
         - not sure
     validations:
