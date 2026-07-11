@@ -1,3 +1,4 @@
+install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 find_program(GETTEXT_XGETTEXT_EXECUTABLE NAMES xgettext)
 find_program(GETTEXT_MSGMERGE_EXECUTABLE NAMES msgmerge)
 find_program(GETTEXT_MSGFMT_EXECUTABLE NAMES msgfmt)

@@ -1,3 +1,4 @@
+install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 set(HOWDY_NATIVE_DEPENDENCIES
 	PkgConfig::INIREADER
 	PkgConfig::LIBCURL
@@ -532,6 +533,15 @@ if(BUILD_TESTING)
 			"${CMAKE_INSTALL_PREFIX}"
 			"${CMAKE_INSTALL_BINDIR}"
 			"${CMAKE_INSTALL_LIBEXECDIR}"
+			"${CMAKE_INSTALL_DATADIR}"
+			"${CMAKE_INSTALL_LOCALEDIR}"
+			"${CMAKE_INSTALL_MANDIR}"
+			"${HOWDY_HELPER_DIR}"
+			"${HOWDY_PAM_DIR}"
+			"${HOWDY_CONFIG_DIR}"
+			"${HOWDY_CONFIG_PATH}"
+			"${HOWDY_MODELS_DIR}"
+			"${HOWDY_USER_MODELS_DIR}"
 	)
 	set_tests_properties(native-howdy-install-layout PROPERTIES RUN_SERIAL TRUE)
 endif()

@@ -1,0 +1,33 @@
+file(READ "${CMAKE_CURRENT_LIST_DIR}/cmake_install_prefix.txt" _howdy_configured_prefix)
+set(_howdy_install_prefix "${CMAKE_INSTALL_PREFIX}")
+
+function(_howdy_normalize_prefix input output)
+	set(normalized "${input}")
+	if(normalized STREQUAL "")
+		set(normalized "/")
+	elseif(NOT normalized STREQUAL "/")
+		cmake_path(NORMAL_PATH normalized)
+		string(REGEX REPLACE "/+$" "" normalized "${normalized}")
+		if(normalized STREQUAL "")
+			set(normalized "/")
+		endif()
+	endif()
+	set(${output} "${normalized}" PARENT_SCOPE)
+endfunction()
+
+# Generated cmake_install.cmake strips the trailing slash from CMAKE_INSTALL_PREFIX.
+_howdy_normalize_prefix("${_howdy_configured_prefix}" _howdy_configured_prefix)
+_howdy_normalize_prefix("${_howdy_install_prefix}" _howdy_install_prefix)
+
+if(NOT _howdy_configured_prefix STREQUAL _howdy_install_prefix)
+	message(
+		FATAL_ERROR
+		"Reconfigure with -DCMAKE_INSTALL_PREFIX=<path>; cmake --install --prefix is unsupported because Howdy runtime paths are generated at configure time."
+	)
+endif()
+
+if(_howdy_configured_prefix STREQUAL "/")
+	set(CMAKE_INSTALL_PREFIX "")
+else()
+	set(CMAKE_INSTALL_PREFIX "${_howdy_configured_prefix}")
+endif()

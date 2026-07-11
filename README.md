@@ -52,7 +52,11 @@ cmake --build --preset debug --parallel "$(nproc)"
 ctest --preset debug
 ```
 
-- Install: `sudo cmake --install build`
+- Install with configured prefix: `sudo cmake --install build`
+
+`cmake --install --prefix` is intentionally unsupported because runtime paths
+are generated during configuration. Reconfigure with
+`-DCMAKE_INSTALL_PREFIX=<path>` to change the install prefix.
 
 See [Contributing](CONTRIBUTING.md) for workflow and rules.
 

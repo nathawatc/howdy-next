@@ -88,6 +88,14 @@ set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
 set(HOWDY_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOWDY_GENERATED_INCLUDE_DIR}")
 
+file(WRITE "${PROJECT_BINARY_DIR}/cmake_install_prefix.txt" "${CMAKE_INSTALL_PREFIX}")
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_prefix_guard.cmake.in"
+	"${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake"
+	@ONLY
+)
+install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+
 set(default_dev_config_path "${HOWDY_CONFIG_PATH}")
 set(installed_config_path "${HOWDY_CONFIG_PATH}")
 set(models_dir "${HOWDY_MODELS_DIR}")
