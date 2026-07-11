@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-06
+**Updated:** 2026-07-10
 
 ## Scope
 
@@ -15,17 +15,26 @@ Root rules. Read nearest `AGENTS.md` for overrides.
 
 ## Build, Test, Development
 
-Use Meson + Ninja; no CMake.
+Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja.
 
-```bash
-meson setup build
-ninja -C build --quiet
-meson test -C build -q --print-errorlogs
+### Release
+
+```sh
+cmake --preset release
+cmake --build --preset release --parallel "$(nproc)"
+ctest --preset release
 ```
 
-`meson setup build` configures build dir. `ninja -C build` builds unified
-`howdy`, native helpers, compare process, and PAM module. `meson test` runs
-native suite.
+### Debug
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel "$(nproc)"
+ctest --preset debug
+```
+
+CMake configures build dir. Build produces unified `howdy`, native helpers, compare process, PAM module.
+CTest runs native suite.
 
 - Install user-facing commands through `howdy`; no standalone executables.
 - Keep privileged helpers under `<libexecdir>/howdy`; do not expose as normal
@@ -34,9 +43,9 @@ native suite.
 CI runs in container (`ci/Containerfile`); image at
 `codeberg.org/nathawat/howdy-next/ci-1:latest`.
 
-Useful local commands after install:
+Useful local commands post-install:
 
-```bash
+```sh
 howdy add <user>
 howdy test
 howdy list
@@ -48,29 +57,28 @@ howdy download-models
 
 - Target C++23.
 - Follow `.clang-format`.
-- Keep snake_case for files, functions, and tests.
+- snake_case for files, functions, tests.
 - Preserve tabs in touched C/C++ files.
 - Reuse shared helpers for storage, config, readiness, model checks.
 - Runtime code should load typed `RuntimeConfig` via `load_runtime_config()`,
   not raw `ConfigReader` lookups.
 - Keep changes small and local.
 
-Format C/C++ changes with:
+Format C/C++:
 
-```bash
+```sh
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
 CI does not run `clang-tidy`; do not use `run-clang-tidy`; use `clang-tidy-diff.py` only:
 
-```bash
+```sh
 git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py -p1 -path build -quiet -hide-progress
 ```
 
 ## Testing
 
-Tests live in `howdy/src/tests/` and `pam/src/tests/`. Add focused `*_test.cpp`
-beside changed code.
+Tests in `howdy/src/tests/` and `pam/src/tests/`. Add focused `*_test.cpp` beside changed code.
 
 Current test files of interest:
 
@@ -103,8 +111,8 @@ For security-sensitive code, cover failure and success paths. Watch file
 ownership checks, config validation, typed runtime config loading, PAM status
 mapping, runtime staging, and exception handling.
 
-Run all tests with `meson test -C build --print-errorlogs`. For one test, use
-`meson test -C build <test-name> --print-errorlogs`.
+Run all tests with `ctest --test-dir build --output-on-failure`. For one test,
+use `ctest --test-dir build -R '^<test-name>$' --output-on-failure`.
 
 ## Security
 

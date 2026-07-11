@@ -13,14 +13,14 @@ bundled face models. Legacy `*_int8bq` models are not supported on this path.
 
 Verified compatibility:
 
-| Engine | YuNet | SFace | Result |
-| ------ | ----- | ----- | ------ |
-| New (`=2`) | `2023mar_int8bq` | `2021dec_int8bq` | Fails in `FaceRecognizerSF::feature()` |
-| New (`=2`) | `2026may` | `2021dec_int8bq` | Fails in `FaceRecognizerSF::feature()` |
-| New (`=2`) | `2026may` | `2021dec` FP32 | Passes; embedding `1x128 CV_32F` |
-| New (`=2`) | `2026may` | `2021dec_int8` | Passes; embedding `1x128 CV_32F` |
-| Classic (`=1`) | `2023mar_int8bq` | `2021dec_int8bq` | Fails during detector initialization |
-| Classic (`=1`) | `2026may` | `2021dec_int8bq` | Passes; embedding `1x128 CV_32F` |
+| Engine         | YuNet            | SFace            | Result                                 |
+| -------------- | ---------------- | ---------------- | -------------------------------------- |
+| New (`=2`)     | `2023mar_int8bq` | `2021dec_int8bq` | Fails in `FaceRecognizerSF::feature()` |
+| New (`=2`)     | `2026may`        | `2021dec_int8bq` | Fails in `FaceRecognizerSF::feature()` |
+| New (`=2`)     | `2026may`        | `2021dec` FP32   | Passes; embedding `1x128 CV_32F`       |
+| New (`=2`)     | `2026may`        | `2021dec_int8`   | Passes; embedding `1x128 CV_32F`       |
+| Classic (`=1`) | `2023mar_int8bq` | `2021dec_int8bq` | Fails during detector initialization   |
+| Classic (`=1`) | `2026may`        | `2021dec_int8bq` | Passes; embedding `1x128 CV_32F`       |
 
 OpenCV may still print upstream warnings while using New graph engine:
 

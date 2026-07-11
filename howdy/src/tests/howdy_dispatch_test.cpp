@@ -170,7 +170,7 @@ int main() {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "version"});
-		ok &= expect(result.status == 0 && result.output == "Howdy-Next 3.3.0\n",
+		ok &= expect(result.status == 0 && result.output == "Howdy-Next 3.3.1\n",
 		             "version output preserved");
 	}
 	{

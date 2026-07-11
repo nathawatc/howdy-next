@@ -2,8 +2,9 @@
 
 set -eu
 
-installed=$(meson introspect "$1" --installed)
+build_dir=$1
 prefix=${2%/}
+stage="$build_dir/install-layout-root"
 
 resolve_dir() {
 	case "$2" in
@@ -12,27 +13,30 @@ resolve_dir() {
 	esac
 }
 
+rm -rf "$stage"
+DESTDIR="$stage" cmake --install "$build_dir" >/dev/null
+
 bindir=$(resolve_dir "$prefix" "$3")
 libexecdir=$(resolve_dir "$prefix" "$4")
 
-howdy_path="$bindir/howdy"
-compare_path="$libexecdir/howdy/howdy-compare"
-auth_helper_path="$libexecdir/howdy/howdy-auth-helper"
-command_dir="$libexecdir/howdy"
+howdy_path="$stage$bindir/howdy"
+compare_path="$stage$libexecdir/howdy/howdy-compare"
+auth_helper_path="$stage$libexecdir/howdy/howdy-auth-helper"
+command_dir="$stage$libexecdir/howdy"
 
-require_path() {
-	if ! printf '%s\n' "$installed" | grep -Fq '"'"$1"'"'; then
-		echo "Missing installed executable: $1" >&2
+require_executable() {
+	if [ ! -x "$1" ]; then
+		echo "Missing installed executable: ${1#"$stage"}" >&2
 		exit 1
 	fi
 }
 
-require_path "$howdy_path"
-require_path "$compare_path"
-require_path "$auth_helper_path"
+require_executable "$howdy_path"
+require_executable "$compare_path"
+require_executable "$auth_helper_path"
 
 for command in add clear config disable download-models list remove set snapshot test; do
-	if printf '%s\n' "$installed" | grep -Fq '"'"$command_dir/howdy-$command"'"'; then
+	if [ -e "$command_dir/howdy-$command" ]; then
 		echo "Obsolete standalone CLI command remains installed: howdy-$command" >&2
 		exit 1
 	fi

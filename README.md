@@ -6,7 +6,7 @@ C++ rewrite of Howdy facial-recognition authentication on Linux
 
 > [!WARNING]
 >
-> Do not install Howdy Next manually with Meson.
+> Do not mix source installs with AUR package files.
 > Use AUR package to avoid mixed files under `/usr` and `/usr/local`.
 
 Packages:
@@ -16,7 +16,7 @@ Packages:
 
 Example:
 
-```bash
+```sh
 paru -S howdy-next
 ```
 
@@ -25,8 +25,10 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-gcc, meson>=1.11.0, ninja, gettext, libevdev, libinih, opencv>=5.0.0, qt6-base, libcurl, openssl, yyjson>=0.12.0, pam
+cmake>=3.31, pkgconf, gettext, libevdev, libinih, opencv>=5.0.0, qt6-base, libcurl, openssl, yyjson>=0.12.0, pam
 ```
+
+Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.
 
 > [!NOTE]
 >
@@ -34,17 +36,31 @@ gcc, meson>=1.11.0, ninja, gettext, libevdev, libinih, opencv>=5.0.0, qt6-base, 
 > from Linux kernel and filesystem containing configured user-model directory.
 > Unsupported write configurations fail closed; clear/delete uses direct unlink.
 
-- Build: `meson setup build && ninja -C build`
-- Install: `meson install -C build`
-- Test: `meson test -C build --print-errorlogs`
+### Release
+
+```sh
+cmake --preset release
+cmake --build --preset release --parallel "$(nproc)"
+ctest --preset release
+```
+
+### Debug
+
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel "$(nproc)"
+ctest --preset debug
+```
+
+- Install: `sudo cmake --install build`
 
 See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ### Setup
 
-1. Run `sudo howdy add` to add face model.
-2. Test with `sudo howdy test`.
-3. Edit config with `sudo howdy config`.
+1. `sudo howdy add` to add face model.
+2. `sudo howdy test` to test.
+3. `sudo howdy config` to edit config.
 
 ## CLI
 
@@ -72,6 +88,6 @@ See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for
 common issues.
 
 > [!WARNING]
-> Howdy is weaker than a password. Similar faces or photos may fool it.
-> IR helps reduce spoofing. It is invisible in photos and LCD displays.
+> Howdy weaker than password. Similar faces or photos may fool it.
+> IR reduces spoofing. Invisible in photos and LCD displays.
 > Never use as sole auth method.

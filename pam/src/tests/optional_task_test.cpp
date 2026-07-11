@@ -1,10 +1,17 @@
 #include "optional_task.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <future>
 #include <iostream>
 #include <string>
+#include <string_view>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace {
 
@@ -18,7 +25,68 @@ namespace {
 
 }  // namespace
 
-auto main() -> int {
+auto run_get_before_spawn() -> void {
+	optional_task<int> task([] {
+		return 1;
+	});
+	task.get();
+}
+
+auto run_get_while_active() -> void {
+	std::array<int, 2> ready_pipe{};
+	if (pipe(ready_pipe.data()) != 0) {
+		_exit(1);
+	}
+
+	std::promise<void> gate;
+	const auto         gate_future = gate.get_future().share();
+	optional_task<int> task([gate_future, ready_fd = ready_pipe[1]] {
+		const char ready = 'r';
+		if (write(ready_fd, &ready, sizeof(ready)) != sizeof(ready)) {
+			_exit(1);
+		}
+		close(ready_fd);
+		gate_future.wait();
+		return 1;
+	});
+
+	task.activate();
+	char ready = 0;
+	if (read(ready_pipe[0], &ready, sizeof(ready)) != sizeof(ready)) {
+		gate.set_value();
+		task.stop();
+		close(ready_pipe[0]);
+		_exit(1);
+	}
+	close(ready_pipe[0]);
+	task.get();
+}
+
+auto expect_terminates(void (*child_fn)(), const std::string &message) -> bool {
+	const pid_t child = fork();
+	if (child == -1) {
+		return expect(false, message + ": fork failed");
+	}
+	if (child == 0) {
+		child_fn();
+		_exit(1);
+	}
+
+	int status = 0;
+	if (waitpid(child, &status, 0) == -1) {
+		return expect(false, message + ": waitpid failed");
+	}
+	return expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, message);
+}
+
+auto main(int argc, char **argv) -> int {
+	if (argc == 2 && std::string_view(argv[1]) == "get-before-spawn") {
+		return expect_terminates(run_get_before_spawn, "get before spawn terminates") ? 0 : 1;
+	}
+	if (argc == 2 && std::string_view(argv[1]) == "get-while-active") {
+		return expect_terminates(run_get_while_active, "get while active terminates") ? 0 : 1;
+	}
+
 	bool ok = true;
 
 	{

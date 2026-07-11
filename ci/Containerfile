@@ -1,14 +1,14 @@
 FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed \
+		'cmake>=3.31' \
 		curl \
 		gcc \
 		gettext \
 		git \
 		libevdev \
 		libinih \
-		'meson>=1.11.0' \
-		ninja \
+		make \
 		nodejs \
 		openssl \
 		'opencv>=5.0.0' \

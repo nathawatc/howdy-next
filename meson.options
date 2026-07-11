@@ -1,5 +1,0 @@
-option('pam_dir', type: 'string', value: '', description: 'Set the pam_howdy destination directory')
-option('config_dir', type: 'string', value: '', description: 'Set the howdy config directory')
-option('models_dir', type: 'string', value: '', description: 'Set the OpenCV ONNX models directory')
-option('user_models_dir', type: 'string', value: '', description: 'Set the user models directory')
-option('log_path', type: 'string', value: '/var/log/howdy', description: 'Set the log file path')

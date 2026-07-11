@@ -156,7 +156,7 @@ int howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	if (command == "version") {
-		std::cout << "Howdy-Next 3.3.0\n";
+		std::cout << "Howdy-Next 3.3.1\n";
 		return 0;
 	}
 

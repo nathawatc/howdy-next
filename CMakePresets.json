@@ -1,0 +1,90 @@
+{
+	"version": 10,
+	"cmakeMinimumRequired": {
+		"major": 3,
+		"minor": 31,
+		"patch": 0
+	},
+	"configurePresets": [
+		{
+			"name": "release",
+			"displayName": "Release",
+			"binaryDir": "${sourceDir}/build",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release",
+				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+			}
+		},
+		{
+			"name": "debug",
+			"displayName": "Debug",
+			"binaryDir": "${sourceDir}/build-debug",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+			}
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "release",
+			"configurePreset": "release"
+		},
+		{
+			"name": "debug",
+			"configurePreset": "debug"
+		}
+	],
+	"testPresets": [
+		{
+			"name": "release",
+			"configurePreset": "release",
+			"output": {
+				"outputOnFailure": true
+			}
+		},
+		{
+			"name": "debug",
+			"configurePreset": "debug",
+			"output": {
+				"outputOnFailure": true
+			}
+		}
+	],
+	"workflowPresets": [
+		{
+			"name": "release",
+			"steps": [
+				{
+					"type": "configure",
+					"name": "release"
+				},
+				{
+					"type": "build",
+					"name": "release"
+				},
+				{
+					"type": "test",
+					"name": "release"
+				}
+			]
+		},
+		{
+			"name": "debug",
+			"steps": [
+				{
+					"type": "configure",
+					"name": "debug"
+				},
+				{
+					"type": "build",
+					"name": "debug"
+				},
+				{
+					"type": "test",
+					"name": "debug"
+				}
+			]
+		}
+	]
+}

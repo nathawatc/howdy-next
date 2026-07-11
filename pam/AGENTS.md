@@ -23,7 +23,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `src/tests/auth_flow_helpers_test.cpp`  | Auth-flow helpers and policy-adjacent tests                                               |
 | `main.hpp`                              | `ConfirmationType`, `Workaround` (`off`, `input`, `native`, `native-input`), `checkenv()` |
 | `optional_task.hpp`                     | Async task wrapper with timeout support                                                   |
-| `meson.build`                           | PAM build configuration                                                                   |
+| `CMakeLists.txt`                        | PAM build configuration                                                                   |
 
 ## Conventions
 

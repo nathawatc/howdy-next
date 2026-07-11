@@ -13,29 +13,51 @@ Read repo guidelines before issue or PR:
 - [Repository Guidelines](AGENTS.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 
-`AGENTS.md` is main contributor reference for layout, build commands, test
-commands, coding style, commit format, PR expectations, and security notes.
+`AGENTS.md`: main contributor reference for layout, build, test, style, commit, PR, security.
 
 ## Basic Workflow
 
-Use Meson and Ninja. No CMake.
+Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja.
 
-```bash
-meson setup build
-ninja -C build
-meson test -C build --print-errorlogs
+### Release
+
+```sh
+cmake --preset release
+cmake --build --preset release --parallel "$(nproc)"
+ctest --preset release
 ```
 
-Format C/C++ changes with repo `.clang-format`:
+### Debug
 
-```bash
+```sh
+cmake --preset debug
+cmake --build --preset debug --parallel "$(nproc)"
+ctest --preset debug
+```
+
+### Translation Code Generation
+
+```sh
+cmake --build --preset release --target codegen --parallel "$(nproc)"
+```
+
+Translation maintenance:
+
+```sh
+cmake --build --preset release --target howdy-pot --parallel "$(nproc)"
+cmake --build --preset release --target howdy-update-po --parallel "$(nproc)"
+```
+
+Format C/C++ with `.clang-format`:
+
+```sh
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
 
-Run static analysis before submit:
+Static analysis before submit:
 
-```bash
-run-clang-tidy -p build -quiet
+```sh
+git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py -p1 -path build -quiet -hide-progress
 ```
 
 ## Pull Requests
@@ -48,14 +70,14 @@ Include:
 - test results
 - logs, screenshots, or terminal output when they clarify behavior
 
-Use Conventional Commits, for example:
+Conventional Commits:
 
 ```text
 fix(pam): handle helper setup failure
 perf(compare): reduce frame resize overhead
 test(config): cover invalid float values
 docs(wiki): update PAM integration examples
-build(release): bump version to 3.3.0
+build(release): bump version to 3.3.1
 style(format): apply clang-format
 ```
 
@@ -68,7 +90,7 @@ extra care.
 Auth code should fail closed on unexpected errors. Do not bypass permission,
 ownership, symlink, hardlink, or writable trust-root checks.
 
-See [Repository Guidelines](AGENTS.md) before changing security-sensitive code.
+See [Repository Guidelines](AGENTS.md) before security-sensitive changes.
 
 ## Issues
 

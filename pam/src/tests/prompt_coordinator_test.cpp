@@ -21,6 +21,7 @@
 #include <thread>
 #include <tuple>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <security/pam_appl.h>
@@ -446,7 +447,13 @@ namespace {
 				_exit(EXIT_FAILURE);
 			}
 			const char ready = '1';
-			(void)write(ready_pipe[1], &ready, 1);
+			ssize_t    write_result;
+			do {
+				write_result = write(ready_pipe[1], &ready, sizeof(ready));
+			} while (write_result < 0 && errno == EINTR);
+			if (std::cmp_not_equal(write_result, sizeof(ready))) {
+				_exit(EXIT_FAILURE);
+			}
 			while (true) {
 				pause();
 			}

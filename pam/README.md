@@ -13,14 +13,6 @@ OpenSUSE   - inih libevdev-devel
 
 Install `INIReader` package from your distro.
 
-## Build
-
-```sh
-meson setup build
-ninja -C build
-meson test -C build --print-errorlogs
-```
-
 ## Source Layout
 
 ```text
@@ -29,12 +21,6 @@ pam/
 ├── src/          # PAM module sources
 │   └── tests/    # Native unit tests
 └── po/           # Translations
-```
-
-## Install
-
-```sh
-meson install -C build
 ```
 
 Add `pam_howdy.so` to target PAM service under `/etc/pam.d/`.

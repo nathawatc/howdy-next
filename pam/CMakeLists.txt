@@ -1,0 +1,159 @@
+add_subdirectory(po)
+
+set(
+	HOWDY_PAM_RUNTIME_CONFIG_SOURCES
+	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_reader.cpp"
+	"${PROJECT_SOURCE_DIR}/howdy/src/config/runtime_config.cpp"
+	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_schema.cpp"
+	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_validation.cpp"
+)
+set(
+	HOWDY_PAM_RUNTIME_SOURCES
+	${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
+	"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/auth_flow.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/runtime_session.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/enter_device.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/native_prompt_conversation.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt_coordinator.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt_workaround.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/status_mapping.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/tty_restore.cpp"
+)
+set(
+	HOWDY_PAM_LIBRARIES
+	PAM::PAM
+	PkgConfig::INIREADER
+	Threads::Threads
+	PkgConfig::LIBEVDEV
+)
+
+add_library(pam_howdy MODULE ${HOWDY_PAM_RUNTIME_SOURCES})
+howdy_configure_pam_target(pam_howdy)
+target_compile_definitions(pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_link_libraries(pam_howdy PRIVATE ${HOWDY_PAM_LIBRARIES})
+set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
+install(
+	TARGETS pam_howdy
+	LIBRARY DESTINATION "${HOWDY_PAM_DIR}"
+)
+
+if(BUILD_TESTING)
+	add_executable(
+		pam_status_mapping_test
+		src/status_mapping.cpp
+		src/tests/status_mapping_test.cpp
+	)
+	howdy_configure_pam_target(pam_status_mapping_test)
+	target_link_libraries(pam_status_mapping_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-status-mapping COMMAND pam_status_mapping_test)
+
+	add_executable(
+		pam_prompt_workaround_test
+		src/prompt_workaround.cpp
+		src/tests/prompt_workaround_test.cpp
+	)
+	howdy_configure_pam_target(pam_prompt_workaround_test)
+	target_link_libraries(pam_prompt_workaround_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-prompt-workaround COMMAND pam_prompt_workaround_test)
+
+	add_executable(
+		pam_main_entrypoints_test
+		src/main.cpp
+		src/tests/main_entrypoints_test.cpp
+	)
+	howdy_configure_pam_target(pam_main_entrypoints_test)
+	target_link_libraries(pam_main_entrypoints_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-main-entrypoints COMMAND pam_main_entrypoints_test)
+
+	add_executable(
+		pam_native_prompt_conversation_test
+		src/native_prompt_conversation.cpp
+		src/tests/native_prompt_conversation_test.cpp
+	)
+	howdy_configure_pam_target(pam_native_prompt_conversation_test)
+	target_compile_definitions(pam_native_prompt_conversation_test PRIVATE HOWDY_PAM_TESTING)
+	target_link_libraries(pam_native_prompt_conversation_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-native-prompt-conversation COMMAND pam_native_prompt_conversation_test)
+
+	add_executable(pam_optional_task_test src/tests/optional_task_test.cpp)
+	howdy_configure_pam_target(pam_optional_task_test)
+	target_link_libraries(pam_optional_task_test PRIVATE Threads::Threads)
+	add_test(NAME pam-optional-task COMMAND pam_optional_task_test)
+	add_test(
+		NAME pam-optional-task-get-before-spawn
+		COMMAND pam_optional_task_test get-before-spawn
+	)
+	add_test(
+		NAME pam-optional-task-get-while-active
+		COMMAND pam_optional_task_test get-while-active
+	)
+
+	add_executable(
+		pam_tty_restore_test
+		src/tty_restore.cpp
+		src/tests/tty_restore_test.cpp
+	)
+	howdy_configure_pam_target(pam_tty_restore_test)
+	target_link_libraries(pam_tty_restore_test PRIVATE PAM::PAM)
+	add_test(NAME pam-tty-restore COMMAND pam_tty_restore_test)
+
+	add_executable(
+		pam_auth_flow_helpers_test
+		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
+		"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
+		src/auth_flow.cpp
+		src/runtime_session.cpp
+		src/enter_device.cpp
+		src/native_prompt_conversation.cpp
+		src/prompt_coordinator.cpp
+		src/prompt_workaround.cpp
+		src/status_mapping.cpp
+		src/tests/auth_flow_helpers_test.cpp
+	)
+	howdy_configure_pam_target(pam_auth_flow_helpers_test)
+	target_compile_definitions(
+		pam_auth_flow_helpers_test
+		PRIVATE
+			HOWDY_PAM_TESTING
+			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+	)
+	target_link_libraries(pam_auth_flow_helpers_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-auth-flow-helpers COMMAND pam_auth_flow_helpers_test)
+
+	add_executable(
+		pam_prompt_coordinator_test
+		src/prompt_coordinator.cpp
+		src/enter_device.cpp
+		src/native_prompt_conversation.cpp
+		src/prompt_workaround.cpp
+		src/tests/prompt_coordinator_test.cpp
+	)
+	howdy_configure_pam_target(pam_prompt_coordinator_test)
+	target_compile_definitions(pam_prompt_coordinator_test PRIVATE HOWDY_PAM_TESTING)
+	target_link_libraries(
+		pam_prompt_coordinator_test
+		PRIVATE
+			PAM::PAM
+			Threads::Threads
+			PkgConfig::LIBEVDEV
+	)
+	add_test(NAME pam-prompt-coordinator COMMAND pam_prompt_coordinator_test)
+
+	add_executable(
+		pam_runtime_session_test
+		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
+		src/runtime_session.cpp
+		src/tests/runtime_session_test.cpp
+	)
+	howdy_configure_pam_target(pam_runtime_session_test)
+	target_compile_definitions(
+		pam_runtime_session_test
+		PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+	)
+	target_link_libraries(pam_runtime_session_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_test(NAME pam-runtime-session COMMAND pam_runtime_session_test)
+endif()
+
+howdy_set_test_timeouts()

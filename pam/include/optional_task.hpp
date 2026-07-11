@@ -1,10 +1,12 @@
 #ifndef OPTIONAL_TASK_H_
 #define OPTIONAL_TASK_H_
 
-#include <cassert>
 #include <chrono>
+#include <exception>
+#include <functional>
 #include <future>
 #include <thread>
+#include <utility>
 
 // A task executed only if activated.
 template <typename T> class optional_task {
@@ -57,7 +59,10 @@ template <typename T> auto optional_task<T>::ready() -> bool {
 // WARNING: The function should be run only if the task has successfully been
 // stopped.
 template <typename T> auto optional_task<T>::get() -> T {
-	assert(!is_active && spawned);
+	if (is_active || !spawned) {
+		std::terminate();
+	}
+
 	return future.get();
 }
 

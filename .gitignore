@@ -56,10 +56,6 @@ build-*/
 Testing/
 .cache/
 
-# ---> Ninja
-.ninja_deps
-.ninja_log
-
 # ---> CMake
 CMakeLists.txt.user
 CMakeCache.txt
@@ -73,10 +69,6 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
-
-# --> Meson
-/subprojects/*
-!/subprojects/*.wrap
 
 # Translations
 *.mo

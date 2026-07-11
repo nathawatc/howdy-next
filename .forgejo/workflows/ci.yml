@@ -14,6 +14,6 @@ jobs:
 
       - name: Build and test
         run: |
-          meson setup build --wrap-mode=nodownload
-          ninja -C build
-          meson test -C build --print-errorlogs
+          cmake --preset release
+          cmake --build --preset release --parallel "$(nproc)"
+          ctest --preset release

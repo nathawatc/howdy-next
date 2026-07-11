@@ -1,0 +1,62 @@
+set(_howdy_config_dir "@HOWDY_CONFIG_DIR@")
+set(_howdy_config_path "@HOWDY_CONFIG_PATH@")
+set(_howdy_user_models_dir "@HOWDY_USER_MODELS_DIR@")
+
+set(_howdy_config_install_dir "$ENV{DESTDIR}${_howdy_config_dir}")
+set(_howdy_config_install_path "$ENV{DESTDIR}${_howdy_config_path}")
+set(_howdy_user_models_install_dir "$ENV{DESTDIR}${_howdy_user_models_dir}")
+
+if(EXISTS "${_howdy_config_install_dir}"
+	AND NOT IS_DIRECTORY "${_howdy_config_install_dir}")
+	message(
+		FATAL_ERROR
+		"Howdy configuration path is not a directory: ${_howdy_config_install_dir}"
+	)
+endif()
+
+if(EXISTS "${_howdy_user_models_install_dir}"
+	AND NOT IS_DIRECTORY "${_howdy_user_models_install_dir}")
+	message(
+		FATAL_ERROR
+		"Howdy user models path is not a directory: ${_howdy_user_models_install_dir}"
+	)
+endif()
+
+if(NOT EXISTS "${_howdy_config_install_dir}")
+	file(MAKE_DIRECTORY "${_howdy_config_install_dir}")
+	file(
+		CHMOD "${_howdy_config_install_dir}"
+		PERMISSIONS
+			OWNER_READ
+			OWNER_WRITE
+			OWNER_EXECUTE
+			GROUP_READ
+			GROUP_EXECUTE
+	)
+endif()
+
+if(NOT EXISTS "${_howdy_config_install_path}")
+	file(
+		INSTALL
+		DESTINATION "${_howdy_config_install_dir}"
+		TYPE FILE
+		FILES "@PROJECT_SOURCE_DIR@/config/config.ini"
+		FILE_PERMISSIONS
+			OWNER_READ
+			OWNER_WRITE
+			GROUP_READ
+	)
+endif()
+
+if(NOT EXISTS "${_howdy_user_models_install_dir}")
+	file(MAKE_DIRECTORY "${_howdy_user_models_install_dir}")
+	file(
+		CHMOD "${_howdy_user_models_install_dir}"
+		PERMISSIONS
+			OWNER_READ
+			OWNER_WRITE
+			OWNER_EXECUTE
+			GROUP_READ
+			GROUP_EXECUTE
+	)
+endif()
