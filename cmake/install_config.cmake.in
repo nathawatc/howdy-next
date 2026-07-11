@@ -38,7 +38,7 @@ endif()
 if(NOT EXISTS "${_howdy_config_install_path}")
 	file(
 		INSTALL
-		DESTINATION "${_howdy_config_install_dir}"
+		DESTINATION "${_howdy_config_dir}"
 		TYPE FILE
 		FILES "@PROJECT_SOURCE_DIR@/config/config.ini"
 		FILE_PERMISSIONS
