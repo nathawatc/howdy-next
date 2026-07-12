@@ -7,6 +7,10 @@
 
 #include <sys/types.h>
 
+#ifdef HOWDY_AUTH_HELPER_TESTING
+#	include <acl/libacl.h>
+#endif
+
 namespace howdy::native::auth_helper {
 
 	struct PreparedPaths {
@@ -27,6 +31,10 @@ namespace howdy::native::auth_helper {
 	    -> CleanupRuntimeResult;
 
 #ifdef HOWDY_AUTH_HELPER_TESTING
+	using AclSetFdForTest = auto (*)(int, acl_t) -> int;
+	using AclGetFdForTest = auto (*)(int) -> acl_t;
+	using AclResetForTest = auto (*)() -> void;
+
 	auto validate_runtime_root(const std::filesystem::path &path) -> bool;
 	auto secure_source_file_stat(int fd, const std::string &label) -> bool;
 	auto write_all(int fd, const char *data, ssize_t size) -> bool;
@@ -44,6 +52,11 @@ namespace howdy::native::auth_helper {
 	                                         const std::filesystem::path &source_config,
 	                                         const std::filesystem::path &source_user_models_dir,
 	                                         uid_t owner_uid) -> std::optional<PreparedPaths>;
+	auto set_acl_setup_failure_for_test(bool fail) -> void;
+	auto set_acl_verification_failure_for_test(bool fail) -> void;
+	auto set_acl_io_for_test(AclSetFdForTest set_fd, AclGetFdForTest get_fd, AclResetForTest reset)
+	    -> void;
+	auto reset_acl_io_for_test() -> void;
 #endif
 
 }  // namespace howdy::native::auth_helper

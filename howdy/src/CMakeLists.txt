@@ -88,6 +88,7 @@ add_executable(
 	storage/user_model_readiness.cpp
 )
 howdy_configure_native_target(howdy_auth_helper)
+target_link_libraries(howdy_auth_helper PRIVATE PkgConfig::LIBACL)
 set_target_properties(howdy_auth_helper PROPERTIES OUTPUT_NAME "howdy-auth-helper")
 install(
 	TARGETS howdy_auth_helper
@@ -122,6 +123,7 @@ if(BUILD_TESTING)
 		tests/auth_helper_test.cpp
 	)
 	howdy_configure_native_target(howdy_auth_helper_test)
+	target_link_libraries(howdy_auth_helper_test PRIVATE PkgConfig::LIBACL)
 	target_compile_definitions(howdy_auth_helper_test PRIVATE HOWDY_AUTH_HELPER_TESTING)
 	add_test(NAME native-auth-helper COMMAND howdy_auth_helper_test)
 

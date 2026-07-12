@@ -2,6 +2,7 @@ FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed \
 		'cmake>=3.31' \
+		acl \
 		curl \
 		gcc \
 		gettext \

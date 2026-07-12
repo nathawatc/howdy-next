@@ -45,6 +45,7 @@ pkg_check_modules(YYJSON REQUIRED IMPORTED_TARGET yyjson>=0.12.0)
 pkg_check_modules(LIBCURL REQUIRED IMPORTED_TARGET libcurl)
 pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)
 pkg_check_modules(LIBEVDEV REQUIRED IMPORTED_TARGET libevdev)
+pkg_check_modules(LIBACL REQUIRED IMPORTED_TARGET libacl)
 
 find_path(PAM_INCLUDE_DIR NAMES security/pam_modules.h REQUIRED)
 find_library(PAM_LIBRARY NAMES pam REQUIRED)
