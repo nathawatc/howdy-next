@@ -5,12 +5,13 @@
 #include "common/file_security.hpp"
 #include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
-#include "core/face_model.hpp"
 
 #include <array>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -18,6 +19,10 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <unistd.h>
+#include <utility>
+
+#include <sys/stat.h>
 
 #include <curl/curl.h>
 #include <openssl/evp.h>
@@ -31,17 +36,61 @@ namespace {
 	constexpr long kLowSpeedBytesPerSecond = 1024;
 	constexpr long kLowSpeedTimeoutSeconds = 30;
 
-	struct ModelDownload {
-		std::string           name;
-		std::string           url;
-		std::filesystem::path destination;
-		std::string           sha256;
-	};
-
 	using howdy::native::download_models_internal::StagedDownloadFile;
 
 	auto root_model_file_owner_uid() -> std::optional<uid_t> {
 		return static_cast<uid_t>(0);
+	}
+
+	auto calculate_sha256_file_descriptor(const int fd) -> std::optional<std::string> {
+		if (lseek(fd, 0, SEEK_SET) < 0) {
+			return std::nullopt;
+		}
+
+		EVP_MD_CTX *context = EVP_MD_CTX_new();
+		if (context == nullptr) {
+			return std::nullopt;
+		}
+		if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
+			EVP_MD_CTX_free(context);
+			return std::nullopt;
+		}
+
+		std::array<unsigned char, 8192> buffer{};
+		while (true) {
+			const auto bytes_read = read(fd, buffer.data(), buffer.size());
+			if (bytes_read == 0) {
+				break;
+			}
+			if (bytes_read < 0) {
+				if (errno == EINTR) {
+					continue;
+				}
+				EVP_MD_CTX_free(context);
+				return std::nullopt;
+			}
+			if (EVP_DigestUpdate(context, buffer.data(), static_cast<std::size_t>(bytes_read)) !=
+			    1) {
+				EVP_MD_CTX_free(context);
+				return std::nullopt;
+			}
+		}
+
+		std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
+		unsigned int                               digest_length = 0;
+		const bool                                 digest_ok =
+		    EVP_DigestFinal_ex(context, digest.data(), &digest_length) == 1 && digest_length == 32U;
+		EVP_MD_CTX_free(context);
+		if (!digest_ok) {
+			return std::nullopt;
+		}
+
+		std::ostringstream output;
+		output << std::hex << std::setfill('0');
+		for (unsigned int index = 0; index < digest_length; ++index) {
+			output << std::setw(2) << static_cast<unsigned int>(digest[index]);
+		}
+		return output.str();
 	}
 
 	auto configure_transfer_policy(CURL *curl) -> bool {
@@ -66,6 +115,11 @@ namespace {
 	}
 
 }  // namespace
+
+auto howdy::native::download_models_internal::sha256_file_descriptor(const int fd)
+    -> std::optional<std::string> {
+	return calculate_sha256_file_descriptor(fd);
+}
 
 auto howdy::native::download_models_internal::download_models_write_callback(
     void *contents, size_t size, size_t nmemb, void *userp) -> size_t {
@@ -93,58 +147,8 @@ auto howdy::native::download_models_internal::download_models_write_callback(
 
 namespace {
 
-	auto file_sha256(const std::filesystem::path &path) -> std::optional<std::string> {
-		std::ifstream input(path, std::ios::binary);
-		if (!input.is_open()) {
-			return std::nullopt;
-		}
-
-		EVP_MD_CTX *context = EVP_MD_CTX_new();
-		if (context == nullptr) {
-			return std::nullopt;
-		}
-		if (EVP_DigestInit_ex(context, EVP_sha256(), nullptr) != 1) {
-			EVP_MD_CTX_free(context);
-			return std::nullopt;
-		}
-
-		std::array<char, 8192> buffer{};
-		while (input.good()) {
-			input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-			const auto bytes_read = input.gcount();
-			if (bytes_read > 0) {
-				if (EVP_DigestUpdate(context, buffer.data(),
-				                     static_cast<std::size_t>(bytes_read)) != 1) {
-					EVP_MD_CTX_free(context);
-					return std::nullopt;
-				}
-			}
-		}
-		if (input.bad()) {
-			EVP_MD_CTX_free(context);
-			return std::nullopt;
-		}
-
-		std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
-		unsigned int                               digest_length = 0;
-		if (EVP_DigestFinal_ex(context, digest.data(), &digest_length) != 1) {
-			EVP_MD_CTX_free(context);
-			return std::nullopt;
-		}
-		EVP_MD_CTX_free(context);
-		if (digest_length != 32U) {
-			return std::nullopt;
-		}
-
-		std::ostringstream out;
-		out << std::hex << std::setfill('0');
-		for (unsigned int index = 0; index < digest_length; ++index) {
-			out << std::setw(2) << static_cast<unsigned int>(digest[index]);
-		}
-		return out.str();
-	}
-
-	auto prepare_staged_download(const std::filesystem::path &destination)
+	auto prepare_staged_download(const std::filesystem::path &destination,
+	                             const std::optional<uid_t>   owner_uid)
 	    -> std::optional<StagedDownloadFile> {
 		const auto      parent = destination.parent_path();
 		std::error_code ec;
@@ -154,8 +158,8 @@ namespace {
 		}
 
 		if (std::filesystem::exists(parent)) {
-			const auto dir_security =
-			    howdy::native::check_secure_root_owned_directory_tree(parent, "Models directory");
+			const auto dir_security = howdy::native::check_secure_root_owned_directory_tree(
+			    parent, "Models directory", owner_uid);
 			if (!dir_security.ok) {
 				return std::nullopt;
 			}
@@ -199,7 +203,8 @@ namespace {
 
 auto howdy::native::download_models_internal::download_models_main_with_dependencies(
     int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
-	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr) {
+	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr ||
+	    dependencies.sha256_file == nullptr || dependencies.fstat_file == nullptr) {
 		return kExitAbort;
 	}
 
@@ -213,99 +218,127 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		          << models_dir_ec.message() << ")\n";
 		return kExitAbort;
 	}
-	const auto models_dir_security =
-	    howdy::native::check_secure_root_owned_directory_tree(models_dir, "Models directory");
+	const auto owner_uid           = dependencies.model_file_owner_uid();
+	const auto models_dir_security = howdy::native::check_secure_root_owned_directory_tree(
+	    models_dir, "Models directory", owner_uid);
 	if (!models_dir_security.ok) {
 		std::cout << models_dir_security.error_message << "\n";
 		return kExitAbort;
 	}
 
-	const std::array<ModelDownload, 2> models = {
-	    ModelDownload{
-	        .name = howdy::native::FaceModel::kYunetModel,
-	        .url =
-	            "https://github.com/opencv/opencv_zoo/raw/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/"
-	            "models/face_detection_yunet/" +
-	            std::string(howdy::native::FaceModel::kYunetModel),
-	        .destination = models_dir / howdy::native::FaceModel::kYunetModel,
-	        .sha256      = "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
-	    },
-	    ModelDownload{
-	        .name = howdy::native::FaceModel::kSfaceModel,
-	        .url =
-	            "https://github.com/opencv/opencv_zoo/raw/088c3571ec70df15100a5e4c26894d95951e92e9/"
-	            "models/face_recognition_sface/" +
-	            std::string(howdy::native::FaceModel::kSfaceModel),
-	        .destination = models_dir / howdy::native::FaceModel::kSfaceModel,
-	        .sha256      = "2b0e941e6f16cc048c20aee0c8e31f569118f65d702914540f7bfdc14048d78a",
-	    },
-	};
-
 	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
 		std::cout << "Failed to initialize download backend\n";
 		return kExitAbort;
 	}
-	for (const auto &model : models) {
-		const auto readiness = howdy::native::check_opencv_model_readiness_with_label(
-		    model.destination, "Model file", dependencies.model_file_owner_uid());
+	for (const auto &model : dependencies.models) {
+		const auto destination = models_dir / model.filename;
+		const auto readiness   = howdy::native::check_opencv_model_readiness_with_label(
+		    destination, "Model file", owner_uid);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			curl_global_cleanup();
 			std::cout << readiness.error_message << "\n";
 			return kExitAbort;
 		}
+
+		bool replace_existing = readiness.status == howdy::native::OpenCvModelStatus::kInvalid;
 		if (readiness.status == howdy::native::OpenCvModelStatus::kOk) {
-			std::cout << "Model already exists: " << model.destination.string() << "\n";
-			continue;
+			const int existing_fd = open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			if (existing_fd < 0) {
+				curl_global_cleanup();
+				std::cout << "Failed to open existing model: " << destination.string() << "\n";
+				return kExitAbort;
+			}
+			struct stat existing_stat{};
+			if (dependencies.fstat_file(existing_fd, &existing_stat) != 0) {
+				const int error_number = errno;
+				close(existing_fd);
+				curl_global_cleanup();
+				std::cout << "Failed to fstat existing model '" << destination.string()
+				          << "': " << std::strerror(error_number) << "\n";
+				return kExitAbort;
+			}
+			if (existing_stat.st_size < 0 ||
+			    std::cmp_not_equal(existing_stat.st_size, model.size)) {
+				std::cout << "Size mismatch for " << destination.string() << ": expected "
+				          << model.size << ", actual " << existing_stat.st_size << "\n";
+				replace_existing = true;
+			} else {
+				const auto actual_sha256 = dependencies.sha256_file(existing_fd);
+				if (!actual_sha256.has_value()) {
+					close(existing_fd);
+					curl_global_cleanup();
+					std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
+					return kExitAbort;
+				}
+				replace_existing = model.sha256 != actual_sha256.value();
+			}
+			close(existing_fd);
+			if (!replace_existing) {
+				std::cout << "Model already exists: " << destination.string() << "\n";
+				continue;
+			}
 		}
-		if (readiness.status == howdy::native::OpenCvModelStatus::kInvalid) {
-			std::cout << "Replacing invalid model download: " << model.destination.string() << "\n";
+		if (replace_existing) {
+			std::cout << "Replacing invalid model download: " << destination.string() << "\n";
 		}
 
-		std::cout << "Downloading " << model.name << "\n";
-		auto staged = prepare_staged_download(model.destination);
+		std::cout << "Downloading " << model.filename << "\n";
+		auto staged = prepare_staged_download(destination, owner_uid);
 		if (!staged.has_value()) {
 			curl_global_cleanup();
-			std::cout << "Failed to prepare destination for model: " << model.destination.string()
+			std::cout << "Failed to prepare destination for model: " << destination.string()
 			          << "\n";
 			return kExitAbort;
 		}
 
-		if (!dependencies.download_file(model.url, *staged)) {
+		if (!dependencies.download_file(std::string(model.url), *staged)) {
 			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
 			std::cout << "Failed to download model: " << model.url << "\n";
 			return kExitAbort;
 		}
 
-		if (howdy::native::is_invalid_model_file(staged->path)) {
+		struct stat staged_stat{};
+		if (dependencies.fstat_file(staged->fd.get(), &staged_stat) != 0) {
+			const int  error_number = errno;
+			const auto staged_path  = staged->path;
 			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
-			std::cout << "Downloaded file is not an ONNX model: " << model.url << "\n";
+			std::cout << "Failed to fstat staged model '" << staged_path.string()
+			          << "': " << std::strerror(error_number) << "\n";
+			return kExitAbort;
+		}
+		if (staged_stat.st_size < 0 || std::cmp_not_equal(staged_stat.st_size, model.size)) {
+			howdy::native::cleanup_staged_file(*staged);
+			curl_global_cleanup();
+			std::cout << "Size mismatch for " << model.filename << ": expected " << model.size
+			          << ", actual " << staged_stat.st_size << "\n";
 			return kExitAbort;
 		}
 
-		const auto actual_sha256 = file_sha256(staged->path);
-		if (!actual_sha256.has_value() || model.sha256 != actual_sha256.value()) {
+		const auto actual_sha256 = dependencies.sha256_file(staged->fd.get());
+		if (!actual_sha256.has_value()) {
 			howdy::native::cleanup_staged_file(*staged);
 			curl_global_cleanup();
-			std::cout << "Checksum mismatch for " << model.name << "\n";
-			std::cout << "Expected SHA256: " << model.sha256 << "\n";
-			if (actual_sha256.has_value()) {
-				std::cout << "Actual SHA256:   " << actual_sha256.value() << "\n";
-			}
+			std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
+			return kExitAbort;
+		}
+		if (model.sha256 != actual_sha256.value()) {
+			howdy::native::cleanup_staged_file(*staged);
+			curl_global_cleanup();
+			std::cout << "Checksum mismatch for " << model.filename << "\n";
 			return kExitAbort;
 		}
 
-		const auto install_result = howdy::native::install_staged_file(*staged, model.destination);
+		const auto install_result = howdy::native::install_staged_file(*staged, destination);
 		if (!howdy::native::atomic_file_commit_is_durable(install_result)) {
 			curl_global_cleanup();
 			if (howdy::native::atomic_file_may_have_committed(install_result)) {
 				std::cout
 				    << "Downloaded model was installed, but its directory could not be synced: "
-				    << model.destination.string() << "\n";
+				    << destination.string() << "\n";
 			} else {
-				std::cout << "Failed to install downloaded model: " << model.destination.string()
-				          << "\n";
+				std::cout << "Failed to install downloaded model: " << destination.string() << "\n";
 			}
 			return kExitAbort;
 		}

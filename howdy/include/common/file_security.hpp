@@ -68,7 +68,8 @@ namespace howdy::native {
 		if (owner_uid.has_value() && stat_.st_uid != *owner_uid) {
 			return SecurePathCheckResult{
 			    .ok            = false,
-			    .error_message = std::string(label) + " must be owned by root: " + path.string(),
+			    .error_message = std::string(label) + " must be owned by UID " +
+			                     std::to_string(*owner_uid) + ": " + path.string(),
 			    .error_code    = 0,
 			};
 		}

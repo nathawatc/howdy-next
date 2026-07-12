@@ -1,11 +1,14 @@
 #pragma once
 
 #include "common/atomic_files.hpp"
+#include "common/opencv_model_manifest.hpp"
 
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 
+#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::native::download_models_internal {
@@ -21,10 +24,17 @@ namespace howdy::native::download_models_internal {
 
 	using DownloadFileFn      = bool (*)(const std::string &url, StagedDownloadFile &staged);
 	using ModelFileOwnerUidFn = std::optional<uid_t> (*)();
+	using Sha256FileFn        = std::optional<std::string> (*)(int fd);
+	using FstatFn             = int (*)(int fd, struct stat *stat_buf);
+
+	[[nodiscard]] auto sha256_file_descriptor(int fd) -> std::optional<std::string>;
 
 	struct DownloadModelsDependencies {
-		DownloadFileFn      download_file;
-		ModelFileOwnerUidFn model_file_owner_uid;
+		DownloadFileFn                         download_file;
+		ModelFileOwnerUidFn                    model_file_owner_uid;
+		Sha256FileFn                           sha256_file = sha256_file_descriptor;
+		FstatFn                                fstat_file  = ::fstat;
+		std::span<const OpenCvModelDescriptor> models      = official_opencv_models();
 	};
 
 	auto download_models_write_callback(void *contents, std::size_t size, std::size_t nmemb,

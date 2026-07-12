@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/opencv_model_manifest.hpp"
 #include "config/runtime_config.hpp"
 #include "core/face_detection.hpp"
 #include "core/face_encoding.hpp"
@@ -22,9 +23,9 @@ namespace howdy::native {
 
 	class FaceModel {
 	public:
-		static constexpr auto kBackendName = "opencv_dnn_sface";
-		static constexpr auto kYunetModel  = "face_detection_yunet_2026may.onnx";
-		static constexpr auto kSfaceModel  = "face_recognition_sface_2021dec_int8.onnx";
+		static constexpr auto        kBackendName = "opencv_dnn_sface";
+		static constexpr const char *kYunetModel  = kYunetModelDescriptor.filename.data();
+		static constexpr const char *kSfaceModel  = kSfaceModelDescriptor.filename.data();
 
 		explicit FaceModel(const FaceConfig &config);
 

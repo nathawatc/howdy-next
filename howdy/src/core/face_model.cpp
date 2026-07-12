@@ -36,7 +36,8 @@ namespace howdy::native {
 	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_shared<Backend>()) {
 		backend_->check_readiness = [](const std::filesystem::path &path) {
-			return check_opencv_face_model_readiness(path, static_cast<uid_t>(0));
+			return check_opencv_model_readiness_with_label(path, "OpenCV face model file",
+			                                               static_cast<uid_t>(0));
 		};
 		backend_->create_detector = [](const std::string &path, const cv::Size &size,
 		                               float score_threshold, float nms_threshold, int top_k) {

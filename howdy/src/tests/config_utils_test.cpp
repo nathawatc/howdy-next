@@ -527,7 +527,7 @@ auto main() -> int {
 	if (geteuid() != 0) {
 		ok &= expect(!strict_root_check.ok,
 		             "strict root-owned config check rejects non-root-owned config");
-		ok &= expect(strict_root_check.error_message.contains("owned by root"),
+		ok &= expect(strict_root_check.error_message.contains("owned by UID 0"),
 		             "strict root-owned config check reports root ownership requirement");
 	} else {
 		ok &= expect(strict_root_check.ok,

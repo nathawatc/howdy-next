@@ -1,6 +1,7 @@
 #include "cli/download_models_internal.hpp"
 
 #include <array>
+#include <cerrno>
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
@@ -13,18 +14,67 @@
 #include <string>
 #include <string_view>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace {
 
-	int download_attempts  = 0;
-	int owner_uid_attempts = 0;
+	int                      download_attempts     = 0;
+	int                      owner_uid_attempts    = 0;
+	int                      fstat_attempts        = 0;
+	int                      failing_fstat_attempt = 0;
+	std::string              downloaded_content;
+	std::vector<std::string> downloaded_urls;
+	bool                     download_succeeds = false;
+
+	constexpr auto kTestModelContent = "small test model";
+	constexpr auto kTestModelSha256 =
+	    "eceb1d87ddd7b5c0e1b63bdac2d086824ffd12eaa157b741835014618a1e6c24";
+	constexpr howdy::native::OpenCvModelDescriptor kTestModel{
+	    .type     = howdy::native::OpenCvModelType::kYunet,
+	    .filename = "test-model.onnx",
+	    .url      = "https://example.invalid/test-model.onnx",
+	    .sha256   = kTestModelSha256,
+	    .size     = std::string_view(kTestModelContent).size(),
+	};
+
+	struct PinnedModelArtifact {
+		howdy::native::OpenCvModelType type;
+		std::string_view               filename;
+		std::string_view               url;
+		std::string_view               sha256;
+		std::uintmax_t                 size;
+	};
+
+	constexpr std::array kPinnedModelArtifacts = {
+	    PinnedModelArtifact{
+	        .type     = howdy::native::OpenCvModelType::kYunet,
+	        .filename = "face_detection_yunet_2026may.onnx",
+	        .url =
+	            "https://github.com/opencv/opencv_zoo/raw/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/"
+	            "models/face_detection_yunet/face_detection_yunet_2026may.onnx",
+	        .sha256 = "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
+	        .size   = 229738,
+	    },
+	    PinnedModelArtifact{
+	        .type     = howdy::native::OpenCvModelType::kSface,
+	        .filename = "face_recognition_sface_2021dec_int8.onnx",
+	        .url =
+	            "https://github.com/opencv/opencv_zoo/raw/088c3571ec70df15100a5e4c26894d95951e92e9/"
+	            "models/face_recognition_sface/face_recognition_sface_2021dec_int8.onnx",
+	        .sha256 = "2b0e941e6f16cc048c20aee0c8e31f569118f65d702914540f7bfdc14048d78a",
+	        .size   = 9896933,
+	    },
+	};
 
 	void reset_dependency_attempts() {
 		download_attempts  = 0;
 		owner_uid_attempts = 0;
+		fstat_attempts     = 0;
+		downloaded_urls.clear();
 	}
 
 	auto attempted_downloads() -> int {
@@ -42,6 +92,54 @@ namespace {
 		(void)staged;
 		++download_attempts;
 		return false;
+	}
+
+	auto successful_fake_download_file(
+	    const std::string &url, howdy::native::download_models_internal::StagedDownloadFile &staged)
+	    -> bool {
+		++download_attempts;
+		downloaded_urls.push_back(url);
+		return download_succeeds &&
+		       howdy::native::write_all_to_fd(staged.fd.get(), downloaded_content);
+	}
+
+	auto failing_sha256_file(int /*fd*/) -> std::optional<std::string> {
+		return std::nullopt;
+	}
+
+	auto selectively_failing_fstat(const int fd, struct stat *stat_buf) -> int {
+		++fstat_attempts;
+		if (fstat_attempts == failing_fstat_attempt) {
+			errno = EIO;
+			return -1;
+		}
+		return fstat(fd, stat_buf);
+	}
+
+	auto official_manifest_download_file(
+	    const std::string &url, howdy::native::download_models_internal::StagedDownloadFile &staged)
+	    -> bool {
+		++download_attempts;
+		downloaded_urls.push_back(url);
+		for (const auto &artifact : kPinnedModelArtifacts) {
+			if (artifact.url == url) {
+				return ftruncate(staged.fd.get(), static_cast<off_t>(artifact.size)) == 0;
+			}
+		}
+		return false;
+	}
+
+	auto official_manifest_sha256_file(const int fd) -> std::optional<std::string> {
+		struct stat stat_buf{};
+		if (fstat(fd, &stat_buf) != 0 || stat_buf.st_size < 0) {
+			return std::nullopt;
+		}
+		for (const auto &artifact : kPinnedModelArtifacts) {
+			if (std::cmp_equal(stat_buf.st_size, artifact.size)) {
+				return std::string(artifact.sha256);
+			}
+		}
+		return std::nullopt;
 	}
 
 	auto test_model_file_owner_uid() -> std::optional<uid_t> {
@@ -198,6 +296,26 @@ namespace {
 			return false;
 		}
 		return true;
+	}
+
+	auto run_test_download(
+	    const std::filesystem::path &models_dir, const std::filesystem::path &output_path,
+	    int *exit_code, const std::span<const howdy::native::OpenCvModelDescriptor> models,
+	    const howdy::native::download_models_internal::DownloadFileFn download_file,
+	    const howdy::native::download_models_internal::Sha256FileFn   sha256_file =
+	        howdy::native::download_models_internal::sha256_file_descriptor,
+	    const howdy::native::download_models_internal::FstatFn fstat_file = ::fstat) -> bool {
+		EnvVarGuard models_env("HOWDY_MODELS_DIR", models_dir.string());
+		reset_dependency_attempts();
+		return capture_download_models_stdout(
+		    output_path, exit_code,
+		    howdy::native::download_models_internal::DownloadModelsDependencies{
+		        .download_file        = download_file,
+		        .model_file_owner_uid = test_model_file_owner_uid,
+		        .sha256_file          = sha256_file,
+		        .fstat_file           = fstat_file,
+		        .models               = models,
+		    });
 	}
 
 	auto run_first_download_attempt(const std::filesystem::path &models_dir,
@@ -558,6 +676,241 @@ auto main() -> int {
 	             "failed atomic write preserves existing target");
 	ok &= expect(count_staged_files(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
 	             "failed atomic write removes staged file");
+
+	const std::array test_models         = {kTestModel};
+	const auto       matching_models_dir = temp_root / "matching-model";
+	const auto       matching_model      = matching_models_dir / kTestModel.filename;
+	const auto       matching_output     = temp_root / "matching-output.txt";
+	fs::create_directories(matching_models_dir, ec);
+	ok &= expect(!ec && write_file(matching_model, kTestModelContent),
+	             "create matching installed test model");
+	int matching_exit  = 0;
+	download_succeeds  = true;
+	downloaded_content = kTestModelContent;
+	ok &= expect(run_test_download(matching_models_dir, matching_output, &matching_exit,
+	                               test_models, successful_fake_download_file),
+	             "run matching installed model");
+	ok &= expect(matching_exit == 0 && attempted_downloads() == 0,
+	             "matching installed model skips download");
+	ok &= expect(read_file(matching_output).contains("Model already exists"),
+	             "matching installed model reports already exists");
+
+	int existing_hash_failure_exit = 0;
+	ok &=
+	    expect(run_test_download(matching_models_dir, matching_output, &existing_hash_failure_exit,
+	                             test_models, successful_fake_download_file, failing_sha256_file),
+	           "run existing-model hash operation failure");
+	const auto existing_hash_failure_stdout = read_file(matching_output);
+	ok &= expect(existing_hash_failure_exit == EXIT_FAILURE && attempted_downloads() == 0,
+	             "existing-model hash failure aborts before download");
+	ok &= expect(read_file(matching_model) == kTestModelContent,
+	             "existing-model hash failure preserves destination");
+	ok &= expect(existing_hash_failure_stdout.contains("Failed to calculate SHA-256") &&
+	                 !existing_hash_failure_stdout.contains("Model already exists") &&
+	                 !existing_hash_failure_stdout.contains("Replacing invalid model"),
+	             "existing-model hash failure reports operation failure only");
+
+	failing_fstat_attempt           = 1;
+	int existing_fstat_failure_exit = 0;
+	ok &=
+	    expect(run_test_download(matching_models_dir, matching_output, &existing_fstat_failure_exit,
+	                             test_models, successful_fake_download_file,
+	                             howdy::native::download_models_internal::sha256_file_descriptor,
+	                             selectively_failing_fstat),
+	           "run existing-model fstat failure");
+	const auto existing_fstat_failure_stdout = read_file(matching_output);
+	ok &= expect(existing_fstat_failure_exit == EXIT_FAILURE && attempted_downloads() == 0,
+	             "existing-model fstat failure aborts before download");
+	ok &= expect(read_file(matching_model) == kTestModelContent,
+	             "existing-model fstat failure preserves destination");
+	ok &= expect(existing_fstat_failure_stdout.contains("fstat") &&
+	                 existing_fstat_failure_stdout.contains(matching_model.string()) &&
+	                 existing_fstat_failure_stdout.contains("Input/output error") &&
+	                 !existing_fstat_failure_stdout.contains("Size mismatch") &&
+	                 !existing_fstat_failure_stdout.contains("Model already exists") &&
+	                 !existing_fstat_failure_stdout.contains("Replacing invalid model"),
+	             "existing-model fstat failure reports syscall context only");
+
+	const auto replacement_models_dir = temp_root / "replacement-model";
+	const auto replacement_model      = replacement_models_dir / kTestModel.filename;
+	const auto replacement_output     = temp_root / "replacement-output.txt";
+	fs::create_directories(replacement_models_dir, ec);
+	ok &= expect(!ec && write_file(replacement_model, ""), "create empty installed model");
+	int replacement_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &replacement_exit,
+	                               test_models, successful_fake_download_file),
+	             "run empty replacement");
+	const auto replacement_stdout = read_file(replacement_output);
+	ok &= expect(replacement_exit == 0 && attempted_downloads() == 1 &&
+	                 read_file(replacement_model) == kTestModelContent,
+	             "empty installed model is replaced");
+	ok &= expect(replacement_stdout.contains("Replacing invalid model download") &&
+	                 !replacement_stdout.contains("Model already exists"),
+	             "corrupted first model is never reported already existing");
+
+	ok &= expect(write_file(replacement_model, "arbitrary existing data"),
+	             "create arbitrary installed model");
+	int arbitrary_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &arbitrary_exit,
+	                               test_models, successful_fake_download_file),
+	             "run arbitrary replacement");
+	ok &= expect(arbitrary_exit == 0 && attempted_downloads() == 1,
+	             "arbitrary installed model triggers replacement");
+	const auto arbitrary_stdout = read_file(replacement_output);
+	ok &= expect(arbitrary_stdout.contains("Size mismatch") &&
+	                 arbitrary_stdout.contains("expected 16, actual 23") &&
+	                 !arbitrary_stdout.contains("Input/output error"),
+	             "existing size mismatch reports expected and actual size only");
+
+	ok &= expect(write_file(replacement_model, "small test modeL"),
+	             "create same-size wrong-hash installed model");
+	int wrong_hash_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &wrong_hash_exit,
+	                               test_models, successful_fake_download_file),
+	             "run wrong-hash replacement");
+	ok &= expect(wrong_hash_exit == 0 && attempted_downloads() == 1,
+	             "wrong-hash installed model triggers replacement");
+
+	ok &=
+	    expect(write_file(replacement_model, "old destination"), "create replacement destination");
+	downloaded_content       = "small test modeL";
+	int staged_mismatch_exit = 0;
+	ok &=
+	    expect(run_test_download(replacement_models_dir, replacement_output, &staged_mismatch_exit,
+	                             test_models, successful_fake_download_file),
+	           "run staged checksum mismatch");
+	ok &= expect(staged_mismatch_exit == EXIT_FAILURE &&
+	                 read_file(replacement_model) == "old destination",
+	             "wrong staged hash preserves destination");
+	ok &= expect(read_file(replacement_output).contains("Checksum mismatch"),
+	             "same-size wrong staged hash reports checksum mismatch");
+	ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+	             "wrong staged hash removes temporary file");
+
+	ok &= expect(write_file(replacement_model, "old destination"),
+	             "restore destination for staged size mismatch");
+	downloaded_content   = "short";
+	int staged_size_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &staged_size_exit,
+	                               test_models, successful_fake_download_file),
+	             "run staged size mismatch");
+	ok &= expect(staged_size_exit == EXIT_FAILURE &&
+	                 read_file(replacement_model) == "old destination",
+	             "staged size mismatch preserves destination");
+	const auto staged_size_stdout = read_file(replacement_output);
+	ok &= expect(staged_size_stdout.contains("Size mismatch") &&
+	                 staged_size_stdout.contains("expected 16, actual 5") &&
+	                 !staged_size_stdout.contains("Input/output error"),
+	             "staged size mismatch reports expected and actual size only");
+
+	ok &= expect(write_file(replacement_model, "small test modeL"),
+	             "restore same-size invalid destination for staged fstat failure");
+	downloaded_content    = kTestModelContent;
+	failing_fstat_attempt = 2;
+	int staged_fstat_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &staged_fstat_exit,
+	                               test_models, successful_fake_download_file,
+	                               howdy::native::download_models_internal::sha256_file_descriptor,
+	                               selectively_failing_fstat),
+	             "run staged fstat failure");
+	const auto staged_fstat_stdout = read_file(replacement_output);
+	ok &= expect(staged_fstat_exit == EXIT_FAILURE &&
+	                 read_file(replacement_model) == "small test modeL",
+	             "staged fstat failure preserves destination");
+	ok &= expect(staged_fstat_stdout.contains("fstat") &&
+	                 staged_fstat_stdout.contains(replacement_models_dir.string()) &&
+	                 staged_fstat_stdout.contains(".howdy-download-") &&
+	                 staged_fstat_stdout.contains("Input/output error") &&
+	                 !staged_fstat_stdout.contains("Size mismatch") &&
+	                 !staged_fstat_stdout.contains("Checksum mismatch"),
+	             "staged fstat failure reports staged path and syscall context only");
+	ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+	             "staged fstat failure removes temporary file");
+
+	ok &= expect(write_file(replacement_model, "old destination"),
+	             "restore destination for hash read failure");
+	int hash_read_failure_exit = 0;
+	downloaded_content         = kTestModelContent;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output,
+	                               &hash_read_failure_exit, test_models,
+	                               successful_fake_download_file, failing_sha256_file),
+	             "run staged hash operation failure");
+	ok &= expect(hash_read_failure_exit == EXIT_FAILURE &&
+	                 read_file(replacement_model) == "old destination",
+	             "hash read failure preserves destination");
+	ok &= expect(read_file(replacement_output).contains("Failed to calculate SHA-256") &&
+	                 !read_file(replacement_output).contains("Checksum mismatch"),
+	             "hash read failure is distinct from digest mismatch");
+	ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+	             "hash read failure removes temporary file");
+
+	const auto insecure_models_dir = temp_root / "insecure-model";
+	const auto insecure_model      = insecure_models_dir / kTestModel.filename;
+	const auto insecure_output     = temp_root / "insecure-output.txt";
+	fs::create_directories(insecure_models_dir, ec);
+	ok &= expect(!ec && write_file(insecure_model, kTestModelContent) &&
+	                 chmod(insecure_model.c_str(), 0664) == 0,
+	             "create insecure installed model");
+	int insecure_exit = 0;
+	ok &= expect(run_test_download(insecure_models_dir, insecure_output, &insecure_exit,
+	                               test_models, successful_fake_download_file),
+	             "run insecure installed model");
+	ok &= expect(insecure_exit == EXIT_FAILURE && attempted_downloads() == 0,
+	             "insecure installed model aborts before download");
+
+	downloaded_content = kTestModelContent;
+	int installed_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &installed_exit,
+	                               test_models, successful_fake_download_file),
+	             "run successful matching replacement");
+	ok &= expect(installed_exit == 0 && read_file(replacement_model) == kTestModelContent,
+	             "matching staged test model installs atomically");
+	int second_run_exit = 0;
+	ok &= expect(run_test_download(replacement_models_dir, replacement_output, &second_run_exit,
+	                               test_models, successful_fake_download_file),
+	             "run installed matching test model");
+	ok &= expect(second_run_exit == 0 && attempted_downloads() == 0,
+	             "second run performs zero downloads");
+
+	const auto manifest_models_dir = temp_root / "manifest-models";
+	const auto manifest_output     = temp_root / "manifest-output.txt";
+	int        manifest_exit       = 0;
+	ok &= expect(run_test_download(manifest_models_dir, manifest_output, &manifest_exit,
+	                               howdy::native::official_opencv_models(),
+	                               official_manifest_download_file, official_manifest_sha256_file),
+	             "run official manifest downloads");
+	std::error_code yunet_size_ec;
+	std::error_code sface_size_ec;
+	ok &= expect(manifest_exit == 0 && downloaded_urls.size() == kPinnedModelArtifacts.size() &&
+	                 downloaded_urls[0] == kPinnedModelArtifacts[0].url &&
+	                 downloaded_urls[1] == kPinnedModelArtifacts[1].url &&
+	                 fs::file_size(manifest_models_dir / kPinnedModelArtifacts[0].filename,
+	                               yunet_size_ec) == kPinnedModelArtifacts[0].size &&
+	                 !yunet_size_ec &&
+	                 fs::file_size(manifest_models_dir / kPinnedModelArtifacts[1].filename,
+	                               sface_size_ec) == kPinnedModelArtifacts[1].size &&
+	                 !sface_size_ec,
+	             "each official download matches its independently pinned artifact");
+
+	const auto &official_yunet = howdy::native::kOfficialOpenCvModels[0];
+	const auto &official_sface = howdy::native::kOfficialOpenCvModels[1];
+	ok &= expect(official_yunet.type == kPinnedModelArtifacts[0].type &&
+	                 official_yunet.filename == kPinnedModelArtifacts[0].filename &&
+	                 official_yunet.url == kPinnedModelArtifacts[0].url &&
+	                 official_yunet.size == kPinnedModelArtifacts[0].size &&
+	                 official_yunet.sha256 == kPinnedModelArtifacts[0].sha256,
+	             "official YuNet descriptor matches independently pinned artifact");
+	ok &= expect(official_sface.type == kPinnedModelArtifacts[1].type &&
+	                 official_sface.filename == kPinnedModelArtifacts[1].filename &&
+	                 official_sface.url == kPinnedModelArtifacts[1].url &&
+	                 official_sface.size == kPinnedModelArtifacts[1].size &&
+	                 official_sface.sha256 == kPinnedModelArtifacts[1].sha256,
+	             "official SFace descriptor matches independently pinned artifact");
+	ok &= expect(official_yunet.filename != official_sface.filename &&
+	                 official_yunet.url != official_sface.url &&
+	                 official_yunet.size != official_sface.size &&
+	                 official_yunet.sha256 != official_sface.sha256,
+	             "official model descriptors remain distinct");
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

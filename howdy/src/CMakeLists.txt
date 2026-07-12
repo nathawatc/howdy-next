@@ -6,6 +6,9 @@ set(HOWDY_NATIVE_DEPENDENCIES
 	howdy_opencv
 )
 
+add_library(howdy_model_file STATIC model_file.cpp)
+howdy_configure_native_target(howdy_model_file)
+
 add_library(howdy_compare_logic STATIC compare_logic.cpp)
 howdy_configure_native_target(howdy_compare_logic)
 target_link_libraries(howdy_compare_logic PUBLIC howdy_opencv)
@@ -60,7 +63,7 @@ set(
 )
 add_library(howdy_native_cpp STATIC ${HOWDY_NATIVE_CPP_SOURCES})
 howdy_configure_native_target(howdy_native_cpp)
-target_link_libraries(howdy_native_cpp PUBLIC ${HOWDY_NATIVE_DEPENDENCIES})
+target_link_libraries(howdy_native_cpp PUBLIC howdy_model_file ${HOWDY_NATIVE_DEPENDENCIES})
 
 add_executable(howdy_compare compare_args.cpp compare.cpp)
 howdy_configure_native_target(howdy_compare)
@@ -225,6 +228,7 @@ if(BUILD_TESTING)
 
 	add_executable(howdy_model_file_test tests/model_file_test.cpp)
 	howdy_configure_native_target(howdy_model_file_test)
+	target_link_libraries(howdy_model_file_test PRIVATE howdy_model_file)
 	add_test(NAME native-model-file COMMAND howdy_model_file_test)
 
 	add_executable(howdy_capture_device_path_test tests/capture_device_path_test.cpp)
@@ -406,7 +410,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_target(howdy_download_models_test)
 	target_link_libraries(
 		howdy_download_models_test
-		PRIVATE PkgConfig::LIBCURL PkgConfig::OPENSSL howdy_opencv
+		PRIVATE howdy_model_file PkgConfig::LIBCURL PkgConfig::OPENSSL howdy_opencv
 	)
 	add_test(NAME native-download-models COMMAND howdy_download_models_test)
 

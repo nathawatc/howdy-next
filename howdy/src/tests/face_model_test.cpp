@@ -178,6 +178,10 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
+	ok &= expect(
+	    howdy::native::FaceModel::kYunetModel == howdy::native::kYunetModelDescriptor.filename &&
+	        howdy::native::FaceModel::kSfaceModel == howdy::native::kSfaceModelDescriptor.filename,
+	    "FaceModel paths map to manifest filenames");
 
 	{
 		std::string detector_path;
@@ -286,6 +290,7 @@ auto main() -> int {
 	}
 
 	{
+		bool detector_created   = false;
 		auto backend            = successful_backend();
 		backend.check_readiness = [](const std::filesystem::path &) {
 			return howdy::native::OpenCvModelReadiness{
@@ -293,13 +298,20 @@ auto main() -> int {
 			    .error_message = std::string(kYunetSecretPath) + ": " + kRawError,
 			};
 		};
+		backend.create_detector = [&detector_created](const std::string &, const cv::Size &, float,
+		                                              float, int) {
+			detector_created = true;
+			return cv::makePtr<FakeDetector>();
+		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
 		                                                        std::move(backend));
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
+		ok &= expect(!detector_created, "first readiness failure prevents detector creation");
 	}
 
 	{
+		bool recognizer_created = false;
 		auto backend            = successful_backend();
 		backend.check_readiness = [](const std::filesystem::path &path) {
 			if (path.filename() == howdy::native::FaceModel::kSfaceModel) {
@@ -312,10 +324,15 @@ auto main() -> int {
 			    .status = howdy::native::OpenCvModelStatus::kOk,
 			};
 		};
+		backend.create_recognizer = [&recognizer_created](const std::string &) {
+			recognizer_created = true;
+			return cv::makePtr<FakeRecognizer>();
+		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
 		                                                        std::move(backend));
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
+		ok &= expect(!recognizer_created, "second readiness failure prevents recognizer creation");
 	}
 
 	{
