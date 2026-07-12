@@ -1,0 +1,36 @@
+#pragma once
+
+#ifdef HOWDY_PAM_TESTING
+
+#	include "runtime_session.hpp"
+
+#	include <string_view>
+
+#	include <spawn.h>
+
+namespace howdy::pam::testing {
+
+	struct AuthHelperSpawnOperations {
+		void *context = nullptr;
+
+		int (*pipe2_fn)(void *, int *pipe_fds, int flags)                        = nullptr;
+		int (*duplicate_fd_fn)(void *, int fd, int minimum_fd)                   = nullptr;
+		int (*actions_init_fn)(void *, posix_spawn_file_actions_t *)             = nullptr;
+		int (*actions_adddup2_fn)(void *, posix_spawn_file_actions_t *, int source_fd,
+		                          int target_fd)                                 = nullptr;
+		int (*actions_addclose_fn)(void *, posix_spawn_file_actions_t *, int fd) = nullptr;
+		int (*actions_destroy_fn)(void *, posix_spawn_file_actions_t *)          = nullptr;
+		int (*spawn_fn)(void *, pid_t *, const char *, const posix_spawn_file_actions_t *,
+		                char *const *argv, char *const *envp)                    = nullptr;
+		int (*close_fn)(void *, int fd)                                          = nullptr;
+	};
+
+	using AuthHelperSpawnLogFn = void (*)(std::string_view message);
+
+	auto prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
+	                                const AuthHelperSpawnOperations &operations) -> bool;
+	auto set_auth_helper_spawn_log_fn(AuthHelperSpawnLogFn logger) -> AuthHelperSpawnLogFn;
+
+}  // namespace howdy::pam::testing
+
+#endif

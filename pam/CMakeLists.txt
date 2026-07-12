@@ -151,7 +151,9 @@ if(BUILD_TESTING)
 	howdy_configure_pam_target(pam_runtime_session_test)
 	target_compile_definitions(
 		pam_runtime_session_test
-		PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+		PRIVATE
+			HOWDY_PAM_TESTING
+			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	)
 	target_link_libraries(pam_runtime_session_test PRIVATE ${HOWDY_PAM_LIBRARIES})
 	add_test(NAME pam-runtime-session COMMAND pam_runtime_session_test)
