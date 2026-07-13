@@ -197,7 +197,7 @@ namespace howdy::native::compare_privileges_internal {
 				return fatal_verification_failure(dependencies);
 			}
 			for (const auto &word : capability_data) {
-				if (word.effective != 0 || word.permitted != 0 || word.inheritable != 0) {
+				if (word.effective != 0 || word.permitted != 0) {
 					return fatal_verification_failure(dependencies);
 				}
 			}

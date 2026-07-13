@@ -70,6 +70,12 @@ namespace {
 	    {NonzeroCapability::kInheritable, "inheritable"},
 	}};
 
+	constexpr std::array<std::pair<NonzeroCapability, const char *>, 2>
+	    kInitiallyFatalCapabilityCases{{
+	        {NonzeroCapability::kEffective, "effective"},
+	        {NonzeroCapability::kPermitted, "permitted"},
+	    }};
+
 	struct FakePrivilegeContext {
 		std::array<uid_t, 3> uids{};
 		std::array<gid_t, 3> gids{};
@@ -99,6 +105,7 @@ namespace {
 		int         getresgid_calls       = 0;
 		int         getresuid_calls       = 0;
 		int         capget_calls          = 0;
+		int         capset_calls          = 0;
 
 		std::size_t          group_count   = 1;
 		const gid_t         *group_pointer = &group_pointer_sentinel;
@@ -231,6 +238,7 @@ namespace {
 	                 const __user_cap_data_struct *data) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("clear capability sets");
+		context.capset_calls++;
 		context.capset_header_valid = header != nullptr && valid_capability_header(*header);
 		context.capset_data_zero    = data != nullptr;
 		for (std::size_t index = 0;
@@ -390,6 +398,13 @@ namespace {
 		}
 	}
 
+	void set_wake_alarm_inheritable(
+	    std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> &capabilities) {
+		constexpr auto capability_word            = static_cast<std::size_t>(CAP_WAKE_ALARM / 32);
+		constexpr auto capability_bit             = static_cast<unsigned int>(CAP_WAKE_ALARM % 32);
+		capabilities[capability_word].inheritable = static_cast<__u32>(1U << capability_bit);
+	}
+
 	auto verify_fatal_result(const FakePrivilegeContext                  &context,
 	                         const howdy::native::ComparePrivilegeResult &result,
 	                         const std::vector<std::string>              &expected_events,
@@ -477,7 +492,7 @@ namespace {
 			ok &= verify_fatal_result(filesystem_context, filesystem_result, expected, label);
 		}
 
-		for (const auto &[capability, label] : kCapabilityCases) {
+		for (const auto &[capability, label] : kInitiallyFatalCapabilityCases) {
 			FakePrivilegeContext capability_context;
 			set_non_root_identity(capability_context);
 			set_capability(capability_context.capabilities, capability);
@@ -539,6 +554,77 @@ namespace {
 			                                                     "clear ambient capabilities"};
 			expected.insert(expected.end(), suffix.begin(), suffix.end());
 			ok &= verify_fatal_result(failure_context, failure_result, expected, label);
+		}
+		return ok;
+	}
+
+	auto test_waylock_inheritable_capability() -> bool {
+		FakePrivilegeContext context;
+		set_non_root_identity(context);
+		set_wake_alarm_inheritable(context.capabilities);
+		const auto result = drop(context);
+
+		bool ok = true;
+		ok &= expect(result.ok(), "Waylock inheritable-only capability sanitizes successfully");
+		ok &= expect(context.fatal_calls == 0,
+		             "Waylock inheritable-only capability does not invoke fatal callback");
+		ok &= expect(std::count(context.events.begin(), context.events.end(),
+		                        "clear ambient capabilities") == 1,
+		             "Waylock inheritable-only capability clears ambient capabilities");
+		ok &= expect(context.capset_calls == 1,
+		             "Waylock inheritable-only capability clears capability sets once");
+		ok &= expect(context.capset_header_valid && context.capset_data_zero,
+		             "Waylock inheritable-only capability capset zeroes all sets");
+		ok &= expect(context.capget_calls == 2,
+		             "Waylock inheritable-only capability performs final capget verification");
+		ok &= expect(context.regain_uid == 0,
+		             "Waylock inheritable-only capability performs root-regain probe");
+		ok &=
+		    expect_events(context, expected_non_root_events(),
+		                  "Waylock inheritable-only capability continues through processing gate");
+		return ok;
+	}
+
+	auto test_waylock_inheritable_sanitization_failures() -> bool {
+		struct FailureCase {
+			FailureOperation         failure;
+			bool                     retain_inheritable;
+			std::vector<std::string> events;
+			const char              *label;
+		};
+
+		const std::array<FailureCase, 3> cases{{
+		    {.failure            = FailureOperation::kAmbient,
+		     .retain_inheritable = false,
+		     .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+		                            "read capability sets", "clear ambient capabilities", "fatal"},
+		     .label              = "ambient-clear failure"},
+		    {.failure            = FailureOperation::kCapset,
+		     .retain_inheritable = false,
+		     .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+		                            "read capability sets", "clear ambient capabilities",
+		                            "clear capability sets", "fatal"},
+		     .label              = "capset failure"},
+		    {.failure            = FailureOperation::kNone,
+		     .retain_inheritable = true,
+		     .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+		                            "read capability sets", "clear ambient capabilities",
+		                            "clear capability sets", "read capability sets", "fatal"},
+		     .label              = "residual inheritable capability"},
+		}};
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			FakePrivilegeContext context;
+			set_non_root_identity(context);
+			set_wake_alarm_inheritable(context.capabilities);
+			context.failure = test_case.failure;
+			if (test_case.retain_inheritable) {
+				set_wake_alarm_inheritable(context.capabilities_after_capset);
+			}
+			const auto result = drop(context);
+			ok &= verify_fatal_result(context, result, test_case.events,
+			                          std::string("Waylock inheritable-only ") + test_case.label);
 		}
 		return ok;
 	}
@@ -944,6 +1030,8 @@ namespace {
 int main() {
 	bool ok = true;
 	ok &= test_non_root();
+	ok &= test_waylock_inheritable_capability();
+	ok &= test_waylock_inheritable_sanitization_failures();
 	ok &= test_initial_credential_inspection_failures();
 	ok &= test_privileged_success();
 	ok &= test_privileged_residual_capabilities();
