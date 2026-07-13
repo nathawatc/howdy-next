@@ -531,6 +531,16 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-howdy-dispatch COMMAND howdy_dispatch_test)
 
+	add_executable(howdy_main_test tests/howdy_main_test.cpp howdy_main.cpp)
+	howdy_configure_native_target(howdy_main_test)
+	target_compile_definitions(
+		howdy_main_test
+		PRIVATE
+			HOWDY_MAIN_ENTRYPOINT=howdy_main_test_entry
+			HOWDY_MAIN_DISPATCH=howdy_main_test_dispatch
+	)
+	add_test(NAME native-howdy-main COMMAND howdy_main_test)
+
 	add_test(
 		NAME native-howdy-install-layout
 		COMMAND
