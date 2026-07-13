@@ -4,6 +4,8 @@
 
 #	include "runtime_session.hpp"
 
+#	include <chrono>
+#	include <string>
 #	include <string_view>
 
 #	include <spawn.h>
@@ -29,7 +31,17 @@ namespace howdy::pam::testing {
 
 	auto prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
 	                                const AuthHelperSpawnOperations &operations) -> bool;
+	auto prepare_runtime_auth_files_until(std::string_view username, PreparedRuntimeFiles *prepared,
+	                                      const AuthHelperSpawnOperations      &operations,
+	                                      std::chrono::steady_clock::time_point deadline) -> bool;
+	auto cleanup_runtime_auth_files_until(const std::filesystem::path          &root_dir,
+	                                      const AuthHelperSpawnOperations      &operations,
+	                                      std::chrono::steady_clock::time_point deadline) -> void;
 	auto set_auth_helper_spawn_log_fn(AuthHelperSpawnLogFn logger) -> AuthHelperSpawnLogFn;
+	auto read_auth_helper_output_until(pid_t child_pid, int output_fd, std::string *output,
+	                                   std::chrono::steady_clock::time_point deadline) -> bool;
+	auto wait_for_cleanup_helper_until(pid_t                                 child_pid,
+	                                   std::chrono::steady_clock::time_point deadline) -> bool;
 
 }  // namespace howdy::pam::testing
 

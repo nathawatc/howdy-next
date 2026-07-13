@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -1000,6 +1002,63 @@ namespace {
 		return close(fd);
 	}
 
+	auto wait_for_ready_byte(int ready_fd, std::string_view name) -> bool;
+	void terminate_and_reap_test_child(pid_t child_pid);
+
+	auto real_pipe2(void *context, int *pipe_fds, int flags) -> int {
+		(void)context;
+		return pipe2(pipe_fds, flags);
+	}
+
+	struct StalledSpawnContext {
+		std::array<int, 2> ready_pipe  = {-1, -1};
+		pid_t              spawned_pid = -1;
+		int                spawn_calls = 0;
+	};
+
+	auto stalled_spawn(void *context, pid_t *child_pid, const char *path,
+	                   const posix_spawn_file_actions_t *actions, char *const *argv,
+	                   char *const *envp) -> int {
+		(void)path;
+		(void)argv;
+		(void)envp;
+		auto &stalled = *static_cast<StalledSpawnContext *>(context);
+		++stalled.spawn_calls;
+		const std::string command = "trap '' TERM; printf R >&" +
+		                            std::to_string(stalled.ready_pipe[1]) + "; exec /bin/sleep 60";
+		std::array<char *, 4> shell_args = {const_cast<char *>("/bin/sh"), const_cast<char *>("-c"),
+		                                    const_cast<char *>(command.c_str()), nullptr};
+		std::array<char *, 1> empty_env  = {nullptr};
+		const int result = posix_spawn(child_pid, "/bin/sh", actions, nullptr, shell_args.data(),
+		                               empty_env.data());
+		if (result != 0) {
+			return result;
+		}
+		stalled.spawned_pid = *child_pid;
+		(void)close(stalled.ready_pipe[1]);
+		stalled.ready_pipe[1] = -1;
+		if (!wait_for_ready_byte(stalled.ready_pipe[0], "stalled auth helper")) {
+			terminate_and_reap_test_child(*child_pid);
+			return EIO;
+		}
+		return 0;
+	}
+
+	auto stalled_spawn_operations(StalledSpawnContext *context)
+	    -> howdy::pam::testing::AuthHelperSpawnOperations {
+		return {
+		    .context             = context,
+		    .pipe2_fn            = real_pipe2,
+		    .duplicate_fd_fn     = integration_duplicate_fd,
+		    .actions_init_fn     = integration_actions_init,
+		    .actions_adddup2_fn  = integration_actions_adddup2,
+		    .actions_addclose_fn = integration_actions_addclose,
+		    .actions_destroy_fn  = integration_actions_destroy,
+		    .spawn_fn            = stalled_spawn,
+		    .close_fn            = integration_close,
+		};
+	}
+
 	auto test_auth_helper_spawn_real_descriptor_collisions() -> bool {
 		const pid_t test_pid = fork();
 		if (test_pid == 0) {
@@ -1075,6 +1134,327 @@ namespace {
 			ok &= expect_child_reaped(&fake, name);
 		}
 		return ok;
+	}
+
+	auto helper_child_reaped(pid_t child_pid, std::string_view name) -> bool {
+		errno                   = 0;
+		const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
+		return expect(wait_result == -1 && errno == ECHILD, std::string(name) + " reaps child");
+	}
+
+	void terminate_and_reap_test_child(pid_t child_pid) {
+		if (child_pid <= 0) {
+			return;
+		}
+
+		(void)kill(child_pid, SIGTERM);
+		for (int attempts = 0; attempts < 50; ++attempts) {
+			const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
+			if (wait_result == child_pid || (wait_result < 0 && errno == ECHILD)) {
+				return;
+			}
+			if (wait_result < 0 && errno != EINTR) {
+				break;
+			}
+			usleep(1000);
+		}
+
+		(void)kill(child_pid, SIGKILL);
+		while (waitpid(child_pid, nullptr, 0) < 0) {
+			if (errno == ECHILD) {
+				return;
+			}
+			if (errno != EINTR) {
+				return;
+			}
+		}
+	}
+
+	auto wait_for_ready_byte(int ready_fd, std::string_view name) -> bool {
+		char ready = 0;
+		while (read(ready_fd, &ready, 1) < 0) {
+			if (errno != EINTR) {
+				return expect(false, std::string(name) + " reads readiness byte");
+			}
+		}
+		return expect(ready == 'R', std::string(name) + " receives readiness byte");
+	}
+
+	class ScopedAuthHelperLogHook {
+	public:
+		explicit ScopedAuthHelperLogHook(AuthHelperSpawnFake *fake)
+		    : previous_(
+		          howdy::pam::testing::set_auth_helper_spawn_log_fn(fake_auth_helper_spawn_log)) {
+			g_auth_helper_spawn_fake = fake;
+		}
+
+		~ScopedAuthHelperLogHook() {
+			howdy::pam::testing::set_auth_helper_spawn_log_fn(previous_);
+			g_auth_helper_spawn_fake = nullptr;
+		}
+
+	private:
+		howdy::pam::testing::AuthHelperSpawnLogFn previous_ = nullptr;
+	};
+
+	auto run_deadline_output_case(std::string_view name, std::string_view output, bool close_output,
+	                              bool exit_success, bool ignore_sigterm) -> bool {
+		std::array<int, 2> output_pipe{};
+		std::array<int, 2> ready_pipe{};
+		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		            std::string(name) + " creates output pipe")) {
+			return false;
+		}
+		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
+			(void)close(output_pipe[0]);
+			(void)close(output_pipe[1]);
+			return expect(false, std::string(name) + " creates readiness pipe");
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			(void)close(output_pipe[0]);
+			(void)close(ready_pipe[0]);
+			if (ignore_sigterm) {
+				(void)signal(SIGTERM, SIG_IGN);
+			}
+			if (!output.empty() && write(output_pipe[1], output.data(), output.size()) !=
+			                           static_cast<ssize_t>(output.size())) {
+				_exit(EXIT_FAILURE);
+			}
+			if (close_output) {
+				(void)close(output_pipe[1]);
+			}
+			if (write(ready_pipe[1], "R", 1) != 1) {
+				_exit(EXIT_FAILURE);
+			}
+			(void)close(ready_pipe[1]);
+			if (exit_success) {
+				_exit(EXIT_SUCCESS);
+			}
+			for (;;) {
+				pause();
+			}
+		}
+		(void)close(output_pipe[1]);
+		(void)close(ready_pipe[1]);
+		if (!expect(child_pid > 0, std::string(name) + " forks child") ||
+		    !wait_for_ready_byte(ready_pipe[0], name)) {
+			(void)close(output_pipe[0]);
+			(void)close(ready_pipe[0]);
+			terminate_and_reap_test_child(child_pid);
+			return false;
+		}
+		(void)close(ready_pipe[0]);
+
+		AuthHelperSpawnFake     fake;
+		ScopedAuthHelperLogHook log_hook(&fake);
+		std::string             helper_output = "stale";
+		const auto              start         = std::chrono::steady_clock::now();
+		const auto              timeout       = std::chrono::milliseconds(150);
+		const bool              result        = howdy::pam::testing::read_auth_helper_output_until(
+		    child_pid, output_pipe[0], &helper_output, start + timeout);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		(void)close(output_pipe[0]);
+
+		bool ok = true;
+		ok &= expect(result == exit_success, std::string(name) + " returns expected result");
+		if (exit_success) {
+			ok &= expect(helper_output == output, std::string(name) + " preserves exact output");
+		} else {
+			ok &= expect(helper_output.empty(), std::string(name) + " discards failed output");
+			ok &= expect(elapsed >= timeout, std::string(name) + " honors deadline");
+			ok &= expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded");
+			ok &= expect(
+			    std::ranges::find(fake.log_messages, "Howdy auth helper prepare timed out") !=
+			        fake.log_messages.end(),
+			    std::string(name) + " logs prepare timeout");
+		}
+		ok &= helper_child_reaped(child_pid, name);
+		return ok;
+	}
+
+	auto test_late_helper_exit_is_timed_out_after_reap() -> bool {
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			_exit(EXIT_SUCCESS);
+		}
+		if (!expect(child_pid > 0, "late helper exit forks child")) {
+			return false;
+		}
+		siginfo_t child_info{};
+		while (waitid(P_PID, static_cast<id_t>(child_pid), &child_info, WEXITED | WNOWAIT) != 0) {
+			if (errno != EINTR) {
+				terminate_and_reap_test_child(child_pid);
+				return expect(false, "late helper exit synchronizes exited child");
+			}
+		}
+
+		AuthHelperSpawnFake     fake;
+		ScopedAuthHelperLogHook log_hook(&fake);
+		const bool              result = howdy::pam::testing::wait_for_cleanup_helper_until(
+		    child_pid, std::chrono::steady_clock::now());
+		return expect(!result, "late helper exit is timed out") &&
+		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup timed out") !=
+		                  fake.log_messages.end(),
+		              "late helper exit logs timeout") &&
+		       helper_child_reaped(child_pid, "late helper exit");
+	}
+
+	auto test_prepare_runtime_auth_files_stalled_child() -> bool {
+		StalledSpawnContext context;
+		if (!expect(pipe(context.ready_pipe.data()) == 0,
+		            "prepare orchestration creates ready pipe")) {
+			return false;
+		}
+		AuthHelperSpawnFake              log_fake;
+		ScopedAuthHelperLogHook          log_hook(&log_fake);
+		howdy::pam::PreparedRuntimeFiles prepared;
+		const auto                       start   = std::chrono::steady_clock::now();
+		const auto                       timeout = std::chrono::milliseconds(150);
+		const bool result = howdy::pam::testing::prepare_runtime_auth_files_until(
+		    "alice", &prepared, stalled_spawn_operations(&context), start + timeout);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		(void)close(context.ready_pipe[0]);
+		(void)close(context.ready_pipe[1]);
+		return expect(!result, "prepare orchestration rejects stalled child") &&
+		       expect(context.spawn_calls == 1, "prepare orchestration spawns once") &&
+		       expect(elapsed >= timeout, "prepare orchestration honors deadline") &&
+		       expect(elapsed < std::chrono::seconds(2), "prepare orchestration remains bounded") &&
+		       expect(std::ranges::find(log_fake.log_messages,
+		                                "Howdy auth helper prepare timed out") !=
+		                  log_fake.log_messages.end(),
+		              "prepare orchestration logs timeout") &&
+		       helper_child_reaped(context.spawned_pid, "prepare orchestration");
+	}
+
+	auto test_cleanup_runtime_auth_files_stalled_child() -> bool {
+		StalledSpawnContext context;
+		if (!expect(pipe(context.ready_pipe.data()) == 0,
+		            "cleanup orchestration creates ready pipe")) {
+			return false;
+		}
+		AuthHelperSpawnFake     log_fake;
+		ScopedAuthHelperLogHook log_hook(&log_fake);
+		const auto              start   = std::chrono::steady_clock::now();
+		const auto              timeout = std::chrono::milliseconds(150);
+		howdy::pam::testing::cleanup_runtime_auth_files_until(
+		    kStagedRoot, stalled_spawn_operations(&context), start + timeout);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		(void)close(context.ready_pipe[0]);
+		(void)close(context.ready_pipe[1]);
+		return expect(context.spawn_calls == 1, "cleanup orchestration spawns once") &&
+		       expect(elapsed >= timeout, "cleanup orchestration honors deadline") &&
+		       expect(elapsed < std::chrono::seconds(2), "cleanup orchestration remains bounded") &&
+		       expect(std::ranges::find(log_fake.log_messages,
+		                                "Howdy auth helper cleanup timed out") !=
+		                  log_fake.log_messages.end(),
+		              "cleanup orchestration logs timeout") &&
+		       helper_child_reaped(context.spawned_pid, "cleanup orchestration");
+	}
+
+	auto test_auth_helper_absolute_deadlines() -> bool {
+		const std::string valid_output = "CONFIG_PATH=/run/howdy/deadline/config.ini\n"
+		                                 "USER_MODELS_DIR=/run/howdy/deadline/models\n";
+		bool              ok           = true;
+		ok &= run_deadline_output_case("normal helper", valid_output, true, true, false);
+		ok &= run_deadline_output_case("silent open pipe", "", false, false, false);
+		ok &= run_deadline_output_case("partial stalled output", "CONFIG_PATH=/partial", false,
+		                               false, false);
+		ok &= run_deadline_output_case("closed pipe live child", valid_output, true, false, false);
+		ok &= run_deadline_output_case("SIGTERM-ignoring helper", valid_output, true, false, true);
+		return ok;
+	}
+
+	auto test_auth_helper_output_limit() -> bool {
+		std::array<int, 2> output_pipe{};
+		std::array<int, 2> ready_pipe{};
+		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		            "output limit creates output pipe")) {
+			return false;
+		}
+		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
+			(void)close(output_pipe[0]);
+			(void)close(output_pipe[1]);
+			return expect(false, "output limit creates readiness pipe");
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			(void)close(output_pipe[0]);
+			(void)close(ready_pipe[0]);
+			if (write(ready_pipe[1], "R", 1) != 1) {
+				_exit(EXIT_FAILURE);
+			}
+			(void)close(ready_pipe[1]);
+			const std::string output(howdy::pam::testing::auth_helper_output_limit(), 'h');
+			const bool        wrote = write(output_pipe[1], output.data(), output.size()) ==
+			                          static_cast<ssize_t>(output.size());
+			(void)close(output_pipe[1]);
+			_exit(wrote ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		(void)close(output_pipe[1]);
+		(void)close(ready_pipe[1]);
+		if (!expect(child_pid > 0, "output limit forks child") ||
+		    !wait_for_ready_byte(ready_pipe[0], "output limit")) {
+			(void)close(output_pipe[0]);
+			(void)close(ready_pipe[0]);
+			terminate_and_reap_test_child(child_pid);
+			return false;
+		}
+		(void)close(ready_pipe[0]);
+
+		std::string output = "stale";
+		const bool  result = howdy::pam::testing::read_auth_helper_output_until(
+		    child_pid, output_pipe[0], &output,
+		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		(void)close(output_pipe[0]);
+		return expect(!result, "output limit is rejected") &&
+		       expect(output.empty(), "output limit data is discarded") &&
+		       helper_child_reaped(child_pid, "output limit");
+	}
+
+	auto test_cleanup_helper_deadline() -> bool {
+		std::array<int, 2> ready_pipe{};
+		if (!expect(pipe2(ready_pipe.data(), O_CLOEXEC) == 0,
+		            "cleanup deadline creates readiness pipe")) {
+			return false;
+		}
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			(void)close(ready_pipe[0]);
+			(void)signal(SIGTERM, SIG_IGN);
+			if (write(ready_pipe[1], "R", 1) != 1) {
+				_exit(EXIT_FAILURE);
+			}
+			(void)close(ready_pipe[1]);
+			for (;;) {
+				pause();
+			}
+		}
+		(void)close(ready_pipe[1]);
+		if (!expect(child_pid > 0, "cleanup deadline forks child") ||
+		    !wait_for_ready_byte(ready_pipe[0], "cleanup deadline")) {
+			(void)close(ready_pipe[0]);
+			terminate_and_reap_test_child(child_pid);
+			return false;
+		}
+		(void)close(ready_pipe[0]);
+
+		AuthHelperSpawnFake     fake;
+		ScopedAuthHelperLogHook log_hook(&fake);
+		const auto              start   = std::chrono::steady_clock::now();
+		const auto              timeout = std::chrono::milliseconds(150);
+		const bool              result =
+		    howdy::pam::testing::wait_for_cleanup_helper_until(child_pid, start + timeout);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		return expect(!result, "cleanup deadline reports failure") &&
+		       expect(elapsed >= timeout, "cleanup deadline honors deadline") &&
+		       expect(elapsed < std::chrono::seconds(2), "cleanup deadline remains bounded") &&
+		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup timed out") !=
+		                  fake.log_messages.end(),
+		              "cleanup deadline logs cleanup timeout") &&
+		       helper_child_reaped(child_pid, "cleanup deadline");
 	}
 
 	auto test_invalid_prepared_runtime_files() -> bool {
@@ -1174,5 +1554,11 @@ auto main() -> int {
 	ok &= test_auth_helper_spawn_success();
 	ok &= test_auth_helper_spawn_descriptor_collisions();
 	ok &= test_auth_helper_spawn_real_descriptor_collisions();
+	ok &= test_auth_helper_absolute_deadlines();
+	ok &= test_late_helper_exit_is_timed_out_after_reap();
+	ok &= test_prepare_runtime_auth_files_stalled_child();
+	ok &= test_cleanup_runtime_auth_files_stalled_child();
+	ok &= test_auth_helper_output_limit();
+	ok &= test_cleanup_helper_deadline();
 	return ok ? 0 : 1;
 }
