@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#include <curl/curl.h>
+
 namespace howdy::native::download_models_internal {
 
 	using StagedDownloadFile                       = StagedFile;
@@ -27,7 +29,19 @@ namespace howdy::native::download_models_internal {
 	using Sha256FileFn        = std::optional<std::string> (*)(int fd);
 	using FstatFn             = int (*)(int fd, struct stat *stat_buf);
 
+	struct CurlSetoptOperations {
+		void *context = nullptr;
+
+		CURLcode (*set_long)(void *context, CURL *curl, CURLoption option, long value) = nullptr;
+		CURLcode (*set_off_t)(void *context, CURL *curl, CURLoption option,
+		                      curl_off_t value)                                        = nullptr;
+		CURLcode (*set_string)(void *context, CURL *curl, CURLoption option,
+		                       const char *value)                                      = nullptr;
+	};
+
 	[[nodiscard]] auto sha256_file_descriptor(int fd) -> std::optional<std::string>;
+	[[nodiscard]] auto configure_transfer_policy(CURL *curl, const CurlSetoptOperations &operations)
+	    -> bool;
 
 	struct DownloadModelsDependencies {
 		DownloadFileFn                         download_file;

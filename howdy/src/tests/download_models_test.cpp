@@ -1,5 +1,6 @@
 #include "cli/download_models_internal.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
@@ -29,6 +30,19 @@ namespace {
 	std::string              downloaded_content;
 	std::vector<std::string> downloaded_urls;
 	bool                     download_succeeds = false;
+
+	struct CurlSetoptCall {
+		CURLoption                 option;
+		CURLcode                   result;
+		std::optional<long>        long_value;
+		std::optional<curl_off_t>  off_t_value;
+		std::optional<std::string> string_value;
+	};
+
+	struct CurlSetoptRecorder {
+		std::optional<CURLoption>   failing_option;
+		std::vector<CurlSetoptCall> calls;
+	};
 
 	constexpr auto kTestModelContent = "small test model";
 	constexpr auto kTestModelSha256 =
@@ -69,6 +83,95 @@ namespace {
 	        .size   = 9896933,
 	    },
 	};
+
+	auto setopt_result(CurlSetoptRecorder &recorder, const CURLoption option) -> CURLcode {
+		return recorder.failing_option.has_value() && *recorder.failing_option == option
+		           ? CURLE_UNKNOWN_OPTION
+		           : CURLE_OK;
+	}
+
+	auto fake_setopt_long(void *context, CURL * /*curl*/, CURLoption option, long value)
+	    -> CURLcode {
+		auto *recorder = static_cast<CurlSetoptRecorder *>(context);
+		if (recorder == nullptr) {
+			return CURLE_FAILED_INIT;
+		}
+		const CURLcode result = setopt_result(*recorder, option);
+		recorder->calls.push_back({
+		    .option     = option,
+		    .result     = result,
+		    .long_value = value,
+		});
+		return result;
+	}
+
+	auto fake_setopt_off_t(void *context, CURL * /*curl*/, CURLoption option, curl_off_t value)
+	    -> CURLcode {
+		auto *recorder = static_cast<CurlSetoptRecorder *>(context);
+		if (recorder == nullptr) {
+			return CURLE_FAILED_INIT;
+		}
+		const CURLcode result = setopt_result(*recorder, option);
+		recorder->calls.push_back({
+		    .option      = option,
+		    .result      = result,
+		    .off_t_value = value,
+		});
+		return result;
+	}
+
+	auto fake_setopt_string(void *context, CURL * /*curl*/, CURLoption option, const char *value)
+	    -> CURLcode {
+		auto *recorder = static_cast<CurlSetoptRecorder *>(context);
+		if (recorder == nullptr) {
+			return CURLE_FAILED_INIT;
+		}
+		const CURLcode result = setopt_result(*recorder, option);
+		recorder->calls.push_back({
+		    .option       = option,
+		    .result       = result,
+		    .string_value = value,
+		});
+		return result;
+	}
+
+	auto recorder_setopt_operations(CurlSetoptRecorder &recorder)
+	    -> howdy::native::download_models_internal::CurlSetoptOperations {
+		return {
+		    .context    = &recorder,
+		    .set_long   = fake_setopt_long,
+		    .set_off_t  = fake_setopt_off_t,
+		    .set_string = fake_setopt_string,
+		};
+	}
+
+	auto configured_long(const CurlSetoptRecorder &recorder, CURLoption option, long value)
+	    -> bool {
+		return std::ranges::any_of(recorder.calls, [option, value](const CurlSetoptCall &call) {
+			return call.option == option && call.result == CURLE_OK && call.long_value == value;
+		});
+	}
+
+	auto configured_off_t(const CurlSetoptRecorder &recorder, CURLoption option, curl_off_t value)
+	    -> bool {
+		return std::ranges::any_of(recorder.calls, [option, value](const CurlSetoptCall &call) {
+			return call.option == option && call.result == CURLE_OK && call.off_t_value == value;
+		});
+	}
+
+	auto configured_string(const CurlSetoptRecorder &recorder, CURLoption option,
+	                       std::string_view value) -> bool {
+		return std::ranges::any_of(recorder.calls, [option, value](const CurlSetoptCall &call) {
+			return call.option == option && call.result == CURLE_OK &&
+			       call.string_value.has_value() && *call.string_value == value;
+		});
+	}
+
+	auto configured_option(const CurlSetoptRecorder &recorder, CURLoption option) -> bool {
+		return std::ranges::any_of(recorder.calls, [option](const CurlSetoptCall &call) {
+			return call.option == option;
+		});
+	}
 
 	void reset_dependency_attempts() {
 		download_attempts  = 0;
@@ -343,6 +446,76 @@ auto main() -> int {
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
 	ok &= expect(!ec, "create temp root");
+
+	CurlSetoptRecorder successful_policy_recorder;
+	ok &= expect(howdy::native::download_models_internal::configure_transfer_policy(
+	                 nullptr, recorder_setopt_operations(successful_policy_recorder)),
+	             "transfer policy configures successfully");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_FOLLOWLOCATION, 1L),
+	             "transfer policy follows redirects");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_NOSIGNAL, 1L),
+	             "transfer policy disables signals");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_CONNECTTIMEOUT, 15L),
+	             "transfer policy configures connect timeout");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_TIMEOUT, 300L),
+	             "transfer policy configures total timeout");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_LOW_SPEED_LIMIT, 1024L),
+	             "transfer policy configures low-speed limit");
+	ok &= expect(configured_long(successful_policy_recorder, CURLOPT_LOW_SPEED_TIME, 30L),
+	             "transfer policy configures low-speed timeout");
+	ok &= expect(configured_off_t(successful_policy_recorder, CURLOPT_MAXFILESIZE_LARGE,
+	                              static_cast<curl_off_t>(
+	                                  howdy::native::download_models_internal::kMaxDownloadBytes)),
+	             "transfer policy configures maximum download size");
+	ok &= expect(configured_string(successful_policy_recorder, CURLOPT_PROTOCOLS_STR, "https"),
+	             "transfer policy restricts initial URLs to HTTPS");
+	ok &=
+	    expect(configured_string(successful_policy_recorder, CURLOPT_REDIR_PROTOCOLS_STR, "https"),
+	           "transfer policy restricts redirects to HTTPS");
+
+	CurlSetoptRecorder initial_protocol_failure_recorder{
+	    .failing_option = CURLOPT_PROTOCOLS_STR,
+	};
+	ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
+	                 nullptr, recorder_setopt_operations(initial_protocol_failure_recorder)),
+	             "initial HTTPS restriction failure aborts transfer policy");
+	ok &= expect(configured_option(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR),
+	             "initial HTTPS restriction is attempted");
+	ok &= expect(
+	    !configured_string(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR, "https"),
+	    "failed initial HTTPS restriction is not reported as configured");
+	ok &= expect(!configured_option(initial_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
+	             "initial HTTPS restriction failure skips redirect restriction");
+
+	CurlSetoptRecorder redirect_protocol_failure_recorder{
+	    .failing_option = CURLOPT_REDIR_PROTOCOLS_STR,
+	};
+	ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
+	                 nullptr, recorder_setopt_operations(redirect_protocol_failure_recorder)),
+	             "redirect HTTPS restriction failure aborts transfer policy");
+	ok &= expect(configured_option(redirect_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
+	             "redirect HTTPS restriction is attempted");
+	ok &= expect(!configured_string(redirect_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR,
+	                                "https"),
+	             "failed redirect HTTPS restriction is not reported as configured");
+
+	CurlSetoptRecorder existing_policy_failure_recorder{
+	    .failing_option = CURLOPT_CONNECTTIMEOUT,
+	};
+	ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
+	                 nullptr, recorder_setopt_operations(existing_policy_failure_recorder)),
+	             "existing transfer policy failure aborts configuration");
+	ok &= expect(!configured_option(existing_policy_failure_recorder, CURLOPT_TIMEOUT),
+	             "existing transfer policy failure short-circuits later options");
+
+	CurlSetoptRecorder missing_callback_recorder;
+	auto missing_callback_operations       = recorder_setopt_operations(missing_callback_recorder);
+	missing_callback_operations.set_string = nullptr;
+	ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
+	                 nullptr, missing_callback_operations),
+	             "missing transfer policy callback fails closed");
+	ok &= expect(missing_callback_recorder.calls.empty(),
+	             "missing transfer policy callback is not dereferenced");
 
 	const auto null_download_models_dir = temp_root / "null-download-file" / "models";
 	const auto null_download_output     = temp_root / "null-download-file-output.txt";

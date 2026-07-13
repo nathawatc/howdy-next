@@ -36,7 +36,29 @@ namespace {
 	constexpr long kLowSpeedBytesPerSecond = 1024;
 	constexpr long kLowSpeedTimeoutSeconds = 30;
 
+	using howdy::native::download_models_internal::CurlSetoptOperations;
 	using howdy::native::download_models_internal::StagedDownloadFile;
+
+	auto curl_setopt_long(void * /*context*/, CURL *curl, CURLoption option, const long value)
+	    -> CURLcode {
+		return curl_easy_setopt(curl, option, value);
+	}
+
+	auto curl_setopt_off_t(void * /*context*/, CURL *curl, CURLoption option,
+	                       const curl_off_t value) -> CURLcode {
+		return curl_easy_setopt(curl, option, value);
+	}
+
+	auto curl_setopt_string(void * /*context*/, CURL *curl, CURLoption option, const char *value)
+	    -> CURLcode {
+		return curl_easy_setopt(curl, option, value);
+	}
+
+	constexpr CurlSetoptOperations kCurlSetoptOperations{
+	    .set_long   = curl_setopt_long,
+	    .set_off_t  = curl_setopt_off_t,
+	    .set_string = curl_setopt_string,
+	};
 
 	auto root_model_file_owner_uid() -> std::optional<uid_t> {
 		return static_cast<uid_t>(0);
@@ -93,28 +115,32 @@ namespace {
 		return output.str();
 	}
 
-	auto configure_transfer_policy(CURL *curl) -> bool {
-		bool ok =
-		    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_TIMEOUT, kTransferTimeoutSeconds) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, kLowSpeedBytesPerSecond) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kLowSpeedTimeoutSeconds) == CURLE_OK &&
-		    curl_easy_setopt(curl, CURLOPT_MAXFILESIZE_LARGE,
-		                     static_cast<curl_off_t>(
-		                         howdy::native::download_models_internal::kMaxDownloadBytes)) ==
-		        CURLE_OK;
-#ifdef CURLOPT_PROTOCOLS_STR
-		ok = ok && curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https") == CURLE_OK;
-#endif
-#ifdef CURLOPT_REDIR_PROTOCOLS_STR
-		ok = ok && curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https") == CURLE_OK;
-#endif
-		return ok;
+}  // namespace
+
+auto howdy::native::download_models_internal::configure_transfer_policy(
+    CURL *curl, const CurlSetoptOperations &operations) -> bool {
+	if (operations.set_long == nullptr || operations.set_off_t == nullptr ||
+	    operations.set_string == nullptr) {
+		return false;
 	}
 
-}  // namespace
+	return operations.set_long(operations.context, curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_CONNECTTIMEOUT,
+	                           kConnectTimeoutSeconds) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_TIMEOUT,
+	                           kTransferTimeoutSeconds) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_LOW_SPEED_LIMIT,
+	                           kLowSpeedBytesPerSecond) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_LOW_SPEED_TIME,
+	                           kLowSpeedTimeoutSeconds) == CURLE_OK &&
+	       operations.set_off_t(operations.context, curl, CURLOPT_MAXFILESIZE_LARGE,
+	                            static_cast<curl_off_t>(kMaxDownloadBytes)) == CURLE_OK &&
+	       operations.set_string(operations.context, curl, CURLOPT_PROTOCOLS_STR, "https") ==
+	           CURLE_OK &&
+	       operations.set_string(operations.context, curl, CURLOPT_REDIR_PROTOCOLS_STR, "https") ==
+	           CURLE_OK;
+}
 
 auto howdy::native::download_models_internal::sha256_file_descriptor(const int fd)
     -> std::optional<std::string> {
@@ -175,7 +201,8 @@ namespace {
 		}
 
 		if (curl_easy_setopt(curl, CURLOPT_URL, url.c_str()) != CURLE_OK ||
-		    !configure_transfer_policy(curl)) {
+		    !howdy::native::download_models_internal::configure_transfer_policy(
+		        curl, kCurlSetoptOperations)) {
 			curl_easy_cleanup(curl);
 			return false;
 		}
