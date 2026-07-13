@@ -6,8 +6,8 @@
 
 #include "common/compare_exit.hpp"
 #ifdef HOWDY_PAM_TESTING
-#	include "auth_flow_testing.hpp"
-#	include "prompt_coordinator_testing.hpp"
+#include "auth_flow_testing.hpp"
+#include "prompt_coordinator_testing.hpp"
 #endif
 #include "enter_device.hpp"
 #include "paths.hpp"

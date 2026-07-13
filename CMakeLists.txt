@@ -15,10 +15,38 @@ endif()
 include(GNUInstallDirs)
 include(CTest)
 include(CheckPIESupported)
+include(CheckCXXSourceCompiles)
+include(CMakePushCheckState)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 
 check_pie_supported()
+
+cmake_push_check_state(RESET)
+set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+check_cxx_source_compiles(
+	[=[
+		#include <spawn.h>
+
+		int main() {
+			posix_spawn_file_actions_t actions;
+			if (posix_spawn_file_actions_init(&actions) != 0) {
+				return 1;
+			}
+			const int result = posix_spawn_file_actions_addclosefrom_np(&actions, 3);
+			posix_spawn_file_actions_destroy(&actions);
+			return result;
+		}
+	]=]
+	HOWDY_HAVE_POSIX_SPAWN_FILE_ACTIONS_ADDCLOSEFROM_NP
+)
+cmake_pop_check_state()
+if(NOT HOWDY_HAVE_POSIX_SPAWN_FILE_ACTIONS_ADDCLOSEFROM_NP)
+	message(
+		FATAL_ERROR
+			"posix_spawn_file_actions_addclosefrom_np() is unavailable; GNU libc 2.34 or newer is required."
+	)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

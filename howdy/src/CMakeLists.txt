@@ -44,6 +44,13 @@ add_library(howdy_compare_capture_session STATIC compare_capture_session.cpp)
 howdy_configure_native_target(howdy_compare_capture_session)
 target_link_libraries(howdy_compare_capture_session PUBLIC howdy_opencv)
 
+add_library(howdy_compare_privileges STATIC compare_privileges.cpp)
+howdy_configure_native_target(howdy_compare_privileges)
+
+add_library(howdy_compare_processing STATIC compare_processing.cpp)
+howdy_configure_native_target(howdy_compare_processing)
+target_link_libraries(howdy_compare_processing PUBLIC howdy_opencv)
+
 set(
 	HOWDY_NATIVE_CPP_SOURCES
 	config/config_reader.cpp
@@ -70,6 +77,8 @@ howdy_configure_native_target(howdy_compare)
 target_link_libraries(
 	howdy_compare
 	PRIVATE
+		howdy_compare_processing
+		howdy_compare_privileges
 		howdy_compare_capture_session
 		howdy_native_cpp
 		howdy_compare_engine
@@ -185,6 +194,16 @@ if(BUILD_TESTING)
 			${HOWDY_NATIVE_DEPENDENCIES}
 	)
 	add_test(NAME native-compare-capture-session COMMAND howdy_compare_capture_session_test)
+
+	add_executable(howdy_compare_privileges_test tests/compare_privileges_test.cpp)
+	howdy_configure_native_target(howdy_compare_privileges_test)
+	target_link_libraries(howdy_compare_privileges_test PRIVATE howdy_compare_privileges)
+	add_test(NAME native-compare-privileges COMMAND howdy_compare_privileges_test)
+
+	add_executable(howdy_compare_processing_test tests/compare_processing_test.cpp)
+	howdy_configure_native_target(howdy_compare_processing_test)
+	target_link_libraries(howdy_compare_processing_test PRIVATE howdy_compare_processing)
+	add_test(NAME native-compare-processing COMMAND howdy_compare_processing_test)
 
 	add_executable(howdy_face_matching_test tests/face_matching_test.cpp)
 	howdy_configure_native_target(howdy_face_matching_test)

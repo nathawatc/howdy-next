@@ -1,6 +1,7 @@
 FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed \
+		'glibc>=2.34' \
 		'cmake>=3.31' \
 		acl \
 		curl \
