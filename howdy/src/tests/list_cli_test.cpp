@@ -3,6 +3,7 @@
 
 #include <array>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -175,6 +176,24 @@ namespace {
 		              "plain success preserves CSV output");
 	}
 
+	auto out_of_range_timestamp_emits_fallback() -> bool {
+		ListCliTestContext context;
+		context.list_result = {
+		    .status  = howdy::native::UserModelStatus::kOk,
+		    .entries = {{.id    = 3,
+		                 .time  = std::numeric_limits<long long>::max(),
+		                 .label = "front door"}},
+		};
+		auto [normal_result, normal_output] = run_list(context, {"howdy-list", "alice"});
+		auto [plain_result, plain_output]   = run_list(context, {"howdy-list", "alice", "--plain"});
+		return expect(normal_result == 0, "out-of-range normal returns 0") &&
+		       expect(normal_output == "3   invalid-time  front door\n\n",
+		              "out-of-range normal uses fallback") &&
+		       expect(plain_result == 0, "out-of-range plain returns 0") &&
+		       expect(plain_output == "3,invalid-time,front door\n\n",
+		              "out-of-range plain uses fallback");
+	}
+
 	auto plain_position_and_unknown_arguments_are_preserved() -> bool {
 		ListCliTestContext context;
 		context.list_result = {
@@ -207,6 +226,7 @@ auto main() -> int {
 	ok &= no_model_preserves_normal_and_plain_output();
 	ok &= storage_failure_preserves_normal_and_plain_output();
 	ok &= successful_output_preserves_formats();
+	ok &= out_of_range_timestamp_emits_fallback();
 	ok &= plain_position_and_unknown_arguments_are_preserved();
 	ok &= zero_entries_prints_final_newline();
 	return ok ? 0 : 1;

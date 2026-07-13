@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -72,7 +73,6 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 		return kExitAbort;
 	}
 	for (const auto &model : models.entries) {
-		const auto timestamp = static_cast<std::time_t>(model.time);
 		std::cout << model.id;
 		if (args->plain) {
 			std::cout << ",";
@@ -81,9 +81,15 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 			    std::max(0, 4 - static_cast<int>(std::to_string(model.id).size())), ' ');
 		}
 		std::array<char, 32> buffer{};
-		std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S",
-		              std::localtime(&timestamp));
-		std::cout << buffer.data();
+		std::tm              local_time{};
+		bool                 valid_time = false;
+		if (std::in_range<std::time_t>(model.time)) {
+			const auto timestamp = static_cast<std::time_t>(model.time);
+			valid_time =
+			    ::localtime_r(&timestamp, &local_time) != nullptr &&
+			    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &local_time) != 0;
+		}
+		std::cout << (valid_time ? buffer.data() : "invalid-time");
 		std::cout << (args->plain ? "," : "  ");
 		std::cout << model.label << "\n";
 	}
