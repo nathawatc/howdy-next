@@ -5,14 +5,14 @@
 
 namespace {
 
-	auto fail_closed_from_exception(const char *context, const std::exception &error) -> int {
+	auto system_error_from_exception(const char *context, const std::exception &error) -> int {
 		syslog(LOG_ERR, "Unhandled C++ exception in %s: %s", context, error.what());
-		return PAM_AUTH_ERR;
+		return PAM_SYSTEM_ERR;
 	}
 
-	auto fail_closed_from_unknown_exception(const char *context) -> int {
+	auto system_error_from_unknown_exception(const char *context) -> int {
 		syslog(LOG_ERR, "Unhandled non-standard exception in %s", context);
-		return PAM_AUTH_ERR;
+		return PAM_SYSTEM_ERR;
 	}
 
 }  // namespace
@@ -24,9 +24,9 @@ PAM_EXTERN auto pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, con
 	try {
 		return identify(pamh, flags, argc, argv, true);
 	} catch (const std::exception &error) {
-		return fail_closed_from_exception("pam_sm_authenticate", error);
+		return system_error_from_exception("pam_sm_authenticate", error);
 	} catch (...) {
-		return fail_closed_from_unknown_exception("pam_sm_authenticate");
+		return system_error_from_unknown_exception("pam_sm_authenticate");
 	}
 }
 
