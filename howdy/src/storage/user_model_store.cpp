@@ -121,7 +121,9 @@ namespace howdy::native {
 		                             const user_model_codec::Document &document, int locked_fd)
 		    -> AtomicFileCommitResult {
 			const auto serialized = user_model_codec::serialize_document(document);
-			if (!serialized.has_value() || !cleanup_stale_write_artifacts(path)) {
+			if (!serialized.has_value() ||
+			    serialized->size() > user_model_limits::kMaxUserModelFileBytes ||
+			    !cleanup_stale_write_artifacts(path)) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 			auto staged = prepare_staged_file(path, kUserModelTempPrefix, kUserModelFileMode);

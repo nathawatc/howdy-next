@@ -1180,6 +1180,23 @@ auto main() -> int {
 	ok &= expect(first_append.status == howdy::native::UserModelStatus::kOk,
 	             "append creates first model entry");
 	ok &= expect(first_append.entry.id == 0, "append allocates first model ID");
+	{
+		const auto                             before_oversized_append = read_file(model_path);
+		const howdy::native::NewUserModelEntry oversized_entry{
+		    .label = std::string(
+		        static_cast<std::size_t>(howdy::native::user_model_limits::kMaxUserModelFileBytes),
+		        'x'),
+		    .backend   = backend,
+		    .metric    = "cosine",
+		    .model     = "sface.onnx",
+		    .encodings = {{0.3F, 0.4F}},
+		};
+		const auto result = howdy::native::append_user_model_entry("alice", oversized_entry);
+		ok &= expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
+		             "append rejects serialized model larger than read limit");
+		ok &= expect(read_file(model_path) == before_oversized_append,
+		             "oversized append leaves existing model file unchanged");
+	}
 	ok &= expect(
 	    write_file(
 	        model_path,
