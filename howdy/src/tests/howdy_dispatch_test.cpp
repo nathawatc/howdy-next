@@ -34,18 +34,24 @@ namespace {
 		std::string              resolved_user = "alice";
 		uid_t                    effective_uid = 0;
 		std::vector<std::string> command_arguments;
-		int                      command_result = 0;
-		CommandId                command_id     = CommandId::kNone;
+		int                      command_result      = 0;
+		CommandId                command_id          = CommandId::kNone;
+		int                      resolve_user_calls  = 0;
+		int                      effective_uid_calls = 0;
 	};
 
 	Context *active_context = nullptr;
 
 	auto resolve_user(void *raw_context) -> std::string {
-		return static_cast<Context *>(raw_context)->resolved_user;
+		auto &context = *static_cast<Context *>(raw_context);
+		++context.resolve_user_calls;
+		return context.resolved_user;
 	}
 
 	auto effective_uid(void *raw_context) -> uid_t {
-		return static_cast<Context *>(raw_context)->effective_uid;
+		auto &context = *static_cast<Context *>(raw_context);
+		++context.effective_uid_calls;
+		return context.effective_uid;
 	}
 
 	auto command_stub(CommandId command_id, int argc, char **argv) -> int {
@@ -185,6 +191,8 @@ int main() {
 		const auto result =
 		    run(context, {"howdy", "-U", "bob", "--plain", "-y", "add", "front-door"});
 		ok &= expect(result.status == 23, "command return code passed through");
+		ok &= expect(context.resolve_user_calls == 0,
+		             "short user option skips default user resolution");
 		ok &=
 		    expect(context.command_arguments ==
 		               std::vector<std::string>{"howdy-add", "bob", "front-door", "--plain", "-y"},
@@ -198,6 +206,79 @@ int main() {
 		ok &= expect(result.status == 0, "non-user command dispatched");
 		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-config", "extra"},
 		             "user injected only for model commands");
+	}
+	{
+		Context context;
+		context.command_result = 23;
+		const auto result      = run(context, {"howdy", "list"});
+		ok &= expect(result.status == 23, "default-user command return code passed through");
+		ok &= expect(context.resolve_user_calls == 1,
+		             "default user resolved when user option is omitted");
+		ok &= expect(context.command_id == CommandId::kList, "list dispatched with default user");
+		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-list", "alice"},
+		             "resolved default user injected into list arguments");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "--user", "bob", "list"});
+		ok &= expect(result.status == 0, "long user option command dispatched");
+		ok &= expect(context.resolve_user_calls == 0,
+		             "long user option skips default user resolution");
+		ok &= expect(context.command_id == CommandId::kList, "long user option dispatches list");
+		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-list", "bob"},
+		             "long user option injected into list arguments");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "-U"});
+		ok &= expect(result.status == 1, "trailing short user option rejected");
+		ok &= expect(result.output.contains("-U") && result.output.contains("requires an argument"),
+		             "trailing short user option reports missing argument");
+		ok &= expect(!result.output.contains("usage: howdy"),
+		             "trailing short user option does not print help");
+		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+		             "trailing short user option skips user resolution and root check");
+		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		             "trailing short user option does not dispatch command");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "--user"});
+		ok &= expect(result.status == 1, "trailing long user option rejected");
+		ok &= expect(result.output.contains("--user") &&
+		                 result.output.contains("requires an argument"),
+		             "trailing long user option reports missing argument");
+		ok &= expect(!result.output.contains("usage: howdy"),
+		             "trailing long user option does not print help");
+		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+		             "trailing long user option skips user resolution and root check");
+		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		             "trailing long user option does not dispatch command");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "list", "-U"});
+		ok &= expect(result.status == 1, "trailing short user option after command rejected");
+		ok &= expect(result.output.contains("-U") && result.output.contains("requires an argument"),
+		             "trailing short user option after command reports missing argument");
+		ok &=
+		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+		           "trailing short user option after command skips user resolution and root check");
+		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		             "trailing short user option after command does not dispatch command");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "add", "--user"});
+		ok &= expect(result.status == 1, "trailing long user option after command rejected");
+		ok &= expect(result.output.contains("--user") &&
+		                 result.output.contains("requires an argument"),
+		             "trailing long user option after command reports missing argument");
+		ok &=
+		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+		           "trailing long user option after command skips user resolution and root check");
+		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		             "trailing long user option after command does not dispatch command");
 	}
 	{
 		Context context;

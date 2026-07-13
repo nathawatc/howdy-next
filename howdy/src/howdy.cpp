@@ -126,9 +126,11 @@ int howdy::native::howdy_internal::howdy_main_with_dependencies(
 	for (int index = 1; index < argc; ++index) {
 		const std::string_view arg(argv[index]);
 		if (arg == "-U" || arg == "--user") {
-			if (index + 1 < argc) {
-				user = argv[++index];
+			if (index + 1 >= argc) {
+				std::cout << "Option '" << arg << "' requires an argument\n";
+				return 1;
 			}
+			user = argv[++index];
 			continue;
 		}
 		if (arg == "-y") {
