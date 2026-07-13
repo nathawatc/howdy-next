@@ -6,18 +6,33 @@
 #	include "optional_task.hpp"
 #	include "prompt_coordinator.hpp"
 
-#	include <tuple>
 #	include <chrono>
+#	include <spawn.h>
+#	include <tuple>
 
 namespace howdy::pam::testing {
+	using PosixSpawnFileActionsInitFn = int (*)(void *context, posix_spawn_file_actions_t *actions);
+	using PosixSpawnFileActionsAddCloseFromFn = int (*)(void                       *context,
+	                                                    posix_spawn_file_actions_t *actions,
+	                                                    int                         from_fd);
+	using PosixSpawnFileActionsDestroyFn      = int (*)(void                       *context,
+	                                                    posix_spawn_file_actions_t *actions);
 	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
-	                             char *const *argv, char *const *envp);
+	                             const posix_spawn_file_actions_t *actions, char *const *argv,
+	                             char *const *envp);
+
+	struct PosixSpawnOperations {
+		PosixSpawnFileActionsInitFn         file_actions_init         = nullptr;
+		PosixSpawnFileActionsAddCloseFromFn file_actions_addclosefrom = nullptr;
+		PosixSpawnFileActionsDestroyFn      file_actions_destroy      = nullptr;
+		PosixSpawnFn                        spawn                     = nullptr;
+	};
 
 	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> &pass_task,
 	                           NativePromptConversation               &native_prompt) noexcept;
 
 	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
-	                           PosixSpawnFn posix_spawn_fn, void *context) -> int;
+	                           const PosixSpawnOperations &operations, void *context) -> int;
 	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::duration hard_timeout)
 	    -> int;
 

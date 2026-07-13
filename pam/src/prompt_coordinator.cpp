@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "prompt_coordinator.hpp"
 
 #include "common/compare_exit.hpp"
@@ -31,8 +35,22 @@
 #include <sys/wait.h>
 
 namespace {
+	using PosixSpawnFileActionsInitFn = int (*)(void *context, posix_spawn_file_actions_t *actions);
+	using PosixSpawnFileActionsAddCloseFromFn = int (*)(void                       *context,
+	                                                    posix_spawn_file_actions_t *actions,
+	                                                    int                         from_fd);
+	using PosixSpawnFileActionsDestroyFn      = int (*)(void                       *context,
+	                                                    posix_spawn_file_actions_t *actions);
 	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
-	                             char *const *argv, char *const *envp);
+	                             const posix_spawn_file_actions_t *actions, char *const *argv,
+	                             char *const *envp);
+
+	struct PosixSpawnOperations {
+		PosixSpawnFileActionsInitFn         file_actions_init;
+		PosixSpawnFileActionsAddCloseFromFn file_actions_addclosefrom;
+		PosixSpawnFileActionsDestroyFn      file_actions_destroy;
+		PosixSpawnFn                        spawn;
+	};
 
 	constexpr auto kPromptRetryDelay =
 	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
@@ -235,14 +253,41 @@ namespace {
 		return wait_for_compare_process(child_pid, deadline);
 	}
 
-	auto call_posix_spawn(void *context, pid_t *child_pid, const char *path, char *const *argv,
-	                      char *const *envp) -> int {
+	auto call_posix_spawn_file_actions_init(void *context, posix_spawn_file_actions_t *actions)
+	    -> int {
 		(void)context;
-		return posix_spawn(child_pid, path, nullptr, nullptr, argv, envp);
+		return posix_spawn_file_actions_init(actions);
 	}
 
+	auto call_posix_spawn_file_actions_addclosefrom(void                       *context,
+	                                                posix_spawn_file_actions_t *actions,
+	                                                int                         from_fd) -> int {
+		(void)context;
+		return posix_spawn_file_actions_addclosefrom_np(actions, from_fd);
+	}
+
+	auto call_posix_spawn_file_actions_destroy(void *context, posix_spawn_file_actions_t *actions)
+	    -> int {
+		(void)context;
+		return posix_spawn_file_actions_destroy(actions);
+	}
+
+	auto call_posix_spawn(void *context, pid_t *child_pid, const char *path,
+	                      const posix_spawn_file_actions_t *actions, char *const *argv,
+	                      char *const *envp) -> int {
+		(void)context;
+		return posix_spawn(child_pid, path, actions, nullptr, argv, envp);
+	}
+
+	constexpr PosixSpawnOperations kPosixSpawnOperations = {
+	    .file_actions_init         = call_posix_spawn_file_actions_init,
+	    .file_actions_addclosefrom = call_posix_spawn_file_actions_addclosefrom,
+	    .file_actions_destroy      = call_posix_spawn_file_actions_destroy,
+	    .spawn                     = call_posix_spawn,
+	};
+
 	auto spawn_compare_process(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                           PosixSpawnFn posix_spawn_fn, void *context) -> int {
+	                           const PosixSpawnOperations &operations, void *context) -> int {
 		const std::string config_path(request.config_path);
 		const std::string username(request.username);
 
@@ -267,14 +312,30 @@ namespace {
 
 		char **compare_env = request.staged_runtime ? runtime_env.data() : empty_env.data();
 
-		return posix_spawn_fn(context, child_pid, kCompareProcessPath, args.data(), compare_env);
+		posix_spawn_file_actions_t file_actions;
+		const int init_result = operations.file_actions_init(context, &file_actions);
+		if (init_result != 0) {
+			return init_result;
+		}
+
+		const int closefrom_result =
+		    operations.file_actions_addclosefrom(context, &file_actions, STDERR_FILENO + 1);
+		if (closefrom_result != 0) {
+			(void)operations.file_actions_destroy(context, &file_actions);
+			return closefrom_result;
+		}
+
+		const int spawn_result = operations.spawn(context, child_pid, kCompareProcessPath,
+		                                          &file_actions, args.data(), compare_env);
+		(void)operations.file_actions_destroy(context, &file_actions);
+		return spawn_result;
 	}
 
 	auto spawn_compare_process_dependency(void                                   *context,
 	                                      const howdy::pam::CompareLaunchRequest &request,
 	                                      pid_t *child_pid) -> int {
 		(void)context;
-		return spawn_compare_process(request, child_pid, call_posix_spawn, nullptr);
+		return spawn_compare_process(request, child_pid, kPosixSpawnOperations, nullptr);
 	}
 
 	auto terminate_compare_process_dependency(void *context, pid_t child_pid) -> void {
@@ -530,8 +591,14 @@ namespace howdy::pam::testing {
 	}
 
 	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
-	                           PosixSpawnFn posix_spawn_fn, void *context) -> int {
-		return ::spawn_compare_process(request, child_pid, posix_spawn_fn, context);
+	                           const PosixSpawnOperations &operations, void *context) -> int {
+		const ::PosixSpawnOperations internal_operations = {
+		    .file_actions_init         = operations.file_actions_init,
+		    .file_actions_addclosefrom = operations.file_actions_addclosefrom,
+		    .file_actions_destroy      = operations.file_actions_destroy,
+		    .spawn                     = operations.spawn,
+		};
+		return ::spawn_compare_process(request, child_pid, internal_operations, context);
 	}
 
 }  // namespace howdy::pam::testing

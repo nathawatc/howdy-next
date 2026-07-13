@@ -98,19 +98,57 @@ namespace {
 	};
 
 	struct PosixSpawnCapture {
-		int                      calls        = 0;
-		int                      spawn_result = 0;
-		pid_t                    next_pid     = 4242;
-		std::string              path;
-		std::vector<std::string> argv;
-		std::vector<std::string> environment;
+		int                               init_calls          = 0;
+		int                               addclosefrom_calls  = 0;
+		int                               destroy_calls       = 0;
+		int                               spawn_calls         = 0;
+		int                               init_result         = 0;
+		int                               addclosefrom_result = 0;
+		int                               spawn_result        = 0;
+		int                               closefrom_fd        = -1;
+		pid_t                             next_pid            = 4242;
+		posix_spawn_file_actions_t       *initialized_actions = nullptr;
+		posix_spawn_file_actions_t       *closefrom_actions   = nullptr;
+		posix_spawn_file_actions_t       *destroyed_actions   = nullptr;
+		const posix_spawn_file_actions_t *spawn_actions       = nullptr;
+		std::string                       path;
+		std::vector<std::string>          argv;
+		std::vector<std::string>          environment;
 	};
 
-	auto capture_posix_spawn(void *context, pid_t *child_pid, const char *path, char *const *argv,
+	auto capture_posix_spawn_file_actions_init(void *context, posix_spawn_file_actions_t *actions)
+	    -> int {
+		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+		++capture.init_calls;
+		capture.initialized_actions = actions;
+		return capture.init_result;
+	}
+
+	auto capture_posix_spawn_file_actions_addclosefrom(void                       *context,
+	                                                   posix_spawn_file_actions_t *actions,
+	                                                   int                         from_fd) -> int {
+		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+		++capture.addclosefrom_calls;
+		capture.closefrom_actions = actions;
+		capture.closefrom_fd      = from_fd;
+		return capture.addclosefrom_result;
+	}
+
+	auto capture_posix_spawn_file_actions_destroy(void                       *context,
+	                                              posix_spawn_file_actions_t *actions) -> int {
+		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+		++capture.destroy_calls;
+		capture.destroyed_actions = actions;
+		return 0;
+	}
+
+	auto capture_posix_spawn(void *context, pid_t *child_pid, const char *path,
+	                         const posix_spawn_file_actions_t *actions, char *const *argv,
 	                         char *const *envp) -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(context);
-		++capture.calls;
-		capture.path = path;
+		++capture.spawn_calls;
+		capture.spawn_actions = actions;
+		capture.path          = path;
 		for (char *const *argument = argv; *argument != nullptr; ++argument) {
 			capture.argv.emplace_back(*argument);
 		}
@@ -122,6 +160,15 @@ namespace {
 			*child_pid = capture.next_pid;
 		}
 		return capture.spawn_result;
+	}
+
+	auto posix_spawn_operations() -> howdy::pam::testing::PosixSpawnOperations {
+		return {
+		    .file_actions_init         = capture_posix_spawn_file_actions_init,
+		    .file_actions_addclosefrom = capture_posix_spawn_file_actions_addclosefrom,
+		    .file_actions_destroy      = capture_posix_spawn_file_actions_destroy,
+		    .spawn                     = capture_posix_spawn,
+		};
 	}
 
 	auto original_conversation(int num_msg, const struct pam_message **messages,
@@ -984,10 +1031,22 @@ namespace {
 		PosixSpawnCapture capture;
 		pid_t             child_pid = -1;
 		const int         result    = howdy::pam::testing::spawn_compare_process(
-		    request, &child_pid, capture_posix_spawn, &capture);
+		    request, &child_pid, posix_spawn_operations(), &capture);
 
 		return expect(result == 0, label + " returns spawn success") &&
-		       expect(capture.calls == 1, label + " calls posix_spawn once") &&
+		       expect(capture.init_calls == 1, label + " initializes file actions once") &&
+		       expect(capture.addclosefrom_calls == 1, label + " adds close-from action once") &&
+		       expect(capture.closefrom_fd == STDERR_FILENO + 1,
+		              label + " closes descriptors beginning at 3") &&
+		       expect(capture.spawn_calls == 1, label + " calls posix_spawn once") &&
+		       expect(capture.spawn_actions != nullptr,
+		              label + " passes non-null file actions to spawn") &&
+		       expect(capture.spawn_actions == capture.initialized_actions &&
+		                  capture.spawn_actions == capture.closefrom_actions,
+		              label + " passes initialized close-from actions to spawn") &&
+		       expect(capture.destroy_calls == 1, label + " destroys file actions once") &&
+		       expect(capture.destroyed_actions == capture.initialized_actions,
+		              label + " destroys initialized file actions") &&
 		       expect(child_pid == capture.next_pid, label + " preserves spawned PID") &&
 		       expect(capture.path == kCompareProcessPath, label + " preserves executable path") &&
 		       expect(capture.argv == expected_argv, label + " preserves exact argv") &&
@@ -1024,15 +1083,61 @@ namespace {
 		    {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"}, "owned temporary request");
 	}
 
+	auto test_production_file_actions_init_failure() -> bool {
+		PosixSpawnCapture capture;
+		capture.init_result = ENOMEM;
+		pid_t     child_pid = -1;
+		const int result    = howdy::pam::testing::spawn_compare_process(
+		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
+
+		return expect(result == ENOMEM, "file-actions init failure preserves error") &&
+		       expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
+		       expect(capture.addclosefrom_calls == 0,
+		              "file-actions init failure does not add close-from action") &&
+		       expect(capture.spawn_calls == 0, "file-actions init failure does not spawn") &&
+		       expect(capture.destroy_calls == 0,
+		              "file-actions init failure does not destroy uninitialized actions") &&
+		       expect(child_pid == -1, "file-actions init failure leaves child PID unchanged");
+	}
+
+	auto test_production_closefrom_failure() -> bool {
+		PosixSpawnCapture capture;
+		capture.addclosefrom_result = EINVAL;
+		pid_t     child_pid         = -1;
+		const int result            = howdy::pam::testing::spawn_compare_process(
+		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
+
+		return expect(result == EINVAL, "close-from setup failure preserves error") &&
+		       expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
+		       expect(capture.addclosefrom_calls == 1,
+		              "close-from setup failure adds action once") &&
+		       expect(capture.closefrom_fd == STDERR_FILENO + 1,
+		              "close-from setup failure begins at descriptor 3") &&
+		       expect(capture.spawn_calls == 0, "close-from setup failure does not spawn") &&
+		       expect(capture.destroy_calls == 1,
+		              "close-from setup failure destroys initialized actions once") &&
+		       expect(capture.destroyed_actions == capture.initialized_actions,
+		              "close-from setup failure destroys initialized actions") &&
+		       expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
+	}
+
 	auto test_production_spawn_failure() -> bool {
 		PosixSpawnCapture capture;
 		capture.spawn_result = EACCES;
 		pid_t     child_pid  = -1;
 		const int result     = howdy::pam::testing::spawn_compare_process(
-		    make_compare_request(), &child_pid, capture_posix_spawn, &capture);
+		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
 
 		return expect(result == EACCES, "production spawn failure preserves error") &&
-		       expect(capture.calls == 1, "production spawn failure calls posix_spawn once") &&
+		       expect(capture.init_calls == 1, "production spawn failure initializes once") &&
+		       expect(capture.addclosefrom_calls == 1,
+		              "production spawn failure adds close-from action once") &&
+		       expect(capture.spawn_calls == 1,
+		              "production spawn failure calls posix_spawn once") &&
+		       expect(capture.spawn_actions != nullptr,
+		              "production spawn failure passes non-null file actions") &&
+		       expect(capture.destroy_calls == 1,
+		              "production spawn failure destroys file actions once") &&
 		       expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
 		       expect(capture.path == kCompareProcessPath,
 		              "production spawn failure preserves executable path") &&
@@ -1180,6 +1285,8 @@ auto main() -> int {
 	ok &= test_production_direct_runtime_environment();
 	ok &= test_production_staged_runtime_environment();
 	ok &= test_owned_launch_request_from_temporaries();
+	ok &= test_production_file_actions_init_failure();
+	ok &= test_production_closefrom_failure();
 	ok &= test_production_spawn_failure();
 	ok &= test_spawn_failure();
 	ok &= test_invalid_spawn_pid();
