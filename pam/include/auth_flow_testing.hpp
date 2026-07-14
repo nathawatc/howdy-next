@@ -5,7 +5,9 @@
 
 #	include "common/fd_io.hpp"
 #	include "optional_task.hpp"
+#	include "prompt_coordinator.hpp"
 #	include "prompt_workaround.hpp"
+#	include "runtime_session.hpp"
 
 #	include <filesystem>
 #	include <functional>
@@ -35,6 +37,20 @@ namespace howdy::pam::testing {
 	                  const ConversationFn &conv_function) -> int;
 	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int;
+
+	using CheckEnabledFn = int (*)(void *context, const howdy::native::RuntimeConfig &config,
+	                               const char                  *username,
+	                               const std::filesystem::path &user_models_dir);
+
+	struct IdentifyDependencies {
+		void                         *context = nullptr;
+		RuntimeSessionDependencies    runtime_session;
+		PromptCoordinatorDependencies prompt_coordinator;
+		CheckEnabledFn                check_enabled = nullptr;
+	};
+
+	auto set_identify_dependencies(const IdentifyDependencies &dependencies) -> void;
+	auto reset_identify_dependencies() -> void;
 
 	struct PromptStopResult {
 		bool enter_failed   = false;

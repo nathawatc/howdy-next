@@ -149,6 +149,11 @@ auto main() -> int {
 		bool                        defaults_ok = true;
 		howdy::native::ConfigReader defaults(default_floats_path.string());
 		defaults_ok &= expect(defaults.ok(), label + ": default float config parses");
+		defaults_ok &=
+		    expect(near(howdy::native::parse_config_float_strict("1.25").value_or(0.0F), 1.25F),
+		           label + ": strict float parser accepts dot decimal");
+		defaults_ok &= expect(!howdy::native::parse_config_float_strict("1,25").has_value(),
+		                      label + ": strict float parser rejects comma decimal");
 		defaults_ok &= expect(!howdy::native::validate_runtime_config(defaults).has_value(),
 		                      label + ": default float config validates");
 		defaults_ok &= expect(near(howdy::native::config_clahe_clip_limit(defaults), 1.25F),

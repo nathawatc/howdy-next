@@ -1,8 +1,13 @@
 #include "common/compare_exit.hpp"
 #include "status_mapping.hpp"
+#include "translation.hpp"
 
+#include <array>
+#include <clocale>
 #include <csignal>
+#include <cstdlib>
 #include <iostream>
+#include <libintl.h>
 #include <string>
 
 #include <security/pam_modules.h>
@@ -27,6 +32,27 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
+
+	const char       *initial_locale_ptr  = std::setlocale(LC_ALL, nullptr);
+	const std::string initial_locale      = initial_locale_ptr == nullptr ? "" : initial_locale_ptr;
+	const char       *initial_domain_ptr  = textdomain(nullptr);
+	const std::string initial_domain      = initial_domain_ptr == nullptr ? "" : initial_domain_ptr;
+	const char       *initial_binding_ptr = bindtextdomain(GETTEXT_PACKAGE, nullptr);
+	const std::string initial_binding = initial_binding_ptr == nullptr ? "" : initial_binding_ptr;
+	const char       *initial_language_ptr = std::getenv("LANGUAGE");
+	const bool        had_initial_language = initial_language_ptr != nullptr;
+	const std::string initial_language     = had_initial_language ? initial_language_ptr : "";
+
+	std::setlocale(LC_ALL, "C");
+	textdomain("pam-host-test-domain");
+	bindtextdomain(GETTEXT_PACKAGE, HOWDY_TEST_LOCALEDIR);
+	const std::string host_domain = textdomain(nullptr);
+
+	ok &= expect(std::string(howdy::pam::translate("Missing Howdy translation")) ==
+	                 "Missing Howdy translation",
+	             "missing Howdy translation returns source string");
+	ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+	             "explicit Howdy translation ignores host default domain");
 
 	{
 		const auto decision =
@@ -121,6 +147,46 @@ auto main() -> int {
 	             "confirmation message is formatted");
 	ok &= expect(build_unknown_error_message(42) == "Unknown error: 42",
 	             "unknown error message is formatted");
+	ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+	             "Howdy message mapping preserves host default domain");
+
+	setenv("LANGUAGE", "th", 1);
+	const std::array<const char *, 3> thai_locales         = {"th_TH.UTF-8", "th_TH.utf8", "th_TH"};
+	const char                       *selected_thai_locale = nullptr;
+	for (const char *candidate : thai_locales) {
+		if (std::setlocale(LC_ALL, candidate) != nullptr) {
+			selected_thai_locale = candidate;
+			break;
+		}
+	}
+	if (selected_thai_locale != nullptr) {
+		const auto translated =
+		    map_compare_wait_status(make_status(howdy::native::CompareExit::kTimeoutReached));
+		ok &= expect(translated.conversation_message == "ยืนยันตัวตนล้มเหลวเนื่องจากหมดเวลา",
+		             "Howdy message resolves from explicit Howdy domain");
+		ok &= expect(std::string(howdy::pam::translate("Missing Howdy translation")) ==
+		                 "Missing Howdy translation",
+		             "missing catalog entry returns source string under translated locale");
+		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+		             "translated Howdy message ignores host default domain");
+	} else {
+		std::cerr << "SKIP: Thai locale is not generated; translated catalog assertion not run\n";
+	}
+
+	if (had_initial_language) {
+		setenv("LANGUAGE", initial_language.c_str(), 1);
+	} else {
+		unsetenv("LANGUAGE");
+	}
+	if (!initial_binding.empty()) {
+		bindtextdomain(GETTEXT_PACKAGE, initial_binding.c_str());
+	}
+	if (!initial_domain.empty()) {
+		textdomain(initial_domain.c_str());
+	}
+	if (!initial_locale.empty()) {
+		std::setlocale(LC_ALL, initial_locale.c_str());
+	}
 
 	if (!ok) {
 		return 1;

@@ -7,11 +7,13 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <clocale>
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <libintl.h>
 #include <limits>
 #include <optional>
 #include <string>
@@ -745,6 +747,136 @@ namespace {
 		return ok;
 	}
 
+	auto expect_authentication_preserves_host_locale_state() -> bool {
+		using howdy::pam::PromptCoordinatorDependencies;
+		using howdy::pam::RuntimeSessionDependencies;
+		using howdy::pam::testing::IdentifyDependencies;
+
+		const auto prepare_runtime = [](void *, std::string_view,
+		                                howdy::pam::PreparedRuntimeFiles *) -> bool {
+			return false;
+		};
+		const auto cleanup_runtime     = [](void *, const std::filesystem::path &) {};
+		const auto load_runtime_config = [](void *, const std::filesystem::path &path) {
+			howdy::native::RuntimeConfig config;
+			config.core.detection_notice    = false;
+			config.core.no_confirmation     = true;
+			config.core.abort_if_ssh        = false;
+			config.core.abort_if_lid_closed = false;
+			config.core.disabled            = false;
+			return howdy::native::RuntimeConfigLoadResult{
+			    .ok            = true,
+			    .status        = howdy::native::RuntimeConfigLoadStatus::kOk,
+			    .path          = path,
+			    .config        = std::move(config),
+			    .error_message = {},
+			    .error_code    = 0,
+			};
+		};
+		const auto effective_uid = [](void *) -> uid_t {
+			return 0;
+		};
+		const auto check_enabled = [](void *, const howdy::native::RuntimeConfig &, const char *,
+		                              const std::filesystem::path &) -> int {
+			return PAM_SUCCESS;
+		};
+		const auto spawn_compare = [](void *, const howdy::pam::CompareLaunchRequest &,
+		                              pid_t *child_pid) -> int {
+			*child_pid = 1;
+			return 0;
+		};
+		const auto wait_compare = [](void *, pid_t, std::chrono::steady_clock::time_point) -> int {
+			return 0;
+		};
+		const auto terminate_compare = [](void *, pid_t) {};
+		const auto input_preflight   = [](void *) -> bool {
+			return true;
+		};
+		const auto request_auth_token = [](void *, pam_handle_t *) -> std::tuple<int, char *> {
+			return {PAM_SUCCESS, nullptr};
+		};
+
+		const RuntimeSessionDependencies runtime_dependencies{
+		    .prepare_runtime     = prepare_runtime,
+		    .cleanup_runtime     = cleanup_runtime,
+		    .load_runtime_config = load_runtime_config,
+		    .effective_uid       = effective_uid,
+		};
+		const PromptCoordinatorDependencies prompt_dependencies{
+		    .spawn_compare_process    = spawn_compare,
+		    .wait_for_compare_process = wait_compare,
+		    .terminate_compare        = terminate_compare,
+		    .input_prompt_preflight   = input_preflight,
+		    .request_auth_token       = request_auth_token,
+		};
+		howdy::pam::testing::set_identify_dependencies(IdentifyDependencies{
+		    .runtime_session    = runtime_dependencies,
+		    .prompt_coordinator = prompt_dependencies,
+		    .check_enabled      = check_enabled,
+		});
+
+		ConversationState state;
+		struct pam_conv   conversation{
+		    .conv        = test_conversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok = true;
+		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+		             "starts PAM handle for real authentication flow");
+		if (pam_handle.get() == nullptr) {
+			howdy::pam::testing::reset_identify_dependencies();
+			return false;
+		}
+
+		ScopedEnv         lc_all("LC_ALL");
+		const char       *initial_locale_ptr = std::setlocale(LC_ALL, nullptr);
+		const std::string initial_locale = initial_locale_ptr == nullptr ? "" : initial_locale_ptr;
+		const char       *initial_domain_ptr = textdomain(nullptr);
+		const std::string initial_domain = initial_domain_ptr == nullptr ? "" : initial_domain_ptr;
+		const char       *host_environment_locale = "C.UTF-8";
+		if (std::setlocale(LC_ALL, host_environment_locale) == nullptr) {
+			host_environment_locale = "C.utf8";
+		}
+		const bool locale_available = std::setlocale(LC_ALL, host_environment_locale) != nullptr;
+		if (locale_available) {
+			setenv("LC_ALL", host_environment_locale, 1);
+		}
+		std::setlocale(LC_ALL, "C");
+		textdomain("pam-host-test-domain");
+		const std::string host_locale = std::setlocale(LC_ALL, nullptr);
+		const std::string host_domain = textdomain(nullptr);
+
+		ok &= expect(pam_sm_authenticate(pam_handle.get(), 0, 0, nullptr) == PAM_SUCCESS,
+		             "real PAM authentication flow succeeds with injected boundaries");
+		if (locale_available) {
+			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
+			             "real authentication preserves host locale");
+		} else {
+			std::cerr << "SKIP: C UTF-8 locale unavailable; locale mutation assertion not run\n";
+		}
+		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+		             "real authentication preserves host gettext domain");
+
+		ok &= expect(pam_sm_authenticate(pam_handle.get(), 0, 0, nullptr) == PAM_SUCCESS,
+		             "repeated real PAM authentication flow succeeds");
+		if (locale_available) {
+			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
+			             "repeated real authentication preserves host locale");
+		}
+		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+		             "repeated real authentication preserves host gettext domain");
+
+		if (!initial_domain.empty()) {
+			textdomain(initial_domain.c_str());
+		}
+		if (!initial_locale.empty()) {
+			std::setlocale(LC_ALL, initial_locale.c_str());
+		}
+		howdy::pam::testing::reset_identify_dependencies();
+		return ok;
+	}
+
 	auto expect_enabled_decisions() -> bool {
 		using howdy::pam::testing::check_enabled;
 
@@ -890,6 +1022,7 @@ auto main() -> int {
 	ok &= expect_auth_helper_output_protocol_validation();
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
+	ok &= expect_authentication_preserves_host_locale_state();
 	ok &= expect_enabled_decisions();
 	ok &= expect_prompt_stop_helpers();
 

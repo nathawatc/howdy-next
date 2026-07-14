@@ -7,10 +7,10 @@
 #include "prompt_coordinator.hpp"
 #include "runtime_session.hpp"
 #include "status_mapping.hpp"
+#include "translation.hpp"
 
 #include <cerrno>
 #include <chrono>
-#include <clocale>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -34,9 +34,10 @@ namespace {
 	// Covers exec, model loading, and camera setup before configured scan timeout begins.
 	constexpr auto kCompareStartupGrace = std::chrono::seconds(3);
 
-	auto S(const char *msg) -> const char * {
-		return gettext(msg);
-	}
+#ifdef HOWDY_PAM_TESTING
+	howdy::pam::testing::IdentifyDependencies g_identify_dependencies;
+	bool                                      g_identify_dependencies_set = false;
+#endif
 
 	using howdy::native::CompareExit;
 
@@ -195,6 +196,16 @@ namespace {
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
 
+	auto set_identify_dependencies(const IdentifyDependencies &dependencies) -> void {
+		g_identify_dependencies     = dependencies;
+		g_identify_dependencies_set = true;
+	}
+
+	auto reset_identify_dependencies() -> void {
+		g_identify_dependencies     = {};
+		g_identify_dependencies_set = false;
+	}
+
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void {
 		::send_conversation_message(conv_function, msg_type, message);
@@ -238,9 +249,14 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		return pam_res == PAM_SUCCESS ? PAM_USER_UNKNOWN : pam_res;
 	}
 
-	howdy::pam::RuntimeSession runtime_session(
-	    kConfiguredConfigPath, kConfiguredUserModelsDir,
-	    howdy::pam::production_runtime_session_dependencies());
+	auto runtime_dependencies = howdy::pam::production_runtime_session_dependencies();
+#ifdef HOWDY_PAM_TESTING
+	if (g_identify_dependencies_set) {
+		runtime_dependencies = g_identify_dependencies.runtime_session;
+	}
+#endif
+	howdy::pam::RuntimeSession runtime_session(kConfiguredConfigPath, kConfiguredUserModelsDir,
+	                                           runtime_dependencies);
 
 	const auto runtime_result = runtime_session.load_for_user(username);
 	if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
@@ -255,7 +271,16 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	}
 	const auto &config = *runtime_result.config_result.config;
 
+#ifdef HOWDY_PAM_TESTING
+	if (g_identify_dependencies_set && g_identify_dependencies.check_enabled != nullptr) {
+		pam_res = g_identify_dependencies.check_enabled(
+		    g_identify_dependencies.context, config, username, runtime_session.user_models_dir());
+	} else {
+		pam_res = check_enabled(config, username, runtime_session.user_models_dir());
+	}
+#else
 	pam_res = check_enabled(config, username, runtime_session.user_models_dir());
+#endif
 	if (pam_res != PAM_SUCCESS) {
 		return pam_res;
 	}
@@ -266,13 +291,12 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		return pam_res;
 	}
 
-	setlocale(LC_ALL, "");
+	// Custom install prefixes require Howdy's domain to map to its configured locale directory.
 	bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
-	textdomain(GETTEXT_PACKAGE);
 
 	if (config.core.detection_notice) {
 		const int notice_result =
-		    conv_function(PAM_TEXT_INFO, S("Attempting facial authentication"));
+		    conv_function(PAM_TEXT_INFO, howdy::pam::translate("Attempting facial authentication"));
 		if (notice_result != PAM_SUCCESS) {
 			syslog(LOG_ERR, "Failed to send detection notice");
 		}
@@ -281,9 +305,14 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 	const Workaround workaround          = get_pam_workaround(argc, argv);
 	const bool       existing_auth_token = auth_token_present(pamh);
 
+	auto prompt_dependencies = howdy::pam::production_prompt_coordinator_dependencies();
+#ifdef HOWDY_PAM_TESTING
+	if (g_identify_dependencies_set) {
+		prompt_dependencies = g_identify_dependencies.prompt_coordinator;
+	}
+#endif
 	howdy::pam::PromptCoordinator coordinator(
-	    pamh, workaround, ask_auth_tok, existing_auth_token,
-	    howdy::pam::production_prompt_coordinator_dependencies(),
+	    pamh, workaround, ask_auth_tok, existing_auth_token, prompt_dependencies,
 	    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
 
 	if (!coordinator.valid()) {
@@ -315,7 +344,8 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 			if (prompt_result.enter_failed) {
 				send_conversation_message(
 				    conv_function, PAM_ERROR_MSG,
-				    S("Failed to send Enter press, waiting for user to press it instead"));
+				    howdy::pam::translate(
+				        "Failed to send Enter press, waiting for user to press it instead"));
 			}
 			return howdy_status(username, prompt_result.compare_status, config, conv_function);
 

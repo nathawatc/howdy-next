@@ -47,7 +47,11 @@ if(BUILD_TESTING)
 		src/tests/status_mapping_test.cpp
 	)
 	howdy_configure_pam_target(pam_status_mapping_test)
+	target_compile_definitions(
+		pam_status_mapping_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
+	)
 	target_link_libraries(pam_status_mapping_test PRIVATE ${HOWDY_PAM_LIBRARIES})
+	add_dependencies(pam_status_mapping_test howdy-gmo)
 	add_test(NAME pam-status-mapping COMMAND pam_status_mapping_test)
 
 	add_executable(
@@ -105,6 +109,7 @@ if(BUILD_TESTING)
 		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
 		"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
 		src/auth_flow.cpp
+		src/main.cpp
 		src/runtime_session.cpp
 		src/enter_device.cpp
 		src/native_prompt_conversation.cpp

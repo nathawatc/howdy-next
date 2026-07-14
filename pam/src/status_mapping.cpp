@@ -1,9 +1,9 @@
 #include "status_mapping.hpp"
 
 #include "common/compare_exit.hpp"
+#include "translation.hpp"
 
 #include <cstring>
-#include <libintl.h>
 #include <string>
 
 #include <security/pam_modules.h>
@@ -26,16 +26,17 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 				break;
 			case howdy::native::CompareExit::kTimeoutReached:
 				decision.conversation_kind    = ConversationKind::Error;
-				decision.conversation_message = gettext("Failure, timeout reached");
+				decision.conversation_message = howdy::pam::translate("Failure, timeout reached");
 				decision.log_message          = "Failure, timeout reached";
 				break;
 			case howdy::native::CompareExit::kAbort:
 				decision.log_message = "Failure, general abort";
 				break;
 			case howdy::native::CompareExit::kTooDark:
-				decision.conversation_kind    = ConversationKind::Error;
-				decision.conversation_message = gettext("Face detection image too dark");
-				decision.log_message          = "Failure, image too dark";
+				decision.conversation_kind = ConversationKind::Error;
+				decision.conversation_message =
+				    howdy::pam::translate("Face detection image too dark");
+				decision.log_message = "Failure, image too dark";
 				break;
 			case howdy::native::CompareExit::kInvalidDevice:
 				decision.log_message = "Failure, not possible to open camera at configured path";
@@ -64,7 +65,7 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 }
 
 auto build_confirmation_message(std::string_view username) -> std::string {
-	std::string template_text   = gettext("Identified face as {}");
+	std::string template_text   = howdy::pam::translate("Identified face as {}");
 	const auto  placeholder_pos = template_text.find("{}");
 	if (placeholder_pos != std::string::npos) {
 		template_text.replace(placeholder_pos, 2, std::string(username));
@@ -73,7 +74,7 @@ auto build_confirmation_message(std::string_view username) -> std::string {
 }
 
 auto build_unknown_error_message(int exit_status) -> std::string {
-	std::string template_text   = gettext("Unknown error: {}");
+	std::string template_text   = howdy::pam::translate("Unknown error: {}");
 	const auto  placeholder_pos = template_text.find("{}");
 	if (placeholder_pos != std::string::npos) {
 		template_text.replace(placeholder_pos, 2, std::to_string(exit_status));
