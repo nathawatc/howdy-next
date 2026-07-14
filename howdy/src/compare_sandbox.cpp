@@ -17,14 +17,13 @@ namespace {
 	using howdy::native::compare_sandbox_internal::CompareSandboxDependencies;
 	using howdy::native::compare_sandbox_internal::RlimitResource;
 
-	constexpr rlim_t kPreferredOpenFiles = 64;
-	// 32 leaves room beyond stdio, camera, config/model files, and OpenCV's internal descriptors.
-	// This is a conservative policy floor, not a measured peak.
-	constexpr rlim_t kMinimumOpenFiles = 32;
+	constexpr rlim_t kPreferredOpenFiles = 32;
+	// Measured peak is five descriptors; 16 leaves room beyond stdio, camera, config/model files,
+	// and OpenCV's internal descriptors.
+	constexpr rlim_t kMinimumOpenFiles = 16;
 	constexpr rlim_t kPreferredAddressSpace =
-	    static_cast<rlim_t>(3ULL * 1024ULL * 1024ULL * 1024ULL);
-	// Local end-to-end measurement is unavailable. Keep a conservative 2 GiB policy floor,
-	// leaving 1 GiB between minimum supported operation and the preferred sandbox cap.
+	    static_cast<rlim_t>(5ULL * 1024ULL * 1024ULL * 1024ULL / 2ULL);
+	// Measured VmPeak is 1.672 GiB. Keep a conservative 2 GiB policy floor.
 	constexpr rlim_t kMinimumAddressSpace = static_cast<rlim_t>(2ULL * 1024ULL * 1024ULL * 1024ULL);
 	constexpr rlim_t kCpuSoftMargin       = 5;
 	constexpr rlim_t kCpuHardMargin       = 10;
