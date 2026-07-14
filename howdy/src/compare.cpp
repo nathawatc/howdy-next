@@ -4,6 +4,7 @@
 #include "common/compare_exit.hpp"
 #include "common/compare_logic.hpp"
 #include "common/compare_processing_internal.hpp"
+#include "common/compare_sandbox.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
@@ -11,60 +12,57 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
 
-#include <sys/prctl.h>
-#include <sys/resource.h>
-
 namespace {
 
 	using howdy::native::CompareExit;
-	constexpr rlim_t kAddressSpaceLimitBytes =
-	    static_cast<rlim_t>(3ULL * 1024ULL * 1024ULL * 1024ULL);
 
-	auto apply_compare_sandbox(int timeout_seconds) -> bool {
-		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
-			std::cerr << "Failed to enable no_new_privs sandboxing\n";
-			return false;
+	auto sandbox_resource_name(howdy::native::CompareSandboxResource resource) -> const char * {
+		switch (resource) {
+			case howdy::native::CompareSandboxResource::kCpu:
+				return "CPU";
+			case howdy::native::CompareSandboxResource::kOpenFiles:
+				return "file-descriptor";
+			case howdy::native::CompareSandboxResource::kCore:
+				return "core-dump";
+			case howdy::native::CompareSandboxResource::kAddressSpace:
+				return "address-space";
+			case howdy::native::CompareSandboxResource::kNone:
+				return "unknown";
 		}
+		return "unknown";
+	}
 
-		rlimit cpu_limit{};
-		cpu_limit.rlim_cur = static_cast<rlim_t>(std::max(timeout_seconds + 5, 15));
-		cpu_limit.rlim_max = static_cast<rlim_t>(std::max(timeout_seconds + 10, 20));
-		if (setrlimit(RLIMIT_CPU, &cpu_limit) != 0) {
-			std::cerr << "Failed to apply CPU sandbox limit\n";
-			return false;
+	void report_sandbox_failure(const howdy::native::CompareSandboxResult &result) {
+		switch (result.status) {
+			case howdy::native::CompareSandboxStatus::kOk:
+				return;
+			case howdy::native::CompareSandboxStatus::kNoNewPrivilegesFailure:
+				std::cerr << "Failed to enable no_new_privs sandboxing";
+				break;
+			case howdy::native::CompareSandboxStatus::kLimitInspectionFailure:
+				std::cerr << "Failed to inspect " << sandbox_resource_name(result.resource)
+				          << " sandbox limit";
+				break;
+			case howdy::native::CompareSandboxStatus::kLimitBelowMinimum:
+				std::cerr << "Inherited " << sandbox_resource_name(result.resource)
+				          << " limit is below Howdy's minimum sandbox policy\n";
+				return;
+			case howdy::native::CompareSandboxStatus::kLimitApplicationFailure:
+				std::cerr << "Failed to apply " << sandbox_resource_name(result.resource)
+				          << " sandbox limit";
+				break;
 		}
-
-		rlimit file_limit{};
-		file_limit.rlim_cur = 64;
-		file_limit.rlim_max = 64;
-		if (setrlimit(RLIMIT_NOFILE, &file_limit) != 0) {
-			std::cerr << "Failed to apply file-descriptor sandbox limit\n";
-			return false;
+		if (result.error_number != 0) {
+			std::cerr << ": " << std::strerror(result.error_number);
 		}
-
-		rlimit core_limit{};
-		core_limit.rlim_cur = 0;
-		core_limit.rlim_max = 0;
-		if (setrlimit(RLIMIT_CORE, &core_limit) != 0) {
-			std::cerr << "Failed to disable core dumps\n";
-			return false;
-		}
-
-		rlimit address_space_limit{};
-		address_space_limit.rlim_cur = kAddressSpaceLimitBytes;
-		address_space_limit.rlim_max = address_space_limit.rlim_cur;
-		if (setrlimit(RLIMIT_AS, &address_space_limit) != 0) {
-			std::cerr << "Failed to apply memory sandbox limit\n";
-			return false;
-		}
-
-		return true;
+		std::cerr << "\n";
 	}
 
 	auto prepare_face_frame_dependency(void *context, const cv::Mat &frame) -> cv::Mat {
@@ -270,7 +268,9 @@ auto main(int argc, char **argv) -> int {
 		}
 		const auto &config = *config_result.config;
 
-		if (!apply_compare_sandbox(config.video.timeout)) {
+		const auto sandbox_result = howdy::native::apply_compare_sandbox(config.video.timeout);
+		if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
+			report_sandbox_failure(sandbox_result);
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
