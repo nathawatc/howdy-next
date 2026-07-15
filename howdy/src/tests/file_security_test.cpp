@@ -1,4 +1,5 @@
 #include "common/file_security.hpp"
+#include "test_support.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -13,6 +14,8 @@
 
 namespace {
 
+	using howdy::test::expect;
+
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);
 		if (!out.is_open()) {
@@ -20,14 +23,6 @@ namespace {
 		}
 		out << content;
 		return out.good();
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto secure_file(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {

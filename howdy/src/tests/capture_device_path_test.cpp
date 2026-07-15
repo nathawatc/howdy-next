@@ -1,11 +1,13 @@
 #include "common/capture_device_path.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 
 namespace {
+
+	using howdy::test::expect;
 
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);
@@ -14,14 +16,6 @@ namespace {
 		}
 		out << content;
 		return out.good();
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 }  // namespace

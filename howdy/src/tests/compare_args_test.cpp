@@ -1,18 +1,12 @@
 #include "common/compare_args.hpp"
+#include "test_support.hpp"
 
-#include <iostream>
 #include <string>
 #include <vector>
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto argv_from(std::vector<std::string> &args) -> std::vector<char *> {
 		std::vector<char *> result;

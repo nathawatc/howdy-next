@@ -1,9 +1,9 @@
 #include "common/file_security.hpp"
 #include "common/model_file.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -13,19 +13,14 @@
 
 namespace {
 
+	using howdy::test::expect;
+
 	constexpr auto kFixture = "known model fixture";
 
 	auto write_file(const std::filesystem::path &path, const std::string_view content) -> bool {
 		std::ofstream output(path, std::ios::binary);
 		output.write(content.data(), static_cast<std::streamsize>(content.size()));
 		return output.good();
-	}
-
-	auto expect(const bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-		}
-		return condition;
 	}
 
 	auto readiness(const std::filesystem::path &path, const std::string_view label = "Model file")

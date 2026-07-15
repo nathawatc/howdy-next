@@ -1,5 +1,6 @@
 #include "common/compare_exit.hpp"
 #include "common/compare_privileges_internal.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -9,7 +10,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
-#include <iostream>
 #include <pwd.h>
 #include <string>
 #include <tuple>
@@ -25,6 +25,8 @@
 #include <linux/securebits.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::CompareExit;
 	using howdy::native::ComparePrivilegeStatus;
@@ -125,14 +127,6 @@ namespace {
 		int         fatal_exit_code = -1;
 		std::string fatal_message;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto expect_events(const FakePrivilegeContext     &context,
 	                   const std::vector<std::string> &expected, const std::string &message)

@@ -1,11 +1,13 @@
 #include "common/compare_processing_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
-#include <iostream>
 #include <string>
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::CompareCaptureOpenStatus;
 	using howdy::native::CompareExit;
@@ -21,14 +23,6 @@ namespace {
 		std::string              privilege_error  = "non-root process has capabilities";
 		std::vector<std::string> events;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto open_capture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<FakeContext *>(raw_context);

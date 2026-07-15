@@ -1,5 +1,6 @@
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
+#include "test_support.hpp"
 
 #include <cerrno>
 #include <clocale>
@@ -17,6 +18,8 @@
 #include <sys/stat.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);
@@ -51,14 +54,6 @@ namespace {
 
 	auto lock_path_for_config(const std::filesystem::path &config_path) -> std::filesystem::path {
 		return config_path.string() + ".lock";
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto get_env_value(const char *name) -> std::optional<std::string> {

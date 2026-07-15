@@ -1,4 +1,5 @@
 #include "common/fd_io.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
@@ -6,7 +7,6 @@
 #include <csignal>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <iterator>
 #include <optional>
 #include <string>
@@ -16,6 +16,8 @@
 #include <sys/wait.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	class ScopedFd {
 	public:
@@ -66,14 +68,6 @@ namespace {
 		std::filesystem::path path;
 		ScopedFd              fd;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto read_file(const std::filesystem::path &path) -> std::string {
 		std::ifstream input(path);

@@ -1,5 +1,6 @@
 #include "cli/add_internal.hpp"
 #include "core/face_model.hpp"
+#include "test_support.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -62,14 +65,6 @@ namespace {
 		howdy::native::NewUserModelEntry                 appended_entry;
 		std::vector<std::string>                         events;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
 		howdy::native::RuntimeConfig config;

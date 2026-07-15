@@ -1,4 +1,5 @@
 #include "cli/download_models_internal.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,8 @@
 #include <sys/stat.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	int                      download_attempts     = 0;
 	int                      owner_uid_attempts    = 0;
@@ -394,14 +397,6 @@ namespace {
 		*exit_code =
 		    howdy::native::download_models_internal::download_models_main_with_dependencies(
 		        1, argv.data(), dependencies);
-		return true;
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
 		return true;
 	}
 

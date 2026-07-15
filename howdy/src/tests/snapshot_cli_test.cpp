@@ -1,4 +1,5 @@
 #include "cli/snapshot_internal.hpp"
+#include "test_support.hpp"
 
 #include <bit>
 #include <cstdint>
@@ -11,6 +12,8 @@
 #include <opencv2/core.hpp>
 
 namespace {
+
+	using howdy::test::expect;
 
 	constexpr std::size_t kSnapshotFrameCount = 4;
 
@@ -38,14 +41,6 @@ namespace {
 		howdy::native::RuntimeConfig                            write_config;
 		std::size_t                                             write_frame_count = 0;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
 		howdy::native::RuntimeConfig config;

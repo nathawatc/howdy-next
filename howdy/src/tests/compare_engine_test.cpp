@@ -1,8 +1,8 @@
 #include "common/compare_engine.hpp"
+#include "test_support.hpp"
 
 #include <cmath>
 #include <cstddef>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <string>
@@ -12,15 +12,9 @@
 #include <opencv2/imgproc.hpp>
 
 namespace {
-	int callback_calls_without_context = 0;
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
+	int callback_calls_without_context = 0;
 
 	auto expect_near(double actual, double expected, double tolerance, const std::string &message)
 	    -> bool {

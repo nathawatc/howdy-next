@@ -1,7 +1,7 @@
 #include "common/preview_engine.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
-#include <iostream>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -11,6 +11,9 @@
 #include <opencv2/imgproc.hpp>
 
 namespace {
+
+	using howdy::test::expect;
+
 	struct Context {
 		howdy::native::FaceDetectionResult                 detection_result;
 		howdy::native::FaceEncodingResult                  encoding_result;
@@ -25,14 +28,6 @@ namespace {
 		int                                                encode_calls  = 0;
 		int                                                match_calls   = 0;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto prepare_frame(void *raw_context, const cv::Mat &frame) -> cv::Mat {
 		if (raw_context == nullptr) {

@@ -1,10 +1,10 @@
+#include "test_support.hpp"
+
 #ifndef HOWDY_PAM_TESTING
 #	define HOWDY_PAM_TESTING
 #endif
 
-#define private public
 #include "native_prompt_conversation.hpp"
-#undef private
 
 #include <array>
 #include <cerrno>
@@ -12,7 +12,6 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <future>
-#include <iostream>
 #include <memory>
 #include <poll.h>
 #include <string>
@@ -22,7 +21,42 @@
 
 #include <security/pam_appl.h>
 
+class NativePromptConversationTestAccess {
+public:
+	static auto dispatch(int num_msg, const struct pam_message **messages,
+	                     struct pam_response **response, void *appdata_ptr) -> int {
+		return NativePromptConversation::dispatch(num_msg, messages, response, appdata_ptr);
+	}
+
+	static auto prompt_input(NativePromptConversation &conversation,
+	                         const struct pam_message &message, char **response, bool hide_input)
+	    -> int {
+		return conversation.prompt_input(message, response, hide_input);
+	}
+
+	static void replace_descriptors(NativePromptConversation                 &conversation,
+	                                NativePromptConversation::TestDescriptors descriptors) {
+		conversation.tty_fd_     = descriptors.tty_fd;
+		conversation.abort_pipe_ = {descriptors.abort_read_fd, descriptors.abort_write_fd};
+	}
+
+	static void close_abort_write_fd(NativePromptConversation &conversation) {
+		::close(conversation.abort_pipe_[1]);
+		conversation.abort_pipe_[1] = -1;
+	}
+
+	static void set_installed(NativePromptConversation &conversation, bool installed) {
+		conversation.installed_ = installed;
+	}
+
+	[[nodiscard]] static auto installed(const NativePromptConversation &conversation) -> bool {
+		return conversation.installed_;
+	}
+};
+
 namespace {
+
+	using howdy::test::expect;
 
 	constexpr int kPromptReadTimeoutMs = 1000;
 
@@ -74,14 +108,6 @@ namespace {
 	private:
 		int fd_ = -1;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 		master_fd->reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
@@ -182,19 +208,19 @@ namespace {
 		const struct pam_message *message_ptr = &message;
 		auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
 
-		ok &= expect(NativePromptConversation::dispatch(1, &message_ptr, &responses, nullptr) ==
-		                 PAM_CONV_ERR,
+		ok &= expect(NativePromptConversationTestAccess::dispatch(1, &message_ptr, &responses,
+		                                                          nullptr) == PAM_CONV_ERR,
 		             "dispatch rejects null appdata");
 		ok &= expect(responses == nullptr, "dispatch clears response on null appdata");
-		ok &= expect(NativePromptConversation::dispatch(1, &message_ptr, nullptr, nullptr) ==
-		                 PAM_CONV_ERR,
+		ok &= expect(NativePromptConversationTestAccess::dispatch(1, &message_ptr, nullptr,
+		                                                          nullptr) == PAM_CONV_ERR,
 		             "dispatch rejects null response pointer");
 
 		NativePromptConversation  conversation({});
 		const struct pam_message *null_message = nullptr;
 		responses                              = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(NativePromptConversation::dispatch(1, &null_message, &responses,
-		                                                &conversation) == PAM_CONV_ERR,
+		ok &= expect(NativePromptConversationTestAccess::dispatch(1, &null_message, &responses,
+		                                                          &conversation) == PAM_CONV_ERR,
 		             "dispatch rejects null message entry");
 		ok &= expect(responses == nullptr, "dispatch clears response for null message entry");
 
@@ -226,9 +252,10 @@ namespace {
 
 		{
 			NativePromptConversation conversation(pamh);
-			conversation.tty_fd_        = slave_fd.release();
-			conversation.abort_pipe_[0] = abort_pipe[0].release();
-			conversation.abort_pipe_[1] = abort_pipe[1].release();
+			NativePromptConversationTestAccess::replace_descriptors(
+			    conversation, {.tty_fd         = slave_fd.release(),
+			                   .abort_read_fd  = abort_pipe[0].release(),
+			                   .abort_write_fd = abort_pipe[1].release()});
 			ok &= expect(conversation.available(), "restore test native prompt is available");
 			ok &= expect(conversation.install() == PAM_SUCCESS,
 			             "restore test installs native conversation");
@@ -268,14 +295,14 @@ namespace {
 		    NativePromptConversation::TestDescriptors{.tty_fd         = slave_fd.release(),
 		                                              .abort_read_fd  = abort_pipe[0].release(),
 		                                              .abort_write_fd = abort_pipe[1].release()});
-		close(conversation->abort_pipe_[1]);
-		conversation->abort_pipe_[1] = -1;
+		NativePromptConversationTestAccess::close_abort_write_fd(*conversation);
 
 		auto        response       = std::make_shared<char *>(nullptr);
 		auto        result_promise = std::make_shared<std::promise<int>>();
 		auto        result_future  = result_promise->get_future();
 		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
-			result_promise->set_value(conversation->prompt_input(message, response.get(), true));
+			result_promise->set_value(NativePromptConversationTestAccess::prompt_input(
+			    *conversation, message, response.get(), true));
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -334,7 +361,8 @@ namespace {
 		auto        result_promise = std::make_shared<std::promise<int>>();
 		auto        result_future  = result_promise->get_future();
 		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
-			result_promise->set_value(conversation->prompt_input(message, response.get(), true));
+			result_promise->set_value(NativePromptConversationTestAccess::prompt_input(
+			    *conversation, message, response.get(), true));
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -381,9 +409,10 @@ namespace {
 		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
 		                                       .abort_read_fd  = abort_pipe[0].release(),
 		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.installed_ = true;
+		NativePromptConversationTestAccess::set_installed(conversation, true);
 		conversation.restore_original();
-		ok &= expect(!conversation.installed_, "null PAM restore clears installed state");
+		ok &= expect(!NativePromptConversationTestAccess::installed(conversation),
+		             "null PAM restore clears installed state");
 		return ok;
 	}
 
@@ -413,8 +442,8 @@ namespace {
 		int                       dispatch_result = PAM_SUCCESS;
 
 		std::thread dispatch_thread([&] -> void {
-			dispatch_result =
-			    NativePromptConversation::dispatch(1, &prompt_ptr, &responses, &conversation);
+			dispatch_result = NativePromptConversationTestAccess::dispatch(
+			    1, &prompt_ptr, &responses, &conversation);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -452,7 +481,8 @@ namespace {
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = conversation->prompt_input(prompt, &response, true);
+			prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, prompt,
+			                                                                 &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -525,7 +555,8 @@ namespace {
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = conversation.prompt_input(prompt, &response, true);
+			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			                                                                 &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -592,7 +623,8 @@ namespace {
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = conversation.prompt_input(prompt, &response, true);
+			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			                                                                 &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -640,7 +672,8 @@ namespace {
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = conversation.prompt_input(prompt, &response, true);
+			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			                                                                 &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -694,7 +727,8 @@ namespace {
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = conversation.prompt_input(prompt, &response, true);
+			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			                                                                 &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -744,7 +778,8 @@ auto main() -> int {
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
 	std::thread prompt_thread([&] -> void {
-		prompt_result = conversation.prompt_input(message, &response, true);
+		prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, message,
+		                                                                 &response, true);
 	});
 
 	std::array<char, 64> prompt_buffer{};

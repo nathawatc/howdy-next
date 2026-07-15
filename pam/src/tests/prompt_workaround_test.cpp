@@ -1,19 +1,12 @@
 #include "main.hpp"
 #include "prompt_workaround.hpp"
+#include "test_support.hpp"
 
 #include <array>
-#include <iostream>
-#include <string>
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 }  // namespace
 

@@ -10,6 +10,8 @@
 
 #include <sys/types.h>
 
+class NativePromptConversationTestAccess;
+
 class NativePromptConversation {
 public:
 	explicit NativePromptConversation(pam_handle_t *pamh);
@@ -43,6 +45,8 @@ public:
 	void               restore_original();
 
 private:
+	friend class NativePromptConversationTestAccess;
+
 	enum class PromptIoResult : std::uint8_t {
 		retry,
 		ready,

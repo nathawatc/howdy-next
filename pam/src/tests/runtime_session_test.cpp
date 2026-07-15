@@ -1,6 +1,7 @@
 #include "auth_flow_testing.hpp"
 #include "runtime_session.hpp"
 #include "runtime_session_testing.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -12,7 +13,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
-#include <iostream>
 #include <paths.hpp>
 #include <spawn.h>
 #include <string>
@@ -24,6 +24,8 @@
 #include <sys/wait.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	constexpr auto kConfiguredConfig = "/etc/howdy/config.ini";
 	constexpr auto kConfiguredModels = "/var/lib/howdy/models";
@@ -54,14 +56,6 @@ namespace {
 
 		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto success_result(const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {

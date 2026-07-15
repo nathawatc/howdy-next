@@ -1,5 +1,6 @@
 #include "cli/disable_cli.hpp"
 #include "cli/disable_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -17,6 +18,8 @@
 #include <sys/stat.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::RuntimeConfigLoadResult;
 	using howdy::native::RuntimeConfigLoadStatus;
@@ -113,14 +116,6 @@ namespace {
 		    .stdout_output = stdout_stream.str(),
 		    .stderr_output = stderr_stream.str(),
 		};
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto expect_no_calls(const TestContext &context, const std::string &message) -> bool {

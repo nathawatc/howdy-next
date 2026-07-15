@@ -2,6 +2,7 @@
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/number_parsing.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cctype>
@@ -19,6 +20,8 @@
 
 namespace {
 
+	using howdy::test::expect;
+
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);
 		if (!out.is_open()) {
@@ -26,14 +29,6 @@ namespace {
 		}
 		out << content;
 		return out.good();
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto trim(std::string_view value) -> std::string_view {

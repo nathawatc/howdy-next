@@ -1,11 +1,11 @@
 #include "optional_task.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <future>
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -15,13 +15,7 @@
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto run_get_before_spawn() -> void {
 		optional_task<int> task([] -> int {

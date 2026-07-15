@@ -1,5 +1,6 @@
 #include "common/compare_exit.hpp"
 #include "status_mapping.hpp"
+#include "test_support.hpp"
 #include "translation.hpp"
 
 #include <array>
@@ -16,13 +17,7 @@
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto make_status(howdy::native::CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;

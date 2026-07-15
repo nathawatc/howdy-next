@@ -1,11 +1,13 @@
 #include "main.hpp"
+#include "test_support.hpp"
 
-#include <iostream>
 #include <stdexcept>
 
 #include <security/pam_modules.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	int  identify_calls      = 0;
 	bool last_ask_auth_tok   = false;
@@ -17,14 +19,6 @@ namespace {
 		last_ask_auth_tok   = false;
 		identify_result     = PAM_SUCCESS;
 		identify_throw_mode = 0;
-	}
-
-	auto expect(bool condition, const char *message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 }  // namespace

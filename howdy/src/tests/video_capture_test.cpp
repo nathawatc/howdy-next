@@ -1,8 +1,8 @@
 #include "common/frame_validation.hpp"
 #include "recorders/video_capture.hpp"
+#include "test_support.hpp"
 
 #include <array>
-#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,15 +36,9 @@ namespace howdy::native {
 
 namespace {
 
-	using ReadContext = howdy::native::VideoCaptureTestAccess::ReadContext;
+	using howdy::test::expect;
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using ReadContext = howdy::native::VideoCaptureTestAccess::ReadContext;
 
 	auto gray_sentinel() -> cv::Mat {
 		return {1, 1, CV_8UC1, cv::Scalar(123)};

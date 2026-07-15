@@ -1,9 +1,9 @@
 #include "cli/test_cli_internal.hpp"
 #include "cli/test_preview_renderer.hpp"
 #include "cli/test_preview_session.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -12,6 +12,8 @@
 #include <opencv2/imgproc.hpp>
 
 namespace {
+
+	using howdy::test::expect;
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -31,13 +33,6 @@ namespace {
 		bool                                                  throw_present   = false;
 		std::chrono::steady_clock::time_point                 now;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-		}
-		return condition;
-	}
 
 	auto prepare_frame(void *context, const cv::Mat &gray_frame) -> cv::Mat {
 		auto *session_context = static_cast<SessionContext *>(context);

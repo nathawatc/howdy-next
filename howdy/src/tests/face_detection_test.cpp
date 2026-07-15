@@ -1,19 +1,13 @@
 #include "core/face_detection.hpp"
+#include "test_support.hpp"
 
 #include <array>
-#include <iostream>
 #include <limits>
 #include <string>
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto valid_rows(int count = 1) -> cv::Mat {
 		cv::Mat rows(count, 15, CV_32FC1);

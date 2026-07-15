@@ -1,3 +1,5 @@
+#include "test_support.hpp"
+
 #include <cstdint>
 #include <iostream>
 #include <sstream>
@@ -6,6 +8,8 @@
 #include <string_view>
 
 namespace {
+
+	using howdy::test::expect;
 
 	enum class DispatchBehavior : std::uint8_t {
 		kReturn,
@@ -53,13 +57,6 @@ namespace {
 		    .status = status,
 		    .error  = error.str(),
 		};
-	}
-
-	auto expect(bool condition, std::string_view message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << '\n';
-		}
-		return condition;
 	}
 
 }  // namespace

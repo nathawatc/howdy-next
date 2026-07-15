@@ -1,5 +1,6 @@
 #include "cli/list_cli.hpp"
 #include "cli/list_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <iostream>
@@ -11,6 +12,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::ostream &stream, std::streambuf *new_output)
@@ -51,14 +54,6 @@ namespace {
 		int                                list_calls = 0;
 		std::string                        listed_user;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto list_callback(void *raw_context, const std::string &user)
 	    -> howdy::native::UserModelListResult {

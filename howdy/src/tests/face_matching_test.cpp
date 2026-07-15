@@ -1,7 +1,7 @@
 #include "core/face_matching.hpp"
+#include "test_support.hpp"
 
 #include <cmath>
-#include <iostream>
 #include <limits>
 #include <numbers>
 #include <string>
@@ -9,13 +9,7 @@
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto expect_near(float actual, float expected, float tolerance, const std::string &message)
 	    -> bool {

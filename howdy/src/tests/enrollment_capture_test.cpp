@@ -1,12 +1,14 @@
 #include "cli/enrollment_capture.hpp"
+#include "test_support.hpp"
 
 #include <cstddef>
-#include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	struct FrameRead {
 		bool    ok = true;
@@ -82,14 +84,6 @@ namespace {
 		int                  detect_calls       = 0;
 		std::vector<cv::Mat> seen_frames;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto test_config(bool clahe_enabled = false) -> howdy::native::VideoConfig {
 		return howdy::native::VideoConfig{

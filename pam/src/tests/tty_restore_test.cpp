@@ -1,10 +1,10 @@
+#include "test_support.hpp"
 #include "tty_restore.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <fcntl.h>
-#include <iostream>
 #include <poll.h>
 #include <string>
 #include <string_view>
@@ -14,6 +14,8 @@
 #include <security/pam_appl.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	class ScopedFd {
 	public:
@@ -59,14 +61,6 @@ namespace {
 	private:
 		int fd_ = -1;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	struct PtyPairOutputs {
 		ScopedFd    *master_fd  = nullptr;

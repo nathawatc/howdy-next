@@ -1,10 +1,10 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "paths.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <unistd.h>
@@ -14,13 +14,7 @@
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);

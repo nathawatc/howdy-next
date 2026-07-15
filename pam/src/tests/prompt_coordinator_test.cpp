@@ -2,6 +2,7 @@
 #include "paths.hpp"
 #include "prompt_coordinator.hpp"
 #include "prompt_coordinator_testing.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +14,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
-#include <iostream>
 #include <mutex>
 #include <poll.h>
 #include <string>
@@ -29,6 +29,8 @@
 #include <sys/wait.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::CompareExit;
 	using howdy::pam::PromptCoordinator;
@@ -270,14 +272,6 @@ namespace {
 
 		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto spawn_compare_process(void *context, const howdy::pam::CompareLaunchRequest &request,
 	                           pid_t *child_pid) -> int {

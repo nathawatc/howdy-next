@@ -1,5 +1,6 @@
 #include "cli/config_cli.hpp"
 #include "cli/config_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -30,6 +31,8 @@ extern "C" auto wrap_initgroups(const char *user, gid_t group) -> int {
 }
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::config_internal::ConfigDependencies;
 	using howdy::native::config_internal::ConfigEditSession;
@@ -299,13 +302,6 @@ namespace {
 		const int exit_code = howdy::native::config_internal::config_main_with_dependencies(
 		    1, argv.data(), dependencies);
 		return {.exit_code = exit_code, .output = output.str()};
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-		}
-		return condition;
 	}
 
 	auto expect_removed_once(const TestContext &context, const std::string &message) -> bool {

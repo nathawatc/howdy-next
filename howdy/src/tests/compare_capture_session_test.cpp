@@ -1,8 +1,8 @@
 #include "common/compare_capture_session.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cmath>
-#include <iostream>
 #include <string>
 #include <vector>
 
@@ -10,6 +10,8 @@
 #include <opencv2/videoio.hpp>
 
 namespace {
+
+	using howdy::test::expect;
 	int set_property_calls_without_context = 0;
 
 	struct FakeCaptureContext {
@@ -33,14 +35,6 @@ namespace {
 		std::chrono::steady_clock::time_point now{};  // NOLINT(readability-redundant-member-init)
 		int                                   calls = 0;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto fake_open(void *context) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);

@@ -1,4 +1,5 @@
 #include "cli/set_internal.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::set_internal::SetDependencies;
 
@@ -70,14 +73,6 @@ namespace {
 		    static_cast<int>(arguments.size()), argv.data(), dependencies);
 		std::cout.rdbuf(previous_buffer);
 		return {.exit_code = exit_code, .output = output.str()};
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 }  // namespace

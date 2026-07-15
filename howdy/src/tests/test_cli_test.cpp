@@ -1,5 +1,6 @@
 #include "cli/test_cli_internal.hpp"
 #include "common/preview_engine.hpp"
+#include "test_support.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -8,6 +9,9 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
+
 	struct StreamRedirect {
 		std::ostream   &output;
 		std::streambuf *old_buffer;
@@ -50,14 +54,6 @@ namespace {
 		howdy::native::RuntimeConfig preview_config;
 		howdy::native::RuntimeConfig open_config;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto expect_sequence(const std::vector<std::string> &actual,
 	                     const std::vector<std::string> &expected, const std::string &message)

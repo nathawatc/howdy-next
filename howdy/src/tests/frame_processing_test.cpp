@@ -1,21 +1,15 @@
 #include "common/compare_logic.hpp"
 #include "common/frame_processing.hpp"
 #include "common/frame_validation.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cmath>
-#include <iostream>
 #include <string>
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto expect_near(double actual, double expected, double tolerance, const std::string &message)
 	    -> bool {

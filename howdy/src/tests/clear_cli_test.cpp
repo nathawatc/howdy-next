@@ -1,5 +1,6 @@
 #include "cli/clear_cli.hpp"
 #include "cli/clear_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <filesystem>
@@ -13,6 +14,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -42,14 +45,6 @@ namespace {
 		std::string                            cleared_user;
 		howdy::native::UserModelFileSnapshot   received_snapshot;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);

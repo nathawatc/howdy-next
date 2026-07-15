@@ -1,5 +1,6 @@
 #include "cli/remove_cli.hpp"
 #include "cli/remove_internal.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <iostream>
@@ -10,6 +11,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -39,14 +42,6 @@ namespace {
 		std::string                              removed_user;
 		howdy::native::UserModelEntryExpectation expected;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto valid_entry() -> howdy::native::UserModelEntry {
 		return {

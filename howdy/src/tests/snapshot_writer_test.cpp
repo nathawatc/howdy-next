@@ -1,5 +1,6 @@
 #include "cli/snapshot_internal.hpp"
 #include "common/frame_validation.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -18,6 +19,8 @@
 #include <sys/stat.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
@@ -49,14 +52,6 @@ namespace {
 		std::string        received_extension;
 		std::vector<uchar> encoded_output;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto make_temp_root(const std::string &name, bool &ok) -> fs::path {
 		const auto root =

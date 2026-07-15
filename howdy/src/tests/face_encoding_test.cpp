@@ -1,12 +1,14 @@
 #include "core/face_encoding_internal.hpp"
+#include "test_support.hpp"
 
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 	enum class FailureOperation : std::uint8_t {
 		kNone,
 		kAlign,
@@ -19,14 +21,6 @@ namespace {
 		cv::Mat feature = cv::Mat(1, static_cast<int>(howdy::native::kSfaceEmbeddingSize), CV_32FC1,
 		                          cv::Scalar(0.25F));
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	[[noreturn]] void throw_cv_error(const char *operation) {
 		throw cv::Exception(cv::Error::StsError, "forced failure", operation, "test", 1);

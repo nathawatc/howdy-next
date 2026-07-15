@@ -4,6 +4,7 @@
 #include "storage/user_model_store.hpp"
 #include "storage/user_model_store_test_hooks.hpp"
 #include "storage/user_models.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
@@ -23,6 +24,8 @@
 
 namespace {
 
+	using howdy::test::expect;
+
 	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream out(path);
 		if (!out.is_open()) {
@@ -39,14 +42,6 @@ namespace {
 
 	auto nested_array(std::size_t depth) -> std::string {
 		return std::string(depth, '[') + "0" + std::string(depth, ']');
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto expectation_from_entry(const howdy::native::UserModelEntry &entry)

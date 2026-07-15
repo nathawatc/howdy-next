@@ -1,5 +1,6 @@
 #include "storage/user_model_codec.hpp"
 #include "storage/user_model_limits.hpp"
+#include "test_support.hpp"
 
 #include <cstddef>
 #include <exception>
@@ -12,17 +13,11 @@
 
 namespace {
 
+	using howdy::test::expect;
+
 	constexpr auto kBackend = "opencv_dnn_sface";
 	constexpr auto kMetric  = "cosine";
 	constexpr auto kModel   = "sface.onnx";
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto expect_status(howdy::native::UserModelStatus actual,
 	                   howdy::native::UserModelStatus expected, const std::string &message)

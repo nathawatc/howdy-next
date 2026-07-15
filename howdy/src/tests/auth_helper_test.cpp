@@ -1,6 +1,7 @@
 #include "auth_helper_runtime.hpp"
 #include "auth_helper_testing.hpp"
 #include "common/auth_helper_protocol.hpp"
+#include "test_support.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -26,6 +27,8 @@
 #include <acl/libacl.h>
 
 namespace {
+
+	using howdy::test::expect;
 	constexpr acl_perm_t kAclRead    = acl_perm_t{ACL_READ};
 	constexpr acl_perm_t kAclWrite   = acl_perm_t{ACL_WRITE};
 	constexpr acl_perm_t kAclExecute = acl_perm_t{ACL_EXECUTE};
@@ -74,14 +77,6 @@ namespace {
 	private:
 		int fd_ = -1;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	std::map<int, acl_t> fake_acls;
 	int                  fake_acl_set_calls = 0;

@@ -1,15 +1,17 @@
 #include "config/runtime_paths.hpp"
 #include "core/face_model.hpp"
+#include "test_support.hpp"
 #include "tests/include/core/face_model_test_access.hpp"
 
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
 
 namespace {
+
+	using howdy::test::expect;
 	constexpr auto kYunetSecretPath = "/secret/models/yunet.onnx";
 	constexpr auto kSfaceSecretPath = "/secret/models/sface.onnx";
 	constexpr auto kRawError        = "raw backend failure";
@@ -41,14 +43,6 @@ namespace {
 		const char                *name_;
 		std::optional<std::string> original_value_;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	[[noreturn]] void throw_cv_error() {
 		throw cv::Exception(cv::Error::StsError, kRawError, kOpenCvFunction, kOpenCvSource, 73);

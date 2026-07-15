@@ -46,7 +46,7 @@ install(
 if(BUILD_TESTING)
 	function(howdy_add_pam_test target test_name)
 		add_executable(${target} ${ARGN})
-		howdy_configure_pam_target(${target})
+		howdy_configure_pam_test_target(${target})
 		target_link_libraries(${target} PRIVATE ${HOWDY_PAM_LIBRARIES})
 		add_test(NAME ${test_name} COMMAND ${target})
 	endfunction()
@@ -86,7 +86,7 @@ if(BUILD_TESTING)
 	target_compile_definitions(pam_native_prompt_conversation_test PRIVATE HOWDY_PAM_TESTING)
 
 	add_executable(pam_optional_task_test src/tests/optional_task_test.cpp)
-	howdy_configure_pam_target(pam_optional_task_test)
+	howdy_configure_pam_test_target(pam_optional_task_test)
 	target_link_libraries(pam_optional_task_test PRIVATE Threads::Threads)
 	add_test(NAME pam-optional-task COMMAND pam_optional_task_test)
 	add_test(
@@ -103,7 +103,7 @@ if(BUILD_TESTING)
 		src/tty_restore.cpp
 		src/tests/tty_restore_test.cpp
 	)
-	howdy_configure_pam_target(pam_tty_restore_test)
+	howdy_configure_pam_test_target(pam_tty_restore_test)
 	target_link_libraries(pam_tty_restore_test PRIVATE PAM::PAM)
 	add_test(NAME pam-tty-restore COMMAND pam_tty_restore_test)
 
@@ -142,7 +142,7 @@ if(BUILD_TESTING)
 		src/prompt_workaround.cpp
 		src/tests/prompt_coordinator_test.cpp
 	)
-	howdy_configure_pam_target(pam_prompt_coordinator_test)
+	howdy_configure_pam_test_target(pam_prompt_coordinator_test)
 	target_compile_definitions(pam_prompt_coordinator_test PRIVATE HOWDY_PAM_TESTING)
 	target_link_libraries(
 		pam_prompt_coordinator_test

@@ -3,6 +3,7 @@
 #include "cli/howdy_internal.hpp"
 #include "cli/list_cli.hpp"
 #include "cli/remove_cli.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cstdint>
@@ -14,6 +15,8 @@
 #include <vector>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::howdy_internal::HowdyDependencies;
 
@@ -149,13 +152,6 @@ namespace {
 		    .output = output.str(),
 		    .error  = error.str(),
 		};
-	}
-
-	auto expect(bool condition, std::string_view message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << '\n';
-		}
-		return condition;
 	}
 
 }  // namespace

@@ -1,4 +1,5 @@
 #include "config/runtime_config.hpp"
+#include "test_support.hpp"
 
 #include <cmath>
 #include <cstdlib>
@@ -13,13 +14,7 @@
 
 namespace {
 
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
+	using howdy::test::expect;
 
 	auto nearly_equal(float left, float right) -> bool {
 		return std::abs(left - right) < 0.0001F;

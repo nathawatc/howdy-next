@@ -245,6 +245,16 @@ function(howdy_configure_pam_target target)
 	)
 endfunction()
 
+function(howdy_configure_native_test_target target)
+	howdy_configure_native_target(${target})
+	target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
+endfunction()
+
+function(howdy_configure_pam_test_target target)
+	howdy_configure_pam_target(${target})
+	target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
+endfunction()
+
 function(howdy_expect_test_failure test_name)
 	set_tests_properties(${test_name} PROPERTIES WILL_FAIL TRUE)
 endfunction()

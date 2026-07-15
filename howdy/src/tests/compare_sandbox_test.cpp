@@ -1,11 +1,11 @@
 #include "common/compare_sandbox.hpp"
 #include "common/compare_sandbox_internal.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <cerrno>
 #include <climits>
 #include <cstdint>
-#include <iostream>
 #include <map>
 #include <string>
 #include <utility>
@@ -15,6 +15,8 @@
 #include <sys/resource.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	using howdy::native::CompareSandboxResource;
 	using howdy::native::CompareSandboxResult;
@@ -115,14 +117,6 @@ namespace {
 	auto apply(FakeSandboxContext &context, int timeout_seconds = 4) -> CompareSandboxResult {
 		return howdy::native::compare_sandbox_internal::apply_compare_sandbox(
 		    timeout_seconds, make_dependencies(context));
-	}
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
 	}
 
 	auto expect_limit(const FakeSandboxContext &context, RlimitResource resource, rlim_t soft,

@@ -3,6 +3,7 @@
 #include "common/compare_exit.hpp"
 #include "common/fd_io.hpp"
 #include "config/runtime_config.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
@@ -30,6 +31,8 @@
 #include <sys/wait.h>
 
 namespace {
+
+	using howdy::test::expect;
 
 	auto fake_partial_read_error([[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
@@ -171,14 +174,6 @@ namespace {
 		std::string  last_message;
 		ResponseMode response_mode = ResponseMode::None;
 	};
-
-	auto expect(bool condition, const std::string &message) -> bool {
-		if (!condition) {
-			std::cerr << "FAIL: " << message << "\n";
-			return false;
-		}
-		return true;
-	}
 
 	auto test_conversation(int num_msg, const struct pam_message **messages,
 	                       struct pam_response **response, void *appdata_ptr) -> int {
