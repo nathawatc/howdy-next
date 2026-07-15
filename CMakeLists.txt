@@ -59,6 +59,19 @@ option(
 	"Treat compiler warnings as errors"
 	OFF
 )
+option(
+	HOWDY_ENABLE_PRIVILEGED_TESTS
+	"Enable installed PAM/setuid end-to-end tests"
+	OFF
+)
+
+if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS AND
+	NOT CMAKE_INSTALL_PREFIX MATCHES "^/opt/howdy-installed-pam-e2e-[A-Za-z0-9._-]+$")
+	message(
+		FATAL_ERROR
+			"Privileged tests require an isolated CMAKE_INSTALL_PREFIX matching /opt/howdy-installed-pam-e2e-*"
+	)
+endif()
 
 add_compile_options(
 	# High-signal compiler diagnostics.
@@ -131,6 +144,24 @@ set(HOWDY_MODELS_DIR "" CACHE PATH "OpenCV ONNX models directory")
 set(HOWDY_USER_MODELS_DIR "" CACHE PATH "User models directory")
 set(HOWDY_LOG_PATH "/var/log/howdy" CACHE PATH "Howdy log directory")
 
+if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
+	if(HOWDY_PAM_DIR STREQUAL "")
+		set(HOWDY_PAM_DIR "${CMAKE_INSTALL_PREFIX}/lib/security")
+	endif()
+	if(HOWDY_CONFIG_DIR STREQUAL "")
+		set(HOWDY_CONFIG_DIR "${CMAKE_INSTALL_PREFIX}/etc/howdy")
+	endif()
+	if(HOWDY_MODELS_DIR STREQUAL "")
+		set(HOWDY_MODELS_DIR "${CMAKE_INSTALL_PREFIX}/share/howdy/models")
+	endif()
+	if(HOWDY_USER_MODELS_DIR STREQUAL "")
+		set(HOWDY_USER_MODELS_DIR "${CMAKE_INSTALL_PREFIX}/etc/howdy/models")
+	endif()
+	if(HOWDY_LOG_PATH STREQUAL "/var/log/howdy")
+		set(HOWDY_LOG_PATH "${CMAKE_INSTALL_PREFIX}/var/log/howdy")
+	endif()
+endif()
+
 if(HOWDY_PAM_DIR STREQUAL "")
 	set(HOWDY_PAM_DIR "${CMAKE_INSTALL_FULL_LIBDIR}/security")
 endif()
@@ -148,6 +179,28 @@ set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.ini")
 set(HOWDY_HELPER_DIR "${CMAKE_INSTALL_FULL_LIBEXECDIR}/howdy")
 set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
 set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
+
+if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
+	foreach(
+		isolated_path
+		IN ITEMS
+			"${CMAKE_INSTALL_FULL_BINDIR}"
+			"${CMAKE_INSTALL_FULL_DATADIR}"
+			"${CMAKE_INSTALL_FULL_LOCALEDIR}"
+			"${CMAKE_INSTALL_FULL_MANDIR}"
+			"${HOWDY_PAM_DIR}"
+			"${HOWDY_CONFIG_DIR}"
+			"${HOWDY_MODELS_DIR}"
+			"${HOWDY_USER_MODELS_DIR}"
+			"${HOWDY_LOG_PATH}"
+			"${HOWDY_HELPER_DIR}"
+	)
+		cmake_path(IS_PREFIX CMAKE_INSTALL_PREFIX "${isolated_path}" NORMALIZE path_is_isolated)
+		if(NOT path_is_isolated)
+			message(FATAL_ERROR "Privileged-test path escapes isolated prefix: ${isolated_path}")
+		endif()
+	endforeach()
+endif()
 set(HOWDY_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOWDY_GENERATED_INCLUDE_DIR}")
 

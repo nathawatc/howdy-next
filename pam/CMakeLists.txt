@@ -172,6 +172,76 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(pam_runtime_session_test PRIVATE ${HOWDY_PAM_LIBRARIES})
 	add_test(NAME pam-runtime-session COMMAND pam_runtime_session_test)
-endif()
+	add_test(
+		NAME pam-installed-setuid-path-validation
+		COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/installed_pam_setuid_e2e.sh" --validate-paths
+	)
+	howdy_set_test_timeouts()
 
-howdy_set_test_timeouts()
+	if(HOWDY_ENABLE_PRIVILEGED_TESTS)
+		include(CheckCXXSourceCompiles)
+		cmake_push_check_state(RESET)
+		set(CMAKE_REQUIRED_LIBRARIES PAM::PAM)
+		check_cxx_source_compiles(
+			[=[
+				#include <security/pam_appl.h>
+				int main() {
+					pam_handle_t *handle = nullptr;
+					pam_conv conversation{};
+					return pam_start_confdir("howdy-e2e", "nobody", &conversation, "/tmp", &handle);
+				}
+			]=]
+			HOWDY_HAVE_PAM_START_CONFDIR
+		)
+		cmake_pop_check_state()
+
+		if(HOWDY_HAVE_PAM_START_CONFDIR)
+			add_executable(pam_installed_e2e_driver src/tests/installed_pam_driver.cpp)
+			howdy_configure_pam_target(pam_installed_e2e_driver)
+			target_link_libraries(pam_installed_e2e_driver PRIVATE PAM::PAM)
+			add_test(
+				NAME installed-pam-setuid-e2e
+				COMMAND
+					bash "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/installed_pam_setuid_e2e.sh"
+					"${PROJECT_BINARY_DIR}"
+					"${CMAKE_INSTALL_PREFIX}"
+					"${HOWDY_PAM_DIR}"
+					"${HOWDY_HELPER_DIR}"
+					"${HOWDY_CONFIG_DIR}"
+					"${HOWDY_USER_MODELS_DIR}"
+					"$<TARGET_FILE:pam_installed_e2e_driver>"
+			)
+			add_test(
+				NAME installed-pam-setuid-install-environment
+				COMMAND
+					sh
+					"${CMAKE_CURRENT_SOURCE_DIR}/src/tests/installed_pam_install_environment_test.sh"
+					"${CMAKE_CURRENT_SOURCE_DIR}/src/tests/installed_pam_setuid_e2e.sh"
+					"${PROJECT_BINARY_DIR}"
+					"${CMAKE_INSTALL_PREFIX}"
+					"${HOWDY_PAM_DIR}"
+					"${HOWDY_HELPER_DIR}"
+					"${HOWDY_CONFIG_DIR}"
+					"${HOWDY_USER_MODELS_DIR}"
+					"$<TARGET_FILE:pam_installed_e2e_driver>"
+			)
+		else()
+			add_test(
+				NAME installed-pam-setuid-e2e
+				COMMAND bash -c "echo 'SKIP: pam_start_confdir unavailable'; exit 77"
+			)
+			add_test(
+				NAME installed-pam-setuid-install-environment
+				COMMAND bash -c "echo 'SKIP: pam_start_confdir unavailable'; exit 77"
+			)
+		endif()
+		set_tests_properties(
+			installed-pam-setuid-e2e installed-pam-setuid-install-environment
+			PROPERTIES
+				RUN_SERIAL TRUE
+				LABELS "privileged;e2e;pam;setuid"
+				SKIP_RETURN_CODE 77
+				TIMEOUT 180
+		)
+	endif()
+endif()

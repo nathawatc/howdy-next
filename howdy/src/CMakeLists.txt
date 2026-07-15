@@ -590,6 +590,14 @@ if(BUILD_TESTING)
 			"${HOWDY_USER_MODELS_DIR}"
 	)
 	set_tests_properties(native-howdy-install-layout PROPERTIES RUN_SERIAL TRUE)
+	add_test(
+		NAME native-howdy-privileged-install-paths
+		COMMAND
+			sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/privileged_install_paths_test.sh"
+			"${PROJECT_SOURCE_DIR}"
+			"${PROJECT_BINARY_DIR}/privileged-install-path-cases"
+	)
+	set_tests_properties(native-howdy-privileged-install-paths PROPERTIES RUN_SERIAL TRUE)
 endif()
 
 set(config_path "${HOWDY_CONFIG_PATH}")
