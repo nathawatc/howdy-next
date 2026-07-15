@@ -2,6 +2,7 @@
 
 #include "common/fd_io.hpp"
 #include "common/invoking_user_env.hpp"
+#include "config/config_limits.hpp"
 #include "config/runtime_paths.hpp"
 
 #include <array>
@@ -9,7 +10,6 @@
 #include <cstdlib>
 #include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <grp.h>
 #include <optional>
 #include <string>
@@ -59,34 +59,14 @@ namespace howdy::native::config_internal {
 			howdy::native::reset_invoking_user_environment(invoking_user);
 		}
 
-		auto copy_config_contents(std::ifstream &input, int fd, std::string *source_content)
-		    -> bool {
-			std::array<char, 8192> buffer{};
-			while (input.good()) {
-				input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-				const auto bytes_read = input.gcount();
-				if (bytes_read <= 0) {
-					continue;
-				}
-				if (source_content != nullptr) {
-					source_content->append(buffer.data(), static_cast<std::size_t>(bytes_read));
-				}
-
-				const char *cursor    = buffer.data();
-				auto        remaining = static_cast<std::size_t>(bytes_read);
-				while (remaining > 0) {
-					const auto written = write(fd, cursor, remaining);
-					if (written < 0) {
-						if (errno == EINTR) {
-							continue;
-						}
-						return false;
-					}
-					cursor += written;
-					remaining -= static_cast<std::size_t>(written);
-				}
+		auto read_config_content(int fd, std::string *content) -> bool {
+			auto result = howdy::native::read_fd_to_string_bounded(
+			    {.fd = fd, .max_bytes = howdy::native::kMaxConfigFileSize + 1});
+			if (result.read_error || result.output.size() > howdy::native::kMaxConfigFileSize) {
+				return false;
 			}
-			return input.good() || input.eof();
+			*content = std::move(result.output);
+			return true;
 		}
 
 		auto create_temp_copy(const fs::path                                   &source_path,
@@ -96,10 +76,16 @@ namespace howdy::native::config_internal {
 				source_content->clear();
 			}
 
-			std::ifstream input(source_path, std::ios::binary);
-			if (!input.is_open()) {
+			const int input_fd = open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			if (input_fd < 0) {
 				return std::nullopt;
 			}
+			std::string content;
+			if (!read_config_content(input_fd, &content)) {
+				close(input_fd);
+				return std::nullopt;
+			}
+			close(input_fd);
 
 			fs::path          temp_dir      = fs::temp_directory_path();
 			std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
@@ -123,7 +109,7 @@ namespace howdy::native::config_internal {
 				ok = false;
 			}
 
-			if (ok && !copy_config_contents(input, fd, source_content)) {
+			if (ok && !howdy::native::write_all_to_fd(fd, content)) {
 				ok = false;
 			}
 
@@ -141,6 +127,9 @@ namespace howdy::native::config_internal {
 					source_content->clear();
 				}
 				return std::nullopt;
+			}
+			if (source_content != nullptr) {
+				*source_content = std::move(content);
 			}
 
 			return temp_path;
@@ -180,30 +169,10 @@ namespace howdy::native::config_internal {
 			return status;
 		}
 
-		auto read_file_contents_from_fd(int input_fd, std::string *content) -> bool {
+		auto read_temp_config_snapshot(const fs::path &temp_path, std::string *content) -> bool {
 			if (content == nullptr) {
 				return false;
 			}
-			content->clear();
-
-			std::array<char, 8192> buffer{};
-			while (true) {
-				const auto bytes_read = read(input_fd, buffer.data(), buffer.size());
-				if (bytes_read == 0) {
-					return true;
-				}
-				if (bytes_read < 0) {
-					if (errno == EINTR) {
-						continue;
-					}
-					return false;
-				}
-
-				content->append(buffer.data(), static_cast<std::size_t>(bytes_read));
-			}
-		}
-
-		auto read_temp_config_snapshot(const fs::path &temp_path, std::string *content) -> bool {
 			const int input_fd = open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			if (input_fd < 0) {
 				return false;
@@ -217,20 +186,21 @@ namespace howdy::native::config_internal {
 				return false;
 			}
 
-			const bool ok = read_file_contents_from_fd(input_fd, content);
+			const bool ok = read_config_content(input_fd, content);
 			close(input_fd);
 			return ok;
 		}
 
 		auto file_content_matches(const fs::path &path, const std::string &expected) -> bool {
-			std::ifstream input(path, std::ios::binary);
-			if (!input.is_open()) {
+			const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			if (input_fd < 0) {
 				return false;
 			}
 
 			std::string current;
-			current.assign(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-			return input.good() || input.eof() ? current == expected : false;
+			const bool  ok = read_config_content(input_fd, &current);
+			close(input_fd);
+			return ok && current == expected;
 		}
 
 		auto resolve_invoking_user_dependency(void *context)

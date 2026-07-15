@@ -2,14 +2,15 @@
 
 #include "common/atomic_files.hpp"
 #include "common/fd_io.hpp"
+#include "config/config_limits.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_validation.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -59,26 +60,17 @@ namespace howdy::native {
 			}
 		};
 
-		auto read_all_from_fd(int fd) -> std::string {
+		auto read_config_from_fd(int fd) -> std::optional<std::string> {
 			if (lseek(fd, 0, SEEK_SET) < 0) {
-				return {};
+				return std::nullopt;
 			}
 
-			std::string            content;
-			std::array<char, 4096> buffer{};
-			while (true) {
-				const auto bytes_read = read(fd, buffer.data(), buffer.size());
-				if (bytes_read == 0) {
-					return content;
-				}
-				if (bytes_read < 0) {
-					if (errno == EINTR) {
-						continue;
-					}
-					return {};
-				}
-				content.append(buffer.data(), static_cast<std::size_t>(bytes_read));
+			const auto result =
+			    read_fd_to_string_bounded({.fd = fd, .max_bytes = kMaxConfigFileSize + 1});
+			if (result.read_error || result.output.size() > kMaxConfigFileSize) {
+				return std::nullopt;
 			}
+			return result.output;
 		}
 
 		auto split_lines_preserve_newlines(const std::string &content) -> std::vector<std::string> {
@@ -150,7 +142,10 @@ namespace howdy::native {
 			return lines;
 		}
 
-		lines = split_lines_preserve_newlines(read_all_from_fd(fd));
+		const auto content = read_config_from_fd(fd);
+		if (content.has_value()) {
+			lines = split_lines_preserve_newlines(*content);
+		}
 		close(fd);
 		if (lock_fd_handle >= 0) {
 			unlock_fd(lock_fd_handle);
@@ -175,6 +170,12 @@ namespace howdy::native {
 	}
 
 	auto validate_config_content(const std::string &content, std::string *error_message) -> bool {
+		if (content.size() > kMaxConfigFileSize) {
+			if (error_message != nullptr) {
+				*error_message = "Updated config exceeds maximum size";
+			}
+			return false;
+		}
 		const auto        temp_root     = std::filesystem::temp_directory_path();
 		std::string       temp_template = (temp_root / "howdy-config-validate-XXXXXX").string();
 		std::vector<char> writable(temp_template.begin(), temp_template.end());
@@ -255,12 +256,15 @@ namespace howdy::native {
 			struct stat opened_stat{};
 			const bool  opened_ok =
 			    fstat(input_fd, &opened_stat) == 0 && S_ISREG(opened_stat.st_mode);
-			const auto current_content = opened_ok ? read_all_from_fd(input_fd) : std::string();
+			const auto current_content = opened_ok ? read_config_from_fd(input_fd) : std::nullopt;
 			close(input_fd);
 			if (!opened_ok) {
 				return fail_with(error_message, "Failed to inspect config file");
 			}
-			if (current_content != expected) {
+			if (!current_content.has_value()) {
+				return fail_with(error_message, "Failed to read config file");
+			}
+			if (*current_content != expected) {
 				return fail_with(
 				    error_message,
 				    "Config changed while editing; not installing stale edited config");
@@ -344,6 +348,9 @@ namespace howdy::native {
 		if (error_message != nullptr) {
 			error_message->clear();
 		}
+		if (content.size() > kMaxConfigFileSize) {
+			return fail_with(error_message, "Updated config exceeds maximum size");
+		}
 
 		const auto initial_security = check_secure_config_path(config_path);
 		if (!initial_security.ok) {
@@ -418,9 +425,12 @@ namespace howdy::native {
 			return fail_with(error_message, "Failed to open config file");
 		}
 
-		const auto current_content = read_all_from_fd(fd);
+		const auto current_content = read_config_from_fd(fd);
 		close(fd);
-		auto lines = split_lines_preserve_newlines(current_content);
+		if (!current_content.has_value()) {
+			return fail_with(error_message, "Failed to read config file");
+		}
+		auto lines = split_lines_preserve_newlines(*current_content);
 
 		if (!replace_line_value(lines, {.key = key, .value = value})) {
 			return fail_with(error_message,
@@ -435,7 +445,7 @@ namespace howdy::native {
 		std::string install_error;
 		const bool  ok = replace_config_content_atomically(
 		    config_path, updated_content, error_message == nullptr ? nullptr : &install_error,
-		    false, false, &current_content);
+		    false, false, &*current_content);
 		if (!ok && error_message != nullptr) {
 			*error_message =
 			    install_error.empty() || install_error == "Failed to install edited config"

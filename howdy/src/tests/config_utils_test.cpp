@@ -1,3 +1,4 @@
+#include "config/config_limits.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
 #include "test_support.hpp"
@@ -149,6 +150,30 @@ auto main() -> int {
 	const auto lines = howdy::native::read_config_lines(config_path, false);
 	ok &= expect(lines.size() == 5, "read_config_lines returns expected line count");
 	ok &= expect(!lines.empty() && lines[0] == "[core]\n", "read_config_lines preserves newlines");
+
+	const std::string config_at_limit(howdy::native::kMaxConfigFileSize, 'x');
+	const std::string config_over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
+	ok &= expect(write_file(config_path, config_at_limit), "write config exactly at size limit");
+	const auto limit_lines = howdy::native::read_config_lines(config_path, false);
+	ok &= expect(limit_lines.size() == 1 && limit_lines.front() == config_at_limit,
+	             "read_config_lines accepts config exactly at size limit");
+	ok &= expect(write_file(config_path, config_over_limit), "write oversized config");
+	ok &= expect(howdy::native::read_config_lines(config_path, false).empty(),
+	             "read_config_lines rejects oversized config");
+	std::string size_error;
+	ok &= expect(!howdy::native::update_config_value(config_path, "disabled", &size_error, "true",
+	                                                 false, false),
+	             "update_config_value rejects oversized current config");
+	ok &= expect(size_error == "Failed to read config file",
+	             "oversized update reports config read failure");
+	ok &= expect(read_file(config_path) == config_over_limit,
+	             "oversized update leaves current config unchanged");
+	ok &= expect(write_file(config_path, "[core]\n"
+	                                     "disabled = false\n"
+	                                     "\n"
+	                                     "[video]\n"
+	                                     "dark_threshold = 60\n"),
+	             "restore initial config after size-limit reads");
 
 	ok &= expect(howdy::native::update_config_value(config_path, "disabled", "true"),
 	             "update_config_value succeeds for existing key");
@@ -381,6 +406,19 @@ auto main() -> int {
 	             "replace_config_content_atomically rejects stale expected content");
 	ok &= expect(read_file(replace_path) == valid_content,
 	             "stale expected content leaves current config unchanged");
+
+	ok &=
+	    expect(write_file(replace_path, config_over_limit), "write oversized stale current config");
+	ok &= expect(
+	    !howdy::native::replace_config_content_atomically(
+	        replace_path, replacement_content, &install_error, true, false, &config_over_limit),
+	    "stale comparison rejects oversized current config");
+	ok &= expect(install_error == "Failed to read config file",
+	             "oversized stale comparison reports config read failure");
+	ok &= expect(read_file(replace_path) == config_over_limit,
+	             "oversized stale comparison performs no install");
+	ok &= expect(write_file(replace_path, valid_content),
+	             "restore replace config after oversized stale comparison");
 
 	ok &= expect(chmod(replace_path.c_str(), 0666) == 0, "make replace config world-writable");
 	ok &= expect(!howdy::native::replace_config_content_atomically(replace_path, valid_content,

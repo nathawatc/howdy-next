@@ -1,5 +1,6 @@
 #include "cli/config_cli.hpp"
 #include "cli/config_internal.hpp"
+#include "config/config_limits.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -398,6 +399,43 @@ namespace {
 		return ok;
 	}
 
+	auto production_config_reads_are_bounded() -> bool {
+		namespace fs = std::filesystem;
+
+		bool       ok = true;
+		const auto dependencies =
+		    howdy::native::config_internal::default_config_edit_dependencies();
+		const fs::path    source_path = fs::current_path() / "howdy-config-cli-size-test.ini";
+		const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
+		const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
+		std::error_code   error;
+
+		ok &= expect(write_file(source_path, at_limit), "write source config at size limit");
+		const auto copy =
+		    dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt);
+		ok &= expect(copy.has_value() && copy->original_content == at_limit,
+		             "source config exactly at size limit is copied");
+		if (copy.has_value()) {
+			std::string snapshot;
+			ok &= expect(dependencies.read_temp_config_snapshot(dependencies.context, copy->path,
+			                                                    &snapshot) &&
+			                 snapshot == at_limit,
+			             "edited temp config exactly at size limit is read");
+			ok &= expect(write_file(copy->path, over_limit), "write oversized edited temp config");
+			ok &= expect(!dependencies.read_temp_config_snapshot(dependencies.context, copy->path,
+			                                                     &snapshot),
+			             "oversized edited temp config is rejected");
+			dependencies.remove_if_exists(dependencies.context, copy->path);
+		}
+
+		ok &= expect(write_file(source_path, over_limit), "write oversized source config");
+		ok &=
+		    expect(!dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt),
+		           "oversized source config is rejected before temp copy");
+		fs::remove(source_path, error);
+		return ok;
+	}
+
 	auto stdout_restores_after_callback_exception() -> bool {
 		bool               ok = true;
 		std::ostringstream restored_output;
@@ -428,6 +466,7 @@ auto main() -> int {
 	ok &= stdout_restores_after_callback_exception();
 
 	ok &= public_entrypoint_preserves_invalid_edit();
+	ok &= production_config_reads_are_bounded();
 
 	{
 		TestContext             context;
