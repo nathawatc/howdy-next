@@ -215,6 +215,86 @@ namespace howdy::native::compare_privileges_internal {
 			}
 			return {.uid = lookup_result->pw_uid, .gid = lookup_result->pw_gid};
 		}
+
+		struct ProcessIdentity {
+			uid_t real_uid      = 0;
+			uid_t effective_uid = 0;
+			uid_t saved_uid     = 0;
+			gid_t real_gid      = 0;
+			gid_t effective_gid = 0;
+			gid_t saved_gid     = 0;
+		};
+
+		auto read_process_identity(const ComparePrivilegeDependencies &dependencies,
+		                           ProcessIdentity                    *identity) -> bool {
+			return dependencies.getresuid(dependencies.context,
+			                              {.real      = &identity->real_uid,
+			                               .effective = &identity->effective_uid,
+			                               .saved     = &identity->saved_uid}) == 0 &&
+			       dependencies.getresgid(dependencies.context,
+			                              {.real      = &identity->real_gid,
+			                               .effective = &identity->effective_gid,
+			                               .saved     = &identity->saved_gid}) == 0;
+		}
+
+		auto prepare_capability_drop(const ComparePrivilegeDependencies &dependencies)
+		    -> ComparePrivilegeResult {
+			const int securebits =
+			    dependencies.prctl(dependencies.context, PR_GET_SECUREBITS, 0, 0, 0, 0);
+			if (securebits < 0) {
+				return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
+				        .error_message = "failed to query securebits"};
+			}
+			if ((securebits & (SECBIT_KEEP_CAPS | SECBIT_NO_SETUID_FIXUP)) != 0) {
+				return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
+				        .error_message = "unsafe securebits configuration"};
+			}
+			if (dependencies.prctl(dependencies.context, PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL,
+			                       0, 0, 0) != 0) {
+				return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
+				        .error_message = "failed to clear ambient capabilities"};
+			}
+			return {.status = ComparePrivilegeStatus::kOk};
+		}
+
+		auto transition_identity(const ComparePrivilegeDependencies &dependencies, uid_t target_uid,
+		                         gid_t target_gid) -> bool {
+			return dependencies.setgroups(dependencies.context, 0, nullptr) == 0 &&
+			       dependencies.setresgid(dependencies.context, target_gid, target_gid,
+			                              target_gid) == 0 &&
+			       dependencies.setresuid(dependencies.context, target_uid, target_uid,
+			                              target_uid) == 0;
+		}
+
+		auto verify_dropped_identity(const ComparePrivilegeDependencies &dependencies,
+		                             uid_t target_uid, gid_t target_gid) -> bool {
+			__user_cap_header_struct capability_header{
+			    .version = _LINUX_CAPABILITY_VERSION_3,
+			    .pid     = 0,
+			};
+			if (!clear_and_verify_capabilities(dependencies, capability_header)) {
+				return false;
+			}
+			ProcessIdentity identity;
+			if (dependencies.getresgid(dependencies.context, {.real      = &identity.real_gid,
+			                                                  .effective = &identity.effective_gid,
+			                                                  .saved = &identity.saved_gid}) != 0 ||
+			    identity.real_gid != target_gid || identity.effective_gid != target_gid ||
+			    identity.saved_gid != target_gid) {
+				return false;
+			}
+			if (dependencies.getresuid(dependencies.context, {.real      = &identity.real_uid,
+			                                                  .effective = &identity.effective_uid,
+			                                                  .saved = &identity.saved_uid}) != 0 ||
+			    identity.real_uid != target_uid || identity.effective_uid != target_uid ||
+			    identity.saved_uid != target_uid) {
+				return false;
+			}
+			return dependencies.query_fsuid(dependencies.context) == target_uid &&
+			       dependencies.query_fsgid(dependencies.context) == target_gid &&
+			       dependencies.getgroups(dependencies.context, 0, nullptr) == 0 &&
+			       dependencies.regain_setuid(dependencies.context, 0) != 0;
+		}
 	}  // namespace
 
 	[[noreturn]] void fatal_compare_privilege_failure([[maybe_unused]] void *context,
@@ -249,29 +329,17 @@ namespace howdy::native::compare_privileges_internal {
 			};
 		}
 
-		uid_t real_uid      = 0;
-		uid_t effective_uid = 0;
-		uid_t saved_uid     = 0;
-		if (dependencies.getresuid(
-		        dependencies.context,
-		        {.real = &real_uid, .effective = &effective_uid, .saved = &saved_uid}) != 0) {
+		ProcessIdentity identity;
+		if (!read_process_identity(dependencies, &identity)) {
 			return fatal_verification_failure(dependencies);
 		}
 
-		gid_t real_gid      = 0;
-		gid_t effective_gid = 0;
-		gid_t saved_gid     = 0;
-		if (dependencies.getresgid(
-		        dependencies.context,
-		        {.real = &real_gid, .effective = &effective_gid, .saved = &saved_gid}) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-
-		if (effective_uid != 0) {
+		if (identity.effective_uid != 0) {
 			// Non-root compare preserves caller supplementary groups for PAM compatibility.
 			// Filesystem and device access therefore remains limited by caller group membership.
-			return handle_unprivileged_caller(dependencies, real_uid, effective_uid, saved_uid,
-			                                  real_gid, effective_gid, saved_gid);
+			return handle_unprivileged_caller(
+			    dependencies, identity.real_uid, identity.effective_uid, identity.saved_uid,
+			    identity.real_gid, identity.effective_gid, identity.saved_gid);
 		}
 
 		const auto nobody = lookup_nobody(dependencies);
@@ -281,71 +349,12 @@ namespace howdy::native::compare_privileges_internal {
 		const uid_t target_uid = nobody.uid;
 		const gid_t target_gid = nobody.gid;
 
-		const int securebits =
-		    dependencies.prctl(dependencies.context, PR_GET_SECUREBITS, 0, 0, 0, 0);
-		if (securebits < 0) {
-			return {
-			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
-			    .error_message = "failed to query securebits",
-			};
+		auto capability_result = prepare_capability_drop(dependencies);
+		if (!capability_result.ok()) {
+			return capability_result;
 		}
-		if ((securebits & (SECBIT_KEEP_CAPS | SECBIT_NO_SETUID_FIXUP)) != 0) {
-			return {
-			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
-			    .error_message = "unsafe securebits configuration",
-			};
-		}
-		if (dependencies.prctl(dependencies.context, PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0,
-		                       0) != 0) {
-			return {
-			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
-			    .error_message = "failed to clear ambient capabilities",
-			};
-		}
-		if (dependencies.setgroups(dependencies.context, 0, nullptr) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-		if (dependencies.setresgid(dependencies.context, target_gid, target_gid, target_gid) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-		if (dependencies.setresuid(dependencies.context, target_uid, target_uid, target_uid) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-
-		__user_cap_header_struct capability_header{
-		    .version = _LINUX_CAPABILITY_VERSION_3,
-		    .pid     = 0,
-		};
-		if (!clear_and_verify_capabilities(dependencies, capability_header)) {
-			return fatal_verification_failure(dependencies);
-		}
-
-		real_gid = effective_gid = saved_gid = 0;
-		if (dependencies.getresgid(
-		        dependencies.context,
-		        {.real = &real_gid, .effective = &effective_gid, .saved = &saved_gid}) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-
-		if (real_gid != target_gid || effective_gid != target_gid || saved_gid != target_gid) {
-			return fatal_verification_failure(dependencies);
-		}
-
-		real_uid = effective_uid = saved_uid = 0;
-		if (dependencies.getresuid(
-		        dependencies.context,
-		        {.real = &real_uid, .effective = &effective_uid, .saved = &saved_uid}) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-		if (real_uid != target_uid || effective_uid != target_uid || saved_uid != target_uid) {
-			return fatal_verification_failure(dependencies);
-		}
-		if (dependencies.query_fsuid(dependencies.context) != target_uid ||
-		    dependencies.query_fsgid(dependencies.context) != target_gid ||
-		    dependencies.getgroups(dependencies.context, 0, nullptr) != 0) {
-			return fatal_verification_failure(dependencies);
-		}
-		if (dependencies.regain_setuid(dependencies.context, 0) == 0) {
+		if (!transition_identity(dependencies, target_uid, target_gid) ||
+		    !verify_dropped_identity(dependencies, target_uid, target_gid)) {
 			return fatal_verification_failure(dependencies);
 		}
 

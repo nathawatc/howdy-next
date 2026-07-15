@@ -124,6 +124,107 @@ namespace {
 		context.capture_session.reset_timeout_clock();
 	}
 
+	auto handle_capture_result(CompareProductionContext                       &context,
+	                           const howdy::native::CompareCaptureFrameResult &result)
+	    -> std::optional<CompareExit> {
+		switch (result.status) {
+			case howdy::native::CompareCaptureFrameStatus::kFrameReady:
+				return std::nullopt;
+			case howdy::native::CompareCaptureFrameStatus::kTimeout: {
+				const auto &stats = context.capture_session.stats();
+				const auto  exit_code =
+				    howdy::native::timeout_exit(stats.dark_frames, stats.valid_frames);
+				if (exit_code == CompareExit::kTooDark) {
+					std::cerr
+					    << "All frames were too dark, please check dark_threshold in config\n";
+					std::cerr << "Average darkness: "
+					          << (stats.dark_running_total / std::max(stats.valid_frames, 1))
+					          << ", Threshold: " << context.video_config.dark_threshold << "\n";
+				}
+				return exit_code;
+			}
+			case howdy::native::CompareCaptureFrameStatus::kReadFailed:
+				std::cerr << result.error_message << "\n";
+				return CompareExit::kInvalidDevice;
+			case howdy::native::CompareCaptureFrameStatus::kNotOpen:
+			case howdy::native::CompareCaptureFrameStatus::kInvalidDependencies:
+				return CompareExit::kAbort;
+		}
+		return CompareExit::kAbort;
+	}
+
+	enum class FrameHandling : std::uint8_t {
+		kInfer,
+		kSkip,
+		kAbort,
+		kInvalidDevice,
+	};
+
+	auto handle_frame_result(howdy::native::CompareCaptureSession    &capture_session,
+	                         const howdy::native::CompareFrameResult &result) -> FrameHandling {
+		switch (result.status) {
+			case howdy::native::CompareFrameStatus::kBlackFrame:
+				capture_session.record_black_frame();
+				return FrameHandling::kSkip;
+			case howdy::native::CompareFrameStatus::kTooDark:
+				capture_session.record_dark_frame(result.brightness.darkness);
+				return FrameHandling::kSkip;
+			case howdy::native::CompareFrameStatus::kInvalidInput:
+				std::cerr << result.error_message << "\n";
+				return FrameHandling::kInvalidDevice;
+			case howdy::native::CompareFrameStatus::kInvalidPreprocessed:
+				std::cerr << result.error_message << "\n";
+				return FrameHandling::kAbort;
+			case howdy::native::CompareFrameStatus::kReady:
+				capture_session.record_ready_frame(result.brightness.darkness);
+				return FrameHandling::kInfer;
+		}
+		return FrameHandling::kAbort;
+	}
+
+	void emit_success_report(const CompareProductionContext              &context,
+	                         const howdy::native::CompareInferenceResult &result) {
+		if (!context.end_report) {
+			return;
+		}
+		const auto &stats    = context.capture_session.stats();
+		const auto  total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+		                           std::chrono::steady_clock::now() - context.start_time)
+		                           .count();
+		std::cout << "Total time: " << total_ms << "ms\n";
+		std::cout << "Frames searched: " << stats.frames << "\n";
+		std::cout << "Black frames ignored: " << stats.black_frames << "\n";
+		std::cout << "Dark frames ignored: " << stats.dark_frames << "\n";
+		std::cout << "Winning score: " << result.winning_score << "\n";
+		if (result.winning_index >= 0 &&
+		    std::cmp_less(result.winning_index, context.stored_encodings.models.size())) {
+			const auto &winner =
+			    context.stored_encodings.models[static_cast<std::size_t>(result.winning_index)];
+			std::cout << "Winning model: " << winner.id << " (\"" << winner.label << "\")\n";
+		}
+	}
+
+	auto handle_inference_result(const CompareProductionContext              &context,
+	                             const howdy::native::CompareInferenceResult &result)
+	    -> std::optional<CompareExit> {
+		switch (result.status) {
+			case howdy::native::CompareInferenceStatus::kNoMatch:
+				return std::nullopt;
+			case howdy::native::CompareInferenceStatus::kMatch:
+				emit_success_report(context, result);
+				return CompareExit::kSuccess;
+			case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
+			case howdy::native::CompareInferenceStatus::kDetectionFailed:
+			case howdy::native::CompareInferenceStatus::kEncodingFailed:
+			case howdy::native::CompareInferenceStatus::kInvalidMatchResult:
+				std::cerr << result.error_message << "\n";
+				return CompareExit::kAbort;
+			case howdy::native::CompareInferenceStatus::kInvalidDependencies:
+				return CompareExit::kAbort;
+		}
+		return CompareExit::kAbort;
+	}
+
 	auto run_frame_loop(void *raw_context) -> CompareExit {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
 		if (!context.compare_engine.has_value()) {
@@ -132,109 +233,33 @@ namespace {
 		auto &capture_session = context.capture_session;
 		auto &compare_engine  = *context.compare_engine;
 
-		float winning_score = 0.0F;
-		int   winning_index = -1;
-
 		while (true) {
 			auto capture_result = capture_session.next_frame();
-
-			switch (capture_result.status) {
-				case howdy::native::CompareCaptureFrameStatus::kFrameReady:
-					break;
-
-				case howdy::native::CompareCaptureFrameStatus::kTimeout: {
-					const auto &stats = capture_session.stats();
-					const auto  exit_code =
-					    howdy::native::timeout_exit(stats.dark_frames, stats.valid_frames);
-
-					if (exit_code == CompareExit::kTooDark) {
-						std::cerr
-						    << "All frames were too dark, please check dark_threshold in config\n";
-						std::cerr << "Average darkness: "
-						          << (stats.dark_running_total / std::max(stats.valid_frames, 1))
-						          << ", Threshold: " << context.video_config.dark_threshold << "\n";
-					}
-
-					return exit_code;
-				}
-
-				case howdy::native::CompareCaptureFrameStatus::kReadFailed:
-					std::cerr << capture_result.error_message << "\n";
-					return CompareExit::kInvalidDevice;
-
-				case howdy::native::CompareCaptureFrameStatus::kNotOpen:
-				case howdy::native::CompareCaptureFrameStatus::kInvalidDependencies:
-					return CompareExit::kAbort;
+			if (const auto exit = handle_capture_result(context, capture_result);
+			    exit.has_value()) {
+				return *exit;
 			}
 
 			const auto frame_result = compare_engine.process_gray_frame(
 			    std::move(capture_result.gray_frame), capture_result.frame_number);
 
-			switch (frame_result.status) {
-				case howdy::native::CompareFrameStatus::kBlackFrame:
-					capture_session.record_black_frame();
-					continue;
-
-				case howdy::native::CompareFrameStatus::kTooDark:
-					capture_session.record_dark_frame(frame_result.brightness.darkness);
-					continue;
-
-				case howdy::native::CompareFrameStatus::kInvalidInput:
-					std::cerr << frame_result.error_message << "\n";
-					return CompareExit::kInvalidDevice;
-
-				case howdy::native::CompareFrameStatus::kInvalidPreprocessed:
-					std::cerr << frame_result.error_message << "\n";
-					return CompareExit::kAbort;
-
-				case howdy::native::CompareFrameStatus::kReady:
-					capture_session.record_ready_frame(frame_result.brightness.darkness);
+			switch (handle_frame_result(capture_session, frame_result)) {
+				case FrameHandling::kInfer:
 					break;
+				case FrameHandling::kSkip:
+					continue;
+				case FrameHandling::kAbort:
+					return CompareExit::kAbort;
+				case FrameHandling::kInvalidDevice:
+					return CompareExit::kInvalidDevice;
 			}
 
 			const auto inference_result =
 			    compare_engine.process_face_frame(frame_result.working_frame);
 
-			switch (inference_result.status) {
-				case howdy::native::CompareInferenceStatus::kNoMatch:
-					break;
-
-				case howdy::native::CompareInferenceStatus::kMatch:
-					winning_index = inference_result.winning_index;
-					winning_score = inference_result.winning_score;
-
-					if (context.end_report) {
-						const auto &stats = capture_session.stats();
-						const auto  total_ms =
-						    std::chrono::duration_cast<std::chrono::milliseconds>(
-						        std::chrono::steady_clock::now() - context.start_time)
-						        .count();
-						std::cout << "Total time: " << total_ms << "ms\n";
-						std::cout << "Frames searched: " << stats.frames << "\n";
-						std::cout << "Black frames ignored: " << stats.black_frames << "\n";
-						std::cout << "Dark frames ignored: " << stats.dark_frames << "\n";
-						std::cout << "Winning score: " << winning_score << "\n";
-						if (winning_index >= 0 &&
-						    std::cmp_less(winning_index, context.stored_encodings.models.size())) {
-							const auto &winner =
-							    context.stored_encodings
-							        .models[static_cast<std::size_t>(winning_index)];
-							std::cout << "Winning model: " << winner.id << " (\"" << winner.label
-							          << "\")\n";
-						}
-					}
-
-					return CompareExit::kSuccess;
-
-				case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
-				case howdy::native::CompareInferenceStatus::kDetectionFailed:
-				case howdy::native::CompareInferenceStatus::kEncodingFailed:
-				case howdy::native::CompareInferenceStatus::kInvalidMatchResult:
-					std::cerr << inference_result.error_message << "\n";
-					return CompareExit::kAbort;
-
-				case howdy::native::CompareInferenceStatus::kInvalidDependencies:
-					return CompareExit::kAbort;
+			if (const auto exit = handle_inference_result(context, inference_result);
+			    exit.has_value()) {
+				return *exit;
 			}
 
 			capture_session.restore_exposure();

@@ -468,110 +468,123 @@ namespace {
 		return true;
 	}
 
-	auto prepare_runtime_auth_files_until(std::string_view                  username,
-	                                      howdy::pam::PreparedRuntimeFiles *prepared,
-	                                      const AuthHelperSpawnOperations  &operations,
-	                                      HelperDeadline                    deadline) -> bool {
-		std::array<int, 2> output_pipe = {-1, -1};
-		if (operations.pipe2_fn(operations.context, output_pipe.data(), O_CLOEXEC) != 0) {
+	struct PreparedHelperSpawn {
+		std::array<int, 2>         output_pipe = {-1, -1};
+		posix_spawn_file_actions_t actions{};
+	};
+
+	void destroy_spawn_actions(const AuthHelperSpawnOperations &operations,
+	                           posix_spawn_file_actions_t      *actions) {
+		const int result = operations.actions_destroy_fn(operations.context, actions);
+		if (result != 0) {
+			log_auth_helper_spawn_error("posix_spawn_file_actions_destroy", result);
+		}
+	}
+
+	auto fail_spawn_setup(const AuthHelperSpawnOperations &operations, PreparedHelperSpawn *spawn,
+	                      const char *operation, int error_code) -> bool {
+		log_auth_helper_spawn_error(operation, error_code);
+		destroy_spawn_actions(operations, &spawn->actions);
+		close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+		close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+		return false;
+	}
+
+	auto setup_helper_spawn(const AuthHelperSpawnOperations &operations, PreparedHelperSpawn *spawn)
+	    -> bool {
+		if (operations.pipe2_fn(operations.context, spawn->output_pipe.data(), O_CLOEXEC) != 0) {
 			syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)", strerror(errno), errno);
 			return false;
 		}
-
-		if (!normalize_pipe_fds(operations, output_pipe)) {
+		if (!normalize_pipe_fds(operations, spawn->output_pipe)) {
+			return false;
+		}
+		const int init_result = operations.actions_init_fn(operations.context, &spawn->actions);
+		if (init_result != 0) {
+			log_auth_helper_spawn_error("posix_spawn_file_actions_init", init_result);
+			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+			close_owned_pipe_fd(operations, spawn->output_pipe[1]);
 			return false;
 		}
 
-		posix_spawn_file_actions_t actions{};
-		const int actions_init_result = operations.actions_init_fn(operations.context, &actions);
-		if (actions_init_result != 0) {
-			log_auth_helper_spawn_error("posix_spawn_file_actions_init", actions_init_result);
-			close_owned_pipe_fd(operations, output_pipe[0]);
-			close_owned_pipe_fd(operations, output_pipe[1]);
-			return false;
-		}
-
-		auto destroy_actions = [&operations, &actions]() -> int {
-			const int destroy_result = operations.actions_destroy_fn(operations.context, &actions);
-			if (destroy_result != 0) {
-				log_auth_helper_spawn_error("posix_spawn_file_actions_destroy", destroy_result);
-			}
-			return destroy_result;
-		};
-
-		auto fail_setup = [&operations, &output_pipe, &destroy_actions](const char *operation,
-		                                                                int error_code) -> bool {
-			log_auth_helper_spawn_error(operation, error_code);
-			(void)destroy_actions();
-			close_owned_pipe_fd(operations, output_pipe[0]);
-			close_owned_pipe_fd(operations, output_pipe[1]);
-			return false;
-		};
-
-		int result = operations.actions_addclose_fn(operations.context, &actions, output_pipe[0]);
+		int result = operations.actions_addclose_fn(operations.context, &spawn->actions,
+		                                            spawn->output_pipe[0]);
 		if (result != 0) {
-			return fail_setup("posix_spawn_file_actions_addclose(pipe read end)", result);
+			return fail_spawn_setup(operations, spawn,
+			                        "posix_spawn_file_actions_addclose(pipe read end)", result);
 		}
-
-		result = operations.actions_adddup2_fn(operations.context, &actions, output_pipe[1],
-		                                       STDOUT_FILENO);
+		result = operations.actions_adddup2_fn(operations.context, &spawn->actions,
+		                                       spawn->output_pipe[1], STDOUT_FILENO);
 		if (result != 0) {
-			return fail_setup("posix_spawn_file_actions_adddup2(STDOUT_FILENO)", result);
+			return fail_spawn_setup(operations, spawn,
+			                        "posix_spawn_file_actions_adddup2(STDOUT_FILENO)", result);
 		}
-
-		result = operations.actions_adddup2_fn(operations.context, &actions, output_pipe[1],
-		                                       STDERR_FILENO);
+		result = operations.actions_adddup2_fn(operations.context, &spawn->actions,
+		                                       spawn->output_pipe[1], STDERR_FILENO);
 		if (result != 0) {
-			return fail_setup("posix_spawn_file_actions_adddup2(STDERR_FILENO)", result);
+			return fail_spawn_setup(operations, spawn,
+			                        "posix_spawn_file_actions_adddup2(STDERR_FILENO)", result);
 		}
-
-		if (output_pipe[1] != STDOUT_FILENO && output_pipe[1] != STDERR_FILENO) {
-			result = operations.actions_addclose_fn(operations.context, &actions, output_pipe[1]);
+		if (spawn->output_pipe[1] != STDOUT_FILENO && spawn->output_pipe[1] != STDERR_FILENO) {
+			result = operations.actions_addclose_fn(operations.context, &spawn->actions,
+			                                        spawn->output_pipe[1]);
 			if (result != 0) {
-				return fail_setup("posix_spawn_file_actions_addclose(pipe write end)", result);
+				return fail_spawn_setup(
+				    operations, spawn, "posix_spawn_file_actions_addclose(pipe write end)", result);
 			}
 		}
+		return true;
+	}
 
+	auto spawn_prepare_helper(std::string_view                 username,
+	                          const AuthHelperSpawnOperations &operations,
+	                          PreparedHelperSpawn *spawn, pid_t *child_pid) -> bool {
 		std::string           username_string(username);
-		std::array<char *, 4> args         = {const_cast<char *>(kAuthHelperPath),
-		                                      const_cast<char *>("prepare"), username_string.data(),
-		                                      nullptr};
-		std::array<char *, 1> env          = {nullptr};
-		pid_t                 child_pid    = -1;
-		const int             spawn_result = operations.spawn_fn({.context   = operations.context,
-		                                                          .child_pid = &child_pid,
-		                                                          .path      = kAuthHelperPath,
-		                                                          .actions   = &actions,
-		                                                          .argv      = args.data(),
-		                                                          .envp      = env.data()});
-		if (spawn_result != 0) {
-			log_auth_helper_spawn_error("posix_spawn", spawn_result);
+		std::array<char *, 4> args   = {const_cast<char *>(kAuthHelperPath),
+		                                const_cast<char *>("prepare"), username_string.data(),
+		                                nullptr};
+		std::array<char *, 1> env    = {nullptr};
+		const int             result = operations.spawn_fn({.context   = operations.context,
+		                                                    .child_pid = child_pid,
+		                                                    .path      = kAuthHelperPath,
+		                                                    .actions   = &spawn->actions,
+		                                                    .argv      = args.data(),
+		                                                    .envp      = env.data()});
+		if (result != 0) {
+			log_auth_helper_spawn_error("posix_spawn", result);
 		}
-		(void)destroy_actions();
-		close_owned_pipe_fd(operations, output_pipe[1]);
-		if (spawn_result != 0) {
-			close_owned_pipe_fd(operations, output_pipe[0]);
+		destroy_spawn_actions(operations, &spawn->actions);
+		close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+		if (result != 0) {
+			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
 			return false;
 		}
+		return true;
+	}
 
-		std::string helper_output;
-		const auto  read_result =
-		    read_auth_helper_output_until(output_pipe[0], &helper_output, deadline);
-		close_owned_pipe_fd(operations, output_pipe[0]);
-		if (read_result != HelperReadResult::kComplete) {
-			if (read_result == HelperReadResult::kTimedOut) {
-				log_prepare_timeout();
-			} else if (read_result == HelperReadResult::kOutputLimit) {
-				syslog(LOG_ERR, "Howdy auth helper reached output limit");
-			}
-			(void)terminate_and_reap_helper_process(child_pid);
-			return false;
+	auto collect_prepare_output(const AuthHelperSpawnOperations &operations,
+	                            PreparedHelperSpawn *spawn, pid_t child_pid,
+	                            HelperDeadline deadline, std::string *output) -> bool {
+		const auto result = read_auth_helper_output_until(spawn->output_pipe[0], output, deadline);
+		close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+		if (result == HelperReadResult::kComplete) {
+			return true;
 		}
+		if (result == HelperReadResult::kTimedOut) {
+			log_prepare_timeout();
+		} else if (result == HelperReadResult::kOutputLimit) {
+			syslog(LOG_ERR, "Howdy auth helper reached output limit");
+		}
+		(void)terminate_and_reap_helper_process(child_pid);
+		return false;
+	}
 
-		int        status      = 0;
-		const auto wait_result = wait_for_helper_process_until(child_pid, deadline, &status);
-		if (wait_result != HelperWaitResult::kExited) {
-			if (wait_result == HelperWaitResult::kTimedOut) {
+	auto validate_prepare_helper(pid_t child_pid, HelperDeadline deadline,
+	                             const std::string &output) -> bool {
+		int        status = 0;
+		const auto result = wait_for_helper_process_until(child_pid, deadline, &status);
+		if (result != HelperWaitResult::kExited) {
+			if (result == HelperWaitResult::kTimedOut) {
 				log_prepare_timeout();
 			} else {
 				syslog(LOG_ERR, "Howdy auth helper failed while waiting");
@@ -579,20 +592,45 @@ namespace {
 			return false;
 		}
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_ERR, "Howdy auth helper failed: %s", helper_output.c_str());
+			syslog(LOG_ERR, "Howdy auth helper failed: %s", output.c_str());
 			return false;
 		}
+		return true;
+	}
 
-		const auto auth_output = parse_auth_helper_output(helper_output);
+	auto assign_prepared_paths(const std::string                &output,
+	                           howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+		const auto auth_output = parse_auth_helper_output(output);
 		if (!auth_output.valid) {
-			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s",
-			       helper_output.c_str());
+			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s", output.c_str());
 			return false;
 		}
 		prepared->config_path     = auth_output.config_path;
 		prepared->user_models_dir = auth_output.user_models_dir;
 		prepared->root_dir        = std::filesystem::path(prepared->config_path).parent_path();
 		return true;
+	}
+
+	auto prepare_runtime_auth_files_until(std::string_view                  username,
+	                                      howdy::pam::PreparedRuntimeFiles *prepared,
+	                                      const AuthHelperSpawnOperations  &operations,
+	                                      HelperDeadline                    deadline) -> bool {
+		PreparedHelperSpawn spawn;
+		if (!setup_helper_spawn(operations, &spawn)) {
+			return false;
+		}
+		pid_t child_pid = -1;
+		if (!spawn_prepare_helper(username, operations, &spawn, &child_pid)) {
+			return false;
+		}
+		std::string helper_output;
+		if (!collect_prepare_output(operations, &spawn, child_pid, deadline, &helper_output)) {
+			return false;
+		}
+		if (!validate_prepare_helper(child_pid, deadline, helper_output)) {
+			return false;
+		}
+		return assign_prepared_paths(helper_output, prepared);
 	}
 
 	auto prepare_runtime_auth_files(std::string_view                  username,
