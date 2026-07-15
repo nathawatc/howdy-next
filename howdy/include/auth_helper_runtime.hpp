@@ -24,10 +24,15 @@ namespace howdy::native::auth_helper {
 		std::string error_message;
 	};
 
+	struct RuntimeIdentity {
+		uid_t uid = 0;
+		gid_t gid = 0;
+	};
+
 	auto runtime_root() -> std::filesystem::path;
-	auto prepare_runtime_auth_files(const std::string &user, uid_t uid, gid_t gid)
+	auto prepare_runtime_auth_files(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths>;
-	auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid, gid_t gid)
+	auto cleanup_runtime_auth_files(const std::filesystem::path &path, RuntimeIdentity identity)
 	    -> CleanupRuntimeResult;
 
 #ifdef HOWDY_AUTH_HELPER_TESTING
@@ -44,14 +49,20 @@ namespace howdy::native::auth_helper {
 	auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
 	                              const std::string &user, std::optional<uid_t> owner_uid,
 	                              std::optional<std::filesystem::path> &source_model_path) -> bool;
-	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path, uid_t uid,
-	                                         gid_t gid, const std::filesystem::path &runtime_root)
+	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path,
+	                                         RuntimeIdentity              identity,
+	                                         const std::filesystem::path &runtime_root)
 	    -> CleanupRuntimeResult;
-	auto prepare_runtime_auth_files_for_test(const std::string &user, uid_t uid, gid_t gid,
-	                                         const std::filesystem::path &runtime_root,
-	                                         const std::filesystem::path &source_config,
-	                                         const std::filesystem::path &source_user_models_dir,
-	                                         uid_t owner_uid) -> std::optional<PreparedPaths>;
+
+	struct RuntimeAuthTestPaths {
+		std::filesystem::path runtime_root;
+		std::filesystem::path source_config;
+		std::filesystem::path source_user_models_dir;
+	};
+
+	auto prepare_runtime_auth_files_for_test(const std::string &user, RuntimeIdentity identity,
+	                                         RuntimeAuthTestPaths paths, uid_t owner_uid)
+	    -> std::optional<PreparedPaths>;
 	auto set_acl_setup_failure_for_test(bool fail) -> void;
 	auto set_acl_verification_failure_for_test(bool fail) -> void;
 	auto set_acl_io_for_test(AclSetFdForTest set_fd, AclGetFdForTest get_fd, AclResetForTest reset)

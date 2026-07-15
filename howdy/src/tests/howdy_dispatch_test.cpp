@@ -5,6 +5,7 @@
 #include "cli/remove_cli.hpp"
 
 #include <array>
+#include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -16,7 +17,7 @@ namespace {
 
 	using howdy::native::howdy_internal::HowdyDependencies;
 
-	enum class CommandId {
+	enum class CommandId : std::uint8_t {
 		kNone,
 		kAdd,
 		kClear,
@@ -159,7 +160,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 
 	{

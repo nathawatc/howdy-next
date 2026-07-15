@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -9,7 +10,7 @@
 
 namespace howdy::native {
 
-	enum class CaptureError {
+	enum class CaptureError : std::uint8_t {
 		kNone,
 		kMissingDevice,
 		kOpenFailed,

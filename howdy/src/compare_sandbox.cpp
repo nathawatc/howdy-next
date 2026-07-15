@@ -47,13 +47,18 @@ namespace {
 		return std::min(preferred, inherited);
 	}
 
-	auto timeout_limit(int timeout_seconds, rlim_t margin) -> rlim_t {
+	struct TimeoutLimit {
+		int    seconds = 0;
+		rlim_t margin  = 0;
+	};
+
+	auto timeout_limit(TimeoutLimit limit) -> rlim_t {
 		const auto timeout =
-		    timeout_seconds > 0 ? static_cast<rlim_t>(timeout_seconds) : static_cast<rlim_t>(0);
-		if (timeout > kMaximumFiniteLimit - margin) {
+		    limit.seconds > 0 ? static_cast<rlim_t>(limit.seconds) : static_cast<rlim_t>(0);
+		if (timeout > kMaximumFiniteLimit - limit.margin) {
 			return kMaximumFiniteLimit;
 		}
-		return timeout + margin;
+		return timeout + limit.margin;
 	}
 
 	auto apply_limit(const LimitPolicy &policy, const CompareSandboxDependencies &dependencies)
@@ -131,14 +136,16 @@ namespace howdy::native::compare_sandbox_internal {
 			};
 		}
 
-		const rlim_t minimum_cpu = timeout_limit(timeout_seconds, kCpuSoftMargin);
+		const rlim_t minimum_cpu =
+		    timeout_limit({.seconds = timeout_seconds, .margin = kCpuSoftMargin});
 		const std::array<LimitPolicy, 4> policies{{
 		    {
 		        .system_resource = RLIMIT_CPU,
 		        .resource        = CompareSandboxResource::kCpu,
 		        .preferred_soft  = std::max(minimum_cpu, kCpuSoftFloor),
 		        .preferred_hard =
-		            std::max(timeout_limit(timeout_seconds, kCpuHardMargin), kCpuHardFloor),
+		            std::max(timeout_limit({.seconds = timeout_seconds, .margin = kCpuHardMargin}),
+		                     kCpuHardFloor),
 		        .minimum_soft = minimum_cpu,
 		        .minimum_hard = minimum_cpu,
 		    },

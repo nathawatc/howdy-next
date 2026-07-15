@@ -25,15 +25,16 @@ namespace howdy::native {
 
 namespace howdy::pam::testing {
 
-	using ConversationFn         = std::function<int(int, const char *)>;
-	using AuthHelperOutputReader = howdy::native::BoundedReadResult (*)(int, std::size_t);
+	using ConversationFn = std::function<int(int, const char *)>;
+	using AuthHelperOutputReader =
+	    howdy::native::BoundedReadResult (*)(howdy::native::BoundedReadRequest request);
 
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void;
 	auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int;
 	auto auth_token_present(pam_handle_t *pamh) -> bool;
 	auto howdy_error(int status, const ConversationFn &conv_function) -> int;
-	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
+	auto howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int;
 	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
 	                   const std::filesystem::path &user_models_dir) -> int;

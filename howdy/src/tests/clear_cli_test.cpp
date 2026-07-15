@@ -302,7 +302,7 @@ namespace {
 		ok &= expect(!ec, "create integration models dir");
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
-		auto run_public_clear = [&]() {
+		auto run_public_clear = [&]() -> int {
 			std::array<std::string, 3> arguments{"howdy-clear", "alice", "-y"};
 			std::array<char *, 3>      argv{arguments[0].data(), arguments[1].data(),
 			                                arguments[2].data()};

@@ -3,6 +3,7 @@
 #include "common/invoking_user.hpp"
 #include "config/config_utils.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -14,7 +15,7 @@ namespace howdy::native::config_internal {
 		std::string           original_content;
 	};
 
-	enum class ConfigEditStatus {
+	enum class ConfigEditStatus : std::uint8_t {
 		kDependenciesUnavailable,
 		kOk,
 		kNoChanges,

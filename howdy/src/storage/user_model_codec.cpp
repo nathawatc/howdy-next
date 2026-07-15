@@ -67,7 +67,7 @@ namespace howdy::native::user_model_codec {
 				if (is_container && depth > user_model_limits::kMaxJsonNestingDepth) {
 					return false;
 				}
-				const auto child_depth = [depth](yyjson_val *child) {
+				const auto child_depth = [depth](yyjson_val *child) -> std::size_t {
 					return depth +
 					       static_cast<std::size_t>(yyjson_is_arr(child) || yyjson_is_obj(child));
 				};
@@ -434,7 +434,7 @@ namespace howdy::native::user_model_codec {
 			}
 
 			const auto add_optional_string = [document, model](const char        *key,
-			                                                   const std::string &value) {
+			                                                   const std::string &value) -> bool {
 				return value.empty() ||
 				       yyjson_mut_obj_add_strncpy(document, model, key, value.data(), value.size());
 			};
@@ -561,7 +561,7 @@ namespace howdy::native::user_model_codec {
 			return failure(UserModelStatus::kOversized,
 			               "Stored face encoding exceeds safety limit");
 		}
-		if (!std::ranges::all_of(encoding, [](float value) {
+		if (!std::ranges::all_of(encoding, [](float value) -> bool {
 			    return std::isfinite(value);
 		    })) {
 			return failure(UserModelStatus::kInvalidShape,

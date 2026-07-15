@@ -19,7 +19,7 @@ namespace {
 	                                    const std::filesystem::path &config_path,
 	                                    const std::string &key, const std::string &value,
 	                                    std::string *error_message, bool lock) -> bool {
-		return howdy::native::update_config_value(config_path, key, value, error_message, lock);
+		return howdy::native::update_config_value(config_path, key, error_message, value, lock);
 	}
 
 }  // namespace
@@ -57,7 +57,7 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 	return kExitOk;
 }
 
-int set_main(int argc, char **argv) {
+auto set_main(int argc, char **argv) -> int {
 	return howdy::native::set_internal::set_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::set_internal::SetDependencies{

@@ -29,8 +29,7 @@ namespace {
 
 }  // namespace
 
-auto identify(pam_handle_t * /*pamh*/, int /*flags*/, int /*argc*/, const char ** /*argv*/,
-              bool ask_auth_tok) -> int {
+auto identify(pam_handle_t * /*pamh*/, PamModuleArguments /*arguments*/, bool ask_auth_tok) -> int {
 	++identify_calls;
 	last_ask_auth_tok = ask_auth_tok;
 	if (identify_throw_mode == 1) {

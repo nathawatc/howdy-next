@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <optional>
@@ -12,7 +13,7 @@
 
 namespace howdy::native {
 
-	enum class SecurePathKind {
+	enum class SecurePathKind : std::uint8_t {
 		kRegularFile,
 		kDirectory,
 	};
@@ -147,9 +148,13 @@ namespace howdy::native {
 		return SecurePathCheckResult{.ok = true, .error_message = {}};
 	}
 
+	struct SecurePathLabels {
+		std::string_view directory;
+		std::string_view file;
+	};
+
 	inline auto check_secure_root_owned_file_with_directory(
-	    const std::filesystem::path &path, const std::string_view directory_label,
-	    const std::string_view     file_label,
+	    const std::filesystem::path &path, const SecurePathLabels labels,
 	    const std::optional<uid_t> owner_uid = default_secure_owner_uid())
 	    -> SecurePathCheckResult {
 		const auto parent = path.parent_path();
@@ -157,18 +162,18 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok = false,
 			    .error_message =
-			        std::string(file_label) + " must have a parent directory: " + path.string(),
+			        std::string(labels.file) + " must have a parent directory: " + path.string(),
 			    .error_code = 0,
 			};
 		}
 
 		auto directory_security =
-		    check_secure_root_owned_directory_tree(parent, directory_label, owner_uid);
+		    check_secure_root_owned_directory_tree(parent, labels.directory, owner_uid);
 		if (!directory_security.ok) {
 			return directory_security;
 		}
 
-		return check_secure_root_owned_file(path, file_label, owner_uid);
+		return check_secure_root_owned_file(path, labels.file, owner_uid);
 	}
 
 }  // namespace howdy::native

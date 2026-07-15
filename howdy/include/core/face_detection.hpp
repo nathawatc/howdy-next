@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -14,7 +15,7 @@ namespace howdy::native {
 		float                      confidence = 0.0F;
 	};
 
-	enum class FaceDetectionStatus {
+	enum class FaceDetectionStatus : std::uint8_t {
 		kOk,
 		kInferenceError,
 		kInvalidOutput,

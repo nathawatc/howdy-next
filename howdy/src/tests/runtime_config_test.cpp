@@ -54,7 +54,7 @@ namespace {
 		return std::filesystem::path(created);
 	}
 
-	auto load_config(const std::filesystem::path &root, const std::string &name,
+	auto load_config(const std::filesystem::path &root, const std::filesystem::path &name,
 	                 const std::string &content) -> howdy::native::RuntimeConfigLoadResult {
 		const auto path = root / name;
 		if (!write_file(path, content)) {
@@ -79,21 +79,21 @@ auto main() -> int {
 	using enum howdy::native::config_schema::OptionId;
 	const howdy::native::RuntimeConfig defaults;
 	const auto expect_bool_default = [&](bool actual, howdy::native::config_schema::OptionId id,
-	                                     const std::string &message) {
+	                                     const std::string &message) -> bool {
 		return expect(actual == howdy::native::config_schema::runtime_default_bool(id), message);
 	};
 	const auto expect_int_default = [&](int actual, howdy::native::config_schema::OptionId id,
-	                                    const std::string &message) {
+	                                    const std::string &message) -> bool {
 		return expect(actual == howdy::native::config_schema::runtime_default_int(id), message);
 	};
 	const auto expect_float_default = [&](float actual, howdy::native::config_schema::OptionId id,
-	                                      const std::string &message) {
+	                                      const std::string &message) -> bool {
 		return expect(nearly_equal(actual, howdy::native::config_schema::runtime_default_float(id)),
 		              message);
 	};
 	const auto expect_string_default = [&](const std::string                     &actual,
 	                                       howdy::native::config_schema::OptionId id,
-	                                       const std::string                     &message) {
+	                                       const std::string                     &message) -> bool {
 		return expect(actual == howdy::native::config_schema::runtime_default_string(id), message);
 	};
 

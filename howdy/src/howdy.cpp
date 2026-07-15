@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <pwd.h>
 #include <string>
 #include <string_view>
@@ -113,59 +114,71 @@ namespace {
 		std::cout << "  -h, --help       Show this help\n";
 	}
 
-}  // namespace
+	struct ParsedCommandLine {
+		std::string              user;
+		bool                     yes   = false;
+		bool                     plain = false;
+		std::string              command;
+		std::vector<std::string> arguments;
+	};
 
-int howdy::native::howdy_internal::howdy_main_with_dependencies(
-    int argc, char **argv, const HowdyDependencies &dependencies) {
-	std::string              user;
-	bool                     yes   = false;
-	bool                     plain = false;
-	std::string              command;
-	std::vector<std::string> arguments;
-
-	for (int index = 1; index < argc; ++index) {
-		const std::string_view arg(argv[index]);
-		if (arg == "-U" || arg == "--user") {
-			if (index + 1 >= argc) {
-				std::cout << "Option '" << arg << "' requires an argument\n";
-				return 1;
+	auto parse_command_line(int argc, char **argv, ParsedCommandLine &parsed)
+	    -> std::optional<int> {
+		for (int index = 1; index < argc; ++index) {
+			const std::string_view arg(argv[index]);
+			if (arg == "-U" || arg == "--user") {
+				if (index + 1 >= argc) {
+					std::cout << "Option '" << arg << "' requires an argument\n";
+					return 1;
+				}
+				parsed.user = argv[++index];
+				continue;
 			}
-			user = argv[++index];
-			continue;
-		}
-		if (arg == "-y") {
-			yes = true;
-			continue;
-		}
-		if (arg == "--plain") {
-			plain = true;
-			continue;
-		}
-		if (command.empty()) {
-			if (arg == "-h" || arg == "--help") {
-				print_help();
-				return 0;
+			if (arg == "-y") {
+				parsed.yes = true;
+				continue;
 			}
-			command = argv[index];
-			continue;
+			if (arg == "--plain") {
+				parsed.plain = true;
+				continue;
+			}
+			if (parsed.command.empty()) {
+				if (arg == "-h" || arg == "--help") {
+					print_help();
+					return 0;
+				}
+				parsed.command = argv[index];
+				continue;
+			}
+			parsed.arguments.emplace_back(argv[index]);
 		}
-		arguments.emplace_back(argv[index]);
+		return std::nullopt;
 	}
 
-	if (command.empty()) {
+}  // namespace
+
+auto howdy::native::howdy_internal::howdy_main_with_dependencies(
+    int argc, char **argv, const HowdyDependencies &dependencies) -> int {
+	ParsedCommandLine parsed;
+	if (const auto parse_result = parse_command_line(argc, argv, parsed);
+	    parse_result.has_value()) {
+		return *parse_result;
+	}
+
+	if (parsed.command.empty()) {
 		print_help();
 		return 0;
 	}
 
-	if (command == "version") {
+	if (parsed.command == "version") {
 		std::cout << "Howdy-Next 3.3.1\n";
 		return 0;
 	}
 
-	if (user.empty()) {
-		user = dependencies.resolve_user(dependencies.context);
+	if (parsed.user.empty()) {
+		parsed.user = dependencies.resolve_user(dependencies.context);
 	}
-	if (user.empty()) {
+	if (parsed.user.empty()) {
 		std::cout << "Could not determine user, please use the --user flag\n";
 		return 1;
 	}
@@ -180,35 +193,36 @@ int howdy::native::howdy_internal::howdy_main_with_dependencies(
 		return 1;
 	}
 
-	if (user == "root") {
+	if (parsed.user == "root") {
 		std::cout
 		    << "Can't run howdy commands as root, please run this command with the --user flag\n";
 		return 1;
 	}
 
-	const auto selected_main = command_main(dependencies, command);
+	const auto selected_main = command_main(dependencies, parsed.command);
 	if (selected_main == nullptr) {
-		std::cout << "Unknown command: " << command << "\n";
+		std::cout << "Unknown command: " << parsed.command << "\n";
 		return 1;
 	}
 
-	const bool needs_user_argument = command == "add" || command == "clear" || command == "list" ||
-	                                 command == "remove" || command == "test";
-	if (needs_user_argument && !howdy::native::is_valid_model_user_name(user)) {
+	const bool needs_user_argument = parsed.command == "add" || parsed.command == "clear" ||
+	                                 parsed.command == "list" || parsed.command == "remove" ||
+	                                 parsed.command == "test";
+	if (needs_user_argument && !howdy::native::is_valid_model_user_name(parsed.user)) {
 		std::cout << howdy::native::kInvalidUserNameMessage << "\n";
 		return 1;
 	}
 
 	std::vector<std::string> argv_strings;
-	argv_strings.push_back("howdy-" + command);
+	argv_strings.push_back("howdy-" + parsed.command);
 	if (needs_user_argument) {
-		argv_strings.push_back(user);
+		argv_strings.push_back(parsed.user);
 	}
-	argv_strings.insert(argv_strings.end(), arguments.begin(), arguments.end());
-	if (plain) {
+	argv_strings.insert(argv_strings.end(), parsed.arguments.begin(), parsed.arguments.end());
+	if (parsed.plain) {
 		argv_strings.emplace_back("--plain");
 	}
-	if (yes) {
+	if (parsed.yes) {
 		argv_strings.emplace_back("-y");
 	}
 
@@ -222,7 +236,7 @@ int howdy::native::howdy_internal::howdy_main_with_dependencies(
 	return selected_main(static_cast<int>(argv_strings.size()), command_argv.data());
 }
 
-int howdy_main(int argc, char **argv) {
+auto howdy_main(int argc, char **argv) -> int {
 	return howdy::native::howdy_internal::howdy_main_with_dependencies(
 	    argc, argv,
 	    {

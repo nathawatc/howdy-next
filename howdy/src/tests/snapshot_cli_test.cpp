@@ -1,5 +1,7 @@
 #include "cli/snapshot_internal.hpp"
 
+#include <bit>
+#include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -242,10 +244,9 @@ namespace {
 
 	auto unknown_capture_status_fails_closed() -> bool {
 		auto context = make_success_context();
-		// NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
 		context.capture_result.status =
-		    static_cast<howdy::native::snapshot_internal::SnapshotCaptureStatus>(999);
-		// NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
+		    std::bit_cast<howdy::native::snapshot_internal::SnapshotCaptureStatus>(
+		        std::uint8_t{UINT8_MAX});
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 

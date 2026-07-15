@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -226,6 +227,101 @@ namespace {
 		       status_code < 400;
 	}
 
+	enum class ExistingModelAction : std::uint8_t {
+		download,
+		skip,
+		abort,
+	};
+
+	auto inspect_existing_model(
+	    const std::filesystem::path &destination, const howdy::native::OpenCvModelDescriptor &model,
+	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
+	    -> ExistingModelAction {
+		const int existing_fd = open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		if (existing_fd < 0) {
+			std::cout << "Failed to open existing model: " << destination.string() << "\n";
+			return ExistingModelAction::abort;
+		}
+		struct stat existing_stat{};
+		if (dependencies.fstat_file(existing_fd, &existing_stat) != 0) {
+			const int error_number = errno;
+			close(existing_fd);
+			std::cout << "Failed to fstat existing model '" << destination.string()
+			          << "': " << std::strerror(error_number) << "\n";
+			return ExistingModelAction::abort;
+		}
+		if (existing_stat.st_size < 0 || std::cmp_not_equal(existing_stat.st_size, model.size)) {
+			close(existing_fd);
+			std::cout << "Size mismatch for " << destination.string() << ": expected " << model.size
+			          << ", actual " << existing_stat.st_size << "\n";
+			return ExistingModelAction::download;
+		}
+		const auto actual_sha256 = dependencies.sha256_file(existing_fd);
+		close(existing_fd);
+		if (!actual_sha256.has_value()) {
+			std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
+			return ExistingModelAction::abort;
+		}
+		return model.sha256 == *actual_sha256 ? ExistingModelAction::skip
+		                                      : ExistingModelAction::download;
+	}
+
+	auto download_model(
+	    const howdy::native::OpenCvModelDescriptor &model, const std::filesystem::path &destination,
+	    const std::optional<uid_t>                                                 owner_uid,
+	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
+	    -> bool {
+		std::cout << "Downloading " << model.filename << "\n";
+		auto staged = prepare_staged_download(destination, owner_uid);
+		if (!staged.has_value()) {
+			std::cout << "Failed to prepare destination for model: " << destination.string()
+			          << "\n";
+			return false;
+		}
+		if (!dependencies.download_file(std::string(model.url), *staged)) {
+			howdy::native::cleanup_staged_file(*staged);
+			std::cout << "Failed to download model: " << model.url << "\n";
+			return false;
+		}
+
+		struct stat staged_stat{};
+		if (dependencies.fstat_file(staged->fd.get(), &staged_stat) != 0) {
+			const int  error_number = errno;
+			const auto staged_path  = staged->path;
+			howdy::native::cleanup_staged_file(*staged);
+			std::cout << "Failed to fstat staged model '" << staged_path.string()
+			          << "': " << std::strerror(error_number) << "\n";
+			return false;
+		}
+		if (staged_stat.st_size < 0 || std::cmp_not_equal(staged_stat.st_size, model.size)) {
+			howdy::native::cleanup_staged_file(*staged);
+			std::cout << "Size mismatch for " << model.filename << ": expected " << model.size
+			          << ", actual " << staged_stat.st_size << "\n";
+			return false;
+		}
+
+		const auto actual_sha256 = dependencies.sha256_file(staged->fd.get());
+		if (!actual_sha256.has_value() || model.sha256 != *actual_sha256) {
+			howdy::native::cleanup_staged_file(*staged);
+			std::cout << (actual_sha256.has_value() ? "Checksum mismatch for "
+			                                        : "Failed to calculate SHA-256 for ")
+			          << model.filename << "\n";
+			return false;
+		}
+
+		const auto install_result = howdy::native::install_staged_file(*staged, destination);
+		if (howdy::native::atomic_file_commit_is_durable(install_result)) {
+			return true;
+		}
+		if (howdy::native::atomic_file_may_have_committed(install_result)) {
+			std::cout << "Downloaded model was installed, but its directory could not be synced: "
+			          << destination.string() << "\n";
+		} else {
+			std::cout << "Failed to install downloaded model: " << destination.string() << "\n";
+		}
+		return false;
+	}
+
 }  // namespace
 
 auto howdy::native::download_models_internal::download_models_main_with_dependencies(
@@ -269,38 +365,13 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 
 		bool replace_existing = readiness.status == howdy::native::OpenCvModelStatus::kInvalid;
 		if (readiness.status == howdy::native::OpenCvModelStatus::kOk) {
-			const int existing_fd = open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-			if (existing_fd < 0) {
+			const auto action = inspect_existing_model(destination, model, dependencies);
+			if (action == ExistingModelAction::abort) {
 				curl_global_cleanup();
-				std::cout << "Failed to open existing model: " << destination.string() << "\n";
 				return kExitAbort;
 			}
-			struct stat existing_stat{};
-			if (dependencies.fstat_file(existing_fd, &existing_stat) != 0) {
-				const int error_number = errno;
-				close(existing_fd);
-				curl_global_cleanup();
-				std::cout << "Failed to fstat existing model '" << destination.string()
-				          << "': " << std::strerror(error_number) << "\n";
-				return kExitAbort;
-			}
-			if (existing_stat.st_size < 0 ||
-			    std::cmp_not_equal(existing_stat.st_size, model.size)) {
-				std::cout << "Size mismatch for " << destination.string() << ": expected "
-				          << model.size << ", actual " << existing_stat.st_size << "\n";
-				replace_existing = true;
-			} else {
-				const auto actual_sha256 = dependencies.sha256_file(existing_fd);
-				if (!actual_sha256.has_value()) {
-					close(existing_fd);
-					curl_global_cleanup();
-					std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
-					return kExitAbort;
-				}
-				replace_existing = model.sha256 != actual_sha256.value();
-			}
-			close(existing_fd);
-			if (!replace_existing) {
+			replace_existing = action == ExistingModelAction::download;
+			if (action == ExistingModelAction::skip) {
 				std::cout << "Model already exists: " << destination.string() << "\n";
 				continue;
 			}
@@ -308,65 +379,8 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		if (replace_existing) {
 			std::cout << "Replacing invalid model download: " << destination.string() << "\n";
 		}
-
-		std::cout << "Downloading " << model.filename << "\n";
-		auto staged = prepare_staged_download(destination, owner_uid);
-		if (!staged.has_value()) {
+		if (!download_model(model, destination, owner_uid, dependencies)) {
 			curl_global_cleanup();
-			std::cout << "Failed to prepare destination for model: " << destination.string()
-			          << "\n";
-			return kExitAbort;
-		}
-
-		if (!dependencies.download_file(std::string(model.url), *staged)) {
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Failed to download model: " << model.url << "\n";
-			return kExitAbort;
-		}
-
-		struct stat staged_stat{};
-		if (dependencies.fstat_file(staged->fd.get(), &staged_stat) != 0) {
-			const int  error_number = errno;
-			const auto staged_path  = staged->path;
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Failed to fstat staged model '" << staged_path.string()
-			          << "': " << std::strerror(error_number) << "\n";
-			return kExitAbort;
-		}
-		if (staged_stat.st_size < 0 || std::cmp_not_equal(staged_stat.st_size, model.size)) {
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Size mismatch for " << model.filename << ": expected " << model.size
-			          << ", actual " << staged_stat.st_size << "\n";
-			return kExitAbort;
-		}
-
-		const auto actual_sha256 = dependencies.sha256_file(staged->fd.get());
-		if (!actual_sha256.has_value()) {
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
-			return kExitAbort;
-		}
-		if (model.sha256 != actual_sha256.value()) {
-			howdy::native::cleanup_staged_file(*staged);
-			curl_global_cleanup();
-			std::cout << "Checksum mismatch for " << model.filename << "\n";
-			return kExitAbort;
-		}
-
-		const auto install_result = howdy::native::install_staged_file(*staged, destination);
-		if (!howdy::native::atomic_file_commit_is_durable(install_result)) {
-			curl_global_cleanup();
-			if (howdy::native::atomic_file_may_have_committed(install_result)) {
-				std::cout
-				    << "Downloaded model was installed, but its directory could not be synced: "
-				    << destination.string() << "\n";
-			} else {
-				std::cout << "Failed to install downloaded model: " << destination.string() << "\n";
-			}
 			return kExitAbort;
 		}
 	}
@@ -376,7 +390,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 	return kExitOk;
 }
 
-int download_models_main(int argc, char **argv) {
+auto download_models_main(int argc, char **argv) -> int {
 	return howdy::native::download_models_internal::download_models_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::download_models_internal::DownloadModelsDependencies{

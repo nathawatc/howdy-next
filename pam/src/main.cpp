@@ -22,7 +22,7 @@ namespace {
 PAM_EXTERN auto pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv)
     -> int {
 	try {
-		return identify(pamh, flags, argc, argv, true);
+		return identify(pamh, {.flags = flags, .argc = argc, .argv = argv}, true);
 	} catch (const std::exception &error) {
 		return system_error_from_exception("pam_sm_authenticate", error);
 	} catch (...) {
@@ -31,6 +31,8 @@ PAM_EXTERN auto pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, con
 }
 
 // Called by PAM when a session is started, such as by the su command.
+// Linux-PAM module ABI requires pam_handle_t *, int, int, const char **.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 PAM_EXTERN auto pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
     -> int {
 	(void)pamh;
@@ -43,6 +45,8 @@ PAM_EXTERN auto pam_sm_open_session(pam_handle_t *pamh, int flags, int argc, con
 // The functions below are required by PAM, but intentionally remain trivial:
 // only pam_sm_authenticate enters the C++ auth flow and needs fail-closed
 // exception handling.
+// Linux-PAM module ABI requires pam_handle_t *, int, int, const char **.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 PAM_EXTERN auto pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv)
     -> int {
 	(void)pamh;
@@ -52,6 +56,8 @@ PAM_EXTERN auto pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const 
 	return PAM_IGNORE;
 }
 
+// Linux-PAM module ABI requires pam_handle_t *, int, int, const char **.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 PAM_EXTERN auto pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, const char **argv)
     -> int {
 	(void)pamh;
@@ -61,6 +67,8 @@ PAM_EXTERN auto pam_sm_close_session(pam_handle_t *pamh, int flags, int argc, co
 	return PAM_IGNORE;
 }
 
+// Linux-PAM module ABI requires pam_handle_t *, int, int, const char **.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 PAM_EXTERN auto pam_sm_chauthtok(pam_handle_t *pamh, int flags, int argc, const char **argv)
     -> int {
 	(void)pamh;
@@ -70,6 +78,8 @@ PAM_EXTERN auto pam_sm_chauthtok(pam_handle_t *pamh, int flags, int argc, const 
 	return PAM_IGNORE;
 }
 
+// Linux-PAM module ABI requires pam_handle_t *, int, int, const char **.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 PAM_EXTERN auto pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) -> int {
 	(void)pamh;
 	(void)flags;

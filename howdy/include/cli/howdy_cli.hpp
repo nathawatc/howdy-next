@@ -1,3 +1,3 @@
 #pragma once
 
-int howdy_main(int argc, char **argv);
+auto howdy_main(int argc, char **argv) -> int;

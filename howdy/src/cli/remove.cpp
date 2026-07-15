@@ -146,7 +146,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	return kExitOk;
 }
 
-int remove_main(int argc, char **argv) {
+auto remove_main(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kExitAbort;
 	}

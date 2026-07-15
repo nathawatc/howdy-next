@@ -11,9 +11,10 @@
 #	define HOWDY_MAIN_DISPATCH howdy_main
 #endif
 
-int HOWDY_MAIN_DISPATCH(int argc, char **argv);
+auto HOWDY_MAIN_DISPATCH(int argc, char **argv) -> int;
+auto HOWDY_MAIN_ENTRYPOINT(int argc, char **argv) -> int;
 
-int HOWDY_MAIN_ENTRYPOINT(int argc, char **argv) {
+auto HOWDY_MAIN_ENTRYPOINT(int argc, char **argv) -> int {
 	try {
 		return HOWDY_MAIN_DISPATCH(argc, argv);
 	} catch (const std::exception &error) {

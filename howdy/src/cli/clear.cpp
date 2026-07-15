@@ -104,7 +104,7 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	return kExitOk;
 }
 
-int clear_main(int argc, char **argv) {
+auto clear_main(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kExitAbort;
 	}

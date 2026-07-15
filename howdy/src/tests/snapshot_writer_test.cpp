@@ -325,18 +325,25 @@ namespace {
 		return cleanup_temp_root(temp_root, ok);
 	}
 
-	auto real_image_output(const std::string &name, const std::string &filename,
-	                       const std::string &extension) -> bool {
+	struct ImageOutputCase {
+		std::string name;
+		std::string filename;
+		std::string extension;
+	};
+
+	auto real_image_output(const ImageOutputCase &test_case) -> bool {
 		bool                  ok        = true;
-		const auto            temp_root = make_temp_root(name, ok);
-		const auto            output    = temp_root / "log" / "snapshots" / filename;
+		const auto            temp_root = make_temp_root(test_case.name, ok);
+		const auto            output    = temp_root / "log" / "snapshots" / test_case.filename;
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::write_snapshot_at_path(
 		    tiny_frames(), text_lines(), output, real_dependencies(context));
-		ok &= expect(result, name + " returns true");
-		ok &= expect(!cv::imread(output.string()).empty(), name + " decodes successfully");
-		ok &= expect(context.received_extension == extension, name + " receives exact extension");
-		ok &= expect_mode(output, kSnapshotFileMode, name + " output mode is 0600");
+		ok &= expect(result, test_case.name + " returns true");
+		ok &=
+		    expect(!cv::imread(output.string()).empty(), test_case.name + " decodes successfully");
+		ok &= expect(context.received_extension == test_case.extension,
+		             test_case.name + " receives exact extension");
+		ok &= expect_mode(output, kSnapshotFileMode, test_case.name + " output mode is 0600");
 		return cleanup_temp_root(temp_root, ok);
 	}
 
@@ -446,9 +453,9 @@ auto main() -> int {
 	ok &= encoded_bytes_install(true);
 	ok &= directory_target_rejects_before_encoding();
 	ok &= blocked_parent_rejects_before_encoding();
-	ok &= real_image_output("jpeg-output", "test.jpg", ".jpg");
-	ok &= real_image_output("png-output", "test.png", ".png");
-	ok &= real_image_output("hidden-png-output", ".png", ".png");
+	ok &= real_image_output({.name = "jpeg-output", .filename = "test.jpg", .extension = ".jpg"});
+	ok &= real_image_output({.name = "png-output", .filename = "test.png", .extension = ".png"});
+	ok &= real_image_output({.name = "hidden-png-output", .filename = ".png", .extension = ".png"});
 	ok &= extensionless_rejects_before_directory_setup();
 	ok &= insecure_existing_log_root_rejects_before_encoding();
 	ok &= missing_directories_are_created_and_secured();

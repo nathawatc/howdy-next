@@ -371,7 +371,8 @@ namespace {
 	}
 
 	auto invalid_accepted_match_results_fail_closed() -> bool {
-		auto run_invalid_match = [](howdy::native::FaceMatch match, const std::string &subject) {
+		auto run_invalid_match = [](howdy::native::FaceMatch match,
+		                            const std::string       &subject) -> bool {
 			auto context                        = make_context();
 			context.detection_result.detections = {face()};
 			context.match_result                = match;
@@ -399,7 +400,8 @@ namespace {
 	}
 
 	auto invalid_dependency_matrix_fails_closed() -> bool {
-		auto run_missing_dependency = [](auto clear_dependency, const std::string &subject) {
+		auto run_missing_dependency = [](auto               clear_dependency,
+		                                 const std::string &subject) -> auto {
 			auto context      = make_context();
 			auto dependencies = inference_dependencies(context);
 			clear_dependency(dependencies);
@@ -419,32 +421,32 @@ namespace {
 
 		bool ok = true;
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.context = nullptr;
 		    },
 		    "null context");
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.prepare_frame = nullptr;
 		    },
 		    "null prepare callback");
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.detect_faces = nullptr;
 		    },
 		    "null detect callback");
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.encode_face = nullptr;
 		    },
 		    "null encode callback");
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.match_face = nullptr;
 		    },
 		    "null match callback");
 		ok &= run_missing_dependency(
-		    [](auto &dependencies) {
+		    [](auto &dependencies) -> auto {
 			    dependencies.now = nullptr;
 		    },
 		    "null clock callback");

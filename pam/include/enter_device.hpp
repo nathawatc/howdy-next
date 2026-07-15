@@ -13,9 +13,9 @@ class EnterDevice {
 public:
 	EnterDevice();
 	void send_enter_press();
-	~EnterDevice()                         = default;
-	EnterDevice(EnterDevice &&)            = default;
-	EnterDevice &operator=(EnterDevice &&) = default;
+	~EnterDevice()                                  = default;
+	EnterDevice(EnterDevice &&)                     = default;
+	auto operator=(EnterDevice &&) -> EnterDevice & = default;
 };
 
 #endif  // HOWDY_SRC_PAM_ENTER_DEVICE_HH

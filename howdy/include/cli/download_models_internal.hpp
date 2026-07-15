@@ -16,7 +16,7 @@
 namespace howdy::native::download_models_internal {
 
 	using StagedDownloadFile                       = StagedFile;
-	inline constexpr std::size_t kMaxDownloadBytes = 100U * 1024U * 1024U;
+	inline constexpr std::size_t kMaxDownloadBytes = std::size_t{100} * 1024 * 1024;
 
 	struct DownloadWriteContext {
 		StagedDownloadFile *staged        = nullptr;

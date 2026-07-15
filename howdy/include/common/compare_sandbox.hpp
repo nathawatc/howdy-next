@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
+
 namespace howdy::native {
 
-	enum class CompareSandboxStatus {
+	enum class CompareSandboxStatus : std::uint8_t {
 		kOk,
 		kNoNewPrivilegesFailure,
 		kLimitInspectionFailure,
@@ -10,7 +12,7 @@ namespace howdy::native {
 		kLimitApplicationFailure,
 	};
 
-	enum class CompareSandboxResource {
+	enum class CompareSandboxResource : std::uint8_t {
 		kNone,
 		kCpu,
 		kOpenFiles,

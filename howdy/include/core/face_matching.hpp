@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -14,118 +15,112 @@ namespace howdy::native {
 		bool  accepted = false;
 	};
 
-	[[nodiscard]] inline auto find_best_face_match(const std::vector<std::vector<float>> &known,
-	                                               const std::vector<float>              &probe,
-	                                               std::string_view metric, float threshold)
-	    -> FaceMatch {
-		FaceMatch match;
-		if (known.empty() || probe.empty()) {
-			match.score = metric == "cosine" ? -1.0F : std::numeric_limits<float>::max();
-			return match;
-		}
-
-		if (metric == "cosine") {
-			float best_score = -1.0F;
-			int   best_index = -1;
-			float probe_norm = 0.0F;
-			for (float value : probe) {
+	namespace face_matching_detail {
+		[[nodiscard]] inline auto vector_norm(const std::vector<float> &values)
+		    -> std::optional<float> {
+			float squared_norm = 0.0F;
+			for (float value : values) {
 				if (!std::isfinite(value)) {
-					match.score = -1.0F;
-					return match;
+					return std::nullopt;
 				}
-				probe_norm += value * value;
+				squared_norm += value * value;
 			}
-			if (probe_norm == 0.0F || !std::isfinite(probe_norm)) {
-				match.score = -1.0F;
-				return match;
+			if (squared_norm == 0.0F || !std::isfinite(squared_norm)) {
+				return std::nullopt;
 			}
-			probe_norm = std::sqrt(std::max(probe_norm, 1.0e-12F));
-			if (!std::isfinite(probe_norm)) {
-				match.score = -1.0F;
-				return match;
-			}
-
-			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto &candidate = known[index];
-				if (candidate.size() != probe.size()) {
-					continue;
-				}
-
-				float dot        = 0.0F;
-				float known_norm = 0.0F;
-				bool  finite     = true;
-				for (std::size_t element = 0; element < probe.size(); ++element) {
-					if (!std::isfinite(candidate[element])) {
-						finite = false;
-						break;
-					}
-					dot += candidate[element] * probe[element];
-					known_norm += candidate[element] * candidate[element];
-				}
-				if (!finite || known_norm == 0.0F || !std::isfinite(known_norm) ||
-				    !std::isfinite(dot)) {
-					continue;
-				}
-
-				known_norm = std::sqrt(std::max(known_norm, 1.0e-12F));
-				if (!std::isfinite(known_norm)) {
-					continue;
-				}
-				const float score = dot / std::max(known_norm * probe_norm, 1.0e-12F);
-				if (!std::isfinite(score)) {
-					continue;
-				}
-				if (best_index < 0 || score > best_score) {
-					best_score = score;
-					best_index = static_cast<int>(index);
-				}
-			}
-
-			match.index    = best_index;
-			match.score    = best_score;
-			match.accepted = best_index >= 0 && best_score >= threshold;
-			return match;
+			const float norm = std::sqrt(std::max(squared_norm, 1.0e-12F));
+			return std::isfinite(norm) ? std::optional<float>{norm} : std::nullopt;
 		}
 
-		float best_score = std::numeric_limits<float>::max();
-		int   best_index = -1;
-		if (!std::ranges::all_of(probe, [](float value) {
-			    return std::isfinite(value);
-		    })) {
-			match.index    = -1;
-			match.score    = std::numeric_limits<float>::max();
-			match.accepted = false;
-			return match;
-		}
-		for (std::size_t index = 0; index < known.size(); ++index) {
-			const auto &candidate = known[index];
+		[[nodiscard]] inline auto cosine_score(const std::vector<float> &candidate,
+		                                       const std::vector<float> &probe, float probe_norm)
+		    -> std::optional<float> {
 			if (candidate.size() != probe.size()) {
-				continue;
+				return std::nullopt;
 			}
-			if (!std::ranges::all_of(candidate, [](float value) {
+			float dot = 0.0F;
+			for (std::size_t element = 0; element < probe.size(); ++element) {
+				if (!std::isfinite(candidate[element])) {
+					return std::nullopt;
+				}
+				dot += candidate[element] * probe[element];
+			}
+			const auto candidate_norm = vector_norm(candidate);
+			if (!candidate_norm.has_value() || !std::isfinite(dot)) {
+				return std::nullopt;
+			}
+			const float score = dot / std::max(*candidate_norm * probe_norm, 1.0e-12F);
+			return std::isfinite(score) ? std::optional<float>{score} : std::nullopt;
+		}
+
+		[[nodiscard]] inline auto cosine_match(const std::vector<std::vector<float>> &known,
+		                                       const std::vector<float> &probe, float threshold)
+		    -> FaceMatch {
+			const auto probe_norm = vector_norm(probe);
+			if (!probe_norm.has_value()) {
+				return {.score = -1.0F};
+			}
+			FaceMatch match{.score = -1.0F};
+			for (std::size_t index = 0; index < known.size(); ++index) {
+				const auto score = cosine_score(known[index], probe, *probe_norm);
+				if (score.has_value() && (match.index < 0 || *score > match.score)) {
+					match.index = static_cast<int>(index);
+					match.score = *score;
+				}
+			}
+			match.accepted = match.index >= 0 && match.score >= threshold;
+			return match;
+		}
+
+		[[nodiscard]] inline auto distance_score(const std::vector<float> &candidate,
+		                                         const std::vector<float> &probe)
+		    -> std::optional<float> {
+			if (candidate.size() != probe.size() ||
+			    !std::ranges::all_of(candidate, [](float value) -> bool {
 				    return std::isfinite(value);
 			    })) {
-				continue;
+				return std::nullopt;
 			}
-
 			float sum = 0.0F;
 			for (std::size_t element = 0; element < probe.size(); ++element) {
 				const float delta = candidate[element] - probe[element];
 				sum += delta * delta;
 			}
-
-			const float score = std::sqrt(sum);
-			if (score < best_score) {
-				best_score = score;
-				best_index = static_cast<int>(index);
-			}
+			return std::sqrt(sum);
 		}
 
-		// Equal embeddings have zero distance, which is the best possible distance match.
-		match.index    = best_index;
-		match.score    = best_score;
-		match.accepted = best_index >= 0 && best_score <= threshold;
-		return match;
+		[[nodiscard]] inline auto distance_match(const std::vector<std::vector<float>> &known,
+		                                         const std::vector<float> &probe, float threshold)
+		    -> FaceMatch {
+			FaceMatch match{.score = std::numeric_limits<float>::max()};
+			if (!std::ranges::all_of(probe, [](float value) -> bool {
+				    return std::isfinite(value);
+			    })) {
+				return match;
+			}
+			for (std::size_t index = 0; index < known.size(); ++index) {
+				const auto score = distance_score(known[index], probe);
+				if (score.has_value() && *score < match.score) {
+					match.index = static_cast<int>(index);
+					match.score = *score;
+				}
+			}
+			match.accepted = match.index >= 0 && match.score <= threshold;
+			return match;
+		}
+	}  // namespace face_matching_detail
+
+	[[nodiscard]] inline auto find_best_face_match(const std::vector<std::vector<float>> &known,
+	                                               const std::vector<float>              &probe,
+	                                               std::string_view metric, float threshold)
+	    -> FaceMatch {
+		if (known.empty() || probe.empty()) {
+			return {.score = metric == "cosine" ? -1.0F : std::numeric_limits<float>::max()};
+		}
+		if (metric == "cosine") {
+			return face_matching_detail::cosine_match(known, probe, threshold);
+		}
+		return face_matching_detail::distance_match(known, probe, threshold);
 	}
 
 }  // namespace howdy::native

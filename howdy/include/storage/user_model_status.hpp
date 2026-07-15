@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
+
 namespace howdy::native {
 
-	enum class UserModelStatus {
+	enum class UserModelStatus : std::uint8_t {
 		kOk,
 		kNoModel,
 		kNoModelDirectory,

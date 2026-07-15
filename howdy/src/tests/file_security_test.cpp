@@ -48,7 +48,7 @@ namespace {
 	auto secure_file_with_directory(const std::filesystem::path &path)
 	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::check_secure_root_owned_file_with_directory(
-		    path, "Test parent directory", "Test file", std::nullopt);
+		    path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt);
 	}
 
 }  // namespace

@@ -18,11 +18,59 @@ namespace howdy::native {
 	    , known_model_count_(known_model_count)
 	    , matching_enabled_(matching_enabled) {}
 
+	auto PreviewEngine::dependencies_valid() const -> bool {
+		return dependencies_.context != nullptr && dependencies_.prepare_frame != nullptr &&
+		       dependencies_.detect_faces != nullptr && dependencies_.now != nullptr &&
+		       (!matching_enabled_ ||
+		        (dependencies_.encode_face != nullptr && dependencies_.match_face != nullptr));
+	}
+
+	auto PreviewEngine::encode_faces(const cv::Mat                    &prepared,
+	                                 const std::vector<FaceDetection> &detections,
+	                                 std::vector<PreviewFaceResult>   &faces,
+	                                 std::string &first_error) const -> std::vector<EncodedFace> {
+		std::vector<EncodedFace> encodings;
+		encodings.reserve(detections.size());
+		for (std::size_t index = 0; index < detections.size(); ++index) {
+			auto encoding =
+			    dependencies_.encode_face(dependencies_.context, prepared, detections[index]);
+			if (!encoding.ok()) {
+				faces[index].status = PreviewFaceStatus::kEncodingFailed;
+				if (first_error.empty()) {
+					first_error = encoding.error_message.empty()
+					                  ? "Face encoding returned invalid embedding"
+					                  : std::move(encoding.error_message);
+				}
+				continue;
+			}
+			encodings.push_back({.face_index = index, .encoding = std::move(encoding.encoding)});
+		}
+		return encodings;
+	}
+
+	auto PreviewEngine::match_faces(const std::vector<EncodedFace> &encodings,
+	                                std::vector<PreviewFaceResult> &faces) -> std::optional<bool> {
+		bool matched = false;
+		for (const auto &encoded : encodings) {
+			auto match =
+			    dependencies_.match_face(dependencies_.context, known_encodings_, encoded.encoding);
+			if (match.accepted &&
+			    (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
+			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
+				return std::nullopt;
+			}
+			matched |= match.accepted;
+			auto &face_result = faces[encoded.face_index];
+			face_result.match = match;
+			face_result.status =
+			    match.accepted ? PreviewFaceStatus::kMatched : PreviewFaceStatus::kUnmatched;
+			face_result.matching_attempted = true;
+		}
+		return matched;
+	}
+
 	auto PreviewEngine::process_gray_frame(cv::Mat gray_frame) -> PreviewFrameResult {
-		if (dependencies_.context == nullptr || dependencies_.prepare_frame == nullptr ||
-		    dependencies_.detect_faces == nullptr || dependencies_.now == nullptr ||
-		    (matching_enabled_ &&
-		     (dependencies_.encode_face == nullptr || dependencies_.match_face == nullptr))) {
+		if (!dependencies_valid()) {
 			return {
 			    .status        = PreviewFrameStatus::kInvalidDependencies,
 			    .error_message = "Internal error: missing preview inference dependency",
@@ -55,7 +103,7 @@ namespace howdy::native {
 		}
 
 		const auto inference_start   = dependencies_.now(dependencies_.context);
-		const auto inference_elapsed = [this, &inference_start]() {
+		const auto inference_elapsed = [this, &inference_start]() -> std::chrono::milliseconds {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(
 			    dependencies_.now(dependencies_.context) - inference_start);
 		};
@@ -107,28 +155,9 @@ namespace howdy::native {
 			};
 		}
 
-		struct EncodedFace {
-			std::size_t        face_index = 0;
-			std::vector<float> encoding;
-		};
-
-		std::vector<EncodedFace> encodings;
-		encodings.reserve(detection_result.detections.size());
 		std::string first_encoding_error;
-		for (std::size_t index = 0; index < detection_result.detections.size(); ++index) {
-			const auto &detection = detection_result.detections[index];
-			auto encoding = dependencies_.encode_face(dependencies_.context, prepared, detection);
-			if (!encoding.ok()) {
-				faces[index].status = PreviewFaceStatus::kEncodingFailed;
-				if (first_encoding_error.empty()) {
-					first_encoding_error = encoding.error_message.empty()
-					                           ? "Face encoding returned invalid embedding"
-					                           : std::move(encoding.error_message);
-				}
-				continue;
-			}
-			encodings.push_back({.face_index = index, .encoding = std::move(encoding.encoding)});
-		}
+		auto        encodings =
+		    encode_faces(prepared, detection_result.detections, faces, first_encoding_error);
 
 		if (encodings.empty()) {
 			return {
@@ -141,32 +170,20 @@ namespace howdy::native {
 			};
 		}
 
-		bool matched = false;
-		for (const auto &encoded : encodings) {
-			auto match =
-			    dependencies_.match_face(dependencies_.context, known_encodings_, encoded.encoding);
-			if (match.accepted &&
-			    (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
-			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
-				return {
-				    .status         = PreviewFrameStatus::kInvalidMatchResult,
-				    .brightness     = brightness,
-				    .gray_frame     = std::move(gray_frame),
-				    .error_message  = "Face matcher returned invalid match result",
-				    .inference_time = inference_elapsed(),
-				};
-			}
-			matched |= match.accepted;
-			auto &face_result = faces[encoded.face_index];
-			face_result.match = match;
-			face_result.status =
-			    match.accepted ? PreviewFaceStatus::kMatched : PreviewFaceStatus::kUnmatched;
-			face_result.matching_attempted = true;
+		const auto matched = match_faces(encodings, faces);
+		if (!matched.has_value()) {
+			return {
+			    .status         = PreviewFrameStatus::kInvalidMatchResult,
+			    .brightness     = brightness,
+			    .gray_frame     = std::move(gray_frame),
+			    .error_message  = "Face matcher returned invalid match result",
+			    .inference_time = inference_elapsed(),
+			};
 		}
 
 		return {
 		    .status =
-		        matched ? PreviewFrameStatus::kMatchedFace : PreviewFrameStatus::kUnmatchedFace,
+		        *matched ? PreviewFrameStatus::kMatchedFace : PreviewFrameStatus::kUnmatchedFace,
 		    .brightness     = brightness,
 		    .gray_frame     = std::move(gray_frame),
 		    .faces          = std::move(faces),

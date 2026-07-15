@@ -21,7 +21,7 @@ namespace howdy::native {
 			return false;
 		}
 
-		return std::ranges::all_of(user, [](const char raw) {
+		return std::ranges::all_of(user, [](const char raw) -> bool {
 			const auto ch = static_cast<unsigned char>(raw);
 			return raw != '/' && raw != '\\' && std::isspace(ch) == 0 && std::iscntrl(ch) == 0;
 		});
@@ -38,7 +38,7 @@ namespace howdy::native {
 	}
 
 	inline auto is_valid_model_label(const std::string_view label) -> bool {
-		return std::ranges::all_of(label, [](const char raw) {
+		return std::ranges::all_of(label, [](const char raw) -> bool {
 			const auto ch = static_cast<unsigned char>(raw);
 			return raw != '/' && raw != '\\' && std::iscntrl(ch) == 0;
 		});

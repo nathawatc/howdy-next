@@ -35,7 +35,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	namespace fs = std::filesystem;
 	using howdy::native::OpenCvModelStatus;
 

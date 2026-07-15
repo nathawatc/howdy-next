@@ -119,8 +119,12 @@ namespace {
 		return true;
 	}
 
-	auto read_with_timeout(int fd, char *buffer, std::size_t buffer_size, int timeout_ms)
-	    -> ssize_t {
+	struct ReadBuffer {
+		char       *data = nullptr;
+		std::size_t size = 0;
+	};
+
+	auto read_with_timeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_t {
 		struct pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
 
 		while (true) {
@@ -136,7 +140,7 @@ namespace {
 			}
 
 			while (true) {
-				const ssize_t bytes_read = read(fd, buffer, buffer_size);
+				const ssize_t bytes_read = read(fd, buffer.data, buffer.size);
 				if (bytes_read < 0 && errno == EINTR) {
 					continue;
 				}
@@ -186,7 +190,7 @@ namespace {
 		                 PAM_CONV_ERR,
 		             "dispatch rejects null response pointer");
 
-		NativePromptConversation  conversation(-1, -1, -1);
+		NativePromptConversation  conversation({});
 		const struct pam_message *null_message = nullptr;
 		responses                              = reinterpret_cast<struct pam_response *>(0x1);
 		ok &= expect(NativePromptConversation::dispatch(1, &null_message, &responses,
@@ -261,20 +265,23 @@ namespace {
 		};
 
 		auto conversation = std::make_shared<NativePromptConversation>(
-		    slave_fd.release(), abort_pipe[0].release(), abort_pipe[1].release());
+		    NativePromptConversation::TestDescriptors{.tty_fd         = slave_fd.release(),
+		                                              .abort_read_fd  = abort_pipe[0].release(),
+		                                              .abort_write_fd = abort_pipe[1].release()});
 		close(conversation->abort_pipe_[1]);
 		conversation->abort_pipe_[1] = -1;
 
 		auto        response       = std::make_shared<char *>(nullptr);
 		auto        result_promise = std::make_shared<std::promise<int>>();
 		auto        result_future  = result_promise->get_future();
-		std::thread prompt_thread([conversation, message, response, result_promise] {
+		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
 			result_promise->set_value(conversation->prompt_input(message, response.get(), true));
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "abort wake test prompt is written to tty");
 
 		conversation->request_abort();
@@ -319,18 +326,21 @@ namespace {
 		};
 
 		auto conversation = std::make_shared<NativePromptConversation>(
-		    slave_fd.release(), abort_pipe[0].release(), abort_pipe[1].release());
+		    NativePromptConversation::TestDescriptors{.tty_fd         = slave_fd.release(),
+		                                              .abort_read_fd  = abort_pipe[0].release(),
+		                                              .abort_write_fd = abort_pipe[1].release()});
 
 		auto        response       = std::make_shared<char *>(nullptr);
 		auto        result_promise = std::make_shared<std::promise<int>>();
 		auto        result_future  = result_promise->get_future();
-		std::thread prompt_thread([conversation, message, response, result_promise] {
+		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
 			result_promise->set_value(conversation->prompt_input(message, response.get(), true));
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "hangup test prompt is written to tty");
 
 		master_fd.reset();
@@ -368,8 +378,9 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.installed_ = true;
 		conversation.restore_original();
 		ok &= expect(!conversation.installed_, "null PAM restore clears installed state");
@@ -388,8 +399,9 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_throw_mode(throw_mode);
 
 		const struct pam_message prompt = {
@@ -400,14 +412,15 @@ namespace {
 		auto                     *responses       = reinterpret_cast<struct pam_response *>(0x1);
 		int                       dispatch_result = PAM_SUCCESS;
 
-		std::thread dispatch_thread([&] {
+		std::thread dispatch_thread([&] -> void {
 			dispatch_result =
 			    NativePromptConversation::dispatch(1, &prompt_ptr, &responses, &conversation);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, message + ": prompt is written to tty");
 
 		constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
@@ -438,13 +451,14 @@ namespace {
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
-		std::thread prompt_thread([&] {
+		std::thread prompt_thread([&] -> void {
 			prompt_result = conversation->prompt_input(prompt, &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd, prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd, {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, message + ": prompt is written to tty");
 
 		constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
@@ -476,8 +490,9 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_poll_eintr_count(1);
 		return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
 		                                                        "poll EINTR retry test");
@@ -501,20 +516,22 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_poll_eintr_count(1);
 		conversation.set_test_abort_on_poll_eintr(true);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
-		std::thread prompt_thread([&] {
+		std::thread prompt_thread([&] -> void {
 			prompt_result = conversation.prompt_input(prompt, &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "poll EINTR abort test prompt is written to tty");
 
 		prompt_thread.join();
@@ -540,8 +557,9 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_read_eintr_count(1);
 		return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
 		                                                        "read EINTR retry test");
@@ -565,20 +583,22 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_read_eintr_count(1);
 		conversation.set_test_abort_on_read_eintr(true);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
-		std::thread prompt_thread([&] {
+		std::thread prompt_thread([&] -> void {
 			prompt_result = conversation.prompt_input(prompt, &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "read EINTR abort test prompt is written to tty");
 
 		constexpr char kPassword = 's';
@@ -613,18 +633,20 @@ namespace {
 		    .msg       = "Password: ",
 		};
 		const int                slave_raw_fd = slave_fd.get();
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
-		std::thread prompt_thread([&] {
+		std::thread prompt_thread([&] -> void {
 			prompt_result = conversation.prompt_input(prompt, &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "oversized prompt test writes prompt to tty");
 
 		const std::string oversized_response = std::string(513, 'x') + "\n";
@@ -664,19 +686,21 @@ namespace {
 		    .msg_style = PAM_PROMPT_ECHO_OFF,
 		    .msg       = "Password: ",
 		};
-		NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-		                                      abort_pipe[1].release());
+		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+		                                       .abort_read_fd  = abort_pipe[0].release(),
+		                                       .abort_write_fd = abort_pipe[1].release()});
 		conversation.set_test_restore_failure(true);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
-		std::thread prompt_thread([&] {
+		std::thread prompt_thread([&] -> void {
 			prompt_result = conversation.prompt_input(prompt, &response, true);
 		});
 
 		std::array<char, 64> prompt_buffer{};
-		const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-		                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+		const ssize_t        prompt_bytes = read_with_timeout(
+		    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "restore failure test writes prompt to tty");
 		constexpr std::array<char, 7> kPassword{'s', 'e', 'c', 'r', 'e', 't', '\n'};
 		ok &= expect(write_all(master_fd.get(), kPassword.data(), kPassword.size()),
@@ -713,18 +737,20 @@ auto main() -> int {
 	};
 
 	const int                slave_raw_fd = slave_fd.get();
-	NativePromptConversation conversation(slave_fd.release(), abort_pipe[0].release(),
-	                                      abort_pipe[1].release());
+	NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
+	                                       .abort_read_fd  = abort_pipe[0].release(),
+	                                       .abort_write_fd = abort_pipe[1].release()});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
-	std::thread prompt_thread([&] {
+	std::thread prompt_thread([&] -> void {
 		prompt_result = conversation.prompt_input(message, &response, true);
 	});
 
 	std::array<char, 64> prompt_buffer{};
-	const ssize_t prompt_bytes = read_with_timeout(master_fd.get(), prompt_buffer.data(),
-	                                               prompt_buffer.size(), kPromptReadTimeoutMs);
+	const ssize_t        prompt_bytes = read_with_timeout(
+	    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+	    kPromptReadTimeoutMs);
 	ok &= expect(prompt_bytes > 0, "prompt is written to tty");
 
 	constexpr char kCtrlC = 3;

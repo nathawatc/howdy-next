@@ -30,7 +30,8 @@ namespace howdy::native {
 
 		cv::Mat aligned;
 		try {
-			dependencies.align_face(dependencies.context, frame, row, aligned);
+			dependencies.align_face(dependencies.context,
+			                        {.frame = frame, .face = row, .aligned = aligned});
 		} catch (const cv::Exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,

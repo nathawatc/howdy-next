@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -6,7 +7,7 @@
 
 namespace {
 
-	enum class DispatchBehavior {
+	enum class DispatchBehavior : std::uint8_t {
 		kReturn,
 		kStdException,
 		kUnknownException,
@@ -17,9 +18,10 @@ namespace {
 
 }  // namespace
 
-int howdy_main_test_entry(int argc, char **argv);
+auto howdy_main_test_entry(int argc, char **argv) -> int;
+auto howdy_main_test_dispatch(int argc, char **argv) -> int;
 
-int howdy_main_test_dispatch(int argc, char **argv) {
+auto howdy_main_test_dispatch(int argc, char **argv) -> int {
 	(void)argc;
 	(void)argv;
 
@@ -62,7 +64,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 
 	dispatch_behavior               = DispatchBehavior::kStdException;

@@ -46,7 +46,7 @@ namespace howdy::native {
 		}
 
 		const auto file_security = check_secure_root_owned_file_with_directory(
-		    config_path, "Config directory", "Config file", owner_uid);
+		    config_path, {.directory = "Config directory", .file = "Config file"}, owner_uid);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
 			    .ok            = false,
@@ -78,13 +78,13 @@ namespace howdy::native {
 	    const std::string    *expected_current_content = nullptr,
 	    SyncParentDirectoryFn sync_parent              = sync_parent_directory) -> bool;
 	auto update_config_value(const std::filesystem::path &config_path, const std::string &key,
-	                         const std::string &value, std::string *error_message,
+	                         std::string *error_message, const std::string &value,
 	                         bool lock = false, bool validate_runtime = true) -> bool;
 
 	inline auto update_config_value(const std::filesystem::path &config_path,
 	                                const std::string &key, const std::string &value,
 	                                bool lock = false) -> bool {
-		return update_config_value(config_path, key, value, nullptr, lock, true);
+		return update_config_value(config_path, key, nullptr, value, lock, true);
 	}
 
 }  // namespace howdy::native

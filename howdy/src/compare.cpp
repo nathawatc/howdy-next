@@ -66,7 +66,8 @@ namespace {
 	}
 
 	auto prepare_face_frame_dependency(void *context, const cv::Mat &frame) -> cv::Mat {
-		return static_cast<howdy::native::FaceModel *>(context)->prepare_frame(frame);
+		(void)context;
+		return howdy::native::FaceModel::prepare_frame(frame);
 	}
 
 	auto detect_faces_dependency(void *context, const cv::Mat &frame)

@@ -1,12 +1,14 @@
 #pragma once
 
+#include <cstdint>
+
 #include <opencv2/core.hpp>
 
 namespace howdy::native {
 
 	inline constexpr int kMaxFrameDimension = 8192;
 
-	enum class FrameValidationStatus {
+	enum class FrameValidationStatus : std::uint8_t {
 		kValid,
 		kEmpty,
 		kUnsupportedDimensions,
@@ -15,7 +17,7 @@ namespace howdy::native {
 		kUnsupportedPixelType,
 	};
 
-	enum class FrameChannelPolicy {
+	enum class FrameChannelPolicy : std::uint8_t {
 		kCameraInput,
 		kGray,
 		kBgr,

@@ -88,6 +88,12 @@ inline auto auth_token_item_present(const void *auth_token) -> bool {
 	return auth_token != nullptr;
 }
 
-auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool ask_auth_tok) -> int;
+struct PamModuleArguments {
+	int          flags = 0;
+	int          argc  = 0;
+	const char **argv  = nullptr;
+};
+
+auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int;
 
 #endif  // MAIN_H_

@@ -13,6 +13,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -37,7 +38,8 @@ namespace {
 	constexpr auto        kHelperWaitPollInterval = std::chrono::milliseconds(10);
 
 #ifdef HOWDY_PAM_TESTING
-	using AuthHelperOutputReader = howdy::native::BoundedReadResult (*)(int, std::size_t);
+	using AuthHelperOutputReader =
+	    howdy::native::BoundedReadResult (*)(howdy::native::BoundedReadRequest request);
 	AuthHelperOutputReader                    g_auth_helper_output_reader = nullptr;
 	howdy::pam::testing::AuthHelperSpawnLogFn g_auth_helper_spawn_log_fn  = nullptr;
 #endif
@@ -54,7 +56,7 @@ namespace {
 
 #ifdef HOWDY_PAM_TESTING
 	auto read_bounded_auth_helper_output(int output_fd) -> howdy::native::BoundedReadResult {
-		return g_auth_helper_output_reader(output_fd, kAuthHelperOutputLimit);
+		return g_auth_helper_output_reader({.fd = output_fd, .max_bytes = kAuthHelperOutputLimit});
 	}
 #endif
 
@@ -162,7 +164,7 @@ namespace {
 		return wait_for_helper_process(child_pid);
 	}
 
-	enum class HelperWaitResult {
+	enum class HelperWaitResult : std::uint8_t {
 		kExited,
 		kTimedOut,
 		kWaitError,
@@ -195,12 +197,95 @@ namespace {
 		}
 	}
 
-	enum class HelperReadResult {
+	enum class HelperReadResult : std::uint8_t {
 		kComplete,
 		kTimedOut,
 		kReadError,
 		kOutputLimit,
 	};
+
+	enum class HelperPollResult : std::uint8_t {
+		kReady,
+		kRetry,
+		kTimedOut,
+		kError,
+	};
+
+	auto poll_auth_helper_output(int output_fd, HelperDeadline deadline) -> HelperPollResult {
+		pollfd    descriptor{.fd = output_fd, .events = POLLIN, .revents = 0};
+		const int poll_result = poll(&descriptor, 1, deadline_poll_timeout(deadline));
+		if (poll_result < 0) {
+			if (errno == EINTR) {
+				return HelperPollResult::kRetry;
+			}
+			const int read_error = errno;
+			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
+			       read_error);
+			return HelperPollResult::kError;
+		}
+		if (poll_result == 0) {
+			return HelperPollResult::kTimedOut;
+		}
+		if ((descriptor.revents & (POLLNVAL | POLLERR)) != 0) {
+			const int read_error = (descriptor.revents & POLLNVAL) != 0 ? EBADF : EIO;
+			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
+			       read_error);
+			return HelperPollResult::kError;
+		}
+		return (descriptor.revents & (POLLIN | POLLHUP)) == 0 ? HelperPollResult::kRetry
+		                                                      : HelperPollResult::kReady;
+	}
+
+	auto read_auth_helper_output_from_fd(int output_fd, std::string &output,
+	                                     HelperDeadline deadline) -> HelperReadResult {
+		if (output_fd < 0) {
+			constexpr int read_error = EBADF;
+			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
+			       read_error);
+			return HelperReadResult::kReadError;
+		}
+
+		std::array<char, 4096> buffer{};
+		while (true) {
+			const auto poll_result = poll_auth_helper_output(output_fd, deadline);
+			if (poll_result == HelperPollResult::kRetry) {
+				continue;
+			}
+			if (poll_result == HelperPollResult::kTimedOut) {
+				output.clear();
+				return HelperReadResult::kTimedOut;
+			}
+			if (poll_result == HelperPollResult::kError) {
+				output.clear();
+				return HelperReadResult::kReadError;
+			}
+
+			const ssize_t bytes_read = read(output_fd, buffer.data(), buffer.size());
+			if (bytes_read > 0) {
+				if (output.size() + static_cast<std::size_t>(bytes_read) >=
+				    kAuthHelperOutputLimit) {
+					output.clear();
+					return HelperReadResult::kOutputLimit;
+				}
+				output.append(buffer.data(), static_cast<std::size_t>(bytes_read));
+				continue;
+			}
+			if (bytes_read == 0) {
+				if (std::chrono::steady_clock::now() >= deadline) {
+					output.clear();
+					return HelperReadResult::kTimedOut;
+				}
+				return HelperReadResult::kComplete;
+			}
+			if (errno != EINTR && errno != EAGAIN) {
+				const int read_error = errno;
+				output.clear();
+				syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
+				       read_error);
+				return HelperReadResult::kReadError;
+			}
+		}
+	}
 
 	auto read_auth_helper_output_until(int output_fd, std::string *output, HelperDeadline deadline)
 	    -> HelperReadResult {
@@ -229,68 +314,7 @@ namespace {
 		}
 #endif
 
-		if (output_fd < 0) {
-			constexpr int read_error = EBADF;
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-			       read_error);
-			return HelperReadResult::kReadError;
-		}
-
-		std::array<char, 4096> buffer{};
-		while (true) {
-			pollfd    descriptor{.fd = output_fd, .events = POLLIN, .revents = 0};
-			const int poll_result = poll(&descriptor, 1, deadline_poll_timeout(deadline));
-			if (poll_result < 0) {
-				if (errno == EINTR) {
-					continue;
-				}
-				const int read_error = errno;
-				output->clear();
-				syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-				       read_error);
-				return HelperReadResult::kReadError;
-			}
-			if (poll_result == 0) {
-				output->clear();
-				return HelperReadResult::kTimedOut;
-			}
-			if ((descriptor.revents & (POLLNVAL | POLLERR)) != 0) {
-				const int read_error = (descriptor.revents & POLLNVAL) != 0 ? EBADF : EIO;
-				output->clear();
-				syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-				       read_error);
-				return HelperReadResult::kReadError;
-			}
-			if ((descriptor.revents & (POLLIN | POLLHUP)) == 0) {
-				continue;
-			}
-
-			const ssize_t bytes_read = read(output_fd, buffer.data(), buffer.size());
-			if (bytes_read > 0) {
-				if (output->size() + static_cast<std::size_t>(bytes_read) >=
-				    kAuthHelperOutputLimit) {
-					output->clear();
-					return HelperReadResult::kOutputLimit;
-				}
-				output->append(buffer.data(), static_cast<std::size_t>(bytes_read));
-				continue;
-			}
-			if (bytes_read == 0) {
-				if (std::chrono::steady_clock::now() >= deadline) {
-					output->clear();
-					return HelperReadResult::kTimedOut;
-				}
-				return HelperReadResult::kComplete;
-			}
-			if (errno == EINTR || errno == EAGAIN) {
-				continue;
-			}
-			const int read_error = errno;
-			output->clear();
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-			       read_error);
-			return HelperReadResult::kReadError;
-		}
+		return read_auth_helper_output_from_fd(output_fd, *output, deadline);
 	}
 
 	void capture_auth_helper_log(std::string_view message) {
@@ -321,6 +345,19 @@ namespace {
 		capture_auth_helper_log(message);
 	}
 
+#ifdef HOWDY_PAM_TESTING
+	using AuthHelperSpawnRequest = howdy::pam::testing::AuthHelperSpawnRequest;
+#else
+	struct AuthHelperSpawnRequest {
+		void                             *context;
+		pid_t                            *child_pid;
+		const char                       *path;
+		const posix_spawn_file_actions_t *actions;
+		char *const                      *argv;
+		char *const                      *envp;
+	};
+#endif
+
 	struct AuthHelperSpawnOperations {
 		void *context = nullptr;
 
@@ -331,8 +368,7 @@ namespace {
 		                          int target_fd)                                 = nullptr;
 		int (*actions_addclose_fn)(void *, posix_spawn_file_actions_t *, int fd) = nullptr;
 		int (*actions_destroy_fn)(void *, posix_spawn_file_actions_t *)          = nullptr;
-		int (*spawn_fn)(void *, pid_t *, const char *, const posix_spawn_file_actions_t *,
-		                char *const *argv, char *const *envp)                    = nullptr;
+		int (*spawn_fn)(const AuthHelperSpawnRequest &)                          = nullptr;
 		int (*close_fn)(void *, int fd)                                          = nullptr;
 	};
 
@@ -368,11 +404,10 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto production_spawn(void *context, pid_t *child_pid, const char *path,
-	                      const posix_spawn_file_actions_t *actions, char *const *argv,
-	                      char *const *envp) -> int {
-		(void)context;
-		return posix_spawn(child_pid, path, actions, nullptr, argv, envp);
+	auto production_spawn(const AuthHelperSpawnRequest &request) -> int {
+		(void)request.context;
+		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
+		                   request.envp);
 	}
 
 	auto production_close(void *context, int fd) -> int {
@@ -414,6 +449,26 @@ namespace {
 		fd = -1;
 	}
 
+	auto normalize_pipe_fds(const AuthHelperSpawnOperations &operations,
+	                        std::array<int, 2>              &output_pipe) -> bool {
+		for (int &pipe_fd : output_pipe) {
+			if (pipe_fd > STDERR_FILENO) {
+				continue;
+			}
+			const int normalized_fd =
+			    operations.duplicate_fd_fn(operations.context, pipe_fd, STDERR_FILENO + 1);
+			if (normalized_fd < 0) {
+				log_auth_helper_spawn_error("fcntl(F_DUPFD_CLOEXEC)", errno);
+				close_owned_pipe_fd(operations, output_pipe[0]);
+				close_owned_pipe_fd(operations, output_pipe[1]);
+				return false;
+			}
+			close_owned_pipe_fd(operations, pipe_fd);
+			pipe_fd = normalized_fd;
+		}
+		return true;
+	}
+
 	auto prepare_runtime_auth_files_until(std::string_view                  username,
 	                                      howdy::pam::PreparedRuntimeFiles *prepared,
 	                                      const AuthHelperSpawnOperations  &operations,
@@ -424,21 +479,8 @@ namespace {
 			return false;
 		}
 
-		for (int &pipe_fd : output_pipe) {
-			if (pipe_fd > STDERR_FILENO) {
-				continue;
-			}
-			const int normalized_fd =
-			    operations.duplicate_fd_fn(operations.context, pipe_fd, STDERR_FILENO + 1);
-			if (normalized_fd < 0) {
-				const int duplicate_error = errno;
-				log_auth_helper_spawn_error("fcntl(F_DUPFD_CLOEXEC)", duplicate_error);
-				close_owned_pipe_fd(operations, output_pipe[0]);
-				close_owned_pipe_fd(operations, output_pipe[1]);
-				return false;
-			}
-			close_owned_pipe_fd(operations, pipe_fd);
-			pipe_fd = normalized_fd;
+		if (!normalize_pipe_fds(operations, output_pipe)) {
+			return false;
 		}
 
 		posix_spawn_file_actions_t actions{};
@@ -497,8 +539,12 @@ namespace {
 		                                      nullptr};
 		std::array<char *, 1> env          = {nullptr};
 		pid_t                 child_pid    = -1;
-		const int             spawn_result = operations.spawn_fn(
-		    operations.context, &child_pid, kAuthHelperPath, &actions, args.data(), env.data());
+		const int             spawn_result = operations.spawn_fn({.context   = operations.context,
+		                                                          .child_pid = &child_pid,
+		                                                          .path      = kAuthHelperPath,
+		                                                          .actions   = &actions,
+		                                                          .argv      = args.data(),
+		                                                          .envp      = env.data()});
 		if (spawn_result != 0) {
 			log_auth_helper_spawn_error("posix_spawn", spawn_result);
 		}
@@ -572,8 +618,12 @@ namespace {
 		                                      const_cast<char *>(root_dir_string.c_str()), nullptr};
 		std::array<char *, 1> env          = {nullptr};
 		pid_t                 child_pid    = -1;
-		const int             spawn_result = operations.spawn_fn(
-		    operations.context, &child_pid, kAuthHelperPath, nullptr, args.data(), env.data());
+		const int             spawn_result = operations.spawn_fn({.context   = operations.context,
+		                                                          .child_pid = &child_pid,
+		                                                          .path      = kAuthHelperPath,
+		                                                          .actions   = nullptr,
+		                                                          .argv      = args.data(),
+		                                                          .envp      = env.data()});
 		if (spawn_result != 0) {
 			syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
 			       strerror(spawn_result), spawn_result);
@@ -805,22 +855,26 @@ namespace howdy::pam::testing {
 	}
 
 	auto read_fd_to_string(int fd) -> std::string {
-		return howdy::native::read_fd_to_string_bounded(fd, kAuthHelperOutputLimit).output;
+		return howdy::native::read_fd_to_string_bounded(
+		           {.fd = fd, .max_bytes = kAuthHelperOutputLimit})
+		    .output;
 	}
 
-	auto read_auth_helper_output_until(pid_t child_pid, int output_fd, std::string *output,
+	auto read_auth_helper_output_until(AuthHelperProcess process, std::string *output,
 	                                   std::chrono::steady_clock::time_point deadline) -> bool {
-		const auto read_result = ::read_auth_helper_output_until(output_fd, output, deadline);
+		const auto read_result =
+		    ::read_auth_helper_output_until(process.output_fd, output, deadline);
 		if (read_result != HelperReadResult::kComplete) {
 			if (read_result == HelperReadResult::kTimedOut) {
 				log_prepare_timeout();
 			}
-			(void)terminate_and_reap_helper_process(child_pid);
+			(void)terminate_and_reap_helper_process(process.child_pid);
 			return false;
 		}
 
-		int        status      = 0;
-		const auto wait_result = wait_for_helper_process_until(child_pid, deadline, &status);
+		int        status = 0;
+		const auto wait_result =
+		    wait_for_helper_process_until(process.child_pid, deadline, &status);
 		if (wait_result != HelperWaitResult::kExited) {
 			output->clear();
 			if (wait_result == HelperWaitResult::kTimedOut) {
@@ -837,7 +891,8 @@ namespace howdy::pam::testing {
 	}
 
 	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output) -> bool {
-		return read_auth_helper_output_until(child_pid, output_fd, output,
+		return read_auth_helper_output_until({.child_pid = child_pid, .output_fd = output_fd},
+		                                     output,
 		                                     std::chrono::steady_clock::now() + kAuthHelperTimeout);
 	}
 

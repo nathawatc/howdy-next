@@ -264,7 +264,7 @@ auto main() -> int {
 	                                     "timeout = 0\n"),
 	             "write config with invalid timeout");
 	ok &= expect(
-	    howdy::native::update_config_value(config_path, "disabled", "true", nullptr, false, false),
+	    howdy::native::update_config_value(config_path, "disabled", nullptr, "true", false, false),
 	    "update_config_value can bypass runtime validation for recovery writes");
 	const auto after_disable_recovery = read_file(config_path);
 	ok &= expect(after_disable_recovery.contains("disabled = true\n"),
@@ -432,7 +432,7 @@ auto main() -> int {
 	ok &= expect(set_file_size_limit, "set file-size limit for install-failure test");
 	if (install_failure_security.ok && set_file_size_limit) {
 		update_failed = !howdy::native::update_config_value(install_failure_path, "disabled",
-		                                                    "true", &update_error, false, false);
+		                                                    &update_error, "true", false, false);
 	}
 	if (set_file_size_limit) {
 		ok &= expect(file_size_limit_guard.restore(),
@@ -448,7 +448,7 @@ auto main() -> int {
 	             "config lock absent before insecure config update");
 	ok &= expect(chmod(config_path.c_str(), 0666) == 0, "make config file world-writable");
 	ok &=
-	    expect(!howdy::native::update_config_value(config_path, "disabled", "false", nullptr, true),
+	    expect(!howdy::native::update_config_value(config_path, "disabled", nullptr, "false", true),
 	           "update_config_value rejects insecure config permissions");
 	ok &= expect(!fs::exists(config_lock_path),
 	             "update_config_value rejects insecure config before creating lock");
@@ -467,8 +467,8 @@ auto main() -> int {
 	ok &= expect(chmod(insecure_dir.c_str(), 0777) == 0, "make config dir world-writable");
 	ok &= expect(!howdy::native::check_secure_config_path(insecure_config_path).ok,
 	             "check_secure_config_path rejects insecure config directory");
-	ok &= expect(!howdy::native::update_config_value(insecure_config_path, "disabled", "true",
-	                                                 nullptr, true),
+	ok &= expect(!howdy::native::update_config_value(insecure_config_path, "disabled", nullptr,
+	                                                 "true", true),
 	             "update_config_value rejects insecure config directory");
 	ok &= expect(!fs::exists(insecure_config_lock_path),
 	             "update_config_value rejects insecure directory before creating lock");
@@ -490,7 +490,7 @@ auto main() -> int {
 	ok &= expect(!howdy::native::check_secure_config_path(nested_config_path).ok,
 	             "check_secure_config_path rejects insecure ancestor directory");
 	ok &= expect(
-	    !howdy::native::update_config_value(nested_config_path, "disabled", "true", nullptr, true),
+	    !howdy::native::update_config_value(nested_config_path, "disabled", nullptr, "true", true),
 	    "update_config_value rejects insecure ancestor directory");
 	ok &= expect(!fs::exists(nested_config_lock_path),
 	             "update_config_value rejects insecure ancestor before creating lock");

@@ -84,7 +84,8 @@ namespace {
 	}
 
 	auto prepare_preview_frame(void *context, const cv::Mat &frame) -> cv::Mat {
-		return static_cast<howdy::native::FaceModel *>(context)->prepare_frame(frame);
+		(void)context;
+		return howdy::native::FaceModel::prepare_frame(frame);
 	}
 
 	auto detect_preview_faces(void *context, const cv::Mat &frame)
@@ -310,7 +311,7 @@ namespace {
 		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
 
 		auto preflight_result = test_cli_internal::run_preview_preflight(
-		    config, user, device_path,
+		    config, user,
 		    test_cli_internal::TestPreviewPreflightDependencies{
 		        .context               = production_context,
 		        .face_model_ready      = face_model_ready_dependency,
@@ -319,7 +320,8 @@ namespace {
 		        .read_camera           = read_camera_dependency,
 		        .switch_gui_user       = switch_gui_user_dependency,
 		        .initialize_gui        = initialize_gui_dependency,
-		    });
+		    },
+		    device_path);
 		if (preflight_result.status != test_cli_internal::TestPreviewStatus::kOk) {
 			return preflight_result;
 		}
@@ -375,7 +377,7 @@ void howdy::native::test_cli_internal::run_with_preview_cleanup(
 
 auto howdy::native::test_cli_internal::run_preview_preflight(
     const howdy::native::RuntimeConfig &config, const std::string &user,
-    const std::string &device_path, const TestPreviewPreflightDependencies &dependencies)
+    const TestPreviewPreflightDependencies &dependencies, const std::string &device_path)
     -> TestPreviewResult {
 	if (dependencies.face_model_ready == nullptr || dependencies.has_graphical_display == nullptr ||
 	    dependencies.open_camera == nullptr || dependencies.read_camera == nullptr ||
@@ -481,7 +483,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 	}
 }
 
-int test_main(int argc, char **argv) {
+auto test_main(int argc, char **argv) -> int {
 	TestProductionContext production_context;
 	return howdy::native::test_cli_internal::test_main_with_dependencies(
 	    argc, argv,

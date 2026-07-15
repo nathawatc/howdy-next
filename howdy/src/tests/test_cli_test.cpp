@@ -184,7 +184,7 @@ namespace {
 		context->preview_user        = user;
 		context->preview_device_path = device_path;
 		return howdy::native::test_cli_internal::run_preview_preflight(
-		    config, user, device_path, preflight_dependencies(*context));
+		    config, user, preflight_dependencies(*context), device_path);
 	}
 
 	auto test_dependencies(TestCliTestContext &context)
@@ -271,7 +271,7 @@ namespace {
 
 		auto expect_face_model_error = [](howdy::native::PreviewFrameStatus status,
 		                                  const std::string                &diagnostic,
-		                                  const std::string                &subject) {
+		                                  const std::string                &subject) -> bool {
 			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
 			    .status        = status,
 			    .error_message = diagnostic,
@@ -296,7 +296,7 @@ namespace {
 
 	auto preview_non_terminal_frames_map_to_ok() -> bool {
 		auto expect_continue = [](howdy::native::PreviewFrameStatus status,
-		                          const std::string                &subject) {
+		                          const std::string                &subject) -> bool {
 			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
 			    .status = status,
 			});
@@ -517,7 +517,7 @@ namespace {
 			auto missing_dependencies = dependencies;
 			clear_callback(missing_dependencies);
 			const auto result = howdy::native::test_cli_internal::run_preview_preflight(
-			    *context.config_result.config, "", "", missing_dependencies);
+			    *context.config_result.config, "", missing_dependencies, "");
 			return expect(result.status ==
 			                  howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
 			              message + " returns face model error") &&
@@ -529,32 +529,32 @@ namespace {
 
 		bool ok = true;
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.face_model_ready = nullptr;
 		    },
 		    "missing face model dependency");
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.has_graphical_display = nullptr;
 		    },
 		    "missing display dependency");
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.open_camera = nullptr;
 		    },
 		    "missing camera open dependency");
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.switch_gui_user = nullptr;
 		    },
 		    "missing GUI user dependency");
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.initialize_gui = nullptr;
 		    },
 		    "missing GUI init dependency");
 		ok &= run_missing_preflight(
-		    [](auto &missing_dependencies) {
+		    [](auto &missing_dependencies) -> auto {
 			    missing_dependencies.read_camera = nullptr;
 		    },
 		    "missing camera read dependency");

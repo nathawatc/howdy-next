@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace howdy::native {
 
-	enum class ComparePrivilegeStatus {
+	enum class ComparePrivilegeStatus : std::uint8_t {
 		kOk,
 		kLookupFailed,
 		kInvalidIdentity,

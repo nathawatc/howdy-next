@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
@@ -110,7 +111,7 @@ namespace howdy::native {
 			return false;
 		}
 
-		return std::ranges::all_of(value, [](const char ch) {
+		return std::ranges::all_of(value, [](const char ch) -> bool {
 			return ch != '\0' && ch != '\n' && ch != '\r';
 		});
 	}
@@ -223,6 +224,118 @@ namespace howdy::native {
 		return true;
 	}
 
+	namespace {
+		auto fail_with(std::string *error_message, const std::string &message) -> bool {
+			if (error_message != nullptr) {
+				*error_message = message;
+			}
+			return false;
+		}
+
+		auto acquire_config_lock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
+		    -> bool {
+			guard.fd = open_lock_file(config_path);
+			if (guard.fd >= 0 && lock_fd(guard.fd)) {
+				return true;
+			}
+			if (guard.fd >= 0) {
+				close(guard.fd);
+				guard.fd = -1;
+			}
+			return false;
+		}
+
+		auto expected_content_matches(const std::filesystem::path &config_path,
+		                              const std::string &expected, std::string *error_message)
+		    -> bool {
+			const int input_fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			if (input_fd < 0) {
+				return fail_with(error_message, "Failed to open config file");
+			}
+			struct stat opened_stat{};
+			const bool  opened_ok =
+			    fstat(input_fd, &opened_stat) == 0 && S_ISREG(opened_stat.st_mode);
+			const auto current_content = opened_ok ? read_all_from_fd(input_fd) : std::string();
+			close(input_fd);
+			if (!opened_ok) {
+				return fail_with(error_message, "Failed to inspect config file");
+			}
+			if (current_content != expected) {
+				return fail_with(
+				    error_message,
+				    "Config changed while editing; not installing stale edited config");
+			}
+			return true;
+		}
+
+		enum class ConfigInstallResult : std::uint8_t {
+			ok,
+			stage_failed,
+			not_committed,
+			committed_not_durable,
+		};
+
+		auto install_config_content(const std::filesystem::path &config_path,
+		                            const std::string &content, const struct stat &current_stat,
+		                            SyncParentDirectoryFn sync_parent) -> ConfigInstallResult {
+			std::string       temp = (config_path.parent_path() / ".howdy-config-XXXXXX").string();
+			std::vector<char> writable(temp.begin(), temp.end());
+			writable.push_back('\0');
+			const int fd = mkostemp(writable.data(), O_CLOEXEC);
+			if (fd < 0) {
+				return ConfigInstallResult::stage_failed;
+			}
+
+			const std::filesystem::path temp_path(writable.data());
+			bool ok = fchown(fd, current_stat.st_uid, current_stat.st_gid) == 0 &&
+			          fchmod(fd, current_stat.st_mode & 07777) == 0 &&
+			          write_all_to_fd(fd, content) && sync_fd(fd);
+			if (close(fd) != 0) {
+				ok = false;
+			}
+			if (!ok) {
+				std::error_code ec;
+				std::filesystem::remove(temp_path, ec);
+				return ConfigInstallResult::not_committed;
+			}
+
+			std::error_code ec;
+			std::filesystem::rename(temp_path, config_path, ec);
+			if (ec) {
+				std::filesystem::remove(temp_path, ec);
+				return ConfigInstallResult::not_committed;
+			}
+			return sync_parent != nullptr && sync_parent(config_path)
+			           ? ConfigInstallResult::ok
+			           : ConfigInstallResult::committed_not_durable;
+		}
+
+		struct ConfigLineReplacement {
+			const std::string &key;
+			const std::string &value;
+		};
+
+		auto replace_line_value(std::vector<std::string> &lines, ConfigLineReplacement replacement)
+		    -> bool {
+			for (auto &line : lines) {
+				const auto stripped_pos = line.find_first_not_of(" \t");
+				if (stripped_pos == std::string::npos) {
+					continue;
+				}
+				const auto stripped = line.substr(stripped_pos);
+				if (stripped.starts_with(replacement.key + " =") ||
+				    stripped.starts_with(replacement.key + " ")) {
+					line = replacement.key;
+					line += " = ";
+					line += replacement.value;
+					line += '\n';
+					return true;
+				}
+			}
+			return false;
+		}
+	}  // namespace
+
 	auto replace_config_content_atomically(const std::filesystem::path &config_path,
 	                                       const std::string &content, std::string *error_message,
 	                                       bool lock, bool validate_runtime,
@@ -232,28 +345,14 @@ namespace howdy::native {
 			error_message->clear();
 		}
 
-		const auto fail = [error_message](const std::string &message) {
-			if (error_message != nullptr) {
-				*error_message = message;
-			}
-			return false;
-		};
-
 		const auto initial_security = check_secure_config_path(config_path);
 		if (!initial_security.ok) {
-			return fail(initial_security.error_message);
+			return fail_with(error_message, initial_security.error_message);
 		}
 
 		ConfigLockGuard config_lock;
-		if (lock) {
-			config_lock.fd = open_lock_file(config_path);
-			if (config_lock.fd < 0 || !lock_fd(config_lock.fd)) {
-				if (config_lock.fd >= 0) {
-					close(config_lock.fd);
-					config_lock.fd = -1;
-				}
-				return fail("Failed to lock config file");
-			}
+		if (lock && !acquire_config_lock(config_lock, config_path)) {
+			return fail_with(error_message, "Failed to lock config file");
 		}
 
 		if (validate_runtime && !validate_config_content(content, error_message)) {
@@ -262,160 +361,70 @@ namespace howdy::native {
 
 		const auto final_security = check_secure_config_path(config_path);
 		if (!final_security.ok) {
-			return fail(final_security.error_message);
+			return fail_with(error_message, final_security.error_message);
 		}
 
 		struct stat current_stat{};
 		if (lstat(config_path.c_str(), &current_stat) != 0 || !S_ISREG(current_stat.st_mode)) {
-			return fail("Failed to inspect config file");
+			return fail_with(error_message, "Failed to inspect config file");
 		}
 
 		if (expected_current_content != nullptr) {
-			const int input_fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-			if (input_fd < 0) {
-				return fail("Failed to open config file");
-			}
-
-			struct stat opened_stat{};
-			const bool  opened_ok =
-			    fstat(input_fd, &opened_stat) == 0 && S_ISREG(opened_stat.st_mode);
-			const auto current_content = opened_ok ? read_all_from_fd(input_fd) : std::string();
-			close(input_fd);
-			if (!opened_ok) {
-				return fail("Failed to inspect config file");
-			}
-			if (current_content != *expected_current_content) {
-				return fail("Config changed while editing; not installing stale edited config");
+			if (!expected_content_matches(config_path, *expected_current_content, error_message)) {
+				return false;
 			}
 		}
-
-		std::string       temp = (config_path.parent_path() / ".howdy-config-XXXXXX").string();
-		std::vector<char> writable(temp.begin(), temp.end());
-		writable.push_back('\0');
-
-		const int fd = mkostemp(writable.data(), O_CLOEXEC);
-		if (fd < 0) {
-			return fail("Failed to stage updated config");
+		const auto install_result =
+		    install_config_content(config_path, content, current_stat, sync_parent);
+		if (install_result == ConfigInstallResult::committed_not_durable) {
+			return fail_with(error_message,
+			                 "Config was installed, but its directory could not be synced; verify "
+			                 "state before retrying");
 		}
-
-		const std::filesystem::path temp_path(writable.data());
-		bool                        ok = true;
-		if (fchown(fd, current_stat.st_uid, current_stat.st_gid) != 0 ||
-		    fchmod(fd, current_stat.st_mode & 07777) != 0) {
-			ok = false;
+		if (install_result == ConfigInstallResult::stage_failed) {
+			return fail_with(error_message, "Failed to stage updated config");
 		}
-		if (ok && !write_all_to_fd(fd, content)) {
-			ok = false;
-		}
-		if (ok && !sync_fd(fd)) {
-			ok = false;
-		}
-		if (close(fd) != 0) {
-			ok = false;
-		}
-
-		bool committed = false;
-		if (ok) {
-			std::error_code ec;
-			std::filesystem::rename(temp_path, config_path, ec);
-			ok = !ec;
-			if (ok) {
-				committed = true;
-				ok        = sync_parent != nullptr && sync_parent(config_path);
-			}
-		}
-
-		if (!ok && !committed) {
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
-		}
-		if (!ok) {
-			if (committed) {
-				return fail("Config was installed, but its directory could not be synced; verify "
-				            "state before retrying");
-			}
-			return fail("Failed to install edited config");
+		if (install_result == ConfigInstallResult::not_committed) {
+			return fail_with(error_message, "Failed to install edited config");
 		}
 		return true;
 	}
 
 	auto update_config_value(const std::filesystem::path &config_path, const std::string &key,
-	                         const std::string &value, std::string *error_message, bool lock,
+	                         std::string *error_message, const std::string &value, bool lock,
 	                         bool validate_runtime) -> bool {
 		if (!is_safe_ini_scalar_value(value)) {
-			if (error_message != nullptr) {
-				*error_message =
-				    "Config values must be single-line scalars and cannot start with [";
-			}
-			return false;
+			return fail_with(error_message,
+			                 "Config values must be single-line scalars and cannot start with [");
 		}
 
 		const auto initial_security = check_secure_config_path(config_path);
 		if (!initial_security.ok) {
-			if (error_message != nullptr) {
-				*error_message = initial_security.error_message;
-			}
-			return false;
+			return fail_with(error_message, initial_security.error_message);
 		}
 
 		ConfigLockGuard config_lock;
-		if (lock) {
-			config_lock.fd = open_lock_file(config_path);
-			if (config_lock.fd < 0 || !lock_fd(config_lock.fd)) {
-				if (config_lock.fd >= 0) {
-					close(config_lock.fd);
-					config_lock.fd = -1;
-				}
-				if (error_message != nullptr) {
-					*error_message = "Failed to lock config file";
-				}
-				return false;
-			}
+		if (lock && !acquire_config_lock(config_lock, config_path)) {
+			return fail_with(error_message, "Failed to lock config file");
 		}
 
 		const auto security = check_secure_config_path(config_path);
 		if (!security.ok) {
-			if (error_message != nullptr) {
-				*error_message = security.error_message;
-			}
-			return false;
+			return fail_with(error_message, security.error_message);
 		}
 
 		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 		if (fd < 0) {
-			if (error_message != nullptr) {
-				*error_message = "Failed to open config file";
-			}
-			return false;
+			return fail_with(error_message, "Failed to open config file");
 		}
 
 		const auto current_content = read_all_from_fd(fd);
 		close(fd);
 		auto lines = split_lines_preserve_newlines(current_content);
 
-		bool updated = false;
-		for (auto &line : lines) {
-			const auto stripped_pos = line.find_first_not_of(" \t");
-			if (stripped_pos == std::string::npos) {
-				continue;
-			}
-
-			const auto stripped = line.substr(stripped_pos);
-			if (stripped.starts_with(key + " =") || stripped.starts_with(key + " ")) {
-				line = key;
-				line += " = ";
-				line += value;
-				line += "\n";
-				updated = true;
-				break;
-			}
-		}
-
-		if (!updated) {
-			if (error_message != nullptr) {
-				*error_message = "Could not find a \"" + key + "\" config option to set";
-			}
-			return false;
+		if (!replace_line_value(lines, {.key = key, .value = value})) {
+			return fail_with(error_message,
+			                 "Could not find a \"" + key + "\" config option to set");
 		}
 
 		const auto updated_content = join_lines(lines);

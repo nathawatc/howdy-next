@@ -4,12 +4,13 @@
 #include "config/runtime_config.hpp"
 #include "storage/user_models.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace howdy::native::add_internal {
 
-	enum class AddPreflightStatus {
+	enum class AddPreflightStatus : std::uint8_t {
 		kOk,
 		kFaceModelError,
 		kExistingModelIncompatible,
@@ -21,7 +22,7 @@ namespace howdy::native::add_internal {
 		std::string        error_message;
 	};
 
-	enum class AddEnrollmentStatus {
+	enum class AddEnrollmentStatus : std::uint8_t {
 		kOk,
 		kFaceModelError,
 		kCaptureOpenError,

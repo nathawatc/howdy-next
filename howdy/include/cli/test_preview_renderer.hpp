@@ -9,7 +9,12 @@
 #include <vector>
 
 namespace howdy::native::test_cli_internal {
-	using InitializePreviewRendererFn = void (*)(void *context, void *renderer);
+	struct PreviewRendererInitialization {
+		void *context  = nullptr;
+		void *renderer = nullptr;
+	};
+
+	using InitializePreviewRendererFn = void (*)(PreviewRendererInitialization initialization);
 	using PreviewRendererCleanupFn    = void (*)(void *context);
 
 	struct TestPreviewRendererDependencies {
@@ -34,6 +39,8 @@ namespace howdy::native::test_cli_internal {
 		[[nodiscard]] auto slow_mode() const -> bool;
 
 	private:
+		// OpenCV MouseCallback requires int, int, int, int, void *.
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 		static void mouse_callback(int event, int x, int y, int flags, void *userdata);
 		static void print_text(cv::Mat &overlay, int line_number, int height,
 		                       const std::string &text);

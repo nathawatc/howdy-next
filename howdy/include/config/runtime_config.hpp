@@ -2,6 +2,7 @@
 
 #include "config/config_schema.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -83,7 +84,7 @@ namespace howdy::native {
 		DebugConfig    debug;
 	};
 
-	enum class RuntimeConfigLoadStatus {
+	enum class RuntimeConfigLoadStatus : std::uint8_t {
 		kOk,
 		kPathError,
 		kParseError,

@@ -17,9 +17,17 @@ namespace howdy::pam::testing {
 	                                                    int                         from_fd);
 	using PosixSpawnFileActionsDestroyFn      = int (*)(void                       *context,
 	                                                    posix_spawn_file_actions_t *actions);
-	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
-	                             const posix_spawn_file_actions_t *actions, char *const *argv,
-	                             char *const *envp);
+
+	struct PosixSpawnRequest {
+		void                             *context   = nullptr;
+		pid_t                            *child_pid = nullptr;
+		const char                       *path      = nullptr;
+		const posix_spawn_file_actions_t *actions   = nullptr;
+		char *const                      *argv      = nullptr;
+		char *const                      *envp      = nullptr;
+	};
+
+	using PosixSpawnFn = int (*)(const PosixSpawnRequest &request);
 
 	struct PosixSpawnOperations {
 		PosixSpawnFileActionsInitFn         file_actions_init         = nullptr;

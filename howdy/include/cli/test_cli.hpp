@@ -1,3 +1,3 @@
 #pragma once
 
-int test_main(int argc, char **argv);
+auto test_main(int argc, char **argv) -> int;

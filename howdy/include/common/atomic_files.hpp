@@ -2,6 +2,7 @@
 
 #include "common/fd_io.hpp"
 
+#include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
 #include <optional>
@@ -75,12 +76,12 @@ namespace howdy::native {
 		std::filesystem::path path;
 	};
 
-	enum class StagedFileMetadataPolicy {
+	enum class StagedFileMetadataPolicy : std::uint8_t {
 		kPreserveExisting,
 		kUseDefaultMode,
 	};
 
-	enum class AtomicFileCommitResult {
+	enum class AtomicFileCommitResult : std::uint8_t {
 		kNotCommitted,
 		kCommitted,
 		kCommittedSyncFailed,

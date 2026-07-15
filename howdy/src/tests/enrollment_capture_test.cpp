@@ -456,7 +456,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 	ok &= black_frame_is_skipped_without_progress();
 	ok &= black_frame_does_not_reach_face_model();

@@ -292,7 +292,7 @@ namespace {
 		}
 	}
 
-	auto run_config(TestContext &context, const ConfigDependencies &dependencies) -> RunResult {
+	auto run_config(const ConfigDependencies &dependencies) -> RunResult {
 		std::array<char *, 1> argv{const_cast<char *>("howdy-config")};
 		std::ostringstream    output;
 		ScopedStreamBuffer    stdout_guard(std::cout, output.rdbuf());
@@ -402,12 +402,8 @@ namespace {
 		return ok;
 	}
 
-}  // namespace
-
-auto main() -> int {
-	bool ok = true;
-
-	{
+	auto stdout_restores_after_callback_exception() -> bool {
+		bool               ok = true;
 		std::ostringstream restored_output;
 		ScopedStreamBuffer outer_stdout_guard(std::cout, restored_output.rdbuf());
 		auto              *original_stdout = std::cout.rdbuf();
@@ -415,7 +411,7 @@ auto main() -> int {
 		context.throw_from_resolve_editor = true;
 		bool exception_observed           = false;
 		try {
-			(void)run_config(context, dependencies_for(context));
+			(void)run_config(dependencies_for(context));
 		} catch (const std::runtime_error &) {
 			exception_observed = true;
 		}
@@ -425,7 +421,15 @@ auto main() -> int {
 		std::cout << "stdout-restored-marker";
 		ok &= expect(restored_output.str() == "stdout-restored-marker",
 		             "stdout marker reaches restored buffer");
+		return ok;
 	}
+
+}  // namespace
+
+auto main() -> int {
+	bool ok = true;
+
+	ok &= stdout_restores_after_callback_exception();
 
 	ok &= public_entrypoint_preserves_invalid_edit();
 
@@ -477,7 +481,7 @@ auto main() -> int {
 		TestContext context;
 		auto        dependencies = dependencies_for(context);
 		remove_dependency(dependencies, missing);
-		const auto result = run_config(context, dependencies);
+		const auto result = run_config(dependencies);
 		ok &= expect(result.exit_code == 1 && result.output.empty(),
 		             "null dependency aborts silently");
 		ok &= expect(context.order.empty(), "null dependency invokes no callbacks");
@@ -486,7 +490,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.editor    = {};
-		const auto result = run_config(context, dependencies_for(context));
+		const auto result = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 && result.output ==
 		                                          "Error: Could not find a suitable text editor.\n"
 		                                          "Set EDITOR to an absolute executable path, or "
@@ -500,7 +504,7 @@ auto main() -> int {
 		if (!user_exists) {
 			context.invoking_user = std::nullopt;
 		}
-		run_config(context, dependencies_for(context));
+		run_config(dependencies_for(context));
 		ok &= expect(context.allow_env_editor == user_exists,
 		             "editor env permission follows invoking user");
 	}
@@ -508,7 +512,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.security  = {.ok = false, .error_message = "Config path is insecure"};
-		const auto result = run_config(context, dependencies_for(context));
+		const auto result = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 && result.output == "Config path is insecure\n",
 		             "unsafe path output exact");
 		ok &=
@@ -518,7 +522,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.temp_copy = std::nullopt;
-		const auto result = run_config(context, dependencies_for(context));
+		const auto result = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 &&
 		                 result.output == "Failed to prepare a temporary config copy\n",
 		             "temp-copy failure output exact");
@@ -529,7 +533,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.editor_status = -1;
-		const auto result     = run_config(context, dependencies_for(context));
+		const auto result     = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 &&
 		                 result.output == "Editing config.ini in nano\nFailed to launch editor\n",
 		             "editor launch failure output exact");
@@ -541,7 +545,7 @@ auto main() -> int {
 	for (const int status : {W_EXITCODE(2, 0), 15}) {
 		TestContext context;
 		context.editor_status = status;
-		const auto result     = run_config(context, dependencies_for(context));
+		const auto result     = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 &&
 		                 result.output == "Editing config.ini in nano\n"
 		                                  "Editor exited unsuccessfully; config not updated\n",
@@ -553,7 +557,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.read_result = false;
-		const auto result   = run_config(context, dependencies_for(context));
+		const auto result   = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 &&
 		                 result.output ==
 		                     "Editing config.ini in nano\nFailed to install edited config\n",
@@ -572,7 +576,7 @@ auto main() -> int {
 		TestContext context;
 		context.validation_result = false;
 		context.validation_error  = error;
-		const auto result         = run_config(context, dependencies_for(context));
+		const auto result         = run_config(dependencies_for(context));
 		ok &=
 		    expect(result.exit_code == 1 && result.output == expected, "invalid edit output exact");
 		ok &= expect(context.removed_paths.empty(), "invalid edit preserves temp");
@@ -582,7 +586,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.content_matches = true;
-		const auto result       = run_config(context, dependencies_for(context));
+		const auto result       = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 0 &&
 		                 result.output == "Editing config.ini in nano\nNo config changes made\n",
 		             "no-op output exact");
@@ -597,7 +601,7 @@ auto main() -> int {
 		TestContext context;
 		context.installer_result = false;
 		context.installer_error  = error;
-		const auto result        = run_config(context, dependencies_for(context));
+		const auto result        = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 && result.output == expected,
 		             "install failure output exact");
 		ok &= expect_removed_once(context, "install failure removes temp once");
@@ -606,7 +610,7 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result = run_config(context, dependencies_for(context));
+		const auto  result = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 0 &&
 		                 result.output == "Editing config.ini in nano\nConfig updated\n",
 		             "success output exact");

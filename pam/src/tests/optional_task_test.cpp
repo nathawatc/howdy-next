@@ -23,61 +23,61 @@ namespace {
 		return true;
 	}
 
-}  // namespace
-
-auto run_get_before_spawn() -> void {
-	optional_task<int> task([] {
-		return 1;
-	});
-	task.get();
-}
-
-auto run_get_while_active() -> void {
-	std::array<int, 2> ready_pipe{};
-	if (pipe(ready_pipe.data()) != 0) {
-		_exit(1);
+	auto run_get_before_spawn() -> void {
+		optional_task<int> task([] -> int {
+			return 1;
+		});
+		task.get();
 	}
 
-	std::promise<void> gate;
-	const auto         gate_future = gate.get_future().share();
-	optional_task<int> task([gate_future, ready_fd = ready_pipe[1]] {
-		const char ready = 'r';
-		if (write(ready_fd, &ready, sizeof(ready)) != sizeof(ready)) {
+	auto run_get_while_active() -> void {
+		std::array<int, 2> ready_pipe{};
+		if (pipe(ready_pipe.data()) != 0) {
 			_exit(1);
 		}
-		close(ready_fd);
-		gate_future.wait();
-		return 1;
-	});
 
-	task.activate();
-	char ready = 0;
-	if (read(ready_pipe[0], &ready, sizeof(ready)) != sizeof(ready)) {
-		gate.set_value();
-		task.stop();
+		std::promise<void> gate;
+		const auto         gate_future = gate.get_future().share();
+		optional_task<int> task([gate_future, ready_fd = ready_pipe[1]] -> int {
+			const char ready = 'r';
+			if (write(ready_fd, &ready, sizeof(ready)) != sizeof(ready)) {
+				_exit(1);
+			}
+			close(ready_fd);
+			gate_future.wait();
+			return 1;
+		});
+
+		task.activate();
+		char ready = 0;
+		if (read(ready_pipe[0], &ready, sizeof(ready)) != sizeof(ready)) {
+			gate.set_value();
+			task.stop();
+			close(ready_pipe[0]);
+			_exit(1);
+		}
 		close(ready_pipe[0]);
-		_exit(1);
-	}
-	close(ready_pipe[0]);
-	task.get();
-}
-
-auto expect_terminates(void (*child_fn)(), const std::string &message) -> bool {
-	const pid_t child = fork();
-	if (child == -1) {
-		return expect(false, message + ": fork failed");
-	}
-	if (child == 0) {
-		child_fn();
-		_exit(1);
+		task.get();
 	}
 
-	int status = 0;
-	if (waitpid(child, &status, 0) == -1) {
-		return expect(false, message + ": waitpid failed");
+	auto expect_terminates(void (*child_fn)(), const std::string &message) -> bool {
+		const pid_t child = fork();
+		if (child == -1) {
+			return expect(false, message + ": fork failed");
+		}
+		if (child == 0) {
+			child_fn();
+			_exit(1);
+		}
+
+		int status = 0;
+		if (waitpid(child, &status, 0) == -1) {
+			return expect(false, message + ": waitpid failed");
+		}
+		return expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, message);
 	}
-	return expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, message);
-}
+
+}  // namespace
 
 auto main(int argc, char **argv) -> int {
 	if (argc == 2 && std::string_view(argv[1]) == "get-before-spawn") {
@@ -90,7 +90,7 @@ auto main(int argc, char **argv) -> int {
 	bool ok = true;
 
 	{
-		optional_task<int> task([] {
+		optional_task<int> task([] -> int {
 			return 1;
 		});
 
@@ -103,7 +103,7 @@ auto main(int argc, char **argv) -> int {
 	{
 		std::promise<void> gate;
 		const auto         gate_future = gate.get_future().share();
-		optional_task<int> task([gate_future] {
+		optional_task<int> task([gate_future] -> int {
 			gate_future.wait();
 			return 42;
 		});
@@ -133,7 +133,7 @@ auto main(int argc, char **argv) -> int {
 		std::atomic<bool>  completed{false};
 
 		{
-			optional_task<int> task([gate_future, &completed] {
+			optional_task<int> task([gate_future, &completed] -> int {
 				gate_future.wait();
 				completed.store(true);
 				return 0;

@@ -245,7 +245,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 	ok &= test_successful_privilege_validation_reaches_processing();
 	ok &= test_open_failure();

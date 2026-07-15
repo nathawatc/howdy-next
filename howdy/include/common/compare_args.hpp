@@ -2,6 +2,7 @@
 
 #include "common/compare_exit.hpp"
 
+#include <cstdint>
 #include <string>
 
 namespace howdy::native {
@@ -11,7 +12,7 @@ namespace howdy::native {
 		std::string config_path;
 	};
 
-	enum class CompareArgsStatus {
+	enum class CompareArgsStatus : std::uint8_t {
 		kOk,
 		kHelp,
 		kError,

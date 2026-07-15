@@ -34,8 +34,8 @@ namespace {
 			}
 		}
 
-		ScopedEnvironment(const ScopedEnvironment &)            = delete;
-		ScopedEnvironment &operator=(const ScopedEnvironment &) = delete;
+		ScopedEnvironment(const ScopedEnvironment &)                     = delete;
+		auto operator=(const ScopedEnvironment &) -> ScopedEnvironment & = delete;
 
 	private:
 		const char                *name_;
@@ -102,6 +102,8 @@ namespace {
 
 	class FakeRecognizer final : public cv::FaceRecognizerSF {
 	public:
+		// OpenCV FaceRecognizerSF::alignCrop requires two adjacent cv::InputArray parameters.
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 		void alignCrop([[maybe_unused]] cv::InputArray src_img,
 		               [[maybe_unused]] cv::InputArray face_box,
 		               cv::OutputArray                 aligned) const override {
@@ -123,24 +125,22 @@ namespace {
 	auto successful_backend() -> howdy::native::FaceModelTestAccess::Backend {
 		return {
 		    .check_readiness =
-		        [](const std::filesystem::path &) {
-			        return howdy::native::OpenCvModelReadiness{
-			            .status = howdy::native::OpenCvModelStatus::kOk,
-			        };
-		        },
-		    .create_detector =
-		        [](const std::string &, const cv::Size &, float, float, int) {
-			        return cv::makePtr<FakeDetector>();
-		        },
-		    .create_recognizer =
-		        [](const std::string &) {
-			        return cv::makePtr<FakeRecognizer>();
-		        },
-		    .set_input_size = [](const cv::Size &) {},
-		    .detect =
-		        [](const cv::Mat &, cv::Mat &faces) {
-			        faces = cv::Mat{};
-		        },
+		        [](const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
+			    return howdy::native::OpenCvModelReadiness{
+			        .status = howdy::native::OpenCvModelStatus::kOk,
+			    };
+		    },
+		    .create_detector = [](const std::string &, const cv::Size &, float, float,
+		                          int) -> cv::Ptr<FakeDetector> {
+			    return cv::makePtr<FakeDetector>();
+		    },
+		    .create_recognizer = [](const std::string &) -> cv::Ptr<FakeRecognizer> {
+			    return cv::makePtr<FakeRecognizer>();
+		    },
+		    .set_input_size = [](const cv::Size &) -> void {},
+		    .detect         = [](const cv::Mat &, cv::Mat &faces) -> void {
+			    faces = cv::Mat{};
+		    },
 		};
 	}
 
@@ -188,11 +188,12 @@ auto main() -> int {
 		std::string recognizer_path;
 		auto        backend     = successful_backend();
 		backend.create_detector = [&detector_path](const std::string &path, const cv::Size &, float,
-		                                           float, int) {
+		                                           float, int) -> cv::Ptr<FakeDetector> {
 			detector_path = path;
 			return cv::makePtr<FakeDetector>();
 		};
-		backend.create_recognizer = [&recognizer_path](const std::string &path) {
+		backend.create_recognizer =
+		    [&recognizer_path](const std::string &path) -> cv::Ptr<FakeRecognizer> {
 			recognizer_path = path;
 			return cv::makePtr<FakeRecognizer>();
 		};
@@ -213,8 +214,10 @@ auto main() -> int {
 
 		std::string readiness_engine;
 		std::string detector_engine;
-		auto        backend     = successful_backend();
-		backend.check_readiness = [&readiness_engine](const std::filesystem::path &) {
+		auto        backend = successful_backend();
+		backend.check_readiness =
+		    [&readiness_engine](
+		        const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
 			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
 				readiness_engine = value;
 			}
@@ -223,7 +226,7 @@ auto main() -> int {
 			};
 		};
 		backend.create_detector = [&detector_engine](const std::string &, const cv::Size &, float,
-		                                             float, int) {
+		                                             float, int) -> cv::Ptr<FakeDetector> {
 			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
 				detector_engine = value;
 			}
@@ -267,7 +270,8 @@ auto main() -> int {
 
 	{
 		auto backend            = successful_backend();
-		backend.create_detector = [](const std::string &, const cv::Size &, float, float, int) {
+		backend.create_detector = [](const std::string &, const cv::Size &, float, float,
+		                             int) -> cv::Ptr<cv::FaceDetectorYN> {
 			return cv::Ptr<cv::FaceDetectorYN>{};
 		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
@@ -279,7 +283,7 @@ auto main() -> int {
 
 	{
 		auto backend              = successful_backend();
-		backend.create_recognizer = [](const std::string &) {
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
 			return cv::Ptr<cv::FaceRecognizerSF>{};
 		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
@@ -290,16 +294,17 @@ auto main() -> int {
 	}
 
 	{
-		bool detector_created   = false;
-		auto backend            = successful_backend();
-		backend.check_readiness = [](const std::filesystem::path &) {
+		bool detector_created = false;
+		auto backend          = successful_backend();
+		backend.check_readiness =
+		    [](const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
 			return howdy::native::OpenCvModelReadiness{
 			    .status        = howdy::native::OpenCvModelStatus::kInvalid,
 			    .error_message = std::string(kYunetSecretPath) + ": " + kRawError,
 			};
 		};
 		backend.create_detector = [&detector_created](const std::string &, const cv::Size &, float,
-		                                              float, int) {
+		                                              float, int) -> cv::Ptr<FakeDetector> {
 			detector_created = true;
 			return cv::makePtr<FakeDetector>();
 		};
@@ -313,7 +318,8 @@ auto main() -> int {
 	{
 		bool recognizer_created = false;
 		auto backend            = successful_backend();
-		backend.check_readiness = [](const std::filesystem::path &path) {
+		backend.check_readiness =
+		    [](const std::filesystem::path &path) -> howdy::native::OpenCvModelReadiness {
 			if (path.filename() == howdy::native::FaceModel::kSfaceModel) {
 				return howdy::native::OpenCvModelReadiness{
 				    .status        = howdy::native::OpenCvModelStatus::kInvalid,
@@ -324,7 +330,8 @@ auto main() -> int {
 			    .status = howdy::native::OpenCvModelStatus::kOk,
 			};
 		};
-		backend.create_recognizer = [&recognizer_created](const std::string &) {
+		backend.create_recognizer =
+		    [&recognizer_created](const std::string &) -> cv::Ptr<FakeRecognizer> {
 			recognizer_created = true;
 			return cv::makePtr<FakeRecognizer>();
 		};
@@ -337,7 +344,7 @@ auto main() -> int {
 
 	{
 		auto backend           = successful_backend();
-		backend.set_input_size = [](const cv::Size &) {
+		backend.set_input_size = [](const cv::Size &) -> void {
 			throw_cv_error();
 		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
@@ -348,7 +355,7 @@ auto main() -> int {
 
 	{
 		auto backend   = successful_backend();
-		backend.detect = [](const cv::Mat &, cv::Mat &) {
+		backend.detect = [](const cv::Mat &, cv::Mat &) -> void {
 			throw_cv_error();
 		};
 		auto model = howdy::native::FaceModelTestAccess::create(howdy::native::FaceConfig{},
@@ -361,10 +368,10 @@ auto main() -> int {
 		bool input_size_set    = false;
 		bool detect_called     = false;
 		auto backend           = successful_backend();
-		backend.set_input_size = [&input_size_set](const cv::Size &size) {
+		backend.set_input_size = [&input_size_set](const cv::Size &size) -> void {
 			input_size_set = size == cv::Size(640, 480);
 		};
-		backend.detect = [&detect_called](const cv::Mat &, cv::Mat &faces) {
+		backend.detect = [&detect_called](const cv::Mat &, cv::Mat &faces) -> void {
 			detect_called = true;
 			faces         = cv::Mat(1, 15, CV_32FC1);
 			for (int column = 0; column < faces.cols; ++column) {

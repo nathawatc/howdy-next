@@ -62,17 +62,22 @@ auto main() -> int {
 	ok &= expect(howdy::native::timeout_exit(1, 2) == howdy::native::CompareExit::kTimeoutReached,
 	             "mixed valid frames returns timeout exit");
 
-	ok &= expect_near(howdy::native::compare_resize_scale(640, 480, 0, 320.0F), 320.0 / 480.0,
-	                  0.000001, "landscape resize caps by frame height");
-	ok &= expect_near(howdy::native::compare_resize_scale(640, 480, 2, 320.0F), 320.0 / 640.0,
-	                  0.000001, "portrait resize caps by rotated frame height");
-	ok &= expect(howdy::native::compare_resize_scale(340, 340, 0, 1024.0F) == 1.0,
+	ok &= expect_near(
+	    howdy::native::compare_resize_scale({.width = 640, .height = 480, .rotation = 0}, 320.0F),
+	    320.0 / 480.0, 0.000001, "landscape resize caps by frame height");
+	ok &= expect_near(
+	    howdy::native::compare_resize_scale({.width = 640, .height = 480, .rotation = 2}, 320.0F),
+	    320.0 / 640.0, 0.000001, "portrait resize caps by rotated frame height");
+	ok &= expect(howdy::native::compare_resize_scale({.width = 340, .height = 340, .rotation = 0},
+	                                                 1024.0F) == 1.0,
 	             "resize cap does not upscale small Brio frames");
-	ok &= expect(howdy::native::compare_resize_scale(640, 0, 0, 320.0F) == 1.0,
+	ok &= expect(howdy::native::compare_resize_scale({.width = 640, .height = 0, .rotation = 0},
+	                                                 320.0F) == 1.0,
 	             "invalid capture height does not force huge upscale");
-	ok &= expect(howdy::native::compare_resize_scale(640, 480, 0, -1.0F) == 1.0,
+	ok &= expect(howdy::native::compare_resize_scale({.width = 640, .height = 480, .rotation = 0},
+	                                                 -1.0F) == 1.0,
 	             "negative resize cap is ignored");
-	ok &= expect(howdy::native::compare_resize_scale(640, 480, 0,
+	ok &= expect(howdy::native::compare_resize_scale({.width = 640, .height = 480, .rotation = 0},
 	                                                 std::numeric_limits<float>::infinity()) == 1.0,
 	             "non-finite resize cap is ignored");
 

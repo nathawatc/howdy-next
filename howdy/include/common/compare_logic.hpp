@@ -2,6 +2,7 @@
 
 #include "common/compare_exit.hpp"
 
+#include <cstdint>
 #include <exception>
 #include <iosfwd>
 #include <string>
@@ -11,10 +12,16 @@
 
 namespace howdy::native {
 
-	enum class BrightnessDecision {
+	enum class BrightnessDecision : std::uint8_t {
 		kBlackFrame,
 		kTooDark,
 		kProcessFrame,
+	};
+
+	struct FrameGeometry {
+		int width    = 0;
+		int height   = 0;
+		int rotation = 0;
 	};
 
 	auto update_best_score(float current, float score, const std::string &metric) -> float;
@@ -23,8 +30,7 @@ namespace howdy::native {
 	    -> BrightnessDecision;
 
 	auto timeout_exit(int dark_tries, int valid_frames) -> CompareExit;
-	auto compare_resize_scale(int frame_width, int frame_height, int rotate, float max_height)
-	    -> double;
+	auto compare_resize_scale(FrameGeometry frame, float max_height) -> double;
 	auto compare_abort_from_cv_exception(const cv::Exception &error, std::ostream &stream,
 	                                     std::string_view context) -> CompareExit;
 	auto compare_abort_from_exception(const std::exception &error, std::ostream &stream,

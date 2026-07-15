@@ -3,9 +3,12 @@
 
 #include <array>
 #include <atomic>
+#include <poll.h>
 #include <termios.h>
 
 #include <security/pam_appl.h>
+
+#include <sys/types.h>
 
 class NativePromptConversation {
 public:
@@ -16,7 +19,13 @@ public:
 	auto operator=(const NativePromptConversation &) -> NativePromptConversation & = delete;
 
 #ifdef HOWDY_PAM_TESTING
-	NativePromptConversation(int tty_fd, int abort_read_fd, int abort_write_fd);
+	struct TestDescriptors {
+		int tty_fd         = -1;
+		int abort_read_fd  = -1;
+		int abort_write_fd = -1;
+	};
+
+	explicit NativePromptConversation(TestDescriptors descriptors);
 	void set_test_throw_mode(int mode);
 	void set_test_poll_eintr_count(int count);
 	void set_test_read_eintr_count(int count);
@@ -34,12 +43,31 @@ public:
 	void               restore_original();
 
 private:
+	enum class PromptIoResult : std::uint8_t {
+		retry,
+		ready,
+		abort,
+	};
+
 	static auto dispatch(int num_msg, const struct pam_message **msgm,
 	                     struct pam_response **response, void *appdata_ptr) -> int;
 	auto        handle(int num_msg, const struct pam_message **msgm, struct pam_response **response)
 	    -> int;
 	[[nodiscard]] auto write_message_line(const struct pam_message &message) const -> int;
 	auto prompt_input(const struct pam_message &message, char **response, bool hide_input) -> int;
+#ifdef HOWDY_PAM_TESTING
+	auto poll_prompt(std::array<struct pollfd, 2> &fds) -> int;
+#else
+	static auto poll_prompt(std::array<struct pollfd, 2> &fds) -> int;
+#endif
+#ifdef HOWDY_PAM_TESTING
+	auto read_prompt_char(char *ch) -> ssize_t;
+#else
+	auto read_prompt_char(char *ch) const -> ssize_t;
+#endif
+	auto               poll_prompt_state(std::array<struct pollfd, 2> &fds) -> PromptIoResult;
+	auto               read_prompt_state(char *ch) -> PromptIoResult;
+	auto               wait_for_prompt_character(char *ch) -> PromptIoResult;
 	[[nodiscard]] auto restore_prompt_terminal(const struct termios &original_termios) const
 	    -> bool;
 

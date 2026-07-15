@@ -70,7 +70,7 @@ namespace {
 		}
 
 		const struct pam_conv original_conv = *conv;
-		*conv_function                      = [original_conv](int msg_type, const char *msg_str) {
+		*conv_function = [original_conv](int msg_type, const char *msg_str) -> int {
 			const struct pam_message  msg  = {.msg_style = msg_type, .msg = msg_str};
 			const struct pam_message *msgp = &msg;
 			struct pam_response      *resp = nullptr;
@@ -113,7 +113,7 @@ namespace {
 		return PAM_AUTH_ERR;
 	}
 
-	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
+	auto howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int {
 		if (status != EXIT_SUCCESS) {
 			return howdy_error(status, conv_function);
@@ -223,7 +223,7 @@ namespace howdy::pam::testing {
 		return ::howdy_error(status, conv_function);
 	}
 
-	auto howdy_status(char *username, int status, const howdy::native::RuntimeConfig &config,
+	auto howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
 	                  const ConversationFn &conv_function) -> int {
 		return ::howdy_status(username, status, config, conv_function);
 	}
@@ -236,9 +236,8 @@ namespace howdy::pam::testing {
 }  // namespace howdy::pam::testing
 #endif
 
-auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool ask_auth_tok)
-    -> int {
-	(void)flags;
+auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int {
+	(void)arguments.flags;
 
 	openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
@@ -302,7 +301,7 @@ auto identify(pam_handle_t *pamh, int flags, int argc, const char **argv, bool a
 		}
 	}
 
-	const Workaround workaround          = get_pam_workaround(argc, argv);
+	const Workaround workaround          = get_pam_workaround(arguments.argc, arguments.argv);
 	const bool       existing_auth_token = auth_token_present(pamh);
 
 	auto prompt_dependencies = howdy::pam::production_prompt_coordinator_dependencies();

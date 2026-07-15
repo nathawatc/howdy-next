@@ -11,6 +11,14 @@
 #	include <spawn.h>
 
 namespace howdy::pam::testing {
+	struct AuthHelperSpawnRequest {
+		void                             *context   = nullptr;
+		pid_t                            *child_pid = nullptr;
+		const char                       *path      = nullptr;
+		const posix_spawn_file_actions_t *actions   = nullptr;
+		char *const                      *argv      = nullptr;
+		char *const                      *envp      = nullptr;
+	};
 
 	struct AuthHelperSpawnOperations {
 		void *context = nullptr;
@@ -22,12 +30,16 @@ namespace howdy::pam::testing {
 		                          int target_fd)                                 = nullptr;
 		int (*actions_addclose_fn)(void *, posix_spawn_file_actions_t *, int fd) = nullptr;
 		int (*actions_destroy_fn)(void *, posix_spawn_file_actions_t *)          = nullptr;
-		int (*spawn_fn)(void *, pid_t *, const char *, const posix_spawn_file_actions_t *,
-		                char *const *argv, char *const *envp)                    = nullptr;
+		int (*spawn_fn)(const AuthHelperSpawnRequest &)                          = nullptr;
 		int (*close_fn)(void *, int fd)                                          = nullptr;
 	};
 
 	using AuthHelperSpawnLogFn = void (*)(std::string_view message);
+
+	struct AuthHelperProcess {
+		pid_t child_pid = -1;
+		int   output_fd = -1;
+	};
 
 	auto prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
 	                                const AuthHelperSpawnOperations &operations) -> bool;
@@ -38,7 +50,7 @@ namespace howdy::pam::testing {
 	                                      const AuthHelperSpawnOperations      &operations,
 	                                      std::chrono::steady_clock::time_point deadline) -> void;
 	auto set_auth_helper_spawn_log_fn(AuthHelperSpawnLogFn logger) -> AuthHelperSpawnLogFn;
-	auto read_auth_helper_output_until(pid_t child_pid, int output_fd, std::string *output,
+	auto read_auth_helper_output_until(AuthHelperProcess process, std::string *output,
 	                                   std::chrono::steady_clock::time_point deadline) -> bool;
 	auto wait_for_cleanup_helper_until(pid_t                                 child_pid,
 	                                   std::chrono::steady_clock::time_point deadline) -> bool;

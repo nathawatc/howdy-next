@@ -65,38 +65,41 @@ namespace howdy::native {
 	public:
 		UserModelStore() = default;
 
-		[[nodiscard]] auto begin_mutation(const std::string &user) const
+		[[nodiscard]] static auto begin_mutation(const std::string &user)
 		    -> UserModelStoreMutationResult;
-		[[nodiscard]] auto lock_existing(const std::string &user) const
+		[[nodiscard]] static auto lock_existing(const std::string &user)
 		    -> UserModelStoreTransactionResult;
 
 	private:
+		struct UserModelExpectations {
+			std::string backend;
+			std::string metric;
+			std::string model;
+			bool        strict_shape;
+		};
+
 		struct UserModelPathResult {
 			UserModelStatus       status = UserModelStatus::kOk;
 			std::string           error_message;
 			std::filesystem::path path;
 		};
 
-		[[nodiscard]] auto resolve(const std::string &user, bool create_directory,
-		                           std::optional<uid_t> owner_uid) const -> UserModelPathResult;
-		[[nodiscard]] auto
-		load_document(const std::string &user, const std::string &expected_backend,
-		              const std::string &expected_metric, const std::string &expected_model,
-		              bool strict_shape, std::optional<uid_t> owner_uid) const
+		[[nodiscard]] static auto resolve(const std::string &user, bool create_directory,
+		                                  std::optional<uid_t> owner_uid) -> UserModelPathResult;
+		[[nodiscard]] static auto load_document(const std::string           &user,
+		                                        const UserModelExpectations &expectations,
+		                                        std::optional<uid_t>         owner_uid)
 		    -> user_model_codec::Document;
-		[[nodiscard]] auto inspect(const std::string &user) const -> UserModelInspectResult;
-		[[nodiscard]] auto load_document_from_path(const std::filesystem::path &path,
-		                                           const std::string           &expected_backend,
-		                                           const std::string           &expected_metric,
-		                                           const std::string           &expected_model,
-		                                           bool                         strict_shape) const
+		[[nodiscard]] static auto inspect(const std::string &user) -> UserModelInspectResult;
+		[[nodiscard]] static auto load_document_from_path(const std::filesystem::path &path,
+		                                                  const UserModelExpectations &expectations)
 		    -> user_model_codec::Document;
-		[[nodiscard]] auto load_document_from_fd(
-		    int fd, const std::filesystem::path &path, const std::string &expected_backend,
-		    const std::string &expected_metric, const std::string &expected_model,
-		    bool strict_shape, bool treat_empty_as_no_model) const -> user_model_codec::Document;
-		[[nodiscard]] auto inspect_regular_file_status(const std::filesystem::path &path,
-		                                               std::string                 *message) const
+		[[nodiscard]] static auto load_document_from_fd(int fd, const std::filesystem::path &path,
+		                                                const UserModelExpectations &expectations,
+		                                                bool treat_empty_as_no_model)
+		    -> user_model_codec::Document;
+		[[nodiscard]] static auto inspect_regular_file_status(const std::filesystem::path &path,
+		                                                      std::string                 *message)
 		    -> UserModelStatus;
 
 		friend auto list_user_model_entries(const std::string &user,

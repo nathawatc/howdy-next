@@ -201,11 +201,11 @@ namespace {
 	}
 
 	auto renderer_owns_configuration_and_models() -> bool {
-		auto make_renderer = [] {
+		auto make_renderer = [] -> test_cli_internal::TestPreviewRenderer {
 			howdy::native::VideoConfig config;
 			config.clahe_enabled = false;
 			std::vector<howdy::native::EncodingModelInfo> models;
-			return test_cli_internal::TestPreviewRenderer(config, std::move(models));
+			return {config, std::move(models)};
 		};
 
 		auto renderer = make_renderer();
@@ -223,9 +223,9 @@ namespace {
 		bool                     fail_destroy_window  = false;
 	};
 
-	void initialize_renderer(void *context, void *renderer) {
-		(void)renderer;
-		auto *lifecycle_context = static_cast<RendererLifecycleContext *>(context);
+	void initialize_renderer(test_cli_internal::PreviewRendererInitialization initialization) {
+		(void)initialization.renderer;
+		auto *lifecycle_context = static_cast<RendererLifecycleContext *>(initialization.context);
 		lifecycle_context->sequence.emplace_back("initialize");
 		lifecycle_context->initialize_calls++;
 		if (lifecycle_context->fail_initialize) {

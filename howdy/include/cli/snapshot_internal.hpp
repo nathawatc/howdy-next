@@ -3,6 +3,7 @@
 #include "common/atomic_files.hpp"
 #include "config/runtime_config.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -12,7 +13,7 @@
 
 namespace howdy::native::snapshot_internal {
 
-	enum class SnapshotCaptureStatus {
+	enum class SnapshotCaptureStatus : std::uint8_t {
 		kOk,
 		kOpenError,
 		kReadError,

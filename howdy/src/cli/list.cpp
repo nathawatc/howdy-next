@@ -77,8 +77,9 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 		if (args->plain) {
 			std::cout << ",";
 		} else {
-			std::cout << std::string(
-			    std::max(0, 4 - static_cast<int>(std::to_string(model.id).size())), ' ');
+			constexpr std::size_t kIdColumnWidth = 4;
+			const auto            id_size        = std::to_string(model.id).size();
+			std::cout << std::string(id_size < kIdColumnWidth ? kIdColumnWidth - id_size : 0, ' ');
 		}
 		std::array<char, 32> buffer{};
 		std::tm              local_time{};
@@ -98,7 +99,7 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 	return kExitOk;
 }
 
-int list_main(int argc, char **argv) {
+auto list_main(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kExitAbort;
 	}

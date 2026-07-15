@@ -3,6 +3,7 @@
 #include "common/auth_helper_protocol.hpp"
 
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
@@ -25,6 +26,9 @@
 #include <acl/libacl.h>
 
 namespace {
+	constexpr acl_perm_t kAclRead    = acl_perm_t{ACL_READ};
+	constexpr acl_perm_t kAclWrite   = acl_perm_t{ACL_WRITE};
+	constexpr acl_perm_t kAclExecute = acl_perm_t{ACL_EXECUTE};
 
 	class ScopedFd {
 	public:
@@ -208,7 +212,7 @@ namespace {
 		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 	}
 
-	enum class AclCheckStatus {
+	enum class AclCheckStatus : std::uint8_t {
 		kMatch,
 		kMismatch,
 		kError,
@@ -373,11 +377,70 @@ namespace {
 		return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 	}
 
-	enum class AclSupport {
+	enum class AclSupport : std::uint8_t {
 		kSupported,
 		kUnsupported,
 		kError,
 	};
+
+	auto add_acl_probe_entry(acl_t &acl, acl_tag_t tag, const void *qualifier,
+	                         acl_perm_t permissions) -> bool {
+		acl_entry_t   entry;
+		acl_permset_t permission_set;
+		if (acl_create_entry(&acl, &entry) != 0 || acl_set_tag_type(entry, tag) != 0 ||
+		    (qualifier != nullptr && acl_set_qualifier(entry, qualifier) != 0) ||
+		    acl_get_permset(entry, &permission_set) != 0 || acl_clear_perms(permission_set) != 0) {
+			return false;
+		}
+		for (const acl_perm_t permission : {kAclRead, kAclWrite, kAclExecute}) {
+			if ((permissions & permission) != 0 && acl_add_perm(permission_set, permission) != 0) {
+				return false;
+			}
+		}
+		return acl_set_permset(entry, permission_set) == 0;
+	}
+
+	struct AclProbeResult {
+		bool ready           = false;
+		bool policy_mismatch = false;
+		int  error_number    = 0;
+	};
+
+	auto configure_acl_probe(acl_t &acl, int fd, const std::filesystem::path &probe_path,
+	                         std::optional<int> injected_error) -> AclProbeResult {
+		const uid_t uid          = geteuid();
+		bool        ready        = add_acl_probe_entry(acl, ACL_USER_OBJ, nullptr, kAclRead) &&
+		                           add_acl_probe_entry(acl, ACL_USER, &uid, kAclRead) &&
+		                           add_acl_probe_entry(acl, ACL_GROUP_OBJ, nullptr, 0) &&
+		                           add_acl_probe_entry(acl, ACL_MASK, nullptr, kAclRead) &&
+		                           add_acl_probe_entry(acl, ACL_OTHER, nullptr, 0);
+		int         error_number = ready ? 0 : errno;
+		if (ready && acl_valid(acl) != 0) {
+			error_number = errno;
+			ready        = false;
+		}
+		if (ready && injected_error.has_value()) {
+			errno        = *injected_error;
+			error_number = errno;
+			ready        = false;
+		}
+		if (ready && acl_set_fd(fd, acl) != 0) {
+			error_number = errno;
+			ready        = false;
+		}
+		if (!ready) {
+			return {.error_number = error_number};
+		}
+		const auto acl_check = check_private_acl(probe_path, uid, false);
+		if (acl_check.status == AclCheckStatus::kError) {
+			return {.error_number = acl_check.error_number};
+		}
+		if (acl_check.status == AclCheckStatus::kMismatch) {
+			std::cerr << "FAIL: ACL support probe policy mismatch '" << probe_path << "'\n";
+			return {.policy_mismatch = true};
+		}
+		return {.ready = true};
+	}
 
 	auto acl_support(const std::filesystem::path &root,
 	                 std::optional<int>           injected_error = std::nullopt) -> AclSupport {
@@ -391,83 +454,14 @@ namespace {
 			return AclSupport::kError;
 		}
 
-		AclSupport result          = AclSupport::kError;
-		int        error_number    = 0;
-		bool       policy_mismatch = false;
-		acl_t      acl             = acl_init(5);
+		AclProbeResult probe_result;
+		AclSupport     result = AclSupport::kError;
+		acl_t          acl    = acl_init(5);
 		if (acl == nullptr) {
-			error_number = errno;
+			probe_result.error_number = errno;
 		} else {
-			const auto add_entry = [&acl](acl_tag_t tag, const void *qualifier, int permissions) {
-				acl_entry_t   entry;
-				acl_permset_t permission_set;
-				if (acl_create_entry(&acl, &entry) != 0) {
-					return false;
-				}
-				if (acl_set_tag_type(entry, tag) != 0) {
-					return false;
-				}
-				if (qualifier != nullptr && acl_set_qualifier(entry, qualifier) != 0) {
-					return false;
-				}
-				if (acl_get_permset(entry, &permission_set) != 0) {
-					return false;
-				}
-				if (acl_clear_perms(permission_set) != 0) {
-					return false;
-				}
-				for (const auto permission : {ACL_READ, ACL_WRITE, ACL_EXECUTE}) {
-					if ((permissions & permission) == 0) {
-						continue;
-					}
-					if (acl_add_perm(permission_set, permission) != 0) {
-						return false;
-					}
-				}
-				return acl_set_permset(entry, permission_set) == 0;
-			};
-			const uid_t uid   = geteuid();
-			bool        ready = add_entry(ACL_USER_OBJ, nullptr, ACL_READ);
-			if (ready) {
-				ready = add_entry(ACL_USER, &uid, ACL_READ);
-			}
-			if (ready) {
-				ready = add_entry(ACL_GROUP_OBJ, nullptr, 0);
-			}
-			if (ready) {
-				ready = add_entry(ACL_MASK, nullptr, ACL_READ);
-			}
-			if (ready) {
-				ready = add_entry(ACL_OTHER, nullptr, 0);
-			}
-			if (!ready) {
-				error_number = errno;
-			}
-			if (ready && acl_valid(acl) != 0) {
-				error_number = errno;
-				ready        = false;
-			}
-			if (ready && injected_error.has_value()) {
-				errno        = *injected_error;
-				error_number = errno;
-				ready        = false;
-			}
-			if (ready && acl_set_fd(fd, acl) != 0) {
-				error_number = errno;
-				ready        = false;
-			}
-			if (ready) {
-				const auto acl_check = check_private_acl(probe_path, uid, false);
-				if (acl_check.status == AclCheckStatus::kError) {
-					error_number = acl_check.error_number;
-					ready        = false;
-				} else if (acl_check.status == AclCheckStatus::kMismatch) {
-					std::cerr << "FAIL: ACL support probe policy mismatch '" << probe_path << "'\n";
-					ready           = false;
-					policy_mismatch = true;
-				}
-			}
-			if (ready) {
+			probe_result = configure_acl_probe(acl, fd, probe_path, injected_error);
+			if (probe_result.ready) {
 				result = AclSupport::kSupported;
 			}
 		}
@@ -480,14 +474,14 @@ namespace {
 		if (result == AclSupport::kSupported) {
 			return result;
 		}
-		if (policy_mismatch) {
+		if (probe_result.policy_mismatch) {
 			return AclSupport::kError;
 		}
-		if (error_number == ENOTSUP || error_number == EOPNOTSUPP) {
+		if (probe_result.error_number == ENOTSUP || probe_result.error_number == EOPNOTSUPP) {
 			return AclSupport::kUnsupported;
 		}
 		std::cerr << "FAIL: ACL support probe '" << probe_path
-		          << "': " << std::strerror(error_number) << "\n";
+		          << "': " << std::strerror(probe_result.error_number) << "\n";
 		return AclSupport::kError;
 	}
 
@@ -885,9 +879,10 @@ namespace {
 		const auto      runtime_root = fixture_root / "runtime-root";
 		const auto      uid          = getuid();
 		const auto      gid          = getgid();
-		const auto      prefix       = "pam-" + std::to_string(uid) + "-";
-		const uid_t     non_root_uid = 1;
-		const gid_t     wrong_gid    = gid == 0 ? static_cast<gid_t>(1) : static_cast<gid_t>(0);
+		const howdy::native::auth_helper::RuntimeIdentity identity{.uid = uid, .gid = gid};
+		const auto  prefix       = "pam-" + std::to_string(uid) + "-";
+		const uid_t non_root_uid = 1;
+		const gid_t wrong_gid    = gid == 0 ? static_cast<gid_t>(1) : static_cast<gid_t>(0);
 
 		fs::remove_all(fixture_root, ec);
 		fs::create_directories(runtime_root, ec);
@@ -895,23 +890,23 @@ namespace {
 		ok &= expect(chmod(runtime_root.c_str(), 0711) == 0, "secures cleanup runtime root");
 
 		const auto wrong_parent = fixture_root / "wrong-parent" / (prefix + "wrong-parent");
-		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_parent, uid, gid, runtime_root).ok,
+		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_parent, identity, runtime_root).ok,
 		             "wrong cleanup parent is rejected");
 
 		const auto wrong_prefix = runtime_root / ("pam-" + std::to_string(uid + 1) + "-wrong");
-		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_prefix, uid, gid, runtime_root).ok,
+		ok &= expect(!cleanup_runtime_auth_files_for_test(wrong_prefix, identity, runtime_root).ok,
 		             "wrong pam uid prefix is rejected");
 
 		const auto missing_runtime_dir = runtime_root / (prefix + "missing");
 		ok &= expect(
-		    cleanup_runtime_auth_files_for_test(missing_runtime_dir, uid, gid, runtime_root).ok,
+		    cleanup_runtime_auth_files_for_test(missing_runtime_dir, identity, runtime_root).ok,
 		    "missing expected runtime dir succeeds");
 		ok &=
 		    expect(!fs::exists(missing_runtime_dir), "missing expected runtime dir stays missing");
 
 		const auto regular_file = runtime_root / (prefix + "regular");
 		ok &= expect(write_file(regular_file, "cleanup"), "writes runtime cleanup file");
-		ok &= expect(!cleanup_runtime_auth_files_for_test(regular_file, uid, gid, runtime_root).ok,
+		ok &= expect(!cleanup_runtime_auth_files_for_test(regular_file, identity, runtime_root).ok,
 		             "regular file is rejected for cleanup");
 		ok &= expect(fs::exists(regular_file), "regular file remains after rejected cleanup");
 		fs::remove(regular_file, ec);
@@ -922,7 +917,7 @@ namespace {
 		ok &= expect(write_file(symlink_target, "target"), "writes cleanup symlink target");
 		if (symlink(symlink_target.c_str(), symlink_path.c_str()) == 0) {
 			ok &= expect(
-			    !cleanup_runtime_auth_files_for_test(symlink_path, uid, gid, runtime_root).ok,
+			    !cleanup_runtime_auth_files_for_test(symlink_path, identity, runtime_root).ok,
 			    "symlink is rejected for cleanup");
 			ok &= expect(fs::exists(symlink_path), "symlink remains after rejected cleanup");
 			fs::remove(symlink_path, ec);
@@ -963,7 +958,7 @@ namespace {
 				ok &= expect(chmod(group_writable_dir.c_str(), 0770) == 0,
 				             "makes cleanup directory group-writable");
 				ok &= expect(
-				    !cleanup_runtime_auth_files_for_test(group_writable_dir, uid, gid, runtime_root)
+				    !cleanup_runtime_auth_files_for_test(group_writable_dir, identity, runtime_root)
 				         .ok,
 				    "group-writable directory is rejected");
 				fs::remove_all(group_writable_dir, ec);
@@ -977,7 +972,7 @@ namespace {
 				ok &= expect(chmod(world_writable_dir.c_str(), 0777) == 0,
 				             "makes cleanup directory world-writable");
 				ok &= expect(
-				    !cleanup_runtime_auth_files_for_test(world_writable_dir, uid, gid, runtime_root)
+				    !cleanup_runtime_auth_files_for_test(world_writable_dir, identity, runtime_root)
 				         .ok,
 				    "world-writable directory is rejected");
 				fs::remove_all(world_writable_dir, ec);
@@ -991,7 +986,7 @@ namespace {
 				ok &= expect(chmod(valid_runtime_dir.c_str(), 0711) == 0,
 				             "secures valid cleanup directory");
 				ok &= expect(
-				    cleanup_runtime_auth_files_for_test(valid_runtime_dir, uid, gid, runtime_root)
+				    cleanup_runtime_auth_files_for_test(valid_runtime_dir, identity, runtime_root)
 				        .ok,
 				    "valid runtime directory is removed");
 				ok &= expect(!fs::exists(valid_runtime_dir), "valid runtime directory is gone");
@@ -1002,7 +997,7 @@ namespace {
 				ok &= expect(chown(wrong_owner_dir.c_str(), non_root_uid, gid) == 0,
 				             "sets wrong-owner cleanup directory");
 				ok &= expect(
-				    !cleanup_runtime_auth_files_for_test(wrong_owner_dir, uid, gid, runtime_root)
+				    !cleanup_runtime_auth_files_for_test(wrong_owner_dir, identity, runtime_root)
 				         .ok,
 				    "wrong owner is rejected");
 				fs::remove_all(wrong_owner_dir, ec);
@@ -1014,7 +1009,7 @@ namespace {
 				ok &= expect(chown(wrong_gid_dir.c_str(), 0, wrong_gid) == 0,
 				             "sets wrong-gid cleanup directory");
 				ok &= expect(
-				    !cleanup_runtime_auth_files_for_test(wrong_gid_dir, uid, gid, runtime_root).ok,
+				    !cleanup_runtime_auth_files_for_test(wrong_gid_dir, identity, runtime_root).ok,
 				    "wrong gid is rejected");
 				fs::remove_all(wrong_gid_dir, ec);
 				ec.clear();
@@ -1041,6 +1036,13 @@ namespace {
 		const auto      models_dir   = fs::path("./models");
 		const auto      model_path   = models_dir / "alice.dat";
 		const uid_t     owner_uid    = geteuid();
+		const howdy::native::auth_helper::RuntimeIdentity      identity{.uid = target_uid,
+		                                                                .gid = getgid()};
+		const howdy::native::auth_helper::RuntimeAuthTestPaths source_paths{
+		    .runtime_root           = runtime_root,
+		    .source_config          = config_path,
+		    .source_user_models_dir = models_dir,
+		};
 		fs::remove_all(fixture_dir, ec);
 		fs::create_directories(runtime_root, ec);
 		ok &= expect(!ec, "creates injected runtime root");
@@ -1057,8 +1059,8 @@ namespace {
 
 		if (acl_functional) {
 			const auto before_success = runtime_dirs_for_uid(runtime_root, target_uid);
-			const auto prepared       = prepare_runtime_auth_files_for_test(
-			    "alice", target_uid, getgid(), runtime_root, config_path, models_dir, owner_uid);
+			const auto prepared =
+			    prepare_runtime_auth_files_for_test("alice", identity, source_paths, owner_uid);
 			ok &=
 			    expect(prepared.has_value(), "missing source user model still prepares auth files");
 			if (prepared.has_value()) {
@@ -1091,11 +1093,14 @@ namespace {
 		}
 
 		const auto before_config_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-		ok &= expect(!prepare_runtime_auth_files_for_test("alice", target_uid, getgid(),
-		                                                  runtime_root, source_dir / "missing.ini",
-		                                                  models_dir, owner_uid)
-		                  .has_value(),
-		             "failed config staging rejects prepare");
+		ok &= expect(
+		    !prepare_runtime_auth_files_for_test("alice", identity,
+		                                         {.runtime_root  = runtime_root,
+		                                          .source_config = source_dir / "missing.ini",
+		                                          .source_user_models_dir = models_dir},
+		                                         owner_uid)
+		         .has_value(),
+		    "failed config staging rejects prepare");
 		ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_config_failure,
 		             "failed config staging removes private runtime directory");
 
@@ -1104,11 +1109,10 @@ namespace {
 		} else {
 			ok &= expect(chmod(config_path.c_str(), 0000) == 0, "makes source config unreadable");
 			const auto before_config_copy_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-			ok &= expect(!prepare_runtime_auth_files_for_test("alice", target_uid, getgid(),
-			                                                  runtime_root, config_path, models_dir,
-			                                                  owner_uid)
-			                  .has_value(),
-			             "failed config copy rejects prepare");
+			ok &= expect(
+			    !prepare_runtime_auth_files_for_test("alice", identity, source_paths, owner_uid)
+			         .has_value(),
+			    "failed config copy rejects prepare");
 			ok &=
 			    expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_config_copy_failure,
 			           "failed config copy removes private runtime directory");
@@ -1119,8 +1123,8 @@ namespace {
 			ok &= expect(write_file(model_path, "model-content"), "writes secure source model");
 			ok &= expect(chmod(model_path.c_str(), 0644) == 0, "secures source model");
 			const auto before_model_success = runtime_dirs_for_uid(runtime_root, target_uid);
-			const auto prepared_with_model  = prepare_runtime_auth_files_for_test(
-			    "alice", target_uid, getgid(), runtime_root, config_path, models_dir, owner_uid);
+			const auto prepared_with_model =
+			    prepare_runtime_auth_files_for_test("alice", identity, source_paths, owner_uid);
 			ok &=
 			    expect(prepared_with_model.has_value(), "secure source model prepares auth files");
 			if (prepared_with_model.has_value()) {
@@ -1140,11 +1144,10 @@ namespace {
 			ok &= expect(write_file(model_path, "model-content"), "writes insecure source model");
 			ok &= expect(chmod(model_path.c_str(), 0664) == 0, "makes source model insecure");
 			const auto before_model_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-			ok &= expect(!prepare_runtime_auth_files_for_test("alice", target_uid, getgid(),
-			                                                  runtime_root, config_path, models_dir,
-			                                                  owner_uid)
-			                  .has_value(),
-			             "insecure source model rejects prepare");
+			ok &= expect(
+			    !prepare_runtime_auth_files_for_test("alice", identity, source_paths, owner_uid)
+			         .has_value(),
+			    "insecure source model rejects prepare");
 			ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_model_failure,
 			             "insecure source model failure removes private runtime directory");
 		}
@@ -1190,8 +1193,12 @@ namespace {
 			return ok;
 		}
 		const auto before_prepare = runtime_dirs_for_uid(runtime_root, getuid());
-		const auto prepared       = prepare_runtime_auth_files_for_test(
-		    "alice", getuid(), getgid(), runtime_root, config_path, models_dir, 0);
+		const auto prepared =
+		    prepare_runtime_auth_files_for_test("alice", {.uid = getuid(), .gid = getgid()},
+		                                        {.runtime_root           = runtime_root,
+		                                         .source_config          = config_path,
+		                                         .source_user_models_dir = models_dir},
+		                                        0);
 		ok &= expect(!prepared.has_value(), "wrong-owner config rejects runtime preparation");
 		ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_prepare,
 		             "wrong-owner config removes partial runtime tree");
@@ -1237,9 +1244,13 @@ namespace {
 		set_acl_setup_failure_for_test(true);
 		const auto         before_failure = runtime_dirs_for_uid(runtime_root, target_uid);
 		std::ostringstream failure_output;
-		auto              *previous_cerr  = std::cerr.rdbuf(failure_output.rdbuf());
-		const auto         failed_prepare = prepare_runtime_auth_files_for_test(
-		    "alice", target_uid, getegid(), runtime_root, config_path, models_dir, geteuid());
+		auto              *previous_cerr = std::cerr.rdbuf(failure_output.rdbuf());
+		const auto         failed_prepare =
+		    prepare_runtime_auth_files_for_test("alice", {.uid = target_uid, .gid = getegid()},
+		                                        {.runtime_root           = runtime_root,
+		                                         .source_config          = config_path,
+		                                         .source_user_models_dir = models_dir},
+		                                        geteuid());
 		std::cerr.rdbuf(previous_cerr);
 		set_acl_setup_failure_for_test(false);
 		ok &= expect(!failed_prepare.has_value(), "ACL setup failure rejects preparation");
@@ -1256,9 +1267,13 @@ namespace {
 		set_acl_verification_failure_for_test(true);
 		const auto         before_verify_failure = runtime_dirs_for_uid(runtime_root, target_uid);
 		std::ostringstream verify_failure_output;
-		previous_cerr                    = std::cerr.rdbuf(verify_failure_output.rdbuf());
-		const auto verify_failed_prepare = prepare_runtime_auth_files_for_test(
-		    "alice", target_uid, getegid(), runtime_root, config_path, models_dir, geteuid());
+		previous_cerr = std::cerr.rdbuf(verify_failure_output.rdbuf());
+		const auto verify_failed_prepare =
+		    prepare_runtime_auth_files_for_test("alice", {.uid = target_uid, .gid = getegid()},
+		                                        {.runtime_root           = runtime_root,
+		                                         .source_config          = config_path,
+		                                         .source_user_models_dir = models_dir},
+		                                        geteuid());
 		std::cerr.rdbuf(previous_cerr);
 		set_acl_verification_failure_for_test(false);
 		ok &= expect(!verify_failed_prepare.has_value(), "ACL policy mismatch rejects preparation");
@@ -1316,8 +1331,12 @@ namespace {
 		             "secures ACL source model");
 
 		const auto before_prepare = runtime_dirs_for_uid(runtime_root, target_uid);
-		const auto prepared       = prepare_runtime_auth_files_for_test(
-		    "alice", target_uid, shared_gid, runtime_root, config_path, models_dir, owner_uid);
+		const auto prepared =
+		    prepare_runtime_auth_files_for_test("alice", {.uid = target_uid, .gid = shared_gid},
+		                                        {.runtime_root           = runtime_root,
+		                                         .source_config          = config_path,
+		                                         .source_user_models_dir = models_dir},
+		                                        owner_uid);
 		ok &= expect(prepared.has_value(), "ACL runtime preparation succeeds");
 		if (prepared.has_value()) {
 			for (const auto &[path, directory, label] : {

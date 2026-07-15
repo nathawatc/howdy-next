@@ -59,6 +59,36 @@ namespace howdy::native::config_internal {
 			howdy::native::reset_invoking_user_environment(invoking_user);
 		}
 
+		auto copy_config_contents(std::ifstream &input, int fd, std::string *source_content)
+		    -> bool {
+			std::array<char, 8192> buffer{};
+			while (input.good()) {
+				input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+				const auto bytes_read = input.gcount();
+				if (bytes_read <= 0) {
+					continue;
+				}
+				if (source_content != nullptr) {
+					source_content->append(buffer.data(), static_cast<std::size_t>(bytes_read));
+				}
+
+				const char *cursor    = buffer.data();
+				auto        remaining = static_cast<std::size_t>(bytes_read);
+				while (remaining > 0) {
+					const auto written = write(fd, cursor, remaining);
+					if (written < 0) {
+						if (errno == EINTR) {
+							continue;
+						}
+						return false;
+					}
+					cursor += written;
+					remaining -= static_cast<std::size_t>(written);
+				}
+			}
+			return input.good() || input.eof();
+		}
+
 		auto create_temp_copy(const fs::path                                   &source_path,
 		                      const std::optional<howdy::native::InvokingUser> &invoking_user,
 		                      std::string *source_content = nullptr) -> std::optional<fs::path> {
@@ -93,38 +123,8 @@ namespace howdy::native::config_internal {
 				ok = false;
 			}
 
-			if (ok) {
-				std::array<char, 8192> buffer{};
-				while (input.good()) {
-					input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-					const auto bytes_read = input.gcount();
-					if (bytes_read <= 0) {
-						continue;
-					}
-
-					if (source_content != nullptr) {
-						source_content->append(buffer.data(), static_cast<std::size_t>(bytes_read));
-					}
-
-					const char *cursor    = buffer.data();
-					auto        remaining = static_cast<std::size_t>(bytes_read);
-					while (remaining > 0) {
-						const auto written = write(fd, cursor, remaining);
-						if (written < 0) {
-							if (errno == EINTR) {
-								continue;
-							}
-							ok = false;
-							break;
-						}
-						cursor += written;
-						remaining -= static_cast<std::size_t>(written);
-					}
-
-					if (!ok) {
-						break;
-					}
-				}
+			if (ok && !copy_config_contents(input, fd, source_content)) {
+				ok = false;
 			}
 
 			if (ok && !howdy::native::sync_fd(fd)) {
@@ -135,7 +135,7 @@ namespace howdy::native::config_internal {
 				ok = false;
 			}
 
-			if (!ok || (!input.good() && !input.eof())) {
+			if (!ok) {
 				remove_if_exists(temp_path);
 				if (source_content != nullptr) {
 					source_content->clear();
@@ -373,10 +373,11 @@ namespace howdy::native::config_internal {
 			return {.status = ConfigEditStatus::kTempCreateFailed, .editor = editor};
 		}
 
-		const auto cleanup = [&]() {
+		const auto cleanup = [&]() -> void {
 			dependencies_.remove_if_exists(dependencies_.context, temp_copy->path);
 		};
-		const auto result_base = [&](ConfigEditStatus status, std::string error = {}) {
+		const auto result_base = [&](ConfigEditStatus status,
+		                             std::string      error = {}) -> ConfigEditResult {
 			return ConfigEditResult{
 			    .status    = status,
 			    .error     = std::move(error),

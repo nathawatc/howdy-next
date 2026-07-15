@@ -6,6 +6,7 @@
 #include "config/runtime_config.hpp"
 #include "core/face_detection.hpp"
 
+#include <cstdint>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -26,7 +27,7 @@ namespace howdy::native {
 		double                     dark_running_total = 0.0;
 	};
 
-	enum class EnrollmentCaptureFailure {
+	enum class EnrollmentCaptureFailure : std::uint8_t {
 		kOnlyBlackFrames,
 		kOnlyTooDarkFrames,
 		kNoSufficientlyBrightFrames,

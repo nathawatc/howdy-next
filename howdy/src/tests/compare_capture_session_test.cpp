@@ -62,18 +62,18 @@ namespace {
 		return static_cast<FakeCaptureContext *>(context)->error;
 	}
 
-	auto fake_set_property(void *context, int property, double value) -> bool {
+	auto fake_set_property(void *context, howdy::native::CaptureProperty property) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.property_calls.push_back({
-		    .property = property,
-		    .value    = value,
+		    .property = property.id,
+		    .value    = property.value,
 		});
 		return true;
 	}
 
-	auto fake_set_property_without_context([[maybe_unused]] void  *context,
-	                                       [[maybe_unused]] int    property,
-	                                       [[maybe_unused]] double value) -> bool {
+	auto fake_set_property_without_context([[maybe_unused]] void                          *context,
+	                                       [[maybe_unused]] howdy::native::CaptureProperty property)
+	    -> bool {
 		set_property_calls_without_context++;
 		return true;
 	}

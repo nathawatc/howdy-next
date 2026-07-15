@@ -51,8 +51,8 @@ namespace {
 			return fail("howdy-auth-helper can only prepare auth files for the calling user");
 		}
 
-		const auto prepared =
-		    howdy::native::auth_helper::prepare_runtime_auth_files(user, uid, entry->pw_gid);
+		const auto prepared = howdy::native::auth_helper::prepare_runtime_auth_files(
+		    user, {.uid = uid, .gid = entry->pw_gid});
 		if (!prepared.has_value()) {
 			return 1;
 		}
@@ -72,8 +72,8 @@ namespace {
 			return fail("Failed to resolve calling user");
 		}
 
-		const auto cleanup_result =
-		    howdy::native::auth_helper::cleanup_runtime_auth_files(path, uid, entry->pw_gid);
+		const auto cleanup_result = howdy::native::auth_helper::cleanup_runtime_auth_files(
+		    path, {.uid = uid, .gid = entry->pw_gid});
 		if (!cleanup_result.ok) {
 			return fail(cleanup_result.error_message);
 		}

@@ -1,9 +1,19 @@
-# Strict, selective policy.
-# Explicit misc/cppcoreguidelines checks prevent future clang-tidy releases
-# from silently widening CI policy. System headers stay excluded.
+# Broad, strict clang-tidy policy.
+#
+# All selected general-purpose checks are enforced as errors except:
+#
+# - Compiler-owned diagnostics:
+#   - clang-diagnostic-*
+#   - bugprone-narrowing-conversions
+#   - readability-misleading-indentation
+#
+# - Repository-wide low-signal style checks:
+#   - readability-magic-numbers
+#   - readability-identifier-length
 
-Checks: "
-  clang-diagnostic-*,
+InheritParentConfig: false
+
+Checks: >-
   clang-analyzer-*,
   bugprone-*,
   modernize-*,
@@ -17,19 +27,13 @@ Checks: "
   cppcoreguidelines-pro-type-member-init,
   cppcoreguidelines-pro-type-cstyle-cast,
   cppcoreguidelines-prefer-member-initializer,
+  -clang-diagnostic-*,
+  -bugprone-narrowing-conversions,
+  -readability-misleading-indentation,
   -readability-magic-numbers,
-  -readability-identifier-length,
-  -readability-function-cognitive-complexity,
-  -readability-non-const-parameter,
-  -readability-convert-member-functions-to-static,
-  -modernize-use-trailing-return-type,
-  -bugprone-easily-swappable-parameters,
-  -bugprone-implicit-widening-of-multiplication-result,
-  -performance-enum-size,
-  -modernize-use-using"
+  -readability-identifier-length
 
-WarningsAsErrors: "
-  clang-diagnostic-*,
+WarningsAsErrors: >-
   clang-analyzer-*,
   bugprone-*,
   modernize-*,
@@ -42,26 +46,15 @@ WarningsAsErrors: "
   misc-definitions-in-headers,
   cppcoreguidelines-pro-type-member-init,
   cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-prefer-member-initializer,
+  -clang-diagnostic-*,
+  -bugprone-narrowing-conversions,
+  -readability-misleading-indentation,
   -readability-magic-numbers,
-  -readability-identifier-length,
-  -readability-function-cognitive-complexity,
-  -readability-non-const-parameter,
-  -readability-convert-member-functions-to-static,
-  -modernize-use-trailing-return-type,
-  -bugprone-easily-swappable-parameters,
-  -bugprone-implicit-widening-of-multiplication-result,
-  -performance-enum-size,
-  -modernize-use-using"
+  -readability-identifier-length
 
-HeaderFilterRegex: "(^|.*/)(howdy|pam)/"
-ExcludeHeaderFilterRegex: "^/usr/include/"
+HeaderFilterRegex: '(^|.*/)(howdy|pam)/'
+ExcludeHeaderFilterRegex: '(^|.*/)(build[^/]*/|_deps/)|^/usr/(local/)?include/'
 
-CheckOptions:
-  - key: readability-function-cognitive-complexity.Threshold
-    value: "25"
-  - key: bugprone-easily-swappable-parameters.MinimumLength
-    value: "4"
-  - key: bugprone-easily-swappable-parameters.MaximumDistance
-    value: "2"
-
-# vim:syntax=yaml
+SystemHeaders: false
+FormatStyle: file

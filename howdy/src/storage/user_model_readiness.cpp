@@ -47,7 +47,8 @@ namespace howdy::native {
 		}
 
 		const auto file_security = check_secure_root_owned_file_with_directory(
-		    *model_path, "User models directory", "User model file", owner_uid);
+		    *model_path, {.directory = "User models directory", .file = "User model file"},
+		    owner_uid);
 		if (!file_security.ok) {
 			if (file_security.error_code == ENOENT) {
 				return readiness_failure(UserModelStatus::kNoModel, {}, *model_path);

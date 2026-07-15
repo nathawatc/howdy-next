@@ -3,13 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace howdy::native {
 	inline constexpr std::size_t kSfaceEmbeddingSize = 128;
 
-	enum class FaceEncodingStatus {
+	enum class FaceEncodingStatus : std::uint8_t {
 		kOk,
 		kInferenceError,
 		kInvalidOutput,
@@ -23,7 +24,7 @@ namespace howdy::native {
 
 		[[nodiscard]] auto ok() const -> bool {
 			return status == FaceEncodingStatus::kOk && encoding.size() == kSfaceEmbeddingSize &&
-			       std::ranges::all_of(encoding, [](float value) {
+			       std::ranges::all_of(encoding, [](float value) -> bool {
 				       return std::isfinite(value);
 			       });
 		}

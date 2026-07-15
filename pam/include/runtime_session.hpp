@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -34,7 +35,7 @@ namespace howdy::pam {
 		EffectiveUidFn        effective_uid       = nullptr;
 	};
 
-	enum class RuntimeSessionLoadStatus {
+	enum class RuntimeSessionLoadStatus : std::uint8_t {
 		kOk,
 		kPrepareFailed,
 		kConfigLoadFailed,

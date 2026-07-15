@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -65,6 +66,37 @@ namespace {
 		std::array<char, kMaxPromptResponseBytes> data_{};
 		std::size_t                               length_ = 0;
 	};
+
+	enum class PromptCharacterResult : std::uint8_t {
+		keep_reading,
+		complete,
+		abort,
+	};
+
+	auto process_prompt_character(char ch, SensitivePromptBuffer &password, bool &response_too_long)
+	    -> PromptCharacterResult {
+		if (ch == '\n' || ch == '\r') {
+			return PromptCharacterResult::complete;
+		}
+		if (ch == 3) {
+			return PromptCharacterResult::abort;
+		}
+		if (ch == '\b' || ch == 127) {
+			if (!password.empty()) {
+				password.pop_back();
+			}
+			return PromptCharacterResult::keep_reading;
+		}
+		if (response_too_long) {
+			return PromptCharacterResult::keep_reading;
+		}
+		if (password.full()) {
+			response_too_long = true;
+			return PromptCharacterResult::keep_reading;
+		}
+		password.push_back(ch);
+		return PromptCharacterResult::keep_reading;
+	}
 
 #ifdef HOWDY_PAM_TESTING
 	std::atomic<int> g_test_available_result{-1};
@@ -174,12 +206,11 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 }
 
 #ifdef HOWDY_PAM_TESTING
-NativePromptConversation::NativePromptConversation(int tty_fd, int abort_read_fd,
-                                                   int abort_write_fd)
+NativePromptConversation::NativePromptConversation(TestDescriptors descriptors)
     : override_conv_{.conv = dispatch, .appdata_ptr = this}
     , has_original_conv_(true)
-    , tty_fd_(tty_fd)
-    , abort_pipe_{{abort_read_fd, abort_write_fd}} {}
+    , tty_fd_(descriptors.tty_fd)
+    , abort_pipe_{{descriptors.abort_read_fd, descriptors.abort_write_fd}} {}
 
 void NativePromptConversation::set_test_throw_mode(int mode) {
 	test_throw_mode_ = mode;
@@ -421,6 +452,94 @@ auto NativePromptConversation::restore_prompt_terminal(const struct termios &ori
 #endif
 }
 
+#ifdef HOWDY_PAM_TESTING
+auto NativePromptConversation::poll_prompt(std::array<struct pollfd, 2> &fds) -> int {
+	if (test_poll_eintr_count_ > 0) {
+		--test_poll_eintr_count_;
+		if (test_abort_on_poll_eintr_) {
+			abort_requested_.store(true);
+		}
+		errno = EINTR;
+		return -1;
+	}
+	return poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
+}
+#else
+auto NativePromptConversation::poll_prompt(std::array<struct pollfd, 2> &fds) -> int {
+	return poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
+}
+#endif
+
+#ifdef HOWDY_PAM_TESTING
+auto NativePromptConversation::read_prompt_char(char *ch) -> ssize_t {
+	if (test_read_eintr_count_ > 0) {
+		--test_read_eintr_count_;
+		if (test_abort_on_read_eintr_) {
+			abort_requested_.store(true);
+		}
+		errno = EINTR;
+		return -1;
+	}
+	return read(tty_fd_, ch, 1);
+}
+#else
+auto NativePromptConversation::read_prompt_char(char *ch) const -> ssize_t {
+	return read(tty_fd_, ch, 1);
+}
+#endif
+
+auto NativePromptConversation::poll_prompt_state(std::array<struct pollfd, 2> &fds)
+    -> PromptIoResult {
+	const int poll_result = poll_prompt(fds);
+	if (poll_result < 0) {
+		return errno == EINTR && !abort_requested_.load() ? PromptIoResult::retry
+		                                                  : PromptIoResult::abort;
+	}
+	if (abort_requested_.load()) {
+		drain_abort_pipe(abort_pipe_[0]);
+		return PromptIoResult::abort;
+	}
+	constexpr short kFdFailureEvents = POLLHUP | POLLERR | POLLNVAL;
+	if ((fds[0].revents & kFdFailureEvents) != 0 || (fds[1].revents & kFdFailureEvents) != 0) {
+		return PromptIoResult::abort;
+	}
+	if ((fds[1].revents & POLLIN) != 0) {
+		drain_abort_pipe(abort_pipe_[0]);
+		return PromptIoResult::abort;
+	}
+	return poll_result == 0 || (fds[0].revents & POLLIN) == 0 ? PromptIoResult::retry
+	                                                          : PromptIoResult::ready;
+}
+
+auto NativePromptConversation::read_prompt_state(char *ch) -> PromptIoResult {
+	const ssize_t bytes_read = read_prompt_char(ch);
+	if (bytes_read < 0) {
+		return errno == EINTR && !abort_requested_.load() ? PromptIoResult::retry
+		                                                  : PromptIoResult::abort;
+	}
+	return bytes_read == 0 ? PromptIoResult::retry : PromptIoResult::ready;
+}
+
+auto NativePromptConversation::wait_for_prompt_character(char *ch) -> PromptIoResult {
+	std::array<struct pollfd, 2> fds{{
+	    {.fd = tty_fd_, .events = POLLIN, .revents = 0},
+	    {.fd = abort_pipe_[0], .events = POLLIN, .revents = 0},
+	}};
+	while (true) {
+		const auto poll_result = poll_prompt_state(fds);
+		if (poll_result == PromptIoResult::abort) {
+			return poll_result;
+		}
+		if (poll_result == PromptIoResult::retry) {
+			continue;
+		}
+		const auto read_result = read_prompt_state(ch);
+		if (read_result != PromptIoResult::retry) {
+			return read_result;
+		}
+	}
+}
+
 auto NativePromptConversation::prompt_input(const struct pam_message &message, char **response,
                                             bool hide_input) -> int {
 	if (response == nullptr || tty_fd_ < 0) {
@@ -449,7 +568,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 	if (tcsetattr(tty_fd_, TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
-	const auto abort_prompt = [this, &original_termios] {
+	const auto abort_prompt = [this, &original_termios] -> int {
 		(void)restore_prompt_terminal(original_termios);
 		write_newline(tty_fd_);
 		return PAM_CONV_ERR;
@@ -460,103 +579,22 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 		return abort_prompt();
 	}
 
-	SensitivePromptBuffer        password;
-	bool                         response_too_long = false;
-	std::array<struct pollfd, 2> fds{{
-	    {.fd = tty_fd_, .events = POLLIN, .revents = 0},
-	    {.fd = abort_pipe_[0], .events = POLLIN, .revents = 0},
-	}};
+	SensitivePromptBuffer password;
+	bool                  response_too_long = false;
 
 	while (true) {
-#ifdef HOWDY_PAM_TESTING
-		int poll_result = -1;
-		if (test_poll_eintr_count_ > 0) {
-			--test_poll_eintr_count_;
-			if (test_abort_on_poll_eintr_) {
-				abort_requested_.store(true);
-			}
-			errno = EINTR;
-		} else {
-			poll_result = poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
-		}
-#else
-		const int poll_result = poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
-#endif
-		if (poll_result < 0) {
-			if (errno == EINTR && !abort_requested_.load()) {
-				continue;
-			}
-			return abort_prompt();
-		}
-
-		if (abort_requested_.load()) {
-			drain_abort_pipe(abort_pipe_[0]);
-			return abort_prompt();
-		}
-
-		constexpr short kFdFailureEvents = POLLHUP | POLLERR | POLLNVAL;
-		if ((fds[0].revents & kFdFailureEvents) != 0 || (fds[1].revents & kFdFailureEvents) != 0) {
-			return abort_prompt();
-		}
-
-		if ((fds[1].revents & POLLIN) != 0) {
-			drain_abort_pipe(abort_pipe_[0]);
-			return abort_prompt();
-		}
-
-		if (poll_result == 0 || (fds[0].revents & POLLIN) == 0) {
-			continue;
-		}
-
 		char ch = '\0';
-#ifdef HOWDY_PAM_TESTING
-		ssize_t bytes_read = -1;
-		if (test_read_eintr_count_ > 0) {
-			--test_read_eintr_count_;
-			if (test_abort_on_read_eintr_) {
-				abort_requested_.store(true);
-			}
-			errno      = EINTR;
-			bytes_read = -1;
-		} else {
-			bytes_read = read(tty_fd_, &ch, 1);
-		}
-#else
-		const ssize_t bytes_read = read(tty_fd_, &ch, 1);
-#endif
-		if (bytes_read < 0) {
-			if (errno == EINTR && !abort_requested_.load()) {
-				continue;
-			}
+		if (wait_for_prompt_character(&ch) == PromptIoResult::abort) {
 			return abort_prompt();
 		}
-		if (bytes_read == 0) {
-			continue;
-		}
 
-		if (ch == '\n' || ch == '\r') {
+		const auto character_result = process_prompt_character(ch, password, response_too_long);
+		if (character_result == PromptCharacterResult::complete) {
 			break;
 		}
-
-		if (ch == 3) {
+		if (character_result == PromptCharacterResult::abort) {
 			return abort_prompt();
 		}
-
-		if (ch == '\b' || ch == 127) {
-			if (!password.empty()) {
-				password.pop_back();
-			}
-			continue;
-		}
-
-		if (response_too_long) {
-			continue;
-		}
-		if (password.full()) {
-			response_too_long = true;
-			continue;
-		}
-		password.push_back(ch);
 	}
 
 	if (!restore_prompt_terminal(original_termios)) {

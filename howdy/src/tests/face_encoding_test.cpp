@@ -1,12 +1,13 @@
 #include "core/face_encoding_internal.hpp"
 
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string>
 #include <vector>
 
 namespace {
-	enum class FailureOperation {
+	enum class FailureOperation : std::uint8_t {
 		kNone,
 		kAlign,
 		kFeature,
@@ -31,13 +32,12 @@ namespace {
 		throw cv::Exception(cv::Error::StsError, "forced failure", operation, "test", 1);
 	}
 
-	void align_face(void *opaque, [[maybe_unused]] const cv::Mat &frame,
-	                [[maybe_unused]] const cv::Mat &face, cv::Mat &aligned) {
+	void align_face(void *opaque, const howdy::native::FaceAlignmentRequest &request) {
 		auto &context = *static_cast<FakeSfaceContext *>(opaque);
 		if (context.failure == FailureOperation::kAlign) {
 			throw_cv_error("alignCrop");
 		}
-		aligned = context.aligned;
+		request.aligned = context.aligned;
 	}
 
 	void extract_feature(void *opaque, [[maybe_unused]] const cv::Mat &aligned, cv::Mat &feature) {

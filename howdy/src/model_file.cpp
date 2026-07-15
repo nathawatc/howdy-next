@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <string>
@@ -16,7 +17,7 @@
 namespace howdy::native {
 	namespace {
 
-		enum class PlaceholderStatus {
+		enum class PlaceholderStatus : std::uint8_t {
 			kOk,
 			kPlaceholder,
 			kReadError,
@@ -63,9 +64,10 @@ namespace howdy::native {
 			}
 
 			std::string prefix(buffer.data(), static_cast<std::size_t>(bytes_read));
-			std::ranges::transform(prefix, prefix.begin(), [](const unsigned char character) {
-				return static_cast<char>(std::tolower(character));
-			});
+			std::ranges::transform(prefix, prefix.begin(),
+			                       [](const unsigned char character) -> char {
+				                       return static_cast<char>(std::tolower(character));
+			                       });
 			const auto content_start = prefix.find_first_not_of(" \t\r\n");
 			const auto content       = content_start == std::string::npos
 			                               ? std::string_view{}

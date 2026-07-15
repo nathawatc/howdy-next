@@ -9,6 +9,7 @@
 #include <chrono>
 #include <clocale>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -30,7 +31,7 @@
 
 namespace {
 
-	auto fake_partial_read_error([[maybe_unused]] int fd, [[maybe_unused]] std::size_t max_bytes)
+	auto fake_partial_read_error([[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
 		howdy::native::BoundedReadResult result;
 		result.output       = "CONFIG_PATH=/tmp/partial\n";
@@ -157,7 +158,7 @@ namespace {
 		ScopedFd    fd;
 	};
 
-	enum class ResponseMode {
+	enum class ResponseMode : std::uint8_t {
 		None,
 		Empty,
 		Secret,
@@ -224,7 +225,7 @@ namespace {
 		return howdy::native::write_all_to_fd(fd, data);
 	}
 
-	auto write_file(const std::string &path, const std::string &content) -> bool {
+	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
 		std::ofstream output(path);
 		output << content;
 		return output.good();
@@ -693,7 +694,7 @@ namespace {
 			return PAM_SUCCESS;
 		};
 
-		const auto make_status = [](howdy::native::CompareExit exit_code) {
+		const auto make_status = [](howdy::native::CompareExit exit_code) -> int {
 			return static_cast<int>(exit_code) << 8;
 		};
 
@@ -756,8 +757,10 @@ namespace {
 		                                howdy::pam::PreparedRuntimeFiles *) -> bool {
 			return false;
 		};
-		const auto cleanup_runtime     = [](void *, const std::filesystem::path &) {};
-		const auto load_runtime_config = [](void *, const std::filesystem::path &path) {
+		const auto cleanup_runtime = [](void *, const std::filesystem::path &) -> void {};
+		const auto load_runtime_config =
+		    [](void *,
+		       const std::filesystem::path &path) -> howdy::native::RuntimeConfigLoadResult {
 			howdy::native::RuntimeConfig config;
 			config.core.detection_notice    = false;
 			config.core.no_confirmation     = true;
@@ -788,7 +791,7 @@ namespace {
 		const auto wait_compare = [](void *, pid_t, std::chrono::steady_clock::time_point) -> int {
 			return 0;
 		};
-		const auto terminate_compare = [](void *, pid_t) {};
+		const auto terminate_compare = [](void *, pid_t) -> void {};
 		const auto input_preflight   = [](void *) -> bool {
 			return true;
 		};
@@ -914,7 +917,7 @@ namespace {
 				const fs::path model_path = *models_dir / "alice.dat";
 				ok &= expect(chmod(models_dir->c_str(), 0755) == 0,
 				             "sets secure models directory mode");
-				ok &= expect(write_file(model_path.string(), "[]"), "writes model file");
+				ok &= expect(write_file(model_path, "[]"), "writes model file");
 				ok &= expect(chmod(model_path.c_str(), 0644) == 0, "sets secure model file mode");
 				ok &= expect(check_enabled(base_config, "alice", *models_dir) == PAM_SUCCESS,
 				             "secure model path allows authentication");
@@ -933,8 +936,8 @@ namespace {
 
 		bool ok = true;
 
-		optional_task<std::tuple<int, char *>> inactive_task([] {
-			return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+		optional_task<std::tuple<int, char *>> inactive_task([] -> std::tuple<int, char *> {
+			return {PAM_SUCCESS, nullptr};
 		});
 		const PromptStopPlan                   no_stop_plan{
 		    .stop_prompt  = false,
@@ -946,8 +949,8 @@ namespace {
 		             "no-stop plan returns default prompt stop result");
 		ok &= expect(!inactive_task.active(), "no-stop plan leaves inactive task inactive");
 
-		optional_task<std::tuple<int, char *>> ready_task([] {
-			return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+		optional_task<std::tuple<int, char *>> ready_task([] -> std::tuple<int, char *> {
+			return {PAM_SUCCESS, nullptr};
 		});
 		ready_task.activate();
 		ok &= expect(ready_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
@@ -964,9 +967,10 @@ namespace {
 		ok &= expect(std::get<0>(ready_task.get()) == PAM_SUCCESS,
 		             "stopped ready prompt keeps task result");
 
-		optional_task<std::tuple<int, char *>> abort_without_native_prompt([] {
-			return std::tuple<int, char *>(PAM_CONV_ERR, nullptr);
-		});
+		optional_task<std::tuple<int, char *>> abort_without_native_prompt(
+		    [] -> std::tuple<int, char *> {
+			    return {PAM_CONV_ERR, nullptr};
+		    });
 		abort_without_native_prompt.activate();
 		ok &= expect(abort_without_native_prompt.wait(std::chrono::seconds(1)) ==
 		                 std::future_status::ready,
@@ -984,8 +988,8 @@ namespace {
 		             "abort plan deactivates prompt task without native prompt");
 
 		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
-			optional_task<std::tuple<int, char *>> input_task([] {
-				return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+			optional_task<std::tuple<int, char *>> input_task([] -> std::tuple<int, char *> {
+				return {PAM_SUCCESS, nullptr};
 			});
 			input_task.activate();
 			ok &= expect(input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,

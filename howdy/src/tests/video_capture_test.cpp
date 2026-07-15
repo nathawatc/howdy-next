@@ -116,7 +116,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 	ok &= empty_frame_is_rejected_without_grayscale_conversion();
 	ok &= three_dimensional_frame_is_rejected_without_grayscale_conversion();

@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -44,7 +45,7 @@ namespace howdy::pam {
 		RequestAuthTokenFn        request_auth_token       = nullptr;
 	};
 
-	enum class PromptCoordinatorDecision {
+	enum class PromptCoordinatorDecision : std::uint8_t {
 		kHowdyResult,
 		kPamResult,
 		kPasswordFallback,
@@ -79,6 +80,12 @@ namespace howdy::pam {
 		auto run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
 	private:
+		auto start_compare_task(pid_t                                 child_pid,
+		                        std::chrono::steady_clock::time_point compare_deadline)
+		    -> optional_task<int> &;
+		[[nodiscard]] auto configure_prompt_workaround() -> bool;
+		auto start_password_task(bool ask_pass) -> optional_task<std::tuple<int, char *>> &;
+
 		pam_handle_t                           *pamh_                 = nullptr;
 		Workaround                              requested_workaround_ = Workaround::Off;
 		bool                                    ask_auth_tok_         = false;

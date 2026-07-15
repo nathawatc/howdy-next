@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -15,7 +16,7 @@ namespace howdy::native {
 namespace howdy::native::test_cli_internal {
 	class TestPreviewRenderer;
 
-	enum class TestPreviewStatus {
+	enum class TestPreviewStatus : std::uint8_t {
 		kOk,
 		kFaceModelError,
 		kMissingGraphicalEnvironment,
@@ -72,9 +73,8 @@ namespace howdy::native::test_cli_internal {
 	auto map_preview_frame_failure(const howdy::native::PreviewFrameResult &result)
 	    -> TestPreviewResult;
 	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
-	                           const std::string                      &device_path,
-	                           const TestPreviewPreflightDependencies &dependencies)
-	    -> TestPreviewResult;
+	                           const TestPreviewPreflightDependencies &dependencies,
+	                           const std::string &device_path) -> TestPreviewResult;
 	void run_with_preview_cleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
 	                              PreviewCleanupBodyFn body);
 

@@ -7,7 +7,7 @@
 
 namespace howdy::native {
 
-	enum class OpenCvModelType {
+	enum class OpenCvModelType : std::uint8_t {
 		kYunet,
 		kSface,
 	};

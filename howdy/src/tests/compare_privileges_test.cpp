@@ -5,6 +5,7 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -28,18 +29,21 @@ namespace {
 	using howdy::native::CompareExit;
 	using howdy::native::ComparePrivilegeStatus;
 	using howdy::native::compare_privileges_internal::ComparePrivilegeDependencies;
+	using howdy::native::compare_privileges_internal::FatalExitRequest;
+	using howdy::native::compare_privileges_internal::GroupIdOutputs;
+	using howdy::native::compare_privileges_internal::UserIdOutputs;
 
 	int   marker_fd              = -1;
 	gid_t group_pointer_sentinel = 0;
 
-	enum class LookupMode {
+	enum class LookupMode : std::uint8_t {
 		kSuccess,
 		kMissing,
 		kError,
 		kErange,
 	};
 
-	enum class FailureOperation {
+	enum class FailureOperation : std::uint8_t {
 		kNone,
 		kSecurebits,
 		kAmbient,
@@ -58,7 +62,7 @@ namespace {
 		kRegainSucceeds,
 	};
 
-	enum class NonzeroCapability {
+	enum class NonzeroCapability : std::uint8_t {
 		kEffective,
 		kPermitted,
 		kInheritable,
@@ -182,6 +186,7 @@ namespace {
 		return context.failure == FailureOperation::kAmbient ? -1 : 0;
 	}
 
+	// NOLINTNEXTLINE(readability-non-const-parameter) -- POSIX callback signature.
 	auto fake_getgroups(void *raw_context, int size, gid_t *groups) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("query supplementary groups");
@@ -272,7 +277,7 @@ namespace {
 		return 0;
 	}
 
-	auto fake_getresgid(void *raw_context, gid_t *real, gid_t *effective, gid_t *saved) -> int {
+	auto fake_getresgid(void *raw_context, GroupIdOutputs outputs) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("getresgid");
 		context.getresgid_calls++;
@@ -280,15 +285,15 @@ namespace {
 		    (context.failure == FailureOperation::kGetresgid && context.getresgid_calls > 1)) {
 			return -1;
 		}
-		*real      = context.gid_mismatch && context.getresgid_calls > 1
-		                 ? static_cast<gid_t>(context.gids[0] + 1)
-		                 : context.gids[0];
-		*effective = context.gids[1];
-		*saved     = context.gids[2];
+		*outputs.real      = context.gid_mismatch && context.getresgid_calls > 1
+		                         ? static_cast<gid_t>(context.gids[0] + 1)
+		                         : context.gids[0];
+		*outputs.effective = context.gids[1];
+		*outputs.saved     = context.gids[2];
 		return 0;
 	}
 
-	auto fake_getresuid(void *raw_context, uid_t *real, uid_t *effective, uid_t *saved) -> int {
+	auto fake_getresuid(void *raw_context, UserIdOutputs outputs) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("getresuid");
 		context.getresuid_calls++;
@@ -296,11 +301,11 @@ namespace {
 		    (context.failure == FailureOperation::kGetresuid && context.getresuid_calls > 1)) {
 			return -1;
 		}
-		*real      = context.uid_mismatch && context.getresuid_calls > 1
-		                 ? static_cast<uid_t>(context.uids[0] + 1)
-		                 : context.uids[0];
-		*effective = context.uids[1];
-		*saved     = context.uids[2];
+		*outputs.real      = context.uid_mismatch && context.getresuid_calls > 1
+		                         ? static_cast<uid_t>(context.uids[0] + 1)
+		                         : context.uids[0];
+		*outputs.effective = context.uids[1];
+		*outputs.saved     = context.uids[2];
 		return 0;
 	}
 
@@ -323,13 +328,12 @@ namespace {
 		return context.failure == FailureOperation::kRegainSucceeds ? 0 : -1;
 	}
 
-	void fake_fatal_exit(void *raw_context, const char *message, std::size_t message_size,
-	                     int exit_code) {
+	void fake_fatal_exit(void *raw_context, FatalExitRequest request) {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("fatal");
 		context.fatal_calls++;
-		context.fatal_exit_code = exit_code;
-		context.fatal_message.assign(message, message_size);
+		context.fatal_exit_code = request.exit_code;
+		context.fatal_message.assign(request.message, request.message_size);
 	}
 
 	auto make_dependencies(FakePrivilegeContext &context) -> ComparePrivilegeDependencies {
@@ -746,7 +750,7 @@ namespace {
 		const auto erange_result   = drop(erange_context);
 		ok &= expect(erange_result.status == ComparePrivilegeStatus::kLookupFailed,
 		             "repeated ERANGE fails closed");
-		ok &= expect(erange_context.largest_lookup_buffer == 64 * 1024,
+		ok &= expect(erange_context.largest_lookup_buffer == std::size_t{64} * 1024,
 		             "passwd lookup reaches 64 KiB cap");
 		ok &= expect(erange_context.lookup_calls == 7, "passwd retries are bounded");
 		ok &= expect(erange_context.events.size() ==
@@ -1027,7 +1031,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 	ok &= test_non_root();
 	ok &= test_waylock_inheritable_capability();

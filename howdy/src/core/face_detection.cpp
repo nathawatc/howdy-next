@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -29,6 +30,50 @@ namespace howdy::native {
 			return value >= static_cast<double>(std::numeric_limits<int>::min()) &&
 			       value <= static_cast<double>(std::numeric_limits<int>::max());
 		}
+
+		auto validate_detection_row(const cv::Mat &rows, int row) -> std::optional<std::string> {
+			for (int column = 0; column < rows.cols; ++column) {
+				if (!std::isfinite(rows.at<float>(row, column))) {
+					return "YuNet output contains a non-finite value";
+				}
+			}
+			if (rows.at<float>(row, 2) <= 0.0F || rows.at<float>(row, 3) <= 0.0F) {
+				return "YuNet detection width and height must be greater than zero";
+			}
+			for (int column = 0; column < 14; ++column) {
+				if (!integer_rendering_value_is_safe(rows.at<float>(row, column))) {
+					return "YuNet output contains geometry outside supported integer range";
+				}
+			}
+
+			const int x      = static_cast<int>(rows.at<float>(row, 0));
+			const int y      = static_cast<int>(rows.at<float>(row, 1));
+			const int width  = static_cast<int>(rows.at<float>(row, 2));
+			const int height = static_cast<int>(rows.at<float>(row, 3));
+			if (width < 1 || height < 1) {
+				return "YuNet detection width and height must render as at least one pixel";
+			}
+			if (!integer_rendering_sum_is_safe(static_cast<double>(x) + width - 1.0) ||
+			    !integer_rendering_sum_is_safe(static_cast<double>(y) + height - 1.0) ||
+			    !integer_rendering_sum_is_safe(static_cast<double>(y) + height + 12.0)) {
+				return "YuNet output box geometry overflows preview rendering";
+			}
+			return std::nullopt;
+		}
+
+		auto make_detection(const cv::Mat &rows, int row) -> FaceDetection {
+			FaceDetection detection{
+			    .box        = cv::Rect2f(rows.at<float>(row, 0), rows.at<float>(row, 1),
+			                             rows.at<float>(row, 2), rows.at<float>(row, 3)),
+			    .confidence = rows.at<float>(row, 14),
+			};
+			for (std::size_t index = 0; index < detection.landmarks.size(); ++index) {
+				const int column = 4 + static_cast<int>(index * 2);
+				detection.landmarks[index] =
+				    cv::Point2f(rows.at<float>(row, column), rows.at<float>(row, column + 1));
+			}
+			return detection;
+		}
 	}  // namespace
 
 	auto parse_yunet_detections(const cv::Mat &rows) -> FaceDetectionResult {
@@ -54,53 +99,10 @@ namespace howdy::native {
 		FaceDetectionResult result;
 		result.detections.reserve(static_cast<std::size_t>(rows.rows));
 		for (int row = 0; row < rows.rows; ++row) {
-			for (int column = 0; column < rows.cols; ++column) {
-				if (!std::isfinite(rows.at<float>(row, column))) {
-					return invalid_output("YuNet output contains a non-finite value", rows);
-				}
+			if (auto error = validate_detection_row(rows, row); error.has_value()) {
+				return invalid_output(std::move(*error), rows);
 			}
-			if (rows.at<float>(row, 2) <= 0.0F || rows.at<float>(row, 3) <= 0.0F) {
-				return invalid_output("YuNet detection width and height must be greater than zero",
-				                      rows);
-			}
-			for (int column = 0; column < 14; ++column) {
-				if (!integer_rendering_value_is_safe(rows.at<float>(row, column))) {
-					return invalid_output(
-					    "YuNet output contains geometry outside supported integer range", rows);
-				}
-			}
-
-			const int x      = static_cast<int>(rows.at<float>(row, 0));
-			const int y      = static_cast<int>(rows.at<float>(row, 1));
-			const int width  = static_cast<int>(rows.at<float>(row, 2));
-			const int height = static_cast<int>(rows.at<float>(row, 3));
-			if (width < 1 || height < 1) {
-				return invalid_output(
-				    "YuNet detection width and height must render as at least one pixel", rows);
-			}
-
-			const auto rendered_x      = static_cast<double>(x);
-			const auto rendered_y      = static_cast<double>(y);
-			const auto rendered_width  = static_cast<double>(width);
-			const auto rendered_height = static_cast<double>(height);
-			if (!integer_rendering_sum_is_safe(rendered_x + rendered_width - 1.0) ||
-			    !integer_rendering_sum_is_safe(rendered_y + rendered_height - 1.0) ||
-			    !integer_rendering_sum_is_safe(rendered_y + rendered_height + 12.0)) {
-				return invalid_output("YuNet output box geometry overflows preview rendering",
-				                      rows);
-			}
-
-			FaceDetection detection{
-			    .box        = cv::Rect2f(rows.at<float>(row, 0), rows.at<float>(row, 1),
-			                             rows.at<float>(row, 2), rows.at<float>(row, 3)),
-			    .confidence = rows.at<float>(row, 14),
-			};
-			for (std::size_t index = 0; index < detection.landmarks.size(); ++index) {
-				const int column = 4 + static_cast<int>(index * 2);
-				detection.landmarks[index] =
-				    cv::Point2f(rows.at<float>(row, column), rows.at<float>(row, column + 1));
-			}
-			result.detections.push_back(detection);
+			result.detections.push_back(make_detection(rows, row));
 		}
 		return result;
 	}

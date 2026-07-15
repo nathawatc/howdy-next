@@ -24,6 +24,7 @@ namespace howdy::native::howdy_internal {
 		CommandMain test                           = nullptr;
 	};
 
-	int howdy_main_with_dependencies(int argc, char **argv, const HowdyDependencies &dependencies);
+	auto howdy_main_with_dependencies(int argc, char **argv, const HowdyDependencies &dependencies)
+	    -> int;
 
 }  // namespace howdy::native::howdy_internal

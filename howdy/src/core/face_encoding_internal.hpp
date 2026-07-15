@@ -7,8 +7,13 @@
 
 namespace howdy::native {
 
-	using AlignFaceFn          = void (*)(void *context, const cv::Mat &frame, const cv::Mat &face,
-	                                      cv::Mat &aligned);
+	struct FaceAlignmentRequest {
+		const cv::Mat &frame;
+		const cv::Mat &face;
+		cv::Mat       &aligned;
+	};
+
+	using AlignFaceFn          = void (*)(void *context, const FaceAlignmentRequest &request);
 	using ExtractFaceFeatureFn = void (*)(void *context, const cv::Mat &aligned, cv::Mat &feature);
 
 	struct FaceEncodingDependencies {

@@ -127,10 +127,13 @@ namespace howdy::native {
 	auto list_user_model_entries(const std::string &user, const std::string &expected_backend,
 	                             const std::string &expected_metric,
 	                             const std::string &expected_model) -> UserModelListResult {
-		const UserModelStore store;
-		const auto document = store.load_document(user, expected_backend, expected_metric,
-		                                          expected_model, true, default_secure_owner_uid());
-		const auto &entries = document.result;
+		const auto  document = UserModelStore::load_document(user,
+		                                                     {.backend      = expected_backend,
+		                                                      .metric       = expected_metric,
+		                                                      .model        = expected_model,
+		                                                      .strict_shape = true},
+		                                                     default_secure_owner_uid());
+		const auto &entries  = document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return failure(entries.status, entries.error_message);
 		}
@@ -138,15 +141,13 @@ namespace howdy::native {
 	}
 
 	auto inspect_user_model_file(const std::string &user) -> UserModelInspectResult {
-		const UserModelStore store;
-		return store.inspect(user);
+		return UserModelStore::inspect(user);
 	}
 
 	auto append_user_model_entry(const std::string &user, const NewUserModelEntry &new_entry)
 	    -> UserModelMutationResult {
-		const UserModelStore store;
-		auto                 mutation = store.begin_mutation(user);
-		auto                &entries  = mutation.document.result;
+		auto  mutation = UserModelStore::begin_mutation(user);
+		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk && entries.status != UserModelStatus::kNoModel) {
 			return mutation_failure(entries.status, entries.error_message);
 		}
@@ -223,9 +224,8 @@ namespace howdy::native {
 	}
 
 	auto remove_user_model_entry(const std::string &user, int id) -> UserModelMutationResult {
-		const UserModelStore store;
-		auto                 mutation = store.begin_mutation(user);
-		auto                &entries  = mutation.document.result;
+		auto  mutation = UserModelStore::begin_mutation(user);
+		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return mutation_failure(entries.status, entries.error_message);
 		}
@@ -233,9 +233,10 @@ namespace howdy::native {
 			return internal_invariant_failure();
 		}
 
-		const auto found = std::ranges::find_if(entries.entries, [id](const UserModelEntry &entry) {
-			return entry.id == id;
-		});
+		const auto found =
+		    std::ranges::find_if(entries.entries, [id](const UserModelEntry &entry) -> bool {
+			    return entry.id == id;
+		    });
 		if (found == entries.entries.end()) {
 			return mutation_failure(UserModelStatus::kModelNotFound, "Model ID was not found");
 		}
@@ -249,9 +250,8 @@ namespace howdy::native {
 	auto remove_user_model_entry_if_matches(const std::string               &user,
 	                                        const UserModelEntryExpectation &expected)
 	    -> UserModelMutationResult {
-		const UserModelStore store;
-		auto                 mutation = store.begin_mutation(user);
-		auto                &entries  = mutation.document.result;
+		auto  mutation = UserModelStore::begin_mutation(user);
+		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return mutation_failure(entries.status, entries.error_message);
 		}
@@ -260,7 +260,7 @@ namespace howdy::native {
 		}
 
 		const auto found =
-		    std::ranges::find_if(entries.entries, [&expected](const UserModelEntry &entry) {
+		    std::ranges::find_if(entries.entries, [&expected](const UserModelEntry &entry) -> bool {
 			    return entry.id == expected.id;
 		    });
 		if (found == entries.entries.end()) {
@@ -277,8 +277,7 @@ namespace howdy::native {
 	}
 
 	auto clear_user_model_entries(const std::string &user) -> UserModelMutationResult {
-		const UserModelStore store;
-		auto                 transaction = store.lock_existing(user);
+		auto transaction = UserModelStore::lock_existing(user);
 		if (transaction.status != UserModelStatus::kOk) {
 			return mutation_failure(transaction.status, transaction.error_message);
 		}
@@ -303,8 +302,7 @@ namespace howdy::native {
 	auto clear_user_model_entries_if_unchanged(const std::string           &user,
 	                                           const UserModelFileSnapshot &expected_snapshot)
 	    -> UserModelMutationResult {
-		const UserModelStore store;
-		auto                 transaction = store.lock_existing(user);
+		auto transaction = UserModelStore::lock_existing(user);
 		if (transaction.status == UserModelStatus::kNoModel ||
 		    transaction.status == UserModelStatus::kNoModelDirectory) {
 			return model_changed_failure();
@@ -346,8 +344,9 @@ namespace howdy::native {
 
 	auto load_user_models(const std::string &user, const std::string &expected_backend,
 	                      std::optional<uid_t> owner_uid) -> UserModelLoadResult {
-		const UserModelStore store;
-		const auto document = store.load_document(user, expected_backend, {}, {}, false, owner_uid);
+		const auto document = UserModelStore::load_document(
+		    user, {.backend = expected_backend, .metric = {}, .model = {}, .strict_shape = false},
+		    owner_uid);
 		const auto         &entries = document.result;
 		UserModelLoadResult result{
 		    .status        = remap_load_status(entries.status),

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -9,7 +10,7 @@
 
 namespace howdy::native {
 
-	enum class OpenCvModelStatus {
+	enum class OpenCvModelStatus : std::uint8_t {
 		kOk,
 		kMissing,
 		kInsecure,

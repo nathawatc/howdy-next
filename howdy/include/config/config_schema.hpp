@@ -1,24 +1,25 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <string_view>
 
 namespace howdy::native::config_schema {
 
-	enum class ValueType {
+	enum class ValueType : std::uint8_t {
 		boolean,
 		integer,
 		floating_point,
 		string,
 	};
 
-	enum class SpecialRule {
+	enum class SpecialRule : std::uint8_t {
 		none,
 		device_path,
 		sface_threshold,
 	};
 
-	enum class OptionId {
+	enum class OptionId : std::uint8_t {
 		core_detection_notice,
 		core_no_confirmation,
 		core_abort_if_ssh,

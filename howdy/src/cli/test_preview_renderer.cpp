@@ -32,7 +32,7 @@ namespace howdy::native::test_cli_internal {
 		window_cleanup_pending_   = true;
 		try {
 			if (dependencies_.initialize != nullptr) {
-				dependencies_.initialize(dependencies_.context, this);
+				dependencies_.initialize({.context = dependencies_.context, .renderer = this});
 			} else {
 				cv::namedWindow(kWindowName);
 				cv::setMouseCallback(kWindowName, mouse_callback, this);
@@ -51,7 +51,7 @@ namespace howdy::native::test_cli_internal {
 			return;
 		}
 		std::exception_ptr cleanup_error;
-		auto               attempt_cleanup = [&cleanup_error](bool &pending, auto &&operation) {
+		auto attempt_cleanup = [&cleanup_error](bool &pending, auto &&operation) -> auto {
 			if (!pending) {
 				return;
 			}
@@ -65,14 +65,14 @@ namespace howdy::native::test_cli_internal {
 			}
 		};
 
-		attempt_cleanup(callback_cleanup_pending_, [this] {
+		attempt_cleanup(callback_cleanup_pending_, [this] -> void {
 			if (dependencies_.clear_callback != nullptr) {
 				dependencies_.clear_callback(dependencies_.context);
 			} else {
 				cv::setMouseCallback(kWindowName, nullptr, nullptr);
 			}
 		});
-		attempt_cleanup(window_cleanup_pending_, [this] {
+		attempt_cleanup(window_cleanup_pending_, [this] -> void {
 			if (dependencies_.destroy_window != nullptr) {
 				dependencies_.destroy_window(dependencies_.context);
 			} else {
@@ -207,6 +207,8 @@ namespace howdy::native::test_cli_internal {
 		renderer.emplace(std::move(config), std::move(models), dependencies);
 	}
 
+	// OpenCV MouseCallback requires int, int, int, int, void *.
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	void TestPreviewRenderer::mouse_callback(int event, int x, int y, int flags, void *userdata) {
 		(void)x;
 		(void)y;

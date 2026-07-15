@@ -142,22 +142,20 @@ namespace {
 		return 0;
 	}
 
-	auto capture_posix_spawn(void *context, pid_t *child_pid, const char *path,
-	                         const posix_spawn_file_actions_t *actions, char *const *argv,
-	                         char *const *envp) -> int {
-		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+	auto capture_posix_spawn(const howdy::pam::testing::PosixSpawnRequest &request) -> int {
+		auto &capture = *static_cast<PosixSpawnCapture *>(request.context);
 		++capture.spawn_calls;
-		capture.spawn_actions = actions;
-		capture.path          = path;
-		for (char *const *argument = argv; *argument != nullptr; ++argument) {
+		capture.spawn_actions = request.actions;
+		capture.path          = request.path;
+		for (char *const *argument = request.argv; *argument != nullptr; ++argument) {
 			capture.argv.emplace_back(*argument);
 		}
-		for (char *const *entry = envp; *entry != nullptr; ++entry) {
+		for (char *const *entry = request.envp; *entry != nullptr; ++entry) {
 			capture.environment.emplace_back(*entry);
 		}
 
 		if (capture.spawn_result == 0) {
-			*child_pid = capture.next_pid;
+			*request.child_pid = capture.next_pid;
 		}
 		return capture.spawn_result;
 	}
@@ -244,9 +242,14 @@ namespace {
 
 	class ScopedNativePromptResults {
 	public:
-		ScopedNativePromptResults(int available_result, int install_result) {
-			NativePromptConversation::set_test_available_result(available_result);
-			NativePromptConversation::set_test_install_result(install_result);
+		struct Results {
+			int available = -1;
+			int install   = -1;
+		};
+
+		explicit ScopedNativePromptResults(Results results) {
+			NativePromptConversation::set_test_available_result(results.available);
+			NativePromptConversation::set_test_install_result(results.install);
 		}
 
 		ScopedNativePromptResults(const ScopedNativePromptResults &)                     = delete;
@@ -295,52 +298,55 @@ namespace {
 		return 0;
 	}
 
+	void handle_native_prompt(FakeContext &fake) {
+		struct pollfd prompt_fd = {
+		    .fd      = fake.prompt_master_fd,
+		    .events  = POLLIN,
+		    .revents = 0,
+		};
+		int poll_result = -1;
+		do {
+			poll_result = poll(&prompt_fd, 1, -1);
+		} while (poll_result < 0 && errno == EINTR);
+		if (poll_result > 0 && (prompt_fd.revents & POLLIN) != 0) {
+			std::array<char, 64> buffer{};
+			if (read(fake.prompt_master_fd, buffer.data(), buffer.size()) > 0) {
+				fake.native_prompt_seen = true;
+				if (fake.complete_native_prompt) {
+					const std::string input   = "password\n";
+					std::size_t       written = 0;
+					while (written < input.size()) {
+						const ssize_t result = write(fake.prompt_master_fd, input.data() + written,
+						                             input.size() - written);
+						if (result > 0) {
+							written += static_cast<std::size_t>(result);
+							continue;
+						}
+						if (result < 0 && errno == EINTR) {
+							continue;
+						}
+						break;
+					}
+					fake.native_prompt_input_sent = written == input.size();
+				}
+			}
+		}
+		if (fake.complete_native_prompt) {
+			std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
+			fake.native_prompt_condition.wait(lock, [&fake] -> bool {
+				return fake.native_prompt_completed.load();
+			});
+			fake.pam_completion_observed_by_waiter = true;
+		}
+	}
+
 	auto wait_for_compare(void *context, pid_t child_pid,
 	                      [[maybe_unused]] std::chrono::steady_clock::time_point deadline) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
 		fake.waited_pid = child_pid;
 		if (fake.request_native_prompt && fake.prompt_master_fd >= 0) {
-			struct pollfd prompt_fd = {
-			    .fd      = fake.prompt_master_fd,
-			    .events  = POLLIN,
-			    .revents = 0,
-			};
-			int poll_result = -1;
-			do {
-				poll_result = poll(&prompt_fd, 1, -1);
-			} while (poll_result < 0 && errno == EINTR);
-			if (poll_result > 0 && (prompt_fd.revents & POLLIN) != 0) {
-				std::array<char, 64> buffer{};
-				if (read(fake.prompt_master_fd, buffer.data(), buffer.size()) > 0) {
-					fake.native_prompt_seen = true;
-					if (fake.complete_native_prompt) {
-						const std::string input   = "password\n";
-						std::size_t       written = 0;
-						while (written < input.size()) {
-							const ssize_t result =
-							    write(fake.prompt_master_fd, input.data() + written,
-							          input.size() - written);
-							if (result > 0) {
-								written += static_cast<std::size_t>(result);
-								continue;
-							}
-							if (result < 0 && errno == EINTR) {
-								continue;
-							}
-							break;
-						}
-						fake.native_prompt_input_sent = written == input.size();
-					}
-				}
-			}
-			if (fake.complete_native_prompt) {
-				std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
-				fake.native_prompt_condition.wait(lock, [&fake] {
-					return fake.native_prompt_completed.load();
-				});
-				fake.pam_completion_observed_by_waiter = true;
-			}
+			handle_native_prompt(fake);
 		}
 		while (true) {
 			int         status = 0;
@@ -769,7 +775,8 @@ namespace {
 		if (!expect(fixture.start(false), label + " starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results(available_result, install_result);
+		ScopedNativePromptResults prompt_results(
+		    {.available = available_result, .install = install_result});
 		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
@@ -799,7 +806,7 @@ namespace {
 		if (!expect(fixture.start(false), "native-input success starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results(1, PAM_SUCCESS);
+		ScopedNativePromptResults prompt_results({.available = 1, .install = PAM_SUCCESS});
 		const pid_t               child_pid = spawn_blocked_child();
 		if (!expect(child_pid > 0, "native-input success child spawned")) {
 			return false;
@@ -836,7 +843,8 @@ namespace {
 		if (!expect(fixture.start(false), label + " starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results(available_result, install_result);
+		ScopedNativePromptResults prompt_results(
+		    {.available = available_result, .install = install_result});
 		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
@@ -874,8 +882,8 @@ namespace {
 			return false;
 		}
 
-		optional_task<std::tuple<int, char *>> pass_task([] {
-			return std::tuple<int, char *>(PAM_SUCCESS, nullptr);
+		optional_task<std::tuple<int, char *>> pass_task([] -> std::tuple<int, char *> {
+			return {PAM_SUCCESS, nullptr};
 		});
 		pass_task.activate();
 		pass_task.stop();

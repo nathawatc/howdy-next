@@ -8,6 +8,8 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,7 +40,7 @@ namespace howdy::native {
 		PreviewNowFn          now           = preview_steady_clock_now;
 	};
 
-	enum class PreviewFrameStatus {
+	enum class PreviewFrameStatus : std::uint8_t {
 		kNoFace,
 		kFacesDetected,
 		kUnmatchedFace,
@@ -52,7 +54,7 @@ namespace howdy::native {
 		kInvalidDependencies,
 	};
 
-	enum class PreviewFaceStatus {
+	enum class PreviewFaceStatus : std::uint8_t {
 		kDetected,
 		kEncodingFailed,
 		kUnmatched,
@@ -84,6 +86,18 @@ namespace howdy::native {
 		auto process_gray_frame(cv::Mat gray_frame) -> PreviewFrameResult;
 
 	private:
+		struct EncodedFace {
+			std::size_t        face_index = 0;
+			std::vector<float> encoding;
+		};
+
+		[[nodiscard]] auto dependencies_valid() const -> bool;
+		auto encode_faces(const cv::Mat &prepared, const std::vector<FaceDetection> &detections,
+		                  std::vector<PreviewFaceResult> &faces, std::string &first_error) const
+		    -> std::vector<EncodedFace>;
+		auto match_faces(const std::vector<EncodedFace> &encodings,
+		                 std::vector<PreviewFaceResult> &faces) -> std::optional<bool>;
+
 		VideoConfig                     config_;
 		cv::Ptr<cv::CLAHE>              clahe_;
 		PreviewInferenceDependencies    dependencies_;

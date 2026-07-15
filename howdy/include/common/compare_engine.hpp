@@ -6,6 +6,7 @@
 #include "core/face_encoding.hpp"
 #include "core/face_matching.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -13,7 +14,7 @@
 
 namespace howdy::native {
 
-	enum class CompareFrameStatus {
+	enum class CompareFrameStatus : std::uint8_t {
 		kReady,
 		kBlackFrame,
 		kTooDark,
@@ -47,7 +48,7 @@ namespace howdy::native {
 		FindBestMatchFn    find_best_match    = nullptr;
 	};
 
-	enum class CompareInferenceStatus {
+	enum class CompareInferenceStatus : std::uint8_t {
 		kNoMatch,
 		kMatch,
 		kInvalidPreparedFrame,

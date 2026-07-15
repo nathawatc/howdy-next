@@ -1,4 +1,5 @@
 name: Test Build
+
 on:
   pull_request:
   workflow_dispatch:
@@ -14,6 +15,6 @@ jobs:
 
       - name: Build and test
         run: |
-          cmake --preset release
+          cmake --preset release -DHOWDY_WARNINGS_AS_ERRORS=ON
           cmake --build --preset release --parallel "$(nproc)"
           ctest --preset release

@@ -325,14 +325,17 @@ namespace {
 		return ok;
 	}
 
-	auto
-	preflight_failure_stops_before_prompt(howdy::native::add_internal::AddPreflightStatus status,
-	                                      const std::string &message, const std::string &test_name)
-	    -> bool {
+	struct PreflightFailureCase {
+		howdy::native::add_internal::AddPreflightStatus status;
+		std::string                                     message;
+		std::string                                     test_name;
+	};
+
+	auto preflight_failure_stops_before_prompt(const PreflightFailureCase &test_case) -> bool {
 		auto context             = make_success_context();
 		context.preflight_result = howdy::native::add_internal::AddPreflightResult{
-		    .status        = status,
-		    .error_message = message,
+		    .status        = test_case.status,
+		    .error_message = test_case.message,
 		};
 		std::istringstream input("front-door\n");
 		std::ostringstream output;
@@ -342,34 +345,38 @@ namespace {
 		const int result = run_add(context, {"howdy-add", "alice"});
 
 		bool ok = true;
-		ok &= expect(result == 1, test_name + " returns 1");
-		ok &= expect(context.preflight_calls == 1, test_name + " calls preflight");
-		ok &=
-		    expect(context.preflight_saw_unread_input, test_name + " runs preflight before prompt");
-		ok &= expect(context.capture_calls == 0, test_name + " skips capture");
-		ok &= expect(context.append_calls == 0, test_name + " skips append");
-		ok &= expect(input.tellg() == std::streampos(0), test_name + " leaves label input unread");
+		ok &= expect(result == 1, test_case.test_name + " returns 1");
+		ok &= expect(context.preflight_calls == 1, test_case.test_name + " calls preflight");
+		ok &= expect(context.preflight_saw_unread_input,
+		             test_case.test_name + " runs preflight before prompt");
+		ok &= expect(context.capture_calls == 0, test_case.test_name + " skips capture");
+		ok &= expect(context.append_calls == 0, test_case.test_name + " skips append");
+		ok &= expect(input.tellg() == std::streampos(0),
+		             test_case.test_name + " leaves label input unread");
 		ok &= expect(!output.str().contains("Enter a label for this new model"),
-		             test_name + " does not prompt for label");
+		             test_case.test_name + " does not prompt for label");
 		return ok;
 	}
 
 	auto face_model_preflight_failure_stops_before_prompt() -> bool {
 		return preflight_failure_stops_before_prompt(
-		    howdy::native::add_internal::AddPreflightStatus::kFaceModelError, "face failed",
-		    "face-model preflight failure");
+		    {.status    = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
+		     .message   = "face failed",
+		     .test_name = "face-model preflight failure"});
 	}
 
 	auto incompatible_existing_model_stops_before_prompt() -> bool {
 		return preflight_failure_stops_before_prompt(
-		    howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible, "",
-		    "incompatible existing model");
+		    {.status  = howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible,
+		     .message = "",
+		     .test_name = "incompatible existing model"});
 	}
 
 	auto existing_model_error_stops_before_prompt() -> bool {
 		return preflight_failure_stops_before_prompt(
-		    howdy::native::add_internal::AddPreflightStatus::kExistingModelError, "storage failed",
-		    "existing model preflight error");
+		    {.status    = howdy::native::add_internal::AddPreflightStatus::kExistingModelError,
+		     .message   = "storage failed",
+		     .test_name = "existing model preflight error"});
 	}
 
 	auto unknown_preflight_status_fails_closed_before_prompt() -> bool {

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <climits>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <string>
@@ -30,7 +31,7 @@ namespace {
 		};
 	}
 
-	enum class FailureOperation {
+	enum class FailureOperation : std::uint8_t {
 		kNone,
 		kPrctl,
 		kGetrlimit,
@@ -420,7 +421,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 	ok &= test_preferred_values_accepted();
 	ok &= test_unlimited_values_accepted();

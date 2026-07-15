@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -540,20 +541,17 @@ namespace {
 		return fake.actions_destroy_result;
 	}
 
-	auto fake_spawn(void *context, pid_t *child_pid, const char *path,
-	                const posix_spawn_file_actions_t *actions, char *const *argv, char *const *env)
-	    -> int {
-		(void)actions;
-		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
+	auto fake_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
+		auto &fake = *static_cast<AuthHelperSpawnFake *>(request.context);
 		fake.operations.emplace_back("spawn");
 		++fake.spawn_calls;
-		fake.spawn_path = path;
-		for (auto *const *argument = argv; argument != nullptr && *argument != nullptr;
+		fake.spawn_path = request.path;
+		for (auto *const *argument = request.argv; argument != nullptr && *argument != nullptr;
 		     ++argument) {
 			fake.spawn_argv.emplace_back(*argument);
 		}
-		for (auto *const *environment = env; environment != nullptr && *environment != nullptr;
-		     ++environment) {
+		for (auto *const *environment = request.envp;
+		     environment != nullptr && *environment != nullptr; ++environment) {
 			fake.spawn_env.emplace_back(*environment);
 		}
 		if (fake.spawn_result != 0) {
@@ -567,8 +565,8 @@ namespace {
 		if (pid == 0) {
 			_exit(EXIT_SUCCESS);
 		}
-		*child_pid       = pid;
-		fake.spawned_pid = pid;
+		*request.child_pid = pid;
+		fake.spawned_pid   = pid;
 		return 0;
 	}
 
@@ -579,8 +577,7 @@ namespace {
 		return 0;
 	}
 
-	auto fake_auth_helper_output_reader([[maybe_unused]] int         fd,
-	                                    [[maybe_unused]] std::size_t max_bytes)
+	auto fake_auth_helper_output_reader([[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
 		if (g_auth_helper_spawn_fake != nullptr) {
 			g_auth_helper_spawn_fake->operations.emplace_back("read_output");
@@ -700,7 +697,7 @@ namespace {
 	}
 
 	auto test_auth_helper_spawn_setup_failures() -> bool {
-		enum class FailurePoint {
+		enum class FailurePoint : std::uint8_t {
 			kInit,
 			kFirstClose,
 			kStdoutDup,
@@ -978,13 +975,7 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto integration_spawn(void *context, pid_t *child_pid, const char *path,
-	                       const posix_spawn_file_actions_t *actions, char *const *argv,
-	                       char *const *envp) -> int {
-		(void)context;
-		(void)path;
-		(void)argv;
-		(void)envp;
+	auto integration_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
 		std::array<char *, 4> shell_args = {
 		    const_cast<char *>("/bin/sh"),
 		    const_cast<char *>("-c"),
@@ -993,8 +984,8 @@ namespace {
 		    nullptr,
 		};
 		std::array<char *, 1> empty_env = {nullptr};
-		return posix_spawn(child_pid, "/bin/sh", actions, nullptr, shell_args.data(),
-		                   empty_env.data());
+		return posix_spawn(request.child_pid, "/bin/sh", request.actions, nullptr,
+		                   shell_args.data(), empty_env.data());
 	}
 
 	auto integration_close(void *context, int fd) -> int {
@@ -1016,29 +1007,24 @@ namespace {
 		int                spawn_calls = 0;
 	};
 
-	auto stalled_spawn(void *context, pid_t *child_pid, const char *path,
-	                   const posix_spawn_file_actions_t *actions, char *const *argv,
-	                   char *const *envp) -> int {
-		(void)path;
-		(void)argv;
-		(void)envp;
-		auto &stalled = *static_cast<StalledSpawnContext *>(context);
+	auto stalled_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
+		auto &stalled = *static_cast<StalledSpawnContext *>(request.context);
 		++stalled.spawn_calls;
 		const std::string command = "trap '' TERM; printf R >&" +
 		                            std::to_string(stalled.ready_pipe[1]) + "; exec /bin/sleep 60";
 		std::array<char *, 4> shell_args = {const_cast<char *>("/bin/sh"), const_cast<char *>("-c"),
 		                                    const_cast<char *>(command.c_str()), nullptr};
 		std::array<char *, 1> empty_env  = {nullptr};
-		const int result = posix_spawn(child_pid, "/bin/sh", actions, nullptr, shell_args.data(),
-		                               empty_env.data());
+		const int result = posix_spawn(request.child_pid, "/bin/sh", request.actions, nullptr,
+		                               shell_args.data(), empty_env.data());
 		if (result != 0) {
 			return result;
 		}
-		stalled.spawned_pid = *child_pid;
+		stalled.spawned_pid = *request.child_pid;
 		(void)close(stalled.ready_pipe[1]);
 		stalled.ready_pipe[1] = -1;
 		if (!wait_for_ready_byte(stalled.ready_pipe[0], "stalled auth helper")) {
-			terminate_and_reap_test_child(*child_pid);
+			terminate_and_reap_test_child(*request.child_pid);
 			return EIO;
 		}
 		return 0;
@@ -1253,7 +1239,7 @@ namespace {
 		const auto              start         = std::chrono::steady_clock::now();
 		const auto              timeout       = std::chrono::milliseconds(150);
 		const bool              result        = howdy::pam::testing::read_auth_helper_output_until(
-		    child_pid, output_pipe[0], &helper_output, start + timeout);
+		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &helper_output, start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		(void)close(output_pipe[0]);
 
@@ -1406,7 +1392,7 @@ namespace {
 
 		std::string output = "stale";
 		const bool  result = howdy::pam::testing::read_auth_helper_output_until(
-		    child_pid, output_pipe[0], &output,
+		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &output,
 		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
 		(void)close(output_pipe[0]);
 		return expect(!result, "output limit is rejected") &&

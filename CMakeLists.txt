@@ -54,17 +54,51 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_compile_options(-Wall -fstack-protector-strong)
+option(
+	HOWDY_WARNINGS_AS_ERRORS
+	"Treat compiler warnings as errors"
+	OFF
+)
+
+add_compile_options(
+	# High-signal compiler diagnostics.
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wextra>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wpedantic>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wconversion>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wsign-conversion>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wshadow>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wformat=2>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wundef>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wdate-time>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wmissing-declarations>"
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Woverloaded-virtual>"
+
+	# Partial aggregate initialization is intentional. Remaining members are
+	# value-initialized by C++, while clang-tidy checks unsafe member state.
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wno-missing-field-initializers>"
+
+	# Build hardening.
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-fstack-protector-strong>"
+
+	# Enable only in maintainer/CI builds.
+	"$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-Werror>"
+)
+
 add_compile_definitions(
 	GETTEXT_PACKAGE="howdy"
 	LOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}"
+
 	"$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>"
 	"$<$<CONFIG:RelWithDebInfo>:_FORTIFY_SOURCE=3>"
 	"$<$<CONFIG:MinSizeRel>:_FORTIFY_SOURCE=3>"
 )
+
 add_link_options(
-	-Wl,-z,relro -Wl,-z,now
-	LINKER:--no-undefined LINKER:--as-needed
+	"LINKER:-z,relro"
+	"LINKER:-z,now"
+	"LINKER:--no-undefined"
+	"LINKER:--as-needed"
 )
 
 pkg_check_modules(OPENCV5 REQUIRED IMPORTED_TARGET opencv5>=5.0.0)

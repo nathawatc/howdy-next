@@ -51,6 +51,70 @@ namespace howdy::native {
 			       "\": " + std::string(rule);
 		}
 
+		auto validate_integer(const config_schema::Option &option, std::string_view value)
+		    -> std::optional<std::string> {
+			const auto parsed = parse_int_strict(value);
+			if (!parsed.has_value()) {
+				return invalid_config_value_message(option.key, value, option.invalid_rule);
+			}
+			if (option.range.has_allowed_value &&
+			    *parsed == static_cast<int>(option.range.allowed_value)) {
+				return std::nullopt;
+			}
+			if (*parsed < static_cast<int>(option.range.minimum) ||
+			    *parsed > static_cast<int>(option.range.maximum)) {
+				return invalid_config_value_message(option.key, value, option.invalid_rule);
+			}
+			return std::nullopt;
+		}
+
+		auto validate_float(const ConfigReader &config, const config_schema::Option &option,
+		                    std::string_view value) -> std::optional<std::string> {
+			const auto parsed = parse_config_float_strict(value);
+			if (!parsed.has_value()) {
+				return invalid_config_value_message(option.key, value, option.invalid_rule);
+			}
+			if (option.special_rule == config_schema::SpecialRule::sface_threshold) {
+				const auto &metric_option = config_schema::runtime_config_option(
+				    config_schema::OptionId::face_sface_metric);
+				const auto  metric  = normalized_lower(config.get(
+				    std::string(metric_option.section), std::string(metric_option.key),
+				    std::string(config_schema::runtime_default_string(metric_option.id))));
+				const float maximum = metric == "cosine"
+				                          ? config_schema::sface_cosine_threshold_maximum
+				                          : option.range.maximum;
+				if (*parsed < option.range.minimum || *parsed > maximum) {
+					return invalid_config_value_message(option.key, value,
+					                                    metric == "cosine" ? "expected range 0..1"
+					                                                       : "expected range 0..4");
+				}
+				return std::nullopt;
+			}
+			if (*parsed < option.range.minimum || *parsed > option.range.maximum) {
+				return invalid_config_value_message(option.key, value, option.invalid_rule);
+			}
+			return std::nullopt;
+		}
+
+		auto validate_string(const config_schema::Option &option, std::string_view value)
+		    -> std::optional<std::string> {
+			if (option.special_rule == config_schema::SpecialRule::device_path) {
+				if (std::ranges::find(option.choices, value) != option.choices.end()) {
+					return std::nullopt;
+				}
+				if (value.empty() || !is_allowed_capture_device_path(value)) {
+					return invalid_config_value_message(option.key, value, option.invalid_rule);
+				}
+				return std::nullopt;
+			}
+			if (!option.choices.empty() &&
+			    std::ranges::find(option.choices, normalized_lower(std::string(value))) ==
+			        option.choices.end()) {
+				return invalid_config_value_message(option.key, value, option.invalid_rule);
+			}
+			return std::nullopt;
+		}
+
 		auto validate_known_config_value(const ConfigReader          &config,
 		                                 const config_schema::Option &option,
 		                                 std::string_view value) -> std::optional<std::string> {
@@ -61,63 +125,13 @@ namespace howdy::native {
 					}
 					return std::nullopt;
 				case config_schema::ValueType::integer: {
-					const auto parsed = parse_int_strict(value);
-					if (!parsed.has_value()) {
-						return invalid_config_value_message(option.key, value, option.invalid_rule);
-					}
-					if (option.range.has_allowed_value &&
-					    *parsed == static_cast<int>(option.range.allowed_value)) {
-						return std::nullopt;
-					}
-					if (*parsed < static_cast<int>(option.range.minimum) ||
-					    *parsed > static_cast<int>(option.range.maximum)) {
-						return invalid_config_value_message(option.key, value, option.invalid_rule);
-					}
-					return std::nullopt;
+					return validate_integer(option, value);
 				}
 				case config_schema::ValueType::floating_point: {
-					const auto parsed = parse_config_float_strict(value);
-					if (!parsed.has_value()) {
-						return invalid_config_value_message(option.key, value, option.invalid_rule);
-					}
-					if (option.special_rule == config_schema::SpecialRule::sface_threshold) {
-						const auto &metric_option = config_schema::runtime_config_option(
-						    config_schema::OptionId::face_sface_metric);
-						const auto  metric  = normalized_lower(config.get(
-						    std::string(metric_option.section), std::string(metric_option.key),
-						    std::string(config_schema::runtime_default_string(metric_option.id))));
-						const float maximum = metric == "cosine"
-						                          ? config_schema::sface_cosine_threshold_maximum
-						                          : option.range.maximum;
-						if (*parsed < option.range.minimum || *parsed > maximum) {
-							return invalid_config_value_message(
-							    option.key, value,
-							    metric == "cosine" ? "expected range 0..1" : "expected range 0..4");
-						}
-						return std::nullopt;
-					}
-					if (*parsed < option.range.minimum || *parsed > option.range.maximum) {
-						return invalid_config_value_message(option.key, value, option.invalid_rule);
-					}
-					return std::nullopt;
+					return validate_float(config, option, value);
 				}
 				case config_schema::ValueType::string:
-					if (option.special_rule == config_schema::SpecialRule::device_path) {
-						if (std::ranges::find(option.choices, value) != option.choices.end()) {
-							return std::nullopt;
-						}
-						if (value.empty() || !is_allowed_capture_device_path(value)) {
-							return invalid_config_value_message(option.key, value,
-							                                    option.invalid_rule);
-						}
-						return std::nullopt;
-					}
-					if (!option.choices.empty() &&
-					    std::ranges::find(option.choices, normalized_lower(std::string(value))) ==
-					        option.choices.end()) {
-						return invalid_config_value_message(option.key, value, option.invalid_rule);
-					}
-					return std::nullopt;
+					return validate_string(option, value);
 			}
 			return std::nullopt;
 		}

@@ -125,8 +125,8 @@ namespace {
 		return config.ok() && !howdy::native::validate_runtime_config(config).has_value();
 	}
 
-	auto rejects(const std::filesystem::path &path, const std::string &content,
-	             const std::string &needle) -> bool {
+	auto rejects(const std::filesystem::path &path, const std::string &content, const char *needle)
+	    -> bool {
 		if (!write_file(path, content)) {
 			return false;
 		}

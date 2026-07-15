@@ -68,7 +68,13 @@ namespace {
 		return true;
 	}
 
-	auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd, std::string *slave_name) -> bool {
+	struct PtyPairOutputs {
+		ScopedFd    *master_fd  = nullptr;
+		ScopedFd    *slave_fd   = nullptr;
+		std::string *slave_name = nullptr;
+	};
+
+	auto open_pty_pair(PtyPairOutputs outputs) -> bool {
 		const int master = posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC);
 		if (master < 0 || grantpt(master) != 0 || unlockpt(master) != 0) {
 			if (master >= 0) {
@@ -89,9 +95,9 @@ namespace {
 			return false;
 		}
 
-		*master_fd  = ScopedFd(master);
-		*slave_fd   = ScopedFd(slave);
-		*slave_name = name;
+		*outputs.master_fd  = ScopedFd(master);
+		*outputs.slave_fd   = ScopedFd(slave);
+		*outputs.slave_name = name;
 		return true;
 	}
 
@@ -141,7 +147,9 @@ auto main() -> int {
 	ScopedFd    slave_fd;
 	std::string slave_name;
 
-	ok &= expect(open_pty_pair(&master_fd, &slave_fd, &slave_name), "opens pseudo terminal");
+	ok &= expect(
+	    open_pty_pair({.master_fd = &master_fd, .slave_fd = &slave_fd, .slave_name = &slave_name}),
+	    "opens pseudo terminal");
 	if (!ok) {
 		return 1;
 	}

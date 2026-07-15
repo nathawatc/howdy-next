@@ -343,7 +343,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::resolve(const std::string &user, bool create_directory,
-	                             std::optional<uid_t> owner_uid) const
+	                             std::optional<uid_t> owner_uid)
 	    -> UserModelStore::UserModelPathResult {
 		const auto models_dir = resolve_user_models_dir();
 		if (!create_directory) {
@@ -401,7 +401,8 @@ namespace howdy::native {
 		}
 		if (model_exists) {
 			const auto file_security = check_secure_root_owned_file_with_directory(
-			    *model_path, "User models directory", "User model file", owner_uid);
+			    *model_path, {.directory = "User models directory", .file = "User model file"},
+			    owner_uid);
 			if (!file_security.ok) {
 				return UserModelPathResult{
 				    .status        = UserModelStatus::kInsecurePath,
@@ -414,8 +415,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::inspect_regular_file_status(const std::filesystem::path &path,
-	                                                 std::string                 *message) const
-	    -> UserModelStatus {
+	                                                 std::string *message) -> UserModelStatus {
 		std::error_code regular_ec;
 		if (std::filesystem::is_regular_file(path, regular_ec)) {
 			return UserModelStatus::kOk;
@@ -433,10 +433,8 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::load_document_from_fd(int fd, const std::filesystem::path &path,
-	                                           const std::string &expected_backend,
-	                                           const std::string &expected_metric,
-	                                           const std::string &expected_model, bool strict_shape,
-	                                           bool treat_empty_as_no_model) const
+	                                           const UserModelExpectations &expectations,
+	                                           bool                         treat_empty_as_no_model)
 	    -> user_model_codec::Document {
 		struct stat opened_file{};
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
@@ -468,8 +466,8 @@ namespace howdy::native {
 			};
 		}
 
-		const auto content =
-		    read_fd_to_string_bounded(fd, user_model_limits::kMaxUserModelFileBytes + 1);
+		const auto content = read_fd_to_string_bounded(
+		    {.fd = fd, .max_bytes = user_model_limits::kMaxUserModelFileBytes + 1});
 		if (content.read_error) {
 			return user_model_codec::Document{
 			    failure(UserModelStatus::kParseError,
@@ -483,15 +481,13 @@ namespace howdy::native {
 			};
 		}
 
-		return user_model_codec::decode_document(content.output, expected_backend, expected_metric,
-		                                         expected_model, strict_shape);
+		return user_model_codec::decode_document(content.output, expectations.backend,
+		                                         expectations.metric, expectations.model,
+		                                         expectations.strict_shape);
 	}
 
 	auto UserModelStore::load_document_from_path(const std::filesystem::path &path,
-	                                             const std::string           &expected_backend,
-	                                             const std::string           &expected_metric,
-	                                             const std::string           &expected_model,
-	                                             bool                         strict_shape) const
+	                                             const UserModelExpectations &expectations)
 	    -> user_model_codec::Document {
 		ScopedFd input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (input.get() < 0) {
@@ -504,25 +500,22 @@ namespace howdy::native {
 			            "Failed to open user model file: " + path.string()),
 			};
 		}
-		return load_document_from_fd(input.get(), path, expected_backend, expected_metric,
-		                             expected_model, strict_shape, false);
+		return load_document_from_fd(input.get(), path, expectations, false);
 	}
 
-	auto UserModelStore::load_document(const std::string &user, const std::string &expected_backend,
-	                                   const std::string &expected_metric,
-	                                   const std::string &expected_model, bool strict_shape,
-	                                   std::optional<uid_t> owner_uid) const
+	auto UserModelStore::load_document(const std::string           &user,
+	                                   const UserModelExpectations &expectations,
+	                                   std::optional<uid_t>         owner_uid)
 	    -> user_model_codec::Document {
 		const auto path_result = resolve(user, false, owner_uid);
 		if (path_result.status != UserModelStatus::kOk) {
 			return user_model_codec::Document(
 			    failure(path_result.status, path_result.error_message));
 		}
-		return load_document_from_path(path_result.path, expected_backend, expected_metric,
-		                               expected_model, strict_shape);
+		return load_document_from_path(path_result.path, expectations);
 	}
 
-	auto UserModelStore::inspect(const std::string &user) const -> UserModelInspectResult {
+	auto UserModelStore::inspect(const std::string &user) -> UserModelInspectResult {
 		const auto path_result = resolve(user, false, default_secure_owner_uid());
 		if (path_result.status != UserModelStatus::kOk) {
 			return inspect_failure(path_result.status, path_result.error_message);
@@ -544,8 +537,7 @@ namespace howdy::native {
 		};
 	}
 
-	auto UserModelStore::begin_mutation(const std::string &user) const
-	    -> UserModelStoreMutationResult {
+	auto UserModelStore::begin_mutation(const std::string &user) -> UserModelStoreMutationResult {
 		const auto path_result = resolve(user, true, default_secure_owner_uid());
 		if (path_result.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
@@ -581,8 +573,10 @@ namespace howdy::native {
 			                "User model file changed, please rerun the command")),
 			};
 		}
-		auto document = load_document_from_fd(locked_file->lock.fd, path_result.path, {}, {}, {},
-		                                      true, locked_file->created_empty_file);
+		auto document =
+		    load_document_from_fd(locked_file->lock.fd, path_result.path,
+		                          {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
+		                          locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
 		    .transaction = UserModelStoreTransaction(
 		        path_result.path, std::move(locked_file->namespace_lock),
@@ -591,8 +585,7 @@ namespace howdy::native {
 		};
 	}
 
-	auto UserModelStore::lock_existing(const std::string &user) const
-	    -> UserModelStoreTransactionResult {
+	auto UserModelStore::lock_existing(const std::string &user) -> UserModelStoreTransactionResult {
 		const auto path_result = resolve(user, false, default_secure_owner_uid());
 		if (path_result.status != UserModelStatus::kOk) {
 			return UserModelStoreTransactionResult{

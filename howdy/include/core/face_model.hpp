@@ -6,6 +6,7 @@
 #include "core/face_encoding.hpp"
 #include "core/face_matching.hpp"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,7 +15,7 @@
 #include <opencv2/objdetect/face.hpp>
 
 namespace howdy::native {
-	enum class FaceModelErrorCategory {
+	enum class FaceModelErrorCategory : std::uint8_t {
 		kNone,
 		kModelNotReady,
 		kDetectorInitialization,
@@ -34,8 +35,8 @@ namespace howdy::native {
 		[[nodiscard]] auto error_message() const -> const std::string &;
 		[[nodiscard]] auto metric() const -> const std::string &;
 
-		[[nodiscard]] auto prepare_frame(const cv::Mat &frame) const -> cv::Mat;
-		auto               detect(const cv::Mat &frame) -> FaceDetectionResult;
+		[[nodiscard]] static auto prepare_frame(const cv::Mat &frame) -> cv::Mat;
+		auto                      detect(const cv::Mat &frame) -> FaceDetectionResult;
 		auto encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
 		[[nodiscard]] auto best_match(const std::vector<std::vector<float>> &known,
 		                              const std::vector<float> &probe) const -> FaceMatch;

@@ -34,9 +34,8 @@ namespace howdy::native {
 		return CompareExit::kTimeoutReached;
 	}
 
-	auto compare_resize_scale(int frame_width, int frame_height, int rotate, float max_height)
-	    -> double {
-		const int scaling_axis = rotate == 2 ? frame_width : frame_height;
+	auto compare_resize_scale(FrameGeometry frame, float max_height) -> double {
+		const int scaling_axis = frame.rotation == 2 ? frame.width : frame.height;
 		if (scaling_axis <= 0 || max_height <= 0.0F) {
 			return 1.0;
 		}

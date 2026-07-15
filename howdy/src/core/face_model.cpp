@@ -21,9 +21,9 @@ namespace howdy::native {
 			return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
 		}
 
-		void align_face(void *context, const cv::Mat &frame, const cv::Mat &face,
-		                cv::Mat &aligned) {
-			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(frame, face, aligned);
+		void align_face(void *context, const FaceAlignmentRequest &request) {
+			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(request.frame, request.face,
+			                                                        request.aligned);
 		}
 
 		void extract_feature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
@@ -35,25 +35,26 @@ namespace howdy::native {
 	    : metric_(config.sface_metric)
 	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_shared<Backend>()) {
-		backend_->check_readiness = [](const std::filesystem::path &path) {
+		backend_->check_readiness = [](const std::filesystem::path &path) -> OpenCvModelReadiness {
 			return check_opencv_model_readiness_with_label(path, "OpenCV face model file",
 			                                               static_cast<uid_t>(0));
 		};
 		backend_->create_detector = [](const std::string &path, const cv::Size &size,
-		                               float score_threshold, float nms_threshold, int top_k) {
+		                               float score_threshold, float nms_threshold,
+		                               int top_k) -> cv::Ptr<cv::FaceDetectorYN> {
 			return cv::FaceDetectorYN::create(path, "", size, score_threshold, nms_threshold,
 			                                  top_k);
 		};
-		backend_->create_recognizer = [](const std::string &path) {
+		backend_->create_recognizer = [](const std::string &path) -> cv::Ptr<cv::FaceRecognizerSF> {
 			return cv::FaceRecognizerSF::create(path, "");
 		};
 		initialize(config);
 		if (ok_) {
 			const auto detector      = detector_;
-			backend_->set_input_size = [detector](const cv::Size &size) {
+			backend_->set_input_size = [detector](const cv::Size &size) -> void {
 				detector->setInputSize(size);
 			};
-			backend_->detect = [detector](const cv::Mat &frame, cv::Mat &faces) {
+			backend_->detect = [detector](const cv::Mat &frame, cv::Mat &faces) -> void {
 				detector->detect(frame, faces);
 			};
 		}
@@ -134,7 +135,7 @@ namespace howdy::native {
 		return metric_;
 	}
 
-	auto FaceModel::prepare_frame(const cv::Mat &frame) const -> cv::Mat {
+	auto FaceModel::prepare_frame(const cv::Mat &frame) -> cv::Mat {
 		if (frame.channels() == 1) {
 			cv::Mat converted;
 			cv::cvtColor(frame, converted, cv::COLOR_GRAY2BGR);

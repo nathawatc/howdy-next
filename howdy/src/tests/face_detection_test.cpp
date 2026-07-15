@@ -41,7 +41,7 @@ namespace {
 
 }  // namespace
 
-int main() {
+auto main() -> int {
 	bool ok = true;
 
 	const auto empty = howdy::native::parse_yunet_detections(cv::Mat{});

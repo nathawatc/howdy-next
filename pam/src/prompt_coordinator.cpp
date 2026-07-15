@@ -1,13 +1,13 @@
 #ifndef _GNU_SOURCE
-#define _GNU_SOURCE
+#	define _GNU_SOURCE
 #endif
 
 #include "prompt_coordinator.hpp"
 
 #include "common/compare_exit.hpp"
 #ifdef HOWDY_PAM_TESTING
-#include "auth_flow_testing.hpp"
-#include "prompt_coordinator_testing.hpp"
+#	include "auth_flow_testing.hpp"
+#	include "prompt_coordinator_testing.hpp"
 #endif
 #include "enter_device.hpp"
 #include "paths.hpp"
@@ -41,9 +41,21 @@ namespace {
 	                                                    int                         from_fd);
 	using PosixSpawnFileActionsDestroyFn      = int (*)(void                       *context,
 	                                                    posix_spawn_file_actions_t *actions);
-	using PosixSpawnFn = int (*)(void *context, pid_t *child_pid, const char *path,
-	                             const posix_spawn_file_actions_t *actions, char *const *argv,
-	                             char *const *envp);
+
+#ifdef HOWDY_PAM_TESTING
+	using PosixSpawnRequest = howdy::pam::testing::PosixSpawnRequest;
+#else
+	struct PosixSpawnRequest {
+		void                             *context;
+		pid_t                            *child_pid;
+		const char                       *path;
+		const posix_spawn_file_actions_t *actions;
+		char *const                      *argv;
+		char *const                      *envp;
+	};
+#endif
+
+	using PosixSpawnFn = int (*)(const PosixSpawnRequest &request);
 
 	struct PosixSpawnOperations {
 		PosixSpawnFileActionsInitFn         file_actions_init;
@@ -98,54 +110,52 @@ namespace {
 		}
 	};
 
+	auto try_wait_for_compare(pid_t child_pid, int *status) -> bool {
+		while (true) {
+			const pid_t result = waitpid(child_pid, status, WNOHANG);
+			if (result == child_pid) {
+				return true;
+			}
+			if (result == 0) {
+				return false;
+			}
+			if (errno == EINTR) {
+				continue;
+			}
+			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
+			*status = make_wait_exit_status(CompareExit::kAbort);
+			return true;
+		}
+	}
+
+	auto wait_for_compare_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline)
+	    -> std::optional<int> {
+		using Clock = std::chrono::steady_clock;
+		while (true) {
+			int status = 0;
+			if (try_wait_for_compare(child_pid, &status)) {
+				return status;
+			}
+			const auto now = Clock::now();
+			if (now >= deadline) {
+				return std::nullopt;
+			}
+			std::this_thread::sleep_for(
+			    std::min(std::chrono::duration_cast<Clock::duration>(kCompareWaitPollInterval),
+			             deadline - now));
+		}
+	}
+
 	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::time_point deadline)
 	    -> int {
 		using Clock = std::chrono::steady_clock;
 
-		auto try_wait = [child_pid](int *status) -> bool {
-			while (true) {
-				const pid_t result = waitpid(child_pid, status, WNOHANG);
-				if (result == child_pid) {
-					return true;
-				}
-				if (result == 0) {
-					return false;
-				}
-				if (errno == EINTR) {
-					continue;
-				}
-
-				syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno),
-				       errno);
-				*status = make_wait_exit_status(CompareExit::kAbort);
-				return true;
-			}
-		};
-
-		auto wait_until = [&try_wait](Clock::time_point deadline) -> std::optional<int> {
-			while (true) {
-				int status = 0;
-				if (try_wait(&status)) {
-					return status;
-				}
-
-				const auto now = Clock::now();
-				if (now >= deadline) {
-					return std::nullopt;
-				}
-				const auto remaining = deadline - now;
-				std::this_thread::sleep_for(
-				    std::min(std::chrono::duration_cast<Clock::duration>(kCompareWaitPollInterval),
-				             remaining));
-			}
-		};
-
-		if (const auto status = wait_until(deadline); status.has_value()) {
+		if (const auto status = wait_for_compare_until(child_pid, deadline); status.has_value()) {
 			return *status;
 		}
 
 		int status = 0;
-		if (try_wait(&status)) {
+		if (try_wait_for_compare(child_pid, &status)) {
 			return status;
 		}
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
@@ -153,7 +163,8 @@ namespace {
 			       strerror(errno), errno);
 		}
 
-		if (wait_until(Clock::now() + kCompareTerminationGrace).has_value()) {
+		if (wait_for_compare_until(child_pid, Clock::now() + kCompareTerminationGrace)
+		        .has_value()) {
 			return make_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
@@ -272,11 +283,10 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto call_posix_spawn(void *context, pid_t *child_pid, const char *path,
-	                      const posix_spawn_file_actions_t *actions, char *const *argv,
-	                      char *const *envp) -> int {
-		(void)context;
-		return posix_spawn(child_pid, path, actions, nullptr, argv, envp);
+	auto call_posix_spawn(const PosixSpawnRequest &request) -> int {
+		(void)request.context;
+		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
+		                   request.envp);
 	}
 
 	constexpr PosixSpawnOperations kPosixSpawnOperations = {
@@ -325,8 +335,12 @@ namespace {
 			return closefrom_result;
 		}
 
-		const int spawn_result = operations.spawn(context, child_pid, kCompareProcessPath,
-		                                          &file_actions, args.data(), compare_env);
+		const int spawn_result = operations.spawn({.context   = context,
+		                                           .child_pid = child_pid,
+		                                           .path      = kCompareProcessPath,
+		                                           .actions   = &file_actions,
+		                                           .argv      = args.data(),
+		                                           .envp      = compare_env});
 		(void)operations.file_actions_destroy(context, &file_actions);
 		return spawn_result;
 	}
@@ -393,6 +407,87 @@ namespace howdy::pam {
 		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
 
+	auto
+	PromptCoordinator::start_compare_task(pid_t                                 child_pid,
+	                                      std::chrono::steady_clock::time_point compare_deadline)
+	    -> optional_task<int> & {
+		auto &task = child_task_.emplace([this, child_pid, compare_deadline] -> int {
+			const int status = dependencies_.wait_for_compare_process(dependencies_.context,
+			                                                          child_pid, compare_deadline);
+			{
+				std::unique_lock<std::mutex> lock(mutex_);
+				if (confirmation_type_ == ConfirmationType::Unset) {
+					confirmation_type_ = ConfirmationType::Howdy;
+				}
+			}
+			condition_.notify_one();
+			return status;
+		});
+		task.activate();
+		return task;
+	}
+
+	auto PromptCoordinator::configure_prompt_workaround() -> bool {
+		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
+		                                 requested_workaround_ == Workaround::NativeInput;
+		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
+			native_prompt_.emplace(pamh_);
+			if (!native_prompt_->available()) {
+				const bool fallback_to_input = requested_workaround_ == Workaround::NativeInput;
+				syslog(LOG_INFO,
+				       fallback_to_input
+				           ? "Native prompt conversation unavailable, falling back to input "
+				             "workaround"
+				           : "Native prompt conversation unavailable, disabling prompt "
+				             "workaround");
+				effective_workaround_ = fallback_to_input ? Workaround::Input : Workaround::Off;
+				native_prompt_.reset();
+			} else {
+				const int install_result = native_prompt_->install();
+				if (install_result == PAM_SUCCESS) {
+					effective_workaround_ = Workaround::Native;
+				} else {
+					syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
+					       install_result);
+					effective_workaround_ = requested_workaround_ == Workaround::NativeInput
+					                            ? Workaround::Input
+					                            : Workaround::Off;
+					native_prompt_.reset();
+				}
+			}
+		}
+
+		if (effective_workaround_ == Workaround::Input && ask_auth_tok_ && !existing_auth_token_ &&
+		    !dependencies_.input_prompt_preflight(dependencies_.context)) {
+			syslog(LOG_WARNING,
+			       "Input prompt workaround preflight failed; falling back to standard PAM prompt");
+			effective_workaround_ = Workaround::Off;
+		}
+		return effective_workaround_ == Workaround::Native
+		           ? native_prompt_.has_value() && !existing_auth_token_
+		           : should_ask_for_password(ask_auth_tok_, effective_workaround_,
+		                                     existing_auth_token_);
+	}
+
+	auto PromptCoordinator::start_password_task(bool ask_pass)
+	    -> optional_task<std::tuple<int, char *>> & {
+		auto &task = pass_task_.emplace([this] -> std::tuple<int, char *> {
+			auto result = dependencies_.request_auth_token(dependencies_.context, pamh_);
+			{
+				std::unique_lock<std::mutex> lock(mutex_);
+				if (confirmation_type_ == ConfirmationType::Unset) {
+					confirmation_type_ = ConfirmationType::Pam;
+				}
+			}
+			condition_.notify_one();
+			return result;
+		});
+		if (ask_pass) {
+			task.activate();
+		}
+		return task;
+	}
+
 	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
@@ -420,97 +515,23 @@ namespace howdy::pam {
 			};
 		}
 
-		child_task_.emplace([this, child_pid, compare_deadline] {
-			const int status = dependencies_.wait_for_compare_process(dependencies_.context,
-			                                                          child_pid, compare_deadline);
-
-			{
-				std::unique_lock<std::mutex> lock(mutex_);
-				if (confirmation_type_ == ConfirmationType::Unset) {
-					confirmation_type_ = ConfirmationType::Howdy;
-				}
-			}
-			condition_.notify_one();
-			return status;
-		});
-		child_task_->activate();
-
-		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
-		                                 requested_workaround_ == Workaround::NativeInput;
-		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
-			native_prompt_.emplace(pamh_);
-
-			if (!native_prompt_->available()) {
-				if (requested_workaround_ == Workaround::NativeInput) {
-					syslog(
-					    LOG_INFO,
-					    "Native prompt conversation unavailable, falling back to input workaround");
-					effective_workaround_ = Workaround::Input;
-				} else {
-					syslog(LOG_INFO,
-					       "Native prompt conversation unavailable, disabling prompt workaround");
-					effective_workaround_ = Workaround::Off;
-				}
-				native_prompt_.reset();
-			} else {
-				const int install_result = native_prompt_->install();
-				if (install_result == PAM_SUCCESS) {
-					effective_workaround_ = Workaround::Native;
-				} else {
-					syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
-					       install_result);
-					if (requested_workaround_ == Workaround::NativeInput) {
-						effective_workaround_ = Workaround::Input;
-					} else {
-						effective_workaround_ = Workaround::Off;
-					}
-					native_prompt_.reset();
-				}
-			}
-		}
-
-		if (effective_workaround_ == Workaround::Input && ask_auth_tok_ && !existing_auth_token_ &&
-		    !dependencies_.input_prompt_preflight(dependencies_.context)) {
-			syslog(LOG_WARNING,
-			       "Input prompt workaround preflight failed; falling back to standard PAM prompt");
-			effective_workaround_ = Workaround::Off;
-		}
-
-		const bool ask_pass = effective_workaround_ == Workaround::Native
-		                          ? native_prompt_.has_value() && !existing_auth_token_
-		                          : should_ask_for_password(ask_auth_tok_, effective_workaround_,
-		                                                    existing_auth_token_);
-
-		pass_task_.emplace([this] {
-			auto result = dependencies_.request_auth_token(dependencies_.context, pamh_);
-
-			{
-				std::unique_lock<std::mutex> lock(mutex_);
-				if (confirmation_type_ == ConfirmationType::Unset) {
-					confirmation_type_ = ConfirmationType::Pam;
-				}
-			}
-			condition_.notify_one();
-			return result;
-		});
-
-		if (ask_pass) {
-			pass_task_->activate();
-		}
+		auto      &child_task = start_compare_task(child_pid, compare_deadline);
+		const bool ask_pass   = configure_prompt_workaround();
+		auto      &pass_task  = start_password_task(ask_pass);
 
 		{
 			std::unique_lock<std::mutex> lock(mutex_);
-			condition_.wait(lock, [this] {
+			condition_.wait(lock, [this] -> bool {
 				return confirmation_type_ != ConfirmationType::Unset;
 			});
 		}
 
 		if (confirmation_type_ == ConfirmationType::Pam) {
 			dependencies_.terminate_compare(dependencies_.context, child_pid);
-			child_task_->stop();
+			child_task.stop();
 			if (ask_pass) {
-				pass_task_->stop();
-				const auto [pam_result, password] = pass_task_->get();
+				pass_task.stop();
+				const auto [pam_result, password] = pass_task.get();
 				(void)password;
 				return PromptCoordinatorResult{
 				    .decision   = PromptCoordinatorDecision::kPamResult,
@@ -519,13 +540,13 @@ namespace howdy::pam {
 			}
 		}
 
-		child_task_->stop();
-		const int status = child_task_->get();
+		child_task.stop();
+		const int status = child_task.get();
 
 		const bool compare_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
 		if (!compare_succeeded && ask_pass) {
-			pass_task_->stop();
-			const auto [pam_result, password] = pass_task_->get();
+			pass_task.stop();
+			const auto [pam_result, password] = pass_task.get();
 			(void)password;
 			return PromptCoordinatorResult{
 			    .decision       = PromptCoordinatorDecision::kPasswordFallback,
@@ -535,13 +556,13 @@ namespace howdy::pam {
 		}
 
 		const auto stop_plan =
-		    plan_prompt_stop(ask_pass, ask_pass && pass_task_->ready(), effective_workaround_);
-		const auto stop_result = request_password_prompt_stop(
-		    *pass_task_, stop_plan, native_prompt_ ? &*native_prompt_ : nullptr);
+		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
+		auto      *native_prompt = native_prompt_.has_value() ? &native_prompt_.value() : nullptr;
+		const auto stop_result = request_password_prompt_stop(pass_task, stop_plan, native_prompt);
 		if (!stop_result.prompt_stopped) {
 			syslog(LOG_ERR, "Input prompt workaround cancellation failed; waiting for "
 			                "user/password prompt to complete");
-			pass_task_->stop();
+			pass_task.stop();
 		}
 
 		return PromptCoordinatorResult{

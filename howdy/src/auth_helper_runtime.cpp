@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
@@ -35,7 +36,22 @@ namespace howdy::native::auth_helper {
 
 	namespace {
 
-		constexpr std::size_t kCopyBufferSize = 64 * 1024;
+		constexpr std::size_t kCopyBufferSize = std::size_t{64} * 1024;
+		constexpr acl_perm_t  kAclRead        = acl_perm_t{ACL_READ};
+		constexpr acl_perm_t  kAclWrite       = acl_perm_t{ACL_WRITE};
+		constexpr acl_perm_t  kAclExecute     = acl_perm_t{ACL_EXECUTE};
+
+		struct StagedIdentity {
+			uid_t target_uid = 0;
+			uid_t owner_uid  = 0;
+			gid_t owner_gid  = 0;
+		};
+
+		struct RuntimeSources {
+			std::filesystem::path runtime_root;
+			std::filesystem::path config;
+			std::filesystem::path user_models_dir;
+		};
 
 #ifdef HOWDY_AUTH_HELPER_TESTING
 		bool            g_fail_acl_setup        = false;
@@ -162,7 +178,7 @@ namespace howdy::native::auth_helper {
 			return true;
 		}
 
-		enum class AclVerifyStatus {
+		enum class AclVerifyStatus : std::uint8_t {
 			kOk,
 			kReadError,
 			kIterationError,
@@ -251,7 +267,7 @@ namespace howdy::native::auth_helper {
 			return acl_set_fd(fd, acl);
 		}
 
-		auto verify_private_acl(int fd, uid_t uid, bool directory) -> AclVerifyResult {
+		auto verify_private_acl(int fd, bool directory, uid_t uid) -> AclVerifyResult {
 #ifdef HOWDY_AUTH_HELPER_TESTING
 			if (g_fail_acl_verification) {
 				return {.status = AclVerifyStatus::kMalformed};
@@ -267,7 +283,7 @@ namespace howdy::native::auth_helper {
 			const int            permissions   = directory ? (ACL_READ | ACL_EXECUTE) : ACL_READ;
 			constexpr std::array kExpectedTags = {ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_MASK,
 			                                      ACL_OTHER};
-			int                  entry_count   = 0;
+			std::size_t          entry_count   = 0;
 			acl_entry_t          entry;
 			int                  entry_id = ACL_FIRST_ENTRY;
 			while (true) {
@@ -283,7 +299,7 @@ namespace howdy::native::auth_helper {
 					break;
 				}
 				entry_id = ACL_NEXT_ENTRY;
-				if (entry_count >= 5) {
+				if (entry_count >= kExpectedTags.size()) {
 					acl_free(acl);
 					return {.status = AclVerifyStatus::kMalformed};
 				}
@@ -309,7 +325,7 @@ namespace howdy::native::auth_helper {
 				}
 			}
 			acl_free(acl);
-			if (entry_count != 5) {
+			if (entry_count != kExpectedTags.size()) {
 				return {.status = AclVerifyStatus::kMalformed};
 			}
 			return {.status = AclVerifyStatus::kOk};
@@ -325,6 +341,37 @@ namespace howdy::native::auth_helper {
 			                         result.error_number);
 		}
 
+		auto add_acl_entry(acl_t &acl, const std::filesystem::path &path, acl_tag_t tag,
+		                   const void *qualifier, acl_perm_t entry_permissions) -> bool {
+			acl_entry_t   entry;
+			acl_permset_t permission_set;
+			if (acl_create_entry(&acl, &entry) != 0) {
+				return log_errno_failure("acl_create_entry for staged object", path, errno);
+			}
+			if (acl_set_tag_type(entry, tag) != 0) {
+				return log_errno_failure("acl_set_tag_type for staged object", path, errno);
+			}
+			if (qualifier != nullptr && acl_set_qualifier(entry, qualifier) != 0) {
+				return log_errno_failure("acl_set_qualifier for staged object", path, errno);
+			}
+			if (acl_get_permset(entry, &permission_set) != 0) {
+				return log_errno_failure("acl_get_permset for staged object", path, errno);
+			}
+			if (acl_clear_perms(permission_set) != 0) {
+				return log_errno_failure("acl_clear_perms for staged object", path, errno);
+			}
+			for (const acl_perm_t permission : {kAclRead, kAclWrite, kAclExecute}) {
+				if ((entry_permissions & permission) != 0 &&
+				    acl_add_perm(permission_set, permission) != 0) {
+					return log_errno_failure("acl_add_perm for staged object", path, errno);
+				}
+			}
+			if (acl_set_permset(entry, permission_set) != 0) {
+				return log_errno_failure("acl_set_permset for staged object", path, errno);
+			}
+			return true;
+		}
+
 		auto set_private_acl(int fd, const std::filesystem::path &path, uid_t uid, bool directory)
 		    -> bool {
 #ifdef HOWDY_AUTH_HELPER_TESTING
@@ -334,79 +381,30 @@ namespace howdy::native::auth_helper {
 				return log_errno_failure("apply ACL to staged object", path, error_number);
 			}
 #endif
-			const int permissions = directory ? (ACL_READ | ACL_EXECUTE) : ACL_READ;
-			acl_t     acl         = acl_init(5);
+			const acl_perm_t permissions = directory ? (kAclRead | kAclExecute) : kAclRead;
+			acl_t            acl         = acl_init(5);
 			if (acl == nullptr) {
 				const int error_number = errno;
 				return log_errno_failure("allocate ACL for staged object", path, error_number);
 			}
 
-			const auto add_entry = [&acl, &path](acl_tag_t tag, const void *qualifier,
-			                                     int entry_permissions) {
-				acl_entry_t   entry;
-				acl_permset_t permission_set;
-				if (acl_create_entry(&acl, &entry) != 0) {
-					const int error_number = errno;
-					return log_errno_failure("acl_create_entry for staged object", path,
-					                         error_number);
-				}
-				if (acl_set_tag_type(entry, tag) != 0) {
-					const int error_number = errno;
-					return log_errno_failure("acl_set_tag_type for staged object", path,
-					                         error_number);
-				}
-				if (qualifier != nullptr) {
-					if (acl_set_qualifier(entry, qualifier) != 0) {
-						const int error_number = errno;
-						return log_errno_failure("acl_set_qualifier for staged object", path,
-						                         error_number);
-					}
-				}
-				if (acl_get_permset(entry, &permission_set) != 0) {
-					const int error_number = errno;
-					return log_errno_failure("acl_get_permset for staged object", path,
-					                         error_number);
-				}
-				if (acl_clear_perms(permission_set) != 0) {
-					const int error_number = errno;
-					return log_errno_failure("acl_clear_perms for staged object", path,
-					                         error_number);
-				}
-				for (const auto permission : {ACL_READ, ACL_WRITE, ACL_EXECUTE}) {
-					if ((entry_permissions & permission) == 0) {
-						continue;
-					}
-					if (acl_add_perm(permission_set, permission) != 0) {
-						const int error_number = errno;
-						return log_errno_failure("acl_add_perm for staged object", path,
-						                         error_number);
-					}
-				}
-				if (acl_set_permset(entry, permission_set) != 0) {
-					const int error_number = errno;
-					return log_errno_failure("acl_set_permset for staged object", path,
-					                         error_number);
-				}
-				return true;
-			};
-
-			if (!add_entry(ACL_USER_OBJ, nullptr, permissions)) {
+			if (!add_acl_entry(acl, path, ACL_USER_OBJ, nullptr, permissions)) {
 				acl_free(acl);
 				return false;
 			}
-			if (!add_entry(ACL_USER, &uid, permissions)) {
+			if (!add_acl_entry(acl, path, ACL_USER, &uid, permissions)) {
 				acl_free(acl);
 				return false;
 			}
-			if (!add_entry(ACL_GROUP_OBJ, nullptr, 0)) {
+			if (!add_acl_entry(acl, path, ACL_GROUP_OBJ, nullptr, 0)) {
 				acl_free(acl);
 				return false;
 			}
-			if (!add_entry(ACL_MASK, nullptr, permissions)) {
+			if (!add_acl_entry(acl, path, ACL_MASK, nullptr, permissions)) {
 				acl_free(acl);
 				return false;
 			}
-			if (!add_entry(ACL_OTHER, nullptr, 0)) {
+			if (!add_acl_entry(acl, path, ACL_OTHER, nullptr, 0)) {
 				acl_free(acl);
 				return false;
 			}
@@ -421,34 +419,34 @@ namespace howdy::native::auth_helper {
 				return log_errno_failure("acl_set_fd for staged object", path, error_number);
 			}
 			acl_free(acl);
-			const auto verification = verify_private_acl(fd, uid, directory);
+			const auto verification = verify_private_acl(fd, directory, uid);
 			if (verification.status != AclVerifyStatus::kOk) {
 				return log_acl_verify_failure(path, verification);
 			}
 			return true;
 		}
 
-		auto secure_runtime_fd(int fd, const std::filesystem::path &path, uid_t uid,
-		                       uid_t owner_uid, gid_t owner_gid, bool directory) -> bool {
+		auto secure_runtime_fd(int fd, const std::filesystem::path &path, StagedIdentity identity,
+		                       bool directory) -> bool {
 			const mode_t mode = directory ? 0500 : 0400;
-			if (!fchown_if_needed(fd, path, owner_uid, owner_gid)) {
+			if (!fchown_if_needed(fd, path, identity.owner_uid, identity.owner_gid)) {
 				return false;
 			}
 			if (fchmod(fd, mode) != 0) {
 				const int error_number = errno;
 				return log_errno_failure("fchmod staged object", path, error_number);
 			}
-			return set_private_acl(fd, path, uid, directory);
+			return set_private_acl(fd, path, identity.target_uid, directory);
 		}
 
-		auto finalize_runtime_directory(const std::filesystem::path &path, uid_t uid,
-		                                uid_t owner_uid, gid_t owner_gid) -> bool {
+		auto finalize_runtime_directory(const std::filesystem::path &path, StagedIdentity identity)
+		    -> bool {
 			const int fd = open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 			if (fd < 0) {
 				const int error_number = errno;
 				return log_errno_failure("open staged directory", path, error_number);
 			}
-			if (!secure_runtime_fd(fd, path, uid, owner_uid, owner_gid, true)) {
+			if (!secure_runtime_fd(fd, path, identity, true)) {
 				close(fd);
 				return false;
 			}
@@ -461,7 +459,7 @@ namespace howdy::native::auth_helper {
 
 		auto copy_file_for_owner(const std::filesystem::path &source,
 		                         const std::filesystem::path &destination, const std::string &label,
-		                         uid_t uid, uid_t owner_uid, gid_t owner_gid) -> bool {
+		                         StagedIdentity identity) -> bool {
 			const int source_fd = open(source.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			if (source_fd < 0) {
 				std::cerr << "Failed to open " << label << ": " << source << " ("
@@ -469,7 +467,7 @@ namespace howdy::native::auth_helper {
 				return false;
 			}
 
-			if (!secure_source_file_stat_for_owner(source_fd, label, owner_uid)) {
+			if (!secure_source_file_stat_for_owner(source_fd, label, identity.owner_uid)) {
 				close(source_fd);
 				return false;
 			}
@@ -503,8 +501,7 @@ namespace howdy::native::auth_helper {
 				}
 			}
 
-			const bool secured =
-			    secure_runtime_fd(destination_fd, destination, uid, owner_uid, owner_gid, false);
+			const bool secured = secure_runtime_fd(destination_fd, destination, identity, false);
 			if (!secured) {
 				ok = false;
 			}
@@ -521,13 +518,14 @@ namespace howdy::native::auth_helper {
 			return ok;
 		}
 
-		auto make_private_runtime_dir(const std::filesystem::path &root, uid_t uid, uid_t owner_uid,
-		                              gid_t root_gid) -> std::optional<std::filesystem::path> {
-			if (!validate_runtime_root_for_owner(root, owner_uid, root_gid)) {
+		auto make_private_runtime_dir(const std::filesystem::path &root, StagedIdentity identity)
+		    -> std::optional<std::filesystem::path> {
+			if (!validate_runtime_root_for_owner(root, identity.owner_uid, identity.owner_gid)) {
 				return std::nullopt;
 			}
 
-			std::string       templ = (root / ("pam-" + std::to_string(uid) + "-XXXXXX")).string();
+			std::string templ =
+			    (root / ("pam-" + std::to_string(identity.target_uid) + "-XXXXXX")).string();
 			std::vector<char> buffer(templ.begin(), templ.end());
 			buffer.push_back('\0');
 
@@ -547,7 +545,7 @@ namespace howdy::native::auth_helper {
 				std::filesystem::remove_all(path, ec);
 				return std::nullopt;
 			}
-			if (!fchown_if_needed(fd, path, owner_uid, root_gid)) {
+			if (!fchown_if_needed(fd, path, identity.owner_uid, identity.owner_gid)) {
 				close(fd);
 				std::error_code ec;
 				std::filesystem::remove_all(path, ec);
@@ -571,8 +569,7 @@ namespace howdy::native::auth_helper {
 			return path;
 		}
 
-		auto make_user_models_dir(const PreparedPaths &prepared, uid_t owner_uid, gid_t owner_gid)
-		    -> bool {
+		auto make_user_models_dir(const PreparedPaths &prepared, StagedIdentity identity) -> bool {
 			if (mkdir(prepared.user_models_dir.c_str(), 0700) != 0) {
 				const int error_number = errno;
 				return log_errno_failure("mkdir runtime user models directory",
@@ -585,7 +582,8 @@ namespace howdy::native::auth_helper {
 				return log_errno_failure("open runtime user models directory",
 				                         prepared.user_models_dir, error_number);
 			}
-			if (!fchown_if_needed(fd, prepared.user_models_dir, owner_uid, owner_gid)) {
+			if (!fchown_if_needed(fd, prepared.user_models_dir, identity.owner_uid,
+			                      identity.owner_gid)) {
 				close(fd);
 				return false;
 			}
@@ -605,23 +603,23 @@ namespace howdy::native::auth_helper {
 		}
 
 		auto stage_config_for_user(const PreparedPaths         &prepared,
-		                           const std::filesystem::path &source_config, uid_t uid,
-		                           uid_t owner_uid, gid_t owner_gid) -> bool {
+		                           const std::filesystem::path &source_config,
+		                           StagedIdentity               identity) -> bool {
 			const auto config_security =
-			    howdy::native::check_secure_config_path(source_config, owner_uid);
+			    howdy::native::check_secure_config_path(source_config, identity.owner_uid);
 			if (!config_security.ok) {
 				std::cerr << config_security.error_message << "\n";
 				return false;
 			}
-			return copy_file_for_owner(source_config, prepared.config_path, "Config file", uid,
-			                           owner_uid, owner_gid);
+			return copy_file_for_owner(source_config, prepared.config_path, "Config file",
+			                           identity);
 		}
 
 		auto stage_user_model_for_user(const std::string &user, const PreparedPaths &prepared,
 		                               const std::filesystem::path &source_user_models_dir,
-		                               uid_t uid, uid_t owner_uid, gid_t owner_gid) -> bool {
+		                               StagedIdentity               identity) -> bool {
 			std::optional<std::filesystem::path> source_model_path;
-			if (!select_source_model_path(source_user_models_dir, user, owner_uid,
+			if (!select_source_model_path(source_user_models_dir, user, identity.owner_uid,
 			                              source_model_path)) {
 				return false;
 			}
@@ -630,16 +628,13 @@ namespace howdy::native::auth_helper {
 			}
 			return copy_file_for_owner(*source_model_path,
 			                           prepared.user_models_dir / source_model_path->filename(),
-			                           "User model file", uid, owner_uid, owner_gid);
+			                           "User model file", identity);
 		}
 
-		auto prepare_runtime_auth_files_from(const std::string &user, uid_t uid,
-		                                     const std::filesystem::path &runtime_root,
-		                                     const std::filesystem::path &source_config,
-		                                     const std::filesystem::path &source_user_models_dir,
-		                                     uid_t owner_uid, gid_t root_gid)
+		auto prepare_runtime_auth_files_from(const std::string &user, StagedIdentity identity,
+		                                     const RuntimeSources &sources)
 		    -> std::optional<PreparedPaths> {
-			auto runtime_dir = make_private_runtime_dir(runtime_root, uid, owner_uid, root_gid);
+			auto runtime_dir = make_private_runtime_dir(sources.runtime_root, identity);
 			if (!runtime_dir.has_value()) {
 				return std::nullopt;
 			}
@@ -651,12 +646,11 @@ namespace howdy::native::auth_helper {
 			    .user_models_dir = guard.path() / "models",
 			};
 
-			if (!make_user_models_dir(prepared, owner_uid, root_gid) ||
-			    !stage_config_for_user(prepared, source_config, uid, owner_uid, root_gid) ||
-			    !stage_user_model_for_user(user, prepared, source_user_models_dir, uid, owner_uid,
-			                               root_gid) ||
-			    !finalize_runtime_directory(prepared.user_models_dir, uid, owner_uid, root_gid) ||
-			    !finalize_runtime_directory(prepared.runtime_dir, uid, owner_uid, root_gid)) {
+			if (!make_user_models_dir(prepared, identity) ||
+			    !stage_config_for_user(prepared, sources.config, identity) ||
+			    !stage_user_model_for_user(user, prepared, sources.user_models_dir, identity) ||
+			    !finalize_runtime_directory(prepared.user_models_dir, identity) ||
+			    !finalize_runtime_directory(prepared.runtime_dir, identity)) {
 				return std::nullopt;
 			}
 
@@ -704,6 +698,7 @@ namespace howdy::native::auth_helper {
 		return "/run/howdy";
 	}
 
+#ifdef HOWDY_AUTH_HELPER_TESTING
 	auto validate_runtime_root(const std::filesystem::path &path) -> bool {
 		return validate_runtime_root_for_owner(path, 0, 0);
 	}
@@ -711,6 +706,7 @@ namespace howdy::native::auth_helper {
 	auto secure_source_file_stat(int fd, const std::string &label) -> bool {
 		return secure_source_file_stat_for_owner(fd, label, 0);
 	}
+#endif
 
 	auto write_all(int fd, const char *data, ssize_t size) -> bool {
 		if (size <= 0) {
@@ -719,12 +715,15 @@ namespace howdy::native::auth_helper {
 		return howdy::native::write_all_to_fd(fd, data, static_cast<std::size_t>(size));
 	}
 
+#ifdef HOWDY_AUTH_HELPER_TESTING
 	auto copy_file_for_user(const std::filesystem::path &source,
 	                        const std::filesystem::path &destination, const std::string &label,
 	                        gid_t invoking_gid) -> bool {
 		(void)invoking_gid;
-		return copy_file_for_owner(source, destination, label, geteuid(), 0, 0);
+		return copy_file_for_owner(source, destination, label,
+		                           {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0});
 	}
+#endif
 
 	auto select_source_model_path(const std::filesystem::path &source_user_models_dir,
 	                              const std::string &user, std::optional<uid_t> owner_uid,
@@ -750,37 +749,40 @@ namespace howdy::native::auth_helper {
 		}
 	}
 
-	auto prepare_runtime_auth_files(const std::string &user, uid_t uid, gid_t invoking_gid)
+	auto prepare_runtime_auth_files(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths> {
-		(void)invoking_gid;
-		return prepare_runtime_auth_files_from(user, uid, runtime_root(),
-		                                       howdy::native::resolve_config_path(),
-		                                       howdy::native::resolve_user_models_dir(), 0, 0);
+		(void)identity.gid;
+		return prepare_runtime_auth_files_from(
+		    user, {.target_uid = identity.uid, .owner_uid = 0, .owner_gid = 0},
+		    {.runtime_root    = runtime_root(),
+		     .config          = howdy::native::resolve_config_path(),
+		     .user_models_dir = howdy::native::resolve_user_models_dir()});
 	}
 
-	auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid,
-	                                gid_t invoking_gid) -> CleanupRuntimeResult {
-		(void)invoking_gid;
-		return cleanup_runtime_auth_files_from(path, uid, runtime_root());
+	auto cleanup_runtime_auth_files(const std::filesystem::path &path, RuntimeIdentity identity)
+	    -> CleanupRuntimeResult {
+		(void)identity.gid;
+		return cleanup_runtime_auth_files_from(path, identity.uid, runtime_root());
 	}
 
 #ifdef HOWDY_AUTH_HELPER_TESTING
-	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path, uid_t uid,
-	                                         gid_t                        invoking_gid,
+	auto cleanup_runtime_auth_files_for_test(const std::filesystem::path &path,
+	                                         RuntimeIdentity              identity,
 	                                         const std::filesystem::path &runtime_root)
 	    -> CleanupRuntimeResult {
-		(void)invoking_gid;
-		return cleanup_runtime_auth_files_from(path, uid, runtime_root);
+		(void)identity.gid;
+		return cleanup_runtime_auth_files_from(path, identity.uid, runtime_root);
 	}
 
-	auto prepare_runtime_auth_files_for_test(const std::string &user, uid_t uid, gid_t invoking_gid,
-	                                         const std::filesystem::path &runtime_root,
-	                                         const std::filesystem::path &source_config,
-	                                         const std::filesystem::path &source_user_models_dir,
-	                                         uid_t owner_uid) -> std::optional<PreparedPaths> {
-		(void)invoking_gid;
-		return prepare_runtime_auth_files_from(user, uid, runtime_root, source_config,
-		                                       source_user_models_dir, owner_uid, getegid());
+	auto prepare_runtime_auth_files_for_test(const std::string &user, RuntimeIdentity identity,
+	                                         RuntimeAuthTestPaths paths, uid_t owner_uid)
+	    -> std::optional<PreparedPaths> {
+		(void)identity.gid;
+		return prepare_runtime_auth_files_from(
+		    user, {.target_uid = identity.uid, .owner_uid = owner_uid, .owner_gid = getegid()},
+		    {.runtime_root    = std::move(paths.runtime_root),
+		     .config          = std::move(paths.source_config),
+		     .user_models_dir = std::move(paths.source_user_models_dir)});
 	}
 
 	auto set_acl_setup_failure_for_test(bool fail) -> void {

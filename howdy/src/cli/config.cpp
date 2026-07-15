@@ -81,7 +81,7 @@ auto howdy::native::config_internal::config_main_with_dependencies(
 	return kExitAbort;
 }
 
-int config_main(int argc, char **argv) {
+auto config_main(int argc, char **argv) -> int {
 	return howdy::native::config_internal::config_main_with_dependencies(
 	    argc, argv, howdy::native::config_internal::default_config_edit_dependencies());
 }

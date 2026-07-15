@@ -4,6 +4,7 @@
 #include "recorders/video_capture.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 
 #include <opencv2/core.hpp>
@@ -13,8 +14,14 @@ namespace howdy::native {
 	using CaptureOpenFn          = bool (*)(void *context);
 	using CaptureReadGrayFrameFn = bool (*)(void *context, cv::Mat &gray_frame);
 	using CaptureErrorMessageFn  = std::string (*)(void *context);
-	using CaptureSetPropertyFn   = bool (*)(void *context, int property, double value);
-	using CaptureNowFn           = std::chrono::steady_clock::time_point (*)(void *context);
+
+	struct CaptureProperty {
+		int    id    = 0;
+		double value = 0.0;
+	};
+
+	using CaptureSetPropertyFn = bool (*)(void *context, CaptureProperty property);
+	using CaptureNowFn         = std::chrono::steady_clock::time_point (*)(void *context);
 
 	struct CompareCaptureDependencies {
 		void                  *capture_context = nullptr;
@@ -27,7 +34,7 @@ namespace howdy::native {
 		CaptureNowFn now           = nullptr;
 	};
 
-	enum class CompareCaptureOpenStatus {
+	enum class CompareCaptureOpenStatus : std::uint8_t {
 		kOk,
 		kOpenFailed,
 		kInvalidDependencies,
@@ -38,7 +45,7 @@ namespace howdy::native {
 		std::string              error_message;
 	};
 
-	enum class CompareCaptureFrameStatus {
+	enum class CompareCaptureFrameStatus : std::uint8_t {
 		kFrameReady,
 		kTimeout,
 		kReadFailed,

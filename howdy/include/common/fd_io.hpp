@@ -17,6 +17,11 @@ namespace howdy::native {
 		int         error_number = 0;
 	};
 
+	struct BoundedReadRequest {
+		int         fd        = -1;
+		std::size_t max_bytes = 0;
+	};
+
 	inline auto write_all_to_fd(int fd, const char *data, std::size_t size) -> bool {
 		if (data == nullptr && size > 0) {
 			return false;
@@ -57,17 +62,17 @@ namespace howdy::native {
 		return true;
 	}
 
-	inline auto read_fd_to_string_bounded(int fd, std::size_t max_bytes) -> BoundedReadResult {
+	inline auto read_fd_to_string_bounded(BoundedReadRequest request) -> BoundedReadResult {
 		BoundedReadResult result;
-		if (max_bytes == 0) {
+		if (request.max_bytes == 0) {
 			return result;
 		}
 
 		std::array<char, 1024> buffer{};
-		while (result.output.size() < max_bytes) {
-			const std::size_t remaining     = max_bytes - result.output.size();
+		while (result.output.size() < request.max_bytes) {
+			const std::size_t remaining     = request.max_bytes - result.output.size();
 			const std::size_t bytes_to_read = std::min(remaining, buffer.size());
-			const ssize_t     bytes_read    = read(fd, buffer.data(), bytes_to_read);
+			const ssize_t     bytes_read    = read(request.fd, buffer.data(), bytes_to_read);
 			if (bytes_read < 0) {
 				if (errno == EINTR) {
 					continue;
@@ -83,7 +88,7 @@ namespace howdy::native {
 			result.output.append(buffer.data(), static_cast<std::size_t>(bytes_read));
 		}
 
-		result.hit_limit = result.output.size() == max_bytes;
+		result.hit_limit = result.output.size() == request.max_bytes;
 		return result;
 	}
 

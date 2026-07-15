@@ -27,7 +27,7 @@ namespace {
 	                                    const std::string &key, const std::string &value,
 	                                    std::string *error_message, bool lock,
 	                                    bool validate_runtime) -> bool {
-		return howdy::native::update_config_value(config_path, key, value, error_message, lock,
+		return howdy::native::update_config_value(config_path, key, error_message, value, lock,
 		                                          validate_runtime);
 	}
 
@@ -85,7 +85,7 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 	return kExitOk;
 }
 
-int disable_main(int argc, char **argv) {
+auto disable_main(int argc, char **argv) -> int {
 	return howdy::native::disable_internal::disable_main_with_dependencies(
 	    argc, argv,
 	    {

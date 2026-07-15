@@ -20,8 +20,10 @@ namespace {
 		return static_cast<howdy::native::VideoCapture *>(context)->error_message();
 	}
 
-	auto set_capture_property_dependency(void *context, int property, double value) -> bool {
-		return static_cast<howdy::native::VideoCapture *>(context)->set(property, value);
+	auto set_capture_property_dependency(void *context, howdy::native::CaptureProperty property)
+	    -> bool {
+		return static_cast<howdy::native::VideoCapture *>(context)->set(property.id,
+		                                                                property.value);
 	}
 
 	auto steady_now_dependency([[maybe_unused]] void *context)
@@ -151,10 +153,11 @@ namespace howdy::native {
 			return;
 		}
 
-		(void)dependencies_.set_property(dependencies_.capture_context, cv::CAP_PROP_AUTO_EXPOSURE,
-		                                 1.0);
-		(void)dependencies_.set_property(dependencies_.capture_context, cv::CAP_PROP_EXPOSURE,
-		                                 static_cast<double>(config_.exposure));
+		(void)dependencies_.set_property(dependencies_.capture_context,
+		                                 {.id = cv::CAP_PROP_AUTO_EXPOSURE, .value = 1.0});
+		(void)dependencies_.set_property(
+		    dependencies_.capture_context,
+		    {.id = cv::CAP_PROP_EXPOSURE, .value = static_cast<double>(config_.exposure)});
 	}
 
 	auto CompareCaptureSession::stats() const -> const CompareCaptureStats & {

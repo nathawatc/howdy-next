@@ -144,7 +144,7 @@ namespace howdy::native {
 	inline auto config_sface_metric(const ConfigReader &config) -> std::string {
 		const auto &option = config_option(config_schema::OptionId::face_sface_metric);
 		auto metric = config_option_string(config, option, std::string(option.fallback.string));
-		std::ranges::transform(metric, metric.begin(), [](unsigned char ch) {
+		std::ranges::transform(metric, metric.begin(), [](unsigned char ch) -> char {
 			return static_cast<char>(std::tolower(ch));
 		});
 		if (std::ranges::find(option.choices, metric) != option.choices.end()) {

@@ -1,3 +1,3 @@
 #pragma once
 
-int download_models_main(int argc, char **argv);
+auto download_models_main(int argc, char **argv) -> int;
