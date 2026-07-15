@@ -1,10 +1,10 @@
 #include "native_prompt_conversation.hpp"
 
 #include "common/fd_io.hpp"
+#include "native_prompt_input.hpp"
 
 #include <array>
 #include <cerrno>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -19,85 +19,7 @@
 
 namespace {
 
-	constexpr int         kAbortPollTimeoutMs     = 100;
-	constexpr std::size_t kMaxPromptResponseBytes = 512;
-
-	class SensitivePromptBuffer {
-	public:
-		SensitivePromptBuffer()                                                  = default;
-		SensitivePromptBuffer(const SensitivePromptBuffer &)                     = delete;
-		auto operator=(const SensitivePromptBuffer &) -> SensitivePromptBuffer & = delete;
-
-		~SensitivePromptBuffer() {
-			volatile char *cursor = data_.data();
-			for (std::size_t index = 0; index < data_.size(); ++index) {
-				cursor[index] = '\0';
-			}
-			length_ = 0;
-		}
-
-		[[nodiscard]] auto empty() const -> bool {
-			return length_ == 0;
-		}
-
-		[[nodiscard]] auto full() const -> bool {
-			return length_ == data_.size();
-		}
-
-		void push_back(char value) {
-			data_[length_++] = value;
-		}
-
-		void pop_back() {
-			if (length_ > 0) {
-				data_[--length_] = '\0';
-			}
-		}
-
-		[[nodiscard]] auto data() const -> const char * {
-			return data_.data();
-		}
-
-		[[nodiscard]] auto size() const -> std::size_t {
-			return length_;
-		}
-
-	private:
-		std::array<char, kMaxPromptResponseBytes> data_{};
-		std::size_t                               length_ = 0;
-	};
-
-	enum class PromptCharacterResult : std::uint8_t {
-		keep_reading,
-		complete,
-		abort,
-	};
-
-	auto process_prompt_character(char ch, SensitivePromptBuffer &password, bool &response_too_long)
-	    -> PromptCharacterResult {
-		if (ch == '\n' || ch == '\r') {
-			return PromptCharacterResult::complete;
-		}
-		if (ch == 3) {
-			return PromptCharacterResult::abort;
-		}
-		if (ch == '\b' || ch == 127) {
-			if (!password.empty()) {
-				password.pop_back();
-			}
-			return PromptCharacterResult::keep_reading;
-		}
-		if (response_too_long) {
-			return PromptCharacterResult::keep_reading;
-		}
-		if (password.full()) {
-			response_too_long = true;
-			return PromptCharacterResult::keep_reading;
-		}
-		password.push_back(ch);
-		return PromptCharacterResult::keep_reading;
-	}
-
+	constexpr int kAbortPollTimeoutMs = 100;
 #ifdef HOWDY_PAM_TESTING
 	std::atomic<int> g_test_available_result{-1};
 	std::atomic<int> g_test_install_result{-1};
@@ -579,8 +501,8 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 		return abort_prompt();
 	}
 
-	SensitivePromptBuffer password;
-	bool                  response_too_long = false;
+	howdy::pam::native_prompt_input::SensitiveBuffer password;
+	bool                                             response_too_long = false;
 
 	while (true) {
 		char ch = '\0';
@@ -588,11 +510,12 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 			return abort_prompt();
 		}
 
-		const auto character_result = process_prompt_character(ch, password, response_too_long);
-		if (character_result == PromptCharacterResult::complete) {
+		const auto character_result =
+		    howdy::pam::native_prompt_input::process_character(ch, password, response_too_long);
+		if (character_result == howdy::pam::native_prompt_input::CharacterResult::complete) {
 			break;
 		}
-		if (character_result == PromptCharacterResult::abort) {
+		if (character_result == howdy::pam::native_prompt_input::CharacterResult::abort) {
 			return abort_prompt();
 		}
 	}

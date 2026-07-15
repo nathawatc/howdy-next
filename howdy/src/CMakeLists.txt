@@ -99,6 +99,7 @@ install(
 add_executable(
 	howdy_auth_helper
 	auth_helper.cpp
+	auth_helper_acl.cpp
 	auth_helper_runtime.cpp
 	config/runtime_paths.cpp
 	storage/user_model_readiness.cpp
@@ -133,6 +134,7 @@ if(BUILD_TESTING)
 	add_executable(
 		howdy_auth_helper_test
 		auth_helper.cpp
+		auth_helper_acl.cpp
 		auth_helper_runtime.cpp
 		config/runtime_paths.cpp
 		storage/user_model_readiness.cpp

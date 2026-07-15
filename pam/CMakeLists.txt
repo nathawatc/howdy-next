@@ -13,10 +13,13 @@ set(
 	${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
 	"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/auth_flow.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/auth_helper_process.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/compare_process.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/runtime_session.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/enter_device.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/native_prompt_conversation.cpp"
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/native_prompt_input.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt_coordinator.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt_workaround.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/status_mapping.cpp"
@@ -75,6 +78,7 @@ if(BUILD_TESTING)
 	add_executable(
 		pam_native_prompt_conversation_test
 		src/native_prompt_conversation.cpp
+		src/native_prompt_input.cpp
 		src/tests/native_prompt_conversation_test.cpp
 	)
 	howdy_configure_pam_target(pam_native_prompt_conversation_test)
@@ -109,10 +113,13 @@ if(BUILD_TESTING)
 		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
 		"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
 		src/auth_flow.cpp
+		src/auth_helper_process.cpp
+		src/compare_process.cpp
 		src/main.cpp
 		src/runtime_session.cpp
 		src/enter_device.cpp
 		src/native_prompt_conversation.cpp
+		src/native_prompt_input.cpp
 		src/prompt_coordinator.cpp
 		src/prompt_workaround.cpp
 		src/status_mapping.cpp
@@ -130,9 +137,11 @@ if(BUILD_TESTING)
 
 	add_executable(
 		pam_prompt_coordinator_test
+		src/compare_process.cpp
 		src/prompt_coordinator.cpp
 		src/enter_device.cpp
 		src/native_prompt_conversation.cpp
+		src/native_prompt_input.cpp
 		src/prompt_workaround.cpp
 		src/tests/prompt_coordinator_test.cpp
 	)
@@ -150,6 +159,7 @@ if(BUILD_TESTING)
 	add_executable(
 		pam_runtime_session_test
 		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
+		src/auth_helper_process.cpp
 		src/runtime_session.cpp
 		src/tests/runtime_session_test.cpp
 	)
