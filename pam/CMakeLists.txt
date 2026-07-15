@@ -44,47 +44,46 @@ install(
 )
 
 if(BUILD_TESTING)
-	add_executable(
+	function(howdy_add_pam_test target test_name)
+		add_executable(${target} ${ARGN})
+		howdy_configure_pam_target(${target})
+		target_link_libraries(${target} PRIVATE ${HOWDY_PAM_LIBRARIES})
+		add_test(NAME ${test_name} COMMAND ${target})
+	endfunction()
+
+	howdy_add_pam_test(
 		pam_status_mapping_test
+		pam-status-mapping
 		src/status_mapping.cpp
 		src/tests/status_mapping_test.cpp
 	)
-	howdy_configure_pam_target(pam_status_mapping_test)
 	target_compile_definitions(
 		pam_status_mapping_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
-	target_link_libraries(pam_status_mapping_test PRIVATE ${HOWDY_PAM_LIBRARIES})
 	add_dependencies(pam_status_mapping_test howdy-gmo)
-	add_test(NAME pam-status-mapping COMMAND pam_status_mapping_test)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_prompt_workaround_test
+		pam-prompt-workaround
 		src/prompt_workaround.cpp
 		src/tests/prompt_workaround_test.cpp
 	)
-	howdy_configure_pam_target(pam_prompt_workaround_test)
-	target_link_libraries(pam_prompt_workaround_test PRIVATE ${HOWDY_PAM_LIBRARIES})
-	add_test(NAME pam-prompt-workaround COMMAND pam_prompt_workaround_test)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_main_entrypoints_test
+		pam-main-entrypoints
 		src/main.cpp
 		src/tests/main_entrypoints_test.cpp
 	)
-	howdy_configure_pam_target(pam_main_entrypoints_test)
-	target_link_libraries(pam_main_entrypoints_test PRIVATE ${HOWDY_PAM_LIBRARIES})
-	add_test(NAME pam-main-entrypoints COMMAND pam_main_entrypoints_test)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_native_prompt_conversation_test
+		pam-native-prompt-conversation
 		src/native_prompt_conversation.cpp
 		src/native_prompt_input.cpp
 		src/tests/native_prompt_conversation_test.cpp
 	)
-	howdy_configure_pam_target(pam_native_prompt_conversation_test)
 	target_compile_definitions(pam_native_prompt_conversation_test PRIVATE HOWDY_PAM_TESTING)
-	target_link_libraries(pam_native_prompt_conversation_test PRIVATE ${HOWDY_PAM_LIBRARIES})
-	add_test(NAME pam-native-prompt-conversation COMMAND pam_native_prompt_conversation_test)
 
 	add_executable(pam_optional_task_test src/tests/optional_task_test.cpp)
 	howdy_configure_pam_target(pam_optional_task_test)
@@ -108,8 +107,9 @@ if(BUILD_TESTING)
 	target_link_libraries(pam_tty_restore_test PRIVATE PAM::PAM)
 	add_test(NAME pam-tty-restore COMMAND pam_tty_restore_test)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_auth_flow_helpers_test
+		pam-auth-flow-helpers
 		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
 		"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
 		src/auth_flow.cpp
@@ -125,15 +125,12 @@ if(BUILD_TESTING)
 		src/status_mapping.cpp
 		src/tests/auth_flow_helpers_test.cpp
 	)
-	howdy_configure_pam_target(pam_auth_flow_helpers_test)
 	target_compile_definitions(
 		pam_auth_flow_helpers_test
 		PRIVATE
 			HOWDY_PAM_TESTING
 			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	)
-	target_link_libraries(pam_auth_flow_helpers_test PRIVATE ${HOWDY_PAM_LIBRARIES})
-	add_test(NAME pam-auth-flow-helpers COMMAND pam_auth_flow_helpers_test)
 
 	add_executable(
 		pam_prompt_coordinator_test
@@ -156,22 +153,20 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME pam-prompt-coordinator COMMAND pam_prompt_coordinator_test)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_runtime_session_test
+		pam-runtime-session
 		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
 		src/auth_helper_process.cpp
 		src/runtime_session.cpp
 		src/tests/runtime_session_test.cpp
 	)
-	howdy_configure_pam_target(pam_runtime_session_test)
 	target_compile_definitions(
 		pam_runtime_session_test
 		PRIVATE
 			HOWDY_PAM_TESTING
 			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	)
-	target_link_libraries(pam_runtime_session_test PRIVATE ${HOWDY_PAM_LIBRARIES})
-	add_test(NAME pam-runtime-session COMMAND pam_runtime_session_test)
 	add_test(
 		NAME pam-installed-setuid-path-validation
 		COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/src/tests/installed_pam_setuid_e2e.sh" --validate-paths
