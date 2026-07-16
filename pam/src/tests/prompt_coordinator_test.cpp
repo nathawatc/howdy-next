@@ -386,6 +386,15 @@ namespace {
 		return fake.preflight_result;
 	}
 
+	void release_blocked_token(void *context) {
+		auto &fake = *static_cast<FakeContext *>(context);
+		{
+			std::unique_lock<std::mutex> lock(fake.token_mutex);
+			fake.warning_released_token = true;
+		}
+		fake.token_condition.notify_one();
+	}
+
 	auto request_auth_token(void *context, pam_handle_t *pamh) -> std::tuple<int, char *> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
@@ -701,13 +710,13 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		howdy::pam::testing::set_input_workaround_access_result(-1);
+		howdy::pam::testing::configure_enter_device(false, true);
 
 		int               callback_calls             = 0;
 		bool              callback_saw_blocked_token = false;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
+		const auto        result     = coordinator.run(make_compare_request(), [&] -> void {
 			++callback_calls;
 			{
 				std::unique_lock<std::mutex> lock(context.token_mutex);
@@ -720,14 +729,86 @@ namespace {
 				throw std::runtime_error("simulated warning failure");
 			}
 		});
-		howdy::pam::testing::reset_input_workaround_access_result();
+		const int construction_count = howdy::pam::testing::enter_device_construction_count();
+		const int press_count        = howdy::pam::testing::enter_press_count();
+		howdy::pam::testing::reset_enter_device();
 
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input failure preserves Howdy result") &&
 		       expect(callback_calls == 1, "input failure callback runs exactly once") &&
+		       expect(construction_count == 1, "input failure creates one Enter device") &&
+		       expect(press_count == 1, "input failure attempts one Enter press") &&
 		       expect(callback_saw_blocked_token,
 		              "input failure callback runs before password task release") &&
 		       expect(child_reaped(child_pid), "input failure callback child is reaped");
+	}
+
+	auto test_input_success_sends_one_enter() -> bool {
+		FakeContext context{.block_token_until_warning = true};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "input success child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+		howdy::pam::testing::configure_enter_device(false, false, release_blocked_token, &context);
+
+		int               callback_calls = 0;
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto result = coordinator.run(make_compare_request(), [&callback_calls] -> void {
+			++callback_calls;
+		});
+		const int  construction_count = howdy::pam::testing::enter_device_construction_count();
+		const int  press_count        = howdy::pam::testing::enter_press_count();
+		howdy::pam::testing::reset_enter_device();
+
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              "input success preserves Howdy result") &&
+		       expect(result.prompt_stopped,
+		              "input success completes prompt during grace period") &&
+		       expect(construction_count == 1, "input success creates one Enter device") &&
+		       expect(press_count == 1, "input success sends exactly one Enter press") &&
+		       expect(callback_calls == 0, "input success emits no failure callback") &&
+		       expect(child_reaped(child_pid), "input success child is reaped");
+	}
+
+	auto test_input_success_blocked_after_grace_waits_for_manual_completion() -> bool {
+		FakeContext context{.block_token_until_warning = true};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "blocked input success child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+		howdy::pam::testing::configure_enter_device(false, false);
+
+		int               callback_calls             = 0;
+		bool              callback_saw_blocked_token = false;
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result     = coordinator.run(make_compare_request(), [&] -> void {
+			++callback_calls;
+			{
+				std::unique_lock<std::mutex> lock(context.token_mutex);
+				callback_saw_blocked_token =
+				    context.auth_token_calls == 1 && !context.warning_released_token;
+				context.warning_released_token = true;
+			}
+			context.token_condition.notify_one();
+		});
+		const int construction_count = howdy::pam::testing::enter_device_construction_count();
+		const int press_count        = howdy::pam::testing::enter_press_count();
+		howdy::pam::testing::reset_enter_device();
+
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              "blocked input success preserves Howdy result") &&
+		       expect(!result.prompt_stopped,
+		              "blocked input success uses manual-completion fallback") &&
+		       expect(construction_count == 1, "blocked input success creates one Enter device") &&
+		       expect(press_count == 1, "blocked input success sends one Enter press") &&
+		       expect(callback_calls == 1, "blocked input success emits one failure callback") &&
+		       expect(callback_saw_blocked_token,
+		              "blocked input callback runs before manual token release") &&
+		       expect(child_reaped(child_pid), "blocked input success child is reaped");
 	}
 
 	auto test_compare_failure_password_result(int pam_result, const std::string &label) -> bool {
@@ -1324,6 +1405,8 @@ auto main() -> int {
 	ok &= test_pam_wins();
 	ok &= test_input_failure_callback_precedes_password_release(false);
 	ok &= test_input_failure_callback_precedes_password_release(true);
+	ok &= test_input_success_sends_one_enter();
+	ok &= test_input_success_blocked_after_grace_waits_for_manual_completion();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_compare_signal_password_fallback();

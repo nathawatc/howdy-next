@@ -1,5 +1,6 @@
 #pragma once
 
+#include "enter_device.hpp"
 #include "main.hpp"
 #include "native_prompt_conversation.hpp"
 #include "optional_task.hpp"
@@ -85,6 +86,7 @@ namespace howdy::pam {
 		                        std::chrono::steady_clock::time_point compare_deadline)
 		    -> optional_task<int> &;
 		[[nodiscard]] auto configure_prompt_workaround() -> bool;
+		void               configure_input_workaround();
 		auto start_password_task(bool ask_pass) -> optional_task<std::tuple<int, char *>> &;
 
 		pam_handle_t                           *pamh_                 = nullptr;
@@ -97,6 +99,7 @@ namespace howdy::pam {
 		std::condition_variable                 condition_;
 		ConfirmationType                        confirmation_type_ = ConfirmationType::Unset;
 		std::optional<NativePromptConversation> native_prompt_;
+		std::optional<EnterDevice>              enter_device_;
 		std::optional<optional_task<int>>       child_task_;
 		std::optional<optional_task<std::tuple<int, char *>>> pass_task_;
 		Workaround effective_workaround_ = Workaround::Off;

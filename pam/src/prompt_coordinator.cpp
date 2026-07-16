@@ -30,9 +30,7 @@
 
 namespace {
 
-	constexpr auto kPromptRetryDelay =
-	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
-	constexpr int kMaxPromptRetries = 5;
+	constexpr auto kPromptCompletionGrace = std::chrono::milliseconds(100);
 
 #ifdef HOWDY_PAM_TESTING
 	std::optional<int> g_input_workaround_access_result;
@@ -88,19 +86,13 @@ namespace {
 			return false;
 		}
 
-		try {
-			EnterDevice probe;
-		} catch (const std::runtime_error &err) {
-			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
-			return false;
-		}
-
 		return true;
 	}
 
 	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
 	                                  const PromptStopPlan                   &plan,
-	                                  NativePromptConversation *native_prompt) -> PromptStopResult {
+	                                  NativePromptConversation               *native_prompt,
+	                                  EnterDevice *enter_device) -> PromptStopResult {
 		PromptStopResult result;
 		if (!plan.stop_prompt) {
 			return result;
@@ -110,31 +102,25 @@ namespace {
 			native_prompt->request_abort();
 		}
 
+		if (plan.send_enter && pass_task.ready()) {
+			pass_task.stop();
+			return result;
+		}
+
 		if (plan.send_enter) {
-			if (input_workaround_access() != 0) {
-				syslog(LOG_WARNING, "Insufficient permissions to create the fake device");
-				result.enter_failed = true;
-			} else {
-				try {
-					EnterDevice enter_device;
-					enter_device.send_enter_press();
-
-					int retries = 0;
-					for (; retries < kMaxPromptRetries &&
-					       pass_task.wait(kPromptRetryDelay) == std::future_status::timeout;
-					     retries++) {
-						enter_device.send_enter_press();
-					}
-
-					if (retries == kMaxPromptRetries && pass_task.wait(std::chrono::milliseconds(
-					                                        0)) == std::future_status::timeout) {
-						syslog(LOG_WARNING, "Failed to send enter input before the retries limit");
-						result.enter_failed = true;
-					}
-				} catch (const std::runtime_error &err) {
-					syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
-					result.enter_failed = true;
+			try {
+				if (enter_device == nullptr) {
+					throw std::runtime_error("Input prompt workaround device unavailable");
 				}
+				enter_device->send_enter_press();
+				if (pass_task.wait(kPromptCompletionGrace) == std::future_status::timeout) {
+					result.enter_failed   = true;
+					result.prompt_stopped = false;
+					return result;
+				}
+			} catch (const std::runtime_error &err) {
+				syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
+				result.enter_failed = true;
 			}
 		}
 
@@ -245,16 +231,31 @@ namespace howdy::pam {
 			}
 		}
 
-		if (effective_workaround_ == Workaround::Input && ask_auth_tok_ && !existing_auth_token_ &&
-		    !dependencies_.input_prompt_preflight(dependencies_.context)) {
-			syslog(LOG_WARNING,
-			       "Input prompt workaround preflight failed; falling back to standard PAM prompt");
-			effective_workaround_ = Workaround::Off;
-		}
+		configure_input_workaround();
 		return effective_workaround_ == Workaround::Native
 		           ? native_prompt_.has_value() && !existing_auth_token_
 		           : should_ask_for_password(ask_auth_tok_, effective_workaround_,
 		                                     existing_auth_token_);
+	}
+
+	void PromptCoordinator::configure_input_workaround() {
+		if (effective_workaround_ != Workaround::Input || !ask_auth_tok_ || existing_auth_token_) {
+			return;
+		}
+
+		if (!dependencies_.input_prompt_preflight(dependencies_.context)) {
+			syslog(LOG_WARNING, "Input prompt workaround preflight failed; falling back to "
+			                    "standard PAM prompt");
+			effective_workaround_ = Workaround::Off;
+			return;
+		}
+
+		try {
+			enter_device_.emplace();
+		} catch (const std::runtime_error &err) {
+			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
+			effective_workaround_ = Workaround::Off;
+		}
 	}
 
 	auto PromptCoordinator::start_password_task(bool ask_pass)
@@ -348,7 +349,9 @@ namespace howdy::pam {
 		const auto stop_plan =
 		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
 		auto      *native_prompt = native_prompt_.has_value() ? &native_prompt_.value() : nullptr;
-		const auto stop_result = request_password_prompt_stop(pass_task, stop_plan, native_prompt);
+		auto      *enter_device  = enter_device_.has_value() ? &enter_device_.value() : nullptr;
+		const auto stop_result =
+		    request_password_prompt_stop(pass_task, stop_plan, native_prompt, enter_device);
 		if (stop_result.enter_failed && report_input_failure) {
 			try {
 				report_input_failure();
@@ -402,7 +405,7 @@ namespace howdy::pam::testing {
 
 	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
 	                                  const PromptStopPlan &plan) -> PromptStopResult {
-		const auto result = ::request_password_prompt_stop(pass_task, plan, nullptr);
+		const auto result = ::request_password_prompt_stop(pass_task, plan, nullptr, nullptr);
 		return PromptStopResult{.enter_failed   = result.enter_failed,
 		                        .prompt_stopped = result.prompt_stopped};
 	}

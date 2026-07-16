@@ -982,25 +982,22 @@ namespace {
 		ok &= expect(!abort_without_native_prompt.active(),
 		             "abort plan deactivates prompt task without native prompt");
 
-		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
-			optional_task<std::tuple<int, char *>> input_task([] -> std::tuple<int, char *> {
-				return {PAM_SUCCESS, nullptr};
-			});
-			input_task.activate();
-			ok &= expect(input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
-			             "input prompt task finishes before stop");
-			const PromptStopPlan input_plan{
-			    .stop_prompt  = true,
-			    .abort_prompt = false,
-			    .send_enter   = true,
-			};
-			const auto input_result = request_password_prompt_stop(input_task, input_plan);
-			ok &= expect(input_result.enter_failed && input_result.prompt_stopped,
-			             "input plan reports enter failure when uinput is unavailable");
-			ok &= expect(!input_task.active(), "input plan deactivates ready prompt task");
-		} else {
-			std::cerr << "SKIP: prompt stop input failure requires unavailable /dev/uinput\n";
-		}
+		optional_task<std::tuple<int, char *>> ready_input_task([] -> std::tuple<int, char *> {
+			return {PAM_SUCCESS, nullptr};
+		});
+		ready_input_task.activate();
+		ok &= expect(ready_input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
+		             "ready input prompt task finishes before stop");
+		const PromptStopPlan input_plan{
+		    .stop_prompt  = true,
+		    .abort_prompt = false,
+		    .send_enter   = true,
+		};
+		const auto input_result = request_password_prompt_stop(ready_input_task, input_plan);
+		ok &= expect(!input_result.enter_failed && input_result.prompt_stopped,
+		             "already-ready input prompt skips Enter injection");
+		ok &=
+		    expect(!ready_input_task.active(), "input plan deactivates already-ready prompt task");
 
 		return ok;
 	}
