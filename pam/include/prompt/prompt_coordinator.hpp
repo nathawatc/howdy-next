@@ -36,6 +36,8 @@ namespace howdy::pam {
 
 	using InputPromptPreflightFn = bool (*)(void *context);
 
+	using CreateEnterDeviceFn = std::unique_ptr<EnterDevice> (*)(void *context);
+
 	using RequestAuthTokenFn = std::tuple<int, char *> (*)(void *context, pam_handle_t *pamh);
 
 	struct PromptCoordinatorDependencies {
@@ -44,6 +46,7 @@ namespace howdy::pam {
 		WaitForCompareProcessFn   wait_for_compare_process = nullptr;
 		TerminateCompareProcessFn terminate_compare        = nullptr;
 		InputPromptPreflightFn    input_prompt_preflight   = nullptr;
+		CreateEnterDeviceFn       create_enter_device      = nullptr;
 		RequestAuthTokenFn        request_auth_token       = nullptr;
 	};
 
@@ -99,7 +102,7 @@ namespace howdy::pam {
 		std::condition_variable                 condition_;
 		ConfirmationType                        confirmation_type_ = ConfirmationType::Unset;
 		std::optional<NativePromptConversation> native_prompt_;
-		std::optional<EnterDevice>              enter_device_;
+		std::unique_ptr<EnterDevice>            enter_device_;
 		std::optional<optional_task<int>>       child_task_;
 		std::optional<optional_task<std::tuple<int, char *>>> pass_task_;
 		Workaround effective_workaround_ = Workaround::Off;

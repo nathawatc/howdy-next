@@ -32,16 +32,7 @@ namespace {
 
 	constexpr auto kPromptCompletionGrace = std::chrono::milliseconds(100);
 
-#ifdef HOWDY_PAM_TESTING
-	std::optional<int> g_input_workaround_access_result;
-#endif
-
 	auto input_workaround_access() -> int {
-#ifdef HOWDY_PAM_TESTING
-		if (g_input_workaround_access_result.has_value()) {
-			return *g_input_workaround_access_result;
-		}
-#endif
 		return euidaccess("/dev/uinput", W_OK | R_OK);
 	}
 
@@ -149,6 +140,11 @@ namespace {
 		return {auth_result, auth_tok_ptr};
 	}
 
+	auto create_enter_device_dependency(void *context) -> std::unique_ptr<EnterDevice> {
+		(void)context;
+		return create_enter_device();
+	}
+
 }  // namespace
 
 namespace howdy::pam {
@@ -177,6 +173,7 @@ namespace howdy::pam {
 		       dependencies_.wait_for_compare_process != nullptr &&
 		       dependencies_.terminate_compare != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
+		       dependencies_.create_enter_device != nullptr &&
 		       dependencies_.request_auth_token != nullptr &&
 		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
@@ -251,9 +248,16 @@ namespace howdy::pam {
 		}
 
 		try {
-			enter_device_.emplace();
-		} catch (const std::runtime_error &err) {
+			enter_device_ = dependencies_.create_enter_device(dependencies_.context);
+			if (enter_device_ == nullptr) {
+				syslog(LOG_ERR, "Input prompt workaround setup failed: device unavailable");
+				effective_workaround_ = Workaround::Off;
+			}
+		} catch (const std::exception &err) {
 			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
+			effective_workaround_ = Workaround::Off;
+		} catch (...) {
+			syslog(LOG_ERR, "Input prompt workaround setup failed with non-standard exception");
 			effective_workaround_ = Workaround::Off;
 		}
 	}
@@ -349,7 +353,7 @@ namespace howdy::pam {
 		const auto stop_plan =
 		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
 		auto      *native_prompt = native_prompt_.has_value() ? &native_prompt_.value() : nullptr;
-		auto      *enter_device  = enter_device_.has_value() ? &enter_device_.value() : nullptr;
+		auto      *enter_device  = enter_device_.get();
 		const auto stop_result =
 		    request_password_prompt_stop(pass_task, stop_plan, native_prompt, enter_device);
 		if (stop_result.enter_failed && report_input_failure) {
@@ -381,6 +385,7 @@ namespace howdy::pam {
 		    .wait_for_compare_process = compare_process::wait,
 		    .terminate_compare        = compare_process::terminate,
 		    .input_prompt_preflight   = input_prompt_preflight_dependency,
+		    .create_enter_device      = create_enter_device_dependency,
 		    .request_auth_token       = request_auth_token_dependency,
 		};
 	}
@@ -389,15 +394,6 @@ namespace howdy::pam {
 
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
-
-	void set_input_workaround_access_result(int result) {
-		g_input_workaround_access_result = result;
-	}
-
-	void reset_input_workaround_access_result() {
-		g_input_workaround_access_result.reset();
-	}
-
 	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> &pass_task,
 	                           NativePromptConversation               &native_prompt) noexcept {
 		::cleanup_native_prompt(&pass_task, &native_prompt);

@@ -790,6 +790,9 @@ namespace {
 		const auto input_preflight   = [](void *) -> bool {
 			return true;
 		};
+		const auto create_enter_device = [](void *) -> std::unique_ptr<EnterDevice> {
+			return nullptr;
+		};
 		const auto request_auth_token = [](void *, pam_handle_t *) -> std::tuple<int, char *> {
 			return {PAM_SUCCESS, nullptr};
 		};
@@ -805,6 +808,7 @@ namespace {
 		    .wait_for_compare_process = wait_compare,
 		    .terminate_compare        = terminate_compare,
 		    .input_prompt_preflight   = input_preflight,
+		    .create_enter_device      = create_enter_device,
 		    .request_auth_token       = request_auth_token,
 		};
 		howdy::pam::testing::set_identify_dependencies(IdentifyDependencies{

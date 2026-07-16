@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <memory>
 #include <mutex>
 #include <poll.h>
 #include <stdexcept>
@@ -48,6 +49,8 @@ namespace {
 		std::atomic<int>          terminate_calls{0};
 		std::atomic<pid_t>        terminated_pid{-1};
 		std::atomic<int>          preflight_calls{0};
+		std::atomic<int>          enter_device_constructions{0};
+		std::atomic<int>          enter_presses{0};
 		std::atomic<int>          auth_token_calls{0};
 		int                       token_result = PAM_SUCCESS;
 		std::chrono::milliseconds token_delay{0};
@@ -55,10 +58,14 @@ namespace {
 		bool                      warning_released_token    = false;
 		std::mutex                token_mutex;
 		std::condition_variable   token_condition;
-		bool                      preflight_result       = true;
-		bool                      request_native_prompt  = false;
-		bool                      complete_native_prompt = false;
-		int                       prompt_master_fd       = -1;
+		bool                      preflight_result         = true;
+		bool                      fail_enter_construction  = false;
+		bool                      return_null_enter_device = false;
+		bool                      fail_enter_send          = false;
+		bool                      release_token_on_enter   = false;
+		bool                      request_native_prompt    = false;
+		bool                      complete_native_prompt   = false;
+		int                       prompt_master_fd         = -1;
 		std::atomic<bool>         native_prompt_seen{false};
 		std::atomic<bool>         native_prompt_installed{false};
 		std::atomic<bool>         native_prompt_input_sent{false};
@@ -73,6 +80,29 @@ namespace {
 		pid_t                     next_child_pid         = -1;
 		std::mutex                native_prompt_mutex;
 		std::condition_variable   native_prompt_condition;
+	};
+
+	class FakeEnterDevice final : public EnterDevice {
+	public:
+		explicit FakeEnterDevice(FakeContext *context)
+		    : context_(context) {}
+
+		void send_enter_press() override {
+			++context_->enter_presses;
+			if (context_->fail_enter_send) {
+				throw std::runtime_error("Failed to send Enter keypress");
+			}
+			if (context_->release_token_on_enter) {
+				{
+					std::unique_lock<std::mutex> lock(context_->token_mutex);
+					context_->warning_released_token = true;
+				}
+				context_->token_condition.notify_one();
+			}
+		}
+
+	private:
+		FakeContext *context_;
 	};
 
 	class ScopedFd {
@@ -273,6 +303,7 @@ namespace {
 		int wait      = 0;
 		int terminate = 0;
 		int preflight = 0;
+		int enter     = 0;
 		int auth      = 0;
 
 		auto operator==(const CallbackCounts &) const -> bool = default;
@@ -386,13 +417,16 @@ namespace {
 		return fake.preflight_result;
 	}
 
-	void release_blocked_token(void *context) {
+	auto create_enter_device(void *context) -> std::unique_ptr<EnterDevice> {
 		auto &fake = *static_cast<FakeContext *>(context);
-		{
-			std::unique_lock<std::mutex> lock(fake.token_mutex);
-			fake.warning_released_token = true;
+		++fake.enter_device_constructions;
+		if (fake.fail_enter_construction) {
+			throw std::runtime_error("Failed to create uinput device");
 		}
-		fake.token_condition.notify_one();
+		if (fake.return_null_enter_device) {
+			return nullptr;
+		}
+		return std::make_unique<FakeEnterDevice>(&fake);
 	}
 
 	auto request_auth_token(void *context, pam_handle_t *pamh) -> std::tuple<int, char *> {
@@ -442,6 +476,7 @@ namespace {
 		    .wait_for_compare_process = wait_for_compare,
 		    .terminate_compare        = terminate_compare,
 		    .input_prompt_preflight   = input_preflight,
+		    .create_enter_device      = create_enter_device,
 		    .request_auth_token       = request_auth_token,
 		};
 	}
@@ -452,6 +487,7 @@ namespace {
 		    .wait      = context.wait_calls.load(),
 		    .terminate = context.terminate_calls.load(),
 		    .preflight = context.preflight_calls.load(),
+		    .enter     = context.enter_device_constructions.load(),
 		    .auth      = context.auth_token_calls.load(),
 		};
 	}
@@ -704,19 +740,21 @@ namespace {
 	}
 
 	auto test_input_failure_callback_precedes_password_release(bool callback_throws) -> bool {
-		FakeContext context{.block_token_until_warning = true};
+		FakeContext context{
+		    .block_token_until_warning = true,
+		    .fail_enter_send           = true,
+		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, "input failure callback child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		howdy::pam::testing::configure_enter_device(false, true);
 
 		int               callback_calls             = 0;
 		bool              callback_saw_blocked_token = false;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result     = coordinator.run(make_compare_request(), [&] -> void {
+		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
 			++callback_calls;
 			{
 				std::unique_lock<std::mutex> lock(context.token_mutex);
@@ -729,28 +767,27 @@ namespace {
 				throw std::runtime_error("simulated warning failure");
 			}
 		});
-		const int construction_count = howdy::pam::testing::enter_device_construction_count();
-		const int press_count        = howdy::pam::testing::enter_press_count();
-		howdy::pam::testing::reset_enter_device();
-
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input failure preserves Howdy result") &&
 		       expect(callback_calls == 1, "input failure callback runs exactly once") &&
-		       expect(construction_count == 1, "input failure creates one Enter device") &&
-		       expect(press_count == 1, "input failure attempts one Enter press") &&
+		       expect(context.enter_device_constructions == 1,
+		              "input failure creates one Enter device") &&
+		       expect(context.enter_presses == 1, "input failure attempts one Enter press") &&
 		       expect(callback_saw_blocked_token,
 		              "input failure callback runs before password task release") &&
 		       expect(child_reaped(child_pid), "input failure callback child is reaped");
 	}
 
 	auto test_input_success_sends_one_enter() -> bool {
-		FakeContext context{.block_token_until_warning = true};
+		FakeContext context{
+		    .block_token_until_warning = true,
+		    .release_token_on_enter    = true,
+		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, "input success child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		howdy::pam::testing::configure_enter_device(false, false, release_blocked_token, &context);
 
 		int               callback_calls = 0;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
@@ -758,16 +795,13 @@ namespace {
 		const auto result = coordinator.run(make_compare_request(), [&callback_calls] -> void {
 			++callback_calls;
 		});
-		const int  construction_count = howdy::pam::testing::enter_device_construction_count();
-		const int  press_count        = howdy::pam::testing::enter_press_count();
-		howdy::pam::testing::reset_enter_device();
-
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
 		       expect(result.prompt_stopped,
 		              "input success completes prompt during grace period") &&
-		       expect(construction_count == 1, "input success creates one Enter device") &&
-		       expect(press_count == 1, "input success sends exactly one Enter press") &&
+		       expect(context.enter_device_constructions == 1,
+		              "input success creates one Enter device") &&
+		       expect(context.enter_presses == 1, "input success sends exactly one Enter press") &&
 		       expect(callback_calls == 0, "input success emits no failure callback") &&
 		       expect(child_reaped(child_pid), "input success child is reaped");
 	}
@@ -779,13 +813,12 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		howdy::pam::testing::configure_enter_device(false, false);
 
 		int               callback_calls             = 0;
 		bool              callback_saw_blocked_token = false;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result     = coordinator.run(make_compare_request(), [&] -> void {
+		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
 			++callback_calls;
 			{
 				std::unique_lock<std::mutex> lock(context.token_mutex);
@@ -795,16 +828,13 @@ namespace {
 			}
 			context.token_condition.notify_one();
 		});
-		const int construction_count = howdy::pam::testing::enter_device_construction_count();
-		const int press_count        = howdy::pam::testing::enter_press_count();
-		howdy::pam::testing::reset_enter_device();
-
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "blocked input success preserves Howdy result") &&
 		       expect(!result.prompt_stopped,
 		              "blocked input success uses manual-completion fallback") &&
-		       expect(construction_count == 1, "blocked input success creates one Enter device") &&
-		       expect(press_count == 1, "blocked input success sends one Enter press") &&
+		       expect(context.enter_device_constructions == 1,
+		              "blocked input success creates one Enter device") &&
+		       expect(context.enter_presses == 1, "blocked input success sends one Enter press") &&
 		       expect(callback_calls == 1, "blocked input success emits one failure callback") &&
 		       expect(callback_saw_blocked_token,
 		              "blocked input callback runs before manual token release") &&
@@ -893,6 +923,32 @@ namespace {
 		       expect(context.terminate_calls == 0,
 		              "preflight fallback does not terminate compare child") &&
 		       expect(reaped, "preflight fallback reaps child");
+	}
+
+	auto test_enter_device_construction_fallback(bool return_null, const std::string &label)
+	    -> bool {
+		FakeContext context{
+		    .fail_enter_construction  = !return_null,
+		    .return_null_enter_device = return_null,
+		};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              label + " returns compare result") &&
+		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
+		       expect(context.enter_device_constructions == 1,
+		              label + " calls Enter-device factory once") &&
+		       expect(context.enter_presses == 0, label + " sends no Enter press") &&
+		       expect(context.auth_token_calls == 0,
+		              label + " falls back to standard PAM prompt") &&
+		       expect(child_reaped(child_pid), label + " reaps child");
 	}
 
 	auto test_native_setup_without_input_fallback(int available_result, int install_result,
@@ -1327,7 +1383,7 @@ namespace {
 
 	auto test_invalid_dependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 5; ++missing) {
+		for (int missing = 0; missing < 6; ++missing) {
 			FakeContext context;
 			auto        deps = dependencies(&context);
 			switch (missing) {
@@ -1344,6 +1400,9 @@ namespace {
 					deps.input_prompt_preflight = nullptr;
 					break;
 				case 4:
+					deps.create_enter_device = nullptr;
+					break;
+				case 5:
 					deps.request_auth_token = nullptr;
 					break;
 				default:
@@ -1411,6 +1470,8 @@ auto main() -> int {
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_compare_signal_password_fallback();
 	ok &= test_input_preflight_fallback();
+	ok &= test_enter_device_construction_fallback(false, "Enter-device construction failure");
+	ok &= test_enter_device_construction_fallback(true, "null Enter-device factory result");
 	ok &= test_native_setup_without_input_fallback(0, -1, "native unavailable");
 	ok &= test_native_setup_without_input_fallback(1, PAM_CONV_ERR, "native install failure");
 	ok &= test_native_input_success_uses_native_path();
