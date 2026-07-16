@@ -1,8 +1,8 @@
 #include "config/config_validation.hpp"
 
-#include "common/capture_device_path.hpp"
 #include "config/config_schema.hpp"
 #include "config/number_parsing.hpp"
+#include "vision/capture_device_path.hpp"
 
 #include <algorithm>
 #include <cctype>

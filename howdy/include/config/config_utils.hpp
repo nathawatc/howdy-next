@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/atomic_files.hpp"
-#include "common/file_security.hpp"
+#include "support/atomic_files.hpp"
+#include "support/file_security.hpp"
 
 #include <cerrno>
 #include <filesystem>

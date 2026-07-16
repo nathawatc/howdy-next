@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/atomic_files.hpp"
-#include "common/opencv_model_manifest.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
+#include "support/atomic_files.hpp"
 
 #include <cstddef>
 #include <optional>

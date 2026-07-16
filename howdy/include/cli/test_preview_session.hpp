@@ -1,8 +1,8 @@
 #pragma once
 
 #include "cli/test_cli_internal.hpp"
-#include "common/preview_engine.hpp"
 #include "config/runtime_config.hpp"
+#include "vision/preview_engine.hpp"
 
 #include <chrono>
 

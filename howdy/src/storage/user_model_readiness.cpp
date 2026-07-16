@@ -1,7 +1,7 @@
 #include "storage/user_model_readiness.hpp"
 
-#include "common/file_security.hpp"
-#include "common/user_names.hpp"
+#include "support/file_security.hpp"
+#include "support/user_names.hpp"
 
 #include <cerrno>
 #include <filesystem>

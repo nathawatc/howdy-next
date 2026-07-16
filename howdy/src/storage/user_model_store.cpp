@@ -1,13 +1,13 @@
 #include "storage/user_model_store.hpp"
 
-#include "common/atomic_files.hpp"
-#include "common/fd_io.hpp"
-#include "common/file_security.hpp"
-#include "common/user_names.hpp"
 #include "config/runtime_paths.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_store_test_hooks.hpp"
+#include "support/atomic_files.hpp"
+#include "support/fd_io.hpp"
+#include "support/file_security.hpp"
+#include "support/user_names.hpp"
 
 #include <cerrno>
 #include <cstdint>

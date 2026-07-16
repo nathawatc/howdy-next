@@ -230,7 +230,6 @@ function(howdy_configure_native_target target)
 		${target}
 		PRIVATE
 			"${HOWDY_GENERATED_INCLUDE_DIR}"
-			"${PROJECT_SOURCE_DIR}/howdy/src"
 			"${PROJECT_SOURCE_DIR}/howdy/include"
 	)
 endfunction()
@@ -247,12 +246,22 @@ endfunction()
 
 function(howdy_configure_native_test_target target)
 	howdy_configure_native_target(${target})
-	target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
+	target_include_directories(
+		${target}
+		PRIVATE
+			"${PROJECT_SOURCE_DIR}/howdy/tests/include"
+			"${PROJECT_SOURCE_DIR}/tests/include"
+	)
 endfunction()
 
 function(howdy_configure_pam_test_target target)
 	howdy_configure_pam_target(${target})
-	target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/tests")
+	target_include_directories(
+		${target}
+		PRIVATE
+			"${PROJECT_SOURCE_DIR}/pam/tests/include"
+			"${PROJECT_SOURCE_DIR}/tests/include"
+	)
 endfunction()
 
 function(howdy_expect_test_failure test_name)

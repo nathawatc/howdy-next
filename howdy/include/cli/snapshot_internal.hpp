@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/atomic_files.hpp"
 #include "config/runtime_config.hpp"
+#include "support/atomic_files.hpp"
 
 #include <cstdint>
 #include <filesystem>

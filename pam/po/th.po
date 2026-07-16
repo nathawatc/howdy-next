@@ -12,26 +12,26 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/auth_flow.cpp
+#: src/module/auth_flow.cpp
 msgid "Attempting facial authentication"
 msgstr "กำลังยืนยันตัวตนด้วยใบหน้า"
 
-#: src/auth_flow.cpp
+#: src/module/auth_flow.cpp
 msgid "Failed to send Enter press, waiting for user to press it instead"
 msgstr "ส่งคำสั่ง Enter ไม่สำเร็จ กรุณากด Enter ด้วยตัวเอง"
 
-#: src/status_mapping.cpp
+#: src/module/status_mapping.cpp
 msgid "Failure, timeout reached"
 msgstr "ยืนยันตัวตนล้มเหลวเนื่องจากหมดเวลา"
 
-#: src/status_mapping.cpp
+#: src/module/status_mapping.cpp
 msgid "Face detection image too dark"
 msgstr "ภาพมืดเกินไป ไม่สามารถตรวจจับใบหน้าได้"
 
-#: src/status_mapping.cpp
+#: src/module/status_mapping.cpp
 msgid "Identified face as {}"
 msgstr "ระบุใบหน้าเป็น: {}"
 
-#: src/status_mapping.cpp
+#: src/module/status_mapping.cpp
 msgid "Unknown error: {}"
 msgstr "ข้อผิดพลาดที่ไม่รู้จัก: {}"

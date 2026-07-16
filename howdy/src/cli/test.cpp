@@ -2,13 +2,13 @@
 #include "cli/test_cli_internal.hpp"
 #include "cli/test_preview_renderer.hpp"
 #include "cli/test_preview_session.hpp"
-#include "common/invoking_user.hpp"
-#include "common/invoking_user_env.hpp"
-#include "common/preview_engine.hpp"
 #include "config/runtime_config.hpp"
-#include "core/face_model.hpp"
-#include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
+#include "support/invoking_user.hpp"
+#include "support/invoking_user_env.hpp"
+#include "vision/face_model.hpp"
+#include "vision/preview_engine.hpp"
+#include "vision/video_capture.hpp"
 
 #include <chrono>
 #include <cstdlib>

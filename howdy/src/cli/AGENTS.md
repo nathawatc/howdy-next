@@ -1,6 +1,6 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-07-06
+**Updated:** 2026-07-16
 
 ## Scope
 
@@ -8,8 +8,8 @@ Native C++ CLI for model mgmt, config edit, camera test, snapshot gen.
 
 ## Where to Look
 
-- Unified CLI dispatch: `howdy/src/howdy.cpp`,
-  `howdy/src/howdy_main.cpp` — Parse global flags, resolve target user,
+- Unified CLI dispatch: `howdy/src/app/howdy.cpp`,
+  `howdy/src/bin/howdy_main.cpp` — Parse global flags, resolve target user,
   enforce root/user guards, dispatch command.
 - Add face: `howdy/src/cli/add.cpp` — Capture and encode user model.
 - Clear all: `howdy/src/cli/clear.cpp` — Delete all user models.
@@ -27,7 +27,7 @@ Native C++ CLI for model mgmt, config edit, camera test, snapshot gen.
 
 CLI commands use dependency injection for tests.
 
-- `include/cli/howdy_internal.hpp`: `HowdyDependencies`,
+- `include/app/howdy_internal.hpp`: `HowdyDependencies`,
   `howdy_main_with_dependencies()`
 - `include/cli/add_internal.hpp`: `AddDependencies`,
   `add_main_with_dependencies()`
@@ -56,7 +56,7 @@ CLI commands use dependency injection for tests.
 ## Conventions
 
 - `howdy` is sole installed user-facing CLI. Add commands through dispatcher
-  deps in `include/cli/howdy_internal.hpp`; do not add standalone executables.
+  deps in `include/app/howdy_internal.hpp`; do not add standalone executables.
 - Preserve dispatcher global behavior: `-U/--user`, `-y`, `--plain`, root
   requirement, root-user rejection, invalid model-user validation.
 - Command argv comes from dispatcher. Do not make subcommands parse global
@@ -64,8 +64,8 @@ CLI commands use dependency injection for tests.
 - Cover dispatch behavior in `howdy_dispatch_test.cpp` through
   `howdy_main_with_dependencies()`.
 - Keep config edits atomic and secure.
-- Reuse `common/invoking_user*.hpp` for invoking-user helpers.
-- Reuse `common/model_file.hpp` for model integrity checks.
+- Reuse `support/invoking_user*.hpp` for invoking-user helpers.
+- Reuse `model_assets/model_file.hpp` for model integrity checks.
 - `download-models` owns pinned packaged-model fetch policy: fixed upstream
   URLs, fixed SHA-256, and canonical OpenCV 5 model pair
   `face_detection_yunet_2026may.onnx` plus
@@ -74,7 +74,7 @@ CLI commands use dependency injection for tests.
   `RuntimeConfig` fields over raw `ConfigReader` access.
 - Keep command behavior aligned with installed `/etc/howdy` layout.
 - Prefer shared helpers in `howdy/src/config`, `howdy/src/storage`, and
-  `howdy/include/common`.
+  `howdy/include/support`.
 - Add, test, and snapshot commands are split into production `*_main.cpp`
   plus shared implementation for testability; avoid duplicating the DI seam.
 - List, remove, and set public wrappers retain production behavior while

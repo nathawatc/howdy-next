@@ -1,17 +1,16 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-10
+**Updated:** 2026-07-16
 
 ## Scope
 
 Root rules. Read nearest `AGENTS.md` for overrides.
 
 - `ci/AGENTS.md`: CI build/test configuration
-- `howdy/src/AGENTS.md`: shared runtime, storage, config, model, helper code
+- `howdy/AGENTS.md`: Howdy package include, source, tests, and resources
 - `howdy/src/cli/AGENTS.md`: CLI entrypoints and download/config commands
-- `howdy/src/recorders/AGENTS.md`: camera capture layer
+- `howdy/src/vision/AGENTS.md`: OpenCV 5 DNN and camera capture layer
 - `pam/AGENTS.md`: PAM module and auth flow
-- `howdy/src/core/AGENTS.md`: OpenCV 5 DNN engine compatibility
 
 ## Build, Test, Development
 
@@ -59,6 +58,8 @@ howdy download-models
 - Follow `.clang-format`.
 - snake_case for files, functions, tests.
 - Preserve tabs in touched C/C++ files.
+- Keep the Cargo-style layout: mirror modules across `include/`, `src/`, and `tests/` when applicable;
+  keep resources outside `src/`.
 - Reuse shared helpers for storage, config, readiness, model checks.
 - Runtime code should load typed `RuntimeConfig` via `load_runtime_config()`,
   not raw `ConfigReader` lookups.
@@ -78,7 +79,7 @@ git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py -p1 -path b
 
 ## Testing
 
-Tests in `howdy/src/tests/` and `pam/src/tests/`. Add focused `*_test.cpp` beside changed code.
+Tests in `howdy/tests/` and `pam/tests/`. Add focused `*_test.cpp` under matching module.
 
 Current test files of interest:
 
@@ -102,7 +103,7 @@ Current test files of interest:
   `main_entrypoints_test.cpp`, `native_prompt_conversation_test.cpp`,
   `optional_task_test.cpp`, `prompt_coordinator_test.cpp`,
   `prompt_workaround_test.cpp`, `runtime_session_test.cpp`,
-  `status_mapping_test.cpp`, `tty_restore_test.cpp`
+  `status_mapping_test.cpp`
 
 Unified dispatcher and install-layout coverage:
 `native-howdy-dispatch`, `native-howdy-install-layout`.
@@ -120,7 +121,7 @@ Do not change `config.ini` format casually. Preserve atomic config rewrites,
 secure path validation, typed runtime config validation, and ownership
 expectations for `/etc/howdy`, `config.ini`, downloaded ONNX model files, and
 user model files. PAM auth should fail closed on unexpected errors; validate
-helper output protocol via shared keys in `common/auth_helper_protocol.hpp`.
+helper output protocol via shared keys in `protocol/auth_helper_protocol.hpp`.
 
 ## Commit / PR
 

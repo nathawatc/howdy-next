@@ -2,9 +2,9 @@
 #include "cli/add_internal.hpp"
 #include "cli/enrollment_capture.hpp"
 #include "config/runtime_config.hpp"
-#include "core/face_model.hpp"
-#include "recorders/video_capture.hpp"
 #include "storage/user_models.hpp"
+#include "vision/face_model.hpp"
+#include "vision/video_capture.hpp"
 
 #include <chrono>
 #include <iostream>

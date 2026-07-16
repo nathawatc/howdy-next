@@ -1,11 +1,11 @@
 #include "cli/snapshot_cli.hpp"
 #include "cli/snapshot_internal.hpp"
-#include "common/atomic_files.hpp"
-#include "common/file_security.hpp"
-#include "common/frame_validation.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
-#include "recorders/video_capture.hpp"
+#include "support/atomic_files.hpp"
+#include "support/file_security.hpp"
+#include "vision/frame_validation.hpp"
+#include "vision/video_capture.hpp"
 
 #include <array>
 #include <chrono>

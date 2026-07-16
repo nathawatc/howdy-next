@@ -1,10 +1,10 @@
 #include "config/config_utils.hpp"
 
-#include "common/atomic_files.hpp"
-#include "common/fd_io.hpp"
 #include "config/config_limits.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_validation.hpp"
+#include "support/atomic_files.hpp"
+#include "support/fd_io.hpp"
 
 #include <algorithm>
 #include <cstdint>

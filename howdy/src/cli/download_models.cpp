@@ -1,10 +1,10 @@
 #include "cli/download_models_cli.hpp"
 #include "cli/download_models_internal.hpp"
-#include "common/atomic_files.hpp"
-#include "common/fd_io.hpp"
-#include "common/file_security.hpp"
-#include "common/model_file.hpp"
 #include "config/runtime_paths.hpp"
+#include "model_assets/model_file.hpp"
+#include "support/atomic_files.hpp"
+#include "support/fd_io.hpp"
+#include "support/file_security.hpp"
 
 #include <array>
 #include <cerrno>

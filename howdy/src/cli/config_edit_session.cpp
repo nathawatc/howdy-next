@@ -1,9 +1,9 @@
 #include "cli/config_edit_session.hpp"
 
-#include "common/fd_io.hpp"
-#include "common/invoking_user_env.hpp"
 #include "config/config_limits.hpp"
 #include "config/runtime_paths.hpp"
+#include "support/fd_io.hpp"
+#include "support/invoking_user_env.hpp"
 
 #include <array>
 #include <cerrno>
