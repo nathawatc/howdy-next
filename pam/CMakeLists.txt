@@ -75,6 +75,10 @@ if(BUILD_TESTING)
 		src/main.cpp
 		src/tests/main_entrypoints_test.cpp
 	)
+	target_compile_definitions(
+		pam_main_entrypoints_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
+	)
+	add_dependencies(pam_main_entrypoints_test howdy-gmo)
 
 	howdy_add_pam_test(
 		pam_native_prompt_conversation_test
