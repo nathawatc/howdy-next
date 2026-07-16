@@ -1,5 +1,5 @@
 .\" PAM module manual for Howdy Next
-.TH PAM_HOWDY 8 "July 10, 2026" "Howdy Next 3.3.1" "System Administration"
+.TH PAM_HOWDY 8 "July 16, 2026" "Howdy Next 3.3.1" "System Administration"
 .SH NAME
 pam_howdy \- PAM facial authentication module for Howdy Next
 .SH SYNOPSIS
@@ -29,14 +29,15 @@ Use PAM conversation control to stop Howdy's concurrent password prompt after
 successful face authentication. This mode does not fall back to input injection.
 .TP
 \fBnative-input\fR
-Try native prompt handling first, then fall back to the input workaround when
-native prompt handling is unavailable or cannot be installed.
+Try native prompt handling first, then fall back to the input workaround when a
+usable TTY is unavailable or native prompt handling cannot be installed.
 .TP
 \fBinput\fR
 Use a
 .I /dev/uinput
-Enter key workaround to stop the concurrent password prompt. This mode is less
-preferred than
+Enter key workaround to stop the concurrent password prompt. The injected key
+is not addressed to the PAM conversation and may be received by another
+application that currently has keyboard focus. This mode is less preferred than
 .B native
 and may be less reliable on some lock screens.
 .RE
@@ -52,8 +53,9 @@ For a PAM consumer where Howdy should run as a sufficient authentication method:
 .nf
 auth  sufficient  pam_howdy.so
 .fi
-.SS TTY, Login, Sudo, And Polkit
-For services that call PAM before collecting a password, put Howdy before
+.SS TTY, Login, And Sudo
+For TTY-backed services that call PAM before collecting a password, put Howdy
+before
 .BR pam_unix (8).
 Use
 .B workaround=native
@@ -66,6 +68,22 @@ auth  sufficient   pam_howdy.so workaround=native
 auth  sufficient   pam_unix.so try_first_pass nullok
 auth  sufficient   pam_fprintd.so
 .fi
+.SS Graphical Authorization Prompts
+Graphical PAM consumers, including graphical Polkit prompts, may not provide a
+usable TTY. If Howdy must stop a concurrent password prompt, use
+.B workaround=native-input
+to prefer native prompt handling where available and fall back to input
+injection otherwise:
+.PP
+.nf
+auth  sufficient   pam_howdy.so workaround=native-input
+.fi
+.PP
+The input fallback sends Enter through
+.IR /dev/uinput .
+It is not targeted to the PAM prompt and may instead reach another application
+that currently has keyboard focus. Validate this behavior for each graphical
+consumer before enabling it.
 .SS Lock Screens That Collect Input Before PAM
 Some lock screens, including
 .BR waylock ,
