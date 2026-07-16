@@ -256,12 +256,6 @@ namespace {
 				           ? howdy_status(username, result.compare_status, config, conv_function)
 				           : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
-				if (result.enter_failed) {
-					send_conversation_message(
-					    conv_function, PAM_ERROR_MSG,
-					    howdy::pam::translate(
-					        "Failed to send Enter press, waiting for user to press it instead"));
-				}
 				return howdy_status(username, result.compare_status, config, conv_function);
 			case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
 			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
@@ -376,5 +370,12 @@ auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_to
 	    .staged_runtime  = runtime_session.staged(),
 	};
 
-	return map_prompt_result(coordinator.run(compare_request), username, config, conv_function);
+	const auto report_input_failure = [&conv_function] -> void {
+		send_conversation_message(
+		    conv_function, PAM_ERROR_MSG,
+		    howdy::pam::translate(
+		        "Failed to send Enter press, waiting for user to press it instead"));
+	};
+	return map_prompt_result(coordinator.run(compare_request, report_input_failure), username,
+	                         config, conv_function);
 }

@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <mutex>
 #include <poll.h>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -50,6 +51,10 @@ namespace {
 		std::atomic<int>          auth_token_calls{0};
 		int                       token_result = PAM_SUCCESS;
 		std::chrono::milliseconds token_delay{0};
+		bool                      block_token_until_warning = false;
+		bool                      warning_released_token    = false;
+		std::mutex                token_mutex;
+		std::condition_variable   token_condition;
 		bool                      preflight_result       = true;
 		bool                      request_native_prompt  = false;
 		bool                      complete_native_prompt = false;
@@ -411,6 +416,12 @@ namespace {
 			fake.native_prompt_condition.notify_one();
 			return {result, nullptr};
 		}
+		if (fake.block_token_until_warning) {
+			std::unique_lock<std::mutex> lock(fake.token_mutex);
+			fake.token_condition.wait_for(lock, 1s, [&fake] -> bool {
+				return fake.warning_released_token;
+			});
+		}
 		std::this_thread::sleep_for(fake.token_delay);
 		return {fake.token_result, nullptr};
 	}
@@ -662,8 +673,11 @@ namespace {
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result = coordinator.run(make_compare_request());
-		const bool        reaped = child_reaped(child_pid);
+		int               input_failure_calls = 0;
+		const auto result = coordinator.run(make_compare_request(), [&input_failure_calls] -> void {
+			++input_failure_calls;
+		});
+		const bool reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM winner returns PAM result") &&
 		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
@@ -673,9 +687,47 @@ namespace {
 		       expect(result.pam_status == PAM_SUCCESS, "PAM winner preserves PAM success") &&
 		       expect(context.preflight_calls == 1, "PAM winner runs input preflight once") &&
 		       expect(context.auth_token_calls == 1, "PAM winner requests token once") &&
+		       expect(input_failure_calls == 0,
+		              "successful input workaround reports no input failure") &&
 		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "PAM winner terminates compare child once") &&
 		       expect(reaped, "PAM winner reaps compare child");
+	}
+
+	auto test_input_failure_callback_precedes_password_release(bool callback_throws) -> bool {
+		FakeContext context{.block_token_until_warning = true};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "input failure callback child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+		howdy::pam::testing::set_input_workaround_access_result(-1);
+
+		int               callback_calls             = 0;
+		bool              callback_saw_blocked_token = false;
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
+			++callback_calls;
+			{
+				std::unique_lock<std::mutex> lock(context.token_mutex);
+				callback_saw_blocked_token =
+				    context.auth_token_calls == 1 && !context.warning_released_token;
+				context.warning_released_token = true;
+			}
+			context.token_condition.notify_one();
+			if (callback_throws) {
+				throw std::runtime_error("simulated warning failure");
+			}
+		});
+		howdy::pam::testing::reset_input_workaround_access_result();
+
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              "input failure preserves Howdy result") &&
+		       expect(callback_calls == 1, "input failure callback runs exactly once") &&
+		       expect(callback_saw_blocked_token,
+		              "input failure callback runs before password task release") &&
+		       expect(child_reaped(child_pid), "input failure callback child is reaped");
 	}
 
 	auto test_compare_failure_password_result(int pam_result, const std::string &label) -> bool {
@@ -1270,6 +1322,8 @@ auto main() -> int {
 	ok &= test_invalid_hard_timeout_fails_closed();
 	ok &= test_compare_wins_without_password_prompt();
 	ok &= test_pam_wins();
+	ok &= test_input_failure_callback_precedes_password_release(false);
+	ok &= test_input_failure_callback_precedes_password_release(true);
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_compare_signal_password_fallback();

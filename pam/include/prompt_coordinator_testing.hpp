@@ -38,6 +38,8 @@ namespace howdy::pam::testing {
 
 	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> &pass_task,
 	                           NativePromptConversation               &native_prompt) noexcept;
+	void set_input_workaround_access_result(int result);
+	void reset_input_workaround_access_result();
 
 	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
 	                           const PosixSpawnOperations &operations, void *context) -> int;

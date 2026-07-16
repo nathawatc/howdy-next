@@ -34,6 +34,19 @@ namespace {
 	    std::chrono::duration<int, std::chrono::milliseconds::period>(100);
 	constexpr int kMaxPromptRetries = 5;
 
+#ifdef HOWDY_PAM_TESTING
+	std::optional<int> g_input_workaround_access_result;
+#endif
+
+	auto input_workaround_access() -> int {
+#ifdef HOWDY_PAM_TESTING
+		if (g_input_workaround_access_result.has_value()) {
+			return *g_input_workaround_access_result;
+		}
+#endif
+		return euidaccess("/dev/uinput", W_OK | R_OK);
+	}
+
 	struct PromptStopResult {
 		bool enter_failed   = false;
 		bool prompt_stopped = true;
@@ -68,7 +81,7 @@ namespace {
 	};
 
 	auto input_prompt_workaround_preflight() -> bool {
-		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+		if (input_workaround_access() != 0) {
 			const int access_errno = errno;
 			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
 			       access_errno);
@@ -98,7 +111,7 @@ namespace {
 		}
 
 		if (plan.send_enter) {
-			if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
+			if (input_workaround_access() != 0) {
 				syslog(LOG_WARNING, "Insufficient permissions to create the fake device");
 				result.enter_failed = true;
 			} else {
@@ -263,7 +276,9 @@ namespace howdy::pam {
 		return task;
 	}
 
-	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
+	auto PromptCoordinator::run(const CompareLaunchRequest  &request,
+	                            const std::function<void()> &report_input_failure)
+	    -> PromptCoordinatorResult {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
 		}
@@ -334,6 +349,16 @@ namespace howdy::pam {
 		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
 		auto      *native_prompt = native_prompt_.has_value() ? &native_prompt_.value() : nullptr;
 		const auto stop_result = request_password_prompt_stop(pass_task, stop_plan, native_prompt);
+		if (stop_result.enter_failed && report_input_failure) {
+			try {
+				report_input_failure();
+			} catch (const std::exception &error) {
+				syslog(LOG_WARNING, "Input prompt failure callback failed: %s", error.what());
+			} catch (...) {
+				syslog(LOG_WARNING,
+				       "Input prompt failure callback failed with non-standard exception");
+			}
+		}
 		if (!stop_result.prompt_stopped) {
 			syslog(LOG_ERR, "Input prompt workaround cancellation failed; waiting for "
 			                "user/password prompt to complete");
@@ -343,7 +368,6 @@ namespace howdy::pam {
 		return PromptCoordinatorResult{
 		    .decision       = PromptCoordinatorDecision::kHowdyResult,
 		    .compare_status = status,
-		    .enter_failed   = stop_result.enter_failed,
 		    .prompt_stopped = stop_result.prompt_stopped,
 		};
 	}
@@ -362,6 +386,14 @@ namespace howdy::pam {
 
 #ifdef HOWDY_PAM_TESTING
 namespace howdy::pam::testing {
+
+	void set_input_workaround_access_result(int result) {
+		g_input_workaround_access_result = result;
+	}
+
+	void reset_input_workaround_access_result() {
+		g_input_workaround_access_result.reset();
+	}
 
 	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> &pass_task,
 	                           NativePromptConversation               &native_prompt) noexcept {

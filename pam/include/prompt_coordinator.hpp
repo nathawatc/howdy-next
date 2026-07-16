@@ -7,6 +7,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -58,7 +59,6 @@ namespace howdy::pam {
 		PromptCoordinatorDecision decision       = PromptCoordinatorDecision::kInvalidDependencies;
 		int                       compare_status = 0;
 		int                       pam_status     = PAM_SUCCESS;
-		bool                      enter_failed   = false;
 		bool                      prompt_stopped = true;
 	};
 
@@ -77,7 +77,8 @@ namespace howdy::pam {
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		auto run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
+		auto run(const CompareLaunchRequest  &request,
+		         const std::function<void()> &report_input_failure = {}) -> PromptCoordinatorResult;
 
 	private:
 		auto start_compare_task(pid_t                                 child_pid,
