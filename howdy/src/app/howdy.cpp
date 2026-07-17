@@ -11,6 +11,7 @@
 #include "cli/snapshot_cli.hpp"
 #include "cli/test_cli.hpp"
 #include "support/user_names.hpp"
+#include "version.hpp"
 
 #include <cerrno>
 #include <cstdlib>
@@ -171,7 +172,7 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	if (parsed.command == "version") {
-		std::cout << "Howdy-Next 3.3.1\n";
+		std::cout << "Howdy-Next " << howdy::native::kProjectVersion << "\n";
 		return 0;
 	}
 

@@ -224,6 +224,11 @@ configure_file(
 	"${HOWDY_GENERATED_INCLUDE_DIR}/paths.hpp"
 	@ONLY
 )
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/howdy/include/howdy/version.hpp.in"
+	"${HOWDY_GENERATED_INCLUDE_DIR}/version.hpp"
+	@ONLY
+)
 
 function(howdy_configure_native_target target)
 	target_include_directories(

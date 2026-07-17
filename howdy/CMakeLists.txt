@@ -579,12 +579,22 @@ configure_file(
 )
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_config.cmake")
 install(DIRECTORY DESTINATION "${HOWDY_MODELS_DIR}")
+configure_file(
+	"${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/howdy.1"
+	@ONLY
+)
+configure_file(
+	"${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
+	"${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8"
+	@ONLY
+)
 install(
-	FILES "${PROJECT_SOURCE_DIR}/howdy/howdy.1"
+	FILES "${CMAKE_CURRENT_BINARY_DIR}/howdy.1"
 	DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
 )
 install(
-	FILES "${PROJECT_SOURCE_DIR}/pam/pam_howdy.8"
+	FILES "${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8"
 	DESTINATION "${CMAKE_INSTALL_MANDIR}/man8"
 )
 

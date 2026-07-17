@@ -4,6 +4,7 @@
 #include "cli/list_cli.hpp"
 #include "cli/remove_cli.hpp"
 #include "test_support.hpp"
+#include "version.hpp"
 
 #include <array>
 #include <cstdint>
@@ -172,9 +173,9 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "version"});
-		ok &= expect(result.status == 0 && result.output == "Howdy-Next 3.3.1\n",
-		             "version output preserved");
+		const auto result   = run(context, {"howdy", "version"});
+		const auto expected = "Howdy-Next " + std::string(howdy::native::kProjectVersion) + "\n";
+		ok &= expect(result.status == 0 && result.output == expected, "version output preserved");
 	}
 	{
 		Context    context;
