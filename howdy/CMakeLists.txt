@@ -49,7 +49,11 @@ target_link_libraries(howdy_frame_processing PUBLIC howdy_opencv)
 
 add_library(howdy_preview_engine STATIC src/vision/preview_engine.cpp)
 howdy_configure_native_target(howdy_preview_engine)
-target_link_libraries(howdy_preview_engine PUBLIC howdy_opencv)
+target_link_libraries(
+	howdy_preview_engine
+	PUBLIC howdy_opencv
+	PRIVATE howdy_frame_processing
+)
 
 add_library(
 	howdy_test_preview
@@ -72,7 +76,11 @@ target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv)
 
 add_library(howdy_compare_capture_session STATIC src/compare/capture_session.cpp)
 howdy_configure_native_target(howdy_compare_capture_session)
-target_link_libraries(howdy_compare_capture_session PUBLIC howdy_opencv)
+target_link_libraries(
+	howdy_compare_capture_session
+	PUBLIC howdy_opencv
+	PRIVATE howdy_vision_core
+)
 
 add_library(howdy_compare_privileges STATIC src/compare/privileges.cpp)
 howdy_configure_native_target(howdy_compare_privileges)
@@ -88,22 +96,24 @@ add_library(howdy_user_model_codec STATIC src/storage/user_model_codec.cpp)
 howdy_configure_native_target(howdy_user_model_codec)
 target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
 
+add_library(howdy_face_model STATIC src/vision/face_model.cpp)
+howdy_configure_native_target(howdy_face_model)
+target_link_libraries(
+	howdy_face_model
+	PUBLIC howdy_opencv howdy_config
+	PRIVATE howdy_runtime_paths howdy_model_file howdy_vision_core
+)
+
 add_library(
-	howdy_native_cpp STATIC
-	src/vision/face_model.cpp
+	howdy_user_models
+	STATIC
 	src/storage/user_model_store.cpp
 	src/storage/user_models.cpp
 )
-howdy_configure_native_target(howdy_native_cpp)
+howdy_configure_native_target(howdy_user_models)
 target_link_libraries(
-	howdy_native_cpp
-	PUBLIC
-		howdy_config
-		howdy_runtime_paths
-		howdy_user_model_readiness
-		howdy_model_file
-		howdy_vision_core
-		howdy_user_model_codec
+	howdy_user_models
+	PRIVATE howdy_runtime_paths howdy_user_model_readiness howdy_user_model_codec
 )
 
 add_executable(howdy_compare src/bin/compare.cpp)
@@ -116,7 +126,9 @@ target_link_libraries(
 		howdy_compare_privileges
 		howdy_compare_sandbox
 		howdy_compare_capture_session
-		howdy_native_cpp
+		howdy_face_model
+		howdy_user_models
+		howdy_runtime_paths
 		howdy_compare_engine
 		howdy_frame_processing
 		howdy_compare_logic
@@ -172,7 +184,9 @@ howdy_configure_native_target(howdy_cli)
 target_link_libraries(
 	howdy_cli
 	PUBLIC
-		howdy_native_cpp
+		howdy_face_model
+		howdy_user_models
+		howdy_runtime_paths
 		howdy_test_preview
 		howdy_preview_engine
 		howdy_frame_processing
@@ -255,9 +269,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_compare_capture_session_test)
 	target_link_libraries(
 		howdy_compare_capture_session_test
-		PRIVATE
-			howdy_compare_capture_session
-			howdy_native_cpp
+		PRIVATE howdy_compare_capture_session
 	)
 	add_test(NAME native-compare-capture-session COMMAND howdy_compare_capture_session_test)
 
@@ -292,12 +304,17 @@ if(BUILD_TESTING)
 
 	add_executable(howdy_face_model_test tests/vision/face_model_test.cpp)
 	howdy_configure_native_test_target(howdy_face_model_test)
-	target_link_libraries(howdy_face_model_test PRIVATE howdy_native_cpp)
+	target_link_libraries(
+		howdy_face_model_test
+		PRIVATE
+			howdy_face_model
+			howdy_runtime_paths
+	)
 	add_test(NAME native-face-model COMMAND howdy_face_model_test)
 
 	add_executable(howdy_config_utils_test tests/config/config_utils_test.cpp)
 	howdy_configure_native_test_target(howdy_config_utils_test)
-	target_link_libraries(howdy_config_utils_test PRIVATE howdy_native_cpp)
+	target_link_libraries(howdy_config_utils_test PRIVATE howdy_config)
 	add_test(NAME native-config-utils COMMAND howdy_config_utils_test)
 
 	add_executable(howdy_file_security_test tests/support/file_security_test.cpp)
@@ -338,13 +355,18 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(
 		howdy_config_validation_test
-		PRIVATE howdy_native_cpp
+		PRIVATE howdy_config
 	)
 	add_test(NAME native-config-validation COMMAND howdy_config_validation_test)
 
 	add_executable(howdy_user_models_test tests/storage/user_models_test.cpp)
 	howdy_configure_native_test_target(howdy_user_models_test)
-	target_link_libraries(howdy_user_models_test PRIVATE howdy_native_cpp)
+	target_link_libraries(
+		howdy_user_models_test
+		PRIVATE
+			howdy_user_models
+			howdy_user_model_readiness
+	)
 	add_test(NAME native-user-models COMMAND howdy_user_models_test)
 
 	add_executable(howdy_user_model_codec_test tests/storage/user_model_codec_test.cpp)
@@ -409,11 +431,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_preview_engine_test)
 	target_link_libraries(
 		howdy_preview_engine_test
-		PRIVATE
-			howdy_native_cpp
-			howdy_preview_engine
-			howdy_frame_processing
-			howdy_opencv
+		PRIVATE howdy_preview_engine
 	)
 	add_test(NAME native-preview-engine COMMAND howdy_preview_engine_test)
 
@@ -440,7 +458,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_runtime_paths_test)
 	target_link_libraries(
 		howdy_runtime_paths_test
-		PRIVATE howdy_native_cpp
+		PRIVATE howdy_runtime_paths
 	)
 	add_test(NAME native-runtime-paths COMMAND howdy_runtime_paths_test)
 
@@ -448,7 +466,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_runtime_config_load_test)
 	target_link_libraries(
 		howdy_runtime_config_load_test
-		PRIVATE howdy_native_cpp
+		PRIVATE howdy_runtime_paths
 	)
 	add_test(NAME native-runtime-config-load COMMAND howdy_runtime_config_load_test)
 	set_tests_properties(
@@ -460,7 +478,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_runtime_config_test)
 	target_link_libraries(
 		howdy_runtime_config_test
-		PRIVATE howdy_native_cpp
+		PRIVATE howdy_config
 	)
 	add_test(NAME native-runtime-config COMMAND howdy_runtime_config_test)
 	set_tests_properties(
@@ -476,7 +494,7 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_config_reader_test)
 	target_link_libraries(
 		howdy_config_reader_test
-		PRIVATE howdy_native_cpp
+		PRIVATE howdy_config
 	)
 	add_test(NAME native-config-reader COMMAND howdy_config_reader_test)
 endif()

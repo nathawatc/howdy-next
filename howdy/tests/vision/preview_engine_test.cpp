@@ -94,6 +94,25 @@ namespace {
 		};
 	}
 
+	auto test_video_config(float dark_threshold = 50.0F) -> howdy::native::VideoConfig {
+		return {
+		    .timeout              = 0,
+		    .device_path          = {},
+		    .warn_no_device       = false,
+		    .max_height           = 0.0F,
+		    .frame_width          = 0,
+		    .frame_height         = 0,
+		    .clahe_enabled        = false,
+		    .clahe_clip_limit     = 0.0F,
+		    .clahe_tile_grid_size = 0,
+		    .dark_threshold       = dark_threshold,
+		    .force_mjpeg          = false,
+		    .exposure             = 0,
+		    .device_fps           = 0,
+		    .rotate               = 0,
+		};
+	}
+
 	auto make_context() -> Context {
 		return {
 		    .detection_result = {.status = howdy::native::FaceDetectionStatus::kOk},
@@ -113,9 +132,7 @@ namespace {
 
 	auto make_engine(Context &context, float dark_threshold = 99.0F, bool matching_enabled = true)
 	    -> howdy::native::PreviewEngine {
-		howdy::native::VideoConfig config;
-		config.clahe_enabled  = false;
-		config.dark_threshold = dark_threshold;
+		auto config = test_video_config(dark_threshold);
 		return howdy::native::PreviewEngine(
 		    config, inference_dependencies(context),
 		    {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)}, 1, matching_enabled);
@@ -193,8 +210,7 @@ namespace {
 		context.now_results                 = {start, start + std::chrono::milliseconds(37)};
 		auto dependencies                   = inference_dependencies(context);
 		dependencies.now                    = now;
-		howdy::native::VideoConfig config;
-		config.clahe_enabled = false;
+		auto config = test_video_config();
 		howdy::native::PreviewEngine engine(
 		    config, dependencies, {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
 		    1, true);
@@ -347,8 +363,7 @@ namespace {
 	auto matching_disabled_reports_detected_faces() -> bool {
 		auto context                        = make_context();
 		context.detection_result.detections = {face()};
-		howdy::native::VideoConfig config;
-		config.clahe_enabled = false;
+		auto config = test_video_config();
 		howdy::native::PreviewEngine engine(config,
 		                                    {
 		                                        .context       = &context,
@@ -400,8 +415,7 @@ namespace {
 			auto context      = make_context();
 			auto dependencies = inference_dependencies(context);
 			clear_dependency(dependencies);
-			howdy::native::VideoConfig config;
-			config.clahe_enabled = false;
+			auto config = test_video_config();
 			howdy::native::PreviewEngine engine(config, dependencies, {}, 0, true);
 			const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 			return expect(result.status == howdy::native::PreviewFrameStatus::kInvalidDependencies,
