@@ -4,12 +4,8 @@
 
 #include "runtime/compare_process.hpp"
 
-#include "protocol/compare_exit.hpp"
-#ifdef HOWDY_PAM_TESTING
-#	include "support/auth_flow_testing.hpp"
-#	include "support/prompt_coordinator_testing.hpp"
-#endif
 #include "paths.hpp"
+#include "protocol/compare_exit.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,34 +22,8 @@
 #include <sys/wait.h>
 
 namespace {
-	using PosixSpawnFileActionsInitFn = int (*)(void *context, posix_spawn_file_actions_t *actions);
-	using PosixSpawnFileActionsAddCloseFromFn = int (*)(void                       *context,
-	                                                    posix_spawn_file_actions_t *actions,
-	                                                    int                         from_fd);
-	using PosixSpawnFileActionsDestroyFn      = int (*)(void                       *context,
-	                                                    posix_spawn_file_actions_t *actions);
-
-#ifdef HOWDY_PAM_TESTING
-	using PosixSpawnRequest = howdy::pam::testing::PosixSpawnRequest;
-#else
-	struct PosixSpawnRequest {
-		void                             *context;
-		pid_t                            *child_pid;
-		const char                       *path;
-		const posix_spawn_file_actions_t *actions;
-		char *const                      *argv;
-		char *const                      *envp;
-	};
-#endif
-
-	using PosixSpawnFn = int (*)(const PosixSpawnRequest &request);
-
-	struct PosixSpawnOperations {
-		PosixSpawnFileActionsInitFn         file_actions_init;
-		PosixSpawnFileActionsAddCloseFromFn file_actions_addclosefrom;
-		PosixSpawnFileActionsDestroyFn      file_actions_destroy;
-		PosixSpawnFn                        spawn;
-	};
+	using howdy::pam::compare_process::Operations;
+	using howdy::pam::compare_process::SpawnRequest;
 
 	constexpr auto kCompareWaitPollInterval = std::chrono::milliseconds(10);
 	// Lets compare process perform SIGTERM cleanup without extending scan deadline.
@@ -163,13 +133,14 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto call_posix_spawn(const PosixSpawnRequest &request) -> int {
+	auto call_posix_spawn(const SpawnRequest &request) -> int {
 		(void)request.context;
 		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
 		                   request.envp);
 	}
 
-	constexpr PosixSpawnOperations kPosixSpawnOperations = {
+	constexpr Operations kPosixSpawnOperations = {
+	    .context                   = nullptr,
 	    .file_actions_init         = call_posix_spawn_file_actions_init,
 	    .file_actions_addclosefrom = call_posix_spawn_file_actions_addclosefrom,
 	    .file_actions_destroy      = call_posix_spawn_file_actions_destroy,
@@ -177,7 +148,7 @@ namespace {
 	};
 
 	auto spawn_compare_process(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                           const PosixSpawnOperations &operations, void *context) -> int {
+	                           const Operations &operations) -> int {
 		const std::string config_path(request.config_path);
 		const std::string username(request.username);
 
@@ -203,25 +174,25 @@ namespace {
 		char **compare_env = request.staged_runtime ? runtime_env.data() : empty_env.data();
 
 		posix_spawn_file_actions_t file_actions;
-		const int init_result = operations.file_actions_init(context, &file_actions);
+		const int init_result = operations.file_actions_init(operations.context, &file_actions);
 		if (init_result != 0) {
 			return init_result;
 		}
 
-		const int closefrom_result =
-		    operations.file_actions_addclosefrom(context, &file_actions, STDERR_FILENO + 1);
+		const int closefrom_result = operations.file_actions_addclosefrom(
+		    operations.context, &file_actions, STDERR_FILENO + 1);
 		if (closefrom_result != 0) {
-			(void)operations.file_actions_destroy(context, &file_actions);
+			(void)operations.file_actions_destroy(operations.context, &file_actions);
 			return closefrom_result;
 		}
 
-		const int spawn_result = operations.spawn({.context   = context,
+		const int spawn_result = operations.spawn({.context   = operations.context,
 		                                           .child_pid = child_pid,
 		                                           .path      = kCompareProcessPath,
 		                                           .actions   = &file_actions,
 		                                           .argv      = args.data(),
 		                                           .envp      = compare_env});
-		(void)operations.file_actions_destroy(context, &file_actions);
+		(void)operations.file_actions_destroy(operations.context, &file_actions);
 		return spawn_result;
 	}
 
@@ -229,15 +200,28 @@ namespace {
 
 namespace howdy::pam::compare_process {
 
+	auto production_operations() -> Operations {
+		return kPosixSpawnOperations;
+	}
+
+	auto spawn(const CompareLaunchRequest &request, pid_t *child_pid, const Operations &operations)
+	    -> int {
+		return spawn_compare_process(request, child_pid, operations);
+	}
+
+	auto wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int {
+		return wait_for_compare_process(child_pid, deadline);
+	}
+
 	auto spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int {
 		(void)context;
-		return spawn_compare_process(request, child_pid, kPosixSpawnOperations, nullptr);
+		return spawn(request, child_pid, production_operations());
 	}
 
 	auto wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline)
 	    -> int {
 		(void)context;
-		return wait_for_compare_process(child_pid, deadline);
+		return wait_until(child_pid, deadline);
 	}
 
 	auto terminate(void *context, pid_t child_pid) -> void {
@@ -249,29 +233,3 @@ namespace howdy::pam::compare_process {
 	}
 
 }  // namespace howdy::pam::compare_process
-
-#ifdef HOWDY_PAM_TESTING
-namespace howdy::pam::testing {
-	auto wait_for_compare_process(pid_t child_pid) -> int {
-		return ::wait_for_compare_process(child_pid, std::chrono::steady_clock::now() +
-		                                                 std::chrono::seconds(1));
-	}
-
-	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::duration hard_timeout)
-	    -> int {
-		return ::wait_for_compare_process(child_pid,
-		                                  std::chrono::steady_clock::now() + hard_timeout);
-	}
-
-	auto spawn_compare_process(const CompareLaunchRequest &request, pid_t *child_pid,
-	                           const PosixSpawnOperations &operations, void *context) -> int {
-		const ::PosixSpawnOperations internal_operations = {
-		    .file_actions_init         = operations.file_actions_init,
-		    .file_actions_addclosefrom = operations.file_actions_addclosefrom,
-		    .file_actions_destroy      = operations.file_actions_destroy,
-		    .spawn                     = operations.spawn,
-		};
-		return ::spawn_compare_process(request, child_pid, internal_operations, context);
-	}
-}  // namespace howdy::pam::testing
-#endif

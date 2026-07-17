@@ -275,5 +275,5 @@ function(howdy_set_test_timeouts)
 	endif()
 endfunction()
 
-add_subdirectory(pam)
 add_subdirectory(howdy)
+add_subdirectory(pam)

@@ -1,7 +1,7 @@
 #include "paths.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "protocol/compare_exit.hpp"
-#include "support/prompt_coordinator_testing.hpp"
+#include "runtime/compare_process.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -12,7 +12,6 @@
 #include <condition_variable>
 #include <csignal>
 #include <cstdlib>
-#include <cstring>
 #include <fcntl.h>
 #include <memory>
 #include <mutex>
@@ -65,7 +64,11 @@ namespace {
 		bool                      release_token_on_enter   = false;
 		bool                      request_native_prompt    = false;
 		bool                      complete_native_prompt   = false;
-		int                       prompt_master_fd         = -1;
+		bool                      native_available         = true;
+		int                       native_install_result    = PAM_SUCCESS;
+		std::atomic<int>          native_abort_calls{0};
+		std::atomic<int>          native_restore_calls{0};
+		int                       prompt_master_fd = -1;
 		std::atomic<bool>         native_prompt_seen{false};
 		std::atomic<bool>         native_prompt_installed{false};
 		std::atomic<bool>         native_prompt_input_sent{false};
@@ -99,6 +102,36 @@ namespace {
 				}
 				context_->token_condition.notify_one();
 			}
+		}
+
+	private:
+		FakeContext *context_;
+	};
+
+	class FakeNativePrompt final : public NativePrompt {
+	public:
+		explicit FakeNativePrompt(FakeContext *context)
+		    : context_(context) {}
+
+		[[nodiscard]] auto available() const -> bool override {
+			return context_->native_available;
+		}
+
+		auto install() -> int override {
+			if (context_->native_install_result == PAM_SUCCESS) {
+				context_->native_prompt_installed = true;
+			}
+			return context_->native_install_result;
+		}
+
+		void request_abort() override {
+			++context_->native_abort_calls;
+			context_->native_prompt_completed = true;
+			context_->native_prompt_condition.notify_one();
+		}
+
+		void restore_original() override {
+			++context_->native_restore_calls;
 		}
 
 	private:
@@ -179,7 +212,7 @@ namespace {
 		return 0;
 	}
 
-	auto capture_posix_spawn(const howdy::pam::testing::PosixSpawnRequest &request) -> int {
+	auto capture_posix_spawn(const howdy::pam::compare_process::SpawnRequest &request) -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(request.context);
 		++capture.spawn_calls;
 		capture.spawn_actions = request.actions;
@@ -197,8 +230,9 @@ namespace {
 		return capture.spawn_result;
 	}
 
-	auto posix_spawn_operations() -> howdy::pam::testing::PosixSpawnOperations {
+	auto posix_spawn_operations(void *context) -> howdy::pam::compare_process::Operations {
 		return {
+		    .context                   = context,
 		    .file_actions_init         = capture_posix_spawn_file_actions_init,
 		    .file_actions_addclosefrom = capture_posix_spawn_file_actions_addclosefrom,
 		    .file_actions_destroy      = capture_posix_spawn_file_actions_destroy,
@@ -277,27 +311,6 @@ namespace {
 		ScopedFd        master_fd_;
 	};
 
-	class ScopedNativePromptResults {
-	public:
-		struct Results {
-			int available = -1;
-			int install   = -1;
-		};
-
-		explicit ScopedNativePromptResults(Results results) {
-			NativePromptConversation::set_test_available_result(results.available);
-			NativePromptConversation::set_test_install_result(results.install);
-		}
-
-		ScopedNativePromptResults(const ScopedNativePromptResults &)                     = delete;
-		auto operator=(const ScopedNativePromptResults &) -> ScopedNativePromptResults & = delete;
-
-		~ScopedNativePromptResults() {
-			NativePromptConversation::set_test_available_result(-1);
-			NativePromptConversation::set_test_install_result(-1);
-		}
-	};
-
 	struct CallbackCounts {
 		int spawn     = 0;
 		int wait      = 0;
@@ -328,39 +341,7 @@ namespace {
 		return 0;
 	}
 
-	void handle_native_prompt(FakeContext &fake) {
-		struct pollfd prompt_fd = {
-		    .fd      = fake.prompt_master_fd,
-		    .events  = POLLIN,
-		    .revents = 0,
-		};
-		int poll_result = -1;
-		do {
-			poll_result = poll(&prompt_fd, 1, -1);
-		} while (poll_result < 0 && errno == EINTR);
-		if (poll_result > 0 && (prompt_fd.revents & POLLIN) != 0) {
-			std::array<char, 64> buffer{};
-			if (read(fake.prompt_master_fd, buffer.data(), buffer.size()) > 0) {
-				fake.native_prompt_seen = true;
-				if (fake.complete_native_prompt) {
-					const std::string input   = "password\n";
-					std::size_t       written = 0;
-					while (written < input.size()) {
-						const ssize_t result = write(fake.prompt_master_fd, input.data() + written,
-						                             input.size() - written);
-						if (result > 0) {
-							written += static_cast<std::size_t>(result);
-							continue;
-						}
-						if (result < 0 && errno == EINTR) {
-							continue;
-						}
-						break;
-					}
-					fake.native_prompt_input_sent = written == input.size();
-				}
-			}
-		}
+	void wait_for_native_prompt_completion(FakeContext &fake) {
 		if (fake.complete_native_prompt) {
 			std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
 			fake.native_prompt_condition.wait(lock, [&fake] -> bool {
@@ -375,8 +356,8 @@ namespace {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
 		fake.waited_pid = child_pid;
-		if (fake.request_native_prompt && fake.prompt_master_fd >= 0) {
-			handle_native_prompt(fake);
+		if (fake.request_native_prompt) {
+			wait_for_native_prompt_completion(fake);
 		}
 		while (true) {
 			int         status = 0;
@@ -396,10 +377,11 @@ namespace {
 	                               std::chrono::steady_clock::time_point deadline) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
-		fake.waited_pid       = child_pid;
-		const auto remaining  = std::max(deadline - std::chrono::steady_clock::now(),
-		                                 std::chrono::steady_clock::duration::zero());
-		const int  status     = howdy::pam::testing::wait_for_compare_process(child_pid, remaining);
+		fake.waited_pid      = child_pid;
+		const auto remaining = std::max(deadline - std::chrono::steady_clock::now(),
+		                                std::chrono::steady_clock::duration::zero());
+		const int  status    = howdy::pam::compare_process::wait_until(
+		    child_pid, std::chrono::steady_clock::now() + remaining);
 		fake.last_wait_status = status;
 		return status;
 	}
@@ -429,35 +411,29 @@ namespace {
 		return std::make_unique<FakeEnterDevice>(&fake);
 	}
 
+	auto create_native_prompt(void *context, pam_handle_t *pamh) -> std::unique_ptr<NativePrompt> {
+		(void)pamh;
+		auto &fake = *static_cast<FakeContext *>(context);
+		return std::make_unique<FakeNativePrompt>(&fake);
+	}
+
 	auto request_auth_token(void *context, pam_handle_t *pamh) -> std::tuple<int, char *> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
 		if (fake.request_native_prompt) {
-			const void *item = nullptr;
-			if (pam_get_item(pamh, PAM_CONV, &item) != PAM_SUCCESS || item == nullptr) {
-				return {PAM_SYSTEM_ERR, nullptr};
+			(void)pamh;
+			fake.native_prompt_seen = true;
+			if (fake.complete_native_prompt) {
+				fake.native_prompt_input_sent = true;
+				fake.native_prompt_completed  = true;
+				fake.native_prompt_condition.notify_one();
+			} else {
+				std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
+				fake.native_prompt_condition.wait(lock, [&fake] -> bool {
+					return fake.native_prompt_completed.load();
+				});
 			}
-			const auto *conversation = static_cast<const struct pam_conv *>(item);
-			fake.native_prompt_installed =
-			    conversation->conv != original_conversation || conversation->appdata_ptr != context;
-			const struct pam_message message = {
-			    .msg_style = PAM_PROMPT_ECHO_OFF,
-			    .msg       = "Password: ",
-			};
-			const struct pam_message *message_ptr = &message;
-			struct pam_response      *response    = nullptr;
-			const int                 result =
-			    conversation->conv(1, &message_ptr, &response, conversation->appdata_ptr);
-			if (response != nullptr) {
-				if (response->resp != nullptr) {
-					std::memset(response->resp, 0, std::strlen(response->resp));
-					std::free(response->resp);
-				}
-				std::free(response);
-			}
-			fake.native_prompt_completed = true;
-			fake.native_prompt_condition.notify_one();
-			return {result, nullptr};
+			return {PAM_SUCCESS, nullptr};
 		}
 		if (fake.block_token_until_warning) {
 			std::unique_lock<std::mutex> lock(fake.token_mutex);
@@ -477,6 +453,7 @@ namespace {
 		    .terminate_compare        = terminate_compare,
 		    .input_prompt_preflight   = input_preflight,
 		    .create_enter_device      = create_enter_device,
+		    .create_native_prompt     = create_native_prompt,
 		    .request_auth_token       = request_auth_token,
 		};
 	}
@@ -593,7 +570,8 @@ namespace {
 			return false;
 		}
 
-		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 40ms);
+		const int status = howdy::pam::compare_process::wait_until(
+		    child_pid, std::chrono::steady_clock::now() + 40ms);
 		return expect(status == timeout_wait_status(),
 		              "watchdog timeout returns synthetic timeout status") &&
 		       expect(child_reaped(child_pid), "watchdog timeout reaps blocked child");
@@ -605,7 +583,8 @@ namespace {
 			return false;
 		}
 
-		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 40ms);
+		const int status = howdy::pam::compare_process::wait_until(
+		    child_pid, std::chrono::steady_clock::now() + 40ms);
 		return expect(status == timeout_wait_status(),
 		              "SIGTERM-ignoring child returns synthetic timeout status") &&
 		       expect(child_reaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
@@ -617,7 +596,8 @@ namespace {
 			return false;
 		}
 
-		const int status = howdy::pam::testing::wait_for_compare_process(child_pid, 1s);
+		const int status = howdy::pam::compare_process::wait_until(
+		    child_pid, std::chrono::steady_clock::now() + 1s);
 		return expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
 		       expect(child_reaped(child_pid), "watchdog reaps naturally exited child");
 	}
@@ -951,16 +931,16 @@ namespace {
 		       expect(child_reaped(child_pid), label + " reaps child");
 	}
 
-	auto test_native_setup_without_input_fallback(int available_result, int install_result,
+	auto test_native_setup_without_input_fallback(bool available_result, int install_result,
 	                                              const std::string &label) -> bool {
 		FakeContext      context;
 		NativePamFixture fixture(&context);
 		if (!expect(fixture.start(false), label + " starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results(
-		    {.available = available_result, .install = install_result});
-		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
+		context.native_available      = available_result;
+		context.native_install_result = install_result;
+		const pid_t child_pid         = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
@@ -989,8 +969,7 @@ namespace {
 		if (!expect(fixture.start(false), "native-input success starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results({.available = 1, .install = PAM_SUCCESS});
-		const pid_t               child_pid = spawn_blocked_child();
+		const pid_t child_pid = spawn_blocked_child();
 		if (!expect(child_pid > 0, "native-input success child spawned")) {
 			return false;
 		}
@@ -1016,7 +995,7 @@ namespace {
 		       expect(child_reaped(child_pid), "native-input success reaps compare child");
 	}
 
-	auto test_native_input_setup_fallback(int available_result, int install_result,
+	auto test_native_input_setup_fallback(bool available_result, int install_result,
 	                                      const std::string &label) -> bool {
 		FakeContext context{
 		    .token_result = PAM_SUCCESS,
@@ -1026,9 +1005,9 @@ namespace {
 		if (!expect(fixture.start(false), label + " starts PAM handle")) {
 			return false;
 		}
-		ScopedNativePromptResults prompt_results(
-		    {.available = available_result, .install = install_result});
-		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
+		context.native_available      = available_result;
+		context.native_install_result = install_result;
+		const pid_t child_pid         = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
@@ -1074,7 +1053,7 @@ namespace {
 			return false;
 		}
 
-		howdy::pam::testing::cleanup_native_prompt(pass_task, native_prompt);
+		howdy::pam::cleanup_native_prompt(&pass_task, &native_prompt);
 		return expect(fixture.original_conversation_restored(),
 		              "cleanup restores original conversation after task becomes inactive");
 	}
@@ -1113,9 +1092,10 @@ namespace {
 		       expect(context.terminate_calls == 0,
 		              "blocked native prompt does not terminate compare child") &&
 		       expect(context.original_conversation_calls == 0,
-		              "blocked native prompt uses installed conversation") &&
-		       expect(fixture.original_conversation_restored(),
-		              "coordinator destructor restores native conversation") &&
+		              "blocked native prompt bypasses original conversation") &&
+		       expect(context.native_abort_calls == 1,
+		              "blocked native prompt requests one abort") &&
+		       expect(context.native_restore_calls == 1, "blocked native prompt restores once") &&
 		       expect(child_reaped(child_pid), "blocked native prompt reaps child");
 	}
 
@@ -1164,8 +1144,10 @@ namespace {
 		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "native PAM winner terminates blocked compare child once") &&
 		       expect(child_reaped(child_pid), "native PAM winner reaps compare child") &&
-		       expect(fixture.original_conversation_restored(),
-		              "native PAM winner restores original conversation after destruction") &&
+		       expect(context.native_abort_calls == 0,
+		              "native PAM winner needs no abort after password completion") &&
+		       expect(context.native_restore_calls == 1,
+		              "native PAM winner restores native prompt once") &&
 		       expect(context.original_conversation_calls == 0,
 		              "native PAM winner leaves no blocked native prompt task");
 	}
@@ -1221,8 +1203,8 @@ namespace {
 	                                   const std::string                      &label) -> bool {
 		PosixSpawnCapture capture;
 		pid_t             child_pid = -1;
-		const int         result    = howdy::pam::testing::spawn_compare_process(
-		    request, &child_pid, posix_spawn_operations(), &capture);
+		const int result = howdy::pam::compare_process::spawn(request, &child_pid,
+		                                                      posix_spawn_operations(&capture));
 
 		return expect(result == 0, label + " returns spawn success") &&
 		       expect(capture.init_calls == 1, label + " initializes file actions once") &&
@@ -1278,8 +1260,8 @@ namespace {
 		PosixSpawnCapture capture;
 		capture.init_result = ENOMEM;
 		pid_t     child_pid = -1;
-		const int result    = howdy::pam::testing::spawn_compare_process(
-		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
+		const int result    = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
+		                                                         posix_spawn_operations(&capture));
 
 		return expect(result == ENOMEM, "file-actions init failure preserves error") &&
 		       expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
@@ -1295,8 +1277,8 @@ namespace {
 		PosixSpawnCapture capture;
 		capture.addclosefrom_result = EINVAL;
 		pid_t     child_pid         = -1;
-		const int result            = howdy::pam::testing::spawn_compare_process(
-		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
+		const int result = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
+		                                                      posix_spawn_operations(&capture));
 
 		return expect(result == EINVAL, "close-from setup failure preserves error") &&
 		       expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
@@ -1316,8 +1298,8 @@ namespace {
 		PosixSpawnCapture capture;
 		capture.spawn_result = EACCES;
 		pid_t     child_pid  = -1;
-		const int result     = howdy::pam::testing::spawn_compare_process(
-		    make_compare_request(), &child_pid, posix_spawn_operations(), &capture);
+		const int result = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
+		                                                      posix_spawn_operations(&capture));
 
 		return expect(result == EACCES, "production spawn failure preserves error") &&
 		       expect(capture.init_calls == 1, "production spawn failure initializes once") &&
@@ -1383,7 +1365,7 @@ namespace {
 
 	auto test_invalid_dependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 6; ++missing) {
+		for (int missing = 0; missing < 7; ++missing) {
 			FakeContext context;
 			auto        deps = dependencies(&context);
 			switch (missing) {
@@ -1403,6 +1385,9 @@ namespace {
 					deps.create_enter_device = nullptr;
 					break;
 				case 5:
+					deps.create_native_prompt = nullptr;
+					break;
+				case 6:
 					deps.request_auth_token = nullptr;
 					break;
 				default:
@@ -1472,11 +1457,11 @@ auto main() -> int {
 	ok &= test_input_preflight_fallback();
 	ok &= test_enter_device_construction_fallback(false, "Enter-device construction failure");
 	ok &= test_enter_device_construction_fallback(true, "null Enter-device factory result");
-	ok &= test_native_setup_without_input_fallback(0, -1, "native unavailable");
-	ok &= test_native_setup_without_input_fallback(1, PAM_CONV_ERR, "native install failure");
+	ok &= test_native_setup_without_input_fallback(false, -1, "native unavailable");
+	ok &= test_native_setup_without_input_fallback(true, PAM_CONV_ERR, "native install failure");
 	ok &= test_native_input_success_uses_native_path();
-	ok &= test_native_input_setup_fallback(0, -1, "native-input unavailable");
-	ok &= test_native_input_setup_fallback(1, PAM_CONV_ERR, "native-input install failure");
+	ok &= test_native_input_setup_fallback(false, -1, "native-input unavailable");
+	ok &= test_native_input_setup_fallback(true, PAM_CONV_ERR, "native-input install failure");
 	ok &= test_cleanup_restores_after_stopped_task();
 	ok &= test_native_blocked_prompt_cleanup();
 	ok &= test_native_pam_wins();

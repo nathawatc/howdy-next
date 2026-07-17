@@ -1,10 +1,5 @@
-#include "test_support.hpp"
-
-#ifndef HOWDY_PAM_TESTING
-#	define HOWDY_PAM_TESTING
-#endif
-
 #include "prompt/native_prompt_conversation.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
@@ -14,6 +9,7 @@
 #include <future>
 #include <memory>
 #include <poll.h>
+#include <stdexcept>
 #include <string>
 #include <termios.h>
 #include <thread>
@@ -23,6 +19,47 @@
 
 class NativePromptConversationTestAccess {
 public:
+	struct Descriptors {
+		int tty_fd         = -1;
+		int abort_read_fd  = -1;
+		int abort_write_fd = -1;
+	};
+
+	struct Operations {
+		void *context                                                = nullptr;
+		int (*poll_prompt)(void *, struct pollfd *, nfds_t, int)     = nullptr;
+		ssize_t (*read_prompt)(void *, int, void *, std::size_t)     = nullptr;
+		int (*restore_terminal)(void *, int, const struct termios *) = nullptr;
+		void (*post_message)(void *)                                 = nullptr;
+	};
+
+	static auto create(Descriptors descriptors) -> std::unique_ptr<NativePromptConversation> {
+		return create(descriptors, Operations{});
+	}
+
+	static auto create(Descriptors descriptors, Operations operations)
+	    -> std::unique_ptr<NativePromptConversation> {
+		auto production = NativePromptConversation::production_operations();
+		NativePromptConversation::Operations injected{
+		    .context = operations.context,
+		    .poll_prompt =
+		        operations.poll_prompt != nullptr ? operations.poll_prompt : production.poll_prompt,
+		    .read_prompt =
+		        operations.read_prompt != nullptr ? operations.read_prompt : production.read_prompt,
+		    .restore_terminal = operations.restore_terminal != nullptr
+		                            ? operations.restore_terminal
+		                            : production.restore_terminal,
+		    .post_message     = operations.post_message != nullptr ? operations.post_message
+		                                                           : production.post_message,
+		};
+		return std::unique_ptr<NativePromptConversation>(
+		    new NativePromptConversation(nullptr, {}, true,
+		                                 {.tty_fd         = descriptors.tty_fd,
+		                                  .abort_read_fd  = descriptors.abort_read_fd,
+		                                  .abort_write_fd = descriptors.abort_write_fd},
+		                                 injected));
+	}
+
 	static auto dispatch(int num_msg, const struct pam_message **messages,
 	                     struct pam_response **response, void *appdata_ptr) -> int {
 		return NativePromptConversation::dispatch(num_msg, messages, response, appdata_ptr);
@@ -34,8 +71,8 @@ public:
 		return conversation.prompt_input(message, response, hide_input);
 	}
 
-	static void replace_descriptors(NativePromptConversation                 &conversation,
-	                                NativePromptConversation::TestDescriptors descriptors) {
+	static void replace_descriptors(NativePromptConversation &conversation,
+	                                Descriptors               descriptors) {
 		conversation.tty_fd_     = descriptors.tty_fd;
 		conversation.abort_pipe_ = {descriptors.abort_read_fd, descriptors.abort_write_fd};
 	}
@@ -59,6 +96,79 @@ namespace {
 	using howdy::test::expect;
 
 	constexpr int kPromptReadTimeoutMs = 1000;
+
+	struct OperationContext {
+		NativePromptConversation *conversation     = nullptr;
+		int                       poll_eintr_count = 0;
+		int                       read_eintr_count = 0;
+		bool                      abort_on_poll    = false;
+		bool                      abort_on_read    = false;
+		bool                      restore_failure  = false;
+		int                       throw_mode       = 0;
+	};
+
+	auto injected_poll(void *context, struct pollfd *fds, nfds_t count, int timeout) -> int {
+		auto &operations = *static_cast<OperationContext *>(context);
+		if (operations.poll_eintr_count > 0) {
+			--operations.poll_eintr_count;
+			if (operations.abort_on_poll) {
+				operations.conversation->request_abort();
+			}
+			errno = EINTR;
+			return -1;
+		}
+		return poll(fds, count, timeout);
+	}
+
+	auto injected_read(void *context, int fd, void *buffer, std::size_t count) -> ssize_t {
+		auto &operations = *static_cast<OperationContext *>(context);
+		if (operations.read_eintr_count > 0) {
+			--operations.read_eintr_count;
+			if (operations.abort_on_read) {
+				operations.conversation->request_abort();
+			}
+			errno = EINTR;
+			return -1;
+		}
+		return read(fd, buffer, count);
+	}
+
+	auto injected_restore(void *context, int fd, const struct termios *termios) -> int {
+		auto &operations = *static_cast<OperationContext *>(context);
+		if (operations.restore_failure) {
+			errno = EIO;
+			return -1;
+		}
+		return tcsetattr(fd, TCSANOW, termios);
+	}
+
+	void injected_post_message(void *context) {
+		const auto &operations = *static_cast<OperationContext *>(context);
+		if (operations.throw_mode == 1) {
+			throw std::runtime_error("simulated dispatch failure");
+		}
+		if (operations.throw_mode == 2) {
+			throw 1;
+		}
+	}
+
+	auto create_conversation(NativePromptConversationTestAccess::Descriptors descriptors,
+	                         OperationContext                               *operations = nullptr)
+	    -> std::unique_ptr<NativePromptConversation> {
+		auto conversation = NativePromptConversationTestAccess::create(
+		    descriptors, operations == nullptr ? NativePromptConversationTestAccess::Operations{}
+		                                       : NativePromptConversationTestAccess::Operations{
+		                                             .context          = operations,
+		                                             .poll_prompt      = injected_poll,
+		                                             .read_prompt      = injected_read,
+		                                             .restore_terminal = injected_restore,
+		                                             .post_message     = injected_post_message,
+		                                         });
+		if (operations != nullptr) {
+			operations->conversation = conversation.get();
+		}
+		return conversation;
+	}
 
 	class ScopedFd {
 	public:
@@ -216,11 +326,11 @@ namespace {
 		                                                          nullptr) == PAM_CONV_ERR,
 		             "dispatch rejects null response pointer");
 
-		NativePromptConversation  conversation({});
+		auto                      conversation = create_conversation({});
 		const struct pam_message *null_message = nullptr;
 		responses                              = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(NativePromptConversationTestAccess::dispatch(1, &null_message, &responses,
-		                                                          &conversation) == PAM_CONV_ERR,
+		ok &= expect(NativePromptConversationTestAccess::dispatch(
+		                 1, &null_message, &responses, conversation.get()) == PAM_CONV_ERR,
 		             "dispatch rejects null message entry");
 		ok &= expect(responses == nullptr, "dispatch clears response for null message entry");
 
@@ -291,10 +401,10 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		auto conversation = std::make_shared<NativePromptConversation>(
-		    NativePromptConversation::TestDescriptors{.tty_fd         = slave_fd.release(),
-		                                              .abort_read_fd  = abort_pipe[0].release(),
-		                                              .abort_write_fd = abort_pipe[1].release()});
+		auto conversation = std::shared_ptr<NativePromptConversation>(
+		    create_conversation({.tty_fd         = slave_fd.release(),
+		                         .abort_read_fd  = abort_pipe[0].release(),
+		                         .abort_write_fd = abort_pipe[1].release()}));
 		NativePromptConversationTestAccess::close_abort_write_fd(*conversation);
 
 		auto        response       = std::make_shared<char *>(nullptr);
@@ -352,10 +462,10 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		auto conversation = std::make_shared<NativePromptConversation>(
-		    NativePromptConversation::TestDescriptors{.tty_fd         = slave_fd.release(),
-		                                              .abort_read_fd  = abort_pipe[0].release(),
-		                                              .abort_write_fd = abort_pipe[1].release()});
+		auto conversation = std::shared_ptr<NativePromptConversation>(
+		    create_conversation({.tty_fd         = slave_fd.release(),
+		                         .abort_read_fd  = abort_pipe[0].release(),
+		                         .abort_write_fd = abort_pipe[1].release()}));
 
 		auto        response       = std::make_shared<char *>(nullptr);
 		auto        result_promise = std::make_shared<std::promise<int>>();
@@ -406,12 +516,12 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		NativePromptConversationTestAccess::set_installed(conversation, true);
-		conversation.restore_original();
-		ok &= expect(!NativePromptConversationTestAccess::installed(conversation),
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()});
+		NativePromptConversationTestAccess::set_installed(*conversation, true);
+		conversation->restore_original();
+		ok &= expect(!NativePromptConversationTestAccess::installed(*conversation),
 		             "null PAM restore clears installed state");
 		return ok;
 	}
@@ -428,10 +538,11 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_throw_mode(throw_mode);
+		OperationContext operations{.throw_mode = throw_mode};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
 
 		const struct pam_message prompt = {
 		    .msg_style = PAM_PROMPT_ECHO_OFF,
@@ -443,7 +554,7 @@ namespace {
 
 		std::thread dispatch_thread([&] -> void {
 			dispatch_result = NativePromptConversationTestAccess::dispatch(
-			    1, &prompt_ptr, &responses, &conversation);
+			    1, &prompt_ptr, &responses, conversation.get());
 		});
 
 		std::array<char, 64> prompt_buffer{};
@@ -520,11 +631,12 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_poll_eintr_count(1);
-		return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
+		OperationContext operations{.poll_eintr_count = 1};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
+		return expect_prompt_input_returns_password_after_retry(conversation.get(), master_fd.get(),
 		                                                        "poll EINTR retry test");
 	}
 
@@ -546,16 +658,16 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_poll_eintr_count(1);
-		conversation.set_test_abort_on_poll_eintr(true);
+		OperationContext operations{.poll_eintr_count = 1, .abort_on_poll = true};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, prompt,
 			                                                                 &response, true);
 		});
 
@@ -588,11 +700,12 @@ namespace {
 			return false;
 		}
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_read_eintr_count(1);
-		return expect_prompt_input_returns_password_after_retry(&conversation, master_fd.get(),
+		OperationContext operations{.read_eintr_count = 1};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
+		return expect_prompt_input_returns_password_after_retry(conversation.get(), master_fd.get(),
 		                                                        "read EINTR retry test");
 	}
 
@@ -614,16 +727,16 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_read_eintr_count(1);
-		conversation.set_test_abort_on_read_eintr(true);
+		OperationContext operations{.read_eintr_count = 1, .abort_on_read = true};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, prompt,
 			                                                                 &response, true);
 		});
 
@@ -664,15 +777,15 @@ namespace {
 		    .msg_style = PAM_PROMPT_ECHO_OFF,
 		    .msg       = "Password: ",
 		};
-		const int                slave_raw_fd = slave_fd.get();
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
+		const int slave_raw_fd = slave_fd.get();
+		auto      conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                              .abort_read_fd  = abort_pipe[0].release(),
+		                                              .abort_write_fd = abort_pipe[1].release()});
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, prompt,
 			                                                                 &response, true);
 		});
 
@@ -719,15 +832,16 @@ namespace {
 		    .msg_style = PAM_PROMPT_ECHO_OFF,
 		    .msg       = "Password: ",
 		};
-		NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-		                                       .abort_read_fd  = abort_pipe[0].release(),
-		                                       .abort_write_fd = abort_pipe[1].release()});
-		conversation.set_test_restore_failure(true);
+		OperationContext operations{.restore_failure = true};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
 
 		int         prompt_result = PAM_SUCCESS;
 		char       *response      = nullptr;
 		std::thread prompt_thread([&] -> void {
-			prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, prompt,
+			prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, prompt,
 			                                                                 &response, true);
 		});
 
@@ -770,15 +884,15 @@ auto main() -> int {
 	    .msg       = "Password: ",
 	};
 
-	const int                slave_raw_fd = slave_fd.get();
-	NativePromptConversation conversation({.tty_fd         = slave_fd.release(),
-	                                       .abort_read_fd  = abort_pipe[0].release(),
-	                                       .abort_write_fd = abort_pipe[1].release()});
+	const int slave_raw_fd = slave_fd.get();
+	auto      conversation = create_conversation({.tty_fd         = slave_fd.release(),
+	                                              .abort_read_fd  = abort_pipe[0].release(),
+	                                              .abort_write_fd = abort_pipe[1].release()});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
 	std::thread prompt_thread([&] -> void {
-		prompt_result = NativePromptConversationTestAccess::prompt_input(conversation, message,
+		prompt_result = NativePromptConversationTestAccess::prompt_input(*conversation, message,
 		                                                                 &response, true);
 	});
 

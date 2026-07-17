@@ -1,41 +1,48 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 add_subdirectory(po)
 
-set(
-	HOWDY_PAM_RUNTIME_CONFIG_SOURCES
-	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_reader.cpp"
-	"${PROJECT_SOURCE_DIR}/howdy/src/config/runtime_config.cpp"
-	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_schema.cpp"
-	"${PROJECT_SOURCE_DIR}/howdy/src/config/config_validation.cpp"
+add_library(
+	pam_runtime STATIC
+	src/runtime/auth_helper_process.cpp
+	src/runtime/compare_process.cpp
+	src/runtime/runtime_session.cpp
 )
-set(
-	HOWDY_PAM_RUNTIME_SOURCES
-	${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
-	"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/module/auth_flow.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/auth_helper_process.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/compare_process.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/module/main.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/runtime_session.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt/enter_device.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt/native_prompt_conversation.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt/native_prompt_input.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/prompt/prompt_coordinator.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/module/prompt_workaround.cpp"
-	"${CMAKE_CURRENT_SOURCE_DIR}/src/module/status_mapping.cpp"
+howdy_configure_pam_target(pam_runtime)
+target_compile_definitions(pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_link_libraries(pam_runtime PRIVATE howdy_config)
+
+add_library(
+	pam_prompt STATIC
+	src/prompt/enter_device.cpp
+	src/prompt/native_prompt_conversation.cpp
+	src/prompt/native_prompt_input.cpp
+	src/prompt/prompt_coordinator.cpp
+	src/module/prompt_workaround.cpp
 )
-set(
-	HOWDY_PAM_LIBRARIES
-	PAM::PAM
-	PkgConfig::INIREADER
-	Threads::Threads
-	PkgConfig::LIBEVDEV
+howdy_configure_pam_target(pam_prompt)
+target_link_libraries(
+	pam_prompt
+	PUBLIC PAM::PAM Threads::Threads
+	PRIVATE PkgConfig::LIBEVDEV pam_runtime
 )
 
-add_library(pam_howdy MODULE ${HOWDY_PAM_RUNTIME_SOURCES})
+add_library(
+	pam_module STATIC
+	src/module/auth_flow.cpp
+	src/module/status_mapping.cpp
+)
+howdy_configure_pam_target(pam_module)
+target_compile_definitions(pam_module PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_link_libraries(
+	pam_module
+	PUBLIC PAM::PAM
+	PRIVATE pam_prompt pam_runtime howdy_user_model_readiness
+)
+
+add_library(pam_howdy MODULE src/module/main.cpp)
 howdy_configure_pam_target(pam_howdy)
 target_compile_definitions(pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
-target_link_libraries(pam_howdy PRIVATE ${HOWDY_PAM_LIBRARIES})
+target_link_libraries(pam_howdy PRIVATE pam_module)
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
 install(
 	TARGETS pam_howdy
@@ -46,16 +53,15 @@ if(BUILD_TESTING)
 	function(howdy_add_pam_test target test_name)
 		add_executable(${target} ${ARGN})
 		howdy_configure_pam_test_target(${target})
-		target_link_libraries(${target} PRIVATE ${HOWDY_PAM_LIBRARIES})
 		add_test(NAME ${test_name} COMMAND ${target})
 	endfunction()
 
 	howdy_add_pam_test(
 		pam_status_mapping_test
 		pam-status-mapping
-		src/module/status_mapping.cpp
 		tests/module/status_mapping_test.cpp
 	)
+	target_link_libraries(pam_status_mapping_test PRIVATE pam_module)
 	target_compile_definitions(
 		pam_status_mapping_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
@@ -64,9 +70,9 @@ if(BUILD_TESTING)
 	howdy_add_pam_test(
 		pam_prompt_workaround_test
 		pam-prompt-workaround
-		src/module/prompt_workaround.cpp
 		tests/prompt/prompt_workaround_test.cpp
 	)
+	target_link_libraries(pam_prompt_workaround_test PRIVATE pam_prompt)
 
 	howdy_add_pam_test(
 		pam_main_entrypoints_test
@@ -74,6 +80,7 @@ if(BUILD_TESTING)
 		src/module/main.cpp
 		tests/module/main_entrypoints_test.cpp
 	)
+	target_link_libraries(pam_main_entrypoints_test PRIVATE PAM::PAM)
 	target_compile_definitions(
 		pam_main_entrypoints_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
@@ -82,12 +89,9 @@ if(BUILD_TESTING)
 	howdy_add_pam_test(
 		pam_native_prompt_conversation_test
 		pam-native-prompt-conversation
-		src/prompt/native_prompt_conversation.cpp
-		src/prompt/native_prompt_input.cpp
 		tests/prompt/native_prompt_conversation_test.cpp
 	)
-	target_compile_definitions(pam_native_prompt_conversation_test PRIVATE HOWDY_PAM_TESTING)
-
+	target_link_libraries(pam_native_prompt_conversation_test PRIVATE pam_prompt)
 	add_executable(pam_optional_task_test tests/prompt/optional_task_test.cpp)
 	howdy_configure_pam_test_target(pam_optional_task_test)
 	target_link_libraries(pam_optional_task_test PRIVATE Threads::Threads)
@@ -104,63 +108,39 @@ if(BUILD_TESTING)
 	howdy_add_pam_test(
 		pam_auth_flow_helpers_test
 		pam-auth-flow-helpers
-		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
-		"${PROJECT_SOURCE_DIR}/howdy/src/storage/user_model_readiness.cpp"
-		src/module/auth_flow.cpp
-		src/runtime/auth_helper_process.cpp
-		src/runtime/compare_process.cpp
-		src/module/main.cpp
-		src/runtime/runtime_session.cpp
-		src/prompt/enter_device.cpp
-		src/prompt/native_prompt_conversation.cpp
-		src/prompt/native_prompt_input.cpp
-		src/prompt/prompt_coordinator.cpp
-		src/module/prompt_workaround.cpp
-		src/module/status_mapping.cpp
 		tests/module/auth_flow_helpers_test.cpp
 	)
 	target_compile_definitions(
 		pam_auth_flow_helpers_test
 		PRIVATE
-			HOWDY_PAM_TESTING
 			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	)
+	target_link_libraries(
+		pam_auth_flow_helpers_test
+		PRIVATE pam_module pam_prompt pam_runtime
+	)
 
-	add_executable(
+	howdy_add_pam_test(
 		pam_prompt_coordinator_test
-		src/runtime/compare_process.cpp
-		src/prompt/prompt_coordinator.cpp
-		src/prompt/enter_device.cpp
-		src/prompt/native_prompt_conversation.cpp
-		src/prompt/native_prompt_input.cpp
-		src/module/prompt_workaround.cpp
+		pam-prompt-coordinator
 		tests/prompt/prompt_coordinator_test.cpp
 	)
-	howdy_configure_pam_test_target(pam_prompt_coordinator_test)
-	target_compile_definitions(pam_prompt_coordinator_test PRIVATE HOWDY_PAM_TESTING)
 	target_link_libraries(
 		pam_prompt_coordinator_test
-		PRIVATE
-			PAM::PAM
-			Threads::Threads
-			PkgConfig::LIBEVDEV
+		PRIVATE pam_prompt pam_runtime
 	)
-	add_test(NAME pam-prompt-coordinator COMMAND pam_prompt_coordinator_test)
 
 	howdy_add_pam_test(
 		pam_runtime_session_test
 		pam-runtime-session
-		${HOWDY_PAM_RUNTIME_CONFIG_SOURCES}
-		src/runtime/auth_helper_process.cpp
-		src/runtime/runtime_session.cpp
 		tests/runtime/runtime_session_test.cpp
 	)
 	target_compile_definitions(
 		pam_runtime_session_test
 		PRIVATE
-			HOWDY_PAM_TESTING
 			HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	)
+	target_link_libraries(pam_runtime_session_test PRIVATE pam_runtime)
 	add_test(
 		NAME pam-installed-setuid-path-validation
 		COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/installed_pam_setuid_e2e.sh" --validate-paths

@@ -20,10 +20,21 @@
 namespace {
 
 	constexpr int kAbortPollTimeoutMs = 100;
-#ifdef HOWDY_PAM_TESTING
-	std::atomic<int> g_test_available_result{-1};
-	std::atomic<int> g_test_install_result{-1};
-#endif
+
+	auto production_poll(void * /*context*/, struct pollfd *fds, nfds_t count, int timeout) -> int {
+		return poll(fds, count, timeout);
+	}
+
+	auto production_read(void * /*context*/, int fd, void *buffer, std::size_t count) -> ssize_t {
+		return read(fd, buffer, count);
+	}
+
+	auto production_restore_terminal(void * /*context*/, int fd, const struct termios *termios)
+	    -> int {
+		return tcsetattr(fd, TCSANOW, termios);
+	}
+
+	void production_post_message(void * /*context*/) {}
 
 	auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
 	                          struct pam_response **response, void * /*appdata_ptr*/) -> int {
@@ -104,7 +115,8 @@ namespace {
 
 NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
     : pamh_(pamh)
-    , override_conv_{.conv = dispatch, .appdata_ptr = this} {
+    , override_conv_{.conv = dispatch, .appdata_ptr = this}
+    , operations_(production_operations()) {
 	const void *conv_ptr = nullptr;
 	if (pam_get_item(pamh_, PAM_CONV, &conv_ptr) != PAM_SUCCESS || conv_ptr == nullptr) {
 		return;
@@ -127,45 +139,26 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 	}
 }
 
-#ifdef HOWDY_PAM_TESTING
-NativePromptConversation::NativePromptConversation(TestDescriptors descriptors)
-    : override_conv_{.conv = dispatch, .appdata_ptr = this}
-    , has_original_conv_(true)
+auto NativePromptConversation::production_operations() -> Operations {
+	return {
+	    .poll_prompt      = production_poll,
+	    .read_prompt      = production_read,
+	    .restore_terminal = production_restore_terminal,
+	    .post_message     = production_post_message,
+	};
+}
+
+NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
+                                                   struct pam_conv original_conv,
+                                                   bool has_original_conv, Descriptors descriptors,
+                                                   Operations operations)
+    : pamh_(pamh)
+    , original_conv_(original_conv)
+    , override_conv_{.conv = dispatch, .appdata_ptr = this}
+    , has_original_conv_(has_original_conv)
     , tty_fd_(descriptors.tty_fd)
-    , abort_pipe_{{descriptors.abort_read_fd, descriptors.abort_write_fd}} {}
-
-void NativePromptConversation::set_test_throw_mode(int mode) {
-	test_throw_mode_ = mode;
-}
-
-void NativePromptConversation::set_test_poll_eintr_count(int count) {
-	test_poll_eintr_count_ = count < 0 ? 0 : count;
-}
-
-void NativePromptConversation::set_test_read_eintr_count(int count) {
-	test_read_eintr_count_ = count < 0 ? 0 : count;
-}
-
-void NativePromptConversation::set_test_abort_on_poll_eintr(bool enabled) {
-	test_abort_on_poll_eintr_ = enabled;
-}
-
-void NativePromptConversation::set_test_abort_on_read_eintr(bool enabled) {
-	test_abort_on_read_eintr_ = enabled;
-}
-
-void NativePromptConversation::set_test_restore_failure(bool enabled) {
-	test_restore_failure_ = enabled;
-}
-
-void NativePromptConversation::set_test_available_result(int result) {
-	g_test_available_result.store(result);
-}
-
-void NativePromptConversation::set_test_install_result(int result) {
-	g_test_install_result.store(result);
-}
-#endif
+    , abort_pipe_{{descriptors.abort_read_fd, descriptors.abort_write_fd}}
+    , operations_(operations) {}
 
 NativePromptConversation::~NativePromptConversation() {
 	restore_original();
@@ -208,12 +201,6 @@ void NativePromptConversation::restore_original() {
 }
 
 auto NativePromptConversation::available() const -> bool {
-#ifdef HOWDY_PAM_TESTING
-	const int test_result = g_test_available_result.load();
-	if (test_result >= 0) {
-		return test_result != 0;
-	}
-#endif
 	return has_original_conv_ && tty_fd_ >= 0 && abort_pipe_[0] >= 0 && abort_pipe_[1] >= 0;
 }
 
@@ -221,13 +208,6 @@ auto NativePromptConversation::install() -> int {
 	if (!available()) {
 		return PAM_SYSTEM_ERR;
 	}
-
-#ifdef HOWDY_PAM_TESTING
-	const int test_result = g_test_install_result.load();
-	if (test_result >= 0) {
-		return test_result;
-	}
-#endif
 
 	const int pam_res = pam_set_item(pamh_, PAM_CONV, &override_conv_);
 	if (pam_res == PAM_SUCCESS) {
@@ -325,14 +305,9 @@ auto NativePromptConversation::handle(int num_msg, const struct pam_message **ms
 				break;
 		}
 
-#ifdef HOWDY_PAM_TESTING
-		if (test_throw_mode_ == 1) {
-			throw std::exception();
+		if (operations_.post_message != nullptr) {
+			operations_.post_message(operations_.context);
 		}
-		if (test_throw_mode_ == 2) {
-			throw 1;
-		}
-#endif
 
 		if (result == PAM_SUCCESS) {
 			continue;
@@ -362,53 +337,22 @@ auto NativePromptConversation::write_message_line(const struct pam_message &mess
 
 auto NativePromptConversation::restore_prompt_terminal(const struct termios &original_termios) const
     -> bool {
-	while (tcsetattr(tty_fd_, TCSANOW, &original_termios) != 0) {
+	while (operations_.restore_terminal(operations_.context, tty_fd_, &original_termios) != 0) {
 		if (errno != EINTR) {
 			return false;
 		}
 	}
-#ifdef HOWDY_PAM_TESTING
-	return !test_restore_failure_;
-#else
 	return true;
-#endif
 }
 
-#ifdef HOWDY_PAM_TESTING
-auto NativePromptConversation::poll_prompt(std::array<struct pollfd, 2> &fds) -> int {
-	if (test_poll_eintr_count_ > 0) {
-		--test_poll_eintr_count_;
-		if (test_abort_on_poll_eintr_) {
-			abort_requested_.store(true);
-		}
-		errno = EINTR;
-		return -1;
-	}
-	return poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
+auto NativePromptConversation::poll_prompt(std::array<struct pollfd, 2> &fds) const -> int {
+	return operations_.poll_prompt(operations_.context, fds.data(), fds.size(),
+	                               kAbortPollTimeoutMs);
 }
-#else
-auto NativePromptConversation::poll_prompt(std::array<struct pollfd, 2> &fds) -> int {
-	return poll(fds.data(), fds.size(), kAbortPollTimeoutMs);
-}
-#endif
 
-#ifdef HOWDY_PAM_TESTING
-auto NativePromptConversation::read_prompt_char(char *ch) -> ssize_t {
-	if (test_read_eintr_count_ > 0) {
-		--test_read_eintr_count_;
-		if (test_abort_on_read_eintr_) {
-			abort_requested_.store(true);
-		}
-		errno = EINTR;
-		return -1;
-	}
-	return read(tty_fd_, ch, 1);
-}
-#else
 auto NativePromptConversation::read_prompt_char(char *ch) const -> ssize_t {
-	return read(tty_fd_, ch, 1);
+	return operations_.read_prompt(operations_.context, tty_fd_, ch, 1);
 }
-#endif
 
 auto NativePromptConversation::poll_prompt_state(std::array<struct pollfd, 2> &fds)
     -> PromptIoResult {

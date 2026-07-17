@@ -1,6 +1,5 @@
+#include "runtime/auth_helper_process.hpp"
 #include "runtime/runtime_session.hpp"
-#include "support/auth_flow_testing.hpp"
-#include "support/runtime_session_testing.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -480,8 +479,6 @@ namespace {
 		pid_t                            spawned_pid            = -1;
 	};
 
-	AuthHelperSpawnFake *g_auth_helper_spawn_fake = nullptr;
-
 	auto fake_pipe2(void *context, int *pipe_fds, int flags) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.operations.emplace_back("pipe2");
@@ -535,7 +532,7 @@ namespace {
 		return fake.actions_destroy_result;
 	}
 
-	auto fake_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
+	auto fake_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(request.context);
 		fake.operations.emplace_back("spawn");
 		++fake.spawn_calls;
@@ -571,61 +568,37 @@ namespace {
 		return 0;
 	}
 
-	auto fake_auth_helper_output_reader([[maybe_unused]] howdy::native::BoundedReadRequest request)
+	auto fake_auth_helper_output_reader(void                                              *context,
+	                                    [[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
-		if (g_auth_helper_spawn_fake != nullptr) {
-			g_auth_helper_spawn_fake->operations.emplace_back("read_output");
-			++g_auth_helper_spawn_fake->output_reader_calls;
-		}
+		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
+		fake.operations.emplace_back("read_output");
+		++fake.output_reader_calls;
 		return {
 		    .output = "CONFIG_PATH=/run/howdy/auth-helper/config.ini\n"
 		              "USER_MODELS_DIR=/run/howdy/auth-helper/models\n",
 		};
 	}
 
-	auto fake_auth_helper_spawn_log(std::string_view message) -> void {
-		if (g_auth_helper_spawn_fake != nullptr) {
-			g_auth_helper_spawn_fake->log_messages.emplace_back(message);
-		}
+	auto fake_auth_helper_spawn_log(void *context, std::string_view message) -> void {
+		static_cast<AuthHelperSpawnFake *>(context)->log_messages.emplace_back(message);
 	}
 
-	class ScopedAuthHelperSpawnHooks {
-	public:
-		explicit ScopedAuthHelperSpawnHooks(AuthHelperSpawnFake *fake)
-		    : previous_log_fn_(
-		          howdy::pam::testing::set_auth_helper_spawn_log_fn(fake_auth_helper_spawn_log))
-		    , previous_output_reader_(howdy::pam::testing::set_auth_helper_output_reader(
-		          fake_auth_helper_output_reader)) {
-			g_auth_helper_spawn_fake = fake;
-		}
-
-		ScopedAuthHelperSpawnHooks(const ScopedAuthHelperSpawnHooks &)                     = delete;
-		auto operator=(const ScopedAuthHelperSpawnHooks &) -> ScopedAuthHelperSpawnHooks & = delete;
-
-		~ScopedAuthHelperSpawnHooks() {
-			howdy::pam::testing::set_auth_helper_output_reader(previous_output_reader_);
-			howdy::pam::testing::set_auth_helper_spawn_log_fn(previous_log_fn_);
-			g_auth_helper_spawn_fake = nullptr;
-		}
-
-	private:
-		howdy::pam::testing::AuthHelperSpawnLogFn   previous_log_fn_        = nullptr;
-		howdy::pam::testing::AuthHelperOutputReader previous_output_reader_ = nullptr;
-	};
-
 	auto spawn_operations(AuthHelperSpawnFake *fake)
-	    -> howdy::pam::testing::AuthHelperSpawnOperations {
-		return {
-		    .context             = fake,
-		    .pipe2_fn            = fake_pipe2,
-		    .duplicate_fd_fn     = fake_duplicate_fd,
-		    .actions_init_fn     = fake_actions_init,
-		    .actions_adddup2_fn  = fake_actions_adddup2,
-		    .actions_addclose_fn = fake_actions_addclose,
-		    .actions_destroy_fn  = fake_actions_destroy,
-		    .spawn_fn            = fake_spawn,
-		    .close_fn            = fake_close,
-		};
+	    -> howdy::pam::auth_helper_process::Operations {
+		auto operations             = howdy::pam::auth_helper_process::production_operations();
+		operations.context          = fake;
+		operations.pipe2            = fake_pipe2;
+		operations.duplicate_fd     = fake_duplicate_fd;
+		operations.actions_init     = fake_actions_init;
+		operations.actions_adddup2  = fake_actions_adddup2;
+		operations.actions_addclose = fake_actions_addclose;
+		operations.actions_destroy  = fake_actions_destroy;
+		operations.spawn            = fake_spawn;
+		operations.close            = fake_close;
+		operations.read_bounded     = fake_auth_helper_output_reader;
+		operations.log_observer     = fake_auth_helper_spawn_log;
+		return operations;
 	}
 
 	auto expect_parent_pipe_closed_once(const AuthHelperSpawnFake &fake, std::string_view name)
@@ -783,9 +756,8 @@ namespace {
 					break;
 			}
 
-			ScopedAuthHelperSpawnHooks       hooks(&fake);
 			howdy::pam::PreparedRuntimeFiles prepared;
-			const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+			const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 			    "alice", &prepared, spawn_operations(&fake));
 			ok &= expect(!prepared_ok, std::string(test_case.name) + " returns false");
 			ok &= expect(fake.spawn_calls == 0,
@@ -809,9 +781,8 @@ namespace {
 		    .stdout_dup_result      = EIO,
 		    .actions_destroy_result = EIO,
 		};
-		ScopedAuthHelperSpawnHooks       hooks(&fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+		const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 		    "alice", &prepared, spawn_operations(&fake));
 		return expect(!prepared_ok, "setup and destroy failure returns false") &&
 		       expect(fake.spawn_calls == 0, "setup and destroy failure does not spawn helper") &&
@@ -829,9 +800,8 @@ namespace {
 		    .actions_destroy_result = EIO,
 		    .spawn_result           = EAGAIN,
 		};
-		ScopedAuthHelperSpawnHooks       hooks(&fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+		const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 		    "alice", &prepared, spawn_operations(&fake));
 		return expect(!prepared_ok, "spawn and destroy failure returns false") &&
 		       expect(fake.spawn_calls == 1, "spawn and destroy failure calls spawn once") &&
@@ -848,9 +818,8 @@ namespace {
 
 	auto test_auth_helper_spawn_destroy_failure() -> bool {
 		AuthHelperSpawnFake              fake{.actions_destroy_result = EIO};
-		ScopedAuthHelperSpawnHooks       hooks(&fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+		const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 		    "alice", &prepared, spawn_operations(&fake));
 		return expect(prepared_ok, "post-spawn destroy failure preserves helper success") &&
 		       expect(fake.spawn_calls == 1, "destroy failure occurs after helper spawn") &&
@@ -870,9 +839,8 @@ namespace {
 
 	auto test_auth_helper_spawn_failure() -> bool {
 		AuthHelperSpawnFake              fake{.spawn_result = EAGAIN};
-		ScopedAuthHelperSpawnHooks       hooks(&fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+		const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 		    "alice", &prepared, spawn_operations(&fake));
 		return expect(!prepared_ok, "spawn failure returns false") &&
 		       expect(fake.spawn_calls == 1, "spawn failure calls spawn once") &&
@@ -884,9 +852,8 @@ namespace {
 
 	auto test_auth_helper_spawn_success() -> bool {
 		AuthHelperSpawnFake              fake;
-		ScopedAuthHelperSpawnHooks       hooks(&fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+		const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 		    "alice", &prepared, spawn_operations(&fake));
 		return expect(prepared_ok, "spawn success returns true") &&
 		       expect(fake.pipe_fds == std::vector<std::array<int, 2>>{{10, 11}},
@@ -969,7 +936,7 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto integration_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
+	auto integration_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		std::array<char *, 4> shell_args = {
 		    const_cast<char *>("/bin/sh"),
 		    const_cast<char *>("-c"),
@@ -996,12 +963,17 @@ namespace {
 	}
 
 	struct StalledSpawnContext {
-		std::array<int, 2> ready_pipe  = {-1, -1};
-		pid_t              spawned_pid = -1;
-		int                spawn_calls = 0;
+		std::array<int, 2>       ready_pipe = {-1, -1};
+		std::vector<std::string> log_messages;
+		pid_t                    spawned_pid = -1;
+		int                      spawn_calls = 0;
 	};
 
-	auto stalled_spawn(const howdy::pam::testing::AuthHelperSpawnRequest &request) -> int {
+	void stalled_spawn_log(void *context, std::string_view message) {
+		static_cast<StalledSpawnContext *>(context)->log_messages.emplace_back(message);
+	}
+
+	auto stalled_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		auto &stalled = *static_cast<StalledSpawnContext *>(request.context);
 		++stalled.spawn_calls;
 		const std::string command = "trap '' TERM; printf R >&" +
@@ -1025,18 +997,20 @@ namespace {
 	}
 
 	auto stalled_spawn_operations(StalledSpawnContext *context)
-	    -> howdy::pam::testing::AuthHelperSpawnOperations {
-		return {
-		    .context             = context,
-		    .pipe2_fn            = real_pipe2,
-		    .duplicate_fd_fn     = integration_duplicate_fd,
-		    .actions_init_fn     = integration_actions_init,
-		    .actions_adddup2_fn  = integration_actions_adddup2,
-		    .actions_addclose_fn = integration_actions_addclose,
-		    .actions_destroy_fn  = integration_actions_destroy,
-		    .spawn_fn            = stalled_spawn,
-		    .close_fn            = integration_close,
-		};
+	    -> howdy::pam::auth_helper_process::Operations {
+		auto operations             = howdy::pam::auth_helper_process::production_operations();
+		operations.context          = context;
+		operations.pipe2            = real_pipe2;
+		operations.duplicate_fd     = integration_duplicate_fd;
+		operations.actions_init     = integration_actions_init;
+		operations.actions_adddup2  = integration_actions_adddup2;
+		operations.actions_addclose = integration_actions_addclose;
+		operations.actions_destroy  = integration_actions_destroy;
+		operations.spawn            = stalled_spawn;
+		operations.close            = integration_close;
+		operations.read_bounded     = nullptr;
+		operations.log_observer     = stalled_spawn_log;
+		return operations;
 	}
 
 	auto test_auth_helper_spawn_real_descriptor_collisions() -> bool {
@@ -1044,19 +1018,19 @@ namespace {
 		if (test_pid == 0) {
 			(void)close(STDOUT_FILENO);
 			(void)close(STDERR_FILENO);
-			howdy::pam::PreparedRuntimeFiles                     prepared;
-			const howdy::pam::testing::AuthHelperSpawnOperations operations{
-			    .pipe2_fn            = integration_pipe2,
-			    .duplicate_fd_fn     = integration_duplicate_fd,
-			    .actions_init_fn     = integration_actions_init,
-			    .actions_adddup2_fn  = integration_actions_adddup2,
-			    .actions_addclose_fn = integration_actions_addclose,
-			    .actions_destroy_fn  = integration_actions_destroy,
-			    .spawn_fn            = integration_spawn,
-			    .close_fn            = integration_close,
-			};
-			const bool prepared_ok =
-			    howdy::pam::testing::prepare_runtime_auth_files("alice", &prepared, operations);
+			howdy::pam::PreparedRuntimeFiles prepared;
+			auto operations             = howdy::pam::auth_helper_process::production_operations();
+			operations.pipe2            = integration_pipe2;
+			operations.duplicate_fd     = integration_duplicate_fd;
+			operations.actions_init     = integration_actions_init;
+			operations.actions_adddup2  = integration_actions_adddup2;
+			operations.actions_addclose = integration_actions_addclose;
+			operations.actions_destroy  = integration_actions_destroy;
+			operations.spawn            = integration_spawn;
+			operations.close            = integration_close;
+			operations.read_bounded     = nullptr;
+			const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
+			    "alice", &prepared, operations);
 			const bool paths_ok = prepared.config_path == "/run/howdy/collision/config.ini" &&
 			                      prepared.user_models_dir == "/run/howdy/collision/models" &&
 			                      prepared.root_dir == "/run/howdy/collision";
@@ -1085,9 +1059,8 @@ namespace {
 		bool ok = true;
 		for (const auto &pipe_fds : pipe_fd_pairs) {
 			AuthHelperSpawnFake              fake{.next_pipe_fds = pipe_fds};
-			ScopedAuthHelperSpawnHooks       hooks(&fake);
 			howdy::pam::PreparedRuntimeFiles prepared;
-			const bool prepared_ok = howdy::pam::testing::prepare_runtime_auth_files(
+			const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 			    "alice", &prepared, spawn_operations(&fake));
 			const char *const name =
 			    pipe_fds[0] == STDOUT_FILENO ? "stdout-read collision" : "stderr-read collision";
@@ -1160,23 +1133,6 @@ namespace {
 		return expect(ready == 'R', std::string(name) + " receives readiness byte");
 	}
 
-	class ScopedAuthHelperLogHook {
-	public:
-		explicit ScopedAuthHelperLogHook(AuthHelperSpawnFake *fake)
-		    : previous_(
-		          howdy::pam::testing::set_auth_helper_spawn_log_fn(fake_auth_helper_spawn_log)) {
-			g_auth_helper_spawn_fake = fake;
-		}
-
-		~ScopedAuthHelperLogHook() {
-			howdy::pam::testing::set_auth_helper_spawn_log_fn(previous_);
-			g_auth_helper_spawn_fake = nullptr;
-		}
-
-	private:
-		howdy::pam::testing::AuthHelperSpawnLogFn previous_ = nullptr;
-	};
-
 	auto run_deadline_output_case(std::string_view name, std::string_view output, bool close_output,
 	                              bool exit_success, bool ignore_sigterm) -> bool {
 		std::array<int, 2> output_pipe{};
@@ -1227,13 +1183,17 @@ namespace {
 		}
 		(void)close(ready_pipe[0]);
 
-		AuthHelperSpawnFake     fake;
-		ScopedAuthHelperLogHook log_hook(&fake);
-		std::string             helper_output = "stale";
-		const auto              start         = std::chrono::steady_clock::now();
-		const auto              timeout       = std::chrono::milliseconds(150);
-		const bool              result        = howdy::pam::testing::read_auth_helper_output_until(
-		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &helper_output, start + timeout);
+		AuthHelperSpawnFake fake;
+		auto                operations = howdy::pam::auth_helper_process::production_operations();
+		operations.context             = &fake;
+		operations.read_bounded        = nullptr;
+		operations.log_observer        = fake_auth_helper_spawn_log;
+		std::string helper_output      = "stale";
+		const auto  start              = std::chrono::steady_clock::now();
+		const auto  timeout            = std::chrono::milliseconds(150);
+		const bool  result             = howdy::pam::auth_helper_process::read_output(
+		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &helper_output, operations,
+		    start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		(void)close(output_pipe[0]);
 
@@ -1270,10 +1230,12 @@ namespace {
 			}
 		}
 
-		AuthHelperSpawnFake     fake;
-		ScopedAuthHelperLogHook log_hook(&fake);
-		const bool              result = howdy::pam::testing::wait_for_cleanup_helper_until(
-		    child_pid, std::chrono::steady_clock::now());
+		AuthHelperSpawnFake fake;
+		auto                operations = howdy::pam::auth_helper_process::production_operations();
+		operations.context             = &fake;
+		operations.log_observer        = fake_auth_helper_spawn_log;
+		const bool result              = howdy::pam::auth_helper_process::wait_for_cleanup_helper(
+		    child_pid, operations, std::chrono::steady_clock::now());
 		return expect(!result, "late helper exit is timed out") &&
 		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup timed out") !=
 		                  fake.log_messages.end(),
@@ -1287,13 +1249,12 @@ namespace {
 		            "prepare orchestration creates ready pipe")) {
 			return false;
 		}
-		AuthHelperSpawnFake              log_fake;
-		ScopedAuthHelperLogHook          log_hook(&log_fake);
 		howdy::pam::PreparedRuntimeFiles prepared;
-		const auto                       start   = std::chrono::steady_clock::now();
-		const auto                       timeout = std::chrono::milliseconds(150);
-		const bool result = howdy::pam::testing::prepare_runtime_auth_files_until(
-		    "alice", &prepared, stalled_spawn_operations(&context), start + timeout);
+		const auto                       start      = std::chrono::steady_clock::now();
+		const auto                       timeout    = std::chrono::milliseconds(150);
+		const auto                       operations = stalled_spawn_operations(&context);
+		const bool result = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
+		    "alice", &prepared, operations, start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		(void)close(context.ready_pipe[0]);
 		(void)close(context.ready_pipe[1]);
@@ -1301,10 +1262,10 @@ namespace {
 		       expect(context.spawn_calls == 1, "prepare orchestration spawns once") &&
 		       expect(elapsed >= timeout, "prepare orchestration honors deadline") &&
 		       expect(elapsed < std::chrono::seconds(2), "prepare orchestration remains bounded") &&
-		       expect(std::ranges::find(log_fake.log_messages,
-		                                "Howdy auth helper prepare timed out") !=
-		                  log_fake.log_messages.end(),
-		              "prepare orchestration logs timeout") &&
+		       expect(
+		           std::ranges::find(context.log_messages, "Howdy auth helper prepare timed out") !=
+		               context.log_messages.end(),
+		           "prepare orchestration logs timeout") &&
 		       helper_child_reaped(context.spawned_pid, "prepare orchestration");
 	}
 
@@ -1314,22 +1275,21 @@ namespace {
 		            "cleanup orchestration creates ready pipe")) {
 			return false;
 		}
-		AuthHelperSpawnFake     log_fake;
-		ScopedAuthHelperLogHook log_hook(&log_fake);
-		const auto              start   = std::chrono::steady_clock::now();
-		const auto              timeout = std::chrono::milliseconds(150);
-		howdy::pam::testing::cleanup_runtime_auth_files_until(
-		    kStagedRoot, stalled_spawn_operations(&context), start + timeout);
+		const auto start      = std::chrono::steady_clock::now();
+		const auto timeout    = std::chrono::milliseconds(150);
+		const auto operations = stalled_spawn_operations(&context);
+		howdy::pam::auth_helper_process::cleanup_runtime_auth_files(kStagedRoot, operations,
+		                                                            start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		(void)close(context.ready_pipe[0]);
 		(void)close(context.ready_pipe[1]);
 		return expect(context.spawn_calls == 1, "cleanup orchestration spawns once") &&
 		       expect(elapsed >= timeout, "cleanup orchestration honors deadline") &&
 		       expect(elapsed < std::chrono::seconds(2), "cleanup orchestration remains bounded") &&
-		       expect(std::ranges::find(log_fake.log_messages,
-		                                "Howdy auth helper cleanup timed out") !=
-		                  log_fake.log_messages.end(),
-		              "cleanup orchestration logs timeout") &&
+		       expect(
+		           std::ranges::find(context.log_messages, "Howdy auth helper cleanup timed out") !=
+		               context.log_messages.end(),
+		           "cleanup orchestration logs timeout") &&
 		       helper_child_reaped(context.spawned_pid, "cleanup orchestration");
 	}
 
@@ -1367,7 +1327,7 @@ namespace {
 				_exit(EXIT_FAILURE);
 			}
 			(void)close(ready_pipe[1]);
-			const std::string output(howdy::pam::testing::auth_helper_output_limit(), 'h');
+			const std::string output(howdy::pam::auth_helper_process::output_limit(), 'h');
 			const bool        wrote = write(output_pipe[1], output.data(), output.size()) ==
 			                          static_cast<ssize_t>(output.size());
 			(void)close(output_pipe[1]);
@@ -1384,9 +1344,11 @@ namespace {
 		}
 		(void)close(ready_pipe[0]);
 
-		std::string output = "stale";
-		const bool  result = howdy::pam::testing::read_auth_helper_output_until(
-		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &output,
+		std::string output      = "stale";
+		auto        operations  = howdy::pam::auth_helper_process::production_operations();
+		operations.read_bounded = nullptr;
+		const bool result       = howdy::pam::auth_helper_process::read_output(
+		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &output, operations,
 		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
 		(void)close(output_pipe[0]);
 		return expect(!result, "output limit is rejected") &&
@@ -1421,12 +1383,14 @@ namespace {
 		}
 		(void)close(ready_pipe[0]);
 
-		AuthHelperSpawnFake     fake;
-		ScopedAuthHelperLogHook log_hook(&fake);
-		const auto              start   = std::chrono::steady_clock::now();
-		const auto              timeout = std::chrono::milliseconds(150);
-		const bool              result =
-		    howdy::pam::testing::wait_for_cleanup_helper_until(child_pid, start + timeout);
+		AuthHelperSpawnFake fake;
+		auto                operations = howdy::pam::auth_helper_process::production_operations();
+		operations.context             = &fake;
+		operations.log_observer        = fake_auth_helper_spawn_log;
+		const auto start               = std::chrono::steady_clock::now();
+		const auto timeout             = std::chrono::milliseconds(150);
+		const bool result              = howdy::pam::auth_helper_process::wait_for_cleanup_helper(
+		    child_pid, operations, start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		return expect(!result, "cleanup deadline reports failure") &&
 		       expect(elapsed >= timeout, "cleanup deadline honors deadline") &&

@@ -41,7 +41,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
   - compare argv remains `howdy-compare --config <config-path> <username>`.
 - PAM failures must remain fail-closed. Invalid runtime-session or
   prompt-coordinator dependencies map to `PAM_SYSTEM_ERR`.
-- Do not restore `HOWDY_PAM_TESTING` behavior in production code.
+- Do not restore conditional PAM test-mode behavior in production code.
   Test-only hooks remain local to test builds.
 - Never auto-terminate on success; PAM waits for user input.
 - Use `WIFEXITED` and `WIFSIGNALED` to inspect child status.
@@ -51,7 +51,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 - Auth helper output parsed via `parse_auth_helper_output()`; rejects malformed
   lines (duplicate/missing/unknown keys). Protocol keys in
   `protocol/auth_helper_protocol.hpp` (`kConfigPathKey`, `kUserModelsDirKey`).
-- Auth helper output reader is injectable for testing
-  (`g_auth_helper_output_reader` under `HOWDY_PAM_TESTING`).
+- Auth helper process dependencies are passed explicitly through
+  `auth_helper_process::Operations`; keep test state local to each test.
 - `read_auth_helper_output()` fails closed on read errors, output limit hits,
   helper exit failures, and malformed protocol output.

@@ -1,10 +1,13 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
+#include <clocale>  // IWYU pragma: keep
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <string_view>
+#include <syslog.h>
 #include <unistd.h>
 
 #include <security/pam_modules.h>
@@ -93,6 +96,67 @@ struct PamModuleArguments {
 	int          argc  = 0;
 	const char **argv  = nullptr;
 };
+
+using IdentifyFn = int (*)(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+                           bool ask_auth_tok);
+
+__attribute__((visibility("hidden"))) inline auto
+authenticate_with_identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok,
+                           void *context, IdentifyFn identify_fn) -> int {
+	class ScopedMessageLocale {
+	public:
+		ScopedMessageLocale() noexcept
+		    : previous_locale_(uselocale(nullptr)) {
+			if (previous_locale_ == nullptr) {
+				return;
+			}
+
+			locale_t duplicated_locale = duplocale(previous_locale_);
+			if (duplicated_locale == nullptr) {
+				return;
+			}
+
+			locale_ = newlocale(LC_MESSAGES_MASK | LC_CTYPE_MASK, "", duplicated_locale);
+			if (locale_ == nullptr) {
+				freelocale(duplicated_locale);
+				return;
+			}
+
+			if (uselocale(locale_) == nullptr) {
+				freelocale(locale_);
+				locale_ = nullptr;
+			}
+		}
+
+		~ScopedMessageLocale() {
+			if (locale_ != nullptr) {
+				uselocale(previous_locale_);
+				freelocale(locale_);
+			}
+		}
+
+		ScopedMessageLocale(const ScopedMessageLocale &)                     = delete;
+		auto operator=(const ScopedMessageLocale &) -> ScopedMessageLocale & = delete;
+
+	private:
+		locale_t locale_          = nullptr;
+		locale_t previous_locale_ = nullptr;
+	};
+
+	ScopedMessageLocale message_locale;
+	try {
+		if (identify_fn == nullptr) {
+			return PAM_SYSTEM_ERR;
+		}
+		return identify_fn(context, pamh, arguments, ask_auth_tok);
+	} catch (const std::exception &error) {
+		syslog(LOG_ERR, "Unhandled C++ exception in pam_sm_authenticate: %s", error.what());
+		return PAM_SYSTEM_ERR;
+	} catch (...) {
+		syslog(LOG_ERR, "Unhandled non-standard exception in pam_sm_authenticate");
+		return PAM_SYSTEM_ERR;
+	}
+}
 
 auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int;
 

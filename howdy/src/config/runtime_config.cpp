@@ -5,13 +5,9 @@
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 
-#include <utility>
-#ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-#	include "config/runtime_paths.hpp"
-#endif
-
 #include <cassert>
 #include <string>
+#include <utility>
 
 namespace howdy::native {
 	namespace {
@@ -116,15 +112,4 @@ namespace howdy::native {
 
 		return success_result(config_path, populate_runtime_config(reader));
 	}
-
-#ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-	auto load_runtime_config(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult {
-		return load_runtime_config(config_path, default_secure_owner_uid());
-	}
-
-	auto load_runtime_config() -> RuntimeConfigLoadResult {
-		return load_runtime_config(resolve_config_path());
-	}
-#endif
-
 }  // namespace howdy::native

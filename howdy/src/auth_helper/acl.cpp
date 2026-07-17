@@ -1,7 +1,5 @@
 #include "auth_helper/acl.hpp"
 
-#include "auth_helper/runtime.hpp"
-
 #include <array>
 #include <cerrno>
 #include <cstdint>
@@ -17,14 +15,6 @@ namespace howdy::native::auth_helper {
 		constexpr acl_perm_t kAclRead    = acl_perm_t{ACL_READ};
 		constexpr acl_perm_t kAclWrite   = acl_perm_t{ACL_WRITE};
 		constexpr acl_perm_t kAclExecute = acl_perm_t{ACL_EXECUTE};
-
-#ifdef HOWDY_AUTH_HELPER_TESTING
-		bool            g_fail_acl_setup        = false;
-		bool            g_fail_acl_verification = false;
-		AclSetFdForTest g_acl_set_fd_for_test   = nullptr;
-		AclGetFdForTest g_acl_get_fd_for_test   = nullptr;
-		AclResetForTest g_acl_reset_for_test    = nullptr;
-#endif
 
 		auto log_errno_failure(std::string_view operation, const std::filesystem::path &path,
 		                       int error_number) -> bool {
@@ -104,31 +94,19 @@ namespace howdy::native::auth_helper {
 			return {.status = AclVerifyStatus::kOk};
 		}
 
-		auto get_fd_acl(int fd) -> acl_t {
-#ifdef HOWDY_AUTH_HELPER_TESTING
-			if (g_acl_get_fd_for_test != nullptr) {
-				return g_acl_get_fd_for_test(fd);
-			}
-#endif
+		auto production_get_fd(void *context, int fd) -> acl_t {
+			(void)context;
 			return acl_get_fd(fd);
 		}
 
-		auto set_fd_acl(int fd, acl_t acl) -> int {
-#ifdef HOWDY_AUTH_HELPER_TESTING
-			if (g_acl_set_fd_for_test != nullptr) {
-				return g_acl_set_fd_for_test(fd, acl);
-			}
-#endif
+		auto production_set_fd(void *context, int fd, acl_t acl) -> int {
+			(void)context;
 			return acl_set_fd(fd, acl);
 		}
 
-		auto verify_private_acl(int fd, bool directory, uid_t uid) -> AclVerifyResult {
-#ifdef HOWDY_AUTH_HELPER_TESTING
-			if (g_fail_acl_verification) {
-				return {.status = AclVerifyStatus::kMalformed};
-			}
-#endif
-			acl_t acl = get_fd_acl(fd);
+		auto verify_private_acl(int fd, bool directory, uid_t uid, const AclOperations &operations)
+		    -> AclVerifyResult {
+			acl_t acl = operations.acl_get_fd(operations.context, fd);
 			if (acl == nullptr) {
 				return {.status       = AclVerifyStatus::kReadError,
 				        .error_number = errno,
@@ -229,15 +207,18 @@ namespace howdy::native::auth_helper {
 
 	}  // namespace
 
-	auto set_private_acl(int fd, const std::filesystem::path &path, uid_t uid, bool directory)
-	    -> bool {
-#ifdef HOWDY_AUTH_HELPER_TESTING
-		if (g_fail_acl_setup) {
-			errno                  = EIO;
+	auto production_acl_operations() -> AclOperations {
+		return {
+		    .context = nullptr, .acl_get_fd = production_get_fd, .acl_set_fd = production_set_fd};
+	}
+
+	auto set_private_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                     bool directory, const AclOperations &operations) -> bool {
+		if (operations.acl_get_fd == nullptr || operations.acl_set_fd == nullptr) {
+			errno                  = EINVAL;
 			const int error_number = errno;
 			return log_errno_failure("apply ACL to staged object", path, error_number);
 		}
-#endif
 		const acl_perm_t permissions = directory ? (kAclRead | kAclExecute) : kAclRead;
 		acl_t            acl         = acl_init(5);
 		if (acl == nullptr) {
@@ -258,44 +239,23 @@ namespace howdy::native::auth_helper {
 			acl_free(acl);
 			return log_errno_failure("acl_valid for staged object", path, error_number);
 		}
-		if (set_fd_acl(fd, acl) != 0) {
+		if (operations.acl_set_fd(operations.context, fd, acl) != 0) {
 			const int error_number = errno;
 			acl_free(acl);
 			return log_errno_failure("acl_set_fd for staged object", path, error_number);
 		}
 		acl_free(acl);
-		const auto verification = verify_private_acl(fd, directory, uid);
+		const auto verification = verify_private_acl(fd, directory, uid, operations);
 		if (verification.status != AclVerifyStatus::kOk) {
 			return log_acl_verify_failure(path, verification);
 		}
 		return true;
 	}
 
-#ifdef HOWDY_AUTH_HELPER_TESTING
-	auto set_acl_setup_failure_for_test(bool fail) -> void {
-		g_fail_acl_setup = fail;
+	auto set_private_acl(int fd, const std::filesystem::path &path, uid_t uid, bool directory)
+	    -> bool {
+		return set_private_acl_with_operations(fd, path, uid, directory,
+		                                       production_acl_operations());
 	}
-
-	auto set_acl_verification_failure_for_test(bool fail) -> void {
-		g_fail_acl_verification = fail;
-	}
-
-	auto set_acl_io_for_test(AclSetFdForTest set_fd, AclGetFdForTest get_fd, AclResetForTest reset)
-	    -> void {
-		reset_acl_io_for_test();
-		g_acl_set_fd_for_test = set_fd;
-		g_acl_get_fd_for_test = get_fd;
-		g_acl_reset_for_test  = reset;
-	}
-
-	auto reset_acl_io_for_test() -> void {
-		if (g_acl_reset_for_test != nullptr) {
-			g_acl_reset_for_test();
-		}
-		g_acl_set_fd_for_test = nullptr;
-		g_acl_get_fd_for_test = nullptr;
-		g_acl_reset_for_test  = nullptr;
-	}
-#endif
 
 }  // namespace howdy::native::auth_helper

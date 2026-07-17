@@ -1,16 +1,12 @@
 #ifndef _GNU_SOURCE
-#define _GNU_SOURCE
+#	define _GNU_SOURCE
 #endif
 
 #include "prompt/prompt_coordinator.hpp"
 
-#include "runtime/compare_process.hpp"
-#ifdef HOWDY_PAM_TESTING
-#include "support/auth_flow_testing.hpp"
-#include "support/prompt_coordinator_testing.hpp"
-#endif
 #include "module/prompt_workaround.hpp"
 #include "prompt/enter_device.hpp"
+#include "runtime/compare_process.hpp"
 
 #include <cerrno>
 #include <chrono>
@@ -36,13 +32,49 @@ namespace {
 		return euidaccess("/dev/uinput", W_OK | R_OK);
 	}
 
-	struct PromptStopResult {
-		bool enter_failed   = false;
-		bool prompt_stopped = true;
-	};
+	auto input_prompt_workaround_preflight() -> bool {
+		if (input_workaround_access() != 0) {
+			const int access_errno = errno;
+			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
+			       access_errno);
+			return false;
+		}
+
+		return true;
+	}
+
+	auto input_prompt_preflight_dependency(void *context) -> bool {
+		(void)context;
+		return input_prompt_workaround_preflight();
+	}
+
+	auto request_auth_token_dependency(void *context, pam_handle_t *pamh)
+	    -> std::tuple<int, char *> {
+		(void)context;
+		char     *auth_tok_ptr = nullptr;
+		const int auth_result =
+		    pam_get_authtok(pamh, PAM_AUTHTOK, const_cast<const char **>(&auth_tok_ptr), nullptr);
+
+		return {auth_result, auth_tok_ptr};
+	}
+
+	auto create_enter_device_dependency(void *context) -> std::unique_ptr<EnterDevice> {
+		(void)context;
+		return create_enter_device();
+	}
+
+	auto create_native_prompt_dependency(void *context, pam_handle_t *pamh)
+	    -> std::unique_ptr<NativePrompt> {
+		(void)context;
+		return std::make_unique<NativePromptConversation>(pamh);
+	}
+
+}  // namespace
+
+namespace howdy::pam {
 
 	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> *pass_task,
-	                           NativePromptConversation               *native_prompt) noexcept {
+	                           NativePrompt                           *native_prompt) noexcept {
 		if (pass_task == nullptr || native_prompt == nullptr) {
 			return;
 		}
@@ -60,29 +92,8 @@ namespace {
 		}
 	}
 
-	struct NativePromptCleanupGuard {
-		optional_task<std::tuple<int, char *>> *pass_task     = nullptr;
-		NativePromptConversation               *native_prompt = nullptr;
-
-		~NativePromptCleanupGuard() {
-			cleanup_native_prompt(pass_task, native_prompt);
-		}
-	};
-
-	auto input_prompt_workaround_preflight() -> bool {
-		if (input_workaround_access() != 0) {
-			const int access_errno = errno;
-			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
-			       access_errno);
-			return false;
-		}
-
-		return true;
-	}
-
 	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-	                                  const PromptStopPlan                   &plan,
-	                                  NativePromptConversation               *native_prompt,
+	                                  const PromptStopPlan &plan, NativePrompt *native_prompt,
 	                                  EnterDevice *enter_device) -> PromptStopResult {
 		PromptStopResult result;
 		if (!plan.stop_prompt) {
@@ -125,29 +136,16 @@ namespace {
 		return result;
 	}
 
-	auto input_prompt_preflight_dependency(void *context) -> bool {
-		(void)context;
-		return input_prompt_workaround_preflight();
-	}
+	namespace {
+		struct NativePromptCleanupGuard {
+			optional_task<std::tuple<int, char *>> *pass_task     = nullptr;
+			NativePrompt                           *native_prompt = nullptr;
 
-	auto request_auth_token_dependency(void *context, pam_handle_t *pamh)
-	    -> std::tuple<int, char *> {
-		(void)context;
-		char     *auth_tok_ptr = nullptr;
-		const int auth_result =
-		    pam_get_authtok(pamh, PAM_AUTHTOK, const_cast<const char **>(&auth_tok_ptr), nullptr);
-
-		return {auth_result, auth_tok_ptr};
-	}
-
-	auto create_enter_device_dependency(void *context) -> std::unique_ptr<EnterDevice> {
-		(void)context;
-		return create_enter_device();
-	}
-
-}  // namespace
-
-namespace howdy::pam {
+			~NativePromptCleanupGuard() {
+				cleanup_native_prompt(pass_task, native_prompt);
+			}
+		};
+	}  // namespace
 
 	PromptCoordinator::PromptCoordinator(pam_handle_t *pamh, Workaround workaround,
 	                                     bool ask_auth_tok, bool existing_auth_token,
@@ -164,7 +162,7 @@ namespace howdy::pam {
 	PromptCoordinator::~PromptCoordinator() {
 		NativePromptCleanupGuard cleanup{
 		    .pass_task     = pass_task_ ? &*pass_task_ : nullptr,
-		    .native_prompt = native_prompt_ ? &*native_prompt_ : nullptr,
+		    .native_prompt = native_prompt_.get(),
 		};
 	}
 
@@ -174,6 +172,7 @@ namespace howdy::pam {
 		       dependencies_.terminate_compare != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
 		       dependencies_.create_enter_device != nullptr &&
+		       dependencies_.create_native_prompt != nullptr &&
 		       dependencies_.request_auth_token != nullptr &&
 		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
@@ -202,8 +201,8 @@ namespace howdy::pam {
 		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
 		                                 requested_workaround_ == Workaround::NativeInput;
 		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
-			native_prompt_.emplace(pamh_);
-			if (!native_prompt_->available()) {
+			native_prompt_ = dependencies_.create_native_prompt(dependencies_.context, pamh_);
+			if (native_prompt_ == nullptr || !native_prompt_->available()) {
 				const bool fallback_to_input = requested_workaround_ == Workaround::NativeInput;
 				syslog(LOG_INFO,
 				       fallback_to_input
@@ -230,7 +229,7 @@ namespace howdy::pam {
 
 		configure_input_workaround();
 		return effective_workaround_ == Workaround::Native
-		           ? native_prompt_.has_value() && !existing_auth_token_
+		           ? native_prompt_ != nullptr && !existing_auth_token_
 		           : should_ask_for_password(ask_auth_tok_, effective_workaround_,
 		                                     existing_auth_token_);
 	}
@@ -352,7 +351,7 @@ namespace howdy::pam {
 
 		const auto stop_plan =
 		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
-		auto      *native_prompt = native_prompt_.has_value() ? &native_prompt_.value() : nullptr;
+		auto      *native_prompt = native_prompt_.get();
 		auto      *enter_device  = enter_device_.get();
 		const auto stop_result =
 		    request_password_prompt_stop(pass_task, stop_plan, native_prompt, enter_device);
@@ -386,25 +385,9 @@ namespace howdy::pam {
 		    .terminate_compare        = compare_process::terminate,
 		    .input_prompt_preflight   = input_prompt_preflight_dependency,
 		    .create_enter_device      = create_enter_device_dependency,
+		    .create_native_prompt     = create_native_prompt_dependency,
 		    .request_auth_token       = request_auth_token_dependency,
 		};
 	}
 
 }  // namespace howdy::pam
-
-#ifdef HOWDY_PAM_TESTING
-namespace howdy::pam::testing {
-	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> &pass_task,
-	                           NativePromptConversation               &native_prompt) noexcept {
-		::cleanup_native_prompt(&pass_task, &native_prompt);
-	}
-
-	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
-	                                  const PromptStopPlan &plan) -> PromptStopResult {
-		const auto result = ::request_password_prompt_stop(pass_task, plan, nullptr, nullptr);
-		return PromptStopResult{.enter_failed   = result.enter_failed,
-		                        .prompt_stopped = result.prompt_stopped};
-	}
-
-}  // namespace howdy::pam::testing
-#endif

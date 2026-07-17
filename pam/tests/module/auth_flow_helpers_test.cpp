@@ -1,7 +1,10 @@
 #include "config/runtime_config.hpp"
+#include "module/auth_flow.hpp"
+#include "module/main.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
-#include "support/auth_flow_testing.hpp"
+#include "runtime/auth_helper_process.hpp"
+#include "runtime/compare_process.hpp"
 #include "support/fd_io.hpp"
 #include "test_support.hpp"
 
@@ -34,8 +37,10 @@ namespace {
 
 	using howdy::test::expect;
 
-	auto fake_partial_read_error([[maybe_unused]] howdy::native::BoundedReadRequest request)
+	auto fake_partial_read_error(void                                              *context,
+	                             [[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
+		(void)context;
 		howdy::native::BoundedReadResult result;
 		result.output       = "CONFIG_PATH=/tmp/partial\n";
 		result.read_error   = true;
@@ -43,22 +48,21 @@ namespace {
 		return result;
 	}
 
-	class ScopedAuthHelperOutputReader {
-	public:
-		explicit ScopedAuthHelperOutputReader(howdy::pam::testing::AuthHelperOutputReader reader)
-		    : previous_reader_(howdy::pam::testing::set_auth_helper_output_reader(reader)) {}
+	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output,
+	                             howdy::pam::auth_helper_process::OutputReader reader = nullptr)
+	    -> bool {
+		auto operations         = howdy::pam::auth_helper_process::production_operations();
+		operations.read_bounded = reader;
+		return howdy::pam::auth_helper_process::read_output(
+		    {.child_pid = child_pid, .output_fd = output_fd}, output, operations,
+		    std::chrono::steady_clock::now() + std::chrono::seconds(10));
+	}
 
-		ScopedAuthHelperOutputReader(const ScopedAuthHelperOutputReader &) = delete;
-		auto operator=(const ScopedAuthHelperOutputReader &)
-		    -> ScopedAuthHelperOutputReader & = delete;
-
-		~ScopedAuthHelperOutputReader() {
-			howdy::pam::testing::set_auth_helper_output_reader(previous_reader_);
-		}
-
-	private:
-		howdy::pam::testing::AuthHelperOutputReader previous_reader_ = nullptr;
-	};
+	auto read_fd_to_string(int fd) -> std::string {
+		return howdy::native::read_fd_to_string_bounded(
+		           {.fd = fd, .max_bytes = howdy::pam::auth_helper_process::output_limit()})
+		    .output;
+	}
 
 	class ScopedFd {
 	public:
@@ -251,8 +255,6 @@ namespace {
 	}
 
 	auto expect_fd_reading() -> bool {
-		using howdy::pam::testing::read_fd_to_string;
-
 		bool                    ok = true;
 		std::array<ScopedFd, 2> empty_pipe;
 		ok &= expect(open_pipe(&empty_pipe), "creates empty input pipe");
@@ -295,14 +297,12 @@ namespace {
 	}
 
 	auto expect_process_waiting() -> bool {
-		using howdy::pam::testing::wait_for_compare_process;
-		using howdy::pam::testing::wait_for_helper_process;
-
 		bool        ok                = true;
 		const pid_t compare_child_pid = spawn_exiting_child(7);
 		ok &= expect(compare_child_pid > 0, "spawns compare child");
 		if (compare_child_pid > 0) {
-			const int status = wait_for_compare_process(compare_child_pid);
+			const int status = howdy::pam::compare_process::wait_until(
+			    compare_child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(1));
 			ok &= expect(WIFEXITED(status) && WEXITSTATUS(status) == 7,
 			             "compare wait preserves child exit status");
 		}
@@ -310,17 +310,19 @@ namespace {
 		const pid_t helper_child_pid = spawn_exiting_child(9);
 		ok &= expect(helper_child_pid > 0, "spawns helper child");
 		if (helper_child_pid > 0) {
-			const int status = wait_for_helper_process(helper_child_pid);
+			const int status = howdy::pam::auth_helper_process::wait_for_helper(helper_child_pid);
 			ok &= expect(WIFEXITED(status) && WEXITSTATUS(status) == 9,
 			             "helper wait preserves child exit status");
 		}
 
 		constexpr pid_t kNonexistentChild = std::numeric_limits<pid_t>::max();
-		const int       compare_failure   = wait_for_compare_process(kNonexistentChild);
-		const auto      abort_code        = static_cast<int>(howdy::native::CompareExit::kAbort);
+		const int       compare_failure   = howdy::pam::compare_process::wait_until(
+		    kNonexistentChild, std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
 		ok &= expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
 		             "compare wait failure returns abort status");
-		const int helper_failure = wait_for_helper_process(kNonexistentChild);
+		const int helper_failure =
+		    howdy::pam::auth_helper_process::wait_for_helper(kNonexistentChild);
 		ok &= expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
 		             "helper wait failure returns abort status");
 
@@ -328,9 +330,6 @@ namespace {
 	}
 
 	auto expect_auth_helper_output_limit_terminates_child() -> bool {
-		using howdy::pam::testing::auth_helper_output_limit;
-		using howdy::pam::testing::read_auth_helper_output;
-
 		bool                    ok = true;
 		std::array<ScopedFd, 2> output_pipe;
 		ok &= expect(open_pipe(&output_pipe), "creates output-limit auth-helper pipe");
@@ -338,7 +337,7 @@ namespace {
 			return false;
 		}
 
-		const std::string limit_output(auth_helper_output_limit(), 'h');
+		const std::string limit_output(howdy::pam::auth_helper_process::output_limit(), 'h');
 		const pid_t       child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks output-limit auth-helper child");
 		if (child_pid < 0) {
@@ -374,8 +373,6 @@ namespace {
 	}
 
 	auto expect_auth_helper_output_read_error_terminates_child() -> bool {
-		using howdy::pam::testing::read_auth_helper_output;
-
 		bool        ok        = true;
 		const pid_t child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks read-error auth-helper child");
@@ -427,8 +424,6 @@ namespace {
 	}
 
 	auto expect_auth_helper_output_partial_read_error_discards_output() -> bool {
-		using howdy::pam::testing::read_auth_helper_output;
-
 		bool        ok        = true;
 		const pid_t child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks partial-read-error auth-helper child");
@@ -440,9 +435,9 @@ namespace {
 			_exit(0);
 		}
 
-		ScopedAuthHelperOutputReader reader_override(fake_partial_read_error);
-		std::string                  helper_output = "previous output";
-		const bool helper_ok = read_auth_helper_output(child_pid, -1, &helper_output);
+		std::string helper_output = "previous output";
+		const bool  helper_ok =
+		    read_auth_helper_output(child_pid, -1, &helper_output, fake_partial_read_error);
 
 		ok &= expect(!helper_ok, "auth-helper partial read error fails closed");
 		ok &= expect(helper_output.empty(), "auth-helper partial read error discards output");
@@ -487,8 +482,7 @@ namespace {
 		}
 
 		output_pipe[1].reset();
-		return howdy::pam::testing::read_auth_helper_output(child_pid, output_pipe[0].get(),
-		                                                    read_output);
+		return read_auth_helper_output(child_pid, output_pipe[0].get(), read_output);
 	}
 
 	auto expect_auth_helper_output_child_failure_discards_output() -> bool {
@@ -509,8 +503,6 @@ namespace {
 	}
 
 	auto expect_auth_helper_output_protocol_validation() -> bool {
-		using howdy::pam::testing::parse_auth_helper_output;
-
 		struct ProtocolCase {
 			std::string name;
 			std::string output;
@@ -585,7 +577,7 @@ namespace {
 			if (!test_case.expected_ok) {
 				ok &= expect(actual_output.empty(), test_case.name + " discards malformed output");
 			}
-			const auto parsed = parse_auth_helper_output(test_case.output);
+			const auto parsed = howdy::pam::auth_helper_process::parse_output(test_case.output);
 			ok &=
 			    expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {
@@ -602,10 +594,10 @@ namespace {
 	}
 
 	auto expect_conversation_helpers() -> bool {
-		using howdy::pam::testing::auth_token_present;
-		using howdy::pam::testing::ConversationFn;
-		using howdy::pam::testing::make_conversation;
-		using howdy::pam::testing::send_conversation_message;
+		using howdy::pam::auth_flow::auth_token_present;
+		using howdy::pam::auth_flow::ConversationFn;
+		using howdy::pam::auth_flow::make_conversation;
+		using howdy::pam::auth_flow::send_conversation_message;
 
 		bool                 ok            = true;
 		int                  direct_calls  = 0;
@@ -674,9 +666,9 @@ namespace {
 	}
 
 	auto expect_status_helpers() -> bool {
-		using howdy::pam::testing::ConversationFn;
-		using howdy::pam::testing::howdy_error;
-		using howdy::pam::testing::howdy_status;
+		using howdy::pam::auth_flow::ConversationFn;
+		using howdy::pam::auth_flow::howdy_error;
+		using howdy::pam::auth_flow::howdy_status;
 
 		bool                 ok            = true;
 		int                  calls         = 0;
@@ -746,7 +738,7 @@ namespace {
 	auto expect_authentication_preserves_host_locale_state() -> bool {
 		using howdy::pam::PromptCoordinatorDependencies;
 		using howdy::pam::RuntimeSessionDependencies;
-		using howdy::pam::testing::IdentifyDependencies;
+		using howdy::pam::auth_flow::IdentifyDependencies;
 
 		const auto prepare_runtime = [](void *, std::string_view,
 		                                howdy::pam::PreparedRuntimeFiles *) -> bool {
@@ -793,6 +785,10 @@ namespace {
 		const auto create_enter_device = [](void *) -> std::unique_ptr<EnterDevice> {
 			return nullptr;
 		};
+		const auto create_native_prompt = [](void *,
+		                                     pam_handle_t *) -> std::unique_ptr<NativePrompt> {
+			return nullptr;
+		};
 		const auto request_auth_token = [](void *, pam_handle_t *) -> std::tuple<int, char *> {
 			return {PAM_SUCCESS, nullptr};
 		};
@@ -809,13 +805,15 @@ namespace {
 		    .terminate_compare        = terminate_compare,
 		    .input_prompt_preflight   = input_preflight,
 		    .create_enter_device      = create_enter_device,
+		    .create_native_prompt     = create_native_prompt,
 		    .request_auth_token       = request_auth_token,
 		};
-		howdy::pam::testing::set_identify_dependencies(IdentifyDependencies{
+		IdentifyDependencies dependencies{
+		    .context            = nullptr,
 		    .runtime_session    = runtime_dependencies,
 		    .prompt_coordinator = prompt_dependencies,
 		    .check_enabled      = check_enabled,
-		});
+		};
 
 		ConversationState state;
 		struct pam_conv   conversation{
@@ -827,7 +825,6 @@ namespace {
 		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
 		             "starts PAM handle for real authentication flow");
 		if (pam_handle.get() == nullptr) {
-			howdy::pam::testing::reset_identify_dependencies();
 			return false;
 		}
 
@@ -849,7 +846,14 @@ namespace {
 		const std::string host_locale = std::setlocale(LC_ALL, nullptr);
 		const std::string host_domain = textdomain(nullptr);
 
-		ok &= expect(pam_sm_authenticate(pam_handle.get(), 0, 0, nullptr) == PAM_SUCCESS,
+		const auto injected_identify = [](void *context, pam_handle_t *handle,
+		                                  PamModuleArguments arguments, bool ask_auth_tok) -> int {
+			const auto *injected = static_cast<const IdentifyDependencies *>(context);
+			return howdy::pam::auth_flow::identify_with_dependencies(handle, arguments,
+			                                                         ask_auth_tok, *injected);
+		};
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        injected_identify) == PAM_SUCCESS,
 		             "real PAM authentication flow succeeds with injected boundaries");
 		if (locale_available) {
 			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
@@ -860,7 +864,8 @@ namespace {
 		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
 		             "real authentication preserves host gettext domain");
 
-		ok &= expect(pam_sm_authenticate(pam_handle.get(), 0, 0, nullptr) == PAM_SUCCESS,
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        injected_identify) == PAM_SUCCESS,
 		             "repeated real PAM authentication flow succeeds");
 		if (locale_available) {
 			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
@@ -875,12 +880,35 @@ namespace {
 		if (!initial_locale.empty()) {
 			std::setlocale(LC_ALL, initial_locale.c_str());
 		}
-		howdy::pam::testing::reset_identify_dependencies();
+		return ok;
+	}
+
+	auto expect_identify_dependency_validation() -> bool {
+		bool ok = true;
+
+		auto dependencies          = howdy::pam::auth_flow::production_identify_dependencies();
+		dependencies.check_enabled = nullptr;
+		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
+		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
+		             "identify rejects missing enabled-check callback");
+
+		dependencies = howdy::pam::auth_flow::production_identify_dependencies();
+		dependencies.runtime_session.load_runtime_config = nullptr;
+		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
+		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
+		             "identify rejects missing runtime-session callback");
+
+		dependencies = howdy::pam::auth_flow::production_identify_dependencies();
+		dependencies.prompt_coordinator.spawn_compare_process = nullptr;
+		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
+		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
+		             "identify rejects missing prompt-coordinator callback");
+
 		return ok;
 	}
 
 	auto expect_enabled_decisions() -> bool {
-		using howdy::pam::testing::check_enabled;
+		using howdy::pam::auth_flow::check_enabled;
 
 		bool ok = true;
 
@@ -931,7 +959,7 @@ namespace {
 	}
 
 	auto expect_prompt_stop_helpers() -> bool {
-		using howdy::pam::testing::request_password_prompt_stop;
+		using howdy::pam::request_password_prompt_stop;
 
 		bool ok = true;
 
@@ -943,7 +971,8 @@ namespace {
 		    .abort_prompt = false,
 		    .send_enter   = false,
 		};
-		const auto no_stop_result = request_password_prompt_stop(inactive_task, no_stop_plan);
+		const auto no_stop_result =
+		    request_password_prompt_stop(inactive_task, no_stop_plan, nullptr, nullptr);
 		ok &= expect(!no_stop_result.enter_failed && no_stop_result.prompt_stopped,
 		             "no-stop plan returns default prompt stop result");
 		ok &= expect(!inactive_task.active(), "no-stop plan leaves inactive task inactive");
@@ -959,7 +988,8 @@ namespace {
 		    .abort_prompt = false,
 		    .send_enter   = false,
 		};
-		const auto stop_result = request_password_prompt_stop(ready_task, stop_plan);
+		const auto stop_result =
+		    request_password_prompt_stop(ready_task, stop_plan, nullptr, nullptr);
 		ok &= expect(!stop_result.enter_failed && stop_result.prompt_stopped,
 		             "stop plan stops ready prompt without input");
 		ok &= expect(!ready_task.active(), "stop plan deactivates ready prompt task");
@@ -980,7 +1010,7 @@ namespace {
 		    .send_enter   = false,
 		};
 		const auto abort_result =
-		    request_password_prompt_stop(abort_without_native_prompt, abort_plan);
+		    request_password_prompt_stop(abort_without_native_prompt, abort_plan, nullptr, nullptr);
 		ok &= expect(!abort_result.enter_failed && abort_result.prompt_stopped,
 		             "abort plan without native prompt stops task safely");
 		ok &= expect(!abort_without_native_prompt.active(),
@@ -997,7 +1027,8 @@ namespace {
 		    .abort_prompt = false,
 		    .send_enter   = true,
 		};
-		const auto input_result = request_password_prompt_stop(ready_input_task, input_plan);
+		const auto input_result =
+		    request_password_prompt_stop(ready_input_task, input_plan, nullptr, nullptr);
 		ok &= expect(!input_result.enter_failed && input_result.prompt_stopped,
 		             "already-ready input prompt skips Enter injection");
 		ok &=
@@ -1023,6 +1054,7 @@ auto main() -> int {
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
 	ok &= expect_authentication_preserves_host_locale_state();
+	ok &= expect_identify_dependency_validation();
 	ok &= expect_enabled_decisions();
 	ok &= expect_prompt_stop_helpers();
 

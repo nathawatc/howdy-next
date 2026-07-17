@@ -1,13 +1,12 @@
-#include "protocol/compare_exit.hpp"
-#include "storage/user_model_readiness.hpp"
-#ifdef HOWDY_PAM_TESTING
-#	include "support/auth_flow_testing.hpp"
-#endif
+#include "module/auth_flow.hpp"
+
 #include "module/main.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
 #include "prompt/prompt_coordinator.hpp"
+#include "protocol/compare_exit.hpp"
 #include "runtime/runtime_session.hpp"
+#include "storage/user_model_readiness.hpp"
 
 #include <cerrno>
 #include <chrono>
@@ -34,18 +33,78 @@ namespace {
 	// Covers exec, model loading, and camera setup before configured scan timeout begins.
 	constexpr auto kCompareStartupGrace = std::chrono::seconds(3);
 
-#ifdef HOWDY_PAM_TESTING
-	howdy::pam::testing::IdentifyDependencies g_identify_dependencies;
-	bool                                      g_identify_dependencies_set = false;
-#endif
-
 	using howdy::native::CompareExit;
+	using howdy::pam::auth_flow::ConversationFn;
 
 	auto compare_status_is(int status, CompareExit exit_code) -> bool {
 		return WIFEXITED(status) && WEXITSTATUS(status) == static_cast<int>(exit_code);
 	}
 
-	using ConversationFn = std::function<int(int, const char *)>;
+	auto get_username(pam_handle_t *pamh, char **username) -> int {
+		const int result = pam_get_user(pamh, const_cast<const char **>(username), nullptr);
+		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
+			syslog(LOG_ERR, "Failed to get username");
+			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
+		}
+		return PAM_SUCCESS;
+	}
+
+	void send_detection_notice(const howdy::native::RuntimeConfig &config,
+	                           const ConversationFn               &conv_function) {
+		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
+		bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
+		if (!config.core.detection_notice) {
+			return;
+		}
+		const int result =
+		    conv_function(PAM_TEXT_INFO, howdy::pam::translate("Attempting facial authentication"));
+		if (result != PAM_SUCCESS) {
+			syslog(LOG_ERR, "Failed to send detection notice");
+		}
+	}
+
+	auto map_prompt_result(const howdy::pam::PromptCoordinatorResult &result, const char *username,
+	                       const howdy::native::RuntimeConfig &config,
+	                       const ConversationFn               &conv_function) -> int {
+		switch (result.decision) {
+			case howdy::pam::PromptCoordinatorDecision::kPamResult:
+				return result.pam_status != PAM_SUCCESS ? result.pam_status : PAM_IGNORE;
+			case howdy::pam::PromptCoordinatorDecision::kPasswordFallback:
+				return result.pam_status != PAM_SUCCESS
+				           ? howdy::pam::auth_flow::howdy_status(username, result.compare_status,
+				                                                 config, conv_function)
+				           : PAM_IGNORE;
+			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
+				return howdy::pam::auth_flow::howdy_status(username, result.compare_status, config,
+				                                           conv_function);
+			case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
+			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
+			case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
+				return PAM_SYSTEM_ERR;
+		}
+		return PAM_SYSTEM_ERR;
+	}
+
+	auto dependencies_valid(const howdy::pam::auth_flow::IdentifyDependencies &dependencies)
+	    -> bool {
+		const auto &runtime = dependencies.runtime_session;
+		const auto &prompt  = dependencies.prompt_coordinator;
+		return runtime.prepare_runtime != nullptr && runtime.cleanup_runtime != nullptr &&
+		       runtime.load_runtime_config != nullptr && runtime.effective_uid != nullptr &&
+		       prompt.spawn_compare_process != nullptr &&
+		       prompt.wait_for_compare_process != nullptr && prompt.terminate_compare != nullptr &&
+		       prompt.input_prompt_preflight != nullptr && prompt.create_enter_device != nullptr &&
+		       prompt.create_native_prompt != nullptr && prompt.request_auth_token != nullptr &&
+		       dependencies.check_enabled != nullptr;
+	}
+
+	auto production_check_enabled(void *context, const howdy::native::RuntimeConfig &config,
+	                              const char                  *username,
+	                              const std::filesystem::path &user_models_dir) -> int;
+
+}  // namespace
+
+namespace howdy::pam::auth_flow {
 
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void {
@@ -191,191 +250,106 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	auto get_username(pam_handle_t *pamh, char **username) -> int {
-		const int result = pam_get_user(pamh, const_cast<const char **>(username), nullptr);
-		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
-			syslog(LOG_ERR, "Failed to get username");
-			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
-		}
-		return PAM_SUCCESS;
+	auto production_identify_dependencies() -> IdentifyDependencies {
+		return {
+		    .context            = nullptr,
+		    .runtime_session    = production_runtime_session_dependencies(),
+		    .prompt_coordinator = production_prompt_coordinator_dependencies(),
+		    .check_enabled      = production_check_enabled,
+		};
 	}
 
-	auto runtime_session_dependencies() -> howdy::pam::RuntimeSessionDependencies {
-		auto dependencies = howdy::pam::production_runtime_session_dependencies();
-#ifdef HOWDY_PAM_TESTING
-		if (g_identify_dependencies_set) {
-			dependencies = g_identify_dependencies.runtime_session;
+	auto identify_with_dependencies(pam_handle_t *pamh, PamModuleArguments arguments,
+	                                bool ask_auth_tok, const IdentifyDependencies &dependencies)
+	    -> int {
+		(void)arguments.flags;
+
+		openlog("pam_howdy", 0, LOG_AUTHPRIV);
+
+		if (!dependencies_valid(dependencies)) {
+			return PAM_SYSTEM_ERR;
 		}
-#endif
-		return dependencies;
+
+		char *username = nullptr;
+		int   pam_res  = get_username(pamh, &username);
+		if (pam_res != PAM_SUCCESS) {
+			return pam_res;
+		}
+
+		howdy::pam::RuntimeSession runtime_session(kConfiguredConfigPath, kConfiguredUserModelsDir,
+		                                           dependencies.runtime_session);
+
+		const auto runtime_result = runtime_session.load_for_user(username);
+		if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
+		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies ||
+		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
+			return PAM_SYSTEM_ERR;
+		}
+
+		if (runtime_result.status != howdy::pam::RuntimeSessionLoadStatus::kOk ||
+		    runtime_result.config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+		    !runtime_result.config_result.config.has_value()) {
+			syslog(LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
+			return PAM_SYSTEM_ERR;
+		}
+		const auto &config = *runtime_result.config_result.config;
+
+		pam_res = dependencies.check_enabled(dependencies.context, config, username,
+		                                     runtime_session.user_models_dir());
+		if (pam_res != PAM_SUCCESS) {
+			return pam_res;
+		}
+
+		ConversationFn conv_function;
+		pam_res = make_conversation(pamh, &conv_function);
+		if (pam_res != PAM_SUCCESS) {
+			return pam_res;
+		}
+
+		send_detection_notice(config, conv_function);
+
+		const Workaround workaround          = get_pam_workaround(arguments.argc, arguments.argv);
+		const bool       existing_auth_token = auth_flow::auth_token_present(pamh);
+
+		howdy::pam::PromptCoordinator coordinator(
+		    pamh, workaround, ask_auth_tok, existing_auth_token, dependencies.prompt_coordinator,
+		    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
+
+		if (!coordinator.valid()) {
+			return PAM_SYSTEM_ERR;
+		}
+
+		const howdy::pam::CompareLaunchRequest compare_request = {
+		    .config_path     = runtime_session.config_path(),
+		    .username        = username,
+		    .user_models_dir = runtime_session.user_models_dir(),
+		    .staged_runtime  = runtime_session.staged(),
+		};
+
+		const auto report_input_failure = [&conv_function] -> void {
+			send_conversation_message(
+			    conv_function, PAM_ERROR_MSG,
+			    howdy::pam::translate(
+			        "Failed to send Enter press, waiting for user to press it instead"));
+		};
+		return map_prompt_result(coordinator.run(compare_request, report_input_failure), username,
+		                         config, conv_function);
 	}
 
-	auto run_enabled_check(const howdy::native::RuntimeConfig &config, const char *username,
-	                       const std::filesystem::path &user_models_dir) -> int {
-#ifdef HOWDY_PAM_TESTING
-		if (g_identify_dependencies_set && g_identify_dependencies.check_enabled != nullptr) {
-			return g_identify_dependencies.check_enabled(g_identify_dependencies.context, config,
-			                                             username, user_models_dir);
-		}
-#endif
-		return check_enabled(config, username, user_models_dir);
-	}
+}  // namespace howdy::pam::auth_flow
 
-	void send_detection_notice(const howdy::native::RuntimeConfig &config,
-	                           const ConversationFn               &conv_function) {
-		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
-		bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
-		if (!config.core.detection_notice) {
-			return;
-		}
-		const int result =
-		    conv_function(PAM_TEXT_INFO, howdy::pam::translate("Attempting facial authentication"));
-		if (result != PAM_SUCCESS) {
-			syslog(LOG_ERR, "Failed to send detection notice");
-		}
-	}
+namespace {
 
-	auto prompt_coordinator_dependencies() -> howdy::pam::PromptCoordinatorDependencies {
-		auto dependencies = howdy::pam::production_prompt_coordinator_dependencies();
-#ifdef HOWDY_PAM_TESTING
-		if (g_identify_dependencies_set) {
-			dependencies = g_identify_dependencies.prompt_coordinator;
-		}
-#endif
-		return dependencies;
-	}
-
-	auto map_prompt_result(const howdy::pam::PromptCoordinatorResult &result, const char *username,
-	                       const howdy::native::RuntimeConfig &config,
-	                       const ConversationFn               &conv_function) -> int {
-		switch (result.decision) {
-			case howdy::pam::PromptCoordinatorDecision::kPamResult:
-				return result.pam_status != PAM_SUCCESS ? result.pam_status : PAM_IGNORE;
-			case howdy::pam::PromptCoordinatorDecision::kPasswordFallback:
-				return result.pam_status != PAM_SUCCESS
-				           ? howdy_status(username, result.compare_status, config, conv_function)
-				           : PAM_IGNORE;
-			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
-				return howdy_status(username, result.compare_status, config, conv_function);
-			case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
-			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
-			case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
-				return PAM_SYSTEM_ERR;
-		}
-		return PAM_SYSTEM_ERR;
+	auto production_check_enabled(void *context, const howdy::native::RuntimeConfig &config,
+	                              const char                  *username,
+	                              const std::filesystem::path &user_models_dir) -> int {
+		(void)context;
+		return howdy::pam::auth_flow::check_enabled(config, username, user_models_dir);
 	}
 
 }  // namespace
 
-#ifdef HOWDY_PAM_TESTING
-namespace howdy::pam::testing {
-
-	auto set_identify_dependencies(const IdentifyDependencies &dependencies) -> void {
-		g_identify_dependencies     = dependencies;
-		g_identify_dependencies_set = true;
-	}
-
-	auto reset_identify_dependencies() -> void {
-		g_identify_dependencies     = {};
-		g_identify_dependencies_set = false;
-	}
-
-	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
-	                               const std::string &message) -> void {
-		::send_conversation_message(conv_function, msg_type, message);
-	}
-
-	auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int {
-		return ::make_conversation(pamh, conv_function);
-	}
-
-	auto auth_token_present(pam_handle_t *pamh) -> bool {
-		return ::auth_token_present(pamh);
-	}
-
-	auto howdy_error(int status, const ConversationFn &conv_function) -> int {
-		return ::howdy_error(status, conv_function);
-	}
-
-	auto howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
-	                  const ConversationFn &conv_function) -> int {
-		return ::howdy_status(username, status, config, conv_function);
-	}
-
-	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
-	                   const std::filesystem::path &user_models_dir) -> int {
-		return ::check_enabled(config, username, user_models_dir);
-	}
-
-}  // namespace howdy::pam::testing
-#endif
-
 auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int {
-	(void)arguments.flags;
-
-	openlog("pam_howdy", 0, LOG_AUTHPRIV);
-
-	char *username = nullptr;
-	int   pam_res  = get_username(pamh, &username);
-	if (pam_res != PAM_SUCCESS) {
-		return pam_res;
-	}
-
-	howdy::pam::RuntimeSession runtime_session(kConfiguredConfigPath, kConfiguredUserModelsDir,
-	                                           runtime_session_dependencies());
-
-	const auto runtime_result = runtime_session.load_for_user(username);
-	if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
-	    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies ||
-	    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
-		return PAM_SYSTEM_ERR;
-	}
-
-	if (runtime_result.status != howdy::pam::RuntimeSessionLoadStatus::kOk ||
-	    runtime_result.config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
-	    !runtime_result.config_result.config.has_value()) {
-		syslog(LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
-		return PAM_SYSTEM_ERR;
-	}
-	const auto &config = *runtime_result.config_result.config;
-
-	pam_res = run_enabled_check(config, username, runtime_session.user_models_dir());
-	if (pam_res != PAM_SUCCESS) {
-		return pam_res;
-	}
-
-	ConversationFn conv_function;
-	pam_res = make_conversation(pamh, &conv_function);
-	if (pam_res != PAM_SUCCESS) {
-		return pam_res;
-	}
-
-	send_detection_notice(config, conv_function);
-
-	const Workaround workaround          = get_pam_workaround(arguments.argc, arguments.argv);
-	const bool       existing_auth_token = auth_token_present(pamh);
-
-	howdy::pam::PromptCoordinator coordinator(
-	    pamh, workaround, ask_auth_tok, existing_auth_token, prompt_coordinator_dependencies(),
-	    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
-
-	if (!coordinator.valid()) {
-		return PAM_SYSTEM_ERR;
-	}
-
-	const howdy::pam::CompareLaunchRequest compare_request = {
-	    .config_path     = runtime_session.config_path(),
-	    .username        = username,
-	    .user_models_dir = runtime_session.user_models_dir(),
-	    .staged_runtime  = runtime_session.staged(),
-	};
-
-	const auto report_input_failure = [&conv_function] -> void {
-		send_conversation_message(
-		    conv_function, PAM_ERROR_MSG,
-		    howdy::pam::translate(
-		        "Failed to send Enter press, waiting for user to press it instead"));
-	};
-	return map_prompt_result(coordinator.run(compare_request, report_input_failure), username,
-	                         config, conv_function);
+	return howdy::pam::auth_flow::identify_with_dependencies(
+	    pamh, arguments, ask_auth_tok, howdy::pam::auth_flow::production_identify_dependencies());
 }
