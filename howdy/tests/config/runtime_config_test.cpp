@@ -91,6 +91,39 @@ auto main() -> int {
 	                                       const std::string                     &message) -> bool {
 		return expect(actual == howdy::native::config_schema::runtime_default_string(id), message);
 	};
+	const auto expect_video_defaults = [&](const howdy::native::VideoConfig &video,
+	                                       const std::string                &source) -> bool {
+		bool matches = true;
+		matches &=
+		    expect_int_default(video.timeout, video_timeout, source + " timeout matches schema");
+		matches &= expect_string_default(video.device_path, video_device_path,
+		                                 source + " device_path matches schema");
+		matches &= expect_bool_default(video.warn_no_device, video_warn_no_device,
+		                               source + " warn_no_device matches schema");
+		matches &= expect_float_default(video.max_height, video_max_height,
+		                                source + " max_height matches schema");
+		matches &= expect_int_default(video.frame_width, video_frame_width,
+		                              source + " frame_width matches schema");
+		matches &= expect_int_default(video.frame_height, video_frame_height,
+		                              source + " frame_height matches schema");
+		matches &= expect_bool_default(video.clahe_enabled, video_clahe_enabled,
+		                               source + " clahe_enabled matches schema");
+		matches &= expect_float_default(video.clahe_clip_limit, video_clahe_clip_limit,
+		                                source + " clahe_clip_limit matches schema");
+		matches &= expect_int_default(video.clahe_tile_grid_size, video_clahe_tile_grid_size,
+		                              source + " clahe_tile_grid_size matches schema");
+		matches &= expect_float_default(video.dark_threshold, video_dark_threshold,
+		                                source + " dark_threshold matches schema");
+		matches &= expect_bool_default(video.force_mjpeg, video_force_mjpeg,
+		                               source + " force_mjpeg matches schema");
+		matches &=
+		    expect_int_default(video.exposure, video_exposure, source + " exposure matches schema");
+		matches &= expect_int_default(video.device_fps, video_device_fps,
+		                              source + " device_fps matches schema");
+		matches &=
+		    expect_int_default(video.rotate, video_rotate, source + " rotate matches schema");
+		return matches;
+	};
 
 	ok &= expect_bool_default(defaults.core.detection_notice, core_detection_notice,
 	                          "core detection_notice struct default matches schema");
@@ -102,34 +135,8 @@ auto main() -> int {
 	                          "core abort_if_lid_closed struct default matches schema");
 	ok &= expect_bool_default(defaults.core.disabled, core_disabled,
 	                          "core disabled struct default matches schema");
-	ok &= expect_int_default(defaults.video.timeout, video_timeout,
-	                         "video timeout struct default matches schema");
-	ok &= expect_string_default(defaults.video.device_path, video_device_path,
-	                            "video device_path struct default matches schema");
-	ok &= expect_bool_default(defaults.video.warn_no_device, video_warn_no_device,
-	                          "video warn_no_device struct default matches schema");
-	ok &= expect_float_default(defaults.video.max_height, video_max_height,
-	                           "video max_height struct default matches schema");
-	ok &= expect_int_default(defaults.video.frame_width, video_frame_width,
-	                         "video frame_width struct default matches schema");
-	ok &= expect_int_default(defaults.video.frame_height, video_frame_height,
-	                         "video frame_height struct default matches schema");
-	ok &= expect_bool_default(defaults.video.clahe_enabled, video_clahe_enabled,
-	                          "video clahe_enabled struct default matches schema");
-	ok &= expect_float_default(defaults.video.clahe_clip_limit, video_clahe_clip_limit,
-	                           "video clahe_clip_limit struct default matches schema");
-	ok &= expect_int_default(defaults.video.clahe_tile_grid_size, video_clahe_tile_grid_size,
-	                         "video clahe_tile_grid_size struct default matches schema");
-	ok &= expect_float_default(defaults.video.dark_threshold, video_dark_threshold,
-	                           "video dark_threshold struct default matches schema");
-	ok &= expect_bool_default(defaults.video.force_mjpeg, video_force_mjpeg,
-	                          "video force_mjpeg struct default matches schema");
-	ok &= expect_int_default(defaults.video.exposure, video_exposure,
-	                         "video exposure struct default matches schema");
-	ok &= expect_int_default(defaults.video.device_fps, video_device_fps,
-	                         "video device_fps struct default matches schema");
-	ok &= expect_int_default(defaults.video.rotate, video_rotate,
-	                         "video rotate struct default matches schema");
+	ok &= expect_video_defaults(howdy::native::default_video_config(), "factory");
+	ok &= expect_video_defaults(defaults.video, "RuntimeConfig default");
 	ok &= expect_float_default(defaults.face.yunet_score_threshold, face_yunet_score_threshold,
 	                           "face yunet_score_threshold struct default matches schema");
 	ok &= expect_float_default(defaults.face.yunet_nms_threshold, face_yunet_nms_threshold,
@@ -155,12 +162,7 @@ auto main() -> int {
 		ok &= expect(config.core.detection_notice ==
 		                 howdy::native::config_schema::runtime_default_bool(core_detection_notice),
 		             "core default loads from schema");
-		ok &= expect(config.video.timeout ==
-		                 howdy::native::config_schema::runtime_default_int(video_timeout),
-		             "video default loads from schema");
-		ok &= expect(config.video.device_path ==
-		                 howdy::native::config_schema::runtime_default_string(video_device_path),
-		             "device default loads from schema");
+		ok &= expect_video_defaults(config.video, "minimal config");
 		ok &= expect(
 		    nearly_equal(config.face.sface_threshold,
 		                 howdy::native::config_schema::runtime_default_float(face_sface_threshold)),

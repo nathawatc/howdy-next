@@ -89,6 +89,27 @@ namespace howdy::native {
 
 	}  // namespace
 
+	auto default_video_config() -> VideoConfig {
+		using enum config_schema::OptionId;
+
+		return {
+		    .timeout        = config_schema::runtime_default_int(video_timeout),
+		    .device_path    = std::string(config_schema::runtime_default_string(video_device_path)),
+		    .warn_no_device = config_schema::runtime_default_bool(video_warn_no_device),
+		    .max_height     = config_schema::runtime_default_float(video_max_height),
+		    .frame_width    = config_schema::runtime_default_int(video_frame_width),
+		    .frame_height   = config_schema::runtime_default_int(video_frame_height),
+		    .clahe_enabled  = config_schema::runtime_default_bool(video_clahe_enabled),
+		    .clahe_clip_limit     = config_schema::runtime_default_float(video_clahe_clip_limit),
+		    .clahe_tile_grid_size = config_schema::runtime_default_int(video_clahe_tile_grid_size),
+		    .dark_threshold       = config_schema::runtime_default_float(video_dark_threshold),
+		    .force_mjpeg          = config_schema::runtime_default_bool(video_force_mjpeg),
+		    .exposure             = config_schema::runtime_default_int(video_exposure),
+		    .device_fps           = config_schema::runtime_default_int(video_device_fps),
+		    .rotate               = config_schema::runtime_default_int(video_rotate),
+		};
+	}
+
 	auto load_runtime_config(const std::filesystem::path &config_path,
 	                         const std::optional<uid_t>   owner_uid) -> RuntimeConfigLoadResult {
 		const auto security = check_secure_config_path(config_path, owner_uid);

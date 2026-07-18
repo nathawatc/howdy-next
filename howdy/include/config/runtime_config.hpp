@@ -24,32 +24,23 @@ namespace howdy::native {
 	};
 
 	struct VideoConfig {
-		int timeout = config_schema::runtime_default_int(config_schema::OptionId::video_timeout);
-		std::string device_path = std::string(
-		    config_schema::runtime_default_string(config_schema::OptionId::video_device_path));
-		bool warn_no_device =
-		    config_schema::runtime_default_bool(config_schema::OptionId::video_warn_no_device);
-		float max_height =
-		    config_schema::runtime_default_float(config_schema::OptionId::video_max_height);
-		int frame_width =
-		    config_schema::runtime_default_int(config_schema::OptionId::video_frame_width);
-		int frame_height =
-		    config_schema::runtime_default_int(config_schema::OptionId::video_frame_height);
-		bool clahe_enabled =
-		    config_schema::runtime_default_bool(config_schema::OptionId::video_clahe_enabled);
-		float clahe_clip_limit =
-		    config_schema::runtime_default_float(config_schema::OptionId::video_clahe_clip_limit);
-		int clahe_tile_grid_size =
-		    config_schema::runtime_default_int(config_schema::OptionId::video_clahe_tile_grid_size);
-		float dark_threshold =
-		    config_schema::runtime_default_float(config_schema::OptionId::video_dark_threshold);
-		bool force_mjpeg =
-		    config_schema::runtime_default_bool(config_schema::OptionId::video_force_mjpeg);
-		int exposure = config_schema::runtime_default_int(config_schema::OptionId::video_exposure);
-		int device_fps =
-		    config_schema::runtime_default_int(config_schema::OptionId::video_device_fps);
-		int rotate = config_schema::runtime_default_int(config_schema::OptionId::video_rotate);
+		int         timeout{};
+		std::string device_path;
+		bool        warn_no_device{};
+		float       max_height{};
+		int         frame_width{};
+		int         frame_height{};
+		bool        clahe_enabled{};
+		float       clahe_clip_limit{};
+		int         clahe_tile_grid_size{};
+		float       dark_threshold{};
+		bool        force_mjpeg{};
+		int         exposure{};
+		int         device_fps{};
+		int         rotate{};
 	};
+
+	auto default_video_config() -> VideoConfig;
 
 	struct FaceConfig {
 		float yunet_score_threshold = config_schema::runtime_default_float(
@@ -78,7 +69,7 @@ namespace howdy::native {
 
 	struct RuntimeConfig {
 		CoreConfig     core;
-		VideoConfig    video;
+		VideoConfig    video = default_video_config();
 		FaceConfig     face;
 		SnapshotConfig snapshots;
 		DebugConfig    debug;

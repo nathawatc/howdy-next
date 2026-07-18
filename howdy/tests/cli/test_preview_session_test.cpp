@@ -138,7 +138,7 @@ namespace {
 
 	auto first_frame_quit_restores_configured_exposure() -> bool {
 		SessionContext             context;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
@@ -163,7 +163,7 @@ namespace {
 	}
 
 	auto retained_production_frame_supports_two_preview_runs() -> bool {
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                                = false;
 		config.dark_threshold                               = 100.0F;
 		auto                                  preview_frame = gray_frame();
@@ -197,7 +197,7 @@ namespace {
 
 	auto renderer_owns_configuration_and_models() -> bool {
 		auto make_renderer = [] -> test_cli_internal::TestPreviewRenderer {
-			howdy::native::VideoConfig config;
+			howdy::native::VideoConfig config{};
 			config.clahe_enabled = false;
 			std::vector<howdy::native::EncodingModelInfo> models;
 			return {config, std::move(models)};
@@ -248,7 +248,7 @@ namespace {
 
 	auto repeated_preview_replacement_cleans_initialized_renderer_first() -> bool {
 		RendererLifecycleContext                                 context;
-		howdy::native::VideoConfig                               config;
+		howdy::native::VideoConfig                               config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = initialize_renderer,
@@ -280,7 +280,7 @@ namespace {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig                               config;
+		howdy::native::VideoConfig                               config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = initialize_renderer,
@@ -316,7 +316,7 @@ namespace {
 	auto callback_success_window_failure_retries_only_window() -> bool {
 		RendererLifecycleContext context;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig                               config;
+		howdy::native::VideoConfig                               config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = initialize_renderer,
@@ -354,7 +354,7 @@ namespace {
 	auto callback_failure_window_success_retries_only_callback() -> bool {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
-		howdy::native::VideoConfig                               config;
+		howdy::native::VideoConfig                               config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = initialize_renderer,
@@ -390,7 +390,7 @@ namespace {
 
 	auto renderer_default_cleanup_is_ordered_and_idempotent() -> bool {
 		RendererLifecycleContext               context;
-		howdy::native::VideoConfig             config;
+		howdy::native::VideoConfig             config{};
 		test_cli_internal::TestPreviewRenderer renderer(
 		    config, {},
 		    {.context        = &context,
@@ -415,7 +415,7 @@ namespace {
 	auto renderer_failed_initialize_rolls_back() -> bool {
 		RendererLifecycleContext context;
 		context.fail_initialize = true;
-		howdy::native::VideoConfig             config;
+		howdy::native::VideoConfig             config{};
 		test_cli_internal::TestPreviewRenderer renderer(
 		    config, {},
 		    {.context        = &context,
@@ -445,7 +445,7 @@ namespace {
 	auto renderer_shutdown_finishes_after_callback_error() -> bool {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
-		howdy::native::VideoConfig             config;
+		howdy::native::VideoConfig             config{};
 		test_cli_internal::TestPreviewRenderer renderer(
 		    config, {},
 		    {.context        = &context,
@@ -481,7 +481,7 @@ namespace {
 		context.fail_initialize     = true;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig             config;
+		howdy::native::VideoConfig             config{};
 		test_cli_internal::TestPreviewRenderer renderer(
 		    config, {},
 		    {.context        = &context,
@@ -510,7 +510,7 @@ namespace {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig             config;
+		howdy::native::VideoConfig             config{};
 		test_cli_internal::TestPreviewRenderer renderer(
 		    config, {},
 		    {.context        = &context,
@@ -547,7 +547,7 @@ namespace {
 		RendererLifecycleContext renderer_context;
 		renderer_context.fail_clear_callback = true;
 		renderer_context.fail_destroy_window = true;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 
 		std::string error_message;
 		try {
@@ -577,7 +577,7 @@ namespace {
 
 	auto disabled_exposure_skips_restore() -> bool {
 		SessionContext             context;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = -1;
@@ -596,7 +596,7 @@ namespace {
 	auto camera_read_failure_after_prefetch_maps_to_camera_error() -> bool {
 		SessionContext context;
 		context.stop_after = 2;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
@@ -622,7 +622,7 @@ namespace {
 		context.frames.push_back(gray_frame());
 		context.slow_mode  = true;
 		context.stop_after = 2;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
@@ -646,7 +646,7 @@ namespace {
 	auto inference_failure_stops_before_presenter() -> bool {
 		SessionContext context;
 		context.invalid_prepare = true;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
@@ -668,7 +668,7 @@ namespace {
 
 	auto missing_dependency_fails_closed() -> bool {
 		SessionContext             context;
-		howdy::native::VideoConfig config;
+		howdy::native::VideoConfig config{};
 		config.clahe_enabled  = false;
 		config.dark_threshold = 100.0F;
 		auto engine           = make_engine(context, config);
