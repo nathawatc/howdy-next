@@ -1,7 +1,6 @@
 #include "config/config_schema.hpp"
 
 #include <array>
-#include <cassert>
 #include <cstdlib>
 
 namespace howdy::native::config_schema {
@@ -233,7 +232,6 @@ namespace howdy::native::config_schema {
 				return option;
 			}
 		}
-		assert(false);
 		std::abort();
 	}
 
@@ -248,7 +246,6 @@ namespace howdy::native::config_schema {
 
 	auto runtime_default_bool(OptionId id) -> bool {
 		const auto &fallback = runtime_config_option(id).fallback;
-		assert(fallback.has_boolean);
 		if (!fallback.has_boolean) {
 			std::abort();
 		}
@@ -257,7 +254,6 @@ namespace howdy::native::config_schema {
 
 	auto runtime_default_int(OptionId id) -> int {
 		const auto &fallback = runtime_config_option(id).fallback;
-		assert(fallback.has_integer);
 		if (!fallback.has_integer) {
 			std::abort();
 		}
@@ -266,7 +262,6 @@ namespace howdy::native::config_schema {
 
 	auto runtime_default_float(OptionId id) -> float {
 		const auto &fallback = runtime_config_option(id).fallback;
-		assert(fallback.has_floating_point);
 		if (!fallback.has_floating_point) {
 			std::abort();
 		}
@@ -275,7 +270,6 @@ namespace howdy::native::config_schema {
 
 	auto runtime_default_string(OptionId id) -> std::string_view {
 		const auto &fallback = runtime_config_option(id).fallback;
-		assert(fallback.has_string);
 		if (!fallback.has_string) {
 			std::abort();
 		}
