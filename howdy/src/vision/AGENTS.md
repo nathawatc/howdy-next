@@ -1,6 +1,6 @@
 # Core Face Pipeline Guidelines
 
-**Updated:** 2026-07-16
+**Updated:** 2026-07-18
 
 ## Scope
 

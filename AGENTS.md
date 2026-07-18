@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-07-16
+**Updated:** 2026-07-18
 
 ## Scope
 
@@ -87,27 +87,33 @@ Tests in `howdy/tests/` and `pam/tests/`. Add focused `*_test.cpp` under matchin
 
 Current test files of interest:
 
-- Dispatcher / install layout: `howdy_dispatch_test.cpp`, `install_layout_test.sh`
+- Dispatcher / install layout: `howdy_dispatch_test.cpp`, `howdy_main_test.cpp`,
+  `install_layout_test.sh`, `privileged_install_paths_test.sh`
 - CLI: `add_cli_test.cpp`, `clear_cli_test.cpp`, `config_cli_test.cpp`,
   `disable_cli_test.cpp`, `download_models_test.cpp`, `enrollment_capture_test.cpp`,
   `list_cli_test.cpp`, `remove_cli_test.cpp`, `set_cli_test.cpp`,
-  `snapshot_cli_test.cpp`, `test_cli_test.cpp`
+  `snapshot_cli_test.cpp`, `snapshot_writer_test.cpp`, `test_cli_test.cpp`,
+  `test_preview_session_test.cpp`
 - Compare / capture: `compare_args_test.cpp`, `compare_capture_session_test.cpp`,
-  `compare_engine_test.cpp`, `compare_logic_test.cpp`, `face_detection_test.cpp`,
+  `compare_engine_test.cpp`, `compare_logic_test.cpp`, `compare_privileges_test.cpp`,
+  `compare_processing_test.cpp`, `compare_sandbox_test.cpp`, `face_detection_test.cpp`,
   `face_encoding_test.cpp`, `face_matching_test.cpp`, `face_model_test.cpp`,
-  `frame_processing_test.cpp`, `preview_engine_test.cpp`,
-  `test_preview_session_test.cpp`, `video_capture_test.cpp`
+  `frame_processing_test.cpp`, `preview_engine_test.cpp`, `video_capture_test.cpp`
 - Config / storage / utilities: `capture_device_path_test.cpp`,
   `config_reader_test.cpp`, `config_utils_test.cpp`, `config_validation_test.cpp`,
   `fd_io_test.cpp`, `file_security_test.cpp`, `invoking_user_env_test.cpp`,
   `model_file_test.cpp`, `runtime_config_load_test.cpp`, `runtime_config_test.cpp`,
-  `runtime_paths_test.cpp`, `user_model_codec_test.cpp`, `user_models_test.cpp`,
-  `user_names_test.cpp`
-- PAM / auth flow: `auth_flow_helpers_test.cpp`, `auth_helper_test.cpp`,
-  `main_entrypoints_test.cpp`, `native_prompt_conversation_test.cpp`,
-  `optional_task_test.cpp`, `prompt_coordinator_test.cpp`,
-  `prompt_workaround_test.cpp`, `runtime_session_test.cpp`,
-  `status_mapping_test.cpp`
+  `runtime_paths_test.cpp`, `user_model_codec_test.cpp`,
+  `user_models_failure_test.cpp`, `user_models_mutation_test.cpp`,
+  `user_models_test.cpp`, `user_names_test.cpp`
+- Auth helper: `auth_helper_path_test.cpp`, `auth_helper_staging_test.cpp`,
+  `auth_helper_test.cpp`
+- PAM / auth flow: `auth_flow_helpers_test.cpp`, `main_entrypoints_test.cpp`,
+  `native_prompt_conversation_test.cpp`, `optional_task_test.cpp`,
+  `prompt_coordinator_adapter_test.cpp`, `prompt_coordinator_modes_test.cpp`,
+  `prompt_coordinator_test.cpp`, `prompt_workaround_test.cpp`,
+  `runtime_session_deadline_test.cpp`, `runtime_session_spawn_test.cpp`,
+  `runtime_session_test.cpp`, `status_mapping_test.cpp`
 
 Unified dispatcher and install-layout coverage:
 `native-howdy-dispatch`, `native-howdy-install-layout`.

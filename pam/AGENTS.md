@@ -1,6 +1,6 @@
 # PAM Module Knowledge Base
 
-**Updated:** 2026-07-16
+**Updated:** 2026-07-18
 
 ## Scope
 
@@ -8,22 +8,26 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 
 ## Where to Look
 
-| File                                       | Role                                                                                      |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `src/module/main.cpp`                      | PAM module entry points                                                                   |
-| `src/module/auth_flow.cpp`                 | Auth policy, readiness, status mapping, coordinator                                       |
-| `src/runtime/runtime_session.cpp`          | Auth-helper staging, typed config load, staged cleanup                                    |
-| `src/prompt/prompt_coordinator.cpp`        | Compare lifecycle and prompt coordination                                                 |
-| `include/runtime/runtime_session.hpp`      | One-shot staged runtime/config boundary                                                   |
-| `include/prompt/prompt_coordinator.hpp`    | Compare launch and prompt-race boundary                                                   |
-| `src/prompt/enter_device.cpp`              | Virtual keyboard helper that sends Enter                                                  |
-| `src/module/status_mapping.cpp`            | Status and confirmation text mapping                                                      |
-| `tests/runtime/runtime_session_test.cpp`   | Runtime staging, config, cleanup, one-shot tests                                          |
-| `tests/prompt/prompt_coordinator_test.cpp` | Prompt, compare-process, cleanup, one-shot tests                                          |
-| `tests/module/auth_flow_helpers_test.cpp`  | Auth-flow helpers and policy-adjacent tests                                               |
-| `include/module/main.hpp`                  | `ConfirmationType`, `Workaround` (`off`, `input`, `native`, `native-input`), `checkenv()` |
-| `include/prompt/optional_task.hpp`         | Async task wrapper with timeout support                                                   |
-| `CMakeLists.txt`                           | PAM build configuration                                                                   |
+| File                                               | Role                                                                                      |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `src/module/main.cpp`                              | PAM module entry points                                                                   |
+| `src/module/auth_flow.cpp`                         | Auth policy, readiness, status mapping, coordinator                                       |
+| `src/runtime/runtime_session.cpp`                  | Auth-helper staging, typed config load, staged cleanup                                    |
+| `src/prompt/prompt_coordinator.cpp`                | Compare lifecycle and prompt coordination                                                 |
+| `include/runtime/runtime_session.hpp`              | One-shot staged runtime/config boundary                                                   |
+| `include/prompt/prompt_coordinator.hpp`            | Compare launch and prompt-race boundary                                                   |
+| `src/prompt/enter_device.cpp`                      | Virtual keyboard helper that sends Enter                                                  |
+| `src/module/status_mapping.cpp`                    | Status and confirmation text mapping                                                      |
+| `tests/runtime/runtime_session_test.cpp`           | Core runtime-session tests and split-suite entry point                                    |
+| `tests/runtime/runtime_session_spawn_test.cpp`     | Helper spawn and process-path tests                                                       |
+| `tests/runtime/runtime_session_deadline_test.cpp`  | Helper deadline and timeout tests                                                         |
+| `tests/prompt/prompt_coordinator_test.cpp`         | Core coordinator tests and split-suite entry point                                        |
+| `tests/prompt/prompt_coordinator_modes_test.cpp`   | Native/input workaround mode tests                                                        |
+| `tests/prompt/prompt_coordinator_adapter_test.cpp` | Production adapter tests                                                                  |
+| `tests/module/auth_flow_helpers_test.cpp`          | Auth-flow helpers and policy-adjacent tests                                               |
+| `include/module/main.hpp`                          | `ConfirmationType`, `Workaround` (`off`, `input`, `native`, `native-input`), `checkenv()` |
+| `include/prompt/optional_task.hpp`                 | Async task wrapper with timeout support                                                   |
+| `CMakeLists.txt`                                   | PAM build configuration                                                                   |
 
 ## Conventions
 
@@ -46,6 +50,8 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 - Never auto-terminate on success; PAM waits for user input.
 - Use `WIFEXITED` and `WIFSIGNALED` to inspect child status.
 - Keep every `conv_function` and syslog path fully handled.
+- Preserve PAM-owned authentication tokens as `const char *`; do not cast away
+  constness or assume ownership of memory returned by PAM.
 - Treat runtime config load failures or missing typed config values as `PAM_SYSTEM_ERR`.
 - Prefer pthread and standard C++ synchronization over `_thread`.
 - Auth helper output parsed via `parse_auth_helper_output()`; rejects malformed

@@ -1,6 +1,6 @@
 # Howdy Package Guidelines
 
-**Updated:** 2026-07-16
+**Updated:** 2026-07-18
 
 ## Scope
 
@@ -21,6 +21,9 @@ read `howdy/src/vision/AGENTS.md`.
   feature code.
 - Runtime consumers should use typed `RuntimeConfig`, `VideoConfig`, and
   `FaceConfig` values instead of direct `ConfigReader` key lookups.
+- Keep option metadata and packaged fallback values centralized in
+  `config/config_schema.*`; derive runtime-only defaults in
+  `src/config/runtime_config_defaults.cpp` instead of duplicating literals.
 - `RuntimeConfigLoadResult::config` is optional; check status and
   `config.has_value()` before dereferencing.
 - Keep runtime behavior fail-closed on validation or ownership errors.
@@ -51,6 +54,9 @@ read `howdy/src/vision/AGENTS.md`.
 - Use `face_detection_test.cpp` for pure YuNet-result parsing and
   `user_model_codec_test.cpp` for codec grammar/security regressions; neither
   requires real ONNX inference.
+- Split broad storage regressions by behavior: baseline reads in
+  `user_models_test.cpp`, mutation paths in `user_models_mutation_test.cpp`, and
+  failure/security paths in `user_models_failure_test.cpp`.
 - Enrollment capture logic lives in `cli/enrollment_capture.hpp` (template
   `capture_enrollment_sample()`); classify failures with
   `classify_enrollment_capture_failure()`.
