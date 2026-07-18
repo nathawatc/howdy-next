@@ -215,6 +215,8 @@ if(BUILD_TESTING)
 	add_executable(
 		howdy_auth_helper_test
 		tests/auth_helper/auth_helper_test.cpp
+		tests/auth_helper/auth_helper_path_test.cpp
+		tests/auth_helper/auth_helper_staging_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_auth_helper_test)
 	target_link_libraries(howdy_auth_helper_test PRIVATE howdy_auth_helper_core)
@@ -359,7 +361,12 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-config-validation COMMAND howdy_config_validation_test)
 
-	add_executable(howdy_user_models_test tests/storage/user_models_test.cpp)
+	add_executable(
+		howdy_user_models_test
+		tests/storage/user_models_test.cpp
+		tests/storage/user_models_mutation_test.cpp
+		tests/storage/user_models_failure_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_user_models_test)
 	target_link_libraries(
 		howdy_user_models_test

@@ -124,6 +124,8 @@ if(BUILD_TESTING)
 		pam_prompt_coordinator_test
 		pam-prompt-coordinator
 		tests/prompt/prompt_coordinator_test.cpp
+		tests/prompt/prompt_coordinator_modes_test.cpp
+		tests/prompt/prompt_coordinator_adapter_test.cpp
 	)
 	target_link_libraries(
 		pam_prompt_coordinator_test
@@ -134,6 +136,8 @@ if(BUILD_TESTING)
 		pam_runtime_session_test
 		pam-runtime-session
 		tests/runtime/runtime_session_test.cpp
+		tests/runtime/runtime_session_spawn_test.cpp
+		tests/runtime/runtime_session_deadline_test.cpp
 	)
 	target_compile_definitions(
 		pam_runtime_session_test
