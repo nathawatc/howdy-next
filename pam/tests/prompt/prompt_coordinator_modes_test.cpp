@@ -329,7 +329,7 @@ namespace {
 			return false;
 		}
 
-		optional_task<std::tuple<int, char *>> pass_task([] -> std::tuple<int, char *> {
+		optional_task<std::tuple<int, const char *>> pass_task([] -> std::tuple<int, const char *> {
 			return {PAM_SUCCESS, nullptr};
 		});
 		pass_task.activate();

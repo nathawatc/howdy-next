@@ -790,7 +790,8 @@ namespace {
 		                                     pam_handle_t *) -> std::unique_ptr<NativePrompt> {
 			return nullptr;
 		};
-		const auto request_auth_token = [](void *, pam_handle_t *) -> std::tuple<int, char *> {
+		const auto request_auth_token = [](void *,
+		                                   pam_handle_t *) -> std::tuple<int, const char *> {
 			return {PAM_SUCCESS, nullptr};
 		};
 
@@ -964,10 +965,11 @@ namespace {
 
 		bool ok = true;
 
-		optional_task<std::tuple<int, char *>> inactive_task([] -> std::tuple<int, char *> {
-			return {PAM_SUCCESS, nullptr};
-		});
-		const PromptStopPlan                   no_stop_plan{
+		optional_task<std::tuple<int, const char *>> inactive_task(
+		    [] -> std::tuple<int, const char *> {
+			    return {PAM_SUCCESS, nullptr};
+		    });
+		const PromptStopPlan no_stop_plan{
 		    .stop_prompt  = false,
 		    .abort_prompt = false,
 		    .send_enter   = false,
@@ -978,9 +980,10 @@ namespace {
 		             "no-stop plan returns default prompt stop result");
 		ok &= expect(!inactive_task.active(), "no-stop plan leaves inactive task inactive");
 
-		optional_task<std::tuple<int, char *>> ready_task([] -> std::tuple<int, char *> {
-			return {PAM_SUCCESS, nullptr};
-		});
+		optional_task<std::tuple<int, const char *>> ready_task(
+		    [] -> std::tuple<int, const char *> {
+			    return {PAM_SUCCESS, nullptr};
+		    });
 		ready_task.activate();
 		ok &= expect(ready_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
 		             "ready prompt task finishes before stop");
@@ -997,8 +1000,8 @@ namespace {
 		ok &= expect(std::get<0>(ready_task.get()) == PAM_SUCCESS,
 		             "stopped ready prompt keeps task result");
 
-		optional_task<std::tuple<int, char *>> abort_without_native_prompt(
-		    [] -> std::tuple<int, char *> {
+		optional_task<std::tuple<int, const char *>> abort_without_native_prompt(
+		    [] -> std::tuple<int, const char *> {
 			    return {PAM_CONV_ERR, nullptr};
 		    });
 		abort_without_native_prompt.activate();
@@ -1017,9 +1020,10 @@ namespace {
 		ok &= expect(!abort_without_native_prompt.active(),
 		             "abort plan deactivates prompt task without native prompt");
 
-		optional_task<std::tuple<int, char *>> ready_input_task([] -> std::tuple<int, char *> {
-			return {PAM_SUCCESS, nullptr};
-		});
+		optional_task<std::tuple<int, const char *>> ready_input_task(
+		    [] -> std::tuple<int, const char *> {
+			    return {PAM_SUCCESS, nullptr};
+		    });
 		ready_input_task.activate();
 		ok &= expect(ready_input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
 		             "ready input prompt task finishes before stop");

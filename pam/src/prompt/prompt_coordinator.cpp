@@ -49,11 +49,10 @@ namespace {
 	}
 
 	auto request_auth_token_dependency(void *context, pam_handle_t *pamh)
-	    -> std::tuple<int, char *> {
+	    -> std::tuple<int, const char *> {
 		(void)context;
-		char     *auth_tok_ptr = nullptr;
-		const int auth_result =
-		    pam_get_authtok(pamh, PAM_AUTHTOK, const_cast<const char **>(&auth_tok_ptr), nullptr);
+		const char *auth_tok_ptr = nullptr;
+		const int   auth_result  = pam_get_authtok(pamh, PAM_AUTHTOK, &auth_tok_ptr, nullptr);
 
 		return {auth_result, auth_tok_ptr};
 	}
@@ -73,8 +72,8 @@ namespace {
 
 namespace howdy::pam {
 
-	void cleanup_native_prompt(optional_task<std::tuple<int, char *>> *pass_task,
-	                           NativePrompt                           *native_prompt) noexcept {
+	void cleanup_native_prompt(optional_task<std::tuple<int, const char *>> *pass_task,
+	                           NativePrompt *native_prompt) noexcept {
 		if (pass_task == nullptr || native_prompt == nullptr) {
 			return;
 		}
@@ -92,7 +91,7 @@ namespace howdy::pam {
 		}
 	}
 
-	auto request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
+	auto request_password_prompt_stop(optional_task<std::tuple<int, const char *>> &pass_task,
 	                                  const PromptStopPlan &plan, NativePrompt *native_prompt,
 	                                  EnterDevice *enter_device) -> PromptStopResult {
 		PromptStopResult result;
@@ -138,8 +137,8 @@ namespace howdy::pam {
 
 	namespace {
 		struct NativePromptCleanupGuard {
-			optional_task<std::tuple<int, char *>> *pass_task     = nullptr;
-			NativePrompt                           *native_prompt = nullptr;
+			optional_task<std::tuple<int, const char *>> *pass_task     = nullptr;
+			NativePrompt                                 *native_prompt = nullptr;
 
 			~NativePromptCleanupGuard() {
 				cleanup_native_prompt(pass_task, native_prompt);
@@ -262,8 +261,8 @@ namespace howdy::pam {
 	}
 
 	auto PromptCoordinator::start_password_task(bool ask_pass)
-	    -> optional_task<std::tuple<int, char *>> & {
-		auto &task = pass_task_.emplace([this] -> std::tuple<int, char *> {
+	    -> optional_task<std::tuple<int, const char *>> & {
+		auto &task = pass_task_.emplace([this] -> std::tuple<int, const char *> {
 			auto result = dependencies_.request_auth_token(dependencies_.context, pamh_);
 			{
 				std::unique_lock<std::mutex> lock(mutex_);

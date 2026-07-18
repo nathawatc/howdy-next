@@ -422,7 +422,8 @@ namespace howdy::test::prompt_coordinator {
 		return std::make_unique<FakeNativePrompt>(&fake);
 	}
 
-	inline auto request_auth_token(void *context, pam_handle_t *pamh) -> std::tuple<int, char *> {
+	inline auto request_auth_token(void *context, pam_handle_t *pamh)
+	    -> std::tuple<int, const char *> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
 		if (fake.request_native_prompt) {

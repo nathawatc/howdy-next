@@ -35,7 +35,7 @@ namespace howdy::pam {
 	using CreateNativePromptFn = std::unique_ptr<NativePrompt> (*)(void         *context,
 	                                                               pam_handle_t *pamh);
 
-	using RequestAuthTokenFn = std::tuple<int, char *> (*)(void *context, pam_handle_t *pamh);
+	using RequestAuthTokenFn = std::tuple<int, const char *> (*)(void *context, pam_handle_t *pamh);
 
 	struct PromptCoordinatorDependencies {
 		void                     *context                  = nullptr;
@@ -70,11 +70,11 @@ namespace howdy::pam {
 	};
 
 	__attribute__((visibility("hidden"))) void
-	cleanup_native_prompt(optional_task<std::tuple<int, char *>> *pass_task,
-	                      NativePrompt                           *native_prompt) noexcept;
+	cleanup_native_prompt(optional_task<std::tuple<int, const char *>> *pass_task,
+	                      NativePrompt                                 *native_prompt) noexcept;
 
 	__attribute__((visibility("hidden"))) auto
-	request_password_prompt_stop(optional_task<std::tuple<int, char *>> &pass_task,
+	request_password_prompt_stop(optional_task<std::tuple<int, const char *>> &pass_task,
 	                             const PromptStopPlan &plan, NativePrompt *native_prompt,
 	                             EnterDevice *enter_device) -> PromptStopResult;
 
@@ -102,7 +102,7 @@ namespace howdy::pam {
 		    -> optional_task<int> &;
 		[[nodiscard]] auto configure_prompt_workaround() -> bool;
 		void               configure_input_workaround();
-		auto start_password_task(bool ask_pass) -> optional_task<std::tuple<int, char *>> &;
+		auto start_password_task(bool ask_pass) -> optional_task<std::tuple<int, const char *>> &;
 
 		pam_handle_t                       *pamh_                 = nullptr;
 		Workaround                          requested_workaround_ = Workaround::Off;
@@ -116,7 +116,7 @@ namespace howdy::pam {
 		std::unique_ptr<NativePrompt>       native_prompt_;
 		std::unique_ptr<EnterDevice>        enter_device_;
 		std::optional<optional_task<int>>   child_task_;
-		std::optional<optional_task<std::tuple<int, char *>>> pass_task_;
+		std::optional<optional_task<std::tuple<int, const char *>>> pass_task_;
 		Workaround effective_workaround_ = Workaround::Off;
 		bool       run_started_          = false;
 	};

@@ -40,8 +40,8 @@ namespace {
 		return WIFEXITED(status) && WEXITSTATUS(status) == static_cast<int>(exit_code);
 	}
 
-	auto get_username(pam_handle_t *pamh, char **username) -> int {
-		const int result = pam_get_user(pamh, const_cast<const char **>(username), nullptr);
+	auto get_username(pam_handle_t *pamh, const char **username) -> int {
+		const int result = pam_get_user(pamh, username, nullptr);
 		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
 			syslog(LOG_ERR, "Failed to get username");
 			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
@@ -270,8 +270,8 @@ namespace howdy::pam::auth_flow {
 			return PAM_SYSTEM_ERR;
 		}
 
-		char *username = nullptr;
-		int   pam_res  = get_username(pamh, &username);
+		const char *username = nullptr;
+		int         pam_res  = get_username(pamh, &username);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
