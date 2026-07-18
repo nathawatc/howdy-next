@@ -58,8 +58,12 @@ howdy download-models
 - Follow `.clang-format`.
 - snake_case for files, functions, tests.
 - Preserve tabs in touched C/C++ files.
-- Keep the Cargo-style layout: mirror modules across `include/`, `src/`, and `tests/` when applicable;
-  keep resources outside `src/`.
+- Keep package modules mirrored across `include/<module>/`, `src/<module>/`,
+  and `tests/<module>/` when applicable.
+- Place headers shared only by test translation units under
+  `tests/include/<module>/`; never expose test include directories to
+  production targets.
+- Keep resources outside `src/`.
 - Reuse shared helpers for storage, config, readiness, model checks.
 - Runtime code should load typed `RuntimeConfig` via `load_runtime_config()`,
   not raw `ConfigReader` lookups.
