@@ -5,11 +5,9 @@
 #include "test_support.hpp"
 
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -29,16 +27,6 @@ namespace {
 		}
 		out << content;
 		return out.good();
-	}
-
-	auto trim(std::string_view value) -> std::string_view {
-		while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())) != 0) {
-			value.remove_prefix(1);
-		}
-		while (!value.empty() && std::isspace(static_cast<unsigned char>(value.back())) != 0) {
-			value.remove_suffix(1);
-		}
-		return value;
 	}
 
 	auto option_name(const howdy::native::config_schema::Option &option) -> std::string {
@@ -74,40 +62,70 @@ namespace {
 		return ok;
 	}
 
-	auto packaged_config_keys_are_known(const std::filesystem::path &path) -> bool {
-		std::ifstream input(path);
-		if (!input.is_open()) {
-			std::cerr << "FAIL: open packaged config: " << path << "\n";
-			return false;
+	auto fallback_value(const howdy::native::config_schema::Option &option) -> std::string {
+		using enum howdy::native::config_schema::ValueType;
+		switch (option.type) {
+			case boolean:
+				return option.fallback.boolean ? "true" : "false";
+			case integer:
+				return std::to_string(option.fallback.integer);
+			case floating_point:
+				return std::to_string(option.fallback.floating_point);
+			case string:
+				return std::string(option.fallback.string);
+		}
+		return {};
+	}
+
+	auto packaged_config_matches_schema(const howdy::native::ConfigReader &config) -> bool {
+		using enum howdy::native::config_schema::ValueType;
+
+		bool ok = true;
+		for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			const auto section = std::string(option.section);
+			const auto key     = std::string(option.key);
+			const auto name    = option_name(option);
+			if (!config.has_value(section, key)) {
+				ok &= expect(false, "packaged config contains schema option: " + name);
+				continue;
+			}
+
+			bool matches = false;
+			switch (option.type) {
+				case boolean:
+					matches = config.get_bool(section, key, !option.fallback.boolean) ==
+					          option.fallback.boolean;
+					break;
+				case integer:
+					matches = config.get_int(section, key, 0) == option.fallback.integer;
+					break;
+				case floating_point:
+					matches =
+					    config.get_float(section, key, 0.0F) == option.fallback.floating_point;
+					break;
+				case string:
+					matches = config.get(section, key, {}) == option.fallback.string;
+					break;
+			}
+			const auto shipped = config.get(section, key, {});
+			auto       message = name;
+			message += " fallback=";
+			message += fallback_value(option);
+			message += " shipped=";
+			message += shipped;
+			ok &= expect(matches, message);
 		}
 
-		bool        ok = true;
-		std::string section;
-		std::string line;
-		while (std::getline(input, line)) {
-			const auto comment = line.find('#');
-			if (comment != std::string::npos) {
-				line.resize(comment);
+		for (const auto &section : config.sections()) {
+			for (const auto &key : config.keys(section)) {
+				auto message = std::string("packaged config key is known by schema: ");
+				message += section;
+				message += ".";
+				message += key;
+				ok &= expect(howdy::native::config_schema::runtime_config_option(section, key) !=
+				                 nullptr,
+				             message);
 			}
-			const auto stripped = trim(line);
-			if (stripped.empty()) {
-				continue;
-			}
-			if (stripped.front() == '[' && stripped.back() == ']') {
-				section = std::string(trim(stripped.substr(1, stripped.size() - 2)));
-				continue;
-			}
-
-			const auto separator = stripped.find('=');
-			if (separator == std::string_view::npos) {
-				ok &= expect(false, "packaged config line is not section or key-value: " +
-				                        std::string(stripped));
-				continue;
-			}
-			const auto key = trim(stripped.substr(0, separator));
-			ok &= expect(
-			    howdy::native::config_schema::runtime_config_option(section, key) != nullptr,
-			    "packaged config key is known by schema: " + section + "." + std::string(key));
 		}
 		return ok;
 	}
@@ -148,13 +166,13 @@ auto main() -> int {
 
 	ok &= expect(schema_option_ids_are_unique_and_resolvable(),
 	             "schema option ids are unique and resolvable");
-	ok &= expect(packaged_config_keys_are_known(packaged_config),
-	             "all packaged config keys are known by schema");
 	const howdy::native::ConfigReader packaged_reader(packaged_config.string());
 	ok &= expect(packaged_reader.ok(), "packaged config parses");
 	if (packaged_reader.ok()) {
 		ok &= expect(!howdy::native::validate_runtime_config(packaged_reader).has_value(),
 		             "packaged config values validate against schema");
+		ok &= expect(packaged_config_matches_schema(packaged_reader),
+		             "packaged config matches schema fallbacks");
 	}
 
 	ok &= expect(validates(temp_root / "device-fps-zero.ini", "[video]\ndevice_fps = 0\n"),

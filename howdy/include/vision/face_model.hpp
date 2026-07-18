@@ -54,8 +54,8 @@ namespace howdy::native {
 		bool                          ok_             = false;
 		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;
 		std::string                   error_message_;
-		std::string                   metric_    = "cosine";
-		float                         threshold_ = 0.363F;
+		std::string                   metric_ = "cosine";
+		float                         threshold_;
 		cv::Size                      input_size_{320, 320};
 		cv::Ptr<cv::FaceDetectorYN>   detector_;
 		cv::Ptr<cv::FaceRecognizerSF> recognizer_;

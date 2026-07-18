@@ -25,7 +25,7 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih, opencv>=5.0.0, qt6-base, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
+glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, qt6-base, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
 ```
 
 Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.

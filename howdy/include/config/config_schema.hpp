@@ -96,8 +96,6 @@ namespace howdy::native::config_schema {
 		return {.has_string = true, .string = value};
 	}
 
-	inline constexpr float sface_cosine_threshold_default = 0.363F;
-	inline constexpr float sface_other_threshold_default  = 1.128F;
 	inline constexpr float sface_cosine_threshold_maximum = 1.0F;
 
 	auto runtime_config_options() -> std::span<const Option>;

@@ -42,4 +42,17 @@ namespace howdy::native {
 		return reader_.GetBoolean(section, name, fallback);
 	}
 
+	auto ConfigReader::sections() const -> std::vector<std::string> {
+		return reader_.Sections();
+	}
+
+	auto ConfigReader::keys(const std::string &section) const -> std::vector<std::string> {
+		return reader_.Keys(section);
+	}
+
+	auto ConfigReader::has_value(const std::string &section, const std::string &name) const
+	    -> bool {
+		return reader_.HasValue(section, name);
+	}
+
 }  // namespace howdy::native

@@ -716,7 +716,8 @@ namespace {
 		                 last_message == "Identified face as alice",
 		             "successful status sends enabled confirmation");
 
-		const howdy::native::RuntimeConfig quiet_config;
+		howdy::native::RuntimeConfig quiet_config;
+		quiet_config.core.no_confirmation = true;
 
 		calls = 0;
 		ok &= expect(howdy_status(username.data(), EXIT_SUCCESS, quiet_config, conversation) ==

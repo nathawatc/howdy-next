@@ -115,7 +115,7 @@ add_link_options(
 )
 
 pkg_check_modules(OPENCV5 REQUIRED IMPORTED_TARGET opencv5>=5.0.0)
-pkg_check_modules(INIREADER REQUIRED IMPORTED_TARGET INIReader)
+pkg_check_modules(INIREADER REQUIRED IMPORTED_TARGET INIReader>=59)
 pkg_check_modules(YYJSON REQUIRED IMPORTED_TARGET yyjson>=0.12.0)
 pkg_check_modules(LIBCURL REQUIRED IMPORTED_TARGET libcurl>=7.85.0)
 pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)

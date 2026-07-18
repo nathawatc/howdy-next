@@ -156,8 +156,7 @@ namespace howdy::native {
 	inline auto config_sface_threshold(const ConfigReader &config, const std::string &metric)
 	    -> float {
 		const auto &option   = config_option(config_schema::OptionId::face_sface_threshold);
-		const float fallback = metric == "cosine" ? config_schema::runtime_default_float(option.id)
-		                                          : config_schema::sface_other_threshold_default;
+		const float fallback = config_schema::runtime_default_float(option.id);
 		const float maximum  = metric == "cosine" ? config_schema::sface_cosine_threshold_maximum
 		                                          : option.range.maximum;
 		return bounded_float_or_fallback(config_option_float(config, option, fallback), fallback,

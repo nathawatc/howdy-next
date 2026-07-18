@@ -2,6 +2,7 @@
 
 #include <INIReader.h>
 #include <string>
+#include <vector>
 
 namespace howdy::native {
 
@@ -19,6 +20,10 @@ namespace howdy::native {
 		                             float fallback) const -> float;
 		[[nodiscard]] auto get_bool(const std::string &section, const std::string &name,
 		                            bool fallback) const -> bool;
+		[[nodiscard]] auto sections() const -> std::vector<std::string>;
+		[[nodiscard]] auto keys(const std::string &section) const -> std::vector<std::string>;
+		[[nodiscard]] auto has_value(const std::string &section, const std::string &name) const
+		    -> bool;
 
 	private:
 		std::string path_;
