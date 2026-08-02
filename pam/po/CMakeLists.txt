@@ -2,8 +2,15 @@ install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 find_program(GETTEXT_XGETTEXT_EXECUTABLE NAMES xgettext)
 find_program(GETTEXT_MSGMERGE_EXECUTABLE NAMES msgmerge)
 find_program(GETTEXT_MSGFMT_EXECUTABLE NAMES msgfmt)
-if(NOT GETTEXT_XGETTEXT_EXECUTABLE OR NOT GETTEXT_MSGMERGE_EXECUTABLE OR NOT GETTEXT_MSGFMT_EXECUTABLE)
-	message(FATAL_ERROR "Translation support requires xgettext, msgmerge, and msgfmt from gettext")
+if(
+	NOT GETTEXT_XGETTEXT_EXECUTABLE
+	OR NOT GETTEXT_MSGMERGE_EXECUTABLE
+	OR NOT GETTEXT_MSGFMT_EXECUTABLE
+)
+	message(
+		FATAL_ERROR
+		"Translation support requires xgettext, msgmerge, and msgfmt from gettext"
+	)
 endif()
 
 set(HOWDY_POT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/howdy.pot")
@@ -16,7 +23,10 @@ foreach(potfile IN LISTS HOWDY_POTFILES)
 	endif()
 	set(pot_source "${CMAKE_CURRENT_SOURCE_DIR}/../${potfile}")
 	if(NOT EXISTS "${pot_source}")
-		message(FATAL_ERROR "Translation source '${potfile}' listed in POTFILES does not exist")
+		message(
+			FATAL_ERROR
+			"Translation source '${potfile}' listed in POTFILES does not exist"
+		)
 	endif()
 	list(APPEND HOWDY_POT_SOURCES "${pot_source}")
 endforeach()
@@ -31,7 +41,11 @@ set(HOWDY_TRANSLATION_PO_FILES)
 foreach(language IN LISTS HOWDY_LANGUAGES)
 	set(po_file "${CMAKE_CURRENT_SOURCE_DIR}/${language}.po")
 	if(NOT EXISTS "${po_file}")
-		message(FATAL_ERROR "Translation locale '${language}' listed in LINGUAS has no ${language}.po")
+		message(
+			FATAL_ERROR
+			"Translation locale '${language}' listed in LINGUAS "
+			"has no ${language}.po"
+		)
 	endif()
 	list(APPEND HOWDY_TRANSLATION_PO_FILES "${po_file}")
 	set(mo_file "${CMAKE_CURRENT_BINARY_DIR}/${language}/LC_MESSAGES/howdy.mo")

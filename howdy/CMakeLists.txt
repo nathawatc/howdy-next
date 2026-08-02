@@ -20,7 +20,10 @@ add_library(
 howdy_configure_native_target(howdy_runtime_paths)
 target_link_libraries(howdy_runtime_paths PUBLIC howdy_config)
 
-add_library(howdy_user_model_readiness STATIC src/storage/user_model_readiness.cpp)
+add_library(
+	howdy_user_model_readiness STATIC
+	src/storage/user_model_readiness.cpp
+)
 howdy_configure_native_target(howdy_user_model_readiness)
 
 add_library(howdy_model_file STATIC src/model_assets/model_file.cpp)
@@ -74,7 +77,10 @@ add_library(howdy_compare_engine STATIC src/compare/engine.cpp)
 howdy_configure_native_target(howdy_compare_engine)
 target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv)
 
-add_library(howdy_compare_capture_session STATIC src/compare/capture_session.cpp)
+add_library(
+	howdy_compare_capture_session STATIC
+	src/compare/capture_session.cpp
+)
 howdy_configure_native_target(howdy_compare_capture_session)
 target_link_libraries(
 	howdy_compare_capture_session
@@ -154,7 +160,9 @@ target_link_libraries(
 add_executable(howdy_auth_helper src/bin/auth_helper.cpp)
 howdy_configure_native_target(howdy_auth_helper)
 target_link_libraries(howdy_auth_helper PRIVATE howdy_auth_helper_core)
-set_target_properties(howdy_auth_helper PROPERTIES OUTPUT_NAME "howdy-auth-helper")
+set_target_properties(
+	howdy_auth_helper PROPERTIES OUTPUT_NAME "howdy-auth-helper"
+)
 install(
 	TARGETS howdy_auth_helper
 	RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
@@ -202,9 +210,15 @@ if(BUILD_TESTING)
 	add_test(NAME native-auth-helper-help COMMAND howdy_auth_helper --help)
 	add_test(NAME native-auth-helper-empty COMMAND howdy_auth_helper)
 	howdy_expect_test_failure(native-auth-helper-empty)
-	add_test(NAME native-auth-helper-unknown-command COMMAND howdy_auth_helper unknown alice)
+	add_test(
+		NAME native-auth-helper-unknown-command
+		COMMAND howdy_auth_helper unknown alice
+	)
 	howdy_expect_test_failure(native-auth-helper-unknown-command)
-	add_test(NAME native-auth-helper-prepare-guard COMMAND howdy_auth_helper prepare ../alice)
+	add_test(
+		NAME native-auth-helper-prepare-guard
+		COMMAND howdy_auth_helper prepare ../alice
+	)
 	howdy_expect_test_failure(native-auth-helper-prepare-guard)
 	add_test(
 		NAME native-auth-helper-cleanup-guard
@@ -227,11 +241,15 @@ if(BUILD_TESTING)
 	add_test(NAME native-compare-missing-user COMMAND howdy_compare)
 	howdy_expect_test_failure(native-compare-missing-user)
 	add_test(NAME native-compare-no-model COMMAND howdy_compare coverage-user)
+	set(
+		compare_test_models_empty
+		"${CMAKE_CURRENT_BINARY_DIR}/compare-test-models-empty"
+	)
 	set_tests_properties(
 		native-compare-no-model
 		PROPERTIES
 			WILL_FAIL TRUE
-			ENVIRONMENT "HOWDY_USER_MODELS_DIR=${CMAKE_CURRENT_BINARY_DIR}/compare-test-models-empty"
+			ENVIRONMENT "HOWDY_USER_MODELS_DIR=${compare_test_models_empty}"
 	)
 
 	add_executable(howdy_compare_args_test tests/compare/compare_args_test.cpp)
@@ -241,10 +259,14 @@ if(BUILD_TESTING)
 
 	add_executable(howdy_compare_logic_test tests/compare/compare_logic_test.cpp)
 	howdy_configure_native_test_target(howdy_compare_logic_test)
-	target_link_libraries(howdy_compare_logic_test PRIVATE howdy_compare_logic howdy_opencv)
+	target_link_libraries(
+		howdy_compare_logic_test PRIVATE howdy_compare_logic howdy_opencv
+	)
 	add_test(NAME native-compare-logic COMMAND howdy_compare_logic_test)
 
-	add_executable(howdy_frame_processing_test tests/vision/frame_processing_test.cpp)
+	add_executable(
+		howdy_frame_processing_test tests/vision/frame_processing_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_frame_processing_test)
 	target_link_libraries(
 		howdy_frame_processing_test
@@ -273,19 +295,32 @@ if(BUILD_TESTING)
 		howdy_compare_capture_session_test
 		PRIVATE howdy_compare_capture_session
 	)
-	add_test(NAME native-compare-capture-session COMMAND howdy_compare_capture_session_test)
+	add_test(
+		NAME native-compare-capture-session
+		COMMAND howdy_compare_capture_session_test
+	)
 
-	add_executable(howdy_compare_privileges_test tests/compare/compare_privileges_test.cpp)
+	add_executable(
+		howdy_compare_privileges_test tests/compare/compare_privileges_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_compare_privileges_test)
-	target_link_libraries(howdy_compare_privileges_test PRIVATE howdy_compare_privileges)
+	target_link_libraries(
+		howdy_compare_privileges_test PRIVATE howdy_compare_privileges
+	)
 	add_test(NAME native-compare-privileges COMMAND howdy_compare_privileges_test)
 
-	add_executable(howdy_compare_processing_test tests/compare/compare_processing_test.cpp)
+	add_executable(
+		howdy_compare_processing_test tests/compare/compare_processing_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_compare_processing_test)
-	target_link_libraries(howdy_compare_processing_test PRIVATE howdy_compare_processing)
+	target_link_libraries(
+		howdy_compare_processing_test PRIVATE howdy_compare_processing
+	)
 	add_test(NAME native-compare-processing COMMAND howdy_compare_processing_test)
 
-	add_executable(howdy_compare_sandbox_test tests/compare/compare_sandbox_test.cpp)
+	add_executable(
+		howdy_compare_sandbox_test tests/compare/compare_sandbox_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_compare_sandbox_test)
 	target_link_libraries(howdy_compare_sandbox_test PRIVATE howdy_compare_sandbox)
 	add_test(NAME native-compare-sandbox COMMAND howdy_compare_sandbox_test)
@@ -332,16 +367,22 @@ if(BUILD_TESTING)
 	target_link_libraries(howdy_model_file_test PRIVATE howdy_model_file)
 	add_test(NAME native-model-file COMMAND howdy_model_file_test)
 
-	add_executable(howdy_capture_device_path_test tests/vision/capture_device_path_test.cpp)
+	add_executable(
+		howdy_capture_device_path_test tests/vision/capture_device_path_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_capture_device_path_test)
-	add_test(NAME native-capture-device-path COMMAND howdy_capture_device_path_test)
+	add_test(
+		NAME native-capture-device-path COMMAND howdy_capture_device_path_test
+	)
 
 	add_executable(howdy_video_capture_test tests/vision/video_capture_test.cpp)
 	howdy_configure_native_test_target(howdy_video_capture_test)
 	target_link_libraries(howdy_video_capture_test PRIVATE howdy_vision_core)
 	add_test(NAME native-video-capture COMMAND howdy_video_capture_test)
 
-	add_executable(howdy_enrollment_capture_test tests/cli/enrollment_capture_test.cpp)
+	add_executable(
+		howdy_enrollment_capture_test tests/cli/enrollment_capture_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_enrollment_capture_test)
 	target_link_libraries(
 		howdy_enrollment_capture_test
@@ -349,7 +390,9 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-enrollment-capture COMMAND howdy_enrollment_capture_test)
 
-	add_executable(howdy_config_validation_test tests/config/config_validation_test.cpp)
+	add_executable(
+		howdy_config_validation_test tests/config/config_validation_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_config_validation_test)
 	target_compile_definitions(
 		howdy_config_validation_test
@@ -376,9 +419,13 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-user-models COMMAND howdy_user_models_test)
 
-	add_executable(howdy_user_model_codec_test tests/storage/user_model_codec_test.cpp)
+	add_executable(
+		howdy_user_model_codec_test tests/storage/user_model_codec_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_user_model_codec_test)
-	target_link_libraries(howdy_user_model_codec_test PRIVATE howdy_user_model_codec)
+	target_link_libraries(
+		howdy_user_model_codec_test PRIVATE howdy_user_model_codec
+	)
 	add_test(NAME native-user-model-codec COMMAND howdy_user_model_codec_test)
 
 	add_executable(howdy_clear_cli_test tests/cli/clear_cli_test.cpp)
@@ -422,7 +469,9 @@ if(BUILD_TESTING)
 	target_link_libraries(howdy_test_cli_test PRIVATE howdy_cli)
 	add_test(NAME native-test-cli COMMAND howdy_test_cli_test)
 
-	add_executable(howdy_test_preview_session_test tests/cli/test_preview_session_test.cpp)
+	add_executable(
+		howdy_test_preview_session_test tests/cli/test_preview_session_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_test_preview_session_test)
 	target_link_libraries(
 		howdy_test_preview_session_test
@@ -432,7 +481,9 @@ if(BUILD_TESTING)
 			howdy_preview_engine
 			howdy_opencv
 	)
-	add_test(NAME native-test-preview-session COMMAND howdy_test_preview_session_test)
+	add_test(
+		NAME native-test-preview-session COMMAND howdy_test_preview_session_test
+	)
 
 	add_executable(howdy_preview_engine_test tests/vision/preview_engine_test.cpp)
 	howdy_configure_native_test_target(howdy_preview_engine_test)
@@ -449,7 +500,9 @@ if(BUILD_TESTING)
 
 	add_executable(howdy_snapshot_writer_test tests/cli/snapshot_writer_test.cpp)
 	howdy_configure_native_test_target(howdy_snapshot_writer_test)
-	target_link_libraries(howdy_snapshot_writer_test PRIVATE howdy_cli howdy_opencv)
+	target_link_libraries(
+		howdy_snapshot_writer_test PRIVATE howdy_cli howdy_opencv
+	)
 	add_test(NAME native-snapshot-writer COMMAND howdy_snapshot_writer_test)
 
 	add_executable(howdy_download_models_test tests/cli/download_models_test.cpp)
@@ -469,13 +522,17 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-runtime-paths COMMAND howdy_runtime_paths_test)
 
-	add_executable(howdy_runtime_config_load_test tests/config/runtime_config_load_test.cpp)
+	add_executable(
+		howdy_runtime_config_load_test tests/config/runtime_config_load_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_runtime_config_load_test)
 	target_link_libraries(
 		howdy_runtime_config_load_test
 		PRIVATE howdy_runtime_paths
 	)
-	add_test(NAME native-runtime-config-load COMMAND howdy_runtime_config_load_test)
+	add_test(
+		NAME native-runtime-config-load COMMAND howdy_runtime_config_load_test
+	)
 	set_tests_properties(
 		native-runtime-config-load
 		PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
@@ -493,7 +550,9 @@ if(BUILD_TESTING)
 		PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
 	)
 
-	add_executable(howdy_invoking_user_env_test tests/support/invoking_user_env_test.cpp)
+	add_executable(
+		howdy_invoking_user_env_test tests/support/invoking_user_env_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_invoking_user_env_test)
 	add_test(NAME native-invoking-user-env COMMAND howdy_invoking_user_env_test)
 
@@ -520,6 +579,7 @@ target_link_libraries(
 install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 if(BUILD_TESTING)
+	set(howdy_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
 	add_test(NAME native-howdy-help COMMAND howdy --help)
 	add_test(NAME native-howdy-version COMMAND howdy version)
 	add_test(NAME native-howdy-nonroot-path COMMAND howdy -U coverage-user list)
@@ -539,7 +599,9 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-howdy-dispatch COMMAND howdy_dispatch_test)
 
-	add_executable(howdy_main_test tests/app/howdy_main_test.cpp src/bin/howdy_main.cpp)
+	add_executable(
+		howdy_main_test tests/app/howdy_main_test.cpp src/bin/howdy_main.cpp
+	)
 	howdy_configure_native_test_target(howdy_main_test)
 	target_compile_definitions(
 		howdy_main_test
@@ -571,11 +633,14 @@ if(BUILD_TESTING)
 	add_test(
 		NAME native-howdy-privileged-install-paths
 		COMMAND
-			sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/privileged_install_paths_test.sh"
+			sh
+			"${howdy_integration_dir}/privileged_install_paths_test.sh"
 			"${PROJECT_SOURCE_DIR}"
 			"${PROJECT_BINARY_DIR}/privileged-install-path-cases"
 	)
-	set_tests_properties(native-howdy-privileged-install-paths PROPERTIES RUN_SERIAL TRUE)
+	set_tests_properties(
+		native-howdy-privileged-install-paths PROPERTIES RUN_SERIAL TRUE
+	)
 endif()
 
 set(config_path "${HOWDY_CONFIG_PATH}")

@@ -8,7 +8,9 @@ add_library(
 	src/runtime/runtime_session.cpp
 )
 howdy_configure_pam_target(pam_runtime)
-target_compile_definitions(pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_compile_definitions(
+	pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+)
 target_link_libraries(pam_runtime PRIVATE howdy_config)
 
 add_library(
@@ -32,7 +34,9 @@ add_library(
 	src/module/status_mapping.cpp
 )
 howdy_configure_pam_target(pam_module)
-target_compile_definitions(pam_module PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_compile_definitions(
+	pam_module PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+)
 target_link_libraries(
 	pam_module
 	PUBLIC PAM::PAM
@@ -41,7 +45,9 @@ target_link_libraries(
 
 add_library(pam_howdy MODULE src/module/main.cpp)
 howdy_configure_pam_target(pam_howdy)
-target_compile_definitions(pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY)
+target_compile_definitions(
+	pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+)
 target_link_libraries(pam_howdy PRIVATE pam_module)
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
 install(
@@ -50,6 +56,7 @@ install(
 )
 
 if(BUILD_TESTING)
+	set(pam_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
 	function(howdy_add_pam_test target test_name)
 		add_executable(${target} ${ARGN})
 		howdy_configure_pam_test_target(${target})
@@ -63,7 +70,8 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(pam_status_mapping_test PRIVATE pam_module)
 	target_compile_definitions(
-		pam_status_mapping_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
+		pam_status_mapping_test
+		PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
 	add_dependencies(pam_status_mapping_test howdy-gmo)
 
@@ -82,7 +90,8 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(pam_main_entrypoints_test PRIVATE PAM::PAM)
 	target_compile_definitions(
-		pam_main_entrypoints_test PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
+		pam_main_entrypoints_test
+		PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
 	add_dependencies(pam_main_entrypoints_test howdy-gmo)
 
@@ -147,7 +156,10 @@ if(BUILD_TESTING)
 	target_link_libraries(pam_runtime_session_test PRIVATE pam_runtime)
 	add_test(
 		NAME pam-installed-setuid-path-validation
-		COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/installed_pam_setuid_e2e.sh" --validate-paths
+		COMMAND
+			bash
+			"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
+			--validate-paths
 	)
 	howdy_set_test_timeouts()
 
@@ -161,7 +173,8 @@ if(BUILD_TESTING)
 				int main() {
 					pam_handle_t *handle = nullptr;
 					pam_conv conversation{};
-					return pam_start_confdir("howdy-e2e", "nobody", &conversation, "/tmp", &handle);
+					return pam_start_confdir(
+						"howdy-e2e", "nobody", &conversation, "/tmp", &handle);
 				}
 			]=]
 			HOWDY_HAVE_PAM_START_CONFDIR
@@ -169,13 +182,17 @@ if(BUILD_TESTING)
 		cmake_pop_check_state()
 
 		if(HOWDY_HAVE_PAM_START_CONFDIR)
-			add_executable(pam_installed_e2e_driver tests/integration/installed_pam_driver.cpp)
+			add_executable(
+				pam_installed_e2e_driver
+				tests/integration/installed_pam_driver.cpp
+			)
 			howdy_configure_pam_target(pam_installed_e2e_driver)
 			target_link_libraries(pam_installed_e2e_driver PRIVATE PAM::PAM)
 			add_test(
 				NAME installed-pam-setuid-e2e
 				COMMAND
-					bash "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/installed_pam_setuid_e2e.sh"
+					bash
+					"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
 					"${PROJECT_BINARY_DIR}"
 					"${CMAKE_INSTALL_PREFIX}"
 					"${HOWDY_PAM_DIR}"
@@ -188,8 +205,8 @@ if(BUILD_TESTING)
 				NAME installed-pam-setuid-install-environment
 				COMMAND
 					sh
-					"${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/installed_pam_install_environment_test.sh"
-					"${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/installed_pam_setuid_e2e.sh"
+					"${pam_integration_dir}/installed_pam_install_environment_test.sh"
+					"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
 					"${PROJECT_BINARY_DIR}"
 					"${CMAKE_INSTALL_PREFIX}"
 					"${HOWDY_PAM_DIR}"

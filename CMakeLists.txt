@@ -44,7 +44,8 @@ cmake_pop_check_state()
 if(NOT HOWDY_HAVE_POSIX_SPAWN_FILE_ACTIONS_ADDCLOSEFROM_NP)
 	message(
 		FATAL_ERROR
-			"posix_spawn_file_actions_addclosefrom_np() is unavailable; GNU libc 2.34 or newer is required."
+			"posix_spawn_file_actions_addclosefrom_np() is unavailable; "
+			"GNU libc 2.34 or newer is required."
 	)
 endif()
 
@@ -65,14 +66,20 @@ option(
 	OFF
 )
 
-if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS AND
-	NOT CMAKE_INSTALL_PREFIX MATCHES "^/opt/howdy-installed-pam-e2e-[A-Za-z0-9._-]+$")
+if(
+	BUILD_TESTING
+	AND HOWDY_ENABLE_PRIVILEGED_TESTS
+	AND NOT CMAKE_INSTALL_PREFIX
+		MATCHES "^/opt/howdy-installed-pam-e2e-[A-Za-z0-9._-]+$"
+)
 	message(
 		FATAL_ERROR
-			"Privileged tests require an isolated CMAKE_INSTALL_PREFIX matching /opt/howdy-installed-pam-e2e-*"
+			"Privileged tests require an isolated CMAKE_INSTALL_PREFIX "
+			"matching /opt/howdy-installed-pam-e2e-*"
 	)
 endif()
 
+set(howdy_cxx_compiler "$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>")
 add_compile_options(
 	# High-signal compiler diagnostics.
 	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>"
@@ -95,7 +102,7 @@ add_compile_options(
 	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-fstack-protector-strong>"
 
 	# Enable only in maintainer/CI builds.
-	"$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>>:-Werror>"
+	"$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,${howdy_cxx_compiler}>:-Werror>"
 )
 
 add_compile_definitions(
@@ -195,16 +202,25 @@ if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 			"${HOWDY_LOG_PATH}"
 			"${HOWDY_HELPER_DIR}"
 	)
-		cmake_path(IS_PREFIX CMAKE_INSTALL_PREFIX "${isolated_path}" NORMALIZE path_is_isolated)
+		cmake_path(
+			IS_PREFIX CMAKE_INSTALL_PREFIX "${isolated_path}"
+			NORMALIZE path_is_isolated
+		)
 		if(NOT path_is_isolated)
-			message(FATAL_ERROR "Privileged-test path escapes isolated prefix: ${isolated_path}")
+			message(
+				FATAL_ERROR
+				"Privileged-test path escapes isolated prefix: ${isolated_path}"
+			)
 		endif()
 	endforeach()
 endif()
 set(HOWDY_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOWDY_GENERATED_INCLUDE_DIR}")
 
-file(WRITE "${PROJECT_BINARY_DIR}/cmake_install_prefix.txt" "${CMAKE_INSTALL_PREFIX}")
+file(
+	WRITE "${PROJECT_BINARY_DIR}/cmake_install_prefix.txt"
+	"${CMAKE_INSTALL_PREFIX}"
+)
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/cmake/install_prefix_guard.cmake.in"
 	"${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake"
