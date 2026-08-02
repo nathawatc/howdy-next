@@ -109,7 +109,8 @@ Current test files of interest:
 - Auth helper: `auth_helper_path_test.cpp`, `auth_helper_staging_test.cpp`,
   `auth_helper_test.cpp`
 - PAM / auth flow: `auth_flow_helpers_test.cpp`, `main_entrypoints_test.cpp`,
-  `native_prompt_conversation_test.cpp`, `optional_task_test.cpp`,
+  `conversation_response_test.cpp`, `native_prompt_conversation_test.cpp`,
+  `observed_prompt_conversation_test.cpp`,
   `prompt_coordinator_adapter_test.cpp`, `prompt_coordinator_modes_test.cpp`,
   `prompt_coordinator_test.cpp`, `prompt_workaround_test.cpp`,
   `runtime_session_deadline_test.cpp`, `runtime_session_spawn_test.cpp`,

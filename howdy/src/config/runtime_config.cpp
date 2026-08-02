@@ -5,17 +5,16 @@
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 
-#include <cassert>
 #include <string>
 #include <utility>
 
 namespace howdy::native {
 	namespace {
 
-		auto failure_result(RuntimeConfigLoadStatus status, const std::filesystem::path &path,
-		                    std::string error_message, int error_code = 0)
-		    -> RuntimeConfigLoadResult {
-			assert(status != RuntimeConfigLoadStatus::kOk);
+		template <RuntimeConfigLoadStatus status>
+		auto failure_result(const std::filesystem::path &path, std::string error_message,
+		                    int error_code = 0) -> RuntimeConfigLoadResult {
+			static_assert(status != RuntimeConfigLoadStatus::kOk);
 			return RuntimeConfigLoadResult{
 			    .ok            = false,
 			    .status        = status,
@@ -114,21 +113,21 @@ namespace howdy::native {
 	                         const std::optional<uid_t>   owner_uid) -> RuntimeConfigLoadResult {
 		const auto security = check_secure_config_path(config_path, owner_uid);
 		if (!security.ok) {
-			return failure_result(RuntimeConfigLoadStatus::kPathError, config_path,
-			                      security.error_message, security.error_code);
+			return failure_result<RuntimeConfigLoadStatus::kPathError>(
+			    config_path, security.error_message, security.error_code);
 		}
 
 		const ConfigReader reader(config_path.string());
 		if (!reader.ok()) {
-			return failure_result(RuntimeConfigLoadStatus::kParseError, config_path,
-			                      "Failed to parse config: " + config_path.string() + " (error " +
-			                          std::to_string(reader.parse_error()) + ")");
+			return failure_result<RuntimeConfigLoadStatus::kParseError>(
+			    config_path, "Failed to parse config: " + config_path.string() + " (error " +
+			                     std::to_string(reader.parse_error()) + ")");
 		}
 
 		if (const auto validation = validate_runtime_config(reader)) {
-			return failure_result(RuntimeConfigLoadStatus::kInvalidRuntimeValue, config_path,
-			                      "Invalid runtime config in " + config_path.string() + ": " +
-			                          *validation);
+			return failure_result<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
+			    config_path,
+			    "Invalid runtime config in " + config_path.string() + ": " + *validation);
 		}
 
 		return success_result(config_path, populate_runtime_config(reader));

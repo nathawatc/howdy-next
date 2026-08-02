@@ -30,14 +30,21 @@ successful face authentication. This mode does not fall back to input injection.
 .TP
 \fBnative-input\fR
 Try native prompt handling first, then fall back to the input workaround when a
-usable TTY is unavailable or native prompt handling cannot be installed.
+usable interactive TTY is unavailable or native prompt handling cannot be installed.
+Native handling requires PAM's TTY to be the process group's foreground terminal
+and to match standard input, standard output, or standard error. Other standard
+descriptors may be redirected.
+A graphical conversation that only advertises a TTY uses input fallback.
 .TP
 \fBinput\fR
 Use a
 .I /dev/uinput
 Enter key workaround to stop the concurrent password prompt. The injected key
-is not addressed to the PAM conversation and may be received by another
-application that currently has keyboard focus. This mode is less preferred than
+is sent at most once, after Howdy observes a PAM hidden-input password prompt.
+This observation does not prove graphical readiness or keyboard focus. Enter is not
+addressed to the PAM conversation and may be received by another application
+that currently has keyboard focus. If ineffective, password entry can continue
+manually. This mode is less preferred than
 .B native
 and may be less reliable on some lock screens.
 .RE
@@ -81,9 +88,14 @@ auth  sufficient   pam_howdy.so workaround=native-input
 .PP
 The input fallback sends Enter through
 .IR /dev/uinput .
-It is not targeted to the PAM prompt and may instead reach another application
-that currently has keyboard focus. Validate this behavior for each graphical
-consumer before enabling it.
+It sends at most once after Howdy observes a PAM hidden-input password prompt.
+This observation does not prove graphical readiness or keyboard focus. Enter is not
+targeted to the PAM prompt and may instead reach another application that
+currently has keyboard focus. If ineffective, complete password entry manually.
+Validate this behavior for each graphical consumer before enabling it.
+.PP
+Howdy will not begin a new synthetic Enter attempt after the password request has
+returned. Howdy sends no more than one Enter attempt.
 .SS Lock Screens That Collect Input Before PAM
 Some lock screens, including
 .BR waylock ,
@@ -102,6 +114,9 @@ When a PAM authentication token already exists,
 .B pam_howdy.so
 does not start the native or input workaround, even if a workaround option is
 configured.
+.PP
+If Howdy cannot restore original PAM conversation after workaround use,
+authentication fails with system error and no further application notice is sent.
 .SH SECURITY NOTES
 Do not make
 .I /etc/howdy

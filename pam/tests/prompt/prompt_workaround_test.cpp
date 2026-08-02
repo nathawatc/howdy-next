@@ -95,47 +95,5 @@ auto main() -> int {
 	ok &= expect(auth_token_item_present(""), "empty PAM auth token item is still present");
 	ok &= expect(auth_token_item_present("password"), "non-empty PAM auth token item is present");
 
-	{
-		const auto plan = plan_prompt_stop(false, false, Workaround::Native);
-		ok &= expect(!plan.stop_prompt, "inactive prompt is not stopped");
-		ok &= expect(!plan.abort_prompt, "inactive prompt is not aborted");
-		ok &= expect(!plan.send_enter, "inactive prompt does not send enter");
-	}
-
-	{
-		const auto plan = plan_prompt_stop(true, true, Workaround::Input);
-		ok &= expect(plan.stop_prompt, "ready prompt is joined");
-		ok &= expect(!plan.abort_prompt, "ready prompt is not aborted");
-		ok &= expect(!plan.send_enter, "ready prompt does not receive fake input");
-	}
-
-	{
-		const auto plan = plan_prompt_stop(true, true, Workaround::Native);
-		ok &= expect(plan.stop_prompt, "ready native prompt is joined");
-		ok &= expect(!plan.abort_prompt, "ready native prompt is not aborted");
-		ok &= expect(!plan.send_enter, "ready native prompt does not receive fake input");
-	}
-
-	{
-		const auto plan = plan_prompt_stop(true, false, Workaround::Native);
-		ok &= expect(plan.stop_prompt, "native workaround stops prompt");
-		ok &= expect(plan.abort_prompt, "native workaround aborts prompt");
-		ok &= expect(!plan.send_enter, "native workaround skips fake input");
-	}
-
-	{
-		const auto plan = plan_prompt_stop(true, false, Workaround::Input);
-		ok &= expect(plan.stop_prompt, "input workaround stops prompt");
-		ok &= expect(!plan.abort_prompt, "input workaround does not abort");
-		ok &= expect(plan.send_enter, "input workaround injects enter");
-	}
-
-	{
-		const auto plan = plan_prompt_stop(true, false, Workaround::Off);
-		ok &= expect(plan.stop_prompt, "off workaround stops pending prompt");
-		ok &= expect(!plan.abort_prompt, "off workaround does not abort prompt");
-		ok &= expect(!plan.send_enter, "off workaround does not inject enter");
-	}
-
 	return ok ? 0 : 1;
 }

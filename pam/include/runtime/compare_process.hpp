@@ -34,10 +34,14 @@ namespace howdy::pam::compare_process {
 	__attribute__((visibility("hidden"))) auto
 	wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int;
 	__attribute__((visibility("hidden"))) auto
-	spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int;
-	__attribute__((visibility("hidden"))) auto wait(void *context, pid_t child_pid,
-	                                                std::chrono::steady_clock::time_point deadline)
+	wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	           void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int;
-	__attribute__((visibility("hidden"))) auto terminate(void *context, pid_t child_pid) -> void;
+	__attribute__((visibility("hidden"))) auto
+	spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int;
+	__attribute__((visibility("hidden"))) auto
+	wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested) -> int;
+	__attribute__((visibility("hidden"))) void cancel_and_reap(pid_t child_pid) noexcept;
 
 }  // namespace howdy::pam::compare_process

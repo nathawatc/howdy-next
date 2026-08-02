@@ -53,13 +53,19 @@ namespace {
 		}
 	}
 
-	auto wait_for_compare_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline)
-	    -> std::optional<int> {
+	auto wait_for_compare_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	                            void                                      *cancellation_context,
+	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
+	                            bool *cancelled) -> std::optional<int> {
 		using Clock = std::chrono::steady_clock;
 		while (true) {
 			int status = 0;
 			if (try_wait_for_compare(child_pid, &status)) {
 				return status;
+			}
+			if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
+				*cancelled = true;
+				return std::nullopt;
 			}
 			const auto now = Clock::now();
 			if (now >= deadline) {
@@ -71,11 +77,16 @@ namespace {
 		}
 	}
 
-	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::time_point deadline)
+	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	                              void                                      *cancellation_context,
+	                              howdy::pam::CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		using Clock = std::chrono::steady_clock;
 
-		if (const auto status = wait_for_compare_until(child_pid, deadline); status.has_value()) {
+		bool cancelled = false;
+		if (const auto status = wait_for_compare_until(child_pid, deadline, cancellation_context,
+		                                               cancellation_requested, &cancelled);
+		    status.has_value()) {
 			return *status;
 		}
 
@@ -84,13 +95,16 @@ namespace {
 			return status;
 		}
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate timed-out compare process: %s (%d)",
-			       strerror(errno), errno);
+			syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)", strerror(errno),
+			       errno);
 		}
 
-		if (wait_for_compare_until(child_pid, Clock::now() + kCompareTerminationGrace)
+		bool ignored_cancellation = false;
+		if (wait_for_compare_until(child_pid, Clock::now() + kCompareTerminationGrace, nullptr,
+		                           nullptr, &ignored_cancellation)
 		        .has_value()) {
-			return make_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? make_wait_exit_status(CompareExit::kAbort)
+			                 : make_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
@@ -101,7 +115,8 @@ namespace {
 			status             = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
-				return make_wait_exit_status(CompareExit::kTimeoutReached);
+				return cancelled ? make_wait_exit_status(CompareExit::kAbort)
+				                 : make_wait_exit_status(CompareExit::kTimeoutReached);
 			}
 			if (result < 0 && errno == EINTR) {
 				continue;
@@ -110,7 +125,8 @@ namespace {
 				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
 				       strerror(errno), errno);
 			}
-			return make_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? make_wait_exit_status(CompareExit::kAbort)
+			                 : make_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 	}
 
@@ -210,7 +226,14 @@ namespace howdy::pam::compare_process {
 	}
 
 	auto wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int {
-		return wait_for_compare_process(child_pid, deadline);
+		return wait_for_compare_process(child_pid, deadline, nullptr, nullptr);
+	}
+
+	auto wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	                void                          *cancellation_context,
+	                CompareCancellationRequestedFn cancellation_requested) -> int {
+		return wait_for_compare_process(child_pid, deadline, cancellation_context,
+		                                cancellation_requested);
 	}
 
 	auto spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int {
@@ -218,18 +241,16 @@ namespace howdy::pam::compare_process {
 		return spawn(request, child_pid, production_operations());
 	}
 
-	auto wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline)
+	auto wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		(void)context;
-		return wait_until(child_pid, deadline);
+		return wait_until(child_pid, deadline, cancellation_context, cancellation_requested);
 	}
 
-	auto terminate(void *context, pid_t child_pid) -> void {
-		(void)context;
-		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)", strerror(errno),
-			       errno);
-		}
+	void cancel_and_reap(pid_t child_pid) noexcept {
+		(void)wait_for_compare_process(child_pid, std::chrono::steady_clock::now(), nullptr,
+		                               nullptr);
 	}
 
 }  // namespace howdy::pam::compare_process

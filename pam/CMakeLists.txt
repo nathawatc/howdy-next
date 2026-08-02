@@ -16,8 +16,11 @@ target_link_libraries(pam_runtime PRIVATE howdy_config)
 add_library(
 	pam_prompt STATIC
 	src/prompt/enter_device.cpp
+	src/prompt/conversation_response.cpp
+	src/prompt/internal_fd.cpp
 	src/prompt/native_prompt_conversation.cpp
 	src/prompt/native_prompt_input.cpp
+	src/prompt/observed_prompt_conversation.cpp
 	src/prompt/prompt_coordinator.cpp
 	src/module/prompt_workaround.cpp
 )
@@ -94,26 +97,32 @@ if(BUILD_TESTING)
 		PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
 	add_dependencies(pam_main_entrypoints_test howdy-gmo)
-
 	howdy_add_pam_test(
 		pam_native_prompt_conversation_test
 		pam-native-prompt-conversation
 		tests/prompt/native_prompt_conversation_test.cpp
 	)
 	target_link_libraries(pam_native_prompt_conversation_test PRIVATE pam_prompt)
-	add_executable(pam_optional_task_test tests/prompt/optional_task_test.cpp)
-	howdy_configure_pam_test_target(pam_optional_task_test)
-	target_link_libraries(pam_optional_task_test PRIVATE Threads::Threads)
-	add_test(NAME pam-optional-task COMMAND pam_optional_task_test)
-	add_test(
-		NAME pam-optional-task-get-before-spawn
-		COMMAND pam_optional_task_test get-before-spawn
+	target_include_directories(
+		pam_native_prompt_conversation_test
+		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
 	)
-	add_test(
-		NAME pam-optional-task-get-while-active
-		COMMAND pam_optional_task_test get-while-active
+	howdy_add_pam_test(
+		pam_observed_prompt_conversation_test
+		pam-observed-prompt-conversation
+		tests/prompt/observed_prompt_conversation_test.cpp
 	)
-
+	target_link_libraries(pam_observed_prompt_conversation_test PRIVATE pam_prompt)
+	howdy_add_pam_test(
+		pam_conversation_response_test
+		pam-conversation-response
+		tests/prompt/conversation_response_test.cpp
+	)
+	target_link_libraries(pam_conversation_response_test PRIVATE pam_prompt)
+	target_include_directories(
+		pam_conversation_response_test
+		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/prompt"
+	)
 	howdy_add_pam_test(
 		pam_auth_flow_helpers_test
 		pam-auth-flow-helpers

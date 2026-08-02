@@ -776,11 +776,11 @@ namespace {
 			*child_pid = 1;
 			return 0;
 		};
-		const auto wait_compare = [](void *, pid_t, std::chrono::steady_clock::time_point) -> int {
+		const auto wait_compare = [](void *, pid_t, std::chrono::steady_clock::time_point, void *,
+		                             howdy::pam::CompareCancellationRequestedFn) -> int {
 			return 0;
 		};
-		const auto terminate_compare = [](void *, pid_t) -> void {};
-		const auto input_preflight   = [](void *) -> bool {
+		const auto input_preflight = [](void *) -> bool {
 			return true;
 		};
 		const auto create_enter_device = [](void *) -> std::unique_ptr<EnterDevice> {
@@ -788,6 +788,11 @@ namespace {
 		};
 		const auto create_native_prompt = [](void *,
 		                                     pam_handle_t *) -> std::unique_ptr<NativePrompt> {
+			return nullptr;
+		};
+		const auto create_secret_prompt_conversation = [](void *, pam_handle_t *,
+		                                                  howdy::pam::SecretPromptObserver)
+		    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
 			return nullptr;
 		};
 		const auto request_auth_token = [](void *,
@@ -802,13 +807,13 @@ namespace {
 		    .effective_uid       = effective_uid,
 		};
 		const PromptCoordinatorDependencies prompt_dependencies{
-		    .spawn_compare_process    = spawn_compare,
-		    .wait_for_compare_process = wait_compare,
-		    .terminate_compare        = terminate_compare,
-		    .input_prompt_preflight   = input_preflight,
-		    .create_enter_device      = create_enter_device,
-		    .create_native_prompt     = create_native_prompt,
-		    .request_auth_token       = request_auth_token,
+		    .spawn_compare_process             = spawn_compare,
+		    .wait_for_compare_process          = wait_compare,
+		    .input_prompt_preflight            = input_preflight,
+		    .create_enter_device               = create_enter_device,
+		    .create_native_prompt              = create_native_prompt,
+		    .create_secret_prompt_conversation = create_secret_prompt_conversation,
+		    .request_auth_token                = request_auth_token,
 		};
 		IdentifyDependencies dependencies{
 		    .context            = nullptr,
@@ -960,88 +965,6 @@ namespace {
 		return ok;
 	}
 
-	auto expect_prompt_stop_helpers() -> bool {
-		using howdy::pam::request_password_prompt_stop;
-
-		bool ok = true;
-
-		optional_task<std::tuple<int, const char *>> inactive_task(
-		    [] -> std::tuple<int, const char *> {
-			    return {PAM_SUCCESS, nullptr};
-		    });
-		const PromptStopPlan no_stop_plan{
-		    .stop_prompt  = false,
-		    .abort_prompt = false,
-		    .send_enter   = false,
-		};
-		const auto no_stop_result =
-		    request_password_prompt_stop(inactive_task, no_stop_plan, nullptr, nullptr);
-		ok &= expect(!no_stop_result.enter_failed && no_stop_result.prompt_stopped,
-		             "no-stop plan returns default prompt stop result");
-		ok &= expect(!inactive_task.active(), "no-stop plan leaves inactive task inactive");
-
-		optional_task<std::tuple<int, const char *>> ready_task(
-		    [] -> std::tuple<int, const char *> {
-			    return {PAM_SUCCESS, nullptr};
-		    });
-		ready_task.activate();
-		ok &= expect(ready_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
-		             "ready prompt task finishes before stop");
-		const PromptStopPlan stop_plan{
-		    .stop_prompt  = true,
-		    .abort_prompt = false,
-		    .send_enter   = false,
-		};
-		const auto stop_result =
-		    request_password_prompt_stop(ready_task, stop_plan, nullptr, nullptr);
-		ok &= expect(!stop_result.enter_failed && stop_result.prompt_stopped,
-		             "stop plan stops ready prompt without input");
-		ok &= expect(!ready_task.active(), "stop plan deactivates ready prompt task");
-		ok &= expect(std::get<0>(ready_task.get()) == PAM_SUCCESS,
-		             "stopped ready prompt keeps task result");
-
-		optional_task<std::tuple<int, const char *>> abort_without_native_prompt(
-		    [] -> std::tuple<int, const char *> {
-			    return {PAM_CONV_ERR, nullptr};
-		    });
-		abort_without_native_prompt.activate();
-		ok &= expect(abort_without_native_prompt.wait(std::chrono::seconds(1)) ==
-		                 std::future_status::ready,
-		             "abort prompt task finishes before stop");
-		const PromptStopPlan abort_plan{
-		    .stop_prompt  = true,
-		    .abort_prompt = true,
-		    .send_enter   = false,
-		};
-		const auto abort_result =
-		    request_password_prompt_stop(abort_without_native_prompt, abort_plan, nullptr, nullptr);
-		ok &= expect(!abort_result.enter_failed && abort_result.prompt_stopped,
-		             "abort plan without native prompt stops task safely");
-		ok &= expect(!abort_without_native_prompt.active(),
-		             "abort plan deactivates prompt task without native prompt");
-
-		optional_task<std::tuple<int, const char *>> ready_input_task(
-		    [] -> std::tuple<int, const char *> {
-			    return {PAM_SUCCESS, nullptr};
-		    });
-		ready_input_task.activate();
-		ok &= expect(ready_input_task.wait(std::chrono::seconds(1)) == std::future_status::ready,
-		             "ready input prompt task finishes before stop");
-		const PromptStopPlan input_plan{
-		    .stop_prompt  = true,
-		    .abort_prompt = false,
-		    .send_enter   = true,
-		};
-		const auto input_result =
-		    request_password_prompt_stop(ready_input_task, input_plan, nullptr, nullptr);
-		ok &= expect(!input_result.enter_failed && input_result.prompt_stopped,
-		             "already-ready input prompt skips Enter injection");
-		ok &=
-		    expect(!ready_input_task.active(), "input plan deactivates already-ready prompt task");
-
-		return ok;
-	}
-
 }  // namespace
 
 auto main() -> int {
@@ -1061,7 +984,6 @@ auto main() -> int {
 	ok &= expect_authentication_preserves_host_locale_state();
 	ok &= expect_identify_dependency_validation();
 	ok &= expect_enabled_decisions();
-	ok &= expect_prompt_stop_helpers();
 
 	ok &= expect(std::string(kConfigPathKey) == "CONFIG_PATH",
 	             "config path protocol key remains unchanged");

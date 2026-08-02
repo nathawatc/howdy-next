@@ -13,6 +13,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <poll.h>
@@ -29,6 +30,77 @@
 
 #include <sys/wait.h>
 
+namespace howdy::pam {
+	class PromptCoordinatorTestAccess {
+	public:
+		static auto wait_for_compare_success(PromptCoordinator                  &coordinator,
+		                                     std::chrono::steady_clock::duration timeout) -> bool {
+			std::unique_lock<std::mutex> lock(coordinator.mutex_);
+			return coordinator.condition_.wait_for(lock, timeout, [&coordinator] -> bool {
+				return coordinator.state_.compare_succeeded;
+			});
+		}
+
+		[[nodiscard]] static auto password_call_returned(PromptCoordinator &coordinator) -> bool {
+			std::scoped_lock lock(coordinator.mutex_);
+			return coordinator.state_.password_call_returned;
+		}
+
+		static auto wait_for_password_call_returned(PromptCoordinator                  &coordinator,
+		                                            std::chrono::steady_clock::duration timeout)
+		    -> bool {
+			std::unique_lock<std::mutex> lock(coordinator.mutex_);
+			return coordinator.condition_.wait_for(lock, timeout, [&coordinator] -> bool {
+				return coordinator.state_.password_call_returned;
+			});
+		}
+
+		static void request_shutdown(PromptCoordinator &coordinator) {
+			{
+				std::scoped_lock lock(coordinator.mutex_);
+				coordinator.state_.shutdown_requested     = true;
+				coordinator.state_.cancellation_requested = true;
+				if (coordinator.state_.enter == PromptCoordinator::EnterState::kClaimed) {
+					coordinator.state_.enter              = PromptCoordinator::EnterState::kPending;
+					coordinator.state_.claimed_generation = 0;
+				}
+			}
+			coordinator.condition_.notify_all();
+		}
+
+		static void prepare_claimed_enter(PromptCoordinator           &coordinator,
+		                                  std::unique_ptr<EnterDevice> enter_device) {
+			std::scoped_lock lock(coordinator.mutex_);
+			coordinator.enter_device_                = std::move(enter_device);
+			coordinator.state_.first_completion      = PromptCoordinator::FirstCompletion::kCompare;
+			coordinator.state_.compare_succeeded     = true;
+			coordinator.state_.password_call_entered = true;
+			coordinator.state_.secret_prompt_generation = 1;
+			coordinator.state_.claimed_generation       = 1;
+			coordinator.state_.secret_prompt_active     = true;
+			coordinator.state_.enter                    = PromptCoordinator::EnterState::kClaimed;
+		}
+
+		static void publish_password_call_returned(PromptCoordinator &coordinator) {
+			coordinator.publish_password_call_returned();
+		}
+
+		static void close_prompt_generation(PromptCoordinator     &coordinator,
+		                                    SecretPromptGeneration generation) {
+			PromptCoordinator::secret_prompt_end(&coordinator, generation);
+		}
+
+		static auto begin_prompt_generation(PromptCoordinator &coordinator)
+		    -> SecretPromptGeneration {
+			return PromptCoordinator::secret_prompt_begin(&coordinator);
+		}
+
+		static void send_enter_for_prompt_generations(PromptCoordinator &coordinator) {
+			coordinator.send_enter_for_prompt_generations();
+		}
+	};
+}  // namespace howdy::pam
+
 namespace howdy::test::prompt_coordinator {
 
 	using howdy::test::expect;
@@ -40,49 +112,88 @@ namespace howdy::test::prompt_coordinator {
 	using namespace std::chrono_literals;
 
 	struct FakeContext {
-		std::atomic<int>          spawn_calls{0};
-		std::atomic<pid_t>        spawned_pid{-1};
-		std::atomic<int>          wait_calls{0};
-		std::atomic<pid_t>        waited_pid{-1};
-		std::atomic<int>          last_wait_status{0};
-		std::atomic<int>          terminate_calls{0};
-		std::atomic<pid_t>        terminated_pid{-1};
-		std::atomic<int>          preflight_calls{0};
-		std::atomic<int>          enter_device_constructions{0};
-		std::atomic<int>          enter_presses{0};
-		std::atomic<int>          auth_token_calls{0};
-		int                       token_result = PAM_SUCCESS;
-		std::chrono::milliseconds token_delay{0};
-		bool                      block_token_until_warning = false;
-		bool                      warning_released_token    = false;
-		std::mutex                token_mutex;
-		std::condition_variable   token_condition;
-		bool                      preflight_result         = true;
-		bool                      fail_enter_construction  = false;
-		bool                      return_null_enter_device = false;
-		bool                      fail_enter_send          = false;
-		bool                      release_token_on_enter   = false;
-		bool                      request_native_prompt    = false;
-		bool                      complete_native_prompt   = false;
-		bool                      native_available         = true;
-		int                       native_install_result    = PAM_SUCCESS;
-		std::atomic<int>          native_abort_calls{0};
-		std::atomic<int>          native_restore_calls{0};
-		int                       prompt_master_fd = -1;
-		std::atomic<bool>         native_prompt_seen{false};
-		std::atomic<bool>         native_prompt_installed{false};
-		std::atomic<bool>         native_prompt_input_sent{false};
-		std::atomic<bool>         native_prompt_completed{false};
-		std::atomic<bool>         pam_completion_observed_by_waiter{false};
-		std::atomic<int>          original_conversation_calls{0};
-		int                       spawn_result = 0;
-		std::string               spawned_config_path;
-		std::string               spawned_username;
-		std::string               spawned_user_models_dir;
-		bool                      spawned_staged_runtime = false;
-		pid_t                     next_child_pid         = -1;
-		std::mutex                native_prompt_mutex;
-		std::condition_variable   native_prompt_condition;
+		std::thread::id                                 run_thread;
+		std::thread::id                                 wait_thread;
+		std::thread::id                                 auth_token_thread;
+		std::thread::id                                 enter_thread;
+		std::thread::id                                 native_create_thread;
+		std::thread::id                                 native_install_thread;
+		std::thread::id                                 native_restore_thread;
+		std::thread::id                                 native_abort_thread;
+		std::chrono::milliseconds                       token_delay{0};
+		PromptCoordinator                              *coordinator_for_enter = nullptr;
+		howdy::pam::SecretPromptObserver                secret_prompt_observer{};
+		std::string                                     spawned_config_path;
+		std::string                                     spawned_username;
+		std::string                                     spawned_user_models_dir;
+		std::mutex                                      reap_mutex;
+		std::mutex                                      token_mutex;
+		std::mutex                                      enter_mutex;
+		std::mutex                                      native_prompt_mutex;
+		std::condition_variable                         reap_condition;
+		std::condition_variable                         token_condition;
+		std::condition_variable                         enter_condition;
+		std::condition_variable                         native_prompt_condition;
+		std::atomic<int>                                spawn_calls{0};
+		std::atomic<pid_t>                              spawned_pid{-1};
+		std::atomic<int>                                wait_calls{0};
+		std::atomic<pid_t>                              waited_pid{-1};
+		std::atomic<int>                                last_wait_status{0};
+		std::atomic<int>                                terminate_calls{0};
+		std::atomic<pid_t>                              terminated_pid{-1};
+		std::atomic<int>                                preflight_calls{0};
+		std::atomic<int>                                enter_device_constructions{0};
+		std::atomic<int>                                enter_presses{0};
+		std::atomic<int>                                auth_token_calls{0};
+		int                                             token_result          = PAM_SUCCESS;
+		int                                             native_install_result = PAM_SUCCESS;
+		std::atomic<int>                                native_abort_calls{0};
+		std::atomic<int>                                native_restore_calls{0};
+		std::atomic<int>                                secret_restore_calls{0};
+		int                                             prompt_master_fd = -1;
+		std::atomic<int>                                original_conversation_calls{0};
+		int                                             spawn_result   = 0;
+		pid_t                                           next_child_pid = -1;
+		std::atomic<bool>                               auth_token_active{false};
+		bool                                            block_token_until_warning     = false;
+		bool                                            block_token_until_release     = false;
+		bool                                            use_real_auth_token           = false;
+		bool                                            block_before_conversation     = false;
+		bool                                            complete_without_conversation = false;
+		bool                                            hold_reaped_until_cancel      = false;
+		bool                                            token_waits_for_reap          = false;
+		bool                                            throw_compare_wait            = false;
+		bool                                            child_reaped_by_wait          = false;
+		bool                                            warning_released_token        = false;
+		bool                                            before_conversation           = false;
+		bool                                            release_conversation          = false;
+		bool                                            release_token                 = false;
+		bool                                            preflight_result              = true;
+		bool                                            fail_enter_construction       = false;
+		bool                                            return_null_enter_device      = false;
+		bool                                            fail_enter_send               = false;
+		bool                                            release_token_on_enter        = false;
+		bool                                            block_enter_after_emit        = false;
+		std::atomic<bool>                               token_returned{false};
+		std::atomic<howdy::pam::SecretPromptGeneration> active_prompt_generation{0};
+		std::atomic<bool>                               enter_ready{false};
+		std::atomic<bool>                               enter_started_before_password_return{false};
+		std::atomic<bool>                               enter_emission_finished{false};
+		bool                                            release_enter          = false;
+		bool                                            request_native_prompt  = false;
+		bool                                            complete_native_prompt = false;
+		bool                                            native_available       = true;
+		howdy::pam::ConversationRestoreResult           native_restore_result =
+		    howdy::pam::ConversationRestoreResult::kOriginalRestored;
+		howdy::pam::ConversationRestoreResult secret_restore_result =
+		    howdy::pam::ConversationRestoreResult::kOriginalRestored;
+		std::atomic<bool> native_prompt_seen{false};
+		std::atomic<bool> native_prompt_installed{false};
+		std::atomic<bool> native_prompt_input_sent{false};
+		std::atomic<bool> native_prompt_completed{false};
+		std::atomic<bool> pam_completion_observed_by_waiter{false};
+		bool              suppress_secret_prompt = false;
+		bool              spawned_staged_runtime = false;
 	};
 
 	class FakeEnterDevice final : public EnterDevice {
@@ -91,7 +202,24 @@ namespace howdy::test::prompt_coordinator {
 		    : context_(context) {}
 
 		void send_enter_press() override {
+			context_->enter_thread      = std::this_thread::get_id();
+			const auto wait_for_release = [this] -> void {
+				std::unique_lock<std::mutex> lock(context_->enter_mutex);
+				context_->enter_ready = true;
+				context_->enter_condition.notify_all();
+				context_->enter_condition.wait(lock, [this] -> bool {
+					return context_->release_enter;
+				});
+			};
+			if (context_->coordinator_for_enter != nullptr) {
+				context_->enter_started_before_password_return =
+				    !howdy::pam::PromptCoordinatorTestAccess::password_call_returned(
+				        *context_->coordinator_for_enter);
+			}
 			++context_->enter_presses;
+			if (context_->block_enter_after_emit) {
+				wait_for_release();
+			}
 			if (context_->fail_enter_send) {
 				throw std::runtime_error("Failed to send Enter keypress");
 			}
@@ -102,6 +230,8 @@ namespace howdy::test::prompt_coordinator {
 				}
 				context_->token_condition.notify_one();
 			}
+			context_->enter_emission_finished = true;
+			context_->enter_condition.notify_all();
 		}
 
 	private:
@@ -118,6 +248,7 @@ namespace howdy::test::prompt_coordinator {
 		}
 
 		auto install() -> int override {
+			context_->native_install_thread = std::this_thread::get_id();
 			if (context_->native_install_result == PAM_SUCCESS) {
 				context_->native_prompt_installed = true;
 			}
@@ -125,13 +256,38 @@ namespace howdy::test::prompt_coordinator {
 		}
 
 		void request_abort() override {
+			context_->native_abort_thread = std::this_thread::get_id();
 			++context_->native_abort_calls;
 			context_->native_prompt_completed = true;
 			context_->native_prompt_condition.notify_one();
 		}
 
-		void restore_original() override {
+		auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override {
+			context_->native_restore_thread = std::this_thread::get_id();
 			++context_->native_restore_calls;
+			return context_->native_restore_result;
+		}
+
+	private:
+		FakeContext *context_;
+	};
+
+	class FakeSecretPromptConversation final : public howdy::pam::SecretPromptConversation {
+	public:
+		explicit FakeSecretPromptConversation(FakeContext *context)
+		    : context_(context) {}
+
+		[[nodiscard]] auto available() const -> bool override {
+			return true;
+		}
+
+		auto install() -> int override {
+			return PAM_SUCCESS;
+		}
+
+		auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override {
+			++context_->secret_restore_calls;
+			return context_->secret_restore_result;
 		}
 
 	private:
@@ -344,57 +500,105 @@ namespace howdy::test::prompt_coordinator {
 		return 0;
 	}
 
-	inline void wait_for_native_prompt_completion(FakeContext &fake) {
+	inline auto wait_for_native_prompt_completion(FakeContext &fake) -> bool {
 		if (fake.complete_native_prompt) {
 			std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
-			fake.native_prompt_condition.wait(lock, [&fake] -> bool {
-				return fake.native_prompt_completed.load();
-			});
+			if (!fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
+				    return fake.native_prompt_completed.load();
+			    })) {
+				return false;
+			}
 			fake.pam_completion_observed_by_waiter = true;
 		}
+		return true;
+	}
+
+	inline auto reap_test_child(pid_t child_pid, int *status) -> bool {
+		pid_t waited;
+		do {
+			waited = waitpid(child_pid, status, 0);
+		} while (waited < 0 && errno == EINTR);
+		if (waited == child_pid) {
+			return true;
+		}
+		std::cerr << "waitpid(" << child_pid << ") failed: errno=" << errno << '\n';
+		return false;
 	}
 
 	inline auto wait_for_compare(void *context, pid_t child_pid,
-	                             [[maybe_unused]] std::chrono::steady_clock::time_point deadline)
+	                             [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
+	                             void                                      *cancellation_context,
+	                             howdy::pam::CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
-		fake.waited_pid = child_pid;
+		fake.waited_pid  = child_pid;
+		fake.wait_thread = std::this_thread::get_id();
+		if (fake.throw_compare_wait) {
+			throw std::runtime_error("simulated compare wait failure");
+		}
 		if (fake.request_native_prompt) {
-			wait_for_native_prompt_completion(fake);
+			if (!wait_for_native_prompt_completion(fake)) {
+				howdy::pam::compare_process::cancel_and_reap(child_pid);
+				return static_cast<int>(CompareExit::kAbort) << 8;
+			}
 		}
 		while (true) {
 			int         status = 0;
-			const pid_t result = waitpid(child_pid, &status, 0);
+			const pid_t result = waitpid(child_pid, &status, WNOHANG);
 			if (result == child_pid) {
 				fake.last_wait_status = status;
+				{
+					std::scoped_lock lock(fake.reap_mutex);
+					fake.child_reaped_by_wait = true;
+				}
+				fake.reap_condition.notify_one();
+				while (fake.hold_reaped_until_cancel && cancellation_requested != nullptr &&
+				       !cancellation_requested(cancellation_context)) {
+					std::this_thread::yield();
+				}
 				return status;
 			}
 			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			if (result == 0 && cancellation_requested != nullptr &&
+			    cancellation_requested(cancellation_context)) {
+				++fake.terminate_calls;
+				fake.terminated_pid = child_pid;
+				(void)kill(child_pid, SIGTERM);
+				if (!reap_test_child(child_pid, &status)) {
+					return static_cast<int>(CompareExit::kAbort) << 8;
+				}
+				fake.last_wait_status = status;
+				return status;
+			}
+			if (result == 0) {
+				std::this_thread::sleep_for(1ms);
 				continue;
 			}
 			return static_cast<int>(CompareExit::kAbort) << 8;
 		}
 	}
 
-	inline auto watchdog_wait_for_compare(void *context, pid_t child_pid,
-	                                      std::chrono::steady_clock::time_point deadline) -> int {
+	inline auto watchdog_wait_for_compare(
+	    void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	    void                                      *cancellation_context,
+	    howdy::pam::CompareCancellationRequestedFn cancellation_requested) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
 		fake.waited_pid      = child_pid;
 		const auto remaining = std::max(deadline - std::chrono::steady_clock::now(),
 		                                std::chrono::steady_clock::duration::zero());
 		const int  status    = howdy::pam::compare_process::wait_until(
-		    child_pid, std::chrono::steady_clock::now() + remaining);
+		    child_pid, std::chrono::steady_clock::now() + remaining, cancellation_context,
+		    cancellation_requested);
+		if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
+			++fake.terminate_calls;
+			fake.terminated_pid = child_pid;
+		}
 		fake.last_wait_status = status;
 		return status;
-	}
-
-	inline auto terminate_compare(void *context, pid_t child_pid) -> void {
-		auto &fake = *static_cast<FakeContext *>(context);
-		++fake.terminate_calls;
-		fake.terminated_pid = child_pid;
-		(void)kill(child_pid, SIGTERM);
 	}
 
 	inline auto input_preflight(void *context) -> bool {
@@ -418,14 +622,109 @@ namespace howdy::test::prompt_coordinator {
 	inline auto create_native_prompt(void *context, pam_handle_t *pamh)
 	    -> std::unique_ptr<NativePrompt> {
 		(void)pamh;
-		auto &fake = *static_cast<FakeContext *>(context);
+		auto &fake                = *static_cast<FakeContext *>(context);
+		fake.native_create_thread = std::this_thread::get_id();
 		return std::make_unique<FakeNativePrompt>(&fake);
+	}
+
+	inline auto create_secret_prompt_conversation(void *context, pam_handle_t *pamh,
+	                                              howdy::pam::SecretPromptObserver observer)
+	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
+		(void)pamh;
+		auto &fake                  = *static_cast<FakeContext *>(context);
+		fake.secret_prompt_observer = observer;
+		return std::make_unique<FakeSecretPromptConversation>(&fake);
+	}
+
+	inline auto request_token_until_release(FakeContext &fake) -> std::tuple<int, const char *> {
+		std::unique_lock<std::mutex> lock(fake.token_mutex);
+		fake.before_conversation = true;
+		fake.token_condition.notify_all();
+		if (!fake.token_condition.wait_for(lock, 2s, [&fake] -> bool {
+			    return fake.release_token;
+		    })) {
+			fake.auth_token_active = false;
+			return {PAM_SYSTEM_ERR, nullptr};
+		}
+		fake.auth_token_active = false;
+		fake.token_returned    = true;
+		fake.token_condition.notify_all();
+		return {fake.token_result, nullptr};
+	}
+
+	inline auto request_real_auth_token(FakeContext &fake, pam_handle_t *pamh)
+	    -> std::tuple<int, const char *> {
+		if (fake.block_before_conversation) {
+			std::unique_lock<std::mutex> lock(fake.token_mutex);
+			fake.before_conversation = true;
+			fake.token_condition.notify_all();
+			if (!fake.token_condition.wait_for(lock, 2s, [&fake] -> bool {
+				    return fake.release_conversation;
+			    })) {
+				fake.auth_token_active = false;
+				return {PAM_SYSTEM_ERR, nullptr};
+			}
+		}
+		if (fake.complete_without_conversation) {
+			fake.auth_token_active = false;
+			return {fake.token_result, nullptr};
+		}
+		const void *item   = nullptr;
+		int         result = pam_get_item(pamh, PAM_CONV, &item);
+		if (result == PAM_SUCCESS && item != nullptr) {
+			const auto              *conversation = static_cast<const struct pam_conv *>(item);
+			const struct pam_message message{
+			    .msg_style = PAM_PROMPT_ECHO_OFF,
+			    .msg       = "Password: ",
+			};
+			const struct pam_message *message_ptr = &message;
+			struct pam_response      *response    = nullptr;
+			result = conversation->conv(1, &message_ptr, &response, conversation->appdata_ptr);
+			if (response != nullptr) {
+				std::free(response->resp);
+				std::free(response);
+			}
+		}
+		fake.auth_token_active = false;
+		return {result, nullptr};
 	}
 
 	inline auto request_auth_token(void *context, pam_handle_t *pamh)
 	    -> std::tuple<int, const char *> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
+		fake.auth_token_thread = std::this_thread::get_id();
+		fake.auth_token_active = true;
+		const auto generation =
+		    !fake.suppress_secret_prompt && !fake.use_real_auth_token &&
+		            fake.secret_prompt_observer.begin != nullptr
+		        ? fake.secret_prompt_observer.begin(fake.secret_prompt_observer.context)
+		        : 0;
+		fake.active_prompt_generation = generation;
+
+		struct GenerationScope {
+			howdy::pam::SecretPromptObserver   observer{};
+			howdy::pam::SecretPromptGeneration generation = 0;
+
+			~GenerationScope() {
+				if (generation != 0) {
+					observer.end(observer.context, generation);
+				}
+			}
+		} generation_scope{.observer = fake.secret_prompt_observer, .generation = generation};
+
+		if (fake.block_token_until_release) {
+			return request_token_until_release(fake);
+		}
+		if (fake.use_real_auth_token) {
+			return request_real_auth_token(fake, pamh);
+		}
+		if (fake.token_waits_for_reap) {
+			std::unique_lock<std::mutex> lock(fake.reap_mutex);
+			fake.reap_condition.wait_for(lock, 1s, [&fake] -> bool {
+				return fake.child_reaped_by_wait;
+			});
+		}
 		if (fake.request_native_prompt) {
 			(void)pamh;
 			fake.native_prompt_seen = true;
@@ -435,33 +734,63 @@ namespace howdy::test::prompt_coordinator {
 				fake.native_prompt_condition.notify_one();
 			} else {
 				std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
-				fake.native_prompt_condition.wait(lock, [&fake] -> bool {
-					return fake.native_prompt_completed.load();
-				});
+				if (!fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
+					    return fake.native_prompt_completed.load();
+				    })) {
+					fake.auth_token_active = false;
+					return {PAM_SYSTEM_ERR, nullptr};
+				}
 			}
+			fake.auth_token_active = false;
 			return {PAM_SUCCESS, nullptr};
 		}
 		if (fake.block_token_until_warning) {
 			std::unique_lock<std::mutex> lock(fake.token_mutex);
-			fake.token_condition.wait_for(lock, 1s, [&fake] -> bool {
+			fake.token_condition.wait_for(lock, 200ms, [&fake] -> bool {
 				return fake.warning_released_token;
 			});
 		}
 		std::this_thread::sleep_for(fake.token_delay);
+		fake.auth_token_active = false;
 		return {fake.token_result, nullptr};
 	}
 
 	inline auto dependencies(FakeContext *context) -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
-		    .context                  = context,
-		    .spawn_compare_process    = spawn_compare_process,
-		    .wait_for_compare_process = wait_for_compare,
-		    .terminate_compare        = terminate_compare,
-		    .input_prompt_preflight   = input_preflight,
-		    .create_enter_device      = create_enter_device,
-		    .create_native_prompt     = create_native_prompt,
-		    .request_auth_token       = request_auth_token,
+		    .context                           = context,
+		    .spawn_compare_process             = spawn_compare_process,
+		    .wait_for_compare_process          = wait_for_compare,
+		    .input_prompt_preflight            = input_preflight,
+		    .create_enter_device               = create_enter_device,
+		    .create_native_prompt              = create_native_prompt,
+		    .create_secret_prompt_conversation = create_secret_prompt_conversation,
+		    .request_auth_token                = request_auth_token,
 		};
+	}
+
+	inline auto wait_for_enter_ready(FakeContext                        &context,
+	                                 std::chrono::steady_clock::duration timeout) -> bool {
+		std::unique_lock<std::mutex> lock(context.enter_mutex);
+		return context.enter_condition.wait_for(lock, timeout, [&context] -> bool {
+			return context.enter_ready.load();
+		});
+	}
+
+	inline auto wait_for_enter_emission_finished(FakeContext                        &context,
+	                                             std::chrono::steady_clock::duration timeout)
+	    -> bool {
+		std::unique_lock<std::mutex> lock(context.enter_mutex);
+		return context.enter_condition.wait_for(lock, timeout, [&context] -> bool {
+			return context.enter_emission_finished.load();
+		});
+	}
+
+	inline void release_enter(FakeContext &context) {
+		{
+			std::scoped_lock lock(context.enter_mutex);
+			context.release_enter = true;
+		}
+		context.enter_condition.notify_all();
 	}
 
 	inline auto callback_counts(const FakeContext &context) -> CallbackCounts {
@@ -554,7 +883,7 @@ namespace howdy::test::prompt_coordinator {
 		if (child_pid <= 0 || ready != '1') {
 			if (child_pid > 0) {
 				(void)kill(child_pid, SIGKILL);
-				(void)waitpid(child_pid, nullptr, 0);
+				(void)reap_test_child(child_pid, nullptr);
 			}
 			return -1;
 		}

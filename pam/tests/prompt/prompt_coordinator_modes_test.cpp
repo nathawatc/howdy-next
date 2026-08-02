@@ -4,7 +4,7 @@
 namespace {
 	using namespace howdy::test::prompt_coordinator;
 
-	auto test_input_failure_callback_precedes_password_release(bool callback_throws) -> bool {
+	auto test_input_failure_callback_follows_password_completion(bool callback_throws) -> bool {
 		FakeContext context{
 		    .block_token_until_warning = true,
 		    .fail_enter_send           = true,
@@ -15,16 +15,16 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		int               callback_calls             = 0;
-		bool              callback_saw_blocked_token = false;
+		int               callback_calls               = 0;
+		bool              callback_saw_completed_token = false;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
 			++callback_calls;
 			{
 				std::unique_lock<std::mutex> lock(context.token_mutex);
-				callback_saw_blocked_token =
-				    context.auth_token_calls == 1 && !context.warning_released_token;
+				callback_saw_completed_token =
+				    context.auth_token_calls == 1 && !context.auth_token_active;
 				context.warning_released_token = true;
 			}
 			context.token_condition.notify_one();
@@ -38,9 +38,41 @@ namespace {
 		       expect(context.enter_device_constructions == 1,
 		              "input failure creates one Enter device") &&
 		       expect(context.enter_presses == 1, "input failure attempts one Enter press") &&
-		       expect(callback_saw_blocked_token,
-		              "input failure callback runs before password task release") &&
+		       expect(callback_saw_completed_token,
+		              "input failure callback runs after password request unwinds") &&
 		       expect(child_reaped(child_pid), "input failure callback child is reaped");
+	}
+
+	auto test_input_restore_failure_suppresses_deferred_notice(
+	    howdy::pam::ConversationRestoreResult restore_result, const std::string &message) -> bool {
+		FakeContext context{
+		    .block_token_until_warning = true,
+		    .fail_enter_send           = true,
+		    .secret_restore_result     = restore_result,
+		};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, message + ": child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		int               callback_calls = 0;
+		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto result = coordinator.run(make_compare_request(), [&callback_calls] -> void {
+			++callback_calls;
+		});
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              message + ": hard failure overrides face success") &&
+		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		              message + ": restoration failure returns system error") &&
+		       expect(context.enter_presses == 1,
+		              message + ": failed Enter attempt creates deferred notice") &&
+		       expect(callback_calls == 0,
+		              message + ": restoration failure suppresses deferred PAM notice") &&
+		       expect(context.secret_restore_calls == 1,
+		              message + ": conversation restoration attempted once") &&
+		       expect(child_reaped(child_pid), message + ": child reaped");
 	}
 
 	auto test_input_success_sends_one_enter() -> bool {
@@ -53,6 +85,7 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
+		context.run_thread     = std::this_thread::get_id();
 
 		int               callback_calls = 0;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
@@ -62,11 +95,14 @@ namespace {
 		});
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
-		       expect(result.prompt_stopped,
-		              "input success completes prompt during grace period") &&
 		       expect(context.enter_device_constructions == 1,
 		              "input success creates one Enter device") &&
 		       expect(context.enter_presses == 1, "input success sends exactly one Enter press") &&
+		       expect(context.auth_token_thread == context.run_thread,
+		              "input success requests password on run caller thread") &&
+		       expect(context.enter_thread == context.wait_thread &&
+		                  context.enter_thread != context.run_thread,
+		              "input success sends Enter from compare worker") &&
 		       expect(callback_calls == 0, "input success emits no failure callback") &&
 		       expect(child_reaped(child_pid), "input success child is reaped");
 	}
@@ -79,37 +115,35 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		int               callback_calls             = 0;
-		bool              callback_saw_blocked_token = false;
+		int               callback_calls               = 0;
+		bool              callback_saw_completed_token = false;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
 			++callback_calls;
 			{
 				std::unique_lock<std::mutex> lock(context.token_mutex);
-				callback_saw_blocked_token =
-				    context.auth_token_calls == 1 && !context.warning_released_token;
+				callback_saw_completed_token =
+				    context.auth_token_calls == 1 && !context.auth_token_active;
 				context.warning_released_token = true;
 			}
 			context.token_condition.notify_one();
 		});
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "blocked input success preserves Howdy result") &&
-		       expect(!result.prompt_stopped,
-		              "blocked input success uses manual-completion fallback") &&
 		       expect(context.enter_device_constructions == 1,
 		              "blocked input success creates one Enter device") &&
 		       expect(context.enter_presses == 1, "blocked input success sends one Enter press") &&
 		       expect(callback_calls == 1, "blocked input success emits one failure callback") &&
-		       expect(callback_saw_blocked_token,
-		              "blocked input callback runs before manual token release") &&
+		       expect(callback_saw_completed_token,
+		              "blocked input callback runs after manual token completion") &&
 		       expect(child_reaped(child_pid), "blocked input success child is reaped");
 	}
 
 	auto test_compare_failure_password_result(int pam_result, const std::string &label) -> bool {
 		FakeContext context{
-		    .token_result = pam_result,
 		    .token_delay  = std::chrono::milliseconds(100),
+		    .token_result = pam_result,
 		};
 		const pid_t child_pid = spawn_child(static_cast<int>(CompareExit::kTimeoutReached));
 		if (!expect(child_pid > 0, label + " child spawned")) {
@@ -138,8 +172,8 @@ namespace {
 
 	auto test_compare_signal_password_fallback() -> bool {
 		FakeContext context{
-		    .token_result = PAM_SUCCESS,
 		    .token_delay  = std::chrono::milliseconds(100),
+		    .token_result = PAM_SUCCESS,
 		};
 		const pid_t child_pid = spawn_signaled_child(SIGTERM);
 		if (!expect(child_pid > 0, "signaled compare child spawned")) {
@@ -283,8 +317,8 @@ namespace {
 	auto test_native_input_setup_fallback(bool available_result, int install_result,
 	                                      const std::string &label) -> bool {
 		FakeContext context{
-		    .token_result = PAM_SUCCESS,
 		    .token_delay  = std::chrono::milliseconds(100),
+		    .token_result = PAM_SUCCESS,
 		};
 		NativePamFixture fixture(&context);
 		if (!expect(fixture.start(false), label + " starts PAM handle")) {
@@ -315,36 +349,9 @@ namespace {
 		       expect(child_reaped(child_pid), label + " reaps child");
 	}
 
-	auto test_cleanup_restores_after_stopped_task() -> bool {
-		FakeContext      context;
-		NativePamFixture fixture(&context);
-		if (!expect(fixture.start(true), "stopped-task cleanup starts PAM PTY")) {
-			return false;
-		}
-
-		NativePromptConversation native_prompt(fixture.pamh());
-		if (!expect(native_prompt.available(), "stopped-task cleanup native prompt available") ||
-		    !expect(native_prompt.install() == PAM_SUCCESS,
-		            "stopped-task cleanup installs native conversation")) {
-			return false;
-		}
-
-		optional_task<std::tuple<int, const char *>> pass_task([] -> std::tuple<int, const char *> {
-			return {PAM_SUCCESS, nullptr};
-		});
-		pass_task.activate();
-		pass_task.stop();
-		if (!expect(!pass_task.active(), "stopped-task cleanup task is inactive after stop")) {
-			return false;
-		}
-
-		howdy::pam::cleanup_native_prompt(&pass_task, &native_prompt);
-		return expect(fixture.original_conversation_restored(),
-		              "cleanup restores original conversation after task becomes inactive");
-	}
-
 	auto test_native_blocked_prompt_cleanup() -> bool {
-		FakeContext      context{.request_native_prompt = true};
+		FakeContext context{.request_native_prompt = true};
+		context.run_thread = std::this_thread::get_id();
 		NativePamFixture fixture(&context);
 		if (!expect(fixture.start(true), "blocked native prompt starts PAM PTY")) {
 			return false;
@@ -370,7 +377,6 @@ namespace {
 		              "blocked native prompt waits for spawned child") &&
 		       expect(result.compare_status == 0,
 		              "blocked native prompt preserves successful compare status") &&
-		       expect(result.prompt_stopped, "blocked native prompt task joins after abort") &&
 		       expect(context.native_prompt_seen,
 		              "blocked native prompt reaches native conversation") &&
 		       expect(context.auth_token_calls == 1, "blocked native prompt requests token once") &&
@@ -380,6 +386,14 @@ namespace {
 		              "blocked native prompt bypasses original conversation") &&
 		       expect(context.native_abort_calls == 1,
 		              "blocked native prompt requests one abort") &&
+		       expect(context.native_create_thread == context.run_thread &&
+		                  context.native_install_thread == context.run_thread &&
+		                  context.auth_token_thread == context.run_thread &&
+		                  context.native_restore_thread == context.run_thread,
+		              "native PAM operations stay on run caller thread") &&
+		       expect(context.native_abort_thread == context.wait_thread &&
+		                  context.native_abort_thread != context.run_thread,
+		              "native abort runs on compare worker") &&
 		       expect(context.native_restore_calls == 1, "blocked native prompt restores once") &&
 		       expect(child_reaped(child_pid), "blocked native prompt reaps child");
 	}
@@ -430,18 +444,52 @@ namespace {
 		              "native PAM winner terminates blocked compare child once") &&
 		       expect(child_reaped(child_pid), "native PAM winner reaps compare child") &&
 		       expect(context.native_abort_calls == 0,
-		              "native PAM winner needs no abort after password completion") &&
+		              "native PAM winner needs no abort after password_call_returned") &&
 		       expect(context.native_restore_calls == 1,
 		              "native PAM winner restores native prompt once") &&
 		       expect(context.original_conversation_calls == 0,
 		              "native PAM winner leaves no blocked native prompt task");
 	}
+
+	auto test_native_restore_failure_forces_system_error(
+	    howdy::pam::ConversationRestoreResult restore_result, const std::string &message) -> bool {
+		FakeContext context{
+		    .request_native_prompt  = true,
+		    .complete_native_prompt = true,
+		    .native_restore_result  = restore_result,
+		};
+		NativePamFixture fixture(&context);
+		if (!expect(fixture.start(true), message + ": starts PAM PTY")) {
+			return false;
+		}
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, message + ": child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              message + ": restoration failure overrides normal winner") &&
+		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		              message + ": restoration failure returns hard PAM error") &&
+		       expect(context.native_restore_calls == 1,
+		              message + ": restoration attempted once") &&
+		       expect(child_reaped(child_pid), message + ": child reaped");
+	}
 }  // namespace
 
 auto run_prompt_mode_tests() -> bool {
 	bool ok = true;
-	ok &= test_input_failure_callback_precedes_password_release(false);
-	ok &= test_input_failure_callback_precedes_password_release(true);
+	ok &= test_input_failure_callback_follows_password_completion(false);
+	ok &= test_input_failure_callback_follows_password_completion(true);
+	ok &= test_input_restore_failure_suppresses_deferred_notice(
+	    howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
+	    "input fail-closed restoration");
+	ok &= test_input_restore_failure_suppresses_deferred_notice(
+	    howdy::pam::ConversationRestoreResult::kUnsafe, "input unsafe restoration");
 	ok &= test_input_success_sends_one_enter();
 	ok &= test_input_success_blocked_after_grace_waits_for_manual_completion();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
@@ -455,8 +503,12 @@ auto run_prompt_mode_tests() -> bool {
 	ok &= test_native_input_success_uses_native_path();
 	ok &= test_native_input_setup_fallback(false, -1, "native-input unavailable");
 	ok &= test_native_input_setup_fallback(true, PAM_CONV_ERR, "native-input install failure");
-	ok &= test_cleanup_restores_after_stopped_task();
 	ok &= test_native_blocked_prompt_cleanup();
 	ok &= test_native_pam_wins();
+	ok &= test_native_restore_failure_forces_system_error(
+	    howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
+	    "fail-closed callback installation");
+	ok &= test_native_restore_failure_forces_system_error(
+	    howdy::pam::ConversationRestoreResult::kUnsafe, "unsafe native restoration");
 	return ok;
 }

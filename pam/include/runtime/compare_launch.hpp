@@ -3,6 +3,7 @@
 #include <string>
 
 namespace howdy::pam {
+	using CompareCancellationRequestedFn = bool (*)(void *context);
 
 	struct CompareLaunchRequest {
 		std::string config_path;

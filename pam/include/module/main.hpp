@@ -12,11 +12,6 @@
 
 #include <security/pam_modules.h>
 
-enum class ConfirmationType : std::uint8_t {
-	Unset,
-	Howdy,
-	Pam
-};
 enum class Workaround : std::uint8_t {
 	Off,
 	Input,

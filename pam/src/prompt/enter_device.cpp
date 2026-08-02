@@ -1,7 +1,11 @@
 #include "prompt/enter_device.hpp"
 
+#include "internal_fd.hpp"
+
+#include <fcntl.h>
 #include <memory>
 #include <stdexcept>
+#include <unistd.h>
 
 #include <libevdev/libevdev-uinput.h>
 #include <libevdev/libevdev.h>
@@ -22,10 +26,15 @@ namespace {
 
 			libevdev_enable_event_type(raw_device_.get(), EV_KEY);
 			libevdev_enable_event_code(raw_device_.get(), EV_KEY, KEY_ENTER, nullptr);
+			uinput_fd_ = howdy::pam::detail::normalize_internal_fd(
+			    howdy::pam::detail::ScopedFd(open("/dev/uinput", O_RDWR | O_NONBLOCK | O_CLOEXEC)));
+			if (!uinput_fd_.valid()) {
+				throw std::runtime_error("Failed to open uinput device");
+			}
 
 			libevdev_uinput *raw_uinput    = nullptr;
 			const int        create_result = libevdev_uinput_create_from_device(
-			    raw_device_.get(), LIBEVDEV_UINPUT_OPEN_MANAGED, &raw_uinput);
+			    raw_device_.get(), uinput_fd_.get(), &raw_uinput);
 			if (create_result != 0) {
 				throw std::runtime_error("Failed to create uinput device");
 			}
@@ -43,6 +52,7 @@ namespace {
 
 	private:
 		std::unique_ptr<struct libevdev, decltype(&libevdev_free)> raw_device_;
+		howdy::pam::detail::ScopedFd                               uinput_fd_;
 		std::unique_ptr<struct libevdev_uinput, decltype(&libevdev_uinput_destroy)>
 		    raw_uinput_device_;
 	};

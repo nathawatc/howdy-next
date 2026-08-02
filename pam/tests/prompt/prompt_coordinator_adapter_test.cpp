@@ -218,7 +218,7 @@ namespace {
 
 	auto test_invalid_dependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 7; ++missing) {
+		for (int missing = 0; missing < 6; ++missing) {
 			FakeContext context;
 			auto        deps = dependencies(&context);
 			switch (missing) {
@@ -229,18 +229,15 @@ namespace {
 					deps.wait_for_compare_process = nullptr;
 					break;
 				case 2:
-					deps.terminate_compare = nullptr;
-					break;
-				case 3:
 					deps.input_prompt_preflight = nullptr;
 					break;
-				case 4:
+				case 3:
 					deps.create_enter_device = nullptr;
 					break;
-				case 5:
+				case 4:
 					deps.create_native_prompt = nullptr;
 					break;
-				case 6:
+				case 5:
 					deps.request_auth_token = nullptr;
 					break;
 				default:

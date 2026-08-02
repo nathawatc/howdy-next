@@ -3,6 +3,7 @@
 #include "module/main.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
+#include "prompt/conversation_response.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/runtime_session.hpp"
@@ -92,10 +93,11 @@ namespace {
 		return runtime.prepare_runtime != nullptr && runtime.cleanup_runtime != nullptr &&
 		       runtime.load_runtime_config != nullptr && runtime.effective_uid != nullptr &&
 		       prompt.spawn_compare_process != nullptr &&
-		       prompt.wait_for_compare_process != nullptr && prompt.terminate_compare != nullptr &&
+		       prompt.wait_for_compare_process != nullptr &&
 		       prompt.input_prompt_preflight != nullptr && prompt.create_enter_device != nullptr &&
-		       prompt.create_native_prompt != nullptr && prompt.request_auth_token != nullptr &&
-		       dependencies.check_enabled != nullptr;
+		       prompt.create_native_prompt != nullptr &&
+		       prompt.create_secret_prompt_conversation != nullptr &&
+		       prompt.request_auth_token != nullptr && dependencies.check_enabled != nullptr;
 	}
 
 	auto production_check_enabled(void *context, const howdy::native::RuntimeConfig &config,
@@ -134,13 +136,7 @@ namespace howdy::pam::auth_flow {
 			const struct pam_message *msgp = &msg;
 			struct pam_response      *resp = nullptr;
 			const int conv_result = original_conv.conv(1, &msgp, &resp, original_conv.appdata_ptr);
-			if (resp != nullptr) {
-				if (resp->resp != nullptr) {
-					std::memset(resp->resp, 0, std::strlen(resp->resp));
-					std::free(resp->resp);
-				}
-				std::free(resp);
-			}
+			howdy::pam::secure_free_conversation_responses(&resp, 1);
 			return conv_result;
 		};
 

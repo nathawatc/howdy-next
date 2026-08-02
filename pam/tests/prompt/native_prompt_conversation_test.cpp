@@ -1,9 +1,12 @@
+#include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_conversation.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <future>
@@ -17,6 +20,10 @@
 
 #include <security/pam_appl.h>
 
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+
 class NativePromptConversationTestAccess {
 public:
 	struct Descriptors {
@@ -26,11 +33,12 @@ public:
 	};
 
 	struct Operations {
-		void *context                                                = nullptr;
-		int (*poll_prompt)(void *, struct pollfd *, nfds_t, int)     = nullptr;
-		ssize_t (*read_prompt)(void *, int, void *, std::size_t)     = nullptr;
-		int (*restore_terminal)(void *, int, const struct termios *) = nullptr;
-		void (*post_message)(void *)                                 = nullptr;
+		void *context                                                  = nullptr;
+		int (*poll_prompt)(void *, struct pollfd *, nfds_t, int)       = nullptr;
+		ssize_t (*read_prompt)(void *, int, void *, std::size_t)       = nullptr;
+		int (*restore_terminal)(void *, int, const struct termios *)   = nullptr;
+		void (*post_message)(void *)                                   = nullptr;
+		int (*set_pam_item)(void *, pam_handle_t *, int, const void *) = nullptr;
 	};
 
 	static auto create(Descriptors descriptors) -> std::unique_ptr<NativePromptConversation> {
@@ -51,6 +59,8 @@ public:
 		                            : production.restore_terminal,
 		    .post_message     = operations.post_message != nullptr ? operations.post_message
 		                                                           : production.post_message,
+		    .set_pam_item     = operations.set_pam_item != nullptr ? operations.set_pam_item
+		                                                           : production.set_pam_item,
 		};
 		return std::unique_ptr<NativePromptConversation>(
 		    new NativePromptConversation(nullptr, {}, true,
@@ -62,7 +72,10 @@ public:
 
 	static auto dispatch(int num_msg, const struct pam_message **messages,
 	                     struct pam_response **response, void *appdata_ptr) -> int {
-		return NativePromptConversation::dispatch(num_msg, messages, response, appdata_ptr);
+		auto *conversation = static_cast<NativePromptConversation *>(appdata_ptr);
+		return NativePromptConversation::dispatch(
+		    num_msg, messages, response,
+		    conversation == nullptr ? nullptr : conversation->dispatch_context_.get());
 	}
 
 	static auto prompt_input(NativePromptConversation &conversation,
@@ -86,8 +99,31 @@ public:
 		conversation.installed_ = installed;
 	}
 
-	[[nodiscard]] static auto installed(const NativePromptConversation &conversation) -> bool {
+	static void set_pam_handle(NativePromptConversation &conversation, pam_handle_t *pamh) {
+		conversation.pamh_ = pamh;
+	}
+
+	static auto override_conversation(const NativePromptConversation &conversation)
+	    -> struct pam_conv {
+		return conversation.override_conv_;
+
+	}
+
+	[[nodiscard]] static auto
+	installed(const NativePromptConversation &conversation) -> bool {
 		return conversation.installed_;
+	}
+
+	[[nodiscard]] static auto tty_fd(const NativePromptConversation &conversation) -> int {
+		return conversation.tty_fd_;
+	}
+
+	[[nodiscard]] static auto abort_read_fd(const NativePromptConversation &conversation) -> int {
+		return conversation.abort_pipe_[0];
+	}
+
+	[[nodiscard]] static auto abort_write_fd(const NativePromptConversation &conversation) -> int {
+		return conversation.abort_pipe_[1];
 	}
 };
 
@@ -105,6 +141,9 @@ namespace {
 		bool                      abort_on_read    = false;
 		bool                      restore_failure  = false;
 		int                       throw_mode       = 0;
+		std::array<int, 3>        pam_set_results{{PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}};
+		int                       pam_set_calls = 0;
+		struct pam_conv           last_pam_conversation{};
 	};
 
 	auto injected_poll(void *context, struct pollfd *fds, nfds_t count, int timeout) -> int {
@@ -152,6 +191,17 @@ namespace {
 		}
 	}
 
+	auto injected_set_pam_item(void *context, pam_handle_t * /*pamh*/, int item_type,
+	                           const void *item) -> int {
+		auto &operations = *static_cast<OperationContext *>(context);
+		if (item_type == PAM_CONV && item != nullptr) {
+			operations.last_pam_conversation = *static_cast<const struct pam_conv *>(item);
+		}
+		const auto index = static_cast<std::size_t>(operations.pam_set_calls++);
+		return index < operations.pam_set_results.size() ? operations.pam_set_results[index]
+		                                                 : PAM_SYSTEM_ERR;
+	}
+
 	auto create_conversation(NativePromptConversationTestAccess::Descriptors descriptors,
 	                         OperationContext                               *operations = nullptr)
 	    -> std::unique_ptr<NativePromptConversation> {
@@ -163,6 +213,7 @@ namespace {
 		                                             .read_prompt      = injected_read,
 		                                             .restore_terminal = injected_restore,
 		                                             .post_message     = injected_post_message,
+		                                             .set_pam_item     = injected_set_pam_item,
 		                                         });
 		if (operations != nullptr) {
 			operations->conversation = conversation.get();
@@ -253,6 +304,507 @@ namespace {
 		(*fds)[0].reset(raw_fds[0]);
 		(*fds)[1].reset(raw_fds[1]);
 		return true;
+	}
+
+	auto expect_isolated(bool (*scenario)(), const std::string &message) -> bool {
+		const pid_t child_pid = fork();
+		if (!expect(child_pid >= 0, message + ": child spawned")) {
+			return false;
+		}
+		if (child_pid == 0) {
+			_exit(scenario() ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+
+		int status = 0;
+		for (int attempt = 0; attempt < 500; ++attempt) {
+			const pid_t waited = waitpid(child_pid, &status, WNOHANG);
+			if (waited == child_pid) {
+				return expect(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS,
+				              message + ": child succeeds");
+			}
+			if (waited < 0 && errno != EINTR) {
+				return expect(false, message + ": waitpid failed, errno=" + std::to_string(errno));
+			}
+			(void)poll(nullptr, 0, 10);
+		}
+
+		(void)kill(child_pid, SIGTERM);
+		for (int attempt = 0; attempt < 100; ++attempt) {
+			const pid_t waited = waitpid(child_pid, &status, WNOHANG);
+			if (waited == child_pid) {
+				return expect(false, message + ": child exceeded timeout and was terminated");
+			}
+			if (waited < 0 && errno != EINTR) {
+				return expect(
+				    false, message + ": termination wait failed, errno=" + std::to_string(errno));
+			}
+			(void)poll(nullptr, 0, 10);
+		}
+
+		(void)kill(child_pid, SIGKILL);
+		pid_t waited;
+		do {
+			waited = waitpid(child_pid, &status, 0);
+		} while (waited < 0 && errno == EINTR);
+		return expect(waited == child_pid, message + ": timed-out child reaped") &&
+		       expect(false, message + ": child exceeded timeout and required SIGKILL");
+	}
+
+	auto eligibility_conversation(int /*num_msg*/, const struct pam_message ** /*messages*/,
+	                              struct pam_response **response, void * /*context*/) -> int {
+		if (response != nullptr) {
+			*response = nullptr;
+		}
+		return PAM_CONV_ERR;
+	}
+
+	struct NativeFdScenario {
+		std::array<bool, 3> closed_stdio{};
+		int                 terminal_stdio          = -1;
+		bool                exhaust_tty_duplication = false;
+	};
+
+	auto redirect_stdio_to_null(int null_fd) -> bool {
+		return std::ranges::all_of(std::array{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO},
+		                           [null_fd](const int fd) -> bool {
+			                           return dup2(null_fd, fd) == fd;
+		                           });
+	}
+
+	auto close_test_stdio(const std::array<bool, 3> &closed_stdio) -> bool {
+		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
+			if (closed_stdio[static_cast<std::size_t>(fd)] && close(fd) != 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	auto descriptor_is_closed(int fd) -> bool {
+		errno = 0;
+		return fcntl(fd, F_GETFD) == -1 && errno == EBADF;
+	}
+
+	struct DescriptorIdentity {
+		bool        open  = false;
+		int         flags = -1;
+		int         error = 0;
+		struct stat metadata{};
+	};
+
+	auto standard_descriptor_identities() -> std::array<DescriptorIdentity, 3> {
+		std::array<DescriptorIdentity, 3> identities{};
+		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
+			auto &identity = identities[static_cast<std::size_t>(fd)];
+			errno          = 0;
+			identity.flags = fcntl(fd, F_GETFD);
+			identity.error = identity.flags < 0 ? errno : 0;
+			identity.open  = identity.flags >= 0 && fstat(fd, &identity.metadata) == 0;
+		}
+		return identities;
+	}
+
+	auto standard_descriptors_match(const std::array<DescriptorIdentity, 3> &expected) -> bool {
+		const auto actual = standard_descriptor_identities();
+		for (std::size_t index = 0; index < expected.size(); ++index) {
+			if (actual[index].open != expected[index].open) {
+				return false;
+			}
+			if (!expected[index].open &&
+			    (expected[index].error != EBADF || actual[index].error != EBADF)) {
+				return false;
+			}
+			if (actual[index].open &&
+			    (actual[index].flags != expected[index].flags ||
+			     actual[index].metadata.st_dev != expected[index].metadata.st_dev ||
+			     actual[index].metadata.st_ino != expected[index].metadata.st_ino ||
+			     actual[index].metadata.st_rdev != expected[index].metadata.st_rdev)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	auto test_internal_descriptors_preserve_stdio(NativeFdScenario scenario) -> bool {
+		ScopedFd master_fd;
+		ScopedFd slave_fd;
+		if (!open_pty_pair(&master_fd, &slave_fd)) {
+			return false;
+		}
+		const char *slave_name = ptsname(master_fd.get());
+		if (slave_name == nullptr || setsid() < 0) {
+			return false;
+		}
+		(void)signal(SIGHUP, SIG_IGN);
+		ScopedFd terminal_fd(open(slave_name, O_RDWR | O_CLOEXEC));
+		if (!terminal_fd.valid() || tcsetpgrp(terminal_fd.get(), getpgrp()) != 0) {
+			return false;
+		}
+
+		ScopedFd null_fd(open("/dev/null", O_RDWR | O_CLOEXEC));
+		if (!null_fd.valid()) {
+			return false;
+		}
+		if (!redirect_stdio_to_null(null_fd.get())) {
+			return false;
+		}
+		if (scenario.terminal_stdio >= 0 &&
+		    dup2(terminal_fd.get(), scenario.terminal_stdio) != scenario.terminal_stdio) {
+			return false;
+		}
+		struct stat terminal_before{};
+		if (scenario.terminal_stdio >= 0 && fstat(scenario.terminal_stdio, &terminal_before) != 0) {
+			return false;
+		}
+
+		const struct pam_conv original{.conv = eligibility_conversation, .appdata_ptr = nullptr};
+		pam_handle_t         *pamh = nullptr;
+		if (pam_start("howdy-native-fd-test", "alice", &original, &pamh) != PAM_SUCCESS) {
+			return false;
+		}
+		if (pam_set_item(pamh, PAM_TTY, slave_name) != PAM_SUCCESS) {
+			pam_end(pamh, PAM_SYSTEM_ERR);
+			return false;
+		}
+		if (!close_test_stdio(scenario.closed_stdio)) {
+			pam_end(pamh, PAM_SYSTEM_ERR);
+			return false;
+		}
+		if (scenario.exhaust_tty_duplication) {
+			const struct rlimit limit{.rlim_cur = STDERR_FILENO + 1, .rlim_max = STDERR_FILENO + 1};
+			if (setrlimit(RLIMIT_NOFILE, &limit) != 0) {
+				pam_end(pamh, PAM_SYSTEM_ERR);
+				return false;
+			}
+		}
+		const auto stdio_before = standard_descriptor_identities();
+
+		NativePromptConversation conversation(pamh);
+		const bool               available = conversation.available();
+		const std::array         internal_fds{
+		    NativePromptConversationTestAccess::tty_fd(conversation),
+		    NativePromptConversationTestAccess::abort_read_fd(conversation),
+		    NativePromptConversationTestAccess::abort_write_fd(conversation),
+		};
+		const bool  stdio_preserved = standard_descriptors_match(stdio_before);
+		struct stat terminal_after{};
+		const bool  terminal_preserved =
+		    scenario.terminal_stdio < 0 || (fstat(scenario.terminal_stdio, &terminal_after) == 0 &&
+		                                    terminal_before.st_dev == terminal_after.st_dev &&
+		                                    terminal_before.st_ino == terminal_after.st_ino &&
+		                                    terminal_before.st_rdev == terminal_after.st_rdev);
+		pam_end(pamh, PAM_SUCCESS);
+		const bool expect_available =
+		    scenario.terminal_stdio >= 0 && !scenario.exhaust_tty_duplication;
+		const bool internal_fds_valid =
+		    std::ranges::all_of(internal_fds,
+		                        [](const int fd) -> bool {
+			                        return fd > STDERR_FILENO &&
+			                               (fcntl(fd, F_GETFD) & FD_CLOEXEC) != 0;
+		                        }) &&
+		    internal_fds[0] != internal_fds[1] && internal_fds[0] != internal_fds[2] &&
+		    internal_fds[1] != internal_fds[2];
+		return available == expect_available && stdio_preserved && terminal_preserved &&
+		       (!available || internal_fds_valid);
+	}
+
+	auto closed_stdin_preserved_with_terminal_stdout() -> bool {
+		return test_internal_descriptors_preserve_stdio(
+		    {.closed_stdio = {true, false, false}, .terminal_stdio = STDOUT_FILENO});
+	}
+
+	auto closed_stdout_preserved_with_terminal_stdin() -> bool {
+		return test_internal_descriptors_preserve_stdio(
+		    {.closed_stdio = {false, true, false}, .terminal_stdio = STDIN_FILENO});
+	}
+
+	auto closed_stderr_preserved_with_terminal_stdin() -> bool {
+		return test_internal_descriptors_preserve_stdio(
+		    {.closed_stdio = {false, false, true}, .terminal_stdio = STDIN_FILENO});
+	}
+
+	auto closed_stdin_stdout_preserved_with_terminal_stderr() -> bool {
+		return test_internal_descriptors_preserve_stdio(
+		    {.closed_stdio = {true, true, false}, .terminal_stdio = STDERR_FILENO});
+	}
+
+	auto closed_all_stdio_remain_closed() -> bool {
+		return test_internal_descriptors_preserve_stdio(
+		    {.closed_stdio = {true, true, true}, .terminal_stdio = -1});
+	}
+
+	auto tty_normalization_failure_preserves_closed_stdin() -> bool {
+		return test_internal_descriptors_preserve_stdio({.closed_stdio   = {true, false, false},
+		                                                 .terminal_stdio = STDOUT_FILENO,
+		                                                 .exhaust_tty_duplication = true});
+	}
+
+	struct InternalFdFailureContext {
+		std::size_t        fail_duplicate_call = 0;
+		std::size_t        duplicate_calls     = 0;
+		bool               fail_pipe           = false;
+		std::array<int, 2> raw_pipe{{-1, -1}};
+		std::array<int, 2> duplicated{{-1, -1}};
+	};
+
+	auto injected_internal_duplicate(void *context, int fd, int minimum_fd) -> int {
+		auto &failure = *static_cast<InternalFdFailureContext *>(context);
+		++failure.duplicate_calls;
+		if (failure.duplicate_calls == failure.fail_duplicate_call) {
+			errno = EMFILE;
+			return -1;
+		}
+		const int duplicated = fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
+		if (failure.duplicate_calls <= failure.duplicated.size()) {
+			failure.duplicated[failure.duplicate_calls - 1] = duplicated;
+		}
+		return duplicated;
+	}
+
+	auto injected_internal_pipe(void *context, int *pipe_fds, int flags) -> int {
+		auto &failure = *static_cast<InternalFdFailureContext *>(context);
+		if (failure.fail_pipe) {
+			errno = EMFILE;
+			return -1;
+		}
+		const int result = pipe2(pipe_fds, flags);
+		if (result == 0) {
+			failure.raw_pipe = {pipe_fds[0], pipe_fds[1]};
+		}
+		return result;
+	}
+
+	auto recorded_descriptors_are_closed(const InternalFdFailureContext &failure) -> bool {
+		return std::ranges::all_of(std::array{failure.raw_pipe[0], failure.raw_pipe[1],
+		                                      failure.duplicated[0], failure.duplicated[1]},
+		                           [](const int fd) -> bool {
+			                           return fd < 0 || descriptor_is_closed(fd);
+		                           });
+	}
+
+	auto internal_pipe_failure_is_transactional(std::size_t         fail_duplicate_call,
+	                                            std::array<bool, 3> closed_stdio,
+	                                            bool                fail_pipe = false) -> bool {
+		if (!close_test_stdio(closed_stdio)) {
+			return false;
+		}
+		const auto               stdio_before = standard_descriptor_identities();
+		InternalFdFailureContext context{
+		    .fail_duplicate_call = fail_duplicate_call,
+		    .fail_pipe           = fail_pipe,
+		};
+		const howdy::pam::detail::InternalFdOperations operations{
+		    .context     = &context,
+		    .duplicate   = injected_internal_duplicate,
+		    .create_pipe = injected_internal_pipe,
+		};
+		auto pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC | O_NONBLOCK, &operations);
+		if (pipe.valid() || !recorded_descriptors_are_closed(context)) {
+			return false;
+		}
+		if (!standard_descriptors_match(stdio_before)) {
+			return false;
+		}
+		auto conversation = create_conversation({});
+		return !conversation->available();
+	}
+
+	auto abort_pipe_creation_failure_is_transactional() -> bool {
+		return internal_pipe_failure_is_transactional(0, {}, true);
+	}
+
+	auto abort_pipe_first_normalization_failure_is_transactional() -> bool {
+		return internal_pipe_failure_is_transactional(1, {true, false, false});
+	}
+
+	auto abort_pipe_second_normalization_failure_is_transactional() -> bool {
+		return internal_pipe_failure_is_transactional(2, {true, true, false});
+	}
+
+	auto expect_native_terminal_eligibility() -> bool {
+		ScopedFd                first_master;
+		ScopedFd                first_slave;
+		ScopedFd                second_master;
+		ScopedFd                second_slave;
+		std::array<ScopedFd, 2> pipes;
+		bool                    ok = true;
+		ok &= expect(open_pty_pair(&first_master, &first_slave),
+		             "native eligibility opens interactive terminal");
+		ok &= expect(open_pty_pair(&second_master, &second_slave),
+		             "native eligibility opens mismatched terminal");
+		ok &= expect(open_pipe(&pipes), "native eligibility opens graphical stdio substitute");
+		if (!ok) {
+			return false;
+		}
+
+		char *interactive_path = ptsname(first_master.get());
+		if (!expect(interactive_path != nullptr,
+		            "native eligibility resolves interactive terminal")) {
+			return false;
+		}
+		const pid_t terminal_child = fork();
+		if (terminal_child == 0) {
+			if (setsid() < 0) {
+				_exit(EXIT_FAILURE);
+			}
+			const int terminal_fd = open(interactive_path, O_RDWR | O_CLOEXEC);
+			if (terminal_fd < 0) {
+				_exit(EXIT_FAILURE);
+			}
+			const bool normal = native_prompt_terminal_is_interactive({.tty    = terminal_fd,
+			                                                           .input  = terminal_fd,
+			                                                           .output = terminal_fd,
+			                                                           .error  = terminal_fd});
+			const bool redirected_stdout =
+			    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
+			                                           .input  = terminal_fd,
+			                                           .output = pipes[1].get(),
+			                                           .error  = terminal_fd});
+			const bool stdout_only =
+			    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
+			                                           .input  = pipes[0].get(),
+			                                           .output = terminal_fd,
+			                                           .error  = pipes[1].get()});
+			const bool stderr_only =
+			    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
+			                                           .input  = pipes[0].get(),
+			                                           .output = pipes[1].get(),
+			                                           .error  = terminal_fd});
+			const bool unrelated_stdio =
+			    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
+			                                           .input  = pipes[0].get(),
+			                                           .output = pipes[1].get(),
+			                                           .error  = pipes[1].get()});
+			const bool regular_pam_tty =
+			    native_prompt_terminal_is_interactive({.tty    = pipes[0].get(),
+			                                           .input  = terminal_fd,
+			                                           .output = terminal_fd,
+			                                           .error  = terminal_fd});
+			const unsigned failures = static_cast<unsigned>(!normal) |
+			                          (static_cast<unsigned>(!redirected_stdout) << 1U) |
+			                          (static_cast<unsigned>(!stdout_only) << 2U) |
+			                          (static_cast<unsigned>(!stderr_only) << 3U) |
+			                          (static_cast<unsigned>(unrelated_stdio) << 4U) |
+			                          (static_cast<unsigned>(regular_pam_tty) << 5U);
+			_exit(static_cast<int>(failures));
+		}
+		if (!expect(terminal_child > 0, "native eligibility spawns terminal child")) {
+			return false;
+		}
+		int   terminal_status = 0;
+		pid_t waited;
+		do {
+			waited = waitpid(terminal_child, &terminal_status, 0);
+		} while (waited < 0 && errno == EINTR);
+		ok &=
+		    expect(waited == terminal_child, "native eligibility waits for terminal child, errno=" +
+		                                         std::to_string(waited < 0 ? errno : 0));
+		if (waited == terminal_child) {
+			ok &= expect(WIFEXITED(terminal_status), "native eligibility child exits normally");
+			if (WIFEXITED(terminal_status)) {
+				const auto failures = static_cast<unsigned>(WEXITSTATUS(terminal_status));
+				ok &= expect((failures & (1U << 0U)) == 0,
+				             "all matching descriptors retain native mode");
+				ok &= expect((failures & (1U << 1U)) == 0,
+				             "redirected stdout with matching stdin/stderr retains native mode");
+				ok &= expect((failures & (1U << 2U)) == 0,
+				             "matching stdout with redirected stdin/stderr retains native mode");
+				ok &= expect((failures & (1U << 3U)) == 0,
+				             "matching stderr with redirected stdin/stdout retains native mode");
+				ok &= expect((failures & (1U << 4U)) == 0,
+				             "unrelated standard descriptors reject native mode for fallback");
+				ok &= expect((failures & (1U << 5U)) == 0,
+				             "regular-file PAM_TTY rejects native mode for fallback");
+			}
+		}
+		ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
+		                                                     .input  = first_slave.get(),
+		                                                     .output = first_slave.get(),
+		                                                     .error  = first_slave.get()}),
+		             "foreground mismatch rejects native mode for fallback");
+		ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
+		                                                     .input  = second_slave.get(),
+		                                                     .output = second_slave.get(),
+		                                                     .error  = second_slave.get()}),
+		             "different interactive descriptors reject native mode for fallback");
+		ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
+		                                                     .input  = pipes[0].get(),
+		                                                     .output = pipes[1].get(),
+		                                                     .error  = pipes[1].get()}),
+		             "GDM-like unrelated stdio rejects native mode for fallback");
+		return ok;
+	}
+
+	auto expect_native_terminal_aliases() -> bool {
+		ScopedFd first_master;
+		ScopedFd first_slave;
+		ScopedFd second_master;
+		ScopedFd second_slave;
+		bool     ok = true;
+		ok &=
+		    expect(open_pty_pair(&first_master, &first_slave), "native alias test opens first PTY");
+		ok &= expect(open_pty_pair(&second_master, &second_slave),
+		             "native alias test opens second PTY");
+		if (!ok) {
+			return false;
+		}
+
+		char             *first_name  = ptsname(first_master.get());
+		const std::string first_path  = first_name == nullptr ? "" : first_name;
+		char             *second_name = ptsname(second_master.get());
+		const std::string second_path = second_name == nullptr ? "" : second_name;
+		ok &= expect(first_name != nullptr && second_name != nullptr,
+		             "native alias test resolves PTY paths");
+		if (!ok) {
+			return false;
+		}
+
+		const pid_t child = fork();
+		if (child < 0) {
+			return expect(false, "native alias test spawns terminal child");
+		}
+		if (child == 0) {
+			if (setsid() < 0) {
+				_exit(EXIT_FAILURE);
+			}
+			const int terminal_fd = open(first_path.c_str(), O_RDWR | O_CLOEXEC);
+			const int alias_fd    = open("/dev/tty", O_RDWR | O_CLOEXEC | O_NOCTTY);
+			const int other_fd    = open(second_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY);
+			if (terminal_fd < 0 || alias_fd < 0 || other_fd < 0) {
+				_exit(EXIT_FAILURE);
+			}
+
+			const bool path_target_alias = native_prompt_terminal_is_interactive(
+			    {.tty = terminal_fd, .input = alias_fd, .output = -1, .error = -1});
+			const bool alias_target_path = native_prompt_terminal_is_interactive(
+			    {.tty = alias_fd, .input = terminal_fd, .output = -1, .error = -1});
+			const bool different_pty_same_session = native_prompt_terminal_is_interactive(
+			    {.tty = terminal_fd, .input = other_fd, .output = -1, .error = -1});
+			const unsigned failures = static_cast<unsigned>(!path_target_alias) |
+			                          (static_cast<unsigned>(!alias_target_path) << 1U) |
+			                          (static_cast<unsigned>(different_pty_same_session) << 2U);
+			_exit(static_cast<int>(failures));
+		}
+
+		int   status = 0;
+		pid_t waited;
+		do {
+			waited = waitpid(child, &status, 0);
+		} while (waited < 0 && errno == EINTR);
+		ok &= expect(waited == child, "native alias test verifies exact waitpid result");
+		if (waited != child) {
+			return ok;
+		}
+		ok &= expect(WIFEXITED(status), "native alias test child exits normally");
+		if (!WIFEXITED(status)) {
+			return ok;
+		}
+		const auto failures = static_cast<unsigned>(WEXITSTATUS(status));
+		ok &= expect((failures & (1U << 0U)) == 0, "/dev/pts target accepts /dev/tty stdio alias");
+		ok &= expect((failures & (1U << 1U)) == 0, "/dev/tty target accepts underlying PTY stdio");
+		ok &= expect((failures & (1U << 2U)) == 0,
+		             "different PTY in same process session is rejected");
+		return ok;
 	}
 
 	struct ReadBuffer {
@@ -369,6 +921,7 @@ namespace {
 			ok &= expect(conversation.available(), "restore test native prompt is available");
 			ok &= expect(conversation.install() == PAM_SUCCESS,
 			             "restore test installs native conversation");
+			conversation.restore_original();
 		}
 
 		const void *restored_item = nullptr;
@@ -380,6 +933,40 @@ namespace {
 		             "restore test restores original PAM conversation callback");
 		ok &= expect(restored_conv->appdata_ptr == original_conv.appdata_ptr,
 		             "restore test restores original PAM conversation appdata");
+		pam_end(pamh, PAM_SUCCESS);
+		return ok;
+	}
+
+	auto expect_invalid_pam_tty_is_unavailable() -> bool {
+		int             appdata = 42;
+		struct pam_conv original_conv{
+		    .conv        = test_conv,
+		    .appdata_ptr = &appdata,
+		};
+		pam_handle_t *pamh = nullptr;
+		if (!expect(pam_start("howdy-native-tty-test", "test-user", &original_conv, &pamh) ==
+		                PAM_SUCCESS,
+		            "invalid PAM_TTY test starts PAM handle")) {
+			return false;
+		}
+
+		bool ok = true;
+		{
+			NativePromptConversation conversation(pamh);
+			ok &= expect(!conversation.available(), "missing PAM_TTY disables native prompt");
+		}
+
+		std::string path_template = "/tmp/howdy-pam-tty-XXXXXX";
+		const int   regular_fd    = mkstemp(path_template.data());
+		ok &= expect(regular_fd >= 0, "regular PAM_TTY test creates temporary file");
+		if (regular_fd >= 0) {
+			ok &= expect(pam_set_item(pamh, PAM_TTY, path_template.data()) == PAM_SUCCESS,
+			             "regular PAM_TTY test sets PAM item");
+			NativePromptConversation conversation(pamh);
+			ok &= expect(!conversation.available(), "regular-file PAM_TTY disables native prompt");
+			close(regular_fd);
+			unlink(path_template.data());
+		}
 		pam_end(pamh, PAM_SUCCESS);
 		return ok;
 	}
@@ -407,10 +994,10 @@ namespace {
 		                         .abort_write_fd = abort_pipe[1].release()}));
 		NativePromptConversationTestAccess::close_abort_write_fd(*conversation);
 
-		auto        response       = std::make_shared<char *>(nullptr);
-		auto        result_promise = std::make_shared<std::promise<int>>();
-		auto        result_future  = result_promise->get_future();
-		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
+		auto         response       = std::make_shared<char *>(nullptr);
+		auto         result_promise = std::make_shared<std::promise<int>>();
+		auto         result_future  = result_promise->get_future();
+		std::jthread prompt_thread([conversation, message, response, result_promise] -> void {
 			result_promise->set_value(NativePromptConversationTestAccess::prompt_input(
 			    *conversation, message, response.get(), true));
 		});
@@ -427,12 +1014,10 @@ namespace {
 			conversation->request_abort();
 		}
 		if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-			ok &= expect(false, "abort wake test prompt thread stops before timeout");
-			// Test is already failed. Detached prompt owns every object it can touch via
-			// shared_ptr/value captures, so returning cannot leave stack-owned dangling state.
-			prompt_thread.detach();
-			return ok;
+			(void)expect(false, "abort wake test prompt thread stops before timeout");
+			_exit(EXIT_FAILURE);
 		}
+		conversation->request_abort();
 		prompt_thread.join();
 
 		const int prompt_result = result_future.get();
@@ -467,10 +1052,10 @@ namespace {
 		                         .abort_read_fd  = abort_pipe[0].release(),
 		                         .abort_write_fd = abort_pipe[1].release()}));
 
-		auto        response       = std::make_shared<char *>(nullptr);
-		auto        result_promise = std::make_shared<std::promise<int>>();
-		auto        result_future  = result_promise->get_future();
-		std::thread prompt_thread([conversation, message, response, result_promise] -> void {
+		auto         response       = std::make_shared<char *>(nullptr);
+		auto         result_promise = std::make_shared<std::promise<int>>();
+		auto         result_future  = result_promise->get_future();
+		std::jthread prompt_thread([conversation, message, response, result_promise] -> void {
 			result_promise->set_value(NativePromptConversationTestAccess::prompt_input(
 			    *conversation, message, response.get(), true));
 		});
@@ -486,12 +1071,10 @@ namespace {
 			conversation->request_abort();
 		}
 		if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-			ok &= expect(false, "PTY hangup prompt thread stops before timeout");
-			// Test is already failed. Detached prompt owns every object it can touch via
-			// shared_ptr/value captures, so returning cannot leave stack-owned dangling state.
-			prompt_thread.detach();
-			return ok;
+			(void)expect(false, "PTY hangup prompt thread stops before timeout");
+			_exit(EXIT_FAILURE);
 		}
+		conversation->request_abort();
 		prompt_thread.join();
 
 		const int prompt_result = result_future.get();
@@ -520,9 +1103,51 @@ namespace {
 		                                         .abort_read_fd  = abort_pipe[0].release(),
 		                                         .abort_write_fd = abort_pipe[1].release()});
 		NativePromptConversationTestAccess::set_installed(*conversation, true);
-		conversation->restore_original();
+		const auto result = conversation->restore_original();
 		ok &= expect(!NativePromptConversationTestAccess::installed(*conversation),
 		             "null PAM restore clears installed state");
+		ok &= expect(result == howdy::pam::ConversationRestoreResult::kUnsafe,
+		             "null PAM restore reports unsafe detachment");
+		return ok;
+	}
+
+	auto expect_restore_result(std::array<int, 3>                    pam_set_results,
+	                           howdy::pam::ConversationRestoreResult expected,
+	                           const std::string                    &message) -> bool {
+		OperationContext operations{.pam_set_results = pam_set_results};
+		auto             conversation = create_conversation({}, &operations);
+		NativePromptConversationTestAccess::set_pam_handle(*conversation,
+		                                                   reinterpret_cast<pam_handle_t *>(0x1));
+		NativePromptConversationTestAccess::set_installed(*conversation, true);
+		const struct pam_conv override =
+		    NativePromptConversationTestAccess::override_conversation(*conversation);
+		const auto result = conversation->restore_original();
+		bool       ok     = expect(result == expected, message + ": explicit restore result");
+		const int  calls_before_destruction = operations.pam_set_calls;
+		conversation.reset();
+		ok &= expect(operations.pam_set_calls == calls_before_destruction,
+		             message + ": destructor performs no PAM operation");
+
+		if (expected == howdy::pam::ConversationRestoreResult::kUnsafe) {
+			const struct pam_message  message_item{.msg_style = PAM_TEXT_INFO, .msg = "late"};
+			const struct pam_message *message_ptr = &message_item;
+			auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+			ok &= expect(override.conv(1, &message_ptr, &response, override.appdata_ptr) ==
+			                 PAM_CONV_ERR,
+			             message + ": retained callback fails closed after object destruction");
+			ok &= expect(response == nullptr,
+			             message + ": retained callback clears response after destruction");
+		} else if (expected == howdy::pam::ConversationRestoreResult::kFailClosedInstalled) {
+			const struct pam_message  message_item{.msg_style = PAM_TEXT_INFO, .msg = "late"};
+			const struct pam_message *message_ptr = &message_item;
+			auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+			ok &= expect(operations.last_pam_conversation.conv(
+			                 1, &message_ptr, &response,
+			                 operations.last_pam_conversation.appdata_ptr) == PAM_CONV_ERR,
+			             message + ": installed static callback fails closed after destruction");
+			ok &= expect(response == nullptr,
+			             message + ": installed static callback clears response");
+		}
 		return ok;
 	}
 
@@ -922,9 +1547,30 @@ auto main() -> int {
 	}
 
 	ok &= expect_dispatch_rejects_invalid_state();
+	ok &= expect_native_terminal_eligibility();
+	ok &= expect_native_terminal_aliases();
+	ok &= expect_isolated(closed_stdin_preserved_with_terminal_stdout,
+	                      "closed stdin remains closed with terminal stdout");
+	ok &= expect_isolated(closed_stdout_preserved_with_terminal_stdin,
+	                      "closed stdout remains closed with terminal stdin");
+	ok &= expect_isolated(closed_stderr_preserved_with_terminal_stdin,
+	                      "closed stderr remains closed with terminal stdin");
+	ok &= expect_isolated(closed_stdin_stdout_preserved_with_terminal_stderr,
+	                      "closed stdin and stdout remain closed with terminal stderr");
+	ok &= expect_isolated(closed_all_stdio_remain_closed,
+	                      "all closed stdio remains closed and native stays unavailable");
+	ok &= expect_isolated(tty_normalization_failure_preserves_closed_stdin,
+	                      "PAM_TTY normalization failure preserves closed stdin");
+	ok &= expect_isolated(abort_pipe_creation_failure_is_transactional,
+	                      "abort pipe creation failure is transactional");
+	ok &= expect_isolated(abort_pipe_first_normalization_failure_is_transactional,
+	                      "abort pipe read normalization failure is transactional");
+	ok &= expect_isolated(abort_pipe_second_normalization_failure_is_transactional,
+	                      "abort pipe write normalization failure is transactional");
 	ok &= expect_original_conversation_restored();
-	ok &= expect_abort_request_unblocks_without_pipe_wakeup();
-	ok &= expect_pty_hangup_aborts_prompt();
+	ok &= expect_invalid_pam_tty_is_unavailable();
+	ok &= expect_isolated(expect_abort_request_unblocks_without_pipe_wakeup, "abort wake test");
+	ok &= expect_isolated(expect_pty_hangup_aborts_prompt, "PTY hangup test");
 	ok &= expect_poll_eintr_without_abort_does_not_abort_prompt();
 	ok &= expect_poll_eintr_with_abort_fails_closed();
 	ok &= expect_read_eintr_retries_and_accepts_input();
@@ -932,6 +1578,15 @@ auto main() -> int {
 	ok &= expect_oversized_prompt_fails_closed();
 	ok &= expect_restore_failure_fails_closed();
 	ok &= expect_restore_handles_null_pam();
+	ok &= expect_restore_result({PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS},
+	                            howdy::pam::ConversationRestoreResult::kOriginalRestored,
+	                            "original conversation restoration");
+	ok &= expect_restore_result({PAM_SYSTEM_ERR, PAM_SUCCESS, PAM_SUCCESS},
+	                            howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
+	                            "fail-closed restoration fallback");
+	ok &= expect_restore_result({PAM_SYSTEM_ERR, PAM_SYSTEM_ERR, PAM_SUCCESS},
+	                            howdy::pam::ConversationRestoreResult::kUnsafe,
+	                            "unsafe restoration fallback");
 	ok &= expect_dispatch_throw_cleanup(1, "std exception after response allocation");
 	ok &= expect_dispatch_throw_cleanup(2, "unknown exception after response allocation");
 

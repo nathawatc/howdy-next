@@ -6,6 +6,7 @@
 
 #include "module/prompt_workaround.hpp"
 #include "prompt/enter_device.hpp"
+#include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
 
 #include <cerrno>
@@ -13,9 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <future>
-#include <spawn.h>
-#include <stdexcept>
+#include <limits>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -68,83 +67,16 @@ namespace {
 		return std::make_unique<NativePromptConversation>(pamh);
 	}
 
+	auto create_secret_prompt_conversation_dependency(void *context, pam_handle_t *pamh,
+	                                                  howdy::pam::SecretPromptObserver observer)
+	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
+		(void)context;
+		return std::make_unique<howdy::pam::ObservedPromptConversation>(pamh, observer);
+	}
+
 }  // namespace
 
 namespace howdy::pam {
-
-	void cleanup_native_prompt(optional_task<std::tuple<int, const char *>> *pass_task,
-	                           NativePrompt *native_prompt) noexcept {
-		if (pass_task == nullptr || native_prompt == nullptr) {
-			return;
-		}
-
-		try {
-			if (pass_task->active()) {
-				native_prompt->request_abort();
-			}
-			pass_task->stop();
-			native_prompt->restore_original();
-		} catch (const std::exception &error) {
-			syslog(LOG_CRIT, "Native prompt cleanup failed: %s", error.what());
-		} catch (...) {
-			syslog(LOG_CRIT, "Native prompt cleanup failed with non-standard exception");
-		}
-	}
-
-	auto request_password_prompt_stop(optional_task<std::tuple<int, const char *>> &pass_task,
-	                                  const PromptStopPlan &plan, NativePrompt *native_prompt,
-	                                  EnterDevice *enter_device) -> PromptStopResult {
-		PromptStopResult result;
-		if (!plan.stop_prompt) {
-			return result;
-		}
-
-		if (plan.abort_prompt && native_prompt != nullptr) {
-			native_prompt->request_abort();
-		}
-
-		if (plan.send_enter && pass_task.ready()) {
-			pass_task.stop();
-			return result;
-		}
-
-		if (plan.send_enter) {
-			try {
-				if (enter_device == nullptr) {
-					throw std::runtime_error("Input prompt workaround device unavailable");
-				}
-				enter_device->send_enter_press();
-				if (pass_task.wait(kPromptCompletionGrace) == std::future_status::timeout) {
-					result.enter_failed   = true;
-					result.prompt_stopped = false;
-					return result;
-				}
-			} catch (const std::runtime_error &err) {
-				syslog(LOG_WARNING, "Failed to send enter input: %s", err.what());
-				result.enter_failed = true;
-			}
-		}
-
-		if (plan.send_enter &&
-		    pass_task.wait(std::chrono::milliseconds(0)) == std::future_status::timeout) {
-			result.prompt_stopped = false;
-			return result;
-		}
-
-		pass_task.stop();
-		return result;
-	}
-
-	namespace {
-		struct NativePromptCleanupGuard {
-			optional_task<std::tuple<int, const char *>> *pass_task     = nullptr;
-			NativePrompt                                 *native_prompt = nullptr;
-
-			~NativePromptCleanupGuard() {
-				cleanup_native_prompt(pass_task, native_prompt);
-			}
-		};
-	}  // namespace
 
 	PromptCoordinator::PromptCoordinator(pam_handle_t *pamh, Workaround workaround,
 	                                     bool ask_auth_tok, bool existing_auth_token,
@@ -158,72 +90,260 @@ namespace howdy::pam {
 	    , dependencies_(dependencies)
 	    , effective_workaround_(workaround) {}
 
-	PromptCoordinator::~PromptCoordinator() {
-		NativePromptCleanupGuard cleanup{
-		    .pass_task     = pass_task_ ? &*pass_task_ : nullptr,
-		    .native_prompt = native_prompt_.get(),
-		};
-	}
-
 	auto PromptCoordinator::valid() const -> bool {
 		return dependencies_.spawn_compare_process != nullptr &&
 		       dependencies_.wait_for_compare_process != nullptr &&
-		       dependencies_.terminate_compare != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
 		       dependencies_.create_enter_device != nullptr &&
 		       dependencies_.create_native_prompt != nullptr &&
+		       dependencies_.create_secret_prompt_conversation != nullptr &&
 		       dependencies_.request_auth_token != nullptr &&
 		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
 
-	auto
-	PromptCoordinator::start_compare_task(pid_t                                 child_pid,
-	                                      std::chrono::steady_clock::time_point compare_deadline)
-	    -> optional_task<int> & {
-		auto &task = child_task_.emplace([this, child_pid, compare_deadline] -> int {
-			const int status = dependencies_.wait_for_compare_process(dependencies_.context,
-			                                                          child_pid, compare_deadline);
-			{
-				std::unique_lock<std::mutex> lock(mutex_);
-				if (confirmation_type_ == ConfirmationType::Unset) {
-					confirmation_type_ = ConfirmationType::Howdy;
+	auto PromptCoordinator::cancellation_requested(void *context) -> bool {
+		auto            &coordinator = *static_cast<PromptCoordinator *>(context);
+		std::scoped_lock lock(coordinator.mutex_);
+		return coordinator.state_.cancellation_requested;
+	}
+
+	auto PromptCoordinator::secret_prompt_begin(void *context) noexcept -> SecretPromptGeneration {
+		auto                  &coordinator = *static_cast<PromptCoordinator *>(context);
+		SecretPromptGeneration generation  = 0;
+		{
+			std::scoped_lock lock(coordinator.mutex_);
+			if (coordinator.state_.password_call_entered &&
+			    !coordinator.state_.password_call_returned &&
+			    !coordinator.state_.shutdown_requested) {
+				if (coordinator.state_.enter == EnterState::kClaimed) {
+					coordinator.state_.enter              = EnterState::kPending;
+					coordinator.state_.claimed_generation = 0;
 				}
+				generation = coordinator.state_.secret_prompt_generation ==
+				                     std::numeric_limits<SecretPromptGeneration>::max()
+				                 ? 1
+				                 : coordinator.state_.secret_prompt_generation + 1;
+				coordinator.state_.secret_prompt_generation = generation;
+				coordinator.state_.secret_prompt_active     = true;
 			}
-			condition_.notify_one();
-			return status;
+		}
+		coordinator.condition_.notify_all();
+		return generation;
+	}
+
+	void PromptCoordinator::secret_prompt_end(void                  *context,
+	                                          SecretPromptGeneration generation) noexcept {
+		auto &coordinator = *static_cast<PromptCoordinator *>(context);
+		{
+			std::scoped_lock lock(coordinator.mutex_);
+			if (generation == 0 || generation != coordinator.state_.secret_prompt_generation) {
+				return;
+			}
+			coordinator.state_.secret_prompt_active = false;
+			if (coordinator.state_.enter == EnterState::kClaimed &&
+			    coordinator.state_.claimed_generation == generation) {
+				coordinator.state_.enter              = EnterState::kPending;
+				coordinator.state_.claimed_generation = 0;
+			}
+		}
+		coordinator.condition_.notify_all();
+	}
+
+	auto PromptCoordinator::wait_for_compare(
+	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept -> int {
+		int status = static_cast<int>(howdy::native::CompareExit::kAbort) << 8;
+		try {
+			status = dependencies_.wait_for_compare_process(
+			    dependencies_.context, child_pid, compare_deadline, this, cancellation_requested);
+		} catch (const std::exception &error) {
+			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
+			compare_process::cancel_and_reap(child_pid);
+		} catch (...) {
+			syslog(LOG_ERR, "Compare wait failed with non-standard exception");
+			compare_process::cancel_and_reap(child_pid);
+		}
+		return status;
+	}
+
+	auto PromptCoordinator::publish_compare_completion(int status) -> SuccessAction {
+		std::unique_lock<std::mutex> lock(mutex_);
+		state_.compare_status    = status;
+		state_.compare_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
+		if (state_.first_completion == FirstCompletion::kNone) {
+			state_.first_completion = FirstCompletion::kCompare;
+		}
+		condition_.notify_all();
+		if (state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
+		    state_.password_call_returned || state_.shutdown_requested) {
+			return SuccessAction::kNone;
+		}
+		if (effective_workaround_ == Workaround::Native && native_prompt_ != nullptr) {
+			return SuccessAction::kAbortNative;
+		}
+		if (effective_workaround_ != Workaround::Input || state_.enter != EnterState::kPending) {
+			return SuccessAction::kNone;
+		}
+
+		condition_.wait(lock, [this] -> bool {
+			return state_.secret_prompt_active || state_.password_call_returned ||
+			       state_.shutdown_requested;
 		});
-		task.activate();
-		return task;
+		if (!state_.secret_prompt_active || state_.password_call_returned ||
+		    state_.enter != EnterState::kPending || state_.shutdown_requested) {
+			return SuccessAction::kNone;
+		}
+		state_.enter              = EnterState::kClaimed;
+		state_.claimed_generation = state_.secret_prompt_generation;
+		return SuccessAction::kSendEnter;
+	}
+
+	void PromptCoordinator::request_native_abort() noexcept {
+		try {
+			native_prompt_->request_abort();
+		} catch (const std::exception &error) {
+			syslog(LOG_WARNING, "Native prompt abort failed: %s", error.what());
+		} catch (...) {
+			syslog(LOG_WARNING, "Native prompt abort failed with non-standard exception");
+		}
+	}
+
+	auto PromptCoordinator::wait_for_enter_claim() -> bool {
+		std::unique_lock<std::mutex> lock(mutex_);
+		condition_.wait(lock, [this] -> bool {
+			return state_.password_call_returned || state_.shutdown_requested ||
+			       state_.first_completion != FirstCompletion::kCompare ||
+			       !state_.compare_succeeded || state_.enter == EnterState::kEmitting ||
+			       state_.enter == EnterState::kFinished ||
+			       (state_.enter == EnterState::kPending && state_.secret_prompt_active);
+		});
+		if (state_.password_call_returned || state_.shutdown_requested ||
+		    state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
+		    state_.enter != EnterState::kPending || !state_.secret_prompt_active) {
+			return false;
+		}
+		state_.enter              = EnterState::kClaimed;
+		state_.claimed_generation = state_.secret_prompt_generation;
+		return true;
+	}
+
+	auto PromptCoordinator::send_enter_and_record_result() noexcept -> EnterEmissionResult {
+		{
+			std::scoped_lock lock(mutex_);
+			if (state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
+			    !state_.secret_prompt_active || state_.password_call_returned ||
+			    state_.enter != EnterState::kClaimed ||
+			    state_.claimed_generation != state_.secret_prompt_generation ||
+			    state_.shutdown_requested) {
+				if (state_.enter == EnterState::kClaimed) {
+					state_.enter              = EnterState::kPending;
+					state_.claimed_generation = 0;
+				}
+				const bool retry = state_.first_completion == FirstCompletion::kCompare &&
+				                   state_.compare_succeeded && !state_.password_call_returned &&
+				                   !state_.shutdown_requested &&
+				                   state_.enter == EnterState::kPending;
+				return retry ? EnterEmissionResult::kRetry : EnterEmissionResult::kStop;
+			}
+			// This Claimed -> Emitting transition linearizes Enter against password return.
+			// Whichever transition acquires mutex_ first wins; no external I/O holds mutex_.
+			state_.enter = EnterState::kEmitting;
+		}
+
+		bool enter_write_failed = false;
+		try {
+			if (enter_device_ == nullptr) {
+				enter_write_failed = true;
+			} else {
+				enter_device_->send_enter_press();
+			}
+		} catch (const std::exception &error) {
+			syslog(LOG_WARNING, "Failed to send enter input: %s", error.what());
+			enter_write_failed = true;
+		} catch (...) {
+			syslog(LOG_WARNING, "Failed to send enter input with non-standard exception");
+			enter_write_failed = true;
+		}
+		std::unique_lock<std::mutex> lock(mutex_);
+		state_.enter = EnterState::kFinished;
+		if (!enter_write_failed) {
+			condition_.wait_for(lock, kPromptCompletionGrace, [this] -> bool {
+				return state_.password_call_returned || state_.shutdown_requested;
+			});
+		}
+		const bool prompt_failed = enter_write_failed || !state_.password_call_returned;
+		if (prompt_failed) {
+			state_.deferred_failure_notice = true;
+		}
+		lock.unlock();
+		if (prompt_failed) {
+			syslog(LOG_ERR,
+			       "Input prompt workaround cancellation failed; waiting for user/password "
+			       "prompt to complete");
+		}
+		return EnterEmissionResult::kStop;
+	}
+
+	void PromptCoordinator::send_enter_for_prompt_generations() noexcept {
+		while (true) {
+			const auto result = send_enter_and_record_result();
+			if (result != EnterEmissionResult::kRetry || !wait_for_enter_claim()) {
+				return;
+			}
+		}
+	}
+
+	void PromptCoordinator::compare_worker(
+	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept {
+		const int           status = wait_for_compare(child_pid, compare_deadline);
+		const SuccessAction action = publish_compare_completion(status);
+		if (action == SuccessAction::kAbortNative) {
+			request_native_abort();
+		} else if (action == SuccessAction::kSendEnter) {
+			send_enter_for_prompt_generations();
+		}
+	}
+
+	void PromptCoordinator::disable_native_workaround(bool unavailable) {
+		const bool fallback_to_input = requested_workaround_ == Workaround::NativeInput;
+		if (unavailable) {
+			syslog(LOG_INFO,
+			       fallback_to_input
+			           ? "Native prompt conversation unavailable, falling back to input workaround"
+			           : "Native prompt conversation unavailable, disabling prompt workaround");
+		}
+		effective_workaround_ = fallback_to_input ? Workaround::Input : Workaround::Off;
+		native_prompt_.reset();
+	}
+
+	void PromptCoordinator::configure_native_workaround() {
+		try {
+			native_prompt_ = dependencies_.create_native_prompt(dependencies_.context, pamh_);
+		} catch (const std::exception &error) {
+			syslog(LOG_WARNING, "Native prompt conversation setup failed: %s", error.what());
+		} catch (...) {
+			syslog(LOG_WARNING,
+			       "Native prompt conversation setup failed with non-standard exception");
+		}
+
+		if (native_prompt_ == nullptr || !native_prompt_->available()) {
+			disable_native_workaround(true);
+			return;
+		}
+
+		const int install_result = native_prompt_->install();
+		if (install_result == PAM_SUCCESS) {
+			effective_workaround_ = Workaround::Native;
+			return;
+		}
+		syslog(LOG_WARNING, "Failed to install native prompt conversation: %d", install_result);
+		disable_native_workaround(false);
 	}
 
 	auto PromptCoordinator::configure_prompt_workaround() -> bool {
 		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
 		                                 requested_workaround_ == Workaround::NativeInput;
 		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
-			native_prompt_ = dependencies_.create_native_prompt(dependencies_.context, pamh_);
-			if (native_prompt_ == nullptr || !native_prompt_->available()) {
-				const bool fallback_to_input = requested_workaround_ == Workaround::NativeInput;
-				syslog(LOG_INFO,
-				       fallback_to_input
-				           ? "Native prompt conversation unavailable, falling back to input "
-				             "workaround"
-				           : "Native prompt conversation unavailable, disabling prompt "
-				             "workaround");
-				effective_workaround_ = fallback_to_input ? Workaround::Input : Workaround::Off;
-				native_prompt_.reset();
-			} else {
-				const int install_result = native_prompt_->install();
-				if (install_result == PAM_SUCCESS) {
-					effective_workaround_ = Workaround::Native;
-				} else {
-					syslog(LOG_WARNING, "Failed to install native prompt conversation: %d",
-					       install_result);
-					effective_workaround_ = requested_workaround_ == Workaround::NativeInput
-					                            ? Workaround::Input
-					                            : Workaround::Off;
-					native_prompt_.reset();
-				}
-			}
+			configure_native_workaround();
 		}
 
 		configure_input_workaround();
@@ -258,25 +378,141 @@ namespace howdy::pam {
 			syslog(LOG_ERR, "Input prompt workaround setup failed with non-standard exception");
 			effective_workaround_ = Workaround::Off;
 		}
+		if (effective_workaround_ != Workaround::Input) {
+			return;
+		}
+
+		try {
+			secret_prompt_conversation_ = dependencies_.create_secret_prompt_conversation(
+			    dependencies_.context, pamh_,
+			    {.context = this, .begin = secret_prompt_begin, .end = secret_prompt_end});
+			if (secret_prompt_conversation_ == nullptr ||
+			    !secret_prompt_conversation_->available() ||
+			    secret_prompt_conversation_->install() != PAM_SUCCESS) {
+				syslog(LOG_ERR, "Input prompt observation setup failed");
+				secret_prompt_conversation_.reset();
+				enter_device_.reset();
+				effective_workaround_ = Workaround::Off;
+			}
+		} catch (const std::exception &error) {
+			syslog(LOG_ERR, "Input prompt observation setup failed: %s", error.what());
+			secret_prompt_conversation_.reset();
+			enter_device_.reset();
+			effective_workaround_ = Workaround::Off;
+		} catch (...) {
+			syslog(LOG_ERR, "Input prompt observation setup failed with non-standard exception");
+			secret_prompt_conversation_.reset();
+			enter_device_.reset();
+			effective_workaround_ = Workaround::Off;
+		}
 	}
 
-	auto PromptCoordinator::start_password_task(bool ask_pass)
-	    -> optional_task<std::tuple<int, const char *>> & {
-		auto &task = pass_task_.emplace([this] -> std::tuple<int, const char *> {
-			auto result = dependencies_.request_auth_token(dependencies_.context, pamh_);
-			{
-				std::unique_lock<std::mutex> lock(mutex_);
-				if (confirmation_type_ == ConfirmationType::Unset) {
-					confirmation_type_ = ConfirmationType::Pam;
-				}
-			}
-			condition_.notify_one();
-			return result;
-		});
-		if (ask_pass) {
-			task.activate();
+	auto PromptCoordinator::restore_prompt_conversation() noexcept -> ConversationRestoreResult {
+		auto result = ConversationRestoreResult::kOriginalRestored;
+		if (secret_prompt_conversation_ != nullptr) {
+			result = secret_prompt_conversation_->restore_original();
+		} else if (native_prompt_ != nullptr) {
+			result = native_prompt_->restore_original();
 		}
-		return task;
+		if (result == ConversationRestoreResult::kOriginalRestored) {
+			return result;
+		}
+		syslog(LOG_CRIT, result == ConversationRestoreResult::kFailClosedInstalled
+		                     ? "PAM conversation restoration failed; fail-closed callback installed"
+		                     : "PAM conversation restoration unsafe; callback context quarantined");
+		return result;
+	}
+
+	void PromptCoordinator::initialize_run_state(bool ask_pass) {
+		std::scoped_lock lock(mutex_);
+		if (!ask_pass) {
+			return;
+		}
+		state_.enter = effective_workaround_ == Workaround::Input ? EnterState::kPending
+		                                                          : EnterState::kNotApplicable;
+	}
+
+	void PromptCoordinator::publish_password_call_entered() {
+		std::scoped_lock lock(mutex_);
+		state_.password_call_entered = true;
+	}
+
+	void PromptCoordinator::cleanup_spawned_child(
+	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept {
+		{
+			std::scoped_lock lock(mutex_);
+			state_.cancellation_requested = true;
+			state_.shutdown_requested     = true;
+		}
+		condition_.notify_all();
+		compare_worker(child_pid, compare_deadline);
+		(void)restore_prompt_conversation();
+	}
+
+	auto PromptCoordinator::request_password() noexcept -> int {
+		try {
+			const auto [result, password] =
+			    dependencies_.request_auth_token(dependencies_.context, pamh_);
+			(void)password;
+			return result;
+		} catch (const std::exception &error) {
+			syslog(LOG_ERR, "Password request failed: %s", error.what());
+		} catch (...) {
+			syslog(LOG_ERR, "Password request failed with non-standard exception");
+		}
+		return PAM_SYSTEM_ERR;
+	}
+
+	void PromptCoordinator::publish_password_call_returned() {
+		{
+			std::scoped_lock lock(mutex_);
+			state_.password_call_returned = true;
+			state_.secret_prompt_active   = false;
+			if (state_.enter == EnterState::kClaimed) {
+				state_.enter              = EnterState::kPending;
+				state_.claimed_generation = 0;
+			}
+			if (state_.first_completion == FirstCompletion::kNone) {
+				state_.first_completion       = FirstCompletion::kPassword;
+				state_.cancellation_requested = true;
+			}
+		}
+		condition_.notify_all();
+	}
+
+	auto PromptCoordinator::build_result(bool ask_pass, int pam_result) -> PromptCoordinatorResult {
+		std::scoped_lock        lock(mutex_);
+		PromptCoordinatorResult result{
+		    .compare_status = state_.compare_status,
+		    .pam_status     = pam_result,
+		};
+		if (state_.first_completion == FirstCompletion::kPassword) {
+			result.decision = PromptCoordinatorDecision::kPamResult;
+		} else if (!state_.compare_succeeded && ask_pass) {
+			result.decision = PromptCoordinatorDecision::kPasswordFallback;
+		} else {
+			result.decision = PromptCoordinatorDecision::kHowdyResult;
+		}
+		return result;
+	}
+
+	void PromptCoordinator::report_deferred_failure(
+	    const std::function<void()> &report_input_failure) noexcept {
+		bool report_failure = false;
+		{
+			std::scoped_lock lock(mutex_);
+			report_failure = state_.deferred_failure_notice;
+		}
+		if (!report_failure || !report_input_failure) {
+			return;
+		}
+		try {
+			report_input_failure();
+		} catch (const std::exception &error) {
+			syslog(LOG_WARNING, "Input prompt failure callback failed: %s", error.what());
+		} catch (...) {
+			syslog(LOG_WARNING, "Input prompt failure callback failed with non-standard exception");
+		}
 	}
 
 	auto PromptCoordinator::run(const CompareLaunchRequest  &request,
@@ -308,84 +544,62 @@ namespace howdy::pam {
 			};
 		}
 
-		auto      &child_task = start_compare_task(child_pid, compare_deadline);
-		const bool ask_pass   = configure_prompt_workaround();
-		auto      &pass_task  = start_password_task(ask_pass);
-
-		{
-			std::unique_lock<std::mutex> lock(mutex_);
-			condition_.wait(lock, [this] -> bool {
-				return confirmation_type_ != ConfirmationType::Unset;
-			});
+		bool ask_pass = false;
+		try {
+			ask_pass = configure_prompt_workaround();
+		} catch (const std::exception &error) {
+			syslog(LOG_ERR, "Prompt workaround setup failed: %s", error.what());
+			cleanup_spawned_child(child_pid, compare_deadline);
+			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
+		} catch (...) {
+			syslog(LOG_ERR, "Prompt workaround setup failed with non-standard exception");
+			cleanup_spawned_child(child_pid, compare_deadline);
+			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 
-		if (confirmation_type_ == ConfirmationType::Pam) {
-			dependencies_.terminate_compare(dependencies_.context, child_pid);
-			child_task.stop();
-			if (ask_pass) {
-				pass_task.stop();
-				const auto [pam_result, password] = pass_task.get();
-				(void)password;
-				return PromptCoordinatorResult{
-				    .decision   = PromptCoordinatorDecision::kPamResult,
-				    .pam_status = pam_result,
-				};
-			}
+		initialize_run_state(ask_pass);
+
+		std::thread child_thread;
+		try {
+			child_thread =
+			    std::thread(&PromptCoordinator::compare_worker, this, child_pid, compare_deadline);
+		} catch (const std::exception &error) {
+			syslog(LOG_ERR, "Failed to start compare wait worker: %s", error.what());
+			cleanup_spawned_child(child_pid, compare_deadline);
+			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
+		}
+		int pam_result = PAM_SUCCESS;
+		if (ask_pass) {
+			publish_password_call_entered();
+			pam_result = request_password();
+			publish_password_call_returned();
 		}
 
-		child_task.stop();
-		const int status = child_task.get();
-
-		const bool compare_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
-		if (!compare_succeeded && ask_pass) {
-			pass_task.stop();
-			const auto [pam_result, password] = pass_task.get();
-			(void)password;
-			return PromptCoordinatorResult{
-			    .decision       = PromptCoordinatorDecision::kPasswordFallback,
-			    .compare_status = status,
-			    .pam_status     = pam_result,
-			};
+		child_thread.join();
+		const auto restore_result = restore_prompt_conversation();
+		if (restore_result != ConversationRestoreResult::kOriginalRestored) {
+			pam_result = PAM_SYSTEM_ERR;
 		}
 
-		const auto stop_plan =
-		    plan_prompt_stop(ask_pass, ask_pass && pass_task.ready(), effective_workaround_);
-		auto      *native_prompt = native_prompt_.get();
-		auto      *enter_device  = enter_device_.get();
-		const auto stop_result =
-		    request_password_prompt_stop(pass_task, stop_plan, native_prompt, enter_device);
-		if (stop_result.enter_failed && report_input_failure) {
-			try {
-				report_input_failure();
-			} catch (const std::exception &error) {
-				syslog(LOG_WARNING, "Input prompt failure callback failed: %s", error.what());
-			} catch (...) {
-				syslog(LOG_WARNING,
-				       "Input prompt failure callback failed with non-standard exception");
-			}
+		auto result = build_result(ask_pass, pam_result);
+		if (restore_result != ConversationRestoreResult::kOriginalRestored) {
+			result.decision   = PromptCoordinatorDecision::kPamResult;
+			result.pam_status = PAM_SYSTEM_ERR;
+		} else {
+			report_deferred_failure(report_input_failure);
 		}
-		if (!stop_result.prompt_stopped) {
-			syslog(LOG_ERR, "Input prompt workaround cancellation failed; waiting for "
-			                "user/password prompt to complete");
-			pass_task.stop();
-		}
-
-		return PromptCoordinatorResult{
-		    .decision       = PromptCoordinatorDecision::kHowdyResult,
-		    .compare_status = status,
-		    .prompt_stopped = stop_result.prompt_stopped,
-		};
+		return result;
 	}
 
 	auto production_prompt_coordinator_dependencies() -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
-		    .spawn_compare_process    = compare_process::spawn,
-		    .wait_for_compare_process = compare_process::wait,
-		    .terminate_compare        = compare_process::terminate,
-		    .input_prompt_preflight   = input_prompt_preflight_dependency,
-		    .create_enter_device      = create_enter_device_dependency,
-		    .create_native_prompt     = create_native_prompt_dependency,
-		    .request_auth_token       = request_auth_token_dependency,
+		    .spawn_compare_process             = compare_process::spawn,
+		    .wait_for_compare_process          = compare_process::wait,
+		    .input_prompt_preflight            = input_prompt_preflight_dependency,
+		    .create_enter_device               = create_enter_device_dependency,
+		    .create_native_prompt              = create_native_prompt_dependency,
+		    .create_secret_prompt_conversation = create_secret_prompt_conversation_dependency,
+		    .request_auth_token                = request_auth_token_dependency,
 		};
 	}
 

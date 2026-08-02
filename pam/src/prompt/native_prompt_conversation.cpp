@@ -1,21 +1,30 @@
 #include "prompt/native_prompt_conversation.hpp"
 
+#include "internal_fd.hpp"
+#include "prompt/conversation_response.hpp"
 #include "prompt/native_prompt_input.hpp"
 #include "support/fd_io.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <fcntl.h>
+#include <memory>
+#include <mutex>
 #include <poll.h>
 #include <string>
 #include <syslog.h>
 #include <termios.h>
 #include <unistd.h>
+#include <vector>
 
 #include <security/pam_appl.h>
+
+#include <sys/ioctl.h>
+#include <sys/stat.h>
 
 namespace {
 
@@ -36,6 +45,11 @@ namespace {
 
 	void production_post_message(void * /*context*/) {}
 
+	auto production_set_pam_item(void * /*context*/, pam_handle_t *pamh, int item_type,
+	                             const void *item) -> int {
+		return pam_set_item(pamh, item_type, item);
+	}
+
 	auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
 	                          struct pam_response **response, void * /*appdata_ptr*/) -> int {
 		if (response != nullptr) {
@@ -45,30 +59,32 @@ namespace {
 	}
 
 	auto open_tty_fd(pam_handle_t *pamh) -> int {
-		std::array<std::string, 2> candidates{};
-		std::size_t                candidate_count = 0;
-
 		const void *tty_item = nullptr;
-		if (pam_get_item(pamh, PAM_TTY, &tty_item) == PAM_SUCCESS && tty_item != nullptr) {
-			auto tty_path = std::string(static_cast<const char *>(tty_item));
-			if (!tty_path.empty()) {
-				if (tty_path.front() != '/') {
-					tty_path = "/dev/" + tty_path;
-				}
-				candidates[candidate_count++] = std::move(tty_path);
-			}
+		if (pam_get_item(pamh, PAM_TTY, &tty_item) != PAM_SUCCESS || tty_item == nullptr) {
+			return -1;
 		}
 
-		candidates[candidate_count++] = "/dev/tty";
-
-		for (std::size_t i = 0; i < candidate_count; ++i) {
-			const int fd = open(candidates[i].c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY);
-			if (fd >= 0) {
-				return fd;
-			}
+		auto tty_path = std::string(static_cast<const char *>(tty_item));
+		if (tty_path.empty()) {
+			return -1;
+		}
+		if (tty_path.front() != '/') {
+			tty_path = "/dev/" + tty_path;
 		}
 
-		return -1;
+		auto tty_fd = howdy::pam::detail::normalize_internal_fd(
+		    howdy::pam::detail::ScopedFd(open(tty_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY)));
+		if (tty_fd.get() < 0) {
+			return -1;
+		}
+
+		if (!native_prompt_terminal_is_interactive({.tty    = tty_fd.get(),
+		                                            .input  = STDIN_FILENO,
+		                                            .output = STDOUT_FILENO,
+		                                            .error  = STDERR_FILENO})) {
+			return -1;
+		}
+		return tty_fd.release();
 	}
 
 	void close_fd(int &fd) {
@@ -94,30 +110,60 @@ namespace {
 		}
 	}
 
-	void free_pam_responses(struct pam_response *responses, int num_msg) {
-		if (responses == nullptr || num_msg <= 0) {
-			return;
+	auto same_terminal_identity(int target_fd, const struct stat &target_stat, int descriptor_fd)
+	    -> bool {
+		struct stat descriptor_stat{};
+		if (fstat(descriptor_fd, &descriptor_stat) != 0 || !S_ISCHR(descriptor_stat.st_mode)) {
+			return false;
+		}
+		if (descriptor_stat.st_rdev == target_stat.st_rdev) {
+			return true;
 		}
 
-		for (int index = 0; index < num_msg; ++index) {
-			if (responses[index].resp == nullptr) {
-				continue;
-			}
-
-			std::memset(responses[index].resp, 0, std::strlen(responses[index].resp));
-			std::free(responses[index].resp);
-			responses[index].resp = nullptr;
+#ifdef TIOCGDEV
+		unsigned int target_device     = 0;
+		unsigned int descriptor_device = 0;
+		if (ioctl(target_fd, TIOCGDEV, &target_device) == 0 &&
+		    ioctl(descriptor_fd, TIOCGDEV, &descriptor_device) == 0) {
+			return target_device == descriptor_device;
 		}
-		std::free(responses);
+#endif
+		return false;
 	}
 
 }  // namespace
 
+auto native_prompt_terminal_is_interactive(const NativeTerminalDescriptors &descriptors) -> bool {
+	if (descriptors.tty < 0 || isatty(descriptors.tty) == 0) {
+		return false;
+	}
+
+	struct stat tty_stat{};
+	if (fstat(descriptors.tty, &tty_stat) != 0 || !S_ISCHR(tty_stat.st_mode)) {
+		return false;
+	}
+
+	const pid_t foreground_group = tcgetpgrp(descriptors.tty);
+	if (foreground_group < 0 || foreground_group != getpgrp()) {
+		return false;
+	}
+
+	// Native prompt owns PAM_TTY for input and output. Require at least one standard
+	// descriptor to identify that same foreground terminal; any others may be redirected.
+	return std::ranges::any_of(std::array{descriptors.input, descriptors.output, descriptors.error},
+	                           [descriptors, &tty_stat](const int fd) -> bool {
+		                           return fd >= 0 && isatty(fd) != 0 &&
+		                                  same_terminal_identity(descriptors.tty, tty_stat, fd);
+	                           });
+}
+
 NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
     : pamh_(pamh)
-    , override_conv_{.conv = dispatch, .appdata_ptr = this}
+    , dispatch_context_(std::make_unique<DispatchContext>())
+    , override_conv_{.conv = dispatch, .appdata_ptr = dispatch_context_.get()}
     , operations_(production_operations()) {
-	const void *conv_ptr = nullptr;
+	dispatch_context_->owner = this;
+	const void *conv_ptr     = nullptr;
 	if (pam_get_item(pamh_, PAM_CONV, &conv_ptr) != PAM_SUCCESS || conv_ptr == nullptr) {
 		return;
 	}
@@ -133,10 +179,13 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 		return;
 	}
 
-	if (pipe2(abort_pipe_.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
+	auto abort_pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC | O_NONBLOCK);
+	if (!abort_pipe.valid()) {
 		close_fd(tty_fd_);
 		return;
 	}
+	abort_pipe_[0] = abort_pipe.read.release();
+	abort_pipe_[1] = abort_pipe.write.release();
 }
 
 auto NativePromptConversation::production_operations() -> Operations {
@@ -145,6 +194,7 @@ auto NativePromptConversation::production_operations() -> Operations {
 	    .read_prompt      = production_read,
 	    .restore_terminal = production_restore_terminal,
 	    .post_message     = production_post_message,
+	    .set_pam_item     = production_set_pam_item,
 	};
 }
 
@@ -154,50 +204,73 @@ NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
                                                    Operations operations)
     : pamh_(pamh)
     , original_conv_(original_conv)
-    , override_conv_{.conv = dispatch, .appdata_ptr = this}
+    , dispatch_context_(std::make_unique<DispatchContext>())
+    , override_conv_{.conv = dispatch, .appdata_ptr = dispatch_context_.get()}
     , has_original_conv_(has_original_conv)
     , tty_fd_(descriptors.tty_fd)
     , abort_pipe_{{descriptors.abort_read_fd, descriptors.abort_write_fd}}
-    , operations_(operations) {}
+    , operations_(operations) {
+	dispatch_context_->owner = this;
+}
 
 NativePromptConversation::~NativePromptConversation() {
-	restore_original();
-
+	if (installed_ && dispatch_context_ != nullptr) {
+		retain_unsafe_dispatch_context();
+	}
 	close_fd(tty_fd_);
 	close_fd(abort_pipe_[0]);
 	close_fd(abort_pipe_[1]);
 }
 
-void NativePromptConversation::restore_original() {
+void NativePromptConversation::retain_unsafe_dispatch_context() noexcept {
+	dispatch_context_->fail_closed.store(true);
+	dispatch_context_->owner = nullptr;
+	static std::mutex                                    quarantine_mutex;
+	static std::vector<std::unique_ptr<DispatchContext>> quarantine;
+	try {
+		std::scoped_lock lock(quarantine_mutex);
+		quarantine.push_back(std::move(dispatch_context_));
+	} catch (...) {
+		// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
+		// fail-closed context for process lifetime and report explicit ownership fallback.
+		[[maybe_unused]] auto *retained_context = dispatch_context_.release();
+		syslog(LOG_CRIT, "Native fail-closed callback context retained outside quarantine");
+	}
+}
+
+auto NativePromptConversation::restore_original() noexcept
+    -> howdy::pam::ConversationRestoreResult {
 	if (!installed_) {
-		return;
+		return howdy::pam::ConversationRestoreResult::kOriginalRestored;
 	}
 
 	if (pamh_ == nullptr) {
 		syslog(LOG_CRIT, "Cannot restore PAM conversation: null PAM handle");
+		retain_unsafe_dispatch_context();
 		installed_ = false;
-		return;
+		return howdy::pam::ConversationRestoreResult::kUnsafe;
 	}
 
-	const int restore_result = pam_set_item(pamh_, PAM_CONV, &original_conv_);
+	const int restore_result =
+	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &original_conv_);
 	if (restore_result == PAM_SUCCESS) {
 		installed_ = false;
-		return;
+		return howdy::pam::ConversationRestoreResult::kOriginalRestored;
 	}
 
 	syslog(LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
 	static const struct pam_conv fail_closed_conv = {.conv        = fail_closed_dispatch,
 	                                                 .appdata_ptr = nullptr};
-	const int fail_closed_result = pam_set_item(pamh_, PAM_CONV, &fail_closed_conv);
+	const int                    fail_closed_result =
+	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &fail_closed_conv);
 	if (fail_closed_result != PAM_SUCCESS) {
 		syslog(LOG_CRIT, "Failed to install fail-closed PAM conversation: %d", fail_closed_result);
-		syslog(LOG_CRIT, "PAM_CONV may remain unsafe after native prompt restore failure");
-		// Both PAM_CONV writes failed. There is no safe destructor-path recovery left;
-		// make this object's state explicit so no later restore retry is implied.
+		retain_unsafe_dispatch_context();
 		installed_ = false;
-		return;
+		return howdy::pam::ConversationRestoreResult::kUnsafe;
 	}
 	installed_ = false;
+	return howdy::pam::ConversationRestoreResult::kFailClosedInstalled;
 }
 
 auto NativePromptConversation::available() const -> bool {
@@ -209,7 +282,8 @@ auto NativePromptConversation::install() -> int {
 		return PAM_SYSTEM_ERR;
 	}
 
-	const int pam_res = pam_set_item(pamh_, PAM_CONV, &override_conv_);
+	const int pam_res =
+	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &override_conv_);
 	if (pam_res == PAM_SUCCESS) {
 		installed_ = true;
 	}
@@ -245,23 +319,22 @@ auto NativePromptConversation::dispatch(int num_msg, const struct pam_message **
 	}
 
 	try {
-		auto *self = static_cast<NativePromptConversation *>(appdata_ptr);
-		if (self == nullptr || response == nullptr) {
+		auto *context = static_cast<DispatchContext *>(appdata_ptr);
+		if (context == nullptr || response == nullptr || context->fail_closed.load() ||
+		    context->owner == nullptr) {
 			return PAM_CONV_ERR;
 		}
-		return self->handle(num_msg, msgm, response);
+		return context->owner->handle(num_msg, msgm, response);
 	} catch (const std::exception &error) {
 		syslog(LOG_ERR, "Unhandled C++ exception in native PAM conversation: %s", error.what());
 		if (response != nullptr) {
-			free_pam_responses(*response, num_msg);
-			*response = nullptr;
+			howdy::pam::secure_free_conversation_responses(response, num_msg);
 		}
 		return PAM_CONV_ERR;
 	} catch (...) {
 		syslog(LOG_ERR, "Unhandled non-standard exception in native PAM conversation");
 		if (response != nullptr) {
-			free_pam_responses(*response, num_msg);
-			*response = nullptr;
+			howdy::pam::secure_free_conversation_responses(response, num_msg);
 		}
 		return PAM_CONV_ERR;
 	}
@@ -282,7 +355,7 @@ auto NativePromptConversation::handle(int num_msg, const struct pam_message **ms
 
 	for (int index = 0; index < num_msg; ++index) {
 		if (msgm[index] == nullptr) {
-			free_pam_responses(pam_responses, num_msg);
+			howdy::pam::secure_free_conversation_responses(&pam_responses, num_msg);
 			*response = nullptr;
 			return PAM_CONV_ERR;
 		}
@@ -313,7 +386,7 @@ auto NativePromptConversation::handle(int num_msg, const struct pam_message **ms
 			continue;
 		}
 
-		free_pam_responses(pam_responses, num_msg);
+		howdy::pam::secure_free_conversation_responses(&pam_responses, num_msg);
 		*response = nullptr;
 		return result;
 	}
