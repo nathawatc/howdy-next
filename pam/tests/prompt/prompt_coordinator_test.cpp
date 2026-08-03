@@ -1,6 +1,8 @@
 #include "prompt/prompt_coordinator_test_groups.hpp"
 #include "prompt/prompt_coordinator_test_support.hpp"
 
+#include <cstring>
+
 namespace {
 	using namespace howdy::test::prompt_coordinator;
 

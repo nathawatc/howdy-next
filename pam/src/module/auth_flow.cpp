@@ -7,15 +7,9 @@
 #include "prompt/prompt_coordinator.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/runtime_session.hpp"
-#include "storage/user_model_readiness.hpp"
 
-#include <cerrno>
 #include <chrono>
 #include <cstdlib>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <glob.h>
 #include <libintl.h>
 #include <paths.hpp>
 #include <string>
@@ -87,8 +81,9 @@ namespace {
 
 	auto dependencies_valid(const howdy::pam::auth_flow::IdentifyDependencies &dependencies)
 	    -> bool {
-		const auto &runtime = dependencies.runtime_session;
-		const auto &prompt  = dependencies.prompt_coordinator;
+		const auto &runtime     = dependencies.runtime_session;
+		const auto &prompt      = dependencies.prompt_coordinator;
+		const auto &eligibility = dependencies.eligibility;
 		return runtime.prepare_runtime != nullptr && runtime.cleanup_runtime != nullptr &&
 		       runtime.load_runtime_config != nullptr && runtime.effective_uid != nullptr &&
 		       prompt.spawn_compare_process != nullptr &&
@@ -96,12 +91,10 @@ namespace {
 		       prompt.input_prompt_preflight != nullptr && prompt.create_enter_device != nullptr &&
 		       prompt.create_native_prompt != nullptr &&
 		       prompt.create_secret_prompt_conversation != nullptr &&
-		       prompt.request_auth_token != nullptr && dependencies.check_enabled != nullptr;
+		       prompt.request_auth_token != nullptr && eligibility.ssh_session_present != nullptr &&
+		       eligibility.read_lid_state != nullptr &&
+		       eligibility.check_model_readiness != nullptr;
 	}
-
-	auto production_check_enabled(void *context, const howdy::native::RuntimeConfig &config,
-	                              const char                  *username,
-	                              const std::filesystem::path &user_models_dir) -> int;
 
 }  // namespace
 
@@ -182,75 +175,57 @@ namespace howdy::pam::auth_flow {
 		return PAM_SUCCESS;
 	}
 
-	auto check_enabled(const howdy::native::RuntimeConfig &config, const char *username,
-	                   const std::filesystem::path &user_models_dir) -> int {
-		if (config.core.disabled) {
-			syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
-			return PAM_AUTHINFO_UNAVAIL;
-		}
+	namespace {
 
-		if (config.core.abort_if_ssh) {
-			if (checkenv("SSH_CONNECTION") || checkenv("SSH_CLIENT") || checkenv("SSH_TTY") ||
-			    checkenv("SSHD_OPTS")) {
-				syslog(LOG_INFO, "Skipped authentication, SSH session detected");
-				return PAM_AUTHINFO_UNAVAIL;
+		void log_eligibility_result(
+		    const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) {
+			using howdy::pam::auth_eligibility::AuthenticationEligibility;
+
+			if (!result.diagnostic_message.empty()) {
+				syslog(LOG_ERR, "%s", result.diagnostic_message.c_str());
 			}
-		}
 
-		if (config.core.abort_if_lid_closed) {
-			glob_t    glob_result{};
-			const int return_value =
-			    glob("/proc/acpi/button/lid/*/state", 0, nullptr, &glob_result);
-
-			if (return_value != 0 && return_value != GLOB_NOMATCH) {
-				syslog(LOG_ERR, "Failed to read files from glob: %d", return_value);
-				if (errno != 0) {
-					syslog(LOG_ERR, "Underlying error: %s (%d)", strerror(errno), errno);
-				}
-			} else {
-				for (size_t i = 0; i < glob_result.gl_pathc; i++) {
-					std::ifstream file(std::string(glob_result.gl_pathv[i]));
-					std::string   lid_state;
-					std::getline(file, lid_state);
-
-					if (lid_state.contains("closed")) {
-						globfree(&glob_result);
-						syslog(LOG_INFO, "Skipped authentication, closed lid detected");
-						return PAM_AUTHINFO_UNAVAIL;
+			switch (result.status) {
+				case AuthenticationEligibility::kEligible:
+					return;
+				case AuthenticationEligibility::kDisabled:
+					syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
+					return;
+				case AuthenticationEligibility::kSshSession:
+					syslog(LOG_INFO, "Skipped authentication, SSH session detected");
+					return;
+				case AuthenticationEligibility::kClosedLid:
+					syslog(LOG_INFO, "Skipped authentication, closed lid detected");
+					return;
+				case AuthenticationEligibility::kInvalidUser:
+					syslog(LOG_WARNING, "Skipped authentication, invalid username");
+					return;
+				case AuthenticationEligibility::kMissingModel:
+					syslog(LOG_WARNING, "Skipped authentication, no face model found for user");
+					return;
+				case AuthenticationEligibility::kInvalidModelStorage:
+					if (!result.error_message.empty()) {
+						syslog(LOG_ERR, "%s", result.error_message.c_str());
 					}
-				}
+					return;
+				case AuthenticationEligibility::kRuntimeError:
+					if (result.error_message.empty()) {
+						syslog(LOG_ERR, "Authentication eligibility failed");
+					} else {
+						syslog(LOG_ERR, "%s", result.error_message.c_str());
+					}
+					return;
 			}
-			globfree(&glob_result);
 		}
 
-		const auto readiness = howdy::native::check_user_model_readiness(user_models_dir, username,
-		                                                                 static_cast<uid_t>(0));
-		switch (readiness.status) {
-			case howdy::native::UserModelStatus::kOk:
-				break;
-			case howdy::native::UserModelStatus::kInvalidUser:
-				syslog(LOG_WARNING, "Skipped authentication, invalid username");
-				return PAM_AUTHINFO_UNAVAIL;
-			case howdy::native::UserModelStatus::kNoModel:
-			case howdy::native::UserModelStatus::kNoModelDirectory:
-				syslog(LOG_WARNING, "Skipped authentication, no face model found for user");
-				return PAM_AUTHINFO_UNAVAIL;
-			default:
-				if (!readiness.error_message.empty()) {
-					syslog(LOG_ERR, "%s", readiness.error_message.c_str());
-				}
-				return PAM_AUTHINFO_UNAVAIL;
-		}
-
-		return PAM_SUCCESS;
-	}
+	}  // namespace
 
 	auto production_identify_dependencies() -> IdentifyDependencies {
 		return {
-		    .context            = nullptr,
 		    .runtime_session    = production_runtime_session_dependencies(),
 		    .prompt_coordinator = production_prompt_coordinator_dependencies(),
-		    .check_enabled      = production_check_enabled,
+		    .eligibility =
+		        howdy::pam::auth_eligibility::production_authentication_eligibility_dependencies(),
 		};
 	}
 
@@ -289,8 +264,12 @@ namespace howdy::pam::auth_flow {
 		}
 		const auto &config = *runtime_result.config_result.config;
 
-		pam_res = dependencies.check_enabled(dependencies.context, config, username,
-		                                     runtime_session.user_models_dir());
+		const auto eligibility_result =
+		    howdy::pam::auth_eligibility::evaluate_authentication_eligibility(
+		        pamh, config, username, runtime_session.user_models_dir(),
+		        dependencies.eligibility);
+		log_eligibility_result(eligibility_result);
+		pam_res = map_authentication_eligibility(eligibility_result);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
@@ -325,17 +304,6 @@ namespace howdy::pam::auth_flow {
 	}
 
 }  // namespace howdy::pam::auth_flow
-
-namespace {
-
-	auto production_check_enabled(void *context, const howdy::native::RuntimeConfig &config,
-	                              const char                  *username,
-	                              const std::filesystem::path &user_models_dir) -> int {
-		(void)context;
-		return howdy::pam::auth_flow::check_enabled(config, username, user_models_dir);
-	}
-
-}  // namespace
 
 auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int {
 	return howdy::pam::auth_flow::identify_with_dependencies(

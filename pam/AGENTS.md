@@ -28,7 +28,8 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `tests/prompt/prompt_coordinator_modes_test.cpp`   | Native/input workaround mode tests                                              |
 | `tests/prompt/prompt_coordinator_adapter_test.cpp` | Production adapter tests                                                        |
 | `tests/module/auth_flow_helpers_test.cpp`          | Auth-flow helpers and policy-adjacent tests                                     |
-| `include/module/main.hpp`                          | `Workaround` (`off`, `input`, `native`, `native-input`), `checkenv()`           |
+| `include/module/auth_eligibility.hpp`              | Typed eligibility conditions, policy, and injected runtime probes               |
+| `include/module/main.hpp`                          | `Workaround` (`off`, `input`, `native`, `native-input`) and PAM entry helpers   |
 | `CMakeLists.txt`                                   | PAM build configuration                                                         |
 
 ## Conventions

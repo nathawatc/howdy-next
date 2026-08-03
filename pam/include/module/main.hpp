@@ -3,8 +3,6 @@
 
 #include <clocale>  // IWYU pragma: keep
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <string_view>
 #include <syslog.h>
@@ -51,35 +49,6 @@ inline auto get_pam_workaround(int argc, const char *const *argv) -> Workaround 
 		}
 	}
 	return Workaround::Off;
-}
-
-/**
- * Check if an environment variable exists either in the environ array or using
- * getenv.
- * @param name The name of the environment variable.
- * @return The value of the environment variable or nullptr if it doesn't exist
- * or environ is nullptr.
- * @note This function was created because `getenv` wasn't working properly in
- * some contexts (like sudo).
- */
-inline auto checkenv(const char *name) -> bool {
-	if (std::getenv(name) != nullptr) {
-		return true;
-	}
-
-	if (environ == nullptr) {
-		return false;
-	}
-
-	const auto len = strlen(name);
-
-	for (char **env = environ; *env != nullptr; env++) {
-		if (strncmp(*env, name, len) == 0 && (*env)[len] == '=') {
-			return true;
-		}
-	}
-
-	return false;
 }
 
 inline auto auth_token_item_present(const void *auth_token) -> bool {

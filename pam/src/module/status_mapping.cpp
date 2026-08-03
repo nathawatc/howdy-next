@@ -10,6 +10,24 @@
 
 #include <sys/wait.h>
 
+auto map_authentication_eligibility(
+    const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) -> int {
+	using howdy::pam::auth_eligibility::AuthenticationEligibility;
+	switch (result.status) {
+		case AuthenticationEligibility::kEligible:
+			return PAM_SUCCESS;
+		case AuthenticationEligibility::kDisabled:
+		case AuthenticationEligibility::kSshSession:
+		case AuthenticationEligibility::kClosedLid:
+		case AuthenticationEligibility::kInvalidUser:
+		case AuthenticationEligibility::kMissingModel:
+		case AuthenticationEligibility::kInvalidModelStorage:
+		case AuthenticationEligibility::kRuntimeError:
+			return PAM_AUTHINFO_UNAVAIL;
+	}
+	return PAM_SYSTEM_ERR;
+}
+
 auto map_compare_wait_status(int status) -> CompareStatusDecision {
 	CompareStatusDecision decision;
 	decision.pam_result = PAM_AUTH_ERR;

@@ -23,10 +23,60 @@ namespace {
 		return static_cast<int>(exit_code) << 8;
 	}
 
+	auto expect_authentication_eligibility_mapping() -> bool {
+		using howdy::pam::auth_eligibility::AuthenticationEligibility;
+		using howdy::pam::auth_eligibility::AuthenticationEligibilityResult;
+
+		struct MappingCase {
+			const char               *name;
+			AuthenticationEligibility eligibility;
+			int                       pam_status;
+		};
+
+		const std::array cases = {
+		    MappingCase{.name        = "eligible",
+		                .eligibility = AuthenticationEligibility::kEligible,
+		                .pam_status  = PAM_SUCCESS},
+		    MappingCase{.name        = "disabled",
+		                .eligibility = AuthenticationEligibility::kDisabled,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "SSH session",
+		                .eligibility = AuthenticationEligibility::kSshSession,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "closed lid",
+		                .eligibility = AuthenticationEligibility::kClosedLid,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "invalid user",
+		                .eligibility = AuthenticationEligibility::kInvalidUser,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "missing model",
+		                .eligibility = AuthenticationEligibility::kMissingModel,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "invalid model storage",
+		                .eligibility = AuthenticationEligibility::kInvalidModelStorage,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		    MappingCase{.name        = "runtime error",
+		                .eligibility = AuthenticationEligibility::kRuntimeError,
+		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+		};
+
+		bool ok = true;
+		for (const auto &test_case : cases) {
+			const int actual = map_authentication_eligibility(
+			    AuthenticationEligibilityResult{.status = test_case.eligibility});
+			const std::string message = std::string(test_case.name) + ": expected PAM status " +
+			                            std::to_string(test_case.pam_status) + ", got " +
+			                            std::to_string(actual);
+			ok &= expect(actual == test_case.pam_status, message);
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
 	bool ok = true;
+	ok &= expect_authentication_eligibility_mapping();
 
 	const char       *initial_locale_ptr  = std::setlocale(LC_ALL, nullptr);
 	const std::string initial_locale      = initial_locale_ptr == nullptr ? "" : initial_locale_ptr;

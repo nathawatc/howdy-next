@@ -5,13 +5,16 @@ add_library(
 	pam_runtime STATIC
 	src/runtime/auth_helper_process.cpp
 	src/runtime/compare_process.cpp
+	src/runtime/environment.cpp
+	src/runtime/lid_probe.cpp
 	src/runtime/runtime_session.cpp
+	src/runtime/session_probe.cpp
 )
 howdy_configure_pam_target(pam_runtime)
 target_compile_definitions(
 	pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
-target_link_libraries(pam_runtime PRIVATE howdy_config)
+target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE howdy_config)
 
 add_library(
 	pam_prompt STATIC
@@ -33,6 +36,7 @@ target_link_libraries(
 
 add_library(
 	pam_module STATIC
+	src/module/auth_eligibility.cpp
 	src/module/auth_flow.cpp
 	src/module/status_mapping.cpp
 )
@@ -77,6 +81,34 @@ if(BUILD_TESTING)
 		PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 	)
 	add_dependencies(pam_status_mapping_test howdy-gmo)
+
+	howdy_add_pam_test(
+		pam_environment_test
+		pam-environment
+		tests/runtime/environment_test.cpp
+	)
+	target_link_libraries(pam_environment_test PRIVATE pam_runtime)
+
+	howdy_add_pam_test(
+		pam_session_probe_test
+		pam-session-probe
+		tests/runtime/session_probe_test.cpp
+	)
+	target_link_libraries(pam_session_probe_test PRIVATE pam_runtime)
+
+	howdy_add_pam_test(
+		pam_lid_probe_test
+		pam-lid-probe
+		tests/runtime/lid_probe_test.cpp
+	)
+	target_link_libraries(pam_lid_probe_test PRIVATE pam_runtime)
+
+	howdy_add_pam_test(
+		pam_auth_eligibility_test
+		pam-auth-eligibility
+		tests/module/auth_eligibility_test.cpp
+	)
+	target_link_libraries(pam_auth_eligibility_test PRIVATE pam_module)
 
 	howdy_add_pam_test(
 		pam_prompt_workaround_test

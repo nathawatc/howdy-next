@@ -15,9 +15,8 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
-#include <fstream>
-#include <iostream>
 #include <libintl.h>
 #include <limits>
 #include <optional>
@@ -30,7 +29,6 @@
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
 
-#include <sys/stat.h>
 #include <sys/wait.h>
 
 namespace {
@@ -179,6 +177,192 @@ namespace {
 		ResponseMode response_mode = ResponseMode::None;
 	};
 
+	struct RuntimeFlowState {
+		bool disabled   = false;
+		int  load_calls = 0;
+	};
+
+	struct EligibilityFlowState {
+		bool                                ssh = false;
+		howdy::pam::runtime::LidStateResult lid{
+		    .status = howdy::pam::runtime::LidProbeStatus::kOk,
+		    .state  = howdy::pam::runtime::LidState::kOpen,
+		};
+		howdy::native::UserModelReadinessResult readiness{
+		    .status = howdy::native::UserModelStatus::kOk,
+		};
+		int ssh_calls   = 0;
+		int lid_calls   = 0;
+		int model_calls = 0;
+	};
+
+	struct PromptFlowState {
+		int spawn_calls = 0;
+	};
+
+	struct EligibilityFlowFixture {
+		RuntimeFlowState     runtime;
+		EligibilityFlowState eligibility;
+		PromptFlowState      prompt;
+	};
+
+	auto flow_prepare_runtime(void *context, std::string_view username,
+	                          howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+		(void)context;
+		(void)username;
+		(void)prepared;
+		return false;
+	}
+
+	auto flow_cleanup_runtime(void *context, const std::filesystem::path &root_dir) -> void {
+		(void)context;
+		(void)root_dir;
+	}
+
+	auto flow_load_runtime_config(void *context, const std::filesystem::path &path)
+	    -> howdy::native::RuntimeConfigLoadResult {
+		auto *state = static_cast<RuntimeFlowState *>(context);
+		++state->load_calls;
+
+		howdy::native::RuntimeConfig config;
+		config.core.detection_notice    = true;
+		config.core.no_confirmation     = true;
+		config.core.abort_if_ssh        = true;
+		config.core.abort_if_lid_closed = true;
+		config.core.disabled            = state->disabled;
+		return {
+		    .ok            = true,
+		    .status        = howdy::native::RuntimeConfigLoadStatus::kOk,
+		    .path          = path,
+		    .config        = std::move(config),
+		    .error_message = {},
+		    .error_code    = 0,
+		};
+	}
+
+	auto flow_effective_uid(void *context) -> uid_t {
+		(void)context;
+		return 0;
+	}
+
+	auto flow_ssh_session_present(void *context, pam_handle_t *pamh) -> bool {
+		(void)pamh;
+		auto *state = static_cast<EligibilityFlowState *>(context);
+		++state->ssh_calls;
+		return state->ssh;
+	}
+
+	auto flow_read_lid_state(void *context) -> howdy::pam::runtime::LidStateResult {
+		auto *state = static_cast<EligibilityFlowState *>(context);
+		++state->lid_calls;
+		return state->lid;
+	}
+
+	auto flow_check_model_readiness(void *context, const std::filesystem::path &models_dir,
+	                                const char *username)
+	    -> howdy::native::UserModelReadinessResult {
+		(void)models_dir;
+		(void)username;
+		auto *state = static_cast<EligibilityFlowState *>(context);
+		++state->model_calls;
+		return state->readiness;
+	}
+
+	auto flow_spawn_compare(void *context, const howdy::pam::CompareLaunchRequest &request,
+	                        pid_t *child_pid) -> int {
+		(void)request;
+		auto *state = static_cast<PromptFlowState *>(context);
+		++state->spawn_calls;
+		*child_pid = 1;
+		return 0;
+	}
+
+	auto flow_wait_compare(void *context, pid_t child_pid,
+	                       std::chrono::steady_clock::time_point      deadline,
+	                       void                                      *cancellation_context,
+	                       howdy::pam::CompareCancellationRequestedFn cancellation_requested)
+	    -> int {
+		(void)context;
+		(void)child_pid;
+		(void)deadline;
+		(void)cancellation_context;
+		(void)cancellation_requested;
+		return 0;
+	}
+
+	auto flow_input_prompt_preflight(void *context) -> bool {
+		(void)context;
+		return true;
+	}
+
+	auto flow_create_enter_device(void *context) -> std::unique_ptr<EnterDevice> {
+		(void)context;
+		return nullptr;
+	}
+
+	auto flow_create_native_prompt(void *context, pam_handle_t *pamh)
+	    -> std::unique_ptr<NativePrompt> {
+		(void)context;
+		(void)pamh;
+		return nullptr;
+	}
+
+	auto flow_create_secret_prompt_conversation(void *context, pam_handle_t *pamh,
+	                                            howdy::pam::SecretPromptObserver observer)
+	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
+		(void)context;
+		(void)pamh;
+		(void)observer;
+		return nullptr;
+	}
+
+	auto flow_request_auth_token(void *context, pam_handle_t *pamh)
+	    -> std::tuple<int, const char *> {
+		(void)context;
+		(void)pamh;
+		return {PAM_SUCCESS, nullptr};
+	}
+
+	auto make_eligibility_flow_dependencies(EligibilityFlowFixture *fixture)
+	    -> howdy::pam::auth_flow::IdentifyDependencies {
+		return {
+		    .runtime_session =
+		        {
+		            .context             = &fixture->runtime,
+		            .prepare_runtime     = flow_prepare_runtime,
+		            .cleanup_runtime     = flow_cleanup_runtime,
+		            .load_runtime_config = flow_load_runtime_config,
+		            .effective_uid       = flow_effective_uid,
+		        },
+		    .prompt_coordinator =
+		        {
+		            .context                           = &fixture->prompt,
+		            .spawn_compare_process             = flow_spawn_compare,
+		            .wait_for_compare_process          = flow_wait_compare,
+		            .input_prompt_preflight            = flow_input_prompt_preflight,
+		            .create_enter_device               = flow_create_enter_device,
+		            .create_native_prompt              = flow_create_native_prompt,
+		            .create_secret_prompt_conversation = flow_create_secret_prompt_conversation,
+		            .request_auth_token                = flow_request_auth_token,
+		        },
+		    .eligibility =
+		        {
+		            .context               = &fixture->eligibility,
+		            .ssh_session_present   = flow_ssh_session_present,
+		            .read_lid_state        = flow_read_lid_state,
+		            .check_model_readiness = flow_check_model_readiness,
+		        },
+		};
+	}
+
+	auto identify_for_test(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                       bool ask_auth_tok) -> int {
+		const auto *dependencies =
+		    static_cast<const howdy::pam::auth_flow::IdentifyDependencies *>(context);
+		return howdy::pam::auth_flow::identify_with_dependencies(pamh, arguments, ask_auth_tok,
+		                                                         *dependencies);
+	}
+
 	auto test_conversation(int num_msg, const struct pam_message **messages,
 	                       struct pam_response **response, void *appdata_ptr) -> int {
 		auto *state = static_cast<ConversationState *>(appdata_ptr);
@@ -198,12 +382,15 @@ namespace {
 				return PAM_BUF_ERR;
 			}
 			if (state->response_mode == ResponseMode::Secret) {
-				(*response)->resp = strdup("temporary-secret");
+				constexpr const char *secret = "temporary-secret";
+				const auto            length = std::strlen(secret) + 1;
+				(*response)->resp            = static_cast<char *>(std::malloc(length));
 				if ((*response)->resp == nullptr) {
 					free(*response);
 					*response = nullptr;
 					return PAM_BUF_ERR;
 				}
+				std::memcpy((*response)->resp, secret, length);
 			}
 		}
 
@@ -224,12 +411,6 @@ namespace {
 		return howdy::native::write_all_to_fd(fd, data);
 	}
 
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream output(path);
-		output << content;
-		return output.good();
-	}
-
 	auto create_temp_file(const std::string &label) -> std::optional<TemporaryFile> {
 		const std::string template_path = "/tmp/howdy-auth-flow-" + label + "-XXXXXX";
 		std::vector<char> path_buffer(template_path.begin(), template_path.end());
@@ -240,18 +421,6 @@ namespace {
 			return std::nullopt;
 		}
 		return TemporaryFile{.path = path_buffer.data(), .fd = std::move(fd)};
-	}
-
-	auto create_temp_directory(const std::string &template_path)
-	    -> std::optional<std::filesystem::path> {
-		std::vector<char> path_buffer(template_path.begin(), template_path.end());
-		path_buffer.push_back('\0');
-
-		char *created = mkdtemp(path_buffer.data());
-		if (created == nullptr) {
-			return std::nullopt;
-		}
-		return std::filesystem::path(created);
 	}
 
 	auto expect_fd_reading() -> bool {
@@ -737,90 +906,8 @@ namespace {
 	}
 
 	auto expect_authentication_preserves_host_locale_state() -> bool {
-		using howdy::pam::PromptCoordinatorDependencies;
-		using howdy::pam::RuntimeSessionDependencies;
-		using howdy::pam::auth_flow::IdentifyDependencies;
-
-		const auto prepare_runtime = [](void *, std::string_view,
-		                                howdy::pam::PreparedRuntimeFiles *) -> bool {
-			return false;
-		};
-		const auto cleanup_runtime = [](void *, const std::filesystem::path &) -> void {};
-		const auto load_runtime_config =
-		    [](void *,
-		       const std::filesystem::path &path) -> howdy::native::RuntimeConfigLoadResult {
-			howdy::native::RuntimeConfig config;
-			config.core.detection_notice    = false;
-			config.core.no_confirmation     = true;
-			config.core.abort_if_ssh        = false;
-			config.core.abort_if_lid_closed = false;
-			config.core.disabled            = false;
-			return howdy::native::RuntimeConfigLoadResult{
-			    .ok            = true,
-			    .status        = howdy::native::RuntimeConfigLoadStatus::kOk,
-			    .path          = path,
-			    .config        = std::move(config),
-			    .error_message = {},
-			    .error_code    = 0,
-			};
-		};
-		const auto effective_uid = [](void *) -> uid_t {
-			return 0;
-		};
-		const auto check_enabled = [](void *, const howdy::native::RuntimeConfig &, const char *,
-		                              const std::filesystem::path &) -> int {
-			return PAM_SUCCESS;
-		};
-		const auto spawn_compare = [](void *, const howdy::pam::CompareLaunchRequest &,
-		                              pid_t *child_pid) -> int {
-			*child_pid = 1;
-			return 0;
-		};
-		const auto wait_compare = [](void *, pid_t, std::chrono::steady_clock::time_point, void *,
-		                             howdy::pam::CompareCancellationRequestedFn) -> int {
-			return 0;
-		};
-		const auto input_preflight = [](void *) -> bool {
-			return true;
-		};
-		const auto create_enter_device = [](void *) -> std::unique_ptr<EnterDevice> {
-			return nullptr;
-		};
-		const auto create_native_prompt = [](void *,
-		                                     pam_handle_t *) -> std::unique_ptr<NativePrompt> {
-			return nullptr;
-		};
-		const auto create_secret_prompt_conversation = [](void *, pam_handle_t *,
-		                                                  howdy::pam::SecretPromptObserver)
-		    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
-			return nullptr;
-		};
-		const auto request_auth_token = [](void *,
-		                                   pam_handle_t *) -> std::tuple<int, const char *> {
-			return {PAM_SUCCESS, nullptr};
-		};
-
-		const RuntimeSessionDependencies runtime_dependencies{
-		    .prepare_runtime     = prepare_runtime,
-		    .cleanup_runtime     = cleanup_runtime,
-		    .load_runtime_config = load_runtime_config,
-		    .effective_uid       = effective_uid,
-		};
-		const PromptCoordinatorDependencies prompt_dependencies{
-		    .spawn_compare_process             = spawn_compare,
-		    .wait_for_compare_process          = wait_compare,
-		    .input_prompt_preflight            = input_preflight,
-		    .create_enter_device               = create_enter_device,
-		    .create_native_prompt              = create_native_prompt,
-		    .create_secret_prompt_conversation = create_secret_prompt_conversation,
-		    .request_auth_token                = request_auth_token,
-		};
-		IdentifyDependencies dependencies{
-		    .context            = nullptr,
-		    .runtime_session    = runtime_dependencies,
-		    .prompt_coordinator = prompt_dependencies,
-		    .check_enabled      = check_enabled,
-		};
+		EligibilityFlowFixture fixture;
+		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
 
 		ConversationState state;
 		struct pam_conv   conversation{
@@ -829,8 +916,8 @@ namespace {
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
-		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
-		             "starts PAM handle for real authentication flow");
+		ok &=
+		    expect(pam_handle.start(&conversation) == PAM_SUCCESS, "locale test starts PAM handle");
 		if (pam_handle.get() == nullptr) {
 			return false;
 		}
@@ -853,33 +940,35 @@ namespace {
 		const std::string host_locale = std::setlocale(LC_ALL, nullptr);
 		const std::string host_domain = textdomain(nullptr);
 
-		const auto injected_identify = [](void *context, pam_handle_t *handle,
-		                                  PamModuleArguments arguments, bool ask_auth_tok) -> int {
-			const auto *injected = static_cast<const IdentifyDependencies *>(context);
-			return howdy::pam::auth_flow::identify_with_dependencies(handle, arguments,
-			                                                         ask_auth_tok, *injected);
+		const auto expect_host_state = [&](const char *scenario) -> void {
+			if (locale_available) {
+				ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
+				             std::string(scenario) + ": authentication restores host locale");
+			}
+			ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+			             std::string(scenario) + ": authentication restores host gettext domain");
 		};
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        injected_identify) == PAM_SUCCESS,
-		             "real PAM authentication flow succeeds with injected boundaries");
-		if (locale_available) {
-			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
-			             "real authentication preserves host locale");
-		} else {
-			std::cerr << "SKIP: C UTF-8 locale unavailable; locale mutation assertion not run\n";
-		}
-		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
-		             "real authentication preserves host gettext domain");
 
 		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        injected_identify) == PAM_SUCCESS,
-		             "repeated real PAM authentication flow succeeds");
-		if (locale_available) {
-			ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
-			             "repeated real authentication preserves host locale");
-		}
-		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
-		             "repeated real authentication preserves host gettext domain");
+		                                        identify_for_test) == PAM_SUCCESS,
+		             "successful authentication enters locale test flow");
+		expect_host_state("successful authentication");
+
+		fixture.runtime.disabled = true;
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        identify_for_test) == PAM_AUTHINFO_UNAVAIL,
+		             "disabled early return preserves PAM behavior in locale test");
+		expect_host_state("disabled early return");
+
+		fixture.runtime.disabled      = false;
+		fixture.eligibility.readiness = {
+		    .status        = howdy::native::UserModelStatus::kInsecurePath,
+		    .error_message = "locale test model failure",
+		};
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        identify_for_test) == PAM_AUTHINFO_UNAVAIL,
+		             "model failure returns through locale test flow");
+		expect_host_state("model failure");
 
 		if (!initial_domain.empty()) {
 			textdomain(initial_domain.c_str());
@@ -890,77 +979,172 @@ namespace {
 		return ok;
 	}
 
-	auto expect_identify_dependency_validation() -> bool {
-		bool ok = true;
+	auto expect_authentication_eligibility_integration() -> bool {
+		EligibilityFlowFixture fixture;
+		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
 
-		auto dependencies          = howdy::pam::auth_flow::production_identify_dependencies();
-		dependencies.check_enabled = nullptr;
-		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
-		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
-		             "identify rejects missing enabled-check callback");
+		ConversationState state;
+		struct pam_conv   conversation{
+		    .conv        = test_conversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok = true;
+		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+		             "eligibility integration starts PAM handle");
+		if (pam_handle.get() == nullptr) {
+			return false;
+		}
 
-		dependencies = howdy::pam::auth_flow::production_identify_dependencies();
-		dependencies.runtime_session.load_runtime_config = nullptr;
-		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
-		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
-		             "identify rejects missing runtime-session callback");
+		const auto reset_probe_calls = [&]() -> void {
+			fixture.runtime.load_calls      = 0;
+			fixture.eligibility.ssh_calls   = 0;
+			fixture.eligibility.lid_calls   = 0;
+			fixture.eligibility.model_calls = 0;
+		};
+		const auto expect_count = [&](const std::string &scenario, const char *probe, int actual,
+		                              int expected) -> void {
+			ok &= expect(actual == expected, scenario + ": expected " + probe + " calls " +
+			                                     std::to_string(expected) + ", got " +
+			                                     std::to_string(actual));
+		};
+		const auto expect_ineligible = [&](const char *scenario) -> void {
+			const std::string name(scenario);
+			const int         prompt_before = fixture.prompt.spawn_calls;
+			reset_probe_calls();
+			const int result = authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+			                                              identify_for_test);
+			ok &= expect(result == PAM_AUTHINFO_UNAVAIL,
+			             name + ": ineligible result maps to PAM_AUTHINFO_UNAVAIL");
+			ok &= expect(fixture.prompt.spawn_calls == prompt_before,
+			             name + ": compare process is not spawned");
+			ok &= expect(fixture.runtime.load_calls == 1,
+			             name + ": runtime configuration loads before eligibility");
+		};
 
-		dependencies = howdy::pam::auth_flow::production_identify_dependencies();
-		dependencies.prompt_coordinator.spawn_compare_process = nullptr;
-		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
-		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
-		             "identify rejects missing prompt-coordinator callback");
+		fixture.runtime.disabled      = true;
+		fixture.eligibility.ssh       = true;
+		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kClosed};
+		fixture.eligibility.readiness = {.status = howdy::native::UserModelStatus::kNoModel};
+		expect_ineligible("globally disabled");
+		expect_count("globally disabled", "SSH", fixture.eligibility.ssh_calls, 0);
+		expect_count("globally disabled", "lid", fixture.eligibility.lid_calls, 0);
+		expect_count("globally disabled", "model", fixture.eligibility.model_calls, 0);
+
+		fixture.runtime.disabled      = false;
+		fixture.eligibility.ssh       = true;
+		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kOpen};
+		fixture.eligibility.readiness = {.status = howdy::native::UserModelStatus::kNoModel};
+		expect_ineligible("SSH session");
+		expect_count("SSH session", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("SSH session", "lid", fixture.eligibility.lid_calls, 0);
+		expect_count("SSH session", "model", fixture.eligibility.model_calls, 0);
+
+		fixture.eligibility.ssh       = false;
+		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kClosed};
+		fixture.eligibility.readiness = {.status = howdy::native::UserModelStatus::kNoModel};
+		expect_ineligible("closed lid");
+		expect_count("closed lid", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("closed lid", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("closed lid", "model", fixture.eligibility.model_calls, 0);
+
+		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kOpen};
+		fixture.eligibility.readiness = {
+		    .status = howdy::native::UserModelStatus::kInvalidUser,
+		};
+		expect_ineligible("invalid user");
+		expect_count("invalid user", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("invalid user", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("invalid user", "model", fixture.eligibility.model_calls, 1);
+
+		fixture.eligibility.readiness = {
+		    .status = howdy::native::UserModelStatus::kNoModel,
+		};
+		expect_ineligible("missing model");
+		expect_count("missing model", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("missing model", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("missing model", "model", fixture.eligibility.model_calls, 1);
+
+		fixture.eligibility.readiness = {
+		    .status        = howdy::native::UserModelStatus::kInsecurePath,
+		    .error_message = "invalid model storage",
+		};
+		expect_ineligible("invalid model storage");
+		expect_count("invalid model storage", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("invalid model storage", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("invalid model storage", "model", fixture.eligibility.model_calls, 1);
+
+		fixture.eligibility.lid = {
+		    .status        = howdy::pam::runtime::LidProbeStatus::kError,
+		    .state         = howdy::pam::runtime::LidState::kUnknown,
+		    .error_message = "non-fatal lid diagnostic",
+		};
+		fixture.eligibility.readiness          = {.status = howdy::native::UserModelStatus::kOk};
+		const int prompt_before_lid_diagnostic = fixture.prompt.spawn_calls;
+		reset_probe_calls();
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        identify_for_test) == PAM_SUCCESS,
+		             "eligible authentication continues after non-fatal lid diagnostic");
+		ok &= expect(fixture.prompt.spawn_calls == prompt_before_lid_diagnostic + 1,
+		             "non-fatal lid diagnostic does not suppress compare process");
+		expect_count("eligible with lid diagnostic", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("eligible with lid diagnostic", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("eligible with lid diagnostic", "model", fixture.eligibility.model_calls, 1);
+
+		fixture.eligibility.lid          = {.state = howdy::pam::runtime::LidState::kOpen};
+		fixture.eligibility.readiness    = {.status = howdy::native::UserModelStatus::kOk};
+		const int prompt_before_eligible = fixture.prompt.spawn_calls;
+		reset_probe_calls();
+		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
+		                                        identify_for_test) == PAM_SUCCESS,
+		             "eligible authentication enters prompt coordination");
+		ok &= expect(fixture.prompt.spawn_calls == prompt_before_eligible + 1,
+		             "eligible authentication spawns compare process");
+		expect_count("eligible", "SSH", fixture.eligibility.ssh_calls, 1);
+		expect_count("eligible", "lid", fixture.eligibility.lid_calls, 1);
+		expect_count("eligible", "model", fixture.eligibility.model_calls, 1);
 
 		return ok;
 	}
 
-	auto expect_enabled_decisions() -> bool {
-		using howdy::pam::auth_flow::check_enabled;
+	auto expect_invalid_eligibility_dependencies_fail_closed() -> bool {
+		EligibilityFlowFixture fixture;
+		const auto             base = make_eligibility_flow_dependencies(&fixture);
+		bool                   ok   = true;
 
-		bool ok = true;
+		const auto expect_invalid = [&](const char *scenario, auto invalidate) -> void {
+			auto dependencies = base;
+			invalidate(dependencies);
+			const int runtime_calls = fixture.runtime.load_calls;
+			const int prompt_calls  = fixture.prompt.spawn_calls;
+			const int result =
+			    howdy::pam::auth_flow::identify_with_dependencies(nullptr, {}, true, dependencies);
+			const std::string name(scenario);
+			ok &= expect(result == PAM_SYSTEM_ERR,
+			             name + ": invalid dependency contract maps to PAM_SYSTEM_ERR");
+			ok &= expect(fixture.runtime.load_calls == runtime_calls &&
+			                 fixture.prompt.spawn_calls == prompt_calls &&
+			                 fixture.eligibility.ssh_calls == 0 &&
+			                 fixture.eligibility.lid_calls == 0 &&
+			                 fixture.eligibility.model_calls == 0,
+			             name + ": validation stops before runtime, probes and prompt");
+		};
 
-		howdy::native::RuntimeConfig disabled_config;
-		disabled_config.core.disabled = true;
-		ok &= expect(check_enabled(disabled_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
-		             "disabled config skips authentication");
-
-		const howdy::native::RuntimeConfig ssh_config;
-		ScopedEnv                          ssh_connection("SSH_CONNECTION");
-		setenv("SSH_CONNECTION", "client server", 1);
-		ok &= expect(check_enabled(ssh_config, "alice", "/") == PAM_AUTHINFO_UNAVAIL,
-		             "ssh environment skips authentication");
-		unsetenv("SSH_CONNECTION");
-
-		howdy::native::RuntimeConfig base_config;
-		base_config.core.abort_if_ssh        = false;
-		base_config.core.abort_if_lid_closed = false;
-
-		ok &= expect(check_enabled(base_config, "../alice", "/") == PAM_AUTHINFO_UNAVAIL,
-		             "invalid username skips authentication");
-		ok &= expect(check_enabled(base_config, "howdy_missing_model_for_test", "/") ==
-		                 PAM_AUTHINFO_UNAVAIL,
-		             "missing model file skips authentication");
-		ok &= expect(check_enabled(base_config, "alice", "/tmp") == PAM_AUTHINFO_UNAVAIL,
-		             "insecure models directory skips authentication");
-
-		if (geteuid() == 0) {
-			namespace fs          = std::filesystem;
-			const auto models_dir = create_temp_directory("/run/howdy-auth-flow-models-XXXXXX");
-			ok &= expect(models_dir.has_value(), "creates root-owned models directory");
-			if (models_dir.has_value()) {
-				const fs::path model_path = *models_dir / "alice.dat";
-				ok &= expect(chmod(models_dir->c_str(), 0755) == 0,
-				             "sets secure models directory mode");
-				ok &= expect(write_file(model_path, "[]"), "writes model file");
-				ok &= expect(chmod(model_path.c_str(), 0644) == 0, "sets secure model file mode");
-				ok &= expect(check_enabled(base_config, "alice", *models_dir) == PAM_SUCCESS,
-				             "secure model path allows authentication");
-				std::error_code ec;
-				fs::remove_all(*models_dir, ec);
-			}
-		} else {
-			std::cerr << "SKIP: check_enabled success path requires root-owned fixture\n";
-		}
+		expect_invalid("missing SSH-session callback", [](auto &dependencies) -> void {
+			dependencies.eligibility.ssh_session_present = nullptr;
+		});
+		expect_invalid("missing lid-state callback", [](auto &dependencies) -> void {
+			dependencies.eligibility.read_lid_state = nullptr;
+		});
+		expect_invalid("missing model-readiness callback", [](auto &dependencies) -> void {
+			dependencies.eligibility.check_model_readiness = nullptr;
+		});
+		expect_invalid("missing runtime-session callback", [](auto &dependencies) -> void {
+			dependencies.runtime_session.load_runtime_config = nullptr;
+		});
+		expect_invalid("missing prompt-coordinator callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.spawn_compare_process = nullptr;
+		});
 
 		return ok;
 	}
@@ -982,8 +1166,8 @@ auto main() -> int {
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
 	ok &= expect_authentication_preserves_host_locale_state();
-	ok &= expect_identify_dependency_validation();
-	ok &= expect_enabled_decisions();
+	ok &= expect_authentication_eligibility_integration();
+	ok &= expect_invalid_eligibility_dependencies_fail_closed();
 
 	ok &= expect(std::string(kConfigPathKey) == "CONFIG_PATH",
 	             "config path protocol key remains unchanged");

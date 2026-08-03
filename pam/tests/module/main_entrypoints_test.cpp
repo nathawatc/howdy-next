@@ -94,21 +94,6 @@ auto identify(pam_handle_t * /*pamh*/, PamModuleArguments /*arguments*/, bool as
 auto main() -> int {
 	bool ok = true;
 
-	setenv("HOWDY_TEST_PRESENT", "1", 1);
-	ok &= expect(checkenv("HOWDY_TEST_PRESENT"), "checkenv detects present variable");
-	unsetenv("HOWDY_TEST_PRESENT");
-	ok &= expect(!checkenv("HOWDY_TEST_PRESENT"), "checkenv rejects absent variable");
-
-	unsetenv("SSH_CONNECTION");
-	setenv("SSH_CONNECTION_EXTRA", "1", 1);
-	ok &= expect(!checkenv("SSH_CONNECTION"), "checkenv ignores prefixed variable names");
-	unsetenv("SSH_CONNECTION_EXTRA");
-
-	char **saved_environ = environ;
-	environ              = nullptr;
-	ok &= expect(!checkenv("HOWDY_TEST_PRESENT"), "checkenv handles null environ");
-	environ = saved_environ;
-
 	reset_identify_state();
 	ok &= expect(pam_sm_authenticate(nullptr, 0, 0, nullptr) == PAM_SUCCESS,
 	             "authenticate forwards PAM_SUCCESS from identify");
