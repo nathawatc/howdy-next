@@ -585,6 +585,14 @@ if(BUILD_TESTING)
 	add_test(NAME native-howdy-nonroot-path COMMAND howdy -U coverage-user list)
 	howdy_expect_test_failure(native-howdy-nonroot-path)
 	add_test(NAME native-howdy-empty COMMAND howdy)
+	add_test(
+		NAME native-howdy-bash-completion
+		COMMAND
+			bash
+			"${howdy_integration_dir}/bash_completion_test.sh"
+			"$<TARGET_FILE:howdy>"
+			"${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
+	)
 
 	add_executable(howdy_dispatch_test tests/app/howdy_dispatch_test.cpp)
 	howdy_configure_native_test_target(howdy_dispatch_test)
@@ -643,16 +651,9 @@ if(BUILD_TESTING)
 	)
 endif()
 
-set(config_path "${HOWDY_CONFIG_PATH}")
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/howdy-completion"
-	@ONLY
-)
 install(
-	FILES "${CMAKE_CURRENT_BINARY_DIR}/howdy-completion"
+	FILES "${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
 	DESTINATION "${CMAKE_INSTALL_DATADIR}/bash-completion/completions"
-	RENAME howdy
 	PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
 )
 

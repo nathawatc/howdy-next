@@ -19,7 +19,13 @@ namespace {
 
 	using howdy::test::expect;
 
+	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
+
+	constexpr std::array<std::string_view, 11> public_commands = {
+	    "add",    "clear", "config",   "disable", "download-models", "list",
+	    "remove", "set",   "snapshot", "test",    "version",
+	};
 
 	enum class CommandId : std::uint8_t {
 		kNone,
@@ -116,7 +122,8 @@ namespace {
 		std::string error;
 	};
 
-	auto run(Context &context, std::vector<std::string> arguments) -> RunResult {
+	auto run(Context &context, std::vector<std::string> arguments,
+	         CommandMain list_callback = list_stub) -> RunResult {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
@@ -139,7 +146,7 @@ namespace {
 		        .config          = config_stub,
 		        .disable         = disable_stub,
 		        .download_models = download_models_stub,
-		        .list            = list_stub,
+		        .list            = list_callback,
 		        .remove          = remove_stub,
 		        .set             = set_stub,
 		        .snapshot        = snapshot_stub,
@@ -155,6 +162,101 @@ namespace {
 		};
 	}
 
+	auto test_completion_behavior() -> bool {
+		bool ok = true;
+
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "--help"});
+			ok &=
+			    expect(result.status == 0 && result.output.contains("commands:"), "help succeeds");
+			for (const auto command : public_commands) {
+				ok &= expect(result.output.contains(command), "help lists every public command");
+			}
+			ok &=
+			    expect(!result.output.contains("__complete"), "completion query stays out of help");
+		}
+		{
+			Context                    context;
+			const auto                 result   = run(context, {"howdy", "__complete", "commands"});
+			constexpr std::string_view expected = "add\n"
+			                                      "clear\n"
+			                                      "config\n"
+			                                      "disable\n"
+			                                      "download-models\n"
+			                                      "list\n"
+			                                      "remove\n"
+			                                      "set\n"
+			                                      "snapshot\n"
+			                                      "test\n"
+			                                      "version\n";
+			ok &= expect(result.status == 0 && result.output == expected && result.error.empty(),
+			             "completion query returns canonical command list");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "completion query skips user and root checks");
+			ok &=
+			    expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+			           "completion query does not dispatch a command");
+		}
+		{
+			const std::vector<std::vector<std::string>> malformed_queries = {
+			    {"howdy", "__complete"},
+			    {"howdy", "__complete", "unknown"},
+			    {"howdy", "__complete", "commands", "extra"},
+			    {"howdy", "__complete", "commands", "-y"},
+			    {"howdy", "-y", "__complete", "commands"},
+			    {"howdy", "__complete", "--plain", "commands"},
+			    {"howdy", "__complete", "commands", "--plain"},
+			    {"howdy", "__complete", "commands", "-U", "bob"},
+			    {"howdy", "-U", "bob", "__complete", "commands"},
+			    {"howdy", "--user", "bob", "__complete", "commands"},
+			};
+			for (const auto &arguments : malformed_queries) {
+				Context    context;
+				const auto result = run(context, arguments);
+				ok &= expect(result.status != 0, "malformed completion query is rejected");
+				ok &= expect(!result.output.contains("add\n"),
+				             "malformed completion query prints no command list");
+				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+				             "malformed completion query skips user and root checks");
+				ok &= expect(context.command_id == CommandId::kNone &&
+				                 context.command_arguments.empty(),
+				             "malformed completion query does not dispatch a command");
+			}
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "version"});
+			const auto expected =
+			    "Howdy-Next " + std::string(howdy::native::kProjectVersion) + "\n";
+			ok &=
+			    expect(result.status == 0 && result.output == expected, "version output preserved");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "version skips user and root checks");
+			ok &=
+			    expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+			           "version does not dispatch a command");
+		}
+
+		return ok;
+	}
+
+	auto test_missing_callback() -> bool {
+		Context    context;
+		const auto result = run(context, {"howdy", "-U", "alice", "list"}, nullptr);
+		bool       ok     = true;
+		ok &= expect(result.status != 0, "null command callback returns failure");
+		ok &= expect(result.output == "Unknown command: list\n",
+		             "null command callback keeps diagnostic");
+		ok &= expect(context.resolve_user_calls == 0,
+		             "explicit user skips lookup for null command callback");
+		ok &= expect(context.effective_uid_calls == 1,
+		             "null callback is checked after root validation");
+		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		             "null command callback is not invoked");
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -166,17 +268,8 @@ auto main() -> int {
 		ok &= expect(result.status == 0 && result.output.contains("usage: howdy"),
 		             "no command prints help");
 	}
-	{
-		Context    context;
-		const auto result = run(context, {"howdy", "--help"});
-		ok &= expect(result.status == 0 && result.output.contains("commands:"), "help succeeds");
-	}
-	{
-		Context    context;
-		const auto result   = run(context, {"howdy", "version"});
-		const auto expected = "Howdy-Next " + std::string(howdy::native::kProjectVersion) + "\n";
-		ok &= expect(result.status == 0 && result.output == expected, "version output preserved");
-	}
+	ok &= test_completion_behavior();
+	ok &= test_missing_callback();
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "unknown"});

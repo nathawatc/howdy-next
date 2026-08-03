@@ -13,8 +13,11 @@
 #include "support/user_names.hpp"
 #include "version.hpp"
 
+#include <array>
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -25,6 +28,119 @@
 #include <vector>
 
 namespace {
+
+	using howdy::native::howdy_internal::CommandMain;
+	using howdy::native::howdy_internal::HowdyDependencies;
+
+	enum class CommandKind : std::uint8_t {
+		kEntrypoint,
+		kVersion,
+	};
+
+	using CommandDependency = CommandMain HowdyDependencies::*;
+
+	struct CommandSpec {
+		std::string_view  name;
+		std::string_view  description;
+		CommandKind       kind;
+		CommandDependency dependency;
+		bool              needs_user_argument;
+	};
+
+	constexpr std::array<CommandSpec, 11> kCommandSpecs = {{
+	    {
+	        .name                = "add",
+	        .description         = "Add face model",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::add,
+	        .needs_user_argument = true,
+	    },
+	    {
+	        .name                = "clear",
+	        .description         = "Remove all models",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::clear,
+	        .needs_user_argument = true,
+	    },
+	    {
+	        .name                = "config",
+	        .description         = "Edit config",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::config,
+	        .needs_user_argument = false,
+	    },
+	    {
+	        .name                = "disable",
+	        .description         = "Enable or disable auth",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::disable,
+	        .needs_user_argument = false,
+	    },
+	    {
+	        .name                = "download-models",
+	        .description         = "Download ONNX models",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::download_models,
+	        .needs_user_argument = false,
+	    },
+	    {
+	        .name                = "list",
+	        .description         = "List models",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::list,
+	        .needs_user_argument = true,
+	    },
+	    {
+	        .name                = "remove",
+	        .description         = "Remove a specific model",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::remove,
+	        .needs_user_argument = true,
+	    },
+	    {
+	        .name                = "set",
+	        .description         = "Edit config value",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::set,
+	        .needs_user_argument = false,
+	    },
+	    {
+	        .name                = "snapshot",
+	        .description         = "Camera preview",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::snapshot,
+	        .needs_user_argument = false,
+	    },
+	    {
+	        .name                = "test",
+	        .description         = "Test camera",
+	        .kind                = CommandKind::kEntrypoint,
+	        .dependency          = &HowdyDependencies::test,
+	        .needs_user_argument = true,
+	    },
+	    {
+	        .name                = "version",
+	        .description         = "Print version",
+	        .kind                = CommandKind::kVersion,
+	        .dependency          = nullptr,
+	        .needs_user_argument = false,
+	    },
+	}};
+
+	auto find_command(std::string_view name) -> const CommandSpec * {
+		for (const auto &spec : kCommandSpecs) {
+			if (spec.name == name) {
+				return &spec;
+			}
+		}
+		return nullptr;
+	}
+
+	void print_completion_commands() {
+		for (const auto &spec : kCommandSpecs) {
+			std::cout << spec.name << '\n';
+		}
+	}
 
 	auto resolve_user(void *context) -> std::string {
 		(void)context;
@@ -59,55 +175,13 @@ namespace {
 		return geteuid();
 	}
 
-	auto command_main(const howdy::native::howdy_internal::HowdyDependencies &dependencies,
-	                  std::string_view command) -> howdy::native::howdy_internal::CommandMain {
-		if (command == "add") {
-			return dependencies.add;
-		}
-		if (command == "clear") {
-			return dependencies.clear;
-		}
-		if (command == "config") {
-			return dependencies.config;
-		}
-		if (command == "disable") {
-			return dependencies.disable;
-		}
-		if (command == "download-models") {
-			return dependencies.download_models;
-		}
-		if (command == "list") {
-			return dependencies.list;
-		}
-		if (command == "remove") {
-			return dependencies.remove;
-		}
-		if (command == "set") {
-			return dependencies.set;
-		}
-		if (command == "snapshot") {
-			return dependencies.snapshot;
-		}
-		if (command == "test") {
-			return dependencies.test;
-		}
-		return nullptr;
-	}
-
 	void print_help() {
 		std::cout << "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n\n";
 		std::cout << "commands:\n";
-		std::cout << "  add              Add face model\n";
-		std::cout << "  clear            Remove all models\n";
-		std::cout << "  config           Edit config\n";
-		std::cout << "  disable          Enable or disable auth\n";
-		std::cout << "  download-models  Download ONNX models\n";
-		std::cout << "  list             List models\n";
-		std::cout << "  remove           Remove a specific model\n";
-		std::cout << "  set              Edit config value\n";
-		std::cout << "  snapshot         Camera preview\n";
-		std::cout << "  test             Test camera\n";
-		std::cout << "  version          Print version\n";
+		for (const auto &spec : kCommandSpecs) {
+			std::cout << "  " << std::left << std::setw(17) << spec.name << spec.description
+			          << '\n';
+		}
 		std::cout << "\noptions:\n";
 		std::cout << "  -U, --user USER  Target user for model commands\n";
 		std::cout << "  --plain          Disable interactive prompts where supported\n";
@@ -117,8 +191,9 @@ namespace {
 
 	struct ParsedCommandLine {
 		std::string              user;
-		bool                     yes   = false;
-		bool                     plain = false;
+		bool                     yes                = false;
+		bool                     plain              = false;
+		bool                     global_option_seen = false;
 		std::string              command;
 		std::vector<std::string> arguments;
 	};
@@ -128,6 +203,7 @@ namespace {
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
 			if (arg == "-U" || arg == "--user") {
+				parsed.global_option_seen = true;
 				if (index + 1 >= argc) {
 					std::cout << "Option '" << arg << "' requires an argument\n";
 					return 1;
@@ -136,11 +212,13 @@ namespace {
 				continue;
 			}
 			if (arg == "-y") {
-				parsed.yes = true;
+				parsed.global_option_seen = true;
+				parsed.yes                = true;
 				continue;
 			}
 			if (arg == "--plain") {
-				parsed.plain = true;
+				parsed.global_option_seen = true;
+				parsed.plain              = true;
 				continue;
 			}
 			if (parsed.command.empty()) {
@@ -171,7 +249,17 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		return 0;
 	}
 
-	if (parsed.command == "version") {
+	if (parsed.command == "__complete") {
+		if (parsed.global_option_seen || parsed.arguments.size() != 1 ||
+		    parsed.arguments.front() != "commands") {
+			return 1;
+		}
+		print_completion_commands();
+		return 0;
+	}
+
+	const auto *command_spec = find_command(parsed.command);
+	if (command_spec != nullptr && command_spec->kind == CommandKind::kVersion) {
 		std::cout << "Howdy-Next " << howdy::native::kProjectVersion << "\n";
 		return 0;
 	}
@@ -200,22 +288,23 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		return 1;
 	}
 
-	const auto selected_main = command_main(dependencies, parsed.command);
+	auto selected_main = static_cast<CommandMain>(nullptr);
+	if (command_spec != nullptr && command_spec->kind == CommandKind::kEntrypoint) {
+		selected_main = dependencies.*(command_spec->dependency);
+	}
 	if (selected_main == nullptr) {
 		std::cout << "Unknown command: " << parsed.command << "\n";
 		return 1;
 	}
 
-	const bool needs_user_argument = parsed.command == "add" || parsed.command == "clear" ||
-	                                 parsed.command == "list" || parsed.command == "remove" ||
-	                                 parsed.command == "test";
+	const bool needs_user_argument = command_spec->needs_user_argument;
 	if (needs_user_argument && !howdy::native::is_valid_model_user_name(parsed.user)) {
 		std::cout << howdy::native::kInvalidUserNameMessage << "\n";
 		return 1;
 	}
 
 	std::vector<std::string> argv_strings;
-	argv_strings.push_back("howdy-" + parsed.command);
+	argv_strings.push_back("howdy-" + std::string(command_spec->name));
 	if (needs_user_argument) {
 		argv_strings.push_back(parsed.user);
 	}

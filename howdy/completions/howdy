@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+_howdy() {
+	COMPREPLY=()
+
+	local current_word="${COMP_WORDS[COMP_CWORD]-}"
+	local previous_word=""
+	if (( COMP_CWORD > 0 )); then
+		previous_word="${COMP_WORDS[COMP_CWORD - 1]}"
+	fi
+
+	case "$previous_word" in
+		-U|--user)
+			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
+			return 0
+			;;
+	esac
+
+	local command=""
+	local command_index=-1
+	local index=1
+	while (( index < COMP_CWORD )); do
+		case "${COMP_WORDS[index]}" in
+			-U|--user)
+				(( index += 2 ))
+				;;
+			-y|--plain)
+				(( index += 1 ))
+				;;
+			*)
+				command="${COMP_WORDS[index]}"
+				command_index=$index
+				break
+				;;
+		esac
+	done
+
+	if (( command_index < 0 )); then
+		local -a commands=()
+		mapfile -t commands < <(howdy __complete commands)
+		for command in "${commands[@]}"; do
+			if [[ "$command" == "$current_word"* ]]; then
+				COMPREPLY+=("$command")
+			fi
+		done
+		return 0
+	fi
+
+	if [[ "$command" != "disable" ]]; then
+		return 0
+	fi
+
+	local positional_argument_count=0
+	index=$((command_index + 1))
+	while (( index < COMP_CWORD )); do
+		case "${COMP_WORDS[index]}" in
+			-U|--user)
+				(( index += 2 ))
+				;;
+			-y|--plain)
+				(( index += 1 ))
+				;;
+			*)
+				(( positional_argument_count += 1 ))
+				(( index += 1 ))
+				;;
+		esac
+	done
+
+	if (( positional_argument_count == 0 )); then
+		local value
+		for value in false true; do
+			if [[ "$value" == "$current_word"* ]]; then
+				COMPREPLY+=("$value")
+			fi
+		done
+	fi
+
+	return 0
+}
+
+complete -F _howdy howdy
