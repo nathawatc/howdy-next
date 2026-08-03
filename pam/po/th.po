@@ -16,10 +16,6 @@ msgstr ""
 msgid "Attempting facial authentication"
 msgstr "กำลังยืนยันตัวตนด้วยใบหน้า"
 
-#: src/module/auth_flow.cpp
-msgid "Failed to send Enter press, waiting for user to press it instead"
-msgstr "ส่งคำสั่ง Enter ไม่สำเร็จ กรุณากด Enter ด้วยตัวเอง"
-
 #: src/module/status_mapping.cpp
 msgid "Failure, timeout reached"
 msgstr "ยืนยันตัวตนล้มเหลวเนื่องจากหมดเวลา"

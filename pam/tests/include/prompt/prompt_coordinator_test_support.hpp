@@ -155,7 +155,6 @@ namespace howdy::test::prompt_coordinator {
 		int                                             spawn_result   = 0;
 		pid_t                                           next_child_pid = -1;
 		std::atomic<bool>                               auth_token_active{false};
-		bool                                            block_token_until_warning     = false;
 		bool                                            block_token_until_release     = false;
 		bool                                            use_real_auth_token           = false;
 		bool                                            block_before_conversation     = false;
@@ -164,7 +163,6 @@ namespace howdy::test::prompt_coordinator {
 		bool                                            token_waits_for_reap          = false;
 		bool                                            throw_compare_wait            = false;
 		bool                                            child_reaped_by_wait          = false;
-		bool                                            warning_released_token        = false;
 		bool                                            before_conversation           = false;
 		bool                                            release_conversation          = false;
 		bool                                            release_token                 = false;
@@ -226,7 +224,7 @@ namespace howdy::test::prompt_coordinator {
 			if (context_->release_token_on_enter) {
 				{
 					std::unique_lock<std::mutex> lock(context_->token_mutex);
-					context_->warning_released_token = true;
+					context_->release_token = true;
 				}
 				context_->token_condition.notify_one();
 			}
@@ -743,12 +741,6 @@ namespace howdy::test::prompt_coordinator {
 			}
 			fake.auth_token_active = false;
 			return {PAM_SUCCESS, nullptr};
-		}
-		if (fake.block_token_until_warning) {
-			std::unique_lock<std::mutex> lock(fake.token_mutex);
-			fake.token_condition.wait_for(lock, 200ms, [&fake] -> bool {
-				return fake.warning_released_token;
-			});
 		}
 		std::this_thread::sleep_for(fake.token_delay);
 		fake.auth_token_active = false;

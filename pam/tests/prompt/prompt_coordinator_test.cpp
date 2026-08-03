@@ -285,11 +285,8 @@ namespace {
 
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		int               input_failure_calls = 0;
-		const auto result = coordinator.run(make_compare_request(), [&input_failure_calls] -> void {
-			++input_failure_calls;
-		});
-		const bool reaped = child_reaped(child_pid);
+		const auto        result = coordinator.run(make_compare_request());
+		const bool        reaped = child_reaped(child_pid);
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM winner returns PAM result") &&
 		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
@@ -303,8 +300,7 @@ namespace {
 		              "PAM winner requests token on run caller thread") &&
 		       expect(context.wait_thread != context.run_thread,
 		              "PAM winner waits for compare on worker thread") &&
-		       expect(input_failure_calls == 0,
-		              "successful input workaround reports no input failure") &&
+
 		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "PAM winner terminates compare child once") &&
 		       expect(reaped, "PAM winner reaps compare child");

@@ -15,7 +15,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <glob.h>
 #include <libintl.h>
 #include <paths.hpp>
@@ -322,14 +321,7 @@ namespace howdy::pam::auth_flow {
 		    .staged_runtime  = runtime_session.staged(),
 		};
 
-		const auto report_input_failure = [&conv_function] -> void {
-			send_conversation_message(
-			    conv_function, PAM_ERROR_MSG,
-			    howdy::pam::translate(
-			        "Failed to send Enter press, waiting for user to press it instead"));
-		};
-		return map_prompt_result(coordinator.run(compare_request, report_input_failure), username,
-		                         config, conv_function);
+		return map_prompt_result(coordinator.run(compare_request), username, config, conv_function);
 	}
 
 }  // namespace howdy::pam::auth_flow

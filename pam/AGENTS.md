@@ -51,8 +51,9 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
   pending so compare worker may claim a later active secret-prompt generation;
   emission permanently consumes it.
 - Input Enter is one-shot and may be ineffective when target prompt lacks
-  keyboard focus. Manual password completion remains available. Failure notice
-  is deferred until active PAM conversation unwinds; syslog warning is immediate.
+  keyboard focus. Manual password completion remains available. Enter failure is
+  logged immediately through syslog; no PAM notice is emitted for runtime Enter
+  failure.
 - Native mode requires opened `PAM_TTY` to be foreground terminal for process
   group and requires stdin, stdout, or stderr to identify same terminal. Other
   descriptors may be redirected; graphical consumers with unrelated stdio fail
@@ -63,8 +64,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
   normalization; final Howdy-owned descriptors never retain those slots.
 - Native restoration reports original-restored, static-fail-closed-installed,
   or unsafe. Non-original outcomes force `PAM_SYSTEM_ERR`; unsafe callback
-  context becomes permanently fail closed and remains lifetime-safe. Restoration
-  failure suppresses deferred PAM notices.
+  context becomes permanently fail closed and remains lifetime-safe.
 - auth_flow.cpp owns service policy and maps RuntimeSession /
   PromptCoordinator results to PAM behavior. Keep it free of duplicated
   staging and child-lifecycle orchestration.

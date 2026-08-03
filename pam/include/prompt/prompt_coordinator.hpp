@@ -10,7 +10,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <functional>
 #include <mutex>
 #include <tuple>
 
@@ -80,8 +79,7 @@ namespace howdy::pam {
 
 		[[nodiscard]] auto valid() const -> bool;
 
-		auto run(const CompareLaunchRequest  &request,
-		         const std::function<void()> &report_input_failure = {}) -> PromptCoordinatorResult;
+		auto run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
 	private:
 		friend class PromptCoordinatorTestAccess;
@@ -119,7 +117,6 @@ namespace howdy::pam {
 			bool                   password_call_returned   = false;
 			bool                   secret_prompt_active     = false;
 			bool                   cancellation_requested   = false;
-			bool                   deferred_failure_notice  = false;
 			bool                   shutdown_requested       = false;
 		};
 
@@ -147,7 +144,6 @@ namespace howdy::pam {
 		[[nodiscard]] auto request_password() noexcept -> int;
 		void               publish_password_call_returned();
 		[[nodiscard]] auto build_result(bool ask_pass, int pam_result) -> PromptCoordinatorResult;
-		void report_deferred_failure(const std::function<void()> &report_input_failure) noexcept;
 		[[nodiscard]] auto restore_prompt_conversation() noexcept -> ConversationRestoreResult;
 
 		pam_handle_t                             *pamh_                 = nullptr;

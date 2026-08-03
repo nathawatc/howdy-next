@@ -271,9 +271,6 @@ namespace howdy::pam {
 			});
 		}
 		const bool prompt_failed = enter_write_failed || !state_.password_call_returned;
-		if (prompt_failed) {
-			state_.deferred_failure_notice = true;
-		}
 		lock.unlock();
 		if (prompt_failed) {
 			syslog(LOG_ERR,
@@ -496,28 +493,7 @@ namespace howdy::pam {
 		return result;
 	}
 
-	void PromptCoordinator::report_deferred_failure(
-	    const std::function<void()> &report_input_failure) noexcept {
-		bool report_failure = false;
-		{
-			std::scoped_lock lock(mutex_);
-			report_failure = state_.deferred_failure_notice;
-		}
-		if (!report_failure || !report_input_failure) {
-			return;
-		}
-		try {
-			report_input_failure();
-		} catch (const std::exception &error) {
-			syslog(LOG_WARNING, "Input prompt failure callback failed: %s", error.what());
-		} catch (...) {
-			syslog(LOG_WARNING, "Input prompt failure callback failed with non-standard exception");
-		}
-	}
-
-	auto PromptCoordinator::run(const CompareLaunchRequest  &request,
-	                            const std::function<void()> &report_input_failure)
-	    -> PromptCoordinatorResult {
+	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
 		}
@@ -585,8 +561,6 @@ namespace howdy::pam {
 		if (restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
 			result.pam_status = PAM_SYSTEM_ERR;
-		} else {
-			report_deferred_failure(report_input_failure);
 		}
 		return result;
 	}

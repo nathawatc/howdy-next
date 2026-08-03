@@ -1,32 +1,17 @@
 #include "prompt/observed_prompt_conversation.hpp"
-#include "prompt/prompt_coordinator.hpp"
-#include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <tuple>
-#include <unistd.h>
 
 #include <security/pam_appl.h>
 
-#include <sys/wait.h>
-
 namespace howdy::pam {
-	class PromptCoordinatorTestAccess {
-	public:
-		[[nodiscard]] static auto deferred_failure_notice(PromptCoordinator &coordinator) -> bool {
-			std::scoped_lock lock(coordinator.mutex_);
-			return coordinator.state_.deferred_failure_notice;
-		}
-	};
-
 	class ObservedPromptConversationTestAccess {
 	public:
 		using GetPamItemFn = int (*)(void *, pam_handle_t *, int, const void **);
@@ -78,13 +63,11 @@ namespace {
 	};
 
 	struct OperationState {
-		struct pam_conv                original{};
-		std::array<int, 3>             set_results{{PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}};
-		int                            get_calls = 0;
-		int                            set_calls = 0;
-		struct pam_conv                last_set{};
-		howdy::pam::PromptCoordinator *coordinator              = nullptr;
-		bool                          *deferred_notice_observed = nullptr;
+		struct pam_conv    original{};
+		std::array<int, 3> set_results{{PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}};
+		int                get_calls = 0;
+		int                set_calls = 0;
+		struct pam_conv    last_set{};
 	};
 
 	struct ObserverState {
@@ -148,12 +131,7 @@ namespace {
 	auto injected_set_item(void       *context, pam_handle_t       */*pamh*/, int /*item_type*/,
 	                       const void *item) -> int {
 		auto &state = *static_cast<OperationState *>(context);
-		if (state.set_calls > 0 && state.coordinator != nullptr &&
-		    state.deferred_notice_observed != nullptr) {
-			*state.deferred_notice_observed =
-			    howdy::pam::PromptCoordinatorTestAccess::deferred_failure_notice(
-			        *state.coordinator);
-		}
+
 		if (item != nullptr) {
 			state.last_set = *static_cast<const struct pam_conv *>(item);
 		}
@@ -306,192 +284,6 @@ namespace {
 		return ok;
 	}
 
-	struct DeferredNoticeContext {
-		OperationState          operations;
-		struct pam_conv         override_conversation{};
-		std::mutex              mutex;
-		std::condition_variable condition;
-		int                     enter_attempts           = 0;
-		bool                    enter_failed             = false;
-		bool                    deferred_notice_observed = false;
-		bool                    child_reaped             = false;
-	};
-
-	class FailingEnterDevice final : public EnterDevice {
-	public:
-		explicit FailingEnterDevice(DeferredNoticeContext *context)
-		    : context_(context) {}
-
-		void send_enter_press() override {
-			{
-				std::scoped_lock lock(context_->mutex);
-				++context_->enter_attempts;
-				context_->enter_failed = true;
-			}
-			context_->condition.notify_all();
-			throw std::runtime_error("synthetic Enter failure");
-		}
-
-	private:
-		DeferredNoticeContext *context_;
-	};
-
-	auto deferred_original_conversation(int /*num_msg*/, const struct pam_message ** /*messages*/,
-	                                    struct pam_response **response, void *appdata_ptr) -> int {
-		if (response != nullptr) {
-			*response = nullptr;
-		}
-		auto *state = static_cast<DeferredNoticeContext *>(appdata_ptr);
-		if (state == nullptr) {
-			return PAM_SUCCESS;
-		}
-		std::unique_lock<std::mutex> lock(state->mutex);
-		return state->condition.wait_for(lock, std::chrono::seconds(2),
-		                                 [state] -> bool {
-			                                 return state->enter_failed;
-		                                 })
-		           ? PAM_SUCCESS
-		           : PAM_SYSTEM_ERR;
-	}
-
-	auto deferred_spawn(void * /*context*/, const howdy::pam::CompareLaunchRequest & /*request*/,
-	                    pid_t *child_pid) -> int {
-		const pid_t child = fork();
-		if (child < 0) {
-			return errno;
-		}
-		if (child == 0) {
-			_exit(EXIT_SUCCESS);
-		}
-		*child_pid = child;
-		return 0;
-	}
-
-	auto deferred_wait(void *context, pid_t child_pid,
-	                   std::chrono::steady_clock::time_point /*deadline*/,
-	                   void * /*cancellation_context*/,
-	                   howdy::pam::CompareCancellationRequestedFn /*cancellation_requested*/)
-	    -> int {
-		auto &state  = *static_cast<DeferredNoticeContext *>(context);
-		int   status = 0;
-		pid_t waited;
-		do {
-			waited = waitpid(child_pid, &status, 0);
-		} while (waited < 0 && errno == EINTR);
-		if (waited == child_pid) {
-			state.child_reaped = true;
-			return status;
-		}
-		return static_cast<int>(howdy::native::CompareExit::kAbort) << 8;
-	}
-
-	auto deferred_preflight(void * /*context*/) -> bool {
-		return true;
-	}
-
-	auto deferred_enter_device(void *context) -> std::unique_ptr<EnterDevice> {
-		return std::make_unique<FailingEnterDevice>(static_cast<DeferredNoticeContext *>(context));
-	}
-
-	auto deferred_native_prompt(void * /*context*/, pam_handle_t * /*pamh*/)
-	    -> std::unique_ptr<NativePrompt> {
-		return nullptr;
-	}
-
-	auto deferred_secret_prompt(void *context, pam_handle_t *pamh,
-	                            howdy::pam::SecretPromptObserver observer)
-	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
-		auto &state               = *static_cast<DeferredNoticeContext *>(context);
-		state.operations.original = {
-		    .conv        = deferred_original_conversation,
-		    .appdata_ptr = &state,
-		};
-		auto wrapper =
-		    ObservedPromptConversationTestAccess::create(pamh, observer,
-		                                                 {.context  = &state.operations,
-		                                                  .get_item = injected_get_item,
-		                                                  .set_item = injected_set_item});
-		state.override_conversation =
-		    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
-		return wrapper;
-	}
-
-	auto deferred_request_auth_token(void *context, pam_handle_t * /*pamh*/)
-	    -> std::tuple<int, const char *> {
-		auto                     &state = *static_cast<DeferredNoticeContext *>(context);
-		const struct pam_message  message{.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "};
-		const struct pam_message *message_ptr = &message;
-		struct pam_response      *response    = nullptr;
-		const int                 result      = state.override_conversation.conv(
-		    1, &message_ptr, &response, state.override_conversation.appdata_ptr);
-		if (response != nullptr) {
-			std::free(response);
-		}
-		if (result != PAM_SUCCESS) {
-			return {result, nullptr};
-		}
-		std::unique_lock<std::mutex> lock(state.mutex);
-		if (!state.condition.wait_for(lock, std::chrono::seconds(2), [&state] -> bool {
-			    return state.enter_failed;
-		    })) {
-			return {PAM_SYSTEM_ERR, nullptr};
-		}
-		return {PAM_SUCCESS, nullptr};
-	}
-
-	auto test_restore_failure_suppresses_deferred_notice(std::array<int, 3> set_results,
-	                                                     std::string_view   label) -> bool {
-		DeferredNoticeContext state;
-		state.operations.set_results = set_results;
-		const struct pam_conv original{
-		    .conv        = deferred_original_conversation,
-		    .appdata_ptr = &state,
-		};
-		pam_handle_t *pamh = nullptr;
-		if (!expect(pam_start("howdy-observed-restore-test", "test-user", &original, &pamh) ==
-		                PAM_SUCCESS,
-		            "restore notice test starts PAM handle")) {
-			return false;
-		}
-
-		const howdy::pam::PromptCoordinatorDependencies dependencies{
-		    .context                           = &state,
-		    .spawn_compare_process             = deferred_spawn,
-		    .wait_for_compare_process          = deferred_wait,
-		    .input_prompt_preflight            = deferred_preflight,
-		    .create_enter_device               = deferred_enter_device,
-		    .create_native_prompt              = deferred_native_prompt,
-		    .create_secret_prompt_conversation = deferred_secret_prompt,
-		    .request_auth_token                = deferred_request_auth_token,
-		};
-		howdy::pam::PromptCoordinator coordinator(pamh, Workaround::Input, true, false,
-		                                          dependencies, std::chrono::seconds(5));
-		state.operations.coordinator              = &coordinator;
-		state.operations.deferred_notice_observed = &state.deferred_notice_observed;
-		int        notice_calls                   = 0;
-		const auto result = coordinator.run({.config_path     = "/etc/howdy/config.ini",
-		                                     .username        = "alice",
-		                                     .user_models_dir = "/etc/howdy/models"},
-		                                    [&notice_calls] -> void {
-			                                    ++notice_calls;
-		                                    });
-		pam_end(pamh, result.pam_status);
-
-		return expect(state.enter_attempts == 1, std::string(label) + ": Enter attempted once") &&
-		       expect(state.enter_failed, std::string(label) + ": Enter failure observed") &&
-		       expect(state.deferred_notice_observed,
-		              std::string(label) + ": deferred notice pending before restoration") &&
-		       expect(result.decision == howdy::pam::PromptCoordinatorDecision::kPamResult,
-		              std::string(label) + ": restore failure returns PAM decision") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
-		              std::string(label) + ": restore failure returns system error") &&
-		       expect(notice_calls == 0,
-		              std::string(label) + ": failed restoration suppresses deferred notice") &&
-		       expect(state.operations.set_calls == 3,
-		              std::string(label) + ": restoration fallback attempted") &&
-		       expect(state.child_reaped, std::string(label) + ": compare child reaped");
-	}
-
 }  // namespace
 
 auto main() -> int {
@@ -504,9 +296,5 @@ auto main() -> int {
 	                        {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SUCCESS}, "fail-closed restoration");
 	ok &= test_restore_result(ConversationRestoreResult::kUnsafe,
 	                          {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SYSTEM_ERR}, "unsafe restoration");
-	ok &= test_restore_failure_suppresses_deferred_notice(
-	    {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SUCCESS}, "fail-closed installation");
-	ok &= test_restore_failure_suppresses_deferred_notice(
-	    {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SYSTEM_ERR}, "unsafe restoration");
 	return ok ? 0 : 1;
 }

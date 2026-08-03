@@ -116,7 +116,7 @@ does not start the native or input workaround, even if a workaround option is
 configured.
 .PP
 If Howdy cannot restore original PAM conversation after workaround use,
-authentication fails with system error and no further application notice is sent.
+authentication fails with system error.
 .SH SECURITY NOTES
 Do not make
 .I /etc/howdy

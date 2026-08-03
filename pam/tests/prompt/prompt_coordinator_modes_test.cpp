@@ -4,80 +4,9 @@
 namespace {
 	using namespace howdy::test::prompt_coordinator;
 
-	auto test_input_failure_callback_follows_password_completion(bool callback_throws) -> bool {
-		FakeContext context{
-		    .block_token_until_warning = true,
-		    .fail_enter_send           = true,
-		};
-		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "input failure callback child spawned")) {
-			return false;
-		}
-		context.next_child_pid = child_pid;
-
-		int               callback_calls               = 0;
-		bool              callback_saw_completed_token = false;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
-			++callback_calls;
-			{
-				std::unique_lock<std::mutex> lock(context.token_mutex);
-				callback_saw_completed_token =
-				    context.auth_token_calls == 1 && !context.auth_token_active;
-				context.warning_released_token = true;
-			}
-			context.token_condition.notify_one();
-			if (callback_throws) {
-				throw std::runtime_error("simulated warning failure");
-			}
-		});
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
-		              "input failure preserves Howdy result") &&
-		       expect(callback_calls == 1, "input failure callback runs exactly once") &&
-		       expect(context.enter_device_constructions == 1,
-		              "input failure creates one Enter device") &&
-		       expect(context.enter_presses == 1, "input failure attempts one Enter press") &&
-		       expect(callback_saw_completed_token,
-		              "input failure callback runs after password request unwinds") &&
-		       expect(child_reaped(child_pid), "input failure callback child is reaped");
-	}
-
-	auto test_input_restore_failure_suppresses_deferred_notice(
-	    howdy::pam::ConversationRestoreResult restore_result, const std::string &message) -> bool {
-		FakeContext context{
-		    .block_token_until_warning = true,
-		    .fail_enter_send           = true,
-		    .secret_restore_result     = restore_result,
-		};
-		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, message + ": child spawned")) {
-			return false;
-		}
-		context.next_child_pid = child_pid;
-
-		int               callback_calls = 0;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
-		const auto result = coordinator.run(make_compare_request(), [&callback_calls] -> void {
-			++callback_calls;
-		});
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
-		              message + ": hard failure overrides face success") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
-		              message + ": restoration failure returns system error") &&
-		       expect(context.enter_presses == 1,
-		              message + ": failed Enter attempt creates deferred notice") &&
-		       expect(callback_calls == 0,
-		              message + ": restoration failure suppresses deferred PAM notice") &&
-		       expect(context.secret_restore_calls == 1,
-		              message + ": conversation restoration attempted once") &&
-		       expect(child_reaped(child_pid), message + ": child reaped");
-	}
-
 	auto test_input_success_sends_one_enter() -> bool {
 		FakeContext context{
-		    .block_token_until_warning = true,
+		    .block_token_until_release = true,
 		    .release_token_on_enter    = true,
 		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
@@ -87,12 +16,9 @@ namespace {
 		context.next_child_pid = child_pid;
 		context.run_thread     = std::this_thread::get_id();
 
-		int               callback_calls = 0;
 		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		const auto result = coordinator.run(make_compare_request(), [&callback_calls] -> void {
-			++callback_calls;
-		});
+		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
 		       expect(context.enter_device_constructions == 1,
@@ -103,41 +29,7 @@ namespace {
 		       expect(context.enter_thread == context.wait_thread &&
 		                  context.enter_thread != context.run_thread,
 		              "input success sends Enter from compare worker") &&
-		       expect(callback_calls == 0, "input success emits no failure callback") &&
 		       expect(child_reaped(child_pid), "input success child is reaped");
-	}
-
-	auto test_input_success_blocked_after_grace_waits_for_manual_completion() -> bool {
-		FakeContext context{.block_token_until_warning = true};
-		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "blocked input success child spawned")) {
-			return false;
-		}
-		context.next_child_pid = child_pid;
-
-		int               callback_calls               = 0;
-		bool              callback_saw_completed_token = false;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result = coordinator.run(make_compare_request(), [&] -> void {
-			++callback_calls;
-			{
-				std::unique_lock<std::mutex> lock(context.token_mutex);
-				callback_saw_completed_token =
-				    context.auth_token_calls == 1 && !context.auth_token_active;
-				context.warning_released_token = true;
-			}
-			context.token_condition.notify_one();
-		});
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
-		              "blocked input success preserves Howdy result") &&
-		       expect(context.enter_device_constructions == 1,
-		              "blocked input success creates one Enter device") &&
-		       expect(context.enter_presses == 1, "blocked input success sends one Enter press") &&
-		       expect(callback_calls == 1, "blocked input success emits one failure callback") &&
-		       expect(callback_saw_completed_token,
-		              "blocked input callback runs after manual token completion") &&
-		       expect(child_reaped(child_pid), "blocked input success child is reaped");
 	}
 
 	auto test_compare_failure_password_result(int pam_result, const std::string &label) -> bool {
@@ -483,15 +375,7 @@ namespace {
 
 auto run_prompt_mode_tests() -> bool {
 	bool ok = true;
-	ok &= test_input_failure_callback_follows_password_completion(false);
-	ok &= test_input_failure_callback_follows_password_completion(true);
-	ok &= test_input_restore_failure_suppresses_deferred_notice(
-	    howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
-	    "input fail-closed restoration");
-	ok &= test_input_restore_failure_suppresses_deferred_notice(
-	    howdy::pam::ConversationRestoreResult::kUnsafe, "input unsafe restoration");
 	ok &= test_input_success_sends_one_enter();
-	ok &= test_input_success_blocked_after_grace_waits_for_manual_completion();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_compare_signal_password_fallback();
