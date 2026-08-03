@@ -2,7 +2,6 @@
 #include "cli/list_internal.hpp"
 #include "storage/user_models.hpp"
 
-#include <algorithm>
 #include <array>
 #include <ctime>
 #include <iostream>
