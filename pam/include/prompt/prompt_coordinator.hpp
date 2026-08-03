@@ -1,10 +1,10 @@
 #pragma once
 
-#include "module/main.hpp"
 #include "prompt/conversation_restore.hpp"
 #include "prompt/enter_device.hpp"
 #include "prompt/native_prompt_conversation.hpp"
 #include "prompt/observed_prompt_conversation.hpp"
+#include "prompt/workaround.hpp"
 #include "runtime/compare_launch.hpp"
 
 #include <chrono>
@@ -147,7 +147,7 @@ namespace howdy::pam {
 		[[nodiscard]] auto restore_prompt_conversation() noexcept -> ConversationRestoreResult;
 
 		pam_handle_t                             *pamh_                 = nullptr;
-		Workaround                                requested_workaround_ = Workaround::Off;
+		Workaround                                requested_workaround_ = Workaround::kOff;
 		bool                                      ask_auth_tok_         = false;
 		bool                                      existing_auth_token_  = false;
 		std::chrono::steady_clock::duration       hard_timeout_{};
@@ -158,7 +158,7 @@ namespace howdy::pam {
 		std::unique_ptr<SecretPromptConversation> secret_prompt_conversation_;
 		std::unique_ptr<EnterDevice>              enter_device_;
 		State                                     state_;
-		Workaround                                effective_workaround_ = Workaround::Off;
+		Workaround                                effective_workaround_ = Workaround::kOff;
 		bool                                      run_started_          = false;
 	};
 

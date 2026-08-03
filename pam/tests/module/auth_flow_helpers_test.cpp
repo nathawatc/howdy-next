@@ -1,6 +1,6 @@
 #include "config/runtime_config.hpp"
 #include "module/auth_flow.hpp"
-#include "module/main.hpp"
+#include "module/entrypoint.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/auth_helper_process.hpp"
@@ -33,6 +33,8 @@
 
 namespace {
 
+	using howdy::pam::PamModuleArguments;
+	using howdy::pam::run_authentication_entrypoint;
 	using howdy::test::expect;
 
 	auto fake_partial_read_error(void                                              *context,
@@ -949,14 +951,18 @@ namespace {
 			             std::string(scenario) + ": authentication restores host gettext domain");
 		};
 
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        identify_for_test) == PAM_SUCCESS,
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
 		             "successful authentication enters locale test flow");
 		expect_host_state("successful authentication");
 
 		fixture.runtime.disabled = true;
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        identify_for_test) == PAM_AUTHINFO_UNAVAIL,
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_AUTHINFO_UNAVAIL,
 		             "disabled early return preserves PAM behavior in locale test");
 		expect_host_state("disabled early return");
 
@@ -965,8 +971,10 @@ namespace {
 		    .status        = howdy::native::UserModelStatus::kInsecurePath,
 		    .error_message = "locale test model failure",
 		};
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        identify_for_test) == PAM_AUTHINFO_UNAVAIL,
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_AUTHINFO_UNAVAIL,
 		             "model failure returns through locale test flow");
 		expect_host_state("model failure");
 
@@ -1012,8 +1020,9 @@ namespace {
 			const std::string name(scenario);
 			const int         prompt_before = fixture.prompt.spawn_calls;
 			reset_probe_calls();
-			const int result = authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-			                                              identify_for_test);
+			const int result = run_authentication_entrypoint(
+			    pam_handle.get(), {}, true,
+			    {.context = &dependencies, .authenticate = identify_for_test});
 			ok &= expect(result == PAM_AUTHINFO_UNAVAIL,
 			             name + ": ineligible result maps to PAM_AUTHINFO_UNAVAIL");
 			ok &= expect(fixture.prompt.spawn_calls == prompt_before,
@@ -1082,8 +1091,10 @@ namespace {
 		fixture.eligibility.readiness          = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_lid_diagnostic = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        identify_for_test) == PAM_SUCCESS,
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
 		             "eligible authentication continues after non-fatal lid diagnostic");
 		ok &= expect(fixture.prompt.spawn_calls == prompt_before_lid_diagnostic + 1,
 		             "non-fatal lid diagnostic does not suppress compare process");
@@ -1095,8 +1106,10 @@ namespace {
 		fixture.eligibility.readiness    = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_eligible = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(authenticate_with_identify(pam_handle.get(), {}, true, &dependencies,
-		                                        identify_for_test) == PAM_SUCCESS,
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
 		             "eligible authentication enters prompt coordination");
 		ok &= expect(fixture.prompt.spawn_calls == prompt_before_eligible + 1,
 		             "eligible authentication spawns compare process");

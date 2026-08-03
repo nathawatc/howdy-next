@@ -16,7 +16,7 @@ namespace {
 		context.next_child_pid = child_pid;
 		context.run_thread     = std::this_thread::get_id();
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -43,7 +43,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result          = coordinator.run(make_compare_request());
 		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
@@ -73,7 +73,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
@@ -98,7 +98,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
@@ -128,7 +128,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -157,7 +157,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -186,7 +186,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNativeInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -224,7 +224,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(fixture.pamh(), Workaround::NativeInput, true, false,
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNativeInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
@@ -256,7 +256,7 @@ namespace {
 
 		howdy::pam::PromptCoordinatorResult result;
 		{
-			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+			PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
 			                              dependencies(&context), std::chrono::seconds(5));
 			result = coordinator.run(make_compare_request());
 		}
@@ -307,7 +307,7 @@ namespace {
 
 		howdy::pam::PromptCoordinatorResult result;
 		{
-			PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+			PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
 			                              dependencies(&context), std::chrono::seconds(5));
 			result = coordinator.run(make_compare_request());
 		}
@@ -360,7 +360,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(fixture.pamh(), Workaround::Native, true, false,
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,

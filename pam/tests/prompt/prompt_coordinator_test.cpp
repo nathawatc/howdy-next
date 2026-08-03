@@ -203,7 +203,7 @@ namespace {
 		auto deps                     = dependencies(&context);
 		deps.wait_for_compare_process = watchdog_wait_for_compare;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps, 40ms);
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 40ms);
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "watchdog timeout keeps password fallback") &&
@@ -224,7 +224,7 @@ namespace {
 		auto deps                     = dependencies(&context);
 		deps.wait_for_compare_process = watchdog_wait_for_compare;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps, 1s);
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 1s);
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM success wins before watchdog") &&
@@ -238,7 +238,7 @@ namespace {
 		bool ok = true;
 		for (const auto timeout : {std::chrono::milliseconds::zero(), -1ms}) {
 			FakeContext       context;
-			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 			                              dependencies(&context), timeout);
 			const auto        result = coordinator.run(make_compare_request());
 			ok &= expect(!coordinator.valid(), "nonpositive hard timeout is invalid");
@@ -258,7 +258,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
@@ -285,7 +285,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		const bool        reaped = child_reaped(child_pid);
@@ -310,7 +310,7 @@ namespace {
 
 	auto test_password_call_returned_before_enter_emission_suppresses_enter() -> bool {
 		FakeContext       context;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -334,7 +334,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		context.coordinator_for_enter = &coordinator;
 		howdy::pam::PromptCoordinatorResult result;
@@ -377,7 +377,7 @@ namespace {
 
 	auto test_prompt_generation_rollover_retries_canceled_claim() -> bool {
 		FakeContext       context;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -399,7 +399,7 @@ namespace {
 
 	auto test_password_return_between_generations_prevents_retry() -> bool {
 		FakeContext       context;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -415,7 +415,7 @@ namespace {
 
 	auto test_shutdown_between_generations_prevents_retry() -> bool {
 		FakeContext       context;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -431,7 +431,7 @@ namespace {
 
 	auto test_generation_close_after_emission_starts_does_not_retry() -> bool {
 		FakeContext       context{.block_enter_after_emit = true};
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -452,7 +452,7 @@ namespace {
 
 	auto test_multiple_generation_rollovers_emit_once() -> bool {
 		FakeContext       context;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
 		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
 		    coordinator, std::make_unique<FakeEnterDevice>(&context));
@@ -505,7 +505,7 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		PromptCoordinator coordinator(pamh, Workaround::Input, true, false, dependencies(&context),
+		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, dependencies(&context),
 		                              std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		pam_end(pamh, result.pam_status);
@@ -555,7 +555,7 @@ namespace {
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
 			context.run_thread = std::this_thread::get_id();
-			PromptCoordinator coordinator(pamh, Workaround::Input, true, false, deps, 5s);
+			PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, deps, 5s);
 			result = coordinator.run(make_compare_request());
 		});
 
@@ -610,7 +610,7 @@ namespace {
 		context.next_child_pid                 = child_pid;
 		auto deps                              = dependencies(&context);
 		deps.create_secret_prompt_conversation = create_production_secret_prompt_conversation;
-		PromptCoordinator coordinator(pamh, Workaround::Input, true, false, deps, 5s);
+		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, deps, 5s);
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
 			result = coordinator.run(make_compare_request());
@@ -726,7 +726,7 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -744,7 +744,7 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,

@@ -17,7 +17,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.run(request);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -176,7 +176,7 @@ namespace {
 
 	auto test_spawn_failure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto result = coordinator.run(make_compare_request());
@@ -190,7 +190,7 @@ namespace {
 	auto test_invalid_spawn_pid() -> bool {
 		FakeContext context;
 		context.next_child_pid = -1;
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto result = coordinator.run(make_compare_request());
@@ -202,7 +202,7 @@ namespace {
 
 	auto test_one_shot_after_spawn_failure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
-		PromptCoordinator coordinator(nullptr, Workaround::Input, true, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 
 		const auto first  = coordinator.run(make_compare_request());
@@ -244,7 +244,7 @@ namespace {
 					break;
 			}
 
-			PromptCoordinator coordinator(nullptr, Workaround::Input, true, false, deps,
+			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps,
 			                              std::chrono::seconds(5));
 			ok &= expect(!coordinator.valid(), "missing dependency is invalid");
 			const auto before = callback_counts(context);
@@ -265,7 +265,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::Off, false, false,
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 		                              dependencies(&context), std::chrono::seconds(5));
 		const auto        first = coordinator.run(make_compare_request());
 		if (!expect(first.decision == PromptCoordinatorDecision::kHowdyResult,

@@ -1,6 +1,16 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 add_subdirectory(po)
 
+add_library(pam_options STATIC src/module/pam_options.cpp)
+howdy_configure_pam_target(pam_options)
+
+add_library(pam_message_locale STATIC src/runtime/message_locale.cpp)
+howdy_configure_pam_target(pam_message_locale)
+target_include_directories(
+	pam_message_locale
+	PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
 add_library(
 	pam_runtime STATIC
 	src/runtime/auth_helper_process.cpp
@@ -25,7 +35,7 @@ add_library(
 	src/prompt/native_prompt_input.cpp
 	src/prompt/observed_prompt_conversation.cpp
 	src/prompt/prompt_coordinator.cpp
-	src/module/prompt_workaround.cpp
+	src/prompt/workaround.cpp
 )
 howdy_configure_pam_target(pam_prompt)
 target_link_libraries(
@@ -47,15 +57,38 @@ target_compile_definitions(
 target_link_libraries(
 	pam_module
 	PUBLIC PAM::PAM
-	PRIVATE pam_prompt pam_runtime howdy_user_model_readiness
+	PRIVATE pam_options pam_prompt pam_runtime howdy_user_model_readiness
 )
 
-add_library(pam_howdy MODULE src/module/main.cpp)
+add_library(pam_entrypoint STATIC src/module/entrypoint.cpp)
+howdy_configure_pam_target(pam_entrypoint)
+target_link_libraries(
+	pam_entrypoint
+	PUBLIC PAM::PAM
+	PRIVATE pam_message_locale
+)
+
+add_library(
+	pam_production_entrypoint STATIC
+	src/module/production_entrypoint.cpp
+)
+howdy_configure_pam_target(pam_production_entrypoint)
+target_link_libraries(
+	pam_production_entrypoint
+	PUBLIC pam_entrypoint
+	PRIVATE pam_module
+)
+
+add_library(
+	pam_howdy MODULE
+	src/module/main.cpp
+	src/module/unsupported_entrypoints.cpp
+)
 howdy_configure_pam_target(pam_howdy)
 target_compile_definitions(
 	pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
-target_link_libraries(pam_howdy PRIVATE pam_module)
+target_link_libraries(pam_howdy PRIVATE pam_production_entrypoint)
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
 install(
 	TARGETS pam_howdy
@@ -69,6 +102,27 @@ if(BUILD_TESTING)
 		howdy_configure_pam_test_target(${target})
 		add_test(NAME ${test_name} COMMAND ${target})
 	endfunction()
+
+	howdy_add_pam_test(
+		pam_options_test
+		pam-options
+		tests/module/pam_options_test.cpp
+	)
+	target_link_libraries(pam_options_test PRIVATE pam_options)
+
+	howdy_add_pam_test(
+		pam_message_locale_test
+		pam-message-locale
+		tests/runtime/message_locale_test.cpp
+	)
+	target_link_libraries(pam_message_locale_test PRIVATE pam_message_locale)
+
+	howdy_add_pam_test(
+		pam_entrypoint_test
+		pam-entrypoint
+		tests/module/entrypoint_test.cpp
+	)
+	target_link_libraries(pam_entrypoint_test PRIVATE pam_entrypoint)
 
 	howdy_add_pam_test(
 		pam_status_mapping_test
@@ -118,17 +172,12 @@ if(BUILD_TESTING)
 	target_link_libraries(pam_prompt_workaround_test PRIVATE pam_prompt)
 
 	howdy_add_pam_test(
-		pam_main_entrypoints_test
-		pam-main-entrypoints
-		src/module/main.cpp
-		tests/module/main_entrypoints_test.cpp
+		pam_abi_entrypoints_test
+		pam-abi-entrypoints
+		tests/module/abi_entrypoints_test.cpp
+		src/module/unsupported_entrypoints.cpp
 	)
-	target_link_libraries(pam_main_entrypoints_test PRIVATE PAM::PAM)
-	target_compile_definitions(
-		pam_main_entrypoints_test
-		PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
-	)
-	add_dependencies(pam_main_entrypoints_test howdy-gmo)
+	target_link_libraries(pam_abi_entrypoints_test PRIVATE pam_entrypoint)
 	howdy_add_pam_test(
 		pam_native_prompt_conversation_test
 		pam-native-prompt-conversation
@@ -167,7 +216,7 @@ if(BUILD_TESTING)
 	)
 	target_link_libraries(
 		pam_auth_flow_helpers_test
-		PRIVATE pam_module pam_prompt pam_runtime
+		PRIVATE pam_entrypoint pam_module
 	)
 
 	howdy_add_pam_test(

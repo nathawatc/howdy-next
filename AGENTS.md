@@ -108,7 +108,7 @@ Current test files of interest:
   `user_models_test.cpp`, `user_names_test.cpp`
 - Auth helper: `auth_helper_path_test.cpp`, `auth_helper_staging_test.cpp`,
   `auth_helper_test.cpp`
-- PAM / auth flow: `auth_flow_helpers_test.cpp`, `main_entrypoints_test.cpp`,
+- PAM / auth flow: `auth_flow_helpers_test.cpp`, `abi_entrypoints_test.cpp`,
   `conversation_response_test.cpp`, `native_prompt_conversation_test.cpp`,
   `observed_prompt_conversation_test.cpp`,
   `prompt_coordinator_adapter_test.cpp`, `prompt_coordinator_modes_test.cpp`,

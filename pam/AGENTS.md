@@ -10,7 +10,8 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 
 | File                                               | Role                                                                            |
 | -------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `src/module/main.cpp`                              | PAM module entry points                                                         |
+| `src/module/main.cpp`                              | PAM authentication entry point                                                  |
+| `src/module/unsupported_entrypoints.cpp`           | Unsupported PAM hooks returning `PAM_IGNORE`                                    |
 | `src/module/auth_flow.cpp`                         | Auth policy, readiness, status mapping, coordinator                             |
 | `src/runtime/runtime_session.cpp`                  | Auth-helper staging, typed config load, staged cleanup                          |
 | `src/prompt/prompt_coordinator.cpp`                | Compare lifecycle and prompt coordination                                       |
@@ -29,7 +30,11 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `tests/prompt/prompt_coordinator_adapter_test.cpp` | Production adapter tests                                                        |
 | `tests/module/auth_flow_helpers_test.cpp`          | Auth-flow helpers and policy-adjacent tests                                     |
 | `include/module/auth_eligibility.hpp`              | Typed eligibility conditions, policy, and injected runtime probes               |
-| `include/module/main.hpp`                          | `Workaround` (`off`, `input`, `native`, `native-input`) and PAM entry helpers   |
+| `include/module/entrypoint.hpp`                    | Generic PAM ABI adapter and exception boundary                                  |
+| `include/module/production_entrypoint.hpp`         | Production authentication callback wiring                                       |
+| `include/module/pam_options.hpp`                   | Typed PAM invocation arguments and workaround options                           |
+| `include/prompt/workaround.hpp`                    | Prompt workaround mode and prompt policy helper                                 |
+| `include/runtime/message_locale.hpp`               | Thread-local message and character locale guard                                 |
 | `CMakeLists.txt`                                   | PAM build configuration                                                         |
 
 ## Conventions

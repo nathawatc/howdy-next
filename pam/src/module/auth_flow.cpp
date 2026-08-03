@@ -1,6 +1,6 @@
 #include "module/auth_flow.hpp"
 
-#include "module/main.hpp"
+#include "module/pam_options.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
 #include "prompt/conversation_response.hpp"
@@ -138,7 +138,7 @@ namespace howdy::pam::auth_flow {
 	auto auth_token_present(pam_handle_t *pamh) -> bool {
 		const void *auth_token = nullptr;
 		const int   result     = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
-		return result == PAM_SUCCESS && auth_token_item_present(auth_token);
+		return result == PAM_SUCCESS && auth_token != nullptr;
 	}
 
 	auto howdy_error(int status, const ConversationFn &conv_function) -> int {
@@ -282,11 +282,12 @@ namespace howdy::pam::auth_flow {
 
 		send_detection_notice(config, conv_function);
 
-		const Workaround workaround          = get_pam_workaround(arguments.argc, arguments.argv);
+		const PamOptions pam_options         = parse_pam_options(arguments);
 		const bool       existing_auth_token = auth_flow::auth_token_present(pamh);
 
 		howdy::pam::PromptCoordinator coordinator(
-		    pamh, workaround, ask_auth_tok, existing_auth_token, dependencies.prompt_coordinator,
+		    pamh, pam_options.workaround, ask_auth_tok, existing_auth_token,
+		    dependencies.prompt_coordinator,
 		    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
 
 		if (!coordinator.valid()) {
@@ -304,8 +305,3 @@ namespace howdy::pam::auth_flow {
 	}
 
 }  // namespace howdy::pam::auth_flow
-
-auto identify(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok) -> int {
-	return howdy::pam::auth_flow::identify_with_dependencies(
-	    pamh, arguments, ask_auth_tok, howdy::pam::auth_flow::production_identify_dependencies());
-}

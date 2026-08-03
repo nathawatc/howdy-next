@@ -4,8 +4,8 @@
 
 #include "prompt/prompt_coordinator.hpp"
 
-#include "module/prompt_workaround.hpp"
 #include "prompt/enter_device.hpp"
+#include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
 
@@ -177,10 +177,10 @@ namespace howdy::pam {
 		    state_.password_call_returned || state_.shutdown_requested) {
 			return SuccessAction::kNone;
 		}
-		if (effective_workaround_ == Workaround::Native && native_prompt_ != nullptr) {
+		if (effective_workaround_ == Workaround::kNative && native_prompt_ != nullptr) {
 			return SuccessAction::kAbortNative;
 		}
-		if (effective_workaround_ != Workaround::Input || state_.enter != EnterState::kPending) {
+		if (effective_workaround_ != Workaround::kInput || state_.enter != EnterState::kPending) {
 			return SuccessAction::kNone;
 		}
 
@@ -301,14 +301,14 @@ namespace howdy::pam {
 	}
 
 	void PromptCoordinator::disable_native_workaround(bool unavailable) {
-		const bool fallback_to_input = requested_workaround_ == Workaround::NativeInput;
+		const bool fallback_to_input = requested_workaround_ == Workaround::kNativeInput;
 		if (unavailable) {
 			syslog(LOG_INFO,
 			       fallback_to_input
 			           ? "Native prompt conversation unavailable, falling back to input workaround"
 			           : "Native prompt conversation unavailable, disabling prompt workaround");
 		}
-		effective_workaround_ = fallback_to_input ? Workaround::Input : Workaround::Off;
+		effective_workaround_ = fallback_to_input ? Workaround::kInput : Workaround::kOff;
 		native_prompt_.reset();
 	}
 
@@ -329,7 +329,7 @@ namespace howdy::pam {
 
 		const int install_result = native_prompt_->install();
 		if (install_result == PAM_SUCCESS) {
-			effective_workaround_ = Workaround::Native;
+			effective_workaround_ = Workaround::kNative;
 			return;
 		}
 		syslog(LOG_WARNING, "Failed to install native prompt conversation: %d", install_result);
@@ -337,28 +337,28 @@ namespace howdy::pam {
 	}
 
 	auto PromptCoordinator::configure_prompt_workaround() -> bool {
-		const bool wants_native_prompt = requested_workaround_ == Workaround::Native ||
-		                                 requested_workaround_ == Workaround::NativeInput;
+		const bool wants_native_prompt = requested_workaround_ == Workaround::kNative ||
+		                                 requested_workaround_ == Workaround::kNativeInput;
 		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
 			configure_native_workaround();
 		}
 
 		configure_input_workaround();
-		return effective_workaround_ == Workaround::Native
+		return effective_workaround_ == Workaround::kNative
 		           ? native_prompt_ != nullptr && !existing_auth_token_
 		           : should_ask_for_password(ask_auth_tok_, effective_workaround_,
 		                                     existing_auth_token_);
 	}
 
 	void PromptCoordinator::configure_input_workaround() {
-		if (effective_workaround_ != Workaround::Input || !ask_auth_tok_ || existing_auth_token_) {
+		if (effective_workaround_ != Workaround::kInput || !ask_auth_tok_ || existing_auth_token_) {
 			return;
 		}
 
 		if (!dependencies_.input_prompt_preflight(dependencies_.context)) {
 			syslog(LOG_WARNING, "Input prompt workaround preflight failed; falling back to "
 			                    "standard PAM prompt");
-			effective_workaround_ = Workaround::Off;
+			effective_workaround_ = Workaround::kOff;
 			return;
 		}
 
@@ -366,16 +366,16 @@ namespace howdy::pam {
 			enter_device_ = dependencies_.create_enter_device(dependencies_.context);
 			if (enter_device_ == nullptr) {
 				syslog(LOG_ERR, "Input prompt workaround setup failed: device unavailable");
-				effective_workaround_ = Workaround::Off;
+				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &err) {
 			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
-			effective_workaround_ = Workaround::Off;
+			effective_workaround_ = Workaround::kOff;
 		} catch (...) {
 			syslog(LOG_ERR, "Input prompt workaround setup failed with non-standard exception");
-			effective_workaround_ = Workaround::Off;
+			effective_workaround_ = Workaround::kOff;
 		}
-		if (effective_workaround_ != Workaround::Input) {
+		if (effective_workaround_ != Workaround::kInput) {
 			return;
 		}
 
@@ -389,18 +389,18 @@ namespace howdy::pam {
 				syslog(LOG_ERR, "Input prompt observation setup failed");
 				secret_prompt_conversation_.reset();
 				enter_device_.reset();
-				effective_workaround_ = Workaround::Off;
+				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Input prompt observation setup failed: %s", error.what());
 			secret_prompt_conversation_.reset();
 			enter_device_.reset();
-			effective_workaround_ = Workaround::Off;
+			effective_workaround_ = Workaround::kOff;
 		} catch (...) {
 			syslog(LOG_ERR, "Input prompt observation setup failed with non-standard exception");
 			secret_prompt_conversation_.reset();
 			enter_device_.reset();
-			effective_workaround_ = Workaround::Off;
+			effective_workaround_ = Workaround::kOff;
 		}
 	}
 
@@ -425,8 +425,8 @@ namespace howdy::pam {
 		if (!ask_pass) {
 			return;
 		}
-		state_.enter = effective_workaround_ == Workaround::Input ? EnterState::kPending
-		                                                          : EnterState::kNotApplicable;
+		state_.enter = effective_workaround_ == Workaround::kInput ? EnterState::kPending
+		                                                           : EnterState::kNotApplicable;
 	}
 
 	void PromptCoordinator::publish_password_call_entered() {

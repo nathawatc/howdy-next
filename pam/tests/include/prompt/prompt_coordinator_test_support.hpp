@@ -1,5 +1,6 @@
 #pragma once
 #include "prompt/prompt_coordinator.hpp"
+#include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
 #include "test_support.hpp"
@@ -109,6 +110,7 @@ namespace howdy::test::prompt_coordinator {
 	using howdy::pam::PromptCoordinator;
 	using howdy::pam::PromptCoordinatorDecision;
 	using howdy::pam::PromptCoordinatorDependencies;
+	using howdy::pam::Workaround;
 	using namespace std::chrono_literals;
 
 	struct FakeContext {

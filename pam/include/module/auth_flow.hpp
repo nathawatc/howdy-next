@@ -1,6 +1,7 @@
 #pragma once
 
 #include "module/auth_eligibility.hpp"
+#include "module/pam_options.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "runtime/runtime_session.hpp"
 
