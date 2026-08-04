@@ -21,8 +21,10 @@ read `howdy/src/vision/AGENTS.md`.
   feature code.
 - Runtime consumers should use typed `RuntimeConfig`, `VideoConfig`, and
   `FaceConfig` values instead of direct `ConfigReader` key lookups.
-- Keep option metadata and packaged fallback values centralized in
-  `config/config_schema.*`; derive runtime-only defaults in
+- Keep runtime option metadata and packaged fallback values centralized in
+  `config/config_schema.*`; build packaged `config.ini` from that schema.
+  Never edit generated config files manually; keep renderer and generator
+  outside runtime authentication paths. Derive runtime-only defaults in
   `src/config/runtime_config_defaults.cpp` instead of duplicating literals.
 - `RuntimeConfigLoadResult::config` is optional; check status and
   `config.has_value()` before dereferencing.

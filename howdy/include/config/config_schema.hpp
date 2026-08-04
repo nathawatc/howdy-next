@@ -78,6 +78,7 @@ namespace howdy::native::config_schema {
 		std::span<const std::string_view> choices;
 		SpecialRule                       special_rule;
 		std::string_view                  invalid_rule;
+		std::string_view                  description;
 	};
 
 	constexpr auto bool_default(bool value) -> RuntimeDefault {

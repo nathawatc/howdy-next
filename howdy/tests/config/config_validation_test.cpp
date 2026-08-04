@@ -13,7 +13,7 @@
 #include <utility>
 
 #ifndef HOWDY_PACKAGED_CONFIG_PATH
-#	define HOWDY_PACKAGED_CONFIG_PATH "config/config.ini"
+#	error "HOWDY_PACKAGED_CONFIG_PATH must be defined by CMake"
 #endif
 
 namespace {
@@ -54,6 +54,9 @@ namespace {
 
 			const auto &resolved = howdy::native::config_schema::runtime_config_option(option.id);
 			ok &= expect(&resolved == &option, "schema option id resolves same option: " + name);
+			ok &= expect(!option.description.empty(), "schema option has description: " + name);
+			ok &= expect(option.description != option.key,
+			             "schema option description explains key: " + name);
 		}
 
 		for (std::size_t index = 0; index < option_count; ++index) {
@@ -80,7 +83,8 @@ namespace {
 	auto packaged_config_matches_schema(const howdy::native::ConfigReader &config) -> bool {
 		using enum howdy::native::config_schema::ValueType;
 
-		bool ok = true;
+		bool        ok                  = true;
+		std::size_t parsed_option_count = 0;
 		for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
 			const auto section = std::string(option.section);
 			const auto key     = std::string(option.key);
@@ -118,6 +122,7 @@ namespace {
 
 		for (const auto &section : config.sections()) {
 			for (const auto &key : config.keys(section)) {
+				++parsed_option_count;
 				auto message = std::string("packaged config key is known by schema: ");
 				message += section;
 				message += ".";
@@ -127,6 +132,9 @@ namespace {
 				             message);
 			}
 		}
+		ok &= expect(parsed_option_count ==
+		                 howdy::native::config_schema::runtime_config_options().size(),
+		             "packaged config contains each schema option exactly once");
 		return ok;
 	}
 

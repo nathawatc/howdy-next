@@ -1,15 +1,72 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+add_library(howdy_config_schema STATIC src/config/config_schema.cpp)
+howdy_configure_native_target(howdy_config_schema)
+
+add_library(howdy_config_template STATIC src/config/config_template.cpp)
+howdy_configure_native_target(howdy_config_template)
+target_link_libraries(howdy_config_template PUBLIC howdy_config_schema)
+
 add_library(
 	howdy_config
 	STATIC
 	src/config/config_reader.cpp
 	src/config/runtime_config.cpp
-	src/config/config_schema.cpp
 	src/config/config_utils.cpp
 	src/config/config_validation.cpp
 )
 howdy_configure_native_target(howdy_config)
-target_link_libraries(howdy_config PUBLIC PkgConfig::INIREADER)
+target_link_libraries(
+	howdy_config
+	PUBLIC
+		howdy_config_schema
+		PkgConfig::INIREADER
+)
+
+add_executable(howdy_config_generator src/tools/generate_config.cpp)
+howdy_configure_native_target(howdy_config_generator)
+target_link_libraries(howdy_config_generator PRIVATE howdy_config_template)
+if(CMAKE_CROSSCOMPILING)
+	set_property(
+		TARGET howdy_config_generator
+		PROPERTY CROSSCOMPILING_EMULATOR "${CMAKE_CROSSCOMPILING_EMULATOR}"
+	)
+endif()
+
+set(
+	HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH
+	"${HOWDY_PACKAGED_CONFIG_PATH}.candidate"
+)
+set(
+	HOWDY_PACKAGED_CONFIG_SCRIPT
+	"${PROJECT_SOURCE_DIR}/cmake/packaged_config.cmake"
+)
+add_custom_command(
+	OUTPUT "${HOWDY_PACKAGED_CONFIG_PATH}"
+	COMMAND
+		"${CMAKE_COMMAND}"
+		"-DHOWDY_PACKAGED_CONFIG_ACTION=prepare"
+		"-DHOWDY_PACKAGED_CONFIG_CANDIDATE=${HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH}"
+		"-DHOWDY_PACKAGED_CONFIG_OUTPUT=${HOWDY_PACKAGED_CONFIG_PATH}"
+		-P "${HOWDY_PACKAGED_CONFIG_SCRIPT}"
+	COMMAND
+		howdy_config_generator
+		--output "${HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH}"
+	COMMAND
+		"${CMAKE_COMMAND}"
+		"-DHOWDY_PACKAGED_CONFIG_ACTION=publish"
+		"-DHOWDY_PACKAGED_CONFIG_CANDIDATE=${HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH}"
+		"-DHOWDY_PACKAGED_CONFIG_OUTPUT=${HOWDY_PACKAGED_CONFIG_PATH}"
+		-P "${HOWDY_PACKAGED_CONFIG_SCRIPT}"
+	DEPENDS
+		howdy_config_generator
+		"${HOWDY_PACKAGED_CONFIG_SCRIPT}"
+	COMMENT "Generating packaged Howdy config.ini"
+	VERBATIM
+)
+add_custom_target(
+	howdy_packaged_config ALL
+	DEPENDS "${HOWDY_PACKAGED_CONFIG_PATH}"
+)
 
 add_library(
 	howdy_runtime_paths
@@ -354,6 +411,45 @@ if(BUILD_TESTING)
 	target_link_libraries(howdy_config_utils_test PRIVATE howdy_config)
 	add_test(NAME native-config-utils COMMAND howdy_config_utils_test)
 
+	add_executable(
+		howdy_config_template_test tests/config/config_template_test.cpp
+	)
+	howdy_configure_native_test_target(howdy_config_template_test)
+	target_link_libraries(
+		howdy_config_template_test PRIVATE howdy_config_template
+	)
+	add_test(NAME native-config-template COMMAND howdy_config_template_test)
+
+	add_executable(
+		howdy_config_generator_test tests/config/config_generator_test.cpp
+	)
+	howdy_configure_native_test_target(howdy_config_generator_test)
+	add_dependencies(howdy_config_generator_test howdy_config_generator)
+
+	if(NOT CMAKE_CROSSCOMPILING)
+		add_test(
+			NAME native-config-generator
+			COMMAND howdy_config_generator_test "$<TARGET_FILE:howdy_config_generator>"
+		)
+		add_test(
+			NAME native-config-cross-compilation
+			COMMAND
+				"${CMAKE_COMMAND}"
+				"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+				"-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/config-cross-compilation-test"
+				"-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+				"-DHOWDY_PAM_INCLUDE_DIR=${PAM_INCLUDE_DIR}"
+				"-DHOWDY_PAM_LIBRARY=${PAM_LIBRARY}"
+				-P "${PROJECT_SOURCE_DIR}/tests/cmake/config_generation_test.cmake"
+		)
+		set_tests_properties(
+			native-config-cross-compilation
+			PROPERTIES
+				RUN_SERIAL TRUE
+				TIMEOUT 120
+		)
+	endif()
+
 	add_executable(howdy_file_security_test tests/support/file_security_test.cpp)
 	howdy_configure_native_test_target(howdy_file_security_test)
 	add_test(NAME native-file-security COMMAND howdy_file_security_test)
@@ -396,8 +492,9 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_config_validation_test)
 	target_compile_definitions(
 		howdy_config_validation_test
-		PRIVATE HOWDY_PACKAGED_CONFIG_PATH="${PROJECT_SOURCE_DIR}/config/config.ini"
+		PRIVATE "HOWDY_PACKAGED_CONFIG_PATH=\"${HOWDY_PACKAGED_CONFIG_PATH}\""
 	)
+	add_dependencies(howdy_config_validation_test howdy_packaged_config)
 	target_link_libraries(
 		howdy_config_validation_test
 		PRIVATE howdy_config

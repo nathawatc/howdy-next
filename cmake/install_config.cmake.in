@@ -1,6 +1,15 @@
 set(_howdy_config_dir "@HOWDY_CONFIG_DIR@")
 set(_howdy_config_path "@HOWDY_CONFIG_PATH@")
+set(_howdy_packaged_config_path "@HOWDY_PACKAGED_CONFIG_PATH@")
 set(_howdy_user_models_dir "@HOWDY_USER_MODELS_DIR@")
+
+if(NOT EXISTS "${_howdy_packaged_config_path}" OR IS_DIRECTORY "${_howdy_packaged_config_path}")
+	message(
+		FATAL_ERROR
+		"Generated Howdy config is missing: ${_howdy_packaged_config_path}. "
+		"Build target howdy_packaged_config before installing."
+	)
+endif()
 
 set(_howdy_config_install_dir "$ENV{DESTDIR}${_howdy_config_dir}")
 set(_howdy_config_install_path "$ENV{DESTDIR}${_howdy_config_path}")
@@ -40,7 +49,7 @@ if(NOT EXISTS "${_howdy_config_install_path}")
 		INSTALL
 		DESTINATION "${_howdy_config_dir}"
 		TYPE FILE
-		FILES "@PROJECT_SOURCE_DIR@/config/config.ini"
+		FILES "${_howdy_packaged_config_path}"
 		FILE_PERMISSIONS
 			OWNER_READ
 			OWNER_WRITE

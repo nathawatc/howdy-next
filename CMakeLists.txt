@@ -8,6 +8,14 @@ project(
 	LANGUAGES CXX
 )
 
+if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+	message(
+		FATAL_ERROR
+			"Cross-compiling Howdy requires CMAKE_CROSSCOMPILING_EMULATOR "
+			"to run the packaged-config generator"
+	)
+endif()
+
 if(NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE STREQUAL "")
 	set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
 endif()
@@ -183,6 +191,10 @@ if(HOWDY_USER_MODELS_DIR STREQUAL "")
 endif()
 
 set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.ini")
+set(
+	HOWDY_PACKAGED_CONFIG_PATH
+	"${PROJECT_BINARY_DIR}/generated/config/config.ini"
+)
 set(HOWDY_HELPER_DIR "${CMAKE_INSTALL_FULL_LIBEXECDIR}/howdy")
 set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
 set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
