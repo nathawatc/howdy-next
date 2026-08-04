@@ -68,21 +68,8 @@ See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ## CLI
 
-`howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]`
-
-| Command         | Description           |
-| --------------- | --------------------- |
-| add             | Add face model        |
-| clear           | Remove all models     |
-| config          | Edit config           |
-| disable         | Enable/disable        |
-| download-models | Download ONNX models  |
-| list            | List models           |
-| remove          | Remove specific model |
-| set             | Edit config value     |
-| snapshot        | Camera preview        |
-| test            | Test camera           |
-| version         | Show version          |
+See `howdy(1)` for the complete command and option reference.
+See `pam_howdy(8)` for PAM configuration and workaround modes.
 
 ## Troubleshooting
 

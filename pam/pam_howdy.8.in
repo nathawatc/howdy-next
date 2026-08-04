@@ -1,58 +1,75 @@
-.\" PAM module manual for Howdy Next
-.TH PAM_HOWDY 8 "July 16, 2026" "Howdy Next @PROJECT_VERSION@" "System Administration"
+.TH PAM_HOWDY 8 "@HOWDY_MAN_DATE@" "Howdy Next @PROJECT_VERSION@" "System Administration"
 .SH NAME
 pam_howdy \- PAM facial authentication module for Howdy Next
 .SH SYNOPSIS
 .B pam_howdy.so
-[\fBworkaround=\fR\fIoff|input|native|native-input\fR]
+[\fBworkaround=\fR\fIvalue\fR]
 .SH DESCRIPTION
 .B pam_howdy.so
 authenticates a PAM user with Howdy Next facial recognition.
 .PP
-The module reads Howdy configuration from
-.I /etc/howdy/config.ini
-and user face models from
-.IR /etc/howdy/models/ .
+The module reads the configured Howdy file at
+.I @HOWDY_CONFIG_PATH_ROFF@
+and enrolled user models from
+.IR @HOWDY_USER_MODELS_DIR_ROFF@ .
 These paths are expected to remain root-controlled and non-user-writable.
 .SH OPTIONS
-.TP
-\fBworkaround=\fR\fIoff|input|native|native-input\fR
-Set the password prompt workaround for this PAM service. The default is
-\fBoff\fR.
-.RS
-.TP
-\fBoff\fR
-Do not start or stop a concurrent password prompt.
-.TP
-\fBnative\fR
-Use PAM conversation control to stop Howdy's concurrent password prompt after
-successful face authentication. This mode does not fall back to input injection.
-.TP
-\fBnative-input\fR
-Try native prompt handling first, then fall back to the input workaround when a
-usable interactive TTY is unavailable or native prompt handling cannot be installed.
-Native handling requires PAM's TTY to be the process group's foreground terminal
-and to match standard input, standard output, or standard error. Other standard
-descriptors may be redirected.
-A graphical conversation that only advertises a TTY uses input fallback.
-.TP
-\fBinput\fR
-Use a
-.I /dev/uinput
-Enter key workaround to stop the concurrent password prompt. The injected key
-is sent at most once, after Howdy observes a PAM hidden-input password prompt.
-This observation does not prove graphical readiness or keyboard focus. Enter is not
-addressed to the PAM conversation and may be received by another application
-that currently has keyboard focus. If ineffective, password entry can continue
-manually. This mode is less preferred than
-.B native
-and may be less reliable on some lock screens.
-.RE
-.PP
-This option is intentionally service-local. It is configured on the
+The
+.B workaround=
+option is service-local. It is configured on the
 .B pam_howdy.so
 line and is not read from
 .IR config.ini .
+Omit the option for the default mode.
+@PAM_WORKAROUND_REFERENCE@
+.SH "WORKAROUND BEHAVIOR"
+The default is off when
+.B workaround=
+is omitted. Empty, unknown, or malformed values, including
+.B workaround=off ,
+also select the off behavior. Only the first argument beginning with
+.B workaround=
+is considered; later duplicate arguments do not override it.
+.PP
+.B workaround=input
+is available when Howdy is configured to ask for an authentication token and no
+PAM token already exists. Howdy checks access to
+.IR /dev/uinput ,
+installs a prompt observer, and may send one synthetic Enter keypress after a
+successful face comparison while a hidden-input prompt is active. Setup or
+preflight failure disables this workaround and leaves the standard PAM prompt in
+place. A failed or ineffective keypress does not complete authentication; finish
+the password prompt manually.
+.PP
+.B workaround=native
+requires a usable terminal. The
+.B PAM_TTY
+item must identify an open terminal whose foreground process group is the current
+process group. At least one of standard input, standard output, or standard error
+must be an open terminal for that same device; any of the other standard
+descriptors may be redirected. A graphical conversation may provide TTY metadata
+without providing matching standard-terminal descriptors, so native handling is
+unavailable in that case. The native mode does not silently fall back to input
+injection when terminal setup or conversation installation fails; it disables the
+workaround and uses the normal PAM conversation instead.
+.PP
+.B workaround=native-input
+tries native handling first. If native handling is unavailable or cannot be
+installed, it falls back to the input behavior described above. If native handling
+succeeds, input injection is not also enabled.
+.PP
+Native and input prompt conversations are restored after the authentication run.
+If restoration cannot restore the original conversation, Howdy installs a
+fail-closed conversation where possible and returns a system error; an unsafe
+restoration also leaves the callback context quarantined. An existing PAM
+authentication token prevents either workaround from starting.
+.PP
+Input mode requires access to
+.IR /dev/uinput .
+The synthetic key is delivered to the currently focused input device, not to a
+specific PAM window, and can reach another application. Enable input injection
+only for a service and display environment whose focus and device behavior have
+been validated.
 .SH SETUP
 .SS Basic
 For a PAM consumer where Howdy should run as a sufficient authentication method:
@@ -89,8 +106,8 @@ auth  sufficient   pam_howdy.so workaround=native-input
 The input fallback sends Enter through
 .IR /dev/uinput .
 It sends at most once after Howdy observes a PAM hidden-input password prompt.
-This observation does not prove graphical readiness or keyboard focus. Enter is not
-targeted to the PAM prompt and may instead reach another application that
+This observation does not prove graphical readiness or keyboard focus. Enter is
+not targeted to the PAM prompt and may instead reach another application that
 currently has keyboard focus. If ineffective, complete password entry manually.
 Validate this behavior for each graphical consumer before enabling it.
 .PP
@@ -106,7 +123,7 @@ authentication:
 .nf
 auth  optional     pam_exec.so /usr/bin/linux-enable-ir-emitter run --config /etc/linux-enable-ir-emitter.toml
 auth  sufficient   pam_unix.so try_first_pass nullok
-auth  sufficient   pam_howdy.so workaround=off
+auth  sufficient   pam_howdy.so
 auth  sufficient   pam_fprintd.so
 .fi
 .PP
@@ -119,9 +136,9 @@ If Howdy cannot restore original PAM conversation after workaround use,
 authentication fails with system error.
 .SH SECURITY NOTES
 Do not make
-.I /etc/howdy
+.I @HOWDY_CONFIG_DIR_ROFF@
 or
-.I /etc/howdy/config.ini
+.I @HOWDY_CONFIG_PATH_ROFF@
 world-readable to support unprivileged lock screens. Howdy Next expects the
 protected source config and model paths to remain root-controlled.
 .PP
@@ -131,15 +148,14 @@ setuid helper to prepare temporary root-controlled runtime copies of the
 protected config and enrolled model before recognition.
 .SH FILES
 .TP
-.I /etc/howdy/config.ini
+.I @HOWDY_CONFIG_PATH_ROFF@
 Main Howdy configuration file.
 .TP
-.I /etc/howdy/models/
-User face models directory.
+.IR @HOWDY_USER_MODELS_DIR_ROFF@
+Configured directory containing enrolled user face models.
 .TP
-.I /usr/lib/howdy/howdy-auth-helper
-Setuid helper used for unprivileged PAM consumers. The exact path depends on
-the installation prefix and library directory.
+.I @HOWDY_AUTH_HELPER_PATH_ROFF@
+Setuid helper used for unprivileged PAM consumers.
 .SH SEE ALSO
 .BR howdy (1),
 .BR pam (8),

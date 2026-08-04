@@ -3,6 +3,7 @@ add_subdirectory(po)
 
 add_library(pam_options STATIC src/module/pam_options.cpp)
 howdy_configure_pam_target(pam_options)
+target_link_libraries(pam_options PRIVATE howdy_pam_option_catalog)
 
 add_library(pam_message_locale STATIC src/runtime/message_locale.cpp)
 howdy_configure_pam_target(pam_message_locale)

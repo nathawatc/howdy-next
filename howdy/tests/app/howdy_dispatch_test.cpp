@@ -1,3 +1,4 @@
+#include "app/command_catalog.hpp"
 #include "app/howdy_internal.hpp"
 #include "cli/add_cli.hpp"
 #include "cli/clear_cli.hpp"
@@ -6,47 +7,29 @@
 #include "test_support.hpp"
 #include "version.hpp"
 
+#include <algorithm>
 #include <array>
-#include <cstdint>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
-#include <string_view>
-#include <utility>
 #include <vector>
 
 namespace {
 
 	using howdy::test::expect;
 
+	using howdy::native::command_catalog;
+	using howdy::native::CommandId;
 	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
-
-	constexpr std::array<std::string_view, 11> public_commands = {
-	    "add",    "clear", "config",   "disable", "download-models", "list",
-	    "remove", "set",   "snapshot", "test",    "version",
-	};
-
-	enum class CommandId : std::uint8_t {
-		kNone,
-		kAdd,
-		kClear,
-		kConfig,
-		kDisable,
-		kDownloadModels,
-		kList,
-		kRemove,
-		kSet,
-		kSnapshot,
-		kTest,
-	};
 
 	struct Context {
 		std::string              resolved_user = "alice";
 		uid_t                    effective_uid = 0;
 		std::vector<std::string> command_arguments;
-		int                      command_result      = 0;
-		CommandId                command_id          = CommandId::kNone;
+		int                      command_result = 0;
+		std::optional<CommandId> command_id;
 		int                      resolve_user_calls  = 0;
 		int                      effective_uid_calls = 0;
 	};
@@ -170,33 +153,37 @@ namespace {
 			const auto result = run(context, {"howdy", "--help"});
 			ok &=
 			    expect(result.status == 0 && result.output.contains("commands:"), "help succeeds");
-			for (const auto command : public_commands) {
-				ok &= expect(result.output.contains(command), "help lists every public command");
+			ok &=
+			    expect(result.output.starts_with(
+			               "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n"),
+			           "help usage ordering is preserved");
+			for (const auto &command : command_catalog()) {
+				ok &= expect(result.output.contains(command.name),
+				             "help lists every catalog command");
+				ok &= expect(result.output.contains(command.summary),
+				             "help uses every catalog summary");
+			}
+			for (const auto &option : howdy::native::global_option_catalog()) {
+				ok &= expect(result.output.contains(option.summary),
+				             "help uses every catalog option summary");
 			}
 			ok &=
 			    expect(!result.output.contains("__complete"), "completion query stays out of help");
 		}
 		{
-			Context                    context;
-			const auto                 result   = run(context, {"howdy", "__complete", "commands"});
-			constexpr std::string_view expected = "add\n"
-			                                      "clear\n"
-			                                      "config\n"
-			                                      "disable\n"
-			                                      "download-models\n"
-			                                      "list\n"
-			                                      "remove\n"
-			                                      "set\n"
-			                                      "snapshot\n"
-			                                      "test\n"
-			                                      "version\n";
+			Context     context;
+			const auto  result = run(context, {"howdy", "__complete", "commands"});
+			std::string expected;
+			for (const auto &command : command_catalog()) {
+				expected += command.name;
+				expected += '\n';
+			}
 			ok &= expect(result.status == 0 && result.output == expected && result.error.empty(),
-			             "completion query returns canonical command list");
+			             "completion query returns canonical catalog command list");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 			             "completion query skips user and root checks");
-			ok &=
-			    expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
-			           "completion query does not dispatch a command");
+			ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
+			             "completion query does not dispatch a command");
 		}
 		{
 			const std::vector<std::vector<std::string>> malformed_queries = {
@@ -219,8 +206,7 @@ namespace {
 				             "malformed completion query prints no command list");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 				             "malformed completion query skips user and root checks");
-				ok &= expect(context.command_id == CommandId::kNone &&
-				                 context.command_arguments.empty(),
+				ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 				             "malformed completion query does not dispatch a command");
 			}
 		}
@@ -233,9 +219,8 @@ namespace {
 			    expect(result.status == 0 && result.output == expected, "version output preserved");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 			             "version skips user and root checks");
-			ok &=
-			    expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
-			           "version does not dispatch a command");
+			ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
+			             "version does not dispatch a command");
 		}
 
 		return ok;
@@ -252,7 +237,7 @@ namespace {
 		             "explicit user skips lookup for null command callback");
 		ok &= expect(context.effective_uid_calls == 1,
 		             "null callback is checked after root validation");
-		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 		             "null command callback is not invoked");
 		return ok;
 	}
@@ -321,6 +306,17 @@ auto main() -> int {
 	}
 	{
 		Context    context;
+		const auto result = run(context, {"howdy", "list", ""});
+		ok &= expect(result.status == 0, "empty positional argument does not change dispatch");
+		ok &=
+		    expect(context.command_arguments == std::vector<std::string>{"howdy-list", "alice", ""},
+		           "empty positional argument remains forwarded");
+		ok &= expect(std::ranges::find(context.command_arguments, "--plain") ==
+		                 context.command_arguments.end(),
+		             "empty positional argument does not enable plain mode");
+	}
+	{
+		Context    context;
 		const auto result = run(context, {"howdy", "-U"});
 		ok &= expect(result.status == 1, "trailing short user option rejected");
 		ok &= expect(result.output.contains("-U") && result.output.contains("requires an argument"),
@@ -329,7 +325,7 @@ auto main() -> int {
 		             "trailing short user option does not print help");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		             "trailing short user option skips user resolution and root check");
-		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 		             "trailing short user option does not dispatch command");
 	}
 	{
@@ -343,7 +339,7 @@ auto main() -> int {
 		             "trailing long user option does not print help");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		             "trailing long user option skips user resolution and root check");
-		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 		             "trailing long user option does not dispatch command");
 	}
 	{
@@ -355,7 +351,7 @@ auto main() -> int {
 		ok &=
 		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		           "trailing short user option after command skips user resolution and root check");
-		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 		             "trailing short user option after command does not dispatch command");
 	}
 	{
@@ -368,7 +364,7 @@ auto main() -> int {
 		ok &=
 		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		           "trailing long user option after command skips user resolution and root check");
-		ok &= expect(context.command_id == CommandId::kNone && context.command_arguments.empty(),
+		ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 		             "trailing long user option after command does not dispatch command");
 	}
 	{
@@ -381,24 +377,19 @@ auto main() -> int {
 		ok &= expect(context.command_arguments.empty(), "non-root command not dispatched");
 	}
 	{
-		const std::vector<std::pair<std::string, CommandId>> commands = {
-		    {"add", CommandId::kAdd},
-		    {"clear", CommandId::kClear},
-		    {"config", CommandId::kConfig},
-		    {"disable", CommandId::kDisable},
-		    {"download-models", CommandId::kDownloadModels},
-		    {"list", CommandId::kList},
-		    {"remove", CommandId::kRemove},
-		    {"set", CommandId::kSet},
-		    {"snapshot", CommandId::kSnapshot},
-		    {"test", CommandId::kTest},
-		};
-		for (const auto &[command, expected_id] : commands) {
+		std::size_t dispatched_commands = 0;
+		for (const auto &command : command_catalog()) {
+			if (command.id == CommandId::kVersion) {
+				continue;
+			}
+			++dispatched_commands;
 			Context    context;
-			const auto result = run(context, {"howdy", "-U", "bob", command});
-			ok &= expect(result.status == 0 && context.command_id == expected_id,
-			             "command maps to matching entrypoint");
+			const auto result = run(context, {"howdy", "-U", "bob", std::string(command.name)});
+			ok &= expect(result.status == 0 && context.command_id == command.id,
+			             "every catalog command maps to matching entrypoint");
 		}
+		ok &= expect(dispatched_commands + 1 == command_catalog().size(),
+		             "every production command is covered by dispatch test");
 	}
 	{
 		auto                  add_name = std::to_array("howdy-add");

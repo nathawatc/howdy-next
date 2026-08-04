@@ -1,59 +1,56 @@
-.\" Updated for Howdy Next
-.TH HOWDY 1 "July 10, 2026" "Howdy Next @PROJECT_VERSION@" "User Commands"
+.TH HOWDY 1 "@HOWDY_MAN_DATE@" "Howdy Next @PROJECT_VERSION@" "User Commands"
 .SH NAME
-howdy \- facial authentication for Linux via PAM
+howdy \- facial authentication management for Linux
 .SH SYNOPSIS
 .B howdy
-[\fB\-U\fR \fIUSER\fR] [\fB\-y\fR] [\fB\-\-plain\fR] [\fB\-h\fR] \fIcommand\fR [\fIarguments\fR...]
+[\fIoptions\fR] \fIcommand\fR [\fIarguments\fR...]
 .SH DESCRIPTION
-Howdy uses your camera and facial recognition as an authentication method
-via PAM. Works with login, lock screen, sudo, su, and more.
+Howdy manages enrolled face models and camera-based recognition for Howdy Next.
+Recognition is exposed to authentication services through the
+.BR pam_howdy (8)
+module.
 .PP
-This is a modernized fork of the original Howdy project.
+The command selects a management operation. A target user is resolved from the
+invoking environment when possible; use the user option when explicit targeting
+is required.
 .SH COMMANDS
-.TP
-\fBadd\fR      Add a new face model
-.TP
-\fBclear\fR    Remove all face models
-.TP
-\fBconfig\fR   Open config file in editor
-.TP
-\fBdisable\fR  Enable or disable Howdy
-.TP
-\fBdownload-models\fR  Download ONNX models from HuggingFace
-.TP
-\fBlist\fR     List saved face models
-.TP
-\fBremove\fR   Remove a specific model
-.TP
-\fBset\fR      Set a config option
-.TP
-\fBsnapshot\fR  Take a camera snapshot
-.TP
-\fBtest\fR     Test camera and recognition
-.TP
-\fBversion\fR  Print version number
+@HOWDY_COMMAND_REFERENCE@
 .SH OPTIONS
-.TP
-\fB\-U\fR, \fB\-\-user\fR \fIUSER\fR  Set user account
-.TP
-\fB\-y\fR     Skip confirmation questions
-.TP
-\fB\-\-plain\fR  Machine\-friendly output
-.TP
-\fB\-h\fR, \fB\-\-help\fR  Show help message
+@HOWDY_OPTION_REFERENCE@
+.SH EXAMPLES
+Add a face model, test recognition, or edit configuration:
+.PP
+.nf
+sudo howdy add
+sudo howdy test
+sudo howdy config
+.fi
+.PP
+Use
+.BR \-U
+or
+.BR \-\-user
+when a model command must target a specific account.
 .SH FILES
 .TP
-.I /etc/howdy/config.ini
-Main configuration file
+.I @HOWDY_CONFIG_PATH_ROFF@
+Main Howdy configuration file.
 .TP
-.I /etc/howdy/models/
-User face models directory
+.I @HOWDY_MODELS_DIR_ROFF@
+Packaged ONNX model directory.
+.TP
+.I @HOWDY_USER_MODELS_DIR_ROFF@
+Configured directory containing enrolled user face models.
+.SH "EXIT STATUS"
+The command returns zero on success and a nonzero status when parsing, validation,
+recognition, or storage fails.
 .SH "SECURITY NOTES"
-Howdy is NOT as secure as a password. Photos or similar faces can fool it.
-.B Do not use as sole authentication method.
+Facial recognition is weaker than a password. Similar faces or photographs may
+fool it.
+.B Do not use Howdy as the sole authentication method.
+Keep the configured files and model directories root-controlled.
 .SH AUTHOR
-Originally written by boltgolt. Howdy Next is maintained by nathawat on codeberg.
+Originally written by boltgolt. Howdy Next is maintained by nathawat on Codeberg.
 .SH "SEE ALSO"
 .BR pam_howdy (8),
 .BR pam (8),

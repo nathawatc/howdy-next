@@ -189,6 +189,10 @@ verify_layout() {
 		require_file "$file_path"
 		require_exact_path_once "$stage" f "$file_path"
 	done
+	if [ "$(find "$stage" -type f -name howdy_docs_generator -print | wc -l)" -ne 0 ]; then
+		echo "Documentation generator was installed" >&2
+		exit 1
+	fi
 	require_executable "$howdy_path"
 	require_executable "$compare_path"
 	require_executable "$auth_helper_path"

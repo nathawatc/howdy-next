@@ -1,7 +1,9 @@
+#include "module/pam_option_catalog.hpp"
 #include "module/pam_options.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -9,6 +11,7 @@ namespace {
 	using howdy::pam::PamModuleArguments;
 	using howdy::pam::parse_pam_options;
 	using howdy::pam::Workaround;
+	using howdy::pam::workaround_catalog;
 	using howdy::test::expect;
 
 	auto workaround_for(PamModuleArguments arguments) -> Workaround {
@@ -50,7 +53,7 @@ auto main() -> int {
 	             "native-input workaround is parsed");
 
 	for (const std::string_view argument :
-	     {"workaround=", "workaround=unknown", "workaround=input=extra"}) {
+	     {"workaround=", "workaround=off", "workaround=unknown", "workaround=input=extra"}) {
 		const char *const raw_argument = argument.data();
 		ok &= expect(workaround_for({.argc = 1, .argv = &raw_argument}) == Workaround::kOff,
 		             "empty, unknown, and malformed values default to off");
@@ -76,6 +79,26 @@ auto main() -> int {
 	const std::array<const char *, 1> config_style_args = {"core.workaround=input"};
 	ok &= expect(workaround_for({.argc = 1, .argv = config_style_args.data()}) == Workaround::kOff,
 	             "config-style workaround key is not a PAM option");
+
+	constexpr std::array expected_values{"input", "native", "native-input"};
+	const auto           catalog = workaround_catalog();
+	ok &= expect(catalog.size() == expected_values.size(), "workaround catalog size is stable");
+	for (std::size_t index = 0; index < catalog.size(); ++index) {
+		const auto &descriptor = catalog[index];
+		ok &= expect(index < expected_values.size() && descriptor.value == expected_values[index],
+		             "workaround catalog order is stable");
+		ok &= expect(!descriptor.summary.empty(), "workaround summary is non-empty");
+		const std::string argument     = "workaround=" + std::string(descriptor.value);
+		const char *const raw_argument = argument.c_str();
+		ok &= expect(workaround_for({.argc = 1, .argv = &raw_argument}) == descriptor.workaround,
+		             "parser accepts every catalog workaround value");
+		for (std::size_t previous = 0; previous < index; ++previous) {
+			ok &=
+			    expect(catalog[previous].value != descriptor.value, "workaround values are unique");
+		}
+	}
+	ok &=
+	    expect(workaround_for({}) == howdy::pam::kDefaultWorkaround, "catalog default remains off");
 
 	return ok ? 0 : 1;
 }

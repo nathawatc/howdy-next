@@ -32,6 +32,30 @@ if(CMAKE_CROSSCOMPILING)
 	)
 endif()
 
+add_library(howdy_man_reference STATIC src/docs/man_reference.cpp)
+howdy_configure_native_target(howdy_man_reference)
+target_include_directories(
+	howdy_man_reference
+	PUBLIC "${PROJECT_SOURCE_DIR}/pam/include"
+)
+
+add_executable(howdy_docs_generator src/tools/generate_docs.cpp)
+howdy_configure_native_target(howdy_docs_generator)
+target_include_directories(
+	howdy_docs_generator
+	PRIVATE "${PROJECT_SOURCE_DIR}/pam/include"
+)
+target_link_libraries(
+	howdy_docs_generator
+	PRIVATE howdy_command_catalog howdy_pam_option_catalog howdy_man_reference
+)
+if(CMAKE_CROSSCOMPILING)
+	set_property(
+		TARGET howdy_docs_generator
+		PROPERTY CROSSCOMPILING_EMULATOR "${CMAKE_CROSSCOMPILING_EMULATOR}"
+	)
+endif()
+
 set(
 	HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH
 	"${HOWDY_PACKAGED_CONFIG_PATH}.candidate"
@@ -249,6 +273,7 @@ howdy_configure_native_target(howdy_cli)
 target_link_libraries(
 	howdy_cli
 	PUBLIC
+		howdy_command_catalog
 		howdy_face_model
 		howdy_user_models
 		howdy_runtime_paths
@@ -263,6 +288,19 @@ target_link_libraries(
 )
 
 if(BUILD_TESTING)
+	add_executable(howdy_command_catalog_test tests/app/command_catalog_test.cpp)
+	howdy_configure_native_test_target(howdy_command_catalog_test)
+	target_link_libraries(howdy_command_catalog_test PRIVATE howdy_command_catalog)
+	add_test(NAME native-command-catalog COMMAND howdy_command_catalog_test)
+
+	add_executable(howdy_man_reference_test tests/docs/man_reference_test.cpp)
+	howdy_configure_native_test_target(howdy_man_reference_test)
+	target_link_libraries(
+		howdy_man_reference_test
+		PRIVATE howdy_man_reference howdy_command_catalog howdy_pam_option_catalog
+	)
+	add_test(NAME native-man-reference COMMAND howdy_man_reference_test)
+
 	add_test(NAME native-compare-help COMMAND howdy_compare --help)
 	add_test(NAME native-auth-helper-help COMMAND howdy_auth_helper --help)
 	add_test(NAME native-auth-helper-empty COMMAND howdy_auth_helper)
@@ -675,6 +713,66 @@ target_link_libraries(
 )
 install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
+set(HOWDY_DOC_REFERENCE_DIR "${PROJECT_BINARY_DIR}/generated/docs")
+set(
+	HOWDY_COMMAND_REFERENCE_PATH
+	"${HOWDY_DOC_REFERENCE_DIR}/howdy-commands.roff"
+)
+set(HOWDY_OPTION_REFERENCE_PATH "${HOWDY_DOC_REFERENCE_DIR}/howdy-options.roff")
+set(
+	HOWDY_WORKAROUND_REFERENCE_PATH
+	"${HOWDY_DOC_REFERENCE_DIR}/pam-workarounds.roff"
+)
+set(HOWDY_MAN1_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.1")
+set(HOWDY_MAN8_PATH "${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8")
+set(HOWDY_MAN_COMPOSE_SCRIPT "${PROJECT_SOURCE_DIR}/cmake/compose_man.cmake")
+
+add_custom_command(
+	OUTPUT
+		"${HOWDY_COMMAND_REFERENCE_PATH}"
+		"${HOWDY_OPTION_REFERENCE_PATH}"
+		"${HOWDY_WORKAROUND_REFERENCE_PATH}"
+		"${HOWDY_MAN1_PATH}"
+		"${HOWDY_MAN8_PATH}"
+	COMMAND
+		howdy_docs_generator
+		--output-dir "${HOWDY_DOC_REFERENCE_DIR}"
+	COMMAND
+		"${CMAKE_COMMAND}"
+		"-DMAN1_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
+		"-DMAN1_OUTPUT_PATH=${HOWDY_MAN1_PATH}"
+		"-DMAN8_TEMPLATE=${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
+		"-DMAN8_OUTPUT_PATH=${HOWDY_MAN8_PATH}"
+		"-DCOMMAND_REFERENCE=${HOWDY_COMMAND_REFERENCE_PATH}"
+		"-DOPTION_REFERENCE=${HOWDY_OPTION_REFERENCE_PATH}"
+		"-DWORKAROUND_REFERENCE=${HOWDY_WORKAROUND_REFERENCE_PATH}"
+		"-DPROJECT_VERSION=${PROJECT_VERSION}"
+		"-DHOWDY_MAN_DATE=${HOWDY_MAN_DATE}"
+		"-DHOWDY_CONFIG_DIR=${HOWDY_CONFIG_DIR}"
+		"-DHOWDY_CONFIG_PATH=${HOWDY_CONFIG_PATH}"
+		"-DHOWDY_MODELS_DIR=${HOWDY_MODELS_DIR}"
+		"-DHOWDY_USER_MODELS_DIR=${HOWDY_USER_MODELS_DIR}"
+		"-DHOWDY_AUTH_HELPER_PATH=${HOWDY_AUTH_HELPER_PATH}"
+		-P "${HOWDY_MAN_COMPOSE_SCRIPT}"
+	DEPENDS
+		howdy_docs_generator
+		"${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
+		"${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
+		"${PROJECT_SOURCE_DIR}/howdy/include/app/command_catalog.hpp"
+		"${PROJECT_SOURCE_DIR}/howdy/src/app/command_catalog.cpp"
+		"${PROJECT_SOURCE_DIR}/howdy/include/docs/man_reference.hpp"
+		"${PROJECT_SOURCE_DIR}/howdy/src/docs/man_reference.cpp"
+		"${PROJECT_SOURCE_DIR}/howdy/src/tools/generate_docs.cpp"
+		"${PROJECT_SOURCE_DIR}/pam/include/module/pam_option_catalog.hpp"
+		"${PROJECT_SOURCE_DIR}/pam/src/module/pam_option_catalog.cpp"
+		"${HOWDY_MAN_COMPOSE_SCRIPT}"
+	COMMENT "Generating and composing Howdy manual pages"
+	VERBATIM
+)
+add_custom_target(
+	howdy_docs ALL DEPENDS "${HOWDY_MAN1_PATH}" "${HOWDY_MAN8_PATH}"
+)
+
 if(BUILD_TESTING)
 	set(howdy_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
 	add_test(NAME native-howdy-help COMMAND howdy --help)
@@ -746,6 +844,31 @@ if(BUILD_TESTING)
 	set_tests_properties(
 		native-howdy-privileged-install-paths PROPERTIES RUN_SERIAL TRUE
 	)
+	if(NOT CMAKE_CROSSCOMPILING)
+		add_test(
+			NAME native-howdy-docs-generator
+			COMMAND
+				sh
+				"${howdy_integration_dir}/docs_generator_test.sh"
+				"$<TARGET_FILE:howdy_docs_generator>"
+				"${PROJECT_BINARY_DIR}/docs-generator-test"
+		)
+	endif()
+	add_test(
+		NAME native-howdy-docs
+		COMMAND
+			sh
+			"${howdy_integration_dir}/docs_test.sh"
+			"${PROJECT_BINARY_DIR}"
+			"${PROJECT_SOURCE_DIR}"
+			"${HOWDY_MAN1_PATH}"
+			"${HOWDY_MAN8_PATH}"
+			"${HOWDY_CONFIG_DIR}"
+			"${HOWDY_CONFIG_PATH}"
+			"${HOWDY_MODELS_DIR}"
+			"${HOWDY_USER_MODELS_DIR}"
+			"${HOWDY_AUTH_HELPER_PATH}"
+	)
 endif()
 
 install(
@@ -767,22 +890,12 @@ configure_file(
 )
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_config.cmake")
 install(DIRECTORY DESTINATION "${HOWDY_MODELS_DIR}")
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/howdy.1"
-	@ONLY
-)
-configure_file(
-	"${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8"
-	@ONLY
-)
 install(
-	FILES "${CMAKE_CURRENT_BINARY_DIR}/howdy.1"
+	FILES "${HOWDY_MAN1_PATH}"
 	DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
 )
 install(
-	FILES "${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8"
+	FILES "${HOWDY_MAN8_PATH}"
 	DESTINATION "${CMAKE_INSTALL_MANDIR}/man8"
 )
 

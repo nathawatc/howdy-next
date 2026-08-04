@@ -8,6 +8,11 @@ project(
 	LANGUAGES CXX
 )
 
+string(TIMESTAMP HOWDY_MAN_DATE "%Y-%m-%d" UTC)
+if(HOWDY_MAN_DATE STREQUAL "")
+	message(FATAL_ERROR "Cannot determine UTC documentation date")
+endif()
+
 if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
 	message(
 		FATAL_ERROR
@@ -307,6 +312,20 @@ function(howdy_set_test_timeouts)
 		set_tests_properties(${HOWDY_DIRECTORY_TESTS} PROPERTIES TIMEOUT 30)
 	endif()
 endfunction()
+
+add_library(
+	howdy_command_catalog
+	STATIC
+	howdy/src/app/command_catalog.cpp
+)
+howdy_configure_native_target(howdy_command_catalog)
+
+add_library(
+	howdy_pam_option_catalog
+	STATIC
+	pam/src/module/pam_option_catalog.cpp
+)
+howdy_configure_pam_target(howdy_pam_option_catalog)
 
 add_subdirectory(howdy)
 add_subdirectory(pam)
