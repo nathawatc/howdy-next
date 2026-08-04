@@ -17,7 +17,7 @@ C++ PAM authentication module for facial-recognition auth on Linux PAM-enabled s
 | `src/prompt/prompt_coordinator.cpp`                | Compare lifecycle and prompt coordination                                       |
 | `include/runtime/runtime_session.hpp`              | One-shot staged runtime/config boundary                                         |
 | `include/prompt/prompt_coordinator.hpp`            | Compare launch and prompt-race boundary                                         |
-| `src/prompt/enter_device.cpp`                      | Virtual keyboard helper that sends Enter                                        |
+| `src/prompt/prompt_submitter.cpp`                  | uinput-backed prompt submitter                                                  |
 | `src/prompt/conversation_response.cpp`             | Secure PAM conversation-response erasure and release                            |
 | `src/prompt/observed_prompt_conversation.cpp`      | Caller-thread secret-prompt observation and synchronous conversation delegation |
 | `src/prompt/native_prompt_conversation.cpp`        | Native TTY conversation, abort, and fail-closed restoration                     |

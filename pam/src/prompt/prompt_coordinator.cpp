@@ -4,7 +4,7 @@
 
 #include "prompt/prompt_coordinator.hpp"
 
-#include "prompt/enter_device.hpp"
+#include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
@@ -56,9 +56,10 @@ namespace {
 		return {auth_result, auth_tok_ptr};
 	}
 
-	auto create_enter_device_dependency(void *context) -> std::unique_ptr<EnterDevice> {
+	auto create_prompt_submitter_dependency(void *context)
+	    -> std::unique_ptr<howdy::pam::PromptSubmitter> {
 		(void)context;
-		return create_enter_device();
+		return howdy::pam::create_uinput_prompt_submitter();
 	}
 
 	auto create_native_prompt_dependency(void *context, pam_handle_t *pamh)
@@ -94,7 +95,7 @@ namespace howdy::pam {
 		return dependencies_.spawn_compare_process != nullptr &&
 		       dependencies_.wait_for_compare_process != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
-		       dependencies_.create_enter_device != nullptr &&
+		       dependencies_.create_prompt_submitter != nullptr &&
 		       dependencies_.create_native_prompt != nullptr &&
 		       dependencies_.create_secret_prompt_conversation != nullptr &&
 		       dependencies_.request_auth_token != nullptr &&
@@ -115,8 +116,8 @@ namespace howdy::pam {
 			if (coordinator.state_.password_call_entered &&
 			    !coordinator.state_.password_call_returned &&
 			    !coordinator.state_.shutdown_requested) {
-				if (coordinator.state_.enter == EnterState::kClaimed) {
-					coordinator.state_.enter              = EnterState::kPending;
+				if (coordinator.state_.submission == PromptSubmissionState::kClaimed) {
+					coordinator.state_.submission         = PromptSubmissionState::kPending;
 					coordinator.state_.claimed_generation = 0;
 				}
 				generation = coordinator.state_.secret_prompt_generation ==
@@ -140,9 +141,9 @@ namespace howdy::pam {
 				return;
 			}
 			coordinator.state_.secret_prompt_active = false;
-			if (coordinator.state_.enter == EnterState::kClaimed &&
+			if (coordinator.state_.submission == PromptSubmissionState::kClaimed &&
 			    coordinator.state_.claimed_generation == generation) {
-				coordinator.state_.enter              = EnterState::kPending;
+				coordinator.state_.submission         = PromptSubmissionState::kPending;
 				coordinator.state_.claimed_generation = 0;
 			}
 		}
@@ -180,7 +181,8 @@ namespace howdy::pam {
 		if (effective_workaround_ == Workaround::kNative && native_prompt_ != nullptr) {
 			return SuccessAction::kAbortNative;
 		}
-		if (effective_workaround_ != Workaround::kInput || state_.enter != EnterState::kPending) {
+		if (effective_workaround_ != Workaround::kInput ||
+		    state_.submission != PromptSubmissionState::kPending) {
 			return SuccessAction::kNone;
 		}
 
@@ -189,12 +191,12 @@ namespace howdy::pam {
 			       state_.shutdown_requested;
 		});
 		if (!state_.secret_prompt_active || state_.password_call_returned ||
-		    state_.enter != EnterState::kPending || state_.shutdown_requested) {
+		    state_.submission != PromptSubmissionState::kPending || state_.shutdown_requested) {
 			return SuccessAction::kNone;
 		}
-		state_.enter              = EnterState::kClaimed;
+		state_.submission         = PromptSubmissionState::kClaimed;
 		state_.claimed_generation = state_.secret_prompt_generation;
-		return SuccessAction::kSendEnter;
+		return SuccessAction::kSubmitPrompt;
 	}
 
 	void PromptCoordinator::request_native_abort() noexcept {
@@ -207,83 +209,86 @@ namespace howdy::pam {
 		}
 	}
 
-	auto PromptCoordinator::wait_for_enter_claim() -> bool {
+	auto PromptCoordinator::wait_for_prompt_submission_claim() -> bool {
 		std::unique_lock<std::mutex> lock(mutex_);
 		condition_.wait(lock, [this] -> bool {
 			return state_.password_call_returned || state_.shutdown_requested ||
 			       state_.first_completion != FirstCompletion::kCompare ||
-			       !state_.compare_succeeded || state_.enter == EnterState::kEmitting ||
-			       state_.enter == EnterState::kFinished ||
-			       (state_.enter == EnterState::kPending && state_.secret_prompt_active);
+			       !state_.compare_succeeded ||
+			       state_.submission == PromptSubmissionState::kSubmitting ||
+			       state_.submission == PromptSubmissionState::kFinished ||
+			       (state_.submission == PromptSubmissionState::kPending &&
+			        state_.secret_prompt_active);
 		});
 		if (state_.password_call_returned || state_.shutdown_requested ||
 		    state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
-		    state_.enter != EnterState::kPending || !state_.secret_prompt_active) {
+		    state_.submission != PromptSubmissionState::kPending || !state_.secret_prompt_active) {
 			return false;
 		}
-		state_.enter              = EnterState::kClaimed;
+		state_.submission         = PromptSubmissionState::kClaimed;
 		state_.claimed_generation = state_.secret_prompt_generation;
 		return true;
 	}
 
-	auto PromptCoordinator::send_enter_and_record_result() noexcept -> EnterEmissionResult {
+	auto PromptCoordinator::submit_prompt_and_record_result() noexcept -> PromptSubmissionResult {
 		{
 			std::scoped_lock lock(mutex_);
 			if (state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
 			    !state_.secret_prompt_active || state_.password_call_returned ||
-			    state_.enter != EnterState::kClaimed ||
+			    state_.submission != PromptSubmissionState::kClaimed ||
 			    state_.claimed_generation != state_.secret_prompt_generation ||
 			    state_.shutdown_requested) {
-				if (state_.enter == EnterState::kClaimed) {
-					state_.enter              = EnterState::kPending;
+				if (state_.submission == PromptSubmissionState::kClaimed) {
+					state_.submission         = PromptSubmissionState::kPending;
 					state_.claimed_generation = 0;
 				}
 				const bool retry = state_.first_completion == FirstCompletion::kCompare &&
 				                   state_.compare_succeeded && !state_.password_call_returned &&
 				                   !state_.shutdown_requested &&
-				                   state_.enter == EnterState::kPending;
-				return retry ? EnterEmissionResult::kRetry : EnterEmissionResult::kStop;
+				                   state_.submission == PromptSubmissionState::kPending;
+				return retry ? PromptSubmissionResult::kRetry : PromptSubmissionResult::kStop;
 			}
-			// This Claimed -> Emitting transition linearizes Enter against password return.
-			// Whichever transition acquires mutex_ first wins; no external I/O holds mutex_.
-			state_.enter = EnterState::kEmitting;
+			// This Claimed -> Submitting transition linearizes prompt submission against password
+			// return. Whichever transition acquires mutex_ first wins; no external I/O holds
+			// mutex_.
+			state_.submission = PromptSubmissionState::kSubmitting;
 		}
 
-		bool enter_write_failed = false;
+		bool submission_failed = false;
 		try {
-			if (enter_device_ == nullptr) {
-				enter_write_failed = true;
+			if (prompt_submitter_ == nullptr) {
+				submission_failed = true;
 			} else {
-				enter_device_->send_enter_press();
+				prompt_submitter_->submit_prompt();
 			}
 		} catch (const std::exception &error) {
-			syslog(LOG_WARNING, "Failed to send enter input: %s", error.what());
-			enter_write_failed = true;
+			syslog(LOG_WARNING, "Input prompt submission failed: %s", error.what());
+			submission_failed = true;
 		} catch (...) {
-			syslog(LOG_WARNING, "Failed to send enter input with non-standard exception");
-			enter_write_failed = true;
+			syslog(LOG_WARNING, "Input prompt submission failed with non-standard exception");
+			submission_failed = true;
 		}
 		std::unique_lock<std::mutex> lock(mutex_);
-		state_.enter = EnterState::kFinished;
-		if (!enter_write_failed) {
+		state_.submission = PromptSubmissionState::kFinished;
+		if (!submission_failed) {
 			condition_.wait_for(lock, kPromptCompletionGrace, [this] -> bool {
 				return state_.password_call_returned || state_.shutdown_requested;
 			});
 		}
-		const bool prompt_failed = enter_write_failed || !state_.password_call_returned;
+		const bool prompt_failed = submission_failed || !state_.password_call_returned;
 		lock.unlock();
 		if (prompt_failed) {
 			syslog(LOG_ERR,
 			       "Input prompt workaround cancellation failed; waiting for user/password "
 			       "prompt to complete");
 		}
-		return EnterEmissionResult::kStop;
+		return PromptSubmissionResult::kStop;
 	}
 
-	void PromptCoordinator::send_enter_for_prompt_generations() noexcept {
+	void PromptCoordinator::submit_prompt_for_generations() noexcept {
 		while (true) {
-			const auto result = send_enter_and_record_result();
-			if (result != EnterEmissionResult::kRetry || !wait_for_enter_claim()) {
+			const auto result = submit_prompt_and_record_result();
+			if (result != PromptSubmissionResult::kRetry || !wait_for_prompt_submission_claim()) {
 				return;
 			}
 		}
@@ -295,8 +300,8 @@ namespace howdy::pam {
 		const SuccessAction action = publish_compare_completion(status);
 		if (action == SuccessAction::kAbortNative) {
 			request_native_abort();
-		} else if (action == SuccessAction::kSendEnter) {
-			send_enter_for_prompt_generations();
+		} else if (action == SuccessAction::kSubmitPrompt) {
+			submit_prompt_for_generations();
 		}
 	}
 
@@ -363,9 +368,10 @@ namespace howdy::pam {
 		}
 
 		try {
-			enter_device_ = dependencies_.create_enter_device(dependencies_.context);
-			if (enter_device_ == nullptr) {
-				syslog(LOG_ERR, "Input prompt workaround setup failed: device unavailable");
+			prompt_submitter_ = dependencies_.create_prompt_submitter(dependencies_.context);
+			if (prompt_submitter_ == nullptr) {
+				syslog(LOG_ERR,
+				       "Input prompt workaround setup failed: submission backend unavailable");
 				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &err) {
@@ -388,18 +394,18 @@ namespace howdy::pam {
 			    secret_prompt_conversation_->install() != PAM_SUCCESS) {
 				syslog(LOG_ERR, "Input prompt observation setup failed");
 				secret_prompt_conversation_.reset();
-				enter_device_.reset();
+				prompt_submitter_.reset();
 				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Input prompt observation setup failed: %s", error.what());
 			secret_prompt_conversation_.reset();
-			enter_device_.reset();
+			prompt_submitter_.reset();
 			effective_workaround_ = Workaround::kOff;
 		} catch (...) {
 			syslog(LOG_ERR, "Input prompt observation setup failed with non-standard exception");
 			secret_prompt_conversation_.reset();
-			enter_device_.reset();
+			prompt_submitter_.reset();
 			effective_workaround_ = Workaround::kOff;
 		}
 	}
@@ -425,8 +431,9 @@ namespace howdy::pam {
 		if (!ask_pass) {
 			return;
 		}
-		state_.enter = effective_workaround_ == Workaround::kInput ? EnterState::kPending
-		                                                           : EnterState::kNotApplicable;
+		state_.submission = effective_workaround_ == Workaround::kInput
+		                        ? PromptSubmissionState::kPending
+		                        : PromptSubmissionState::kNotApplicable;
 	}
 
 	void PromptCoordinator::publish_password_call_entered() {
@@ -465,8 +472,8 @@ namespace howdy::pam {
 			std::scoped_lock lock(mutex_);
 			state_.password_call_returned = true;
 			state_.secret_prompt_active   = false;
-			if (state_.enter == EnterState::kClaimed) {
-				state_.enter              = EnterState::kPending;
+			if (state_.submission == PromptSubmissionState::kClaimed) {
+				state_.submission         = PromptSubmissionState::kPending;
 				state_.claimed_generation = 0;
 			}
 			if (state_.first_completion == FirstCompletion::kNone) {
@@ -570,7 +577,7 @@ namespace howdy::pam {
 		    .spawn_compare_process             = compare_process::spawn,
 		    .wait_for_compare_process          = compare_process::wait,
 		    .input_prompt_preflight            = input_prompt_preflight_dependency,
-		    .create_enter_device               = create_enter_device_dependency,
+		    .create_prompt_submitter           = create_prompt_submitter_dependency,
 		    .create_native_prompt              = create_native_prompt_dependency,
 		    .create_secret_prompt_conversation = create_secret_prompt_conversation_dependency,
 		    .request_auth_token                = request_auth_token_dependency,

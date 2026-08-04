@@ -88,7 +88,8 @@ namespace {
 		       runtime.load_runtime_config != nullptr && runtime.effective_uid != nullptr &&
 		       prompt.spawn_compare_process != nullptr &&
 		       prompt.wait_for_compare_process != nullptr &&
-		       prompt.input_prompt_preflight != nullptr && prompt.create_enter_device != nullptr &&
+		       prompt.input_prompt_preflight != nullptr &&
+		       prompt.create_prompt_submitter != nullptr &&
 		       prompt.create_native_prompt != nullptr &&
 		       prompt.create_secret_prompt_conversation != nullptr &&
 		       prompt.request_auth_token != nullptr && eligibility.ssh_session_present != nullptr &&

@@ -232,7 +232,7 @@ namespace {
 					deps.input_prompt_preflight = nullptr;
 					break;
 				case 3:
-					deps.create_enter_device = nullptr;
+					deps.create_prompt_submitter = nullptr;
 					break;
 				case 4:
 					deps.create_native_prompt = nullptr;

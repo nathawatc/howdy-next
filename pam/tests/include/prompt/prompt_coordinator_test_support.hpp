@@ -61,25 +61,33 @@ namespace howdy::pam {
 				std::scoped_lock lock(coordinator.mutex_);
 				coordinator.state_.shutdown_requested     = true;
 				coordinator.state_.cancellation_requested = true;
-				if (coordinator.state_.enter == PromptCoordinator::EnterState::kClaimed) {
-					coordinator.state_.enter              = PromptCoordinator::EnterState::kPending;
+				if (coordinator.state_.submission ==
+				    PromptCoordinator::PromptSubmissionState::kClaimed) {
+					coordinator.state_.submission =
+					    PromptCoordinator::PromptSubmissionState::kPending;
 					coordinator.state_.claimed_generation = 0;
 				}
 			}
 			coordinator.condition_.notify_all();
 		}
 
-		static void prepare_claimed_enter(PromptCoordinator           &coordinator,
-		                                  std::unique_ptr<EnterDevice> enter_device) {
+		static void prepare_claimed_submission(PromptCoordinator               &coordinator,
+		                                       std::unique_ptr<PromptSubmitter> prompt_submitter) {
 			std::scoped_lock lock(coordinator.mutex_);
-			coordinator.enter_device_                = std::move(enter_device);
+			coordinator.prompt_submitter_            = std::move(prompt_submitter);
 			coordinator.state_.first_completion      = PromptCoordinator::FirstCompletion::kCompare;
 			coordinator.state_.compare_succeeded     = true;
 			coordinator.state_.password_call_entered = true;
 			coordinator.state_.secret_prompt_generation = 1;
 			coordinator.state_.claimed_generation       = 1;
 			coordinator.state_.secret_prompt_active     = true;
-			coordinator.state_.enter                    = PromptCoordinator::EnterState::kClaimed;
+			coordinator.state_.submission = PromptCoordinator::PromptSubmissionState::kClaimed;
+		}
+
+		static auto prompt_submission_finished(PromptCoordinator &coordinator) -> bool {
+			std::scoped_lock lock(coordinator.mutex_);
+			return coordinator.state_.submission ==
+			       PromptCoordinator::PromptSubmissionState::kFinished;
 		}
 
 		static void publish_password_call_returned(PromptCoordinator &coordinator) {
@@ -96,8 +104,8 @@ namespace howdy::pam {
 			return PromptCoordinator::secret_prompt_begin(&coordinator);
 		}
 
-		static void send_enter_for_prompt_generations(PromptCoordinator &coordinator) {
-			coordinator.send_enter_for_prompt_generations();
+		static void submit_prompt_for_generations(PromptCoordinator &coordinator) {
+			coordinator.submit_prompt_for_generations();
 		}
 	};
 }  // namespace howdy::pam
@@ -110,6 +118,7 @@ namespace howdy::test::prompt_coordinator {
 	using howdy::pam::PromptCoordinator;
 	using howdy::pam::PromptCoordinatorDecision;
 	using howdy::pam::PromptCoordinatorDependencies;
+	using howdy::pam::PromptSubmitter;
 	using howdy::pam::Workaround;
 	using namespace std::chrono_literals;
 
@@ -117,24 +126,24 @@ namespace howdy::test::prompt_coordinator {
 		std::thread::id                                 run_thread;
 		std::thread::id                                 wait_thread;
 		std::thread::id                                 auth_token_thread;
-		std::thread::id                                 enter_thread;
+		std::thread::id                                 submission_thread;
 		std::thread::id                                 native_create_thread;
 		std::thread::id                                 native_install_thread;
 		std::thread::id                                 native_restore_thread;
 		std::thread::id                                 native_abort_thread;
 		std::chrono::milliseconds                       token_delay{0};
-		PromptCoordinator                              *coordinator_for_enter = nullptr;
+		PromptCoordinator                              *coordinator_for_submission = nullptr;
 		howdy::pam::SecretPromptObserver                secret_prompt_observer{};
 		std::string                                     spawned_config_path;
 		std::string                                     spawned_username;
 		std::string                                     spawned_user_models_dir;
 		std::mutex                                      reap_mutex;
 		std::mutex                                      token_mutex;
-		std::mutex                                      enter_mutex;
+		std::mutex                                      submission_mutex;
 		std::mutex                                      native_prompt_mutex;
 		std::condition_variable                         reap_condition;
 		std::condition_variable                         token_condition;
-		std::condition_variable                         enter_condition;
+		std::condition_variable                         submission_condition;
 		std::condition_variable                         native_prompt_condition;
 		std::atomic<int>                                spawn_calls{0};
 		std::atomic<pid_t>                              spawned_pid{-1};
@@ -144,8 +153,8 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<int>                                terminate_calls{0};
 		std::atomic<pid_t>                              terminated_pid{-1};
 		std::atomic<int>                                preflight_calls{0};
-		std::atomic<int>                                enter_device_constructions{0};
-		std::atomic<int>                                enter_presses{0};
+		std::atomic<int>                                prompt_submitter_constructions{0};
+		std::atomic<int>                                prompt_submissions{0};
 		std::atomic<int>                                auth_token_calls{0};
 		int                                             token_result          = PAM_SUCCESS;
 		int                                             native_install_result = PAM_SUCCESS;
@@ -157,33 +166,33 @@ namespace howdy::test::prompt_coordinator {
 		int                                             spawn_result   = 0;
 		pid_t                                           next_child_pid = -1;
 		std::atomic<bool>                               auth_token_active{false};
-		bool                                            block_token_until_release     = false;
-		bool                                            use_real_auth_token           = false;
-		bool                                            block_before_conversation     = false;
-		bool                                            complete_without_conversation = false;
-		bool                                            hold_reaped_until_cancel      = false;
-		bool                                            token_waits_for_reap          = false;
-		bool                                            throw_compare_wait            = false;
-		bool                                            child_reaped_by_wait          = false;
-		bool                                            before_conversation           = false;
-		bool                                            release_conversation          = false;
-		bool                                            release_token                 = false;
-		bool                                            preflight_result              = true;
-		bool                                            fail_enter_construction       = false;
-		bool                                            return_null_enter_device      = false;
-		bool                                            fail_enter_send               = false;
-		bool                                            release_token_on_enter        = false;
-		bool                                            block_enter_after_emit        = false;
+		bool                                            block_token_until_release          = false;
+		bool                                            use_real_auth_token                = false;
+		bool                                            block_before_conversation          = false;
+		bool                                            complete_without_conversation      = false;
+		bool                                            hold_reaped_until_cancel           = false;
+		bool                                            token_waits_for_reap               = false;
+		bool                                            throw_compare_wait                 = false;
+		bool                                            child_reaped_by_wait               = false;
+		bool                                            before_conversation                = false;
+		bool                                            release_conversation               = false;
+		bool                                            release_token                      = false;
+		bool                                            preflight_result                   = true;
+		bool                                            fail_prompt_submitter_construction = false;
+		bool                                            return_null_prompt_submitter       = false;
+		bool                                            fail_prompt_submission             = false;
+		bool                                            release_token_on_submission        = false;
+		bool                                            block_submission_after_start       = false;
 		std::atomic<bool>                               token_returned{false};
 		std::atomic<howdy::pam::SecretPromptGeneration> active_prompt_generation{0};
-		std::atomic<bool>                               enter_ready{false};
-		std::atomic<bool>                               enter_started_before_password_return{false};
-		std::atomic<bool>                               enter_emission_finished{false};
-		bool                                            release_enter          = false;
-		bool                                            request_native_prompt  = false;
-		bool                                            complete_native_prompt = false;
-		bool                                            native_available       = true;
-		howdy::pam::ConversationRestoreResult           native_restore_result =
+		std::atomic<bool>                               submission_ready{false};
+		std::atomic<bool>                     submission_started_before_password_return{false};
+		std::atomic<bool>                     submission_finished{false};
+		bool                                  release_submission     = false;
+		bool                                  request_native_prompt  = false;
+		bool                                  complete_native_prompt = false;
+		bool                                  native_available       = true;
+		howdy::pam::ConversationRestoreResult native_restore_result =
 		    howdy::pam::ConversationRestoreResult::kOriginalRestored;
 		howdy::pam::ConversationRestoreResult secret_restore_result =
 		    howdy::pam::ConversationRestoreResult::kOriginalRestored;
@@ -196,42 +205,42 @@ namespace howdy::test::prompt_coordinator {
 		bool              spawned_staged_runtime = false;
 	};
 
-	class FakeEnterDevice final : public EnterDevice {
+	class FakePromptSubmitter final : public PromptSubmitter {
 	public:
-		explicit FakeEnterDevice(FakeContext *context)
+		explicit FakePromptSubmitter(FakeContext *context)
 		    : context_(context) {}
 
-		void send_enter_press() override {
-			context_->enter_thread      = std::this_thread::get_id();
+		void submit_prompt() override {
+			context_->submission_thread = std::this_thread::get_id();
 			const auto wait_for_release = [this] -> void {
-				std::unique_lock<std::mutex> lock(context_->enter_mutex);
-				context_->enter_ready = true;
-				context_->enter_condition.notify_all();
-				context_->enter_condition.wait(lock, [this] -> bool {
-					return context_->release_enter;
+				std::unique_lock<std::mutex> lock(context_->submission_mutex);
+				context_->submission_ready = true;
+				context_->submission_condition.notify_all();
+				context_->submission_condition.wait(lock, [this] -> bool {
+					return context_->release_submission;
 				});
 			};
-			if (context_->coordinator_for_enter != nullptr) {
-				context_->enter_started_before_password_return =
+			if (context_->coordinator_for_submission != nullptr) {
+				context_->submission_started_before_password_return =
 				    !howdy::pam::PromptCoordinatorTestAccess::password_call_returned(
-				        *context_->coordinator_for_enter);
+				        *context_->coordinator_for_submission);
 			}
-			++context_->enter_presses;
-			if (context_->block_enter_after_emit) {
+			++context_->prompt_submissions;
+			if (context_->block_submission_after_start) {
 				wait_for_release();
 			}
-			if (context_->fail_enter_send) {
-				throw std::runtime_error("Failed to send Enter keypress");
+			if (context_->fail_prompt_submission) {
+				throw std::runtime_error("Failed to submit prompt");
 			}
-			if (context_->release_token_on_enter) {
+			if (context_->release_token_on_submission) {
 				{
 					std::unique_lock<std::mutex> lock(context_->token_mutex);
 					context_->release_token = true;
 				}
 				context_->token_condition.notify_one();
 			}
-			context_->enter_emission_finished = true;
-			context_->enter_condition.notify_all();
+			context_->submission_finished = true;
+			context_->submission_condition.notify_all();
 		}
 
 	private:
@@ -474,7 +483,7 @@ namespace howdy::test::prompt_coordinator {
 		int wait      = 0;
 		int terminate = 0;
 		int preflight = 0;
-		int enter     = 0;
+		int submitter = 0;
 		int auth      = 0;
 
 		auto operator==(const CallbackCounts &) const -> bool = default;
@@ -607,16 +616,16 @@ namespace howdy::test::prompt_coordinator {
 		return fake.preflight_result;
 	}
 
-	inline auto create_enter_device(void *context) -> std::unique_ptr<EnterDevice> {
+	inline auto create_prompt_submitter(void *context) -> std::unique_ptr<PromptSubmitter> {
 		auto &fake = *static_cast<FakeContext *>(context);
-		++fake.enter_device_constructions;
-		if (fake.fail_enter_construction) {
-			throw std::runtime_error("Failed to create uinput device");
+		++fake.prompt_submitter_constructions;
+		if (fake.fail_prompt_submitter_construction) {
+			throw std::runtime_error("Failed to create prompt submitter");
 		}
-		if (fake.return_null_enter_device) {
+		if (fake.return_null_prompt_submitter) {
 			return nullptr;
 		}
-		return std::make_unique<FakeEnterDevice>(&fake);
+		return std::make_unique<FakePromptSubmitter>(&fake);
 	}
 
 	inline auto create_native_prompt(void *context, pam_handle_t *pamh)
@@ -755,36 +764,35 @@ namespace howdy::test::prompt_coordinator {
 		    .spawn_compare_process             = spawn_compare_process,
 		    .wait_for_compare_process          = wait_for_compare,
 		    .input_prompt_preflight            = input_preflight,
-		    .create_enter_device               = create_enter_device,
+		    .create_prompt_submitter           = create_prompt_submitter,
 		    .create_native_prompt              = create_native_prompt,
 		    .create_secret_prompt_conversation = create_secret_prompt_conversation,
 		    .request_auth_token                = request_auth_token,
 		};
 	}
 
-	inline auto wait_for_enter_ready(FakeContext                        &context,
-	                                 std::chrono::steady_clock::duration timeout) -> bool {
-		std::unique_lock<std::mutex> lock(context.enter_mutex);
-		return context.enter_condition.wait_for(lock, timeout, [&context] -> bool {
-			return context.enter_ready.load();
+	inline auto wait_for_submission_ready(FakeContext                        &context,
+	                                      std::chrono::steady_clock::duration timeout) -> bool {
+		std::unique_lock<std::mutex> lock(context.submission_mutex);
+		return context.submission_condition.wait_for(lock, timeout, [&context] -> bool {
+			return context.submission_ready.load();
 		});
 	}
 
-	inline auto wait_for_enter_emission_finished(FakeContext                        &context,
-	                                             std::chrono::steady_clock::duration timeout)
-	    -> bool {
-		std::unique_lock<std::mutex> lock(context.enter_mutex);
-		return context.enter_condition.wait_for(lock, timeout, [&context] -> bool {
-			return context.enter_emission_finished.load();
+	inline auto wait_for_submission_finished(FakeContext                        &context,
+	                                         std::chrono::steady_clock::duration timeout) -> bool {
+		std::unique_lock<std::mutex> lock(context.submission_mutex);
+		return context.submission_condition.wait_for(lock, timeout, [&context] -> bool {
+			return context.submission_finished.load();
 		});
 	}
 
-	inline void release_enter(FakeContext &context) {
+	inline void release_submission(FakeContext &context) {
 		{
-			std::scoped_lock lock(context.enter_mutex);
-			context.release_enter = true;
+			std::scoped_lock lock(context.submission_mutex);
+			context.release_submission = true;
 		}
-		context.enter_condition.notify_all();
+		context.submission_condition.notify_all();
 	}
 
 	inline auto callback_counts(const FakeContext &context) -> CallbackCounts {
@@ -793,7 +801,7 @@ namespace howdy::test::prompt_coordinator {
 		    .wait      = context.wait_calls.load(),
 		    .terminate = context.terminate_calls.load(),
 		    .preflight = context.preflight_calls.load(),
-		    .enter     = context.enter_device_constructions.load(),
+		    .submitter = context.prompt_submitter_constructions.load(),
 		    .auth      = context.auth_token_calls.load(),
 		};
 	}

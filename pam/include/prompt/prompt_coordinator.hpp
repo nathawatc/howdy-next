@@ -1,9 +1,9 @@
 #pragma once
 
 #include "prompt/conversation_restore.hpp"
-#include "prompt/enter_device.hpp"
 #include "prompt/native_prompt_conversation.hpp"
 #include "prompt/observed_prompt_conversation.hpp"
+#include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "runtime/compare_launch.hpp"
 
@@ -30,7 +30,7 @@ namespace howdy::pam {
 
 	using InputPromptPreflightFn = bool (*)(void *context);
 
-	using CreateEnterDeviceFn = std::unique_ptr<EnterDevice> (*)(void *context);
+	using CreatePromptSubmitterFn = std::unique_ptr<PromptSubmitter> (*)(void *context);
 
 	using CreateNativePromptFn = std::unique_ptr<NativePrompt> (*)(void         *context,
 	                                                               pam_handle_t *pamh);
@@ -43,7 +43,7 @@ namespace howdy::pam {
 		SpawnCompareProcessFn            spawn_compare_process             = nullptr;
 		WaitForCompareProcessFn          wait_for_compare_process          = nullptr;
 		InputPromptPreflightFn           input_prompt_preflight            = nullptr;
-		CreateEnterDeviceFn              create_enter_device               = nullptr;
+		CreatePromptSubmitterFn          create_prompt_submitter           = nullptr;
 		CreateNativePromptFn             create_native_prompt              = nullptr;
 		CreateSecretPromptConversationFn create_secret_prompt_conversation = nullptr;
 		RequestAuthTokenFn               request_auth_token                = nullptr;
@@ -89,26 +89,26 @@ namespace howdy::pam {
 			kPassword,
 			kCompare
 		};
-		enum class EnterState : std::uint8_t {
+		enum class PromptSubmissionState : std::uint8_t {
 			kNotApplicable,
 			kPending,
 			kClaimed,
-			kEmitting,
+			kSubmitting,
 			kFinished,
 		};
 		enum class SuccessAction : std::uint8_t {
 			kNone,
 			kAbortNative,
-			kSendEnter,
+			kSubmitPrompt,
 		};
-		enum class EnterEmissionResult : std::uint8_t {
+		enum class PromptSubmissionResult : std::uint8_t {
 			kStop,
 			kRetry,
 		};
 
 		struct State {
 			FirstCompletion        first_completion         = FirstCompletion::kNone;
-			EnterState             enter                    = EnterState::kNotApplicable;
+			PromptSubmissionState  submission               = PromptSubmissionState::kNotApplicable;
 			SecretPromptGeneration secret_prompt_generation = 0;
 			SecretPromptGeneration claimed_generation       = 0;
 			int                    compare_status           = 0;
@@ -128,9 +128,9 @@ namespace howdy::pam {
 		                 std::chrono::steady_clock::time_point compare_deadline) noexcept -> int;
 		[[nodiscard]] auto publish_compare_completion(int status) -> SuccessAction;
 		void               request_native_abort() noexcept;
-		[[nodiscard]] auto wait_for_enter_claim() -> bool;
-		[[nodiscard]] auto send_enter_and_record_result() noexcept -> EnterEmissionResult;
-		void               send_enter_for_prompt_generations() noexcept;
+		[[nodiscard]] auto wait_for_prompt_submission_claim() -> bool;
+		[[nodiscard]] auto submit_prompt_and_record_result() noexcept -> PromptSubmissionResult;
+		void               submit_prompt_for_generations() noexcept;
 		void compare_worker(pid_t                                 child_pid,
 		                    std::chrono::steady_clock::time_point compare_deadline) noexcept;
 		void configure_native_workaround();
@@ -156,7 +156,7 @@ namespace howdy::pam {
 		std::condition_variable                   condition_;
 		std::unique_ptr<NativePrompt>             native_prompt_;
 		std::unique_ptr<SecretPromptConversation> secret_prompt_conversation_;
-		std::unique_ptr<EnterDevice>              enter_device_;
+		std::unique_ptr<PromptSubmitter>          prompt_submitter_;
 		State                                     state_;
 		Workaround                                effective_workaround_ = Workaround::kOff;
 		bool                                      run_started_          = false;

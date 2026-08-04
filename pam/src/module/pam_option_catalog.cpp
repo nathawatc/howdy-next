@@ -10,7 +10,7 @@ namespace howdy::pam {
 		    {
 		        .value      = "input",
 		        .workaround = Workaround::kInput,
-		        .summary    = "Inject one Enter key after a hidden-input prompt is observed.",
+		        .summary    = "Submit the active hidden-input prompt by injecting one Enter key.",
 		    },
 		    {
 		        .value      = "native",

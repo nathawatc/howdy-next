@@ -16,7 +16,7 @@ namespace {
 
 	struct PromptEntryState {
 		FakeContext      *context = nullptr;
-		std::atomic<int>  enter_count_seen{-1};
+		std::atomic<int>  submission_count_seen{-1};
 		std::atomic<bool> original_called{false};
 	};
 
@@ -77,11 +77,11 @@ namespace {
 
 		std::unique_lock<std::mutex> lock(state->context->token_mutex);
 		if (!state->context->token_condition.wait_for(lock, 1s, [state] -> bool {
-			    return state->context->enter_presses.load() == 1;
+			    return state->context->prompt_submissions.load() == 1;
 		    })) {
 			return PAM_CONV_ERR;
 		}
-		state->enter_count_seen = state->context->enter_presses.load();
+		state->submission_count_seen = state->context->prompt_submissions.load();
 		auto *responses =
 		    static_cast<struct pam_response *>(calloc(1, sizeof(struct pam_response)));
 		if (responses == nullptr) {
@@ -308,42 +308,43 @@ namespace {
 		       expect(reaped, "PAM winner reaps compare child");
 	}
 
-	auto test_password_call_returned_before_enter_emission_suppresses_enter() -> bool {
+	auto test_password_call_returned_before_prompt_submission_suppresses_submission() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::publish_password_call_returned(coordinator);
-		howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+		howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 
-		return expect(context.enter_presses == 0,
-		              "password_call_returned suppresses claimed Enter before emission") &&
-		       expect(!context.enter_emission_finished,
-		              "suppressed Enter never enters device implementation");
+		return expect(context.prompt_submissions == 0,
+		              "password_call_returned suppresses claimed prompt submission before "
+		              "submission attempt") &&
+		       expect(!context.submission_finished,
+		              "suppressed prompt submission never reaches prompt submitter");
 	}
 
-	auto test_enter_emission_started_before_password_return_allows_one_attempt() -> bool {
+	auto test_prompt_submission_started_before_password_return_allows_one_attempt() -> bool {
 		FakeContext context{
-		    .block_token_until_release = true,
-		    .block_enter_after_emit    = true,
+		    .block_token_until_release    = true,
+		    .block_submission_after_start = true,
 		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "emission-before-return child spawned")) {
+		if (!expect(child_pid > 0, "submission-before-return child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), std::chrono::seconds(5));
-		context.coordinator_for_enter = &coordinator;
+		context.coordinator_for_submission = &coordinator;
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
 			result = coordinator.run(make_compare_request());
 		});
 
-		bool ok = expect(wait_for_enter_ready(context, 1s),
-		                 "in-flight Enter action begins before password returns");
+		bool ok = expect(wait_for_submission_ready(context, 1s),
+		                 "in-flight prompt submission begins before password returns");
 		{
 			std::scoped_lock lock(context.token_mutex);
 			context.release_token = true;
@@ -355,107 +356,109 @@ namespace {
 			                                              [&context] -> bool {
 				                                              return context.token_returned.load();
 			                                              }),
-			             "password call completes during Enter action");
+			             "password call completes during prompt submission");
 		}
 		ok &= expect(howdy::pam::PromptCoordinatorTestAccess::wait_for_password_call_returned(
 		                 coordinator, 1s),
-		             "password_call_returned does not wait for blocked Enter device");
-		ok &= expect(!context.enter_emission_finished,
-		             "blocked Enter emission has started but not finished");
-		release_enter(context);
+		             "password_call_returned does not wait for blocked prompt submitter");
+		ok &= expect(!context.submission_finished,
+		             "blocked prompt submission has started but not finished");
+		release_submission(context);
 		run_thread.join();
 
 		return ok &&
-		       expect(context.enter_started_before_password_return,
-		              "enter_emission_started before password_call_returned") &&
-		       expect(context.enter_presses == 1, "in-flight Enter action emits once") &&
-		       expect(context.enter_emission_finished, "Enter emission finishes after release") &&
+		       expect(context.submission_started_before_password_return,
+		              "prompt_submission_started before password_call_returned") &&
+		       expect(context.prompt_submissions == 1,
+		              "in-flight submission attempt occurs once") &&
+		       expect(context.submission_finished, "prompt submission finishes after release") &&
 		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
-		              "emission-before-return preserves compare winner") &&
-		       expect(child_reaped(child_pid), "emission-before-return child is reaped");
+		              "submission-before-return preserves compare winner") &&
+		       expect(child_reaped(child_pid), "submission-before-return child is reaped");
 	}
 
 	auto test_prompt_generation_rollover_retries_canceled_claim() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 1);
 		std::jthread worker([&coordinator] -> void {
-			howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+			howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 		});
 		const auto   generation =
 		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
-		const bool emitted = wait_for_enter_emission_finished(context, 1s);
-		if (!emitted) {
+		const bool submission_completed = wait_for_submission_finished(context, 1s);
+		if (!submission_completed) {
 			howdy::pam::PromptCoordinatorTestAccess::request_shutdown(coordinator);
 		}
 		worker.join();
 		return expect(generation == 2, "later secret prompt receives new generation") &&
-		       expect(emitted, "canceled claim retries on later prompt generation") &&
-		       expect(context.enter_presses == 1, "generation rollover emits exactly one Enter");
+		       expect(submission_completed, "canceled claim retries on later prompt generation") &&
+		       expect(context.prompt_submissions == 1,
+		              "generation rollover makes exactly one submission attempt");
 	}
 
 	auto test_password_return_between_generations_prevents_retry() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 1);
 		howdy::pam::PromptCoordinatorTestAccess::publish_password_call_returned(coordinator);
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
-		howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+		howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 		return expect(generation == 0, "password return rejects later prompt generation") &&
-		       expect(context.enter_presses == 0,
-		              "password return between generations suppresses Enter retry");
+		       expect(context.prompt_submissions == 0,
+		              "password return between generations suppresses prompt submission retry");
 	}
 
 	auto test_shutdown_between_generations_prevents_retry() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 1);
 		howdy::pam::PromptCoordinatorTestAccess::request_shutdown(coordinator);
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
-		howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+		howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 		return expect(generation == 0, "shutdown rejects later prompt generation") &&
-		       expect(context.enter_presses == 0,
-		              "shutdown between generations suppresses Enter retry");
+		       expect(context.prompt_submissions == 0,
+		              "shutdown between generations suppresses prompt submission retry");
 	}
 
-	auto test_generation_close_after_emission_starts_does_not_retry() -> bool {
-		FakeContext       context{.block_enter_after_emit = true};
+	auto test_generation_close_after_submission_starts_does_not_retry() -> bool {
+		FakeContext       context{.block_submission_after_start = true};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		std::jthread worker([&coordinator] -> void {
-			howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+			howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 		});
-		bool         ok = expect(wait_for_enter_ready(context, 1s),
-		                         "generation 1 Enter emission starts before close");
+		bool         ok = expect(wait_for_submission_ready(context, 1s),
+		                         "generation 1 prompt submission starts before close");
 		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 1);
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
-		release_enter(context);
+		release_submission(context);
 		worker.join();
-		return ok && expect(generation == 2, "generation 2 begins after emission starts") &&
-		       expect(context.enter_presses == 1,
-		              "generation close after emission starts never sends second Enter");
+		return ok && expect(generation == 2, "generation 2 begins after submission starts") &&
+		       expect(context.prompt_submissions == 1, "generation close after submission starts "
+		                                               "never makes second submission attempt");
 	}
 
-	auto test_multiple_generation_rollovers_emit_once() -> bool {
+	auto test_multiple_generation_rollovers_submit_once() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              dependencies(&context), 5s);
-		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_enter(
-		    coordinator, std::make_unique<FakeEnterDevice>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 1);
 		for (howdy::pam::SecretPromptGeneration expected = 2; expected < 5; ++expected) {
 			const auto generation =
@@ -467,19 +470,19 @@ namespace {
 			                                                                 generation);
 		}
 		std::jthread worker([&coordinator] -> void {
-			howdy::pam::PromptCoordinatorTestAccess::send_enter_for_prompt_generations(coordinator);
+			howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
 		});
 		const auto   final_generation =
 		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
-		const bool emitted = wait_for_enter_emission_finished(context, 1s);
-		if (!emitted) {
+		const bool submission_completed = wait_for_submission_finished(context, 1s);
+		if (!submission_completed) {
 			howdy::pam::PromptCoordinatorTestAccess::request_shutdown(coordinator);
 		}
 		worker.join();
 		return expect(final_generation == 5, "final rollover generation becomes active") &&
-		       expect(emitted, "worker wakes after multiple generation rollovers") &&
-		       expect(context.enter_presses == 1,
-		              "multiple generation rollovers emit exactly one Enter");
+		       expect(submission_completed, "worker wakes after multiple generation rollovers") &&
+		       expect(context.prompt_submissions == 1,
+		              "multiple generation rollovers make exactly one submission attempt");
 	}
 
 	auto test_application_conversation_stays_serial_on_caller_thread() -> bool {
@@ -525,11 +528,11 @@ namespace {
 		       expect(child_reaped(child_pid), "thread-affinity child is reaped");
 	}
 
-	auto test_best_effort_enter_follows_production_secret_prompt_observation() -> bool {
+	auto test_best_effort_prompt_submission_follows_production_secret_prompt_observation() -> bool {
 		FakeContext context{
-		    .use_real_auth_token       = true,
-		    .block_before_conversation = true,
-		    .release_token_on_enter    = true,
+		    .use_real_auth_token         = true,
+		    .block_before_conversation   = true,
+		    .release_token_on_submission = true,
 		};
 		PromptEntryState      state{.context = &context};
 		const struct pam_conv conversation{
@@ -567,8 +570,9 @@ namespace {
 				                                              return context.before_conversation;
 			                                              }),
 			             "password acquisition pauses before wrapper receives secret prompt");
-			ok &= expect(context.enter_presses == 0,
-			             "face success sends no Enter before wrapper receives ECHO_OFF");
+			ok &=
+			    expect(context.prompt_submissions == 0,
+			           "face success makes no submission attempt before wrapper receives ECHO_OFF");
 			context.release_conversation = true;
 		}
 		context.token_condition.notify_all();
@@ -577,15 +581,17 @@ namespace {
 
 		return ok &&
 		       expect(state.original_called, "original secret conversation receives prompt") &&
-		       expect(state.enter_count_seen == 1,
-		              "original callback may observe best-effort Enter already attempted") &&
-		       expect(context.enter_presses == 1, "secret prompt permits exactly one Enter") &&
+		       expect(
+		           state.submission_count_seen == 1,
+		           "original callback may observe best-effort submission attempt already made") &&
+		       expect(context.prompt_submissions == 1,
+		              "secret prompt permits exactly one submission attempt") &&
 		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "immediate face success remains Howdy result") &&
 		       expect(child_reaped(child_pid), "observed prompt child reaped");
 	}
 
-	auto test_password_call_returned_before_echo_off_sends_no_enter() -> bool {
+	auto test_password_call_returned_before_echo_off_submits_no_prompt() -> bool {
 		FakeContext context{
 		    .use_real_auth_token           = true,
 		    .block_before_conversation     = true,
@@ -637,13 +643,28 @@ namespace {
 		pam_end(pamh, result.pam_status);
 
 		return ok &&
-		       expect(context.enter_presses == 0,
-		              "password_call_returned before ECHO_OFF sends no Enter") &&
+		       expect(context.prompt_submissions == 0,
+		              "password_call_returned before ECHO_OFF makes no submission attempt") &&
 		       expect(state.original_calls == 0,
 		              "password_call_returned before ECHO_OFF skips application conversation") &&
 		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "face success remains winner before prompt-free password_call_returned") &&
 		       expect(child_reaped(child_pid), "no-secret-prompt child reaped");
+	}
+
+	auto test_prompt_submission_failure_is_handled() -> bool {
+		FakeContext       context{.fail_prompt_submission = true};
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
+		howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
+
+		return expect(context.prompt_submissions == 1,
+		              "prompt submission failure attempts submission once") &&
+		       expect(
+		           howdy::pam::PromptCoordinatorTestAccess::prompt_submission_finished(coordinator),
+		           "prompt submission exception is contained and marks completion");
 	}
 
 	auto test_production_prompt_wrapper_batches_and_fails_closed() -> bool {
@@ -765,16 +786,17 @@ auto main() -> int {
 	ok &= test_invalid_hard_timeout_fails_closed();
 	ok &= test_compare_wins_without_password_prompt();
 	ok &= test_pam_wins();
-	ok &= test_password_call_returned_before_enter_emission_suppresses_enter();
-	ok &= test_enter_emission_started_before_password_return_allows_one_attempt();
+	ok &= test_password_call_returned_before_prompt_submission_suppresses_submission();
+	ok &= test_prompt_submission_started_before_password_return_allows_one_attempt();
 	ok &= test_prompt_generation_rollover_retries_canceled_claim();
 	ok &= test_password_return_between_generations_prevents_retry();
 	ok &= test_shutdown_between_generations_prevents_retry();
-	ok &= test_generation_close_after_emission_starts_does_not_retry();
-	ok &= test_multiple_generation_rollovers_emit_once();
+	ok &= test_generation_close_after_submission_starts_does_not_retry();
+	ok &= test_multiple_generation_rollovers_submit_once();
 	ok &= test_application_conversation_stays_serial_on_caller_thread();
-	ok &= test_best_effort_enter_follows_production_secret_prompt_observation();
-	ok &= test_password_call_returned_before_echo_off_sends_no_enter();
+	ok &= test_best_effort_prompt_submission_follows_production_secret_prompt_observation();
+	ok &= test_password_call_returned_before_echo_off_submits_no_prompt();
+	ok &= test_prompt_submission_failure_is_handled();
 	ok &= test_production_prompt_wrapper_batches_and_fails_closed();
 	ok &= test_reaped_child_is_never_signalled_by_caller();
 	ok &= test_compare_wait_exception_reaps_child();

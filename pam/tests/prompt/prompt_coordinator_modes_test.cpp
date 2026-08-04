@@ -4,10 +4,10 @@
 namespace {
 	using namespace howdy::test::prompt_coordinator;
 
-	auto test_input_success_sends_one_enter() -> bool {
+	auto test_input_success_submits_prompt() -> bool {
 		FakeContext context{
-		    .block_token_until_release = true,
-		    .release_token_on_enter    = true,
+		    .block_token_until_release   = true,
+		    .release_token_on_submission = true,
 		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, "input success child spawned")) {
@@ -21,14 +21,15 @@ namespace {
 		const auto        result = coordinator.run(make_compare_request());
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
-		       expect(context.enter_device_constructions == 1,
-		              "input success creates one Enter device") &&
-		       expect(context.enter_presses == 1, "input success sends exactly one Enter press") &&
+		       expect(context.prompt_submitter_constructions == 1,
+		              "input success creates one prompt submitter") &&
+		       expect(context.prompt_submissions == 1,
+		              "input success submits prompt exactly once") &&
 		       expect(context.auth_token_thread == context.run_thread,
 		              "input success requests password on run caller thread") &&
-		       expect(context.enter_thread == context.wait_thread &&
-		                  context.enter_thread != context.run_thread,
-		              "input success sends Enter from compare worker") &&
+		       expect(context.submission_thread == context.wait_thread &&
+		                  context.submission_thread != context.run_thread,
+		              "input success submits prompt from compare worker") &&
 		       expect(child_reaped(child_pid), "input success child is reaped");
 	}
 
@@ -58,6 +59,8 @@ namespace {
 		              label + " preserves exact compare status") &&
 		       expect(result.pam_status == pam_result, label + " preserves PAM result") &&
 		       expect(context.auth_token_calls == 1, label + " requests token once") &&
+		       expect(context.prompt_submissions == 0,
+		              label + " submits no prompt after compare failure") &&
 		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
 		       expect(reaped, label + " reaps child");
 	}
@@ -116,11 +119,11 @@ namespace {
 		       expect(reaped, "preflight fallback reaps child");
 	}
 
-	auto test_enter_device_construction_fallback(bool return_null, const std::string &label)
+	auto test_prompt_submitter_construction_fallback(bool return_null, const std::string &label)
 	    -> bool {
 		FakeContext context{
-		    .fail_enter_construction  = !return_null,
-		    .return_null_enter_device = return_null,
+		    .fail_prompt_submitter_construction = !return_null,
+		    .return_null_prompt_submitter       = return_null,
 		};
 		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, label + " child spawned")) {
@@ -134,9 +137,9 @@ namespace {
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result") &&
 		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
-		       expect(context.enter_device_constructions == 1,
-		              label + " calls Enter-device factory once") &&
-		       expect(context.enter_presses == 0, label + " sends no Enter press") &&
+		       expect(context.prompt_submitter_constructions == 1,
+		              label + " calls prompt submitter factory once") &&
+		       expect(context.prompt_submissions == 0, label + " submits no prompt") &&
 		       expect(context.auth_token_calls == 0,
 		              label + " falls back to standard PAM prompt") &&
 		       expect(child_reaped(child_pid), label + " reaps child");
@@ -375,13 +378,14 @@ namespace {
 
 auto run_prompt_mode_tests() -> bool {
 	bool ok = true;
-	ok &= test_input_success_sends_one_enter();
+	ok &= test_input_success_submits_prompt();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");
 	ok &= test_compare_signal_password_fallback();
 	ok &= test_input_preflight_fallback();
-	ok &= test_enter_device_construction_fallback(false, "Enter-device construction failure");
-	ok &= test_enter_device_construction_fallback(true, "null Enter-device factory result");
+	ok &=
+	    test_prompt_submitter_construction_fallback(false, "prompt submitter construction failure");
+	ok &= test_prompt_submitter_construction_fallback(true, "null prompt submitter factory result");
 	ok &= test_native_setup_without_input_fallback(false, -1, "native unavailable");
 	ok &= test_native_setup_without_input_fallback(true, PAM_CONV_ERR, "native install failure");
 	ok &= test_native_input_success_uses_native_path();

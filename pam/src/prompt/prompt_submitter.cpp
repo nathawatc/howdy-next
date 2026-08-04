@@ -1,4 +1,4 @@
-#include "prompt/enter_device.hpp"
+#include "prompt/prompt_submitter.hpp"
 
 #include "internal_fd.hpp"
 
@@ -11,9 +11,9 @@
 #include <libevdev/libevdev.h>
 
 namespace {
-	class LibevdevEnterDevice final : public EnterDevice {
+	class UinputPromptSubmitter final : public howdy::pam::PromptSubmitter {
 	public:
-		LibevdevEnterDevice()
+		UinputPromptSubmitter()
 		    : raw_device_(nullptr, &libevdev_free)
 		    , raw_uinput_device_(nullptr, &libevdev_uinput_destroy) {
 			auto *raw_libevdev = libevdev_new();
@@ -41,7 +41,7 @@ namespace {
 			raw_uinput_device_.reset(raw_uinput);
 		}
 
-		void send_enter_press() override {
+		void submit_prompt() override {
 			if (libevdev_uinput_write_event(raw_uinput_device_.get(), EV_KEY, KEY_ENTER, 1) != 0 ||
 			    libevdev_uinput_write_event(raw_uinput_device_.get(), EV_SYN, SYN_REPORT, 0) != 0 ||
 			    libevdev_uinput_write_event(raw_uinput_device_.get(), EV_KEY, KEY_ENTER, 0) != 0 ||
@@ -58,6 +58,8 @@ namespace {
 	};
 }  // namespace
 
-auto create_enter_device() -> std::unique_ptr<EnterDevice> {
-	return std::make_unique<LibevdevEnterDevice>();
-}
+namespace howdy::pam {
+	auto create_uinput_prompt_submitter() -> std::unique_ptr<PromptSubmitter> {
+		return std::make_unique<UinputPromptSubmitter>();
+	}
+}  // namespace howdy::pam

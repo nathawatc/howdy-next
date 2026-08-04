@@ -34,6 +34,7 @@
 namespace {
 
 	using howdy::pam::PamModuleArguments;
+	using howdy::pam::PromptSubmitter;
 	using howdy::pam::run_authentication_entrypoint;
 	using howdy::test::expect;
 
@@ -297,7 +298,7 @@ namespace {
 		return true;
 	}
 
-	auto flow_create_enter_device(void *context) -> std::unique_ptr<EnterDevice> {
+	auto flow_create_prompt_submitter(void *context) -> std::unique_ptr<PromptSubmitter> {
 		(void)context;
 		return nullptr;
 	}
@@ -342,7 +343,7 @@ namespace {
 		            .spawn_compare_process             = flow_spawn_compare,
 		            .wait_for_compare_process          = flow_wait_compare,
 		            .input_prompt_preflight            = flow_input_prompt_preflight,
-		            .create_enter_device               = flow_create_enter_device,
+		            .create_prompt_submitter           = flow_create_prompt_submitter,
 		            .create_native_prompt              = flow_create_native_prompt,
 		            .create_secret_prompt_conversation = flow_create_secret_prompt_conversation,
 		            .request_auth_token                = flow_request_auth_token,

@@ -29,7 +29,7 @@ target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE howdy_config)
 
 add_library(
 	pam_prompt STATIC
-	src/prompt/enter_device.cpp
+	src/prompt/prompt_submitter.cpp
 	src/prompt/conversation_response.cpp
 	src/prompt/internal_fd.cpp
 	src/prompt/native_prompt_conversation.cpp
