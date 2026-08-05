@@ -2,16 +2,15 @@
 
 ## Requirements
 
-PAM module needs `INIReader` and `libevdev`.
+The PAM module links against `INIReader` and `libevdev`. Install both development
+packages before building.
 
-```text
-Arch Linux - libinih libevdev
-Debian     - libinih-dev libevdev-dev
-Fedora     - inih-devel libevdev-devel
-OpenSUSE   - inih libevdev-devel
-```
+Common package names are:
 
-Install `INIReader` package from your distro.
+- Arch Linux: `libinih` and `libevdev`
+- Debian: `libinih-dev` and `libevdev-dev`
+- Fedora: `inih-devel` and `libevdev-devel`
+- OpenSUSE: `inih` and `libevdev-devel`
 
 ## Source Layout
 
