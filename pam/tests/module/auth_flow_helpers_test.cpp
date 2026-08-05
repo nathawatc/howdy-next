@@ -833,7 +833,7 @@ namespace {
 		                         conversation) == PAM_AUTH_ERR,
 		             "timeout status fails closed");
 		ok &= expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
-		                 last_message == "Failure, timeout reached",
+		                 last_message == "Face verification timed out",
 		             "timeout status sends error conversation");
 
 		calls = 0;
@@ -857,7 +857,7 @@ namespace {
 		                          conversation) == PAM_SUCCESS,
 		             "successful status approves login");
 		ok &= expect(calls == 1 && last_msg_type == PAM_TEXT_INFO &&
-		                 last_message == "Identified face as alice",
+		                 last_message == "Face matched user alice",
 		             "successful status sends enabled confirmation");
 
 		howdy::native::RuntimeConfig quiet_config;
@@ -874,7 +874,7 @@ namespace {
 		                        quiet_config, conversation) == PAM_AUTH_ERR,
 		           "failed status delegates to error handling");
 		ok &= expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
-		                 last_message == "Face detection image too dark",
+		                 last_message == "Camera image is too dark for detection",
 		             "failed status sends mapped error conversation");
 
 		return ok;

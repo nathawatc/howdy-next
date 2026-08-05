@@ -192,7 +192,7 @@ namespace {
 		ok &= expect(context.load_calls == 1, "camera read failure loads once");
 		ok &= expect(context.capture_calls == 1, "camera read failure captures once");
 		ok &= expect(context.write_calls == 0, "camera read failure skips write");
-		ok &= expect(error.str().contains("Failed to read frame from camera"),
+		ok &= expect(error.str().contains("Could not capture a camera frame"),
 		             "camera read failure writes read error");
 		return ok;
 	}
@@ -357,8 +357,8 @@ namespace {
 		             "writer receives video runtime config");
 		ok &= expect(context.write_config.face.sface_threshold == 0.42F,
 		             "writer receives face runtime config");
-		ok &= expect(output_text.contains("Generated snapshot saved as"),
-		             "successful snapshot prints heading");
+		ok &=
+		    expect(output_text.contains("Snapshot saved to"), "successful snapshot prints heading");
 		ok &= expect(output_text.contains("/tmp/howdy-test/snapshots/test.jpg"),
 		             "successful snapshot prints fixed path");
 		return ok;

@@ -154,7 +154,7 @@ namespace {
 		          "Face models have not been initialized yet, please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kNoModel,
 		          {},
-		          "No face model known for the user alice, please run:\n\n\thowdy add\n\n"},
+		          "No face model found for this user alice, please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kParseError, "storage failed",
 		          "storage failed\n"},
 		     }) {
@@ -186,9 +186,8 @@ namespace {
 		auto context          = success_context();
 		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
-		       expect(output ==
-		                  "This will remove the model called \"front door\" for alice\n"
-		                  "Do you want to continue [y/N]: \nInterpreting as a \"NO\", aborting\n",
+		       expect(output == "This will remove the model called \"front door\" for alice\n"
+		                        "Continue? [y/N]: \nInterpreting as a \"NO\", aborting\n",
 		              "rejected confirmation preserves prompt and abort message") &&
 		       expect(context.remove_calls == 0, "rejected confirmation skips removal");
 	}
@@ -208,7 +207,7 @@ namespace {
 		                 expected.model == "face_recognition_sface_2021dec.onnx",
 		             "accepted confirmation passes complete stale-entry expectation");
 		ok &= expect(output == "This will remove the model called \"front door\" for alice\n"
-		                       "Do you want to continue [y/N]: \nRemoved model 3\n",
+		                       "Continue? [y/N]: \nRemoved model 3\n",
 		             "accepted confirmation preserves full output");
 		return ok;
 	}
@@ -267,7 +266,8 @@ namespace {
 		context.remove_result.removed_last = true;
 		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3", "-y"});
 		return expect(result == 0, "last-model removal returns 0") &&
-		       expect(output == "Removed last model, howdy disabled for user\n",
+		       expect(output ==
+		                  "Removed final face model; face verification disabled for this user\n",
 		              "last-model removal preserves disabled message");
 	}
 

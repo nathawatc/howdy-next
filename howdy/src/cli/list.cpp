@@ -60,7 +60,7 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
 		if (!args->plain) {
-			std::cout << "No face model known for the user " << args->user << ", please run:\n";
+			std::cout << "No face model found for this user " << args->user << ", please run:\n";
 			std::cout << "\n\tsudo howdy -U " << args->user << " add\n\n";
 		}
 		return kExitAbort;

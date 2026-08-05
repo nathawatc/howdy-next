@@ -52,7 +52,7 @@ namespace {
 		}
 		const int result = conv_function({
 		    .style = PAM_TEXT_INFO,
-		    .text  = howdy::pam::translate("Attempting facial authentication"),
+		    .text  = howdy::pam::translate("Starting face verification"),
 		});
 		if (result != PAM_SUCCESS) {
 			syslog(LOG_ERR, "Failed to send detection notice");
@@ -107,7 +107,7 @@ namespace howdy::pam::auth_flow {
 	                               const std::string &message) -> void {
 		const int result = conv_function({.style = msg_type, .text = message});
 		if (result != PAM_SUCCESS) {
-			syslog(LOG_WARNING, "Failed to send PAM conversation message: %d", result);
+			syslog(LOG_WARNING, "Could not send PAM status message: %d", result);
 		}
 	}
 
@@ -147,7 +147,7 @@ namespace howdy::pam::auth_flow {
 			                          build_confirmation_message(username));
 		}
 
-		syslog(LOG_INFO, "Login approved");
+		syslog(LOG_INFO, "Face verification succeeded");
 		return PAM_SUCCESS;
 	}
 
@@ -165,19 +165,19 @@ namespace howdy::pam::auth_flow {
 				case AuthenticationEligibility::kEligible:
 					return;
 				case AuthenticationEligibility::kDisabled:
-					syslog(LOG_INFO, "Skipped authentication, Howdy is disabled");
+					syslog(LOG_INFO, "Face verification skipped: Howdy is disabled");
 					return;
 				case AuthenticationEligibility::kSshSession:
-					syslog(LOG_INFO, "Skipped authentication, SSH session detected");
+					syslog(LOG_INFO, "Face verification skipped for SSH session");
 					return;
 				case AuthenticationEligibility::kClosedLid:
-					syslog(LOG_INFO, "Skipped authentication, closed lid detected");
+					syslog(LOG_INFO, "Face verification skipped: lid is closed");
 					return;
 				case AuthenticationEligibility::kInvalidUser:
-					syslog(LOG_WARNING, "Skipped authentication, invalid username");
+					syslog(LOG_WARNING, "Face verification skipped: invalid username");
 					return;
 				case AuthenticationEligibility::kMissingModel:
-					syslog(LOG_WARNING, "Skipped authentication, no face model found for user");
+					syslog(LOG_WARNING, "Face verification skipped: no enrolled face model");
 					return;
 				case AuthenticationEligibility::kInvalidModelStorage:
 					if (!result.error_message.empty()) {

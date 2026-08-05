@@ -135,8 +135,7 @@ namespace {
 				const auto  exit_code =
 				    howdy::native::timeout_exit(stats.dark_frames, stats.valid_frames);
 				if (exit_code == CompareExit::kTooDark) {
-					std::cerr
-					    << "All frames were too dark, please check dark_threshold in config\n";
+					std::cerr << "All frames were too dark; check dark_threshold\n";
 					std::cerr << "Average darkness: "
 					          << (stats.dark_running_total / std::max(stats.valid_frames, 1))
 					          << ", Threshold: " << context.video_config.dark_threshold << "\n";

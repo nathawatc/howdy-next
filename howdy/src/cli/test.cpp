@@ -471,7 +471,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 			std::cerr << "Error: " << preview_result.error_message << "\n";
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraReadError:
-			std::cerr << "Failed to read frame from camera\n";
+			std::cerr << "Could not capture a camera frame\n";
 			return kExitCameraError;
 		case TestPreviewStatus::kGuiUserError:
 			std::cerr << "Failed to switch GUI session to the invoking user\n";

@@ -79,7 +79,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 		return kExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << "No face model known for the user " << args->user << ", please run:\n";
+		std::cout << "No face model found for this user " << args->user << ", please run:\n";
 		std::cout << "\n\thowdy add\n\n";
 		return kExitAbort;
 	}
@@ -121,7 +121,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	if (!args->yes) {
 		std::cout << "This will remove the model called \"" << found_label << "\" for "
 		          << args->user << "\n";
-		std::cout << "Do you want to continue [y/N]: ";
+		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {
@@ -138,7 +138,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 		return kExitAbort;
 	}
 	if (remove_result.removed_last) {
-		std::cout << "Removed last model, howdy disabled for user\n";
+		std::cout << "Removed final face model; face verification disabled for this user\n";
 		return kExitOk;
 	}
 

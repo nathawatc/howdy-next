@@ -205,10 +205,10 @@ namespace {
 	                           float                                         dark_threshold) {
 		switch (howdy::native::classify_enrollment_capture_failure(capture_result)) {
 			case howdy::native::EnrollmentCaptureFailure::kOnlyBlackFrames:
-				std::cerr << "Camera saw only black frames - is IR emitter working?\n";
+				std::cerr << "Camera returned only black frames; check the IR emitter\n";
 				break;
 			case howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames:
-				std::cerr << "All frames were too dark, please check dark_threshold in config\n";
+				std::cerr << "All frames were too dark; check dark_threshold\n";
 				std::cerr << "Average darkness: "
 				          << (capture_result.dark_running_total / capture_result.valid_frames)
 				          << ", Threshold: " << dark_threshold << "\n";

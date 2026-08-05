@@ -36,7 +36,7 @@ namespace {
 auto howdy::native::disable_internal::disable_main_with_dependencies(
     int argc, char **argv, const DisableDependencies &dependencies) -> int {
 	if (argc < 2) {
-		std::cout << "Please add a 0 (enable) or a 1 (disable) as an argument\n";
+		std::cout << "Specify 0 to enable or 1 to disable Howdy\n";
 		return kExitAbort;
 	}
 
@@ -50,7 +50,7 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		out_value = "false";
 		disabled  = false;
 	} else {
-		std::cout << "Please only use 0 (enable) or 1 (disable) as an argument\n";
+		std::cout << "Invalid value; use 0 to enable or 1 to disable Howdy\n";
 		return kExitAbort;
 	}
 	if (dependencies.resolve_config_path == nullptr ||
@@ -68,7 +68,7 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 	}
 
 	if (disabled == config_result.config->core.disabled) {
-		std::cout << "The disable option has already been set to " << out_value << "\n";
+		std::cout << (disabled ? "Howdy is already disabled\n" : "Howdy is already enabled\n");
 		return kExitAbort;
 	}
 
@@ -81,7 +81,7 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		return kExitAbort;
 	}
 
-	std::cout << (out_value == "true" ? "Howdy has been disabled\n" : "Howdy has been enabled\n");
+	std::cout << (disabled ? "Howdy is now disabled\n" : "Howdy is now enabled\n");
 	return kExitOk;
 }
 

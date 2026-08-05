@@ -223,8 +223,7 @@ auto main() -> int {
 		TestContext context;
 		const auto  result = run_disable({"howdy-disable"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 1, "missing argument returns 1");
-		ok &= expect(result.stdout_output ==
-		                 "Please add a 0 (enable) or a 1 (disable) as an argument\n",
+		ok &= expect(result.stdout_output == "Specify 0 to enable or 1 to disable Howdy\n",
 		             "missing argument stdout exact");
 		ok &= expect(result.stderr_output.empty(), "missing argument stderr empty");
 		ok &= expect_no_calls(context, "missing argument skips dependencies");
@@ -234,9 +233,9 @@ auto main() -> int {
 		TestContext context;
 		const auto  result = run_disable({"howdy-disable", "invalid"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 1, "invalid argument returns 1");
-		ok &= expect(result.stdout_output ==
-		                 "Please only use 0 (enable) or 1 (disable) as an argument\n",
-		             "invalid argument stdout exact");
+		ok &=
+		    expect(result.stdout_output == "Invalid value; use 0 to enable or 1 to disable Howdy\n",
+		           "invalid argument stdout exact");
 		ok &= expect(result.stderr_output.empty(), "invalid argument stderr empty");
 		ok &= expect_no_calls(context, "invalid argument skips dependencies");
 	}
@@ -292,9 +291,10 @@ auto main() -> int {
 		context.load_result = loaded_config(disabled);
 		const auto result   = run_disable({"howdy-disable", argument}, dependencies_for(context));
 		ok &= expect(result.exit_code == 1, "unchanged state returns 1");
-		ok &= expect(result.stdout_output ==
-		                 std::string("The disable option has already been set to ") + value + "\n",
-		             "unchanged state stdout exact");
+		const auto *const expected_state = disabled ? "disabled" : "enabled";
+		ok &=
+		    expect(result.stdout_output == std::string("Howdy is already ") + expected_state + "\n",
+		           "unchanged state stdout exact");
 		ok &= expect(result.stderr_output.empty(), "unchanged state stderr empty");
 		ok &= expect(context.updater_calls == 0, "unchanged state skips updater");
 	}
@@ -310,7 +310,7 @@ auto main() -> int {
 		ok &= expect(result.exit_code == 1, "updater failure returns 1");
 		ok &= expect(result.stdout_output == output, "updater failure stdout exact");
 		ok &= expect(result.stderr_output.empty(), "updater failure stderr empty");
-		ok &= expect(!result.stdout_output.contains("Howdy has been disabled"),
+		ok &= expect(!result.stdout_output.contains("Howdy is now disabled"),
 		             "updater failure omits success");
 		ok &= expect_update(context, "true", "updater failure");
 	}
@@ -320,7 +320,7 @@ auto main() -> int {
 		context.load_result = loaded_config(false);
 		const auto result   = run_disable({"howdy-disable", "true"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 0, "disable success returns 0");
-		ok &= expect(result.stdout_output == "Howdy has been disabled\n",
+		ok &= expect(result.stdout_output == "Howdy is now disabled\n",
 		             "disable success stdout exact");
 		ok &= expect(result.stderr_output.empty(), "disable success stderr empty");
 		ok &= expect(context.resolver_calls == 1 && context.loader_calls == 1 &&
@@ -333,8 +333,8 @@ auto main() -> int {
 		context.load_result = loaded_config(true);
 		const auto result   = run_disable({"howdy-disable", "false"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 0, "enable success returns 0");
-		ok &= expect(result.stdout_output == "Howdy has been enabled\n",
-		             "enable success stdout exact");
+		ok &=
+		    expect(result.stdout_output == "Howdy is now enabled\n", "enable success stdout exact");
 		ok &= expect(result.stderr_output.empty(), "enable success stderr empty");
 		ok &= expect_update(context, "false", "enable success");
 	}

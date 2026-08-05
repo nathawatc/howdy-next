@@ -295,7 +295,7 @@ auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
 			std::cerr << capture_result.error_message << "\n";
 			return kExitAbort;
 		case SnapshotCaptureStatus::kReadError:
-			std::cerr << "Failed to read frame from camera\n";
+			std::cerr << "Could not capture a camera frame\n";
 			return kExitAbort;
 		default:
 			std::cerr << "Internal error: unknown snapshot capture status\n";
@@ -314,7 +314,7 @@ auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
 		return kExitAbort;
 	}
 
-	std::cout << "Generated snapshot saved as\n";
+	std::cout << "Snapshot saved to\n";
 	std::cout << write_result.path.string() << "\n";
 	return kExitOk;
 }

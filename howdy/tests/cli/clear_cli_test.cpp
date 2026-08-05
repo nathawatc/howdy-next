@@ -204,7 +204,7 @@ namespace {
 		auto [result, output] = run_clear(context, {"howdy-clear", "alice"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
 		       expect(output == "This will clear all models for alice\n"
-		                        "Do you want to continue [y/N]: "
+		                        "Continue? [y/N]: "
 		                        "\nInterpreting as a \"NO\", aborting\n",
 		              "rejected confirmation preserves output") &&
 		       expect(context.inspect_calls == 1 && context.clear_calls == 0,
@@ -226,7 +226,7 @@ namespace {
 		                 snapshot.ctime_seconds == 66 && snapshot.ctime_nanosecs == 77,
 		             "accepted confirmation passes complete snapshot unchanged");
 		ok &= expect(output == "This will clear all models for alice\n"
-		                       "Do you want to continue [y/N]: \nModels cleared\n",
+		                       "Continue? [y/N]: \nModels cleared\n",
 		             "accepted confirmation preserves output");
 		return ok;
 	}

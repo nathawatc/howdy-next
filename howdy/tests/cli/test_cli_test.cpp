@@ -380,7 +380,7 @@ namespace {
 		ok &= expect(context.gui_calls == 1, "camera read failure switches GUI user once");
 		ok &= expect(context.gui_init_calls == 1, "camera read failure initializes GUI once");
 		ok &= expect(context.read_calls == 1, "camera read failure reads camera once");
-		ok &= expect(error.str().contains("Failed to read frame from camera"),
+		ok &= expect(error.str().contains("Could not capture a camera frame"),
 		             "camera read failure writes diagnostic");
 		return ok;
 	}

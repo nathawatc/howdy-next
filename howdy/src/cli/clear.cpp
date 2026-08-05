@@ -77,7 +77,7 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 
 	if (!args->yes) {
 		std::cout << "This will clear all models for " << args->user << "\n";
-		std::cout << "Do you want to continue [y/N]: ";
+		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {

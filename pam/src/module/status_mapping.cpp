@@ -37,32 +37,33 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 		switch (static_cast<howdy::native::CompareExit>(exit_status)) {
 			case howdy::native::CompareExit::kSuccess:
 				decision.pam_result  = PAM_SUCCESS;
-				decision.log_message = "Login approved";
+				decision.log_message = "Face verification succeeded";
 				break;
 			case howdy::native::CompareExit::kNoFaceModel:
-				decision.log_message = "Failure, no face model known";
+				decision.log_message = "Face verification unavailable: no enrolled face model";
 				break;
 			case howdy::native::CompareExit::kTimeoutReached:
-				decision.conversation_kind    = ConversationKind::Error;
-				decision.conversation_message = howdy::pam::translate("Failure, timeout reached");
-				decision.log_message          = "Failure, timeout reached";
+				decision.conversation_kind = ConversationKind::Error;
+				decision.conversation_message =
+				    howdy::pam::translate("Face verification timed out");
+				decision.log_message = "Face verification timed out";
 				break;
 			case howdy::native::CompareExit::kAbort:
-				decision.log_message = "Failure, general abort";
+				decision.log_message = "Face verification aborted";
 				break;
 			case howdy::native::CompareExit::kTooDark:
 				decision.conversation_kind = ConversationKind::Error;
 				decision.conversation_message =
-				    howdy::pam::translate("Face detection image too dark");
-				decision.log_message = "Failure, image too dark";
+				    howdy::pam::translate("Camera image is too dark for detection");
+				decision.log_message = "Face verification failed: camera image too dark";
 				break;
 			case howdy::native::CompareExit::kInvalidDevice:
-				decision.log_message = "Failure, not possible to open camera at configured path";
+				decision.log_message = "Face verification failed: cannot open configured camera";
 				break;
 			default:
 				decision.conversation_kind    = ConversationKind::Error;
 				decision.conversation_message = build_unknown_error_message(exit_status);
-				decision.log_message          = "Failure, unknown error";
+				decision.log_message          = "Face verification failed: unknown error";
 				break;
 		}
 		return decision;
@@ -83,7 +84,7 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 }
 
 auto build_confirmation_message(std::string_view username) -> std::string {
-	std::string template_text   = howdy::pam::translate("Identified face as {}");
+	std::string template_text   = howdy::pam::translate("Face matched user {}");
 	const auto  placeholder_pos = template_text.find("{}");
 	if (placeholder_pos != std::string::npos) {
 		template_text.replace(placeholder_pos, 2, std::string(username));

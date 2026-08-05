@@ -424,8 +424,9 @@ namespace {
 		const auto error_output = error.str();
 		bool       ok = expect_capture_failure_stops_before_append(context, result,
 		                                                           "black-frame capture failure");
-		ok &= expect(error_output.contains("Camera saw only black frames - is IR emitter working?"),
-		             "black-frame capture failure prints IR emitter diagnostic");
+		ok &=
+		    expect(error_output.contains("Camera returned only black frames; check the IR emitter"),
+		           "black-frame capture failure prints IR emitter diagnostic");
 		return ok;
 	}
 
@@ -440,8 +441,7 @@ namespace {
 		const auto error_output = error.str();
 		bool       ok = expect_capture_failure_stops_before_append(context, result,
 		                                                           "only-too-dark capture failure");
-		ok &= expect(error_output.contains(
-		                 "All frames were too dark, please check dark_threshold in config"),
+		ok &= expect(error_output.contains("All frames were too dark; check dark_threshold"),
 		             "only-too-dark capture failure prints dark threshold diagnostic");
 		ok &= expect(error_output.contains("Average darkness: 40, Threshold: 32"),
 		             "only-too-dark capture failure prints average darkness and threshold");
@@ -461,8 +461,7 @@ namespace {
 		    context, result, "no-sufficiently-bright capture failure");
 		ok &= expect(error_output.contains("No sufficiently bright frames captured, aborting"),
 		             "no-sufficiently-bright capture failure prints diagnostic");
-		ok &= expect(!error_output.contains(
-		                 "All frames were too dark, please check dark_threshold in config"),
+		ok &= expect(!error_output.contains("All frames were too dark; check dark_threshold"),
 		             "no-sufficiently-bright capture failure does not print too-dark diagnostic");
 		return ok;
 	}

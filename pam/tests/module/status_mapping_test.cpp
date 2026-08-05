@@ -105,7 +105,7 @@ auto main() -> int {
 		ok &= expect(decision.pam_result == PAM_SUCCESS, "success returns PAM_SUCCESS");
 		ok &= expect(decision.conversation_kind == ConversationKind::None,
 		             "success has no conversation");
-		ok &= expect(decision.log_message == "Login approved", "success log message");
+		ok &= expect(decision.log_message == "Face verification succeeded", "success log message");
 	}
 
 	{
@@ -115,7 +115,8 @@ auto main() -> int {
 		ok &= expect(decision.conversation_kind == ConversationKind::None,
 		             "no-model has no conversation");
 		ok &=
-		    expect(decision.log_message == "Failure, no face model known", "no-model log message");
+		    expect(decision.log_message == "Face verification unavailable: no enrolled face model",
+		           "no-model log message");
 	}
 
 	{
@@ -123,8 +124,8 @@ auto main() -> int {
 		    map_compare_wait_status(make_status(howdy::native::CompareExit::kTimeoutReached));
 		ok &= expect(decision.conversation_kind == ConversationKind::Error,
 		             "timeout returns error conversation");
-		ok &=
-		    expect(decision.conversation_message == "Failure, timeout reached", "timeout message");
+		ok &= expect(decision.conversation_message == "Face verification timed out",
+		             "timeout message");
 	}
 
 	{
@@ -132,7 +133,7 @@ auto main() -> int {
 		    map_compare_wait_status(make_status(howdy::native::CompareExit::kAbort));
 		ok &= expect(decision.conversation_kind == ConversationKind::None,
 		             "abort has no conversation");
-		ok &= expect(decision.log_message == "Failure, general abort", "abort log message");
+		ok &= expect(decision.log_message == "Face verification aborted", "abort log message");
 	}
 
 	{
@@ -140,8 +141,10 @@ auto main() -> int {
 		    map_compare_wait_status(make_status(howdy::native::CompareExit::kTooDark));
 		ok &= expect(decision.conversation_kind == ConversationKind::Error,
 		             "too-dark returns error conversation");
-		ok &= expect(decision.conversation_message == "Face detection image too dark",
+		ok &= expect(decision.conversation_message == "Camera image is too dark for detection",
 		             "too-dark message");
+		ok &= expect(decision.log_message == "Face verification failed: camera image too dark",
+		             "too-dark log message");
 	}
 
 	{
@@ -151,7 +154,7 @@ auto main() -> int {
 		ok &= expect(decision.conversation_kind == ConversationKind::None,
 		             "invalid-device has no conversation");
 		ok &= expect(decision.log_message ==
-		                 "Failure, not possible to open camera at configured path",
+		                 "Face verification failed: cannot open configured camera",
 		             "invalid-device log message");
 	}
 
@@ -161,7 +164,8 @@ auto main() -> int {
 		ok &= expect(decision.conversation_kind == ConversationKind::Error,
 		             "unknown exit returns error conversation");
 		ok &= expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
-		ok &= expect(decision.log_message == "Failure, unknown error", "unknown exit log");
+		ok &= expect(decision.log_message == "Face verification failed: unknown error",
+		             "unknown exit log");
 	}
 
 	{
@@ -188,7 +192,7 @@ auto main() -> int {
 		             "helper execution-style failure reports controlled error");
 	}
 
-	ok &= expect(build_confirmation_message("alice") == "Identified face as alice",
+	ok &= expect(build_confirmation_message("alice") == "Face matched user alice",
 	             "confirmation message is formatted");
 	ok &= expect(build_unknown_error_message(42) == "Unknown error: 42",
 	             "unknown error message is formatted");
@@ -207,7 +211,7 @@ auto main() -> int {
 	if (selected_thai_locale != nullptr) {
 		const auto translated =
 		    map_compare_wait_status(make_status(howdy::native::CompareExit::kTimeoutReached));
-		ok &= expect(translated.conversation_message == "ยืนยันตัวตนล้มเหลวเนื่องจากหมดเวลา",
+		ok &= expect(translated.conversation_message == "การยืนยันใบหน้าหมดเวลา",
 		             "Howdy message resolves from explicit Howdy domain");
 		ok &= expect(std::string(howdy::pam::translate("Missing Howdy translation")) ==
 		                 "Missing Howdy translation",

@@ -13,20 +13,20 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 
 #: src/module/auth_flow.cpp
-msgid "Attempting facial authentication"
-msgstr "กำลังยืนยันตัวตนด้วยใบหน้า"
+msgid "Starting face verification"
+msgstr "กำลังเริ่มการยืนยันใบหน้า"
 
 #: src/module/status_mapping.cpp
-msgid "Failure, timeout reached"
-msgstr "ยืนยันตัวตนล้มเหลวเนื่องจากหมดเวลา"
+msgid "Face verification timed out"
+msgstr "การยืนยันใบหน้าหมดเวลา"
 
 #: src/module/status_mapping.cpp
-msgid "Face detection image too dark"
-msgstr "ภาพมืดเกินไป ไม่สามารถตรวจจับใบหน้าได้"
+msgid "Camera image is too dark for detection"
+msgstr "ภาพจากกล้องมืดเกินไปสำหรับการตรวจจับ"
 
 #: src/module/status_mapping.cpp
-msgid "Identified face as {}"
-msgstr "ระบุใบหน้าเป็น: {}"
+msgid "Face matched user {}"
+msgstr "ใบหน้าตรงกับผู้ใช้ {}"
 
 #: src/module/status_mapping.cpp
 msgid "Unknown error: {}"

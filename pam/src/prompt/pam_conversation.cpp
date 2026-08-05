@@ -34,14 +34,14 @@ namespace howdy::pam {
 
 	auto PamConversation::acquire(pam_handle_t *pamh, PamConversation *output) noexcept -> int {
 		if (pamh == nullptr || output == nullptr) {
-			syslog(LOG_ERR, "Failed to acquire conversation");
+			syslog(LOG_ERR, "PAM conversation is unavailable");
 			return PAM_SYSTEM_ERR;
 		}
 
 		const void *item   = nullptr;
 		const int   status = pam_get_item(pamh, PAM_CONV, &item);
 		if (status != PAM_SUCCESS) {
-			syslog(LOG_ERR, "Failed to acquire conversation");
+			syslog(LOG_ERR, "PAM conversation is unavailable");
 			return status;
 		}
 		if (item == nullptr) {

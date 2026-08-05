@@ -111,7 +111,7 @@ namespace howdy::native {
 		try {
 			const bool read_ok = frame_reader_ ? frame_reader_->read(frame) : capture_.read(frame);
 			if (!read_ok) {
-				set_error(CaptureError::kReadFailed, "Failed to read a frame from camera");
+				set_error(CaptureError::kReadFailed, "Could not capture a camera frame");
 				return false;
 			}
 
