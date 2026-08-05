@@ -31,6 +31,7 @@ add_library(
 	pam_prompt STATIC
 	src/prompt/prompt_submitter.cpp
 	src/prompt/conversation_response.cpp
+	src/prompt/pam_conversation.cpp
 	src/prompt/internal_fd.cpp
 	src/prompt/native_prompt_conversation.cpp
 	src/prompt/native_prompt_input.cpp
@@ -205,6 +206,12 @@ if(BUILD_TESTING)
 		pam_conversation_response_test
 		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/prompt"
 	)
+	howdy_add_pam_test(
+		pam_conversation_test
+		pam-conversation
+		tests/prompt/pam_conversation_test.cpp
+	)
+	target_link_libraries(pam_conversation_test PRIVATE pam_prompt)
 	howdy_add_pam_test(
 		pam_auth_flow_helpers_test
 		pam-auth-flow-helpers

@@ -2,6 +2,7 @@
 
 #include "module/auth_eligibility.hpp"
 #include "module/pam_options.hpp"
+#include "prompt/pam_conversation.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "runtime/runtime_session.hpp"
 
@@ -12,7 +13,7 @@
 
 namespace howdy::pam::auth_flow {
 
-	using ConversationFn = std::function<int(int, const char *)>;
+	using ConversationFn = std::function<int(const howdy::pam::ConversationMessage &)>;
 
 	struct IdentifyDependencies {
 		RuntimeSessionDependencies                                          runtime_session;
@@ -30,10 +31,6 @@ namespace howdy::pam::auth_flow {
 	__attribute__((visibility("hidden"))) void
 	send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                          const std::string &message);
-
-	__attribute__((visibility("hidden"))) auto make_conversation(pam_handle_t   *pamh,
-	                                                             ConversationFn *conv_function)
-	    -> int;
 
 	__attribute__((visibility("hidden"))) auto auth_token_present(pam_handle_t *pamh) -> bool;
 

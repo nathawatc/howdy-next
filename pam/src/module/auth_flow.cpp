@@ -3,7 +3,7 @@
 #include "module/pam_options.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
-#include "prompt/conversation_response.hpp"
+#include "prompt/pam_conversation.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/runtime_session.hpp"
@@ -50,8 +50,10 @@ namespace {
 		if (!config.core.detection_notice) {
 			return;
 		}
-		const int result =
-		    conv_function(PAM_TEXT_INFO, howdy::pam::translate("Attempting facial authentication"));
+		const int result = conv_function({
+		    .style = PAM_TEXT_INFO,
+		    .text  = howdy::pam::translate("Attempting facial authentication"),
+		});
 		if (result != PAM_SUCCESS) {
 			syslog(LOG_ERR, "Failed to send detection notice");
 		}
@@ -103,37 +105,10 @@ namespace howdy::pam::auth_flow {
 
 	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
 	                               const std::string &message) -> void {
-		const int result = conv_function(msg_type, message.c_str());
+		const int result = conv_function({.style = msg_type, .text = message});
 		if (result != PAM_SUCCESS) {
 			syslog(LOG_WARNING, "Failed to send PAM conversation message: %d", result);
 		}
-	}
-
-	auto make_conversation(pam_handle_t *pamh, ConversationFn *conv_function) -> int {
-		struct pam_conv *conv     = nullptr;
-		const void     **conv_ptr = const_cast<const void **>(reinterpret_cast<void **>(&conv));
-		const int        pam_res  = pam_get_item(pamh, PAM_CONV, conv_ptr);
-		if (pam_res != PAM_SUCCESS) {
-			syslog(LOG_ERR, "Failed to acquire conversation");
-			return pam_res;
-		}
-
-		if (conv == nullptr || conv->conv == nullptr) {
-			syslog(LOG_ERR, "PAM conversation is not available");
-			return PAM_SYSTEM_ERR;
-		}
-
-		const struct pam_conv original_conv = *conv;
-		*conv_function = [original_conv](int msg_type, const char *msg_str) -> int {
-			const struct pam_message  msg  = {.msg_style = msg_type, .msg = msg_str};
-			const struct pam_message *msgp = &msg;
-			struct pam_response      *resp = nullptr;
-			const int conv_result = original_conv.conv(1, &msgp, &resp, original_conv.appdata_ptr);
-			howdy::pam::secure_free_conversation_responses(&resp, 1);
-			return conv_result;
-		};
-
-		return PAM_SUCCESS;
 	}
 
 	auto auth_token_present(pam_handle_t *pamh) -> bool {
@@ -275,11 +250,15 @@ namespace howdy::pam::auth_flow {
 			return pam_res;
 		}
 
-		ConversationFn conv_function;
-		pam_res = make_conversation(pamh, &conv_function);
+		howdy::pam::PamConversation conversation;
+		pam_res = howdy::pam::PamConversation::acquire(pamh, &conversation);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
+		const ConversationFn conv_function =
+		    [&conversation](const howdy::pam::ConversationMessage &message) noexcept -> int {
+			return conversation.send(message);
+		};
 
 		send_detection_notice(config, conv_function);
 

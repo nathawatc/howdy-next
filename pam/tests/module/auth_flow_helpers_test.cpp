@@ -768,7 +768,6 @@ namespace {
 	auto expect_conversation_helpers() -> bool {
 		using howdy::pam::auth_flow::auth_token_present;
 		using howdy::pam::auth_flow::ConversationFn;
-		using howdy::pam::auth_flow::make_conversation;
 		using howdy::pam::auth_flow::send_conversation_message;
 
 		bool                 ok            = true;
@@ -776,10 +775,11 @@ namespace {
 		int                  direct_type   = 0;
 		int                  direct_result = PAM_CONV_ERR;
 		std::string          direct_message;
-		const ConversationFn direct_conversation = [&](int msg_type, const char *message) -> int {
+		const ConversationFn direct_conversation =
+		    [&](const howdy::pam::ConversationMessage &message) -> int {
 			++direct_calls;
-			direct_type    = msg_type;
-			direct_message = message == nullptr ? "" : message;
+			direct_type    = message.style;
+			direct_message = message.text;
 			return direct_result;
 		};
 		send_conversation_message(direct_conversation, PAM_ERROR_MSG, "direct message");
@@ -803,36 +803,7 @@ namespace {
 			return false;
 		}
 
-		ConversationFn wrapped_conversation;
-		ok &= expect(make_conversation(pam_handle.get(), &wrapped_conversation) == PAM_SUCCESS,
-		             "acquires PAM conversation");
-
-		state.response_mode = ResponseMode::None;
-		ok &= expect(wrapped_conversation(PAM_TEXT_INFO, "no response") == PAM_SUCCESS,
-		             "wrapped conversation accepts null response");
-		state.response_mode = ResponseMode::Empty;
-		ok &= expect(wrapped_conversation(PAM_ERROR_MSG, "empty response") == PAM_SUCCESS,
-		             "wrapped conversation frees response without text");
-		state.response_mode = ResponseMode::Secret;
-		state.result        = PAM_CONV_ERR;
-		ok &= expect(wrapped_conversation(PAM_PROMPT_ECHO_OFF, "secret response") == PAM_CONV_ERR,
-		             "wrapped conversation preserves callback result");
-		ok &= expect(state.calls == 3 && state.last_msg_type == PAM_PROMPT_ECHO_OFF &&
-		                 state.last_message == "secret response",
-		             "wrapped conversation forwards message fields");
-
 		ok &= expect(!auth_token_present(pam_handle.get()), "missing auth token is absent");
-
-		struct pam_conv unavailable_conversation{
-		    .conv        = nullptr,
-		    .appdata_ptr = nullptr,
-		};
-		ok &= expect(pam_set_item(pam_handle.get(), PAM_CONV, &unavailable_conversation) ==
-		                 PAM_SUCCESS,
-		             "sets unavailable PAM conversation");
-		ConversationFn unavailable_wrapper;
-		ok &= expect(make_conversation(pam_handle.get(), &unavailable_wrapper) == PAM_SYSTEM_ERR,
-		             "rejects unavailable PAM conversation callback");
 
 		return ok;
 	}
@@ -846,10 +817,11 @@ namespace {
 		int                  calls         = 0;
 		int                  last_msg_type = 0;
 		std::string          last_message;
-		const ConversationFn conversation = [&](int msg_type, const char *message) -> int {
+		const ConversationFn conversation =
+		    [&](const howdy::pam::ConversationMessage &message) -> int {
 			++calls;
-			last_msg_type = msg_type;
-			last_message  = message == nullptr ? "" : message;
+			last_msg_type = message.style;
+			last_message  = message.text;
 			return PAM_SUCCESS;
 		};
 
