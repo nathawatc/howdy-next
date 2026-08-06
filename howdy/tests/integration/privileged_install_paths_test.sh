@@ -46,9 +46,11 @@ reject_destination bindir CMAKE_INSTALL_BINDIR /usr/bin
 reject_destination datadir CMAKE_INSTALL_DATADIR /usr/share
 reject_destination localedir CMAKE_INSTALL_LOCALEDIR /usr/share/locale
 reject_destination mandir CMAKE_INSTALL_MANDIR /usr/share/man
+reject_destination licenses HOWDY_LICENSES_INSTALL_DIR /usr/share/licenses/howdy
 
 configure_case accepted \
 	-DCMAKE_INSTALL_BINDIR=bin \
 	-DCMAKE_INSTALL_DATADIR=share \
 	-DCMAKE_INSTALL_LOCALEDIR=share/locale \
-	-DCMAKE_INSTALL_MANDIR=share/man >/dev/null
+	-DCMAKE_INSTALL_MANDIR=share/man \
+	-DHOWDY_LICENSES_INSTALL_DIR=share/licenses/howdy >/dev/null

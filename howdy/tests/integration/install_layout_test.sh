@@ -15,6 +15,7 @@ config_dir=${10}
 config_path=${11}
 models_dir=${12}
 user_models_dir=${13}
+licenses_dir=${14}
 
 strip_trailing_slashes() {
 	path=$1
@@ -163,6 +164,7 @@ verify_layout() {
 	config_path_path=$(resolve_dir "$configured_prefix" "$config_path")
 	models_dir_path=$(resolve_dir "$configured_prefix" "$models_dir")
 	user_models_dir_path=$(resolve_dir "$configured_prefix" "$user_models_dir")
+	licenses_dir_path=$(resolve_dir "$configured_prefix" "$licenses_dir")
 
 	howdy_path="${stage}${bindir_path}/howdy"
 	compare_path="${stage}${helper_dir_path}/howdy-compare"
@@ -175,6 +177,10 @@ verify_layout() {
 	translation_path="${stage}${localedir_path}/th/LC_MESSAGES/howdy.mo"
 	man1_path="${stage}${mandir_path}/man1/howdy.1"
 	man8_path="${stage}${mandir_path}/man8/pam_howdy.8"
+	license_path="${stage}${licenses_dir_path}/LICENSE"
+	third_party_notices_path="${stage}${licenses_dir_path}/THIRD_PARTY_NOTICES.md"
+	yunet_license_path="${stage}${licenses_dir_path}/YUNET-MIT.txt"
+	sface_license_path="${stage}${licenses_dir_path}/SFACE-APACHE-2.0.txt"
 
 	for file_path in \
 		"$howdy_path" \
@@ -185,7 +191,11 @@ verify_layout() {
 		"$completion_path" \
 		"$translation_path" \
 		"$man1_path" \
-		"$man8_path"; do
+		"$man8_path" \
+		"$license_path" \
+		"$third_party_notices_path" \
+		"$yunet_license_path" \
+		"$sface_license_path"; do
 		require_file "$file_path"
 		require_exact_path_once "$stage" f "$file_path"
 	done

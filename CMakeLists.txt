@@ -163,6 +163,12 @@ set(HOWDY_CONFIG_DIR "" CACHE PATH "Howdy configuration directory")
 set(HOWDY_MODELS_DIR "" CACHE PATH "OpenCV ONNX models directory")
 set(HOWDY_USER_MODELS_DIR "" CACHE PATH "User models directory")
 set(HOWDY_LOG_PATH "/var/log/howdy" CACHE PATH "Howdy log directory")
+set(
+	HOWDY_LICENSES_INSTALL_DIR
+	"${CMAKE_INSTALL_DOCDIR}"
+	CACHE STRING
+	"Directory for Howdy license and third-party notice files"
+)
 
 if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 	if(HOWDY_PAM_DIR STREQUAL "")
@@ -205,6 +211,12 @@ set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
 set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
 
 if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
+	set(howdy_licenses_install_path "${HOWDY_LICENSES_INSTALL_DIR}")
+	cmake_path(
+		ABSOLUTE_PATH howdy_licenses_install_path
+		BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}"
+		NORMALIZE
+	)
 	foreach(
 		isolated_path
 		IN ITEMS
@@ -218,6 +230,7 @@ if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 			"${HOWDY_USER_MODELS_DIR}"
 			"${HOWDY_LOG_PATH}"
 			"${HOWDY_HELPER_DIR}"
+			"${howdy_licenses_install_path}"
 	)
 		cmake_path(
 			IS_PREFIX CMAKE_INSTALL_PREFIX "${isolated_path}"
@@ -244,6 +257,15 @@ configure_file(
 	@ONLY
 )
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+
+install(
+	FILES
+		"${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+		"${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+		"${CMAKE_CURRENT_SOURCE_DIR}/third_party/licenses/YUNET-MIT.txt"
+		"${CMAKE_CURRENT_SOURCE_DIR}/third_party/licenses/SFACE-APACHE-2.0.txt"
+	DESTINATION "${HOWDY_LICENSES_INSTALL_DIR}"
+)
 
 set(default_dev_config_path "${HOWDY_CONFIG_PATH}")
 set(installed_config_path "${HOWDY_CONFIG_PATH}")

@@ -59,3 +59,6 @@ This Code of Conduct is adapted from Contributor Covenant, version 2.0:
 Community Impact Guidelines were inspired by Mozilla's code of conduct
 enforcement ladder:
 <https://github.com/mozilla/diversity>
+
+This version was shortened and modified for Howdy Next. Source and licensing
+details are recorded in `THIRD_PARTY_NOTICES.md`.

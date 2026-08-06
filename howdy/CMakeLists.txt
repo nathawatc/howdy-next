@@ -831,6 +831,7 @@ if(BUILD_TESTING)
 			"${HOWDY_CONFIG_PATH}"
 			"${HOWDY_MODELS_DIR}"
 			"${HOWDY_USER_MODELS_DIR}"
+			"${HOWDY_LICENSES_INSTALL_DIR}"
 	)
 	set_tests_properties(native-howdy-install-layout PROPERTIES RUN_SERIAL TRUE)
 	add_test(
