@@ -175,11 +175,11 @@ namespace {
 		         {howdy::native::UserModelStatus::kNoModelDirectory,
 		          {},
 		          std::nullopt,
-		          "No models created yet, can't clear them if they don't exist\n"},
+		          "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kNoModel,
 		          {},
 		          std::nullopt,
-		          "alice has no models or they have been cleared already\n"},
+		          "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kInsecurePath, "storage failed", std::nullopt,
 		          "storage failed\n"},
 		         {howdy::native::UserModelStatus::kOk,
@@ -203,9 +203,9 @@ namespace {
 		auto context          = success_context();
 		auto [result, output] = run_clear(context, {"howdy-clear", "alice"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
-		       expect(output == "This will clear all models for alice\n"
+		       expect(output == "This will remove all face models for alice\n"
 		                        "Continue? [y/N]: "
-		                        "\nInterpreting as a \"NO\", aborting\n",
+		                        "\nNo confirmation received; aborting.\n",
 		              "rejected confirmation preserves output") &&
 		       expect(context.inspect_calls == 1 && context.clear_calls == 0,
 		              "rejected confirmation inspects once and skips clear");
@@ -225,7 +225,7 @@ namespace {
 		                 snapshot.mtime_seconds == 44 && snapshot.mtime_nanosecs == 55 &&
 		                 snapshot.ctime_seconds == 66 && snapshot.ctime_nanosecs == 77,
 		             "accepted confirmation passes complete snapshot unchanged");
-		ok &= expect(output == "This will clear all models for alice\n"
+		ok &= expect(output == "This will remove all face models for alice\n"
 		                       "Continue? [y/N]: \nModels cleared\n",
 		             "accepted confirmation preserves output");
 		return ok;
@@ -244,12 +244,8 @@ namespace {
 		bool ok = true;
 		for (const auto &[status, error, expected] :
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
-		         {howdy::native::UserModelStatus::kNoModelDirectory,
-		          {},
-		          "No models created yet, can't clear them if they don't exist\n"},
-		         {howdy::native::UserModelStatus::kNoModel,
-		          {},
-		          "alice has no models or they have been cleared already\n"},
+		         {howdy::native::UserModelStatus::kNoModelDirectory, {}, "No face models found.\n"},
+		         {howdy::native::UserModelStatus::kNoModel, {}, "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kModelChanged, "model changed",
 		          "model changed\n"},
 		     }) {

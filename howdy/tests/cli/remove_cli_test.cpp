@@ -133,12 +133,11 @@ namespace {
 	}
 
 	auto missing_model_id_prints_guidance() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice"});
-		const std::string expected =
-		    "Please add the ID of the model you want to remove as an argument\n"
-		    "For example:\n\n\thowdy remove 0\n\n"
-		    "You can find the IDs by running:\n\n\thowdy list\n\n";
+		auto context               = success_context();
+		auto [result, output]      = run_remove(context, {"howdy-remove", "alice"});
+		const std::string expected = "Please specify the model ID to remove.\n"
+		                             "For example:\n\n\thowdy remove 0\n\n"
+		                             "You can find the IDs by running:\n\n\thowdy list\n\n";
 		return expect(result == 1, "missing model ID returns 1") &&
 		       expect(output == expected, "missing model ID preserves guidance") &&
 		       expect(context.list_calls == 0 && context.remove_calls == 0,
@@ -151,10 +150,10 @@ namespace {
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
 		         {howdy::native::UserModelStatus::kNoModelDirectory,
 		          {},
-		          "Face models have not been initialized yet, please run:\n\n\thowdy add\n\n"},
+		          "No face models found. Please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kNoModel,
 		          {},
-		          "No face model found for this user alice, please run:\n\n\thowdy add\n\n"},
+		          "No face models found. Please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kParseError, "storage failed",
 		          "storage failed\n"},
 		     }) {
@@ -186,8 +185,8 @@ namespace {
 		auto context          = success_context();
 		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
-		       expect(output == "This will remove the model called \"front door\" for alice\n"
-		                        "Continue? [y/N]: \nInterpreting as a \"NO\", aborting\n",
+		       expect(output == "Model \"front door\" will be removed for alice.\n"
+		                        "Continue? [y/N]: \nNo confirmation received; aborting.\n",
 		              "rejected confirmation preserves prompt and abort message") &&
 		       expect(context.remove_calls == 0, "rejected confirmation skips removal");
 	}
@@ -206,7 +205,7 @@ namespace {
 		                 expected.backend == "sface" && expected.metric == "cosine" &&
 		                 expected.model == "face_recognition_sface_2021dec.onnx",
 		             "accepted confirmation passes complete stale-entry expectation");
-		ok &= expect(output == "This will remove the model called \"front door\" for alice\n"
+		ok &= expect(output == "Model \"front door\" will be removed for alice.\n"
 		                       "Continue? [y/N]: \nRemoved model 3\n",
 		             "accepted confirmation preserves full output");
 		return ok;

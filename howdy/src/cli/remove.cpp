@@ -64,7 +64,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 		return kExitAbort;
 	}
 	if (args->id.empty()) {
-		std::cout << "Please add the ID of the model you want to remove as an argument\n";
+		std::cout << "Please specify the model ID to remove.\n";
 		std::cout << "For example:\n";
 		std::cout << "\n\thowdy remove 0\n\n";
 		std::cout << "You can find the IDs by running:\n";
@@ -74,12 +74,12 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 
 	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "Face models have not been initialized yet, please run:\n";
+		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
 		return kExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << "No face model found for this user " << args->user << ", please run:\n";
+		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
 		return kExitAbort;
 	}
@@ -119,13 +119,12 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	}
 
 	if (!args->yes) {
-		std::cout << "This will remove the model called \"" << found_label << "\" for "
-		          << args->user << "\n";
+		std::cout << "Model \"" << found_label << "\" will be removed for " << args->user << ".\n";
 		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {
-			std::cout << "\nInterpreting as a \"NO\", aborting\n";
+			std::cout << "\nNo confirmation received; aborting.\n";
 			return kExitAbort;
 		}
 		std::cout << "\n";

@@ -527,7 +527,7 @@ auto main() -> int {
 		context.editor    = {};
 		const auto result = run_config(dependencies_for(context));
 		ok &= expect(result.exit_code == 1 && result.output ==
-		                                          "Error: Could not find a suitable text editor.\n"
+		                                          "Error: No suitable text editor found.\n"
 		                                          "Set EDITOR to an absolute executable path, or "
 		                                          "install one of: micro, nano, vi.\n",
 		             "no editor output exact");

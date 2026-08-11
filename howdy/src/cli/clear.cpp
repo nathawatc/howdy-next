@@ -59,11 +59,11 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 
 	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, args->user);
 	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No models created yet, can't clear them if they don't exist\n";
+		std::cout << "No face models found.\n";
 		return kExitAbort;
 	}
 	if (inspection.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << args->user << " has no models or they have been cleared already\n";
+		std::cout << "No face models found.\n";
 		return kExitAbort;
 	}
 	if (inspection.status != howdy::native::UserModelStatus::kOk) {
@@ -76,12 +76,12 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	}
 
 	if (!args->yes) {
-		std::cout << "This will clear all models for " << args->user << "\n";
+		std::cout << "This will remove all face models for " << args->user << "\n";
 		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {
-			std::cout << "\nInterpreting as a \"NO\", aborting\n";
+			std::cout << "\nNo confirmation received; aborting.\n";
 			return kExitAbort;
 		}
 	}
@@ -89,11 +89,11 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	const auto clear_result = dependencies.clear_user_model_entries_if_unchanged(
 	    dependencies.context, args->user, *inspection.snapshot);
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No models created yet, can't clear them if they don't exist\n";
+		std::cout << "No face models found.\n";
 		return kExitAbort;
 	}
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << args->user << " has no models or they have been cleared already\n";
+		std::cout << "No face models found.\n";
 		return kExitAbort;
 	}
 	if (clear_result.status != howdy::native::UserModelStatus::kOk) {

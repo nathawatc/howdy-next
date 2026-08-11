@@ -371,9 +371,9 @@ auto main() -> int {
 		Context context;
 		context.effective_uid = 1000;
 		const auto result     = run(context, {"howdy", "list"});
-		ok &=
-		    expect(result.status == 1 && result.output.contains("Please run this command as root"),
-		           "root check runs before dispatch");
+		ok &= expect(result.status == 1 &&
+		                 result.output.contains("This command requires root privileges."),
+		             "root check runs before dispatch");
 		ok &= expect(context.command_arguments.empty(), "non-root command not dispatched");
 	}
 	{

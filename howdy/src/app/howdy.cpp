@@ -293,12 +293,12 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		parsed.user = dependencies.resolve_user(dependencies.context);
 	}
 	if (parsed.user.empty()) {
-		std::cout << "Could not determine user, please use the --user flag\n";
+		std::cout << "Unable to determine the user; please use --user\n";
 		return 1;
 	}
 
 	if (dependencies.effective_uid(dependencies.context) != 0) {
-		std::cout << "Please run this command as root:\n\n";
+		std::cout << "This command requires root privileges.\n\n";
 		std::cout << "\tsudo howdy";
 		for (int index = 1; index < argc; ++index) {
 			std::cout << " " << argv[index];
@@ -308,8 +308,7 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	if (parsed.user == "root") {
-		std::cout
-		    << "Can't run howdy commands as root, please run this command with the --user flag\n";
+		std::cout << "Running as root requires --user.\n";
 		return 1;
 	}
 

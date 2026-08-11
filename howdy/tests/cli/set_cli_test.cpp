@@ -78,10 +78,9 @@ namespace {
 }  // namespace
 
 auto main() -> int {
-	constexpr auto usage =
-	    "Please add a setting you would like to change and the value to set it to\n"
-	    "For example:\n"
-	    "\n\thowdy set sface_threshold 0.363\n\n";
+	constexpr auto usage = "Please specify a setting and value.\n"
+	                       "For example:\n"
+	                       "\n\thowdy set sface_threshold 0.363\n\n";
 	constexpr auto unsafe_value_error =
 	    "Config values must be single-line scalars and cannot start with [\n";
 	bool ok = true;

@@ -119,7 +119,7 @@ namespace {
 		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
 		auto [result, output] = run_list(context, {"howdy-list", "alice"});
 		return expect(result == 1, "no model directory returns 1") &&
-		       expect(output == "Face models have not been initialized yet, please run:\n"
+		       expect(output == "No face models found. Please run:\n"
 		                        "\n\tsudo howdy -U alice add\n\n",
 		              "no model directory preserves guidance") &&
 		       expect(context.list_calls == 1 && context.listed_user == "alice",
@@ -132,7 +132,7 @@ namespace {
 		auto [normal_result, normal_output] = run_list(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = run_list(context, {"howdy-list", "alice", "--plain"});
 		return expect(normal_result == 1, "no model normal returns 1") &&
-		       expect(normal_output == "No face model found for this user alice, please run:\n"
+		       expect(normal_output == "No face models found. Please run:\n"
 		                               "\n\tsudo howdy -U alice add\n\n",
 		              "no model normal preserves guidance") &&
 		       expect(plain_result == 1, "no model plain returns 1") &&

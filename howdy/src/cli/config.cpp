@@ -52,7 +52,7 @@ auto howdy::native::config_internal::config_main_with_dependencies(
 			std::cout << "No config changes made\n";
 			return kExitOk;
 		case ConfigEditStatus::kEditorUnavailable:
-			std::cout << "Error: Could not find a suitable text editor.\n";
+			std::cout << "Error: No suitable text editor found.\n";
 			std::cout << "Set EDITOR to an absolute executable path, or install one of: micro, "
 			             "nano, vi.\n";
 			return kExitAbort;

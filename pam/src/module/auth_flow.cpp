@@ -37,7 +37,7 @@ namespace {
 	auto get_username(pam_handle_t *pamh, const char **username) -> int {
 		const int result = pam_get_user(pamh, username, nullptr);
 		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
-			syslog(LOG_ERR, "Failed to get username");
+			syslog(LOG_ERR, "Unable to determine the user.");
 			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
 		}
 		return PAM_SUCCESS;
@@ -55,7 +55,7 @@ namespace {
 		    .text  = howdy::pam::translate("Starting face verification"),
 		});
 		if (result != PAM_SUCCESS) {
-			syslog(LOG_ERR, "Failed to send detection notice");
+			syslog(LOG_ERR, "Unable to show the detection notice.");
 		}
 	}
 

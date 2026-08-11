@@ -517,10 +517,10 @@ namespace howdy::pam {
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
-				syslog(LOG_ERR, "Can't spawn the howdy process: %s (%d)", strerror(spawn_result),
+				syslog(LOG_ERR, "Unable to start Howdy: %s (%d)", strerror(spawn_result),
 				       spawn_result);
 			} else {
-				syslog(LOG_ERR, "Can't spawn the howdy process: invalid child pid");
+				syslog(LOG_ERR, "Unable to start Howdy: invalid child pid");
 			}
 			return {
 			    .decision = PromptCoordinatorDecision::kCompareSpawnFailed,

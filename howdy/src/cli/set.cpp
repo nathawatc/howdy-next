@@ -28,7 +28,7 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
                                                              const SetDependencies &dependencies)
     -> int {
 	if (argc < 3) {
-		std::cout << "Please add a setting you would like to change and the value to set it to\n";
+		std::cout << "Please specify a setting and value.\n";
 		std::cout << "For example:\n";
 		std::cout << "\n\thowdy set sface_threshold 0.363\n\n";
 		return kExitAbort;
