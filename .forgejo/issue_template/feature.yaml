@@ -1,7 +1,6 @@
 name: Feature request
 about: Propose a new Howdy Next feature or behavior change.
 title: "feat: "
-ref: master
 labels:
   - kind/feature
 body:
