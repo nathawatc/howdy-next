@@ -15,6 +15,12 @@ Read repo guidelines before issue or PR:
 
 `AGENTS.md`: main contributor reference for layout, build, test, style, commit, PR, security.
 
+## Licensing
+
+By submitting a contribution to Howdy Next, you agree to license your
+contribution under the GNU General Public License v3.0 or later
+(`GPL-3.0-or-later`).
+
 ## Basic Workflow
 
 Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja.

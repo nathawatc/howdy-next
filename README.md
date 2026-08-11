@@ -82,3 +82,14 @@ common issues.
 > Howdy weaker than password. Similar faces or photos may fool it.
 > IR reduces spoofing. Invisible in photos and LCD displays.
 > Never use as sole auth method.
+
+## License
+
+Howdy Next is licensed under the GNU General Public License v3.0 or later
+(`GPL-3.0-or-later`).
+
+Revisions prior to the GPL relicensing commit were released under the MIT
+License.
+
+Third-party materials retain their respective licenses. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
