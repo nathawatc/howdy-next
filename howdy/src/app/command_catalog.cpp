@@ -15,6 +15,7 @@ namespace howdy::native {
 		            .summary     = "Add face model",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kModelUser,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kClear,
@@ -22,6 +23,7 @@ namespace howdy::native {
 		            .summary     = "Remove all models",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kModelUser,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kConfig,
@@ -29,6 +31,7 @@ namespace howdy::native {
 		            .summary     = "Edit config",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kDisable,
@@ -36,6 +39,7 @@ namespace howdy::native {
 		            .summary     = "Enable or disable auth",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kBoolean,
 		        },
 		        {
 		            .id          = CommandId::kDownloadModels,
@@ -43,6 +47,7 @@ namespace howdy::native {
 		            .summary     = "Download ONNX models",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kList,
@@ -50,6 +55,7 @@ namespace howdy::native {
 		            .summary     = "List models",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kModelUser,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kRemove,
@@ -57,6 +63,7 @@ namespace howdy::native {
 		            .summary     = "Remove a specific model",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kModelUser,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kSet,
@@ -64,6 +71,7 @@ namespace howdy::native {
 		            .summary     = "Edit config value",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kSnapshot,
@@ -71,6 +79,7 @@ namespace howdy::native {
 		            .summary     = "Camera preview",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kTest,
@@ -78,6 +87,7 @@ namespace howdy::native {
 		            .summary     = "Test camera",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kModelUser,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		        {
 		            .id          = CommandId::kVersion,
@@ -85,37 +95,46 @@ namespace howdy::native {
 		            .summary     = "Print version",
 		            .kind        = CommandKind::kVersion,
 		            .user_target = UserTargetMode::kNone,
+		            .completion  = CommandCompletionKind::kNone,
 		        },
 		    }};
 
 		constexpr std::array<GlobalOptionDescriptor, 4> kGlobalOptionCatalog = {{
 		    {
-		        .id            = GlobalOptionId::kUser,
-		        .short_name    = "-U",
-		        .long_name     = "--user",
-		        .argument_name = "USER",
-		        .summary       = "Target user for model commands",
+		        .id                   = GlobalOptionId::kUser,
+		        .short_name           = "-U",
+		        .long_name            = "--user",
+		        .argument_name        = "USER",
+		        .summary              = "Target user for model commands",
+		        .completion           = GlobalOptionCompletionKind::kUser,
+		        .parses_after_command = true,
 		    },
 		    {
-		        .id            = GlobalOptionId::kPlain,
-		        .short_name    = "",
-		        .long_name     = "--plain",
-		        .argument_name = "",
-		        .summary       = "Disable interactive prompts where supported",
+		        .id                   = GlobalOptionId::kPlain,
+		        .short_name           = "",
+		        .long_name            = "--plain",
+		        .argument_name        = "",
+		        .summary              = "Disable interactive prompts where supported",
+		        .completion           = GlobalOptionCompletionKind::kNone,
+		        .parses_after_command = true,
 		    },
 		    {
-		        .id            = GlobalOptionId::kYes,
-		        .short_name    = "-y",
-		        .long_name     = "",
-		        .argument_name = "",
-		        .summary       = "Assume yes where supported",
+		        .id                   = GlobalOptionId::kYes,
+		        .short_name           = "-y",
+		        .long_name            = "",
+		        .argument_name        = "",
+		        .summary              = "Assume yes where supported",
+		        .completion           = GlobalOptionCompletionKind::kNone,
+		        .parses_after_command = true,
 		    },
 		    {
-		        .id            = GlobalOptionId::kHelp,
-		        .short_name    = "-h",
-		        .long_name     = "--help",
-		        .argument_name = "",
-		        .summary       = "Show this help",
+		        .id                   = GlobalOptionId::kHelp,
+		        .short_name           = "-h",
+		        .long_name            = "--help",
+		        .argument_name        = "",
+		        .summary              = "Show this help",
+		        .completion           = GlobalOptionCompletionKind::kNone,
+		        .parses_after_command = false,
 		    },
 		}};
 
@@ -138,7 +157,9 @@ namespace howdy::native {
 			const auto &option = kGlobalOptionCatalog[index];
 			const auto  id     = static_cast<std::size_t>(option.id);
 			if (id >= seen_ids.size() || seen_ids[id] ||
-			    (option.short_name.empty() && option.long_name.empty()) || option.summary.empty()) {
+			    (option.short_name.empty() && option.long_name.empty()) || option.summary.empty() ||
+			    (option.completion != GlobalOptionCompletionKind::kNone &&
+			     option.argument_name.empty())) {
 				return false;
 			}
 			seen_ids[id] = true;

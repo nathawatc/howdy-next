@@ -9,31 +9,73 @@ _howdy() {
 		previous_word="${COMP_WORDS[COMP_CWORD - 1]}"
 	fi
 
-	case "$previous_word" in
-		-U|--user)
-			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
-			return 0
-			;;
-	esac
+	local -a global_option_spellings=()
+	local -A global_option_takes_argument=()
+	local -A global_option_parses_after_command=()
+	local -A global_option_completion=()
+	local spelling takes_argument parses_after_command completion_kind
+	while IFS=$'\t' read -r spelling takes_argument parses_after_command completion_kind; do
+		if [[ -n "$spelling" ]]; then
+			global_option_spellings+=("$spelling")
+			global_option_takes_argument["$spelling"]="$takes_argument"
+			global_option_parses_after_command["$spelling"]="$parses_after_command"
+			global_option_completion["$spelling"]="$completion_kind"
+		fi
+	done < <(howdy __complete global-options)
 
 	local command=""
 	local command_index=-1
+	local positional_argument_count=0
+	local completion_disabled=0
 	local index=1
 	while (( index < COMP_CWORD )); do
-		case "${COMP_WORDS[index]}" in
-			-U|--user)
+		local word="${COMP_WORDS[index]}"
+		if [[ "$word" == -* ]] &&
+			[[ -n "${global_option_takes_argument[$word]+set}" ]] &&
+			! (( command_index >= 0 && global_option_parses_after_command[$word] == 0 )); then
+			if [[ "${global_option_parses_after_command[$word]}" == 0 ]]; then
+				completion_disabled=1
+			fi
+			if [[ "${global_option_takes_argument[$word]}" == 1 ]]; then
 				(( index += 2 ))
-				;;
-			-y|--plain)
+			else
 				(( index += 1 ))
-				;;
-			*)
-				command="${COMP_WORDS[index]}"
-				command_index=$index
-				break
-				;;
-		esac
+			fi
+			continue
+		fi
+		if (( command_index < 0 )); then
+			command="$word"
+			command_index=$index
+		else
+			(( positional_argument_count += 1 ))
+		fi
+		(( index += 1 ))
 	done
+
+	if (( completion_disabled )); then
+		return 0
+	fi
+
+	if [[ "$previous_word" == -* ]] &&
+		[[ -n "${global_option_takes_argument[$previous_word]+set}" ]] &&
+		[[ "${global_option_takes_argument[$previous_word]}" == 1 ]]; then
+		if [[ "${global_option_completion[$previous_word]}" == user ]]; then
+			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
+		fi
+		return 0
+	fi
+
+	if [[ "$current_word" == -* ]]; then
+		for spelling in "${global_option_spellings[@]}"; do
+			if (( command_index < 0 )) ||
+				[[ "${global_option_parses_after_command[$spelling]}" == 1 ]]; then
+				if [[ "$spelling" == "$current_word"* ]]; then
+					COMPREPLY+=("$spelling")
+				fi
+			fi
+		done
+		return 0
+	fi
 
 	if (( command_index < 0 )); then
 		local -a commands=()
@@ -46,35 +88,14 @@ _howdy() {
 		return 0
 	fi
 
-	if [[ "$command" != "disable" ]]; then
-		return 0
-	fi
-
-	local positional_argument_count=0
-	index=$((command_index + 1))
-	while (( index < COMP_CWORD )); do
-		case "${COMP_WORDS[index]}" in
-			-U|--user)
-				(( index += 2 ))
-				;;
-			-y|--plain)
-				(( index += 1 ))
-				;;
-			*)
-				(( positional_argument_count += 1 ))
-				(( index += 1 ))
-				;;
-		esac
+	local -a values=()
+	mapfile -t values < <(howdy __complete command-values "$command" "$positional_argument_count")
+	local value
+	for value in "${values[@]}"; do
+		if [[ "$value" == "$current_word"* ]]; then
+			COMPREPLY+=("$value")
+		fi
 	done
-
-	if (( positional_argument_count == 0 )); then
-		local value
-		for value in false true; do
-			if [[ "$value" == "$current_word"* ]]; then
-				COMPREPLY+=("$value")
-			fi
-		done
-	fi
 
 	return 0
 }

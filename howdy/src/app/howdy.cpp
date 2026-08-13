@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -32,10 +33,79 @@ namespace {
 	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
 
+	constexpr std::array<std::string_view, 2> kBooleanCompletionValues{"false", "true"};
+
 	void print_completion_commands() {
 		for (const auto &descriptor : howdy::native::command_catalog()) {
 			std::cout << descriptor.name << '\n';
 		}
+	}
+
+	auto completion_kind_name(howdy::native::GlobalOptionCompletionKind kind) -> std::string_view {
+		switch (kind) {
+			case howdy::native::GlobalOptionCompletionKind::kNone:
+				return "none";
+			case howdy::native::GlobalOptionCompletionKind::kUser:
+				return "user";
+		}
+		return "none";
+	}
+
+	void print_completion_global_options() {
+		for (const auto &option : howdy::native::global_option_catalog()) {
+			for (const auto spelling : {option.short_name, option.long_name}) {
+				if (!spelling.empty()) {
+					std::cout << spelling << '\t' << (!option.argument_name.empty() ? '1' : '0')
+					          << '\t' << (option.parses_after_command ? '1' : '0') << '\t'
+					          << completion_kind_name(option.completion) << '\n';
+				}
+			}
+		}
+	}
+
+	auto parse_completion_position(std::string_view text, std::size_t &position) -> bool {
+		if (text.empty()) {
+			return false;
+		}
+		const auto result = std::from_chars(text.data(), text.data() + text.size(), position);
+		return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+	}
+
+	auto print_completion_command_values(std::string_view command_name, std::size_t position)
+	    -> bool {
+		const auto *descriptor = howdy::native::find_command(command_name);
+		if (descriptor == nullptr || position != 0) {
+			return false;
+		}
+		if (descriptor->completion == howdy::native::CommandCompletionKind::kBoolean) {
+			for (const auto value : kBooleanCompletionValues) {
+				std::cout << value << '\n';
+			}
+		}
+		return true;
+	}
+
+	auto handle_completion_query(const std::vector<std::string> &arguments, bool global_option_seen)
+	    -> int {
+		if (global_option_seen) {
+			return 1;
+		}
+		if (arguments.size() == 1 && arguments.front() == "commands") {
+			print_completion_commands();
+			return 0;
+		}
+		if (arguments.size() == 1 && arguments.front() == "global-options") {
+			print_completion_global_options();
+			return 0;
+		}
+		if (arguments.size() == 3 && arguments.front() == "command-values") {
+			std::size_t position = 0;
+			if (parse_completion_position(arguments[2], position) &&
+			    print_completion_command_values(arguments[1], position)) {
+				return 0;
+			}
+		}
+		return 1;
 	}
 
 	auto format_option_label(const howdy::native::GlobalOptionDescriptor &option) -> std::string {
@@ -158,7 +228,8 @@ namespace {
 	    -> std::optional<int> {
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
-			if (const auto *option = howdy::native::find_global_option(arg); option != nullptr) {
+			if (const auto *option = howdy::native::find_global_option(arg);
+			    option != nullptr && (parsed.command.empty() || option->parses_after_command)) {
 				switch (option->id) {
 					case howdy::native::GlobalOptionId::kUser:
 						parsed.global_option_seen = true;
@@ -177,11 +248,8 @@ namespace {
 						parsed.plain              = true;
 						continue;
 					case howdy::native::GlobalOptionId::kHelp:
-						if (parsed.command.empty()) {
-							print_help();
-							return 0;
-						}
-						break;
+						print_help();
+						return 0;
 					case howdy::native::GlobalOptionId::kCount:
 						break;
 				}
@@ -211,12 +279,7 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	if (parsed.command == "__complete") {
-		if (parsed.global_option_seen || parsed.arguments.size() != 1 ||
-		    parsed.arguments.front() != "commands") {
-			return 1;
-		}
-		print_completion_commands();
-		return 0;
+		return handle_completion_query(parsed.arguments, parsed.global_option_seen);
 	}
 
 	const auto *command_descriptor = howdy::native::find_command(parsed.command);

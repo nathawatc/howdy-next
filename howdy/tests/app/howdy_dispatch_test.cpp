@@ -151,8 +151,78 @@ namespace {
 		};
 	}
 
+	auto expected_global_option_completion() -> std::string {
+		std::string expected;
+		for (const auto &option : howdy::native::global_option_catalog()) {
+			for (const auto spelling : {option.short_name, option.long_name}) {
+				if (!spelling.empty()) {
+					expected += spelling;
+					expected += '\t';
+					expected += option.argument_name.empty() ? '0' : '1';
+					expected += '\t';
+					expected += option.parses_after_command ? '1' : '0';
+					expected += '\t';
+					expected +=
+					    option.completion == howdy::native::GlobalOptionCompletionKind::kUser
+					        ? "user"
+					        : "none";
+					expected += '\n';
+				}
+			}
+		}
+		return expected;
+	}
+
+	auto test_completion_metadata_behavior() -> bool {
+		bool ok = true;
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "__complete", "global-options"});
+			ok &= expect(
+			    result.status == 0 && result.output == expected_global_option_completion() &&
+			        result.error.empty(),
+			    "global option completion query returns catalog aliases and argument metadata");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "global option completion query skips normal dispatch flow");
+		}
+		{
+			Context    context;
+			const auto result =
+			    run(context, {"howdy", "__complete", "command-values", "disable", "0"});
+			ok &= expect(result.status == 0 && result.output == "false\ntrue\n",
+			             "boolean command completion comes from command metadata");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "command value completion skips normal dispatch flow");
+		}
+		{
+			Context    context;
+			const auto result =
+			    run(context, {"howdy", "__complete", "command-values", "version", "0"});
+			ok &= expect(result.status == 0 && result.output.empty(),
+			             "unrelated command has no positional completion values");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "empty command value completion skips normal dispatch flow");
+		}
+		const std::vector<std::vector<std::string>> invalid_queries = {
+		    {"howdy", "__complete", "command-values", "unknown", "0"},
+		    {"howdy", "__complete", "command-values", "disable", "bad"},
+		    {"howdy", "__complete", "command-values", "disable", "1"},
+		};
+		for (const auto &arguments : invalid_queries) {
+			Context    context;
+			const auto result = run(context, arguments);
+			ok &= expect(result.status != 0 && result.output.empty(),
+			             "invalid command completion value query is rejected cleanly");
+		}
+		return ok;
+	}
+
 	auto test_completion_behavior() -> bool {
 		bool ok = true;
+		ok &= test_completion_metadata_behavior();
 
 		{
 			Context    context;
@@ -200,6 +270,8 @@ namespace {
 			    {"howdy", "-y", "__complete", "commands"},
 			    {"howdy", "__complete", "--plain", "commands"},
 			    {"howdy", "__complete", "commands", "--plain"},
+			    {"howdy", "__complete", "global-options", "extra"},
+			    {"howdy", "__complete", "command-values", "disable"},
 			    {"howdy", "__complete", "commands", "-U", "bob"},
 			    {"howdy", "-U", "bob", "__complete", "commands"},
 			    {"howdy", "--user", "bob", "__complete", "commands"},
@@ -215,6 +287,14 @@ namespace {
 				ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),
 				             "malformed completion query does not dispatch a command");
 			}
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "config", "--help"});
+			ok &=
+			    expect(result.status == 0 && context.command_arguments ==
+			                                     std::vector<std::string>{"howdy-config", "--help"},
+			           "help after command remains a positional argument");
 		}
 		{
 			Context    context;

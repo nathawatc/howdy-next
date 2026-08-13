@@ -31,12 +31,23 @@ namespace howdy::native {
 		kModelUser,
 	};
 
+	enum class CommandCompletionKind : std::uint8_t {
+		kNone,
+		kBoolean,
+	};
+
+	enum class GlobalOptionCompletionKind : std::uint8_t {
+		kNone,
+		kUser,
+	};
+
 	struct CommandDescriptor {
-		CommandId        id;
-		std::string_view name;
-		std::string_view summary;
-		CommandKind      kind;
-		UserTargetMode   user_target;
+		CommandId             id;
+		std::string_view      name;
+		std::string_view      summary;
+		CommandKind           kind;
+		UserTargetMode        user_target;
+		CommandCompletionKind completion;
 	};
 
 	enum class GlobalOptionId : std::uint8_t {
@@ -48,11 +59,13 @@ namespace howdy::native {
 	};
 
 	struct GlobalOptionDescriptor {
-		GlobalOptionId   id;
-		std::string_view short_name;
-		std::string_view long_name;
-		std::string_view argument_name;
-		std::string_view summary;
+		GlobalOptionId             id;
+		std::string_view           short_name;
+		std::string_view           long_name;
+		std::string_view           argument_name;
+		std::string_view           summary;
+		GlobalOptionCompletionKind completion;
+		bool                       parses_after_command;
 	};
 
 	[[nodiscard]] auto command_catalog() -> std::span<const CommandDescriptor>;
