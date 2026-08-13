@@ -401,7 +401,8 @@ auto main() -> int {
 	ok &= expect(invalid_config.ok(), "invalid runtime config is syntactically parseable");
 	ok &= expect(howdy::native::validate_runtime_config(invalid_config).has_value(),
 	             "invalid runtime config fails closed before runtime use");
-	ok &= expect(howdy::native::config_timeout_seconds(invalid_config) == 4,
+	ok &= expect(howdy::native::read_runtime_int(
+	                 invalid_config, howdy::native::config_schema::OptionId::video_timeout) == 4,
 	             "unsafe invalid timeout falls back to current default value");
 
 	fs::remove_all(temp_root, ec);

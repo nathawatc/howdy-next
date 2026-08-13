@@ -97,7 +97,8 @@ namespace howdy::native::config_schema {
 		return {.has_string = true, .string = value};
 	}
 
-	inline constexpr float sface_cosine_threshold_maximum = 1.0F;
+	inline constexpr std::string_view sface_cosine_metric            = "cosine";
+	inline constexpr float            sface_cosine_threshold_maximum = 1.0F;
 
 	auto runtime_config_options() -> std::span<const Option>;
 	auto runtime_config_option(OptionId id) -> const Option &;

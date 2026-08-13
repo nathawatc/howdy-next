@@ -31,7 +31,7 @@ namespace howdy::native::config_schema {
 		inline constexpr NumericRange sface_threshold_range{.minimum = 0.0F, .maximum = 4.0F};
 
 		inline constexpr std::array<std::string_view, 3> sface_metric_choices = {
-		    "cosine",
+		    sface_cosine_metric,
 		    "l2",
 		    "l2norm",
 		};

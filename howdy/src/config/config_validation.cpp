@@ -80,13 +80,14 @@ namespace howdy::native {
 				const auto  metric  = normalized_lower(config.get(
 				    std::string(metric_option.section), std::string(metric_option.key),
 				    std::string(config_schema::runtime_default_string(metric_option.id))));
-				const float maximum = metric == "cosine"
+				const float maximum = metric == config_schema::sface_cosine_metric
 				                          ? config_schema::sface_cosine_threshold_maximum
 				                          : option.range.maximum;
 				if (*parsed < option.range.minimum || *parsed > maximum) {
 					return invalid_config_value_message(option.key, value,
-					                                    metric == "cosine" ? "expected range 0..1"
-					                                                       : "expected range 0..4");
+					                                    metric == config_schema::sface_cosine_metric
+					                                        ? "expected range 0..1"
+					                                        : "expected range 0..4");
 				}
 				return std::nullopt;
 			}

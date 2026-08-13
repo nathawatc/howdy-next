@@ -4,163 +4,103 @@
 #include "config/config_schema.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cctype>
+#include <cstdlib>
 #include <string>
+#include <string_view>
 
 namespace howdy::native {
 
-	inline auto bounded_int_or_fallback(int value, int fallback, int minimum, int maximum) -> int {
-		return value >= minimum && value <= maximum ? value : fallback;
+	inline auto runtime_option(config_schema::OptionId id, config_schema::ValueType type)
+	    -> const config_schema::Option & {
+		const auto &option = config_schema::runtime_config_option(id);
+		if (option.type != type) {
+			assert(false);
+			std::abort();
+		}
+		return option;
 	}
 
-	inline auto bounded_float_or_fallback(float value, float fallback, float minimum, float maximum)
+	inline auto read_runtime_bool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
+		const auto &option = runtime_option(id, config_schema::ValueType::boolean);
+		if (!option.fallback.has_boolean) {
+			assert(false);
+			std::abort();
+		}
+		return reader.get_bool(std::string(option.section), std::string(option.key),
+		                       option.fallback.boolean);
+	}
+
+	inline auto read_runtime_int(const ConfigReader &reader, config_schema::OptionId id) -> int {
+		const auto &option = runtime_option(id, config_schema::ValueType::integer);
+		if (!option.fallback.has_integer) {
+			assert(false);
+			std::abort();
+		}
+		const int value = reader.get_int(std::string(option.section), std::string(option.key),
+		                                 option.fallback.integer);
+		if (option.range.has_allowed_value &&
+		    value == static_cast<int>(option.range.allowed_value)) {
+			return value;
+		}
+		return value >= static_cast<int>(option.range.minimum) &&
+		               value <= static_cast<int>(option.range.maximum)
+		           ? value
+		           : option.fallback.integer;
+	}
+
+	inline auto read_runtime_float(const ConfigReader &reader, config_schema::OptionId id)
 	    -> float {
-		return value >= minimum && value <= maximum ? value : fallback;
+		const auto &option = runtime_option(id, config_schema::ValueType::floating_point);
+		if (!option.fallback.has_floating_point) {
+			assert(false);
+			std::abort();
+		}
+		const float value = reader.get_float(std::string(option.section), std::string(option.key),
+		                                     option.fallback.floating_point);
+		return value >= option.range.minimum && value <= option.range.maximum
+		           ? value
+		           : option.fallback.floating_point;
 	}
 
-	inline auto config_option(config_schema::OptionId id) -> const config_schema::Option & {
-		return config_schema::runtime_config_option(id);
-	}
-
-	inline auto config_option_int(const ConfigReader &config, const config_schema::Option &option,
-	                              int fallback) -> int {
-		return config.get_int(std::string(option.section), std::string(option.key), fallback);
-	}
-
-	inline auto config_option_float(const ConfigReader &config, const config_schema::Option &option,
-	                                float fallback) -> float {
-		return config.get_float(std::string(option.section), std::string(option.key), fallback);
-	}
-
-	inline auto config_option_string(const ConfigReader          &config,
-	                                 const config_schema::Option &option,
-	                                 const std::string           &fallback) -> std::string {
-		return config.get(std::string(option.section), std::string(option.key), fallback);
-	}
-
-	inline auto config_timeout_seconds(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_timeout);
-		return bounded_int_or_fallback(
-		    config_option_int(config, option, option.fallback.integer), option.fallback.integer,
-		    static_cast<int>(option.range.minimum), static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_dark_threshold(const ConfigReader &config) -> float {
-		const auto &option   = config_option(config_schema::OptionId::video_dark_threshold);
-		const auto  fallback = config_schema::runtime_default_float(option.id);
-		return bounded_float_or_fallback(config_option_float(config, option, fallback), fallback,
-		                                 option.range.minimum, option.range.maximum);
-	}
-
-	inline auto config_max_height(const ConfigReader &config) -> float {
-		const auto &option = config_option(config_schema::OptionId::video_max_height);
-		return bounded_float_or_fallback(
-		    config_option_float(config, option, option.fallback.floating_point),
-		    option.fallback.floating_point, option.range.minimum, option.range.maximum);
-	}
-
-	inline auto config_rotate_mode(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_rotate);
-		return bounded_int_or_fallback(
-		    config_option_int(config, option, option.fallback.integer), option.fallback.integer,
-		    static_cast<int>(option.range.minimum), static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_exposure(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_exposure);
-		const int   value  = config_option_int(config, option, option.fallback.integer);
-		if (value == -1) {
+	inline auto read_runtime_string(const ConfigReader &reader, config_schema::OptionId id)
+	    -> std::string {
+		const auto &option = runtime_option(id, config_schema::ValueType::string);
+		if (!option.fallback.has_string) {
+			assert(false);
+			std::abort();
+		}
+		auto value = reader.get(std::string(option.section), std::string(option.key),
+		                        std::string(option.fallback.string));
+		if (option.choices.empty() ||
+		    option.special_rule == config_schema::SpecialRule::device_path) {
 			return value;
 		}
-		return bounded_int_or_fallback(value, option.fallback.integer,
-		                               static_cast<int>(option.range.minimum),
-		                               static_cast<int>(option.range.maximum));
-	}
 
-	inline auto config_clahe_clip_limit(const ConfigReader &config) -> float {
-		const auto &option = config_option(config_schema::OptionId::video_clahe_clip_limit);
-		return bounded_float_or_fallback(
-		    config_option_float(config, option, option.fallback.floating_point),
-		    option.fallback.floating_point, option.range.minimum, option.range.maximum);
-	}
-
-	inline auto config_clahe_tile_grid_size(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_clahe_tile_grid_size);
-		return bounded_int_or_fallback(
-		    config_option_int(config, option, option.fallback.integer), option.fallback.integer,
-		    static_cast<int>(option.range.minimum), static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_frame_width(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_frame_width);
-		const int   value  = config_option_int(config, option, option.fallback.integer);
-		if (value == -1) {
-			return value;
-		}
-		return bounded_int_or_fallback(value, option.fallback.integer,
-		                               static_cast<int>(option.range.minimum),
-		                               static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_frame_height(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_frame_height);
-		const int   value  = config_option_int(config, option, option.fallback.integer);
-		if (value == -1) {
-			return value;
-		}
-		return bounded_int_or_fallback(value, option.fallback.integer,
-		                               static_cast<int>(option.range.minimum),
-		                               static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_device_fps(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::video_device_fps);
-		return bounded_int_or_fallback(
-		    config_option_int(config, option, option.fallback.integer), option.fallback.integer,
-		    static_cast<int>(option.range.minimum), static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_yunet_score_threshold(const ConfigReader &config) -> float {
-		const auto &option = config_option(config_schema::OptionId::face_yunet_score_threshold);
-		return bounded_float_or_fallback(
-		    config_option_float(config, option, option.fallback.floating_point),
-		    option.fallback.floating_point, option.range.minimum, option.range.maximum);
-	}
-
-	inline auto config_yunet_nms_threshold(const ConfigReader &config) -> float {
-		const auto &option = config_option(config_schema::OptionId::face_yunet_nms_threshold);
-		return bounded_float_or_fallback(
-		    config_option_float(config, option, option.fallback.floating_point),
-		    option.fallback.floating_point, option.range.minimum, option.range.maximum);
-	}
-
-	inline auto config_yunet_top_k(const ConfigReader &config) -> int {
-		const auto &option = config_option(config_schema::OptionId::face_yunet_top_k);
-		return bounded_int_or_fallback(
-		    config_option_int(config, option, option.fallback.integer), option.fallback.integer,
-		    static_cast<int>(option.range.minimum), static_cast<int>(option.range.maximum));
-	}
-
-	inline auto config_sface_metric(const ConfigReader &config) -> std::string {
-		const auto &option = config_option(config_schema::OptionId::face_sface_metric);
-		auto metric = config_option_string(config, option, std::string(option.fallback.string));
-		std::ranges::transform(metric, metric.begin(), [](unsigned char ch) -> char {
+		std::ranges::transform(value, value.begin(), [](unsigned char ch) -> char {
 			return static_cast<char>(std::tolower(ch));
 		});
-		if (std::ranges::find(option.choices, metric) != option.choices.end()) {
-			return metric;
-		}
-		return std::string(option.fallback.string);
+		return std::ranges::find(option.choices, value) != option.choices.end()
+		           ? value
+		           : std::string(option.fallback.string);
 	}
 
-	inline auto config_sface_threshold(const ConfigReader &config, const std::string &metric)
-	    -> float {
-		const auto &option   = config_option(config_schema::OptionId::face_sface_threshold);
-		const float fallback = config_schema::runtime_default_float(option.id);
-		const float maximum  = metric == "cosine" ? config_schema::sface_cosine_threshold_maximum
-		                                          : option.range.maximum;
-		return bounded_float_or_fallback(config_option_float(config, option, fallback), fallback,
-		                                 option.range.minimum, maximum);
+	inline auto read_sface_threshold(const ConfigReader &reader, std::string_view metric) -> float {
+		const auto &option = runtime_option(config_schema::OptionId::face_sface_threshold,
+		                                    config_schema::ValueType::floating_point);
+		if (option.special_rule != config_schema::SpecialRule::sface_threshold ||
+		    !option.fallback.has_floating_point) {
+			assert(false);
+			std::abort();
+		}
+		const float maximum = metric == config_schema::sface_cosine_metric
+		                          ? config_schema::sface_cosine_threshold_maximum
+		                          : option.range.maximum;
+		const float value   = reader.get_float(std::string(option.section), std::string(option.key),
+		                                       option.fallback.floating_point);
+		return value >= option.range.minimum && value <= maximum ? value
+		                                                         : option.fallback.floating_point;
 	}
 
 }  // namespace howdy::native

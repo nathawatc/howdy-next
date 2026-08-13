@@ -34,19 +34,6 @@ namespace howdy::native {
 			};
 		}
 
-		auto read_runtime_bool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
-			const auto &option = config_schema::runtime_config_option(id);
-			return reader.get_bool(std::string(option.section), std::string(option.key),
-			                       config_schema::runtime_default_bool(id));
-		}
-
-		auto read_runtime_string(const ConfigReader &reader, config_schema::OptionId id)
-		    -> std::string {
-			const auto &option = config_schema::runtime_config_option(id);
-			return reader.get(std::string(option.section), std::string(option.key),
-			                  std::string(config_schema::runtime_default_string(id)));
-		}
-
 		auto populate_runtime_config(const ConfigReader &reader) -> RuntimeConfig {
 			using enum config_schema::OptionId;
 
@@ -58,26 +45,28 @@ namespace howdy::native {
 			config.core.abort_if_lid_closed = read_runtime_bool(reader, core_abort_if_lid_closed);
 			config.core.disabled            = read_runtime_bool(reader, core_disabled);
 
-			config.video.timeout              = config_timeout_seconds(reader);
-			config.video.device_path          = read_runtime_string(reader, video_device_path);
-			config.video.warn_no_device       = read_runtime_bool(reader, video_warn_no_device);
-			config.video.max_height           = config_max_height(reader);
-			config.video.frame_width          = config_frame_width(reader);
-			config.video.frame_height         = config_frame_height(reader);
-			config.video.clahe_enabled        = read_runtime_bool(reader, video_clahe_enabled);
-			config.video.clahe_clip_limit     = config_clahe_clip_limit(reader);
-			config.video.clahe_tile_grid_size = config_clahe_tile_grid_size(reader);
-			config.video.dark_threshold       = config_dark_threshold(reader);
-			config.video.force_mjpeg          = read_runtime_bool(reader, video_force_mjpeg);
-			config.video.exposure             = config_exposure(reader);
-			config.video.device_fps           = config_device_fps(reader);
-			config.video.rotate               = config_rotate_mode(reader);
+			config.video.timeout          = read_runtime_int(reader, video_timeout);
+			config.video.device_path      = read_runtime_string(reader, video_device_path);
+			config.video.warn_no_device   = read_runtime_bool(reader, video_warn_no_device);
+			config.video.max_height       = read_runtime_float(reader, video_max_height);
+			config.video.frame_width      = read_runtime_int(reader, video_frame_width);
+			config.video.frame_height     = read_runtime_int(reader, video_frame_height);
+			config.video.clahe_enabled    = read_runtime_bool(reader, video_clahe_enabled);
+			config.video.clahe_clip_limit = read_runtime_float(reader, video_clahe_clip_limit);
+			config.video.clahe_tile_grid_size =
+			    read_runtime_int(reader, video_clahe_tile_grid_size);
+			config.video.dark_threshold = read_runtime_float(reader, video_dark_threshold);
+			config.video.force_mjpeg    = read_runtime_bool(reader, video_force_mjpeg);
+			config.video.exposure       = read_runtime_int(reader, video_exposure);
+			config.video.device_fps     = read_runtime_int(reader, video_device_fps);
+			config.video.rotate         = read_runtime_int(reader, video_rotate);
 
-			config.face.yunet_score_threshold = config_yunet_score_threshold(reader);
-			config.face.yunet_nms_threshold   = config_yunet_nms_threshold(reader);
-			config.face.yunet_top_k           = config_yunet_top_k(reader);
-			config.face.sface_metric          = config_sface_metric(reader);
-			config.face.sface_threshold = config_sface_threshold(reader, config.face.sface_metric);
+			config.face.yunet_score_threshold =
+			    read_runtime_float(reader, face_yunet_score_threshold);
+			config.face.yunet_nms_threshold = read_runtime_float(reader, face_yunet_nms_threshold);
+			config.face.yunet_top_k         = read_runtime_int(reader, face_yunet_top_k);
+			config.face.sface_metric        = read_runtime_string(reader, face_sface_metric);
+			config.face.sface_threshold = read_sface_threshold(reader, config.face.sface_metric);
 
 			config.snapshots.save_failed     = read_runtime_bool(reader, snapshots_save_failed);
 			config.snapshots.save_successful = read_runtime_bool(reader, snapshots_save_successful);
