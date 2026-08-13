@@ -315,6 +315,17 @@ namespace {
 
 auto howdy::native::howdy_internal::howdy_main_with_dependencies(
     int argc, char **argv, const HowdyDependencies &dependencies) -> int {
+	if (const auto error =
+	        howdy::native::validate_command_catalog(howdy::native::command_catalog(), true)) {
+		std::cerr << "howdy: command catalog validation failed: " << *error << '\n';
+		return 1;
+	}
+	if (const auto error = howdy::native::validate_global_option_catalog(
+	        howdy::native::global_option_catalog(), true)) {
+		std::cerr << "howdy: global option catalog validation failed: " << *error << '\n';
+		return 1;
+	}
+
 	ParsedCommandLine parsed;
 	if (const auto parse_result = parse_command_line(argc, argv, parsed);
 	    parse_result.has_value()) {

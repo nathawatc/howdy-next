@@ -7,7 +7,6 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace {
@@ -45,8 +44,15 @@ auto main(int argc, char **argv) -> int {
 		return 2;
 	}
 
-	if (!howdy::native::global_option_catalog_is_valid()) {
-		std::cerr << "howdy_docs_generator: global option catalog is invalid\n";
+	if (const auto error =
+	        howdy::native::validate_command_catalog(howdy::native::command_catalog(), true)) {
+		std::cerr << "howdy_docs_generator: command catalog validation failed: " << *error << '\n';
+		return 1;
+	}
+	if (const auto error = howdy::native::validate_global_option_catalog(
+	        howdy::native::global_option_catalog(), true)) {
+		std::cerr << "howdy_docs_generator: global option catalog validation failed: " << *error
+		          << '\n';
 		return 1;
 	}
 

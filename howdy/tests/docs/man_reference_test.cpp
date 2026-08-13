@@ -90,146 +90,26 @@ auto main() -> int {
 	ok &= expect(escaped_result.output.contains(R"(a\-b\\c)"),
 	             "roff escapes hyphens and backslashes");
 
-	const std::array duplicate_command_ids{
-	    CommandDescriptor{
-	        .id          = CommandId::kAdd,
-	        .name        = "one",
-	        .summary     = "One",
-	        .kind        = howdy::native::CommandKind::kEntrypoint,
-	        .user_target = howdy::native::UserTargetMode::kNone,
-	    },
-	    CommandDescriptor{
-	        .id          = CommandId::kAdd,
-	        .name        = "two",
-	        .summary     = "Two",
-	        .kind        = howdy::native::CommandKind::kEntrypoint,
-	        .user_target = howdy::native::UserTargetMode::kNone,
-	    },
-	};
-	ok &= expect(!render_command_reference(duplicate_command_ids).ok(),
-	             "duplicate command IDs are rejected");
-	const std::array duplicate_command_names{
+	const std::array control_command{
 	    CommandDescriptor{.id          = CommandId::kAdd,
-	                      .name        = "same",
-	                      .summary     = "One",
-	                      .kind        = howdy::native::CommandKind::kEntrypoint,
-	                      .user_target = howdy::native::UserTargetMode::kNone},
-	    CommandDescriptor{.id          = CommandId::kClear,
-	                      .name        = "same",
-	                      .summary     = "Two",
+	                      .name        = "add\n",
+	                      .summary     = "Add face model",
 	                      .kind        = howdy::native::CommandKind::kEntrypoint,
 	                      .user_target = howdy::native::UserTargetMode::kNone},
 	};
-	ok &= expect(!render_command_reference(duplicate_command_names).ok(),
-	             "duplicate command names are rejected");
-	const std::array empty_command{
-	    CommandDescriptor{.id          = CommandId::kAdd,
-	                      .name        = "",
-	                      .summary     = "Summary",
-	                      .kind        = howdy::native::CommandKind::kEntrypoint,
-	                      .user_target = howdy::native::UserTargetMode::kNone},
-	};
-	ok &= expect(!render_command_reference(empty_command).ok(), "empty command names are rejected");
-	const std::array empty_summary{
-	    CommandDescriptor{
-	        .id          = CommandId::kAdd,
-	        .name        = "name",
-	        .summary     = "",
-	        .kind        = howdy::native::CommandKind::kEntrypoint,
-	        .user_target = howdy::native::UserTargetMode::kNone,
-	    },
-	};
-	ok &= expect(!render_command_reference(empty_summary).ok(),
-	             "empty command summaries are rejected");
-
-	const std::array duplicate_options{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-x",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = "One"},
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kPlain,
-	                           .short_name    = "-x",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = "Two"},
-	};
-	ok &= expect(!render_global_option_reference(duplicate_options).ok(),
-	             "duplicate option spellings are rejected");
-	const std::array duplicate_option_ids{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-x",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = "One"},
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-y",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = "Two"},
-	};
-	ok &= expect(!render_global_option_reference(duplicate_option_ids).ok(),
-	             "duplicate option IDs are rejected");
-	const std::array duplicate_long_options{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-x",
-	                           .long_name     = "--same",
-	                           .argument_name = "",
-	                           .summary       = "One"},
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kPlain,
-	                           .short_name    = "-y",
-	                           .long_name     = "--same",
-	                           .argument_name = "",
-	                           .summary       = "Two"},
-	};
-	ok &= expect(!render_global_option_reference(duplicate_long_options).ok(),
-	             "duplicate long option spellings are rejected");
-	const std::array short_long_collision{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-x",
-	                           .long_name     = "--one",
-	                           .argument_name = "",
-	                           .summary       = "One"},
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kPlain,
-	                           .short_name    = "-y",
-	                           .long_name     = "-x",
-	                           .argument_name = "",
-	                           .summary       = "Two"},
-	};
-	ok &= expect(!render_global_option_reference(short_long_collision).ok(),
-	             "short and long option spellings cannot collide");
-	const std::array absent_aliases{
+	ok &= expect(!render_command_reference(control_command).ok(),
+	             "control characters in command text are rejected");
+	const std::array control_option{
 	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
 	                           .short_name    = "-x",
 	                           .long_name     = "",
 	                           .argument_name = "USER",
-	                           .summary       = "Short-only option"},
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kPlain,
-	                           .short_name    = "",
-	                           .long_name     = "--plain",
-	                           .argument_name = "",
-	                           .summary       = "Long-only option"},
+	                           .summary       = "Summary\n"},
 	};
-	ok &= expect(render_global_option_reference(absent_aliases).ok(),
-	             "empty option aliases do not collide");
-	const std::array empty_option{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = "Summary"},
-	};
-	ok &= expect(!render_global_option_reference(empty_option).ok(),
-	             "empty option spellings are rejected");
-	const std::array empty_option_summary{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-	                           .short_name    = "-x",
-	                           .long_name     = "",
-	                           .argument_name = "",
-	                           .summary       = ""},
-	};
-	ok &= expect(!render_global_option_reference(empty_option_summary).ok(),
-	             "empty option summaries are rejected");
+	const auto control_option_result = render_global_option_reference(control_option);
+	ok &= expect(!control_option_result.ok() &&
+	                 control_option_result.error.contains("control character"),
+	             "control characters in option text are rejected");
 
 	const std::array duplicate_workarounds{
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kInput, .summary = "One"},

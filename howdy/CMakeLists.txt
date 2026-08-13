@@ -34,6 +34,7 @@ endif()
 
 add_library(howdy_man_reference STATIC src/docs/man_reference.cpp)
 howdy_configure_native_target(howdy_man_reference)
+target_link_libraries(howdy_man_reference PUBLIC howdy_command_catalog)
 target_include_directories(
 	howdy_man_reference
 	PUBLIC "${PROJECT_SOURCE_DIR}/pam/include"

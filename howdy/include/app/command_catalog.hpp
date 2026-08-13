@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace howdy::native {
@@ -70,8 +72,13 @@ namespace howdy::native {
 	};
 
 	[[nodiscard]] auto command_catalog() -> std::span<const CommandDescriptor>;
+	[[nodiscard]] auto validate_command_catalog(std::span<const CommandDescriptor> commands,
+	                                            bool require_complete = false)
+	    -> std::optional<std::string>;
 	[[nodiscard]] auto global_option_catalog() -> std::span<const GlobalOptionDescriptor>;
-	[[nodiscard]] auto global_option_catalog_is_valid() -> bool;
+	[[nodiscard]] auto
+	validate_global_option_catalog(std::span<const GlobalOptionDescriptor> options,
+	                               bool require_complete = false) -> std::optional<std::string>;
 	[[nodiscard]] auto find_command(std::string_view name) -> const CommandDescriptor *;
 	[[nodiscard]] auto find_global_option(GlobalOptionId id) -> const GlobalOptionDescriptor *;
 	[[nodiscard]] auto find_global_option(std::string_view spelling)
