@@ -1,3 +1,4 @@
+#include "config/config_schema.hpp"
 #include "config/runtime_config.hpp"
 #include "test_support.hpp"
 
@@ -124,6 +125,21 @@ auto main() -> int {
 		    expect_int_default(video.rotate, video_rotate, source + " rotate matches schema");
 		return matches;
 	};
+	const auto expect_face_defaults = [&](const howdy::native::FaceConfig &face,
+	                                      const std::string               &source) -> bool {
+		bool matches = true;
+		matches &= expect_float_default(face.yunet_score_threshold, face_yunet_score_threshold,
+		                                source + " yunet_score_threshold matches schema");
+		matches &= expect_float_default(face.yunet_nms_threshold, face_yunet_nms_threshold,
+		                                source + " yunet_nms_threshold matches schema");
+		matches &= expect_int_default(face.yunet_top_k, face_yunet_top_k,
+		                              source + " yunet_top_k matches schema");
+		matches &= expect_string_default(face.sface_metric, face_sface_metric,
+		                                 source + " sface_metric matches schema");
+		matches &= expect_float_default(face.sface_threshold, face_sface_threshold,
+		                                source + " sface_threshold matches schema");
+		return matches;
+	};
 
 	ok &= expect_bool_default(defaults.core.detection_notice, core_detection_notice,
 	                          "core detection_notice struct default matches schema");
@@ -137,16 +153,8 @@ auto main() -> int {
 	                          "core disabled struct default matches schema");
 	ok &= expect_video_defaults(howdy::native::default_video_config(), "factory");
 	ok &= expect_video_defaults(defaults.video, "RuntimeConfig default");
-	ok &= expect_float_default(defaults.face.yunet_score_threshold, face_yunet_score_threshold,
-	                           "face yunet_score_threshold struct default matches schema");
-	ok &= expect_float_default(defaults.face.yunet_nms_threshold, face_yunet_nms_threshold,
-	                           "face yunet_nms_threshold struct default matches schema");
-	ok &= expect_int_default(defaults.face.yunet_top_k, face_yunet_top_k,
-	                         "face yunet_top_k struct default matches schema");
-	ok &= expect_string_default(defaults.face.sface_metric, face_sface_metric,
-	                            "face sface_metric struct default matches schema");
-	ok &= expect_float_default(defaults.face.sface_threshold, face_sface_threshold,
-	                           "face sface_threshold struct default matches schema");
+	ok &= expect_face_defaults(howdy::native::default_face_config(), "factory");
+	ok &= expect_face_defaults(defaults.face, "RuntimeConfig default");
 	ok &= expect_bool_default(defaults.snapshots.save_failed, snapshots_save_failed,
 	                          "snapshots save_failed struct default matches schema");
 	ok &= expect_bool_default(defaults.snapshots.save_successful, snapshots_save_successful,
@@ -172,10 +180,10 @@ auto main() -> int {
 	const auto custom = load_config(root, "custom.ini",
 	                                "[core]\n"
 	                                "no_confirmation = false\n"
-	                                "detection_notice = false\n"
+	                                "detection_notice = true\n"
 	                                "abort_if_ssh = false\n"
-	                                "abort_if_lid_closed = false\n"
-	                                "disabled = true\n"
+	                                "abort_if_lid_closed = true\n"
+	                                "disabled = false\n"
 	                                "[video]\n"
 	                                "timeout = 12\n"
 	                                "device_path = none\n"
@@ -185,7 +193,7 @@ auto main() -> int {
 	                                "frame_height = 720\n"
 	                                "clahe_enabled = false\n"
 	                                "clahe_clip_limit = 2.5\n"
-	                                "clahe_tile_grid_size = 12\n"
+	                                "clahe_tile_grid_size = 13\n"
 	                                "dark_threshold = 42.5\n"
 	                                "force_mjpeg = true\n"
 	                                "exposure = 20\n"
@@ -194,33 +202,53 @@ auto main() -> int {
 	                                "[face]\n"
 	                                "yunet_score_threshold = 0.8\n"
 	                                "yunet_nms_threshold = 0.2\n"
-	                                "yunet_top_k = 1000\n"
+	                                "yunet_top_k = 1234\n"
 	                                "sface_metric = l2\n"
 	                                "sface_threshold = 3.5\n"
 	                                "[snapshots]\n"
 	                                "save_failed = true\n"
-	                                "save_successful = true\n"
+	                                "save_successful = false\n"
 	                                "[debug]\n"
 	                                "end_report = true\n");
 	ok &= expect(custom.ok, "custom config loads");
 	ok &= expect(custom.config.has_value(), "custom config has config");
 	if (custom.config.has_value()) {
 		const auto &config = *custom.config;
-		ok &= expect(!config.core.no_confirmation && !config.core.detection_notice &&
-		                 !config.core.abort_if_ssh && !config.core.abort_if_lid_closed &&
-		                 config.core.disabled,
-		             "PAM core values load");
-		ok &= expect(config.video.timeout == 12 && config.video.device_path == "none",
-		             "custom video values load");
-		ok &= expect(nearly_equal(config.video.dark_threshold, 42.5F) &&
-		                 config.video.device_fps == 30,
-		             "custom bounded video values load");
-		ok &= expect(config.face.sface_metric == "l2" &&
+		ok &= expect(config.core.detection_notice && !config.core.no_confirmation &&
+		                 !config.core.abort_if_ssh && config.core.abort_if_lid_closed &&
+		                 !config.core.disabled,
+		             "custom core fields map to their schema options");
+		ok &= expect(
+		    config.video.timeout == 12 && config.video.device_path == "none" &&
+		        !config.video.warn_no_device && nearly_equal(config.video.max_height, 640.0F) &&
+		        config.video.frame_width == 1280 && config.video.frame_height == 720 &&
+		        !config.video.clahe_enabled && nearly_equal(config.video.clahe_clip_limit, 2.5F) &&
+		        config.video.clahe_tile_grid_size == 13 &&
+		        nearly_equal(config.video.dark_threshold, 42.5F) && config.video.force_mjpeg &&
+		        config.video.exposure == 20 && config.video.device_fps == 30 &&
+		        config.video.rotate == 2,
+		    "custom video fields map to their schema options");
+		ok &= expect(nearly_equal(config.face.yunet_score_threshold, 0.8F) &&
+		                 nearly_equal(config.face.yunet_nms_threshold, 0.2F) &&
+		                 config.face.yunet_top_k == 1234 && config.face.sface_metric == "l2" &&
 		                 nearly_equal(config.face.sface_threshold, 3.5F),
-		             "custom face values load");
-		ok &= expect(config.snapshots.save_failed && config.snapshots.save_successful &&
+		             "custom face fields map to their schema options");
+		ok &= expect(config.snapshots.save_failed && !config.snapshots.save_successful &&
 		                 config.debug.end_report,
-		             "custom snapshot and debug values load");
+		             "custom snapshot and debug fields map to their schema options");
+	}
+
+	const auto boolean_mapping =
+	    load_config(root, "boolean-mapping.ini",
+	                "[core]\nno_confirmation = true\nabort_if_ssh = false\n"
+	                "[video]\nwarn_no_device = true\nclahe_enabled = false\n");
+	ok &= expect(boolean_mapping.ok && boolean_mapping.config.has_value(),
+	             "same-type boolean mapping config loads");
+	if (boolean_mapping.config.has_value()) {
+		const auto &config = *boolean_mapping.config;
+		ok &= expect(config.core.no_confirmation && !config.core.abort_if_ssh &&
+		                 config.video.warn_no_device && !config.video.clahe_enabled,
+		             "same-type boolean fields map to distinct schema options");
 	}
 
 	const auto cosine =
@@ -245,6 +273,15 @@ auto main() -> int {
 		const auto &config = *l2.config;
 		ok &= expect(nearly_equal(config.face.sface_threshold, 4.0F),
 		             "l2 threshold up to four loads");
+	}
+
+	const auto sentinel =
+	    load_config(root, "sentinel.ini", "[video]\nframe_width = -1\nexposure = -1\n");
+	ok &= expect(sentinel.ok && sentinel.config.has_value(), "allowed video sentinels load");
+	if (sentinel.config.has_value()) {
+		const auto &config = *sentinel.config;
+		ok &= expect(config.video.frame_width == -1 && config.video.exposure == -1,
+		             "allowed video sentinels map to correct fields");
 	}
 
 	const auto invalid_fps = load_config(root, "invalid-fps.ini", "[video]\ndevice_fps = -1\n");
