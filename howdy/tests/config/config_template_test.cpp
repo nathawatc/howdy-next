@@ -44,10 +44,10 @@ namespace {
 		    std::span<const Option>(options));
 	}
 
-	auto rejects(const auto &options, std::string_view error_text) -> bool {
+	auto rejects_rendering_error(const auto &options, std::string_view error_text) -> bool {
 		const auto result = render(options);
-		return expect(!result.ok, "malformed schema is rejected") &&
-		       expect(result.error.find(error_text) != std::string::npos,
+		return expect(!result.ok, "rendering constraint is rejected") &&
+		       expect(result.error.contains(error_text),
 		              "renderer reports: " + std::string(error_text));
 	}
 
@@ -140,51 +140,23 @@ auto main() -> int {
 		             "production rendering is deterministic");
 	}
 
-	const std::array duplicate_ids = {
-	    synthetic_option(OptionId::core_detection_notice, "one", "first", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "First option."),
-	    synthetic_option(OptionId::core_detection_notice, "one", "second", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "Second option."),
-	};
-	ok &= rejects(duplicate_ids, "duplicate option id");
-
-	const std::array duplicate_keys = {
-	    synthetic_option(OptionId::core_detection_notice, "one", "same", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "First option."),
-	    synthetic_option(OptionId::core_no_confirmation, "one", "same", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "Second option."),
-	};
-	ok &= rejects(duplicate_keys, "duplicate section.key");
-
-	const std::array mismatched_fallback = {
-	    synthetic_option(OptionId::core_detection_notice, "one", "value", ValueType::boolean,
-	                     howdy::native::config_schema::int_default(1), "Boolean option."),
-	};
-	ok &= rejects(mismatched_fallback, "fallback type mismatch");
-
-	const std::array missing_fallback = {
-	    synthetic_option(OptionId::core_detection_notice, "one", "value", ValueType::integer,
-	                     RuntimeDefault{}, "Integer option."),
-	};
-	ok &= rejects(missing_fallback, "fallback type mismatch");
-
-	const std::array empty_section = {
-	    synthetic_option(OptionId::core_detection_notice, "", "value", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "Boolean option."),
-	};
-	ok &= rejects(empty_section, "invalid or empty section");
-
-	const std::array empty_key = {
-	    synthetic_option(OptionId::core_detection_notice, "one", "", ValueType::boolean,
-	                     howdy::native::config_schema::bool_default(false), "Boolean option."),
-	};
-	ok &= rejects(empty_key, "invalid or empty key");
-
 	const std::array empty_description = {
 	    synthetic_option(OptionId::core_detection_notice, "one", "value", ValueType::boolean,
 	                     howdy::native::config_schema::bool_default(false), ""),
 	};
-	ok &= rejects(empty_description, "empty or unsafe description");
+	ok &= rejects_rendering_error(empty_description, "empty or unsafe description");
+
+	const std::array unsafe_section = {
+	    synthetic_option(OptionId::core_detection_notice, "one]", "value", ValueType::boolean,
+	                     howdy::native::config_schema::bool_default(false), "Boolean option."),
+	};
+	ok &= rejects_rendering_error(unsafe_section, "invalid or empty section");
+
+	const std::array unsafe_key = {
+	    synthetic_option(OptionId::core_detection_notice, "one", "value=other", ValueType::boolean,
+	                     howdy::native::config_schema::bool_default(false), "Boolean option."),
+	};
+	ok &= rejects_rendering_error(unsafe_key, "invalid or empty key");
 
 	for (const auto *const unsafe : {"line\nbreak", "value=other", "value # comment"}) {
 		const std::array unsafe_string = {
@@ -192,7 +164,7 @@ auto main() -> int {
 		                     howdy::native::config_schema::string_default(unsafe),
 		                     "String option."),
 		};
-		ok &= rejects(unsafe_string, "cannot serialize fallback");
+		ok &= rejects_rendering_error(unsafe_string, "cannot serialize fallback");
 	}
 
 	const std::array repeated_section = {
@@ -203,10 +175,10 @@ auto main() -> int {
 	    synthetic_option(OptionId::core_abort_if_ssh, "one", "third", ValueType::boolean,
 	                     howdy::native::config_schema::bool_default(false), "Third option."),
 	};
-	ok &= rejects(repeated_section, "section reused non-contiguously");
+	ok &= rejects_rendering_error(repeated_section, "section reused non-contiguously");
 
 	const std::array<Option, 0> empty_schema = {};
-	ok &= rejects(empty_schema, "schema has no options");
+	ok &= rejects_rendering_error(empty_schema, "schema has no options");
 
 	return ok ? 0 : 1;
 }

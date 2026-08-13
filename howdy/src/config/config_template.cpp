@@ -29,7 +29,7 @@ namespace howdy::native::config_template {
 		}
 
 		auto is_safe_ini_name(std::string_view value) -> bool {
-			if (value.empty() || is_ascii_space(value.front()) || is_ascii_space(value.back())) {
+			if (!value.empty() && (is_ascii_space(value.front()) || is_ascii_space(value.back()))) {
 				return false;
 			}
 			return std::ranges::all_of(value, [](const char raw_character) -> bool {
@@ -57,29 +57,6 @@ namespace howdy::native::config_template {
 				       character != '#' && character != '=' && character != '[' &&
 				       character != ']' && character != '\'' && character != '"';
 			});
-		}
-
-		auto fallback_matches_type(const config_schema::Option &option) -> bool {
-			const auto &fallback   = option.fallback;
-			const auto  flag_count = static_cast<unsigned>(fallback.has_boolean) +
-			                         static_cast<unsigned>(fallback.has_integer) +
-			                         static_cast<unsigned>(fallback.has_floating_point) +
-			                         static_cast<unsigned>(fallback.has_string);
-			if (flag_count != 1U) {
-				return false;
-			}
-
-			switch (option.type) {
-				case config_schema::ValueType::boolean:
-					return fallback.has_boolean;
-				case config_schema::ValueType::integer:
-					return fallback.has_integer;
-				case config_schema::ValueType::floating_point:
-					return fallback.has_floating_point;
-				case config_schema::ValueType::string:
-					return fallback.has_string;
-			}
-			return false;
 		}
 
 		auto format_integer(int value) -> std::optional<std::string> {
@@ -122,23 +99,9 @@ namespace howdy::native::config_template {
 			return std::nullopt;
 		}
 
-		auto special_rule_is_known(config_schema::SpecialRule rule) -> bool {
-			switch (rule) {
-				case config_schema::SpecialRule::none:
-				case config_schema::SpecialRule::device_path:
-				case config_schema::SpecialRule::sface_threshold:
-					return true;
-			}
-			return false;
-		}
-
-		auto validate_option_metadata(const config_schema::Option &option)
+		auto validate_rendering_constraints(const config_schema::Option &option)
 		    -> std::optional<std::string> {
 			const auto name = option_name(option);
-			if (static_cast<std::size_t>(option.id) >=
-			    static_cast<std::size_t>(config_schema::OptionId::count)) {
-				return "option has invalid id: " + name;
-			}
 			if (!is_safe_ini_name(option.section)) {
 				return "invalid or empty section: " + name;
 			}
@@ -151,20 +114,7 @@ namespace howdy::native::config_template {
 			if (option.description == option.key) {
 				return "description repeats key: " + name;
 			}
-			if (!fallback_matches_type(option)) {
-				return "fallback type mismatch: " + name;
-			}
-			if (!special_rule_is_known(option.special_rule)) {
-				return "unknown special rule: " + name;
-			}
 			return std::nullopt;
-		}
-
-		auto has_duplicate_key(std::span<const config_schema::Option> previous_options,
-		                       const config_schema::Option           &option) -> bool {
-			return std::ranges::any_of(previous_options, [&option](const auto &previous) -> bool {
-				return previous.section == option.section && previous.key == option.key;
-			});
 		}
 
 		auto section_reuse_error(const std::vector<std::string_view> &seen_sections,
@@ -184,13 +134,14 @@ namespace howdy::native::config_template {
 
 	auto render_default_config(std::span<const config_schema::Option> options)
 	    -> ConfigTemplateRenderResult {
+		if (const auto validation = config_schema::validate_options(options)) {
+			return failure(*validation);
+		}
 		if (options.empty()) {
 			return failure("config schema has no options");
 		}
 
-		std::vector<config_schema::OptionId> seen_ids;
-		std::vector<std::string_view>        seen_sections;
-		seen_ids.reserve(options.size());
+		std::vector<std::string_view> seen_sections;
 		seen_sections.reserve(options.size());
 
 		std::string      rendered;
@@ -199,16 +150,8 @@ namespace howdy::native::config_template {
 			const auto &option = options[index];
 			const auto  name   = option_name(option);
 
-			if (const auto error = validate_option_metadata(option)) {
+			if (const auto error = validate_rendering_constraints(option)) {
 				return failure(*error);
-			}
-			if (std::ranges::find(seen_ids, option.id) != seen_ids.end()) {
-				return failure("duplicate option id: " + name);
-			}
-			seen_ids.push_back(option.id);
-
-			if (has_duplicate_key(options.first(index), option)) {
-				return failure("duplicate section.key: " + name);
 			}
 
 			const bool starts_section = index == 0 || option.section != current_section;

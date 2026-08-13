@@ -41,16 +41,16 @@ namespace {
 		constexpr auto option_count = static_cast<std::size_t>(OptionId::count);
 		auto           seen         = std::array<bool, option_count>{};
 
+		const auto validation = howdy::native::config_schema::validate_options(options);
+		ok &= expect(!validation.has_value(), "production schema passes canonical validation");
 		ok &= expect(options.size() == option_count, "schema option count matches OptionId::count");
+		if (validation.has_value()) {
+			return ok;
+		}
 		for (const auto &option : options) {
 			const auto index = static_cast<std::size_t>(std::to_underlying(option.id));
 			const auto name  = option_name(option);
-			ok &= expect(index < option_count, "schema option id is in range: " + name);
-			if (index >= option_count) {
-				continue;
-			}
-			ok &= expect(!seen[index], "schema option id is unique: " + name);
-			seen[index] = true;
+			seen[index]      = true;
 
 			const auto &resolved = howdy::native::config_schema::runtime_config_option(option.id);
 			ok &= expect(&resolved == &option, "schema option id resolves same option: " + name);

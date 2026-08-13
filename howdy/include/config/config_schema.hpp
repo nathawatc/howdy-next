@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 
 namespace howdy::native::config_schema {
@@ -100,6 +102,7 @@ namespace howdy::native::config_schema {
 	inline constexpr std::string_view sface_cosine_metric            = "cosine";
 	inline constexpr float            sface_cosine_threshold_maximum = 1.0F;
 
+	auto validate_options(std::span<const Option> options) -> std::optional<std::string>;
 	auto runtime_config_options() -> std::span<const Option>;
 	auto runtime_config_option(OptionId id) -> const Option &;
 	auto runtime_config_option(std::string_view section, std::string_view key) -> const Option *;

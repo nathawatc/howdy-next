@@ -450,6 +450,13 @@ if(BUILD_TESTING)
 	add_test(NAME native-config-utils COMMAND howdy_config_utils_test)
 
 	add_executable(
+		howdy_config_schema_test tests/config/config_schema_test.cpp
+	)
+	howdy_configure_native_test_target(howdy_config_schema_test)
+	target_link_libraries(howdy_config_schema_test PRIVATE howdy_config_schema)
+	add_test(NAME native-config-schema COMMAND howdy_config_schema_test)
+
+	add_executable(
 		howdy_config_template_test tests/config/config_template_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_config_template_test)
