@@ -44,7 +44,7 @@ ctest --preset debug
 ### Installed PAM/setuid End-to-End Test
 
 Privileged installed-path coverage stays opt-in. Build as normal user with dedicated
-compile-time prefix, then run only test through `sudo`:
+compile-time prefix, then run only test through `run0`:
 
 ```sh
 cmake -S . -B build-e2e \
@@ -53,13 +53,13 @@ cmake -S . -B build-e2e \
     -DHOWDY_WARNINGS_AS_ERRORS=ON \
     -DHOWDY_ENABLE_PRIVILEGED_TESTS=ON
 cmake --build build-e2e --parallel "$(nproc)"
-sudo --preserve-env=HOWDY_E2E_USER \
+run0 --setenv=HOWDY_E2E_USER="$USER" \
     ctest --test-dir build-e2e --output-on-failure -R '^installed-pam-setuid-e2e$'
 ```
 
-Set `HOWDY_E2E_USER` to existing non-root account. Without it, test uses valid
-non-root `SUDO_USER`. Test installs temporarily below configured `/opt` prefix and
-removes installation and runtime staging on exit.
+Set `HOWDY_E2E_USER` to existing non-root account. Test also accepts valid non-root `SUDO_USER`
+supplied by privilege wrappers. Test installs temporarily below configured `/opt` prefix and removes
+installation and runtime staging on exit.
 
 ### Translation Code Generation
 

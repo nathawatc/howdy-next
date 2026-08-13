@@ -147,7 +147,7 @@ if [[ ${HOWDY_E2E_MOUNT_NAMESPACE:-0} != 1 ]]; then
 	exec unshare --mount --propagation private env HOWDY_E2E_MOUNT_NAMESPACE=1 bash "$0" "$@"
 fi
 selected_user=${HOWDY_E2E_USER:-${SUDO_USER:-}}
-[[ -n $selected_user ]] || skip "set HOWDY_E2E_USER or invoke through sudo with valid SUDO_USER"
+[[ -n $selected_user ]] || skip "set HOWDY_E2E_USER or use a wrapper that supplies valid SUDO_USER"
 passwd_record=$(getent passwd "$selected_user") || skip "selected account does not exist"
 IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<<"$passwd_record"
 [[ $account_name == "$selected_user" ]] || fail "selected account name mismatch"

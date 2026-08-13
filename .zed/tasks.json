@@ -202,7 +202,7 @@
 	},
 	{
 		"label": "CMake: Test Privileged E2E",
-		"command": "HOWDY_E2E_USER=\"$USER\" sudo --preserve-env=HOWDY_E2E_USER ctest --test-dir build-e2e --output-on-failure -L privileged",
+		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --test-dir build-e2e --output-on-failure -L privileged",
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
