@@ -4,6 +4,7 @@
 #include "cli/clear_cli.hpp"
 #include "cli/list_cli.hpp"
 #include "cli/remove_cli.hpp"
+#include "config/config_schema.hpp"
 #include "test_support.hpp"
 #include "version.hpp"
 
@@ -151,6 +152,31 @@ namespace {
 		};
 	}
 
+	auto expected_runtime_config_keys() -> std::string {
+		std::string expected;
+		for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			expected += option.key;
+			expected += '\n';
+		}
+		return expected;
+	}
+
+	auto expected_config_option_values(const howdy::native::config_schema::Option &option)
+	    -> std::string {
+		std::string expected;
+		if (!option.choices.empty()) {
+			for (const auto choice : option.choices) {
+				expected += choice;
+				expected += '\n';
+			}
+			return expected;
+		}
+		if (option.type == howdy::native::config_schema::ValueType::boolean) {
+			return "false\ntrue\n";
+		}
+		return {};
+	}
+
 	auto expected_global_option_completion() -> std::string {
 		std::string expected;
 		for (const auto &option : howdy::native::global_option_catalog()) {
@@ -195,6 +221,43 @@ namespace {
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 			                 !context.command_id.has_value(),
 			             "command value completion skips normal dispatch flow");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "__complete", "command-values", "set", "0"});
+			ok &= expect(result.status == 0 && result.output == expected_runtime_config_keys(),
+			             "set key completion follows runtime config schema order");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "set key completion skips normal dispatch flow");
+		}
+		for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			Context    context;
+			const auto result = run(context, {"howdy", "__complete", "command-values", "set", "1",
+			                                  std::string(option.key)});
+			ok &= expect(
+			    result.status == 0 && result.output == expected_config_option_values(option),
+			    "set value completion follows schema metadata for " + std::string(option.key));
+		}
+		{
+			Context    context;
+			const auto result =
+			    run(context, {"howdy", "__complete", "command-values", "set", "1", "unknown_key"});
+			ok &= expect(result.status == 0 && result.output.empty(),
+			             "unknown set key has no completion candidates");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "__complete", "command-values", "set", "1"});
+			ok &= expect(result.status != 0 && result.output.empty(),
+			             "set value completion without key is malformed");
+		}
+		{
+			Context    context;
+			const auto result = run(
+			    context, {"howdy", "__complete", "command-values", "set", "1", "timeout", "extra"});
+			ok &= expect(result.status != 0 && result.output.empty(),
+			             "set value completion with malformed context is rejected");
 		}
 		{
 			Context    context;

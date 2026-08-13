@@ -26,6 +26,7 @@ _howdy() {
 	local command=""
 	local command_index=-1
 	local positional_argument_count=0
+	local -a positional_arguments=()
 	local completion_disabled=0
 	local index=1
 	while (( index < COMP_CWORD )); do
@@ -48,6 +49,7 @@ _howdy() {
 			command_index=$index
 		else
 			(( positional_argument_count += 1 ))
+			positional_arguments+=("$word")
 		fi
 		(( index += 1 ))
 	done
@@ -89,7 +91,9 @@ _howdy() {
 	fi
 
 	local -a values=()
-	mapfile -t values < <(howdy __complete command-values "$command" "$positional_argument_count")
+	mapfile -t values < <(
+		howdy __complete command-values "$command" "$positional_argument_count" "${positional_arguments[@]}"
+	)
 	local value
 	for value in "${values[@]}"; do
 		if [[ "$value" == "$current_word"* ]]; then

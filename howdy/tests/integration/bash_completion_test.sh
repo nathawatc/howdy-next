@@ -95,6 +95,11 @@ assert_completion_list 'empty disable value' $'false\ntrue' howdy disable ""
 assert_single_completion 'disable false value' false howdy disable f
 assert_single_completion 'disable true value' true howdy disable t
 
+assert_contains_completion 'set key' detection_notice howdy set ""
+assert_completion_list 'set key prefix' $'sface_metric\nsface_threshold' howdy set sfa
+assert_completion_list 'set boolean value' $'false\ntrue' howdy set detection_notice ""
+assert_completion_list 'set choice values' $'cosine\nl2\nl2norm' howdy set sface_metric ""
+
 assert_no_completion() {
 	local label=$1
 	shift
@@ -109,6 +114,8 @@ assert_no_completion() {
 	fi
 }
 
+assert_no_completion 'set numeric value' howdy set timeout ""
+assert_no_completion 'set floating-point value' howdy set sface_threshold ""
 assert_no_completion 'version has no values' howdy version ""
 assert_no_completion 'help is not an option after command' howdy config --help ""
 assert_no_completion 'help disables completion after command' howdy config --help "f"

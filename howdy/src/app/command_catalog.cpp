@@ -71,7 +71,7 @@ namespace howdy::native {
 		            .summary     = "Edit config value",
 		            .kind        = CommandKind::kEntrypoint,
 		            .user_target = UserTargetMode::kNone,
-		            .completion  = CommandCompletionKind::kNone,
+		            .completion  = CommandCompletionKind::kConfigSet,
 		        },
 		        {
 		            .id          = CommandId::kSnapshot,

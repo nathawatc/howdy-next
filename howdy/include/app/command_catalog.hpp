@@ -34,6 +34,7 @@ namespace howdy::native {
 	enum class CommandCompletionKind : std::uint8_t {
 		kNone,
 		kBoolean,
+		kConfigSet,
 	};
 
 	enum class GlobalOptionCompletionKind : std::uint8_t {

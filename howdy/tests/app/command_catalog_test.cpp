@@ -107,10 +107,12 @@ auto main() -> int {
 	    CommandKind::kEntrypoint, CommandKind::kVersion,
 	};
 	constexpr std::array expected_completions{
-	    CommandCompletionKind::kNone,    CommandCompletionKind::kNone, CommandCompletionKind::kNone,
-	    CommandCompletionKind::kBoolean, CommandCompletionKind::kNone, CommandCompletionKind::kNone,
-	    CommandCompletionKind::kNone,    CommandCompletionKind::kNone, CommandCompletionKind::kNone,
-	    CommandCompletionKind::kNone,    CommandCompletionKind::kNone,
+	    CommandCompletionKind::kNone, CommandCompletionKind::kNone,
+	    CommandCompletionKind::kNone, CommandCompletionKind::kBoolean,
+	    CommandCompletionKind::kNone, CommandCompletionKind::kNone,
+	    CommandCompletionKind::kNone, CommandCompletionKind::kConfigSet,
+	    CommandCompletionKind::kNone, CommandCompletionKind::kNone,
+	    CommandCompletionKind::kNone,
 	};
 	constexpr std::array expected_user_targets{
 	    UserTargetMode::kModelUser, UserTargetMode::kModelUser, UserTargetMode::kNone,

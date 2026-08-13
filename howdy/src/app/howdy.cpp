@@ -11,6 +11,7 @@
 #include "cli/set_cli.hpp"
 #include "cli/snapshot_cli.hpp"
 #include "cli/test_cli.hpp"
+#include "config/config_schema.hpp"
 #include "support/user_names.hpp"
 #include "version.hpp"
 
@@ -23,6 +24,7 @@
 #include <limits>
 #include <optional>
 #include <pwd.h>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -71,15 +73,59 @@ namespace {
 		return result.ec == std::errc{} && result.ptr == text.data() + text.size();
 	}
 
-	auto print_completion_command_values(std::string_view command_name, std::size_t position)
+	void print_config_option_values(const howdy::native::config_schema::Option &option) {
+		if (!option.choices.empty()) {
+			for (const auto choice : option.choices) {
+				std::cout << choice << '\n';
+			}
+			return;
+		}
+		switch (option.type) {
+			case howdy::native::config_schema::ValueType::boolean:
+				for (const auto value : kBooleanCompletionValues) {
+					std::cout << value << '\n';
+				}
+				return;
+			case howdy::native::config_schema::ValueType::integer:
+			case howdy::native::config_schema::ValueType::floating_point:
+			case howdy::native::config_schema::ValueType::string:
+				return;
+		}
+	}
+
+	auto print_completion_command_values(std::string_view command_name, std::size_t position,
+	                                     std::span<const std::string> previous_positionals)
 	    -> bool {
 		const auto *descriptor = howdy::native::find_command(command_name);
-		if (descriptor == nullptr || position != 0) {
+		if (descriptor == nullptr || previous_positionals.size() != position) {
 			return false;
 		}
 		if (descriptor->completion == howdy::native::CommandCompletionKind::kBoolean) {
+			if (position != 0) {
+				return false;
+			}
 			for (const auto value : kBooleanCompletionValues) {
 				std::cout << value << '\n';
+			}
+			return true;
+		}
+		if (descriptor->completion != howdy::native::CommandCompletionKind::kConfigSet) {
+			return position == 0;
+		}
+		if (position == 0) {
+			for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+				std::cout << option.key << '\n';
+			}
+			return true;
+		}
+		if (position != 1) {
+			return false;
+		}
+		const auto &key = previous_positionals.front();
+		for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			if (option.key == key) {
+				print_config_option_values(option);
+				break;
 			}
 		}
 		return true;
@@ -98,10 +144,12 @@ namespace {
 			print_completion_global_options();
 			return 0;
 		}
-		if (arguments.size() == 3 && arguments.front() == "command-values") {
+		if (arguments.size() >= 3 && arguments.front() == "command-values") {
 			std::size_t position = 0;
 			if (parse_completion_position(arguments[2], position) &&
-			    print_completion_command_values(arguments[1], position)) {
+			    position == arguments.size() - 3 &&
+			    print_completion_command_values(
+			        arguments[1], position, std::span<const std::string>(arguments).subspan(3))) {
 				return 0;
 			}
 		}
