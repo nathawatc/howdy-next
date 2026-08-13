@@ -18,13 +18,25 @@ namespace howdy::native {
 		kSnapshot,
 		kTest,
 		kVersion,
+		kCount,
+	};
+
+	enum class CommandKind : std::uint8_t {
+		kEntrypoint,
+		kVersion,
+	};
+
+	enum class UserTargetMode : std::uint8_t {
+		kNone,
+		kModelUser,
 	};
 
 	struct CommandDescriptor {
 		CommandId        id;
 		std::string_view name;
 		std::string_view summary;
-		bool             accepts_user_argument;
+		CommandKind      kind;
+		UserTargetMode   user_target;
 	};
 
 	enum class GlobalOptionId : std::uint8_t {

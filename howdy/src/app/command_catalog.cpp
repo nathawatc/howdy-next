@@ -7,74 +7,86 @@ namespace howdy::native {
 
 	namespace {
 
-		constexpr std::array<CommandDescriptor, 11> kCommandCatalog = {{
-		    {
-		        .id                    = CommandId::kAdd,
-		        .name                  = "add",
-		        .summary               = "Add face model",
-		        .accepts_user_argument = true,
-		    },
-		    {
-		        .id                    = CommandId::kClear,
-		        .name                  = "clear",
-		        .summary               = "Remove all models",
-		        .accepts_user_argument = true,
-		    },
-		    {
-		        .id                    = CommandId::kConfig,
-		        .name                  = "config",
-		        .summary               = "Edit config",
-		        .accepts_user_argument = false,
-		    },
-		    {
-		        .id                    = CommandId::kDisable,
-		        .name                  = "disable",
-		        .summary               = "Enable or disable auth",
-		        .accepts_user_argument = false,
-		    },
-		    {
-		        .id                    = CommandId::kDownloadModels,
-		        .name                  = "download-models",
-		        .summary               = "Download ONNX models",
-		        .accepts_user_argument = false,
-		    },
-		    {
-		        .id                    = CommandId::kList,
-		        .name                  = "list",
-		        .summary               = "List models",
-		        .accepts_user_argument = true,
-		    },
-		    {
-		        .id                    = CommandId::kRemove,
-		        .name                  = "remove",
-		        .summary               = "Remove a specific model",
-		        .accepts_user_argument = true,
-		    },
-		    {
-		        .id                    = CommandId::kSet,
-		        .name                  = "set",
-		        .summary               = "Edit config value",
-		        .accepts_user_argument = false,
-		    },
-		    {
-		        .id                    = CommandId::kSnapshot,
-		        .name                  = "snapshot",
-		        .summary               = "Camera preview",
-		        .accepts_user_argument = false,
-		    },
-		    {
-		        .id                    = CommandId::kTest,
-		        .name                  = "test",
-		        .summary               = "Test camera",
-		        .accepts_user_argument = true,
-		    },
-		    {
-		        .id                    = CommandId::kVersion,
-		        .name                  = "version",
-		        .summary               = "Print version",
-		        .accepts_user_argument = false,
-		    },
-		}};
+		constexpr std::array<CommandDescriptor, static_cast<std::size_t>(CommandId::kCount)>
+		    kCommandCatalog = {{
+		        {
+		            .id          = CommandId::kAdd,
+		            .name        = "add",
+		            .summary     = "Add face model",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kModelUser,
+		        },
+		        {
+		            .id          = CommandId::kClear,
+		            .name        = "clear",
+		            .summary     = "Remove all models",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kModelUser,
+		        },
+		        {
+		            .id          = CommandId::kConfig,
+		            .name        = "config",
+		            .summary     = "Edit config",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		        {
+		            .id          = CommandId::kDisable,
+		            .name        = "disable",
+		            .summary     = "Enable or disable auth",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		        {
+		            .id          = CommandId::kDownloadModels,
+		            .name        = "download-models",
+		            .summary     = "Download ONNX models",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		        {
+		            .id          = CommandId::kList,
+		            .name        = "list",
+		            .summary     = "List models",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kModelUser,
+		        },
+		        {
+		            .id          = CommandId::kRemove,
+		            .name        = "remove",
+		            .summary     = "Remove a specific model",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kModelUser,
+		        },
+		        {
+		            .id          = CommandId::kSet,
+		            .name        = "set",
+		            .summary     = "Edit config value",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		        {
+		            .id          = CommandId::kSnapshot,
+		            .name        = "snapshot",
+		            .summary     = "Camera preview",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		        {
+		            .id          = CommandId::kTest,
+		            .name        = "test",
+		            .summary     = "Test camera",
+		            .kind        = CommandKind::kEntrypoint,
+		            .user_target = UserTargetMode::kModelUser,
+		        },
+		        {
+		            .id          = CommandId::kVersion,
+		            .name        = "version",
+		            .summary     = "Print version",
+		            .kind        = CommandKind::kVersion,
+		            .user_target = UserTargetMode::kNone,
+		        },
+		    }};
 
 		constexpr std::array<GlobalOptionDescriptor, 4> kGlobalOptionCatalog = {{
 		    {

@@ -9,11 +9,13 @@ namespace {
 
 	using howdy::native::command_catalog;
 	using howdy::native::CommandId;
+	using howdy::native::CommandKind;
 	using howdy::native::find_command;
 	using howdy::native::find_global_option;
 	using howdy::native::global_option_catalog;
 	using howdy::native::global_option_catalog_is_valid;
 	using howdy::native::GlobalOptionId;
+	using howdy::native::UserTargetMode;
 	using howdy::test::expect;
 
 	auto test_global_options() -> bool {
@@ -92,18 +94,32 @@ auto main() -> int {
 	    CommandId::kTest,
 	    CommandId::kVersion,
 	};
-	constexpr std::array expected_user_arguments{
-	    true, true, false, false, false, true, true, false, false, true, false,
+	constexpr std::array expected_command_kinds{
+	    CommandKind::kEntrypoint, CommandKind::kEntrypoint, CommandKind::kEntrypoint,
+	    CommandKind::kEntrypoint, CommandKind::kEntrypoint, CommandKind::kEntrypoint,
+	    CommandKind::kEntrypoint, CommandKind::kEntrypoint, CommandKind::kEntrypoint,
+	    CommandKind::kEntrypoint, CommandKind::kVersion,
+	};
+	constexpr std::array expected_user_targets{
+	    UserTargetMode::kModelUser, UserTargetMode::kModelUser, UserTargetMode::kNone,
+	    UserTargetMode::kNone,      UserTargetMode::kNone,      UserTargetMode::kModelUser,
+	    UserTargetMode::kModelUser, UserTargetMode::kNone,      UserTargetMode::kNone,
+	    UserTargetMode::kModelUser, UserTargetMode::kNone,
 	};
 	const auto commands = command_catalog();
 	ok &= expect(commands.size() == expected_command_ids.size(), "command catalog size is stable");
+	ok &= expect(commands.size() == static_cast<std::size_t>(CommandId::kCount),
+	             "every command ID has a catalog slot");
 	for (std::size_t index = 0; index < commands.size(); ++index) {
 		const auto &command = commands[index];
 		ok &=
 		    expect(index < expected_command_ids.size() && command.id == expected_command_ids[index],
 		           "command catalog order is stable");
-		ok &= expect(index < expected_user_arguments.size() &&
-		                 command.accepts_user_argument == expected_user_arguments[index],
+		ok &= expect(index < expected_command_kinds.size() &&
+		                 command.kind == expected_command_kinds[index],
+		             "command kind is stable");
+		ok &= expect(index < expected_user_targets.size() &&
+		                 command.user_target == expected_user_targets[index],
 		             "command user-target behavior is stable");
 		ok &= expect(!command.name.empty(), "command name is non-empty");
 		ok &= expect(!command.summary.empty(), "command summary is non-empty");

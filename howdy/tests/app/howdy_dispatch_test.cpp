@@ -21,6 +21,7 @@ namespace {
 
 	using howdy::native::command_catalog;
 	using howdy::native::CommandId;
+	using howdy::native::CommandKind;
 	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
 
@@ -106,7 +107,20 @@ namespace {
 	};
 
 	auto run(Context &context, std::vector<std::string> arguments,
-	         CommandMain list_callback = list_stub) -> RunResult {
+	         CommandMain list_callback = list_stub,
+	         std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)> command_mains = {
+	             add_stub,
+	             clear_stub,
+	             config_stub,
+	             disable_stub,
+	             download_models_stub,
+	             list_stub,
+	             remove_stub,
+	             set_stub,
+	             snapshot_stub,
+	             test_stub,
+	             nullptr,
+	         }) -> RunResult {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
@@ -115,25 +129,17 @@ namespace {
 
 		std::ostringstream output;
 		std::ostringstream error;
-		auto              *old_output = std::cout.rdbuf(output.rdbuf());
-		auto              *old_error  = std::cerr.rdbuf(error.rdbuf());
-		active_context                = &context;
-		const auto status             = howdy::native::howdy_internal::howdy_main_with_dependencies(
+		auto              *old_output                             = std::cout.rdbuf(output.rdbuf());
+		auto              *old_error                              = std::cerr.rdbuf(error.rdbuf());
+		active_context                                            = &context;
+		command_mains[static_cast<std::size_t>(CommandId::kList)] = list_callback;
+		const auto status = howdy::native::howdy_internal::howdy_main_with_dependencies(
 		    static_cast<int>(argv.size()), argv.data(),
 		    HowdyDependencies{
-		        .context         = &context,
-		        .resolve_user    = resolve_user,
-		        .effective_uid   = effective_uid,
-		        .add             = add_stub,
-		        .clear           = clear_stub,
-		        .config          = config_stub,
-		        .disable         = disable_stub,
-		        .download_models = download_models_stub,
-		        .list            = list_callback,
-		        .remove          = remove_stub,
-		        .set             = set_stub,
-		        .snapshot        = snapshot_stub,
-		        .test            = test_stub,
+		        .context       = &context,
+		        .resolve_user  = resolve_user,
+		        .effective_uid = effective_uid,
+		        .command_mains = command_mains,
 		    });
 		active_context = nullptr;
 		std::cout.rdbuf(old_output);
@@ -212,7 +218,9 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "version"});
+			const auto result =
+			    run(context, {"howdy", "version"}, nullptr,
+			        std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)>{});
 			const auto expected =
 			    "Howdy-Next " + std::string(howdy::native::kProjectVersion) + "\n";
 			ok &=
@@ -379,7 +387,7 @@ auto main() -> int {
 	{
 		std::size_t dispatched_commands = 0;
 		for (const auto &command : command_catalog()) {
-			if (command.id == CommandId::kVersion) {
+			if (command.kind != CommandKind::kEntrypoint) {
 				continue;
 			}
 			++dispatched_commands;

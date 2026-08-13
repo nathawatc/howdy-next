@@ -78,10 +78,11 @@ auto main() -> int {
 
 	const std::array escaped_commands{
 	    CommandDescriptor{
-	        .id                    = CommandId::kAdd,
-	        .name                  = "a-b\\c",
-	        .summary               = "A-b\\c",
-	        .accepts_user_argument = false,
+	        .id          = CommandId::kAdd,
+	        .name        = "a-b\\c",
+	        .summary     = "A-b\\c",
+	        .kind        = howdy::native::CommandKind::kEntrypoint,
+	        .user_target = howdy::native::UserTargetMode::kNone,
 	    },
 	};
 	const auto escaped_result = render_command_reference(escaped_commands);
@@ -91,34 +92,52 @@ auto main() -> int {
 
 	const std::array duplicate_command_ids{
 	    CommandDescriptor{
-	        .id = CommandId::kAdd, .name = "one", .summary = "One", .accepts_user_argument = false},
+	        .id          = CommandId::kAdd,
+	        .name        = "one",
+	        .summary     = "One",
+	        .kind        = howdy::native::CommandKind::kEntrypoint,
+	        .user_target = howdy::native::UserTargetMode::kNone,
+	    },
 	    CommandDescriptor{
-	        .id = CommandId::kAdd, .name = "two", .summary = "Two", .accepts_user_argument = false},
+	        .id          = CommandId::kAdd,
+	        .name        = "two",
+	        .summary     = "Two",
+	        .kind        = howdy::native::CommandKind::kEntrypoint,
+	        .user_target = howdy::native::UserTargetMode::kNone,
+	    },
 	};
 	ok &= expect(!render_command_reference(duplicate_command_ids).ok(),
 	             "duplicate command IDs are rejected");
 	const std::array duplicate_command_names{
-	    CommandDescriptor{.id                    = CommandId::kAdd,
-	                      .name                  = "same",
-	                      .summary               = "One",
-	                      .accepts_user_argument = false},
-	    CommandDescriptor{.id                    = CommandId::kClear,
-	                      .name                  = "same",
-	                      .summary               = "Two",
-	                      .accepts_user_argument = false},
+	    CommandDescriptor{.id          = CommandId::kAdd,
+	                      .name        = "same",
+	                      .summary     = "One",
+	                      .kind        = howdy::native::CommandKind::kEntrypoint,
+	                      .user_target = howdy::native::UserTargetMode::kNone},
+	    CommandDescriptor{.id          = CommandId::kClear,
+	                      .name        = "same",
+	                      .summary     = "Two",
+	                      .kind        = howdy::native::CommandKind::kEntrypoint,
+	                      .user_target = howdy::native::UserTargetMode::kNone},
 	};
 	ok &= expect(!render_command_reference(duplicate_command_names).ok(),
 	             "duplicate command names are rejected");
 	const std::array empty_command{
-	    CommandDescriptor{.id                    = CommandId::kAdd,
-	                      .name                  = "",
-	                      .summary               = "Summary",
-	                      .accepts_user_argument = false},
+	    CommandDescriptor{.id          = CommandId::kAdd,
+	                      .name        = "",
+	                      .summary     = "Summary",
+	                      .kind        = howdy::native::CommandKind::kEntrypoint,
+	                      .user_target = howdy::native::UserTargetMode::kNone},
 	};
 	ok &= expect(!render_command_reference(empty_command).ok(), "empty command names are rejected");
 	const std::array empty_summary{
 	    CommandDescriptor{
-	        .id = CommandId::kAdd, .name = "name", .summary = "", .accepts_user_argument = false},
+	        .id          = CommandId::kAdd,
+	        .name        = "name",
+	        .summary     = "",
+	        .kind        = howdy::native::CommandKind::kEntrypoint,
+	        .user_target = howdy::native::UserTargetMode::kNone,
+	    },
 	};
 	ok &= expect(!render_command_reference(empty_summary).ok(),
 	             "empty command summaries are rejected");

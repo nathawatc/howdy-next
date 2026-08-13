@@ -16,7 +16,6 @@
 
 #include <array>
 #include <cerrno>
-#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -32,86 +31,6 @@ namespace {
 
 	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
-
-	enum class CommandKind : std::uint8_t {
-		kEntrypoint,
-		kVersion,
-	};
-
-	using CommandDependency = CommandMain HowdyDependencies::*;
-
-	struct CommandBinding {
-		howdy::native::CommandId id;
-		CommandKind              kind;
-		CommandDependency        dependency;
-	};
-
-	constexpr std::array<CommandBinding, 11> kCommandBindings = {{
-	    {
-	        .id         = howdy::native::CommandId::kAdd,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::add,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kClear,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::clear,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kConfig,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::config,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kDisable,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::disable,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kDownloadModels,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::download_models,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kList,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::list,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kRemove,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::remove,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kSet,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::set,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kSnapshot,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::snapshot,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kTest,
-	        .kind       = CommandKind::kEntrypoint,
-	        .dependency = &HowdyDependencies::test,
-	    },
-	    {
-	        .id         = howdy::native::CommandId::kVersion,
-	        .kind       = CommandKind::kVersion,
-	        .dependency = nullptr,
-	    },
-	}};
-
-	auto find_binding(howdy::native::CommandId id) -> const CommandBinding * {
-		for (const auto &binding : kCommandBindings) {
-			if (binding.id == id) {
-				return &binding;
-			}
-		}
-		return nullptr;
-	}
 
 	void print_completion_commands() {
 		for (const auto &descriptor : howdy::native::command_catalog()) {
@@ -168,6 +87,25 @@ namespace {
 	auto effective_uid(void *context) -> uid_t {
 		(void)context;
 		return geteuid();
+	}
+
+	auto production_command_mains()
+	    -> std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)> {
+		std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)>
+		    command_mains{};
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kAdd)]     = add_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kClear)]   = clear_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kConfig)]  = config_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDisable)] = disable_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDownloadModels)] =
+		    download_models_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kList)]   = list_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kRemove)] = remove_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSet)]    = set_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)] =
+		    snapshot_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kTest)] = test_main;
+		return command_mains;
 	}
 
 	auto format_usage_option(const howdy::native::GlobalOptionDescriptor &option) -> std::string {
@@ -282,9 +220,8 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	const auto *command_descriptor = howdy::native::find_command(parsed.command);
-	const auto *command_binding =
-	    command_descriptor == nullptr ? nullptr : find_binding(command_descriptor->id);
-	if (command_binding != nullptr && command_binding->kind == CommandKind::kVersion) {
+	if (command_descriptor != nullptr &&
+	    command_descriptor->kind == howdy::native::CommandKind::kVersion) {
 		std::cout << "Howdy-Next " << howdy::native::kProjectVersion << "\n";
 		return 0;
 	}
@@ -313,15 +250,18 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	auto selected_main = static_cast<CommandMain>(nullptr);
-	if (command_binding != nullptr && command_binding->kind == CommandKind::kEntrypoint) {
-		selected_main = dependencies.*(command_binding->dependency);
+	if (command_descriptor != nullptr &&
+	    command_descriptor->kind == howdy::native::CommandKind::kEntrypoint) {
+		selected_main =
+		    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
 	}
 	if (selected_main == nullptr) {
 		std::cout << "Unknown command: " << parsed.command << "\n";
 		return 1;
 	}
 
-	const bool needs_user_argument = command_descriptor->accepts_user_argument;
+	const bool needs_user_argument =
+	    command_descriptor->user_target == howdy::native::UserTargetMode::kModelUser;
 	if (needs_user_argument && !howdy::native::is_valid_model_user_name(parsed.user)) {
 		std::cout << howdy::native::kInvalidUserNameMessage << "\n";
 		return 1;
@@ -354,17 +294,8 @@ auto howdy_main(int argc, char **argv) -> int {
 	return howdy::native::howdy_internal::howdy_main_with_dependencies(
 	    argc, argv,
 	    {
-	        .resolve_user    = resolve_user,
-	        .effective_uid   = effective_uid,
-	        .add             = add_main,
-	        .clear           = clear_main,
-	        .config          = config_main,
-	        .disable         = disable_main,
-	        .download_models = download_models_main,
-	        .list            = list_main,
-	        .remove          = remove_main,
-	        .set             = set_main,
-	        .snapshot        = snapshot_main,
-	        .test            = test_main,
+	        .resolve_user  = resolve_user,
+	        .effective_uid = effective_uid,
+	        .command_mains = production_command_mains(),
 	    });
 }

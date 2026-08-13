@@ -1,5 +1,8 @@
 #pragma once
 
+#include "app/command_catalog.hpp"
+
+#include <array>
 #include <string>
 
 #include <sys/types.h>
@@ -12,16 +15,7 @@ namespace howdy::native::howdy_internal {
 		void *context                              = nullptr;
 		std::string (*resolve_user)(void *context) = nullptr;
 		uid_t (*effective_uid)(void *context)      = nullptr;
-		CommandMain add                            = nullptr;
-		CommandMain clear                          = nullptr;
-		CommandMain config                         = nullptr;
-		CommandMain disable                        = nullptr;
-		CommandMain download_models                = nullptr;
-		CommandMain list                           = nullptr;
-		CommandMain remove                         = nullptr;
-		CommandMain set                            = nullptr;
-		CommandMain snapshot                       = nullptr;
-		CommandMain test                           = nullptr;
+		std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)> command_mains{};
 	};
 
 	auto howdy_main_with_dependencies(int argc, char **argv, const HowdyDependencies &dependencies)
