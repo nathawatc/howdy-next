@@ -1,6 +1,0 @@
-[submodule "archlinux/howdy-next"]
-	path = archlinux/howdy-next
-	url = ssh://aur@aur.archlinux.org/howdy-next.git
-[submodule "archlinux/howdy-next-git"]
-	path = archlinux/howdy-next-git
-	url = ssh://aur@aur.archlinux.org/howdy-next-git.git
