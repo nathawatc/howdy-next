@@ -284,7 +284,6 @@ target_link_libraries(
 		howdy_compare_logic
 		PkgConfig::LIBCURL
 		PkgConfig::OPENSSL
-		PkgConfig::YYJSON
 		howdy_opencv
 )
 
@@ -739,15 +738,7 @@ endif()
 
 add_executable(howdy src/bin/howdy_main.cpp)
 howdy_configure_native_target(howdy)
-target_link_libraries(
-	howdy
-	PRIVATE
-		howdy_cli
-		PkgConfig::LIBCURL
-		PkgConfig::OPENSSL
-		PkgConfig::YYJSON
-		howdy_opencv
-)
+target_link_libraries(howdy PRIVATE howdy_cli)
 install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 set(HOWDY_DOC_REFERENCE_DIR "${PROJECT_BINARY_DIR}/generated/docs")
@@ -828,15 +819,7 @@ if(BUILD_TESTING)
 
 	add_executable(howdy_dispatch_test tests/app/howdy_dispatch_test.cpp)
 	howdy_configure_native_test_target(howdy_dispatch_test)
-	target_link_libraries(
-		howdy_dispatch_test
-		PRIVATE
-			howdy_cli
-			PkgConfig::LIBCURL
-			PkgConfig::OPENSSL
-			PkgConfig::YYJSON
-			howdy_opencv
-	)
+	target_link_libraries(howdy_dispatch_test PRIVATE howdy_cli)
 	add_test(NAME native-howdy-dispatch COMMAND howdy_dispatch_test)
 
 	add_executable(
