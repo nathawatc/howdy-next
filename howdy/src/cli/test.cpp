@@ -31,6 +31,7 @@ namespace {
 	struct TestArgs {
 		std::string user;
 		std::string device_path;
+		bool        missing_device_path = false;
 	};
 
 	struct TestProductionContext {
@@ -71,7 +72,11 @@ namespace {
 
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
-			if (arg == "--device" && index + 1 < argc) {
+			if (arg == "--device") {
+				if (index + 1 >= argc) {
+					args.missing_device_path = true;
+					continue;
+				}
 				args.device_path = argv[++index];
 				continue;
 			}
@@ -446,8 +451,13 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 		return kExitCameraError;
 	}
 
-	const TestArgs args          = parse_args(argc, argv);
-	auto           config_result = dependencies.load_runtime_config(dependencies.context);
+	const TestArgs args = parse_args(argc, argv);
+	if (args.missing_device_path) {
+		std::cerr << "Error: --device requires a value\n";
+		return kExitCameraError;
+	}
+
+	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";

@@ -469,6 +469,22 @@ namespace {
 		return ok;
 	}
 
+	auto missing_device_value_is_rejected_before_runtime_work() -> bool {
+		auto               context = make_success_context();
+		std::ostringstream error;
+		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+
+		const int result = run_test(context, {"howdy-test", "--device"});
+
+		bool ok = true;
+		ok &= expect(result == 1, "missing device value returns 1");
+		ok &= expect(error.str().contains("--device requires a value"),
+		             "missing device value writes diagnostic");
+		ok &= expect(context.load_calls == 0, "missing device value skips config load");
+		ok &= expect(context.preview_calls == 0, "missing device value skips preview");
+		return ok;
+	}
+
 	auto gui_initialization_runs_before_first_camera_read() -> bool {
 		auto               context = make_success_context();
 		std::ostringstream error;
@@ -605,6 +621,7 @@ auto main() -> int {
 	ok &= successful_preview_returns_zero();
 	ok &= configured_device_default_is_used_for_camera_open();
 	ok &= device_override_is_used_for_camera_open();
+	ok &= missing_device_value_is_rejected_before_runtime_work();
 	ok &= gui_initialization_runs_before_first_camera_read();
 	ok &= graphical_environment_helper_checks_display_values();
 	ok &= missing_preflight_dependency_callbacks_fail_closed();
