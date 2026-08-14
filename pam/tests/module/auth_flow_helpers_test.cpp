@@ -1,12 +1,13 @@
 #include "config/runtime_config.hpp"
 #include "module/auth_flow.hpp"
 #include "module/entrypoint.hpp"
-#include "prompt/prompt_coordinator_test_support.hpp"
+#include "prompt/prompt_coordinator_fake.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "support/fd_io.hpp"
+#include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -34,6 +35,7 @@
 #include <sys/wait.h>
 
 namespace {
+	using namespace howdy::test::process;
 
 	using howdy::pam::PamModuleArguments;
 	using howdy::pam::PromptSubmitter;
@@ -495,64 +497,6 @@ namespace {
 		             "stops reading after bounded output threshold");
 
 		return ok;
-	}
-
-	auto spawn_exiting_child(int exit_code) -> pid_t {
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			_exit(exit_code);
-		}
-		return child_pid;
-	}
-
-	auto spawn_blocked_child() -> pid_t {
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			for (;;) {
-				pause();
-			}
-		}
-		return child_pid;
-	}
-
-	auto spawn_sigterm_ignoring_child() -> pid_t {
-		std::array<int, 2> ready_pipe{-1, -1};
-		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
-			return -1;
-		}
-
-		const pid_t child_pid = fork();
-		if (child_pid < 0) {
-			(void)close(ready_pipe[0]);
-			(void)close(ready_pipe[1]);
-			return -1;
-		}
-		if (child_pid == 0) {
-			(void)close(ready_pipe[0]);
-			if (signal(SIGTERM, SIG_IGN) == SIG_ERR || write(ready_pipe[1], "R", 1) != 1) {
-				_exit(EXIT_FAILURE);
-			}
-			(void)close(ready_pipe[1]);
-			for (;;) {
-				pause();
-			}
-		}
-
-		(void)close(ready_pipe[1]);
-		char    ready       = 0;
-		ssize_t ready_bytes = 0;
-		do {
-			ready_bytes = read(ready_pipe[0], &ready, 1);
-		} while (ready_bytes < 0 && errno == EINTR);
-		(void)close(ready_pipe[0]);
-		if (ready_bytes == 1 && ready == 'R') {
-			return child_pid;
-		}
-
-		(void)kill(child_pid, SIGKILL);
-		while (waitpid(child_pid, nullptr, 0) < 0 && errno == EINTR) {
-		}
-		return -1;
 	}
 
 	auto always_cancel_compare(void *context) -> bool {

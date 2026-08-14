@@ -1,114 +1,26 @@
 #pragma once
-#include "prompt/prompt_coordinator.hpp"
+
+#include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
+#include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
-#include <array>
 #include <atomic>
-#include <cerrno>
 #include <chrono>
 #include <condition_variable>
-#include <csignal>
 #include <cstdlib>
-#include <fcntl.h>
-#include <iostream>
 #include <memory>
 #include <mutex>
-#include <poll.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <tuple>
-#include <unistd.h>
-#include <utility>
-#include <vector>
 
 #include <security/pam_appl.h>
-
-#include <sys/wait.h>
-
-namespace howdy::pam {
-	class PromptCoordinatorTestAccess {
-	public:
-		static auto wait_for_compare_success(PromptCoordinator                  &coordinator,
-		                                     std::chrono::steady_clock::duration timeout) -> bool {
-			std::unique_lock<std::mutex> lock(coordinator.mutex_);
-			return coordinator.condition_.wait_for(lock, timeout, [&coordinator] -> bool {
-				return coordinator.state_.compare_succeeded;
-			});
-		}
-
-		[[nodiscard]] static auto password_call_returned(PromptCoordinator &coordinator) -> bool {
-			std::scoped_lock lock(coordinator.mutex_);
-			return coordinator.state_.password_call_returned;
-		}
-
-		static auto wait_for_password_call_returned(PromptCoordinator                  &coordinator,
-		                                            std::chrono::steady_clock::duration timeout)
-		    -> bool {
-			std::unique_lock<std::mutex> lock(coordinator.mutex_);
-			return coordinator.condition_.wait_for(lock, timeout, [&coordinator] -> bool {
-				return coordinator.state_.password_call_returned;
-			});
-		}
-
-		static void request_shutdown(PromptCoordinator &coordinator) {
-			{
-				std::scoped_lock lock(coordinator.mutex_);
-				coordinator.state_.shutdown_requested     = true;
-				coordinator.state_.cancellation_requested = true;
-				if (coordinator.state_.submission ==
-				    PromptCoordinator::PromptSubmissionState::kClaimed) {
-					coordinator.state_.submission =
-					    PromptCoordinator::PromptSubmissionState::kPending;
-					coordinator.state_.claimed_generation = 0;
-				}
-			}
-			coordinator.condition_.notify_all();
-		}
-
-		static void prepare_claimed_submission(PromptCoordinator               &coordinator,
-		                                       std::unique_ptr<PromptSubmitter> prompt_submitter) {
-			std::scoped_lock lock(coordinator.mutex_);
-			coordinator.prompt_submitter_            = std::move(prompt_submitter);
-			coordinator.state_.first_completion      = PromptCoordinator::FirstCompletion::kCompare;
-			coordinator.state_.compare_succeeded     = true;
-			coordinator.state_.password_call_entered = true;
-			coordinator.state_.secret_prompt_generation = 1;
-			coordinator.state_.claimed_generation       = 1;
-			coordinator.state_.secret_prompt_active     = true;
-			coordinator.state_.submission = PromptCoordinator::PromptSubmissionState::kClaimed;
-		}
-
-		static auto prompt_submission_finished(PromptCoordinator &coordinator) -> bool {
-			std::scoped_lock lock(coordinator.mutex_);
-			return coordinator.state_.submission ==
-			       PromptCoordinator::PromptSubmissionState::kFinished;
-		}
-
-		static void publish_password_call_returned(PromptCoordinator &coordinator) {
-			coordinator.publish_password_call_returned();
-		}
-
-		static void close_prompt_generation(PromptCoordinator     &coordinator,
-		                                    SecretPromptGeneration generation) {
-			PromptCoordinator::secret_prompt_end(&coordinator, generation);
-		}
-
-		static auto begin_prompt_generation(PromptCoordinator &coordinator)
-		    -> SecretPromptGeneration {
-			return PromptCoordinator::secret_prompt_begin(&coordinator);
-		}
-
-		static void submit_prompt_for_generations(PromptCoordinator &coordinator) {
-			coordinator.submit_prompt_for_generations();
-		}
-	};
-}  // namespace howdy::pam
 
 namespace howdy::test::prompt_coordinator {
 
@@ -318,181 +230,6 @@ namespace howdy::test::prompt_coordinator {
 		FakeContext *context_;
 	};
 
-	class ScopedFd {
-	public:
-		ScopedFd() = default;
-
-		explicit ScopedFd(int fd)
-		    : fd_(fd) {}
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-		~ScopedFd() {
-			reset();
-		}
-
-		[[nodiscard]] auto get() const -> int {
-			return fd_;
-		}
-
-		void reset(int fd = -1) {
-			if (fd_ >= 0) {
-				close(fd_);
-			}
-			fd_ = fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
-
-	struct PosixSpawnCapture {
-		int                               init_calls          = 0;
-		int                               addclosefrom_calls  = 0;
-		int                               destroy_calls       = 0;
-		int                               spawn_calls         = 0;
-		int                               init_result         = 0;
-		int                               addclosefrom_result = 0;
-		int                               spawn_result        = 0;
-		int                               closefrom_fd        = -1;
-		pid_t                             next_pid            = 4242;
-		posix_spawn_file_actions_t       *initialized_actions = nullptr;
-		posix_spawn_file_actions_t       *closefrom_actions   = nullptr;
-		posix_spawn_file_actions_t       *destroyed_actions   = nullptr;
-		const posix_spawn_file_actions_t *spawn_actions       = nullptr;
-		std::string                       path;
-		std::vector<std::string>          argv;
-		std::vector<std::string>          environment;
-	};
-
-	inline auto capture_posix_spawn_file_actions_init(void                       *context,
-	                                                  posix_spawn_file_actions_t *actions) -> int {
-		auto &capture = *static_cast<PosixSpawnCapture *>(context);
-		++capture.init_calls;
-		capture.initialized_actions = actions;
-		return capture.init_result;
-	}
-
-	inline auto capture_posix_spawn_file_actions_addclosefrom(void                       *context,
-	                                                          posix_spawn_file_actions_t *actions,
-	                                                          int from_fd) -> int {
-		auto &capture = *static_cast<PosixSpawnCapture *>(context);
-		++capture.addclosefrom_calls;
-		capture.closefrom_actions = actions;
-		capture.closefrom_fd      = from_fd;
-		return capture.addclosefrom_result;
-	}
-
-	inline auto capture_posix_spawn_file_actions_destroy(void                       *context,
-	                                                     posix_spawn_file_actions_t *actions)
-	    -> int {
-		auto &capture = *static_cast<PosixSpawnCapture *>(context);
-		++capture.destroy_calls;
-		capture.destroyed_actions = actions;
-		return 0;
-	}
-
-	inline auto capture_posix_spawn(const howdy::pam::compare_process::SpawnRequest &request)
-	    -> int {
-		auto &capture = *static_cast<PosixSpawnCapture *>(request.context);
-		++capture.spawn_calls;
-		capture.spawn_actions = request.actions;
-		capture.path          = request.path;
-		for (char *const *argument = request.argv; *argument != nullptr; ++argument) {
-			capture.argv.emplace_back(*argument);
-		}
-		for (char *const *entry = request.envp; *entry != nullptr; ++entry) {
-			capture.environment.emplace_back(*entry);
-		}
-
-		if (capture.spawn_result == 0) {
-			*request.child_pid = capture.next_pid;
-		}
-		return capture.spawn_result;
-	}
-
-	inline auto posix_spawn_operations(void *context) -> howdy::pam::compare_process::Operations {
-		return {
-		    .context                   = context,
-		    .file_actions_init         = capture_posix_spawn_file_actions_init,
-		    .file_actions_addclosefrom = capture_posix_spawn_file_actions_addclosefrom,
-		    .file_actions_destroy      = capture_posix_spawn_file_actions_destroy,
-		    .spawn                     = capture_posix_spawn,
-		};
-	}
-
-	inline auto original_conversation(int num_msg, const struct pam_message **messages,
-	                                  struct pam_response **response, void *appdata_ptr) -> int {
-		(void)num_msg;
-		(void)messages;
-		if (response != nullptr) {
-			*response = nullptr;
-		}
-		if (appdata_ptr != nullptr) {
-			++static_cast<FakeContext *>(appdata_ptr)->original_conversation_calls;
-		}
-		return PAM_CONV_ERR;
-	}
-
-	class NativePamFixture {
-	public:
-		explicit NativePamFixture(FakeContext *context)
-		    : context_(context)
-		    , original_conv_{.conv = original_conversation, .appdata_ptr = context} {}
-
-		NativePamFixture(const NativePamFixture &)                     = delete;
-		auto operator=(const NativePamFixture &) -> NativePamFixture & = delete;
-
-		~NativePamFixture() {
-			if (pamh_ != nullptr) {
-				pam_end(pamh_, PAM_SUCCESS);
-			}
-		}
-
-		auto start(bool with_tty) -> bool {
-			if (pam_start("howdy-prompt-coordinator-test", "test-user", &original_conv_, &pamh_) !=
-			    PAM_SUCCESS) {
-				return false;
-			}
-			if (!with_tty) {
-				return true;
-			}
-
-			master_fd_.reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
-			if (master_fd_.get() < 0 || grantpt(master_fd_.get()) != 0 ||
-			    unlockpt(master_fd_.get()) != 0) {
-				return false;
-			}
-			char *slave_path = ptsname(master_fd_.get());
-			if (slave_path == nullptr || pam_set_item(pamh_, PAM_TTY, slave_path) != PAM_SUCCESS) {
-				return false;
-			}
-			context_->prompt_master_fd = master_fd_.get();
-			return true;
-		}
-
-		[[nodiscard]] auto pamh() const -> pam_handle_t * {
-			return pamh_;
-		}
-
-		[[nodiscard]] auto original_conversation_restored() const -> bool {
-			const void *item = nullptr;
-			if (pam_get_item(pamh_, PAM_CONV, &item) != PAM_SUCCESS || item == nullptr) {
-				return false;
-			}
-			const auto *conversation = static_cast<const struct pam_conv *>(item);
-			return conversation->conv == original_conv_.conv &&
-			       conversation->appdata_ptr == original_conv_.appdata_ptr;
-		}
-
-	private:
-		FakeContext    *context_ = nullptr;
-		struct pam_conv original_conv_{};
-		pam_handle_t   *pamh_ = nullptr;
-		ScopedFd        master_fd_;
-	};
-
 	struct CallbackCounts {
 		int spawn     = 0;
 		int wait      = 0;
@@ -543,18 +280,6 @@ namespace howdy::test::prompt_coordinator {
 		return true;
 	}
 
-	inline auto reap_test_child(pid_t child_pid, int *status) -> bool {
-		pid_t waited;
-		do {
-			waited = waitpid(child_pid, status, 0);
-		} while (waited < 0 && errno == EINTR);
-		if (waited == child_pid) {
-			return true;
-		}
-		std::cerr << "waitpid(" << child_pid << ") failed: errno=" << errno << '\n';
-		return false;
-	}
-
 	inline auto wait_for_compare(void *context, pid_t child_pid,
 	                             [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
 	                             void                                      *cancellation_context,
@@ -597,7 +322,7 @@ namespace howdy::test::prompt_coordinator {
 				++fake.terminate_calls;
 				fake.terminated_pid = child_pid;
 				(void)kill(child_pid, SIGTERM);
-				if (!reap_test_child(child_pid, &status)) {
+				if (!howdy::test::process::reap_test_child(child_pid, &status)) {
 					return static_cast<int>(CompareExit::kAbort) << 8;
 				}
 				fake.last_wait_status = status;
@@ -865,87 +590,7 @@ namespace howdy::test::prompt_coordinator {
 		};
 	}
 
-	inline auto spawn_child(int exit_code, std::chrono::milliseconds delay = {}) -> pid_t {
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			std::this_thread::sleep_for(delay);
-			_exit(exit_code);
-		}
-		return child_pid;
-	}
-
-	inline auto spawn_signaled_child(int signal_number) -> pid_t {
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			raise(signal_number);
-			_exit(EXIT_FAILURE);
-		}
-		return child_pid;
-	}
-
-	inline auto spawn_blocked_child() -> pid_t {
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			while (true) {
-				pause();
-			}
-		}
-		return child_pid;
-	}
-
-	inline void ignore_sigterm([[maybe_unused]] int signal_number) {}
-
-	inline auto spawn_sigterm_ignoring_child() -> pid_t {
-		std::array<int, 2> ready_pipe = {-1, -1};
-		if (pipe(ready_pipe.data()) != 0) {
-			return -1;
-		}
-
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			close(ready_pipe[0]);
-			struct sigaction action = {};
-			action.sa_handler       = ignore_sigterm;
-			sigemptyset(&action.sa_mask);
-			if (sigaction(SIGTERM, &action, nullptr) != 0) {
-				_exit(EXIT_FAILURE);
-			}
-			const char ready = '1';
-			ssize_t    write_result;
-			do {
-				write_result = write(ready_pipe[1], &ready, sizeof(ready));
-			} while (write_result < 0 && errno == EINTR);
-			if (std::cmp_not_equal(write_result, sizeof(ready))) {
-				_exit(EXIT_FAILURE);
-			}
-			while (true) {
-				pause();
-			}
-		}
-
-		close(ready_pipe[1]);
-		char ready = '\0';
-		while (read(ready_pipe[0], &ready, 1) < 0 && errno == EINTR) {
-		}
-		close(ready_pipe[0]);
-		if (child_pid <= 0 || ready != '1') {
-			if (child_pid > 0) {
-				(void)kill(child_pid, SIGKILL);
-				(void)reap_test_child(child_pid, nullptr);
-			}
-			return -1;
-		}
-		return child_pid;
-	}
-
-	inline auto child_reaped(pid_t child_pid) -> bool {
-		errno                   = 0;
-		const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
-		return wait_result == -1 && errno == ECHILD;
-	}
-
 	inline auto timeout_wait_status() -> int {
 		return static_cast<int>(CompareExit::kTimeoutReached) << 8;
 	}
-
 }  // namespace howdy::test::prompt_coordinator

@@ -1,8 +1,11 @@
 #include "paths.hpp"
+#include "prompt/compare_spawn_test_support.hpp"
+#include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/prompt_coordinator_test_groups.hpp"
-#include "prompt/prompt_coordinator_test_support.hpp"
+#include "support/process_test_support.hpp"
 
 namespace {
+	using namespace howdy::test::process;
 	using namespace howdy::test::prompt_coordinator;
 
 	auto test_launch_request(const howdy::pam::CompareLaunchRequest &request,
