@@ -1,0 +1,257 @@
+#include "compare/compare_privileges_test_support.hpp"
+
+auto run_compare_privileges_non_root_tests() -> bool;
+
+namespace howdy::test::compare_privileges {
+	namespace {
+
+		auto test_non_root() -> bool {
+			bool ok = true;
+
+			FakePrivilegeContext context;
+			set_non_root_identity(context);
+			const auto result = drop(context);
+			ok &= expect(result.ok(), "matching non-root credentials succeed");
+			ok &= expect_events(context, expected_non_root_events(), "non-root sequence is exact");
+			ok &= expect(context.lookup_calls == 0, "non-root process does not resolve nobody");
+			ok &= expect(context.capset_header_valid && context.capset_data_zero,
+			             "non-root capset clears all capability sets");
+			ok &= expect(context.capget_header_valid, "non-root capget verifies capability sets");
+			ok &= expect(context.regain_uid == 0, "non-root root-regain probe requests UID zero");
+
+			for (const auto &[uids, gids, label] :
+			     std::vector<std::tuple<std::array<uid_t, 3>, std::array<gid_t, 3>, std::string>>{
+			         {{0, 1000, 1000}, {1000, 1000, 1000}, "real UID zero"},
+			         {{1000, 1000, 0}, {1000, 1000, 1000}, "saved UID zero"},
+			         {{1000, 1000, 1000}, {0, 1000, 1000}, "real GID zero"},
+			         {{1000, 1000, 1000}, {1000, 0, 1000}, "effective GID zero"},
+			         {{1000, 1000, 1000}, {1000, 1000, 0}, "saved GID zero"},
+			         {{1000, 1001, 1000}, {1000, 1000, 1000}, "mismatched UID slots"},
+			         {{1000, 1000, 1000}, {1000, 1001, 1000}, "mismatched GID slots"}}) {
+				FakePrivilegeContext invalid_context;
+				invalid_context.uids      = uids;
+				invalid_context.gids      = gids;
+				const auto invalid_result = drop(invalid_context);
+				ok &= verify_fatal_result(invalid_context, invalid_result,
+				                          {"getresuid", "getresgid", "fatal"}, label);
+			}
+
+			for (const auto &[groups, label] :
+			     std::vector<std::pair<std::vector<gid_t>, std::string>>{
+			         {{}, "zero supplementary groups"},
+			         {{44}, "one supplementary group"},
+			         {{10, 44, 998}, "multiple supplementary groups"},
+			         {{1000}, "effective GID duplicated in supplementary groups"}}) {
+				FakePrivilegeContext group_context;
+				set_non_root_identity(group_context);
+				group_context.supplementary_groups = groups;
+				const auto group_result            = drop(group_context);
+				ok &= expect(group_result.ok(), label + " are preserved");
+				ok &= expect_events(group_context, expected_non_root_events(),
+				                    label + " preserve non-root verification order");
+				ok &= expect(group_context.group_count == 1 &&
+				                 group_context.group_pointer == &group_pointer_sentinel,
+				             label + " do not invoke setgroups");
+			}
+
+			for (const auto &[fsuid, fsgid, events, label] :
+			     std::vector<std::tuple<uid_t, gid_t, std::vector<std::string>, std::string>>{
+			         {0, 1000, {"getresuid", "getresgid", "query fsuid"}, "root fsuid"},
+			         {1001,
+			          1000,
+			          {"getresuid", "getresgid", "query fsuid"},
+			          "mismatched nonzero fsuid"},
+			         {1000,
+			          0,
+			          {"getresuid", "getresgid", "query fsuid", "query fsgid"},
+			          "root fsgid"},
+			         {1000,
+			          1001,
+			          {"getresuid", "getresgid", "query fsuid", "query fsgid"},
+			          "mismatched nonzero fsgid"}}) {
+				FakePrivilegeContext filesystem_context;
+				set_non_root_identity(filesystem_context);
+				filesystem_context.fsuid     = fsuid;
+				filesystem_context.fsgid     = fsgid;
+				const auto filesystem_result = drop(filesystem_context);
+				auto       expected          = events;
+				expected.emplace_back("fatal");
+				ok &= verify_fatal_result(filesystem_context, filesystem_result, expected, label);
+			}
+
+			for (const auto &[capability, label] : kInitiallyFatalCapabilityCases) {
+				FakePrivilegeContext capability_context;
+				set_non_root_identity(capability_context);
+				set_capability(capability_context.capabilities, capability);
+				const auto capability_result = drop(capability_context);
+				ok &= verify_fatal_result(capability_context, capability_result,
+				                          {"getresuid", "getresgid", "query fsuid", "query fsgid",
+				                           "read capability sets", "fatal"},
+				                          std::string("initial non-root ") + label + " capability");
+			}
+
+			for (const auto &[capability, label] : kCapabilityCases) {
+				FakePrivilegeContext residual_context;
+				set_non_root_identity(residual_context);
+				set_capability(residual_context.capabilities_after_capset, capability);
+				const auto residual_result = drop(residual_context);
+				ok &=
+				    verify_fatal_result(residual_context, residual_result,
+				                        {"getresuid", "getresgid", "query fsuid", "query fsgid",
+				                         "read capability sets", "clear ambient capabilities",
+				                         "clear capability sets", "read capability sets", "fatal"},
+				                        std::string("residual ") + label + " capability");
+			}
+
+			for (const auto &[failure, events, label] :
+			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
+			         {FailureOperation::kInitialCapget,
+			          {"getresuid", "getresgid", "query fsuid", "query fsgid",
+			           "read capability sets", "fatal"},
+			          "initial capability inspection failure"},
+			         {FailureOperation::kFinalCapget,
+			          {"getresuid", "getresgid", "query fsuid", "query fsgid",
+			           "read capability sets", "clear ambient capabilities",
+			           "clear capability sets", "read capability sets", "fatal"},
+			          "final capability inspection failure"}}) {
+				FakePrivilegeContext capability_context;
+				set_non_root_identity(capability_context);
+				capability_context.failure   = failure;
+				const auto capability_result = drop(capability_context);
+				ok &= verify_fatal_result(capability_context, capability_result, events, label);
+			}
+
+			for (const auto &[failure, suffix, label] :
+			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
+			         {FailureOperation::kAmbient, {"fatal"}, "ambient-capability clear failure"},
+			         {FailureOperation::kCapset,
+			          {"clear capability sets", "fatal"},
+			          "capability-clear failure"},
+			         {FailureOperation::kRegainSucceeds,
+			          {"clear capability sets", "read capability sets", "root-regain probe",
+			           "fatal"},
+			          "successful non-root root regain"}}) {
+				FakePrivilegeContext failure_context;
+				set_non_root_identity(failure_context);
+				failure_context.failure   = failure;
+				const auto failure_result = drop(failure_context);
+				auto       expected       = std::vector<std::string>{"getresuid",
+				                                                     "getresgid",
+				                                                     "query fsuid",
+				                                                     "query fsgid",
+				                                                     "read capability sets",
+				                                                     "clear ambient capabilities"};
+				expected.insert(expected.end(), suffix.begin(), suffix.end());
+				ok &= verify_fatal_result(failure_context, failure_result, expected, label);
+			}
+			return ok;
+		}
+
+		auto test_waylock_inheritable_capability() -> bool {
+			FakePrivilegeContext context;
+			set_non_root_identity(context);
+			set_wake_alarm_inheritable(context.capabilities);
+			const auto result = drop(context);
+
+			bool ok = true;
+			ok &= expect(result.ok(), "Waylock inheritable-only capability sanitizes successfully");
+			ok &= expect(context.fatal_calls == 0,
+			             "Waylock inheritable-only capability does not invoke fatal callback");
+			ok &= expect(std::count(context.events.begin(), context.events.end(),
+			                        "clear ambient capabilities") == 1,
+			             "Waylock inheritable-only capability clears ambient capabilities");
+			ok &= expect(context.capset_calls == 1,
+			             "Waylock inheritable-only capability clears capability sets once");
+			ok &= expect(context.capset_header_valid && context.capset_data_zero,
+			             "Waylock inheritable-only capability capset zeroes all sets");
+			ok &= expect(context.capget_calls == 2,
+			             "Waylock inheritable-only capability performs final capget verification");
+			ok &= expect(context.regain_uid == 0,
+			             "Waylock inheritable-only capability performs root-regain probe");
+			ok &= expect_events(
+			    context, expected_non_root_events(),
+			    "Waylock inheritable-only capability continues through processing gate");
+			return ok;
+		}
+
+		auto test_waylock_inheritable_sanitization_failures() -> bool {
+			struct FailureCase {
+				FailureOperation         failure;
+				bool                     retain_inheritable;
+				std::vector<std::string> events;
+				const char              *label;
+			};
+
+			const std::array<FailureCase, 3> cases{{
+			    {.failure            = FailureOperation::kAmbient,
+			     .retain_inheritable = false,
+			     .events = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+			                "read capability sets", "clear ambient capabilities", "fatal"},
+			     .label  = "ambient-clear failure"},
+			    {.failure            = FailureOperation::kCapset,
+			     .retain_inheritable = false,
+			     .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+			                            "read capability sets", "clear ambient capabilities",
+			                            "clear capability sets", "fatal"},
+			     .label              = "capset failure"},
+			    {.failure            = FailureOperation::kNone,
+			     .retain_inheritable = true,
+			     .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
+			                            "read capability sets", "clear ambient capabilities",
+			                            "clear capability sets", "read capability sets", "fatal"},
+			     .label              = "residual inheritable capability"},
+			}};
+
+			bool ok = true;
+			for (const auto &test_case : cases) {
+				FakePrivilegeContext context;
+				set_non_root_identity(context);
+				set_wake_alarm_inheritable(context.capabilities);
+				context.failure = test_case.failure;
+				if (test_case.retain_inheritable) {
+					set_wake_alarm_inheritable(context.capabilities_after_capset);
+				}
+				const auto result = drop(context);
+				ok &=
+				    verify_fatal_result(context, result, test_case.events,
+				                        std::string("Waylock inheritable-only ") + test_case.label);
+			}
+			return ok;
+		}
+
+		auto test_initial_credential_inspection_failures() -> bool {
+			bool ok = true;
+			for (const auto &[failure, events, label] :
+			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
+			         {FailureOperation::kInitialGetresuid, {"getresuid"}, "initial UID inspection"},
+			         {FailureOperation::kInitialGetresgid,
+			          {"getresuid", "getresgid"},
+			          "initial GID inspection"}}) {
+				FakePrivilegeContext context;
+				set_non_root_identity(context);
+				context.failure     = failure;
+				const auto result   = drop(context);
+				auto       expected = events;
+				expected.emplace_back("fatal");
+				ok &= verify_fatal_result(context, result, expected, label);
+				ok &= expect(context.lookup_calls == 0, label + " does not resolve nobody");
+			}
+			return ok;
+		}
+
+	}  // namespace
+
+	inline auto run_compare_privileges_non_root_tests_impl() -> bool {
+		bool ok = true;
+		ok &= test_non_root();
+		ok &= test_waylock_inheritable_capability();
+		ok &= test_waylock_inheritable_sanitization_failures();
+		ok &= test_initial_credential_inspection_failures();
+		return ok;
+	}
+
+}  // namespace howdy::test::compare_privileges
+
+auto run_compare_privileges_non_root_tests() -> bool {
+	return howdy::test::compare_privileges::run_compare_privileges_non_root_tests_impl();
+}

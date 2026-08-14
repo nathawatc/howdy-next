@@ -396,7 +396,11 @@ if(BUILD_TESTING)
 	)
 
 	add_executable(
-		howdy_compare_privileges_test tests/compare/compare_privileges_test.cpp
+		howdy_compare_privileges_test
+		tests/compare/compare_privileges_test.cpp
+		tests/compare/compare_privileges_non_root_test.cpp
+		tests/compare/compare_privileges_privileged_test.cpp
+		tests/compare/compare_privileges_fatal_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_compare_privileges_test)
 	target_link_libraries(
