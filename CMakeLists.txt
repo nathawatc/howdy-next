@@ -42,38 +42,6 @@ if(NOT DEFINED HOWDY_GIT_COMMIT)
 		"Source commit override for Howdy version output"
 	)
 endif()
-set(HOWDY_BUILD_COMMIT_OVERRIDE "")
-if(NOT "${HOWDY_GIT_COMMIT}" STREQUAL "")
-	string(
-		LENGTH "${HOWDY_GIT_COMMIT}" howdy_git_commit_length
-	)
-	if(howdy_git_commit_length LESS 10)
-		message(
-			FATAL_ERROR
-			"HOWDY_GIT_COMMIT must contain at least 10 "
-			"hexadecimal characters"
-		)
-	endif()
-	string(
-		REGEX MATCH
-		"^[0-9A-Fa-f]+$"
-		howdy_git_commit_hex
-		"${HOWDY_GIT_COMMIT}"
-	)
-	if("${howdy_git_commit_hex}" STREQUAL "")
-		message(
-			FATAL_ERROR
-			"HOWDY_GIT_COMMIT must contain only hexadecimal "
-			"characters"
-		)
-	endif()
-	string(SUBSTRING "${HOWDY_GIT_COMMIT}" 0 10 HOWDY_BUILD_COMMIT_OVERRIDE)
-	string(
-		TOLOWER
-		"${HOWDY_BUILD_COMMIT_OVERRIDE}"
-		HOWDY_BUILD_COMMIT_OVERRIDE
-	)
-endif()
 if(Git_FOUND)
 	set(HOWDY_GIT_EXECUTABLE "${GIT_EXECUTABLE}")
 else()
@@ -316,7 +284,7 @@ add_custom_target(
 		"-DHOWDY_PROJECT_VERSION=${PROJECT_VERSION}"
 		"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
 		"-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
-		"-DHOWDY_GIT_COMMIT=${HOWDY_BUILD_COMMIT_OVERRIDE}"
+		"-DHOWDY_GIT_COMMIT=${HOWDY_GIT_COMMIT}"
 		-P "${HOWDY_VERSION_GENERATOR}"
 	BYPRODUCTS "${HOWDY_GENERATED_VERSION_HEADER}"
 	DEPENDS
