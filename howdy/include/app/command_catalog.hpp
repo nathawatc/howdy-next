@@ -51,6 +51,7 @@ namespace howdy::native {
 		CommandKind           kind;
 		UserTargetMode        user_target;
 		CommandCompletionKind completion;
+		std::string_view      argument_synopsis;
 	};
 
 	enum class GlobalOptionId : std::uint8_t {

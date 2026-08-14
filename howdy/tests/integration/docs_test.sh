@@ -70,7 +70,12 @@ fi
 for command in add clear config disable download-models list remove set snapshot test version; do
 	escaped_command=$command
 	case "$command" in
+		add) escaped_command='add [LABEL]' ;;
+		disable) escaped_command='disable {0|1|true|false}' ;;
 		download-models) escaped_command='download\-models' ;;
+		remove) escaped_command='remove ID' ;;
+		set) escaped_command='set KEY VALUE' ;;
+		test) escaped_command='test [\-\-device DEVICE]' ;;
 	esac
 	label="\\&\\fB${escaped_command}\\fR"
 	require_exactly_once "$reference_dir/howdy-commands.roff" "$label"

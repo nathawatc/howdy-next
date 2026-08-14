@@ -83,6 +83,15 @@ namespace howdy::docs {
 			return {.output = std::move(output), .error = {}};
 		}
 
+		auto format_command_label(const native::CommandDescriptor &command) -> std::string {
+			std::string label(command.name);
+			if (!command.argument_synopsis.empty()) {
+				label += ' ';
+				label += command.argument_synopsis;
+			}
+			return label;
+		}
+
 		auto format_option_label(const native::GlobalOptionDescriptor &option) -> std::string {
 			std::string label;
 			if (!option.short_name.empty()) {
@@ -110,6 +119,10 @@ namespace howdy::docs {
 				}
 				if (const auto error =
 				        validate_roff_text({.kind = "command summary", .value = command.summary})) {
+					return error;
+				}
+				if (const auto error = validate_roff_text({.kind  = "command argument synopsis",
+				                                           .value = command.argument_synopsis})) {
 					return error;
 				}
 			}
@@ -196,7 +209,8 @@ namespace howdy::docs {
 
 		std::string output;
 		for (const auto &command : commands) {
-			append_entry(output, {.label = command.name, .summary = command.summary});
+			const auto label = format_command_label(command);
+			append_entry(output, {.label = label, .summary = command.summary});
 		}
 		return finish(std::move(output));
 	}
