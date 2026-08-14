@@ -39,6 +39,22 @@ namespace {
 		std::error_code ec;
 		std::filesystem::create_directory(user_owned_dir, ec);
 		ok &= expect(!ec, "creates runtime root directory fixture");
+
+		const auto missing_dir = temp_root / "runtime-root-missing";
+		ok &= expect(!std::filesystem::exists(missing_dir),
+		             "runtime root creation path starts missing");
+		ok &= expect(validate_runtime_root(missing_dir, geteuid(), getegid()),
+		             "missing runtime root is created for current effective identity");
+		struct stat missing_stat{};
+		ok &= expect(lstat(missing_dir.c_str(), &missing_stat) == 0, "stats created runtime root");
+		ok &= expect(S_ISDIR(missing_stat.st_mode), "created runtime root is a directory");
+		ok &= expect(missing_stat.st_uid == geteuid() && missing_stat.st_gid == getegid(),
+		             "created runtime root has requested effective owner");
+		ok &= expect((missing_stat.st_mode & (S_IWGRP | S_IWOTH)) == 0,
+		             "created runtime root is not group or world writable");
+		ok &=
+		    expect((missing_stat.st_mode & 0777) == 0711, "created runtime root has expected mode");
+
 		if (geteuid() == 0) {
 			ok &= expect(validate_runtime_root(user_owned_dir, 0, 0),
 			             "root-owned runtime root directory is accepted");
@@ -70,7 +86,33 @@ namespace {
 		             "group-writable source is rejected");
 		group_writable_fd.reset();
 
+		ok &= expect(chmod(regular_path.c_str(), 0666) == 0, "makes source world-writable");
+		ScopedFd world_writable_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
+		ok &= expect(world_writable_fd.get() >= 0, "opens world-writable source");
+		struct stat world_stat{};
+		ok &=
+		    expect(fstat(world_writable_fd.get(), &world_stat) == 0, "stats world-writable source");
+		ok &= expect(!secure_source_file_stat(world_writable_fd.get(), "World writable source",
+		                                      world_stat.st_uid),
+		             "world-writable source is rejected");
+		world_writable_fd.reset();
+
 		ok &= expect(chmod(regular_path.c_str(), 0644) == 0, "restores source mode");
+		const auto hard_link_path = temp_root / "source-file-hard-link";
+		if (link(regular_path.c_str(), hard_link_path.c_str()) == 0) {
+			ScopedFd hard_link_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
+			ok &= expect(hard_link_fd.get() >= 0, "opens hard-linked source");
+			struct stat hard_link_stat{};
+			ok &=
+			    expect(fstat(hard_link_fd.get(), &hard_link_stat) == 0, "stats hard-linked source");
+			ok &= expect(!secure_source_file_stat(hard_link_fd.get(), "Hard-linked source",
+			                                      hard_link_stat.st_uid),
+			             "hard-linked source is rejected");
+			hard_link_fd.reset();
+			ok &= expect(unlink(hard_link_path.c_str()) == 0, "removes hard-linked source fixture");
+		} else {
+			ok &= expect(false, std::string("creates hard-linked source: ") + std::strerror(errno));
+		}
 		ScopedFd regular_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
 		ok &= expect(regular_fd.get() >= 0, "opens regular source");
 		if (geteuid() == 0) {
@@ -89,6 +131,16 @@ namespace {
 
 		bool ok = true;
 		ok &= expect(!write_all(-1, "x", 1), "invalid write fd is rejected");
+
+		const auto no_op_path = temp_root / "write-all-no-op-output";
+		ok &= expect(write_file(no_op_path, "unchanged"), "writes no-op output fixture");
+		ScopedFd no_op_fd(open(no_op_path.c_str(), O_WRONLY | O_CLOEXEC));
+		ok &= expect(no_op_fd.get() >= 0, "opens no-op output file");
+		ok &= expect(write_all(no_op_fd.get(), "ignored", 0), "zero-sized write is a no-op");
+		ok &= expect(write_all(no_op_fd.get(), "ignored", -1), "negative-sized write is a no-op");
+		no_op_fd.reset();
+		ok &=
+		    expect(read_file(no_op_path) == "unchanged", "no-op writes preserve destination file");
 
 		const auto output_path = temp_root / "write-all-output";
 		ScopedFd   output_fd(

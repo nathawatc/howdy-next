@@ -221,6 +221,112 @@ namespace {
 		return ok;
 	}
 
+	enum class ChildOutcome : std::uint8_t {
+		kSuccess,
+		kNonzero,
+		kSignal,
+	};
+
+	auto run_combined_output_failure_case(std::string_view name, ChildOutcome outcome,
+	                                      std::string_view output) -> bool {
+		std::array<int, 2> output_pipe{};
+		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		            std::string(name) + " creates output pipe")) {
+			return false;
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			(void)close(output_pipe[0]);
+			(void)close(output_pipe[1]);
+			return expect(false, std::string(name) + " forks child");
+		}
+		if (child_pid == 0) {
+			(void)close(output_pipe[0]);
+			if (write(output_pipe[1], output.data(), output.size()) !=
+			    static_cast<ssize_t>(output.size())) {
+				_exit(EXIT_FAILURE);
+			}
+			(void)close(output_pipe[1]);
+			switch (outcome) {
+				case ChildOutcome::kSuccess:
+					_exit(EXIT_SUCCESS);
+				case ChildOutcome::kNonzero:
+					_exit(EXIT_FAILURE);
+				case ChildOutcome::kSignal:
+					(void)signal(SIGTERM, SIG_DFL);
+					raise(SIGTERM);
+					_exit(EXIT_FAILURE);
+			}
+			_exit(EXIT_FAILURE);
+		}
+
+		(void)close(output_pipe[1]);
+		AuthHelperSpawnFake fake;
+		auto                operations = howdy::pam::auth_helper_process::production_operations();
+		operations.context             = &fake;
+		operations.read_bounded        = nullptr;
+		operations.log_observer        = fake_auth_helper_spawn_log;
+		std::string helper_output      = "stale";
+		const bool  result             = howdy::pam::auth_helper_process::read_output(
+		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &helper_output, operations,
+		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		(void)close(output_pipe[0]);
+
+		return expect(!result, std::string(name) + " rejects combined child failure") &&
+		       expect(helper_output.empty(), std::string(name) + " clears caller-visible output") &&
+		       expect(fake.log_messages.empty(), std::string(name) + " does not time out") &&
+		       helper_child_reaped(child_pid, name);
+	}
+
+	auto test_auth_helper_combined_failures() -> bool {
+		const std::string valid_output = "CONFIG_PATH=/run/howdy/combined/config.ini\n"
+		                                 "USER_MODELS_DIR=/run/howdy/combined/models\n";
+		bool              ok           = true;
+		ok &= run_combined_output_failure_case("valid output and nonzero helper",
+		                                       ChildOutcome::kNonzero, valid_output);
+		ok &= run_combined_output_failure_case("malformed output and successful helper",
+		                                       ChildOutcome::kSuccess, "MALFORMED_OUTPUT\n");
+		ok &= run_combined_output_failure_case("valid output and signaled helper",
+		                                       ChildOutcome::kSignal, valid_output);
+		return ok;
+	}
+
+	auto run_cleanup_failure_case(std::string_view name, ChildOutcome outcome) -> bool {
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			return expect(false, std::string(name) + " forks child");
+		}
+		if (child_pid == 0) {
+			if (outcome == ChildOutcome::kSignal) {
+				(void)signal(SIGTERM, SIG_DFL);
+				raise(SIGTERM);
+				_exit(EXIT_FAILURE);
+			}
+			_exit(EXIT_FAILURE);
+		}
+
+		AuthHelperSpawnFake fake;
+		auto                operations = howdy::pam::auth_helper_process::production_operations();
+		operations.context             = &fake;
+		operations.log_observer        = fake_auth_helper_spawn_log;
+		const bool result              = howdy::pam::auth_helper_process::wait_for_cleanup_helper(
+		    child_pid, operations, std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		return expect(!result, std::string(name) + " reports child failure") &&
+		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup failed") !=
+		                  fake.log_messages.end(),
+		              std::string(name) + " records child failure") &&
+		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup timed out") ==
+		                  fake.log_messages.end(),
+		              std::string(name) + " does not time out") &&
+		       helper_child_reaped(child_pid, name);
+	}
+
+	auto test_cleanup_helper_combined_failures() -> bool {
+		return run_cleanup_failure_case("nonzero cleanup helper", ChildOutcome::kNonzero) &&
+		       run_cleanup_failure_case("signaled cleanup helper", ChildOutcome::kSignal);
+	}
+
 	auto test_late_helper_exit_is_timed_out_after_reap() -> bool {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
@@ -412,6 +518,8 @@ namespace {
 auto run_runtime_session_deadline_tests() -> bool {
 	bool ok = true;
 	ok &= test_auth_helper_absolute_deadlines();
+	ok &= test_auth_helper_combined_failures();
+	ok &= test_cleanup_helper_combined_failures();
 	ok &= test_late_helper_exit_is_timed_out_after_reap();
 	ok &= test_prepare_runtime_auth_files_stalled_child();
 	ok &= test_cleanup_runtime_auth_files_stalled_child();

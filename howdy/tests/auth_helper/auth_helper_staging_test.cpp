@@ -231,6 +231,21 @@ namespace {
 		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures source config");
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
 
+		const auto invalid_runtime_root = fixture_dir / "runtime-root-file";
+		ok &= expect(write_file(invalid_runtime_root, "not a directory"),
+		             "writes invalid runtime root fixture");
+		const auto before_invalid_root = runtime_dirs_for_uid(fixture_dir, target_uid);
+		const auto invalid_root_prepare =
+		    prepare_runtime_auth_files("alice", identity,
+		                               {.runtime_root    = invalid_runtime_root,
+		                                .config          = config_path,
+		                                .user_models_dir = models_dir},
+		                               operations);
+		ok &= expect(!invalid_root_prepare.has_value(),
+		             "regular runtime root rejects higher-level preparation");
+		ok &= expect(runtime_dirs_for_uid(fixture_dir, target_uid) == before_invalid_root,
+		             "invalid runtime root leaves no partial runtime directory");
+
 		if (acl_functional) {
 			const auto before_success = runtime_dirs_for_uid(runtime_root, target_uid);
 			const auto prepared =
