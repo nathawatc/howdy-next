@@ -36,7 +36,7 @@ namespace {
 auto howdy::native::disable_internal::disable_main_with_dependencies(
     int argc, char **argv, const DisableDependencies &dependencies) -> int {
 	if (argc < 2) {
-		std::cout << "Specify 0 to enable or 1 to disable Howdy\n";
+		std::cout << "Specify 0 or false to enable, or 1 or true to disable Howdy\n";
 		return kExitAbort;
 	}
 
@@ -50,7 +50,7 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		out_value = "false";
 		disabled  = false;
 	} else {
-		std::cout << "Invalid value; use 0 to enable or 1 to disable Howdy\n";
+		std::cout << "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n";
 		return kExitAbort;
 	}
 	if (dependencies.resolve_config_path == nullptr ||
