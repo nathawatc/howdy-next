@@ -448,7 +448,14 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-face-model COMMAND howdy_face_model_test)
 
-	add_executable(howdy_config_utils_test tests/config/config_utils_test.cpp)
+	add_executable(
+		howdy_config_utils_test
+		tests/config/config_utils_test.cpp
+		tests/config/config_read_update_test.cpp
+		tests/config/config_atomic_write_test.cpp
+		tests/config/config_atomic_replace_test.cpp
+		tests/config/config_path_security_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_config_utils_test)
 	target_link_libraries(howdy_config_utils_test PRIVATE howdy_config)
 	add_test(NAME native-config-utils COMMAND howdy_config_utils_test)
