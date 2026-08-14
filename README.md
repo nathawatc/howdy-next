@@ -2,6 +2,12 @@
 
 C++ rewrite of Howdy facial-recognition authentication on Linux
 
+> [!NOTE]
+>
+> Howdy Next is feature-complete and actively maintained. Development now
+> focuses on bug fixes, security fixes, and platform/dependency compatibility.
+> Low commit activity does not mean the project is abandoned.
+
 ## Install from AUR
 
 > [!WARNING]
@@ -29,12 +35,6 @@ glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=
 ```
 
 Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.
-
-> [!NOTE]
->
-> Atomic user-model writes require `renameat2(..., RENAME_EXCHANGE)` support
-> from Linux kernel and filesystem containing configured user-model directory.
-> Unsupported write configurations fail closed; clear/delete uses direct unlink.
 
 ### Release
 
