@@ -236,21 +236,11 @@ namespace {
 		return "[" + label + "]";
 	}
 
-	constexpr std::array kUsageOptionOrder{
-	    howdy::native::GlobalOptionId::kUser,
-	    howdy::native::GlobalOptionId::kPlain,
-	    howdy::native::GlobalOptionId::kHelp,
-	    howdy::native::GlobalOptionId::kYes,
-	};
-
 	void print_help() {
-		std::cout << "usage: howdy";
-		for (const auto id : kUsageOptionOrder) {
-			if (const auto *option = howdy::native::find_global_option(id); option != nullptr) {
-				std::cout << " " << format_usage_option(*option);
-			}
-		}
-		std::cout << " {command} [arguments...]\n\n";
+		std::cout << "usage: howdy "
+		          << howdy::native::howdy_internal::format_usage_options(
+		                 howdy::native::global_option_catalog())
+		          << " {command} [arguments...]\n\n";
 		std::cout << "commands:\n";
 		for (const auto &descriptor : howdy::native::command_catalog()) {
 			std::cout << "  " << std::left << std::setw(17) << descriptor.name << descriptor.summary
@@ -312,6 +302,24 @@ namespace {
 	}
 
 }  // namespace
+
+auto howdy::native::howdy_internal::format_usage_options(
+    std::span<const howdy::native::GlobalOptionDescriptor> options) -> std::string {
+	std::string rendered;
+	// Preserve existing synopsis order generically: long-spelled options first, short-only last.
+	for (const bool include_long_options : {true, false}) {
+		for (const auto &option : options) {
+			if ((!option.long_name.empty()) != include_long_options) {
+				continue;
+			}
+			if (!rendered.empty()) {
+				rendered += ' ';
+			}
+			rendered += format_usage_option(option);
+		}
+	}
+	return rendered;
+}
 
 auto howdy::native::howdy_internal::howdy_main_with_dependencies(
     int argc, char **argv, const HowdyDependencies &dependencies) -> int {

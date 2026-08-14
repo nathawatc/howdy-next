@@ -23,7 +23,10 @@ namespace {
 	using howdy::native::command_catalog;
 	using howdy::native::CommandId;
 	using howdy::native::CommandKind;
+	using howdy::native::GlobalOptionDescriptor;
+	using howdy::native::GlobalOptionId;
 	using howdy::native::howdy_internal::CommandMain;
+	using howdy::native::howdy_internal::format_usage_options;
 	using howdy::native::howdy_internal::HowdyDependencies;
 
 	struct Context {
@@ -199,6 +202,29 @@ namespace {
 		return expected;
 	}
 
+	auto test_usage_option_rendering() -> bool {
+		const std::array options{
+		    GlobalOptionDescriptor{
+		        .id            = static_cast<GlobalOptionId>(255),
+		        .short_name    = "-u",
+		        .long_name     = "--user-test",
+		        .argument_name = "USER",
+		    },
+		    GlobalOptionDescriptor{
+		        .id        = static_cast<GlobalOptionId>(255),
+		        .long_name = "--plain-test",
+		        .summary   = "Plain",
+		    },
+		    GlobalOptionDescriptor{
+		        .id         = static_cast<GlobalOptionId>(255),
+		        .short_name = "-y-test",
+		        .summary    = "Yes",
+		    },
+		};
+		return expect(format_usage_options(options) == "[-u USER] [--plain-test] [-y-test]",
+		              "usage renderer includes every descriptor with generic spellings");
+	}
+
 	auto test_completion_metadata_behavior() -> bool {
 		bool ok = true;
 		{
@@ -285,6 +311,7 @@ namespace {
 
 	auto test_completion_behavior() -> bool {
 		bool ok = true;
+		ok &= test_usage_option_rendering();
 		ok &= test_completion_metadata_behavior();
 
 		{
@@ -296,6 +323,20 @@ namespace {
 			    expect(result.output.starts_with(
 			               "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n"),
 			           "help usage ordering is preserved");
+			const auto usage_end  = result.output.find('\n');
+			const auto usage_line = result.output.substr(0, usage_end);
+			for (const auto &option : howdy::native::global_option_catalog()) {
+				std::string expected = option.short_name.empty() ? std::string(option.long_name)
+				                                                 : std::string(option.short_name);
+				if (!option.argument_name.empty()) {
+					expected += ' ';
+					expected += option.argument_name;
+				}
+				expected.insert(0, 1, '[');
+				expected += ']';
+				ok &= expect(usage_line.contains(expected),
+				             "usage includes every catalog global option");
+			}
 			for (const auto &command : command_catalog()) {
 				ok &= expect(result.output.contains(command.name),
 				             "help lists every catalog command");
