@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.31)
 
 project(
 	howdy
-	VERSION 3.3.1
+	VERSION 3.4.0
 	DESCRIPTION "C++ facial-recognition authentication for Linux"
 	HOMEPAGE_URL "https://codeberg.org/nathawat/howdy-next"
 	LANGUAGES CXX
