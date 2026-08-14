@@ -206,18 +206,18 @@ namespace {
 	auto test_usage_option_rendering() -> bool {
 		const std::array options{
 		    GlobalOptionDescriptor{
-		        .id            = static_cast<GlobalOptionId>(255),
+		        .id            = GlobalOptionId::kUser,
 		        .short_name    = "-u",
 		        .long_name     = "--user-test",
 		        .argument_name = "USER",
 		    },
 		    GlobalOptionDescriptor{
-		        .id        = static_cast<GlobalOptionId>(255),
+		        .id        = GlobalOptionId::kPlain,
 		        .long_name = "--plain-test",
 		        .summary   = "Plain",
 		    },
 		    GlobalOptionDescriptor{
-		        .id         = static_cast<GlobalOptionId>(255),
+		        .id         = GlobalOptionId::kYes,
 		        .short_name = "-y-test",
 		        .summary    = "Yes",
 		    },

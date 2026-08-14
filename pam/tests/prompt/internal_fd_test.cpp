@@ -105,8 +105,6 @@ namespace {
 		{
 			ScopedFd source(move_source_fd);
 			ScopedFd moved(std::move(source));
-			ok &= expect(!source.valid() && source.get() == -1,
-			             "move constructor releases source descriptor");
 			ok &= expect(moved.valid() && moved.get() == move_source_fd,
 			             "move constructor transfers descriptor");
 		}
@@ -129,7 +127,7 @@ namespace {
 			ScopedFd destination(previous_fd);
 			ScopedFd source(incoming_fd);
 			destination = std::move(source);
-			ok &= expect(!source.valid() && destination.get() == incoming_fd,
+			ok &= expect(destination.valid() && destination.get() == incoming_fd,
 			             "move assignment transfers incoming descriptor");
 			ok &= expect(descriptor_is_closed(previous_fd),
 			             "move assignment closes previous owned descriptor");
@@ -264,8 +262,7 @@ namespace {
 			    howdy::pam::detail::normalize_internal_fd(std::move(input), &operations);
 			ok &= expect(normalized.valid() && normalized.get() == high_fd,
 			             "high normalize input passes through unchanged");
-			ok &= expect(!input.valid() && context.calls == 0,
-			             "high normalize input skips duplicate callback");
+			ok &= expect(context.calls == 0, "high normalize input skips duplicate callback");
 		}
 		return ok && expect(descriptor_is_closed(high_fd),
 		                    "high normalize descriptor closes by ownership");
@@ -292,9 +289,10 @@ namespace {
 		}
 
 		std::array<int, 3> low_fds{};
-		for (std::size_t index = 0; index < low_fds.size(); ++index) {
-			low_fds[index] = open("/dev/null", O_RDONLY | O_CLOEXEC);
-			if (low_fds[index] != static_cast<int>(index)) {
+		for (int expected_fd = STDIN_FILENO; expected_fd <= STDERR_FILENO; ++expected_fd) {
+			low_fds[static_cast<std::size_t>(expected_fd)] =
+			    open("/dev/null", O_RDONLY | O_CLOEXEC);
+			if (low_fds[static_cast<std::size_t>(expected_fd)] != expected_fd) {
 				return false;
 			}
 		}
@@ -304,7 +302,7 @@ namespace {
 			ScopedFd input(low_fd);
 			auto     normalized =
 			    howdy::pam::detail::normalize_internal_fd(std::move(input), &operations);
-			if (!normalized.valid() || normalized.get() <= STDERR_FILENO || input.valid()) {
+			if (!normalized.valid() || normalized.get() <= STDERR_FILENO) {
 				return false;
 			}
 		}

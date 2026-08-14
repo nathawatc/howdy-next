@@ -1,6 +1,7 @@
 #include "config/runtime_config.hpp"
 #include "module/auth_flow.hpp"
 #include "module/entrypoint.hpp"
+#include "prompt/prompt_coordinator_test_support.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/auth_helper_process.hpp"
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <libintl.h>
 #include <limits>
@@ -123,8 +125,8 @@ namespace {
 			}
 		}
 
-		auto start(const struct pam_conv *conversation) -> int {
-			return pam_start("howdy-auth-flow-test", "test-user", conversation, &pamh_);
+		auto start(const struct pam_conv *conversation, const char *username = "test-user") -> int {
+			return pam_start("howdy-auth-flow-test", username, conversation, &pamh_);
 		}
 
 		[[nodiscard]] auto get() const -> pam_handle_t * {
@@ -181,8 +183,20 @@ namespace {
 	};
 
 	struct RuntimeFlowState {
-		bool disabled   = false;
-		int  load_calls = 0;
+		bool                                   disabled         = false;
+		bool                                   detection_notice = true;
+		int                                    load_calls       = 0;
+		int                                    prepare_calls    = 0;
+		int                                    cleanup_calls    = 0;
+		int                                    timeout          = 5;
+		uid_t                                  effective_uid    = 0;
+		bool                                   prepare_result   = false;
+		howdy::native::RuntimeConfigLoadStatus initial_load_status =
+		    howdy::native::RuntimeConfigLoadStatus::kOk;
+		howdy::native::RuntimeConfigLoadStatus staged_load_status =
+		    howdy::native::RuntimeConfigLoadStatus::kOk;
+		int initial_error_code = 0;
+		int staged_error_code  = 0;
 	};
 
 	struct EligibilityFlowState {
@@ -211,28 +225,51 @@ namespace {
 
 	auto flow_prepare_runtime(void *context, std::string_view username,
 	                          howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
-		(void)context;
 		(void)username;
-		(void)prepared;
-		return false;
+		auto *state = static_cast<RuntimeFlowState *>(context);
+		++state->prepare_calls;
+		if (!state->prepare_result) {
+			return false;
+		}
+		*prepared = {
+		    .root_dir        = "/tmp/howdy-auth-flow-runtime",
+		    .config_path     = "/tmp/howdy-auth-flow-runtime/config.ini",
+		    .user_models_dir = "/tmp/howdy-auth-flow-runtime/models",
+		};
+		return true;
 	}
 
 	auto flow_cleanup_runtime(void *context, const std::filesystem::path &root_dir) -> void {
-		(void)context;
 		(void)root_dir;
+		auto *state = static_cast<RuntimeFlowState *>(context);
+		++state->cleanup_calls;
 	}
 
 	auto flow_load_runtime_config(void *context, const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		auto *state = static_cast<RuntimeFlowState *>(context);
 		++state->load_calls;
+		const bool staged_load = state->load_calls > 1;
+		const auto status = staged_load ? state->staged_load_status : state->initial_load_status;
+		const int  error_code = staged_load ? state->staged_error_code : state->initial_error_code;
+		if (status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+			return {
+			    .ok            = false,
+			    .status        = status,
+			    .path          = path,
+			    .config        = std::nullopt,
+			    .error_message = "flow runtime configuration failure",
+			    .error_code    = error_code,
+			};
+		}
 
 		howdy::native::RuntimeConfig config;
-		config.core.detection_notice    = true;
+		config.core.detection_notice    = state->detection_notice;
 		config.core.no_confirmation     = true;
 		config.core.abort_if_ssh        = true;
 		config.core.abort_if_lid_closed = true;
 		config.core.disabled            = state->disabled;
+		config.video.timeout            = state->timeout;
 		return {
 		    .ok            = true,
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kOk,
@@ -244,8 +281,8 @@ namespace {
 	}
 
 	auto flow_effective_uid(void *context) -> uid_t {
-		(void)context;
-		return 0;
+		auto *state = static_cast<RuntimeFlowState *>(context);
+		return state->effective_uid;
 	}
 
 	auto flow_ssh_session_present(void *context, pam_handle_t *pamh) -> bool {
@@ -468,6 +505,61 @@ namespace {
 		return child_pid;
 	}
 
+	auto spawn_blocked_child() -> pid_t {
+		const pid_t child_pid = fork();
+		if (child_pid == 0) {
+			for (;;) {
+				pause();
+			}
+		}
+		return child_pid;
+	}
+
+	auto spawn_sigterm_ignoring_child() -> pid_t {
+		std::array<int, 2> ready_pipe{-1, -1};
+		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
+			return -1;
+		}
+
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			(void)close(ready_pipe[0]);
+			(void)close(ready_pipe[1]);
+			return -1;
+		}
+		if (child_pid == 0) {
+			(void)close(ready_pipe[0]);
+			if (signal(SIGTERM, SIG_IGN) == SIG_ERR || write(ready_pipe[1], "R", 1) != 1) {
+				_exit(EXIT_FAILURE);
+			}
+			(void)close(ready_pipe[1]);
+			for (;;) {
+				pause();
+			}
+		}
+
+		(void)close(ready_pipe[1]);
+		char    ready       = 0;
+		ssize_t ready_bytes = 0;
+		do {
+			ready_bytes = read(ready_pipe[0], &ready, 1);
+		} while (ready_bytes < 0 && errno == EINTR);
+		(void)close(ready_pipe[0]);
+		if (ready_bytes == 1 && ready == 'R') {
+			return child_pid;
+		}
+
+		(void)kill(child_pid, SIGKILL);
+		while (waitpid(child_pid, nullptr, 0) < 0 && errno == EINTR) {
+		}
+		return -1;
+	}
+
+	auto always_cancel_compare(void *context) -> bool {
+		(void)context;
+		return true;
+	}
+
 	auto expect_process_waiting() -> bool {
 		bool        ok                = true;
 		const pid_t compare_child_pid = spawn_exiting_child(7);
@@ -497,6 +589,27 @@ namespace {
 		    howdy::pam::auth_helper_process::wait_for_helper(kNonexistentChild);
 		ok &= expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
 		             "helper wait failure returns abort status");
+
+		const pid_t cancelled_child = spawn_blocked_child();
+		ok &= expect(cancelled_child > 0, "spawns cancellable compare child");
+		if (cancelled_child > 0) {
+			const int cancelled_status = howdy::pam::compare_process::wait_until(
+			    cancelled_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
+			    nullptr, always_cancel_compare);
+			ok &= expect(WIFEXITED(cancelled_status) && WEXITSTATUS(cancelled_status) == abort_code,
+			             "compare cancellation returns abort status");
+		}
+
+		const pid_t timed_out_child = spawn_sigterm_ignoring_child();
+		ok &= expect(timed_out_child > 0, "spawns SIGTERM-resistant compare child");
+		if (timed_out_child > 0) {
+			const int timed_out_status = howdy::pam::compare_process::wait_until(
+			    timed_out_child, std::chrono::steady_clock::now());
+			const int timeout_code = static_cast<int>(howdy::native::CompareExit::kTimeoutReached);
+			ok &=
+			    expect(WIFEXITED(timed_out_status) && WEXITSTATUS(timed_out_status) == timeout_code,
+			           "compare timeout kills SIGTERM-resistant child");
+		}
 
 		return ok;
 	}
@@ -808,6 +921,38 @@ namespace {
 		return ok;
 	}
 
+	auto expect_authentication_guards() -> bool {
+		EligibilityFlowFixture fixture;
+		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		ConversationState      state;
+		struct pam_conv        conversation{
+		    .conv        = test_conversation,
+		    .appdata_ptr = &state,
+		};
+		bool ok = true;
+
+		ScopedPamHandle valid_handle;
+		ok &= expect(valid_handle.start(&conversation) == PAM_SUCCESS,
+		             "guard test starts valid PAM handle");
+		if (valid_handle.get() == nullptr) {
+			return false;
+		}
+		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
+		                 nullptr, {}, true, dependencies) == PAM_SYSTEM_ERR,
+		             "null PAM handle maps username lookup failure to PAM_SYSTEM_ERR");
+
+		ScopedPamHandle empty_user_handle;
+		ok &= expect(empty_user_handle.start(&conversation, "") == PAM_SUCCESS,
+		             "guard test starts empty-user PAM handle");
+		if (empty_user_handle.get() == nullptr) {
+			return false;
+		}
+		ok &= expect(howdy::pam::auth_flow::identify_with_dependencies(
+		                 empty_user_handle.get(), {}, true, dependencies) == PAM_USER_UNKNOWN,
+		             "empty PAM username maps to PAM_USER_UNKNOWN");
+		return ok;
+	}
+
 	auto expect_status_helpers() -> bool {
 		using howdy::pam::auth_flow::ConversationFn;
 		using howdy::pam::auth_flow::howdy_error;
@@ -877,6 +1022,111 @@ namespace {
 		                 last_message == "Camera image is too dark for detection",
 		             "failed status sends mapped error conversation");
 
+		return ok;
+	}
+
+	auto expect_authentication_notice_and_conversation_guards() -> bool {
+		EligibilityFlowFixture fixture;
+		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		ConversationState      state;
+		struct pam_conv        conversation{
+		    .conv        = test_conversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok = true;
+		ok &=
+		    expect(pam_handle.start(&conversation) == PAM_SUCCESS, "notice test starts PAM handle");
+		if (pam_handle.get() == nullptr) {
+			return false;
+		}
+
+		state.result = PAM_CONV_ERR;
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
+		             "detection notice conversation failure does not abort authentication");
+		ok &= expect(state.calls == 1 && state.last_msg_type == PAM_TEXT_INFO,
+		             "enabled detection notice sends text message");
+
+		fixture.runtime.detection_notice = false;
+		state.result                     = PAM_SUCCESS;
+		state.calls                      = 0;
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
+		             "disabled detection notice leaves authentication successful");
+		ok &= expect(state.calls == 0, "disabled detection notice sends no message");
+
+		const struct pam_conv unavailable{
+		    .conv        = nullptr,
+		    .appdata_ptr = nullptr,
+		};
+		ok &= expect(pam_set_item(pam_handle.get(), PAM_CONV, &unavailable) == PAM_SUCCESS,
+		             "installs unavailable PAM conversation");
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SYSTEM_ERR,
+		             "unavailable PAM conversation fails closed");
+		return ok;
+	}
+
+	auto expect_runtime_load_failure_paths() -> bool {
+		EligibilityFlowFixture fixture;
+		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		ConversationState      state;
+		struct pam_conv        conversation{
+		    .conv        = test_conversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok = true;
+		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+		             "runtime failure test starts PAM handle");
+		if (pam_handle.get() == nullptr) {
+			return false;
+		}
+
+		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
+		fixture.runtime.initial_error_code  = EACCES;
+		fixture.runtime.effective_uid       = 1000;
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SYSTEM_ERR,
+		             "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
+		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
+		             "runtime staging attempts preparation after inaccessible config");
+
+		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kParseError;
+		fixture.runtime.initial_error_code  = 0;
+		fixture.runtime.effective_uid       = 0;
+		fixture.runtime.load_calls          = 0;
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SYSTEM_ERR,
+		             "runtime configuration failure maps to PAM_SYSTEM_ERR");
+		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
+		             "non-staging runtime failure skips preparation");
+
+		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
+		fixture.runtime.initial_error_code  = EACCES;
+		fixture.runtime.effective_uid       = 1000;
+		fixture.runtime.prepare_result      = true;
+		fixture.runtime.staged_load_status  = howdy::native::RuntimeConfigLoadStatus::kOk;
+		fixture.runtime.load_calls          = 0;
+		ok &= expect(run_authentication_entrypoint(
+		                 pam_handle.get(), {}, true,
+		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		                 PAM_SUCCESS,
+		             "successful staged runtime continues authentication");
+		ok &= expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2 &&
+		                 fixture.runtime.cleanup_calls == 1,
+		             "successful staged runtime reloads config and cleans up");
 		return ok;
 	}
 
@@ -1056,6 +1306,17 @@ namespace {
 		expect_count("invalid model storage", "lid", fixture.eligibility.lid_calls, 1);
 		expect_count("invalid model storage", "model", fixture.eligibility.model_calls, 1);
 
+		fixture.eligibility.readiness = {
+		    .status = howdy::native::UserModelStatus::kInsecurePath,
+		};
+		expect_ineligible("invalid model storage without diagnostic");
+		expect_count("invalid model storage without diagnostic", "SSH",
+		             fixture.eligibility.ssh_calls, 1);
+		expect_count("invalid model storage without diagnostic", "lid",
+		             fixture.eligibility.lid_calls, 1);
+		expect_count("invalid model storage without diagnostic", "model",
+		             fixture.eligibility.model_calls, 1);
+
 		fixture.eligibility.lid = {
 		    .status        = howdy::pam::runtime::LidProbeStatus::kError,
 		    .state         = howdy::pam::runtime::LidState::kUnknown,
@@ -1093,6 +1354,157 @@ namespace {
 		return ok;
 	}
 
+	auto expect_prompt_result_mapping() -> bool {
+		using howdy::native::CompareExit;
+		using howdy::pam::PamModuleArguments;
+		using howdy::test::prompt_coordinator::FakeContext;
+
+		std::array<const char *, 1> input_argv{"workaround=input"};
+		const PamModuleArguments    input_arguments{
+		    .flags = 0,
+		    .argc  = 1,
+		    .argv  = input_argv.data(),
+		};
+
+		struct PromptResultCase {
+			const char *name;
+			bool        blocked_child;
+			int         child_exit;
+			int         token_result;
+			int         expected_result;
+		};
+
+		bool ok = true;
+
+		const auto run_case = [&](const PromptResultCase &test_case) -> void {
+			const auto [name, blocked_child, child_exit, token_result, expected_result] = test_case;
+			EligibilityFlowFixture fixture;
+			fixture.runtime.detection_notice = false;
+			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			FakeContext prompt_context;
+			dependencies.prompt_coordinator =
+			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+
+			ConversationState state;
+			struct pam_conv   conversation{
+			    .conv        = test_conversation,
+			    .appdata_ptr = &state,
+			};
+			ScopedPamHandle pam_handle;
+			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			             std::string(name) + ": starts PAM handle");
+			if (pam_handle.get() == nullptr) {
+				return;
+			}
+
+			pid_t child_pid = -1;
+			if (blocked_child) {
+				child_pid = spawn_blocked_child();
+			} else {
+				child_pid = spawn_exiting_child(child_exit);
+			}
+			ok &= expect(child_pid > 0, std::string(name) + ": spawns compare child");
+			if (child_pid <= 0) {
+				return;
+			}
+			prompt_context.next_child_pid       = child_pid;
+			prompt_context.token_result         = token_result;
+			prompt_context.token_waits_for_reap = !blocked_child;
+			prompt_context.token_delay =
+			    blocked_child ? std::chrono::milliseconds(50) : std::chrono::milliseconds(0);
+
+			const int result = run_authentication_entrypoint(
+			    pam_handle.get(), input_arguments, true,
+			    {.context = &dependencies, .authenticate = identify_for_test});
+			ok &= expect(result == expected_result,
+			             std::string(name) + ": maps prompt result (got " + std::to_string(result) +
+			                 ", auth calls " +
+			                 std::to_string(prompt_context.auth_token_calls.load()) +
+			                 ", terminate calls " +
+			                 std::to_string(prompt_context.terminate_calls.load()) + ")");
+			const bool child_handled = blocked_child ? prompt_context.terminate_calls == 1
+			                                         : prompt_context.child_reaped_by_wait;
+			ok &= expect(prompt_context.wait_calls == 1 && child_handled,
+			             std::string(name) + ": compare child is handled");
+			if (!child_handled) {
+				(void)kill(child_pid, SIGKILL);
+				(void)waitpid(child_pid, nullptr, 0);
+			}
+		};
+
+		run_case({.name            = "password failure after blocked compare",
+		          .blocked_child   = true,
+		          .child_exit      = 0,
+		          .token_result    = PAM_CONV_ERR,
+		          .expected_result = PAM_CONV_ERR});
+		run_case({.name            = "password success after blocked compare",
+		          .blocked_child   = true,
+		          .child_exit      = 0,
+		          .token_result    = PAM_SUCCESS,
+		          .expected_result = PAM_IGNORE});
+		run_case({.name            = "compare failure before password",
+		          .blocked_child   = false,
+		          .child_exit      = static_cast<int>(CompareExit::kTooDark),
+		          .token_result    = PAM_CONV_ERR,
+		          .expected_result = PAM_AUTH_ERR});
+		run_case({.name            = "compare failure with password success",
+		          .blocked_child   = false,
+		          .child_exit      = static_cast<int>(CompareExit::kTooDark),
+		          .token_result    = PAM_SUCCESS,
+		          .expected_result = PAM_IGNORE});
+
+		{
+			EligibilityFlowFixture fixture;
+			fixture.runtime.detection_notice = false;
+			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			FakeContext prompt_context;
+			prompt_context.spawn_result = EIO;
+			dependencies.prompt_coordinator =
+			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+			ConversationState state;
+			struct pam_conv   conversation{
+			    .conv        = test_conversation,
+			    .appdata_ptr = &state,
+			};
+			ScopedPamHandle pam_handle;
+			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			             "compare spawn failure starts PAM handle");
+			if (pam_handle.get() != nullptr) {
+				ok &= expect(run_authentication_entrypoint(
+				                 pam_handle.get(), input_arguments, true,
+				                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+				                 PAM_SYSTEM_ERR,
+				             "compare spawn failure maps to PAM_SYSTEM_ERR");
+			}
+		}
+
+		{
+			EligibilityFlowFixture fixture;
+			fixture.runtime.detection_notice = false;
+			fixture.runtime.timeout          = -3;
+			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			FakeContext prompt_context;
+			dependencies.prompt_coordinator =
+			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+			ConversationState state;
+			struct pam_conv   conversation{
+			    .conv        = test_conversation,
+			    .appdata_ptr = &state,
+			};
+			ScopedPamHandle pam_handle;
+			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			             "invalid coordinator timeout starts PAM handle");
+			if (pam_handle.get() != nullptr) {
+				ok &= expect(run_authentication_entrypoint(
+				                 pam_handle.get(), input_arguments, true,
+				                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+				                 PAM_SYSTEM_ERR,
+				             "invalid coordinator timeout maps to PAM_SYSTEM_ERR");
+			}
+		}
+		return ok;
+	}
+
 	auto expect_invalid_eligibility_dependencies_fail_closed() -> bool {
 		EligibilityFlowFixture fixture;
 		const auto             base = make_eligibility_flow_dependencies(&fixture);
@@ -1125,10 +1537,37 @@ namespace {
 		expect_invalid("missing model-readiness callback", [](auto &dependencies) -> void {
 			dependencies.eligibility.check_model_readiness = nullptr;
 		});
-		expect_invalid("missing runtime-session callback", [](auto &dependencies) -> void {
+		expect_invalid("missing runtime prepare callback", [](auto &dependencies) -> void {
+			dependencies.runtime_session.prepare_runtime = nullptr;
+		});
+		expect_invalid("missing runtime cleanup callback", [](auto &dependencies) -> void {
+			dependencies.runtime_session.cleanup_runtime = nullptr;
+		});
+		expect_invalid("missing runtime effective-UID callback", [](auto &dependencies) -> void {
+			dependencies.runtime_session.effective_uid = nullptr;
+		});
+		expect_invalid("missing compare wait callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.wait_for_compare_process = nullptr;
+		});
+		expect_invalid("missing input preflight callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.input_prompt_preflight = nullptr;
+		});
+		expect_invalid("missing prompt submitter callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.create_prompt_submitter = nullptr;
+		});
+		expect_invalid("missing native prompt callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.create_native_prompt = nullptr;
+		});
+		expect_invalid("missing secret conversation callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.create_secret_prompt_conversation = nullptr;
+		});
+		expect_invalid("missing auth-token callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.request_auth_token = nullptr;
+		});
+		expect_invalid("missing runtime config callback", [](auto &dependencies) -> void {
 			dependencies.runtime_session.load_runtime_config = nullptr;
 		});
-		expect_invalid("missing prompt-coordinator callback", [](auto &dependencies) -> void {
+		expect_invalid("missing prompt spawn callback", [](auto &dependencies) -> void {
 			dependencies.prompt_coordinator.spawn_compare_process = nullptr;
 		});
 
@@ -1151,6 +1590,10 @@ auto main() -> int {
 	ok &= expect_auth_helper_output_protocol_validation();
 	ok &= expect_conversation_helpers();
 	ok &= expect_status_helpers();
+	ok &= expect_authentication_guards();
+	ok &= expect_authentication_notice_and_conversation_guards();
+	ok &= expect_runtime_load_failure_paths();
+	ok &= expect_prompt_result_mapping();
 	ok &= expect_authentication_preserves_host_locale_state();
 	ok &= expect_authentication_eligibility_integration();
 	ok &= expect_invalid_eligibility_dependencies_fail_closed();

@@ -1,5 +1,6 @@
 #include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_conversation.hpp"
+#include "prompt/native_prompt_input.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -139,13 +140,15 @@ namespace {
 	constexpr int kPromptReadTimeoutMs = 1000;
 
 	struct OperationContext {
-		NativePromptConversation *conversation     = nullptr;
-		int                       poll_eintr_count = 0;
-		int                       read_eintr_count = 0;
-		bool                      abort_on_poll    = false;
-		bool                      abort_on_read    = false;
-		bool                      restore_failure  = false;
-		int                       throw_mode       = 0;
+		NativePromptConversation *conversation        = nullptr;
+		int                       poll_eintr_count    = 0;
+		int                       read_eintr_count    = 0;
+		int                       read_zero_count     = 0;
+		int                       restore_eintr_count = 0;
+		bool                      abort_on_poll       = false;
+		bool                      abort_on_read       = false;
+		bool                      restore_failure     = false;
+		int                       throw_mode          = 0;
 		std::array<int, 3>        pam_set_results{{PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}};
 		int                       pam_set_calls = 0;
 		struct pam_conv           last_pam_conversation{};
@@ -174,11 +177,20 @@ namespace {
 			errno = EINTR;
 			return -1;
 		}
+		if (operations.read_zero_count > 0) {
+			--operations.read_zero_count;
+			return 0;
+		}
 		return read(fd, buffer, count);
 	}
 
 	auto injected_restore(void *context, int fd, const struct termios *termios) -> int {
 		auto &operations = *static_cast<OperationContext *>(context);
+		if (operations.restore_eintr_count > 0) {
+			--operations.restore_eintr_count;
+			errno = EINTR;
+			return -1;
+		}
 		if (operations.restore_failure) {
 			errno = EIO;
 			return -1;
@@ -883,7 +895,12 @@ namespace {
 		                                                          nullptr) == PAM_CONV_ERR,
 		             "dispatch rejects null response pointer");
 
-		auto                      conversation = create_conversation({});
+		auto conversation = create_conversation({});
+		responses         = reinterpret_cast<struct pam_response *>(0x1);
+		ok &= expect(NativePromptConversationTestAccess::dispatch(
+		                 0, &message_ptr, &responses, conversation.get()) == PAM_CONV_ERR,
+		             "dispatch rejects zero message count");
+		ok &= expect(responses == nullptr, "zero-message dispatch clears response");
 		const struct pam_message *null_message = nullptr;
 		responses                              = reinterpret_cast<struct pam_response *>(0x1);
 		ok &= expect(NativePromptConversationTestAccess::dispatch(
@@ -1394,6 +1411,201 @@ namespace {
 		return ok;
 	}
 
+	auto expect_read_zero_retries_and_accepts_input() -> bool {
+		bool                    ok = true;
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+
+		ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+		             "read zero retry test opens pseudo terminal");
+		ok &= expect(open_pipe(&abort_pipe), "read zero retry test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		OperationContext operations{.read_zero_count = 1};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
+		return expect_prompt_input_returns_password_after_retry(conversation.get(), master_fd.get(),
+		                                                        "read zero retry test");
+	}
+
+	auto expect_restore_eintr_retries_and_restores() -> bool {
+		bool                    ok = true;
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+
+		ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+		             "restore EINTR retry test opens pseudo terminal");
+		ok &= expect(open_pipe(&abort_pipe), "restore EINTR retry test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		OperationContext operations{.restore_eintr_count = 1};
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()},
+		                                        &operations);
+		return expect_prompt_input_returns_password_after_retry(conversation.get(), master_fd.get(),
+		                                                        "restore EINTR retry test");
+	}
+
+	auto expect_native_message_styles() -> bool {
+		bool                    ok = true;
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+		ok &= expect(open_pty_pair(&master_fd, &slave_fd),
+		             "message-style test opens pseudo terminal");
+		ok &= expect(open_pipe(&abort_pipe), "message-style test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		auto conversation = create_conversation({.tty_fd         = slave_fd.release(),
+		                                         .abort_read_fd  = abort_pipe[0].release(),
+		                                         .abort_write_fd = abort_pipe[1].release()});
+
+		const struct pam_message echo_on_message{.msg_style = PAM_PROMPT_ECHO_ON, .msg = "Login: "};
+		const struct pam_message *echo_on_ptr      = &echo_on_message;
+		struct pam_response      *echo_on_response = nullptr;
+		int                       echo_on_result   = PAM_CONV_ERR;
+		std::thread               echo_on_thread([&] -> void {
+			echo_on_result = NativePromptConversationTestAccess::dispatch(
+			    1, &echo_on_ptr, &echo_on_response, conversation.get());
+		});
+		std::array<char, 64>      prompt_buffer{};
+		ok &= expect(read_with_timeout(master_fd.get(),
+		                               {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		                               kPromptReadTimeoutMs) > 0,
+		             "message-style test writes echo-on prompt");
+		constexpr std::string_view kVisibleInput = "visible\n";
+		ok &= expect(write_all(master_fd.get(), kVisibleInput.data(), kVisibleInput.size()),
+		             "message-style test writes echo-on response");
+		echo_on_thread.join();
+		ok &= expect(echo_on_result == PAM_SUCCESS, "PAM_PROMPT_ECHO_ON dispatch succeeds");
+		ok &= expect(echo_on_response != nullptr &&
+		                 std::string(echo_on_response[0].resp) == "visible",
+		             "PAM_PROMPT_ECHO_ON returns visible input");
+		if (echo_on_response != nullptr) {
+			std::free(echo_on_response[0].resp);
+			std::free(echo_on_response);
+		}
+
+		for (const int style : {PAM_TEXT_INFO, PAM_ERROR_MSG}) {
+			const struct pam_message  message{.msg_style = style, .msg = "notice"};
+			const struct pam_message *message_ptr = &message;
+			struct pam_response      *responses   = nullptr;
+			const int                 result      = NativePromptConversationTestAccess::dispatch(
+			    1, &message_ptr, &responses, conversation.get());
+			ok &= expect(result == PAM_SUCCESS,
+			             "text and error message styles dispatch successfully");
+			ok &= expect(responses != nullptr && responses[0].resp == nullptr,
+			             "text and error message styles return empty responses");
+			ok &= expect(
+			    read_with_timeout(master_fd.get(),
+			                      {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+			                      kPromptReadTimeoutMs) > 0,
+			    "text and error message styles write message lines");
+			std::free(responses);
+		}
+
+		const struct pam_message  null_message{.msg_style = PAM_TEXT_INFO, .msg = nullptr};
+		const struct pam_message *null_message_ptr = &null_message;
+		struct pam_response      *null_responses   = nullptr;
+		ok &= expect(NativePromptConversationTestAccess::dispatch(
+		                 1, &null_message_ptr, &null_responses, conversation.get()) == PAM_SUCCESS,
+		             "null message text is treated as empty text");
+		ok &= expect(read_with_timeout(master_fd.get(),
+		                               {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+		                               kPromptReadTimeoutMs) > 0,
+		             "null message text still writes newline");
+		std::free(null_responses);
+
+		const struct pam_message  unsupported_message{.msg_style = 99, .msg = "unsupported"};
+		const struct pam_message *unsupported_ptr      = &unsupported_message;
+		struct pam_response      *unsupported_response = nullptr;
+		ok &= expect(
+		    NativePromptConversationTestAccess::dispatch(1, &unsupported_ptr, &unsupported_response,
+		                                                 conversation.get()) == PAM_CONV_ERR,
+		    "unsupported message style is rejected");
+		ok &= expect(unsupported_response == nullptr, "unsupported message style clears responses");
+
+		auto                 invalid_tty          = create_conversation({});
+		struct pam_response *invalid_tty_response = nullptr;
+		ok &= expect(NativePromptConversationTestAccess::dispatch(
+		                 1, &null_message_ptr, &invalid_tty_response, invalid_tty.get()) ==
+		                 PAM_CONV_ERR,
+		             "message dispatch rejects missing terminal");
+		ok &= expect(invalid_tty_response == nullptr,
+		             "missing terminal message dispatch clears responses");
+
+		const int closed_tty = NativePromptConversationTestAccess::tty_fd(*conversation);
+		close(closed_tty);
+		const struct pam_message  write_failure_message{.msg_style = PAM_TEXT_INFO,
+		                                                .msg       = "failure"};
+		const struct pam_message *write_failure_ptr      = &write_failure_message;
+		struct pam_response      *write_failure_response = nullptr;
+		ok &= expect(NativePromptConversationTestAccess::dispatch(
+		                 1, &write_failure_ptr, &write_failure_response, conversation.get()) ==
+		                 PAM_CONV_ERR,
+		             "message dispatch reports terminal write failure");
+		ok &= expect(write_failure_response == nullptr, "terminal write failure clears responses");
+		return ok;
+	}
+
+	auto expect_destroyed_installed_native_wrapper_fails_closed() -> bool {
+		auto conversation = create_conversation({});
+		NativePromptConversationTestAccess::set_installed(*conversation, true);
+		const auto installed =
+		    NativePromptConversationTestAccess::override_conversation(*conversation);
+		conversation.reset();
+		const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "late"};
+		const struct pam_message *message_ptr = &message;
+		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+		const int result = installed.conv(1, &message_ptr, &response, installed.appdata_ptr);
+		return expect(result == PAM_CONV_ERR, "destroyed installed native wrapper fails closed") &&
+		       expect(response == nullptr, "destroyed installed native wrapper clears response");
+	}
+
+	auto expect_native_prompt_input_edges() -> bool {
+		using howdy::pam::native_prompt_input::CharacterResult;
+		using howdy::pam::native_prompt_input::SensitiveBuffer;
+
+		bool            ok = true;
+		SensitiveBuffer password;
+		bool            response_too_long = false;
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 '\b', password, response_too_long) == CharacterResult::keep_reading &&
+		                 password.empty(),
+		             "backspace on empty password is ignored");
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 'x', password, response_too_long) == CharacterResult::keep_reading &&
+		                 password.size() == 1,
+		             "ordinary character is appended to password");
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 127, password, response_too_long) == CharacterResult::keep_reading &&
+		                 password.empty(),
+		             "delete removes last password character");
+		response_too_long = true;
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 'y', password, response_too_long) == CharacterResult::keep_reading &&
+		                 password.empty(),
+		             "characters after response overflow are drained");
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 '\r', password, response_too_long) == CharacterResult::complete,
+		             "carriage return completes password input");
+		ok &= expect(howdy::pam::native_prompt_input::process_character(
+		                 3, password, response_too_long) == CharacterResult::abort,
+		             "Ctrl-C aborts password input");
+		return ok;
+	}
+
 	auto expect_oversized_prompt_fails_closed() -> bool {
 		bool                    ok = true;
 		ScopedFd                master_fd;
@@ -1429,7 +1641,7 @@ namespace {
 		    kPromptReadTimeoutMs);
 		ok &= expect(prompt_bytes > 0, "oversized prompt test writes prompt to tty");
 
-		const std::string oversized_response = std::string(513, 'x') + "\n";
+		const std::string oversized_response = std::string(514, 'x') + "\n";
 		ok &=
 		    expect(write_all(master_fd.get(), oversized_response.data(), oversized_response.size()),
 		           "oversized prompt test writes over-limit response");
@@ -1561,6 +1773,7 @@ auto main() -> int {
 	}
 
 	ok &= expect_dispatch_rejects_invalid_state();
+	ok &= expect_destroyed_installed_native_wrapper_fails_closed();
 	ok &= expect_native_terminal_eligibility();
 	ok &= expect_native_terminal_aliases();
 	ok &= expect_isolated(closed_stdin_preserved_with_terminal_stdout,
@@ -1589,6 +1802,10 @@ auto main() -> int {
 	ok &= expect_poll_eintr_with_abort_fails_closed();
 	ok &= expect_read_eintr_retries_and_accepts_input();
 	ok &= expect_read_eintr_with_abort_fails_closed();
+	ok &= expect_read_zero_retries_and_accepts_input();
+	ok &= expect_restore_eintr_retries_and_restores();
+	ok &= expect_native_message_styles();
+	ok &= expect_native_prompt_input_edges();
 	ok &= expect_oversized_prompt_fails_closed();
 	ok &= expect_restore_failure_fails_closed();
 	ok &= expect_restore_handles_null_pam();

@@ -223,7 +223,8 @@ auto main() -> int {
 		TestContext context;
 		const auto  result = run_disable({"howdy-disable"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 1, "missing argument returns 1");
-		ok &= expect(result.stdout_output == "Specify 0 or false to enable, or 1 or true to disable Howdy\n",
+		ok &= expect(result.stdout_output ==
+		                 "Specify 0 or false to enable, or 1 or true to disable Howdy\n",
 		             "missing argument stdout exact");
 		ok &= expect(result.stderr_output.empty(), "missing argument stderr empty");
 		ok &= expect_no_calls(context, "missing argument skips dependencies");
@@ -233,9 +234,9 @@ auto main() -> int {
 		TestContext context;
 		const auto  result = run_disable({"howdy-disable", "invalid"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 1, "invalid argument returns 1");
-		ok &=
-		    expect(result.stdout_output == "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n",
-		           "invalid argument stdout exact");
+		ok &= expect(result.stdout_output ==
+		                 "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n",
+		             "invalid argument stdout exact");
 		ok &= expect(result.stderr_output.empty(), "invalid argument stderr empty");
 		ok &= expect_no_calls(context, "invalid argument skips dependencies");
 	}

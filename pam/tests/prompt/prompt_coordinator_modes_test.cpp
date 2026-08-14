@@ -4,6 +4,129 @@
 namespace {
 	using namespace howdy::test::prompt_coordinator;
 
+	auto test_existing_auth_token_skips_prompt_workaround() -> bool {
+		FakeContext context;
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "existing-token child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::kNativeInput, true, true,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              "existing auth token preserves compare result") &&
+		       expect(context.preflight_calls == 0, "existing auth token skips input preflight") &&
+		       expect(context.prompt_submitter_constructions == 0,
+		              "existing auth token skips prompt submitter construction") &&
+		       expect(context.auth_token_calls == 0,
+		              "existing auth token skips duplicate password request") &&
+		       expect(child_reaped(child_pid), "existing-token child is reaped");
+	}
+
+	auto test_secret_observation_setup_fallback(int mode, const std::string &label) -> bool {
+		FakeContext context;
+		if (mode == 0) {
+			context.return_null_secret_prompt = true;
+		} else if (mode == 1) {
+			context.secret_prompt_available = false;
+		} else if (mode == 2) {
+			context.secret_prompt_install_result = PAM_CONV_ERR;
+		} else if (mode == 3) {
+			context.throw_secret_prompt = true;
+		} else {
+			context.throw_secret_prompt_unknown = true;
+		}
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              label + " falls back to standard prompt") &&
+		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
+		       expect(context.prompt_submitter_constructions == 1,
+		              label + " constructs prompt submitter once") &&
+		       expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       expect(context.secret_restore_calls == 0,
+		              label + " has no conversation to restore") &&
+		       expect(child_reaped(child_pid), label + " reaps child");
+	}
+
+	auto test_native_prompt_setup_exception_fallback(bool unknown, const std::string &label)
+	    -> bool {
+		FakeContext      context;
+		NativePamFixture fixture(&context);
+		if (!expect(fixture.start(false), label + " starts PAM handle")) {
+			return false;
+		}
+		context.throw_native_prompt         = !unknown;
+		context.throw_native_prompt_unknown = unknown;
+		const pid_t child_pid               = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		              label + " falls back after native setup exception") &&
+		       expect(context.preflight_calls == 0, label + " skips input fallback") &&
+		       expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       expect(child_reaped(child_pid), label + " reaps child");
+	}
+
+	auto test_auth_token_exception_mapping(bool unknown, const std::string &label) -> bool {
+		FakeContext context{
+		    .throw_auth_token         = !unknown,
+		    .throw_auth_token_unknown = unknown,
+		};
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, label + " child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              label + " returns PAM result") &&
+		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		              label + " maps exception to system error") &&
+		       expect(context.auth_token_calls == 1, label + " requests token once") &&
+		       expect(child_reaped(child_pid), label + " reaps canceled compare child");
+	}
+
+	auto test_secret_restore_failure_mapping() -> bool {
+		FakeContext context{
+		    .secret_restore_result = howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
+		};
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "secret restore failure child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              "secret restore failure returns PAM result") &&
+		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		              "secret restore failure maps to system error") &&
+		       expect(context.secret_restore_calls == 1,
+		              "secret restore failure attempts restoration once") &&
+		       expect(child_reaped(child_pid), "secret restore failure child is reaped");
+	}
+
 	auto test_input_success_submits_prompt() -> bool {
 		FakeContext context{
 		    .block_token_until_release   = true,
@@ -422,6 +545,17 @@ namespace {
 
 auto run_prompt_mode_tests() -> bool {
 	bool ok = true;
+	ok &= test_existing_auth_token_skips_prompt_workaround();
+	ok &= test_secret_observation_setup_fallback(0, "null secret observer");
+	ok &= test_secret_observation_setup_fallback(1, "unavailable secret observer");
+	ok &= test_secret_observation_setup_fallback(2, "secret observer install failure");
+	ok &= test_secret_observation_setup_fallback(3, "secret observer setup exception");
+	ok &= test_secret_observation_setup_fallback(4, "secret observer unknown exception");
+	ok &= test_native_prompt_setup_exception_fallback(false, "native setup exception");
+	ok &= test_native_prompt_setup_exception_fallback(true, "native setup unknown exception");
+	ok &= test_auth_token_exception_mapping(false, "auth token exception");
+	ok &= test_auth_token_exception_mapping(true, "auth token unknown exception");
+	ok &= test_secret_restore_failure_mapping();
 	ok &= test_input_success_submits_prompt();
 	ok &= test_compare_failure_password_result(PAM_SUCCESS, "successful password fallback");
 	ok &= test_compare_failure_password_result(PAM_CONV_ERR, "failed password fallback");

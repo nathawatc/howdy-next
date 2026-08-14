@@ -180,9 +180,18 @@ namespace howdy::test::prompt_coordinator {
 		bool                                            preflight_result                   = true;
 		bool                                            fail_prompt_submitter_construction = false;
 		bool                                            return_null_prompt_submitter       = false;
-		bool                                            fail_prompt_submission             = false;
-		bool                                            release_token_on_submission        = false;
-		bool                                            block_submission_after_start       = false;
+		bool                                            throw_native_prompt                = false;
+		bool                                            throw_native_prompt_unknown        = false;
+		bool                                            throw_secret_prompt                = false;
+		bool                                            throw_secret_prompt_unknown        = false;
+		bool                                            return_null_secret_prompt          = false;
+		bool                                            secret_prompt_available            = true;
+		int                                             secret_prompt_install_result = PAM_SUCCESS;
+		bool                                            throw_auth_token             = false;
+		bool                                            throw_auth_token_unknown     = false;
+		bool                                            fail_prompt_submission       = false;
+		bool                                            release_token_on_submission  = false;
+		bool                                            block_submission_after_start = false;
 		std::atomic<bool>                               token_returned{false};
 		std::atomic<howdy::pam::SecretPromptGeneration> active_prompt_generation{0};
 		std::atomic<bool>                               submission_ready{false};
@@ -293,11 +302,11 @@ namespace howdy::test::prompt_coordinator {
 		    : context_(context) {}
 
 		[[nodiscard]] auto available() const -> bool override {
-			return true;
+			return context_->secret_prompt_available;
 		}
 
 		auto install() -> int override {
-			return PAM_SUCCESS;
+			return context_->secret_prompt_install_result;
 		}
 
 		auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override {
@@ -645,6 +654,12 @@ namespace howdy::test::prompt_coordinator {
 		(void)pamh;
 		auto &fake                = *static_cast<FakeContext *>(context);
 		fake.native_create_thread = std::this_thread::get_id();
+		if (fake.throw_native_prompt) {
+			throw std::runtime_error("Failed to create native prompt");
+		}
+		if (fake.throw_native_prompt_unknown) {
+			throw 1;
+		}
 		return std::make_unique<FakeNativePrompt>(&fake);
 	}
 
@@ -654,6 +669,15 @@ namespace howdy::test::prompt_coordinator {
 		(void)pamh;
 		auto &fake                  = *static_cast<FakeContext *>(context);
 		fake.secret_prompt_observer = observer;
+		if (fake.throw_secret_prompt) {
+			throw std::runtime_error("Failed to create secret prompt observer");
+		}
+		if (fake.throw_secret_prompt_unknown) {
+			throw 1;
+		}
+		if (fake.return_null_secret_prompt) {
+			return nullptr;
+		}
 		return std::make_unique<FakeSecretPromptConversation>(&fake);
 	}
 
@@ -716,6 +740,12 @@ namespace howdy::test::prompt_coordinator {
 		++fake.auth_token_calls;
 		fake.auth_token_thread = std::this_thread::get_id();
 		fake.auth_token_active = true;
+		if (fake.throw_auth_token) {
+			throw std::runtime_error("Failed to request auth token");
+		}
+		if (fake.throw_auth_token_unknown) {
+			throw 1;
+		}
 		const auto generation =
 		    !fake.suppress_secret_prompt && !fake.use_real_auth_token &&
 		            fake.secret_prompt_observer.begin != nullptr

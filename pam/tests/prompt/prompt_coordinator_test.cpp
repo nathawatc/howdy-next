@@ -758,6 +758,31 @@ namespace {
 		       expect(child_reaped(child_pid), "reap/cancel race reaps child exactly once");
 	}
 
+	auto test_stale_prompt_generation_close_is_ignored() -> bool {
+		FakeContext       context;
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
+		                              dependencies(&context), 5s);
+		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator, 0);
+		howdy::pam::PromptCoordinatorTestAccess::prepare_claimed_submission(
+		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
+		const auto generation =
+		    howdy::pam::PromptCoordinatorTestAccess::begin_prompt_generation(coordinator);
+		howdy::pam::PromptCoordinatorTestAccess::close_prompt_generation(coordinator,
+		                                                                 generation - 1);
+		std::jthread worker([&coordinator] -> void {
+			howdy::pam::PromptCoordinatorTestAccess::submit_prompt_for_generations(coordinator);
+		});
+		const bool   submission_completed = wait_for_submission_finished(context, 1s);
+		if (!submission_completed) {
+			howdy::pam::PromptCoordinatorTestAccess::request_shutdown(coordinator);
+		}
+		worker.join();
+		return expect(generation == 2, "stale generation test starts second generation") &&
+		       expect(submission_completed, "stale generation close preserves active generation") &&
+		       expect(context.prompt_submissions == 1,
+		              "stale generation close permits one prompt submission");
+	}
+
 	auto test_compare_wait_exception_reaps_child() -> bool {
 		FakeContext context{.throw_compare_wait = true};
 		const pid_t child_pid = spawn_blocked_child();
@@ -799,6 +824,7 @@ auto main() -> int {
 	ok &= test_prompt_submission_failure_is_handled();
 	ok &= test_production_prompt_wrapper_batches_and_fails_closed();
 	ok &= test_reaped_child_is_never_signalled_by_caller();
+	ok &= test_stale_prompt_generation_close_is_ignored();
 	ok &= test_compare_wait_exception_reaps_child();
 	ok &= run_prompt_mode_tests();
 	ok &= run_prompt_adapter_tests();

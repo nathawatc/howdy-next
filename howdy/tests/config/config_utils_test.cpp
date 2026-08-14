@@ -73,6 +73,78 @@ namespace {
 		unsetenv(name);
 	}
 
+	auto expect_float_write_paths(const std::filesystem::path &config_path) -> bool {
+		auto write_float_config = [&]() -> bool {
+			return write_file(config_path, "[video]\n"
+			                               "clahe_clip_limit = 2\n"
+			                               "\n"
+			                               "[face]\n"
+			                               "yunet_score_threshold = 0.9\n"
+			                               "yunet_nms_threshold = 0.4\n"
+			                               "sface_threshold = 0.5\n");
+		};
+
+		auto expect_float_write_path = [&](const std::string &label) -> bool {
+			bool ok = true;
+			ok &= expect(write_float_config(), label + ": write baseline float config");
+			ok &=
+			    expect(howdy::native::update_config_value(config_path, "clahe_clip_limit", "1.25"),
+			           label + ": update_config_value accepts clahe_clip_limit dot decimal");
+			ok &= expect(read_file(config_path).contains("clahe_clip_limit = 1.25\n"),
+			             label + ": clahe_clip_limit written unchanged");
+			ok &= expect(
+			    howdy::native::update_config_value(config_path, "yunet_score_threshold", "0.8845"),
+			    label + ": update_config_value accepts yunet_score_threshold dot decimal");
+			ok &= expect(read_file(config_path).contains("yunet_score_threshold = 0.8845\n"),
+			             label + ": yunet_score_threshold written unchanged");
+			ok &= expect(
+			    howdy::native::update_config_value(config_path, "yunet_nms_threshold", "0.3"),
+			    label + ": update_config_value accepts yunet_nms_threshold dot decimal");
+			ok &= expect(read_file(config_path).contains("yunet_nms_threshold = 0.3\n"),
+			             label + ": yunet_nms_threshold written unchanged");
+			ok &=
+			    expect(howdy::native::update_config_value(config_path, "sface_threshold", "0.6942"),
+			           label + ": update_config_value accepts sface_threshold dot decimal");
+			ok &= expect(read_file(config_path).contains("sface_threshold = 0.6942\n"),
+			             label + ": sface_threshold written unchanged");
+
+			for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
+				const auto before_invalid = read_file(config_path);
+				ok &= expect(
+				    !howdy::native::update_config_value(config_path, "clahe_clip_limit", value),
+				    label + ": update_config_value rejects invalid float " + std::string(value));
+				ok &= expect(read_file(config_path) == before_invalid,
+				             label + ": invalid float update leaves config unchanged for " +
+				                 std::string(value));
+			}
+			return ok;
+		};
+
+		bool ok = expect_float_write_path("C locale");
+
+		const char *current_locale = std::setlocale(LC_ALL, nullptr);
+		const auto  previous_locale =
+		    current_locale == nullptr ? std::optional<std::string>() : std::string(current_locale);
+		const auto previous_lc_all     = get_env_value("LC_ALL");
+		const auto previous_lc_numeric = get_env_value("LC_NUMERIC");
+		const auto previous_lang       = get_env_value("LANG");
+		unsetenv("LC_ALL");
+		setenv("LANG", "C", 1);
+		setenv("LC_NUMERIC", "nl_NL.UTF-8", 1);
+		if (std::setlocale(LC_ALL, "") != nullptr) {
+			ok &= expect_float_write_path("LC_NUMERIC=nl_NL.UTF-8");
+		} else {
+			std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+		}
+		restore_env_value("LC_ALL", previous_lc_all);
+		restore_env_value("LC_NUMERIC", previous_lc_numeric);
+		restore_env_value("LANG", previous_lang);
+		if (previous_locale.has_value()) {
+			std::setlocale(LC_ALL, previous_locale->c_str());
+		}
+		return ok;
+	}
+
 	struct FileSizeLimitGuard {
 		using SignalHandler = void (*)(int);
 
@@ -146,6 +218,10 @@ auto main() -> int {
 	                                     "[video]\n"
 	                                     "dark_threshold = 60\n"),
 	             "write initial config");
+	const auto parentless_check = howdy::native::check_secure_config_path("config.ini");
+	ok &= expect(!parentless_check.ok &&
+	                 parentless_check.error_message.contains("must have a parent directory"),
+	             "check_secure_config_path rejects parentless config path");
 
 	const auto lines = howdy::native::read_config_lines(config_path, false);
 	ok &= expect(lines.size() == 5, "read_config_lines returns expected line count");
@@ -182,6 +258,12 @@ auto main() -> int {
 
 	ok &= expect(howdy::native::is_safe_ini_scalar_value("true"),
 	             "is_safe_ini_scalar_value accepts simple scalar");
+	ok &= expect(howdy::native::is_safe_ini_scalar_value(""),
+	             "is_safe_ini_scalar_value accepts empty scalar");
+	ok &= expect(!howdy::native::is_safe_ini_scalar_value(std::string(1, '\0')),
+	             "is_safe_ini_scalar_value rejects embedded NUL");
+	ok &= expect(!howdy::native::is_safe_ini_scalar_value("\r"),
+	             "is_safe_ini_scalar_value rejects carriage return");
 	ok &= expect(!howdy::native::is_safe_ini_scalar_value("true\n[video]\ntimeout = 0"),
 	             "is_safe_ini_scalar_value rejects newline injection");
 	ok &= expect(!howdy::native::is_safe_ini_scalar_value("[video]"),
@@ -191,6 +273,20 @@ auto main() -> int {
 	             "update_config_value succeeds in later section");
 	const auto after_threshold = read_file(config_path);
 	ok &= expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
+
+	const auto whitespace_path = temp_root / "whitespace.ini";
+	ok &= expect(write_file(whitespace_path, "   \n\t  "), "write whitespace-only config lines");
+	ok &= expect(!howdy::native::update_config_value(whitespace_path, "missing_key", nullptr, "x",
+	                                                 false, false),
+	             "update_config_value ignores whitespace-only lines");
+	const auto alternate_syntax_path = temp_root / "alternate-syntax.ini";
+	ok &= expect(write_file(alternate_syntax_path, "[core]\ndisabled true\n"),
+	             "write space-separated config option");
+	ok &= expect(howdy::native::update_config_value(alternate_syntax_path, "disabled", nullptr,
+	                                                "false", false, false),
+	             "update_config_value accepts space-separated option syntax");
+	ok &= expect(read_file(alternate_syntax_path) == "[core]\ndisabled = false\n",
+	             "space-separated option is normalized");
 
 	ok &= expect(!howdy::native::update_config_value(config_path, "missing_key", "x"),
 	             "update_config_value fails for missing key");
@@ -208,74 +304,7 @@ auto main() -> int {
 	ok &= expect(read_file(config_path) == after_threshold,
 	             "invalid device_fps update leaves config unchanged");
 
-	auto write_float_config = [&]() -> bool {
-		return write_file(config_path, "[video]\n"
-		                               "clahe_clip_limit = 2\n"
-		                               "\n"
-		                               "[face]\n"
-		                               "yunet_score_threshold = 0.9\n"
-		                               "yunet_nms_threshold = 0.4\n"
-		                               "sface_threshold = 0.5\n");
-	};
-
-	auto expect_float_write_path = [&](const std::string &label) -> bool {
-		bool write_ok = true;
-		write_ok &= expect(write_float_config(), label + ": write baseline float config");
-		write_ok &=
-		    expect(howdy::native::update_config_value(config_path, "clahe_clip_limit", "1.25"),
-		           label + ": update_config_value accepts clahe_clip_limit dot decimal");
-		write_ok &= expect(read_file(config_path).contains("clahe_clip_limit = 1.25\n"),
-		                   label + ": clahe_clip_limit written unchanged");
-		write_ok &= expect(
-		    howdy::native::update_config_value(config_path, "yunet_score_threshold", "0.8845"),
-		    label + ": update_config_value accepts yunet_score_threshold dot decimal");
-		write_ok &= expect(read_file(config_path).contains("yunet_score_threshold = 0.8845\n"),
-		                   label + ": yunet_score_threshold written unchanged");
-		write_ok &=
-		    expect(howdy::native::update_config_value(config_path, "yunet_nms_threshold", "0.3"),
-		           label + ": update_config_value accepts yunet_nms_threshold dot decimal");
-		write_ok &= expect(read_file(config_path).contains("yunet_nms_threshold = 0.3\n"),
-		                   label + ": yunet_nms_threshold written unchanged");
-		write_ok &=
-		    expect(howdy::native::update_config_value(config_path, "sface_threshold", "0.6942"),
-		           label + ": update_config_value accepts sface_threshold dot decimal");
-		write_ok &= expect(read_file(config_path).contains("sface_threshold = 0.6942\n"),
-		                   label + ": sface_threshold written unchanged");
-
-		for (const auto *const value : {"1,25", "1.25abc", "nan", "inf", "+inf", "-inf"}) {
-			const auto before_invalid = read_file(config_path);
-			write_ok &=
-			    expect(!howdy::native::update_config_value(config_path, "clahe_clip_limit", value),
-			           label + ": update_config_value rejects invalid float " + std::string(value));
-			write_ok &= expect(read_file(config_path) == before_invalid,
-			                   label + ": invalid float update leaves config unchanged for " +
-			                       std::string(value));
-		}
-		return write_ok;
-	};
-
-	ok &= expect_float_write_path("C locale");
-
-	const char *current_locale = std::setlocale(LC_ALL, nullptr);
-	const auto  previous_locale =
-	    current_locale == nullptr ? std::optional<std::string>() : std::string(current_locale);
-	const auto previous_lc_all     = get_env_value("LC_ALL");
-	const auto previous_lc_numeric = get_env_value("LC_NUMERIC");
-	const auto previous_lang       = get_env_value("LANG");
-	unsetenv("LC_ALL");
-	setenv("LANG", "C", 1);
-	setenv("LC_NUMERIC", "nl_NL.UTF-8", 1);
-	if (std::setlocale(LC_ALL, "") != nullptr) {
-		ok &= expect_float_write_path("LC_NUMERIC=nl_NL.UTF-8");
-	} else {
-		std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
-	}
-	restore_env_value("LC_ALL", previous_lc_all);
-	restore_env_value("LC_NUMERIC", previous_lc_numeric);
-	restore_env_value("LANG", previous_lang);
-	if (previous_locale.has_value()) {
-		std::setlocale(LC_ALL, previous_locale->c_str());
-	}
+	ok &= expect_float_write_paths(config_path);
 
 	ok &= expect(write_file(config_path, "[core]\n"
 	                                     "disabled = false\n"
@@ -306,6 +335,22 @@ auto main() -> int {
 	             "atomic_write_lines creates parent dirs and writes file");
 	ok &= expect(read_file(nested_path) == "[face]\nsface_threshold = 0.363\n",
 	             "atomic_write_lines output matches expected content");
+	const auto atomic_directory_path = temp_root / "atomic-directory.ini";
+	ok &= expect(fs::create_directory(atomic_directory_path, ec),
+	             "create non-regular atomic write target");
+	ok &= expect(howdy::native::atomic_write_lines(atomic_directory_path, write_lines) ==
+	                 howdy::native::AtomicFileCommitResult::kNotCommitted,
+	             "atomic_write_lines rejects non-regular target");
+	const auto         atomic_size_path = temp_root / "atomic-size-limit.ini";
+	FileSizeLimitGuard atomic_file_size_limit;
+	const bool         atomic_limit_set = atomic_file_size_limit.set_zero();
+	if (atomic_limit_set) {
+		ok &= expect(howdy::native::atomic_write_lines(atomic_size_path, write_lines) ==
+		                 howdy::native::AtomicFileCommitResult::kNotCommitted,
+		             "atomic_write_lines reports staged write failure");
+		ok &= expect(atomic_file_size_limit.restore(),
+		             "restore file-size limit after atomic write failure");
+	}
 	const auto uncertain_lines_path = temp_root / "uncertain-lines.ini";
 	const auto uncertain_lines_result =
 	    howdy::native::atomic_write_lines(uncertain_lines_path, write_lines, fail_parent_sync);
@@ -321,6 +366,13 @@ auto main() -> int {
 	                                  "[video]\n"
 	                                  "dark_threshold = 50\n";
 	std::string       validation_error;
+	ok &= expect(!howdy::native::validate_config_content(config_over_limit, &validation_error),
+	             "validate_config_content rejects oversized content");
+	ok &= expect(validation_error == "Updated config exceeds maximum size",
+	             "oversized content reports size validation error");
+	validation_error.clear();
+	ok &= expect(!howdy::native::validate_config_content(config_over_limit, nullptr),
+	             "validate_config_content rejects oversized content without error output");
 	ok &= expect(howdy::native::validate_config_content(valid_content, &validation_error),
 	             "validate_config_content accepts valid config");
 	validation_error.clear();
@@ -345,6 +397,13 @@ auto main() -> int {
 	                                        "[video]\n"
 	                                        "dark_threshold = 55\n";
 	std::string       install_error;
+	const auto        before_oversized_replace = read_file(replace_path);
+	ok &= expect(!howdy::native::replace_config_content_atomically(replace_path, config_over_limit,
+	                                                               &install_error, false, false),
+	             "replace_config_content_atomically rejects oversized content");
+	ok &= expect(install_error == "Updated config exceeds maximum size" &&
+	                 read_file(replace_path) == before_oversized_replace,
+	             "oversized replacement leaves existing config unchanged");
 	ok &= expect(howdy::native::replace_config_content_atomically(replace_path, replacement_content,
 	                                                              &install_error, true, true),
 	             "replace_config_content_atomically installs valid content with lock");
@@ -375,6 +434,16 @@ auto main() -> int {
 	ok &= expect(howdy::native::replace_config_content_atomically(replace_path, replacement_content,
 	                                                              &install_error, true, true),
 	             "replace config recovers after parent-sync failure test");
+	ok &= expect(
+	    !howdy::native::replace_config_content_atomically(
+	        replace_path, uncertain_replacement, &install_error, false, false, nullptr, nullptr),
+	    "replace config reports null parent-sync callback as nondurable");
+	ok &= expect(install_error.contains("could not be synced") &&
+	                 read_file(replace_path) == uncertain_replacement,
+	             "null parent-sync callback leaves committed content visible");
+	ok &= expect(howdy::native::replace_config_content_atomically(replace_path, replacement_content,
+	                                                              &install_error, false, false),
+	             "replace config recovers after null parent-sync callback");
 
 	const auto before_invalid_replace = read_file(replace_path);
 	const auto staged_before          = count_staged_configs(temp_root);
@@ -425,6 +494,21 @@ auto main() -> int {
 	                                                               &install_error, true, true),
 	             "replace_config_content_atomically rejects insecure config permissions with lock");
 	ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore replace config permissions");
+
+	const auto lock_failure_path = lock_path_for_config(config_path);
+	fs::remove(lock_failure_path, ec);
+	ec.clear();
+	fs::create_symlink("/tmp", lock_failure_path, ec);
+	ok &= expect(!ec, "create config lock symlink for lock failure");
+	ok &= expect(howdy::native::read_config_lines(config_path, true).empty(),
+	             "read_config_lines fails closed when lock cannot be opened");
+	std::string lock_error;
+	ok &= expect(!howdy::native::update_config_value(config_path, "disabled", &lock_error, "false",
+	                                                 true, false) &&
+	                 lock_error == "Failed to lock config file",
+	             "update_config_value reports config lock failure");
+	fs::remove(lock_failure_path, ec);
+	ec.clear();
 
 	const auto replace_insecure_dir = temp_root / "replace-insecure-dir";
 	ok &= expect(fs::create_directories(replace_insecure_dir, ec) || !ec,

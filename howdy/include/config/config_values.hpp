@@ -4,7 +4,6 @@
 #include "config/config_schema.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <cctype>
 #include <cstdlib>
 #include <string>
@@ -16,7 +15,6 @@ namespace howdy::native {
 	    -> const config_schema::Option & {
 		const auto &option = config_schema::runtime_config_option(id);
 		if (option.type != type) {
-			assert(false);
 			std::abort();
 		}
 		return option;
@@ -25,7 +23,6 @@ namespace howdy::native {
 	inline auto read_runtime_bool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
 		const auto &option = runtime_option(id, config_schema::ValueType::boolean);
 		if (!option.fallback.has_boolean) {
-			assert(false);
 			std::abort();
 		}
 		return reader.get_bool(std::string(option.section), std::string(option.key),
@@ -35,7 +32,6 @@ namespace howdy::native {
 	inline auto read_runtime_int(const ConfigReader &reader, config_schema::OptionId id) -> int {
 		const auto &option = runtime_option(id, config_schema::ValueType::integer);
 		if (!option.fallback.has_integer) {
-			assert(false);
 			std::abort();
 		}
 		const int value = reader.get_int(std::string(option.section), std::string(option.key),
@@ -54,7 +50,6 @@ namespace howdy::native {
 	    -> float {
 		const auto &option = runtime_option(id, config_schema::ValueType::floating_point);
 		if (!option.fallback.has_floating_point) {
-			assert(false);
 			std::abort();
 		}
 		const float value = reader.get_float(std::string(option.section), std::string(option.key),
@@ -68,7 +63,6 @@ namespace howdy::native {
 	    -> std::string {
 		const auto &option = runtime_option(id, config_schema::ValueType::string);
 		if (!option.fallback.has_string) {
-			assert(false);
 			std::abort();
 		}
 		auto value = reader.get(std::string(option.section), std::string(option.key),
@@ -91,7 +85,6 @@ namespace howdy::native {
 		                                    config_schema::ValueType::floating_point);
 		if (option.special_rule != config_schema::SpecialRule::sface_threshold ||
 		    !option.fallback.has_floating_point) {
-			assert(false);
 			std::abort();
 		}
 		const float maximum = metric == config_schema::sface_cosine_metric

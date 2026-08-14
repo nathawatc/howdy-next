@@ -365,6 +365,141 @@ namespace {
 		return ok;
 	}
 
+	auto expect_additional_shape_edges() -> bool {
+		using howdy::native::UserModelStatus;
+
+		bool              ok = true;
+		const auto *const missing_id =
+		    R"([{"time":1700000000,"label":"Office camera","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[1.0]]}])";
+		ok &= expect_status(decode(missing_id).result.status, UserModelStatus::kInvalidShape,
+		                    "missing strict model ID returns kInvalidShape");
+		ok &= expect_status(decode(model_list({model_json("-1")})).result.status,
+		                    UserModelStatus::kInvalidShape,
+		                    "negative model ID returns kInvalidShape");
+
+		const auto signed_time = decode(model_list({model_json("7", "-1")}));
+		ok &= expect_status(signed_time.result.status, UserModelStatus::kOk,
+		                    "negative model timestamp returns kOk");
+		ok &= expect(!signed_time.result.entries.empty() &&
+		                 signed_time.result.entries.front().time == -1,
+		             "negative model timestamp is preserved");
+
+		const std::vector<std::string> invalid_metadata = {
+		    model_json("7", "1700000000", R"("Office camera")", "7"),
+		    model_json("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")", "7"),
+		    model_json("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+		               R"("cosine")", "7"),
+		};
+		for (const auto &content : invalid_metadata) {
+			ok &= expect_status(decode(model_list({content})).result.status,
+			                    UserModelStatus::kInvalidShape,
+			                    "non-string model metadata returns kInvalidShape");
+		}
+
+		const auto tolerant_label = decode(model_list({model_json("7", "1700000000", "7")}), false);
+		ok &= expect_status(tolerant_label.result.status, UserModelStatus::kOk,
+		                    "tolerant non-string label returns kOk");
+		ok &= expect(!tolerant_label.result.entries.empty() &&
+		                 tolerant_label.result.entries.front().label.empty(),
+		             "tolerant non-string label becomes empty");
+
+		ok &= expect_status(decode(model_list({model_json("7", "1700000000", R"("Office camera")",
+		                                                  R"("opencv_dnn_sface")", R"("cosine")",
+		                                                  R"("sface.onnx")", R"("not-an-array")")}))
+		                        .result.status,
+		                    UserModelStatus::kInvalidShape,
+		                    "non-array model data returns kInvalidShape");
+		ok &= expect_status(decode("[7]").result.status, UserModelStatus::kInvalidShape,
+		                    "non-object model entry returns kInvalidShape");
+		for (const std::string_view value : {"null", "\"not-a-number\"", "{}"}) {
+			ok &= expect_status(
+			    decode(model_list({model_json(
+			               "7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+			               R"("cosine")", R"("sface.onnx")", "[[" + std::string(value) + "]]")}))
+			        .result.status,
+			    UserModelStatus::kInvalidShape,
+			    std::string(value) + " encoding element returns kInvalidShape");
+		}
+		ok &=
+		    expect_status(decode(model_list({model_json("7", "1700000000", R"("Office camera")",
+		                                                R"("opencv_dnn_sface")", R"("cosine")",
+		                                                R"("sface.onnx")", "[[]]")}))
+		                      .result.status,
+		                  UserModelStatus::kOversized, "empty stored encoding returns kOversized");
+
+		for (const std::string_view number : {"1e39", "-1e39"}) {
+			const auto encoding = "[[" + std::string(number) + "]]";
+			const auto document = decode(model_list(
+			    {model_json("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+			                R"("cosine")", R"("sface.onnx")", encoding)}));
+			ok &= expect_status(document.result.status, UserModelStatus::kInvalidShape,
+			                    std::string(number) +
+			                        " encoding outside float range returns kInvalidShape");
+		}
+
+		const auto tolerant_max_id = decode(model_list({model_json("2147483647")}), false);
+		ok &= expect_status(tolerant_max_id.result.status, UserModelStatus::kOk,
+		                    "tolerant INT_MAX model ID returns kOk");
+		ok &= expect(tolerant_max_id.result.next_id == std::numeric_limits<int>::max(),
+		             "tolerant INT_MAX model ID preserves allocation boundary");
+		return ok;
+	}
+
+	auto expect_document_edge_operations() -> bool {
+		using howdy::native::UserModelEntry;
+		using howdy::native::UserModelStatus;
+		using howdy::native::user_model_codec::Document;
+
+		bool     ok = true;
+		Document empty;
+		ok &= expect(howdy::native::user_model_codec::is_empty(empty), "default document is empty");
+		ok &= expect(!howdy::native::user_model_codec::serialize_document(empty).has_value(),
+		             "default document has no serialization");
+		ok &= expect(!howdy::native::user_model_codec::erase_entry(empty, 0),
+		             "default document rejects erase");
+
+		auto decoded_empty = decode("[]");
+		ok &= expect(howdy::native::user_model_codec::is_empty(decoded_empty),
+		             "decoded empty document is empty");
+		const auto empty_serialized =
+		    howdy::native::user_model_codec::serialize_document(decoded_empty);
+		ok &= expect(empty_serialized.has_value() && *empty_serialized == "[]",
+		             "immutable empty document serializes");
+		ok &= expect(!howdy::native::user_model_codec::erase_entry(decoded_empty, 0),
+		             "empty decoded document rejects out-of-range erase");
+
+		Document             document;
+		const UserModelEntry entry{
+		    .id        = 20,
+		    .time      = 21,
+		    .label     = "empty-data",
+		    .encodings = {},
+		};
+		ok &= expect(howdy::native::user_model_codec::append_entry(document, entry),
+		             "entry with empty optional fields appends");
+		const auto serialized = howdy::native::user_model_codec::serialize_document(document);
+		ok &= expect(serialized.has_value() && serialized->contains(R"("data":[])"),
+		             "entry with empty encodings serializes data array");
+		ok &= expect(serialized.has_value() && !serialized->contains("backend") &&
+		                 !serialized->contains("metric") && !serialized->contains("model"),
+		             "empty optional metadata is omitted");
+		if (serialized.has_value()) {
+			const auto round_trip = decode(*serialized);
+			ok &= expect_status(round_trip.result.status, UserModelStatus::kOk,
+			                    "empty encoding round trip returns kOk");
+			ok &= expect(round_trip.result.entries.size() == 1 &&
+			                 round_trip.result.entries.front().encodings.empty(),
+			             "empty encoding round trip preserves empty data");
+		}
+		ok &= expect(!howdy::native::user_model_codec::erase_entry(document, 1),
+		             "out-of-range erase is rejected");
+		ok &= expect(howdy::native::user_model_codec::erase_entry(document, 0),
+		             "last entry erase succeeds");
+		ok &= expect(howdy::native::user_model_codec::is_empty(document),
+		             "document is empty after last erase");
+		return ok;
+	}
+
 	auto repeated_array(std::size_t count, std::string_view value) -> std::string {
 		std::string output = "[";
 		for (std::size_t index = 0; index < count; ++index) {
@@ -568,6 +703,8 @@ auto main() -> int {
 		ok &= expect_strict_shape_contract();
 		ok &= expect_compatibility_checks();
 		ok &= expect_encoding_validation();
+		ok &= expect_additional_shape_edges();
+		ok &= expect_document_edge_operations();
 		ok &= expect_boundaries_and_limits();
 		ok &= expect_multi_model_behavior();
 		ok &= expect_unknown_field_preservation();

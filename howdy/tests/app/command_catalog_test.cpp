@@ -2,6 +2,8 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <bit>
+#include <cstdint>
 #include <string_view>
 #include <tuple>
 
@@ -117,19 +119,20 @@ namespace {
 		    validate_global_option_catalog(empty_option_summary).value_or("").contains("summary"),
 		    "empty global option summary is rejected");
 		const auto invalid_option_completion = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-		                           .short_name    = "-a",
-		                           .long_name     = "",
-		                           .argument_name = "USER",
-		                           .summary       = "Option",
-		                           .completion    = static_cast<GlobalOptionCompletionKind>(255)},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "USER",
+		        .summary       = "Option",
+		        .completion    = std::bit_cast<GlobalOptionCompletionKind>(std::uint8_t{255})},
 		};
 		ok &= expect(validate_global_option_catalog(invalid_option_completion)
 		                 .value_or("")
 		                 .contains("completion"),
 		             "unknown global option completion kind is rejected");
 		const auto invalid_option_id = std::array{
-		    GlobalOptionDescriptor{.id            = static_cast<GlobalOptionId>(255),
+		    GlobalOptionDescriptor{.id            = GlobalOptionId::kCount,
 		                           .short_name    = "-a",
 		                           .long_name     = "",
 		                           .argument_name = "",
@@ -233,7 +236,7 @@ namespace {
 		ok &= expect(validate_command_catalog(duplicate_names).value_or("").contains("name"),
 		             "duplicate command names are rejected");
 		const auto invalid_id = std::array{
-		    CommandDescriptor{.id          = static_cast<CommandId>(255),
+		    CommandDescriptor{.id          = CommandId::kCount,
 		                      .name        = "invalid",
 		                      .summary     = "Invalid",
 		                      .kind        = CommandKind::kEntrypoint,
@@ -263,7 +266,7 @@ namespace {
 		    CommandDescriptor{.id          = CommandId::kAdd,
 		                      .name        = "invalid",
 		                      .summary     = "Invalid",
-		                      .kind        = static_cast<CommandKind>(255),
+		                      .kind        = std::bit_cast<CommandKind>(std::uint8_t{255}),
 		                      .user_target = UserTargetMode::kNone},
 		};
 		ok &= expect(validate_command_catalog(invalid_metadata).value_or("").contains("kind"),
@@ -273,7 +276,7 @@ namespace {
 		                      .name        = "invalid",
 		                      .summary     = "Invalid",
 		                      .kind        = CommandKind::kEntrypoint,
-		                      .user_target = static_cast<UserTargetMode>(255)},
+		                      .user_target = std::bit_cast<UserTargetMode>(std::uint8_t{255})},
 		};
 		ok &= expect(
 		    validate_command_catalog(invalid_user_target).value_or("").contains("user-target"),
@@ -284,7 +287,8 @@ namespace {
 		                      .summary     = "Invalid",
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone,
-		                      .completion  = static_cast<CommandCompletionKind>(255)},
+		                      .completion =
+		                          std::bit_cast<CommandCompletionKind>(std::uint8_t{255})},
 		};
 		ok &=
 		    expect(validate_command_catalog(invalid_completion).value_or("").contains("completion"),

@@ -52,8 +52,9 @@ namespace {
 
 	auto test_production_spawn_adapter(const howdy::pam::CompareLaunchRequest &request,
 	                                   const std::vector<std::string>         &expected_argv,
-	                                   const std::vector<std::string>         &expected_environment,
-	                                   const std::string                      &label) -> bool {
+	                                   const std::string                      &label,
+	                                   const std::vector<std::string>         &expected_environment)
+	    -> bool {
 		PosixSpawnCapture capture;
 		pid_t             child_pid = -1;
 		const int result = howdy::pam::compare_process::spawn(request, &child_pid,
@@ -83,8 +84,8 @@ namespace {
 	auto test_production_direct_runtime_environment() -> bool {
 		return test_production_spawn_adapter(
 		    make_compare_request("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
-		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"}, {},
-		    "production direct runtime");
+		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
+		    "production direct runtime", {});
 	}
 
 	auto test_production_staged_runtime_environment() -> bool {
@@ -92,7 +93,7 @@ namespace {
 		    make_compare_request("/run/howdy/runtime/config.ini", "alice",
 		                         "/run/howdy/runtime/models", true),
 		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
-		    {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"}, "production staged runtime");
+		    "production staged runtime", {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"});
 	}
 
 	auto test_owned_launch_request_from_temporaries() -> bool {
@@ -106,7 +107,7 @@ namespace {
 		return test_production_spawn_adapter(
 		    request,
 		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
-		    {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"}, "owned temporary request");
+		    "owned temporary request", {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"});
 	}
 
 	auto test_production_file_actions_init_failure() -> bool {

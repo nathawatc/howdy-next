@@ -53,8 +53,10 @@ namespace {
 
 	auto rejects(std::span<const Option> options, std::string_view error_text) -> bool {
 		const auto validation = howdy::native::config_schema::validate_options(options);
-		return expect(validation.has_value(), "invalid schema is rejected") &&
-		       expect(validation->contains(error_text),
+		if (!validation.has_value()) {
+			return expect(false, "invalid schema is rejected");
+		}
+		return expect(validation->contains(error_text),
 		              "schema reports: " + std::string(error_text));
 	}
 

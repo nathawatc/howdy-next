@@ -47,6 +47,7 @@ namespace {
 	using howdy::pam::ConversationRestoreResult;
 	using howdy::pam::ObservedPromptConversation;
 	using howdy::pam::ObservedPromptConversationTestAccess;
+	using howdy::pam::SecretPromptObserver;
 	using howdy::test::expect;
 
 	enum class ResponseMode : unsigned char {
@@ -65,14 +66,17 @@ namespace {
 	struct OperationState {
 		struct pam_conv    original{};
 		std::array<int, 3> set_results{{PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}};
-		int                get_calls = 0;
-		int                set_calls = 0;
+		int                get_calls        = 0;
+		int                set_calls        = 0;
+		int                get_result       = PAM_SUCCESS;
+		bool               return_null_item = false;
 		struct pam_conv    last_set{};
 	};
 
 	struct ObserverState {
-		int begin_calls = 0;
-		int end_calls   = 0;
+		int  begin_calls = 0;
+		int  end_calls   = 0;
+		bool throw_end   = false;
 	};
 
 	auto delegated_conversation(int num_msg, const struct pam_message **messages,
@@ -114,7 +118,11 @@ namespace {
 	}
 
 	void end_prompt(void *context, howdy::pam::SecretPromptGeneration /*generation*/) {
-		++static_cast<ObserverState *>(context)->end_calls;
+		auto &observer = *static_cast<ObserverState *>(context);
+		++observer.end_calls;
+		if (observer.throw_end) {
+			throw std::runtime_error("observer cleanup failure");
+		}
 	}
 
 	auto injected_get_item(void        *context, pam_handle_t        */*pamh*/, int /*item_type*/,
@@ -124,7 +132,10 @@ namespace {
 		if (item == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
-		*item = &state.original;
+		if (state.get_result != PAM_SUCCESS) {
+			return state.get_result;
+		}
+		*item = state.return_null_item ? nullptr : &state.original;
 		return PAM_SUCCESS;
 	}
 
@@ -192,6 +203,46 @@ namespace {
 			}
 		}
 
+		{
+			OperationState operations;
+			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
+			ObserverState  observer{.throw_end = true};
+			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			std::array<struct pam_message, 3>         messages{};
+			std::array<const struct pam_message *, 3> message_ptrs{};
+			make_messages(&messages, &message_ptrs);
+			auto      *responses = reinterpret_cast<struct pam_response *>(0x1);
+			const auto conversation =
+			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			ok &= expect(conversation.conv(3, message_ptrs.data(), &responses,
+			                               conversation.appdata_ptr) == PAM_SUCCESS,
+			             "observer end exception does not change delegated success");
+			ok &= expect(observer.begin_calls == 1 && observer.end_calls == 1,
+			             "observer end exception still closes prompt generation");
+			ok &= expect(responses == nullptr, "observer end exception leaves response null");
+		}
+
+		{
+			OperationState operations;
+			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
+			ObserverState  observer;
+			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "notice"};
+			const struct pam_message *message_ptr = &message;
+			auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
+			const auto                conversation =
+			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			ok &= expect(conversation.conv(1, &message_ptr, &responses, conversation.appdata_ptr) ==
+			                 PAM_SUCCESS,
+			             "non-secret prompt delegates successfully");
+			ok &= expect(observer.begin_calls == 0 && observer.end_calls == 0,
+			             "non-secret prompt does not create generation");
+			ok &= expect(conversation.conv(0, &message_ptr, &responses, conversation.appdata_ptr) ==
+			                 PAM_CONV_ERR,
+			             "zero-message conversation is rejected");
+			ok &= expect(responses == nullptr, "zero-message conversation clears response");
+		}
+
 		for (const auto mode : {ResponseMode::kNull, ResponseMode::kAllocated,
 		                        ResponseMode::kPartial, ResponseMode::kThrowAfterAllocation}) {
 			OperationState operations;
@@ -249,6 +300,97 @@ namespace {
 		       response == nullptr;
 	}
 
+	auto test_constructor_and_install_guards() -> bool {
+		bool                       ok = true;
+		OperationState             operations;
+		ObserverState              observer;
+		const SecretPromptObserver valid_observer{
+		    .context = &observer, .begin = begin_prompt, .end = end_prompt};
+		const auto make = [&](pam_handle_t *pamh, SecretPromptObserver prompt_observer,
+		                      ObservedPromptConversationTestAccess::InjectedOperations injected)
+		    -> std::unique_ptr<ObservedPromptConversation> {
+			return ObservedPromptConversationTestAccess::create(pamh, prompt_observer, injected);
+		};
+
+		ok &= expect(!make(nullptr, valid_observer,
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "null PAM handle makes observed wrapper unavailable");
+		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1),
+		                   {.context = &observer, .begin = nullptr, .end = end_prompt},
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "missing observer begin callback makes wrapper unavailable");
+		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1),
+		                   {.context = &observer, .begin = begin_prompt, .end = nullptr},
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "missing observer end callback makes wrapper unavailable");
+		ok &= expect(
+		    !make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		          {.context = &operations, .get_item = nullptr, .set_item = injected_set_item})
+		         ->available(),
+		    "missing PAM get-item operation makes wrapper unavailable");
+
+		operations.get_result = PAM_SYSTEM_ERR;
+		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "PAM conversation lookup failure makes wrapper unavailable");
+		operations.get_result       = PAM_SUCCESS;
+		operations.return_null_item = true;
+		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "null PAM conversation item makes wrapper unavailable");
+		operations.return_null_item = false;
+		operations.original         = {};
+		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		                   {.context  = &operations,
+		                    .get_item = injected_get_item,
+		                    .set_item = injected_set_item})
+		                  ->available(),
+		             "null original conversation callback makes wrapper unavailable");
+
+		operations.original = {.conv = delegated_conversation, .appdata_ptr = nullptr};
+		auto no_set =
+		    make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         {.context = &operations, .get_item = injected_get_item, .set_item = nullptr});
+		ok &= expect(no_set->available() && no_set->install() == PAM_SYSTEM_ERR,
+		             "missing PAM set-item operation rejects install");
+		operations.set_results[0] = PAM_SYSTEM_ERR;
+		auto failed_set           = make(
+		    reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		    {.context = &operations, .get_item = injected_get_item, .set_item = injected_set_item});
+		ok &= expect(failed_set->available() && failed_set->install() == PAM_SYSTEM_ERR,
+		             "PAM conversation install failure is returned");
+		return ok;
+	}
+
+	auto test_destroyed_installed_wrapper_fails_closed() -> bool {
+		OperationState operations;
+		DispatchState  dispatch;
+		ObserverState  observer;
+		auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+		bool           ok = expect(wrapper->install() == PAM_SUCCESS,
+		                           "installed observed wrapper prepares unsafe-destruction case");
+		const auto     installed =
+		    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+		wrapper.reset();
+		return ok && expect(call_late(installed),
+		                    "destroyed installed wrapper retains fail-closed callback context");
+	}
+
 	auto test_restore_result(ConversationRestoreResult expected, std::array<int, 3> set_results,
 	                         const char *label) -> bool {
 		OperationState operations{.set_results = set_results};
@@ -262,6 +404,8 @@ namespace {
 		    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
 		const auto result = wrapper->restore_original();
 		ok &= expect(result == expected, std::string(label) + ": returns explicit restore result");
+		ok &= expect(wrapper->restore_original() == ConversationRestoreResult::kOriginalRestored,
+		             std::string(label) + ": repeated restore is already complete");
 		const auto restored_conversation = operations.last_set;
 		const int  calls_before_destroy  = operations.set_calls;
 		wrapper.reset();
@@ -289,6 +433,8 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= test_response_cleanup_contract();
+	ok &= test_constructor_and_install_guards();
+	ok &= test_destroyed_installed_wrapper_fails_closed();
 	ok &= test_restore_result(ConversationRestoreResult::kOriginalRestored,
 	                          {PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}, "original restoration");
 	ok &=
