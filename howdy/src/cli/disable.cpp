@@ -1,5 +1,6 @@
 #include "cli/disable_cli.hpp"
 #include "cli/disable_internal.hpp"
+#include "config/config_schema.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
@@ -72,8 +73,11 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		return kExitAbort;
 	}
 
+	const auto &disabled_option = howdy::native::config_schema::runtime_config_option(
+	    howdy::native::config_schema::OptionId::core_disabled);
 	std::string error_message;
-	if (!dependencies.update_config_value(dependencies.context, config_path, "disabled", out_value,
+	if (!dependencies.update_config_value(dependencies.context, config_path,
+	                                      std::string(disabled_option.key), out_value,
 	                                      &error_message, true, false)) {
 		std::cout << (error_message.empty() ? "Failed to update \"disabled\" config option"
 		                                    : error_message)
