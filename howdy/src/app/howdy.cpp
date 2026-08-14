@@ -12,6 +12,7 @@
 #include "cli/snapshot_cli.hpp"
 #include "cli/test_cli.hpp"
 #include "config/config_schema.hpp"
+#include "howdy/version_format.hpp"
 #include "support/user_names.hpp"
 #include "version.hpp"
 
@@ -352,7 +353,9 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	const auto *command_descriptor = howdy::native::find_command(parsed.command);
 	if (command_descriptor != nullptr &&
 	    command_descriptor->kind == howdy::native::CommandKind::kVersion) {
-		std::cout << "Howdy-Next " << howdy::native::kProjectVersion << "\n";
+		std::cout << howdy::native::format_version(howdy::native::kProjectVersion,
+		                                           howdy::native::kBuildCommit)
+		          << "\n";
 		return 0;
 	}
 

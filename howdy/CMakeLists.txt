@@ -495,6 +495,24 @@ if(BUILD_TESTING)
 				TIMEOUT 120
 		)
 	endif()
+	add_test(
+		NAME native-version-metadata
+		COMMAND
+			"${CMAKE_COMMAND}"
+			"-DHOWDY_VERSION_GENERATOR=${HOWDY_VERSION_GENERATOR}"
+			"-DHOWDY_VERSION_TEMPLATE=${HOWDY_VERSION_TEMPLATE}"
+			"-DHOWDY_PROJECT_VERSION=${PROJECT_VERSION}"
+			"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+			"-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/version-metadata-test"
+			"-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
+			-P "${PROJECT_SOURCE_DIR}/tests/cmake/version_metadata_test.cmake"
+	)
+	set_tests_properties(
+		native-version-metadata
+		PROPERTIES
+			RUN_SERIAL TRUE
+			TIMEOUT 60
+	)
 
 	add_executable(howdy_file_security_test tests/support/file_security_test.cpp)
 	howdy_configure_native_test_target(howdy_file_security_test)

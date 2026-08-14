@@ -5,6 +5,7 @@
 #include "cli/list_cli.hpp"
 #include "cli/remove_cli.hpp"
 #include "config/config_schema.hpp"
+#include "howdy/version_format.hpp"
 #include "test_support.hpp"
 #include "version.hpp"
 
@@ -401,14 +402,22 @@ namespace {
 			           "help after command remains a positional argument");
 		}
 		{
+			ok &= expect(
+			    howdy::native::format_version(howdy::native::kProjectVersion, "abcdef1234") ==
+			        "Howdy Next " + std::string(howdy::native::kProjectVersion) + " (abcdef1234)",
+			    "version formatter includes ten-character commit");
+			ok &= expect(howdy::native::format_version(howdy::native::kProjectVersion, "") ==
+			                 "Howdy Next " + std::string(howdy::native::kProjectVersion),
+			             "version formatter omits empty commit");
 			Context    context;
 			const auto result =
 			    run(context, {"howdy", "version"}, nullptr,
 			        std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)>{});
-			const auto expected =
-			    "Howdy-Next " + std::string(howdy::native::kProjectVersion) + "\n";
-			ok &=
-			    expect(result.status == 0 && result.output == expected, "version output preserved");
+			const auto expected = howdy::native::format_version(howdy::native::kProjectVersion,
+			                                                    howdy::native::kBuildCommit) +
+			                      "\n";
+			ok &= expect(result.status == 0 && result.output == expected,
+			             "version output is formatted");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 			             "version skips user and root checks");
 			ok &= expect(!context.command_id.has_value() && context.command_arguments.empty(),

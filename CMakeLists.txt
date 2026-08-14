@@ -32,6 +32,53 @@ include(CheckCXXSourceCompiles)
 include(CMakePushCheckState)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
+find_package(Git QUIET)
+
+if(NOT DEFINED HOWDY_GIT_COMMIT)
+	set(
+		HOWDY_GIT_COMMIT
+		""
+		CACHE STRING
+		"Source commit override for Howdy version output"
+	)
+endif()
+set(HOWDY_BUILD_COMMIT_OVERRIDE "")
+if(NOT "${HOWDY_GIT_COMMIT}" STREQUAL "")
+	string(
+		LENGTH "${HOWDY_GIT_COMMIT}" howdy_git_commit_length
+	)
+	if(howdy_git_commit_length LESS 10)
+		message(
+			FATAL_ERROR
+			"HOWDY_GIT_COMMIT must contain at least 10 "
+			"hexadecimal characters"
+		)
+	endif()
+	string(
+		REGEX MATCH
+		"^[0-9A-Fa-f]+$"
+		howdy_git_commit_hex
+		"${HOWDY_GIT_COMMIT}"
+	)
+	if("${howdy_git_commit_hex}" STREQUAL "")
+		message(
+			FATAL_ERROR
+			"HOWDY_GIT_COMMIT must contain only hexadecimal "
+			"characters"
+		)
+	endif()
+	string(SUBSTRING "${HOWDY_GIT_COMMIT}" 0 10 HOWDY_BUILD_COMMIT_OVERRIDE)
+	string(
+		TOLOWER
+		"${HOWDY_BUILD_COMMIT_OVERRIDE}"
+		HOWDY_BUILD_COMMIT_OVERRIDE
+	)
+endif()
+if(Git_FOUND)
+	set(HOWDY_GIT_EXECUTABLE "${GIT_EXECUTABLE}")
+else()
+	set(HOWDY_GIT_EXECUTABLE "")
+endif()
 
 check_pie_supported()
 
@@ -246,6 +293,38 @@ if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 endif()
 set(HOWDY_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOWDY_GENERATED_INCLUDE_DIR}")
+set(
+	HOWDY_GENERATED_VERSION_HEADER
+	"${HOWDY_GENERATED_INCLUDE_DIR}/version.hpp"
+)
+set(HOWDY_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/howdy/include")
+set(HOWDY_CMAKE_DIR "${PROJECT_SOURCE_DIR}/cmake")
+set(
+	HOWDY_VERSION_TEMPLATE
+	"${HOWDY_INCLUDE_DIR}/howdy/version.hpp.in"
+)
+set(
+	HOWDY_VERSION_GENERATOR
+	"${HOWDY_CMAKE_DIR}/generate_version.cmake"
+)
+add_custom_target(
+	howdy_version_metadata ALL
+	COMMAND
+		"${CMAKE_COMMAND}"
+		"-DHOWDY_VERSION_TEMPLATE=${HOWDY_VERSION_TEMPLATE}"
+		"-DHOWDY_VERSION_OUTPUT=${HOWDY_GENERATED_VERSION_HEADER}"
+		"-DHOWDY_PROJECT_VERSION=${PROJECT_VERSION}"
+		"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+		"-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
+		"-DHOWDY_GIT_COMMIT=${HOWDY_BUILD_COMMIT_OVERRIDE}"
+		-P "${HOWDY_VERSION_GENERATOR}"
+	BYPRODUCTS "${HOWDY_GENERATED_VERSION_HEADER}"
+	DEPENDS
+		"${HOWDY_VERSION_GENERATOR}"
+		"${HOWDY_VERSION_TEMPLATE}"
+	COMMENT "Generating Howdy version metadata"
+	VERBATIM
+)
 
 file(
 	WRITE "${PROJECT_BINARY_DIR}/cmake_install_prefix.txt"
@@ -279,13 +358,9 @@ configure_file(
 	"${HOWDY_GENERATED_INCLUDE_DIR}/paths.hpp"
 	@ONLY
 )
-configure_file(
-	"${CMAKE_CURRENT_SOURCE_DIR}/howdy/include/howdy/version.hpp.in"
-	"${HOWDY_GENERATED_INCLUDE_DIR}/version.hpp"
-	@ONLY
-)
 
 function(howdy_configure_native_target target)
+	add_dependencies(${target} howdy_version_metadata)
 	target_include_directories(
 		${target}
 		PRIVATE
@@ -295,6 +370,7 @@ function(howdy_configure_native_target target)
 endfunction()
 
 function(howdy_configure_pam_target target)
+	add_dependencies(${target} howdy_version_metadata)
 	target_include_directories(
 		${target}
 		PRIVATE
