@@ -510,6 +510,17 @@ if(BUILD_TESTING)
 	add_test(NAME native-model-file COMMAND howdy_model_file_test)
 
 	add_executable(
+		howdy_model_provenance_test
+		tests/model_assets/opencv_model_provenance_test.cpp
+	)
+	howdy_configure_native_test_target(howdy_model_provenance_test)
+	target_compile_definitions(
+		howdy_model_provenance_test
+		PRIVATE "HOWDY_SOURCE_DIR=\"${PROJECT_SOURCE_DIR}\""
+	)
+	add_test(NAME native-model-provenance COMMAND howdy_model_provenance_test)
+
+	add_executable(
 		howdy_capture_device_path_test tests/vision/capture_device_path_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_capture_device_path_test)
