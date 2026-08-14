@@ -1,0 +1,318 @@
+#include "cli/download_models_internal.hpp"
+#include "test_support.hpp"
+
+#include <array>
+#include <csignal>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <unistd.h>
+
+#include <sys/resource.h>
+#include <sys/stat.h>
+
+namespace howdy::test::download_models {
+
+	using howdy::test::expect;
+
+	auto run_atomic_files_tests() -> bool;
+
+	namespace {
+
+		auto read_file(const std::filesystem::path &path) -> std::string {
+			std::ifstream in(path);
+			if (!in.is_open()) {
+				return {};
+			}
+			return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+		}
+
+		auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
+			std::ofstream out(path);
+			if (!out.is_open()) {
+				return false;
+			}
+			out << content;
+			return out.good();
+		}
+
+		auto count_staged_files(const std::filesystem::path &directory, std::string_view prefix)
+		    -> std::size_t {
+			std::size_t count = 0;
+			for (const auto &entry : std::filesystem::directory_iterator(directory)) {
+				if (entry.path().filename().string().starts_with(prefix)) {
+					++count;
+				}
+			}
+			return count;
+		}
+
+		auto commit_is_durable(howdy::native::AtomicFileCommitResult result) -> bool {
+			return howdy::native::atomic_file_commit_is_durable(result);
+		}
+
+		auto fail_parent_sync(const std::filesystem::path & /*path*/) -> bool {
+			return false;
+		}
+
+		template <typename Value, typename Callback>
+		void with_present(std::optional<Value> &value, Callback callback) {
+			if (value.has_value()) {
+				callback();
+			}
+		}
+
+	}  // namespace
+
+	auto run_atomic_files_tests() -> bool {
+		namespace fs              = std::filesystem;
+		bool            ok        = true;
+		const auto      temp_root = fs::current_path() / "howdy-download-models-test";
+		std::error_code ec;
+
+		howdy::native::StagedFile empty_path_install{
+		    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY)),
+		    .path = {},
+		};
+		ok &= expect(empty_path_install.fd.get() >= 0, "open fd for empty-path staged install");
+		ok &= expect(!commit_is_durable(howdy::native::install_staged_file(empty_path_install,
+		                                                                   temp_root / "unused")),
+		             "staged install rejects empty path");
+		ok &= expect(empty_path_install.fd.get() < 0, "empty-path staged install closes fd");
+
+		const auto blocked_parent = temp_root / "blocked-parent";
+		ok &= expect(write_file(blocked_parent, "not a directory"),
+		             "create file blocking staged parent directory");
+		ok &= expect(!howdy::native::prepare_staged_file(blocked_parent / "models" / "model.onnx",
+		                                                 ".howdy-download-")
+		                  .has_value(),
+		             "prepare staged file returns nullopt when parent creation fails");
+		ok &= expect(!howdy::native::sync_parent_directory(blocked_parent / "model.onnx"),
+		             "parent-directory sync reports open failure");
+
+		const auto overflow_destination = temp_root / "overflow-write.onnx";
+		auto       overflow_staged =
+		    howdy::native::prepare_staged_file(overflow_destination, ".howdy-download-");
+		ok &=
+		    expect(overflow_staged.has_value(), "prepare staged file for overflow write callback");
+		with_present(overflow_staged, [&] -> void {
+			howdy::native::download_models_internal::DownloadWriteContext write_context{
+			    .staged = &*overflow_staged,
+			};
+			std::array<char, 2> payload        = {'x', 'y'};
+			const auto          overflow_size  = (std::numeric_limits<std::size_t>::max() / 2) + 2;
+			const auto          overflow_count = static_cast<std::size_t>(2);
+			const auto          result =
+			    howdy::native::download_models_internal::download_models_write_callback(
+			        payload.data(), overflow_size, overflow_count, &write_context);
+			ok &= expect(result == 0, "overflowing write callback returns 0");
+			ok &= expect(read_file(overflow_staged->path).empty(),
+			             "overflowing write callback leaves staged file empty");
+			howdy::native::cleanup_staged_file(*overflow_staged);
+		});
+
+		const auto limited_destination = temp_root / "limited-write.onnx";
+		auto       limited_staged =
+		    howdy::native::prepare_staged_file(limited_destination, ".howdy-download-");
+		ok &= expect(limited_staged.has_value(), "prepare staged file for cumulative write limit");
+		with_present(limited_staged, [&] -> void {
+			howdy::native::download_models_internal::DownloadWriteContext write_context{
+			    .staged    = &*limited_staged,
+			    .max_bytes = 3,
+			};
+			std::array<char, 2> first_payload  = {'x', 'y'};
+			std::array<char, 2> second_payload = {'z', '!'};
+			const auto          first_result =
+			    howdy::native::download_models_internal::download_models_write_callback(
+			        first_payload.data(), 1, first_payload.size(), &write_context);
+			const auto second_result =
+			    howdy::native::download_models_internal::download_models_write_callback(
+			        second_payload.data(), 1, second_payload.size(), &write_context);
+			ok &= expect(first_result == first_payload.size(),
+			             "write callback accepts data within cumulative limit");
+			ok &= expect(second_result == 0,
+			             "write callback rejects data exceeding cumulative limit");
+			ok &= expect(write_context.bytes_written == first_payload.size(),
+			             "write callback tracks only committed bytes");
+			ok &= expect(read_file(limited_staged->path) == "xy",
+			             "write callback leaves rejected chunk unwritten");
+			howdy::native::cleanup_staged_file(*limited_staged);
+		});
+
+		const auto successful_install_destination = temp_root / "successful-install.onnx";
+		auto       successful_install =
+		    howdy::native::prepare_staged_file(successful_install_destination, ".howdy-download-");
+		ok &= expect(successful_install.has_value(), "prepare staged file for successful install");
+		with_present(successful_install, [&] -> void {
+			const auto staged_path = successful_install->path;
+			ok &= expect(howdy::native::write_all_to_fd(successful_install->fd.get(), "model"),
+			             "download-like write leaves staged fd open before install");
+			ok &= expect(successful_install->fd.get() >= 0,
+			             "download-like staged fd remains open until install");
+			ok &= expect(commit_is_durable(howdy::native::install_staged_file(
+			                 *successful_install, successful_install_destination)),
+			             "install staged file fsyncs and closes download-like open fd");
+			ok &= expect(successful_install->fd.get() < 0, "successful install closes staged fd");
+			ok &= expect(successful_install->path.empty(), "successful install clears staged path");
+			ok &= expect(fs::exists(successful_install_destination, ec) && !ec,
+			             "successful install creates destination");
+			ok &= expect(read_file(successful_install_destination) == "model",
+			             "successful install preserves staged content");
+			ok &= expect(!fs::exists(staged_path, ec) && !ec,
+			             "successful install removes staged temp path");
+		});
+
+		const auto uncertain_install_destination = temp_root / "uncertain-install.onnx";
+		auto       uncertain_install =
+		    howdy::native::prepare_staged_file(uncertain_install_destination, ".howdy-download-");
+		ok &= expect(uncertain_install.has_value(), "prepare staged file for uncertain install");
+		with_present(uncertain_install, [&] -> void {
+			ok &= expect(howdy::native::write_all_to_fd(uncertain_install->fd.get(), "model"),
+			             "write uncertain staged install content");
+			const auto install_result = howdy::native::install_staged_file(
+			    *uncertain_install, uncertain_install_destination, fail_parent_sync);
+			ok &= expect(install_result ==
+			                 howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
+			             "failed parent sync reports committed install with uncertain durability");
+			ok &= expect(read_file(uncertain_install_destination) == "model",
+			             "failed parent sync leaves committed destination visible");
+			ok &= expect(uncertain_install->path.empty(),
+			             "failed parent sync clears consumed staged path");
+		});
+
+		const auto failed_install_destination = temp_root / "failed-install.onnx";
+		auto       failed_install =
+		    howdy::native::prepare_staged_file(failed_install_destination, ".howdy-download-");
+		ok &= expect(failed_install.has_value(), "prepare staged file for failed install");
+		with_present(failed_install, [&] -> void {
+			const auto staged_path = failed_install->path;
+			ok &= expect(!commit_is_durable(howdy::native::install_staged_file(
+			                 *failed_install, temp_root / "missing" / "model")),
+			             "staged install fails for missing destination parent");
+			ok &= expect(!fs::exists(staged_path, ec) && !ec,
+			             "failed staged install removes staged file");
+		});
+
+		const auto atomic_new_path = temp_root / "atomic" / "new-file";
+		ok &= expect(commit_is_durable(howdy::native::write_atomic_file(
+		                 atomic_new_path, "new content", S_IRUSR | S_IWUSR)),
+		             "atomic writer creates new file");
+		ok &= expect(read_file(atomic_new_path) == "new content",
+		             "atomic writer preserves new content");
+		struct stat atomic_new_stat{};
+		ok &= expect(stat(atomic_new_path.c_str(), &atomic_new_stat) == 0,
+		             "stat atomic writer new file");
+		ok &= expect(S_ISREG(atomic_new_stat.st_mode), "atomic writer new target is regular file");
+		ok &= expect((atomic_new_stat.st_mode & 07777) == 0600,
+		             "atomic writer applies requested new-file mode");
+		ok &= expect(count_staged_files(atomic_new_path.parent_path(), ".howdy-atomic-") == 0,
+		             "atomic writer removes staged file after new-file install");
+
+		const auto atomic_existing_path = temp_root / "atomic-existing";
+		ok &= expect(write_file(atomic_existing_path, "initial"),
+		             "create existing atomic writer target");
+		ok &= expect(chmod(atomic_existing_path.c_str(), 0640) == 0,
+		             "set existing atomic writer target mode");
+		ok &= expect(commit_is_durable(howdy::native::write_atomic_file(atomic_existing_path,
+		                                                                "replacement", 0600)),
+		             "atomic writer replaces existing file");
+		ok &= expect(read_file(atomic_existing_path) == "replacement",
+		             "atomic writer preserves replacement content");
+		struct stat atomic_existing_stat{};
+		ok &= expect(stat(atomic_existing_path.c_str(), &atomic_existing_stat) == 0,
+		             "stat replaced atomic writer file");
+		ok &= expect((atomic_existing_stat.st_mode & 07777) == 0640,
+		             "atomic writer preserves existing-file mode");
+		ok &= expect(count_staged_files(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
+		             "atomic writer removes staged file after replacement");
+
+		const auto default_mode_path = temp_root / "default-mode-existing";
+		ok &= expect(write_file(default_mode_path, "old"), "create default-mode policy target");
+		ok &= expect(chmod(default_mode_path.c_str(), 0600) == 0,
+		             "set default-mode policy target mode");
+		auto default_mode_staged = howdy::native::prepare_staged_file(
+		    default_mode_path, ".howdy-default-mode-", S_IRUSR | S_IWUSR | S_IRGRP,
+		    howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+		ok &= expect(default_mode_staged.has_value(), "prepare default-mode policy staged file");
+		with_present(default_mode_staged, [&] -> void {
+			ok &= expect(howdy::native::write_all_to_fd(default_mode_staged->fd.get(), "new"),
+			             "write default-mode policy staged file");
+			ok &= expect(commit_is_durable(howdy::native::install_staged_file(*default_mode_staged,
+			                                                                  default_mode_path)),
+			             "install default-mode policy staged file");
+			ok &= expect(read_file(default_mode_path) == "new",
+			             "default-mode policy installs replacement content");
+			struct stat default_mode_stat{};
+			ok &= expect(stat(default_mode_path.c_str(), &default_mode_stat) == 0,
+			             "stat default-mode policy target");
+			ok &= expect((default_mode_stat.st_mode & 07777) == 0640,
+			             "default-mode policy applies requested mode to existing file");
+			ok &= expect(
+			    count_staged_files(default_mode_path.parent_path(), ".howdy-default-mode-") == 0,
+			    "default-mode policy removes staged file after replacement");
+		});
+
+		const auto atomic_directory_target = temp_root / "atomic-directory-target";
+		fs::create_directory(atomic_directory_target, ec);
+		ok &= expect(!ec, "create directory atomic writer target");
+		ok &= expect(!commit_is_durable(howdy::native::write_atomic_file(atomic_directory_target,
+		                                                                 "must not replace")),
+		             "atomic writer rejects directory target");
+		ok &= expect(fs::is_directory(atomic_directory_target, ec) && !ec,
+		             "atomic writer leaves directory target unchanged");
+		ok &=
+		    expect(count_staged_files(atomic_directory_target.parent_path(), ".howdy-atomic-") == 0,
+		           "atomic writer creates no staged file for directory target");
+
+		const auto atomic_blocked_parent = temp_root / "atomic-blocked-parent";
+		ok &= expect(write_file(atomic_blocked_parent, "blocking content"),
+		             "create file blocking atomic writer parent");
+		const auto atomic_blocked_path = atomic_blocked_parent / "child" / "file";
+		ok &= expect(!commit_is_durable(
+		                 howdy::native::write_atomic_file(atomic_blocked_path, "must not write")),
+		             "atomic writer rejects blocked parent path");
+		ok &= expect(!fs::exists(atomic_blocked_parent / "child", ec) && !ec,
+		             "atomic writer creates no child under blocked parent");
+		ok &= expect(read_file(atomic_blocked_parent) == "blocking content",
+		             "atomic writer preserves blocking file content");
+
+		const auto atomic_write_failure_path = temp_root / "atomic-write-failure";
+		ok &= expect(write_file(atomic_write_failure_path, "original content"),
+		             "create atomic writer write-failure target");
+		struct rlimit original_file_size_limit{};
+		const bool have_file_size_limit = getrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0;
+		ok &= expect(have_file_size_limit, "read file-size resource limit");
+		const auto previous_sigxfsz_handler = std::signal(SIGXFSZ, SIG_IGN);
+		const bool have_sigxfsz_handler     = previous_sigxfsz_handler != SIG_ERR;
+		ok &= expect(have_sigxfsz_handler, "ignore file-size signal for failed atomic write");
+		bool atomic_write_failed = false;
+		if (have_file_size_limit && have_sigxfsz_handler) {
+			auto zero_file_size_limit     = original_file_size_limit;
+			zero_file_size_limit.rlim_cur = 0;
+			const bool limited_file_size  = setrlimit(RLIMIT_FSIZE, &zero_file_size_limit) == 0;
+			ok &= expect(limited_file_size, "limit file size for failed atomic write");
+			if (limited_file_size) {
+				atomic_write_failed = !commit_is_durable(
+				    howdy::native::write_atomic_file(atomic_write_failure_path, "replacement"));
+				ok &= expect(setrlimit(RLIMIT_FSIZE, &original_file_size_limit) == 0,
+				             "restore file-size resource limit");
+			}
+		}
+		if (have_sigxfsz_handler) {
+			ok &= expect(std::signal(SIGXFSZ, previous_sigxfsz_handler) != SIG_ERR,
+			             "restore file-size signal handler");
+		}
+		ok &= expect(atomic_write_failed, "atomic writer reports staged content write failure");
+		ok &= expect(read_file(atomic_write_failure_path) == "original content",
+		             "failed atomic write preserves existing target");
+		ok &= expect(
+		    count_staged_files(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
+		    "failed atomic write removes staged file");
+		return ok;
+	}
+
+}  // namespace howdy::test::download_models
