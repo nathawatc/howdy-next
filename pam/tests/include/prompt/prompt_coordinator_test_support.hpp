@@ -188,10 +188,12 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<bool>                               submission_ready{false};
 		std::atomic<bool>                     submission_started_before_password_return{false};
 		std::atomic<bool>                     submission_finished{false};
-		bool                                  release_submission     = false;
-		bool                                  request_native_prompt  = false;
-		bool                                  complete_native_prompt = false;
-		bool                                  native_available       = true;
+		bool                                  release_submission                       = false;
+		bool                                  request_native_prompt                    = false;
+		bool                                  complete_native_prompt                   = false;
+		bool                                  native_available                         = true;
+		bool                                  native_terminal_restore_failed           = false;
+		bool                                  native_terminal_restore_failure_on_abort = false;
 		howdy::pam::ConversationRestoreResult native_restore_result =
 		    howdy::pam::ConversationRestoreResult::kOriginalRestored;
 		howdy::pam::ConversationRestoreResult secret_restore_result =
@@ -254,6 +256,10 @@ namespace howdy::test::prompt_coordinator {
 
 		[[nodiscard]] auto available() const -> bool override {
 			return context_->native_available;
+		}
+
+		[[nodiscard]] auto terminal_restore_failed() const noexcept -> bool override {
+			return context_->native_terminal_restore_failed;
 		}
 
 		auto install() -> int override {
@@ -510,13 +516,19 @@ namespace howdy::test::prompt_coordinator {
 	}
 
 	inline auto wait_for_native_prompt_completion(FakeContext &fake) -> bool {
+		std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
+		if (!fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
+			    return fake.native_prompt_seen.load();
+		    })) {
+			return false;
+		}
+		if (fake.complete_native_prompt &&
+		    !fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
+			    return fake.native_prompt_completed.load();
+		    })) {
+			return false;
+		}
 		if (fake.complete_native_prompt) {
-			std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
-			if (!fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
-				    return fake.native_prompt_completed.load();
-			    })) {
-				return false;
-			}
 			fake.pam_completion_observed_by_waiter = true;
 		}
 		return true;
@@ -737,6 +749,7 @@ namespace howdy::test::prompt_coordinator {
 		if (fake.request_native_prompt) {
 			(void)pamh;
 			fake.native_prompt_seen = true;
+			fake.native_prompt_condition.notify_all();
 			if (fake.complete_native_prompt) {
 				fake.native_prompt_input_sent = true;
 				fake.native_prompt_completed  = true;
@@ -750,8 +763,11 @@ namespace howdy::test::prompt_coordinator {
 					return {PAM_SYSTEM_ERR, nullptr};
 				}
 			}
+			if (fake.native_terminal_restore_failure_on_abort) {
+				fake.native_terminal_restore_failed = true;
+			}
 			fake.auth_token_active = false;
-			return {PAM_SUCCESS, nullptr};
+			return {fake.token_result, nullptr};
 		}
 		std::this_thread::sleep_for(fake.token_delay);
 		fake.auth_token_active = false;

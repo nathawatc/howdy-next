@@ -245,7 +245,10 @@ namespace {
 	}
 
 	auto test_native_blocked_prompt_cleanup() -> bool {
-		FakeContext context{.request_native_prompt = true};
+		FakeContext context{
+		    .token_result          = PAM_AUTHTOK_ERR,
+		    .request_native_prompt = true,
+		};
 		context.run_thread = std::this_thread::get_id();
 		NativePamFixture fixture(&context);
 		if (!expect(fixture.start(true), "blocked native prompt starts PAM PTY")) {
@@ -272,6 +275,10 @@ namespace {
 		              "blocked native prompt waits for spawned child") &&
 		       expect(result.compare_status == 0,
 		              "blocked native prompt preserves successful compare status") &&
+		       expect(result.pam_status == PAM_AUTHTOK_ERR,
+		              "blocked native prompt preserves mapped cancellation status") &&
+		       expect(!context.native_terminal_restore_failed,
+		              "blocked native prompt has no terminal restore failure") &&
 		       expect(context.native_prompt_seen,
 		              "blocked native prompt reaches native conversation") &&
 		       expect(context.auth_token_calls == 1, "blocked native prompt requests token once") &&
@@ -330,6 +337,8 @@ namespace {
 		              "native PAM winner sends password input after prompt observation") &&
 		       expect(context.native_prompt_completed,
 		              "native PAM winner completes native conversation") &&
+		       expect(!context.native_terminal_restore_failed,
+		              "native PAM winner records no terminal restore failure") &&
 		       expect(context.pam_completion_observed_by_waiter,
 		              "native PAM winner synchronizes completion before compare wait") &&
 		       expect(context.auth_token_calls == 1,
@@ -344,6 +353,41 @@ namespace {
 		              "native PAM winner restores native prompt once") &&
 		       expect(context.original_conversation_calls == 0,
 		              "native PAM winner leaves no blocked native prompt task");
+	}
+
+	auto test_native_terminal_restore_failure_forces_system_error() -> bool {
+		FakeContext context{
+		    .token_result                             = PAM_AUTHTOK_ERR,
+		    .request_native_prompt                    = true,
+		    .native_terminal_restore_failure_on_abort = true,
+		};
+		NativePamFixture fixture(&context);
+		if (!expect(fixture.start(true), "native terminal restore failure starts PAM PTY")) {
+			return false;
+		}
+		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		if (!expect(child_pid > 0, "native terminal restore failure child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+
+		PromptCoordinator coordinator(fixture.pamh(), Workaround::kNative, true, false,
+		                              dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.run(make_compare_request());
+		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              "native terminal restore failure overrides successful face result") &&
+		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		              "native terminal restore failure returns PAM_SYSTEM_ERR") &&
+		       expect(context.native_terminal_restore_failed,
+		              "native terminal restore failure is explicitly reported after abort") &&
+		       expect(context.native_prompt_seen,
+		              "native terminal restore failure reaches active native prompt") &&
+		       expect(
+		           context.native_abort_calls == 1,
+		           "native terminal restore failure aborts native prompt after compare success") &&
+		       expect(context.native_restore_calls == 1,
+		              "native terminal restore failure restores PAM conversation once") &&
+		       expect(child_reaped(child_pid), "native terminal restore failure reaps child");
 	}
 
 	auto test_native_restore_failure_forces_system_error(
@@ -393,6 +437,7 @@ auto run_prompt_mode_tests() -> bool {
 	ok &= test_native_input_setup_fallback(true, PAM_CONV_ERR, "native-input install failure");
 	ok &= test_native_blocked_prompt_cleanup();
 	ok &= test_native_pam_wins();
+	ok &= test_native_terminal_restore_failure_forces_system_error();
 	ok &= test_native_restore_failure_forces_system_error(
 	    howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
 	    "fail-closed callback installation");

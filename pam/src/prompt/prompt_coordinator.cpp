@@ -559,13 +559,17 @@ namespace howdy::pam {
 		}
 
 		child_thread.join();
+		const bool terminal_restore_failed =
+		    native_prompt_ != nullptr && native_prompt_->terminal_restore_failed();
 		const auto restore_result = restore_prompt_conversation();
-		if (restore_result != ConversationRestoreResult::kOriginalRestored) {
+		if (terminal_restore_failed ||
+		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			pam_result = PAM_SYSTEM_ERR;
 		}
 
 		auto result = build_result(ask_pass, pam_result);
-		if (restore_result != ConversationRestoreResult::kOriginalRestored) {
+		if (terminal_restore_failed ||
+		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
 			result.pam_status = PAM_SYSTEM_ERR;
 		}

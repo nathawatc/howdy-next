@@ -312,6 +312,10 @@ void NativePromptConversation::request_abort() {
 	}
 }
 
+[[nodiscard]] auto NativePromptConversation::terminal_restore_failed() const noexcept -> bool {
+	return terminal_restore_failed_.load();
+}
+
 auto NativePromptConversation::dispatch(int num_msg, const struct pam_message **msgm,
                                         struct pam_response **response, void *appdata_ptr) -> int {
 	if (response != nullptr) {
@@ -508,7 +512,10 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 		return PAM_CONV_ERR;
 	}
 	const auto abort_prompt = [this, &original_termios] -> int {
-		(void)restore_prompt_terminal(original_termios);
+		const bool restored = restore_prompt_terminal(original_termios);
+		if (!restored) {
+			terminal_restore_failed_.store(true);
+		}
 		write_newline(tty_fd_);
 		return PAM_CONV_ERR;
 	};
@@ -538,6 +545,7 @@ auto NativePromptConversation::prompt_input(const struct pam_message &message, c
 	}
 
 	if (!restore_prompt_terminal(original_termios)) {
+		terminal_restore_failed_.store(true);
 		write_newline(tty_fd_);
 		return PAM_CONV_ERR;
 	}

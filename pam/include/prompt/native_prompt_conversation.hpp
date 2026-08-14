@@ -23,6 +23,7 @@ public:
 	[[nodiscard]] virtual auto available() const -> bool                              = 0;
 	virtual auto               install() -> int                                       = 0;
 	virtual void               request_abort()                                        = 0;
+	[[nodiscard]] virtual auto terminal_restore_failed() const noexcept -> bool       = 0;
 	virtual auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult = 0;
 };
 
@@ -37,6 +38,7 @@ public:
 	[[nodiscard]] auto available() const -> bool override;
 	auto               install() -> int override;
 	void               request_abort() override;
+	[[nodiscard]] auto terminal_restore_failed() const noexcept -> bool override;
 	auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override;
 
 private:
@@ -98,6 +100,7 @@ private:
 	int                              tty_fd_            = -1;
 	std::array<int, 2>               abort_pipe_{{-1, -1}};
 	std::atomic<bool>                abort_requested_{false};
+	std::atomic<bool>                terminal_restore_failed_{false};
 	Operations                       operations_{};
 };
 

@@ -84,6 +84,11 @@ public:
 		return conversation.prompt_input(message, response, hide_input);
 	}
 
+	[[nodiscard]] static auto terminal_restore_failed(const NativePromptConversation &conversation)
+	    -> bool {
+		return conversation.terminal_restore_failed_.load();
+	}
+
 	static void replace_descriptors(NativePromptConversation &conversation,
 	                                Descriptors               descriptors) {
 		conversation.tty_fd_     = descriptors.tty_fd;
@@ -988,10 +993,12 @@ namespace {
 		    .msg       = "Password: ",
 		};
 
-		auto conversation = std::shared_ptr<NativePromptConversation>(
+		OperationContext operations{.restore_failure = true};
+		auto             conversation = std::shared_ptr<NativePromptConversation>(
 		    create_conversation({.tty_fd         = slave_fd.release(),
 		                         .abort_read_fd  = abort_pipe[0].release(),
-		                         .abort_write_fd = abort_pipe[1].release()}));
+		                         .abort_write_fd = abort_pipe[1].release()},
+		                        &operations));
 		NativePromptConversationTestAccess::close_abort_write_fd(*conversation);
 
 		auto         response       = std::make_shared<char *>(nullptr);
@@ -1022,7 +1029,9 @@ namespace {
 
 		const int prompt_result = result_future.get();
 		ok &= expect(prompt_result == PAM_CONV_ERR,
-		             "abort wake test request abort unblocks prompt without pipe write");
+		             "abort wake test terminal restore failure returns conversation error");
+		ok &= expect(NativePromptConversationTestAccess::terminal_restore_failed(*conversation),
+		             "abort wake test records terminal restore failure");
 		ok &= expect(*response == nullptr, "abort wake test returns no response");
 		if (*response != nullptr) {
 			std::free(*response);
@@ -1480,8 +1489,11 @@ namespace {
 		             "restore failure test writes password response");
 		prompt_thread.join();
 
-		ok &= expect(prompt_result == PAM_CONV_ERR,
-		             "restore failure test fails closed after terminal restore error");
+		ok &=
+		    expect(prompt_result == PAM_CONV_ERR,
+		           "restore failure test returns conversation error after terminal restore error");
+		ok &= expect(NativePromptConversationTestAccess::terminal_restore_failed(*conversation),
+		             "restore failure test records terminal restore failure");
 		ok &= expect(response == nullptr, "restore failure test returns no response");
 		if (response != nullptr) {
 			std::free(response);
@@ -1533,6 +1545,8 @@ auto main() -> int {
 	prompt_thread.join();
 
 	ok &= expect(prompt_result == PAM_CONV_ERR, "Ctrl-C byte aborts the native prompt");
+	ok &= expect(!NativePromptConversationTestAccess::terminal_restore_failed(*conversation),
+	             "successful terminal restoration keeps cancellation non-fatal");
 	ok &= expect(response == nullptr, "aborted prompt does not return a response");
 
 	struct termios restored_termios{};
