@@ -194,6 +194,9 @@ if(BUILD_TESTING)
 		pam_native_prompt_conversation_test
 		pam-native-prompt-conversation
 		tests/prompt/native_prompt_conversation_test.cpp
+		tests/prompt/native_prompt_terminal_test.cpp
+		tests/prompt/native_prompt_fd_test.cpp
+		tests/prompt/native_prompt_input_test.cpp
 	)
 	target_link_libraries(pam_native_prompt_conversation_test PRIVATE pam_prompt)
 	target_include_directories(
