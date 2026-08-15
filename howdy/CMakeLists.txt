@@ -636,7 +636,13 @@ if(BUILD_TESTING)
 	target_link_libraries(howdy_list_cli_test PRIVATE howdy_cli)
 	add_test(NAME native-list-cli COMMAND howdy_list_cli_test)
 
-	add_executable(howdy_add_cli_test tests/cli/add_cli_test.cpp)
+	add_executable(
+		howdy_add_cli_test
+		tests/cli/add_cli_test.cpp
+		tests/cli/add_cli_preflight_test.cpp
+		tests/cli/add_cli_capture_test.cpp
+		tests/cli/add_cli_arguments_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_add_cli_test)
 	target_link_libraries(howdy_add_cli_test PRIVATE howdy_cli)
 	add_test(NAME native-add-cli COMMAND howdy_add_cli_test)
