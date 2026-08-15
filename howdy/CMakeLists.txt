@@ -607,7 +607,11 @@ if(BUILD_TESTING)
 	add_test(NAME native-user-models COMMAND howdy_user_models_test)
 
 	add_executable(
-		howdy_user_model_codec_test tests/storage/user_model_codec_test.cpp
+		howdy_user_model_codec_test
+		tests/storage/user_model_codec_test.cpp
+		tests/storage/user_model_codec_parsing_test.cpp
+		tests/storage/user_model_codec_document_test.cpp
+		tests/storage/user_model_codec_limits_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_user_model_codec_test)
 	target_link_libraries(
