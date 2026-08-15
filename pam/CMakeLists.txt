@@ -226,6 +226,9 @@ if(BUILD_TESTING)
 		pam_auth_flow_helpers_test
 		pam-auth-flow-helpers
 		tests/module/auth_flow_helpers_test.cpp
+		tests/module/auth_flow_integration_test.cpp
+		tests/runtime/auth_helper_output_test.cpp
+		tests/runtime/process_wait_test.cpp
 	)
 	target_compile_definitions(
 		pam_auth_flow_helpers_test
