@@ -858,7 +858,11 @@ if(BUILD_TESTING)
 			"${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
 	)
 
-	add_executable(howdy_dispatch_test tests/app/howdy_dispatch_test.cpp)
+	add_executable(
+		howdy_dispatch_test
+		tests/app/howdy_dispatch_test.cpp
+		tests/app/howdy_completion_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_dispatch_test)
 	target_link_libraries(howdy_dispatch_test PRIVATE howdy_cli)
 	add_test(NAME native-howdy-dispatch COMMAND howdy_dispatch_test)
