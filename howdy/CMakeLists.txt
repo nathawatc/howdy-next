@@ -369,7 +369,12 @@ if(BUILD_TESTING)
 	)
 	add_test(NAME native-frame-processing COMMAND howdy_frame_processing_test)
 
-	add_executable(howdy_compare_engine_test tests/compare/compare_engine_test.cpp)
+	add_executable(
+		howdy_compare_engine_test
+		tests/compare/compare_engine_test.cpp
+		tests/compare/compare_engine_frame_test.cpp
+		tests/compare/compare_engine_inference_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_compare_engine_test)
 	target_link_libraries(
 		howdy_compare_engine_test
