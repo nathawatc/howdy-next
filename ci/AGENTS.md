@@ -1,39 +1,37 @@
 # CI Container Rules
 
-**Updated:** 2026-07-18
+**Updated:** 2026-08-15
 
-## Image Identity
+## Workflow and Image
 
-- Registry image: `codeberg.org/nathawat/howdy-next/ci-1:latest`
-- CI config must reference `codeberg.org/nathawat/howdy-next/ci-1:latest`.
-- Use `latest` tag for CI image. Re-push replaces previous image for that tag.
+- `.forgejo/workflows/ci.yml` runs one release configure/build/test job in
+  `codeberg.org/nathawat/howdy-next/ci-1:latest`.
+- Keep that image identity and mutable `latest` tag aligned between the
+  workflow and image publishing.
+- Build the image from `ci/Containerfile` with fully qualified base image
+  `docker.io/library/archlinux:latest`.
 
-## Containerfile
+## Containerfile Policy
 
-- Use fully qualified base image: `docker.io/library/archlinux:latest`.
-- Install dependencies through pacman. Do not build OpenCV from source.
-- Install `gcc`, `cmake>=3.31` and `make`; Arch `base` image lacks build tools.
-- Require glibc 2.34+ for `posix_spawn_file_actions_addclosefrom_np()`.
-- Require `opencv >= 5.0.0` and `yyjson >= 0.12.0` from Arch stable repositories.
-- Install `qt6-base`; Arch OpenCV HighGUI links against Qt 6.
-- Keep package install minimal. Clear pacman package and sync caches in same
-  layer with `pacman -Scc --noconfirm`.
-- Keep OCI metadata only in `Containerfile`. Do not repeat identical
-  `org.opencontainers.image.*` labels in `podman build` commands.
+- Install dependencies through pacman; do not build OpenCV from source.
+- Keep compiler/build tooling at `gcc`, `make`, and `cmake>=3.31`.
+- Keep `glibc>=2.34` for
+  `posix_spawn_file_actions_addclosefrom_np()`.
+- Keep `opencv>=5.0.0`, `yyjson>=0.12.0`, and `libinih>=59` aligned with the
+  root CMake requirements.
+- Keep `qt6-base`; OpenCV HighGUI links against Qt 6 in this image.
+- Keep package installation minimal and clear pacman caches in the same layer.
+- Keep OCI metadata in `Containerfile`; do not duplicate its labels in build
+  commands.
 
 ## Validation
 
-When changing packages, base image, or build tools:
+When changing the container, workflow, or build dependencies:
 
-1. Build from `ci/`.
-2. Verify CMake configures in image.
-3. Run affected native test targets.
-4. Check glibc, OpenCV, libinih, libcurl, and yyjson versions satisfy CMake dependencies.
-
-## Publishing
-
-- Authenticate with `podman login codeberg.org`.
-- Use `--pull=always` for CI-image rebuilds.
-- Use `--no-cache` only when a clean rebuild is intended.
-- Push `codeberg.org/nathawat/howdy-next/ci-1:latest`.
-- Re-pushing `:latest` replaces previous image for that tag.
+1. From `ci/`, build with `podman build --pull=always -t
+codeberg.org/nathawat/howdy-next/ci-1:latest -f Containerfile .`.
+2. Configure and build the repository with the appropriate CMake preset, using
+   `--parallel "$(nproc)"` and `HOWDY_WARNINGS_AS_ERRORS=ON` for CI parity.
+3. Run affected CTest tests; do not add an unnecessary full matrix.
+4. Check glibc, OpenCV, libinih, libcurl, and yyjson versions satisfy the root
+   CMake requirements.

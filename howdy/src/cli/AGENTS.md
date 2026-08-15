@@ -1,31 +1,48 @@
 # CLI Knowledge Base
 
-**Updated:** 2026-07-18
+**Updated:** 2026-08-15
 
 ## Scope
 
-Native C++ CLI for model mgmt, config edit, camera test, snapshot gen.
+Native C++ CLI for model management, config editing, camera preview, and
+snapshot generation. Keep `howdy` as the sole installed user-facing command.
 
 ## Where to Look
 
-- Unified CLI dispatch: `howdy/src/app/howdy.cpp`,
-  `howdy/src/bin/howdy_main.cpp` — Parse global flags, resolve target user,
-  enforce root/user guards, dispatch command.
-- Add face: `howdy/src/cli/add.cpp` — Capture and encode user model.
-- Clear all: `howdy/src/cli/clear.cpp` — Delete all user models.
-- Edit config: `howdy/src/cli/config.cpp` — Open config in `$EDITOR` safely.
-- Toggle auth: `howdy/src/cli/disable.cpp` — Enable or disable auth.
-- List models: `howdy/src/cli/list.cpp` — Show user model IDs.
-- Remove one: `howdy/src/cli/remove.cpp` — Delete one model by ID.
-- Set config: `howdy/src/cli/set.cpp` — Update one config value atomically.
-- Download ONNX: `howdy/src/cli/download_models.cpp` — Fetch packaged face
-  models.
-- Snapshot: `howdy/src/cli/snapshot.cpp` — Generate diagnostic frame.
-- Camera test: `howdy/src/cli/test.cpp` — Live preview and compare flow.
+- Unified dispatch: `howdy/src/app/howdy.cpp` and
+  `howdy/src/bin/howdy_main.cpp` — parse global flags, resolve target user,
+  enforce root/user guards, and dispatch commands.
+- Add policy: `howdy/src/cli/add.cpp` — argument/label policy,
+  status/diagnostic mapping, and `add_main_with_dependencies()`.
+- Add production adapters: `howdy/src/cli/add_main.cpp` — production
+  `RuntimeConfig` loading, `FaceModel` lifecycle, existing-model inspection,
+  `VideoCapture`/enrollment adapter, storage adapters, and production
+  `add_main()`.
+- Clear all: `howdy/src/cli/clear.cpp` — inspect and delete all user models.
+- Edit config: `howdy/src/cli/config.cpp` and
+  `howdy/src/cli/config_edit_session.cpp` — safe editor workflow and atomic
+  installation.
+- Toggle auth: `howdy/src/cli/disable.cpp` — enable or disable auth.
+- List models: `howdy/src/cli/list.cpp` — show user-model IDs.
+- Remove one: `howdy/src/cli/remove.cpp` — delete one model by ID.
+- Set config: `howdy/src/cli/set.cpp` — update one config value atomically.
+- Download ONNX: `howdy/src/cli/download_models.cpp` — pinned packaged-model
+  fetch, integrity, and installation policy.
+- Snapshot policy/writer: `howdy/src/cli/snapshot.cpp` — frame validation,
+  secure snapshot directory, composition/writer, staged atomic installation,
+  and `snapshot_main_with_dependencies()`.
+- Snapshot production adapters: `howdy/src/cli/snapshot_main.cpp` — production
+  camera capture, timestamp/path generation, `cv::imencode`, runtime adapters,
+  and production `snapshot_main()`.
+- Camera test: `howdy/src/cli/test.cpp` — one CLI/composition source for
+  production preview setup and `test_main_with_dependencies()`/`test_main()`.
+  Reusable preview responsibilities live in `test_preview_session.*`,
+  `test_preview_renderer.*`, and `preview_engine.*`; do not invent a second
+  production entrypoint source for this command.
 
-## Internal Headers (Testability)
+## Internal Headers and Injection Seams
 
-CLI commands use dependency injection for tests.
+CLI commands use dependency injection for deterministic tests.
 
 - `include/app/howdy_internal.hpp`: `HowdyDependencies`,
   `howdy_main_with_dependencies()`
@@ -41,63 +58,74 @@ CLI commands use dependency injection for tests.
   `remove_main_with_dependencies()`
 - `include/cli/set_internal.hpp`: `SetDependencies`,
   `set_main_with_dependencies()`
-- `include/cli/config_internal.hpp`: `ConfigDependencies`,
-  `TempConfigCopy`, `config_main_with_dependencies()`
+- `include/cli/config_internal.hpp`: `ConfigDependencies`, `TempConfigCopy`,
+  `config_main_with_dependencies()`
 - `include/cli/test_cli_internal.hpp`: `TestDependencies`,
-  `test_main_with_dependencies()`, `run_preview_preflight()`,
+  `test_main_with_dependencies()`, `run_preview_preflight()`, and
   `has_graphical_display_environment()`
 - `include/cli/snapshot_internal.hpp`: `SnapshotDependencies`,
-  `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`,
+  `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, and
   `write_snapshot_at_path()`
-- `include/cli/enrollment_capture.hpp`: `capture_enrollment_sample()` template,
-  `EnrollmentCaptureResult`, `classify_enrollment_capture_failure()`
-- `include/cli/download_models_internal.hpp`: download models internals
+- `include/cli/enrollment_capture.hpp`: `capture_enrollment_sample()`,
+  `EnrollmentCaptureResult`, and `classify_enrollment_capture_failure()`
+- `include/cli/download_models_internal.hpp`: download-model internals
+
+`add.cpp` and `snapshot.cpp` contain shared/injected command policy. Their
+`*_main.cpp` files contain production integration only because those existing
+boundaries reduce dependency coupling. This is not a requirement for every CLI
+command.
+
+`snapshot_internal::kSnapshotFrameCount` is the single frame-count invariant
+shared by injected snapshot policy and production camera capture.
 
 ## Conventions
 
-- `howdy` is sole installed user-facing CLI. Add commands through dispatcher
-  deps in `include/app/howdy_internal.hpp`; do not add standalone executables.
+- Add commands through dispatcher dependencies in
+  `include/app/howdy_internal.hpp`; do not add standalone executables.
 - Preserve dispatcher global behavior: `-U/--user`, `-y`, `--plain`, root
-  requirement, root-user rejection, invalid model-user validation.
-- Command argv comes from dispatcher. Do not make subcommands parse global
-  options separately.
-- Cover dispatch behavior in `howdy_dispatch_test.cpp` through
-  `howdy_main_with_dependencies()`.
-- Keep config edits atomic and secure.
-- Reuse `support/invoking_user*.hpp` for invoking-user helpers.
-- Reuse `model_assets/model_file.hpp` for model integrity checks.
-- `download-models` owns pinned packaged-model fetch policy: fixed upstream
-  URLs, fixed SHA-256, and canonical OpenCV 5 model pair
-  `face_detection_yunet_2026may.onnx` plus
-  `face_recognition_sface_2021dec_int8.onnx`.
-- For runtime commands such as add, test, and snapshot, prefer typed
-  `RuntimeConfig` fields over raw `ConfigReader` access.
-- Keep command behavior aligned with installed `/etc/howdy` layout.
-- Prefer shared helpers in `howdy/src/config`, `howdy/src/storage`, and
-  `howdy/include/support`.
-- Add, test, and snapshot commands are split into production `*_main.cpp`
-  plus shared implementation for testability; avoid duplicating the DI seam.
-- List, remove, and set public wrappers retain production behavior while
-  injected `*_main_with_dependencies()` runners support tests.
-- Keep `clear` snapshot-verified: inspect before confirmation, then clear only
-  against exact inspected `UserModelFileSnapshot`.
-- Keep `disable` on typed `RuntimeConfig` loading. Abort before config update
-  when load fails or typed config is absent; preserve updater `lock = true`
-  and `validate_runtime = false`.
-- `download_models_main_with_dependencies()` must fail closed before
-  filesystem or network work when required injected callbacks are absent.
+  requirement, root-user rejection, and invalid model-user validation. Global
+  argv comes from the dispatcher; subcommands must not parse those options.
+- Keep config edits secure and atomic. Reuse `support/invoking_user*.hpp`,
+  `model_assets/model_file.hpp`, config helpers, storage helpers, and runtime
+  readiness checks.
+- Runtime commands use typed `RuntimeConfig` fields rather than raw
+  `ConfigReader` access.
+- `download-models` keeps pinned upstream URLs, SHA-256 values, and the
+  canonical OpenCV 5 model pair. Missing required injected callbacks must fail
+  closed before filesystem or network work.
 - Snapshot writer validates BGR frame batches and atomically installs output.
-- Capture failure diagnostics use `classify_enrollment_capture_failure()` for
-  granular error messages (black frames, too dark, no face, etc.).
-- Config CLI uses `config_main_with_dependencies()` for deterministic tests;
-  do not restore test-only environment variables, fake editor scripts, or
-  filesystem-dependent integration harnesses.
-- Preserve config command flow and cleanup semantics:
-  - invalid edited content keeps temporary file;
-  - editor-launch failure, snapshot-read failure, unchanged edit, and
-    successful install remove it exactly once;
-  - stale config detection passes original content as
-    `expected_current_content`;
-  - install keeps `lock = true` and `validate_runtime = false`.
-- Production editor behavior stays in production adapters; injected tests must
-  not alter `$EDITOR` policy.
+  If directory sync fails after replacement, report that the file may already
+  exist; do not silently retry destructive work.
+- Enrollment diagnostics use `classify_enrollment_capture_failure()` for black,
+  dark, unusable, and no-face outcomes.
+- Preserve config command cleanup and stale-content semantics: invalid edited
+  content keeps its temporary file; other terminal paths remove it exactly once;
+  stale detection passes original content as `expected_current_content`; install
+  keeps `lock = true` and `validate_runtime = false`.
+- Keep production editor/environment behavior in production adapters; injected
+  tests must not alter `$EDITOR` policy.
+
+## Tests
+
+CTest logical suites may contain several translation units. Inspect
+`howdy/CMakeLists.txt` and sibling `*_test.cpp` files; do not treat a driver as
+the complete suite.
+
+- Add CLI: `tests/cli/add_cli_test.cpp` is the driver, with
+  `add_cli_preflight_test.cpp`, `add_cli_capture_test.cpp`, and
+  `add_cli_arguments_test.cpp`.
+- Config CLI: `tests/cli/config_cli_test.cpp` is the driver, with
+  `config_cli_workflow_test.cpp` and `config_cli_integration_test.cpp`.
+- Download models: `tests/cli/download_models_test.cpp` participates in the
+  multi-source `native-download-models` suite with focused entrypoint,
+  integrity, manifest, and support sources.
+- Preview: `tests/cli/test_preview_session_test.cpp` and
+  `tests/cli/test_preview_renderer_test.cpp` form the preview session suite.
+- Snapshot: `tests/cli/snapshot_cli_test.cpp` and
+  `tests/cli/snapshot_writer_test.cpp` are separate CLI and writer suites.
+- Dispatcher/completion belongs under `tests/app/`, including
+  `howdy_dispatch_test.cpp` and `howdy_completion_test.cpp`, not under CLI
+  source ownership.
+
+Use injected capture, clock, renderer, and inference dependencies for
+orchestration tests. Keep test-only shared headers under `tests/include/`.
