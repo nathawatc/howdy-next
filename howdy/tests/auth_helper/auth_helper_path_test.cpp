@@ -1,11 +1,70 @@
+#include "auth_helper/auth_helper_acl_fake.hpp"
+#include "auth_helper/auth_helper_acl_policy.hpp"
+#include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
-#include "auth_helper/auth_helper_test_support.hpp"
+#include "auth_helper/auth_helper_test_io.hpp"
 #include "auth_helper/runtime_internal.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <filesystem>
+#include <iostream>
+#include <optional>
 #include <sstream>
+#include <string>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 	using namespace howdy::test::auth_helper;
+
+	class ScopedFd {
+	public:
+		ScopedFd() = default;
+
+		explicit ScopedFd(int fd)
+		    : fd_(fd) {}
+
+		ScopedFd(const ScopedFd &)                     = delete;
+		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
+
+		ScopedFd(ScopedFd &&other) noexcept
+		    : fd_(other.release()) {}
+
+		auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
+			if (this != &other) {
+				reset(other.release());
+			}
+			return *this;
+		}
+
+		~ScopedFd() {
+			reset();
+		}
+
+		[[nodiscard]] auto get() const -> int {
+			return fd_;
+		}
+
+		void reset(int fd = -1) {
+			if (fd_ >= 0) {
+				close(fd_);
+			}
+			fd_ = fd;
+		}
+
+		auto release() -> int {
+			const int fd = fd_;
+			fd_          = -1;
+			return fd;
+		}
+
+	private:
+		int fd_ = -1;
+	};
 
 	auto expect_acl_probe_classification(const std::filesystem::path &temp_root) -> bool {
 		std::ostringstream output;

@@ -1,15 +1,66 @@
+#include "auth_helper/auth_helper_acl_fake.hpp"
+#include "auth_helper/auth_helper_acl_policy.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
-#include "auth_helper/auth_helper_test_support.hpp"
+#include "auth_helper/auth_helper_test_io.hpp"
 #include "auth_helper/command.hpp"
 #include "auth_helper/runtime_internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <filesystem>
+#include <grp.h>
+#include <iostream>
 #include <set>
 #include <sstream>
+#include <string>
 #include <tuple>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace {
 	using namespace howdy::test::auth_helper;
+
+	auto child_can_access_staged_files(const howdy::native::auth_helper::PreparedPaths &prepared,
+	                                   uid_t uid, gid_t gid, bool expect_access) -> bool {
+		const pid_t child = fork();
+		if (child == 0) {
+			if (setgroups(0, nullptr) != 0 || setgid(gid) != 0 || setuid(uid) != 0) {
+				_exit(2);
+			}
+			const int runtime_fd =
+			    open(prepared.runtime_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			const int models_fd =
+			    open(prepared.user_models_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			const int config_fd = open(prepared.config_path.c_str(), O_RDONLY | O_CLOEXEC);
+			const int model_fd =
+			    open((prepared.user_models_dir / "alice.dat").c_str(), O_RDONLY | O_CLOEXEC);
+			if (runtime_fd >= 0) {
+				close(runtime_fd);
+			}
+			if (models_fd >= 0) {
+				close(models_fd);
+			}
+			if (config_fd >= 0) {
+				close(config_fd);
+			}
+			if (model_fd >= 0) {
+				close(model_fd);
+			}
+			const bool accessible =
+			    runtime_fd >= 0 && models_fd >= 0 && config_fd >= 0 && model_fd >= 0;
+			_exit(accessible == expect_access ? 0 : 1);
+		}
+		if (child < 0) {
+			return false;
+		}
+		int status = 0;
+		return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+	}
 
 	auto runtime_dirs_for_uid(const std::filesystem::path &runtime_root, uid_t uid)
 	    -> std::set<std::filesystem::path> {

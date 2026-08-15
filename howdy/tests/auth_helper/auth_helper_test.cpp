@@ -1,5 +1,11 @@
+#include "auth_helper/auth_helper_acl_fake.hpp"
+#include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
-#include "auth_helper/auth_helper_test_support.hpp"
+
+#include <filesystem>
+#include <iostream>
+#include <string>
+#include <unistd.h>
 
 using namespace howdy::test::auth_helper;
 
