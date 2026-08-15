@@ -1,5 +1,5 @@
-#include "compare/engine.hpp"
 #include "compare/compare_engine_test_support.hpp"
+#include "compare/engine.hpp"
 
 #include <string>
 
@@ -7,9 +7,9 @@
 
 namespace {
 
+	using howdy::test::expect;
 	using howdy::test::compare_engine::expect_near;
 	using howdy::test::compare_engine::make_video_config;
-	using howdy::test::expect;
 
 	auto expect_matrix_equal(const cv::Mat &actual, const cv::Mat &expected,
 	                         const std::string &message) -> bool {

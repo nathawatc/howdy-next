@@ -667,7 +667,9 @@ if(BUILD_TESTING)
 	add_test(NAME native-test-cli COMMAND howdy_test_cli_test)
 
 	add_executable(
-		howdy_test_preview_session_test tests/cli/test_preview_session_test.cpp
+		howdy_test_preview_session_test
+		tests/cli/test_preview_session_test.cpp
+		tests/cli/test_preview_renderer_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_test_preview_session_test)
 	target_link_libraries(

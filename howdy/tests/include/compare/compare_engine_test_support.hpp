@@ -11,7 +11,7 @@ namespace howdy::test::compare_engine {
 	using howdy::test::expect;
 
 	inline auto expect_near(double actual, double expected, double tolerance,
-	                       const std::string &message) -> bool {
+	                        const std::string &message) -> bool {
 		return expect(std::fabs(actual - expected) <= tolerance, message);
 	}
 

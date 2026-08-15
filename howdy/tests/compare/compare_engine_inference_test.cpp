@@ -1,5 +1,5 @@
-#include "compare/engine.hpp"
 #include "compare/compare_engine_test_support.hpp"
+#include "compare/engine.hpp"
 
 #include <cstddef>
 #include <limits>
@@ -12,9 +12,9 @@
 
 namespace {
 
+	using howdy::test::expect;
 	using howdy::test::compare_engine::expect_near;
 	using howdy::test::compare_engine::make_video_config;
-	using howdy::test::expect;
 	int callback_calls_without_context = 0;
 
 	auto make_encoding(float value) -> std::vector<float> {
