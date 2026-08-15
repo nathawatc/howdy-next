@@ -259,6 +259,7 @@ add_library(
 	STATIC
 	src/app/howdy.cpp
 	src/cli/add.cpp
+	src/cli/add_main.cpp
 	src/cli/clear.cpp
 	src/cli/config.cpp
 	src/cli/config_edit_session.cpp
