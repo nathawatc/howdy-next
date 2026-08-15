@@ -624,7 +624,12 @@ if(BUILD_TESTING)
 	target_link_libraries(howdy_clear_cli_test PRIVATE howdy_cli)
 	add_test(NAME native-clear-cli COMMAND howdy_clear_cli_test)
 
-	add_executable(howdy_config_cli_test tests/cli/config_cli_test.cpp)
+	add_executable(
+		howdy_config_cli_test
+		tests/cli/config_cli_test.cpp
+		tests/cli/config_cli_workflow_test.cpp
+		tests/cli/config_cli_integration_test.cpp
+	)
 	howdy_configure_native_test_target(howdy_config_cli_test)
 	target_link_options(howdy_config_cli_test PRIVATE -Wl,--wrap=initgroups)
 	target_link_libraries(howdy_config_cli_test PRIVATE howdy_cli)
