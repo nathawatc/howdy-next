@@ -269,6 +269,7 @@ add_library(
 	src/cli/remove.cpp
 	src/cli/set.cpp
 	src/cli/snapshot.cpp
+	src/cli/snapshot_main.cpp
 	src/cli/test.cpp
 )
 howdy_configure_native_target(howdy_cli)

@@ -3,6 +3,7 @@
 #include "config/runtime_config.hpp"
 #include "support/atomic_files.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -12,6 +13,8 @@
 #include <opencv2/core.hpp>
 
 namespace howdy::native::snapshot_internal {
+
+	inline constexpr std::size_t kSnapshotFrameCount = 4;
 
 	enum class SnapshotCaptureStatus : std::uint8_t {
 		kOk,
