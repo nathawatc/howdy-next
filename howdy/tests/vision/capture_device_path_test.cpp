@@ -39,6 +39,12 @@ auto main() -> int {
 	             "relative device path is rejected");
 	ok &= expect(!howdy::native::is_allowed_capture_device_path("../dev/video0"),
 	             "relative traversal device path is rejected");
+	ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/v4l/by-path/../../null"),
+	             "traversal from the allowed by-path namespace is rejected");
+	ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/video0/../null"),
+	             "nested traversal from the direct video namespace is rejected");
+	ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/v4l/by-path/.."),
+	             "parent entry in the allowed by-path namespace is rejected");
 	ok &= expect(!howdy::native::is_allowed_capture_device_path("/tmp/camera"),
 	             "temporary camera path is rejected");
 	ok &= expect(!howdy::native::is_allowed_capture_device_path("/dev/null"),
