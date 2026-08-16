@@ -28,17 +28,18 @@ namespace howdy::pam::auth_helper_process {
 	struct Operations {
 		void *context = nullptr;
 
-		int (*pipe2)(void *, int *pipe_fds, int flags)                        = nullptr;
-		int (*duplicate_fd)(void *, int fd, int minimum_fd)                   = nullptr;
-		int (*actions_init)(void *, posix_spawn_file_actions_t *)             = nullptr;
+		int (*pipe2)(void *, int *pipe_fds, int flags)                                 = nullptr;
+		int (*duplicate_fd)(void *, int fd, int minimum_fd)                            = nullptr;
+		int (*actions_init)(void *, posix_spawn_file_actions_t *)                      = nullptr;
 		int (*actions_adddup2)(void *, posix_spawn_file_actions_t *, int source_fd,
-		                       int target_fd)                                 = nullptr;
-		int (*actions_addclose)(void *, posix_spawn_file_actions_t *, int fd) = nullptr;
-		int (*actions_destroy)(void *, posix_spawn_file_actions_t *)          = nullptr;
-		int (*spawn)(const SpawnRequest &)                                    = nullptr;
-		int (*close)(void *, int fd)                                          = nullptr;
-		OutputReader read_bounded                                             = nullptr;
-		LogObserver  log_observer                                             = nullptr;
+		                       int target_fd)                                          = nullptr;
+		int (*actions_addclose)(void *, posix_spawn_file_actions_t *, int fd)          = nullptr;
+		int (*actions_addclosefrom)(void *, posix_spawn_file_actions_t *, int from_fd) = nullptr;
+		int (*actions_destroy)(void *, posix_spawn_file_actions_t *)                   = nullptr;
+		int (*spawn)(const SpawnRequest &)                                             = nullptr;
+		int (*close)(void *, int fd)                                                   = nullptr;
+		OutputReader read_bounded                                                      = nullptr;
+		LogObserver  log_observer                                                      = nullptr;
 	};
 
 	struct Output {

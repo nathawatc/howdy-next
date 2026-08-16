@@ -28,6 +28,7 @@ namespace howdy::test::runtime_session {
 		std::vector<std::pair<int, int>> duplicate_fd_requests;
 		std::vector<std::pair<int, int>> dup2_fds;
 		std::vector<int>                 action_close_fds;
+		std::vector<int>                 action_closefrom_fds;
 		std::vector<int>                 parent_close_fds;
 		std::vector<std::string>         spawn_argv;
 		std::vector<std::string>         spawn_env;
@@ -40,6 +41,7 @@ namespace howdy::test::runtime_session {
 		int                              stderr_dup_result      = 0;
 		int                              first_close_result     = 0;
 		int                              final_close_result     = 0;
+		int                              closefrom_result       = 0;
 		int                              actions_destroy_result = 0;
 		int                              spawn_result           = 0;
 		int                              actions_init_calls     = 0;
@@ -93,6 +95,15 @@ namespace howdy::test::runtime_session {
 		fake.action_close_fds.push_back(fd);
 		return fake.action_close_fds.size() == 1 ? fake.first_close_result
 		                                         : fake.final_close_result;
+	}
+
+	inline auto fake_actions_addclosefrom(void *context, posix_spawn_file_actions_t *actions,
+	                                      int from_fd) -> int {
+		(void)actions;
+		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
+		fake.operations.emplace_back("actions_addclosefrom");
+		fake.action_closefrom_fds.push_back(from_fd);
+		return fake.closefrom_result;
 	}
 
 	inline auto fake_actions_destroy(void *context, posix_spawn_file_actions_t *actions) -> int {
@@ -158,18 +169,19 @@ namespace howdy::test::runtime_session {
 
 	inline auto spawn_operations(AuthHelperSpawnFake *fake)
 	    -> howdy::pam::auth_helper_process::Operations {
-		auto operations             = howdy::pam::auth_helper_process::production_operations();
-		operations.context          = fake;
-		operations.pipe2            = fake_pipe2;
-		operations.duplicate_fd     = fake_duplicate_fd;
-		operations.actions_init     = fake_actions_init;
-		operations.actions_adddup2  = fake_actions_adddup2;
-		operations.actions_addclose = fake_actions_addclose;
-		operations.actions_destroy  = fake_actions_destroy;
-		operations.spawn            = fake_spawn;
-		operations.close            = fake_close;
-		operations.read_bounded     = fake_auth_helper_output_reader;
-		operations.log_observer     = fake_auth_helper_spawn_log;
+		auto operations                 = howdy::pam::auth_helper_process::production_operations();
+		operations.context              = fake;
+		operations.pipe2                = fake_pipe2;
+		operations.duplicate_fd         = fake_duplicate_fd;
+		operations.actions_init         = fake_actions_init;
+		operations.actions_adddup2      = fake_actions_adddup2;
+		operations.actions_addclose     = fake_actions_addclose;
+		operations.actions_addclosefrom = fake_actions_addclosefrom;
+		operations.actions_destroy      = fake_actions_destroy;
+		operations.spawn                = fake_spawn;
+		operations.close                = fake_close;
+		operations.read_bounded         = fake_auth_helper_output_reader;
+		operations.log_observer         = fake_auth_helper_spawn_log;
 		return operations;
 	}
 

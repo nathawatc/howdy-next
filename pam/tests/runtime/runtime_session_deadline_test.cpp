@@ -59,17 +59,32 @@ namespace {
 	auto stalled_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		auto &stalled = *static_cast<StalledSpawnContext *>(request.context);
 		++stalled.spawn_calls;
-		const std::string command = "trap '' TERM; printf R >&" +
-		                            std::to_string(stalled.ready_pipe[1]) + "; exec /bin/sleep 60";
+		const int saved_stdin = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+		if (saved_stdin < 0) {
+			return errno;
+		}
+		if (dup2(stalled.ready_pipe[1], STDIN_FILENO) < 0) {
+			const int duplicate_error = errno;
+			(void)close(saved_stdin);
+			return duplicate_error;
+		}
+		const std::string     command    = "trap '' TERM; printf R >&0; exec /bin/sleep 60";
 		std::array<char *, 4> shell_args = {const_cast<char *>("/bin/sh"), const_cast<char *>("-c"),
 		                                    const_cast<char *>(command.c_str()), nullptr};
 		std::array<char *, 1> empty_env  = {nullptr};
-		const int result = posix_spawn(request.child_pid, "/bin/sh", request.actions, nullptr,
-		                               shell_args.data(), empty_env.data());
-		if (result != 0) {
-			return result;
+		const int spawn_result = posix_spawn(request.child_pid, "/bin/sh", request.actions, nullptr,
+		                                     shell_args.data(), empty_env.data());
+		const int restore_result = dup2(saved_stdin, STDIN_FILENO);
+		const int restore_error  = errno;
+		(void)close(saved_stdin);
+		if (spawn_result != 0) {
+			return spawn_result;
 		}
 		stalled.spawned_pid = *request.child_pid;
+		if (restore_result < 0) {
+			terminate_and_reap_test_child(*request.child_pid);
+			return restore_error;
+		}
 		(void)close(stalled.ready_pipe[1]);
 		stalled.ready_pipe[1] = -1;
 		if (!wait_for_ready_byte(stalled.ready_pipe[0], "stalled auth helper")) {

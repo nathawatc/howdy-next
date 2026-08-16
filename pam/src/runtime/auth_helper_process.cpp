@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#	define _GNU_SOURCE
+#endif
+
 #include "runtime/auth_helper_process.hpp"
 
 #include "protocol/auth_helper_protocol.hpp"
@@ -348,6 +352,12 @@ namespace {
 		return posix_spawn_file_actions_addclose(actions, fd);
 	}
 
+	auto production_actions_addclosefrom(void *context, posix_spawn_file_actions_t *actions,
+	                                     int from_fd) -> int {
+		(void)context;
+		return posix_spawn_file_actions_addclosefrom_np(actions, from_fd);
+	}
+
 	auto production_actions_destroy(void *context, posix_spawn_file_actions_t *actions) -> int {
 		(void)context;
 		return posix_spawn_file_actions_destroy(actions);
@@ -372,15 +382,16 @@ namespace {
 
 	auto production_auth_helper_spawn_operations() -> AuthHelperSpawnOperations {
 		return {
-		    .pipe2            = production_pipe2,
-		    .duplicate_fd     = production_duplicate_fd,
-		    .actions_init     = production_actions_init,
-		    .actions_adddup2  = production_actions_adddup2,
-		    .actions_addclose = production_actions_addclose,
-		    .actions_destroy  = production_actions_destroy,
-		    .spawn            = production_spawn,
-		    .close            = production_close,
-		    .read_bounded     = production_read_bounded,
+		    .pipe2                = production_pipe2,
+		    .duplicate_fd         = production_duplicate_fd,
+		    .actions_init         = production_actions_init,
+		    .actions_adddup2      = production_actions_adddup2,
+		    .actions_addclose     = production_actions_addclose,
+		    .actions_addclosefrom = production_actions_addclosefrom,
+		    .actions_destroy      = production_actions_destroy,
+		    .spawn                = production_spawn,
+		    .close                = production_close,
+		    .read_bounded         = production_read_bounded,
 		};
 	}
 
@@ -489,6 +500,12 @@ namespace {
 				    operations, spawn, "posix_spawn_file_actions_addclose(pipe write end)", result);
 			}
 		}
+		result =
+		    operations.actions_addclosefrom(operations.context, &spawn->actions, STDERR_FILENO + 1);
+		if (result != 0) {
+			return fail_spawn_setup(operations, spawn, "posix_spawn_file_actions_addclosefrom",
+			                        result);
+		}
 		return true;
 	}
 
@@ -594,21 +611,40 @@ namespace {
 	auto cleanup_runtime_auth_files_until(const std::filesystem::path     &root_dir,
 	                                      const AuthHelperSpawnOperations &operations,
 	                                      HelperDeadline                   deadline) -> void {
-		std::string           root_dir_string = root_dir.string();
-		std::array<char *, 4> args         = {const_cast<char *>(kAuthHelperPath),
-		                                      const_cast<char *>("cleanup"),
-		                                      const_cast<char *>(root_dir_string.c_str()), nullptr};
-		std::array<char *, 1> env          = {nullptr};
-		pid_t                 child_pid    = -1;
-		const int             spawn_result = operations.spawn({.context   = operations.context,
-		                                                       .child_pid = &child_pid,
-		                                                       .path      = kAuthHelperPath,
-		                                                       .actions   = nullptr,
-		                                                       .argv      = args.data(),
-		                                                       .envp      = env.data()});
+		std::string                root_dir_string = root_dir.string();
+		std::array<char *, 4>      args = {const_cast<char *>(kAuthHelperPath),
+		                                   const_cast<char *>("cleanup"),
+		                                   const_cast<char *>(root_dir_string.c_str()), nullptr};
+		std::array<char *, 1>      env  = {nullptr};
+		posix_spawn_file_actions_t file_actions{};
+		const int init_result = operations.actions_init(operations.context, &file_actions);
+		if (init_result != 0) {
+			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_init", init_result);
+			return;
+		}
+
+		const int closefrom_result =
+		    operations.actions_addclosefrom(operations.context, &file_actions, STDERR_FILENO + 1);
+		if (closefrom_result != 0) {
+			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_addclosefrom",
+			                             closefrom_result);
+			destroy_spawn_actions(operations, &file_actions);
+			return;
+		}
+
+		pid_t     child_pid    = -1;
+		const int spawn_result = operations.spawn({.context   = operations.context,
+		                                           .child_pid = &child_pid,
+		                                           .path      = kAuthHelperPath,
+		                                           .actions   = &file_actions,
+		                                           .argv      = args.data(),
+		                                           .envp      = env.data()});
 		if (spawn_result != 0) {
 			syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
 			       strerror(spawn_result), spawn_result);
+		}
+		destroy_spawn_actions(operations, &file_actions);
+		if (spawn_result != 0) {
 			return;
 		}
 
