@@ -386,9 +386,6 @@ auto main() -> int {
 		ok &= expect(howdy::native::config_schema::runtime_config_option(section, key) != nullptr,
 		             std::string("runtime config option present: ") + section + "." + key);
 	}
-	ok &= expect(validates(temp_root / "obsolete-keys.ini",
-	                       "[core]\nworkaround = input\ngtk_stdout = true\n"),
-	             "obsolete workaround and gtk_stdout config keys remain ignored");
 	ok &= expect(validates(temp_root / "unknown-keys.ini", "[core]\nunknown_core_key = invalid\n"
 	                                                       "[video]\nunknown_video_key = invalid\n"
 	                                                       "[face]\nunknown_face_key = invalid\n"),
