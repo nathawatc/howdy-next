@@ -46,21 +46,15 @@ namespace howdy::native {
 
 	auto default_face_config() -> FaceConfig;
 
-	struct SnapshotConfig {
-		bool save_failed{};
-		bool save_successful{};
-	};
-
 	struct DebugConfig {
 		bool end_report{};
 	};
 
 	struct RuntimeConfig {
-		CoreConfig     core;
-		VideoConfig    video;
-		FaceConfig     face;
-		SnapshotConfig snapshots;
-		DebugConfig    debug;
+		CoreConfig  core;
+		VideoConfig video;
+		FaceConfig  face;
+		DebugConfig debug;
 
 		RuntimeConfig();
 	};

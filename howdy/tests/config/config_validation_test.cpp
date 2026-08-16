@@ -376,11 +376,10 @@ auto main() -> int {
 	                     "[video]\ndevice_path = /tmp/camera\n", "device_path"),
 	             "unrelated device path is rejected");
 
-	const std::array<std::pair<const char *, const char *>, 5> known_runtime_options = {{
+	const std::array<std::pair<const char *, const char *>, 4> known_runtime_options = {{
 	    {"core", "detection_notice"},
 	    {"video", "timeout"},
 	    {"face", "yunet_score_threshold"},
-	    {"snapshots", "save_failed"},
 	    {"debug", "end_report"},
 	}};
 	for (const auto &[section, key] : known_runtime_options) {

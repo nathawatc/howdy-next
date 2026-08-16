@@ -123,14 +123,6 @@ namespace howdy::native {
 			return config;
 		}
 
-		auto read_snapshot_config(const RuntimeValueSource &source) -> SnapshotConfig {
-			using enum config_schema::OptionId;
-			return {
-			    .save_failed     = source.read_bool(snapshots_save_failed),
-			    .save_successful = source.read_bool(snapshots_save_successful),
-			};
-		}
-
 		auto read_debug_config(const RuntimeValueSource &source) -> DebugConfig {
 			return {.end_report = source.read_bool(config_schema::OptionId::debug_end_report)};
 		}
@@ -138,11 +130,10 @@ namespace howdy::native {
 		auto populate_runtime_config(const ConfigReader &reader) -> RuntimeConfig {
 			RuntimeConfig            config;
 			const RuntimeValueSource source{.reader = &reader};
-			config.core      = read_core_config(source);
-			config.video     = read_video_config(source);
-			config.face      = read_face_config(source);
-			config.snapshots = read_snapshot_config(source);
-			config.debug     = read_debug_config(source);
+			config.core  = read_core_config(source);
+			config.video = read_video_config(source);
+			config.face  = read_face_config(source);
+			config.debug = read_debug_config(source);
 			return config;
 		}
 
@@ -152,7 +143,6 @@ namespace howdy::native {
 	    : core(read_core_config(RuntimeValueSource{}))
 	    , video(read_video_config(RuntimeValueSource{}))
 	    , face(read_face_config(RuntimeValueSource{}))
-	    , snapshots(read_snapshot_config(RuntimeValueSource{}))
 	    , debug(read_debug_config(RuntimeValueSource{})) {}
 
 	auto default_video_config() -> VideoConfig {

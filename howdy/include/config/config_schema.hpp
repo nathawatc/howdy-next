@@ -46,8 +46,6 @@ namespace howdy::native::config_schema {
 		face_yunet_top_k,
 		face_sface_metric,
 		face_sface_threshold,
-		snapshots_save_failed,
-		snapshots_save_successful,
 		debug_end_report,
 		count,
 	};

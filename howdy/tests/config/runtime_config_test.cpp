@@ -155,10 +155,6 @@ auto main() -> int {
 	ok &= expect_video_defaults(defaults.video, "RuntimeConfig default");
 	ok &= expect_face_defaults(howdy::native::default_face_config(), "factory");
 	ok &= expect_face_defaults(defaults.face, "RuntimeConfig default");
-	ok &= expect_bool_default(defaults.snapshots.save_failed, snapshots_save_failed,
-	                          "snapshots save_failed struct default matches schema");
-	ok &= expect_bool_default(defaults.snapshots.save_successful, snapshots_save_successful,
-	                          "snapshots save_successful struct default matches schema");
 	ok &= expect_bool_default(defaults.debug.end_report, debug_end_report,
 	                          "debug end_report struct default matches schema");
 
@@ -205,9 +201,6 @@ auto main() -> int {
 	                                "yunet_top_k = 1234\n"
 	                                "sface_metric = l2\n"
 	                                "sface_threshold = 3.5\n"
-	                                "[snapshots]\n"
-	                                "save_failed = true\n"
-	                                "save_successful = false\n"
 	                                "[debug]\n"
 	                                "end_report = true\n");
 	ok &= expect(custom.ok, "custom config loads");
@@ -233,9 +226,7 @@ auto main() -> int {
 		                 config.face.yunet_top_k == 1234 && config.face.sface_metric == "l2" &&
 		                 nearly_equal(config.face.sface_threshold, 3.5F),
 		             "custom face fields map to their schema options");
-		ok &= expect(config.snapshots.save_failed && !config.snapshots.save_successful &&
-		                 config.debug.end_report,
-		             "custom snapshot and debug fields map to their schema options");
+		ok &= expect(config.debug.end_report, "custom debug field maps to its schema option");
 	}
 
 	const auto boolean_mapping =
