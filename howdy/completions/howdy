@@ -27,17 +27,27 @@ _howdy() {
 	local command_index=-1
 	local positional_argument_count=0
 	local -a positional_arguments=()
+	local -a pre_command_global_options=()
 	local completion_disabled=0
+	local options_ended=0
 	local index=1
 	while (( index < COMP_CWORD )); do
 		local word="${COMP_WORDS[index]}"
-		if [[ "$word" == -* ]] &&
+		if (( ! options_ended )) && [[ "$word" == "--" ]]; then
+			options_ended=1
+			(( index += 1 ))
+			continue
+		fi
+		if (( ! options_ended )) && [[ "$word" == -* ]] &&
 			[[ -n "${global_option_takes_argument[$word]+set}" ]] &&
 			! (( command_index >= 0 && global_option_parses_after_command[$word] == 0 )); then
+			if (( command_index < 0 )) && [[ "${global_option_parses_after_command[$word]}" == 1 ]]; then
+				pre_command_global_options+=("$word")
+			fi
 			if [[ "${global_option_parses_after_command[$word]}" == 0 ]]; then
 				completion_disabled=1
 			fi
-			if [[ "${global_option_takes_argument[$word]}" == 1 ]]; then
+			if [[ "${global_option_takes_argument[$word]}" == "1" ]]; then
 				(( index += 2 ))
 			else
 				(( index += 1 ))
@@ -54,34 +64,90 @@ _howdy() {
 		(( index += 1 ))
 	done
 
+	local -a command_option_spellings=()
+	local -A command_option_takes_argument=()
+	local -A command_option_completion=()
+	if (( command_index >= 0 )); then
+		local command_spelling command_takes_argument command_completion_kind
+		while IFS=$'\t' read -r command_spelling command_takes_argument command_completion_kind; do
+			if [[ -n "$command_spelling" ]]; then
+				command_option_spellings+=("$command_spelling")
+				command_option_takes_argument["$command_spelling"]="$command_takes_argument"
+				command_option_completion["$command_spelling"]="$command_completion_kind"
+			fi
+		done < <(howdy __complete command-options "$command")
+	fi
+
 	if (( completion_disabled )); then
 		return 0
 	fi
 
-	if [[ "$previous_word" == -* ]] &&
+	if (( ! options_ended )) && [[ "$previous_word" == -* ]] &&
 		[[ -n "${global_option_takes_argument[$previous_word]+set}" ]] &&
-		[[ "${global_option_takes_argument[$previous_word]}" == 1 ]]; then
+		[[ "${global_option_takes_argument[$previous_word]}" == "1" ]]; then
+		if (( command_index >= 0 )) &&
+			[[ -z "${command_option_takes_argument[$previous_word]+set}" ]]; then
+			return 0
+		fi
 		if [[ "${global_option_completion[$previous_word]}" == user ]]; then
 			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
 		fi
 		return 0
 	fi
+	if [[ "$previous_word" == -* ]] &&
+		[[ -n "${command_option_takes_argument[$previous_word]+set}" ]] &&
+		[[ "${command_option_takes_argument[$previous_word]}" == "1" ]]; then
+		return 0
+	fi
 
-	if [[ "$current_word" == -* ]]; then
-		for spelling in "${global_option_spellings[@]}"; do
-			if (( command_index < 0 )) ||
-				[[ "${global_option_parses_after_command[$spelling]}" == 1 ]]; then
+	if [[ "$current_word" == -* ]] && (( ! options_ended )); then
+		if (( command_index >= 0 )); then
+			local -A used_command_options=()
+			local command_options_ended=0
+			index=$((command_index + 1))
+			while (( index < COMP_CWORD )); do
+				local word="${COMP_WORDS[index]}"
+				if (( ! command_options_ended )) && [[ "$word" == "--" ]]; then
+					command_options_ended=1
+					(( index += 1 ))
+					continue
+				fi
+				if (( ! command_options_ended )) &&
+					[[ -n "${command_option_takes_argument[$word]+set}" ]]; then
+					if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
+						used_command_options["$word"]=1
+					fi
+					if [[ "${command_option_takes_argument[$word]}" == "1" ]]; then
+						(( index += 2 ))
+					else
+						(( index += 1 ))
+					fi
+					continue
+				fi
+				(( index += 1 ))
+			done
+
+			for spelling in "${command_option_spellings[@]}"; do
+				if [[ -n "${used_command_options[$spelling]+set}" ]]; then
+					continue
+				fi
 				if [[ "$spelling" == "$current_word"* ]]; then
 					COMPREPLY+=("$spelling")
 				fi
-			fi
-		done
+			done
+		else
+			for spelling in "${global_option_spellings[@]}"; do
+				if [[ "$spelling" == "$current_word"* ]]; then
+					COMPREPLY+=("$spelling")
+				fi
+			done
+		fi
 		return 0
 	fi
 
 	if (( command_index < 0 )); then
 		local -a commands=()
-		mapfile -t commands < <(howdy __complete commands)
+		mapfile -t commands < <(howdy __complete commands -- "${pre_command_global_options[@]}")
 		for command in "${commands[@]}"; do
 			if [[ "$command" == "$current_word"* ]]; then
 				COMPREPLY+=("$command")

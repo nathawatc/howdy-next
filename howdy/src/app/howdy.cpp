@@ -16,6 +16,7 @@
 #include "support/user_names.hpp"
 #include "version.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <charconv>
@@ -38,10 +39,25 @@ namespace {
 
 	constexpr std::array<std::string_view, 2> kBooleanCompletionValues{"false", "true"};
 
-	void print_completion_commands() {
-		for (const auto &descriptor : howdy::native::command_catalog()) {
-			std::cout << descriptor.name << '\n';
+	auto print_completion_commands(std::span<const std::string> required_options = {}) -> bool {
+		std::vector<howdy::native::GlobalOptionId> required_option_ids;
+		required_option_ids.reserve(required_options.size());
+		for (const auto &spelling : required_options) {
+			const auto *option = howdy::native::find_global_option(spelling);
+			if (option == nullptr || !option->parses_after_command) {
+				return false;
+			}
+			required_option_ids.push_back(option->id);
 		}
+
+		for (const auto &descriptor : howdy::native::command_catalog()) {
+			if (std::ranges::all_of(required_option_ids, [&](const auto id) -> auto {
+				    return howdy::native::command_accepts_global_option(descriptor, id);
+			    })) {
+				std::cout << descriptor.name << '\n';
+			}
+		}
+		return true;
 	}
 
 	auto completion_kind_name(howdy::native::GlobalOptionCompletionKind kind) -> std::string_view {
@@ -61,6 +77,33 @@ namespace {
 					std::cout << spelling << '\t' << (!option.argument_name.empty() ? '1' : '0')
 					          << '\t' << (option.parses_after_command ? '1' : '0') << '\t'
 					          << completion_kind_name(option.completion) << '\n';
+				}
+			}
+		}
+	}
+
+	void print_completion_command_options(std::string_view command_name) {
+		const auto *descriptor = howdy::native::find_command(command_name);
+		if (descriptor == nullptr) {
+			return;
+		}
+		for (const auto &option : howdy::native::global_option_catalog()) {
+			if (!option.parses_after_command ||
+			    !howdy::native::command_accepts_global_option(*descriptor, option.id)) {
+				continue;
+			}
+			for (const auto spelling : {option.short_name, option.long_name}) {
+				if (!spelling.empty()) {
+					std::cout << spelling << '\t' << (!option.argument_name.empty() ? '1' : '0')
+					          << "\tnone\n";
+				}
+			}
+		}
+		for (const auto &option : descriptor->options) {
+			for (const auto spelling : {option.short_name, option.long_name}) {
+				if (!spelling.empty()) {
+					std::cout << spelling << '\t' << (!option.argument_name.empty() ? '1' : '0')
+					          << "\tnone\n";
 				}
 			}
 		}
@@ -137,13 +180,18 @@ namespace {
 		if (global_option_seen) {
 			return 1;
 		}
-		if (arguments.size() == 1 && arguments.front() == "commands") {
-			print_completion_commands();
-			return 0;
+		if (!arguments.empty() && arguments.front() == "commands") {
+			return print_completion_commands(std::span<const std::string>(arguments).subspan(1))
+			           ? 0
+			           : 1;
 		}
 		if (arguments.size() == 1 && arguments.front() == "global-options") {
 			print_completion_global_options();
 			return 0;
+		}
+		if (arguments.size() == 2 && arguments.front() == "command-options") {
+			print_completion_command_options(arguments[1]);
+			return howdy::native::find_command(arguments[1]) == nullptr ? 1 : 0;
 		}
 		if (arguments.size() >= 3 && arguments.front() == "command-values") {
 			std::size_t position = 0;
@@ -254,52 +302,231 @@ namespace {
 		}
 	}
 
+	struct ParsedArgument {
+		std::string value;
+		bool        options_enabled = true;
+	};
+
 	struct ParsedCommandLine {
-		std::string              user;
-		bool                     yes                = false;
-		bool                     plain              = false;
-		bool                     global_option_seen = false;
-		std::string              command;
-		std::vector<std::string> arguments;
+		std::optional<std::string>  command;
+		std::optional<std::string>  user;
+		bool                        yes                = false;
+		bool                        plain              = false;
+		bool                        global_option_seen = false;
+		bool                        help_requested     = false;
+		std::vector<ParsedArgument> arguments;
 	};
 
 	auto parse_command_line(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<int> {
+		bool options_ended = false;
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
-			if (const auto *option = howdy::native::find_global_option(arg);
-			    option != nullptr && (parsed.command.empty() || option->parses_after_command)) {
-				switch (option->id) {
-					case howdy::native::GlobalOptionId::kUser:
-						parsed.global_option_seen = true;
-						if (index + 1 >= argc) {
-							std::cout << "Option '" << arg << "' requires an argument\n";
-							return 1;
-						}
-						parsed.user = argv[++index];
-						continue;
-					case howdy::native::GlobalOptionId::kYes:
-						parsed.global_option_seen = true;
-						parsed.yes                = true;
-						continue;
-					case howdy::native::GlobalOptionId::kPlain:
-						parsed.global_option_seen = true;
-						parsed.plain              = true;
-						continue;
-					case howdy::native::GlobalOptionId::kHelp:
-						print_help();
-						return 0;
-					case howdy::native::GlobalOptionId::kCount:
-						break;
-				}
-			}
-			if (parsed.command.empty()) {
-				parsed.command = argv[index];
+			if (!options_ended && arg == "--") {
+				options_ended = true;
 				continue;
 			}
-			parsed.arguments.emplace_back(argv[index]);
+			if (!options_ended) {
+				if (const auto *option = howdy::native::find_global_option(arg);
+				    option != nullptr &&
+				    (!parsed.command.has_value() || option->parses_after_command)) {
+					switch (option->id) {
+						case howdy::native::GlobalOptionId::kUser:
+							parsed.global_option_seen = true;
+							if (index + 1 >= argc) {
+								std::cout << "Option '" << arg << "' requires an argument\n";
+								return 1;
+							}
+							parsed.user = argv[++index];
+							continue;
+						case howdy::native::GlobalOptionId::kYes:
+							parsed.global_option_seen = true;
+							parsed.yes                = true;
+							continue;
+						case howdy::native::GlobalOptionId::kPlain:
+							parsed.global_option_seen = true;
+							parsed.plain              = true;
+							continue;
+						case howdy::native::GlobalOptionId::kHelp:
+							parsed.help_requested = true;
+							continue;
+						case howdy::native::GlobalOptionId::kCount:
+							break;
+					}
+				}
+			}
+			if (!parsed.command.has_value()) {
+				parsed.command = std::string(arg);
+				continue;
+			}
+			parsed.arguments.push_back(
+			    {.value = std::string(arg), .options_enabled = !options_ended});
 		}
 		return std::nullopt;
+	}
+
+	auto global_option_syntax_error(const ParsedCommandLine                &parsed,
+	                                const howdy::native::CommandDescriptor &command)
+	    -> std::optional<std::string> {
+		if (parsed.user.has_value() && !howdy::native::command_accepts_global_option(
+		                                   command, howdy::native::GlobalOptionId::kUser)) {
+			return "option '--user' is not valid for this command";
+		}
+		if (parsed.plain && !howdy::native::command_accepts_global_option(
+		                        command, howdy::native::GlobalOptionId::kPlain)) {
+			return "option '--plain' is not valid for this command";
+		}
+		if (parsed.yes && !howdy::native::command_accepts_global_option(
+		                      command, howdy::native::GlobalOptionId::kYes)) {
+			return "option '-y' is not valid for this command";
+		}
+		return std::nullopt;
+	}
+
+	auto command_argument_syntax_error(const ParsedCommandLine                &parsed,
+	                                   const howdy::native::CommandDescriptor &command)
+	    -> std::optional<std::string> {
+		std::size_t                                                 positional_count = 0;
+		std::vector<const howdy::native::CommandOptionDescriptor *> seen_options;
+		for (std::size_t index = 0; index < parsed.arguments.size(); ++index) {
+			const auto &argument = parsed.arguments[index];
+			if (!argument.options_enabled) {
+				++positional_count;
+				continue;
+			}
+			const auto *option = howdy::native::find_command_option(command, argument.value);
+			if (option != nullptr) {
+				if (std::ranges::find(seen_options, option) != seen_options.end()) {
+					return "option '" + argument.value + "' may be specified only once";
+				}
+				seen_options.push_back(option);
+				if (option->argument_name.empty()) {
+					continue;
+				}
+				if (index + 1 >= parsed.arguments.size() ||
+				    !parsed.arguments[index + 1].options_enabled ||
+				    parsed.arguments[index + 1].value.empty() ||
+				    parsed.arguments[index + 1].value.front() == '-') {
+					return "option '" + argument.value + "' requires a non-empty value";
+				}
+				++index;
+				continue;
+			}
+			if (!argument.value.empty() && argument.value.front() == '-') {
+				return "unknown option '" + argument.value + "'";
+			}
+			++positional_count;
+		}
+
+		if (positional_count < command.min_positionals ||
+		    positional_count > command.max_positionals) {
+			return "expected between " + std::to_string(command.min_positionals) + " and " +
+			       std::to_string(command.max_positionals) + " positional argument(s)";
+		}
+		return std::nullopt;
+	}
+
+	auto command_syntax_error(const ParsedCommandLine                &parsed,
+	                          const howdy::native::CommandDescriptor &command)
+	    -> std::optional<std::string> {
+		if (const auto error = global_option_syntax_error(parsed, command); error.has_value()) {
+			return error;
+		}
+		return command_argument_syntax_error(parsed, command);
+	}
+
+	auto print_command_syntax_error(std::string_view command, std::string_view error) -> int {
+		std::cout << "Invalid arguments for command '" << command << "': " << error << '\n';
+		return 1;
+	}
+
+	auto reject_empty_user(const ParsedCommandLine &parsed) -> std::optional<int> {
+		if (!parsed.user.has_value() || !parsed.user->empty()) {
+			return std::nullopt;
+		}
+		std::cout << "Option '--user' requires a non-empty argument\n";
+		return 1;
+	}
+
+	auto handle_special_command(const ParsedCommandLine &parsed) -> std::optional<int> {
+		if (!parsed.command.has_value()) {
+			if (const auto result = reject_empty_user(parsed); result.has_value()) {
+				return result;
+			}
+			print_help();
+			return 0;
+		}
+		if (parsed.help_requested) {
+			if (const auto result = reject_empty_user(parsed); result.has_value()) {
+				return result;
+			}
+			print_help();
+			return 0;
+		}
+		if (*parsed.command != "__complete") {
+			return std::nullopt;
+		}
+		if (const auto result = reject_empty_user(parsed); result.has_value()) {
+			return result;
+		}
+		std::vector<std::string> completion_arguments;
+		completion_arguments.reserve(parsed.arguments.size());
+		for (const auto &argument : parsed.arguments) {
+			completion_arguments.push_back(argument.value);
+		}
+		return handle_completion_query(completion_arguments, parsed.global_option_seen);
+	}
+
+	auto resolve_model_user(ParsedCommandLine &parsed, const HowdyDependencies &dependencies)
+	    -> bool {
+		if (!parsed.user.has_value()) {
+			if (dependencies.resolve_user == nullptr) {
+				return false;
+			}
+			parsed.user = dependencies.resolve_user(dependencies.context);
+		}
+		if (!parsed.user.has_value() || parsed.user->empty()) {
+			std::cout << "Unable to determine the user; please use --user\n";
+			return false;
+		}
+		if (!howdy::native::is_valid_model_user_name(*parsed.user)) {
+			std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+			return false;
+		}
+		return true;
+	}
+
+	auto build_command_argv_strings(const howdy::native::CommandDescriptor &command,
+	                                const ParsedCommandLine &parsed, std::string_view user)
+	    -> std::vector<std::string> {
+		std::vector<std::string> argv_strings;
+		argv_strings.push_back("howdy-" + std::string(command.name));
+		if (command.user_target == howdy::native::UserTargetMode::kModelUser) {
+			argv_strings.emplace_back(user);
+		}
+		for (const auto &argument : parsed.arguments) {
+			if (argument.options_enabled) {
+				argv_strings.push_back(argument.value);
+			}
+		}
+		if (parsed.plain) {
+			argv_strings.emplace_back("--plain");
+		}
+		if (parsed.yes) {
+			argv_strings.emplace_back("-y");
+		}
+		bool end_options_forwarded = false;
+		for (const auto &argument : parsed.arguments) {
+			if (argument.options_enabled) {
+				continue;
+			}
+			if (!end_options_forwarded) {
+				argv_strings.emplace_back("--");
+				end_options_forwarded = true;
+			}
+			argv_strings.push_back(argument.value);
+		}
+		return argv_strings;
 	}
 
 }  // namespace
@@ -341,77 +568,61 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		return *parse_result;
 	}
 
-	if (parsed.command.empty()) {
-		print_help();
-		return 0;
+	if (const auto special_result = handle_special_command(parsed); special_result.has_value()) {
+		return *special_result;
 	}
-
-	if (parsed.command == "__complete") {
-		return handle_completion_query(parsed.arguments, parsed.global_option_seen);
+	if (!parsed.command.has_value()) {
+		return 1;
 	}
-
-	const auto *command_descriptor = howdy::native::find_command(parsed.command);
-	if (command_descriptor != nullptr &&
-	    command_descriptor->kind == howdy::native::CommandKind::kVersion) {
+	const auto &command_name       = parsed.command.value();
+	const auto *command_descriptor = howdy::native::find_command(command_name);
+	if (command_descriptor == nullptr) {
+		std::cout << "Unknown command: " << command_name << "\n";
+		return 1;
+	}
+	if (const auto error = command_syntax_error(parsed, *command_descriptor); error.has_value()) {
+		return print_command_syntax_error(command_name, *error);
+	}
+	if (const auto empty_user_result = reject_empty_user(parsed); empty_user_result.has_value()) {
+		return *empty_user_result;
+	}
+	if (command_descriptor->kind == howdy::native::CommandKind::kVersion) {
 		std::cout << howdy::native::format_version(howdy::native::kProjectVersion,
 		                                           howdy::native::kBuildCommit)
 		          << "\n";
 		return 0;
 	}
 
-	if (parsed.user.empty()) {
-		parsed.user = dependencies.resolve_user(dependencies.context);
-	}
-	if (parsed.user.empty()) {
-		std::cout << "Unable to determine the user; please use --user\n";
-		return 1;
-	}
-
-	if (dependencies.effective_uid(dependencies.context) != 0) {
-		std::cout << "This command requires root privileges.\n\n";
-		std::cout << "\tsudo howdy";
-		for (int index = 1; index < argc; ++index) {
-			std::cout << " " << argv[index];
-		}
-		std::cout << "\n";
-		return 1;
-	}
-
-	if (parsed.user == "root") {
-		std::cout << "Running as root requires --user.\n";
-		return 1;
-	}
-
-	auto selected_main = static_cast<CommandMain>(nullptr);
-	if (command_descriptor != nullptr &&
-	    command_descriptor->kind == howdy::native::CommandKind::kEntrypoint) {
-		selected_main =
-		    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
-	}
-	if (selected_main == nullptr) {
-		std::cout << "Unknown command: " << parsed.command << "\n";
-		return 1;
-	}
-
 	const bool needs_user_argument =
 	    command_descriptor->user_target == howdy::native::UserTargetMode::kModelUser;
-	if (needs_user_argument && !howdy::native::is_valid_model_user_name(parsed.user)) {
-		std::cout << howdy::native::kInvalidUserNameMessage << "\n";
+	if (needs_user_argument && !resolve_model_user(parsed, dependencies)) {
+		return 1;
+	}
+	if (dependencies.effective_uid == nullptr ||
+	    dependencies.effective_uid(dependencies.context) != 0) {
+		std::cout << "This command requires root privileges.\n";
+		std::cout << "Run it again with sudo.\n";
+		return 1;
+	}
+	if (needs_user_argument) {
+		if (!parsed.user.has_value()) {
+			return 1;
+		}
+		if (parsed.user.value() == "root") {
+			std::cout << "Running as root requires --user.\n";
+			return 1;
+		}
+	}
+
+	const auto selected_main =
+	    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
+	if (selected_main == nullptr) {
+		std::cout << "Unknown command: " << command_name << "\n";
 		return 1;
 	}
 
-	std::vector<std::string> argv_strings;
-	argv_strings.push_back("howdy-" + std::string(command_descriptor->name));
-	if (needs_user_argument) {
-		argv_strings.push_back(parsed.user);
-	}
-	argv_strings.insert(argv_strings.end(), parsed.arguments.begin(), parsed.arguments.end());
-	if (parsed.plain) {
-		argv_strings.emplace_back("--plain");
-	}
-	if (parsed.yes) {
-		argv_strings.emplace_back("-y");
-	}
+	auto argv_strings = build_command_argv_strings(*command_descriptor, parsed,
+	                                               parsed.user.value_or(std::string{}));
 
 	std::vector<char *> command_argv;
 	command_argv.reserve(argv_strings.size() + 1);

@@ -326,13 +326,16 @@ namespace {
 
 auto howdy::native::download_models_internal::download_models_main_with_dependencies(
     int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
+	if (argc != 1) {
+		std::cout << "Invalid arguments for download-models\n";
+		return kExitAbort;
+	}
+	(void)argv;
 	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr ||
 	    dependencies.sha256_file == nullptr || dependencies.fstat_file == nullptr) {
 		return kExitAbort;
 	}
 
-	(void)argc;
-	(void)argv;
 	const auto      models_dir = howdy::native::resolve_models_dir();
 	std::error_code models_dir_ec;
 	std::filesystem::create_directories(models_dir, models_dir_ec);

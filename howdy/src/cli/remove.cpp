@@ -16,7 +16,8 @@ namespace {
 	struct RemoveArgs {
 		std::string user;
 		std::string id;
-		bool        yes = false;
+		bool        id_provided = false;
+		bool        yes         = false;
 	};
 
 	auto parse_args(int argc, char **argv) -> std::optional<RemoveArgs> {
@@ -24,16 +25,26 @@ namespace {
 		if (argc < 2) {
 			return std::nullopt;
 		}
-		args.user = argv[1];
+		args.user          = argv[1];
+		bool options_ended = false;
 		for (int index = 2; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
-			if (arg == "-y") {
+			if (!options_ended && arg == "--") {
+				options_ended = true;
+				continue;
+			}
+			if (!options_ended && arg == "-y") {
 				args.yes = true;
 				continue;
 			}
-			if (args.id.empty()) {
-				args.id = argv[index];
+			if (!options_ended && !arg.empty() && arg.front() == '-') {
+				return std::nullopt;
 			}
+			if (args.id_provided) {
+				return std::nullopt;
+			}
+			args.id          = arg;
+			args.id_provided = true;
 		}
 		return args;
 	}
@@ -63,7 +74,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	if (!args.has_value()) {
 		return kExitAbort;
 	}
-	if (args->id.empty()) {
+	if (!args->id_provided) {
 		std::cout << "Please specify the model ID to remove.\n";
 		std::cout << "For example:\n";
 		std::cout << "\n\thowdy remove 0\n\n";

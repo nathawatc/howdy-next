@@ -199,7 +199,10 @@ auto howdy::native::snapshot_internal::write_snapshot_with_unique_path(
 
 auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
     int argc, char **argv, const SnapshotDependencies &dependencies) -> int {
-	(void)argc;
+	if (argc != 1) {
+		std::cerr << "Invalid arguments for snapshot\n";
+		return kExitAbort;
+	}
 	(void)argv;
 
 	if (dependencies.load_runtime_config == nullptr || dependencies.capture_frames == nullptr ||

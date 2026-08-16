@@ -82,9 +82,11 @@ shared by injected snapshot policy and production camera capture.
 
 - Add commands through dispatcher dependencies in
   `include/app/howdy_internal.hpp`; do not add standalone executables.
-- Preserve dispatcher global behavior: `-U/--user`, `-y`, `--plain`, root
-  requirement, root-user rejection, and invalid model-user validation. Global
-  argv comes from the dispatcher; subcommands must not parse those options.
+- Dispatcher owns top-level syntax, `--` end-of-options handling, command
+  metadata validation, `-U/--user` target resolution, root requirement, root-user
+  rejection, and invalid model-user validation. It forwards applicable normalized
+  `--plain`/`-y` flags and injects resolved model users. Subcommand parsers own
+  strict validation of that normalized argv and command-specific options.
 - Keep config edits secure and atomic. Reuse `support/invoking_user*.hpp`,
   `model_assets/model_file.hpp`, config helpers, storage helpers, and runtime
   readiness checks.

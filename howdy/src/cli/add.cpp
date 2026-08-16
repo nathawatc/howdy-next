@@ -2,6 +2,7 @@
 #include "cli/enrollment_capture.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_models.hpp"
+#include "support/user_names.hpp"
 #include "vision/face_model.hpp"
 
 #include <iostream>
@@ -18,8 +19,9 @@ namespace {
 	struct AddArgs {
 		std::string user;
 		std::string label;
-		bool        plain = false;
-		bool        yes   = false;
+		bool        label_provided = false;
+		bool        plain          = false;
+		bool        yes            = false;
 	};
 
 	auto parse_args(int argc, char **argv) -> std::optional<AddArgs> {
@@ -29,20 +31,32 @@ namespace {
 			return std::nullopt;
 		}
 
-		args.user = argv[1];
+		args.user          = argv[1];
+		bool options_ended = false;
 		for (int index = 2; index < argc; ++index) {
-			std::string_view arg(argv[index]);
-			if (arg == "--plain") {
+			const std::string_view arg(argv[index]);
+			if (!options_ended && arg == "--") {
+				options_ended = true;
+				continue;
+			}
+			if (!options_ended && arg == "--plain") {
 				args.plain = true;
 				continue;
 			}
-			if (arg == "-y") {
+			if (!options_ended && arg == "-y") {
 				args.yes = true;
 				continue;
 			}
-			if (args.label.empty()) {
-				args.label = argv[index];
+			if (!options_ended && !arg.empty() && arg.front() == '-') {
+				std::cerr << "Unknown option: " << arg << "\n";
+				return std::nullopt;
 			}
+			if (args.label_provided) {
+				std::cerr << "Too many positional arguments for add\n";
+				return std::nullopt;
+			}
+			args.label          = arg;
+			args.label_provided = true;
 		}
 		return args;
 	}
@@ -86,6 +100,10 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	if (!args.has_value()) {
 		return kExitAbort;
 	}
+	if (args->label_provided && !howdy::native::is_valid_model_label(args->label)) {
+		std::cerr << "Invalid model label\n";
+		return kExitAbort;
+	}
 
 	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
@@ -122,7 +140,10 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 			label = input.substr(0, 24);
 		}
 	}
-	std::erase(label, ',');
+	if (!howdy::native::is_valid_model_label(label)) {
+		std::cerr << "Invalid model label\n";
+		return kExitAbort;
+	}
 
 	auto enrollment_result = dependencies.capture_enrollment(dependencies.context, args->user,
 	                                                         config, args->plain, label);

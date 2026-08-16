@@ -76,20 +76,22 @@ assert_contains_completion() {
 
 assert_completion_list 'commands' $'add\nclear\nconfig\ndisable\ndownload-models\nlist\nremove\nset\nsnapshot\ntest\nversion' howdy ""
 assert_single_completion 'command' disable howdy dis
-assert_single_completion 'short option before command' disable howdy -y dis
-assert_single_completion 'plain option before command' disable howdy --plain dis
-assert_single_completion 'short user option before command' disable howdy -U alice dis
-assert_single_completion 'long user option before command' disable howdy --user alice dis
+assert_single_completion 'short option before compatible command' add howdy -y a
+assert_single_completion 'plain option before compatible command' list howdy --plain l
+assert_single_completion 'combined options before compatible command' add howdy --plain -y a
+assert_single_completion 'short user option before compatible command' test howdy -U alice t
+assert_single_completion 'long user option before compatible command' test howdy --user alice t
 assert_completion_list 'short options' $'-U\n--user\n--plain\n-y\n-h\n--help' howdy -
 assert_completion_list 'long options' $'--user\n--plain\n--help' howdy --
-assert_completion_list 'post-command short options' $'-U\n--user\n--plain\n-y' howdy disable -
-assert_completion_list 'post-command long options' $'--user\n--plain' howdy disable --
+assert_completion_list 'post-command short options' $'-U\n--user\n--plain\n-y' howdy add -
+assert_completion_list 'post-command long options' $'--user\n--plain' howdy add --
+assert_single_completion 'test device option' --device howdy test --d
 assert_single_completion 'long option' --plain howdy --p
 assert_single_completion 'short user value' "$current_user" howdy -U "$current_user"
 assert_single_completion 'user value' "$current_user" howdy --user "$current_user"
 assert_contains_completion 'empty user value' "$current_user" howdy --user ""
-assert_contains_completion 'post-command short user value' "$current_user" howdy disable -U ""
-assert_contains_completion 'post-command user value' "$current_user" howdy disable --user ""
+assert_contains_completion 'post-command short user value' "$current_user" howdy add -U ""
+assert_contains_completion 'post-command user value' "$current_user" howdy add --user ""
 
 assert_completion_list 'empty disable value' $'false\ntrue' howdy disable ""
 assert_single_completion 'disable false value' false howdy disable f
@@ -114,6 +116,16 @@ assert_no_completion() {
 	fi
 }
 
+assert_no_completion 'yes option excludes incompatible command' howdy -y dis
+assert_no_completion 'plain option excludes incompatible command' howdy --plain dis
+assert_no_completion 'combined options exclude partially compatible command' howdy --plain -y l
+assert_no_completion 'short user option excludes incompatible command' howdy -U alice dis
+assert_no_completion 'long user option excludes incompatible command' howdy --user alice dis
+assert_no_completion 'disable has no options' howdy disable -
+assert_no_completion 'disable rejects short user value' howdy disable -U ""
+assert_no_completion 'disable rejects user value' howdy disable --user ""
+assert_no_completion 'end-of-options suppresses user completion' howdy add -- -U ""
+assert_no_completion 'used test device option is not repeated' howdy test --device /dev/video0 --d
 assert_no_completion 'set numeric value' howdy set timeout ""
 assert_no_completion 'set floating-point value' howdy set sface_threshold ""
 assert_no_completion 'version has no values' howdy version ""

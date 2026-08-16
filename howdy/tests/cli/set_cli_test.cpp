@@ -107,6 +107,15 @@ auto main() -> int {
 	{
 		TestContext context;
 		const auto  result =
+		    run_set({"howdy-set", "key", "--", "-value"}, dependencies_for(context));
+		ok &= expect(result.exit_code == 0, "end-of-options value update succeeds");
+		ok &= expect(context.received_key == "key" && context.received_value == "-value",
+		             "end-of-options preserves option-looking config value");
+	}
+
+	{
+		TestContext context;
+		const auto  result =
 		    run_set({"howdy-set", "sface_threshold", "0.363"}, dependencies_for(context));
 		ok &= expect(result.exit_code == 0, "successful update succeeds");
 		ok &= expect(result.output == "Config option updated\n", "success output exact");
@@ -136,9 +145,9 @@ auto main() -> int {
 		TestContext context;
 		const auto  result = run_set({"howdy-set", "sface_threshold", "0.363", "ignored"},
 		                             dependencies_for(context));
-		ok &= expect(result.exit_code == 0, "extra argument remains ignored");
-		ok &= expect(context.received_key == "sface_threshold", "extra argument preserves key");
-		ok &= expect(context.received_value == "0.363", "extra argument preserves value");
+		ok &= expect(result.exit_code == 1, "extra argument is rejected");
+		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
+		             "extra argument skips config mutation callbacks");
 	}
 
 	{

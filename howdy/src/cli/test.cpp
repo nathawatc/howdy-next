@@ -32,6 +32,7 @@ namespace {
 		std::string user;
 		std::string device_path;
 		bool        missing_device_path = false;
+		bool        invalid_arguments   = false;
 	};
 
 	struct TestProductionContext {
@@ -69,19 +70,37 @@ namespace {
 
 	auto parse_args(int argc, char **argv) -> TestArgs {
 		TestArgs args;
+		bool     options_ended   = false;
+		bool     device_provided = false;
 
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
-			if (arg == "--device") {
-				if (index + 1 >= argc) {
+			if (!options_ended && arg == "--") {
+				options_ended = true;
+				continue;
+			}
+			if (!options_ended && arg == "--device") {
+				if (device_provided) {
+					args.invalid_arguments = true;
+					continue;
+				}
+				if (index + 1 >= argc || std::string_view(argv[index + 1]).empty() ||
+				    std::string_view(argv[index + 1]).front() == '-') {
 					args.missing_device_path = true;
 					continue;
 				}
 				args.device_path = argv[++index];
+				device_provided  = true;
 				continue;
 			}
-			if (!arg.empty() && arg.front() != '-' && args.user.empty()) {
-				args.user = argv[index];
+			if (!options_ended && !arg.empty() && arg.front() == '-') {
+				args.invalid_arguments = true;
+				continue;
+			}
+			if (args.user.empty()) {
+				args.user = arg;
+			} else {
+				args.invalid_arguments = true;
 			}
 		}
 
@@ -453,7 +472,11 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 
 	const TestArgs args = parse_args(argc, argv);
 	if (args.missing_device_path) {
-		std::cerr << "Error: --device requires a value\n";
+		std::cerr << "Error: --device requires a non-empty value\n";
+		return kExitCameraError;
+	}
+	if (args.invalid_arguments) {
+		std::cerr << "Error: invalid test arguments\n";
 		return kExitCameraError;
 	}
 

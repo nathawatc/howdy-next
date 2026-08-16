@@ -7,7 +7,6 @@
 #include "cli/remove_cli.hpp"
 #include "test_support.hpp"
 
-#include <algorithm>
 #include <array>
 #include <iostream>
 #include <sstream>
@@ -167,6 +166,107 @@ namespace {
 		return ok;
 	}
 
+	auto test_strict_syntax_cases() -> bool {
+		bool ok = true;
+		for (const auto &arguments : std::vector<std::vector<std::string>>{
+		         {"howdy", "add", "one", "two"},
+		         {"howdy", "clear", "typo", "-y"},
+		         {"howdy", "config", "typo"},
+		         {"howdy", "disable", "true", "typo"},
+		         {"howdy", "download-models", "typo"},
+		         {"howdy", "list", "typo"},
+		         {"howdy", "remove", "3", "typo", "-y"},
+		         {"howdy", "set", "device_path", "/dev/video0", "typo"},
+		         {"howdy", "snapshot", "typo"},
+		         {"howdy", "test", "--device"},
+		         {"howdy", "test", "--device", ""},
+		         {"howdy", "test", "--device", "--plain"},
+		         {"howdy", "test", "--unknown"},
+		         {"howdy", "version", "typo"},
+		     }) {
+			Context    context;
+			const auto result = run(context, arguments);
+			ok &= expect(result.status == 1 && !context.command_id.has_value(),
+			             "strict command syntax rejects malformed input before callback");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "malformed syntax skips user and privilege work");
+		}
+		{
+			Context    context;
+			const auto result = run(
+			    context, {"howdy", "test", "--device", "/dev/video0", "--device", "/dev/video1"});
+			ok &= expect(result.status == 1 && !context.command_id.has_value(),
+			             "duplicate test device option is rejected");
+		}
+		return ok;
+	}
+
+	auto test_unknown_command_precedence() -> bool {
+		bool ok = true;
+		for (const uid_t effective_uid : {static_cast<uid_t>(1000), static_cast<uid_t>(0)}) {
+			Context context;
+			context.effective_uid = effective_uid;
+			context.resolved_user = "root";
+			const auto result     = run(context, {"howdy", "vers"});
+			ok &= expect(result.status == 1 && result.output == "Unknown command: vers\n",
+			             "unknown command wins over user and privilege checks");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "unknown command performs no user or privilege work");
+		}
+		return ok;
+	}
+
+	auto test_empty_user_options() -> bool {
+		bool ok = true;
+		for (const auto &user_option : {std::string{"-U"}, std::string{"--user"}}) {
+			Context    context;
+			const auto result = run(context, {"howdy", user_option, "", "clear", "-y"});
+			ok &= expect(result.status == 1 && result.output.contains("non-empty"),
+			             "explicit empty user is rejected");
+			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "explicit empty user cannot fall back or execute");
+		}
+		return ok;
+	}
+
+	auto test_catalog_dispatch() -> bool {
+		bool        ok                  = true;
+		std::size_t dispatched_commands = 0;
+		for (const auto &command : command_catalog()) {
+			if (command.kind != CommandKind::kEntrypoint) {
+				continue;
+			}
+			++dispatched_commands;
+			Context                  context;
+			std::vector<std::string> arguments{"howdy"};
+			if (command.user_target == howdy::native::UserTargetMode::kModelUser) {
+				arguments.insert(arguments.end(), {"-U", "bob"});
+			}
+			arguments.emplace_back(command.name);
+			switch (command.id) {
+				case CommandId::kDisable:
+					arguments.emplace_back("false");
+					break;
+				case CommandId::kRemove:
+					arguments.emplace_back("0");
+					break;
+				case CommandId::kSet:
+					arguments.insert(arguments.end(), {"key", "value"});
+					break;
+				default:
+					break;
+			}
+			const auto result = run(context, std::move(arguments));
+			ok &= expect(result.status == 0 && context.command_id == command.id,
+			             "every catalog command maps to matching entrypoint");
+		}
+		ok &= expect(dispatched_commands + 1 == command_catalog().size(),
+		             "every production command is covered by dispatch test");
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -186,6 +286,7 @@ auto main() -> int {
 		ok &= expect(result.status == 1 && result.output == "Unknown command: unknown\n",
 		             "unknown command rejected");
 	}
+	ok &= test_unknown_command_precedence();
 	{
 		Context context;
 		context.command_result = 23;
@@ -202,10 +303,14 @@ auto main() -> int {
 		             "command output streams preserved");
 	}
 	{
-		Context    context;
-		const auto result = run(context, {"howdy", "-U", "bob", "config", "extra"});
-		ok &= expect(result.status == 0, "non-user command dispatched");
-		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-config", "extra"},
+		Context context;
+		context.command_result = 23;
+		context.resolved_user  = "root";
+		const auto result      = run(context, {"howdy", "config"});
+		ok &= expect(result.status == 23, "non-user command dispatched");
+		ok &= expect(context.resolve_user_calls == 0,
+		             "non-user command skips target-user resolution");
+		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-config"},
 		             "user injected only for model commands");
 	}
 	{
@@ -229,16 +334,43 @@ auto main() -> int {
 		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-list", "bob"},
 		             "long user option injected into list arguments");
 	}
+	ok &= test_empty_user_options();
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "", "list"});
+		ok &= expect(result.status == 1 && result.output == "Unknown command: \n",
+		             "empty command token is not command absence");
+		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+		                 !context.command_id.has_value(),
+		             "empty command does not reinterpret later token");
+	}
+	{
+		Context    context;
+		const auto result = run(context, {"howdy", "add", "--", "-y"});
+		ok &= expect(result.status == 0, "end-of-options literal label dispatches");
+		ok &= expect(context.command_arguments ==
+		                 std::vector<std::string>{"howdy-add", "alice", "--", "-y"},
+		             "end-of-options marker is forwarded to preserve literal label");
+	}
+	{
+		Context context;
+		context.effective_uid = 1000;
+		const auto result     = run(context, {"howdy", "add", "label; echo unsafe"});
+		ok &=
+		    expect(result.status == 1 && result.output == "This command requires root privileges.\n"
+		                                                  "Run it again with sudo.\n",
+		           "non-root diagnostic is fixed and shell-safe");
+		ok &= expect(!result.output.contains("sudo howdy") &&
+		                 !result.output.contains("label; echo unsafe"),
+		             "non-root diagnostic does not reconstruct arbitrary argv");
+	}
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "list", ""});
-		ok &= expect(result.status == 0, "empty positional argument does not change dispatch");
-		ok &=
-		    expect(context.command_arguments == std::vector<std::string>{"howdy-list", "alice", ""},
-		           "empty positional argument remains forwarded");
-		ok &= expect(std::ranges::find(context.command_arguments, "--plain") ==
-		                 context.command_arguments.end(),
-		             "empty positional argument does not enable plain mode");
+		ok &= expect(result.status != 0 && !context.command_id.has_value(),
+		             "surplus empty positional argument is rejected");
+		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+		             "invalid positional syntax skips user and privilege work");
 	}
 	{
 		Context    context;
@@ -296,26 +428,14 @@ auto main() -> int {
 		Context context;
 		context.effective_uid = 1000;
 		const auto result     = run(context, {"howdy", "list"});
-		ok &= expect(result.status == 1 &&
-		                 result.output.contains("This command requires root privileges."),
-		             "root check runs before dispatch");
+		ok &=
+		    expect(result.status == 1 && result.output == "This command requires root privileges.\n"
+		                                                  "Run it again with sudo.\n",
+		           "root check runs before dispatch");
 		ok &= expect(context.command_arguments.empty(), "non-root command not dispatched");
 	}
-	{
-		std::size_t dispatched_commands = 0;
-		for (const auto &command : command_catalog()) {
-			if (command.kind != CommandKind::kEntrypoint) {
-				continue;
-			}
-			++dispatched_commands;
-			Context    context;
-			const auto result = run(context, {"howdy", "-U", "bob", std::string(command.name)});
-			ok &= expect(result.status == 0 && context.command_id == command.id,
-			             "every catalog command maps to matching entrypoint");
-		}
-		ok &= expect(dispatched_commands + 1 == command_catalog().size(),
-		             "every production command is covered by dispatch test");
-	}
+	ok &= test_strict_syntax_cases();
+	ok &= test_catalog_dispatch();
 	{
 		auto                  add_name = std::to_array("howdy-add");
 		std::array<char *, 1> add_argv{add_name.data()};

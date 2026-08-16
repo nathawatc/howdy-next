@@ -8,6 +8,15 @@ namespace howdy::native {
 
 	namespace {
 
+		constexpr std::array<CommandOptionDescriptor, 1> kTestCommandOptions = {{
+		    {
+		        .short_name    = "",
+		        .long_name     = "--device",
+		        .argument_name = "DEVICE",
+		        .summary       = "Camera device path",
+		    },
+		}};
+
 		constexpr std::array<CommandDescriptor, static_cast<std::size_t>(CommandId::kCount)>
 		    kCommandCatalog = {{
 		        {
@@ -18,6 +27,11 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kModelUser,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "[LABEL]",
+		            .min_positionals   = 0,
+		            .max_positionals   = 1,
+		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
+		                                 global_option_bit(GlobalOptionId::kPlain) |
+		                                 global_option_bit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kClear,
@@ -27,6 +41,10 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kModelUser,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
+		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
+		                                 global_option_bit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kConfig,
@@ -36,6 +54,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
 		        },
 		        {
 		            .id                = CommandId::kDisable,
@@ -45,6 +65,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kBoolean,
 		            .argument_synopsis = "{0|1|true|false}",
+		            .min_positionals   = 1,
+		            .max_positionals   = 1,
 		        },
 		        {
 		            .id                = CommandId::kDownloadModels,
@@ -54,6 +76,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
 		        },
 		        {
 		            .id                = CommandId::kList,
@@ -63,6 +87,10 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kModelUser,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
+		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
+		                                 global_option_bit(GlobalOptionId::kPlain),
 		        },
 		        {
 		            .id                = CommandId::kRemove,
@@ -72,6 +100,10 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kModelUser,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "ID",
+		            .min_positionals   = 1,
+		            .max_positionals   = 1,
+		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
+		                                 global_option_bit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kSet,
@@ -81,6 +113,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kConfigSet,
 		            .argument_synopsis = "KEY VALUE",
+		            .min_positionals   = 2,
+		            .max_positionals   = 2,
 		        },
 		        {
 		            .id                = CommandId::kSnapshot,
@@ -90,6 +124,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
 		        },
 		        {
 		            .id                = CommandId::kTest,
@@ -99,6 +135,10 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kModelUser,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "[--device DEVICE]",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
+		            .global_options    = global_option_bit(GlobalOptionId::kUser),
+		            .options           = kTestCommandOptions,
 		        },
 		        {
 		            .id                = CommandId::kVersion,
@@ -108,6 +148,8 @@ namespace howdy::native {
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kNone,
 		            .argument_synopsis = "",
+		            .min_positionals   = 0,
+		            .max_positionals   = 0,
 		        },
 		    }};
 
@@ -219,6 +261,28 @@ namespace howdy::native {
 			return label.empty() ? std::string{"<unspelled>"} : label;
 		}
 
+		auto command_option_label(const CommandOptionDescriptor &option) -> std::string {
+			std::string label;
+			if (!option.short_name.empty()) {
+				label += option.short_name;
+			}
+			if (!option.long_name.empty()) {
+				if (!label.empty()) {
+					label += ", ";
+				}
+				label += option.long_name;
+			}
+			return label.empty() ? std::string{"<unspelled>"} : label;
+		}
+
+		auto command_option_spellings_collide(const CommandOptionDescriptor &left,
+		                                      const CommandOptionDescriptor &right) -> bool {
+			return (!left.short_name.empty() &&
+			        (left.short_name == right.short_name || left.short_name == right.long_name)) ||
+			       (!left.long_name.empty() &&
+			        (left.long_name == right.short_name || left.long_name == right.long_name));
+		}
+
 		auto missing_id_message(std::string_view kind, std::size_t id) -> std::string {
 			return std::string{"missing "} + std::string(kind) + " id: " + std::to_string(id);
 		}
@@ -252,6 +316,31 @@ namespace howdy::native {
 			if (!is_known_command_completion_kind(command.completion)) {
 				return "command has unknown completion kind: " + name;
 			}
+			if (command.min_positionals > command.max_positionals) {
+				return "command positional bounds are reversed: " + name;
+			}
+			const auto known_global_options = static_cast<GlobalOptionMask>(
+			    (1U << static_cast<unsigned int>(GlobalOptionId::kCount)) - 1U);
+			if ((command.global_options & known_global_options) != command.global_options) {
+				return "command has unknown global option mask: " + name;
+			}
+			for (std::size_t option_index = 0; option_index < command.options.size();
+			     ++option_index) {
+				const auto &option = command.options[option_index];
+				if (option.short_name.empty() && option.long_name.empty()) {
+					return "command option has no spelling: " + name;
+				}
+				if (option.summary.empty()) {
+					return "command option summary is empty: " + command_option_label(option);
+				}
+				if (std::ranges::any_of(command.options.first(option_index),
+				                        [&option](const auto &previous) -> bool {
+					                        return command_option_spellings_collide(option,
+					                                                                previous);
+				                        })) {
+					return "duplicate command option spelling: " + command_option_label(option);
+				}
+			}
 
 			if (command.kind == CommandKind::kVersion &&
 			    command.user_target != UserTargetMode::kNone) {
@@ -260,6 +349,11 @@ namespace howdy::native {
 			if (command.kind == CommandKind::kVersion &&
 			    command.completion != CommandCompletionKind::kNone) {
 				return "version command cannot have completion values: " + name;
+			}
+			if (command.kind == CommandKind::kVersion &&
+			    (command.min_positionals != 0 || command.max_positionals != 0 ||
+			     command.global_options != 0 || !command.options.empty())) {
+				return "version command cannot accept arguments or options: " + name;
 			}
 			if (std::ranges::any_of(commands.first(index),
 			                        [&command](const auto &previous) -> bool {
@@ -374,6 +468,22 @@ namespace howdy::native {
 		for (const auto &descriptor : kCommandCatalog) {
 			if (descriptor.name == name) {
 				return &descriptor;
+			}
+		}
+		return nullptr;
+	}
+
+	auto command_accepts_global_option(const CommandDescriptor &command, GlobalOptionId id)
+	    -> bool {
+		return (command.global_options & global_option_bit(id)) != 0;
+	}
+
+	auto find_command_option(const CommandDescriptor &command, std::string_view spelling)
+	    -> const CommandOptionDescriptor * {
+		for (const auto &option : command.options) {
+			if ((!option.short_name.empty() && option.short_name == spelling) ||
+			    (!option.long_name.empty() && option.long_name == spelling)) {
+				return &option;
 			}
 		}
 		return nullptr;

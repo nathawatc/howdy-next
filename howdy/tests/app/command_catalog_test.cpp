@@ -394,6 +394,29 @@ auto main() -> int {
 	    UserTargetMode::kModelUser, UserTargetMode::kNone,      UserTargetMode::kNone,
 	    UserTargetMode::kModelUser, UserTargetMode::kNone,
 	};
+	constexpr std::array expected_positionals{
+	    std::pair<std::size_t, std::size_t>{0, 1}, std::pair<std::size_t, std::size_t>{0, 0},
+	    std::pair<std::size_t, std::size_t>{0, 0}, std::pair<std::size_t, std::size_t>{1, 1},
+	    std::pair<std::size_t, std::size_t>{0, 0}, std::pair<std::size_t, std::size_t>{0, 0},
+	    std::pair<std::size_t, std::size_t>{1, 1}, std::pair<std::size_t, std::size_t>{2, 2},
+	    std::pair<std::size_t, std::size_t>{0, 0}, std::pair<std::size_t, std::size_t>{0, 0},
+	    std::pair<std::size_t, std::size_t>{0, 0},
+	};
+	const std::array<howdy::native::GlobalOptionMask, static_cast<std::size_t>(CommandId::kCount)>
+	           expected_global_options{
+	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kPlain) |
+	                   global_option_bit(GlobalOptionId::kYes),
+	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kYes),
+	               0,
+	               0,
+	               0,
+	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kPlain),
+	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kYes),
+	               0,
+	               0,
+	               global_option_bit(GlobalOptionId::kUser),
+	               0,
+	           };
 	const auto commands = command_catalog();
 	ok &= expect(commands.size() == expected_command_ids.size(), "command catalog size is stable");
 	ok &= expect(commands.size() == static_cast<std::size_t>(CommandId::kCount),
@@ -412,7 +435,25 @@ auto main() -> int {
 		ok &= expect(index < expected_user_targets.size() &&
 		                 command.user_target == expected_user_targets[index],
 		             "command user-target behavior is stable");
+		ok &= expect(index < expected_positionals.size() &&
+		                 std::pair{command.min_positionals, command.max_positionals} ==
+		                     expected_positionals[index],
+		             "command positional bounds are catalogued");
+		ok &= expect(index < expected_global_options.size() &&
+		                 command.global_options == expected_global_options[index],
+		             "command global options are catalogued");
 		ok &= expect(find_command(command.name) == &command, "command lookup uses catalog entry");
+	}
+	{
+		const auto *test_command = find_command("test");
+		ok &= expect(test_command != nullptr && test_command->options.size() == 1,
+		             "test command has one command-specific option");
+		ok &= expect(test_command != nullptr && find_command_option(*test_command, "--device") ==
+		                                            &test_command->options.front(),
+		             "test device option resolves through command catalog");
+		ok &= expect(test_command != nullptr &&
+		                 find_command_option(*test_command, "--unknown") == nullptr,
+		             "unknown command option has no catalog entry");
 	}
 	ok &= expect(find_command("unknown") == nullptr, "unknown command has no completion metadata");
 

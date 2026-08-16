@@ -109,6 +109,25 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
+				    run(context, {"howdy", "__complete", "command-options", "test"});
+				ok &=
+				    expect(result.status == 0 &&
+				               result.output == "-U\t1\tnone\n--user\t1\tnone\n--device\t1\tnone\n",
+				           "test completion exposes applicable global and command options");
+				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+				                 !context.command_id.has_value(),
+				             "command option completion skips normal dispatch flow");
+			}
+			{
+				Context    context;
+				const auto result =
+				    run(context, {"howdy", "__complete", "command-options", "disable"});
+				ok &= expect(result.status == 0 && result.output.empty(),
+				             "inapplicable command options are not advertised");
+			}
+			{
+				Context    context;
+				const auto result =
 				    run(context, {"howdy", "__complete", "command-values", "disable", "0"});
 				ok &= expect(result.status == 0 && result.output == "false\ntrue\n",
 				             "boolean command completion comes from command metadata");
@@ -238,6 +257,26 @@ namespace howdy::test::dispatch {
 				             "completion query does not dispatch a command");
 			}
 			{
+				Context    context;
+				const auto result = run(context, {"howdy", "__complete", "commands", "--", "-y"});
+				ok &= expect(result.status == 0 && result.output == "add\nclear\nremove\n",
+				             "command completion filters by applicable yes option");
+			}
+			{
+				Context    context;
+				const auto result =
+				    run(context, {"howdy", "__complete", "commands", "--", "--plain"});
+				ok &= expect(result.status == 0 && result.output == "add\nlist\n",
+				             "command completion filters by applicable plain option");
+			}
+			{
+				Context    context;
+				const auto result = run(context, {"howdy", "__complete", "commands", "--", "-U"});
+				ok &= expect(result.status == 0 &&
+				                 result.output == "add\nclear\nlist\nremove\ntest\n",
+				             "command completion filters by applicable user option");
+			}
+			{
 				const std::vector<std::vector<std::string>> malformed_queries = {
 				    {"howdy", "__complete"},
 				    {"howdy", "__complete", "unknown"},
@@ -269,10 +308,8 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result = run(context, {"howdy", "config", "--help"});
-				ok &= expect(result.status == 0 &&
-				                 context.command_arguments ==
-				                     std::vector<std::string>{"howdy-config", "--help"},
-				             "help after command remains a positional argument");
+				ok &= expect(result.status != 0 && !context.command_id.has_value(),
+				             "help after command is rejected by strict command syntax");
 			}
 			{
 				ok &= expect(

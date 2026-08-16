@@ -241,6 +241,14 @@ auto main() -> int {
 		ok &= expect_no_calls(context, "invalid argument skips dependencies");
 	}
 
+	{
+		TestContext context;
+		context.load_result = loaded_config(false);
+		const auto result = run_disable({"howdy-disable", "--", "true"}, dependencies_for(context));
+		ok &= expect(result.exit_code == 0, "end-of-options disable value succeeds");
+		ok &= expect_update(context, "true", "end-of-options disable value");
+	}
+
 	for (const auto &[argument, initially_disabled, value] :
 	     {std::tuple{"1", false, "true"}, std::tuple{"true", false, "true"},
 	      std::tuple{"0", true, "false"}, std::tuple{"false", true, "false"}}) {
@@ -345,8 +353,10 @@ auto main() -> int {
 		context.load_result = loaded_config(false);
 		const auto result =
 		    run_disable({"howdy-disable", "true", "ignored"}, dependencies_for(context));
-		ok &= expect(result.exit_code == 0, "extra argument remains ignored");
-		ok &= expect_update(context, "true", "extra argument");
+		ok &= expect(result.exit_code == 1, "extra argument is rejected");
+		ok &= expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
+		                 context.updater_calls == 0,
+		             "extra argument skips config mutation callbacks");
 	}
 
 	ok &= public_entrypoint_integration();

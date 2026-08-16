@@ -25,11 +25,19 @@ namespace {
 		if (argc < 2) {
 			return std::nullopt;
 		}
-		args.user = argv[1];
+		args.user          = argv[1];
+		bool options_ended = false;
 		for (int index = 2; index < argc; ++index) {
-			if (std::string_view(argv[index]) == "--plain") {
-				args.plain = true;
+			const std::string_view arg(argv[index]);
+			if (!options_ended && arg == "--") {
+				options_ended = true;
+				continue;
 			}
+			if (!options_ended && arg == "--plain") {
+				args.plain = true;
+				continue;
+			}
+			return std::nullopt;
 		}
 		return args;
 	}
@@ -37,6 +45,23 @@ namespace {
 	auto list_user_model_entries_dependency([[maybe_unused]] void *context, const std::string &user)
 	    -> howdy::native::UserModelListResult {
 		return howdy::native::list_user_model_entries(user, {});
+	}
+
+	auto csv_field(const std::string_view value) -> std::string {
+		if (!value.contains(',') && !value.contains('"')) {
+			return std::string(value);
+		}
+		std::string escaped;
+		escaped.reserve(value.size() + 2);
+		escaped.push_back('"');
+		for (const char character : value) {
+			if (character == '"') {
+				escaped.push_back('"');
+			}
+			escaped.push_back(character);
+		}
+		escaped.push_back('"');
+		return escaped;
 	}
 
 }  // namespace
@@ -91,7 +116,7 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 		}
 		std::cout << (valid_time ? buffer.data() : "invalid-time");
 		std::cout << (args->plain ? "," : "  ");
-		std::cout << model.label << "\n";
+		std::cout << (args->plain ? csv_field(model.label) : model.label) << "\n";
 	}
 
 	std::cout << "\n";

@@ -74,6 +74,26 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
+		auto explicit_empty_label_still_prompts() -> bool {
+			auto               context = make_success_context();
+			std::istringstream input("front-door\n");
+			std::ostringstream output;
+			context.input_stream = &input;
+			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+
+			const int result = run_add(context, {"howdy-add", "alice", ""});
+
+			bool ok = true;
+			ok &= expect(result == 0, "explicit empty label add returns 0");
+			ok &= expect(output.str().contains("Enter a label for this new model [automatic]: "),
+			             "explicit empty label still prompts for a label");
+			ok &= expect(context.capture_label == "front-door",
+			             "explicit empty label uses entered label for capture");
+			ok &= expect(context.appended_entry.label == "front-door",
+			             "explicit empty label uses entered label for append");
+			return ok;
+		}
+
 		auto plain_mode_skips_label_prompt() -> bool {
 			auto               context = make_success_context();
 			std::istringstream input("front-door\n");
@@ -116,39 +136,44 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto long_yes_argument_remains_label() -> bool {
-			auto               context = make_success_context();
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
-			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+		auto long_yes_argument_is_rejected() -> bool {
+			auto context = make_success_context();
 
 			const int result = run_add(context, {"howdy-add", "alice", "--yes"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "long yes argument add returns 0");
-			ok &= expect(!context.capture_plain, "long yes argument does not imply plain mode");
-			ok &= expect(context.capture_label == "--yes", "long yes argument remains label");
-			ok &= expect(context.appended_entry.label == "--yes",
-			             "long yes argument appends as label");
-			ok &= expect(input.tellg() == std::streampos(0),
-			             "long yes argument leaves label input unread");
-			ok &= expect(!output.str().contains("Enter a label for this new model"),
-			             "long yes argument skips label prompt because it is label text");
+			ok &= expect(result == 1, "unknown long yes argument returns 1");
+			ok &= expect(context.load_calls == 0, "unknown long yes argument skips config load");
+			ok &= expect(context.capture_calls == 0, "unknown long yes argument skips capture");
+			ok &= expect(context.append_calls == 0, "unknown long yes argument skips append");
 			return ok;
 		}
 
-		auto command_label_removes_commas() -> bool {
+		auto command_label_preserves_csv_characters() -> bool {
 			auto context = make_success_context();
 
-			const int result = run_add(context, {"howdy-add", "alice", "front,door"});
+			const int result = run_add(context, {"howdy-add", "alice", "front,\"door"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "comma label add returns 0");
-			ok &= expect(context.capture_label == "frontdoor",
-			             "capture receives comma-stripped label");
-			ok &= expect(context.appended_entry.label == "frontdoor",
-			             "append receives comma-stripped label");
+			ok &= expect(result == 0, "CSV-character label add returns 0");
+			ok &= expect(context.capture_label == "front,\"door",
+			             "capture preserves comma and quote in label");
+			ok &= expect(context.appended_entry.label == "front,\"door",
+			             "append preserves comma and quote in label");
+			return ok;
+		}
+
+		auto invalid_label_stops_before_capture() -> bool {
+			auto context = make_success_context();
+
+			const int result = run_add(context, {"howdy-add", "alice", "bad/name"});
+
+			bool ok = true;
+			ok &= expect(result == 1, "invalid label returns 1");
+			ok &= expect(context.load_calls == 0, "invalid label skips config load");
+			ok &= expect(context.preflight_calls == 0, "invalid label skips preflight");
+			ok &= expect(context.capture_calls == 0, "invalid label skips camera capture");
+			ok &= expect(context.append_calls == 0, "invalid label skips storage mutation");
 			return ok;
 		}
 
@@ -197,10 +222,12 @@ namespace howdy::test::add_cli {
 
 	auto run_add_cli_argument_tests() -> bool {
 		bool ok = true;
+		ok &= explicit_empty_label_still_prompts();
 		ok &= plain_mode_skips_label_prompt();
 		ok &= yes_flag_skips_label_prompt();
-		ok &= long_yes_argument_remains_label();
-		ok &= command_label_removes_commas();
+		ok &= long_yes_argument_is_rejected();
+		ok &= command_label_preserves_csv_characters();
+		ok &= invalid_label_stops_before_capture();
 		ok &= interactive_label_truncates_to_24_characters();
 		ok &= append_failure_returns_error();
 		return ok;

@@ -4,7 +4,10 @@
 #include "config/runtime_paths.hpp"
 
 #include <iostream>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 
 namespace {
 
@@ -22,6 +25,36 @@ namespace {
 		return howdy::native::update_config_value(config_path, key, error_message, value, lock);
 	}
 
+	struct SetArgs {
+		std::string key;
+		std::string value;
+	};
+
+	auto parse_args(int argc, char **argv) -> std::optional<SetArgs> {
+		SetArgs     args;
+		std::size_t positional_count = 0;
+		bool        options_ended    = false;
+		for (int index = 1; index < argc; ++index) {
+			const std::string_view value(argv[index]);
+			if (!options_ended && value == "--") {
+				options_ended = true;
+				continue;
+			}
+			if (!options_ended && !value.empty() && value.front() == '-') {
+				return std::nullopt;
+			}
+			if (positional_count == 0) {
+				args.key = value;
+			} else if (positional_count == 1) {
+				args.value = value;
+			} else {
+				return std::nullopt;
+			}
+			++positional_count;
+		}
+		return positional_count == 2 ? std::optional<SetArgs>{std::move(args)} : std::nullopt;
+	}
+
 }  // namespace
 
 auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **argv,
@@ -33,14 +66,19 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 		std::cout << "\n\thowdy set sface_threshold 0.363\n\n";
 		return kExitAbort;
 	}
+	const auto args = parse_args(argc, argv);
+	if (!args.has_value()) {
+		std::cout << "Invalid arguments for set\n";
+		return kExitAbort;
+	}
 	if (dependencies.resolve_config_path == nullptr ||
 	    dependencies.update_config_value == nullptr) {
 		return kExitAbort;
 	}
 
-	const auto        config_path = dependencies.resolve_config_path(dependencies.context);
-	const std::string key         = argv[1];
-	const std::string value       = argv[2];
+	const auto &config_path = dependencies.resolve_config_path(dependencies.context);
+	const auto &key         = args->key;
+	const auto &value       = args->value;
 	if (!howdy::native::is_safe_ini_scalar_value(value)) {
 		std::cout << "Config values must be single-line scalars and cannot start with [\n";
 		return kExitAbort;

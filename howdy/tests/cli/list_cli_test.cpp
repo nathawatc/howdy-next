@@ -189,16 +189,32 @@ namespace {
 		              "out-of-range plain uses fallback");
 	}
 
-	auto plain_position_and_unknown_arguments_are_preserved() -> bool {
+	auto plain_unknown_argument_is_rejected_before_listing() -> bool {
 		ListCliTestContext context;
 		context.list_result = {
 		    .status  = howdy::native::UserModelStatus::kOk,
 		    .entries = {{.id = 3, .time = 0, .label = "front door"}},
 		};
 		auto [result, output] = run_list(context, {"howdy-list", "alice", "ignored", "--plain"});
-		return expect(result == 0, "positioned plain with unknown argument succeeds") &&
-		       expect(output == "3,1970-01-01 00:00:00,front door\n\n",
-		              "positioned plain preserves output");
+		return expect(result == 1, "unknown list argument is rejected") &&
+		       expect(output.empty(), "unknown list argument has no output") &&
+		       expect(context.list_calls == 0, "unknown list argument skips listing");
+	}
+
+	auto plain_output_escapes_csv_fields() -> bool {
+		ListCliTestContext context;
+		context.list_result = {
+		    .status  = howdy::native::UserModelStatus::kOk,
+		    .entries = {{.id = 3, .time = 0, .label = "front,door"},
+		                {.id = 12, .time = 0, .label = "quote\"door"},
+		                {.id = 13, .time = 0, .label = "front,\"door"}},
+		};
+		auto [result, output] = run_list(context, {"howdy-list", "alice", "--plain"});
+		return expect(result == 0, "CSV-character labels list successfully") &&
+		       expect(output == "3,1970-01-01 00:00:00,\"front,door\"\n"
+		                        "12,1970-01-01 00:00:00,\"quote\"\"door\"\n"
+		                        "13,1970-01-01 00:00:00,\"front,\"\"door\"\n\n",
+		              "plain output escapes comma and quote fields as CSV");
 	}
 
 	auto zero_entries_prints_final_newline() -> bool {
@@ -222,7 +238,8 @@ auto main() -> int {
 	ok &= storage_failure_preserves_normal_and_plain_output();
 	ok &= successful_output_preserves_formats();
 	ok &= out_of_range_timestamp_emits_fallback();
-	ok &= plain_position_and_unknown_arguments_are_preserved();
+	ok &= plain_unknown_argument_is_rejected_before_listing();
+	ok &= plain_output_escapes_csv_fields();
 	ok &= zero_entries_prints_final_newline();
 	return ok ? 0 : 1;
 }

@@ -22,11 +22,22 @@ namespace {
 		if (argc < 2) {
 			return std::nullopt;
 		}
-		args.user = argv[1];
+		args.user          = argv[1];
+		bool options_ended = false;
 		for (int index = 2; index < argc; ++index) {
-			if (std::string_view(argv[index]) == "-y") {
-				args.yes = true;
+			const std::string_view arg(argv[index]);
+			if (!options_ended && arg == "--") {
+				options_ended = true;
+				continue;
 			}
+			if (!options_ended && arg == "-y") {
+				args.yes = true;
+				continue;
+			}
+			if (!options_ended && !arg.empty() && arg.front() == '-') {
+				return std::nullopt;
+			}
+			return std::nullopt;
 		}
 		return args;
 	}

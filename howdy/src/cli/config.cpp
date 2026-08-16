@@ -33,7 +33,10 @@ namespace {
 
 auto howdy::native::config_internal::config_main_with_dependencies(
     int argc, char **argv, const ConfigDependencies &dependencies) -> int {
-	(void)argc;
+	if (argc != 1) {
+		std::cout << "Invalid arguments for config\n";
+		return kExitAbort;
+	}
 	(void)argv;
 	if (!config_edit_dependencies_available(dependencies)) {
 		return kExitAbort;

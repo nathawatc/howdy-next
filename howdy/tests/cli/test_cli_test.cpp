@@ -478,10 +478,33 @@ namespace {
 
 		bool ok = true;
 		ok &= expect(result == 1, "missing device value returns 1");
-		ok &= expect(error.str().contains("--device requires a value"),
+		ok &= expect(error.str().contains("--device requires a non-empty value"),
 		             "missing device value writes diagnostic");
 		ok &= expect(context.load_calls == 0, "missing device value skips config load");
 		ok &= expect(context.preview_calls == 0, "missing device value skips preview");
+		return ok;
+	}
+
+	auto invalid_device_options_stop_before_runtime_work() -> bool {
+		bool ok = true;
+		for (const auto &arguments : std::vector<std::vector<std::string>>{
+		         {"howdy-test", "--device", ""},
+		         {"howdy-test", "--device", "--unknown"},
+		         {"howdy-test", "--unknown"},
+		         {"howdy-test", "--device", "/dev/video0", "--device", "/dev/video1"},
+		     }) {
+			auto               context = make_success_context();
+			std::ostringstream error;
+			StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+
+			const int result = run_test(context, arguments);
+
+			ok &= expect(result == 1, "invalid device option returns 1");
+			ok &= expect(context.load_calls == 0 && context.preview_calls == 0,
+			             "invalid device option skips runtime work");
+			ok &= expect(error.str().contains("device") || error.str().contains("invalid"),
+			             "invalid device option writes diagnostic");
+		}
 		return ok;
 	}
 
@@ -622,6 +645,7 @@ auto main() -> int {
 	ok &= configured_device_default_is_used_for_camera_open();
 	ok &= device_override_is_used_for_camera_open();
 	ok &= missing_device_value_is_rejected_before_runtime_work();
+	ok &= invalid_device_options_stop_before_runtime_work();
 	ok &= gui_initialization_runs_before_first_camera_read();
 	ok &= graphical_environment_helper_checks_display_values();
 	ok &= missing_preflight_dependency_callbacks_fail_closed();
