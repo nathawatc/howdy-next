@@ -14,7 +14,8 @@
 
 namespace howdy::native::snapshot_internal {
 
-	inline constexpr std::size_t kSnapshotFrameCount = 4;
+	inline constexpr std::size_t kSnapshotFrameCount      = 4;
+	inline constexpr std::size_t kMaxSnapshotNameAttempts = 100;
 
 	enum class SnapshotCaptureStatus : std::uint8_t {
 		kOk,
@@ -63,6 +64,13 @@ namespace howdy::native::snapshot_internal {
 	                            const std::filesystem::path      &path,
 	                            const SnapshotWriterDependencies &dependencies,
 	                            AtomicFileCommitResult           *commit_result = nullptr) -> bool;
+
+	auto write_snapshot_with_unique_path(const std::vector<cv::Mat>       &frames,
+	                                     const std::vector<std::string>   &text_lines,
+	                                     const std::filesystem::path      &base_path,
+	                                     const SnapshotWriterDependencies &dependencies,
+	                                     AtomicFileCommitResult           *commit_result = nullptr)
+	    -> std::filesystem::path;
 
 	auto snapshot_main_with_dependencies(int argc, char **argv,
 	                                     const SnapshotDependencies &dependencies) -> int;

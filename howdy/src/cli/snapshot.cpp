@@ -149,11 +149,52 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 		howdy::native::cleanup_staged_file(*staged);
 		return false;
 	}
-	const auto result = howdy::native::install_staged_file(*staged, path, dependencies.sync_parent);
+	const auto result = howdy::native::install_staged_file(
+	    *staged, path, dependencies.sync_parent,
+	    howdy::native::AtomicFileInstallPolicy::kNoReplaceExisting);
 	if (commit_result != nullptr) {
 		*commit_result = result;
 	}
 	return howdy::native::atomic_file_commit_is_durable(result);
+}
+
+auto howdy::native::snapshot_internal::write_snapshot_with_unique_path(
+    const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
+    const std::filesystem::path &base_path, const SnapshotWriterDependencies &dependencies,
+    AtomicFileCommitResult *commit_result) -> std::filesystem::path {
+	if (commit_result != nullptr) {
+		*commit_result = AtomicFileCommitResult::kNotCommitted;
+	}
+
+	for (std::size_t collision_index = 0; collision_index < kMaxSnapshotNameAttempts;
+	     ++collision_index) {
+		auto candidate = collision_index == 0
+		                     ? base_path
+		                     : base_path.parent_path() / (base_path.stem().string() + "-" +
+		                                                  std::to_string(collision_index) +
+		                                                  base_path.extension().string());
+		AtomicFileCommitResult candidate_result = AtomicFileCommitResult::kNotCommitted;
+		if (write_snapshot_at_path(frames, text_lines, candidate, dependencies,
+		                           &candidate_result)) {
+			if (commit_result != nullptr) {
+				*commit_result = candidate_result;
+			}
+			return candidate;
+		}
+		if (candidate_result != AtomicFileCommitResult::kDestinationExists) {
+			if (commit_result != nullptr) {
+				*commit_result = candidate_result;
+			}
+			return {};
+		}
+	}
+
+	if (commit_result != nullptr) {
+		*commit_result = AtomicFileCommitResult::kDestinationExists;
+	}
+	std::cerr << "Could not allocate unique snapshot filename after " << kMaxSnapshotNameAttempts
+	          << " attempts\n";
+	return {};
 }
 
 auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(

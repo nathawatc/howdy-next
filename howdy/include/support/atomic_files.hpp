@@ -2,6 +2,7 @@
 
 #include "support/fd_io.hpp"
 
+#include <cerrno>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
@@ -13,6 +14,9 @@
 #include <vector>
 
 #include <sys/stat.h>
+#include <sys/syscall.h>
+
+#include <linux/fs.h>
 
 namespace howdy::native {
 
@@ -81,8 +85,14 @@ namespace howdy::native {
 		kUseDefaultMode,
 	};
 
+	enum class AtomicFileInstallPolicy : std::uint8_t {
+		kReplaceExisting,
+		kNoReplaceExisting,
+	};
+
 	enum class AtomicFileCommitResult : std::uint8_t {
 		kNotCommitted,
+		kDestinationExists,
 		kCommitted,
 		kCommittedSyncFailed,
 		kStateUncertain,
@@ -90,7 +100,9 @@ namespace howdy::native {
 
 	[[nodiscard]] constexpr auto atomic_file_may_have_committed(AtomicFileCommitResult result)
 	    -> bool {
-		return result != AtomicFileCommitResult::kNotCommitted;
+		return result == AtomicFileCommitResult::kCommitted ||
+		       result == AtomicFileCommitResult::kCommittedSyncFailed ||
+		       result == AtomicFileCommitResult::kStateUncertain;
 	}
 
 	[[nodiscard]] constexpr auto atomic_file_commit_is_durable(AtomicFileCommitResult result)
@@ -177,8 +189,10 @@ namespace howdy::native {
 		return StagedFile{.fd = std::move(fd), .path = temp_path};
 	}
 
-	inline auto install_staged_file(StagedFile &staged, const std::filesystem::path &destination,
-	                                SyncParentDirectoryFn sync_parent = sync_parent_directory)
+	inline auto install_staged_file(
+	    StagedFile &staged, const std::filesystem::path &destination,
+	    SyncParentDirectoryFn   sync_parent    = sync_parent_directory,
+	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting)
 	    -> AtomicFileCommitResult {
 		if (staged.path.empty()) {
 			staged.fd.reset();
@@ -199,11 +213,30 @@ namespace howdy::native {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		std::error_code ec;
-		std::filesystem::rename(staged.path, destination, ec);
-		if (ec) {
+		if (install_policy == AtomicFileInstallPolicy::kReplaceExisting) {
+			std::error_code ec;
+			std::filesystem::rename(staged.path, destination, ec);
+			if (ec) {
+				cleanup_staged_file(staged);
+				return AtomicFileCommitResult::kNotCommitted;
+			}
+		} else {
+#if defined(SYS_renameat2) && defined(RENAME_NOREPLACE)
+			long rename_result = -1;
+			do {
+				rename_result = syscall(SYS_renameat2, AT_FDCWD, staged.path.c_str(), AT_FDCWD,
+				                        destination.c_str(), RENAME_NOREPLACE);
+			} while (rename_result != 0 && errno == EINTR);
+			if (rename_result != 0) {
+				const int error_number = errno;
+				cleanup_staged_file(staged);
+				return error_number == EEXIST ? AtomicFileCommitResult::kDestinationExists
+				                              : AtomicFileCommitResult::kNotCommitted;
+			}
+#else
 			cleanup_staged_file(staged);
 			return AtomicFileCommitResult::kNotCommitted;
+#endif
 		}
 		const bool parent_synced = sync_parent != nullptr && sync_parent(destination);
 		staged.path.clear();

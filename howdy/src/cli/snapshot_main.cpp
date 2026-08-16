@@ -39,14 +39,15 @@ namespace {
 
 	auto generate_snapshot(const std::vector<cv::Mat>     &frames,
 	                       const std::vector<std::string> &text_lines) -> std::filesystem::path {
-		auto       filepath     = snapshot_path();
+		const auto base_path    = snapshot_path();
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
 		    .context      = nullptr,
 		    .encode_image = encode_image_dependency,
 		};
 		howdy::native::AtomicFileCommitResult commit_result;
-		if (!snapshot_internal::write_snapshot_at_path(frames, text_lines, filepath, dependencies,
-		                                               &commit_result)) {
+		auto filepath = snapshot_internal::write_snapshot_with_unique_path(
+		    frames, text_lines, base_path, dependencies, &commit_result);
+		if (filepath.empty()) {
 			if (howdy::native::atomic_file_may_have_committed(commit_result)) {
 				std::cerr << "Snapshot was written, but its directory could not be synced; verify "
 				             "the file before retrying\n";

@@ -230,6 +230,29 @@ namespace howdy::test::download_models {
 		ok &= expect(count_staged_files(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
 		             "atomic writer removes staged file after replacement");
 
+		const auto no_replace_path = temp_root / "atomic-no-replace";
+		ok &= expect(write_file(no_replace_path, "initial"),
+		             "create no-replace atomic writer target");
+		auto no_replace_staged =
+		    howdy::native::prepare_staged_file(no_replace_path, ".howdy-no-replace-");
+		ok &= expect(no_replace_staged.has_value(), "prepare no-replace staged file");
+		with_present(no_replace_staged, [&] -> void {
+			const auto staged_path = no_replace_staged->path;
+			ok &= expect(howdy::native::write_all_to_fd(no_replace_staged->fd.get(), "replacement"),
+			             "write no-replace staged file");
+			const auto result = howdy::native::install_staged_file(
+			    *no_replace_staged, no_replace_path, howdy::native::sync_parent_directory,
+			    howdy::native::AtomicFileInstallPolicy::kNoReplaceExisting);
+			ok &= expect(result == howdy::native::AtomicFileCommitResult::kDestinationExists,
+			             "no-replace install reports existing destination");
+			ok &= expect(!howdy::native::atomic_file_may_have_committed(result),
+			             "no-replace collision is not possibly committed");
+			ok &= expect(read_file(no_replace_path) == "initial",
+			             "no-replace install preserves existing content");
+			ok &= expect(!fs::exists(staged_path, ec) && !ec,
+			             "no-replace collision removes staged file");
+		});
+
 		const auto default_mode_path = temp_root / "default-mode-existing";
 		ok &= expect(write_file(default_mode_path, "old"), "create default-mode policy target");
 		ok &= expect(chmod(default_mode_path.c_str(), 0600) == 0,

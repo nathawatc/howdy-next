@@ -64,8 +64,8 @@ CLI commands use dependency injection for deterministic tests.
   `test_main_with_dependencies()`, `run_preview_preflight()`, and
   `has_graphical_display_environment()`
 - `include/cli/snapshot_internal.hpp`: `SnapshotDependencies`,
-  `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`, and
-  `write_snapshot_at_path()`
+  `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`,
+  `write_snapshot_at_path()`, and `write_snapshot_with_unique_path()`
 - `include/cli/enrollment_capture.hpp`: `capture_enrollment_sample()`,
   `EnrollmentCaptureResult`, and `classify_enrollment_capture_failure()`
 - `include/cli/download_models_internal.hpp`: download-model internals
@@ -94,7 +94,7 @@ shared by injected snapshot policy and production camera capture.
   canonical OpenCV 5 model pair. Missing required injected callbacks must fail
   closed before filesystem or network work.
 - Snapshot writer validates BGR frame batches and atomically installs output.
-  If directory sync fails after replacement, report that the file may already
+  If directory sync fails after installation, report that the file may already
   exist; do not silently retry destructive work.
 - Enrollment diagnostics use `classify_enrollment_capture_failure()` for black,
   dark, unusable, and no-face outcomes.

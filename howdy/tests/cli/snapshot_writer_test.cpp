@@ -2,6 +2,8 @@
 #include "test_support.hpp"
 #include "vision/frame_validation.hpp"
 
+#include <array>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -11,12 +13,14 @@
 #include <string>
 #include <string_view>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 namespace {
 
@@ -52,6 +56,39 @@ namespace {
 		std::string        received_extension;
 		std::vector<uchar> encoded_output;
 	};
+
+	struct ConcurrentWriterContext {
+		int                  ready_fd   = -1;
+		int                  release_fd = -1;
+		bool                 wait_once  = true;
+		std::array<uchar, 3> encoded_output{};
+	};
+
+	auto write_pipe_byte(int fd, char byte) -> bool {
+		while (true) {
+			const auto result = write(fd, &byte, 1);
+			if (result == 1) {
+				return true;
+			}
+			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+	}
+
+	auto read_pipe_byte(int fd, char *byte) -> bool {
+		while (true) {
+			const auto result = read(fd, byte, 1);
+			if (result == 1) {
+				return true;
+			}
+			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+	}
 
 	auto make_temp_root(const std::string &name, bool &ok) -> fs::path {
 		const auto root =
@@ -130,6 +167,14 @@ namespace {
 		return {"snapshot writer test"};
 	}
 
+	auto candidate_path_for_test(const fs::path &base, std::size_t collision_index) -> fs::path {
+		if (collision_index == 0) {
+			return base;
+		}
+		return base.parent_path() / (base.stem().string() + "-" + std::to_string(collision_index) +
+		                             base.extension().string());
+	}
+
 	auto fake_encode(void *raw_context, std::string_view extension, const cv::Mat &image,
 	                 std::vector<uchar> *encoded) -> bool {
 		(void)image;
@@ -149,6 +194,24 @@ namespace {
 			                context->encoded_output.end());
 		}
 		return context->encode_result;
+	}
+
+	auto concurrent_encode(void *raw_context, std::string_view /*extension*/,
+	                       const cv::Mat & /*image*/, std::vector<uchar> *encoded) -> bool {
+		auto *context = static_cast<ConcurrentWriterContext *>(raw_context);
+		if (context->wait_once) {
+			if (!write_pipe_byte(context->ready_fd, 'r')) {
+				return false;
+			}
+			char release = 0;
+			if (!read_pipe_byte(context->release_fd, &release)) {
+				return false;
+			}
+			context->wait_once = false;
+		}
+		encoded->insert(encoded->end(), context->encoded_output.begin(),
+		                context->encoded_output.end());
+		return true;
 	}
 
 	auto real_encode(void *raw_context, std::string_view extension, const cv::Mat &image,
@@ -259,27 +322,239 @@ namespace {
 		return cleanup_temp_root(temp_root, ok);
 	}
 
-	auto encoded_bytes_install(bool existing_destination) -> bool {
-		const auto name =
-		    std::string(existing_destination ? "existing-mode-reset" : "encoded-byte-install");
-		bool       ok        = true;
-		const auto temp_root = make_temp_root(name, ok);
-		const auto output    = temp_root / "log" / "snapshots" / "test.jpg";
-		if (existing_destination) {
-			std::error_code ec;
-			fs::create_directories(output.parent_path(), ec);
-			ok &= expect(!ec && write_file(output, "old"), name + " creates destination");
-			ok &= expect(chmod(output.c_str(), 0640) == 0, name + " sets old mode");
-		}
+	auto encoded_bytes_install() -> bool {
+		bool                  ok        = true;
+		const auto            temp_root = make_temp_root("encoded-byte-install", ok);
+		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::write_snapshot_at_path(
 		    tiny_frames(), text_lines(), output, fake_dependencies(context));
-		ok &= expect(result, name + " returns true");
+		ok &= expect(result, "encoded-byte-install returns true");
 		ok &= expect(read_file(output) == std::string("\x01\x02\x03", 3),
-		             name + " installs exact encoded bytes");
-		ok &= expect_mode(output, kSnapshotFileMode, name + " output mode is 0600");
+		             "encoded-byte-install installs exact encoded bytes");
+		ok &= expect_mode(output, kSnapshotFileMode, "encoded-byte-install output mode is 0600");
+		ok &= expect(count_staged_files(output.parent_path()) == 0,
+		             "encoded-byte-install leaves no staged file");
+		return cleanup_temp_root(temp_root, ok);
+	}
+
+	auto existing_destination_is_not_replaced() -> bool {
+		bool              ok        = true;
+		const auto        temp_root = make_temp_root("existing-destination", ok);
+		const auto        output    = temp_root / "log" / "snapshots" / "test.jpg";
+		const std::string original  = "old snapshot";
+		std::error_code   ec;
+		ok &= expect(fs::create_directories(output.parent_path(), ec) && !ec,
+		             "existing destination creates parent");
+		ok &= expect(write_file(output, original), "existing destination writes original");
+		ok &= expect(chmod(output.c_str(), 0640) == 0, "existing destination sets original mode");
+		WriterCallbackContext                 context;
+		howdy::native::AtomicFileCommitResult commit_result;
+		const bool                            result = snapshot_internal::write_snapshot_at_path(
+		    tiny_frames(), text_lines(), output, fake_dependencies(context), &commit_result);
+		ok &= expect(!result, "existing destination returns false");
+		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
+		             "existing destination reports collision");
+		ok &= expect(!howdy::native::atomic_file_may_have_committed(commit_result),
+		             "existing destination is not possibly committed");
+		ok &= expect(read_file(output) == original, "existing destination content is unchanged");
+		ok &= expect_mode(output, 0640, "existing destination mode is unchanged");
+		ok &= expect(count_staged_files(output.parent_path()) == 0,
+		             "existing destination removes staged file");
+		return cleanup_temp_root(temp_root, ok);
+	}
+
+	auto unique_path_install_selects_next_candidate() -> bool {
+		bool            ok        = true;
+		const auto      temp_root = make_temp_root("unique-path-collisions", ok);
+		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
+		std::error_code ec;
+		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		             "unique path creates parent");
+		const std::array existing = {
+		    std::pair{base, std::string("base snapshot")},
+		    std::pair{base.parent_path() / "20260816T100012-1.jpg", std::string("first snapshot")},
+		    std::pair{base.parent_path() / "20260816T100012-2.jpg", std::string("second snapshot")},
+		};
+		for (const auto &[path, contents] : existing) {
+			ok &= expect(write_file(path, contents), "unique path writes existing candidate");
+		}
+		WriterCallbackContext                 context;
+		howdy::native::AtomicFileCommitResult commit_result;
+		const auto installed = snapshot_internal::write_snapshot_with_unique_path(
+		    tiny_frames(), text_lines(), base, fake_dependencies(context), &commit_result);
+		const auto expected = base.parent_path() / "20260816T100012-3.jpg";
+		ok &= expect(installed == expected, "unique path selects next available suffix");
+		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kCommitted,
+		             "unique path reports durable commit");
+		ok &= expect(context.encode_calls == 4, "unique path encodes each collision candidate");
+		ok &= expect(read_file(expected) == std::string("\x01\x02\x03", 3),
+		             "unique path installs new encoded bytes");
+		for (const auto &[path, contents] : existing) {
+			ok &= expect(read_file(path) == contents, "unique path preserves existing candidate");
+		}
+		ok &= expect_mode(expected, kSnapshotFileMode, "unique path output mode is 0600");
+		ok &= expect(count_staged_files(base.parent_path()) == 0,
+		             "unique path leaves no staged file");
+		return cleanup_temp_root(temp_root, ok);
+	}
+
+	auto unique_path_collision_exhaustion() -> bool {
+		bool            ok        = true;
+		const auto      temp_root = make_temp_root("unique-path-exhaustion", ok);
+		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
+		std::error_code ec;
+		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		             "collision exhaustion creates parent");
+		for (std::size_t index = 0; index < snapshot_internal::kMaxSnapshotNameAttempts; ++index) {
+			ok &= expect(write_file(candidate_path_for_test(base, index),
+			                        "occupied-" + std::to_string(index)),
+			             "collision exhaustion occupies candidate");
+		}
+		WriterCallbackContext                 context;
+		howdy::native::AtomicFileCommitResult commit_result;
+		std::ostringstream                    error;
+		std::filesystem::path                 installed;
+		{
+			StreamRedirect redirect(std::cerr, error.rdbuf());
+			installed = snapshot_internal::write_snapshot_with_unique_path(
+			    tiny_frames(), text_lines(), base, fake_dependencies(context), &commit_result);
+		}
+		ok &= expect(installed.empty(), "collision exhaustion returns no path");
+		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
+		             "collision exhaustion reports final collision");
+		ok &= expect(!howdy::native::atomic_file_may_have_committed(commit_result),
+		             "collision exhaustion is not possibly committed");
+		ok &= expect(error.str().contains("Could not allocate unique snapshot filename"),
+		             "collision exhaustion reports bounded failure");
+		for (std::size_t index = 0; index < snapshot_internal::kMaxSnapshotNameAttempts; ++index) {
+			ok &= expect(read_file(candidate_path_for_test(base, index)) ==
+			                 "occupied-" + std::to_string(index),
+			             "collision exhaustion preserves existing candidate");
+		}
+		ok &= expect(count_staged_files(base.parent_path()) == 0,
+		             "collision exhaustion leaves no staged file");
+		return cleanup_temp_root(temp_root, ok);
+	}
+
+	auto close_pipe(std::array<int, 2> &pipe_fds) -> void {
+		for (auto &fd : pipe_fds) {
+			if (fd >= 0) {
+				close(fd);
+				fd = -1;
+			}
+		}
+	}
+
+	auto reap_children(const std::array<pid_t, 2> &children, std::size_t child_count,
+	                   bool terminate) -> bool {
+		if (terminate) {
+			for (std::size_t index = 0; index < child_count; ++index) {
+				kill(children[index], SIGKILL);
+			}
+		}
+		bool ok = true;
+		for (std::size_t index = 0; index < child_count; ++index) {
+			int   status = 0;
+			pid_t result = -1;
+			do {
+				result = waitpid(children[index], &status, 0);
+			} while (result < 0 && errno == EINTR);
+			ok &= result == children[index] && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+		}
+		return ok;
+	}
+
+	auto run_concurrent_writer_child(const fs::path &base, const std::array<int, 2> &ready_pipe,
+	                                 const std::array<int, 2> &release_pipe, std::size_t index)
+	    -> void {
+		close(ready_pipe[0]);
+		close(release_pipe[1]);
+		ConcurrentWriterContext context{
+		    .ready_fd       = ready_pipe[1],
+		    .release_fd     = release_pipe[0],
+		    .wait_once      = true,
+		    .encoded_output = index == 0 ? std::array<uchar, 3>{'A', 'A', 'A'}
+		                                 : std::array<uchar, 3>{'B', 'B', 'B'},
+		};
+		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
+		    .context = &context, .encode_image = concurrent_encode};
+		const auto installed = snapshot_internal::write_snapshot_with_unique_path(
+		    tiny_frames(), text_lines(), base, dependencies);
+		close(ready_pipe[1]);
+		close(release_pipe[0]);
+		_exit(installed.empty() ? 1 : 0);
+	}
+
+	auto run_concurrent_writers(const fs::path &base) -> bool {
+		std::array<int, 2> ready_pipe{{-1, -1}};
+		std::array<int, 2> release_pipe{{-1, -1}};
+		const bool         ready_created   = pipe(ready_pipe.data()) == 0;
+		const bool         release_created = ready_created && pipe(release_pipe.data()) == 0;
+		if (!ready_created || !release_created) {
+			close_pipe(ready_pipe);
+			close_pipe(release_pipe);
+			return false;
+		}
+
+		std::array<pid_t, 2> children{{-1, -1}};
+		std::size_t          child_count = 0;
+		for (; child_count < children.size(); ++child_count) {
+			children[child_count] = fork();
+			if (children[child_count] < 0) {
+				close_pipe(ready_pipe);
+				close_pipe(release_pipe);
+				return reap_children(children, child_count, true);
+			}
+			if (children[child_count] == 0) {
+				run_concurrent_writer_child(base, ready_pipe, release_pipe, child_count);
+			}
+		}
+
+		close(ready_pipe[1]);
+		ready_pipe[1] = -1;
+		close(release_pipe[0]);
+		release_pipe[0]  = -1;
+		char       ready = 0;
+		const bool barriers_ready =
+		    read_pipe_byte(ready_pipe[0], &ready) && read_pipe_byte(ready_pipe[0], &ready);
+		close(ready_pipe[0]);
+		ready_pipe[0]       = -1;
+		const bool released = barriers_ready && write_pipe_byte(release_pipe[1], 'g') &&
+		                      write_pipe_byte(release_pipe[1], 'g');
+		close(release_pipe[1]);
+		release_pipe[1] = -1;
+		const bool children_succeeded =
+		    reap_children(children, children.size(), !barriers_ready || !released);
+		return barriers_ready && released && children_succeeded;
+	}
+
+	auto concurrent_unique_path_install() -> bool {
+		bool            ok        = true;
+		const auto      temp_root = make_temp_root("concurrent-unique-path", ok);
+		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
+		std::error_code ec;
+		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		             "concurrent install creates parent");
+		ok &= expect(write_file(base, "existing snapshot"), "concurrent install creates base");
 		ok &=
-		    expect(count_staged_files(output.parent_path()) == 0, name + " leaves no staged file");
+		    expect(chmod(base.c_str(), kSnapshotFileMode) == 0, "concurrent install secures base");
+		if (!ok) {
+			return cleanup_temp_root(temp_root, false);
+		}
+		ok &= expect(run_concurrent_writers(base), "concurrent install writers succeed");
+
+		const auto first           = candidate_path_for_test(base, 1);
+		const auto second          = candidate_path_for_test(base, 2);
+		const auto first_contents  = read_file(first);
+		const auto second_contents = read_file(second);
+		ok &= expect(read_file(base) == "existing snapshot",
+		             "concurrent install preserves existing base");
+		ok &= expect((first_contents == "AAA" && second_contents == "BBB") ||
+		                 (first_contents == "BBB" && second_contents == "AAA"),
+		             "concurrent install preserves separate writer contents");
+		ok &= expect(count_staged_files(base.parent_path()) == 0,
+		             "concurrent install leaves no staged files");
 		return cleanup_temp_root(temp_root, ok);
 	}
 
@@ -444,8 +719,11 @@ auto main() -> int {
 	ok &= encoder_failure_preserves_destination("encoder-std-exception", true, false);
 	ok &= encoder_failure_preserves_destination("encoder-cv-exception", false, true);
 	ok &= empty_encoder_output_fails_closed();
-	ok &= encoded_bytes_install(false);
-	ok &= encoded_bytes_install(true);
+	ok &= encoded_bytes_install();
+	ok &= existing_destination_is_not_replaced();
+	ok &= unique_path_install_selects_next_candidate();
+	ok &= unique_path_collision_exhaustion();
+	ok &= concurrent_unique_path_install();
 	ok &= directory_target_rejects_before_encoding();
 	ok &= blocked_parent_rejects_before_encoding();
 	ok &= real_image_output({.name = "jpeg-output", .filename = "test.jpg", .extension = ".jpg"});
