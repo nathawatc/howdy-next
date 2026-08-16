@@ -59,6 +59,14 @@ namespace howdy::native::howdy_completion_internal {
 			}
 		}
 
+		void print_completion_command_max_positionals(std::string_view command_name) {
+			const auto *descriptor = find_command(command_name);
+			if (descriptor == nullptr) {
+				return;
+			}
+			std::cout << descriptor->max_positionals << '\n';
+		}
+
 		void print_completion_command_options(std::string_view command_name) {
 			const auto *descriptor = find_command(command_name);
 			if (descriptor == nullptr) {
@@ -171,6 +179,10 @@ namespace howdy::native::howdy_completion_internal {
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-options") {
 			print_completion_command_options(arguments[1]);
+			return find_command(arguments[1]) == nullptr ? 1 : 0;
+		}
+		if (arguments.size() == 2 && arguments.front() == "command-max-positionals") {
+			print_completion_command_max_positionals(arguments[1]);
 			return find_command(arguments[1]) == nullptr ? 1 : 0;
 		}
 		if (arguments.size() >= 3 && arguments.front() == "command-values") {

@@ -25,48 +25,46 @@ _howdy() {
 
 	local command=""
 	local command_index=-1
-	local positional_argument_count=0
-	local -a positional_arguments=()
 	local -a pre_command_global_options=()
 	local completion_disabled=0
 	local options_ended=0
 	local index=1
-	while (( index < COMP_CWORD )); do
+	while (( index < COMP_CWORD && command_index < 0 )); do
 		local word="${COMP_WORDS[index]}"
 		if (( ! options_ended )) && [[ "$word" == "--" ]]; then
 			options_ended=1
 			(( index += 1 ))
 			continue
 		fi
-		if (( ! options_ended )) && [[ "$word" == -* ]] &&
-			[[ -n "${global_option_takes_argument[$word]+set}" ]] &&
-			! (( command_index >= 0 && global_option_parses_after_command[$word] == 0 )); then
-			if (( command_index < 0 )) && [[ "${global_option_parses_after_command[$word]}" == 1 ]]; then
-				pre_command_global_options+=("$word")
+		if (( ! options_ended )) && [[ "$word" == -* ]]; then
+			if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
+				completion_disabled=1
+				break
 			fi
-			if [[ "${global_option_parses_after_command[$word]}" == 0 ]]; then
+			if [[ "${global_option_parses_after_command[$word]}" == 1 ]]; then
+				pre_command_global_options+=("$word")
+			else
 				completion_disabled=1
 			fi
 			if [[ "${global_option_takes_argument[$word]}" == "1" ]]; then
+				if (( index + 1 < COMP_CWORD )) && [[ -z "${COMP_WORDS[index + 1]}" ]]; then
+					completion_disabled=1
+					break
+				fi
 				(( index += 2 ))
 			else
 				(( index += 1 ))
 			fi
 			continue
 		fi
-		if (( command_index < 0 )); then
-			command="$word"
-			command_index=$index
-		else
-			(( positional_argument_count += 1 ))
-			positional_arguments+=("$word")
-		fi
-		(( index += 1 ))
+		command="$word"
+		command_index=$index
 	done
 
 	local -a command_option_spellings=()
 	local -A command_option_takes_argument=()
 	local -A command_option_completion=()
+	local command_max_positionals=0
 	if (( command_index >= 0 )); then
 		local command_spelling command_takes_argument command_completion_kind
 		while IFS=$'\t' read -r command_spelling command_takes_argument command_completion_kind; do
@@ -76,6 +74,74 @@ _howdy() {
 				command_option_completion["$command_spelling"]="$command_completion_kind"
 			fi
 		done < <(howdy __complete command-options "$command")
+
+		if ! command_max_positionals=$(howdy __complete command-max-positionals "$command"); then
+			completion_disabled=1
+		fi
+		local pre_command_option
+		for pre_command_option in "${pre_command_global_options[@]}"; do
+			if [[ -z "${command_option_takes_argument[$pre_command_option]+set}" ]]; then
+				completion_disabled=1
+				break
+			fi
+		done
+	fi
+
+	local positional_argument_count=0
+	local -a positional_arguments=()
+	if (( command_index >= 0 && ! completion_disabled )); then
+		local command_options_ended=$options_ended
+		local -A seen_command_specific_options=()
+		index=$((command_index + 1))
+		while (( index < COMP_CWORD )); do
+			local word="${COMP_WORDS[index]}"
+			if (( ! command_options_ended )) && [[ "$word" == "--" ]]; then
+				command_options_ended=1
+				(( index += 1 ))
+				continue
+			fi
+			if (( ! command_options_ended )) && [[ "$word" == -* ]]; then
+				if [[ -z "${command_option_takes_argument[$word]+set}" ]] ||
+					[[ "$word" == "-h" || "$word" == "--help" ]]; then
+					completion_disabled=1
+					break
+				fi
+
+				if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
+					if [[ -n "${seen_command_specific_options[$word]+set}" ]]; then
+						completion_disabled=1
+						break
+					fi
+					seen_command_specific_options["$word"]=1
+				fi
+
+				if [[ "${command_option_takes_argument[$word]}" == "1" ]]; then
+					if (( index + 1 >= COMP_CWORD )); then
+						break
+					fi
+					local option_value="${COMP_WORDS[index + 1]}"
+					if [[ -z "$option_value" ]] ||
+						{ [[ -z "${global_option_takes_argument[$word]+set}" ]] &&
+							[[ "$option_value" == -* ]]; }; then
+						completion_disabled=1
+						break
+					fi
+					(( index += 2 ))
+				else
+					(( index += 1 ))
+				fi
+				continue
+			fi
+
+			(( positional_argument_count += 1 ))
+			if (( positional_argument_count > command_max_positionals )); then
+				completion_disabled=1
+				break
+			fi
+			positional_arguments+=("$word")
+			(( index += 1 ))
+		done
+		options_ended=$command_options_ended
 	fi
 
 	if (( completion_disabled )); then

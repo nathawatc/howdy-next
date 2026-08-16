@@ -121,6 +121,21 @@ assert_no_completion 'plain option excludes incompatible command' howdy --plain 
 assert_no_completion 'combined options exclude partially compatible command' howdy --plain -y l
 assert_no_completion 'short user option excludes incompatible command' howdy -U alice dis
 assert_no_completion 'long user option excludes incompatible command' howdy --user alice dis
+assert_no_completion 'typed yes option disables incompatible command completion' howdy disable -y ""
+assert_no_completion 'typed plain option disables incompatible command completion' howdy disable --plain ""
+assert_no_completion 'typed user option disables incompatible command completion' howdy disable -U alice ""
+assert_no_completion 'pre-command incompatible option disables value completion' howdy -y disable ""
+assert_no_completion 'help terminates command completion' howdy add --help -
+assert_no_completion 'unknown command option disables completion' howdy list --bogus -
+assert_no_completion 'foreign command option disables completion' howdy list --device /dev/video0 -
+assert_no_completion 'unknown option after command option disables completion' howdy test --device /dev/video0 --bogus -
+assert_no_completion 'duplicate command option disables completion' howdy test --device /dev/video0 --device /dev/video1 ""
+assert_no_completion 'surplus positional disables completion' howdy list bob -
+assert_no_completion 'surplus positional after option terminator disables completion' howdy list -- bob -
+assert_no_completion 'surplus positional after global option disables completion' howdy list --plain bob -
+assert_no_completion 'surplus positional after command option disables completion' howdy test --device /dev/video0 extra -
+assert_no_completion 'empty committed device value disables completion' howdy test --device "" -
+assert_no_completion 'empty committed user value disables completion' howdy -U "" list -
 assert_completion_list 'disable help options' $'-h\n--help' howdy disable -
 assert_no_completion 'disable rejects short user value' howdy disable -U ""
 assert_no_completion 'disable rejects user value' howdy disable --user ""

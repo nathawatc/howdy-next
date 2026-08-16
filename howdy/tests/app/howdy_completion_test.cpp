@@ -106,6 +106,20 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
+				    run(context, {"howdy", "__complete", "command-max-positionals", "set"});
+				ok &= expect(result.status == 0, "command positional completion query succeeds");
+				ok &= expect(result.output == "2\n",
+				             "command positional completion metadata follows catalog maximum");
+				ok &= expect(context.resolve_user_calls == 0,
+				             "command positional completion skips user resolution");
+				ok &= expect(context.effective_uid_calls == 0,
+				             "command positional completion skips privilege checks");
+				ok &= expect(!context.command_id.has_value(),
+				             "command positional completion does not dispatch a command");
+			}
+			{
+				Context    context;
+				const auto result =
 				    run(context, {"howdy", "__complete", "command-values", "disable", "0"});
 				ok &= expect(result.status == 0 && result.output == "false\ntrue\n",
 				             "boolean command completion comes from command metadata");
@@ -163,6 +177,7 @@ namespace howdy::test::dispatch {
 				             "empty command value completion skips normal dispatch flow");
 			}
 			const std::vector<std::vector<std::string>> invalid_queries = {
+			    {"howdy", "__complete", "command-max-positionals", "unknown"},
 			    {"howdy", "__complete", "command-values", "unknown", "0"},
 			    {"howdy", "__complete", "command-values", "disable", "bad"},
 			    {"howdy", "__complete", "command-values", "disable", "1"},
