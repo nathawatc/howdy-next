@@ -154,9 +154,10 @@ namespace {
 		Context    context;
 		const auto result = run(context, {"howdy", "-U", "alice", "list"}, nullptr);
 		bool       ok     = true;
-		ok &= expect(result.status != 0, "null command callback returns failure");
-		ok &= expect(result.output == "Unknown command: list\n",
-		             "null command callback keeps diagnostic");
+		ok &= expect(result.status == 1, "null command callback returns runtime failure");
+		ok &= expect(result.output.empty() &&
+		                 result.error == "howdy: command entrypoint unavailable: list\n",
+		             "null command callback reports internal entrypoint failure on stderr");
 		ok &= expect(context.resolve_user_calls == 0,
 		             "explicit user skips lookup for null command callback");
 		ok &= expect(context.effective_uid_calls == 1,
@@ -186,8 +187,9 @@ namespace {
 		     }) {
 			Context    context;
 			const auto result = run(context, arguments);
-			ok &= expect(result.status == 1 && !context.command_id.has_value(),
-			             "strict command syntax rejects malformed input before callback");
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error.starts_with("error: ") && !context.command_id.has_value(),
+			             "strict command syntax uses clap-style usage failure before callback");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 			             "malformed syntax skips user and privilege work");
 		}
@@ -195,8 +197,10 @@ namespace {
 			Context    context;
 			const auto result = run(
 			    context, {"howdy", "test", "--device", "/dev/video0", "--device", "/dev/video1"});
-			ok &= expect(result.status == 1 && !context.command_id.has_value(),
-			             "duplicate test device option is rejected");
+			ok &= expect(result.status == 2 &&
+			                 result.error.contains("cannot be used multiple times") &&
+			                 !context.command_id.has_value(),
+			             "duplicate test device option is rejected as usage error");
 		}
 		return ok;
 	}
@@ -208,8 +212,9 @@ namespace {
 			context.effective_uid = effective_uid;
 			context.resolved_user = "root";
 			const auto result     = run(context, {"howdy", "vers"});
-			ok &= expect(result.status == 1 && result.output == "Unknown command: vers\n",
-			             "unknown command wins over user and privilege checks");
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error.starts_with("error: unrecognized subcommand 'vers'\n"),
+			             "unknown command uses clap-style subcommand error before other checks");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 			                 !context.command_id.has_value(),
 			             "unknown command performs no user or privilege work");
@@ -222,11 +227,68 @@ namespace {
 		for (const auto &user_option : {std::string{"-U"}, std::string{"--user"}}) {
 			Context    context;
 			const auto result = run(context, {"howdy", user_option, "", "clear", "-y"});
-			ok &= expect(result.status == 1 && result.output.contains("non-empty"),
-			             "explicit empty user is rejected");
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("value cannot be empty"),
+			             "explicit empty user is rejected as usage error");
 			ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 			                 !context.command_id.has_value(),
 			             "explicit empty user cannot fall back or execute");
+		}
+		return ok;
+	}
+
+	auto test_clap_style_usage_errors() -> bool {
+		bool ok = true;
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "-t"});
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error == "error: unexpected argument '-t' found\n\n"
+			                                 "Usage: howdy [OPTIONS] <COMMAND>\n\n"
+			                                 "For more information, try '--help'.\n",
+			             "unknown top-level option uses clap-style error contract");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "clear", "-t"});
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("error: unexpected argument '-t' found\n") &&
+			                 result.error.contains("Usage: howdy clear [OPTIONS]\n") &&
+			                 !result.error.contains("tip:"),
+			             "option error uses command usage without inapplicable double-dash tip");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "clear", "typo"});
+			ok &= expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("error: unexpected argument 'typo' found\n") &&
+			                 result.error.contains("Usage: howdy clear [OPTIONS]\n"),
+			             "surplus positional reports concrete unexpected argument");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "add", "-t"});
+			ok &= expect(result.status == 2 &&
+			                 result.error.contains("tip: to pass '-t' as a value, use '-- -t'"),
+			             "option-looking positional gets actionable double-dash tip");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "remove"});
+			ok &= expect(
+			    result.status == 2 &&
+			        result.error.contains(
+			            "error: the following required arguments were not provided:\n  ID\n"),
+			    "missing positional uses clap-style required-argument error");
+		}
+		{
+			Context    context;
+			const auto result = run(context, {"howdy", "set", "device_path"});
+			ok &= expect(
+			    result.status == 2 &&
+			        result.error.contains(
+			            "error: the following required arguments were not provided:\n  VALUE\n"),
+			    "partially supplied positional reports only remaining required argument");
 		}
 		return ok;
 	}
@@ -275,16 +337,18 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy"});
-		ok &= expect(result.status == 0 && result.output.contains("usage: howdy"),
-		             "no command prints help");
+		ok &= expect(result.status == 0 &&
+		                 result.output.starts_with("Usage: howdy [OPTIONS] <COMMAND>"),
+		             "no command prints top-level help");
 	}
 	ok &= howdy::test::dispatch::run_howdy_completion_tests();
 	ok &= test_missing_callback();
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "unknown"});
-		ok &= expect(result.status == 1 && result.output == "Unknown command: unknown\n",
-		             "unknown command rejected");
+		ok &= expect(result.status == 2 && result.output.empty() &&
+		                 result.error.contains("unrecognized subcommand 'unknown'"),
+		             "unknown command rejected as usage error");
 	}
 	ok &= test_unknown_command_precedence();
 	{
@@ -338,7 +402,8 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "", "list"});
-		ok &= expect(result.status == 1 && result.output == "Unknown command: \n",
+		ok &= expect(result.status == 2 && result.output.empty() &&
+		                 result.error.contains("unrecognized subcommand ''"),
 		             "empty command token is not command absence");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 		                 !context.command_id.has_value(),
@@ -375,10 +440,11 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "-U"});
-		ok &= expect(result.status == 1, "trailing short user option rejected");
-		ok &= expect(result.output.contains("-U") && result.output.contains("requires an argument"),
-		             "trailing short user option reports missing argument");
-		ok &= expect(!result.output.contains("usage: howdy"),
+		ok &= expect(result.status == 2, "trailing short user option rejected");
+		ok &=
+		    expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
+		           "trailing short user option reports missing argument");
+		ok &= expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
 		             "trailing short user option does not print help");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		             "trailing short user option skips user resolution and root check");
@@ -388,11 +454,11 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "--user"});
-		ok &= expect(result.status == 1, "trailing long user option rejected");
-		ok &= expect(result.output.contains("--user") &&
-		                 result.output.contains("requires an argument"),
+		ok &= expect(result.status == 2, "trailing long user option rejected");
+		ok &= expect(result.error.contains("--user <USER>") &&
+		                 result.error.contains("none was supplied"),
 		             "trailing long user option reports missing argument");
-		ok &= expect(!result.output.contains("usage: howdy"),
+		ok &= expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
 		             "trailing long user option does not print help");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		             "trailing long user option skips user resolution and root check");
@@ -402,9 +468,10 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "list", "-U"});
-		ok &= expect(result.status == 1, "trailing short user option after command rejected");
-		ok &= expect(result.output.contains("-U") && result.output.contains("requires an argument"),
-		             "trailing short user option after command reports missing argument");
+		ok &= expect(result.status == 2, "trailing short user option after command rejected");
+		ok &=
+		    expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
+		           "trailing short user option after command reports missing argument");
 		ok &=
 		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 		           "trailing short user option after command skips user resolution and root check");
@@ -414,9 +481,9 @@ auto main() -> int {
 	{
 		Context    context;
 		const auto result = run(context, {"howdy", "add", "--user"});
-		ok &= expect(result.status == 1, "trailing long user option after command rejected");
-		ok &= expect(result.output.contains("--user") &&
-		                 result.output.contains("requires an argument"),
+		ok &= expect(result.status == 2, "trailing long user option after command rejected");
+		ok &= expect(result.error.contains("--user <USER>") &&
+		                 result.error.contains("none was supplied"),
 		             "trailing long user option after command reports missing argument");
 		ok &=
 		    expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
@@ -434,6 +501,7 @@ auto main() -> int {
 		           "root check runs before dispatch");
 		ok &= expect(context.command_arguments.empty(), "non-root command not dispatched");
 	}
+	ok &= test_clap_style_usage_errors();
 	ok &= test_strict_syntax_cases();
 	ok &= test_catalog_dispatch();
 	{

@@ -83,8 +83,8 @@ assert_single_completion 'short user option before compatible command' test howd
 assert_single_completion 'long user option before compatible command' test howdy --user alice t
 assert_completion_list 'short options' $'-U\n--user\n--plain\n-y\n-h\n--help' howdy -
 assert_completion_list 'long options' $'--user\n--plain\n--help' howdy --
-assert_completion_list 'post-command short options' $'-U\n--user\n--plain\n-y' howdy add -
-assert_completion_list 'post-command long options' $'--user\n--plain' howdy add --
+assert_completion_list 'post-command short options' $'-U\n--user\n--plain\n-y\n-h\n--help' howdy add -
+assert_completion_list 'post-command long options' $'--user\n--plain\n--help' howdy add --
 assert_single_completion 'test device option' --device howdy test --d
 assert_single_completion 'long option' --plain howdy --p
 assert_single_completion 'short user value' "$current_user" howdy -U "$current_user"
@@ -121,7 +121,7 @@ assert_no_completion 'plain option excludes incompatible command' howdy --plain 
 assert_no_completion 'combined options exclude partially compatible command' howdy --plain -y l
 assert_no_completion 'short user option excludes incompatible command' howdy -U alice dis
 assert_no_completion 'long user option excludes incompatible command' howdy --user alice dis
-assert_no_completion 'disable has no options' howdy disable -
+assert_completion_list 'disable help options' $'-h\n--help' howdy disable -
 assert_no_completion 'disable rejects short user value' howdy disable -U ""
 assert_no_completion 'disable rejects user value' howdy disable --user ""
 assert_no_completion 'end-of-options suppresses user completion' howdy add -- -U ""
@@ -129,6 +129,5 @@ assert_no_completion 'used test device option is not repeated' howdy test --devi
 assert_no_completion 'set numeric value' howdy set timeout ""
 assert_no_completion 'set floating-point value' howdy set sface_threshold ""
 assert_no_completion 'version has no values' howdy version ""
-assert_no_completion 'help is not an option after command' howdy config --help ""
 assert_no_completion 'help disables completion after command' howdy config --help "f"
 assert_no_completion 'help suppresses user value' howdy --help -U ""

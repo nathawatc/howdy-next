@@ -27,6 +27,7 @@
 #include <optional>
 #include <pwd.h>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -88,8 +89,9 @@ namespace {
 			return;
 		}
 		for (const auto &option : howdy::native::global_option_catalog()) {
-			if (!option.parses_after_command ||
-			    !howdy::native::command_accepts_global_option(*descriptor, option.id)) {
+			if (option.id != howdy::native::GlobalOptionId::kHelp &&
+			    (!option.parses_after_command ||
+			     !howdy::native::command_accepts_global_option(*descriptor, option.id))) {
 				continue;
 			}
 			for (const auto spelling : {option.short_name, option.long_name}) {
@@ -205,7 +207,8 @@ namespace {
 		return 1;
 	}
 
-	auto format_option_label(const howdy::native::GlobalOptionDescriptor &option) -> std::string {
+	template <typename OptionDescriptor>
+	auto format_option_label(const OptionDescriptor &option) -> std::string {
 		std::string label;
 		if (!option.short_name.empty()) {
 			label += option.short_name;
@@ -217,8 +220,9 @@ namespace {
 			label += option.long_name;
 		}
 		if (!option.argument_name.empty()) {
-			label += ' ';
+			label += " <";
 			label += option.argument_name;
+			label += '>';
 		}
 		return label;
 	}
@@ -275,31 +279,135 @@ namespace {
 		return command_mains;
 	}
 
-	auto format_usage_option(const howdy::native::GlobalOptionDescriptor &option) -> std::string {
-		std::string label = option.short_name.empty() ? std::string(option.long_name)
-		                                              : std::string(option.short_name);
-		if (!option.argument_name.empty()) {
-			label += ' ';
-			label += option.argument_name;
+	auto format_command_usage(const howdy::native::CommandDescriptor &command) -> std::string {
+		std::string usage = "howdy ";
+		usage += command.name;
+		usage += " [OPTIONS]";
+		if (command.max_positionals > 0 && !command.argument_synopsis.empty()) {
+			usage += ' ';
+			usage += command.argument_synopsis;
 		}
-		return "[" + label + "]";
+		return usage;
 	}
 
 	void print_help() {
-		std::cout << "usage: howdy "
-		          << howdy::native::howdy_internal::format_usage_options(
-		                 howdy::native::global_option_catalog())
-		          << " {command} [arguments...]\n\n";
-		std::cout << "commands:\n";
+		std::cout << "Usage: howdy [OPTIONS] <COMMAND>\n\n";
+		std::cout << "Commands:\n";
 		for (const auto &descriptor : howdy::native::command_catalog()) {
 			std::cout << "  " << std::left << std::setw(17) << descriptor.name << descriptor.summary
 			          << '\n';
 		}
-		std::cout << "\noptions:\n";
+		std::cout << "\nOptions:\n";
 		for (const auto &option : howdy::native::global_option_catalog()) {
-			std::cout << "  " << std::left << std::setw(17) << format_option_label(option)
+			std::cout << "  " << std::left << std::setw(22) << format_option_label(option)
 			          << option.summary << '\n';
 		}
+	}
+
+	void print_command_help(const howdy::native::CommandDescriptor &command) {
+		std::cout << command.summary << "\n\n";
+		std::cout << "Usage: " << format_command_usage(command) << "\n\n";
+		std::cout << "Options:\n";
+		for (const auto &option : howdy::native::global_option_catalog()) {
+			if (option.id == howdy::native::GlobalOptionId::kHelp ||
+			    howdy::native::command_accepts_global_option(command, option.id)) {
+				std::cout << "  " << std::left << std::setw(22) << format_option_label(option)
+				          << option.summary << '\n';
+			}
+		}
+		for (const auto &option : command.options) {
+			std::cout << "  " << std::left << std::setw(22) << format_option_label(option)
+			          << option.summary << '\n';
+		}
+	}
+
+	enum class CliSyntaxErrorKind : std::uint8_t {
+		kUnexpectedArgument,
+		kUnrecognizedSubcommand,
+		kMissingOptionValue,
+		kEmptyOptionValue,
+		kDuplicateOption,
+		kMissingRequiredArguments,
+	};
+
+	struct CliSyntaxError {
+		CliSyntaxErrorKind kind;
+		std::string        value;
+		std::string        argument_name;
+		std::size_t        positional_count    = 0;
+		bool               suggest_double_dash = false;
+	};
+
+	void print_usage_footer(const howdy::native::CommandDescriptor *command) {
+		std::cerr << "\nUsage: ";
+		if (command == nullptr) {
+			std::cerr << "howdy [OPTIONS] <COMMAND>\n";
+		} else {
+			std::cerr << format_command_usage(*command) << '\n';
+		}
+		std::cerr << "\nFor more information, try '--help'.\n";
+	}
+
+	auto option_with_argument(const CliSyntaxError &error) -> std::string {
+		std::string label(error.value);
+		if (!error.argument_name.empty()) {
+			label += " <";
+			label += error.argument_name;
+			label += '>';
+		}
+		return label;
+	}
+
+	void print_missing_required_arguments(const howdy::native::CommandDescriptor &command,
+	                                      std::size_t positional_count) {
+		std::istringstream synopsis{std::string(command.argument_synopsis)};
+		std::string        token;
+		std::size_t        index = 0;
+		while (synopsis >> token) {
+			if (!token.empty() && token.front() == '[') {
+				continue;
+			}
+			if (index++ < positional_count) {
+				continue;
+			}
+			std::cerr << "  " << token << '\n';
+		}
+	}
+
+	auto print_cli_syntax_error(const CliSyntaxError                   &error,
+	                            const howdy::native::CommandDescriptor *command) -> int {
+		switch (error.kind) {
+			case CliSyntaxErrorKind::kUnexpectedArgument:
+				std::cerr << "error: unexpected argument '" << error.value << "' found\n";
+				if (error.suggest_double_dash) {
+					std::cerr << "\n  tip: to pass '" << error.value << "' as a value, use '-- "
+					          << error.value << "'\n";
+				}
+				break;
+			case CliSyntaxErrorKind::kUnrecognizedSubcommand:
+				std::cerr << "error: unrecognized subcommand '" << error.value << "'\n";
+				break;
+			case CliSyntaxErrorKind::kMissingOptionValue:
+				std::cerr << "error: a value is required for '" << option_with_argument(error)
+				          << "' but none was supplied\n";
+				break;
+			case CliSyntaxErrorKind::kEmptyOptionValue:
+				std::cerr << "error: invalid value '' for '" << option_with_argument(error)
+				          << "': value cannot be empty\n";
+				break;
+			case CliSyntaxErrorKind::kDuplicateOption:
+				std::cerr << "error: the argument '" << error.value
+				          << "' cannot be used multiple times\n";
+				break;
+			case CliSyntaxErrorKind::kMissingRequiredArguments:
+				std::cerr << "error: the following required arguments were not provided:\n";
+				if (command != nullptr) {
+					print_missing_required_arguments(*command, error.positional_count);
+				}
+				break;
+		}
+		print_usage_footer(command);
+		return 2;
 	}
 
 	struct ParsedArgument {
@@ -310,15 +418,69 @@ namespace {
 	struct ParsedCommandLine {
 		std::optional<std::string>  command;
 		std::optional<std::string>  user;
+		std::string                 user_option_spelling;
 		bool                        yes                = false;
 		bool                        plain              = false;
 		bool                        global_option_seen = false;
 		bool                        help_requested     = false;
+		bool                        help_after_command = false;
 		std::vector<ParsedArgument> arguments;
 	};
 
+	auto can_parse_global_option(const ParsedCommandLine                     &parsed,
+	                             const howdy::native::GlobalOptionDescriptor &option) -> bool {
+		if (!parsed.command.has_value()) {
+			return true;
+		}
+		const bool known_command = howdy::native::find_command(*parsed.command) != nullptr ||
+		                           *parsed.command == "__complete";
+		return known_command &&
+		       (option.parses_after_command || option.id == howdy::native::GlobalOptionId::kHelp);
+	}
+
+	auto parse_global_option(const howdy::native::GlobalOptionDescriptor &option,
+	                         std::string_view spelling, int argc, char **argv, int &index,
+	                         ParsedCommandLine &parsed) -> std::optional<CliSyntaxError> {
+		switch (option.id) {
+			case howdy::native::GlobalOptionId::kUser:
+				parsed.global_option_seen = true;
+				if (index + 1 >= argc) {
+					return CliSyntaxError{
+					    .kind          = CliSyntaxErrorKind::kMissingOptionValue,
+					    .value         = std::string(spelling),
+					    .argument_name = std::string(option.argument_name),
+					};
+				}
+				parsed.user_option_spelling = spelling;
+				parsed.user                 = argv[++index];
+				if (parsed.user->empty()) {
+					return CliSyntaxError{
+					    .kind          = CliSyntaxErrorKind::kEmptyOptionValue,
+					    .value         = parsed.user_option_spelling,
+					    .argument_name = std::string(option.argument_name),
+					};
+				}
+				break;
+			case howdy::native::GlobalOptionId::kYes:
+				parsed.global_option_seen = true;
+				parsed.yes                = true;
+				break;
+			case howdy::native::GlobalOptionId::kPlain:
+				parsed.global_option_seen = true;
+				parsed.plain              = true;
+				break;
+			case howdy::native::GlobalOptionId::kHelp:
+				parsed.help_requested     = true;
+				parsed.help_after_command = parsed.command.has_value();
+				break;
+			case howdy::native::GlobalOptionId::kCount:
+				break;
+		}
+		return std::nullopt;
+	}
+
 	auto parse_command_line(int argc, char **argv, ParsedCommandLine &parsed)
-	    -> std::optional<int> {
+	    -> std::optional<CliSyntaxError> {
 		bool options_ended = false;
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
@@ -327,35 +489,23 @@ namespace {
 				continue;
 			}
 			if (!options_ended) {
-				if (const auto *option = howdy::native::find_global_option(arg);
-				    option != nullptr &&
-				    (!parsed.command.has_value() || option->parses_after_command)) {
-					switch (option->id) {
-						case howdy::native::GlobalOptionId::kUser:
-							parsed.global_option_seen = true;
-							if (index + 1 >= argc) {
-								std::cout << "Option '" << arg << "' requires an argument\n";
-								return 1;
-							}
-							parsed.user = argv[++index];
-							continue;
-						case howdy::native::GlobalOptionId::kYes:
-							parsed.global_option_seen = true;
-							parsed.yes                = true;
-							continue;
-						case howdy::native::GlobalOptionId::kPlain:
-							parsed.global_option_seen = true;
-							parsed.plain              = true;
-							continue;
-						case howdy::native::GlobalOptionId::kHelp:
-							parsed.help_requested = true;
-							continue;
-						case howdy::native::GlobalOptionId::kCount:
-							break;
+				const auto *option = howdy::native::find_global_option(arg);
+				if (option != nullptr && can_parse_global_option(parsed, *option)) {
+					if (const auto error =
+					        parse_global_option(*option, arg, argc, argv, index, parsed);
+					    error.has_value()) {
+						return error;
 					}
+					continue;
 				}
 			}
 			if (!parsed.command.has_value()) {
+				if (!options_ended && arg.size() > 1 && arg.front() == '-') {
+					return CliSyntaxError{
+					    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+					    .value = std::string(arg),
+					};
+				}
 				parsed.command = std::string(arg);
 				continue;
 			}
@@ -367,107 +517,152 @@ namespace {
 
 	auto global_option_syntax_error(const ParsedCommandLine                &parsed,
 	                                const howdy::native::CommandDescriptor &command)
-	    -> std::optional<std::string> {
+	    -> std::optional<CliSyntaxError> {
 		if (parsed.user.has_value() && !howdy::native::command_accepts_global_option(
 		                                   command, howdy::native::GlobalOptionId::kUser)) {
-			return "option '--user' is not valid for this command";
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = parsed.user_option_spelling,
+			};
 		}
 		if (parsed.plain && !howdy::native::command_accepts_global_option(
 		                        command, howdy::native::GlobalOptionId::kPlain)) {
-			return "option '--plain' is not valid for this command";
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = "--plain",
+			};
 		}
 		if (parsed.yes && !howdy::native::command_accepts_global_option(
 		                      command, howdy::native::GlobalOptionId::kYes)) {
-			return "option '-y' is not valid for this command";
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = "-y",
+			};
 		}
+		return std::nullopt;
+	}
+
+	auto positional_argument_syntax_error(const ParsedArgument                   &argument,
+	                                      const howdy::native::CommandDescriptor &command,
+	                                      std::size_t                            &positional_count)
+	    -> std::optional<CliSyntaxError> {
+		if (positional_count >= command.max_positionals) {
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
+			    .value = argument.value,
+			};
+		}
+		++positional_count;
+		return std::nullopt;
+	}
+
+	auto command_option_syntax_error(
+	    const ParsedCommandLine &parsed, const howdy::native::CommandOptionDescriptor &option,
+	    std::size_t                                                 &index,
+	    std::vector<const howdy::native::CommandOptionDescriptor *> &seen_options)
+	    -> std::optional<CliSyntaxError> {
+		const auto &argument = parsed.arguments[index];
+		if (std::ranges::find(seen_options, &option) != seen_options.end()) {
+			return CliSyntaxError{
+			    .kind  = CliSyntaxErrorKind::kDuplicateOption,
+			    .value = argument.value,
+			};
+		}
+		seen_options.push_back(&option);
+		if (option.argument_name.empty()) {
+			return std::nullopt;
+		}
+
+		const std::size_t value_index = index + 1;
+		if (value_index >= parsed.arguments.size() ||
+		    !parsed.arguments[value_index].options_enabled ||
+		    (!parsed.arguments[value_index].value.empty() &&
+		     parsed.arguments[value_index].value.front() == '-')) {
+			return CliSyntaxError{
+			    .kind          = CliSyntaxErrorKind::kMissingOptionValue,
+			    .value         = argument.value,
+			    .argument_name = std::string(option.argument_name),
+			};
+		}
+		if (parsed.arguments[value_index].value.empty()) {
+			return CliSyntaxError{
+			    .kind          = CliSyntaxErrorKind::kEmptyOptionValue,
+			    .value         = argument.value,
+			    .argument_name = std::string(option.argument_name),
+			};
+		}
+		index = value_index;
 		return std::nullopt;
 	}
 
 	auto command_argument_syntax_error(const ParsedCommandLine                &parsed,
 	                                   const howdy::native::CommandDescriptor &command)
-	    -> std::optional<std::string> {
+	    -> std::optional<CliSyntaxError> {
 		std::size_t                                                 positional_count = 0;
 		std::vector<const howdy::native::CommandOptionDescriptor *> seen_options;
 		for (std::size_t index = 0; index < parsed.arguments.size(); ++index) {
 			const auto &argument = parsed.arguments[index];
 			if (!argument.options_enabled) {
-				++positional_count;
+				if (const auto error =
+				        positional_argument_syntax_error(argument, command, positional_count);
+				    error.has_value()) {
+					return error;
+				}
 				continue;
 			}
+
 			const auto *option = howdy::native::find_command_option(command, argument.value);
 			if (option != nullptr) {
-				if (std::ranges::find(seen_options, option) != seen_options.end()) {
-					return "option '" + argument.value + "' may be specified only once";
+				if (const auto error =
+				        command_option_syntax_error(parsed, *option, index, seen_options);
+				    error.has_value()) {
+					return error;
 				}
-				seen_options.push_back(option);
-				if (option->argument_name.empty()) {
-					continue;
-				}
-				if (index + 1 >= parsed.arguments.size() ||
-				    !parsed.arguments[index + 1].options_enabled ||
-				    parsed.arguments[index + 1].value.empty() ||
-				    parsed.arguments[index + 1].value.front() == '-') {
-					return "option '" + argument.value + "' requires a non-empty value";
-				}
-				++index;
 				continue;
 			}
 			if (!argument.value.empty() && argument.value.front() == '-') {
-				return "unknown option '" + argument.value + "'";
+				return CliSyntaxError{
+				    .kind                = CliSyntaxErrorKind::kUnexpectedArgument,
+				    .value               = argument.value,
+				    .suggest_double_dash = positional_count < command.max_positionals,
+				};
 			}
-			++positional_count;
+			if (const auto error =
+			        positional_argument_syntax_error(argument, command, positional_count);
+			    error.has_value()) {
+				return error;
+			}
 		}
 
-		if (positional_count < command.min_positionals ||
-		    positional_count > command.max_positionals) {
-			return "expected between " + std::to_string(command.min_positionals) + " and " +
-			       std::to_string(command.max_positionals) + " positional argument(s)";
+		if (positional_count < command.min_positionals) {
+			return CliSyntaxError{
+			    .kind             = CliSyntaxErrorKind::kMissingRequiredArguments,
+			    .positional_count = positional_count,
+			};
 		}
 		return std::nullopt;
 	}
 
 	auto command_syntax_error(const ParsedCommandLine                &parsed,
 	                          const howdy::native::CommandDescriptor &command)
-	    -> std::optional<std::string> {
+	    -> std::optional<CliSyntaxError> {
 		if (const auto error = global_option_syntax_error(parsed, command); error.has_value()) {
 			return error;
 		}
 		return command_argument_syntax_error(parsed, command);
 	}
 
-	auto print_command_syntax_error(std::string_view command, std::string_view error) -> int {
-		std::cout << "Invalid arguments for command '" << command << "': " << error << '\n';
-		return 1;
-	}
-
-	auto reject_empty_user(const ParsedCommandLine &parsed) -> std::optional<int> {
-		if (!parsed.user.has_value() || !parsed.user->empty()) {
-			return std::nullopt;
-		}
-		std::cout << "Option '--user' requires a non-empty argument\n";
-		return 1;
-	}
-
 	auto handle_special_command(const ParsedCommandLine &parsed) -> std::optional<int> {
 		if (!parsed.command.has_value()) {
-			if (const auto result = reject_empty_user(parsed); result.has_value()) {
-				return result;
-			}
 			print_help();
 			return 0;
 		}
-		if (parsed.help_requested) {
-			if (const auto result = reject_empty_user(parsed); result.has_value()) {
-				return result;
-			}
+		if (parsed.help_requested && !parsed.help_after_command) {
 			print_help();
 			return 0;
 		}
 		if (*parsed.command != "__complete") {
 			return std::nullopt;
-		}
-		if (const auto result = reject_empty_user(parsed); result.has_value()) {
-			return result;
 		}
 		std::vector<std::string> completion_arguments;
 		completion_arguments.reserve(parsed.arguments.size());
@@ -531,24 +726,6 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::howdy_internal::format_usage_options(
-    std::span<const howdy::native::GlobalOptionDescriptor> options) -> std::string {
-	std::string rendered;
-	// Preserve existing synopsis order generically: long-spelled options first, short-only last.
-	for (const bool include_long_options : {true, false}) {
-		for (const auto &option : options) {
-			if ((!option.long_name.empty()) != include_long_options) {
-				continue;
-			}
-			if (!rendered.empty()) {
-				rendered += ' ';
-			}
-			rendered += format_usage_option(option);
-		}
-	}
-	return rendered;
-}
-
 auto howdy::native::howdy_internal::howdy_main_with_dependencies(
     int argc, char **argv, const HowdyDependencies &dependencies) -> int {
 	if (const auto error =
@@ -563,9 +740,10 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	}
 
 	ParsedCommandLine parsed;
-	if (const auto parse_result = parse_command_line(argc, argv, parsed);
-	    parse_result.has_value()) {
-		return *parse_result;
+	if (const auto parse_error = parse_command_line(argc, argv, parsed); parse_error.has_value()) {
+		const auto *command =
+		    parsed.command.has_value() ? howdy::native::find_command(*parsed.command) : nullptr;
+		return print_cli_syntax_error(*parse_error, command);
 	}
 
 	if (const auto special_result = handle_special_command(parsed); special_result.has_value()) {
@@ -577,14 +755,19 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	const auto &command_name       = parsed.command.value();
 	const auto *command_descriptor = howdy::native::find_command(command_name);
 	if (command_descriptor == nullptr) {
-		std::cout << "Unknown command: " << command_name << "\n";
-		return 1;
+		return print_cli_syntax_error(
+		    CliSyntaxError{
+		        .kind  = CliSyntaxErrorKind::kUnrecognizedSubcommand,
+		        .value = command_name,
+		    },
+		    nullptr);
+	}
+	if (parsed.help_requested && parsed.help_after_command) {
+		print_command_help(*command_descriptor);
+		return 0;
 	}
 	if (const auto error = command_syntax_error(parsed, *command_descriptor); error.has_value()) {
-		return print_command_syntax_error(command_name, *error);
-	}
-	if (const auto empty_user_result = reject_empty_user(parsed); empty_user_result.has_value()) {
-		return *empty_user_result;
+		return print_cli_syntax_error(*error, command_descriptor);
 	}
 	if (command_descriptor->kind == howdy::native::CommandKind::kVersion) {
 		std::cout << howdy::native::format_version(howdy::native::kProjectVersion,
@@ -617,7 +800,7 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	const auto selected_main =
 	    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
 	if (selected_main == nullptr) {
-		std::cout << "Unknown command: " << command_name << "\n";
+		std::cerr << "howdy: command entrypoint unavailable: " << command_name << '\n';
 		return 1;
 	}
 

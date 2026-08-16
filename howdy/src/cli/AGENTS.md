@@ -87,6 +87,10 @@ shared by injected snapshot policy and production camera capture.
   rejection, and invalid model-user validation. It forwards applicable normalized
   `--plain`/`-y` flags and injects resolved model users. Subcommand parsers own
   strict validation of that normalized argv and command-specific options.
+- CLI usage errors use clap-style `error:` diagnostics on stderr with contextual
+  `Usage:` text and exit status 2. `-h/--help` writes help to stdout with status 0
+  both at top level and after a valid command. Runtime/operational failures keep
+  their command-specific status and diagnostics.
 - Keep config edits secure and atomic. Reuse `support/invoking_user*.hpp`,
   `model_assets/model_file.hpp`, config helpers, storage helpers, and runtime
   readiness checks.

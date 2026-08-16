@@ -21,7 +21,6 @@ namespace howdy::test::dispatch {
 		using howdy::native::GlobalOptionDescriptor;
 		using howdy::native::GlobalOptionId;
 		using howdy::native::howdy_internal::CommandMain;
-		using howdy::native::howdy_internal::format_usage_options;
 
 		auto expected_runtime_config_keys() -> std::string {
 			std::string expected;
@@ -70,29 +69,6 @@ namespace howdy::test::dispatch {
 			return expected;
 		}
 
-		auto test_usage_option_rendering() -> bool {
-			const std::array options{
-			    GlobalOptionDescriptor{
-			        .id            = GlobalOptionId::kUser,
-			        .short_name    = "-u",
-			        .long_name     = "--user-test",
-			        .argument_name = "USER",
-			    },
-			    GlobalOptionDescriptor{
-			        .id        = GlobalOptionId::kPlain,
-			        .long_name = "--plain-test",
-			        .summary   = "Plain",
-			    },
-			    GlobalOptionDescriptor{
-			        .id         = GlobalOptionId::kYes,
-			        .short_name = "-y-test",
-			        .summary    = "Yes",
-			    },
-			};
-			return expect(format_usage_options(options) == "[-u USER] [--plain-test] [-y-test]",
-			              "usage renderer includes every descriptor with generic spellings");
-		}
-
 		auto test_completion_metadata_behavior() -> bool {
 			bool ok = true;
 			{
@@ -110,10 +86,11 @@ namespace howdy::test::dispatch {
 				Context    context;
 				const auto result =
 				    run(context, {"howdy", "__complete", "command-options", "test"});
-				ok &=
-				    expect(result.status == 0 &&
-				               result.output == "-U\t1\tnone\n--user\t1\tnone\n--device\t1\tnone\n",
-				           "test completion exposes applicable global and command options");
+				ok &= expect(result.status == 0 &&
+				                 result.output ==
+				                     "-U\t1\tnone\n--user\t1\tnone\n-h\t0\tnone\n--help\t0\tnone\n"
+				                     "--device\t1\tnone\n",
+				             "test completion exposes applicable global and command options");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 				                 !context.command_id.has_value(),
 				             "command option completion skips normal dispatch flow");
@@ -122,8 +99,9 @@ namespace howdy::test::dispatch {
 				Context    context;
 				const auto result =
 				    run(context, {"howdy", "__complete", "command-options", "disable"});
-				ok &= expect(result.status == 0 && result.output.empty(),
-				             "inapplicable command options are not advertised");
+				ok &=
+				    expect(result.status == 0 && result.output == "-h\t0\tnone\n--help\t0\tnone\n",
+				           "universal command help is advertised without inapplicable options");
 			}
 			{
 				Context    context;
@@ -200,33 +178,15 @@ namespace howdy::test::dispatch {
 
 		auto test_completion_behavior() -> bool {
 			bool ok = true;
-			ok &= test_usage_option_rendering();
 			ok &= test_completion_metadata_behavior();
 
 			{
 				Context    context;
 				const auto result = run(context, {"howdy", "--help"});
-				ok &= expect(result.status == 0 && result.output.contains("commands:"),
-				             "help succeeds");
-				ok &= expect(
-				    result.output.starts_with(
-				        "usage: howdy [-U USER] [--plain] [-h] [-y] {command} [arguments...]\n"),
-				    "help usage ordering is preserved");
-				const auto usage_end  = result.output.find('\n');
-				const auto usage_line = result.output.substr(0, usage_end);
-				for (const auto &option : howdy::native::global_option_catalog()) {
-					std::string expected = option.short_name.empty()
-					                           ? std::string(option.long_name)
-					                           : std::string(option.short_name);
-					if (!option.argument_name.empty()) {
-						expected += ' ';
-						expected += option.argument_name;
-					}
-					expected.insert(0, 1, '[');
-					expected += ']';
-					ok &= expect(usage_line.contains(expected),
-					             "usage includes every catalog global option");
-				}
+				ok &= expect(result.status == 0 && result.error.empty() &&
+				                 result.output.starts_with(
+				                     "Usage: howdy [OPTIONS] <COMMAND>\n\nCommands:\n"),
+				             "top-level help uses clap-style headings and usage");
 				for (const auto &command : command_catalog()) {
 					ok &= expect(result.output.contains(command.name),
 					             "help lists every catalog command");
@@ -237,6 +197,8 @@ namespace howdy::test::dispatch {
 					ok &= expect(result.output.contains(option.summary),
 					             "help uses every catalog option summary");
 				}
+				ok &= expect(result.output.contains("-U, --user <USER>"),
+				             "help renders option values in clap style");
 				ok &= expect(!result.output.contains("__complete"),
 				             "completion query stays out of help");
 			}
@@ -308,8 +270,23 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result = run(context, {"howdy", "config", "--help"});
-				ok &= expect(result.status != 0 && !context.command_id.has_value(),
-				             "help after command is rejected by strict command syntax");
+				ok &=
+				    expect(result.status == 0 && result.error.empty() &&
+				               result.output.starts_with(
+				                   "Edit config\n\nUsage: howdy config [OPTIONS]\n\nOptions:\n") &&
+				               result.output.contains("-h, --help"),
+				           "help after command renders contextual command help");
+				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+				                 !context.command_id.has_value(),
+				             "command help skips user, privilege, and command execution");
+			}
+			{
+				Context    context;
+				const auto result = run(context, {"howdy", "test", "--help"});
+				ok &=
+				    expect(result.status == 0 && result.output.contains("--device <DEVICE>") &&
+				               result.output.contains("-U, --user <USER>"),
+				           "command help includes applicable global and command-specific options");
 			}
 			{
 				ok &= expect(
