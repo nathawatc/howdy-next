@@ -9,9 +9,10 @@ snapshot generation. Keep `howdy` as the sole installed user-facing command.
 
 ## Where to Look
 
-- Unified dispatch: `howdy/src/app/howdy.cpp` and
-  `howdy/src/bin/howdy_main.cpp` — parse global flags, resolve target user,
-  enforce root/user guards, and dispatch commands.
+- Unified dispatch: `howdy/src/app/howdy.cpp` owns target-user/root policy and
+  command execution; `howdy/src/app/howdy_cli.cpp` owns argv parsing, validation,
+  help, and usage errors; `howdy/src/app/howdy_completion.cpp` owns the hidden
+  completion protocol; `howdy/src/bin/howdy_main.cpp` owns the process entrypoint.
 - Add policy: `howdy/src/cli/add.cpp` — argument/label policy,
   status/diagnostic mapping, and `add_main_with_dependencies()`.
 - Add production adapters: `howdy/src/cli/add_main.cpp` — production

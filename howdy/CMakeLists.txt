@@ -258,6 +258,8 @@ add_library(
 	howdy_cli
 	STATIC
 	src/app/howdy.cpp
+	src/app/howdy_cli.cpp
+	src/app/howdy_completion.cpp
 	src/cli/add.cpp
 	src/cli/add_main.cpp
 	src/cli/clear.cpp

@@ -98,7 +98,6 @@ maintenance problem requires change:
 - `config/config_schema.cpp`
 - `config/config_utils.cpp`
 - `auth_helper/runtime.cpp`
-- `app/howdy.cpp`
 - `app/command_catalog.cpp`
 - `cli/download_models.cpp`
 
