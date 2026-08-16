@@ -10,6 +10,7 @@ namespace howdy::native {
 	    -> CompareArgsParseResult {
 		CompareArgsParseResult result;
 		result.args.config_path = default_config_path;
+		bool user_seen          = false;
 
 		for (int index = 1; index < argc; ++index) {
 			const std::string_view arg(argv[index]);
@@ -29,7 +30,14 @@ namespace howdy::native {
 				result.message   = "Unknown argument: " + std::string(arg) + "\n";
 				return result;
 			}
+			if (user_seen) {
+				result.status    = CompareArgsStatus::kError;
+				result.exit_code = CompareExit::kAbort;
+				result.message   = "Unexpected argument: " + std::string(arg) + "\n";
+				return result;
+			}
 			result.args.user = argv[index];
+			user_seen        = true;
 		}
 
 		if (result.args.user.empty()) {

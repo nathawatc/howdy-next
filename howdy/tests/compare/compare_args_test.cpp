@@ -45,6 +45,18 @@ auto main() -> int {
 	}
 
 	{
+		std::vector<std::string> args = {"howdy-compare", "alice", "bob"};
+		auto                     argv = argv_from(args);
+		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
+		                                                      argv.data(), "/tmp/config.ini");
+		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		             "surplus user is error");
+		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "surplus user aborts");
+		ok &= expect(result.message.contains("Unexpected argument: bob"),
+		             "surplus user message populated");
+	}
+
+	{
 		std::vector<std::string> args = {"howdy-compare", "--help"};
 		auto                     argv = argv_from(args);
 		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
