@@ -1,6 +1,5 @@
 #pragma once
 
-inline constexpr auto kDefaultDevConfigPath = "@default_dev_config_path@";
 inline constexpr auto kConfiguredConfigPath = "@installed_config_path@";
 inline constexpr auto kConfiguredModelsDir = "@models_dir@";
 inline constexpr auto kConfiguredUserModelsDir = "@user_models_dir@";

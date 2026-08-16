@@ -5,7 +5,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <unistd.h>
-#include <vector>
 
 namespace howdy::native {
 
@@ -31,60 +30,28 @@ namespace howdy::native {
 			return {};
 		}
 
-		auto select_existing_path(const std::filesystem::path              &env_path,
-		                          const std::vector<std::filesystem::path> &candidates,
-		                          const std::filesystem::path &fallback) -> std::filesystem::path {
-			if (!env_path.empty()) {
-				return env_path;
-			}
-
-			for (const auto &candidate : candidates) {
-				std::error_code ec;
-				if (!candidate.empty() && std::filesystem::exists(candidate, ec) && !ec) {
-					return candidate;
-				}
-			}
-
-			return fallback;
+		auto select_runtime_path(const char *env_name, const std::filesystem::path &configured_path)
+		    -> std::filesystem::path {
+			const auto env_path = path_from_env(env_name);
+			return env_path.empty() ? configured_path : env_path;
 		}
 
 	}  // namespace
 
 	auto resolve_config_path() -> std::filesystem::path {
-		return select_existing_path(path_from_env("HOWDY_CONFIG"),
-		                            {
-		                                "/etc/howdy/config.ini",
-		                                kConfiguredConfigPath,
-		                                kDefaultDevConfigPath,
-		                            },
-		                            kConfiguredConfigPath);
+		return select_runtime_path("HOWDY_CONFIG", kConfiguredConfigPath);
 	}
 
 	auto resolve_models_dir() -> std::filesystem::path {
-		return select_existing_path(path_from_env("HOWDY_MODELS_DIR"),
-		                            {
-		                                "/usr/share/howdy/models",
-		                                kConfiguredModelsDir,
-		                            },
-		                            kConfiguredModelsDir);
+		return select_runtime_path("HOWDY_MODELS_DIR", kConfiguredModelsDir);
 	}
 
 	auto resolve_user_models_dir() -> std::filesystem::path {
-		return select_existing_path(path_from_env("HOWDY_USER_MODELS_DIR"),
-		                            {
-		                                "/etc/howdy/models",
-		                                kConfiguredUserModelsDir,
-		                            },
-		                            kConfiguredUserModelsDir);
+		return select_runtime_path("HOWDY_USER_MODELS_DIR", kConfiguredUserModelsDir);
 	}
 
 	auto resolve_log_path() -> std::filesystem::path {
-		return select_existing_path(path_from_env("HOWDY_LOG_PATH"),
-		                            {
-		                                "/var/log/howdy",
-		                                kConfiguredLogPath,
-		                            },
-		                            kConfiguredLogPath);
+		return select_runtime_path("HOWDY_LOG_PATH", kConfiguredLogPath);
 	}
 
 }  // namespace howdy::native

@@ -8,7 +8,6 @@
 #include <optional>
 #include <string>
 #include <unistd.h>
-#include <vector>
 
 #include <sys/stat.h>
 
@@ -32,17 +31,6 @@ namespace {
 		unsetenv("HOWDY_LOG_PATH");
 	}
 
-	auto selected_default(const std::vector<std::filesystem::path> &candidates,
-	                      const std::filesystem::path &fallback) -> std::filesystem::path {
-		for (const auto &candidate : candidates) {
-			std::error_code ec;
-			if (!candidate.empty() && std::filesystem::exists(candidate, ec) && !ec) {
-				return candidate;
-			}
-		}
-		return fallback;
-	}
-
 }  // namespace
 
 auto main() -> int {
@@ -61,24 +49,19 @@ auto main() -> int {
 	const auto log_path        = temp_root / "custom-log";
 
 	clear_runtime_env();
-	const auto default_config_path =
-	    selected_default({"/etc/howdy/config.ini", kConfiguredConfigPath, kDefaultDevConfigPath},
-	                     kConfiguredConfigPath);
-	const auto default_models_dir =
-	    selected_default({"/usr/share/howdy/models", kConfiguredModelsDir}, kConfiguredModelsDir);
-	const auto default_user_models_dir =
-	    selected_default({"/etc/howdy/models", kConfiguredUserModelsDir}, kConfiguredUserModelsDir);
-	const auto default_log_path =
-	    selected_default({"/var/log/howdy", kConfiguredLogPath}, kConfiguredLogPath);
+	const fs::path default_config_path     = kConfiguredConfigPath;
+	const fs::path default_models_dir      = kConfiguredModelsDir;
+	const fs::path default_user_models_dir = kConfiguredUserModelsDir;
+	const fs::path default_log_path        = kConfiguredLogPath;
 
 	ok &= expect(howdy::native::resolve_config_path() == default_config_path,
-	             "default config path resolves by current candidate policy");
+	             "default config path uses configured path");
 	ok &= expect(howdy::native::resolve_models_dir() == default_models_dir,
-	             "default models directory resolves by current candidate policy");
+	             "default models directory uses configured path");
 	ok &= expect(howdy::native::resolve_user_models_dir() == default_user_models_dir,
-	             "default user models directory resolves by current candidate policy");
+	             "default user models directory uses configured path");
 	ok &= expect(howdy::native::resolve_log_path() == default_log_path,
-	             "default log path resolves by current candidate policy");
+	             "default log path uses configured path");
 
 	setenv("HOWDY_CONFIG", config_path.c_str(), 1);
 	setenv("HOWDY_MODELS_DIR", models_dir.c_str(), 1);

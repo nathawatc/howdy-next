@@ -314,7 +314,6 @@ install(
 	DESTINATION "${HOWDY_LICENSES_INSTALL_DIR}"
 )
 
-set(default_dev_config_path "${HOWDY_CONFIG_PATH}")
 set(installed_config_path "${HOWDY_CONFIG_PATH}")
 set(models_dir "${HOWDY_MODELS_DIR}")
 set(user_models_dir "${HOWDY_USER_MODELS_DIR}")
