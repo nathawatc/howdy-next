@@ -85,7 +85,7 @@ namespace howdy::native {
 		        {
 		            .id                = CommandId::kSnapshot,
 		            .name              = "snapshot",
-		            .summary           = "Camera preview",
+		            .summary           = "Capture and save a camera snapshot",
 		            .kind              = CommandKind::kEntrypoint,
 		            .user_target       = UserTargetMode::kNone,
 		            .completion        = CommandCompletionKind::kNone,
