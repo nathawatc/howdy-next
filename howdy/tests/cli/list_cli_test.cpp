@@ -119,9 +119,9 @@ namespace {
 		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
 		auto [result, output] = run_list(context, {"howdy-list", "alice"});
 		return expect(result == 1, "no model directory returns 1") &&
-		       expect(output == "No face models found. Please run:\n"
-		                        "\n\tsudo howdy -U alice add\n\n",
-		              "no model directory preserves guidance") &&
+		       expect(output == "No face models found. Use the add command to add a face model for "
+		                        "this user.\n",
+		              "no model directory prints safe guidance") &&
 		       expect(context.list_calls == 1 && context.listed_user == "alice",
 		              "no model directory lists alice once");
 	}
@@ -132,11 +132,23 @@ namespace {
 		auto [normal_result, normal_output] = run_list(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = run_list(context, {"howdy-list", "alice", "--plain"});
 		return expect(normal_result == 1, "no model normal returns 1") &&
-		       expect(normal_output == "No face models found. Please run:\n"
-		                               "\n\tsudo howdy -U alice add\n\n",
-		              "no model normal preserves guidance") &&
+		       expect(normal_output == "No face models found. Use the add command to add a face "
+		                               "model for this user.\n",
+		              "no model normal prints safe guidance") &&
 		       expect(plain_result == 1, "no model plain returns 1") &&
 		       expect(plain_output.empty(), "no model plain stays silent");
+	}
+
+	auto no_model_guidance_does_not_render_user_as_shell_command() -> bool {
+		ListCliTestContext context;
+		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
+		auto [result, output] = run_list(context, {"howdy-list", "$(id)"});
+		return expect(result == 1, "shell-like user no model directory returns 1") &&
+		       expect(output == "No face models found. Use the add command to add a face model for "
+		                        "this user.\n",
+		              "no model guidance does not render user into a shell command") &&
+		       expect(context.list_calls == 1 && context.listed_user == "$(id)",
+		              "shell-like user is passed only to model lookup");
 	}
 
 	auto storage_failure_preserves_normal_and_plain_output() -> bool {
@@ -235,6 +247,7 @@ auto main() -> int {
 	ok &= null_dependency_aborts_silently();
 	ok &= no_model_directory_prints_guidance();
 	ok &= no_model_preserves_normal_and_plain_output();
+	ok &= no_model_guidance_does_not_render_user_as_shell_command();
 	ok &= storage_failure_preserves_normal_and_plain_output();
 	ok &= successful_output_preserves_formats();
 	ok &= out_of_range_timestamp_emits_fallback();

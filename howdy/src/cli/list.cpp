@@ -79,14 +79,14 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 	}
 	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No face models found. Please run:\n";
-		std::cout << "\n\tsudo howdy -U " << args->user << " add\n\n";
+		std::cout
+		    << "No face models found. Use the add command to add a face model for this user.\n";
 		return kExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
 		if (!args->plain) {
-			std::cout << "No face models found. Please run:\n";
-			std::cout << "\n\tsudo howdy -U " << args->user << " add\n\n";
+			std::cout
+			    << "No face models found. Use the add command to add a face model for this user.\n";
 		}
 		return kExitAbort;
 	}
