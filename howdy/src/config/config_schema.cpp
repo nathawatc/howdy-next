@@ -437,6 +437,9 @@ namespace howdy::native::config_schema {
 				if (previous.section == option.section && previous.key == option.key) {
 					return "duplicate section.key: " + name;
 				}
+				if (previous.key == option.key) {
+					return "duplicate option key: " + name;
+				}
 			}
 			return std::nullopt;
 		}

@@ -190,6 +190,68 @@ namespace howdy::test {
 		ok &= expect(read_config_test_file(alternate_syntax_path) == "[core]\ndisabled = false\n",
 		             "space-separated option is normalized");
 
+		const auto mixed_case_path = context.temp_root / "mixed-case.ini";
+		ok &= expect(write_config_test_file(mixed_case_path, "[CORE]\nDISABLED=false\n"),
+		             "write mixed-case config identifiers");
+		ok &= expect(howdy::native::update_config_value(mixed_case_path, "disabled", nullptr,
+		                                                "true", false, false),
+		             "update_config_value matches config identifiers case-insensitively");
+		ok &= expect(read_config_test_file(mixed_case_path) == "[CORE]\ndisabled = true\n",
+		             "mixed-case option is updated in matching section");
+
+		const auto bom_path = context.temp_root / "bom.ini";
+		ok &= expect(write_config_test_file(bom_path, "\xEF\xBB\xBF[core]\ndisabled=false\n"),
+		             "write config with UTF-8 BOM");
+		ok &= expect(
+		    howdy::native::update_config_value(bom_path, "disabled", nullptr, "true", false, false),
+		    "update_config_value recognizes BOM-prefixed section");
+		ok &= expect(read_config_test_file(bom_path) == "\xEF\xBB\xBF[core]\ndisabled = true\n",
+		             "BOM-prefixed config option is updated");
+
+		const auto duplicate_name_path = context.temp_root / "duplicate-name.ini";
+		ok &= expect(write_config_test_file(duplicate_name_path, "[other]\n"
+		                                                         "disabled = false\n"
+		                                                         "\n"
+		                                                         "[core]\n"
+		                                                         "disabled backup = false\n"
+		                                                         "disabled=false\n"),
+		             "write same option name in unrelated section");
+		ok &= expect(howdy::native::update_config_value(duplicate_name_path, "disabled", nullptr,
+		                                                "true", false, false),
+		             "update_config_value targets schema-owned section");
+		const auto duplicate_name_content = read_config_test_file(duplicate_name_path);
+		ok &= expect(duplicate_name_content == "[other]\n"
+		                                       "disabled = false\n"
+		                                       "\n"
+		                                       "[core]\n"
+		                                       "disabled backup = false\n"
+		                                       "disabled = true\n",
+		             "unrelated and similarly named options remain unchanged");
+		howdy::native::ConfigReader duplicate_name_reader(duplicate_name_path.string());
+		ok &= expect(duplicate_name_reader.ok() &&
+		                 duplicate_name_reader.get_bool("core", "disabled", false),
+		             "updated file has effective core.disabled value");
+
+		const auto        duplicate_target_path    = context.temp_root / "duplicate-target.ini";
+		const std::string duplicate_target_content = "[core]\n"
+		                                             "disabled =\n"
+		                                             "disabled = false\n";
+		ok &= expect(write_config_test_file(duplicate_target_path, duplicate_target_content),
+		             "write duplicate target option");
+		howdy::native::ConfigReader duplicate_target_reader(duplicate_target_path.string());
+		ok &= expect(duplicate_target_reader.ok() &&
+		                 !duplicate_target_reader.get_bool("core", "disabled", true),
+		             "duplicate target fixture has effective false value before update");
+		std::string duplicate_target_error;
+		ok &= expect(!howdy::native::update_config_value(duplicate_target_path, "disabled",
+		                                                 &duplicate_target_error, "true", false,
+		                                                 false),
+		             "update_config_value rejects duplicate target options");
+		ok &= expect(duplicate_target_error.contains("appears more than once"),
+		             "duplicate target update reports duplicate option");
+		ok &= expect(read_config_test_file(duplicate_target_path) == duplicate_target_content,
+		             "rejected duplicate target update leaves config unchanged");
+
 		ok &= expect(!howdy::native::update_config_value(context.config_path, "missing_key", "x"),
 		             "update_config_value fails for missing key");
 		ok &= expect(!howdy::native::update_config_value(context.config_path, "dark_threshold",

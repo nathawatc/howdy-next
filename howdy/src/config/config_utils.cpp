@@ -2,11 +2,13 @@
 
 #include "config/config_limits.hpp"
 #include "config/config_reader.hpp"
+#include "config/config_schema.hpp"
 #include "config/config_validation.hpp"
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fcntl.h>
 #include <filesystem>
@@ -315,28 +317,106 @@ namespace howdy::native {
 		}
 
 		struct ConfigLineReplacement {
+			std::string_view   section;
 			const std::string &key;
 			const std::string &value;
 		};
 
+		enum class ConfigLineReplaceResult : std::uint8_t {
+			not_found,
+			replaced,
+			duplicate,
+		};
+
+		auto ini_identifier_equal(std::string_view left, std::string_view right) -> bool {
+			return left.size() == right.size() &&
+			       std::ranges::equal(
+			           left, right, [](unsigned char left_char, unsigned char right_char) -> bool {
+				           return std::tolower(left_char) == std::tolower(right_char);
+			           });
+		}
+
+		auto section_name(std::string_view line) -> std::optional<std::string_view> {
+			constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
+			if (line.starts_with(kUtf8Bom)) {
+				line.remove_prefix(kUtf8Bom.size());
+			}
+			if (line.empty() || line.front() != '[') {
+				return std::nullopt;
+			}
+			const auto end = line.find(']');
+			if (end == std::string_view::npos) {
+				return std::nullopt;
+			}
+			return line.substr(1, end - 1);
+		}
+
+		auto assignment_name(std::string_view line) -> std::optional<std::string_view> {
+			const auto separator = line.find_first_of("=:");
+			if (separator == std::string_view::npos) {
+				return std::nullopt;
+			}
+			auto name = line.substr(0, separator);
+			while (!name.empty() && (name.back() == ' ' || name.back() == '\t')) {
+				name.remove_suffix(1);
+			}
+			return name;
+		}
+
 		auto replace_line_value(std::vector<std::string> &lines, ConfigLineReplacement replacement)
-		    -> bool {
+		    -> ConfigLineReplaceResult {
+			std::string_view current_section;
+			bool             has_previous_name = false;
+			std::string     *matching_line     = nullptr;
 			for (auto &line : lines) {
 				const auto stripped_pos = line.find_first_not_of(" \t");
 				if (stripped_pos == std::string::npos) {
 					continue;
 				}
-				const auto stripped = line.substr(stripped_pos);
-				if (stripped.starts_with(replacement.key + " =") ||
-				    stripped.starts_with(replacement.key + " ")) {
-					line = replacement.key;
-					line += " = ";
-					line += replacement.value;
-					line += '\n';
-					return true;
+				const std::string_view stripped(line.data() + stripped_pos,
+				                                line.size() - stripped_pos);
+				if (stripped.front() == ';' || stripped.front() == '#') {
+					continue;
 				}
+				if (has_previous_name && stripped_pos != 0) {
+					continue;
+				}
+				if (const auto section = section_name(stripped)) {
+					current_section   = *section;
+					has_previous_name = false;
+					continue;
+				}
+
+				const auto name = assignment_name(stripped);
+				if (name.has_value()) {
+					has_previous_name = true;
+					if (!ini_identifier_equal(current_section, replacement.section) ||
+					    !ini_identifier_equal(*name, replacement.key)) {
+						continue;
+					}
+				} else {
+					const auto name_end = stripped.find_first_of(" \t");
+					if (!ini_identifier_equal(current_section, replacement.section) ||
+					    name_end == std::string_view::npos ||
+					    !ini_identifier_equal(stripped.substr(0, name_end), replacement.key)) {
+						continue;
+					}
+					has_previous_name = true;
+				}
+
+				if (matching_line != nullptr) {
+					return ConfigLineReplaceResult::duplicate;
+				}
+				matching_line = &line;
 			}
-			return false;
+			if (matching_line == nullptr) {
+				return ConfigLineReplaceResult::not_found;
+			}
+			*matching_line = replacement.key;
+			*matching_line += " = ";
+			*matching_line += replacement.value;
+			*matching_line += '\n';
+			return ConfigLineReplaceResult::replaced;
 		}
 	}  // namespace
 
@@ -432,7 +512,22 @@ namespace howdy::native {
 		}
 		auto lines = split_lines_preserve_newlines(*current_content);
 
-		if (!replace_line_value(lines, {.key = key, .value = value})) {
+		const auto options = config_schema::runtime_config_options();
+		const auto option  = std::ranges::find_if(options, [&](const auto &candidate) -> auto {
+			return candidate.key == key;
+		});
+		if (option == options.end()) {
+			return fail_with(error_message,
+			                 "Could not find a \"" + key + "\" config option to set");
+		}
+		const auto replace_result =
+		    replace_line_value(lines, {.section = option->section, .key = key, .value = value});
+		if (replace_result == ConfigLineReplaceResult::duplicate) {
+			return fail_with(error_message, "Config option \"" + key +
+			                                    "\" appears more than once in section [" +
+			                                    std::string(option->section) + "]");
+		}
+		if (replace_result == ConfigLineReplaceResult::not_found) {
 			return fail_with(error_message,
 			                 "Could not find a \"" + key + "\" config option to set");
 		}

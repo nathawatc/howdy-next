@@ -85,6 +85,14 @@ auto main() -> int {
 	};
 	ok &= rejects(duplicate_keys, "duplicate section.key");
 
+	const std::array duplicate_option_keys = {
+	    synthetic_option(OptionId::core_detection_notice, "one", "same", ValueType::boolean,
+	                     howdy::native::config_schema::bool_default(false)),
+	    synthetic_option(OptionId::core_no_confirmation, "two", "same", ValueType::boolean,
+	                     howdy::native::config_schema::bool_default(false)),
+	};
+	ok &= rejects(duplicate_option_keys, "duplicate option key");
+
 	const std::array mismatched_fallback = {
 	    synthetic_option(OptionId::core_detection_notice, "one", "value", ValueType::boolean,
 	                     howdy::native::config_schema::int_default(1)),
