@@ -60,6 +60,7 @@ namespace howdy::pam::auth_eligibility {
 			case kInsecurePath:
 			case kLockFailed:
 			case kWriteFailed:
+			case kAtomicExchangeUnsupported:
 			case kDeleteFailed:
 			case kDurabilityUncertain:
 			case kCommitStateUncertain:

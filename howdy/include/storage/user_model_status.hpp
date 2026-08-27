@@ -18,6 +18,7 @@ namespace howdy::native {
 		kInvalidUser,
 		kLockFailed,
 		kWriteFailed,
+		kAtomicExchangeUnsupported,
 		kDeleteFailed,
 		kDurabilityUncertain,
 		kCommitStateUncertain,

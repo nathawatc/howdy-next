@@ -92,6 +92,7 @@ namespace howdy::native {
 
 	enum class AtomicFileCommitResult : std::uint8_t {
 		kNotCommitted,
+		kAtomicExchangeUnsupported,
 		kDestinationExists,
 		kCommitted,
 		kCommittedSyncFailed,

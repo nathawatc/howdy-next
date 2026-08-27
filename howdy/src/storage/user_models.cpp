@@ -47,6 +47,12 @@ namespace howdy::native {
 		                    std::string failure_message, std::string committed_message,
 		                    UserModelEntry entry = {}, bool removed_last = false)
 		    -> UserModelMutationResult {
+			if (result == AtomicFileCommitResult::kAtomicExchangeUnsupported) {
+				return mutation_failure(
+				    UserModelStatus::kAtomicExchangeUnsupported,
+				    "Cannot update user model file: filesystem or kernel does not support required "
+				    "atomic model-file exchange; no changes were made");
+			}
 			if (result == AtomicFileCommitResult::kStateUncertain) {
 				return UserModelMutationResult{
 				    .status        = UserModelStatus::kCommitStateUncertain,

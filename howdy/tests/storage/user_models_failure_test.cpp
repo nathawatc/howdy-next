@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <latch>
 #include <string_view>
 #include <thread>
@@ -251,6 +252,40 @@ namespace howdy::test::user_models {
 			             "staged fsync failure leaves previous model bytes unchanged");
 		}
 		{
+			const std::array unsupported_exchange_errors = {ENOSYS, EINVAL, EOPNOTSUPP};
+			for (const auto error_number : unsupported_exchange_errors) {
+				const auto before_unsupported_exchange = read_file(model_path);
+				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+				    .exchange_errno = error_number,
+				});
+				const auto result = howdy::native::append_user_model_entry("alice", second_entry);
+				ok &= expect(result.status ==
+				                 howdy::native::UserModelStatus::kAtomicExchangeUnsupported,
+				             "append reports unsupported atomic exchange failure");
+				ok &= expect(result.error_message.contains("filesystem or kernel") &&
+				                 result.error_message.contains("atomic model-file exchange"),
+				             "append explains unsupported atomic exchange");
+				ok &= expect(read_file(model_path) == before_unsupported_exchange,
+				             "unsupported atomic exchange leaves model bytes unchanged");
+				ok &= expect(!has_staged_model_file(models_dir),
+				             "unsupported atomic exchange cleans staged model file");
+			}
+		}
+		{
+			const auto before_generic_exchange = read_file(model_path);
+			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+			    .exchange_errno = EIO,
+			});
+			const auto result = howdy::native::append_user_model_entry("alice", second_entry);
+			ok &= expect(result.status == howdy::native::UserModelStatus::kWriteFailed &&
+			                 result.error_message == "Failed to save model file",
+			             "generic exchange failure remains a generic write failure");
+			ok &= expect(read_file(model_path) == before_generic_exchange,
+			             "generic exchange failure leaves model bytes unchanged");
+			ok &= expect(!has_staged_model_file(models_dir),
+			             "generic exchange failure cleans staged model file");
+		}
+		{
 			const auto before_parent_sync_failure = read_file(model_path);
 			const auto before =
 			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
@@ -372,7 +407,7 @@ namespace howdy::test::user_models {
 			    .after_write_identity_check = [&hook](const std::filesystem::path &path) -> void {
 				    replace_path_preserving_original(&hook, path);
 			    },
-			    .fail_write_rollback = true,
+			    .rollback_exchange_errno = EINVAL,
 			});
 			const auto result = howdy::native::append_user_model_entry("alice", second_entry);
 			ok &= expect(hook.calls == 1 && hook.swapped,
@@ -383,6 +418,8 @@ namespace howdy::test::user_models {
 			             "failed post-commit recovery requires state inspection");
 			ok &= expect(result.entry.id == -1 && !result.removed_last,
 			             "uncertain commit result makes no mutation-state claim");
+			ok &= expect(has_staged_model_file(models_dir),
+			             "failed rollback retains staged file for uncertain state");
 			ok &= expect(read_file(model_path) != replacement_model,
 			             "failed rollback leaves changed canonical namespace visible");
 

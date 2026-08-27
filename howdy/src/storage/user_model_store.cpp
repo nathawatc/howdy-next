@@ -88,19 +88,45 @@ namespace howdy::native {
 			       same_file_identity(fd_stat, path_stat);
 		}
 
-		auto exchange_paths(const std::filesystem::path &left, const std::filesystem::path &right)
-		    -> bool {
-#ifdef SYS_renameat2
+		enum class ExchangeResult : std::uint8_t {
+			kSuccess,
+			kFailed,
+			kUnsupported,
+		};
+
+		auto exchange_result_for_errno(int error_number) -> ExchangeResult {
+			if (error_number == ENOSYS || error_number == EINVAL || error_number == EOPNOTSUPP) {
+				return ExchangeResult::kUnsupported;
+			}
+#ifdef ENOTSUP
+			if (error_number == ENOTSUP) {
+				return ExchangeResult::kUnsupported;
+			}
+#endif
+			return ExchangeResult::kFailed;
+		}
+
+		auto exchange_paths(const std::filesystem::path &left, const std::filesystem::path &right,
+		                    bool is_rollback) -> ExchangeResult {
+			auto      &hooks = user_model_store_test_hooks::current();
+			const auto injected_errno =
+			    is_rollback ? hooks.rollback_exchange_errno : hooks.exchange_errno;
+			if (injected_errno.has_value()) {
+				errno = *injected_errno;
+				return exchange_result_for_errno(errno);
+			}
+
+#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE)
 			while (syscall(SYS_renameat2, AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(),
 			               RENAME_EXCHANGE) != 0) {
 				if (errno != EINTR) {
-					return false;
+					return exchange_result_for_errno(errno);
 				}
 			}
-			return true;
+			return ExchangeResult::kSuccess;
 #else
 			errno = ENOSYS;
-			return false;
+			return ExchangeResult::kUnsupported;
 #endif
 		}
 
@@ -149,12 +175,20 @@ namespace howdy::native {
 			if (hooks.after_write_identity_check) {
 				hooks.after_write_identity_check(path);
 			}
-			if (!staged->fd.close() || !exchange_paths(staged->path, path)) {
+			if (!staged->fd.close()) {
 				cleanup_staged_file(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
+			const auto exchange_result = exchange_paths(staged->path, path, false);
+			if (exchange_result != ExchangeResult::kSuccess) {
+				cleanup_staged_file(*staged);
+				return exchange_result == ExchangeResult::kUnsupported
+				           ? AtomicFileCommitResult::kAtomicExchangeUnsupported
+				           : AtomicFileCommitResult::kNotCommitted;
+			}
 			if (!path_identifies_fd(staged->path, locked_fd)) {
-				if (!hooks.fail_write_rollback && exchange_paths(staged->path, path)) {
+				if (!hooks.fail_write_rollback &&
+				    exchange_paths(staged->path, path, true) == ExchangeResult::kSuccess) {
 					cleanup_staged_file(*staged);
 					return AtomicFileCommitResult::kNotCommitted;
 				}

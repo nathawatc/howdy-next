@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <optional>
 
 namespace howdy::native::user_model_store_test_hooks {
 
@@ -17,6 +18,8 @@ namespace howdy::native::user_model_store_test_hooks {
 		bool                                               fail_write_cleanup  = false;
 		bool                                               fail_write_rollback = false;
 		bool                                               fail_delete_unlink  = false;
+		std::optional<int>                                 exchange_errno;
+		std::optional<int>                                 rollback_exchange_errno;
 	};
 
 	[[nodiscard]] auto current() -> Hooks &;
