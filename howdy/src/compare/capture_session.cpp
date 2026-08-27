@@ -153,11 +153,20 @@ namespace howdy::native {
 			return;
 		}
 
-		(void)dependencies_.set_property(dependencies_.capture_context,
-		                                 {.id = cv::CAP_PROP_AUTO_EXPOSURE, .value = 1.0});
-		(void)dependencies_.set_property(
-		    dependencies_.capture_context,
-		    {.id = cv::CAP_PROP_EXPOSURE, .value = static_cast<double>(config_.exposure)});
+		try {
+			(void)dependencies_.set_property(dependencies_.capture_context,
+			                                 {.id = cv::CAP_PROP_AUTO_EXPOSURE, .value = 1.0});
+		} catch (const cv::Exception &) {  // NOLINT(bugprone-empty-catch)
+			// Camera may disconnect during restoration; continue with next property.
+		}
+
+		try {
+			(void)dependencies_.set_property(
+			    dependencies_.capture_context,
+			    {.id = cv::CAP_PROP_EXPOSURE, .value = static_cast<double>(config_.exposure)});
+		} catch (const cv::Exception &) {  // NOLINT(bugprone-empty-catch)
+			// Camera may disconnect during restoration; restoration is best effort.
+		}
 	}
 
 	auto CompareCaptureSession::stats() const -> const CompareCaptureStats & {

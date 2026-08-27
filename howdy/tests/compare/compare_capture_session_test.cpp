@@ -20,8 +20,11 @@ namespace {
 		std::string error       = "synthetic capture failure";
 		cv::Mat     next_gray_frame;
 
-		int open_calls = 0;
-		int read_calls = 0;
+		int  open_calls             = 0;
+		int  read_calls             = 0;
+		int  property_call_count    = 0;
+		int  throw_on_property_call = 0;
+		bool set_property_result    = true;
 
 		struct PropertyCall {
 			int    property;
@@ -62,7 +65,12 @@ namespace {
 		    .property = property.id,
 		    .value    = property.value,
 		});
-		return true;
+		capture.property_call_count++;
+		if (capture.property_call_count == capture.throw_on_property_call) {
+			throw cv::Exception(cv::Error::StsError, "synthetic property failure",
+			                    "fake_set_property", __FILE__, __LINE__);
+		}
+		return capture.set_property_result;
 	}
 
 	auto fake_set_property_without_context([[maybe_unused]] void                          *context,
@@ -385,6 +393,66 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
+		auto               config      = make_video_config();
+		config.exposure                = 37;
+		auto dependencies              = make_dependencies(capture, clock);
+		capture.throw_on_property_call = 1;
+		howdy::native::CompareCaptureSession session(config, dependencies);
+
+		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		             "first property exception session opens");
+		bool restore_threw = false;
+		try {
+			session.restore_exposure();
+		} catch (const cv::Exception &) {
+			restore_threw = true;
+		}
+		ok &= expect(!restore_threw, "first exposure restoration exception is contained");
+		ok &= expect(capture.property_calls.size() == 2,
+		             "second exposure restoration is attempted after first exception");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		auto               config      = make_video_config();
+		config.exposure                = 37;
+		auto dependencies              = make_dependencies(capture, clock);
+		capture.throw_on_property_call = 2;
+		howdy::native::CompareCaptureSession session(config, dependencies);
+
+		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		             "second property exception session opens");
+		bool restore_threw = false;
+		try {
+			session.restore_exposure();
+		} catch (const cv::Exception &) {
+			restore_threw = true;
+		}
+		ok &= expect(!restore_threw, "second exposure restoration exception is contained");
+		ok &= expect(capture.property_calls.size() == 2,
+		             "second exposure restoration call is attempted");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		auto               config   = make_video_config();
+		config.exposure             = 37;
+		auto dependencies           = make_dependencies(capture, clock);
+		capture.set_property_result = false;
+		howdy::native::CompareCaptureSession session(config, dependencies);
+
+		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		             "false property result session opens");
+		session.restore_exposure();
+		ok &= expect(capture.property_calls.size() == 2,
+		             "false property results preserve best-effort restoration");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
 		auto               config          = make_video_config();
 		auto               dependencies    = make_dependencies(capture, clock);
 		config.exposure                    = 37;
@@ -404,6 +472,8 @@ auto main() -> int {
 		howdy::native::CompareCaptureSession session(make_video_config(),
 		                                             make_dependencies(capture, clock));
 
+		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		             "disabled exposure session opens");
 		session.restore_exposure();
 		ok &= expect(capture.property_calls.empty(), "disabled exposure makes no property calls");
 	}
