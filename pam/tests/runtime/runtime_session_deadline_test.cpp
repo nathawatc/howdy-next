@@ -1,8 +1,10 @@
 #include "runtime/runtime_session_process_test_support.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
+#include "support/process_test_support.hpp"
 
 namespace {
 	using namespace howdy::test::runtime_session;
+	using howdy::test::process::ScopedSignalBlock;
 	constexpr auto kStagedRoot = "/run/howdy/pam-test";
 
 	auto integration_duplicate_fd(void *context, int fd, int minimum_fd) -> int {
@@ -484,16 +486,18 @@ namespace {
 		       helper_child_reaped(child_pid, "output limit");
 	}
 
-	auto test_cleanup_helper_deadline() -> bool {
+	auto run_cleanup_helper_deadline_case(std::string_view name, bool ignore_sigterm) -> bool {
 		std::array<int, 2> ready_pipe{};
 		if (!expect(pipe2(ready_pipe.data(), O_CLOEXEC) == 0,
-		            "cleanup deadline creates readiness pipe")) {
+		            std::string(name) + " creates readiness pipe")) {
 			return false;
 		}
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
 			(void)close(ready_pipe[0]);
-			(void)signal(SIGTERM, SIG_IGN);
+			if (ignore_sigterm) {
+				(void)signal(SIGTERM, SIG_IGN);
+			}
 			if (write(ready_pipe[1], "R", 1) != 1) {
 				_exit(EXIT_FAILURE);
 			}
@@ -503,8 +507,8 @@ namespace {
 			}
 		}
 		(void)close(ready_pipe[1]);
-		if (!expect(child_pid > 0, "cleanup deadline forks child") ||
-		    !wait_for_ready_byte(ready_pipe[0], "cleanup deadline")) {
+		if (!expect(child_pid > 0, std::string(name) + " forks child") ||
+		    !wait_for_ready_byte(ready_pipe[0], name)) {
 			(void)close(ready_pipe[0]);
 			terminate_and_reap_test_child(child_pid);
 			return false;
@@ -520,13 +524,42 @@ namespace {
 		const bool result              = howdy::pam::auth_helper_process::wait_for_cleanup_helper(
 		    child_pid, operations, start + timeout);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
-		return expect(!result, "cleanup deadline reports failure") &&
-		       expect(elapsed >= timeout, "cleanup deadline honors deadline") &&
-		       expect(elapsed < std::chrono::seconds(2), "cleanup deadline remains bounded") &&
+		return expect(!result, std::string(name) + " reports failure") &&
+		       expect(elapsed >= timeout, std::string(name) + " honors deadline") &&
+		       expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded") &&
 		       expect(std::ranges::find(fake.log_messages, "Howdy auth helper cleanup timed out") !=
 		                  fake.log_messages.end(),
-		              "cleanup deadline logs cleanup timeout") &&
-		       helper_child_reaped(child_pid, "cleanup deadline");
+		              std::string(name) + " logs cleanup timeout") &&
+		       helper_child_reaped(child_pid, name);
+	}
+
+	auto test_cleanup_helper_deadline() -> bool {
+		return run_cleanup_helper_deadline_case("cleanup deadline", true);
+	}
+
+	auto test_auth_helper_blocked_signal_timeout_cleanup() -> bool {
+		const std::string valid_output = "CONFIG_PATH=/run/howdy/masked/config.ini\n"
+		                                 "USER_MODELS_DIR=/run/howdy/masked/models\n";
+		bool              ok           = true;
+		{
+			ScopedSignalBlock blocked_sigchld(SIGCHLD);
+			if (!expect(blocked_sigchld.valid(), "blocked SIGCHLD auth-helper guard installs")) {
+				return false;
+			}
+			ok &= run_deadline_output_case("blocked SIGCHLD auth-helper timeout", valid_output,
+			                               true, false, false);
+			ok &= run_cleanup_helper_deadline_case("blocked SIGCHLD cleanup timeout", true);
+		}
+		{
+			ScopedSignalBlock blocked_sigterm(SIGTERM);
+			if (!expect(blocked_sigterm.valid(), "blocked SIGTERM auth-helper guard installs")) {
+				return false;
+			}
+			ok &= run_deadline_output_case("blocked SIGTERM auth-helper timeout", valid_output,
+			                               true, false, false);
+			ok &= run_cleanup_helper_deadline_case("blocked SIGTERM cleanup timeout", false);
+		}
+		return ok;
 	}
 }  // namespace
 
@@ -540,5 +573,6 @@ auto run_runtime_session_deadline_tests() -> bool {
 	ok &= test_cleanup_runtime_auth_files_stalled_child();
 	ok &= test_auth_helper_output_limit();
 	ok &= test_cleanup_helper_deadline();
+	ok &= test_auth_helper_blocked_signal_timeout_cleanup();
 	return ok;
 }

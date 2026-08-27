@@ -193,6 +193,66 @@ namespace {
 		       expect(child_reaped(child_pid), "watchdog reaps naturally exited child");
 	}
 
+	auto test_watchdog_blocked_sigchld_natural_exit() -> bool {
+		ScopedSignalBlock blocked_sigchld(SIGCHLD);
+		if (!expect(blocked_sigchld.valid(), "blocked SIGCHLD guard installs")) {
+			return false;
+		}
+
+		const pid_t child_pid = spawn_child(17, 10ms);
+		if (!expect(child_pid > 0, "blocked SIGCHLD natural-exit child spawned")) {
+			return false;
+		}
+
+		const int status = howdy::pam::compare_process::wait_until(
+		    child_pid, std::chrono::steady_clock::now() + 1s);
+		return expect(status == (17 << 8),
+		              "blocked SIGCHLD preserves natural compare exit status") &&
+		       expect(child_reaped(child_pid), "blocked SIGCHLD reaps natural compare child");
+	}
+
+	auto test_watchdog_blocked_sigchld_timeout() -> bool {
+		ScopedSignalBlock blocked_sigchld(SIGCHLD);
+		if (!expect(blocked_sigchld.valid(), "blocked SIGCHLD timeout guard installs")) {
+			return false;
+		}
+
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "blocked SIGCHLD timeout child spawned")) {
+			return false;
+		}
+
+		const auto start   = std::chrono::steady_clock::now();
+		const int  status  = howdy::pam::compare_process::wait_until(child_pid, start + 40ms);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		return expect(status == timeout_wait_status(),
+		              "blocked SIGCHLD returns synthetic compare timeout status") &&
+		       expect(elapsed < 2s, "blocked SIGCHLD compare timeout remains bounded") &&
+		       expect(child_reaped(child_pid), "blocked SIGCHLD reaps timed-out compare child");
+	}
+
+	auto test_watchdog_blocked_sigterm_timeout() -> bool {
+		ScopedSignalBlock blocked_sigterm(SIGTERM);
+		if (!expect(blocked_sigterm.valid(), "blocked SIGTERM timeout guard installs")) {
+			return false;
+		}
+
+		const pid_t child_pid = spawn_blocked_child();
+		if (!expect(child_pid > 0, "blocked SIGTERM timeout child spawned")) {
+			return false;
+		}
+
+		const auto start   = std::chrono::steady_clock::now();
+		const int  status  = howdy::pam::compare_process::wait_until(child_pid, start + 40ms);
+		const auto elapsed = std::chrono::steady_clock::now() - start;
+		return expect(status == timeout_wait_status(),
+		              "blocked SIGTERM returns synthetic compare timeout status") &&
+		       expect(elapsed >= 40ms, "blocked SIGTERM compare timeout honors deadline") &&
+		       expect(elapsed < 2s, "blocked SIGTERM compare timeout remains bounded") &&
+		       expect(child_reaped(child_pid),
+		              "blocked SIGTERM falls back to SIGKILL and reaps compare child");
+	}
+
 	auto test_watchdog_timeout_keeps_password_fallback() -> bool {
 		FakeContext context{
 		    .token_delay  = 100ms,
@@ -809,6 +869,9 @@ auto main() -> int {
 	ok &= test_watchdog_timeout_reaps_blocked_child();
 	ok &= test_watchdog_kills_sigterm_ignoring_child();
 	ok &= test_watchdog_preserves_natural_exit_status();
+	ok &= test_watchdog_blocked_sigchld_natural_exit();
+	ok &= test_watchdog_blocked_sigchld_timeout();
+	ok &= test_watchdog_blocked_sigterm_timeout();
 	ok &= test_watchdog_timeout_keeps_password_fallback();
 	ok &= test_pam_success_reaps_before_watchdog();
 	ok &= test_invalid_hard_timeout_fails_closed();
