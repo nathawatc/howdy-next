@@ -4,7 +4,9 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 
 namespace howdy::native {
@@ -29,8 +31,51 @@ namespace howdy::native {
 		unsetenv("XDG_STATE_HOME");
 	}
 
-	inline void reset_invoking_user_gui_environment(const InvokingUser &invoking_user) {
-		reset_invoking_user_environment(invoking_user);
+	inline auto find_wayland_display(const std::filesystem::path &runtime_dir)
+	    -> std::optional<std::string> {
+		std::optional<std::string>          display;
+		std::error_code                     ec;
+		std::filesystem::directory_iterator iterator(
+		    runtime_dir, std::filesystem::directory_options::skip_permission_denied, ec);
+		if (ec) {
+			return std::nullopt;
+		}
+
+		for (const std::filesystem::directory_iterator end; iterator != end;
+		     iterator.increment(ec)) {
+			if (ec) {
+				return std::nullopt;
+			}
+
+			const auto                 name      = iterator->path().filename().string();
+			const std::string_view     name_view = name;
+			constexpr std::string_view prefix    = "wayland-";
+			if (!name_view.starts_with(prefix)) {
+				continue;
+			}
+			const auto suffix = name_view.substr(prefix.size());
+			if (suffix.empty() ||
+			    suffix.find_first_not_of("0123456789") != std::string_view::npos) {
+				continue;
+			}
+
+			ec.clear();
+			if (iterator->symlink_status(ec).type() != std::filesystem::file_type::socket || ec) {
+				ec.clear();
+				continue;
+			}
+
+			if (display.has_value()) {
+				return std::nullopt;
+			}
+			display = name;
+		}
+
+		return display;
+	}
+
+	inline void prepare_invoking_user_gui_environment(const InvokingUser &invoking_user) {
+		unsetenv("WAYLAND_SOCKET");
 		unsetenv("XDG_RUNTIME_DIR");
 		unsetenv("DBUS_SESSION_BUS_ADDRESS");
 
@@ -45,6 +90,13 @@ namespace howdy::native {
 			if (std::filesystem::exists(session_bus, ec) && !ec) {
 				set_user_env_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + session_bus.string());
 			}
+
+			const char *wayland_display = std::getenv("WAYLAND_DISPLAY");
+			if (wayland_display == nullptr || wayland_display[0] == '\0') {
+				if (const auto display = find_wayland_display(runtime_dir)) {
+					set_user_env_var("WAYLAND_DISPLAY", *display);
+				}
+			}
 		}
 
 		if (std::getenv("XAUTHORITY") == nullptr && !invoking_user.home.empty()) {
@@ -54,6 +106,11 @@ namespace howdy::native {
 				set_user_env_var("XAUTHORITY", xauthority.string());
 			}
 		}
+	}
+
+	inline void reset_invoking_user_gui_environment(const InvokingUser &invoking_user) {
+		reset_invoking_user_environment(invoking_user);
+		prepare_invoking_user_gui_environment(invoking_user);
 	}
 
 }  // namespace howdy::native

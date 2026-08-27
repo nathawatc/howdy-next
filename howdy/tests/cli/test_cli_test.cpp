@@ -334,6 +334,12 @@ namespace {
 		ok &= expect(error_text.contains("Cannot open the interactive test preview because no "
 		                                 "graphical display environment is available."),
 		             "missing graphical environment writes primary diagnostic");
+		ok &= expect(error_text.contains("automatically detects a standard Wayland session"),
+		             "missing graphical environment explains automatic Wayland detection");
+		ok &= expect(error_text.contains("run0 --setenv=WAYLAND_DISPLAY howdy test"),
+		             "missing graphical environment writes Wayland run0 fallback");
+		ok &= expect(error_text.contains("sudo --preserve-env=DISPLAY,XAUTHORITY"),
+		             "missing graphical environment writes X11 sudo fallback");
 		ok &= expect(error_text.contains("sudo howdy snapshot"),
 		             "missing graphical environment writes headless fallback");
 		return ok;

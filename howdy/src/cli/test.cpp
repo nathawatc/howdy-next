@@ -151,6 +151,16 @@ namespace {
 		return value;
 	}
 
+	void prepare_invoking_gui_environment() {
+		if (geteuid() != 0) {
+			return;
+		}
+
+		if (const auto invoking_user = howdy::native::resolve_invoking_user()) {
+			howdy::native::prepare_invoking_user_gui_environment(*invoking_user);
+		}
+	}
+
 	auto has_graphical_display_environment() -> bool {
 		return test_cli_internal::has_graphical_display_environment(
 		    getenv_string_view("DISPLAY"), getenv_string_view("WAYLAND_DISPLAY"),
@@ -160,21 +170,17 @@ namespace {
 	void print_missing_graphical_environment_diagnostic() {
 		std::cerr << "Cannot open the interactive test preview because no graphical display "
 		             "environment is available.\n";
-		std::cerr << "The preview needs display/session variables from your graphical login "
-		             "session.\n\n";
-		std::cerr << "If using sudo, preserve only the display variables, for example:\n";
-		std::cerr << "  sudo "
-		             "--preserve-env=DISPLAY,XAUTHORITY,WAYLAND_DISPLAY,XDG_RUNTIME_DIR "
-		             "howdy test\n\n";
-		std::cerr << "If using run0, pass the display variables explicitly, for example:\n";
-		std::cerr << "  run0 --setenv=DISPLAY=\"$DISPLAY\" "
-		             "--setenv=XAUTHORITY=\"$XAUTHORITY\" "
-		             "--setenv=WAYLAND_DISPLAY=\"$WAYLAND_DISPLAY\" "
-		             "--setenv=XDG_RUNTIME_DIR=\"$XDG_RUNTIME_DIR\" howdy test\n\n";
+		std::cerr << "Howdy automatically detects a standard Wayland session for the invoking "
+		             "user.\n\n";
+		std::cerr
+		    << "If multiple Wayland displays are active, pass the intended display explicitly:\n";
+		std::cerr << "  run0 --setenv=WAYLAND_DISPLAY howdy test\n";
+		std::cerr << "  sudo --preserve-env=WAYLAND_DISPLAY howdy test\n\n";
+		std::cerr << "For X11, preserve its display credentials instead:\n";
+		std::cerr << "  run0 --setenv=DISPLAY --setenv=XAUTHORITY howdy test\n";
+		std::cerr << "  sudo --preserve-env=DISPLAY,XAUTHORITY howdy test\n\n";
 		std::cerr << "For headless testing, use:\n";
-		std::cerr << "  sudo howdy snapshot\n\n";
-		std::cerr << "Note: preserving these variables may still fail if your session's "
-		             "display access controls deny root access.\n";
+		std::cerr << "  sudo howdy snapshot\n";
 	}
 
 	auto load_runtime_config_dependency(void *context) -> howdy::native::RuntimeConfigLoadResult {
@@ -333,6 +339,8 @@ namespace {
 			};
 		}
 		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
+
+		prepare_invoking_gui_environment();
 
 		auto preflight_result = test_cli_internal::run_preview_preflight(
 		    config, user,
