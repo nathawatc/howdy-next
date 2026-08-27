@@ -2,15 +2,14 @@
 
 ## Requirements
 
-The PAM module links against `INIReader` and `libevdev`. Install both development
-packages before building.
+Build the PAM module through the root CMake project. See the [root README](../README.md)
+for the complete build dependency list.
 
-Common package names are:
+PAM-specific dependencies:
 
-- Arch Linux: `libinih` and `libevdev`
-- Debian: `libinih-dev` and `libevdev-dev`
-- Fedora: `inih-devel` and `libevdev-devel`
-- OpenSUSE: `inih` and `libevdev-devel`
+- Linux-PAM
+- INIReader
+- libevdev
 
 ## Source Layout
 

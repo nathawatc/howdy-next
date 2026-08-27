@@ -31,17 +31,34 @@ paru -S howdy-next
 Dependencies:
 
 ```text
-glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, qt6-base, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
+glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
 ```
 
 Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.
 
+Howdy uses OpenCV HighGUI for graphical preview. An OpenCV package may bring a
+GUI backend such as Qt, depending on how the distribution builds OpenCV; Qt is
+not a direct Howdy dependency.
+
 ### Release
 
+For a distro-style system install, configure an appropriate prefix for your
+system; `/usr` is an example:
+
 ```sh
-cmake --preset release
+cmake --preset release -DCMAKE_INSTALL_PREFIX=/usr
 cmake --build --preset release --parallel "$(nproc)"
 ctest --preset release
+```
+
+PAM configuration uses `pam_howdy.so`. By default, Howdy installs it under
+`${CMAKE_INSTALL_FULL_LIBDIR}/security`. If your distribution uses a different
+PAM module directory, override it during configuration:
+
+```sh
+cmake --preset release \
+  -DCMAKE_INSTALL_PREFIX=/usr \
+  -DHOWDY_PAM_DIR=/path/to/pam/security
 ```
 
 ### Debug
