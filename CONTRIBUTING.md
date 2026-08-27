@@ -41,6 +41,27 @@ cmake --build --preset debug --parallel "$(nproc)"
 ctest --preset debug
 ```
 
+## Cross-Compilation
+
+Cross-compiling requires `CMAKE_CROSSCOMPILING_EMULATOR`: Howdy builds target-side
+`howdy_config_generator` and `howdy_docs_generator`, then executes them during the
+build to generate configuration and documentation.
+
+With a toolchain file:
+
+```sh
+cmake -S . -B build-cross \
+    -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake \
+    -DCMAKE_CROSSCOMPILING_EMULATOR=/usr/bin/qemu-aarch64
+cmake --build build-cross --parallel "$(nproc)"
+```
+
+Pass emulator arguments as a semicolon-separated CMake list when needed:
+
+```sh
+-DCMAKE_CROSSCOMPILING_EMULATOR='/usr/bin/qemu-aarch64;-L;/usr/aarch64-linux-gnu'
+```
+
 ### Installed PAM/setuid End-to-End Test
 
 Privileged installed-path coverage stays opt-in. Build as normal user with dedicated
