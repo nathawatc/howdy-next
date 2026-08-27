@@ -719,11 +719,13 @@ if(BUILD_TESTING)
 		tests/cli/download_models_entrypoint_test.cpp
 		tests/cli/download_models_integrity_test.cpp
 		tests/cli/download_models_manifest_test.cpp
+		tests/cli/download_models_proxy_test.cpp
 		tests/cli/download_models_test_support.cpp
 		tests/support/atomic_files_test.cpp
 	)
 	howdy_configure_native_test_target(howdy_download_models_test)
-	target_link_libraries(howdy_download_models_test PRIVATE howdy_cli)
+	target_link_libraries(howdy_download_models_test PRIVATE howdy_cli
+                       Threads::Threads)
 	add_test(NAME native-download-models COMMAND howdy_download_models_test)
 
 	add_executable(howdy_user_names_test tests/support/user_names_test.cpp)

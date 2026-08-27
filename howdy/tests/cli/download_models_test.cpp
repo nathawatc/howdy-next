@@ -28,7 +28,8 @@ auto main() -> int {
 	const UmaskGuard umask_guard(0022);
 	const std::array results = {run_download_models_entrypoint_tests(), run_atomic_files_tests(),
 	                            run_download_models_integrity_tests(),
-	                            run_download_models_manifest_tests()};
+	                            run_download_models_manifest_tests(),
+	                            run_download_models_proxy_tests()};
 	const bool       ok      = std::ranges::all_of(results, [](bool value) -> bool {
 		return value;
 	});

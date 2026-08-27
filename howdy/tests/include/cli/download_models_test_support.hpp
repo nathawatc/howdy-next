@@ -77,5 +77,6 @@ namespace howdy::test::download_models {
 	auto run_atomic_files_tests() -> bool;
 	auto run_download_models_integrity_tests() -> bool;
 	auto run_download_models_manifest_tests() -> bool;
+	auto run_download_models_proxy_tests() -> bool;
 
 }  // namespace howdy::test::download_models
