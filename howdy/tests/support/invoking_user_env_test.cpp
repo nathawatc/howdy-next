@@ -1,41 +1,31 @@
 #include "support/invoking_user_env.hpp"
 #include "test_support.hpp"
 
-#include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <unistd.h>
 
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <sys/stat.h>
 
 namespace {
 
 	using howdy::test::expect;
 
-	auto create_unix_socket(const std::filesystem::path &path) -> bool {
-		const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
-		if (fd < 0) {
-			return false;
+	auto expect_socket_node(const std::filesystem::path &path, std::string_view description)
+	    -> bool {
+		if (mknod(path.c_str(), S_IFSOCK | 0600, 0) == 0) {
+			return true;
 		}
 
-		sockaddr_un address{};
-		address.sun_family     = AF_UNIX;
-		const auto socket_path = path.string();
-		if (socket_path.size() >= sizeof(address.sun_path)) {
-			close(fd);
-			return false;
-		}
-		std::ranges::copy(socket_path, address.sun_path);
-		address.sun_path[socket_path.size()] = '\0';
-
-		const bool created =
-		    bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) == 0;
-		close(fd);
-		return created;
+		const int error = errno;
+		return expect(false, std::string(description) + ": errno " + std::to_string(error) + " (" +
+		                         std::strerror(error) + ")");
 	}
 
 }  // namespace
@@ -69,14 +59,14 @@ auto main() -> int {
 		             "runtime directory without Wayland socket has no display");
 
 		std::ofstream(runtime_dir / "wayland-0.lock") << "lock";
-		ok &= expect(create_unix_socket(runtime_dir / "wayland-1"),
-		             "Wayland discovery test creates first socket");
+		ok &= expect_socket_node(runtime_dir / "wayland-1",
+		                         "Wayland discovery test creates first socket");
 		const auto single_display = howdy::native::find_wayland_display(runtime_dir);
 		ok &= expect(single_display.has_value() && *single_display == "wayland-1",
 		             "single Wayland socket is detected");
 
-		ok &= expect(create_unix_socket(runtime_dir / "wayland-2"),
-		             "Wayland discovery test creates second socket");
+		ok &= expect_socket_node(runtime_dir / "wayland-2",
+		                         "Wayland discovery test creates second socket");
 		ok &= expect(!howdy::native::find_wayland_display(runtime_dir).has_value(),
 		             "multiple Wayland sockets are treated as ambiguous");
 
