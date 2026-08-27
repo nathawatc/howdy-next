@@ -49,9 +49,10 @@ namespace howdy::native {
 		}
 
 		if (!is_allowed_capture_device_path(settings_.device_path)) {
-			set_error(CaptureError::kOpenFailed, "Configured camera device must be a /dev/video* "
-			                                     "or /dev/v4l/by-path/* character device: " +
-			                                         settings_.device_path);
+			set_error(CaptureError::kOpenFailed,
+			          "Configured camera device must be a /dev/video*, /dev/v4l/by-path/*, "
+			          "or /dev/v4l/by-id/* character device: " +
+			              settings_.device_path);
 			return false;
 		}
 

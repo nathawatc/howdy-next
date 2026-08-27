@@ -248,8 +248,11 @@ namespace howdy::native::config_schema {
 		           .fallback     = string_default("none"),
 		           .choices      = device_path_choices,
 		           .special_rule = SpecialRule::device_path,
-		           .invalid_rule = "expected none, /dev/video*, or /dev/v4l/by-path/*",
-		           .description  = "Camera device path; prefer a stable /dev/v4l/by-path entry."},
+		           .invalid_rule =
+		               "expected none, /dev/video*, /dev/v4l/by-path/*, or /dev/v4l/by-id/*",
+		           .description =
+		               "Camera device path; prefer a stable /dev/v4l/by-path or /dev/v4l/by-id "
+		               "entry."},
 		    Option{.id           = OptionId::video_warn_no_device,
 		           .section      = "video",
 		           .key          = "warn_no_device",

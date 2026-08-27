@@ -365,7 +365,7 @@ auto main() -> int {
 	             "unknown sface metric is rejected");
 
 	for (const auto *const device_path :
-	     {"none", "/dev/video0", "/dev/v4l/by-path/platform-camera"}) {
+	     {"none", "/dev/video0", "/dev/v4l/by-path/platform-camera", "/dev/v4l/by-id/usb-camera"}) {
 		ok &=
 		    expect(validates(temp_root / (std::string("device-path-") +
 		                                  std::to_string(std::string(device_path).size()) + ".ini"),
@@ -375,6 +375,9 @@ auto main() -> int {
 	ok &= expect(rejects(temp_root / "unrelated-device-path.ini",
 	                     "[video]\ndevice_path = /tmp/camera\n", "device_path"),
 	             "unrelated device path is rejected");
+	ok &= expect(rejects(temp_root / "traversal-by-id-device-path.ini",
+	                     "[video]\ndevice_path = /dev/v4l/by-id/../../null\n", "device_path"),
+	             "traversal by-id device path is rejected");
 
 	const std::array<std::pair<const char *, const char *>, 4> known_runtime_options = {{
 	    {"core", "detection_notice"},

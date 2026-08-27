@@ -381,6 +381,10 @@ auto main() -> int {
 	             "invalid l2 sface threshold falls back");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/video0"),
 	             "video device path prefix is allowed");
+	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/v4l/by-path/platform-camera"),
+	             "by-path device path prefix is allowed");
+	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/v4l/by-id/usb-camera"),
+	             "by-id device path prefix is allowed");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("none"),
 	             "none device path remains allowed");
 	ok &= expect(!howdy::native::is_allowed_capture_device_path("/tmp/camera"),
