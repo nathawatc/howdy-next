@@ -457,6 +457,26 @@ namespace {
 		return ok;
 	}
 
+	auto unconfigured_camera_error_is_printed() -> bool {
+		auto context                                    = make_success_context();
+		context.config_result.config->video.device_path = "none";
+		context.camera_open_ok                          = false;
+		context.camera_open_error = "Camera is not configured; set video.device_path";
+		std::ostringstream error;
+		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+
+		const int  result     = run_test(context, {"howdy-test"});
+		const auto error_text = error.str();
+
+		bool ok = true;
+		ok &= expect(result == 1, "unconfigured camera returns 1");
+		ok &= expect(context.opened_device_path == "none",
+		             "unconfigured camera passes default sentinel to open");
+		ok &= expect(error_text == context.camera_open_error + "\n",
+		             "unconfigured camera prints only concise actionable error");
+		return ok;
+	}
+
 	auto device_override_is_used_for_camera_open() -> bool {
 		auto               context = make_success_context();
 		std::ostringstream error;
@@ -649,6 +669,7 @@ auto main() -> int {
 	ok &= gui_user_switch_failure_prints_diagnostic();
 	ok &= successful_preview_returns_zero();
 	ok &= configured_device_default_is_used_for_camera_open();
+	ok &= unconfigured_camera_error_is_printed();
 	ok &= device_override_is_used_for_camera_open();
 	ok &= missing_device_value_is_rejected_before_runtime_work();
 	ok &= invalid_device_options_stop_before_runtime_work();

@@ -508,8 +508,12 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 			print_missing_graphical_environment_diagnostic();
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraOpenError:
-			std::cerr << "Failed to open camera device: " << preview_result.device_path << "\n";
-			std::cerr << "Error: " << preview_result.error_message << "\n";
+			if (preview_result.device_path == "none") {
+				std::cerr << preview_result.error_message << "\n";
+			} else {
+				std::cerr << "Failed to open camera device: " << preview_result.device_path << "\n";
+				std::cerr << "Error: " << preview_result.error_message << "\n";
+			}
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraReadError:
 			std::cerr << "Could not capture a camera frame\n";

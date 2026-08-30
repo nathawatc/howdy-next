@@ -160,7 +160,7 @@ namespace {
 		auto context           = make_success_context();
 		context.capture_result = howdy::native::snapshot_internal::SnapshotCaptureResult{
 		    .status        = howdy::native::snapshot_internal::SnapshotCaptureStatus::kOpenError,
-		    .error_message = "camera open failed",
+		    .error_message = "Camera is not configured; set video.device_path",
 		};
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
@@ -171,9 +171,11 @@ namespace {
 		ok &= expect(result == 1, "camera open failure returns 1");
 		ok &= expect(context.load_calls == 1, "camera open failure loads once");
 		ok &= expect(context.capture_calls == 1, "camera open failure captures once");
+		ok &= expect(context.capture_config.video.device_path == "none",
+		             "camera open failure uses default unconfigured device");
 		ok &= expect(context.write_calls == 0, "camera open failure skips write");
-		ok &= expect(error.str().contains("camera open failed"),
-		             "camera open failure writes injected error");
+		ok &= expect(error.str() == context.capture_result.error_message + "\n",
+		             "camera open failure writes only concise error");
 		return ok;
 	}
 

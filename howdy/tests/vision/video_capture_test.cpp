@@ -91,6 +91,21 @@ namespace {
 		return expect_rejected_frame(cv::Mat(4, 4, CV_32FC1, cv::Scalar(0.0F)), "non-CV_8U frame");
 	}
 
+	auto unconfigured_device_is_rejected_before_open() -> bool {
+		auto capture =
+		    howdy::native::VideoCapture(howdy::native::CaptureSettings{.device_path = "none"});
+		const bool result = capture.open();
+		bool       ok     = true;
+		ok &= expect(capture.settings().device_path == "none",
+		             "unconfigured camera keeps none sentinel");
+		ok &= expect(!result, "unconfigured camera is rejected");
+		ok &= expect(capture.error() == howdy::native::CaptureError::kMissingDevice,
+		             "unconfigured camera sets missing-device error");
+		ok &= expect(capture.error_message() == "Camera is not configured; set video.device_path",
+		             "unconfigured camera error is concise and names config setting");
+		return ok;
+	}
+
 	auto injected_reader_cannot_outlive_its_context() -> bool {
 		std::weak_ptr<ReadContext> context_lifetime;
 		bool                       ok = true;
@@ -117,6 +132,7 @@ auto main() -> int {
 	ok &= oversized_frame_is_rejected_without_grayscale_conversion();
 	ok &= unsupported_channel_frame_is_rejected_without_grayscale_conversion();
 	ok &= non_8u_frame_is_rejected_without_grayscale_conversion();
+	ok &= unconfigured_device_is_rejected_before_open();
 	ok &= injected_reader_cannot_outlive_its_context();
 	return ok ? 0 : 1;
 }

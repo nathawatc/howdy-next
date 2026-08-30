@@ -106,6 +106,24 @@ namespace howdy::test::add_cli {
 			    "capture open failure");
 		}
 
+		auto unconfigured_camera_error_is_propagated() -> bool {
+			auto context           = make_success_context();
+			context.capture_result = enrollment_failure_result(
+			    howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError);
+			context.capture_result.error_message =
+			    "Camera is not configured; set video.device_path";
+			std::ostringstream error;
+			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+
+			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+
+			bool ok =
+			    expect_capture_failure_stops_before_append(context, result, "unconfigured camera");
+			ok &= expect(error.str() == context.capture_result.error_message + "\n",
+			             "unconfigured camera prints only concise error in add");
+			return ok;
+		}
+
 		auto black_frame_capture_failure_stops_before_append() -> bool {
 			auto context           = make_success_context();
 			context.capture_result = black_frame_capture_result();
@@ -244,6 +262,7 @@ namespace howdy::test::add_cli {
 		bool ok = true;
 		ok &= face_model_enrollment_failure_stops_before_append();
 		ok &= capture_open_failure_stops_before_append();
+		ok &= unconfigured_camera_error_is_propagated();
 		ok &= black_frame_capture_failure_stops_before_append();
 		ok &= only_too_dark_capture_failure_prints_diagnostic();
 		ok &= no_sufficiently_bright_capture_failure_prints_diagnostic();

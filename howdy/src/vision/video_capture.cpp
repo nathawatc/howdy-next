@@ -36,11 +36,17 @@ namespace howdy::native {
 	    , frame_reader_(std::move(frame_reader)) {}
 
 	auto VideoCapture::open() -> bool {
+		if (settings_.device_path == kNoDevice) {
+			set_error(CaptureError::kMissingDevice,
+			          "Camera is not configured; set video.device_path");
+			return false;
+		}
+
 		release();
 		error_ = CaptureError::kNone;
 		error_message_.clear();
 
-		if (settings_.device_path != kNoDevice && !std::filesystem::exists(settings_.device_path)) {
+		if (!std::filesystem::exists(settings_.device_path)) {
 			if (settings_.warn_no_device) {
 				set_error(CaptureError::kMissingDevice,
 				          "Configured camera device does not exist: " + settings_.device_path);

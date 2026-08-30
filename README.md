@@ -79,9 +79,11 @@ See [Contributing](CONTRIBUTING.md) for workflow and rules.
 
 ### Setup
 
-1. `sudo howdy add` to add face model.
-2. `sudo howdy test` to test.
-3. `sudo howdy config` to edit config.
+1. Identify camera path, preferably under `/dev/v4l/by-id/` or
+   `/dev/v4l/by-path/`.
+2. Run `sudo howdy config` and set `[video] device_path` to that path.
+3. Run `sudo howdy add` to add face model.
+4. Run `sudo howdy test` to test.
 
 ## CLI
 
