@@ -5,57 +5,69 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
-#include <vector>
-
-#include <sys/stat.h>
+#include <string_view>
+#include <utility>
 
 namespace {
 
 	using howdy::test::expect;
-
-	auto nearly_equal(float left, float right) -> bool {
-		return std::abs(left - right) < 0.0001F;
-	}
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream output(path);
-		output << content;
-		return output.good() && chmod(path.c_str(), 0644) == 0;
-	}
+	using howdy::test::write_file;
 
 	struct TemporaryDirectory {
 		std::filesystem::path path;
+
+		explicit TemporaryDirectory(std::filesystem::path directory_path)
+		    : path(std::move(directory_path)) {}
 
 		~TemporaryDirectory() {
 			std::error_code ec;
 			std::filesystem::remove_all(path, ec);
 		}
+
+		TemporaryDirectory(const TemporaryDirectory &)                     = delete;
+		auto operator=(const TemporaryDirectory &) -> TemporaryDirectory & = delete;
+		TemporaryDirectory(TemporaryDirectory &&)                          = delete;
+		auto operator=(TemporaryDirectory &&) -> TemporaryDirectory &      = delete;
 	};
 
-	auto create_temp_directory() -> std::optional<std::filesystem::path> {
-		const auto template_path =
-		    std::filesystem::temp_directory_path() / "howdy-runtime-config-test-XXXXXX";
-		const auto        template_string = template_path.string();
-		std::vector<char> path_buffer(template_string.begin(), template_string.end());
-		path_buffer.push_back('\0');
+	auto nearly_equal(float lhs, float rhs) -> bool {
+		return std::abs(lhs - rhs) < 0.0001F;
+	}
 
-		char *created = mkdtemp(path_buffer.data());
-		if (created == nullptr || chmod(created, 0755) != 0) {
+	auto create_temp_directory() -> std::optional<std::filesystem::path> {
+		std::error_code ec;
+		const auto      temp_root =
+		    std::filesystem::temp_directory_path(ec) / "howdy-runtime-config-test-XXXXXX";
+		if (ec) {
 			return std::nullopt;
 		}
+
+		std::string template_path = temp_root.string();
+		char       *created       = mkdtemp(template_path.data());
+		if (created == nullptr) {
+			return std::nullopt;
+		}
+
 		return std::filesystem::path(created);
 	}
 
-	auto load_config(const std::filesystem::path &root, const std::filesystem::path &name,
-	                 const std::string &content) -> howdy::native::RuntimeConfigLoadResult {
-		const auto path = root / name;
+	auto load_config(const std::filesystem::path &root, const std::string &filename,
+	                 std::string_view content) -> howdy::native::RuntimeConfigLoadResult {
+		const auto path = root / filename;
 		if (!write_file(path, content)) {
-			return {};
+			return {
+			    .ok            = false,
+			    .status        = howdy::native::RuntimeConfigLoadStatus::kPathError,
+			    .path          = path,
+			    .config        = std::nullopt,
+			    .error_message = "failed to create test file",
+			    .error_code    = 0,
+			};
 		}
+
 		return howdy::native::load_runtime_config(path, std::nullopt);
 	}
 
@@ -69,7 +81,7 @@ auto main() -> int {
 		std::cerr << "FAIL: create temp directory\n";
 		return 1;
 	}
-	const TemporaryDirectory temp_directory_guard{.path = *temp_directory};
+	const TemporaryDirectory temp_directory_guard(*temp_directory);
 	const auto              &root = temp_directory_guard.path;
 
 	using enum howdy::native::config_schema::OptionId;
@@ -134,8 +146,11 @@ auto main() -> int {
 		                                source + " yunet_nms_threshold matches schema");
 		matches &= expect_int_default(face.yunet_top_k, face_yunet_top_k,
 		                              source + " yunet_top_k matches schema");
-		matches &= expect_string_default(face.sface_metric, face_sface_metric,
-		                                 source + " sface_metric matches schema");
+		matches &=
+		    expect(face.sface_metric == howdy::native::config_schema::sface_default_metric &&
+		               howdy::native::face_metric_spelling(face.sface_metric) ==
+		                   howdy::native::config_schema::runtime_default_string(face_sface_metric),
+		           source + " sface_metric matches schema");
 		matches &= expect_float_default(face.sface_threshold, face_sface_threshold,
 		                                source + " sface_threshold matches schema");
 		return matches;
@@ -223,7 +238,8 @@ auto main() -> int {
 		    "custom video fields map to their schema options");
 		ok &= expect(nearly_equal(config.face.yunet_score_threshold, 0.8F) &&
 		                 nearly_equal(config.face.yunet_nms_threshold, 0.2F) &&
-		                 config.face.yunet_top_k == 1234 && config.face.sface_metric == "l2" &&
+		                 config.face.yunet_top_k == 1234 &&
+		                 config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
 		                 nearly_equal(config.face.sface_threshold, 3.5F),
 		             "custom face fields map to their schema options");
 		ok &= expect(config.debug.end_report, "custom debug field maps to its schema option");
@@ -248,7 +264,8 @@ auto main() -> int {
 	ok &= expect(cosine.config.has_value(), "cosine config has config");
 	if (cosine.config.has_value()) {
 		const auto &config = *cosine.config;
-		ok &= expect(config.face.sface_metric == "cosine", "cosine metric normalizes");
+		ok &= expect(config.face.sface_metric == howdy::native::FaceMetric::kCosine,
+		             "cosine metric normalizes");
 	}
 
 	const auto invalid_cosine = load_config(
@@ -262,7 +279,8 @@ auto main() -> int {
 	ok &= expect(l2.config.has_value(), "l2 config has config");
 	if (l2.config.has_value()) {
 		const auto &config = *l2.config;
-		ok &= expect(nearly_equal(config.face.sface_threshold, 4.0F),
+		ok &= expect(config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
+		                 nearly_equal(config.face.sface_threshold, 4.0F),
 		             "l2 threshold up to four loads");
 	}
 
@@ -301,13 +319,12 @@ auto main() -> int {
 		                              howdy::native::config_schema::runtime_default_float(
 		                                  video_dark_threshold)),
 		             "empty values preserve schema defaults");
-		ok &= expect(
-		    config.face.sface_metric ==
-		            howdy::native::config_schema::runtime_default_string(face_sface_metric) &&
-		        nearly_equal(
-		            config.face.sface_threshold,
-		            howdy::native::config_schema::runtime_default_float(face_sface_threshold)),
-		    "empty face values preserve schema defaults");
+		ok &=
+		    expect(config.face.sface_metric == howdy::native::config_schema::sface_default_metric &&
+		               nearly_equal(config.face.sface_threshold,
+		                            howdy::native::config_schema::runtime_default_float(
+		                                face_sface_threshold)),
+		           "empty face values preserve schema defaults");
 	}
 
 	return ok ? 0 : 1;

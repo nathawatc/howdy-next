@@ -20,7 +20,7 @@ namespace howdy::test::user_models {
 		const howdy::native::NewUserModelEntry first_entry{
 		    .label     = "first",
 		    .backend   = backend,
-		    .metric    = "cosine",
+		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{0.1F, 0.2F}},
 		};
@@ -314,7 +314,7 @@ namespace howdy::test::user_models {
 			                             howdy::native::user_model_limits::kMaxUserModelFileBytes),
 			                         'x'),
 			    .backend   = backend,
-			    .metric    = "cosine",
+			    .metric    = howdy::native::FaceMetric::kCosine,
 			    .model     = "sface.onnx",
 			    .encodings = {{0.3F, 0.4F}},
 			};
@@ -333,14 +333,14 @@ namespace howdy::test::user_models {
 		const howdy::native::NewUserModelEntry second_entry{
 		    .label     = "second",
 		    .backend   = backend,
-		    .metric    = "cosine",
+		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{0.3F, 0.4F}},
 		};
 		const howdy::native::NewUserModelEntry invalid_encoding_entry{
 		    .label     = "invalid",
 		    .backend   = backend,
-		    .metric    = "cosine",
+		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{std::numeric_limits<float>::infinity()}},
 		};
@@ -360,8 +360,8 @@ namespace howdy::test::user_models {
 		             "append adds second model entry");
 		ok &= expect(second_append.entry.id == 1, "append allocates next model ID");
 		{
-			const auto result =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto result = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing loads appended entries");
 			ok &= expect(result.entries.size() == 2, "append preserves existing entries");

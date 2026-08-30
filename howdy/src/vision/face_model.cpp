@@ -169,7 +169,7 @@ namespace howdy::native {
 		return error_message_;
 	}
 
-	auto FaceModel::metric() const -> const std::string & {
+	auto FaceModel::metric() const -> FaceMetric {
 		return metric_;
 	}
 

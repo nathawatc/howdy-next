@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -80,20 +81,30 @@ namespace howdy::native {
 		           : std::string(option.fallback.string);
 	}
 
-	inline auto read_sface_threshold(const ConfigReader &reader, std::string_view metric) -> float {
-		const auto &option = runtime_option(config_schema::OptionId::face_sface_threshold,
-		                                    config_schema::ValueType::floating_point);
-		if (option.special_rule != config_schema::SpecialRule::sface_threshold ||
-		    !option.fallback.has_floating_point) {
+	inline auto read_sface_metric(const ConfigReader &reader) -> std::optional<FaceMetric> {
+		const auto &option = runtime_option(config_schema::OptionId::face_sface_metric,
+		                                    config_schema::ValueType::string);
+		if (!option.fallback.has_string) {
 			std::abort();
 		}
-		const float maximum = metric == config_schema::sface_cosine_metric
-		                          ? config_schema::sface_cosine_threshold_maximum
-		                          : option.range.maximum;
-		const float value   = reader.get_float(std::string(option.section), std::string(option.key),
-		                                       option.fallback.floating_point);
-		return value >= option.range.minimum && value <= maximum ? value
-		                                                         : option.fallback.floating_point;
+		const auto value = reader.get(std::string(option.section), std::string(option.key),
+		                              std::string(option.fallback.string));
+		return parse_face_metric(value.empty() ? option.fallback.string : value);
+	}
+
+	inline auto read_sface_threshold(const ConfigReader &reader, FaceMetric metric) -> float {
+		const auto &option = runtime_option(config_schema::OptionId::face_sface_threshold,
+		                                    config_schema::ValueType::floating_point);
+		const auto *policy = face_metric_policy(metric);
+		if (option.special_rule != config_schema::SpecialRule::sface_threshold ||
+		    !option.fallback.has_floating_point || policy == nullptr) {
+			std::abort();
+		}
+		const float value = reader.get_float(std::string(option.section), std::string(option.key),
+		                                     option.fallback.floating_point);
+		return value >= option.range.minimum && value <= policy->threshold_maximum
+		           ? value
+		           : option.fallback.floating_point;
 	}
 
 }  // namespace howdy::native

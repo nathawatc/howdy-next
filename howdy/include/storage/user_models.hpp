@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storage/user_model_status.hpp"
+#include "vision/face_metric.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -16,7 +17,7 @@ namespace howdy::native {
 		long long                       time = 0;
 		std::string                     label;
 		std::string                     backend;
-		std::string                     metric;
+		std::optional<FaceMetric>       metric;
 		std::string                     model;
 		std::vector<std::vector<float>> encodings;
 	};
@@ -24,7 +25,7 @@ namespace howdy::native {
 	struct NewUserModelEntry {
 		std::string                     label;
 		std::string                     backend;
-		std::string                     metric;
+		FaceMetric                      metric = FaceMetric::kCosine;
 		std::string                     model;
 		std::vector<std::vector<float>> encodings;
 	};
@@ -53,12 +54,12 @@ namespace howdy::native {
 	};
 
 	struct UserModelEntryExpectation {
-		int         id   = -1;
-		long long   time = 0;
-		std::string label;
-		std::string backend;
-		std::string metric;
-		std::string model;
+		int                       id   = -1;
+		long long                 time = 0;
+		std::string               label;
+		std::string               backend;
+		std::optional<FaceMetric> metric;
+		std::string               model;
 	};
 
 	struct UserModelMutationResult {
@@ -89,8 +90,8 @@ namespace howdy::native {
 	auto load_user_models(const std::string &user, const std::string &expected_backend,
 	                      std::optional<uid_t> owner_uid) -> UserModelLoadResult;
 	auto list_user_model_entries(const std::string &user, const std::string &expected_backend,
-	                             const std::string &expected_metric = {},
-	                             const std::string &expected_model  = {}) -> UserModelListResult;
+	                             std::optional<FaceMetric> expected_metric = {},
+	                             const std::string &expected_model = {}) -> UserModelListResult;
 	auto inspect_user_model_file(const std::string &user) -> UserModelInspectResult;
 	auto append_user_model_entry(const std::string &user, const NewUserModelEntry &entry)
 	    -> UserModelMutationResult;

@@ -8,14 +8,15 @@
 
 namespace howdy::native {
 
-	auto update_best_score(float current, float score, const std::string &metric) -> float {
+	auto update_best_score(float current, float score, FaceMetric metric) -> float {
+		const auto *policy = face_metric_policy(metric);
+		if (policy == nullptr) {
+			return current;
+		}
 		if (std::isnan(current)) {
 			return score;
 		}
-		if (metric == "cosine") {
-			return std::max(current, score);
-		}
-		return std::min(current, score);
+		return policy->higher_score_is_better ? std::max(current, score) : std::min(current, score);
 	}
 
 	auto classify_brightness(double hist_total, float darkness, float dark_threshold)

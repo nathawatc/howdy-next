@@ -32,7 +32,7 @@ namespace howdy::native::user_model_codec {
 		Document(UserModelListResult result, std::unique_ptr<Impl> impl);
 
 		friend auto decode_document(std::string_view input, const std::string &expected_backend,
-		                            const std::string &expected_metric,
+		                            std::optional<FaceMetric> expected_metric,
 		                            const std::string &expected_model, bool strict_shape)
 		    -> Document;
 		friend auto append_entry(Document &document, const UserModelEntry &entry) -> bool;
@@ -42,8 +42,8 @@ namespace howdy::native::user_model_codec {
 	};
 
 	auto decode_document(std::string_view input, const std::string &expected_backend,
-	                     const std::string &expected_metric, const std::string &expected_model,
-	                     bool strict_shape = true) -> Document;
+	                     std::optional<FaceMetric> expected_metric,
+	                     const std::string &expected_model, bool strict_shape = true) -> Document;
 	auto append_entry(Document &document, const UserModelEntry &entry) -> bool;
 	auto erase_entry(Document &document, std::size_t index) -> bool;
 	auto is_empty(const Document &document) -> bool;

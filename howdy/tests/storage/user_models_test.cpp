@@ -400,14 +400,14 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","metric":"l2","model":"sface.onnx","data":[[0.1]]}])"),
 		    "write incompatible metric model");
 		{
-			const auto result =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto result = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleMetric,
 			             "lifecycle listing rejects incompatible metric");
 		}
 		{
-			const auto result =
-			    howdy::native::list_user_model_entries("alice", backend, "l2", "other.onnx");
+			const auto result = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kL2, "other.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleModel,
 			             "lifecycle listing rejects incompatible model metadata");
 		}
@@ -566,7 +566,7 @@ namespace howdy::test::user_models {
 			const howdy::native::NewUserModelEntry default_label_entry{
 			    .label     = "",
 			    .backend   = backend,
-			    .metric    = "cosine",
+			    .metric    = howdy::native::FaceMetric::kCosine,
 			    .model     = "sface.onnx",
 			    .encodings = {{0.3F, 0.4F}},
 			};
@@ -577,8 +577,8 @@ namespace howdy::test::user_models {
 			ok &= expect(result.entry.id == 11, "append returns actual created model ID");
 			ok &= expect(result.entry.label == "Model #11",
 			             "append default label matches actual created model ID");
-			const auto listing =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto listing = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2 && listing.entries[1].id == 11 &&
 			                 listing.entries[1].label == "Model #11",

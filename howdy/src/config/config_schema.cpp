@@ -34,15 +34,12 @@ namespace howdy::native::config_schema {
 		    .has_allowed_value = true,
 		    .allowed_value     = -1.0F,
 		};
-		inline constexpr NumericRange sface_threshold_range{.minimum = 0.0F, .maximum = 4.0F};
-		inline constexpr auto         kExpectedBooleanRule = "expected a boolean";
-		inline constexpr auto         kFrameSizeRule = "expected -1 or integer range 16..8192";
+		inline constexpr NumericRange sface_threshold_range{
+		    .minimum = 0.0F, .maximum = face_metric_threshold_maximum()};
+		inline constexpr auto kExpectedBooleanRule = "expected a boolean";
+		inline constexpr auto kFrameSizeRule       = "expected -1 or integer range 16..8192";
 
-		inline constexpr std::array<std::string_view, 3> sface_metric_choices = {
-		    sface_cosine_metric,
-		    "l2",
-		    "l2norm",
-		};
+		inline constexpr auto sface_metric_choices                           = kFaceMetricSpellings;
 		inline constexpr std::array<std::string_view, 1> device_path_choices = {kNoCaptureDevice};
 
 		auto option_name(const Option &option) -> std::string {
@@ -380,7 +377,7 @@ namespace howdy::native::config_schema {
 		           .section      = "face",
 		           .key          = "sface_metric",
 		           .type         = ValueType::string,
-		           .fallback     = string_default("cosine"),
+		           .fallback     = string_default(face_metric_spelling(sface_default_metric)),
 		           .choices      = sface_metric_choices,
 		           .invalid_rule = "expected one of: cosine, l2, l2norm",
 		           .description  = "SFace distance metric used to compare face embeddings."},
@@ -411,14 +408,23 @@ namespace howdy::native::config_schema {
 					break;
 				}
 			}
-			if (metric_option == nullptr || metric_option->fallback.string != sface_cosine_metric) {
+			if (metric_option == nullptr) {
+				return std::nullopt;
+			}
+			const auto metric = parse_face_metric(metric_option->fallback.string);
+			if (!metric.has_value()) {
+				return std::nullopt;
+			}
+			const auto *policy = face_metric_policy(*metric);
+			if (policy == nullptr) {
 				return std::nullopt;
 			}
 
 			for (const auto &option : options) {
 				if (option.special_rule == SpecialRule::sface_threshold &&
-				    option.fallback.floating_point > sface_cosine_threshold_maximum) {
-					return "sface threshold fallback exceeds cosine range: " + option_name(option);
+				    option.fallback.floating_point > policy->threshold_maximum) {
+					return "sface threshold fallback exceeds " + std::string(policy->spelling) +
+					       " range: " + option_name(option);
 				}
 			}
 			return std::nullopt;

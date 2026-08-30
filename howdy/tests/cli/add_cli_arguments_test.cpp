@@ -31,7 +31,7 @@ namespace howdy::test::add_cli {
 			             "append callback receives label");
 			ok &= expect(context.appended_entry.backend == howdy::native::FaceModel::kBackendName,
 			             "append callback receives backend");
-			ok &= expect(context.appended_entry.metric == "cosine",
+			ok &= expect(context.appended_entry.metric == howdy::native::FaceMetric::kCosine,
 			             "append callback receives metric");
 			ok &= expect(context.appended_entry.model == howdy::native::FaceModel::kSfaceModel,
 			             "append callback receives model");

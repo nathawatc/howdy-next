@@ -136,8 +136,8 @@ namespace howdy::native {
 	}  // namespace
 
 	auto list_user_model_entries(const std::string &user, const std::string &expected_backend,
-	                             const std::string &expected_metric,
-	                             const std::string &expected_model) -> UserModelListResult {
+	                             std::optional<FaceMetric> expected_metric,
+	                             const std::string        &expected_model) -> UserModelListResult {
 		const auto  document = UserModelStore::load_document(user,
 		                                                     {.backend      = expected_backend,
 		                                                      .metric       = expected_metric,
@@ -190,7 +190,7 @@ namespace howdy::native {
 				return mutation_failure(UserModelStatus::kIncompatibleBackend,
 				                        kExistingModelsIncompatibleMessage);
 			}
-			if (!entry.metric.empty() && entry.metric != new_entry.metric) {
+			if (entry.metric.has_value() && *entry.metric != new_entry.metric) {
 				return mutation_failure(UserModelStatus::kIncompatibleMetric,
 				                        kExistingModelsIncompatibleMessage);
 			}

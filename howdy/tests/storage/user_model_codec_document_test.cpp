@@ -17,7 +17,9 @@ namespace howdy::test::user_model_codec {
 			ok &= expect(entry.time == 1700000000LL, "valid strict document preserves time");
 			ok &= expect(entry.label == "Office camera", "valid strict document preserves label");
 			ok &= expect(entry.backend == kBackend, "valid strict document preserves backend");
-			ok &= expect(entry.metric == kMetric, "valid strict document preserves metric");
+			ok &= expect(entry.metric.has_value() &&
+			                 *entry.metric == howdy::native::FaceMetric::kCosine,
+			             "valid strict document parses metric");
 			ok &= expect(entry.model == kModel, "valid strict document preserves model");
 			ok &= expect(entry.encodings == std::vector<std::vector<float>>{{1.0F, 2.0F, -3.5F}},
 			             "valid strict document preserves encoding values");

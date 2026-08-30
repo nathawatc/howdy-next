@@ -7,7 +7,6 @@
 #include "config/config_values.hpp"
 
 #include <string>
-#include <string_view>
 #include <utility>
 
 namespace howdy::native {
@@ -55,8 +54,14 @@ namespace howdy::native {
 				return reader == nullptr ? default_string(id) : read_runtime_string(*reader, id);
 			}
 
+			[[nodiscard]] auto read_face_metric() const -> std::optional<FaceMetric> {
+				return reader == nullptr
+				           ? std::optional<FaceMetric>(config_schema::sface_default_metric)
+				           : read_sface_metric(*reader);
+			}
+
 			[[nodiscard]] auto read_sface_threshold(config_schema::OptionId id,
-			                                        std::string_view        metric) const -> float {
+			                                        FaceMetric              metric) const -> float {
 				return reader == nullptr ? default_float(id)
 				                         : howdy::native::read_sface_threshold(*reader, metric);
 			}
@@ -110,16 +115,15 @@ namespace howdy::native {
 			};
 		}
 
-		auto read_face_config(const RuntimeValueSource &source) -> FaceConfig {
+		auto read_face_config(const RuntimeValueSource &source, FaceMetric metric) -> FaceConfig {
 			using enum config_schema::OptionId;
 			FaceConfig config{
 			    .yunet_score_threshold = source.read_float(face_yunet_score_threshold),
 			    .yunet_nms_threshold   = source.read_float(face_yunet_nms_threshold),
 			    .yunet_top_k           = source.read_int(face_yunet_top_k),
-			    .sface_metric          = source.read_string(face_sface_metric),
+			    .sface_metric          = metric,
 			};
-			config.sface_threshold =
-			    source.read_sface_threshold(face_sface_threshold, config.sface_metric);
+			config.sface_threshold = source.read_sface_threshold(face_sface_threshold, metric);
 			return config;
 		}
 
@@ -127,12 +131,17 @@ namespace howdy::native {
 			return {.end_report = source.read_bool(config_schema::OptionId::debug_end_report)};
 		}
 
-		auto populate_runtime_config(const ConfigReader &reader) -> RuntimeConfig {
-			RuntimeConfig            config;
+		auto populate_runtime_config(const ConfigReader &reader) -> std::optional<RuntimeConfig> {
 			const RuntimeValueSource source{.reader = &reader};
+			const auto               metric = source.read_face_metric();
+			if (!metric.has_value()) {
+				return std::nullopt;
+			}
+
+			RuntimeConfig config;
 			config.core  = read_core_config(source);
 			config.video = read_video_config(source);
-			config.face  = read_face_config(source);
+			config.face  = read_face_config(source, *metric);
 			config.debug = read_debug_config(source);
 			return config;
 		}
@@ -142,7 +151,7 @@ namespace howdy::native {
 	RuntimeConfig::RuntimeConfig()
 	    : core(read_core_config(RuntimeValueSource{}))
 	    , video(read_video_config(RuntimeValueSource{}))
-	    , face(read_face_config(RuntimeValueSource{}))
+	    , face(read_face_config(RuntimeValueSource{}, config_schema::sface_default_metric))
 	    , debug(read_debug_config(RuntimeValueSource{})) {}
 
 	auto default_video_config() -> VideoConfig {
@@ -150,7 +159,7 @@ namespace howdy::native {
 	}
 
 	auto default_face_config() -> FaceConfig {
-		return read_face_config(RuntimeValueSource{});
+		return read_face_config(RuntimeValueSource{}, config_schema::sface_default_metric);
 	}
 
 	auto load_runtime_config(const std::filesystem::path &config_path,
@@ -174,6 +183,12 @@ namespace howdy::native {
 			    "Invalid runtime config in " + config_path.string() + ": " + *validation);
 		}
 
-		return success_result(config_path, populate_runtime_config(reader));
+		auto populated = populate_runtime_config(reader);
+		if (!populated.has_value()) {
+			return failure_result<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
+			    config_path,
+			    "Invalid runtime config in " + config_path.string() + ": unknown face metric");
+		}
+		return success_result(config_path, std::move(*populated));
 	}
 }  // namespace howdy::native

@@ -72,10 +72,10 @@ namespace howdy::native {
 
 	private:
 		struct UserModelExpectations {
-			std::string backend;
-			std::string metric;
-			std::string model;
-			bool        strict_shape;
+			std::string               backend;
+			std::optional<FaceMetric> metric;
+			std::string               model;
+			bool                      strict_shape;
 		};
 
 		struct UserModelPathResult {
@@ -102,10 +102,10 @@ namespace howdy::native {
 		                                                      std::string                 *message)
 		    -> UserModelStatus;
 
-		friend auto list_user_model_entries(const std::string &user,
-		                                    const std::string &expected_backend,
-		                                    const std::string &expected_metric,
-		                                    const std::string &expected_model)
+		friend auto list_user_model_entries(const std::string        &user,
+		                                    const std::string        &expected_backend,
+		                                    std::optional<FaceMetric> expected_metric,
+		                                    const std::string        &expected_model)
 		    -> UserModelListResult;
 		friend auto inspect_user_model_file(const std::string &user) -> UserModelInspectResult;
 		friend auto load_user_models(const std::string &user, const std::string &expected_backend,

@@ -13,7 +13,7 @@ namespace howdy::test::user_model_codec {
 	using howdy::test::expect;
 
 	constexpr auto kBackend = "opencv_dnn_sface";
-	constexpr auto kMetric  = "cosine";
+	constexpr auto kMetric  = howdy::native::FaceMetric::kCosine;
 	constexpr auto kModel   = "sface.onnx";
 
 	inline auto expect_status(howdy::native::UserModelStatus actual,
@@ -56,6 +56,7 @@ namespace howdy::test::user_model_codec {
 	auto expect_valid_strict_document() -> bool;
 	auto expect_new_entry_round_trip() -> bool;
 	auto expect_strict_parser_behavior() -> bool;
+	auto expect_metric_parsing() -> bool;
 	auto expect_duplicate_key_behavior() -> bool;
 	auto expect_immutable_to_mutable_conversion() -> bool;
 	auto expect_malformed_scalar_fields() -> bool;

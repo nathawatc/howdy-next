@@ -1,5 +1,6 @@
 #include "config/config_schema.hpp"
 #include "test_support.hpp"
+#include "vision/face_metric.hpp"
 
 #include <array>
 #include <limits>
@@ -68,6 +69,12 @@ auto main() -> int {
 	const auto production_options = howdy::native::config_schema::runtime_config_options();
 	ok &= expect(!howdy::native::config_schema::validate_options(production_options).has_value(),
 	             "production schema satisfies canonical invariants");
+
+	const auto &sface_threshold_opt =
+	    howdy::native::config_schema::runtime_config_option(OptionId::face_sface_threshold);
+	ok &=
+	    expect(sface_threshold_opt.range.maximum == howdy::native::face_metric_threshold_maximum(),
+	           "production sface_threshold range maximum matches face_metric_threshold_maximum");
 
 	const std::array duplicate_ids = {
 	    synthetic_option(OptionId::core_detection_notice, "one", "first", ValueType::boolean,
@@ -234,8 +241,10 @@ auto main() -> int {
 		ok &= rejects(options, "floating-point fallback is not finite");
 	}
 
+	const auto cosine_threshold_max =
+	    howdy::native::face_metric_policy(howdy::native::FaceMetric::kCosine)->threshold_maximum;
 	const std::array<std::string_view, 1> cosine_choices = {
-	    howdy::native::config_schema::sface_cosine_metric,
+	    howdy::native::face_metric_spelling(howdy::native::FaceMetric::kCosine),
 	};
 	const auto sface_options = [&](float threshold) -> std::array<Option, 2> {
 		return std::array{
@@ -244,7 +253,7 @@ auto main() -> int {
 		           .key      = "sface_metric",
 		           .type     = ValueType::string,
 		           .fallback = howdy::native::config_schema::string_default(
-		               howdy::native::config_schema::sface_cosine_metric),
+		               howdy::native::face_metric_spelling(howdy::native::FaceMetric::kCosine)),
 		           .choices      = cosine_choices,
 		           .special_rule = SpecialRule::none,
 		           .invalid_rule = "synthetic rule",
@@ -254,17 +263,16 @@ auto main() -> int {
 		           .key          = "sface_threshold",
 		           .type         = ValueType::floating_point,
 		           .fallback     = howdy::native::config_schema::float_default(threshold),
-		           .range        = {.minimum = 0.0F, .maximum = 4.0F},
+		           .range        = {.minimum = 0.0F,
+		                            .maximum = howdy::native::face_metric_threshold_maximum()},
 		           .special_rule = SpecialRule::sface_threshold,
 		           .invalid_rule = "synthetic rule",
 		           .description  = "Synthetic option."},
 		};
 	};
-	const auto valid_sface =
-	    sface_options(howdy::native::config_schema::sface_cosine_threshold_maximum);
+	const auto valid_sface = sface_options(cosine_threshold_max);
 	ok &= accepts(valid_sface, "cosine SFace fallback at effective maximum is valid");
-	const auto invalid_sface =
-	    sface_options(howdy::native::config_schema::sface_cosine_threshold_maximum + 0.1F);
+	const auto invalid_sface = sface_options(cosine_threshold_max + 0.1F);
 	ok &= rejects(invalid_sface, "sface threshold fallback exceeds cosine range");
 
 	const std::array<std::string_view, 3> duplicate_choices        = {"cosine", "l2", "cosine"};

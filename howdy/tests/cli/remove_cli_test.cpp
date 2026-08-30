@@ -49,7 +49,7 @@ namespace {
 		    .time    = 1234,
 		    .label   = "front door",
 		    .backend = "sface",
-		    .metric  = "cosine",
+		    .metric  = howdy::native::FaceMetric::kCosine,
 		    .model   = "face_recognition_sface_2021dec.onnx",
 		};
 	}
@@ -202,7 +202,8 @@ namespace {
 		ok &= expect(context.remove_calls == 1 && context.removed_user == "alice",
 		             "accepted confirmation removes requested user model");
 		ok &= expect(expected.id == 3 && expected.time == 1234 && expected.label == "front door" &&
-		                 expected.backend == "sface" && expected.metric == "cosine" &&
+		                 expected.backend == "sface" &&
+		                 expected.metric == howdy::native::FaceMetric::kCosine &&
 		                 expected.model == "face_recognition_sface_2021dec.onnx",
 		             "accepted confirmation passes complete stale-entry expectation");
 		ok &= expect(output == "Model \"front door\" will be removed for alice.\n"

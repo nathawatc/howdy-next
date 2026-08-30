@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config/config_schema.hpp"
+#include "vision/face_metric.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -37,11 +40,11 @@ namespace howdy::native {
 	auto default_video_config() -> VideoConfig;
 
 	struct FaceConfig {
-		float       yunet_score_threshold{};
-		float       yunet_nms_threshold{};
-		int         yunet_top_k{};
-		std::string sface_metric;
-		float       sface_threshold{};
+		float      yunet_score_threshold{};
+		float      yunet_nms_threshold{};
+		int        yunet_top_k{};
+		FaceMetric sface_metric = config_schema::sface_default_metric;
+		float      sface_threshold{};
 	};
 
 	auto default_face_config() -> FaceConfig;

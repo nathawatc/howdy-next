@@ -1,10 +1,11 @@
 #pragma once
 
+#include "vision/face_metric.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <optional>
-#include <string_view>
 #include <vector>
 
 namespace howdy::native {
@@ -114,15 +115,24 @@ namespace howdy::native {
 
 	[[nodiscard]] inline auto find_best_face_match(const std::vector<std::vector<float>> &known,
 	                                               const std::vector<float>              &probe,
-	                                               std::string_view metric, float threshold)
+	                                               FaceMetric metric, float threshold)
 	    -> FaceMatch {
+		const auto *policy = face_metric_policy(metric);
+		if (policy == nullptr) {
+			return {};
+		}
 		if (known.empty() || probe.empty()) {
-			return {.score = metric == "cosine" ? -1.0F : std::numeric_limits<float>::max()};
+			return {.score =
+			            policy->higher_score_is_better ? -1.0F : std::numeric_limits<float>::max()};
 		}
-		if (metric == "cosine") {
-			return face_matching_detail::cosine_match(known, probe, threshold);
+		switch (metric) {
+			case FaceMetric::kCosine:
+				return face_matching_detail::cosine_match(known, probe, threshold);
+			case FaceMetric::kL2:
+			case FaceMetric::kL2Norm:
+				return face_matching_detail::distance_match(known, probe, threshold);
 		}
-		return face_matching_detail::distance_match(known, probe, threshold);
+		return {};
 	}
 
 }  // namespace howdy::native

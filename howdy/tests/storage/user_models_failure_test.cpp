@@ -86,14 +86,14 @@ namespace howdy::test::user_models {
 		const howdy::native::NewUserModelEntry first_entry{
 		    .label     = "first",
 		    .backend   = backend,
-		    .metric    = "cosine",
+		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{0.1F, 0.2F}},
 		};
 		const howdy::native::NewUserModelEntry second_entry{
 		    .label     = "second",
 		    .backend   = backend,
-		    .metric    = "cosine",
+		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{0.3F, 0.4F}},
 		};
@@ -110,7 +110,7 @@ namespace howdy::test::user_models {
 			const howdy::native::NewUserModelEntry invalid_label{
 			    .label     = "bad/name",
 			    .backend   = backend,
-			    .metric    = "cosine",
+			    .metric    = howdy::native::FaceMetric::kCosine,
 			    .model     = "sface.onnx",
 			    .encodings = {{0.1F}},
 			};
@@ -120,7 +120,7 @@ namespace howdy::test::user_models {
 			const howdy::native::NewUserModelEntry empty_encoding{
 			    .label   = "empty",
 			    .backend = backend,
-			    .metric  = "cosine",
+			    .metric  = howdy::native::FaceMetric::kCosine,
 			    .model   = "sface.onnx",
 			};
 			expect_invalid_append(empty_encoding, howdy::native::UserModelStatus::kInvalidShape,
@@ -138,7 +138,7 @@ namespace howdy::test::user_models {
 			                      howdy::native::UserModelStatus::kIncompatibleBackend,
 			                      "append rejects incompatible backend");
 			auto incompatible_metric   = second_entry;
-			incompatible_metric.metric = "l2";
+			incompatible_metric.metric = howdy::native::FaceMetric::kL2;
 			expect_invalid_append(incompatible_metric,
 			                      howdy::native::UserModelStatus::kIncompatibleMetric,
 			                      "append rejects incompatible metric");
@@ -185,9 +185,9 @@ namespace howdy::test::user_models {
 			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 			    .fail_parent_sync = true,
 			});
-			const auto result = howdy::native::remove_user_model_entry("alice", 0);
-			const auto remaining =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto result    = howdy::native::remove_user_model_entry("alice", 0);
+			const auto remaining = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
 			             "remove distinguishes committed parent-sync failure");
 			ok &= expect(!result.removed_last &&
@@ -287,14 +287,14 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto before_parent_sync_failure = read_file(model_path);
-			const auto before =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto before                     = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 			    .fail_parent_sync = true,
 			});
 			const auto result = howdy::native::append_user_model_entry("alice", second_entry);
-			const auto after =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto after  = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
 			             "append distinguishes committed parent-sync failure");
 			ok &= expect(result.error_message.contains("verify state before retrying"),
@@ -308,15 +308,15 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto original_content = read_file(model_path);
-			const auto before =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto before           = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			{
 				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 				    .fail_write_cleanup = true,
 				});
 				const auto result = howdy::native::append_user_model_entry("alice", second_entry);
-				const auto after  = howdy::native::list_user_model_entries("alice", backend,
-				                                                           "cosine", "sface.onnx");
+				const auto after  = howdy::native::list_user_model_entries(
+				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 				ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 				             "append reports success after committed write with cleanup failure");
 				ok &= expect(before.status == howdy::native::UserModelStatus::kOk &&
@@ -446,12 +446,12 @@ namespace howdy::test::user_models {
 				clear_result = howdy::native::clear_user_model_entries("alice");
 			});
 			clear_paused.wait();
-			const auto during_clear =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto during_clear = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			allow_clear.count_down();
 			clearer.join();
-			const auto after_clear =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto after_clear = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(during_clear.status == howdy::native::UserModelStatus::kOk &&
 			                 !during_clear.entries.empty(),
 			             "reader during clear observes original model document");
@@ -516,8 +516,8 @@ namespace howdy::test::user_models {
 			             "remove reports missing model ID");
 		}
 		{
-			const auto listing =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto listing = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified stale remove");
@@ -531,8 +531,8 @@ namespace howdy::test::user_models {
 			    howdy::native::remove_user_model_entry_if_matches("alice", expected);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
 			             "verified remove aborts when model entry changes after listing");
-			const auto after =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto after = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(after.status == howdy::native::UserModelStatus::kOk &&
 			                 after.entries.size() == 2 && after.entries[0].label == "changed",
 			             "stale verified remove leaves changed model entry");
@@ -543,8 +543,8 @@ namespace howdy::test::user_models {
 		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
 		    "restore unchanged entries before verified remove");
 		{
-			const auto listing =
-			    howdy::native::list_user_model_entries("alice", backend, "cosine", "sface.onnx");
+			const auto listing = howdy::native::list_user_model_entries(
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified remove");
@@ -622,7 +622,7 @@ namespace howdy::test::user_models {
 			const howdy::native::NewUserModelEntry empty_encoding_entry{
 			    .label   = "rejected",
 			    .backend = backend,
-			    .metric  = "cosine",
+			    .metric  = howdy::native::FaceMetric::kCosine,
 			    .model   = "sface.onnx",
 			};
 			const auto result =

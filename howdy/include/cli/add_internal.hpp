@@ -35,7 +35,7 @@ namespace howdy::native::add_internal {
 		AddEnrollmentStatus                    status = AddEnrollmentStatus::kCaptureFailure;
 		std::string                            error_message;
 		howdy::native::EnrollmentCaptureResult capture_result;
-		std::string                            metric;
+		howdy::native::FaceMetric              metric = howdy::native::FaceMetric::kCosine;
 		std::vector<float>                     encoding;
 	};
 

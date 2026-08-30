@@ -3,6 +3,7 @@
 #include "config/config_schema.hpp"
 #include "config/number_parsing.hpp"
 #include "vision/capture_device_path.hpp"
+#include "vision/face_metric.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -77,17 +78,27 @@ namespace howdy::native {
 			if (option.special_rule == config_schema::SpecialRule::sface_threshold) {
 				const auto &metric_option = config_schema::runtime_config_option(
 				    config_schema::OptionId::face_sface_metric);
-				const auto  metric  = normalized_lower(config.get(
+				const auto metric_value = config.get(
 				    std::string(metric_option.section), std::string(metric_option.key),
-				    std::string(config_schema::runtime_default_string(metric_option.id))));
-				const float maximum = metric == config_schema::sface_cosine_metric
-				                          ? config_schema::sface_cosine_threshold_maximum
-				                          : option.range.maximum;
+				    std::string(config_schema::runtime_default_string(metric_option.id)));
+				const auto metric = parse_face_metric(
+				    metric_value.empty() ? config_schema::runtime_default_string(metric_option.id)
+				                         : std::string_view(metric_value));
+				if (!metric.has_value()) {
+					return invalid_config_value_message(metric_option.key, metric_value,
+					                                    metric_option.invalid_rule);
+				}
+				const auto *policy = face_metric_policy(*metric);
+				if (policy == nullptr) {
+					return invalid_config_value_message(metric_option.key, metric_value,
+					                                    metric_option.invalid_rule);
+				}
+				const float maximum = policy->threshold_maximum;
 				if (*parsed < option.range.minimum || *parsed > maximum) {
-					return invalid_config_value_message(option.key, value,
-					                                    metric == config_schema::sface_cosine_metric
-					                                        ? "expected range 0..1"
-					                                        : "expected range 0..4");
+					const auto *const range_rule = policy->threshold_maximum == option.range.maximum
+					                                   ? "expected range 0..4"
+					                                   : "expected range 0..1";
+					return invalid_config_value_message(option.key, value, range_rule);
 				}
 				return std::nullopt;
 			}

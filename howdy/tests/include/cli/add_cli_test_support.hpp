@@ -85,7 +85,7 @@ namespace howdy::test::add_cli {
 	inline auto successful_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
 		return howdy::native::add_internal::AddEnrollmentResult{
 		    .status   = howdy::native::add_internal::AddEnrollmentStatus::kOk,
-		    .metric   = "cosine",
+		    .metric   = howdy::native::FaceMetric::kCosine,
 		    .encoding = {0.125F},
 		};
 	}

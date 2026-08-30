@@ -1,4 +1,5 @@
 #include "config/config_reader.hpp"
+#include "config/config_schema.hpp"
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/number_parsing.hpp"
@@ -119,12 +120,21 @@ auto main() -> int {
 	    "yunet nms threshold default is used");
 	ok &= expect(howdy::native::read_runtime_int(empty, OptionId::face_yunet_top_k) == 1000,
 	             "yunet top k default is used");
-	ok &= expect(howdy::native::read_runtime_string(empty, OptionId::face_sface_metric) == "cosine",
-	             "sface metric default is used");
-	ok &= expect(near(howdy::native::read_sface_threshold(empty, "cosine"), 0.6942F),
-	             "cosine sface threshold default is used");
-	ok &= expect(near(howdy::native::read_sface_threshold(empty, "l2"), 0.6942F),
-	             "l2 sface threshold default is used");
+	ok &= expect(
+	    howdy::native::read_runtime_string(empty, OptionId::face_sface_metric) ==
+	        howdy::native::config_schema::runtime_default_string(OptionId::face_sface_metric),
+	    "sface metric default is used");
+	const auto empty_metric = howdy::native::read_sface_metric(empty);
+	ok &= expect(empty_metric.has_value() &&
+	                 *empty_metric == howdy::native::config_schema::sface_default_metric,
+	             "sface metric boundary parses default");
+	ok &=
+	    expect(near(howdy::native::read_sface_threshold(empty, howdy::native::FaceMetric::kCosine),
+	                0.6942F),
+	           "cosine sface threshold default is used");
+	ok &= expect(
+	    near(howdy::native::read_sface_threshold(empty, howdy::native::FaceMetric::kL2), 0.6942F),
+	    "l2 sface threshold default is used");
 
 	const auto bool_path = temp_root / "typed-bools.ini";
 	ok &= expect(write_file(bool_path, "[core]\n"
@@ -186,9 +196,14 @@ auto main() -> int {
 		    expect(write_file(choice_path, "[face]\nsface_metric = " + std::string(choice) + "\n"),
 		           "write schema metric choice");
 		howdy::native::ConfigReader choice_reader(choice_path.string());
+		ok &= expect(choice_reader.ok(), "choice reader parses: " + std::string(choice));
 		ok &= expect(howdy::native::read_runtime_string(choice_reader,
 		                                                OptionId::face_sface_metric) == choice,
 		             "generic string reader accepts schema choice");
+		const auto parsed_metric = howdy::native::read_sface_metric(choice_reader);
+		ok &= expect(parsed_metric.has_value() &&
+		                 howdy::native::face_metric_spelling(*parsed_metric) == choice,
+		             "typed metric reader accepts schema choice");
 	}
 	const auto normalized_metric_path = temp_root / "normalized-metric.ini";
 	ok &= expect(write_file(normalized_metric_path, "[face]\nsface_metric = L2NORM\n"),
@@ -205,6 +220,8 @@ auto main() -> int {
 	    howdy::native::read_runtime_string(invalid_metric, OptionId::face_sface_metric) ==
 	        howdy::native::config_schema::runtime_default_string(OptionId::face_sface_metric),
 	    "generic string reader falls back for invalid choice");
+	ok &= expect(!howdy::native::read_sface_metric(invalid_metric).has_value(),
+	             "typed metric reader rejects unknown choice");
 	const auto free_form_path = temp_root / "free-form-string.ini";
 	ok &= expect(write_file(free_form_path, "[video]\ndevice_path = /dev/video0\n"),
 	             "write free-form string");
@@ -255,9 +272,10 @@ auto main() -> int {
 		    near(howdy::native::read_runtime_float(defaults, OptionId::face_yunet_nms_threshold),
 		         0.3F),
 		    label + ": yunet_nms_threshold keeps dot decimal value");
-		defaults_ok &=
-		    expect(near(howdy::native::read_sface_threshold(defaults, "cosine"), 0.6942F),
-		           label + ": sface_threshold keeps dot decimal value");
+		defaults_ok &= expect(
+		    near(howdy::native::read_sface_threshold(defaults, howdy::native::FaceMetric::kCosine),
+		         0.6942F),
+		    label + ": sface_threshold keeps dot decimal value");
 		return defaults_ok;
 	};
 
@@ -363,13 +381,17 @@ auto main() -> int {
 	    "invalid yunet nms threshold falls back");
 	ok &= expect(howdy::native::read_runtime_int(invalid, OptionId::face_yunet_top_k) == 1000,
 	             "invalid yunet top k falls back");
-	ok &=
-	    expect(howdy::native::read_runtime_string(invalid, OptionId::face_sface_metric) == "cosine",
-	           "invalid sface metric falls back");
-	ok &= expect(near(howdy::native::read_sface_threshold(invalid, "cosine"), 0.6942F),
-	             "invalid sface threshold falls back");
-	ok &= expect(near(howdy::native::read_sface_threshold(invalid, "l2"), 0.6942F),
-	             "invalid l2 sface threshold falls back");
+	ok &= expect(
+	    howdy::native::read_runtime_string(invalid, OptionId::face_sface_metric) ==
+	        howdy::native::config_schema::runtime_default_string(OptionId::face_sface_metric),
+	    "invalid sface metric falls back");
+	ok &= expect(
+	    near(howdy::native::read_sface_threshold(invalid, howdy::native::FaceMetric::kCosine),
+	         0.6942F),
+	    "invalid sface threshold falls back");
+	ok &= expect(
+	    near(howdy::native::read_sface_threshold(invalid, howdy::native::FaceMetric::kL2), 0.6942F),
+	    "invalid l2 sface threshold falls back");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/video0"),
 	             "video device path prefix is allowed");
 	ok &= expect(howdy::native::is_allowed_capture_device_path("/dev/v4l/by-path/platform-camera"),
@@ -399,8 +421,10 @@ auto main() -> int {
 	ok &= expect(
 	    near(howdy::native::read_runtime_float(malformed, OptionId::video_dark_threshold), 75.0F),
 	    "malformed dark threshold falls back");
-	ok &= expect(near(howdy::native::read_sface_threshold(malformed, "cosine"), 0.6942F),
-	             "malformed sface threshold falls back");
+	ok &= expect(
+	    near(howdy::native::read_sface_threshold(malformed, howdy::native::FaceMetric::kCosine),
+	         0.6942F),
+	    "malformed sface threshold falls back");
 
 	const auto non_finite_path = temp_root / "non-finite.ini";
 	ok &= expect(write_file(non_finite_path, "[video]\n"
@@ -420,8 +444,10 @@ auto main() -> int {
 	    near(howdy::native::read_runtime_float(non_finite, OptionId::face_yunet_score_threshold),
 	         0.8845F),
 	    "infinite float falls back to schema default");
-	ok &= expect(near(howdy::native::read_sface_threshold(non_finite, "cosine"), 0.6942F),
-	             "non-finite sface threshold falls back to schema default");
+	ok &= expect(
+	    near(howdy::native::read_sface_threshold(non_finite, howdy::native::FaceMetric::kCosine),
+	         0.6942F),
+	    "non-finite sface threshold falls back to schema default");
 
 	const auto negative_fps_path = temp_root / "negative-fps.ini";
 	ok &= expect(write_file(negative_fps_path, "[video]\n"

@@ -103,17 +103,17 @@ namespace howdy::native::user_model_codec {
 			};
 		}
 
-		auto validate_compatibility(const UserModelEntry &entry,
-		                            const std::string    &expected_backend,
-		                            const std::string    &expected_metric,
-		                            const std::string    &expected_model) -> UserModelListResult {
+		auto validate_compatibility(const UserModelEntry            &entry,
+		                            const std::string               &expected_backend,
+		                            const std::optional<FaceMetric> &expected_metric,
+		                            const std::string &expected_model) -> UserModelListResult {
 			if (!expected_backend.empty() && !entry.backend.empty() &&
 			    entry.backend != expected_backend) {
 				return failure(UserModelStatus::kIncompatibleBackend,
 				               kStoredModelsIncompatibleMessage);
 			}
-			if (!expected_metric.empty() && !entry.metric.empty() &&
-			    entry.metric != expected_metric) {
+			if (expected_metric.has_value() && entry.metric.has_value() &&
+			    *entry.metric != *expected_metric) {
 				return failure(UserModelStatus::kIncompatibleMetric,
 				               kStoredModelsIncompatibleMessage);
 			}
@@ -250,8 +250,37 @@ namespace howdy::native::user_model_codec {
 			UserModelEntry      entry;
 		};
 
+		struct MetadataParseResult {
+			UserModelListResult       result{.status = UserModelStatus::kOk};
+			std::string               backend;
+			std::optional<FaceMetric> metric;
+			std::string               model;
+		};
+
+		auto parse_metadata(yyjson_val *model, bool strict_shape) -> MetadataParseResult {
+			const auto backend     = read_string_field(model, "backend", strict_shape);
+			const auto metric_text = read_string_field(model, "metric", strict_shape);
+			const auto model_name  = read_string_field(model, "model", strict_shape);
+			if (!backend.has_value() || !metric_text.has_value() || !model_name.has_value()) {
+				return MetadataParseResult{
+				    .result = failure(UserModelStatus::kInvalidShape,
+				                      "Stored face model metadata is invalid"),
+				};
+			}
+			const std::optional<FaceMetric> metric = metric_text->empty()
+			                                             ? std::optional<FaceMetric>{}
+			                                             : parse_face_metric(*metric_text);
+			if (!metric_text->empty() && !metric.has_value()) {
+				return MetadataParseResult{
+				    .result = failure(UserModelStatus::kParseError,
+				                      "Stored face model contains an unknown face metric"),
+				};
+			}
+			return MetadataParseResult{.backend = *backend, .metric = metric, .model = *model_name};
+		}
+
 		auto parse_model_entry(yyjson_val *model, const std::string &expected_backend,
-		                       const std::string &expected_metric,
+		                       const std::optional<FaceMetric> &expected_metric,
 		                       const std::string &expected_model, bool strict_shape)
 		    -> EntryParseResult {
 			if (!yyjson_is_obj(model)) {
@@ -296,23 +325,18 @@ namespace howdy::native::user_model_codec {
 				                      "Stored face model label is not a string"),
 				};
 			}
-			const auto backend    = read_string_field(model, "backend", strict_shape);
-			const auto metric     = read_string_field(model, "metric", strict_shape);
-			const auto model_name = read_string_field(model, "model", strict_shape);
-			if (!backend.has_value() || !metric.has_value() || !model_name.has_value()) {
-				return EntryParseResult{
-				    .result = failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model metadata is invalid"),
-				};
+			auto metadata = parse_metadata(model, strict_shape);
+			if (metadata.result.status != UserModelStatus::kOk) {
+				return EntryParseResult{.result = std::move(metadata.result)};
 			}
 
 			UserModelEntry entry{
 			    .id      = *id,
 			    .time    = *time,
 			    .label   = *label,
-			    .backend = *backend,
-			    .metric  = *metric,
-			    .model   = *model_name,
+			    .backend = std::move(metadata.backend),
+			    .metric  = metadata.metric,
+			    .model   = std::move(metadata.model),
 			};
 			if (!is_valid_model_label(entry.label)) {
 				return EntryParseResult{
@@ -367,8 +391,9 @@ namespace howdy::native::user_model_codec {
 		}
 
 		auto parse_entries(yyjson_val *models, const std::string &expected_backend,
-		                   const std::string &expected_metric, const std::string &expected_model,
-		                   bool strict_shape) -> UserModelListResult {
+		                   const std::optional<FaceMetric> &expected_metric,
+		                   const std::string &expected_model, bool strict_shape)
+		    -> UserModelListResult {
 			if (!yyjson_is_arr(models)) {
 				return failure(UserModelStatus::kInvalidShape,
 				               "Model file is not a valid model list");
@@ -443,9 +468,18 @@ namespace howdy::native::user_model_codec {
 				return value.empty() ||
 				       yyjson_mut_obj_add_strncpy(document, model, key, value.data(), value.size());
 			};
+			const auto add_optional_metric = [document,
+			                                  model](std::optional<FaceMetric> metric) -> bool {
+				if (!metric.has_value()) {
+					return true;
+				}
+				const auto spelling = face_metric_spelling(*metric);
+				return !spelling.empty() &&
+				       yyjson_mut_obj_add_strncpy(document, model, "metric", spelling.data(),
+				                                  spelling.size());
+			};
 			if (!add_optional_string("backend", entry.backend) ||
-			    !add_optional_string("metric", entry.metric) ||
-			    !add_optional_string("model", entry.model)) {
+			    !add_optional_metric(entry.metric) || !add_optional_string("model", entry.model)) {
 				return nullptr;
 			}
 			return model;
@@ -467,8 +501,8 @@ namespace howdy::native::user_model_codec {
 	auto Document::operator=(Document &&) noexcept -> Document & = default;
 
 	auto decode_document(std::string_view input, const std::string &expected_backend,
-	                     const std::string &expected_metric, const std::string &expected_model,
-	                     bool strict_shape) -> Document {
+	                     std::optional<FaceMetric> expected_metric,
+	                     const std::string &expected_model, bool strict_shape) -> Document {
 		yyjson_doc *parsed = yyjson_read(input.data(), input.size(), YYJSON_READ_ALLOW_BOM);
 		if (parsed == nullptr) {
 			return Document(

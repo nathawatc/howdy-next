@@ -35,7 +35,7 @@ namespace howdy::native {
 		[[nodiscard]] auto ok() const -> bool;
 		[[nodiscard]] auto error_category() const -> FaceModelErrorCategory;
 		[[nodiscard]] auto error_message() const -> const std::string &;
-		[[nodiscard]] auto metric() const -> const std::string &;
+		[[nodiscard]] auto metric() const -> FaceMetric;
 
 		[[nodiscard]] static auto prepare_frame(const cv::Mat &frame) -> cv::Mat;
 		auto                      detect(const cv::Mat &frame) -> FaceDetectionResult;
@@ -56,7 +56,7 @@ namespace howdy::native {
 		bool                          ok_             = false;
 		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;
 		std::string                   error_message_;
-		std::string                   metric_ = "cosine";
+		FaceMetric                    metric_ = FaceMetric::kCosine;
 		float                         threshold_;
 		cv::Size                      input_size_{320, 320};
 		cv::Ptr<cv::FaceDetectorYN>   detector_;

@@ -11,6 +11,7 @@ auto main() -> int {
 		ok &= expect_valid_strict_document();
 		ok &= expect_new_entry_round_trip();
 		ok &= expect_strict_parser_behavior();
+		ok &= expect_metric_parsing();
 		ok &= expect_duplicate_key_behavior();
 		ok &= expect_immutable_to_mutable_conversion();
 		ok &= expect_malformed_scalar_fields();

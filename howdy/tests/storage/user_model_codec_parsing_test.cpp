@@ -5,6 +5,58 @@
 
 namespace howdy::test::user_model_codec {
 
+	auto expect_metric_parsing() -> bool {
+		using howdy::native::FaceMetric;
+		using howdy::native::UserModelStatus;
+
+		bool       ok            = true;
+		const auto expect_metric = [&](std::string_view spelling, FaceMetric expected) -> void {
+			const auto metric_json = std::string("\"") + std::string(spelling) + "\"";
+			const auto document    = howdy::native::user_model_codec::decode_document(
+			    model_list({model_json("7", "1700000000", R"("Office camera")",
+			                           R"("opencv_dnn_sface")", metric_json, R"("sface.onnx")")}),
+			    kBackend, std::nullopt, kModel);
+			ok &= expect_status(document.result.status, UserModelStatus::kOk,
+			                    std::string(spelling) + " stored metric is accepted");
+			ok &= expect(!document.result.entries.empty() &&
+			                 document.result.entries.front().metric.has_value() &&
+			                 *document.result.entries.front().metric == expected,
+			             std::string(spelling) + " stored metric parses to typed policy");
+		};
+
+		expect_metric("cosine", FaceMetric::kCosine);
+		expect_metric("l2", FaceMetric::kL2);
+		expect_metric("l2norm", FaceMetric::kL2Norm);
+		expect_metric("L2NORM", FaceMetric::kL2Norm);
+
+		const auto unknown = howdy::native::user_model_codec::decode_document(
+		    model_list({model_json("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+		                           R"("euclidean")", R"("sface.onnx")")}),
+		    kBackend, std::nullopt, kModel);
+		ok &= expect_status(unknown.result.status, UserModelStatus::kParseError,
+		                    "unknown stored metric is rejected");
+		ok &= expect(unknown.result.error_message.contains("unknown face metric"),
+		             "unknown stored metric reports explicit error");
+
+		const auto legacy = howdy::native::user_model_codec::decode_document(
+		    model_list({model_json("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+		                           R"("L2NORM")", R"("sface.onnx")")}),
+		    kBackend, std::nullopt, kModel);
+		const auto serialized = howdy::native::user_model_codec::serialize_document(legacy);
+		ok &= expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
+		             "existing persisted metric spelling is preserved");
+
+		const auto missing = howdy::native::user_model_codec::decode_document(
+		    R"([{"id":7,"time":1700000000,"label":"legacy","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[1.0]]}])",
+		    kBackend, FaceMetric::kCosine, kModel);
+		ok &= expect_status(missing.result.status, UserModelStatus::kOk,
+		                    "missing persisted metric remains compatible");
+		ok &= expect(!missing.result.entries.empty() &&
+		                 !missing.result.entries.front().metric.has_value(),
+		             "missing persisted metric remains absent");
+		return ok;
+	}
+
 	auto expect_strict_parser_behavior() -> bool {
 		using howdy::native::UserModelStatus;
 

@@ -150,6 +150,19 @@ namespace {
 		return validation.has_value() && validation->contains(needle);
 	}
 
+	auto rejects_exact(const std::filesystem::path &path, const std::string &content,
+	                   std::string_view expected) -> bool {
+		if (!write_file(path, content)) {
+			return false;
+		}
+		const howdy::native::ConfigReader config(path.string());
+		if (!config.ok()) {
+			return false;
+		}
+		const auto validation = howdy::native::validate_runtime_config(config);
+		return validation.has_value() && *validation == expected;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -328,32 +341,38 @@ auto main() -> int {
 	ok &= expect(validates(temp_root / "cosine-threshold-max.ini",
 	                       "[face]\nsface_metric = cosine\nsface_threshold = 1\n"),
 	             "cosine threshold maximum boundary is valid");
-	ok &= expect(rejects(temp_root / "cosine-threshold-over.ini",
-	                     "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
-	                     "sface_threshold"),
-	             "cosine threshold above maximum is invalid");
+	ok &= expect(
+	    rejects_exact(temp_root / "cosine-threshold-over.ini",
+	                  "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
+	                  "Invalid config value for sface_threshold=\"1.001\": expected range 0..1"),
+	    "cosine threshold above maximum keeps validation message");
 	ok &= expect(validates(temp_root / "l2-threshold-max.ini",
 	                       "[face]\nsface_metric = l2\nsface_threshold = 4\n"),
 	             "l2 threshold maximum boundary is valid");
-	ok &= expect(rejects(temp_root / "l2-threshold-over.ini",
-	                     "[face]\nsface_metric = l2\nsface_threshold = 4.001\n", "sface_threshold"),
-	             "l2 threshold above maximum is invalid");
+	ok &= expect(
+	    rejects_exact(temp_root / "l2-threshold-over.ini",
+	                  "[face]\nsface_metric = l2\nsface_threshold = 4.001\n",
+	                  "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
+	    "l2 threshold above maximum keeps validation message");
 	ok &= expect(validates(temp_root / "l2norm-threshold-max.ini",
 	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 4\n"),
 	             "normalized l2norm threshold maximum is valid");
-	ok &= expect(rejects(temp_root / "l2norm-threshold-over.ini",
-	                     "[face]\nsface_metric = L2NORM\nsface_threshold = 4.001\n",
-	                     "sface_threshold"),
-	             "normalized l2norm threshold above maximum is invalid");
+	ok &= expect(
+	    rejects_exact(temp_root / "l2norm-threshold-over.ini",
+	                  "[face]\nsface_metric = L2NORM\nsface_threshold = 4.001\n",
+	                  "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
+	    "normalized l2norm threshold above maximum keeps validation message");
 
 	for (const auto *const metric : {"cosine", "COSINE", "l2", "L2", "l2norm", "L2NORM"}) {
 		ok &= expect(validates(temp_root / (std::string("metric-") + metric + ".ini"),
 		                       "[face]\nsface_metric = " + std::string(metric) + "\n"),
 		             std::string("sface metric is accepted case-insensitively: ") + metric);
 	}
-	ok &= expect(rejects(temp_root / "invalid-metric.ini", "[face]\nsface_metric = euclidean\n",
-	                     "sface_metric"),
-	             "unknown sface metric is rejected");
+	ok &=
+	    expect(rejects_exact(temp_root / "invalid-metric.ini", "[face]\nsface_metric = euclidean\n",
+	                         "Invalid config value for sface_metric=\"euclidean\": expected one "
+	                         "of: cosine, l2, l2norm"),
+	           "unknown sface metric is rejected through existing validation contract");
 
 	for (const auto *const device_path :
 	     {"none", "/dev/video0", "/dev/v4l/by-path/platform-camera", "/dev/v4l/by-id/usb-camera"}) {

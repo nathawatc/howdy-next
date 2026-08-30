@@ -1,11 +1,11 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
+#include "vision/face_metric.hpp"
 
 #include <cstdint>
 #include <exception>
 #include <iosfwd>
-#include <string>
 #include <string_view>
 
 #include <opencv2/core.hpp>
@@ -28,7 +28,7 @@ namespace howdy::native {
 		int rotation = 0;
 	};
 
-	auto update_best_score(float current, float score, const std::string &metric) -> float;
+	auto update_best_score(float current, float score, FaceMetric metric) -> float;
 
 	auto classify_brightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision;
