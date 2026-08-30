@@ -9,6 +9,7 @@
 #include <sys/types.h>
 
 namespace howdy::native {
+	inline constexpr auto kModelsDirectoryLabel = "Models directory";
 
 	enum class OpenCvModelStatus : std::uint8_t {
 		kOk,

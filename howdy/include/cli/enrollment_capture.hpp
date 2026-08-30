@@ -79,7 +79,7 @@ namespace howdy::native {
 			apply_clahe_if_enabled(gray, video_config, clahe);
 
 			const auto brightness = measure_brightness(gray);
-			if (brightness.hist_total == 0.0 || brightness.darkness >= 100.0F) {
+			if (brightness.hist_total == 0.0 || brightness.darkness >= kBrightnessPercentScale) {
 				result.black_frames++;
 				continue;
 			}

@@ -13,7 +13,7 @@ namespace howdy::native {
 
 	namespace {
 
-		constexpr auto kNoDevice = "none";
+		constexpr auto kCameraNotOpenMessage = "Camera is not open";
 
 	}  // namespace
 
@@ -36,7 +36,7 @@ namespace howdy::native {
 	    , frame_reader_(std::move(frame_reader)) {}
 
 	auto VideoCapture::open(bool perform_warm_up) -> bool {
-		if (settings_.device_path == kNoDevice) {
+		if (settings_.device_path == kNoCaptureDevice) {
 			set_error(CaptureError::kMissingDevice,
 			          "Camera is not configured; set video.device_path");
 			return false;
@@ -112,7 +112,7 @@ namespace howdy::native {
 
 	auto VideoCapture::grab() -> bool {
 		if (!capture_.isOpened()) {
-			set_error(CaptureError::kOpenFailed, "Camera is not open");
+			set_error(CaptureError::kOpenFailed, kCameraNotOpenMessage);
 			return false;
 		}
 
@@ -125,14 +125,14 @@ namespace howdy::native {
 
 	auto VideoCapture::read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
 		if (!frame_reader_ && !capture_.isOpened()) {
-			set_error(CaptureError::kOpenFailed, "Camera is not open");
+			set_error(CaptureError::kOpenFailed, kCameraNotOpenMessage);
 			return false;
 		}
 
 		try {
 			const bool read_ok = frame_reader_ ? frame_reader_->read(frame) : capture_.read(frame);
 			if (!read_ok) {
-				set_error(CaptureError::kReadFailed, "Could not capture a camera frame");
+				set_error(CaptureError::kReadFailed, kCameraReadFailureMessage);
 				return false;
 			}
 

@@ -1,5 +1,7 @@
 #include "compare/logic.hpp"
 
+#include "vision/frame_processing.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <ostream>
@@ -18,7 +20,7 @@ namespace howdy::native {
 
 	auto classify_brightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision {
-		if (hist_total == 0.0 || darkness == 100.0F) {
+		if (hist_total == 0.0 || darkness == kBrightnessPercentScale) {
 			return BrightnessDecision::kBlackFrame;
 		}
 		if (darkness > dark_threshold) {

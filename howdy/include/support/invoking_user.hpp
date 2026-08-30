@@ -8,6 +8,8 @@
 #include <string>
 
 namespace howdy::native {
+	inline constexpr auto kDoasUserEnvironmentVariable  = "DOAS_USER";
+	inline constexpr auto kPkexecUidEnvironmentVariable = "PKEXEC_UID";
 
 	struct InvokingUser {
 		uid_t       uid = 0;
@@ -64,14 +66,14 @@ namespace howdy::native {
 			}
 		}
 
-		if (const char *doas_user = std::getenv("DOAS_USER");
+		if (const char *doas_user = std::getenv(kDoasUserEnvironmentVariable);
 		    doas_user != nullptr && doas_user[0] != '\0') {
 			if (passwd *pwd = getpwnam(doas_user); pwd != nullptr) {
 				return invoking_user_from_pwd(*pwd, pwd->pw_gid);
 			}
 		}
 
-		if (const auto pkexec_uid = parse_uid_env(std::getenv("PKEXEC_UID"))) {
+		if (const auto pkexec_uid = parse_uid_env(std::getenv(kPkexecUidEnvironmentVariable))) {
 			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
 				return invoking_user_from_pwd(*pwd, pwd->pw_gid);
 			}

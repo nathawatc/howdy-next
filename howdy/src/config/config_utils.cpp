@@ -26,7 +26,14 @@ namespace howdy::native {
 
 	namespace {
 
-		constexpr mode_t kDefaultConfigMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+		constexpr mode_t kDefaultConfigMode               = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+		constexpr auto   kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
+		constexpr auto   kConfigValidationFailureMessage  = "Failed to validate updated config";
+		constexpr auto   kConfigFileOpenFailureMessage    = "Failed to open config file";
+		constexpr auto   kConfigFileInspectFailureMessage = "Failed to inspect config file";
+		constexpr auto   kConfigFileReadFailureMessage    = "Failed to read config file";
+		constexpr auto   kConfigFileLockFailureMessage    = "Failed to lock config file";
+		constexpr auto   kConfigTempPrefix                = ".howdy-config-";
 
 		auto open_lock_file(const std::filesystem::path &config_path) -> int {
 			return open(lock_file_path(config_path).c_str(),
@@ -155,7 +162,7 @@ namespace howdy::native {
 	auto atomic_write_lines(const std::filesystem::path    &config_path,
 	                        const std::vector<std::string> &lines,
 	                        SyncParentDirectoryFn           sync_parent) -> AtomicFileCommitResult {
-		auto staged = prepare_staged_file(config_path, ".howdy-config-", kDefaultConfigMode);
+		auto staged = prepare_staged_file(config_path, kConfigTempPrefix, kDefaultConfigMode);
 		if (!staged.has_value()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
@@ -170,7 +177,7 @@ namespace howdy::native {
 	auto validate_config_content(const std::string &content, std::string *error_message) -> bool {
 		if (content.size() > kMaxConfigFileSize) {
 			if (error_message != nullptr) {
-				*error_message = "Updated config exceeds maximum size";
+				*error_message = kUpdatedConfigTooLargeMessage;
 			}
 			return false;
 		}
@@ -182,7 +189,7 @@ namespace howdy::native {
 		const int fd = mkostemp(writable.data(), O_CLOEXEC);
 		if (fd < 0) {
 			if (error_message != nullptr) {
-				*error_message = "Failed to validate updated config";
+				*error_message = kConfigValidationFailureMessage;
 			}
 			return false;
 		}
@@ -197,7 +204,7 @@ namespace howdy::native {
 			std::error_code ec;
 			std::filesystem::remove(temp_path, ec);
 			if (error_message != nullptr) {
-				*error_message = "Failed to validate updated config";
+				*error_message = kConfigValidationFailureMessage;
 			}
 			return false;
 		}
@@ -208,7 +215,7 @@ namespace howdy::native {
 
 		if (!config.ok()) {
 			if (error_message != nullptr) {
-				*error_message = "Updated config is invalid";
+				*error_message = kUpdatedConfigInvalidMessage;
 			}
 			return false;
 		}
@@ -249,7 +256,7 @@ namespace howdy::native {
 		    -> bool {
 			const int input_fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			if (input_fd < 0) {
-				return fail_with(error_message, "Failed to open config file");
+				return fail_with(error_message, kConfigFileOpenFailureMessage);
 			}
 			struct stat opened_stat{};
 			const bool  opened_ok =
@@ -257,15 +264,13 @@ namespace howdy::native {
 			const auto current_content = opened_ok ? read_config_from_fd(input_fd) : std::nullopt;
 			close(input_fd);
 			if (!opened_ok) {
-				return fail_with(error_message, "Failed to inspect config file");
+				return fail_with(error_message, kConfigFileInspectFailureMessage);
 			}
 			if (!current_content.has_value()) {
-				return fail_with(error_message, "Failed to read config file");
+				return fail_with(error_message, kConfigFileReadFailureMessage);
 			}
 			if (*current_content != expected) {
-				return fail_with(
-				    error_message,
-				    "Config changed while editing; not installing stale edited config");
+				return fail_with(error_message, kStaleEditedConfigMessage);
 			}
 			return true;
 		}
@@ -280,7 +285,8 @@ namespace howdy::native {
 		auto install_config_content(const std::filesystem::path &config_path,
 		                            const std::string &content, const struct stat &current_stat,
 		                            SyncParentDirectoryFn sync_parent) -> ConfigInstallResult {
-			std::string       temp = (config_path.parent_path() / ".howdy-config-XXXXXX").string();
+			std::string temp =
+			    (config_path.parent_path() / (std::string(kConfigTempPrefix) + "XXXXXX")).string();
 			std::vector<char> writable(temp.begin(), temp.end());
 			writable.push_back('\0');
 			const int fd = mkostemp(writable.data(), O_CLOEXEC);
@@ -425,7 +431,7 @@ namespace howdy::native {
 			error_message->clear();
 		}
 		if (content.size() > kMaxConfigFileSize) {
-			return fail_with(error_message, "Updated config exceeds maximum size");
+			return fail_with(error_message, kUpdatedConfigTooLargeMessage);
 		}
 
 		const auto initial_security = check_secure_config_path(config_path);
@@ -435,7 +441,7 @@ namespace howdy::native {
 
 		ConfigLockGuard config_lock;
 		if (lock && !acquire_config_lock(config_lock, config_path)) {
-			return fail_with(error_message, "Failed to lock config file");
+			return fail_with(error_message, kConfigFileLockFailureMessage);
 		}
 
 		if (validate_runtime && !validate_config_content(content, error_message)) {
@@ -449,7 +455,7 @@ namespace howdy::native {
 
 		struct stat current_stat{};
 		if (lstat(config_path.c_str(), &current_stat) != 0 || !S_ISREG(current_stat.st_mode)) {
-			return fail_with(error_message, "Failed to inspect config file");
+			return fail_with(error_message, kConfigFileInspectFailureMessage);
 		}
 
 		if (expected_current_content != nullptr) {
@@ -468,7 +474,7 @@ namespace howdy::native {
 			return fail_with(error_message, "Failed to stage updated config");
 		}
 		if (install_result == ConfigInstallResult::not_committed) {
-			return fail_with(error_message, "Failed to install edited config");
+			return fail_with(error_message, kEditedConfigInstallFailedMessage);
 		}
 		return true;
 	}
@@ -488,7 +494,7 @@ namespace howdy::native {
 
 		ConfigLockGuard config_lock;
 		if (lock && !acquire_config_lock(config_lock, config_path)) {
-			return fail_with(error_message, "Failed to lock config file");
+			return fail_with(error_message, kConfigFileLockFailureMessage);
 		}
 
 		const auto security = check_secure_config_path(config_path);
@@ -498,13 +504,13 @@ namespace howdy::native {
 
 		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 		if (fd < 0) {
-			return fail_with(error_message, "Failed to open config file");
+			return fail_with(error_message, kConfigFileOpenFailureMessage);
 		}
 
 		const auto current_content = read_config_from_fd(fd);
 		close(fd);
 		if (!current_content.has_value()) {
-			return fail_with(error_message, "Failed to read config file");
+			return fail_with(error_message, kConfigFileReadFailureMessage);
 		}
 		auto lines = split_lines_preserve_newlines(*current_content);
 
@@ -539,7 +545,7 @@ namespace howdy::native {
 		    false, false, &*current_content);
 		if (!ok && error_message != nullptr) {
 			*error_message =
-			    install_error.empty() || install_error == "Failed to install edited config"
+			    install_error.empty() || install_error == kEditedConfigInstallFailedMessage
 			        ? "Failed to update config file"
 			        : install_error;
 		}

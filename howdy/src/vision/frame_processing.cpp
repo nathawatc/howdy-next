@@ -35,13 +35,14 @@ namespace howdy::native {
 
 		stats.hist_total = cv::sum(hist)[0];
 		if (stats.hist_total != 0.0) {
-			stats.darkness = static_cast<float>(hist.at<float>(0) / stats.hist_total * 100.0);
+			stats.darkness = static_cast<float>(hist.at<float>(0) / stats.hist_total *
+			                                    static_cast<double>(kBrightnessPercentScale));
 		}
 
 		const auto bins_denominator = std::max(static_cast<float>(stats.hist_total), 1.0F);
 		for (std::size_t index = 0; index < stats.bins_percent.size(); ++index) {
-			stats.bins_percent[index] =
-			    hist.at<float>(static_cast<int>(index)) / bins_denominator * 100.0F;
+			stats.bins_percent[index] = hist.at<float>(static_cast<int>(index)) / bins_denominator *
+			                            kBrightnessPercentScale;
 		}
 		return stats;
 	}

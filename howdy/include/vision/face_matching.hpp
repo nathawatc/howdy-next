@@ -8,6 +8,8 @@
 #include <vector>
 
 namespace howdy::native {
+	inline constexpr auto kFaceMatcherInvalidResultMessage =
+	    "Face matcher returned invalid match result";
 
 	struct FaceMatch {
 		int   index    = -1;

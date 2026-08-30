@@ -6,6 +6,7 @@
 #include "storage/user_models.hpp"
 #include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
+#include "vision/capture_device_path.hpp"
 #include "vision/face_model.hpp"
 #include "vision/preview_engine.hpp"
 #include "vision/video_capture.hpp"
@@ -163,8 +164,9 @@ namespace {
 
 	auto has_graphical_display_environment() -> bool {
 		return test_cli_internal::has_graphical_display_environment(
-		    getenv_string_view("DISPLAY"), getenv_string_view("WAYLAND_DISPLAY"),
-		    getenv_string_view("XDG_RUNTIME_DIR"));
+		    getenv_string_view("DISPLAY"),
+		    getenv_string_view(howdy::native::kWaylandDisplayEnvironmentVariable),
+		    getenv_string_view(howdy::native::kXdgRuntimeDirEnvironmentVariable));
 	}
 
 	void print_missing_graphical_environment_diagnostic() {
@@ -174,8 +176,10 @@ namespace {
 		             "user.\n\n";
 		std::cerr
 		    << "If multiple Wayland displays are active, pass the intended display explicitly:\n";
-		std::cerr << "  run0 --setenv=WAYLAND_DISPLAY howdy test\n";
-		std::cerr << "  sudo --preserve-env=WAYLAND_DISPLAY howdy test\n\n";
+		std::cerr << "  run0 --setenv=" << howdy::native::kWaylandDisplayEnvironmentVariable
+		          << " howdy test\n";
+		std::cerr << "  sudo --preserve-env=" << howdy::native::kWaylandDisplayEnvironmentVariable
+		          << " howdy test\n\n";
 		std::cerr << "For X11, preserve its display credentials instead:\n";
 		std::cerr << "  run0 --setenv=DISPLAY --setenv=XAUTHORITY howdy test\n";
 		std::cerr << "  sudo --preserve-env=DISPLAY,XAUTHORITY howdy test\n\n";
@@ -194,7 +198,7 @@ namespace {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr) {
 			return test_cli_internal::TestPreflightOperationResult{
-			    .error_message = "Face model was not initialized",
+			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
 
@@ -335,7 +339,7 @@ namespace {
 		if (production_context == nullptr) {
 			return test_cli_internal::TestPreviewResult{
 			    .status        = test_cli_internal::TestPreviewStatus::kFaceModelError,
-			    .error_message = "Face model was not initialized",
+			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
 		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
@@ -508,7 +512,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 			print_missing_graphical_environment_diagnostic();
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraOpenError:
-			if (preview_result.device_path == "none") {
+			if (preview_result.device_path == howdy::native::kNoCaptureDevice) {
 				std::cerr << preview_result.error_message << "\n";
 			} else {
 				std::cerr << "Failed to open camera device: " << preview_result.device_path << "\n";
@@ -516,7 +520,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 			}
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraReadError:
-			std::cerr << "Could not capture a camera frame\n";
+			std::cerr << howdy::native::kCameraReadFailureMessage << '\n';
 			return kExitCameraError;
 		case TestPreviewStatus::kGuiUserError:
 			std::cerr << "Failed to switch GUI session to the invoking user\n";

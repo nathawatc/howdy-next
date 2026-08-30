@@ -52,7 +52,7 @@ namespace {
 		if (production_context == nullptr) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status        = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
-			    .error_message = "Face model was not initialized",
+			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
 
@@ -96,7 +96,7 @@ namespace {
 		if (production_context == nullptr || !production_context->face_model.has_value()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status        = howdy::native::add_internal::AddEnrollmentStatus::kFaceModelError,
-			    .error_message = "Face model was not initialized",
+			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
 

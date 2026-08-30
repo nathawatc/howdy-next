@@ -32,8 +32,8 @@ namespace howdy::native {
 			return readiness_failure(UserModelStatus::kInvalidUser, kInvalidUserNameMessage);
 		}
 
-		const auto directory_security =
-		    check_secure_root_owned_directory_tree(models_dir, "User models directory", owner_uid);
+		const auto directory_security = check_secure_root_owned_directory_tree(
+		    models_dir, kUserModelsDirectoryLabel, owner_uid);
 		if (!directory_security.ok) {
 			if (directory_security.error_code == ENOENT) {
 				return readiness_failure(UserModelStatus::kNoModelDirectory, {}, *model_path);
@@ -47,7 +47,7 @@ namespace howdy::native {
 		}
 
 		const auto file_security = check_secure_root_owned_file_with_directory(
-		    *model_path, {.directory = "User models directory", .file = "User model file"},
+		    *model_path, {.directory = kUserModelsDirectoryLabel, .file = kUserModelFileLabel},
 		    owner_uid);
 		if (!file_security.ok) {
 			if (file_security.error_code == ENOENT) {

@@ -8,12 +8,13 @@
 #include <sys/stat.h>
 
 namespace howdy::native {
+	inline constexpr auto kNoCaptureDevice = "none";
 
 	namespace detail {
 
 		inline auto is_allowed_capture_device_path(std::string_view             device_path,
 		                                           const std::filesystem::path &root) -> bool {
-			if (device_path.empty() || device_path == "none") {
+			if (device_path.empty() || device_path == kNoCaptureDevice) {
 				return true;
 			}
 

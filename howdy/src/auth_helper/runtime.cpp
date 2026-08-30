@@ -349,8 +349,8 @@ namespace howdy::native::auth_helper {
 				std::cerr << config_security.error_message << "\n";
 				return false;
 			}
-			return internal::copy_file(source_config, prepared.config_path, "Config file", identity,
-			                           operations);
+			return internal::copy_file(source_config, prepared.config_path,
+			                           howdy::native::kConfigFileLabel, identity, operations);
 		}
 
 		auto stage_user_model_for_user(const std::string &user, const PreparedPaths &prepared,
@@ -365,9 +365,9 @@ namespace howdy::native::auth_helper {
 			if (!source_model_path.has_value()) {
 				return true;
 			}
-			return internal::copy_file(*source_model_path,
-			                           prepared.user_models_dir / source_model_path->filename(),
-			                           "User model file", identity, operations);
+			return internal::copy_file(
+			    *source_model_path, prepared.user_models_dir / source_model_path->filename(),
+			    std::string(howdy::native::kUserModelFileLabel), identity, operations);
 		}
 
 	}  // namespace

@@ -8,7 +8,10 @@
 #include <vector>
 
 namespace howdy::native {
-	inline constexpr std::size_t kSfaceEmbeddingSize = 128;
+	inline constexpr std::size_t kSfaceEmbeddingSize  = 128;
+	inline constexpr auto kInvalidFaceEncodingMessage = "Face encoding returned invalid embedding";
+	inline constexpr auto kMissingSfaceEncodingDependencyMessage =
+	    "Internal error: missing SFace encoding dependency";
 
 	enum class FaceEncodingStatus : std::uint8_t {
 		kOk,

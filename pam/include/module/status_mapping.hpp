@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 
+inline constexpr auto kFaceVerificationSucceededMessage = "Face verification succeeded";
+
 enum class ConversationKind : std::uint8_t {
 	None,
 	Error,

@@ -180,7 +180,8 @@ namespace {
 	auto models_directory_failure(std::string_view operation, const std::filesystem::path &path,
 	                              const int error_number) -> howdy::native::SecurePathCheckResult {
 		return {.ok            = false,
-		        .error_message = "Failed to " + std::string(operation) + " Models directory: " +
+		        .error_message = "Failed to " + std::string(operation) + " " +
+		                         std::string(howdy::native::kModelsDirectoryLabel) + ": " +
 		                         path.string() + " (" + std::strerror(error_number) + ")",
 		        .error_code    = error_number};
 	}
@@ -192,9 +193,9 @@ namespace {
 		if (fstat(fd, &component_stat) != 0) {
 			return models_directory_failure("inspect", path, errno);
 		}
-		return howdy::native::check_secure_path_stat(component_stat,
-		                                             howdy::native::SecurePathKind::kDirectory,
-		                                             path, "Models directory", owner_uid);
+		return howdy::native::check_secure_path_stat(
+		    component_stat, howdy::native::SecurePathKind::kDirectory, path,
+		    howdy::native::kModelsDirectoryLabel, owner_uid);
 	}
 
 	auto create_secure_models_directory(const std::filesystem::path &models_dir,
@@ -230,7 +231,7 @@ namespace {
 				const int open_error = errno;
 				if (open_error != ENOENT) {
 					const auto security = howdy::native::check_secure_root_owned_directory_tree(
-					    component_path, "Models directory", owner_uid);
+					    component_path, howdy::native::kModelsDirectoryLabel, owner_uid);
 					return security.ok
 					           ? models_directory_failure("open", component_path, open_error)
 					           : security;
@@ -253,8 +254,8 @@ namespace {
 			current_path = component_path;
 		}
 
-		return howdy::native::check_secure_root_owned_directory_tree(normalized_models_dir,
-		                                                             "Models directory", owner_uid);
+		return howdy::native::check_secure_root_owned_directory_tree(
+		    normalized_models_dir, howdy::native::kModelsDirectoryLabel, owner_uid);
 	}
 
 	auto prepare_staged_download(const std::filesystem::path &destination,
@@ -262,7 +263,7 @@ namespace {
 	    -> std::optional<StagedDownloadFile> {
 		const auto parent       = destination.parent_path();
 		const auto dir_security = howdy::native::check_secure_root_owned_directory_tree(
-		    parent, "Models directory", owner_uid);
+		    parent, howdy::native::kModelsDirectoryLabel, owner_uid);
 		if (!dir_security.ok) {
 			return std::nullopt;
 		}

@@ -2,6 +2,7 @@
 #include "support/atomic_files.hpp"
 #include "support/file_security.hpp"
 #include "vision/frame_validation.hpp"
+#include "vision/video_capture.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -226,7 +227,7 @@ auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
 			std::cerr << capture_result.error_message << "\n";
 			return kExitAbort;
 		case SnapshotCaptureStatus::kReadError:
-			std::cerr << "Could not capture a camera frame\n";
+			std::cerr << howdy::native::kCameraReadFailureMessage << '\n';
 			return kExitAbort;
 		default:
 			std::cerr << "Internal error: unknown snapshot capture status\n";

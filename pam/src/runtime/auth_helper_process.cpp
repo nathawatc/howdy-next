@@ -39,6 +39,11 @@ namespace {
 	using AuthHelperSpawnOperations = howdy::pam::auth_helper_process::Operations;
 	using AuthHelperSpawnRequest    = howdy::pam::auth_helper_process::SpawnRequest;
 
+	void log_auth_helper_read_error(int error_number) {
+		syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(error_number),
+		       error_number);
+	}
+
 	auto make_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
@@ -202,8 +207,7 @@ namespace {
 				return HelperPollResult::kRetry;
 			}
 			const int read_error = errno;
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-			       read_error);
+			log_auth_helper_read_error(read_error);
 			return HelperPollResult::kError;
 		}
 		if (poll_result == 0) {
@@ -211,8 +215,7 @@ namespace {
 		}
 		if ((descriptor.revents & (POLLNVAL | POLLERR)) != 0) {
 			const int read_error = (descriptor.revents & POLLNVAL) != 0 ? EBADF : EIO;
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-			       read_error);
+			log_auth_helper_read_error(read_error);
 			return HelperPollResult::kError;
 		}
 		return (descriptor.revents & (POLLIN | POLLHUP)) == 0 ? HelperPollResult::kRetry
@@ -223,8 +226,7 @@ namespace {
 	                                     HelperDeadline deadline) -> HelperReadResult {
 		if (output_fd < 0) {
 			constexpr int read_error = EBADF;
-			syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-			       read_error);
+			log_auth_helper_read_error(read_error);
 			return HelperReadResult::kReadError;
 		}
 
@@ -263,8 +265,7 @@ namespace {
 			if (errno != EINTR && errno != EAGAIN) {
 				const int read_error = errno;
 				output.clear();
-				syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(read_error),
-				       read_error);
+				log_auth_helper_read_error(read_error);
 				return HelperReadResult::kReadError;
 			}
 		}
@@ -282,8 +283,7 @@ namespace {
 			const auto helper_output = operations.read_bounded(
 			    operations.context, {.fd = output_fd, .max_bytes = kAuthHelperOutputLimit});
 			if (helper_output.read_error) {
-				syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)",
-				       strerror(helper_output.error_number), helper_output.error_number);
+				log_auth_helper_read_error(helper_output.error_number);
 				return HelperReadResult::kReadError;
 			}
 			if (helper_output.hit_limit) {

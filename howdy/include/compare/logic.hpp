@@ -11,6 +11,10 @@
 #include <opencv2/core.hpp>
 
 namespace howdy::native {
+	inline constexpr auto kAllFramesTooDarkMessage =
+	    "All frames were too dark; check dark_threshold";
+	inline constexpr auto kAverageDarknessLabel = "Average darkness: ";
+	inline constexpr auto kThresholdLabel       = ", Threshold: ";
 
 	enum class BrightnessDecision : std::uint8_t {
 		kBlackFrame,

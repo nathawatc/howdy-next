@@ -58,6 +58,12 @@ namespace howdy::native::user_model_codec {
 	};
 
 	namespace {
+		constexpr auto kStoredModelsIncompatibleMessage =
+		    "Stored face models use incompatible face-recognition metadata";
+		constexpr auto kStoredEncodingLimitMessage = "Stored face encoding exceeds safety limit";
+		constexpr auto kStoredEncodingInvalidMessage =
+		    "Stored face encoding contains an invalid value";
+
 		auto json_depth_within_limit(yyjson_val *root) -> bool {
 			std::vector<std::pair<yyjson_val *, std::size_t>> pending{{root, 1}};
 			while (!pending.empty()) {
@@ -104,16 +110,16 @@ namespace howdy::native::user_model_codec {
 			if (!expected_backend.empty() && !entry.backend.empty() &&
 			    entry.backend != expected_backend) {
 				return failure(UserModelStatus::kIncompatibleBackend,
-				               "Stored face models use incompatible face-recognition metadata");
+				               kStoredModelsIncompatibleMessage);
 			}
 			if (!expected_metric.empty() && !entry.metric.empty() &&
 			    entry.metric != expected_metric) {
 				return failure(UserModelStatus::kIncompatibleMetric,
-				               "Stored face models use incompatible face-recognition metadata");
+				               kStoredModelsIncompatibleMessage);
 			}
 			if (!expected_model.empty() && !entry.model.empty() && entry.model != expected_model) {
 				return failure(UserModelStatus::kIncompatibleModel,
-				               "Stored face models use incompatible face-recognition metadata");
+				               kStoredModelsIncompatibleMessage);
 			}
 			return UserModelListResult{.status = UserModelStatus::kOk};
 		}
@@ -209,8 +215,7 @@ namespace howdy::native::user_model_codec {
 			const auto encoding_size = yyjson_arr_size(encoding_json);
 			if (encoding_size == 0 || encoding_size > user_model_limits::kMaxEncodingLength) {
 				return EncodingParseResult{
-				    .result = failure(UserModelStatus::kOversized,
-				                      "Stored face encoding exceeds safety limit"),
+				    .result = failure(UserModelStatus::kOversized, kStoredEncodingLimitMessage),
 				};
 			}
 
@@ -222,16 +227,16 @@ namespace howdy::native::user_model_codec {
 			yyjson_arr_foreach(encoding_json, index, count, value) {
 				if (!yyjson_is_num(value)) {
 					return EncodingParseResult{
-					    .result = failure(UserModelStatus::kInvalidShape,
-					                      "Stored face encoding contains an invalid value"),
+					    .result =
+					        failure(UserModelStatus::kInvalidShape, kStoredEncodingInvalidMessage),
 					};
 				}
 				const auto number = yyjson_get_num(value);
 				if (!std::isfinite(number) || number < -std::numeric_limits<float>::max() ||
 				    number > std::numeric_limits<float>::max()) {
 					return EncodingParseResult{
-					    .result = failure(UserModelStatus::kInvalidShape,
-					                      "Stored face encoding contains an invalid value"),
+					    .result =
+					        failure(UserModelStatus::kInvalidShape, kStoredEncodingInvalidMessage),
 					};
 				}
 				encoding.push_back(static_cast<float>(number));
@@ -334,7 +339,7 @@ namespace howdy::native::user_model_codec {
 			if (yyjson_arr_size(data) > user_model_limits::kMaxEncodingsPerModel) {
 				return EntryParseResult{
 				    .result = failure(UserModelStatus::kOversized,
-				                      "Stored face model contains too many encodings"),
+				                      std::string(kStoredEncodingsLimitMessage)),
 				};
 			}
 
@@ -374,7 +379,7 @@ namespace howdy::native::user_model_codec {
 			}
 			if (model_count > user_model_limits::kMaxStoredModels) {
 				return failure(UserModelStatus::kOversized,
-				               "Stored face model list exceeds safety limit");
+				               std::string(kStoredModelListLimitMessage));
 			}
 
 			UserModelListResult result{.status = UserModelStatus::kOk};
@@ -396,7 +401,7 @@ namespace howdy::native::user_model_codec {
 				if (entry.id == std::numeric_limits<int>::max()) {
 					if (strict_shape) {
 						return failure(UserModelStatus::kInvalidShape,
-						               "Stored face model ID is too large");
+						               std::string(kStoredModelIdLimitMessage));
 					}
 					result.next_id = std::numeric_limits<int>::max();
 				} else {
@@ -558,14 +563,12 @@ namespace howdy::native::user_model_codec {
 
 	auto validate_encoding(const std::vector<float> &encoding) -> UserModelListResult {
 		if (encoding.empty() || encoding.size() > user_model_limits::kMaxEncodingLength) {
-			return failure(UserModelStatus::kOversized,
-			               "Stored face encoding exceeds safety limit");
+			return failure(UserModelStatus::kOversized, kStoredEncodingLimitMessage);
 		}
 		if (!std::ranges::all_of(encoding, [](float value) -> bool {
 			    return std::isfinite(value);
 		    })) {
-			return failure(UserModelStatus::kInvalidShape,
-			               "Stored face encoding contains an invalid value");
+			return failure(UserModelStatus::kInvalidShape, kStoredEncodingInvalidMessage);
 		}
 		return UserModelListResult{.status = UserModelStatus::kOk};
 	}

@@ -4,6 +4,7 @@
 
 #include "runtime/compare_process.hpp"
 
+#include "compare/args.hpp"
 #include "paths.hpp"
 #include "protocol/compare_exit.hpp"
 
@@ -170,7 +171,7 @@ namespace {
 
 		std::array<char *, 5> args = {
 		    const_cast<char *>(kCompareProcessPath),
-		    const_cast<char *>("--config"),
+		    const_cast<char *>(howdy::native::kCompareConfigOption),
 		    const_cast<char *>(config_path.data()),
 		    const_cast<char *>(username.data()),
 		    nullptr,

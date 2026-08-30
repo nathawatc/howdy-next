@@ -181,7 +181,7 @@ namespace howdy::native {
 			if (!encoding_result.ok()) {
 				if (first_encoding_error.empty()) {
 					first_encoding_error = encoding_result.error_message.empty()
-					                           ? "Face encoding returned invalid embedding"
+					                           ? kInvalidFaceEncodingMessage
 					                           : encoding_result.error_message;
 				}
 				continue;
@@ -194,7 +194,7 @@ namespace howdy::native {
 				    !std::isfinite(match.score)) {
 					return {
 					    .status        = CompareInferenceStatus::kInvalidMatchResult,
-					    .error_message = "Face matcher returned invalid match result",
+					    .error_message = kFaceMatcherInvalidResultMessage,
 					};
 				}
 				return {

@@ -12,7 +12,7 @@ namespace howdy::native {
 		    dependencies.extract_feature == nullptr) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
-			    .error_message = "Internal error: missing SFace encoding dependency",
+			    .error_message = kMissingSfaceEncodingDependencyMessage,
 			};
 		}
 
@@ -60,7 +60,7 @@ namespace howdy::native {
 		}
 		if (feature.type() != CV_32FC1 || feature.total() != kSfaceEmbeddingSize) {
 			return {
-			    .error_message = "Face encoding returned invalid embedding",
+			    .error_message = kInvalidFaceEncodingMessage,
 			};
 		}
 
@@ -69,7 +69,7 @@ namespace howdy::native {
 		for (const float value : cv::Mat_<float>(feature)) {
 			if (!std::isfinite(value)) {
 				return {
-				    .error_message = "Face encoding returned invalid embedding",
+				    .error_message = kInvalidFaceEncodingMessage,
 				};
 			}
 			encoding.push_back(value);

@@ -8,10 +8,11 @@
 #include <opencv2/imgproc.hpp>
 
 namespace howdy::native {
+	inline constexpr float kBrightnessPercentScale = 100.0F;
 
 	struct BrightnessStats {
 		double               hist_total = 0.0;
-		float                darkness   = 100.0F;
+		float                darkness   = kBrightnessPercentScale;
 		std::array<float, 8> bins_percent{};
 	};
 

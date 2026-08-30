@@ -20,7 +20,7 @@ namespace howdy::native {
 				result.message   = "Usage: " + std::string(argv[0]) + " [--config PATH] <user>\n";
 				return result;
 			}
-			if (arg == "--config" && index + 1 < argc) {
+			if (arg == kCompareConfigOption && index + 1 < argc) {
 				result.args.config_path = argv[++index];
 				continue;
 			}

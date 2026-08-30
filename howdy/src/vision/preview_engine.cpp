@@ -38,7 +38,7 @@ namespace howdy::native {
 				faces[index].status = PreviewFaceStatus::kEncodingFailed;
 				if (first_error.empty()) {
 					first_error = encoding.error_message.empty()
-					                  ? "Face encoding returned invalid embedding"
+					                  ? kInvalidFaceEncodingMessage
 					                  : std::move(encoding.error_message);
 				}
 				continue;
@@ -87,7 +87,7 @@ namespace howdy::native {
 
 		apply_clahe_if_enabled(gray_frame, config_, clahe_);
 		const auto brightness = measure_brightness(gray_frame);
-		if (brightness.hist_total == 0.0 || brightness.darkness == 100.0F) {
+		if (brightness.hist_total == 0.0 || brightness.darkness == kBrightnessPercentScale) {
 			return {
 			    .status     = PreviewFrameStatus::kBlackFrame,
 			    .brightness = brightness,
@@ -126,7 +126,7 @@ namespace howdy::native {
 			    .brightness     = brightness,
 			    .gray_frame     = std::move(gray_frame),
 			    .error_message  = detection_result.error_message.empty()
-			                          ? "Face detection failed"
+			                          ? kFaceDetectionFailedMessage
 			                          : std::move(detection_result.error_message),
 			    .inference_time = inference_elapsed(),
 			};
@@ -176,7 +176,7 @@ namespace howdy::native {
 			    .status         = PreviewFrameStatus::kInvalidMatchResult,
 			    .brightness     = brightness,
 			    .gray_frame     = std::move(gray_frame),
-			    .error_message  = "Face matcher returned invalid match result",
+			    .error_message  = kFaceMatcherInvalidResultMessage,
 			    .inference_time = inference_elapsed(),
 			};
 		}

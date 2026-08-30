@@ -397,8 +397,7 @@ namespace howdy::native::config_internal {
 		                                                     false, &temp_copy->original_content)) {
 			cleanup();
 			const auto result_status =
-			    install_error ==
-			                "Config changed while editing; not installing stale edited config" ||
+			    install_error == howdy::native::kStaleEditedConfigMessage ||
 			            install_error == "Config changed while editor was open"
 			        ? ConfigEditStatus::kConfigChanged
 			        : ConfigEditStatus::kInstallFailed;

@@ -68,10 +68,10 @@ namespace {
 				std::cerr << "Camera returned only black frames; check the IR emitter\n";
 				break;
 			case howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames:
-				std::cerr << "All frames were too dark; check dark_threshold\n";
-				std::cerr << "Average darkness: "
+				std::cerr << howdy::native::kAllFramesTooDarkMessage << '\n';
+				std::cerr << howdy::native::kAverageDarknessLabel
 				          << (capture_result.dark_running_total / capture_result.valid_frames)
-				          << ", Threshold: " << dark_threshold << "\n";
+				          << howdy::native::kThresholdLabel << dark_threshold << '\n';
 				break;
 			case howdy::native::EnrollmentCaptureFailure::kNoSufficientlyBrightFrames:
 				std::cerr << "No sufficiently bright frames captured, aborting\n";

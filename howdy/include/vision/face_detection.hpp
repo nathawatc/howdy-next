@@ -8,6 +8,7 @@
 #include <opencv2/core.hpp>
 
 namespace howdy::native {
+	inline constexpr auto kFaceDetectionFailedMessage = "Face detection failed";
 
 	struct FaceDetection {
 		cv::Rect2f                 box;

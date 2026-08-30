@@ -6,6 +6,7 @@
 #include <string>
 
 namespace howdy::native {
+	inline constexpr auto kCompareConfigOption = "--config";
 
 	struct CompareArgs {
 		std::string user;

@@ -20,6 +20,8 @@ namespace howdy::native {
 		constexpr auto kFaceDetectorInitializationMessage = "Failed to initialize face detector";
 		constexpr auto kFaceRecognizerInitializationMessage =
 		    "Failed to initialize face recognizer";
+		constexpr auto kFaceEncodingProcessingFailureMessage =
+		    "Face encoding failed while processing camera frame";
 
 		// Temporary OpenCV 5 workaround: force New DNN graph engine and forbid
 		// Classic-engine fallback, which cannot load Howdy's supported ONNX models.
@@ -223,12 +225,12 @@ namespace howdy::native {
 		} catch (const cv::Exception &) {
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInferenceError,
-			    .error_message = "Face detection failed",
+			    .error_message = kFaceDetectionFailedMessage,
 			};
 		} catch (const std::exception &) {
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInferenceError,
-			    .error_message = "Face detection failed",
+			    .error_message = kFaceDetectionFailedMessage,
 			};
 		}
 	}
@@ -250,7 +252,7 @@ namespace howdy::native {
 		if (recognizer_.empty()) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
-			    .error_message = "Internal error: missing SFace encoding dependency",
+			    .error_message = kMissingSfaceEncodingDependencyMessage,
 			};
 		}
 
@@ -274,12 +276,12 @@ namespace howdy::native {
 		} catch (const cv::Exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
-			    .error_message = "Face encoding failed while processing camera frame",
+			    .error_message = kFaceEncodingProcessingFailureMessage,
 			};
 		} catch (const std::exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
-			    .error_message = "Face encoding failed while processing camera frame",
+			    .error_message = kFaceEncodingProcessingFailureMessage,
 			};
 		}
 	}

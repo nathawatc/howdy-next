@@ -147,7 +147,7 @@ namespace howdy::pam::auth_flow {
 			                          build_confirmation_message(username));
 		}
 
-		syslog(LOG_INFO, "Face verification succeeded");
+		syslog(LOG_INFO, "%s", kFaceVerificationSucceededMessage);
 		return PAM_SUCCESS;
 	}
 

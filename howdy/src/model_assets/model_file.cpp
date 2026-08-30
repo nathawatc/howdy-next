@@ -70,7 +70,7 @@ namespace howdy::native {
 			            std::string(label) + " must have a parent directory: " + path.string()};
 		}
 		const auto directory_security =
-		    check_secure_root_owned_directory_tree(parent, "Models directory", owner_uid);
+		    check_secure_root_owned_directory_tree(parent, kModelsDirectoryLabel, owner_uid);
 		if (!directory_security.ok) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = directory_security.error_message};

@@ -15,11 +15,17 @@
 namespace howdy::native {
 
 	namespace {
+		constexpr auto kNewFaceModelEntryInvalidMessage = "New face model entry is invalid";
+		constexpr auto kModelUpdateFailedMessage        = "Failed to update model file";
+		constexpr auto kModelRemoveFailedMessage        = "Failed to remove model file";
+		constexpr auto kModelSaveFailedMessage          = "Failed to save model file";
+		constexpr auto kExistingModelsIncompatibleMessage =
+		    "Existing face models use incompatible face-recognition metadata";
 
 		auto model_changed_failure() -> UserModelMutationResult {
 			return UserModelMutationResult{
 			    .status        = UserModelStatus::kModelChanged,
-			    .error_message = "User model file changed, please rerun the command",
+			    .error_message = std::string(kUserModelChangedMessage),
 			};
 		}
 
@@ -95,14 +101,13 @@ namespace howdy::native {
 		                                std::vector<UserModelEntry>::difference_type found_index)
 		    -> UserModelMutationResult {
 			if (!user_model_codec::erase_entry(*document, static_cast<std::size_t>(found_index))) {
-				return mutation_failure(UserModelStatus::kWriteFailed,
-				                        "Failed to update model file");
+				return mutation_failure(UserModelStatus::kWriteFailed, kModelUpdateFailedMessage);
 			}
 			if (user_model_codec::is_empty(*document)) {
 				const auto commit_result = transaction.remove_file();
 				if (!atomic_file_commit_is_durable(commit_result)) {
 					return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
-					                      "Failed to remove model file",
+					                      kModelRemoveFailedMessage,
 					                      "Model file was removed, but its directory could not be "
 					                      "synced; verify state "
 					                      "before retrying",
@@ -117,7 +122,7 @@ namespace howdy::native {
 			const auto commit_result = transaction.write_document(*document);
 			if (!atomic_file_commit_is_durable(commit_result)) {
 				return commit_failure(
-				    commit_result, UserModelStatus::kWriteFailed, "Failed to update model file",
+				    commit_result, UserModelStatus::kWriteFailed, kModelUpdateFailedMessage,
 				    "Model file was updated, but its directory could not be synced; verify state "
 				    "before retrying",
 				    std::move(removed));
@@ -162,39 +167,36 @@ namespace howdy::native {
 		}
 		if (!new_entry.label.empty() && !is_valid_model_label(new_entry.label)) {
 			return mutation_failure(UserModelStatus::kInvalidShape,
-			                        "New face model entry is invalid");
+			                        kNewFaceModelEntryInvalidMessage);
 		}
 		if (new_entry.encodings.empty()) {
 			return mutation_failure(UserModelStatus::kInvalidShape,
-			                        "New face model entry is invalid");
+			                        kNewFaceModelEntryInvalidMessage);
 		}
 		if (new_entry.encodings.size() > user_model_limits::kMaxEncodingsPerModel) {
 			return mutation_failure(UserModelStatus::kOversized,
-			                        "Stored face model contains too many encodings");
+			                        std::string(kStoredEncodingsLimitMessage));
 		}
 		if (entries.entries.size() >= user_model_limits::kMaxStoredModels) {
 			return mutation_failure(UserModelStatus::kOversized,
-			                        "Stored face model list exceeds safety limit");
+			                        std::string(kStoredModelListLimitMessage));
 		}
 		if (entries.next_id >= std::numeric_limits<int>::max()) {
 			return mutation_failure(UserModelStatus::kInvalidShape,
-			                        "Stored face model ID is too large");
+			                        std::string(kStoredModelIdLimitMessage));
 		}
 		for (const auto &entry : entries.entries) {
 			if (!entry.backend.empty() && entry.backend != new_entry.backend) {
 				return mutation_failure(UserModelStatus::kIncompatibleBackend,
-				                        "Existing face models use incompatible face-recognition "
-				                        "metadata");
+				                        kExistingModelsIncompatibleMessage);
 			}
 			if (!entry.metric.empty() && entry.metric != new_entry.metric) {
 				return mutation_failure(UserModelStatus::kIncompatibleMetric,
-				                        "Existing face models use incompatible face-recognition "
-				                        "metadata");
+				                        kExistingModelsIncompatibleMessage);
 			}
 			if (!entry.model.empty() && entry.model != new_entry.model) {
 				return mutation_failure(UserModelStatus::kIncompatibleModel,
-				                        "Existing face models use incompatible face-recognition "
-				                        "metadata");
+				                        kExistingModelsIncompatibleMessage);
 			}
 		}
 		for (const auto &encoding : new_entry.encodings) {
@@ -215,12 +217,12 @@ namespace howdy::native {
 		    .encodings = new_entry.encodings,
 		};
 		if (!user_model_codec::append_entry(mutation.document, entry)) {
-			return mutation_failure(UserModelStatus::kWriteFailed, "Failed to save model file");
+			return mutation_failure(UserModelStatus::kWriteFailed, kModelSaveFailedMessage);
 		}
 		const auto commit_result = mutation.transaction->write_document(mutation.document);
 		if (!atomic_file_commit_is_durable(commit_result)) {
 			return commit_failure(commit_result, UserModelStatus::kWriteFailed,
-			                      "Failed to save model file",
+			                      kModelSaveFailedMessage,
 			                      "Model file was updated, but its directory could not be synced; "
 			                      "verify state before "
 			                      "retrying",
@@ -293,7 +295,7 @@ namespace howdy::native {
 		const auto commit_result = transaction.transaction->remove_file();
 		if (!atomic_file_commit_is_durable(commit_result)) {
 			return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
-			                      "Failed to remove model file",
+			                      kModelRemoveFailedMessage,
 			                      "Model file was removed, but its directory could not be synced; "
 			                      "verify state before "
 			                      "retrying",
@@ -322,7 +324,7 @@ namespace howdy::native {
 		const auto unchanged = transaction.transaction->snapshot_matches(expected_snapshot);
 		if (!unchanged.has_value()) {
 			return mutation_failure(UserModelStatus::kParseError,
-			                        "Failed to inspect user model file: " +
+			                        std::string(kUserModelFileInspectionFailedMessage) + ": " +
 			                            transaction.transaction->path().string());
 		}
 		if (!*unchanged) {
@@ -331,7 +333,7 @@ namespace howdy::native {
 		const auto commit_result = transaction.transaction->remove_file();
 		if (!atomic_file_commit_is_durable(commit_result)) {
 			return commit_failure(commit_result, UserModelStatus::kDeleteFailed,
-			                      "Failed to remove model file",
+			                      kModelRemoveFailedMessage,
 			                      "Model file was removed, but its directory could not be synced; "
 			                      "verify state before "
 			                      "retrying",

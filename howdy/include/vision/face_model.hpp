@@ -15,6 +15,8 @@
 #include <opencv2/objdetect/face.hpp>
 
 namespace howdy::native {
+	inline constexpr auto kFaceModelNotInitializedMessage = "Face model was not initialized";
+
 	enum class FaceModelErrorCategory : std::uint8_t {
 		kNone,
 		kModelNotReady,

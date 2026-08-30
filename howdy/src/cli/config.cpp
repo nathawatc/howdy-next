@@ -1,5 +1,6 @@
 #include "cli/config_cli.hpp"
 #include "cli/config_internal.hpp"
+#include "config/config_utils.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -19,13 +20,13 @@ namespace {
 
 	void
 	print_config_install_error(const howdy::native::config_internal::ConfigEditResult &result) {
-		if (result.error == "Updated config is invalid") {
+		if (result.error == howdy::native::kUpdatedConfigInvalidMessage) {
 			std::cout << "Edited config is invalid and was not installed: "
 			          << result.temp_path.string() << "\n";
 		} else if (!result.error.empty()) {
 			std::cout << result.error << "\n";
 		} else {
-			std::cout << "Failed to install edited config\n";
+			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';
 		}
 	}
 
@@ -72,7 +73,7 @@ auto howdy::native::config_internal::config_main_with_dependencies(
 			std::cout << "Editor exited unsuccessfully; config not updated\n";
 			return kExitAbort;
 		case ConfigEditStatus::kReadFailed:
-			std::cout << "Failed to install edited config\n";
+			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';
 			return kExitAbort;
 		case ConfigEditStatus::kInvalidEditedConfig:
 		case ConfigEditStatus::kConfigChanged:

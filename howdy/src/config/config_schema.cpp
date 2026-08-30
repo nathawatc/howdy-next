@@ -1,5 +1,7 @@
 #include "config/config_schema.hpp"
 
+#include "vision/capture_device_path.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,13 +35,15 @@ namespace howdy::native::config_schema {
 		    .allowed_value     = -1.0F,
 		};
 		inline constexpr NumericRange sface_threshold_range{.minimum = 0.0F, .maximum = 4.0F};
+		inline constexpr auto         kExpectedBooleanRule = "expected a boolean";
+		inline constexpr auto         kFrameSizeRule = "expected -1 or integer range 16..8192";
 
 		inline constexpr std::array<std::string_view, 3> sface_metric_choices = {
 		    sface_cosine_metric,
 		    "l2",
 		    "l2norm",
 		};
-		inline constexpr std::array<std::string_view, 1> device_path_choices = {"none"};
+		inline constexpr std::array<std::string_view, 1> device_path_choices = {kNoCaptureDevice};
 
 		auto option_name(const Option &option) -> std::string {
 			return std::string(option.section) + "." + std::string(option.key);
@@ -202,35 +206,35 @@ namespace howdy::native::config_schema {
 		           .key          = "detection_notice",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Show progress messages for each face scan attempt."},
 		    Option{.id           = OptionId::core_no_confirmation,
 		           .section      = "core",
 		           .key          = "no_confirmation",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Suppress success confirmation after facial authentication."},
 		    Option{.id           = OptionId::core_abort_if_ssh,
 		           .section      = "core",
 		           .key          = "abort_if_ssh",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Skip facial authentication when session uses SSH."},
 		    Option{.id           = OptionId::core_abort_if_lid_closed,
 		           .section      = "core",
 		           .key          = "abort_if_lid_closed",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Skip facial authentication while laptop lid is closed."},
 		    Option{.id           = OptionId::core_disabled,
 		           .section      = "core",
 		           .key          = "disabled",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description =
 		               "Disable Howdy PAM authentication without removing enrolled models."},
 		    Option{.id           = OptionId::video_timeout,
@@ -245,7 +249,7 @@ namespace howdy::native::config_schema {
 		           .section      = "video",
 		           .key          = "device_path",
 		           .type         = ValueType::string,
-		           .fallback     = string_default("none"),
+		           .fallback     = string_default(kNoCaptureDevice),
 		           .choices      = device_path_choices,
 		           .special_rule = SpecialRule::device_path,
 		           .invalid_rule =
@@ -258,7 +262,7 @@ namespace howdy::native::config_schema {
 		           .key          = "warn_no_device",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Show warning when configured camera cannot be opened."},
 		    Option{.id           = OptionId::video_max_height,
 		           .section      = "video",
@@ -274,7 +278,7 @@ namespace howdy::native::config_schema {
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(-1),
 		           .range        = frame_size_range,
-		           .invalid_rule = "expected -1 or integer range 16..8192",
+		           .invalid_rule = kFrameSizeRule,
 		           .description = "Requested camera width; -1 selects default or largest profile."},
 		    Option{.id           = OptionId::video_frame_height,
 		           .section      = "video",
@@ -282,7 +286,7 @@ namespace howdy::native::config_schema {
 		           .type         = ValueType::integer,
 		           .fallback     = int_default(-1),
 		           .range        = frame_size_range,
-		           .invalid_rule = "expected -1 or integer range 16..8192",
+		           .invalid_rule = kFrameSizeRule,
 		           .description =
 		               "Requested camera height; -1 selects default or largest profile."},
 		    Option{.id           = OptionId::video_clahe_enabled,
@@ -290,7 +294,7 @@ namespace howdy::native::config_schema {
 		           .key          = "clahe_enabled",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(true),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Enable CLAHE preprocessing for low-contrast camera frames."},
 		    Option{.id           = OptionId::video_clahe_clip_limit,
 		           .section      = "video",
@@ -322,7 +326,7 @@ namespace howdy::native::config_schema {
 		           .key          = "force_mjpeg",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Force OpenCV to decode camera frames as MJPEG."},
 		    Option{.id           = OptionId::video_exposure,
 		           .section      = "video",
@@ -394,7 +398,7 @@ namespace howdy::native::config_schema {
 		           .key          = "end_report",
 		           .type         = ValueType::boolean,
 		           .fallback     = bool_default(false),
-		           .invalid_rule = "expected a boolean",
+		           .invalid_rule = kExpectedBooleanRule,
 		           .description  = "Print timing details after authentication."},
 		});
 

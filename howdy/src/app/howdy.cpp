@@ -38,13 +38,14 @@ namespace {
 
 	auto resolve_user(void *context) -> std::string {
 		(void)context;
-		for (const char *name : {"SUDO_USER", "DOAS_USER"}) {
+		for (const char *name : {"SUDO_USER", howdy::native::kDoasUserEnvironmentVariable}) {
 			if (const char *value = std::getenv(name); value != nullptr && value[0] != '\0') {
 				return value;
 			}
 		}
 
-		if (const auto pkexec_uid = howdy::native::parse_uid_env(std::getenv("PKEXEC_UID"))) {
+		if (const auto pkexec_uid = howdy::native::parse_uid_env(
+		        std::getenv(howdy::native::kPkexecUidEnvironmentVariable))) {
 			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
 				return {pwd->pw_name};
 			}

@@ -11,6 +11,11 @@
 #include <vector>
 
 namespace howdy::native {
+	inline constexpr auto kConfigFileLabel                  = "Config file";
+	inline constexpr auto kUpdatedConfigInvalidMessage      = "Updated config is invalid";
+	inline constexpr auto kEditedConfigInstallFailedMessage = "Failed to install edited config";
+	inline constexpr auto kStaleEditedConfigMessage =
+	    "Config changed while editing; not installing stale edited config";
 
 	struct ConfigPathCheckResult {
 		bool        ok = false;
@@ -46,7 +51,7 @@ namespace howdy::native {
 		}
 
 		const auto file_security = check_secure_root_owned_file_with_directory(
-		    config_path, {.directory = "Config directory", .file = "Config file"}, owner_uid);
+		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
 			    .ok            = false,

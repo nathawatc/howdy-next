@@ -9,6 +9,7 @@
 #include <opencv2/videoio.hpp>
 
 namespace howdy::native {
+	inline constexpr auto kCameraReadFailureMessage = "Could not capture a camera frame";
 
 	enum class CaptureError : std::uint8_t {
 		kNone,

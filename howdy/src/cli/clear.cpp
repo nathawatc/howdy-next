@@ -9,8 +9,9 @@
 
 namespace {
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int  kExitOk                   = 0;
+	constexpr int  kExitAbort                = 1;
+	constexpr auto kNoFaceModelsFoundMessage = "No face models found.";
 
 	struct ClearArgs {
 		std::string user;
@@ -70,11 +71,11 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 
 	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, args->user);
 	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No face models found.\n";
+		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kExitAbort;
 	}
 	if (inspection.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << "No face models found.\n";
+		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kExitAbort;
 	}
 	if (inspection.status != howdy::native::UserModelStatus::kOk) {
@@ -82,7 +83,7 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 		return kExitAbort;
 	}
 	if (!inspection.snapshot.has_value()) {
-		std::cout << "Failed to inspect user model file\n";
+		std::cout << howdy::native::kUserModelFileInspectionFailedMessage << '\n';
 		return kExitAbort;
 	}
 
@@ -100,11 +101,11 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	const auto clear_result = dependencies.clear_user_model_entries_if_unchanged(
 	    dependencies.context, args->user, *inspection.snapshot);
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No face models found.\n";
+		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kExitAbort;
 	}
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModel) {
-		std::cout << "No face models found.\n";
+		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kExitAbort;
 	}
 	if (clear_result.status != howdy::native::UserModelStatus::kOk) {
