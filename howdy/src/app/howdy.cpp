@@ -14,14 +14,13 @@
 #include "cli/snapshot_cli.hpp"
 #include "cli/test_cli.hpp"
 #include "howdy/version_format.hpp"
+#include "support/invoking_user.hpp"
 #include "support/user_names.hpp"
 #include "version.hpp"
 
 #include <array>
-#include <cerrno>
 #include <cstdlib>
 #include <iostream>
-#include <limits>
 #include <optional>
 #include <pwd.h>
 #include <string>
@@ -45,17 +44,9 @@ namespace {
 			}
 		}
 
-		if (const char *pkexec_uid = std::getenv("PKEXEC_UID");
-		    pkexec_uid != nullptr && pkexec_uid[0] != '\0') {
-			errno              = 0;
-			char      *end     = nullptr;
-			const auto raw_uid = std::strtoul(pkexec_uid, &end, 10);
-			if (errno == 0 && end != pkexec_uid && end != nullptr && *end == '\0' &&
-			    raw_uid <= std::numeric_limits<uid_t>::max()) {
-				const auto uid = static_cast<uid_t>(raw_uid);
-				if (passwd *pwd = getpwuid(uid); pwd != nullptr) {
-					return {pwd->pw_name};
-				}
+		if (const auto pkexec_uid = howdy::native::parse_uid_env(std::getenv("PKEXEC_UID"))) {
+			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
+				return {pwd->pw_name};
 			}
 		}
 

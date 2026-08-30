@@ -61,30 +61,6 @@ namespace {
 		return subject + " is invalid";
 	}
 
-	auto prepared_frame_validation_message(const cv::Mat                       &frame,
-	                                       howdy::native::FrameValidationStatus status)
-	    -> std::string {
-		const std::string subject = "Prepared frame for face detection";
-		switch (status) {
-			case howdy::native::FrameValidationStatus::kValid:
-				return {};
-			case howdy::native::FrameValidationStatus::kEmpty:
-				return subject + " is empty";
-			case howdy::native::FrameValidationStatus::kUnsupportedDimensions:
-				return subject + " has unsupported frame dimensions: " + std::to_string(frame.dims);
-			case howdy::native::FrameValidationStatus::kOversizedDimensions:
-				return subject + " has oversized frame dimensions: " + std::to_string(frame.cols) +
-				       "x" + std::to_string(frame.rows) + " (max supported dimension: " +
-				       std::to_string(howdy::native::kMaxFrameDimension) + ")";
-			case howdy::native::FrameValidationStatus::kUnsupportedChannelCount:
-				return subject +
-				       " has unsupported channel count: " + std::to_string(frame.channels());
-			case howdy::native::FrameValidationStatus::kUnsupportedPixelType:
-				return subject + " has unsupported pixel type: " + std::to_string(frame.type());
-		}
-		return subject + " is invalid";
-	}
-
 }  // namespace
 
 namespace howdy::native {
@@ -183,7 +159,8 @@ namespace howdy::native {
 		if (prepared_validation != FrameValidationStatus::kValid) {
 			return {
 			    .status        = CompareInferenceStatus::kInvalidPreparedFrame,
-			    .error_message = prepared_frame_validation_message(prepared, prepared_validation),
+			    .error_message = frame_validation_message("Prepared frame for face detection",
+			                                              prepared, prepared_validation),
 			};
 		}
 

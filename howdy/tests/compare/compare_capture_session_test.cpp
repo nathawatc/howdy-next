@@ -23,7 +23,7 @@ namespace {
 		int  open_calls             = 0;
 		int  read_calls             = 0;
 		int  property_call_count    = 0;
-		int  warm_up_calls           = 0;
+		int  warm_up_calls          = 0;
 		int  throw_on_property_call = 0;
 		bool set_property_result    = true;
 		bool warm_up_result         = true;
@@ -34,7 +34,7 @@ namespace {
 		};
 
 		std::vector<PropertyCall> property_calls;
-		std::vector<std::string>   events;
+		std::vector<std::string>  events;
 	};
 
 	struct FakeClockContext {
@@ -78,7 +78,7 @@ namespace {
 		    .value    = property.value,
 		});
 		capture.events.emplace_back(property.id == cv::CAP_PROP_AUTO_EXPOSURE ? "auto-exposure"
-		                                                                    : "exposure");
+		                                                                      : "exposure");
 		capture.property_call_count++;
 		if (capture.property_call_count == capture.throw_on_property_call) {
 			throw cv::Exception(cv::Error::StsError, "synthetic property failure",
@@ -425,7 +425,8 @@ auto main() -> int {
 		ok &= expect(capture.property_calls.size() == 4,
 		             "configured exposure restoration makes two more property calls");
 		ok &= expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
-		                                                        "warm-up", "auto-exposure", "exposure"},
+		                                                        "warm-up", "auto-exposure",
+		                                                        "exposure"},
 		             "exposure restoration follows warm-up");
 		if (capture.property_calls.size() == 4) {
 			ok &= expect(capture.property_calls[0].property == cv::CAP_PROP_AUTO_EXPOSURE &&

@@ -28,28 +28,6 @@ namespace howdy::native {
 			int               error_number = 0;
 		};
 
-		auto secure_file_stat(const struct stat &stat_, const std::string_view label,
-		                      const std::filesystem::path &path,
-		                      const std::optional<uid_t> &owner_uid) -> std::optional<std::string> {
-			if (!S_ISREG(stat_.st_mode)) {
-				return std::string(label) + " must be a regular file: " + path.string();
-			}
-			if (owner_uid.has_value() && stat_.st_uid != *owner_uid) {
-				return std::string(label) + " must be owned by UID " + std::to_string(*owner_uid) +
-				       ": " + path.string();
-			}
-			if ((stat_.st_mode & S_IWGRP) != 0) {
-				return std::string(label) + " must not be group-writable: " + path.string();
-			}
-			if ((stat_.st_mode & S_IWOTH) != 0) {
-				return std::string(label) + " must not be world-writable: " + path.string();
-			}
-			if (stat_.st_nlink != 1) {
-				return std::string(label) + " must not be hard-linked: " + path.string();
-			}
-			return std::nullopt;
-		}
-
 		// Keep runtime readiness bounded to metadata checks and prefix reads. Full-file
 		// SHA-256 integrity validation belongs to download-models, not FaceModel/PAM.
 		auto check_placeholder_prefix(const int fd) -> PlaceholderCheckResult {
@@ -108,9 +86,11 @@ namespace howdy::native {
 			        .error_message = "Failed to inspect " + std::string(label) + ": " +
 			                         path.string() + " (" + std::strerror(errno) + ")"};
 		}
-		if (const auto error = secure_file_stat(path_stat, label, path, owner_uid);
-		    error.has_value()) {
-			return {.status = OpenCvModelStatus::kInsecure, .error_message = *error};
+		if (const auto security = check_secure_path_stat(path_stat, SecurePathKind::kRegularFile,
+		                                                 path, label, owner_uid);
+		    !security.ok) {
+			return {.status        = OpenCvModelStatus::kInsecure,
+			        .error_message = security.error_message};
 		}
 
 		const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
@@ -132,10 +112,12 @@ namespace howdy::native {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Model file changed while opening: " + path.string()};
 		}
-		if (const auto error = secure_file_stat(opened_stat, label, path, owner_uid);
-		    error.has_value()) {
+		if (const auto security = check_secure_path_stat(opened_stat, SecurePathKind::kRegularFile,
+		                                                 path, label, owner_uid);
+		    !security.ok) {
 			close(fd);
-			return {.status = OpenCvModelStatus::kInsecure, .error_message = *error};
+			return {.status        = OpenCvModelStatus::kInsecure,
+			        .error_message = security.error_message};
 		}
 		if (opened_stat.st_size == 0) {
 			close(fd);

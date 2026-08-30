@@ -17,36 +17,33 @@ namespace howdy::native {
 		std::string shell;
 	};
 
+	namespace detail {
+
+		template <typename IdType>
+		inline auto parse_id_env(const char *value) -> std::optional<IdType> {
+			if (value == nullptr || value[0] == '\0') {
+				return std::nullopt;
+			}
+
+			errno             = 0;
+			char      *end    = nullptr;
+			const auto raw_id = std::strtoul(value, &end, 10);
+			if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
+			    raw_id > std::numeric_limits<IdType>::max()) {
+				return std::nullopt;
+			}
+
+			return static_cast<IdType>(raw_id);
+		}
+
+	}  // namespace detail
+
 	inline auto parse_uid_env(const char *value) -> std::optional<uid_t> {
-		if (value == nullptr || value[0] == '\0') {
-			return std::nullopt;
-		}
-
-		errno              = 0;
-		char      *end     = nullptr;
-		const auto raw_uid = std::strtoul(value, &end, 10);
-		if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-		    raw_uid > std::numeric_limits<uid_t>::max()) {
-			return std::nullopt;
-		}
-
-		return static_cast<uid_t>(raw_uid);
+		return detail::parse_id_env<uid_t>(value);
 	}
 
 	inline auto parse_gid_env(const char *value) -> std::optional<gid_t> {
-		if (value == nullptr || value[0] == '\0') {
-			return std::nullopt;
-		}
-
-		errno              = 0;
-		char      *end     = nullptr;
-		const auto raw_gid = std::strtoul(value, &end, 10);
-		if (errno != 0 || end == value || end == nullptr || *end != '\0' ||
-		    raw_gid > std::numeric_limits<gid_t>::max()) {
-			return std::nullopt;
-		}
-
-		return static_cast<gid_t>(raw_gid);
+		return detail::parse_id_env<gid_t>(value);
 	}
 
 	inline auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override) -> InvokingUser {
