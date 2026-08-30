@@ -4,7 +4,9 @@
 #include "model_assets/model_file.hpp"
 #include "vision/face_encoding_internal.hpp"
 #include "vision/face_model_internal.hpp"
+#include "vision/frame_validation.hpp"
 
+#include <exception>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -14,6 +16,11 @@
 
 namespace howdy::native {
 	namespace {
+		constexpr auto kFaceModelNotReadyMessage          = "Face model is not ready";
+		constexpr auto kFaceDetectorInitializationMessage = "Failed to initialize face detector";
+		constexpr auto kFaceRecognizerInitializationMessage =
+		    "Failed to initialize face recognizer";
+
 		// Temporary OpenCV 5 workaround: force New DNN graph engine and forbid
 		// Classic-engine fallback, which cannot load Howdy's supported ONNX models.
 		// Remove after upstream makes New engine selection/failure behavior suitable.
@@ -75,10 +82,21 @@ namespace howdy::native {
 		const auto nms_threshold   = config.yunet_nms_threshold;
 		const auto top_k           = config.yunet_top_k;
 
+		if (backend_ == nullptr || !backend_->check_readiness) {
+			set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
+			return;
+		}
+
 		for (const auto &model_path : {yunet_model, sface_model}) {
-			const auto readiness = backend_->check_readiness(model_path);
+			OpenCvModelReadiness readiness;
+			try {
+				readiness = backend_->check_readiness(model_path);
+			} catch (const std::exception &) {
+				set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
+				return;
+			}
 			if (readiness.status != OpenCvModelStatus::kOk) {
-				set_error(FaceModelErrorCategory::kModelNotReady, "Face model is not ready");
+				set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
 				return;
 			}
 		}
@@ -89,30 +107,48 @@ namespace howdy::native {
 			return;
 		}
 
+		if (!backend_->create_detector) {
+			set_error(FaceModelErrorCategory::kDetectorInitialization,
+			          kFaceDetectorInitializationMessage);
+			return;
+		}
 		try {
 			detector_ = backend_->create_detector(yunet_model, input_size_, score_threshold,
 			                                      nms_threshold, top_k);
 		} catch (const cv::Exception &) {
 			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          "Failed to initialize face detector");
+			          kFaceDetectorInitializationMessage);
+			return;
+		} catch (const std::exception &) {
+			set_error(FaceModelErrorCategory::kDetectorInitialization,
+			          kFaceDetectorInitializationMessage);
 			return;
 		}
 		if (detector_.empty()) {
 			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          "Failed to initialize face detector");
+			          kFaceDetectorInitializationMessage);
 			return;
 		}
 
+		if (!backend_->create_recognizer) {
+			set_error(FaceModelErrorCategory::kRecognizerInitialization,
+			          kFaceRecognizerInitializationMessage);
+			return;
+		}
 		try {
 			recognizer_ = backend_->create_recognizer(sface_model);
 		} catch (const cv::Exception &) {
 			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          "Failed to initialize face recognizer");
+			          kFaceRecognizerInitializationMessage);
+			return;
+		} catch (const std::exception &) {
+			set_error(FaceModelErrorCategory::kRecognizerInitialization,
+			          kFaceRecognizerInitializationMessage);
 			return;
 		}
 		if (recognizer_.empty()) {
 			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          "Failed to initialize face recognizer");
+			          kFaceRecognizerInitializationMessage);
 			return;
 		}
 
@@ -150,8 +186,35 @@ namespace howdy::native {
 	}
 
 	auto FaceModel::detect(const cv::Mat &frame) -> FaceDetectionResult {
+		if (!ok_) {
+			return {
+			    .status        = FaceDetectionStatus::kInferenceError,
+			    .error_message = kFaceModelNotReadyMessage,
+			};
+		}
+		if (validate_frame(frame, FrameChannelPolicy::kCameraInput) !=
+		    FrameValidationStatus::kValid) {
+			return {
+			    .status        = FaceDetectionStatus::kInferenceError,
+			    .error_message = "Face detection failed: invalid input frame",
+			};
+		}
+		if (backend_ == nullptr || !backend_->detect) {
+			return {
+			    .status        = FaceDetectionStatus::kInferenceError,
+			    .error_message = "Internal error: missing face detection backend callback",
+			};
+		}
+
 		try {
 			cv::Mat prepared = prepare_frame(frame);
+			if (cv::Size(prepared.cols, prepared.rows) != input_size_ &&
+			    !backend_->set_input_size) {
+				return {
+				    .status        = FaceDetectionStatus::kInferenceError,
+				    .error_message = "Internal error: missing face input-size backend callback",
+				};
+			}
 			set_input_size_from_frame(prepared);
 
 			cv::Mat faces;
@@ -162,10 +225,35 @@ namespace howdy::native {
 			    .status        = FaceDetectionStatus::kInferenceError,
 			    .error_message = "Face detection failed",
 			};
+		} catch (const std::exception &) {
+			return FaceDetectionResult{
+			    .status        = FaceDetectionStatus::kInferenceError,
+			    .error_message = "Face detection failed",
+			};
 		}
 	}
 
 	auto FaceModel::encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult {
+		if (!ok_) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = kFaceModelNotReadyMessage,
+			};
+		}
+		if (validate_frame(frame, FrameChannelPolicy::kCameraInput) !=
+		    FrameValidationStatus::kValid) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = "Face encoding failed: invalid input frame",
+			};
+		}
+		if (recognizer_.empty()) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = "Internal error: missing SFace encoding dependency",
+			};
+		}
+
 		cv::Mat prepared;
 		try {
 			prepared = prepare_frame(frame);
@@ -184,6 +272,11 @@ namespace howdy::native {
 			                        .extract_feature = extract_feature,
 			                    });
 		} catch (const cv::Exception &) {
+			return {
+			    .status        = FaceEncodingStatus::kInferenceError,
+			    .error_message = "Face encoding failed while processing camera frame",
+			};
+		} catch (const std::exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
 			    .error_message = "Face encoding failed while processing camera frame",

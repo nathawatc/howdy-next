@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -46,6 +47,10 @@ namespace {
 
 	[[noreturn]] void throw_cv_error() {
 		throw cv::Exception(cv::Error::StsError, kRawError, kOpenCvFunction, kOpenCvSource, 73);
+	}
+
+	[[noreturn]] void throw_std_error() {
+		throw std::runtime_error(kRawError);
 	}
 
 	class FakeDetector final : public cv::FaceDetectorYN {
@@ -116,6 +121,26 @@ namespace {
 		}
 	};
 
+	class ThrowingRecognizer final : public cv::FaceRecognizerSF {
+	public:
+		// OpenCV FaceRecognizerSF::alignCrop requires two adjacent cv::InputArray parameters.
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+		void alignCrop([[maybe_unused]] cv::InputArray  src_img,
+		               [[maybe_unused]] cv::InputArray  face_box,
+		               [[maybe_unused]] cv::OutputArray aligned) const override {
+			throw_std_error();
+		}
+
+		void feature([[maybe_unused]] cv::InputArray  aligned_img,
+		             [[maybe_unused]] cv::OutputArray feature) override {}
+
+		[[nodiscard]] auto match([[maybe_unused]] cv::InputArray face_feature1,
+		                         [[maybe_unused]] cv::InputArray face_feature2,
+		                         [[maybe_unused]] int dis_type) const -> double override {
+			return 0.0;
+		}
+	};
+
 	auto successful_backend() -> howdy::native::FaceModelTestAccess::Backend {
 		return {
 		    .check_readiness =
@@ -165,6 +190,52 @@ namespace {
 		ok &= expect(result.error_message == "Face detection failed",
 		             "detection diagnostic is stable");
 		ok &= expect(sanitized(result.error_message), "detection diagnostic is sanitized");
+		return ok;
+	}
+
+	auto expect_not_ready_inference(howdy::native::FaceModel &model) -> bool {
+		bool ok = true;
+		try {
+			const auto detection = model.detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
+			ok &= expect(detection.status == howdy::native::FaceDetectionStatus::kInferenceError,
+			             "not-ready model detection returns inference error");
+			ok &= expect(detection.error_message == "Face model is not ready",
+			             "not-ready model detection reports readiness failure");
+
+			const auto encoding = model.encode(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)), {});
+			ok &= expect(encoding.status == howdy::native::FaceEncodingStatus::kInferenceError,
+			             "not-ready model encoding returns inference error");
+			ok &= expect(encoding.error_message == "Face model is not ready",
+			             "not-ready model encoding reports readiness failure");
+		} catch (...) {
+			ok &= expect(false, "not-ready model inference does not throw");
+		}
+		return ok;
+	}
+
+	auto expect_encoding_standard_exception() -> bool {
+		auto backend              = successful_backend();
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<ThrowingRecognizer> {
+			return cv::makePtr<ThrowingRecognizer>();
+		};
+		auto model = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), std::move(backend));
+		std::optional<howdy::native::FaceEncodingResult> result;
+		bool                                             threw = false;
+		try {
+			result = model.encode(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)), {});
+		} catch (...) {
+			threw = true;
+		}
+		bool ok = true;
+		ok &= expect(!threw, "SFace standard exception does not escape encoding");
+		if (!threw) {
+			ok &= expect(result->status == howdy::native::FaceEncodingStatus::kInferenceError,
+			             "SFace standard exception returns inference error");
+			ok &= expect(result->error_message ==
+			                 "Face encoding failed while processing camera frame",
+			             "SFace standard exception preserves encoding diagnostic");
+		}
 		return ok;
 	}
 
@@ -263,6 +334,63 @@ auto main() -> int {
 	}
 
 	{
+		auto backend = successful_backend();
+		backend.check_readiness =
+		    [](const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
+			throw_std_error();
+		};
+		bool threw = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
+			                          "Face model is not ready");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "readiness standard exception fails model construction cleanly");
+	}
+
+	{
+		auto backend            = successful_backend();
+		backend.create_detector = [](const std::string &, const cv::Size &, float, float,
+		                             int) -> cv::Ptr<FakeDetector> {
+			throw_std_error();
+		};
+		bool threw = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(
+			    model, howdy::native::FaceModelErrorCategory::kDetectorInitialization,
+			    "Failed to initialize face detector");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "detector standard exception fails model construction cleanly");
+	}
+
+	{
+		auto backend              = successful_backend();
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<FakeRecognizer> {
+			throw_std_error();
+		};
+		bool threw = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(
+			    model, howdy::native::FaceModelErrorCategory::kRecognizerInitialization,
+			    "Failed to initialize face recognizer");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "recognizer standard exception fails model construction cleanly");
+	}
+
+	ok &= expect_encoding_standard_exception();
+
+	{
 		auto backend            = successful_backend();
 		backend.create_detector = [](const std::string &, const cv::Size &, float, float,
 		                             int) -> cv::Ptr<cv::FaceDetectorYN> {
@@ -307,6 +435,7 @@ auto main() -> int {
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
 		ok &= expect(!detector_created, "first readiness failure prevents detector creation");
+		ok &= expect_not_ready_inference(model);
 	}
 
 	{
@@ -334,6 +463,141 @@ auto main() -> int {
 		ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                          "Face model is not ready");
 		ok &= expect(!recognizer_created, "second readiness failure prevents recognizer creation");
+	}
+
+	{
+		auto backend            = successful_backend();
+		backend.check_readiness = nullptr;
+		bool threw              = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
+			                          "Face model is not ready");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "missing readiness callback fails model construction cleanly");
+	}
+
+	{
+		auto backend            = successful_backend();
+		backend.create_detector = nullptr;
+		bool threw              = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(
+			    model, howdy::native::FaceModelErrorCategory::kDetectorInitialization,
+			    "Failed to initialize face detector");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "missing detector callback fails model construction cleanly");
+	}
+
+	{
+		auto backend              = successful_backend();
+		backend.create_recognizer = nullptr;
+		bool threw                = false;
+		try {
+			auto model = howdy::native::FaceModelTestAccess::create(
+			    howdy::native::default_face_config(), std::move(backend));
+			ok &= expect_init_failure(
+			    model, howdy::native::FaceModelErrorCategory::kRecognizerInitialization,
+			    "Failed to initialize face recognizer");
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "missing recognizer callback fails model construction cleanly");
+	}
+
+	{
+		auto backend           = successful_backend();
+		backend.set_input_size = nullptr;
+		auto model             = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), std::move(backend));
+		std::optional<howdy::native::FaceDetectionResult> result;
+		bool                                              threw = false;
+		try {
+			result = model.detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "missing input-size callback does not throw");
+		if (!threw) {
+			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			             "missing input-size callback returns inference error");
+		}
+	}
+
+	{
+		auto backend   = successful_backend();
+		backend.detect = nullptr;
+		auto model     = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), std::move(backend));
+		std::optional<howdy::native::FaceDetectionResult> result;
+		bool                                              threw = false;
+		try {
+			result = model.detect(cv::Mat(320, 320, CV_8UC3, cv::Scalar(1, 2, 3)));
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "missing detection callback does not throw");
+		if (!threw) {
+			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			             "missing detection callback returns inference error");
+		}
+	}
+
+	{
+		auto backend   = successful_backend();
+		backend.detect = [](const cv::Mat &, cv::Mat &) -> void {
+			throw_std_error();
+		};
+		auto model = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), std::move(backend));
+		std::optional<howdy::native::FaceDetectionResult> result;
+		bool                                              threw = false;
+		try {
+			result = model.detect(cv::Mat(320, 320, CV_8UC3, cv::Scalar(1, 2, 3)));
+		} catch (...) {
+			threw = true;
+		}
+		ok &= expect(!threw, "backend standard exception does not escape detection");
+		if (!threw) {
+			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			             "backend standard exception returns inference error");
+		}
+	}
+
+	{
+		bool detect_called = false;
+		auto backend       = successful_backend();
+		backend.detect     = [&detect_called](const cv::Mat &, cv::Mat &) -> void {
+			detect_called = true;
+		};
+		auto model = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), std::move(backend));
+		const auto result = model.detect(cv::Mat{});
+		ok &= expect(result.status == howdy::native::FaceDetectionStatus::kInferenceError,
+		             "empty detection input returns inference error");
+		ok &= expect(!detect_called, "empty detection input skips backend");
+
+		const auto invalid = model.detect(cv::Mat(10, 10, CV_16UC3, cv::Scalar(1, 2, 3)));
+		ok &= expect(invalid.status == howdy::native::FaceDetectionStatus::kInferenceError,
+		             "invalid detection input returns inference error");
+		ok &= expect(!detect_called, "invalid detection input skips backend");
+	}
+
+	{
+		auto model = howdy::native::FaceModelTestAccess::create(
+		    howdy::native::default_face_config(), successful_backend());
+		const auto result = model.encode(cv::Mat{}, {});
+		ok &= expect(result.status == howdy::native::FaceEncodingStatus::kInferenceError,
+		             "empty encoding input returns inference error");
+		ok &= expect(result.error_message == "Face encoding failed: invalid input frame",
+		             "empty encoding input reports validation failure");
 	}
 
 	{
