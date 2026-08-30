@@ -94,6 +94,65 @@ namespace howdy::test::download_models {
 		ok &= expect(!howdy::native::sync_parent_directory(blocked_parent / "model.onnx"),
 		             "parent-directory sync reports open failure");
 
+		const auto require_existing_parent      = temp_root / "require-existing-parent";
+		const auto require_existing_destination = require_existing_parent / "model.onnx";
+		fs::create_directory(require_existing_parent, ec);
+		ok &= expect(!ec, "create existing parent for require-existing policy");
+		auto require_existing_staged = howdy::native::prepare_staged_file(
+		    require_existing_destination, ".howdy-require-existing-",
+		    howdy::native::kDefaultAtomicFileMode,
+		    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,
+		    howdy::native::StagedFileParentPolicy::kRequireExisting);
+		ok &= expect(require_existing_staged.has_value(),
+		             "require-existing policy accepts existing real parent");
+		with_present(require_existing_staged, [&] -> void {
+			ok &= expect(fs::exists(require_existing_staged->path, ec) && !ec,
+			             "require-existing policy creates staged file in real parent");
+			howdy::native::cleanup_staged_file(*require_existing_staged);
+		});
+		fs::remove_all(require_existing_parent, ec);
+		ec.clear();
+
+		const auto missing_require_existing_parent = temp_root / "missing-require-existing-parent";
+		const auto missing_require_existing_destination =
+		    missing_require_existing_parent / "model.onnx";
+		fs::remove_all(missing_require_existing_parent, ec);
+		ec.clear();
+		auto missing_require_existing_staged = howdy::native::prepare_staged_file(
+		    missing_require_existing_destination, ".howdy-require-existing-",
+		    howdy::native::kDefaultAtomicFileMode,
+		    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,
+		    howdy::native::StagedFileParentPolicy::kRequireExisting);
+		ok &= expect(!missing_require_existing_staged.has_value(),
+		             "require-existing policy rejects missing parent");
+		ok &= expect(!fs::exists(missing_require_existing_parent, ec) && !ec,
+		             "require-existing policy does not create missing parent");
+
+		const auto symlink_target      = temp_root / "require-existing-symlink-target";
+		const auto symlink_parent      = temp_root / "require-existing-symlink-parent";
+		const auto symlink_destination = symlink_parent / "model.onnx";
+		fs::remove_all(symlink_target, ec);
+		fs::remove(symlink_parent, ec);
+		ec.clear();
+		fs::create_directory(symlink_target, ec);
+		ok &= expect(!ec, "create require-existing symlink target");
+		const bool symlink_created = symlink(symlink_target.c_str(), symlink_parent.c_str()) == 0;
+		ok &= expect(symlink_created, "create require-existing symlink parent");
+		if (symlink_created) {
+			auto symlink_staged = howdy::native::prepare_staged_file(
+			    symlink_destination, ".howdy-require-existing-",
+			    howdy::native::kDefaultAtomicFileMode,
+			    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,
+			    howdy::native::StagedFileParentPolicy::kRequireExisting);
+			ok &= expect(!symlink_staged.has_value(),
+			             "require-existing policy rejects symlink parent");
+			ok &= expect(count_staged_files(symlink_target, ".howdy-require-existing-") == 0,
+			             "require-existing policy creates no staged file through symlink");
+		}
+		fs::remove(symlink_parent, ec);
+		fs::remove_all(symlink_target, ec);
+		ec.clear();
+
 		const auto overflow_destination = temp_root / "overflow-write.onnx";
 		auto       overflow_staged =
 		    howdy::native::prepare_staged_file(overflow_destination, ".howdy-download-");

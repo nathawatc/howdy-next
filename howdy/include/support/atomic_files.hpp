@@ -85,6 +85,11 @@ namespace howdy::native {
 		kUseDefaultMode,
 	};
 
+	enum class StagedFileParentPolicy : std::uint8_t {
+		kCreate,
+		kRequireExisting,
+	};
+
 	enum class AtomicFileInstallPolicy : std::uint8_t {
 		kReplaceExisting,
 		kNoReplaceExisting,
@@ -146,14 +151,23 @@ namespace howdy::native {
 	inline auto prepare_staged_file(
 	    const std::filesystem::path &destination, std::string_view temp_prefix,
 	    mode_t                   default_mode    = kDefaultAtomicFileMode,
-	    StagedFileMetadataPolicy metadata_policy = StagedFileMetadataPolicy::kPreserveExisting)
+	    StagedFileMetadataPolicy metadata_policy = StagedFileMetadataPolicy::kPreserveExisting,
+	    StagedFileParentPolicy   parent_policy   = StagedFileParentPolicy::kCreate)
 	    -> std::optional<StagedFile> {
-		const auto      parent = destination.parent_path().empty() ? std::filesystem::path(".")
-		                                                           : destination.parent_path();
-		std::error_code create_ec;
-		std::filesystem::create_directories(parent, create_ec);
-		if (create_ec) {
-			return std::nullopt;
+		const auto parent = destination.parent_path().empty() ? std::filesystem::path(".")
+		                                                      : destination.parent_path();
+		if (parent_policy == StagedFileParentPolicy::kRequireExisting) {
+			ScopedFd parent_fd(
+			    open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+			if (parent_fd.get() < 0) {
+				return std::nullopt;
+			}
+		} else {
+			std::error_code create_ec;
+			std::filesystem::create_directories(parent, create_ec);
+			if (create_ec) {
+				return std::nullopt;
+			}
 		}
 
 		struct stat current_stat{};

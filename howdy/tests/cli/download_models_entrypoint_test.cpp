@@ -2,10 +2,13 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <vector>
 
 namespace howdy::test::download_models {
@@ -288,6 +291,56 @@ namespace howdy::test::download_models {
 		ok &=
 		    expect(missing_parent_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
 		           "missing parent path starts first model download");
+
+		const auto symlink_target     = temp_root / "symlink-target";
+		const auto symlink_parent     = temp_root / "symlink-parent";
+		const auto symlink_models_dir = symlink_parent / "models";
+		const auto symlink_output     = temp_root / "symlink-output.txt";
+		fs::create_directory(symlink_target, ec);
+		ok &= expect(!ec, "create symlink target directory");
+		fs::remove(symlink_parent, ec);
+		ec.clear();
+		if (symlink(symlink_target.c_str(), symlink_parent.c_str()) == 0) {
+			int symlink_exit = 0;
+			ok &= expect(
+			    run_first_download_attempt(
+			        {.models_dir = symlink_models_dir, .output = symlink_output}, &symlink_exit),
+			    "capture symlink-parent download-models output");
+			const auto symlink_stdout = read_file(symlink_output);
+			ok &= expect(symlink_exit == EXIT_FAILURE && attempted_downloads() == 0,
+			             "symlink parent aborts before download");
+			ok &= expect(!fs::exists(symlink_models_dir, ec) && !ec,
+			             "symlink parent is not used to create models directory");
+			ok &= expect(symlink_stdout.contains("must be a directory"),
+			             "symlink parent reports insecure models directory");
+		} else {
+			std::cerr << "SKIP: symlink creation failed: " << std::strerror(errno) << "\n";
+		}
+		fs::remove(symlink_parent, ec);
+		ec.clear();
+
+		const auto unsafe_parent     = temp_root / "unsafe-parent";
+		const auto unsafe_models_dir = unsafe_parent / "models";
+		const auto unsafe_output     = temp_root / "unsafe-output.txt";
+		fs::create_directory(unsafe_parent, ec);
+		ok &= expect(!ec && chmod(unsafe_parent.c_str(), 0777) == 0,
+		             "create unsafe writable parent directory");
+		int unsafe_parent_exit = 0;
+		ok &= expect(
+		    run_first_download_attempt({.models_dir = unsafe_models_dir, .output = unsafe_output},
+		                               &unsafe_parent_exit),
+		    "capture unsafe-parent download-models output");
+		const auto unsafe_parent_stdout = read_file(unsafe_output);
+		ok &= expect(unsafe_parent_exit == EXIT_FAILURE && attempted_downloads() == 0,
+		             "unsafe parent aborts before download");
+		ok &= expect(!fs::exists(unsafe_models_dir, ec) && !ec,
+		             "unsafe parent is not used to create models directory");
+		ok &= expect(unsafe_parent_stdout.contains("must not be group-writable") ||
+		                 unsafe_parent_stdout.contains("must not be world-writable"),
+		             "unsafe parent reports insecure models directory");
+		ok &= expect(chmod(unsafe_parent.c_str(), 0755) == 0, "restore unsafe parent mode");
+		fs::remove_all(unsafe_parent, ec);
+		ec.clear();
 
 		const auto blocked_models_dir = temp_root / "blocked-models";
 		const auto blocked_output     = temp_root / "blocked-output.txt";

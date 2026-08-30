@@ -19,7 +19,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <system_error>
+#include <string_view>
 #include <unistd.h>
 #include <utility>
 
@@ -37,6 +37,7 @@ namespace {
 	constexpr long kLowSpeedBytesPerSecond = 1024;
 	constexpr long kLowSpeedTimeoutSeconds = 30;
 
+	using howdy::native::ScopedFd;
 	using howdy::native::download_models_internal::CurlSetoptOperations;
 	using howdy::native::download_models_internal::StagedDownloadFile;
 
@@ -176,25 +177,100 @@ auto howdy::native::download_models_internal::download_models_write_callback(
 
 namespace {
 
+	auto models_directory_failure(std::string_view operation, const std::filesystem::path &path,
+	                              const int error_number) -> howdy::native::SecurePathCheckResult {
+		return {.ok            = false,
+		        .error_message = "Failed to " + std::string(operation) + " Models directory: " +
+		                         path.string() + " (" + std::strerror(error_number) + ")",
+		        .error_code    = error_number};
+	}
+
+	auto validate_models_directory_component(const int fd, const std::filesystem::path &path,
+	                                         const std::optional<uid_t> owner_uid)
+	    -> howdy::native::SecurePathCheckResult {
+		struct stat component_stat{};
+		if (fstat(fd, &component_stat) != 0) {
+			return models_directory_failure("inspect", path, errno);
+		}
+		return howdy::native::check_secure_path_stat(component_stat,
+		                                             howdy::native::SecurePathKind::kDirectory,
+		                                             path, "Models directory", owner_uid);
+	}
+
+	auto create_secure_models_directory(const std::filesystem::path &models_dir,
+	                                    const std::optional<uid_t>   owner_uid)
+	    -> howdy::native::SecurePathCheckResult {
+		if (!models_dir.is_absolute()) {
+			return models_directory_failure("open", models_dir, EINVAL);
+		}
+
+		constexpr int kDirectoryOpenFlags   = O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW;
+		const auto    normalized_models_dir = models_dir.lexically_normal();
+		const auto    root                  = normalized_models_dir.root_path();
+		ScopedFd      current(open(root.c_str(), kDirectoryOpenFlags));
+		if (current.get() < 0) {
+			return models_directory_failure("open", root, errno);
+		}
+
+		auto current_path = root;
+		if (auto security =
+		        validate_models_directory_component(current.get(), current_path, owner_uid);
+		    !security.ok) {
+			return security;
+		}
+
+		for (const auto &component : normalized_models_dir.relative_path()) {
+			if (component == std::filesystem::path(".")) {
+				continue;
+			}
+
+			const auto component_path = current_path / component;
+			ScopedFd   next(openat(current.get(), component.c_str(), kDirectoryOpenFlags));
+			if (next.get() < 0) {
+				const int open_error = errno;
+				if (open_error != ENOENT) {
+					const auto security = howdy::native::check_secure_root_owned_directory_tree(
+					    component_path, "Models directory", owner_uid);
+					return security.ok
+					           ? models_directory_failure("open", component_path, open_error)
+					           : security;
+				}
+				if (mkdirat(current.get(), component.c_str(), 0755) != 0 && errno != EEXIST) {
+					return models_directory_failure("create", component_path, errno);
+				}
+				next.reset(openat(current.get(), component.c_str(), kDirectoryOpenFlags));
+				if (next.get() < 0) {
+					return models_directory_failure("open", component_path, errno);
+				}
+			}
+
+			if (auto security =
+			        validate_models_directory_component(next.get(), component_path, owner_uid);
+			    !security.ok) {
+				return security;
+			}
+			current      = std::move(next);
+			current_path = component_path;
+		}
+
+		return howdy::native::check_secure_root_owned_directory_tree(normalized_models_dir,
+		                                                             "Models directory", owner_uid);
+	}
+
 	auto prepare_staged_download(const std::filesystem::path &destination,
 	                             const std::optional<uid_t>   owner_uid)
 	    -> std::optional<StagedDownloadFile> {
-		const auto      parent = destination.parent_path();
-		std::error_code ec;
-		std::filesystem::create_directories(parent, ec);
-		if (ec) {
+		const auto parent       = destination.parent_path();
+		const auto dir_security = howdy::native::check_secure_root_owned_directory_tree(
+		    parent, "Models directory", owner_uid);
+		if (!dir_security.ok) {
 			return std::nullopt;
 		}
 
-		if (std::filesystem::exists(parent)) {
-			const auto dir_security = howdy::native::check_secure_root_owned_directory_tree(
-			    parent, "Models directory", owner_uid);
-			if (!dir_security.ok) {
-				return std::nullopt;
-			}
-		}
-
-		return howdy::native::prepare_staged_file(destination, ".howdy-download-");
+		return howdy::native::prepare_staged_file(
+		    destination, ".howdy-download-", howdy::native::kDefaultAtomicFileMode,
+		    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,
+		    howdy::native::StagedFileParentPolicy::kRequireExisting);
 	}
 
 	auto download_file(const std::string &url, StagedDownloadFile &staged) -> bool {
@@ -338,19 +414,12 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		return kExitAbort;
 	}
 
-	const auto      models_dir = howdy::native::resolve_models_dir();
-	std::error_code models_dir_ec;
-	std::filesystem::create_directories(models_dir, models_dir_ec);
-	if (models_dir_ec) {
-		std::cout << "Failed to create models directory: " << models_dir.string() << " ("
-		          << models_dir_ec.message() << ")\n";
-		return kExitAbort;
-	}
+	const auto models_dir          = howdy::native::resolve_models_dir();
 	const auto owner_uid           = dependencies.model_file_owner_uid();
-	const auto models_dir_security = howdy::native::check_secure_root_owned_directory_tree(
-	    models_dir, "Models directory", owner_uid);
+	const auto models_dir_security = create_secure_models_directory(models_dir, owner_uid);
 	if (!models_dir_security.ok) {
-		std::cout << models_dir_security.error_message << "\n";
+		std::cout << "Failed to create models directory: " << models_dir_security.error_message
+		          << "\n";
 		return kExitAbort;
 	}
 
