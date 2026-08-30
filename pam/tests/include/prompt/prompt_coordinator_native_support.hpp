@@ -1,6 +1,7 @@
 #pragma once
 
 #include "prompt/prompt_coordinator_fake.hpp"
+#include "test_support.hpp"
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -9,34 +10,7 @@
 
 namespace howdy::test::prompt_coordinator {
 
-	class ScopedFd {
-	public:
-		ScopedFd() = default;
-
-		explicit ScopedFd(int fd)
-		    : fd_(fd) {}
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-		~ScopedFd() {
-			reset();
-		}
-
-		[[nodiscard]] auto get() const -> int {
-			return fd_;
-		}
-
-		void reset(int fd = -1) {
-			if (fd_ >= 0) {
-				close(fd_);
-			}
-			fd_ = fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
+	using howdy::test::ScopedFd;
 
 	inline auto original_conversation(int num_msg, const struct pam_message **messages,
 	                                  struct pam_response **response, void *appdata_ptr) -> int {

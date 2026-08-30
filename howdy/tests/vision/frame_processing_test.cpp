@@ -4,17 +4,11 @@
 #include "vision/frame_validation.hpp"
 
 #include <array>
-#include <cmath>
-#include <string>
 
 namespace {
 
 	using howdy::test::expect;
-
-	auto expect_near(double actual, double expected, double tolerance, const std::string &message)
-	    -> bool {
-		return expect(std::fabs(actual - expected) <= tolerance, message);
-	}
+	using howdy::test::expect_near;
 
 }  // namespace
 

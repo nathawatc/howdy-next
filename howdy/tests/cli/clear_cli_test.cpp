@@ -4,7 +4,6 @@
 
 #include <array>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -16,6 +15,7 @@
 namespace {
 
 	using howdy::test::expect;
+	using howdy::test::write_file;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -45,15 +45,6 @@ namespace {
 		std::string                            cleared_user;
 		howdy::native::UserModelFileSnapshot   received_snapshot;
 	};
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
 
 	auto valid_snapshot() -> howdy::native::UserModelFileSnapshot {
 		return {

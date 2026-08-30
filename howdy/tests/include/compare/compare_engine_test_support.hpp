@@ -3,17 +3,10 @@
 #include "config/runtime_config.hpp"
 #include "test_support.hpp"
 
-#include <cmath>
-#include <string>
-
 namespace howdy::test::compare_engine {
 
 	using howdy::test::expect;
-
-	inline auto expect_near(double actual, double expected, double tolerance,
-	                        const std::string &message) -> bool {
-		return expect(std::fabs(actual - expected) <= tolerance, message);
-	}
+	using howdy::test::expect_near;
 
 	inline auto make_video_config(float dark_threshold = 25.0F, float max_height = 100.0F,
 	                              int rotate = 0, bool clahe_enabled = false)

@@ -6,6 +6,7 @@
 #include "config/config_validation.hpp"
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
+#include "support/file_lock.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -27,13 +28,8 @@ namespace howdy::native {
 
 		constexpr mode_t kDefaultConfigMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
-		auto lock_path_for_config(const std::filesystem::path &config_path)
-		    -> std::filesystem::path {
-			return config_path.string() + ".lock";
-		}
-
 		auto open_lock_file(const std::filesystem::path &config_path) -> int {
-			return open(lock_path_for_config(config_path).c_str(),
+			return open(lock_file_path(config_path).c_str(),
 			            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
 		}
 

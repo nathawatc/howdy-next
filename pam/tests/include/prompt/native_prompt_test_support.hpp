@@ -1,6 +1,7 @@
 #pragma once
 
 #include "prompt/native_prompt_conversation.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
@@ -117,58 +118,11 @@ public:
 	}
 };
 
-class ScopedFd {
-public:
-	ScopedFd() = default;
-
-	explicit ScopedFd(int fd)
-	    : fd_(fd) {}
-
-	ScopedFd(const ScopedFd &)                     = delete;
-	auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-	ScopedFd(ScopedFd &&other) noexcept
-	    : fd_(other.release()) {}
-
-	auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
-		if (this != &other) {
-			reset(other.release());
-		}
-		return *this;
-	}
-
-	~ScopedFd() {
-		reset();
-	}
-
-	[[nodiscard]] auto get() const -> int {
-		return fd_;
-	}
-
-	[[nodiscard]] auto valid() const -> bool {
-		return fd_ >= 0;
-	}
-
-	void reset(int fd = -1) {
-		if (fd_ >= 0) {
-			close(fd_);
-		}
-		fd_ = fd;
-	}
-
-	auto release() -> int {
-		const int fd = fd_;
-		fd_          = -1;
-		return fd;
-	}
-
-private:
-	int fd_ = -1;
-};
+using ScopedFd = howdy::test::ScopedFd;
 
 inline auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 	master_fd->reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
-	if (!master_fd->valid()) {
+	if (master_fd->get() < 0) {
 		return false;
 	}
 
@@ -184,7 +138,7 @@ inline auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 	}
 
 	slave_fd->reset(open(slave_name, O_RDWR | O_NOCTTY | O_CLOEXEC));
-	if (!slave_fd->valid()) {
+	if (slave_fd->get() < 0) {
 		master_fd->reset();
 		return false;
 	}

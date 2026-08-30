@@ -4,9 +4,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
-#include <fstream>
 #include <iostream>
-#include <iterator>
 #include <unistd.h>
 
 namespace howdy::test::download_models {
@@ -68,34 +66,6 @@ namespace howdy::test::download_models {
 	auto test_model_file_owner_uid() -> std::optional<uid_t> {
 		++owner_uid_attempts;
 		return std::nullopt;
-	}
-
-	auto read_file(const std::filesystem::path &path) -> std::string {
-		std::ifstream in(path);
-		if (!in.is_open()) {
-			return {};
-		}
-		return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-	}
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
-
-	auto count_staged_files(const std::filesystem::path &directory, std::string_view prefix)
-	    -> std::size_t {
-		std::size_t count = 0;
-		for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-			if (entry.path().filename().string().starts_with(prefix)) {
-				++count;
-			}
-		}
-		return count;
 	}
 
 	namespace {

@@ -1,6 +1,7 @@
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "config/config_validation.hpp"
+#include "support/file_lock.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
@@ -12,20 +13,14 @@
 #include <sys/stat.h>
 
 namespace howdy::test {
-	namespace {
-		auto lock_path_for_config(const std::filesystem::path &config_path)
-		    -> std::filesystem::path {
-			return config_path.string() + ".lock";
-		}
-
-	}  // namespace
+	using howdy::native::lock_file_path;
 
 	auto run_config_lock_failure_tests(ConfigUtilsTestContext &context) -> bool {
 		namespace fs = std::filesystem;
 		using howdy::test::expect;
 		bool            ok = true;
 		std::error_code ec;
-		const auto      lock_failure_path = lock_path_for_config(context.config_path);
+		const auto      lock_failure_path = lock_file_path(context.config_path);
 		fs::remove(lock_failure_path, ec);
 		ec.clear();
 		fs::create_symlink("/tmp", lock_failure_path, ec);
@@ -78,7 +73,7 @@ namespace howdy::test {
 		ok &= expect(update_error == "Failed to update config file",
 		             "failed update_config_value install reports fallback error: " + update_error);
 
-		const auto config_lock_path = lock_path_for_config(context.config_path);
+		const auto config_lock_path = lock_file_path(context.config_path);
 		fs::remove(config_lock_path, ec);
 		ok &= expect(!ec && !fs::exists(config_lock_path),
 		             "config lock absent before insecure config update");
@@ -97,7 +92,7 @@ namespace howdy::test {
 		const auto insecure_config_path = insecure_dir / "config.ini";
 		ok &= expect(write_config_test_file(insecure_config_path, "[core]\ndisabled = false\n"),
 		             "write config in insecure dir");
-		const auto insecure_config_lock_path = lock_path_for_config(insecure_config_path);
+		const auto insecure_config_lock_path = lock_file_path(insecure_config_path);
 		fs::remove(insecure_config_lock_path, ec);
 		ok &= expect(!ec && !fs::exists(insecure_config_lock_path),
 		             "config lock absent before insecure directory update");
@@ -119,7 +114,7 @@ namespace howdy::test {
 		const auto nested_config_path = nested_config_dir / "config.ini";
 		ok &= expect(write_config_test_file(nested_config_path, "[core]\ndisabled = false\n"),
 		             "write config in nested dir");
-		const auto nested_config_lock_path = lock_path_for_config(nested_config_path);
+		const auto nested_config_lock_path = lock_file_path(nested_config_path);
 		fs::remove(nested_config_lock_path, ec);
 		ok &= expect(!ec && !fs::exists(nested_config_lock_path),
 		             "config lock absent before insecure ancestor update");

@@ -2,7 +2,6 @@
 #include "test_support.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -13,15 +12,7 @@
 namespace {
 
 	using howdy::test::expect;
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
+	using howdy::test::write_file;
 
 	auto expect_failure(const howdy::native::RuntimeConfigLoadResult &result,
 	                    howdy::native::RuntimeConfigLoadStatus status, const std::string &message)

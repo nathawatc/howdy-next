@@ -1,10 +1,10 @@
 #pragma once
 
 #include "config/config_limits.hpp"
+#include "test_support.hpp"
 
 #include <csignal>
 #include <filesystem>
-#include <fstream>
 #include <string>
 
 #include <sys/resource.h>
@@ -20,20 +20,11 @@ namespace howdy::test {
 
 	inline auto write_config_test_file(const std::filesystem::path &path,
 	                                   const std::string           &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
+		return write_file(path, content);
 	}
 
 	inline auto read_config_test_file(const std::filesystem::path &path) -> std::string {
-		std::ifstream in(path);
-		if (!in.is_open()) {
-			return {};
-		}
-		return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+		return read_file(path);
 	}
 
 	inline auto fail_parent_sync(const std::filesystem::path & /*path*/) -> bool {

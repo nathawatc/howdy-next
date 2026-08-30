@@ -127,7 +127,7 @@ namespace howdy::test::download_models {
 		             "wrong staged hash preserves destination");
 		ok &= expect(read_file(replacement_output).contains("Checksum mismatch"),
 		             "same-size wrong staged hash reports checksum mismatch");
-		ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+		ok &= expect(count_files_with_prefix(replacement_models_dir, ".howdy-download-") == 0,
 		             "wrong staged hash removes temporary file");
 
 		ok &= expect(write_file(replacement_model, "old destination"),
@@ -169,7 +169,7 @@ namespace howdy::test::download_models {
 		                 !staged_fstat_stdout.contains("Size mismatch") &&
 		                 !staged_fstat_stdout.contains("Checksum mismatch"),
 		             "staged fstat failure reports staged path and syscall context only");
-		ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+		ok &= expect(count_files_with_prefix(replacement_models_dir, ".howdy-download-") == 0,
 		             "staged fstat failure removes temporary file");
 
 		ok &= expect(write_file(replacement_model, "old destination"),
@@ -187,7 +187,7 @@ namespace howdy::test::download_models {
 		ok &= expect(read_file(replacement_output).contains("Failed to calculate SHA-256") &&
 		                 !read_file(replacement_output).contains("Checksum mismatch"),
 		             "hash read failure is distinct from digest mismatch");
-		ok &= expect(count_staged_files(replacement_models_dir, ".howdy-download-") == 0,
+		ok &= expect(count_files_with_prefix(replacement_models_dir, ".howdy-download-") == 0,
 		             "hash read failure removes temporary file");
 
 		const auto insecure_models_dir = temp_root / "insecure-model";

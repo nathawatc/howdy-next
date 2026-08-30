@@ -4,8 +4,6 @@
 #include <array>
 #include <csignal>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
@@ -17,39 +15,14 @@
 
 namespace howdy::test::download_models {
 
+	using howdy::test::count_files_with_prefix;
 	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	auto run_atomic_files_tests() -> bool;
 
 	namespace {
-
-		auto read_file(const std::filesystem::path &path) -> std::string {
-			std::ifstream in(path);
-			if (!in.is_open()) {
-				return {};
-			}
-			return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-		}
-
-		auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-			std::ofstream out(path);
-			if (!out.is_open()) {
-				return false;
-			}
-			out << content;
-			return out.good();
-		}
-
-		auto count_staged_files(const std::filesystem::path &directory, std::string_view prefix)
-		    -> std::size_t {
-			std::size_t count = 0;
-			for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-				if (entry.path().filename().string().starts_with(prefix)) {
-					++count;
-				}
-			}
-			return count;
-		}
 
 		auto commit_is_durable(howdy::native::AtomicFileCommitResult result) -> bool {
 			return howdy::native::atomic_file_commit_is_durable(result);
@@ -146,7 +119,7 @@ namespace howdy::test::download_models {
 			    howdy::native::StagedFileParentPolicy::kRequireExisting);
 			ok &= expect(!symlink_staged.has_value(),
 			             "require-existing policy rejects symlink parent");
-			ok &= expect(count_staged_files(symlink_target, ".howdy-require-existing-") == 0,
+			ok &= expect(count_files_with_prefix(symlink_target, ".howdy-require-existing-") == 0,
 			             "require-existing policy creates no staged file through symlink");
 		}
 		fs::remove(symlink_parent, ec);
@@ -268,7 +241,7 @@ namespace howdy::test::download_models {
 		ok &= expect(S_ISREG(atomic_new_stat.st_mode), "atomic writer new target is regular file");
 		ok &= expect((atomic_new_stat.st_mode & 07777) == 0600,
 		             "atomic writer applies requested new-file mode");
-		ok &= expect(count_staged_files(atomic_new_path.parent_path(), ".howdy-atomic-") == 0,
+		ok &= expect(count_files_with_prefix(atomic_new_path.parent_path(), ".howdy-atomic-") == 0,
 		             "atomic writer removes staged file after new-file install");
 
 		const auto atomic_existing_path = temp_root / "atomic-existing";
@@ -286,8 +259,9 @@ namespace howdy::test::download_models {
 		             "stat replaced atomic writer file");
 		ok &= expect((atomic_existing_stat.st_mode & 07777) == 0640,
 		             "atomic writer preserves existing-file mode");
-		ok &= expect(count_staged_files(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
-		             "atomic writer removes staged file after replacement");
+		ok &= expect(
+		    count_files_with_prefix(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
+		    "atomic writer removes staged file after replacement");
 
 		const auto no_replace_path = temp_root / "atomic-no-replace";
 		ok &= expect(write_file(no_replace_path, "initial"),
@@ -333,9 +307,9 @@ namespace howdy::test::download_models {
 			             "stat default-mode policy target");
 			ok &= expect((default_mode_stat.st_mode & 07777) == 0640,
 			             "default-mode policy applies requested mode to existing file");
-			ok &= expect(
-			    count_staged_files(default_mode_path.parent_path(), ".howdy-default-mode-") == 0,
-			    "default-mode policy removes staged file after replacement");
+			ok &= expect(count_files_with_prefix(default_mode_path.parent_path(),
+			                                     ".howdy-default-mode-") == 0,
+			             "default-mode policy removes staged file after replacement");
 		});
 
 		const auto atomic_directory_target = temp_root / "atomic-directory-target";
@@ -346,9 +320,9 @@ namespace howdy::test::download_models {
 		             "atomic writer rejects directory target");
 		ok &= expect(fs::is_directory(atomic_directory_target, ec) && !ec,
 		             "atomic writer leaves directory target unchanged");
-		ok &=
-		    expect(count_staged_files(atomic_directory_target.parent_path(), ".howdy-atomic-") == 0,
-		           "atomic writer creates no staged file for directory target");
+		ok &= expect(
+		    count_files_with_prefix(atomic_directory_target.parent_path(), ".howdy-atomic-") == 0,
+		    "atomic writer creates no staged file for directory target");
 
 		const auto atomic_blocked_parent = temp_root / "atomic-blocked-parent";
 		ok &= expect(write_file(atomic_blocked_parent, "blocking content"),
@@ -392,7 +366,7 @@ namespace howdy::test::download_models {
 		ok &= expect(read_file(atomic_write_failure_path) == "original content",
 		             "failed atomic write preserves existing target");
 		ok &= expect(
-		    count_staged_files(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
+		    count_files_with_prefix(atomic_write_failure_path.parent_path(), ".howdy-atomic-") == 0,
 		    "failed atomic write removes staged file");
 		return ok;
 	}

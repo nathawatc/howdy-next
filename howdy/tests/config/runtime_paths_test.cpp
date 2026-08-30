@@ -4,9 +4,7 @@
 #include "test_support.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <optional>
-#include <string>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -14,15 +12,7 @@
 namespace {
 
 	using howdy::test::expect;
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
+	using howdy::test::write_file;
 
 	void clear_runtime_env() {
 		unsetenv("HOWDY_CONFIG");

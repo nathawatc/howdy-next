@@ -275,8 +275,8 @@ namespace howdy::native {
 			return label.empty() ? std::string{"<unspelled>"} : label;
 		}
 
-		auto command_option_spellings_collide(const CommandOptionDescriptor &left,
-		                                      const CommandOptionDescriptor &right) -> bool {
+		template <typename Option>
+		auto option_spellings_collide(const Option &left, const Option &right) -> bool {
 			return (!left.short_name.empty() &&
 			        (left.short_name == right.short_name || left.short_name == right.long_name)) ||
 			       (!left.long_name.empty() &&
@@ -335,8 +335,7 @@ namespace howdy::native {
 				}
 				if (std::ranges::any_of(command.options.first(option_index),
 				                        [&option](const auto &previous) -> bool {
-					                        return command_option_spellings_collide(option,
-					                                                                previous);
+					                        return option_spellings_collide(option, previous);
 				                        })) {
 					return "duplicate command option spelling: " + command_option_label(option);
 				}
@@ -362,14 +361,6 @@ namespace howdy::native {
 				return "duplicate command name: " + name;
 			}
 			return std::nullopt;
-		}
-
-		auto option_spellings_collide(const GlobalOptionDescriptor &left,
-		                              const GlobalOptionDescriptor &right) -> bool {
-			return (!left.short_name.empty() &&
-			        (left.short_name == right.short_name || left.short_name == right.long_name)) ||
-			       (!left.long_name.empty() &&
-			        (left.long_name == right.short_name || left.long_name == right.long_name));
 		}
 
 		auto validate_global_option_descriptor(

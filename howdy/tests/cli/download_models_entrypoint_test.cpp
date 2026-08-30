@@ -268,7 +268,7 @@ namespace howdy::test::download_models {
 		             "missing model in existing secure directory reaches download");
 		ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
 		             "existing secure directory starts first model download");
-		ok &= expect(count_staged_files(existing_models_dir, ".howdy-download-") == 0,
+		ok &= expect(count_files_with_prefix(existing_models_dir, ".howdy-download-") == 0,
 		             "failed download removes staged file");
 
 		const auto missing_parent_models_dir = temp_root / "missing-parent" / "models";

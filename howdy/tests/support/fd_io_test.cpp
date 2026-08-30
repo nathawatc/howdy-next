@@ -6,8 +6,6 @@
 #include <chrono>
 #include <csignal>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <unistd.h>
@@ -18,61 +16,14 @@
 namespace {
 
 	using howdy::test::expect;
+	using howdy::test::read_file;
 
-	class ScopedFd {
-	public:
-		ScopedFd() = default;
-
-		explicit ScopedFd(int fd)
-		    : fd_(fd) {}
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-		ScopedFd(ScopedFd &&other) noexcept
-		    : fd_(other.release()) {}
-
-		auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
-			if (this != &other) {
-				reset(other.release());
-			}
-			return *this;
-		}
-
-		~ScopedFd() {
-			reset();
-		}
-
-		[[nodiscard]] auto get() const -> int {
-			return fd_;
-		}
-
-		void reset(int fd = -1) {
-			if (fd_ >= 0) {
-				close(fd_);
-			}
-			fd_ = fd;
-		}
-
-		auto release() -> int {
-			const int fd = fd_;
-			fd_          = -1;
-			return fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
+	using howdy::test::ScopedFd;
 
 	struct TemporaryFile {
 		std::filesystem::path path;
 		ScopedFd              fd;
 	};
-
-	auto read_file(const std::filesystem::path &path) -> std::string {
-		std::ifstream input(path);
-		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-	}
 
 	auto create_temp_file(const std::filesystem::path &root, const std::string &label)
 	    -> std::optional<TemporaryFile> {

@@ -47,50 +47,7 @@ namespace {
 		    .output;
 	}
 
-	class ScopedFd {
-	public:
-		ScopedFd() = default;
-
-		explicit ScopedFd(int fd)
-		    : fd_(fd) {}
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-		ScopedFd(ScopedFd &&other) noexcept
-		    : fd_(other.release()) {}
-
-		auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
-			if (this != &other) {
-				reset(other.release());
-			}
-			return *this;
-		}
-
-		~ScopedFd() {
-			reset();
-		}
-
-		[[nodiscard]] auto get() const -> int {
-			return fd_;
-		}
-
-		void reset(int fd = -1) {
-			if (fd_ >= 0) {
-				close(fd_);
-			}
-			fd_ = fd;
-		}
-
-		auto release() -> int {
-			const int fd = fd_;
-			fd_          = -1;
-			return fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
+	using howdy::test::ScopedFd;
 
 	struct TemporaryFile {
 		std::string path;

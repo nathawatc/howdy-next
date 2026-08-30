@@ -24,8 +24,8 @@
 
 namespace howdy::test::download_models {
 
-	using howdy::native::ScopedFd;
 	using howdy::test::expect;
+	using howdy::test::ScopedFd;
 
 	namespace {
 
@@ -420,7 +420,7 @@ namespace howdy::test::download_models {
 				ok &= expect(!origin.wait_for_connection(std::chrono::milliseconds(100)),
 				             "proxied download does not connect directly to origin");
 			}
-			ok &= expect(count_staged_files(models_dir, ".howdy-download-") == 0,
+			ok &= expect(count_files_with_prefix(models_dir, ".howdy-download-") == 0,
 			             "failed proxy transfer removes staged file");
 			return ok;
 		}

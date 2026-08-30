@@ -1,7 +1,6 @@
 #include "compare/logic.hpp"
 #include "test_support.hpp"
 
-#include <cmath>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -10,11 +9,7 @@
 namespace {
 
 	using howdy::test::expect;
-
-	auto expect_near(double actual, double expected, double tolerance, const std::string &message)
-	    -> bool {
-		return expect(std::fabs(actual - expected) <= tolerance, message);
-	}
+	using howdy::test::expect_near;
 
 }  // namespace
 

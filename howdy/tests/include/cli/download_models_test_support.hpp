@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cli/download_models_internal.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -10,6 +11,10 @@
 #include <vector>
 
 namespace howdy::test::download_models {
+
+	using howdy::test::count_files_with_prefix;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	inline constexpr auto kTestModelContent = "small test model";
 	inline constexpr auto kTestModelSha256 =
@@ -40,10 +45,6 @@ namespace howdy::test::download_models {
 	auto failing_sha256_file(int fd) -> std::optional<std::string>;
 	auto selectively_failing_fstat(int fd, struct stat *stat_buf) -> int;
 	auto test_model_file_owner_uid() -> std::optional<uid_t>;
-	auto read_file(const std::filesystem::path &path) -> std::string;
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool;
-	auto count_staged_files(const std::filesystem::path &directory, std::string_view prefix)
-	    -> std::size_t;
 
 	struct EnvVarGuard {
 		const char                *name;

@@ -7,7 +7,6 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -21,6 +20,8 @@
 namespace howdy::test::config_cli {
 
 	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	namespace {
 
@@ -52,17 +53,6 @@ namespace howdy::test::config_cli {
 			const char                *name_;
 			std::optional<std::string> original_;
 		};
-
-		auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-			std::ofstream output(path);
-			output << content;
-			return output.good();
-		}
-
-		auto read_file(const std::filesystem::path &path) -> std::string {
-			std::ifstream input(path);
-			return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-		}
 
 		auto path_reported_after(const std::string &output, const std::string &prefix)
 		    -> std::filesystem::path {

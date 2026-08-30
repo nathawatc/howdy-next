@@ -5,7 +5,6 @@
 #include <array>
 #include <cerrno>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -25,6 +24,8 @@
 namespace {
 
 	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
@@ -125,19 +126,6 @@ namespace {
 	    -> bool {
 		const auto mode = path_mode(path);
 		return expect(mode.has_value() && *mode == expected_mode, message);
-	}
-
-	auto write_file(const fs::path &path, std::string_view contents) -> bool {
-		std::ofstream output(path, std::ios::binary);
-		output.write(contents.data(), static_cast<std::streamsize>(contents.size()));
-		return static_cast<bool>(output);
-	}
-
-	auto read_file(const fs::path &path) -> std::string {
-		std::ifstream      input(path, std::ios::binary);
-		std::ostringstream contents;
-		contents << input.rdbuf();
-		return contents.str();
 	}
 
 	auto count_staged_files(const fs::path &directory) -> std::size_t {

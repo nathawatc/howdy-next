@@ -4,10 +4,8 @@
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <optional>
-#include <string>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -15,15 +13,7 @@
 namespace {
 
 	using howdy::test::expect;
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
+	using howdy::test::write_file;
 
 	auto secure_file(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
 		return howdy::native::check_secure_root_owned_file(path, "Test file", std::nullopt);

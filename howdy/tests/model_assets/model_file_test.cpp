@@ -3,7 +3,6 @@
 #include "test_support.hpp"
 
 #include <filesystem>
-#include <fstream>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,14 +13,9 @@
 namespace {
 
 	using howdy::test::expect;
+	using howdy::test::write_file;
 
 	constexpr auto kFixture = "known model fixture";
-
-	auto write_file(const std::filesystem::path &path, const std::string_view content) -> bool {
-		std::ofstream output(path, std::ios::binary);
-		output.write(content.data(), static_cast<std::streamsize>(content.size()));
-		return output.good();
-	}
 
 	auto readiness(const std::filesystem::path &path, const std::string_view label = "Model file",
 	               const std::optional<uid_t> owner_uid = std::nullopt)

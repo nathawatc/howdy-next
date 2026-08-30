@@ -107,12 +107,12 @@ namespace {
 		}
 		(void)signal(SIGHUP, SIG_IGN);
 		ScopedFd terminal_fd(open(slave_name, O_RDWR | O_CLOEXEC));
-		if (!terminal_fd.valid() || tcsetpgrp(terminal_fd.get(), getpgrp()) != 0) {
+		if (terminal_fd.get() < 0 || tcsetpgrp(terminal_fd.get(), getpgrp()) != 0) {
 			return false;
 		}
 
 		ScopedFd null_fd(open("/dev/null", O_RDWR | O_CLOEXEC));
-		if (!null_fd.valid()) {
+		if (null_fd.get() < 0) {
 			return false;
 		}
 		if (!redirect_stdio_to_null(null_fd.get())) {

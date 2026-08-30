@@ -3,8 +3,6 @@
 #include <cerrno>
 #include <csignal>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -15,33 +13,11 @@
 
 namespace {
 
+	using howdy::test::count_files_with_prefix;
 	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 	namespace fs = std::filesystem;
-
-	auto read_file(const fs::path &path) -> std::string {
-		std::ifstream input(path, std::ios::binary);
-		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-	}
-
-	auto write_file(const fs::path &path, std::string_view content) -> bool {
-		std::ofstream output(path, std::ios::binary);
-		if (!output.is_open()) {
-			return false;
-		}
-		output.write(content.data(), static_cast<std::streamsize>(content.size()));
-		return output.good();
-	}
-
-	auto count_files_with_prefix(const fs::path &directory, std::string_view prefix)
-	    -> std::size_t {
-		std::size_t count = 0;
-		for (const auto &entry : fs::directory_iterator(directory)) {
-			if (entry.path().filename().string().starts_with(prefix)) {
-				++count;
-			}
-		}
-		return count;
-	}
 
 	auto run_generator(const fs::path &generator_path, std::vector<std::string> arguments,
 	                   bool limit_file_size) -> int {

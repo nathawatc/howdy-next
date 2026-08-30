@@ -5,9 +5,7 @@
 #include <array>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
-#include <iterator>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -20,6 +18,8 @@
 namespace {
 
 	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	using howdy::native::RuntimeConfigLoadResult;
 	using howdy::native::RuntimeConfigLoadStatus;
@@ -134,17 +134,6 @@ namespace {
 		ok &= expect(context.received_lock, message + " enables lock");
 		ok &= expect(!context.received_validate_runtime, message + " disables runtime validation");
 		return ok;
-	}
-
-	auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream output(path);
-		output << content;
-		return output.good();
-	}
-
-	auto read_file(const std::filesystem::path &path) -> std::string {
-		std::ifstream input(path);
-		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 	}
 
 	auto run_public_disable(const std::string &argument) -> int {

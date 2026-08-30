@@ -6,7 +6,6 @@
 #include <cstdio>
 #include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -16,20 +15,8 @@
 namespace howdy::test::user_models {
 
 	using howdy::test::expect;
-
-	inline auto write_file(const std::filesystem::path &path, const std::string &content) -> bool {
-		std::ofstream out(path);
-		if (!out.is_open()) {
-			return false;
-		}
-		out << content;
-		return out.good();
-	}
-
-	inline auto read_file(const std::filesystem::path &path) -> std::string {
-		std::ifstream input(path, std::ios::binary);
-		return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-	}
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
 	inline auto nested_array(std::size_t depth) -> std::string {
 		return std::string(depth, '[') + "0" + std::string(depth, ']');
