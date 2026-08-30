@@ -126,6 +126,8 @@ auto howdy::native::download_models_internal::configure_transfer_policy(
 	}
 
 	return operations.set_long(operations.context, curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_SSL_VERIFYPEER, 1L) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_SSL_VERIFYHOST, 2L) == CURLE_OK &&
 	       operations.set_long(operations.context, curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
 	       operations.set_long(operations.context, curl, CURLOPT_CONNECTTIMEOUT,
 	                           kConnectTimeoutSeconds) == CURLE_OK &&

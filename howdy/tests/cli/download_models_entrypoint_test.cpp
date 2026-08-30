@@ -126,6 +126,10 @@ namespace howdy::test::download_models {
 		             "transfer policy configures successfully");
 		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_FOLLOWLOCATION, 1L),
 		             "transfer policy follows redirects");
+		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_SSL_VERIFYPEER, 1L),
+		             "transfer policy verifies TLS peer");
+		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_SSL_VERIFYHOST, 2L),
+		             "transfer policy verifies TLS host");
 		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_NOSIGNAL, 1L),
 		             "transfer policy disables signals");
 		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_CONNECTTIMEOUT, 15L),
