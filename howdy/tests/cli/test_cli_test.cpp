@@ -458,7 +458,10 @@ namespace {
 	}
 
 	auto unconfigured_camera_error_is_printed() -> bool {
-		auto context                                    = make_success_context();
+		auto context = make_success_context();
+		if (!context.config_result.config.has_value()) {
+			return expect(false, "success context has valid config");
+		}
 		context.config_result.config->video.device_path = "none";
 		context.camera_open_ok                          = false;
 		context.camera_open_error = "Camera is not configured; set video.device_path";
@@ -571,7 +574,10 @@ namespace {
 	}
 
 	auto missing_preflight_dependency_callbacks_fail_closed() -> bool {
-		auto context      = make_success_context();
+		auto context = make_success_context();
+		if (!context.config_result.config.has_value()) {
+			return expect(false, "success context has valid config");
+		}
 		auto dependencies = preflight_dependencies(context);
 
 		auto run_missing_preflight = [&](auto clear_callback, const std::string &message) -> bool {

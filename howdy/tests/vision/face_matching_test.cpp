@@ -252,6 +252,7 @@ auto main() -> int {
 	ok &= expect(!howdy::native::parse_face_metric("euclidean").has_value(),
 	             "unknown face metric is rejected by typed parser");
 	{
+		// NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 		const auto invalid_metric = static_cast<FaceMetric>(255);
 		const auto match =
 		    howdy::native::find_best_face_match({{1.0F}}, {1.0F}, invalid_metric, 0.0F);
