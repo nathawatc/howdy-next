@@ -35,7 +35,7 @@ namespace howdy::native {
 	    : settings_(std::move(settings))
 	    , frame_reader_(std::move(frame_reader)) {}
 
-	auto VideoCapture::open() -> bool {
+	auto VideoCapture::open(bool perform_warm_up) -> bool {
 		if (settings_.device_path == kNoDevice) {
 			set_error(CaptureError::kMissingDevice,
 			          "Camera is not configured; set video.device_path");
@@ -83,6 +83,20 @@ namespace howdy::native {
 				capture_.set(cv::CAP_PROP_FRAME_HEIGHT, settings_.frame_height);
 			}
 
+			if (perform_warm_up && !warm_up()) {
+				return false;
+			}
+			return true;
+		} catch (const cv::Exception &error) {
+			release();
+			set_error(CaptureError::kOpenFailed, "OpenCV failed while opening camera device " +
+			                                         settings_.device_path + ": " + error.what());
+			return false;
+		}
+	}
+
+	auto VideoCapture::warm_up() -> bool {
+		try {
 			// Keep a warm-up grab for compatibility with existing behavior; some
 			// devices may fail the first grab immediately after open and recover on
 			// subsequent reads.

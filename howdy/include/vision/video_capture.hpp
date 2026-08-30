@@ -34,7 +34,8 @@ namespace howdy::native {
 	public:
 		explicit VideoCapture(CaptureSettings settings);
 
-		auto open() -> bool;
+		auto open(bool perform_warm_up = true) -> bool;
+		auto warm_up() -> bool;
 		auto grab() -> bool;
 		auto read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
 		void release();

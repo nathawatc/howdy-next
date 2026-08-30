@@ -8,7 +8,11 @@
 namespace {
 
 	auto open_capture_dependency(void *context) -> bool {
-		return static_cast<howdy::native::VideoCapture *>(context)->open();
+		return static_cast<howdy::native::VideoCapture *>(context)->open(false);
+	}
+
+	auto warm_up_capture_dependency(void *context) -> bool {
+		return static_cast<howdy::native::VideoCapture *>(context)->warm_up();
 	}
 
 	auto read_gray_frame_dependency(void *context, cv::Mat &gray_frame) -> bool {
@@ -42,6 +46,7 @@ namespace howdy::native {
 		dependencies_ = {
 		    .capture_context = &capture_,
 		    .open_capture    = open_capture_dependency,
+		    .warm_up_capture = warm_up_capture_dependency,
 		    .read_gray_frame = read_gray_frame_dependency,
 		    .error_message   = capture_error_message_dependency,
 		    .set_property    = set_capture_property_dependency,
@@ -59,6 +64,7 @@ namespace howdy::native {
 
 	auto CompareCaptureSession::dependencies_valid() const -> bool {
 		return dependencies_.capture_context != nullptr && dependencies_.open_capture != nullptr &&
+		       dependencies_.warm_up_capture != nullptr &&
 		       dependencies_.read_gray_frame != nullptr && dependencies_.error_message != nullptr &&
 		       (config_.exposure == -1 || dependencies_.set_property != nullptr) &&
 		       dependencies_.now != nullptr;
@@ -79,8 +85,16 @@ namespace howdy::native {
 			};
 		}
 
-		is_open_    = true;
-		stats_      = {};
+		is_open_ = true;
+		stats_   = {};
+		restore_exposure();
+		if (!dependencies_.warm_up_capture(dependencies_.capture_context)) {
+			is_open_ = false;
+			return {
+			    .status        = CompareCaptureOpenStatus::kOpenFailed,
+			    .error_message = dependencies_.error_message(dependencies_.capture_context),
+			};
+		}
 		loop_start_ = dependencies_.now(dependencies_.clock_context);
 		return {
 		    .status = CompareCaptureOpenStatus::kOk,

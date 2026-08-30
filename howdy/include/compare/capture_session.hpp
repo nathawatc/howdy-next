@@ -12,6 +12,7 @@
 namespace howdy::native {
 
 	using CaptureOpenFn          = bool (*)(void *context);
+	using CaptureWarmUpFn        = bool (*)(void *context);
 	using CaptureReadGrayFrameFn = bool (*)(void *context, cv::Mat &gray_frame);
 	using CaptureErrorMessageFn  = std::string (*)(void *context);
 
@@ -26,6 +27,7 @@ namespace howdy::native {
 	struct CompareCaptureDependencies {
 		void                  *capture_context = nullptr;
 		CaptureOpenFn          open_capture    = nullptr;
+		CaptureWarmUpFn        warm_up_capture = nullptr;
 		CaptureReadGrayFrameFn read_gray_frame = nullptr;
 		CaptureErrorMessageFn  error_message   = nullptr;
 		CaptureSetPropertyFn   set_property    = nullptr;

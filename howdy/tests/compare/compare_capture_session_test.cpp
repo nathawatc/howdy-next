@@ -23,8 +23,10 @@ namespace {
 		int  open_calls             = 0;
 		int  read_calls             = 0;
 		int  property_call_count    = 0;
+		int  warm_up_calls           = 0;
 		int  throw_on_property_call = 0;
 		bool set_property_result    = true;
+		bool warm_up_result         = true;
 
 		struct PropertyCall {
 			int    property;
@@ -32,6 +34,7 @@ namespace {
 		};
 
 		std::vector<PropertyCall> property_calls;
+		std::vector<std::string>   events;
 	};
 
 	struct FakeClockContext {
@@ -42,12 +45,21 @@ namespace {
 	auto fake_open(void *context) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.open_calls++;
+		capture.events.emplace_back("open");
 		return capture.open_result;
+	}
+
+	auto fake_warm_up(void *context) -> bool {
+		auto &capture = *static_cast<FakeCaptureContext *>(context);
+		capture.warm_up_calls++;
+		capture.events.emplace_back("warm-up");
+		return capture.warm_up_result;
 	}
 
 	auto fake_read_gray_frame(void *context, cv::Mat &gray_frame) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.read_calls++;
+		capture.events.emplace_back("read");
 		if (!capture.read_result) {
 			return false;
 		}
@@ -65,6 +77,8 @@ namespace {
 		    .property = property.id,
 		    .value    = property.value,
 		});
+		capture.events.emplace_back(property.id == cv::CAP_PROP_AUTO_EXPOSURE ? "auto-exposure"
+		                                                                    : "exposure");
 		capture.property_call_count++;
 		if (capture.property_call_count == capture.throw_on_property_call) {
 			throw cv::Exception(cv::Error::StsError, "synthetic property failure",
@@ -91,6 +105,7 @@ namespace {
 		return {
 		    .capture_context = &capture,
 		    .open_capture    = fake_open,
+		    .warm_up_capture = fake_warm_up,
 		    .read_gray_frame = fake_read_gray_frame,
 		    .error_message   = fake_error_message,
 		    .set_property    = fake_set_property,
@@ -161,6 +176,28 @@ auto main() -> int {
 		             "open failure preserves error message");
 		ok &= expect(capture.open_calls == 1, "open failure calls open once");
 		ok &= expect(clock.calls == 0, "open failure does not start timer");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		capture.warm_up_result = false;
+		howdy::native::CompareCaptureSession session(make_video_config(),
+		                                             make_dependencies(capture, clock));
+
+		const auto result = session.open();
+		ok &= expect(capture.open_calls == 1, "warm-up failure opens capture first");
+		ok &= expect(capture.events == std::vector<std::string>{"open", "warm-up"},
+		             "warm-up failure occurs after capture open");
+		ok &= expect(result.status == CompareCaptureOpenStatus::kOpenFailed,
+		             "warm-up failure has open-failed status");
+		ok &= expect(result.error_message == "synthetic capture failure",
+		             "warm-up failure preserves error message");
+		ok &= expect(clock.calls == 0, "warm-up failure does not start timeout clock");
+		const auto next = session.next_frame();
+		ok &= expect(next.status == CompareCaptureFrameStatus::kNotOpen,
+		             "warm-up failure leaves session closed");
+		ok &= expect(capture.read_calls == 0, "warm-up failure prevents frame reads");
 	}
 
 	{
@@ -377,15 +414,31 @@ auto main() -> int {
 
 		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
 		             "configured-exposure session opens");
-		session.restore_exposure();
+		ok &= expect(capture.events ==
+		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
+		             "configured exposure is applied before warm-up");
+		ok &= expect(capture.warm_up_calls == 1, "configured exposure warms up once");
 		ok &= expect(capture.property_calls.size() == 2,
-		             "configured exposure makes exactly two property calls");
-		if (capture.property_calls.size() == 2) {
+		             "configured exposure makes two initial property calls");
+
+		session.restore_exposure();
+		ok &= expect(capture.property_calls.size() == 4,
+		             "configured exposure restoration makes two more property calls");
+		ok &= expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
+		                                                        "warm-up", "auto-exposure", "exposure"},
+		             "exposure restoration follows warm-up");
+		if (capture.property_calls.size() == 4) {
 			ok &= expect(capture.property_calls[0].property == cv::CAP_PROP_AUTO_EXPOSURE &&
 			                 capture.property_calls[0].value == 1.0,
-			             "auto exposure is restored first");
+			             "auto exposure is applied first");
 			ok &= expect(capture.property_calls[1].property == cv::CAP_PROP_EXPOSURE &&
 			                 capture.property_calls[1].value == 37.0,
+			             "explicit exposure is applied second");
+			ok &= expect(capture.property_calls[2].property == cv::CAP_PROP_AUTO_EXPOSURE &&
+			                 capture.property_calls[2].value == 1.0,
+			             "auto exposure is restored first");
+			ok &= expect(capture.property_calls[3].property == cv::CAP_PROP_EXPOSURE &&
+			                 capture.property_calls[3].value == 37.0,
 			             "explicit exposure is restored second");
 		}
 	}
@@ -399,6 +452,26 @@ auto main() -> int {
 		capture.throw_on_property_call = 1;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
+		const auto result = session.open();
+		ok &= expect(result.status == CompareCaptureOpenStatus::kOk,
+		             "initial property exception does not abort open");
+		ok &= expect(capture.events ==
+		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
+		             "initial property exception does not skip warm-up");
+		session.restore_exposure();
+		ok &= expect(capture.property_calls.size() == 4,
+		             "initial property exception preserves later restoration");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		auto               config      = make_video_config();
+		config.exposure                = 37;
+		auto dependencies              = make_dependencies(capture, clock);
+		capture.throw_on_property_call = 3;
+		howdy::native::CompareCaptureSession session(config, dependencies);
+
 		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
 		             "first property exception session opens");
 		bool restore_threw = false;
@@ -408,7 +481,7 @@ auto main() -> int {
 			restore_threw = true;
 		}
 		ok &= expect(!restore_threw, "first exposure restoration exception is contained");
-		ok &= expect(capture.property_calls.size() == 2,
+		ok &= expect(capture.property_calls.size() == 4,
 		             "second exposure restoration is attempted after first exception");
 	}
 
@@ -418,7 +491,7 @@ auto main() -> int {
 		auto               config      = make_video_config();
 		config.exposure                = 37;
 		auto dependencies              = make_dependencies(capture, clock);
-		capture.throw_on_property_call = 2;
+		capture.throw_on_property_call = 4;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
 		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
@@ -430,7 +503,7 @@ auto main() -> int {
 			restore_threw = true;
 		}
 		ok &= expect(!restore_threw, "second exposure restoration exception is contained");
-		ok &= expect(capture.property_calls.size() == 2,
+		ok &= expect(capture.property_calls.size() == 4,
 		             "second exposure restoration call is attempted");
 	}
 
@@ -446,8 +519,8 @@ auto main() -> int {
 		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
 		             "false property result session opens");
 		session.restore_exposure();
-		ok &= expect(capture.property_calls.size() == 2,
-		             "false property results preserve best-effort restoration");
+		ok &= expect(capture.property_calls.size() == 4,
+		             "false property results preserve best-effort application and restoration");
 	}
 
 	{
@@ -474,6 +547,8 @@ auto main() -> int {
 
 		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
 		             "disabled exposure session opens");
+		ok &= expect(capture.events == std::vector<std::string>{"open", "warm-up"},
+		             "disabled exposure leaves camera properties untouched");
 		session.restore_exposure();
 		ok &= expect(capture.property_calls.empty(), "disabled exposure makes no property calls");
 	}
