@@ -2,6 +2,7 @@
 #include "auth_helper/runtime_internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
+#include "protocol/auth_helper_protocol.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "support/fd_io.hpp"
 #include "support/user_names.hpp"
@@ -261,8 +262,9 @@ namespace howdy::native::auth_helper {
 				return std::nullopt;
 			}
 
-			std::string templ =
-			    (root / ("pam-" + std::to_string(identity.target_uid) + "-XXXXXX")).string();
+			std::string templ = (root / auth_helper_protocol::prepared_runtime_directory_template(
+			                                identity.target_uid))
+			                        .string();
 			std::vector<char> buffer(templ.begin(), templ.end());
 			buffer.push_back('\0');
 
@@ -385,8 +387,8 @@ namespace howdy::native::auth_helper {
 			RuntimeDirGuard guard(*runtime_dir);
 			PreparedPaths   prepared{
 			    .runtime_dir     = guard.path(),
-			    .config_path     = guard.path() / "config.ini",
-			    .user_models_dir = guard.path() / "models",
+			    .config_path     = auth_helper_protocol::prepared_config_path(guard.path()),
+			    .user_models_dir = auth_helper_protocol::prepared_user_models_dir(guard.path()),
 			};
 
 			if (!make_user_models_dir(prepared, identity) ||
@@ -404,7 +406,8 @@ namespace howdy::native::auth_helper {
 
 		auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid,
 		                                const std::filesystem::path &root) -> CleanupRuntimeResult {
-			const auto expected_prefix = "pam-" + std::to_string(uid) + "-";
+			const auto expected_prefix =
+			    auth_helper_protocol::prepared_runtime_directory_prefix(uid);
 			if (path.parent_path() != root ||
 			    !path.filename().string().starts_with(expected_prefix)) {
 				return {.ok            = false,
@@ -438,7 +441,7 @@ namespace howdy::native::auth_helper {
 	}  // namespace internal
 
 	auto runtime_root() -> std::filesystem::path {
-		return "/run/howdy";
+		return auth_helper_protocol::prepared_runtime_root();
 	}
 
 	namespace internal {

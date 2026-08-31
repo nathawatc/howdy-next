@@ -1,6 +1,7 @@
 #pragma once
 
 #include "module/auth_flow.hpp"
+#include "protocol/auth_helper_protocol.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -12,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unistd.h>
 #include <utility>
 
 #include <security/pam_appl.h>
@@ -111,10 +113,15 @@ namespace howdy::test::auth_flow {
 		if (!state->prepare_result) {
 			return false;
 		}
+		const auto root =
+		    howdy::native::auth_helper_protocol::prepared_runtime_root() /
+		    (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(getuid()) +
+		     "flow01");
 		*prepared = {
-		    .root_dir        = "/tmp/howdy-auth-flow-runtime",
-		    .config_path     = "/tmp/howdy-auth-flow-runtime/config.ini",
-		    .user_models_dir = "/tmp/howdy-auth-flow-runtime/models",
+		    .root_dir    = root,
+		    .config_path = howdy::native::auth_helper_protocol::prepared_config_path(root).string(),
+		    .user_models_dir =
+		        howdy::native::auth_helper_protocol::prepared_user_models_dir(root).string(),
 		};
 		return true;
 	}

@@ -1,3 +1,4 @@
+#include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "support/fd_io.hpp"
 #include "test_support.hpp"
@@ -6,6 +7,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <unistd.h>
@@ -288,6 +290,9 @@ namespace {
 	}
 
 	auto expect_auth_helper_output_protocol_validation() -> bool {
+		using namespace howdy::native::auth_helper_protocol;
+		namespace fs = std::filesystem;
+
 		struct ProtocolCase {
 			std::string name;
 			std::string output;
@@ -296,56 +301,96 @@ namespace {
 			std::string user_models_dir;
 		};
 
+		const auto runtime_dir =
+		    prepared_runtime_root() / (prepared_runtime_directory_prefix(getuid()) + "parse1");
+		const auto config_path = prepared_config_path(runtime_dir);
+		const auto models_dir  = prepared_user_models_dir(runtime_dir);
+		const auto sibling_dir =
+		    prepared_runtime_root() / (prepared_runtime_directory_prefix(getuid()) + "sibling");
+		const auto foreign_dir =
+		    prepared_runtime_root() /
+		    (prepared_runtime_directory_prefix(static_cast<uid_t>(getuid() + 1)) + "alien1");
+		const auto output_for = [](const fs::path &config, const fs::path &models) -> std::string {
+			return "CONFIG_PATH=" + config.string() + "\nUSER_MODELS_DIR=" + models.string() + "\n";
+		};
+
 		const std::vector<ProtocolCase> cases = {
-		    {.name            = "valid required auth-helper output is accepted",
-		     .output          = "CONFIG_PATH=/run/howdy/config.ini\n"
-		                        "USER_MODELS_DIR=/run/howdy/models\n",
+		    {.name            = "valid canonical prepared-runtime output is accepted",
+		     .output          = output_for(config_path, models_dir),
 		     .expected_ok     = true,
-		     .config_path     = "/run/howdy/config.ini",
-		     .user_models_dir = "/run/howdy/models"},
-		    {.name        = "duplicate CONFIG_PATH is rejected",
-		     .output      = "CONFIG_PATH=/run/howdy/pam-1000-a/config.ini\n"
-		                    "CONFIG_PATH=/run/howdy/pam-1000-b/config.ini\n"
-		                    "USER_MODELS_DIR=/run/howdy/pam-1000-a/models\n",
+		     .config_path     = config_path.string(),
+		     .user_models_dir = models_dir.string()},
+		    {.name        = "config path outside prepared runtime root is rejected",
+		     .output      = output_for("/etc/howdy/config.ini", models_dir),
 		     .expected_ok = false},
-		    {.name        = "duplicate USER_MODELS_DIR is rejected",
-		     .output      = "CONFIG_PATH=/run/howdy/pam-1000-a/config.ini\n"
-		                    "USER_MODELS_DIR=/run/howdy/pam-1000-a/models\n"
-		                    "USER_MODELS_DIR=/run/howdy/pam-1000-b/models\n",
+		    {.name        = "user-model directory outside prepared runtime root is rejected",
+		     .output      = output_for(config_path, "/var/lib/howdy/models"),
+		     .expected_ok = false},
+		    {.name        = "sibling runtime paths are rejected",
+		     .output      = output_for(config_path, prepared_user_models_dir(sibling_dir)),
+		     .expected_ok = false},
+		    {.name        = "invalid prepared runtime suffix is rejected",
+		     .output      = output_for(prepared_config_path(sibling_dir),
+		                               prepared_user_models_dir(sibling_dir)),
+		     .expected_ok = false},
+		    {.name        = "config and models paths swapped are rejected",
+		     .output      = output_for(runtime_dir / kPreparedUserModelsDirectoryName,
+		                               runtime_dir / kPreparedConfigFileName),
+		     .expected_ok = false},
+		    {.name   = "unexpected nested path is rejected",
+		     .output = output_for(runtime_dir / "nested" / kPreparedConfigFileName, models_dir),
+		     .expected_ok = false},
+		    {.name = "parent traversal path is rejected",
+		     .output =
+		         output_for(runtime_dir / ".." / "escaped" / kPreparedConfigFileName, models_dir),
+		     .expected_ok = false},
+		    {.name        = "equivalent noncanonical models path is rejected",
+		     .output      = output_for(config_path, runtime_dir / "models" / ".." / "models"),
+		     .expected_ok = false},
+		    {.name        = "foreign UID runtime path is rejected",
+		     .output      = output_for(prepared_config_path(foreign_dir),
+		                               prepared_user_models_dir(foreign_dir)),
+		     .expected_ok = false},
+		    {.name        = "relative runtime paths are rejected",
+		     .output      = output_for("relative/config.ini", "relative/models"),
+		     .expected_ok = false},
+		    {.name        = "duplicate CONFIG_PATH is rejected",
+		     .output      = "CONFIG_PATH=" + config_path.string() +
+		                    "\nCONFIG_PATH=" + (sibling_dir / kPreparedConfigFileName).string() +
+		                    "\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
+		     .expected_ok = false},
+		    {.name   = "duplicate USER_MODELS_DIR is rejected",
+		     .output = "CONFIG_PATH=" + config_path.string() +
+		               "\nUSER_MODELS_DIR=" + models_dir.string() +
+		               "\nUSER_MODELS_DIR=" + prepared_user_models_dir(sibling_dir).string() + "\n",
 		     .expected_ok = false},
 		    {.name        = "missing CONFIG_PATH is rejected",
-		     .output      = "USER_MODELS_DIR=/run/howdy/models\n",
+		     .output      = "USER_MODELS_DIR=" + models_dir.string() + "\n",
 		     .expected_ok = false},
 		    {.name        = "missing USER_MODELS_DIR is rejected",
-		     .output      = "CONFIG_PATH=/run/howdy/config.ini\n",
+		     .output      = "CONFIG_PATH=" + config_path.string() + "\n",
 		     .expected_ok = false},
 		    {.name        = "empty CONFIG_PATH is rejected",
-		     .output      = "CONFIG_PATH=\nUSER_MODELS_DIR=/run/howdy/models\n",
+		     .output      = "CONFIG_PATH=\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
 		     .expected_ok = false},
 		    {.name        = "empty USER_MODELS_DIR is rejected",
-		     .output      = "CONFIG_PATH=/run/howdy/config.ini\nUSER_MODELS_DIR=\n",
+		     .output      = "CONFIG_PATH=" + config_path.string() + "\nUSER_MODELS_DIR=\n",
 		     .expected_ok = false},
 		    {.name        = "NOTICE line with valid required keys is rejected",
-		     .output      = "NOTICE=ignored\n"
-		                    "CONFIG_PATH=/run/howdy/config.ini\n"
-		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .output      = "NOTICE=ignored\n" + output_for(config_path, models_dir),
 		     .expected_ok = false},
 		    {.name        = "unknown key with valid required keys is rejected",
-		     .output      = "UNKNOWN=ignored\n"
-		                    "CONFIG_PATH=/run/howdy/config.ini\n"
-		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .output      = "UNKNOWN=ignored\n" + output_for(config_path, models_dir),
 		     .expected_ok = false},
 		    {.name        = "line without separator with valid required keys is rejected",
-		     .output      = "CONFIG_PATH=/run/howdy/config.ini\n"
-		                    "helper wrote stderr noise\n"
-		                    "USER_MODELS_DIR=/run/howdy/models\n",
+		     .output      = "CONFIG_PATH=" + config_path.string() +
+		                    "\nhelper wrote stderr noise\n"
+		                    "USER_MODELS_DIR=" +
+		                    models_dir.string() + "\n",
 		     .expected_ok = false},
-		    {.name            = "required value containing equals is preserved and accepted",
-		     .output          = "CONFIG_PATH=/run/howdy/config=debug.ini\n"
-		                        "USER_MODELS_DIR=/run/howdy/models=primary\n",
-		     .expected_ok     = true,
-		     .config_path     = "/run/howdy/config=debug.ini",
-		     .user_models_dir = "/run/howdy/models=primary"},
+		    {.name        = "required values containing equals are rejected by path contract",
+		     .output      = output_for(runtime_dir / "config=debug.ini", models_dir),
+		     .expected_ok = false},
 		};
 
 		bool ok = true;

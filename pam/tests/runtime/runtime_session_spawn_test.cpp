@@ -192,11 +192,11 @@ namespace {
 		       expect(fake.output_reader_calls == 1, "destroy failure still reads helper output") &&
 		       expect(fake.actions_destroy_calls == 1, "destroy failure destroys actions once") &&
 		       expect_parent_pipe_closed_once(fake, "destroy failure") &&
-		       expect(prepared.config_path == "/run/howdy/auth-helper/config.ini",
+		       expect(prepared.config_path == test_prepared_runtime_config_path().string(),
 		              "destroy failure preserves prepared config path") &&
-		       expect(prepared.user_models_dir == "/run/howdy/auth-helper/models",
+		       expect(prepared.user_models_dir == test_prepared_runtime_models_dir().string(),
 		              "destroy failure preserves prepared models path") &&
-		       expect(prepared.root_dir == "/run/howdy/auth-helper",
+		       expect(prepared.root_dir == test_prepared_runtime_root(),
 		              "destroy failure preserves prepared root path") &&
 		       expect_primary_spawn_error(fake, "posix_spawn_file_actions_destroy", EIO,
 		                                  "destroy failure") &&
@@ -256,11 +256,11 @@ namespace {
 		                      "actions_destroy", "close", "read_output", "close"},
 		              "spawn success performs helper operations in order") &&
 		       expect_parent_pipe_closed_once(fake, "spawn success") &&
-		       expect(prepared.config_path == "/run/howdy/auth-helper/config.ini",
+		       expect(prepared.config_path == test_prepared_runtime_config_path().string(),
 		              "spawn success reads config path") &&
-		       expect(prepared.user_models_dir == "/run/howdy/auth-helper/models",
+		       expect(prepared.user_models_dir == test_prepared_runtime_models_dir().string(),
 		              "spawn success reads models path") &&
-		       expect(prepared.root_dir == "/run/howdy/auth-helper",
+		       expect(prepared.root_dir == test_prepared_runtime_root(),
 		              "spawn success derives runtime root") &&
 		       expect_child_reaped(&fake, "spawn success");
 	}
@@ -385,11 +385,14 @@ namespace {
 	}
 
 	auto integration_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
+		const auto            config_path = test_prepared_runtime_config_path("coll01").string();
+		const auto            models_dir  = test_prepared_runtime_models_dir("coll01").string();
+		const auto            command = "printf 'CONFIG_PATH=" + config_path +
+		                                "\\n'; printf 'USER_MODELS_DIR=" + models_dir + "\\n' >&2";
 		std::array<char *, 4> shell_args = {
 		    const_cast<char *>("/bin/sh"),
 		    const_cast<char *>("-c"),
-		    const_cast<char *>("printf 'CONFIG_PATH=/run/howdy/collision/config.ini\\n'; "
-		                       "printf 'USER_MODELS_DIR=/run/howdy/collision/models\\n' >&2"),
+		    const_cast<char *>(command.c_str()),
 		    nullptr,
 		};
 		std::array<char *, 1> empty_env = {nullptr};
@@ -404,11 +407,11 @@ namespace {
 	auto integration_descriptor_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request)
 	    -> int {
 		const auto &context = *static_cast<const DescriptorInheritanceContext *>(request.context);
-		const std::string     command = "if [ -e /proc/self/fd/" +
-		                                std::to_string(context.inherited_fd) +
-		                                " ]; then exit 1; fi; "
-		                                "printf 'CONFIG_PATH=/run/howdy/descriptor/config.ini\\n'; "
-		                                "printf 'USER_MODELS_DIR=/run/howdy/descriptor/models\\n'";
+		const auto  config_path = test_prepared_runtime_config_path("desc01").string();
+		const auto  models_dir  = test_prepared_runtime_models_dir("desc01").string();
+		const auto  command     = "if [ -e /proc/self/fd/" + std::to_string(context.inherited_fd) +
+		                          " ]; then exit 1; fi; printf 'CONFIG_PATH=" + config_path +
+		                          "\\n'; printf 'USER_MODELS_DIR=" + models_dir + "\\n'";
 		std::array<char *, 4> shell_args = {const_cast<char *>("/bin/sh"), const_cast<char *>("-c"),
 		                                    const_cast<char *>(command.c_str()), nullptr};
 		std::array<char *, 1> empty_env  = {nullptr};
@@ -450,9 +453,10 @@ namespace {
 		    "alice", &prepared, operations);
 		(void)close(inherited_fd);
 		return expect(prepared_ok, "descriptor inheritance test helper succeeds") &&
-		       expect(prepared.config_path == "/run/howdy/descriptor/config.ini",
+		       expect(prepared.config_path == test_prepared_runtime_config_path("desc01").string(),
 		              "descriptor inheritance test reads config path") &&
-		       expect(prepared.user_models_dir == "/run/howdy/descriptor/models",
+		       expect(prepared.user_models_dir ==
+		                  test_prepared_runtime_models_dir("desc01").string(),
 		              "descriptor inheritance test reads models path");
 	}
 
@@ -474,9 +478,10 @@ namespace {
 			operations.read_bounded     = nullptr;
 			const bool prepared_ok = howdy::pam::auth_helper_process::prepare_runtime_auth_files(
 			    "alice", &prepared, operations);
-			const bool paths_ok = prepared.config_path == "/run/howdy/collision/config.ini" &&
-			                      prepared.user_models_dir == "/run/howdy/collision/models" &&
-			                      prepared.root_dir == "/run/howdy/collision";
+			const bool paths_ok =
+			    prepared.config_path == test_prepared_runtime_config_path("coll01").string() &&
+			    prepared.user_models_dir == test_prepared_runtime_models_dir("coll01").string() &&
+			    prepared.root_dir == test_prepared_runtime_root("coll01");
 			_exit(prepared_ok && paths_ok ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
 		if (test_pid < 0) {

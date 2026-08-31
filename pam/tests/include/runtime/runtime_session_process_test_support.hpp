@@ -1,4 +1,5 @@
 #pragma once
+#include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "test_support.hpp"
 
@@ -20,6 +21,30 @@
 
 namespace howdy::test::runtime_session {
 	using howdy::test::expect;
+
+	inline auto test_prepared_runtime_root(std::string_view suffix = "helper")
+	    -> std::filesystem::path {
+		return howdy::native::auth_helper_protocol::prepared_runtime_root() /
+		       (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(getuid()) +
+		        std::string(suffix));
+	}
+
+	inline auto test_prepared_runtime_config_path(std::string_view suffix = "helper")
+	    -> std::filesystem::path {
+		return howdy::native::auth_helper_protocol::prepared_config_path(
+		    test_prepared_runtime_root(suffix));
+	}
+
+	inline auto test_prepared_runtime_models_dir(std::string_view suffix = "helper")
+	    -> std::filesystem::path {
+		return howdy::native::auth_helper_protocol::prepared_user_models_dir(
+		    test_prepared_runtime_root(suffix));
+	}
+
+	inline auto test_prepared_runtime_output(std::string_view suffix = "helper") -> std::string {
+		return "CONFIG_PATH=" + test_prepared_runtime_config_path(suffix).string() +
+		       "\nUSER_MODELS_DIR=" + test_prepared_runtime_models_dir(suffix).string() + "\n";
+	}
 
 	struct AuthHelperSpawnFake {
 		std::vector<std::string>         operations;
@@ -49,6 +74,7 @@ namespace howdy::test::runtime_session {
 		int                              spawn_calls            = 0;
 		int                              output_reader_calls    = 0;
 		pid_t                            spawned_pid            = -1;
+		std::string                      helper_output;
 	};
 
 	inline auto fake_pipe2(void *context, int *pipe_fds, int flags) -> int {
@@ -158,8 +184,8 @@ namespace howdy::test::runtime_session {
 		fake.operations.emplace_back("read_output");
 		++fake.output_reader_calls;
 		return {
-		    .output = "CONFIG_PATH=/run/howdy/auth-helper/config.ini\n"
-		              "USER_MODELS_DIR=/run/howdy/auth-helper/models\n",
+		    .output =
+		        fake.helper_output.empty() ? test_prepared_runtime_output() : fake.helper_output,
 		};
 	}
 

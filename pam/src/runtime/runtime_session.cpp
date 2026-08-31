@@ -1,5 +1,6 @@
 #include "runtime/runtime_session.hpp"
 
+#include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 
 #include <cerrno>
@@ -9,6 +10,13 @@
 #include <utility>
 
 namespace {
+	auto prepared_runtime_files_match_contract(const howdy::pam::PreparedRuntimeFiles &prepared)
+	    -> bool {
+		return howdy::native::auth_helper_protocol::matches_prepared_runtime_layout(
+		    prepared.root_dir, std::filesystem::path(prepared.config_path),
+		    std::filesystem::path(prepared.user_models_dir), getuid());
+	}
+
 	auto prepare_runtime_files_dependency(void *context, std::string_view username,
 	                                      howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
 		(void)context;
@@ -103,7 +111,7 @@ namespace howdy::pam {
 			};
 		}
 		if (prepared.config_path.empty() || prepared.user_models_dir.empty() ||
-		    prepared.root_dir.empty()) {
+		    prepared.root_dir.empty() || !prepared_runtime_files_match_contract(prepared)) {
 			if (!prepared.root_dir.empty()) {
 				invoke_cleanup(dependencies_, prepared.root_dir);
 			}

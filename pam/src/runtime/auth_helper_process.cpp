@@ -97,6 +97,14 @@ namespace {
 		}
 
 		result.valid = saw_config_path && saw_user_models_dir;
+		if (!result.valid) {
+			return result;
+		}
+
+		const std::filesystem::path config_path(result.config_path);
+		const std::filesystem::path user_models_dir(result.user_models_dir);
+		result.valid = howdy::native::auth_helper_protocol::matches_prepared_runtime_layout(
+		    config_path.parent_path(), config_path, user_models_dir, getuid());
 		return result;
 	}
 

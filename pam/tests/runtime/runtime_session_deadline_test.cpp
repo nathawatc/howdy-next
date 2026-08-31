@@ -297,8 +297,7 @@ namespace {
 	}
 
 	auto test_auth_helper_combined_failures() -> bool {
-		const std::string valid_output = "CONFIG_PATH=/run/howdy/combined/config.ini\n"
-		                                 "USER_MODELS_DIR=/run/howdy/combined/models\n";
+		const std::string valid_output = test_prepared_runtime_output("comb01");
 		bool              ok           = true;
 		ok &= run_combined_output_failure_case("valid output and nonzero helper",
 		                                       ChildOutcome::kNonzero, valid_output);
@@ -424,8 +423,7 @@ namespace {
 	}
 
 	auto test_auth_helper_absolute_deadlines() -> bool {
-		const std::string valid_output = "CONFIG_PATH=/run/howdy/deadline/config.ini\n"
-		                                 "USER_MODELS_DIR=/run/howdy/deadline/models\n";
+		const std::string valid_output = test_prepared_runtime_output("dead01");
 		bool              ok           = true;
 		ok &= run_deadline_output_case("normal helper", valid_output, true, true, false);
 		ok &= run_deadline_output_case("silent open pipe", "", false, false, false);
@@ -538,8 +536,7 @@ namespace {
 	}
 
 	auto test_auth_helper_blocked_signal_timeout_cleanup() -> bool {
-		const std::string valid_output = "CONFIG_PATH=/run/howdy/masked/config.ini\n"
-		                                 "USER_MODELS_DIR=/run/howdy/masked/models\n";
+		const std::string valid_output = test_prepared_runtime_output("mask01");
 		bool              ok           = true;
 		{
 			ScopedSignalBlock blocked_sigchld(SIGCHLD);
