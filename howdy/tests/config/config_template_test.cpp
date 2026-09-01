@@ -1,13 +1,17 @@
+#include "config/config_reader.hpp"
 #include "config/config_schema.hpp"
 #include "config/config_template.hpp"
+#include "config/config_validation.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cstddef>
+#include <filesystem>
 #include <locale>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 
 namespace {
 
@@ -16,6 +20,7 @@ namespace {
 	using howdy::native::config_schema::RuntimeDefault;
 	using howdy::native::config_schema::ValueType;
 	using howdy::test::expect;
+	using howdy::test::write_file;
 
 	class comma_decimal_numpunct final : public std::numpunct<char> {
 	protected:
@@ -94,18 +99,24 @@ auto main() -> int {
 		ok &= expect(locale_result.ok && locale_result.content.contains("ratio = 1.25\n"),
 		             "floating-point rendering ignores comma decimal locale");
 
-		const std::string expected = "[alpha]\n"
-		                             "# Enable synthetic mode.\n"
-		                             "enabled = true\n\n"
-		                             "# Number of samples to use.\n"
+		const std::string expected = "# See howdy.ini(5) for configuration options.\n\n"
+		                             "[alpha]\n"
+		                             "enabled = true\n"
 		                             "count = 320\n\n"
 		                             "[beta]\n"
-		                             "# Scaling ratio for synthetic mode.\n"
-		                             "ratio = 1.25\n\n"
-		                             "# Device path used by synthetic mode.\n"
+		                             "ratio = 1.25\n"
 		                             "path = none\n";
 		ok &=
 		    expect(primitive_result.content == expected, "primitive output preserves schema order");
+		ok &= expect(count_occurrences(primitive_result.content, "#") == 1,
+		             "primitive output contains exactly one comment");
+		ok &= expect(count_occurrences(primitive_result.content,
+		                               "# See howdy.ini(5) for configuration options.") == 1,
+		             "primitive output has short header comment");
+		ok &= expect(!primitive_result.content.contains("# Enable synthetic mode."),
+		             "primitive output does not contain description comments");
+		ok &= expect(!primitive_result.content.contains("# Number of samples to use."),
+		             "primitive output does not contain description comments");
 		ok &= expect(count_occurrences(primitive_result.content, "enabled = true") == 1,
 		             "boolean option is emitted once");
 		ok &= expect(count_occurrences(primitive_result.content, "count = 320") == 1,
@@ -124,9 +135,25 @@ auto main() -> int {
 	    howdy::native::config_template::render_default_config(production_options);
 	ok &= expect(production_result.ok, "production schema renders");
 	if (production_result.ok) {
+		ok &= expect(production_result.content.starts_with(
+		                 "# See howdy.ini(5) for configuration options.\n\n"),
+		             "production config starts with short header comment");
+		ok &= expect(count_occurrences(production_result.content, "#") == 1,
+		             "production config contains only the single header comment");
 		for (const auto &option : production_options) {
 			ok &= expect(!option.description.empty(), "production option has description");
 			ok &= expect(option.description != option.key, "description explains option");
+			ok &=
+			    expect(!production_result.content.contains("# " + std::string(option.description)),
+			           "production config does not contain per-option description comment: " +
+			               std::string(option.key));
+			const auto canonical_fallback =
+			    howdy::native::config_schema::format_fallback_value(option);
+			ok &= expect(canonical_fallback.has_value() &&
+			                 production_result.content.contains(std::string(option.key) + " = " +
+			                                                    *canonical_fallback + "\n"),
+			             "rendered config matches canonical schema fallback formatting for " +
+			                 std::string(option.key));
 		}
 		for (const auto *const fallback : {"0.8845", "0.3", "0.6942", "1.25", "320", "75"}) {
 			ok &= expect(production_result.content.contains(fallback),
@@ -138,6 +165,20 @@ auto main() -> int {
 		    howdy::native::config_template::render_default_config(production_options);
 		ok &= expect(repeated.ok && repeated.content == production_result.content,
 		             "production rendering is deterministic");
+
+		const auto temp_config_path =
+		    std::filesystem::temp_directory_path() /
+		    ("howdy-rendered-config-test-" + std::to_string(getpid()) + ".ini");
+		std::error_code ec;
+		std::filesystem::remove(temp_config_path, ec);
+		ok &= expect(write_file(temp_config_path, production_result.content),
+		             "write generated production config to temp file");
+		const howdy::native::ConfigReader reader(temp_config_path.string());
+		ok &= expect(reader.ok(), "rendered production config parses without INI syntax errors");
+		const auto validation_error = howdy::native::validate_runtime_config(reader);
+		ok &= expect(!validation_error.has_value(),
+		             "rendered production config passes full canonical runtime validation");
+		std::filesystem::remove(temp_config_path, ec);
 	}
 
 	const std::array empty_description = {

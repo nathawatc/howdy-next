@@ -370,5 +370,60 @@ auto main() -> int {
 	};
 	ok &= rejects(unknown_special_rule, "unknown special rule");
 
+	for (const auto &spelling : howdy::native::config_schema::kAcceptedBooleanSpellings) {
+		ok &= expect(howdy::native::config_schema::is_accepted_boolean_text(spelling),
+		             "lowercase boolean spelling is accepted: " + std::string(spelling));
+		std::string upper(spelling);
+		for (char &ch : upper) {
+			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+		}
+		ok &= expect(howdy::native::config_schema::is_accepted_boolean_text(upper),
+		             "uppercase boolean spelling is accepted: " + upper);
+	}
+	for (const auto *const invalid_bool :
+	     {"maybe", "2", "-1", "enable", "none", "", "true1", "00"}) {
+		ok &= expect(!howdy::native::config_schema::is_accepted_boolean_text(invalid_bool),
+		             "invalid boolean spelling is rejected: " + std::string(invalid_bool));
+	}
+
+	ok &= expect(howdy::native::config_schema::format_integer_value(0) == "0",
+	             "format_integer_value formats zero");
+	ok &= expect(howdy::native::config_schema::format_integer_value(-1) == "-1",
+	             "format_integer_value formats negative sentinel");
+	ok &= expect(howdy::native::config_schema::format_integer_value(320) == "320",
+	             "format_integer_value formats positive integer");
+
+	ok &= expect(howdy::native::config_schema::format_floating_point_value(0.0F) == "0",
+	             "format_floating_point_value formats zero");
+	ok &= expect(howdy::native::config_schema::format_floating_point_value(1.25F) == "1.25",
+	             "format_floating_point_value formats 1.25");
+	ok &= expect(howdy::native::config_schema::format_floating_point_value(0.6942F) == "0.6942",
+	             "format_floating_point_value formats 0.6942");
+	ok &= expect(!howdy::native::config_schema::format_floating_point_value(
+	                  std::numeric_limits<float>::quiet_NaN())
+	                  .has_value(),
+	             "format_floating_point_value rejects NaN");
+
+	const auto bool_opt =
+	    synthetic_option(OptionId::core_detection_notice, "core", "test", ValueType::boolean,
+	                     howdy::native::config_schema::bool_default(true));
+	ok &= expect(howdy::native::config_schema::format_fallback_value(bool_opt) == "true",
+	             "format_fallback_value formats boolean true");
+	const auto int_opt =
+	    synthetic_option(OptionId::video_timeout, "video", "test", ValueType::integer,
+	                     howdy::native::config_schema::int_default(4));
+	ok &= expect(howdy::native::config_schema::format_fallback_value(int_opt) == "4",
+	             "format_fallback_value formats integer fallback");
+	const auto float_opt =
+	    synthetic_option(OptionId::face_sface_threshold, "face", "test", ValueType::floating_point,
+	                     howdy::native::config_schema::float_default(0.6942F));
+	ok &= expect(howdy::native::config_schema::format_fallback_value(float_opt) == "0.6942",
+	             "format_fallback_value formats float fallback");
+	const auto string_opt =
+	    synthetic_option(OptionId::video_device_path, "video", "test", ValueType::string,
+	                     howdy::native::config_schema::string_default("none"));
+	ok &= expect(howdy::native::config_schema::format_fallback_value(string_opt) == "none",
+	             "format_fallback_value formats string fallback");
+
 	return ok ? 0 : 1;
 }

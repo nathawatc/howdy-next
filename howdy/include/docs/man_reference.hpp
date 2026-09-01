@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_catalog.hpp"
+#include "config/config_schema.hpp"
 #include "module/pam_option_catalog.hpp"
 
 #include <span>
@@ -25,5 +26,8 @@ namespace howdy::docs {
 	[[nodiscard]] auto
 	render_workaround_reference(std::span<const pam::WorkaroundDescriptor> workarounds,
 	                            pam::Workaround default_mode) -> RenderResult;
+	[[nodiscard]] auto
+	render_config_option_reference(std::span<const native::config_schema::Option> options)
+	    -> RenderResult;
 
 }  // namespace howdy::docs

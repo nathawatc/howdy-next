@@ -34,7 +34,10 @@ endif()
 
 add_library(howdy_man_reference STATIC src/docs/man_reference.cpp)
 howdy_configure_native_target(howdy_man_reference)
-target_link_libraries(howdy_man_reference PUBLIC howdy_command_catalog)
+target_link_libraries(
+	howdy_man_reference
+	PUBLIC howdy_command_catalog howdy_config_schema
+)
 target_include_directories(
 	howdy_man_reference
 	PUBLIC "${PROJECT_SOURCE_DIR}/pam/include"
@@ -48,7 +51,11 @@ target_include_directories(
 )
 target_link_libraries(
 	howdy_docs_generator
-	PRIVATE howdy_command_catalog howdy_pam_option_catalog howdy_man_reference
+	PRIVATE
+		howdy_command_catalog
+		howdy_pam_option_catalog
+		howdy_config_schema
+		howdy_man_reference
 )
 if(CMAKE_CROSSCOMPILING)
 	set_property(
@@ -301,7 +308,11 @@ if(BUILD_TESTING)
 	howdy_configure_native_test_target(howdy_man_reference_test)
 	target_link_libraries(
 		howdy_man_reference_test
-		PRIVATE howdy_man_reference howdy_command_catalog howdy_pam_option_catalog
+		PRIVATE
+			howdy_man_reference
+			howdy_command_catalog
+			howdy_pam_option_catalog
+			howdy_config_schema
 	)
 	add_test(NAME native-man-reference COMMAND howdy_man_reference_test)
 
@@ -481,7 +492,7 @@ if(BUILD_TESTING)
 	)
 	howdy_configure_native_test_target(howdy_config_template_test)
 	target_link_libraries(
-		howdy_config_template_test PRIVATE howdy_config_template
+		howdy_config_template_test PRIVATE howdy_config_template howdy_config
 	)
 	add_test(NAME native-config-template COMMAND howdy_config_template_test)
 
@@ -798,7 +809,12 @@ set(
 	HOWDY_WORKAROUND_REFERENCE_PATH
 	"${HOWDY_DOC_REFERENCE_DIR}/pam-workarounds.roff"
 )
+set(
+	HOWDY_CONFIG_REFERENCE_PATH
+	"${HOWDY_DOC_REFERENCE_DIR}/howdy-ini-options.roff"
+)
 set(HOWDY_MAN1_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.1")
+set(HOWDY_MAN5_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.ini.5")
 set(HOWDY_MAN8_PATH "${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8")
 set(HOWDY_MAN_COMPOSE_SCRIPT "${PROJECT_SOURCE_DIR}/cmake/compose_man.cmake")
 
@@ -807,7 +823,9 @@ add_custom_command(
 		"${HOWDY_COMMAND_REFERENCE_PATH}"
 		"${HOWDY_OPTION_REFERENCE_PATH}"
 		"${HOWDY_WORKAROUND_REFERENCE_PATH}"
+		"${HOWDY_CONFIG_REFERENCE_PATH}"
 		"${HOWDY_MAN1_PATH}"
+		"${HOWDY_MAN5_PATH}"
 		"${HOWDY_MAN8_PATH}"
 	COMMAND
 		howdy_docs_generator
@@ -816,11 +834,14 @@ add_custom_command(
 		"${CMAKE_COMMAND}"
 		"-DMAN1_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
 		"-DMAN1_OUTPUT_PATH=${HOWDY_MAN1_PATH}"
+		"-DMAN5_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.ini.5.in"
+		"-DMAN5_OUTPUT_PATH=${HOWDY_MAN5_PATH}"
 		"-DMAN8_TEMPLATE=${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
 		"-DMAN8_OUTPUT_PATH=${HOWDY_MAN8_PATH}"
 		"-DCOMMAND_REFERENCE=${HOWDY_COMMAND_REFERENCE_PATH}"
 		"-DOPTION_REFERENCE=${HOWDY_OPTION_REFERENCE_PATH}"
 		"-DWORKAROUND_REFERENCE=${HOWDY_WORKAROUND_REFERENCE_PATH}"
+		"-DCONFIG_REFERENCE=${HOWDY_CONFIG_REFERENCE_PATH}"
 		"-DPROJECT_VERSION=${PROJECT_VERSION}"
 		"-DHOWDY_MAN_DATE=${HOWDY_MAN_DATE}"
 		"-DHOWDY_CONFIG_DIR=${HOWDY_CONFIG_DIR}"
@@ -832,9 +853,12 @@ add_custom_command(
 	DEPENDS
 		howdy_docs_generator
 		"${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
+		"${CMAKE_CURRENT_SOURCE_DIR}/howdy.ini.5.in"
 		"${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
 		"${PROJECT_SOURCE_DIR}/howdy/include/app/command_catalog.hpp"
 		"${PROJECT_SOURCE_DIR}/howdy/src/app/command_catalog.cpp"
+		"${PROJECT_SOURCE_DIR}/howdy/include/config/config_schema.hpp"
+		"${PROJECT_SOURCE_DIR}/howdy/src/config/config_schema.cpp"
 		"${PROJECT_SOURCE_DIR}/howdy/include/docs/man_reference.hpp"
 		"${PROJECT_SOURCE_DIR}/howdy/src/docs/man_reference.cpp"
 		"${PROJECT_SOURCE_DIR}/howdy/src/tools/generate_docs.cpp"
@@ -844,9 +868,8 @@ add_custom_command(
 	COMMENT "Generating and composing Howdy manual pages"
 	VERBATIM
 )
-add_custom_target(
-	howdy_docs ALL DEPENDS "${HOWDY_MAN1_PATH}" "${HOWDY_MAN8_PATH}"
-)
+add_custom_target(howdy_docs ALL DEPENDS "${HOWDY_MAN1_PATH}"
+                  "${HOWDY_MAN5_PATH}" "${HOWDY_MAN8_PATH}")
 
 if(BUILD_TESTING)
 	set(howdy_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
@@ -934,6 +957,7 @@ if(BUILD_TESTING)
 			"${PROJECT_BINARY_DIR}"
 			"${PROJECT_SOURCE_DIR}"
 			"${HOWDY_MAN1_PATH}"
+			"${HOWDY_MAN5_PATH}"
 			"${HOWDY_MAN8_PATH}"
 			"${HOWDY_CONFIG_DIR}"
 			"${HOWDY_CONFIG_PATH}"
@@ -965,6 +989,10 @@ install(DIRECTORY DESTINATION "${HOWDY_MODELS_DIR}")
 install(
 	FILES "${HOWDY_MAN1_PATH}"
 	DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
+)
+install(
+	FILES "${HOWDY_MAN5_PATH}"
+	DESTINATION "${CMAKE_INSTALL_MANDIR}/man5"
 )
 install(
 	FILES "${HOWDY_MAN8_PATH}"

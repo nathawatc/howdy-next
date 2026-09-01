@@ -1,0 +1,30 @@
+.TH HOWDY.INI 5 "@HOWDY_MAN_DATE@" "Howdy Next @PROJECT_VERSION@" "File Formats"
+.SH NAME
+howdy.ini \- Howdy Next configuration file
+.SH DESCRIPTION
+The file
+.I @HOWDY_CONFIG_PATH_ROFF@
+contains runtime configuration for Howdy Next.
+.PP
+The configuration file is formatted using standard INI syntax organized into section
+headers followed by key and value definitions:
+.PP
+.nf
+[section]
+key = value
+.fi
+.PP
+Lines beginning with
+.B #
+or
+.B ;
+are treated as comments.
+.SH "CONFIGURATION OPTIONS"
+@HOWDY_CONFIG_REFERENCE@
+.SH FILES
+.TP
+.I @HOWDY_CONFIG_PATH_ROFF@
+Main Howdy configuration file.
+.SH "SEE ALSO"
+.BR howdy (1),
+.BR pam_howdy (8)

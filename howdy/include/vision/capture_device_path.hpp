@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -9,6 +11,13 @@
 
 namespace howdy::native {
 	inline constexpr auto kNoCaptureDevice = "none";
+
+	inline constexpr std::array<std::string_view, 4> kAcceptedCaptureDevicePatterns = {
+	    kNoCaptureDevice,
+	    "/dev/video*",
+	    "/dev/v4l/by-path/*",
+	    "/dev/v4l/by-id/*",
+	};
 
 	namespace detail {
 

@@ -1,7 +1,9 @@
 #include "app/command_catalog.hpp"
+#include "config/config_schema.hpp"
 #include "docs/man_reference.hpp"
 #include "module/pam_option_catalog.hpp"
 #include "test_support.hpp"
+#include "vision/capture_device_path.hpp"
 
 #include <array>
 #include <string>
@@ -10,11 +12,17 @@
 namespace {
 
 	using howdy::docs::render_command_reference;
+	using howdy::docs::render_config_option_reference;
 	using howdy::docs::render_global_option_reference;
 	using howdy::docs::render_workaround_reference;
 	using howdy::native::CommandDescriptor;
 	using howdy::native::CommandId;
 	using howdy::native::GlobalOptionDescriptor;
+	using howdy::native::config_schema::Option;
+	using howdy::native::config_schema::OptionId;
+	using howdy::native::config_schema::RuntimeDefault;
+	using howdy::native::config_schema::SpecialRule;
+	using howdy::native::config_schema::ValueType;
 	using howdy::pam::Workaround;
 	using howdy::pam::WorkaroundDescriptor;
 	using howdy::test::expect;
@@ -22,6 +30,40 @@ namespace {
 	auto has_exactly_one_final_newline(std::string_view value) -> bool {
 		return !value.empty() && value.back() == '\n' &&
 		       (value.size() == 1 || value[value.size() - 2] != '\n');
+	}
+
+	auto escape_for_roff(std::string_view value) -> std::string {
+		std::string escaped;
+		escaped.reserve(value.size());
+		for (const char character : value) {
+			switch (character) {
+				case '\\':
+					escaped += "\\\\";
+					break;
+				case '-':
+					escaped += "\\-";
+					break;
+				default:
+					escaped += character;
+					break;
+			}
+		}
+		return escaped;
+	}
+
+	auto synthetic_config_option(OptionId id, std::string_view section, std::string_view key,
+	                             ValueType type, RuntimeDefault fallback,
+	                             std::string_view description) -> Option {
+		return Option{.id           = id,
+		              .section      = section,
+		              .key          = key,
+		              .type         = type,
+		              .fallback     = fallback,
+		              .range        = {},
+		              .choices      = {},
+		              .special_rule = SpecialRule::none,
+		              .invalid_rule = "synthetic rule",
+		              .description  = description};
 	}
 
 }  // namespace
@@ -88,6 +130,77 @@ auto main() -> int {
 	ok &= expect(command_result.output == repeat_command_result.output,
 	             "command rendering is deterministic");
 
+	const auto production_schema_options = howdy::native::config_schema::runtime_config_options();
+	const auto config_result = render_config_option_reference(production_schema_options);
+	ok &= expect(config_result.ok(), "production config options render");
+	ok &= expect(has_exactly_one_final_newline(config_result.output),
+	             "config reference has one final newline");
+	ok &= expect(config_result.output.contains(".SS [core]\n"),
+	             "config reference renders core section");
+	ok &= expect(config_result.output.contains(".SS [video]\n"),
+	             "config reference renders video section");
+	ok &= expect(config_result.output.contains(".SS [face]\n"),
+	             "config reference renders face section");
+	ok &= expect(config_result.output.contains(".SS [debug]\n"),
+	             "config reference renders debug section");
+
+	const auto core_pos  = config_result.output.find(".SS [core]\n");
+	const auto video_pos = config_result.output.find(".SS [video]\n");
+	const auto face_pos  = config_result.output.find(".SS [face]\n");
+	const auto debug_pos = config_result.output.find(".SS [debug]\n");
+	ok &= expect(core_pos != std::string::npos && video_pos != std::string::npos &&
+	                 face_pos != std::string::npos && debug_pos != std::string::npos &&
+	                 core_pos < video_pos && video_pos < face_pos && face_pos < debug_pos,
+	             "sections appear in schema order");
+
+	for (const auto &opt : production_schema_options) {
+		const auto key_tag = "\\&\\fB" + std::string(opt.key) + "\\fR";
+		ok &= expect(config_result.output.contains(key_tag),
+		             "config option key tag appears: " + std::string(opt.key));
+		ok &= expect(config_result.output.contains(escape_for_roff(opt.description)),
+		             "config option description appears: " + std::string(opt.key));
+	}
+
+	ok &= expect(!config_result.output.contains("Default:"),
+	             "config reference does not contain Default: field");
+
+	ok &=
+	    expect(config_result.output.contains("\n.br\n\\&Range: 1..300.\n"),
+	           "video timeout range renders on separate metadata line without default annotation");
+	ok &= expect(
+	    config_result.output.contains("\n.br\n\\&Accepted: \\fBnone\\fR, /dev/video*, "
+	                                  "/dev/v4l/by\\-path/*, /dev/v4l/by\\-id/*.\n"),
+	    "video device_path renders accepted patterns with bold fallback token on separate line");
+	ok &= expect(config_result.output.contains("\n.br\n\\&Range: \\-1 or 16..8192.\n"),
+	             "video frame_width sentinel range renders on separate line");
+	ok &= expect(config_result.output.contains("\n.br\n\\&Choices: \\fBcosine\\fR, l2, l2norm.\n"),
+	             "face sface_metric choices renders with bold fallback token on separate line");
+	ok &= expect(config_result.output.contains(
+	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2 and l2norm.\n"),
+	             "face sface_threshold metric-dependent range renders on separate line without "
+	             "default annotation");
+	ok &= expect(config_result.output.contains(
+	                 "\n.br\n\\&Values: true, \\fBfalse\\fR, 1, 0, yes, no, on, off.\n"),
+	             "boolean option with false default bolds false token");
+	ok &= expect(config_result.output.contains(
+	                 "\n.br\n\\&Values: \\fBtrue\\fR, false, 1, 0, yes, no, on, off.\n"),
+	             "boolean option with true default bolds true token");
+
+	for (const auto &spelling : howdy::native::config_schema::kAcceptedBooleanSpellings) {
+		ok &= expect(config_result.output.contains(spelling),
+		             "boolean option documentation includes accepted spelling: " +
+		                 std::string(spelling));
+	}
+	for (const auto &pattern : howdy::native::kAcceptedCaptureDevicePatterns) {
+		ok &=
+		    expect(config_result.output.contains(escape_for_roff(pattern)),
+		           "device_path documentation includes accepted pattern: " + std::string(pattern));
+	}
+
+	const auto repeat_config_result = render_config_option_reference(production_schema_options);
+	ok &= expect(config_result.output == repeat_config_result.output,
+	             "config option rendering is deterministic");
+
 	const std::array generic_commands{
 	    CommandDescriptor{
 	        .id                = CommandId::kAdd,
@@ -122,6 +235,20 @@ auto main() -> int {
 	ok &= expect(escaped_result.output.contains(R"([A\-B\\C])"),
 	             "roff escapes synopsis hyphens and backslashes");
 
+	const std::array escaped_config_options = {
+	    synthetic_config_option(OptionId::core_detection_notice, "sec-a", "key-a",
+	                            ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Desc a-b\\c."),
+	};
+	const auto escaped_config_res = render_config_option_reference(escaped_config_options);
+	ok &= expect(escaped_config_res.ok(), "escaped config options render");
+	ok &= expect(escaped_config_res.output.contains(".SS [sec\\-a]\n"),
+	             "escaped config section escapes hyphens");
+	ok &= expect(escaped_config_res.output.contains(R"(\&\fBkey\-a\fR)"),
+	             "escaped config key escapes hyphens");
+	ok &= expect(escaped_config_res.output.contains(R"(Desc a\-b\\c.)"),
+	             "escaped config description escapes hyphens and backslashes");
+
 	const std::array control_command{
 	    CommandDescriptor{.id          = CommandId::kAdd,
 	                      .name        = "add\n",
@@ -155,6 +282,44 @@ auto main() -> int {
 	ok &= expect(!control_option_result.ok() &&
 	                 control_option_result.error.contains("control character"),
 	             "control characters in option text are rejected");
+
+	const std::array control_config_section = {
+	    synthetic_config_option(OptionId::core_detection_notice, "core\n", "key",
+	                            ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Valid desc."),
+	};
+	ok &= expect(!render_config_option_reference(control_config_section).ok(),
+	             "control characters in config section are rejected");
+
+	const std::array control_config_key = {
+	    synthetic_config_option(OptionId::core_detection_notice, "core", "key\n",
+	                            ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Valid desc."),
+	};
+	ok &= expect(!render_config_option_reference(control_config_key).ok(),
+	             "control characters in config key are rejected");
+
+	const std::array control_config_desc = {
+	    synthetic_config_option(OptionId::core_detection_notice, "core", "key", ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Desc\n"),
+	};
+	ok &= expect(!render_config_option_reference(control_config_desc).ok(),
+	             "control characters in config description are rejected");
+
+	const std::array non_contiguous_sections = {
+	    synthetic_config_option(OptionId::core_detection_notice, "sec1", "k1", ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Desc 1."),
+	    synthetic_config_option(OptionId::core_no_confirmation, "sec2", "k2", ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Desc 2."),
+	    synthetic_config_option(OptionId::core_abort_if_ssh, "sec1", "k3", ValueType::boolean,
+	                            howdy::native::config_schema::bool_default(true), "Desc 3."),
+	};
+	ok &= expect(!render_config_option_reference(non_contiguous_sections).ok(),
+	             "non-contiguous config section reuse is rejected");
+
+	const std::array<Option, 0> empty_config_schema = {};
+	ok &= expect(!render_config_option_reference(empty_config_schema).ok(),
+	             "empty config schema is rejected");
 
 	const std::array duplicate_workarounds{
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kInput, .summary = "One"},

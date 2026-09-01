@@ -55,6 +55,11 @@ auto main(int argc, char **argv) -> int {
 		          << '\n';
 		return 1;
 	}
+	if (const auto error = howdy::native::config_schema::validate_options(
+	        howdy::native::config_schema::runtime_config_options())) {
+		std::cerr << "howdy_docs_generator: config schema validation failed: " << *error << '\n';
+		return 1;
+	}
 
 	const auto command_reference =
 	    howdy::docs::render_command_reference(howdy::native::command_catalog());
@@ -62,6 +67,8 @@ auto main(int argc, char **argv) -> int {
 	    howdy::docs::render_global_option_reference(howdy::native::global_option_catalog());
 	const auto workaround_reference = howdy::docs::render_workaround_reference(
 	    howdy::pam::workaround_catalog(), howdy::pam::kDefaultWorkaround);
+	const auto config_reference = howdy::docs::render_config_option_reference(
+	    howdy::native::config_schema::runtime_config_options());
 	if (!command_reference.ok()) {
 		std::cerr << "howdy_docs_generator: rendering howdy-commands.roff failed: "
 		          << command_reference.error << '\n';
@@ -77,11 +84,17 @@ auto main(int argc, char **argv) -> int {
 		          << workaround_reference.error << '\n';
 		return 1;
 	}
+	if (!config_reference.ok()) {
+		std::cerr << "howdy_docs_generator: rendering howdy-ini-options.roff failed: "
+		          << config_reference.error << '\n';
+		return 1;
+	}
 
 	const std::array fragments{
 	    Fragment{.filename = "howdy-commands.roff", .content = command_reference.output},
 	    Fragment{.filename = "howdy-options.roff", .content = option_reference.output},
 	    Fragment{.filename = "pam-workarounds.roff", .content = workaround_reference.output},
+	    Fragment{.filename = "howdy-ini-options.roff", .content = config_reference.output},
 	};
 	const fs::path output_dir(argv[2]);
 	for (const auto &fragment : fragments) {

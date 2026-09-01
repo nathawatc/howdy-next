@@ -52,6 +52,7 @@ Keep the configured files and model directories root-controlled.
 .SH AUTHOR
 Originally written by boltgolt. Howdy Next is maintained by nathawat on Codeberg.
 .SH "SEE ALSO"
+.BR howdy.ini (5),
 .BR pam_howdy (8),
 .BR pam (8),
 .BR sudo (8)

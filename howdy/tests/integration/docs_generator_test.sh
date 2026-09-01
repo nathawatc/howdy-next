@@ -22,7 +22,7 @@ fi
 output_dir="$root/output"
 mkdir -p "$output_dir"
 "$generator" --output-dir "$output_dir"
-for fragment in howdy-commands.roff howdy-options.roff pam-workarounds.roff; do
+for fragment in howdy-commands.roff howdy-options.roff pam-workarounds.roff howdy-ini-options.roff; do
 	if [ ! -s "$output_dir/$fragment" ]; then
 		printf '%s\n' "Missing or empty generated fragment: $fragment" >&2
 		exit 1

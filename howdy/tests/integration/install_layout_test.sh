@@ -176,6 +176,7 @@ verify_layout() {
 	completion_path="${stage}${datadir_path}/bash-completion/completions/howdy"
 	translation_path="${stage}${localedir_path}/th/LC_MESSAGES/howdy.mo"
 	man1_path="${stage}${mandir_path}/man1/howdy.1"
+	man5_path="${stage}${mandir_path}/man5/howdy.ini.5"
 	man8_path="${stage}${mandir_path}/man8/pam_howdy.8"
 	license_path="${stage}${licenses_dir_path}/LICENSE"
 	third_party_notices_path="${stage}${licenses_dir_path}/THIRD_PARTY_NOTICES.md"
@@ -191,6 +192,7 @@ verify_layout() {
 		"$completion_path" \
 		"$translation_path" \
 		"$man1_path" \
+		"$man5_path" \
 		"$man8_path" \
 		"$license_path" \
 		"$third_party_notices_path" \

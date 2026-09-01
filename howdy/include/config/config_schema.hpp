@@ -2,6 +2,7 @@
 
 #include "vision/face_metric.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -9,6 +10,10 @@
 #include <string_view>
 
 namespace howdy::native::config_schema {
+
+	inline constexpr std::array<std::string_view, 8> kAcceptedBooleanSpellings = {
+	    "true", "false", "1", "0", "yes", "no", "on", "off",
+	};
 
 	enum class ValueType : std::uint8_t {
 		boolean,
@@ -100,6 +105,11 @@ namespace howdy::native::config_schema {
 	}
 
 	inline constexpr FaceMetric sface_default_metric = FaceMetric::kCosine;
+
+	auto is_accepted_boolean_text(std::string_view value) -> bool;
+	auto format_integer_value(int value) -> std::optional<std::string>;
+	auto format_floating_point_value(float value) -> std::optional<std::string>;
+	auto format_fallback_value(const Option &option) -> std::optional<std::string>;
 
 	auto validate_options(std::span<const Option> options) -> std::optional<std::string>;
 	auto runtime_config_options() -> std::span<const Option>;

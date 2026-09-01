@@ -1,14 +1,10 @@
 #include "config/config_template.hpp"
 
 #include <algorithm>
-#include <array>
-#include <charconv>
-#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -59,44 +55,12 @@ namespace howdy::native::config_template {
 			});
 		}
 
-		auto format_integer(int value) -> std::optional<std::string> {
-			std::array<char, 32> buffer{};
-			const auto           result =
-			    std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, 10);
-			if (result.ec != std::errc{}) {
-				return std::nullopt;
-			}
-			return std::string(buffer.data(), result.ptr);
-		}
-
-		auto format_float(float value) -> std::optional<std::string> {
-			if (!std::isfinite(value)) {
-				return std::nullopt;
-			}
-			std::array<char, 64> buffer{};
-			const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-			                                  std::chars_format::general);
-			if (result.ec != std::errc{}) {
-				return std::nullopt;
-			}
-			return std::string(buffer.data(), result.ptr);
-		}
-
 		auto format_fallback(const config_schema::Option &option) -> std::optional<std::string> {
-			switch (option.type) {
-				case config_schema::ValueType::boolean:
-					return option.fallback.boolean ? "true" : "false";
-				case config_schema::ValueType::integer:
-					return format_integer(option.fallback.integer);
-				case config_schema::ValueType::floating_point:
-					return format_float(option.fallback.floating_point);
-				case config_schema::ValueType::string:
-					if (!is_safe_ini_scalar(option.fallback.string)) {
-						return std::nullopt;
-					}
-					return std::string(option.fallback.string);
+			if (option.type == config_schema::ValueType::string &&
+			    !is_safe_ini_scalar(option.fallback.string)) {
+				return std::nullopt;
 			}
-			return std::nullopt;
+			return config_schema::format_fallback_value(option);
 		}
 
 		auto validate_rendering_constraints(const config_schema::Option &option)
@@ -144,7 +108,7 @@ namespace howdy::native::config_template {
 		std::vector<std::string_view> seen_sections;
 		seen_sections.reserve(options.size());
 
-		std::string      rendered;
+		std::string      rendered = "# See howdy.ini(5) for configuration options.\n\n";
 		std::string_view current_section;
 		for (std::size_t index = 0; index < options.size(); ++index) {
 			const auto &option = options[index];
@@ -160,8 +124,14 @@ namespace howdy::native::config_template {
 				return failure(*error);
 			}
 			if (starts_section) {
+				if (index != 0) {
+					rendered += '\n';
+				}
 				seen_sections.push_back(option.section);
 				current_section = option.section;
+				rendered += '[';
+				rendered += option.section;
+				rendered += "]\n";
 			}
 
 			const auto value = format_fallback(option);
@@ -169,25 +139,11 @@ namespace howdy::native::config_template {
 				return failure("cannot serialize fallback as INI scalar: " + name);
 			}
 
-			if (index != 0) {
-				rendered += '\n';
-			}
-			if (index == 0 || option.section != options[index - 1].section) {
-				rendered += '[';
-				rendered += option.section;
-				rendered += "]\n";
-			}
-			rendered += "# ";
-			rendered += option.description;
-			rendered += "\n";
 			rendered += option.key;
 			rendered += " = ";
 			rendered += *value;
-			if (index + 1 < options.size()) {
-				rendered += '\n';
-			}
+			rendered += '\n';
 		}
-		rendered += '\n';
 
 		return {.ok = true, .content = std::move(rendered)};
 	}

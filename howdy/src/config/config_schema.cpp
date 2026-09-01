@@ -4,10 +4,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <string>
+#include <system_error>
 
 namespace howdy::native::config_schema {
 	namespace {
@@ -508,6 +511,53 @@ namespace howdy::native::config_schema {
 			}
 		}
 		return nullptr;
+	}
+
+	auto is_accepted_boolean_text(std::string_view value) -> bool {
+		std::string lowered;
+		lowered.reserve(value.size());
+		for (const char character : value) {
+			lowered.push_back(
+			    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+		}
+		return std::ranges::find(kAcceptedBooleanSpellings, lowered) !=
+		       kAcceptedBooleanSpellings.end();
+	}
+
+	auto format_integer_value(int value) -> std::optional<std::string> {
+		std::array<char, 32> buffer{};
+		const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, 10);
+		if (result.ec != std::errc{}) {
+			return std::nullopt;
+		}
+		return std::string(buffer.data(), result.ptr);
+	}
+
+	auto format_floating_point_value(float value) -> std::optional<std::string> {
+		if (!std::isfinite(value)) {
+			return std::nullopt;
+		}
+		std::array<char, 64> buffer{};
+		const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
+		                                  std::chars_format::general);
+		if (result.ec != std::errc{}) {
+			return std::nullopt;
+		}
+		return std::string(buffer.data(), result.ptr);
+	}
+
+	auto format_fallback_value(const Option &option) -> std::optional<std::string> {
+		switch (option.type) {
+			case ValueType::boolean:
+				return option.fallback.boolean ? "true" : "false";
+			case ValueType::integer:
+				return format_integer_value(option.fallback.integer);
+			case ValueType::floating_point:
+				return format_floating_point_value(option.fallback.floating_point);
+			case ValueType::string:
+				return std::string(option.fallback.string);
+		}
+		return std::nullopt;
 	}
 
 	auto runtime_default_bool(OptionId id) -> bool {

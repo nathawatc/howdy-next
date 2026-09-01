@@ -41,9 +41,7 @@ namespace howdy::native {
 		}
 
 		auto is_valid_bool_text(std::string_view value) -> bool {
-			const auto lowered = normalized_lower(std::string(value));
-			return lowered == "true" || lowered == "false" || lowered == "1" || lowered == "0" ||
-			       lowered == "yes" || lowered == "no" || lowered == "on" || lowered == "off";
+			return config_schema::is_accepted_boolean_text(value);
 		}
 
 		auto invalid_config_value_message(std::string_view key, std::string_view value,

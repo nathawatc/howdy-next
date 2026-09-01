@@ -5,12 +5,13 @@ set -eu
 build_dir=$1
 source_dir=$2
 man1=$3
-man8=$4
-config_dir=$5
-config_path=$6
-models_dir=$7
-user_models_dir=$8
-auth_helper_path=$9
+man5=$4
+man8=$5
+config_dir=$6
+config_path=$7
+models_dir=$8
+user_models_dir=$9
+auth_helper_path=${10}
 
 reference_dir="$build_dir/generated/docs"
 
@@ -49,20 +50,22 @@ require_roff_path() {
 }
 
 require_nonempty_file "$man1"
+require_nonempty_file "$man5"
 require_nonempty_file "$man8"
-for fragment in howdy-commands.roff howdy-options.roff pam-workarounds.roff; do
+for fragment in howdy-commands.roff howdy-options.roff pam-workarounds.roff howdy-ini-options.roff; do
 	require_nonempty_file "$reference_dir/$fragment"
 done
 
 man1_date=$(sed -n '1s/^\.TH HOWDY 1 "\([^"]*\)".*/\1/p' "$man1")
+man5_date=$(sed -n '1s/^\.TH HOWDY.INI 5 "\([^"]*\)".*/\1/p' "$man5")
 man8_date=$(sed -n '1s/^\.TH PAM_HOWDY 8 "\([^"]*\)".*/\1/p' "$man8")
 if ! printf '%s\n' "$man1_date" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' ||
-	[ "$man1_date" != "$man8_date" ]; then
-	printf '%s\n' "Man pages do not share an ISO UTC date: '$man1_date' '$man8_date'" >&2
+	[ "$man1_date" != "$man5_date" ] || [ "$man1_date" != "$man8_date" ]; then
+	printf '%s\n' "Man pages do not share an ISO UTC date: '$man1_date' '$man5_date' '$man8_date'" >&2
 	exit 1
 fi
 if grep -E '[0-9]{4}-[0-9]{2}-[0-9]{2}' \
-	"$source_dir/howdy/howdy.1.in" "$source_dir/pam/pam_howdy.8.in" >/dev/null; then
+	"$source_dir/howdy/howdy.1.in" "$source_dir/howdy/howdy.ini.5.in" "$source_dir/pam/pam_howdy.8.in" >/dev/null; then
 	printf '%s\n' 'Man-page templates contain a hardcoded calendar date' >&2
 	exit 1
 fi
@@ -103,6 +106,25 @@ if grep -F 'workaround=off' "$reference_dir/pam-workarounds.roff" >/dev/null; th
 	exit 1
 fi
 
+for section in core video face debug; do
+	section_header=".SS [${section}]"
+	require_exactly_once "$reference_dir/howdy-ini-options.roff" "$section_header"
+	require_exactly_once "$man5" "$section_header"
+done
+
+for option in detection_notice timeout sface_threshold end_report; do
+	opt_label="\\&\\fB${option}\\fR"
+	require_exactly_once "$reference_dir/howdy-ini-options.roff" "$opt_label"
+	require_exactly_once "$man5" "$opt_label"
+done
+
+require_contains "$man5" 'Show progress messages for each face scan attempt.'
+
+require_contains "$man1" 'howdy.ini (5)'
+require_contains "$man8" 'howdy.ini (5)'
+require_contains "$man5" 'howdy (1)'
+require_contains "$man5" 'pam_howdy (8)'
+
 require_roff_path "$config_path" "$man1"
 require_roff_path "$models_dir/" "$man1"
 require_roff_path "$user_models_dir/" "$man1"
@@ -110,8 +132,9 @@ require_roff_path "$config_dir" "$man8"
 require_roff_path "$config_path" "$man8"
 require_roff_path "$user_models_dir/" "$man8"
 require_roff_path "$auth_helper_path" "$man8"
+require_roff_path "$config_path" "$man5"
 
-if [ -e "$source_dir/howdy/howdy.1" ] || [ -e "$source_dir/pam/pam_howdy.8" ]; then
+if [ -e "$source_dir/howdy/howdy.1" ] || [ -e "$source_dir/howdy/howdy.ini.5" ] || [ -e "$source_dir/pam/pam_howdy.8" ]; then
 	printf '%s\n' 'Checked-in generated man page remains in source tree' >&2
 	exit 1
 fi
@@ -128,7 +151,7 @@ fi
 require_contains "$source_dir/pam/README.md" 'pam_howdy(8)'
 
 if [ -f "$build_dir/install_manifest.txt" ]; then
-	for private_file in howdy_docs_generator howdy-commands.roff howdy-options.roff pam-workarounds.roff; do
+	for private_file in howdy_docs_generator howdy-commands.roff howdy-options.roff pam-workarounds.roff howdy-ini-options.roff; do
 		if grep -F -- "$private_file" "$build_dir/install_manifest.txt" >/dev/null; then
 			printf '%s\n' "Private documentation artifact appears in install manifest: $private_file" >&2
 			exit 1
@@ -138,9 +161,11 @@ fi
 
 if command -v mandoc >/dev/null 2>&1; then
 	mandoc -T utf8 "$man1" >/dev/null
+	mandoc -T utf8 "$man5" >/dev/null
 	mandoc -T utf8 "$man8" >/dev/null
 elif command -v groff >/dev/null 2>&1; then
 	groff -man -Tutf8 "$man1" >/dev/null
+	groff -man -Tutf8 "$man5" >/dev/null
 	groff -man -Tutf8 "$man8" >/dev/null
 else
 	printf '%s\n' 'Man syntax check skipped: no mandoc or groff available'
