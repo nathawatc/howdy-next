@@ -17,6 +17,12 @@ models_dir=${12}
 user_models_dir=${13}
 licenses_dir=${14}
 
+newline='
+'
+cached_stage_root=
+cached_stage_files=
+cached_stage_directories=
+
 strip_trailing_slashes() {
 	path=$1
 	while [ "$path" != "/" ] && [ "${path%/}" != "$path" ]; do
@@ -87,15 +93,24 @@ count_exact_paths() {
 	root=$1
 	type=$2
 	target=$3
-	count=0
-	while IFS= read -r found; do
-		if [ "$found" = "$target" ]; then
-			count=$((count + 1))
-		fi
-	done <<EOF
-$(find "$root" -type "$type" -print)
-EOF
-	printf '%s\n' "$count"
+	if [ "$root" != "$cached_stage_root" ]; then
+		cache_stage_paths "$root"
+	fi
+	case "$type" in
+		f) paths=$cached_stage_files ;;
+		d) paths=$cached_stage_directories ;;
+		*) printf '%s\n' 0; return ;;
+	esac
+	case "$newline$paths$newline" in
+		*"$newline$target$newline"*) printf '%s\n' 1 ;;
+		*) printf '%s\n' 0 ;;
+	esac
+}
+
+cache_stage_paths() {
+	cached_stage_root=$1
+	cached_stage_files=$(find "$1" -type f -print)
+	cached_stage_directories=$(find "$1" -type d -print)
 }
 
 require_exact_path_once() {
@@ -149,6 +164,7 @@ verify_obsolete_commands_absent() {
 
 verify_layout() {
 	stage=$1
+	cache_stage_paths "$stage"
 	bindir_path=$(resolve_dir "$configured_prefix" "$bindir")
 	datadir_path=$(resolve_dir "$configured_prefix" "$datadir")
 	localedir_path=$(resolve_dir "$configured_prefix" "$localedir")
@@ -201,10 +217,16 @@ verify_layout() {
 		require_file "$file_path"
 		require_exact_path_once "$stage" f "$file_path"
 	done
-	if [ "$(find "$stage" -type f -name howdy_docs_generator -print | wc -l)" -ne 0 ]; then
-		echo "Documentation generator was installed" >&2
-		exit 1
-	fi
+	while IFS= read -r file_path; do
+		case "${file_path##*/}" in
+			howdy_docs_generator)
+				echo "Documentation generator was installed" >&2
+				exit 1
+				;;
+		esac
+	done <<EOF
+$cached_stage_files
+EOF
 	require_executable "$howdy_path"
 	require_executable "$compare_path"
 	require_executable "$auth_helper_path"
@@ -269,6 +291,8 @@ if [ "$(cat "$installed_config_path")" != "$config_marker" ]; then
 	exit 1
 fi
 
+cache_stage_paths "$stage"
+
 doubled_stage="${stage}${stage}"
 doubled_config_path="${stage}${stage}${config_file_path}"
 doubled_user_models_path="${stage}${stage}$(resolve_dir "$configured_prefix" "$user_models_dir")"
@@ -290,9 +314,10 @@ if [ "$(count_exact_paths "$stage" f "$installed_config_path")" -ne 1 ]; then
 fi
 config_count=0
 while IFS= read -r found_config; do
+	[ "${found_config##*/}" = config.ini ] || continue
 	config_count=$((config_count + 1))
 done <<EOF
-$(find "$stage" -type f -name config.ini -print)
+$cached_stage_files
 EOF
 if [ "$config_count" -ne 1 ]; then
 	echo "Expected exactly one config.ini in staged tree (found ${config_count})" >&2

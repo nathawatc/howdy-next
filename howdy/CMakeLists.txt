@@ -521,7 +521,6 @@ if(BUILD_TESTING)
 		set_tests_properties(
 			native-config-cross-compilation
 			PROPERTIES
-				RUN_SERIAL TRUE
 				TIMEOUT 120
 		)
 	endif()
@@ -540,7 +539,6 @@ if(BUILD_TESTING)
 	set_tests_properties(
 		native-version-metadata
 		PROPERTIES
-			RUN_SERIAL TRUE
 			TIMEOUT 60
 	)
 
@@ -927,7 +925,6 @@ if(BUILD_TESTING)
 			"${HOWDY_USER_MODELS_DIR}"
 			"${HOWDY_LICENSES_INSTALL_DIR}"
 	)
-	set_tests_properties(native-howdy-install-layout PROPERTIES RUN_SERIAL TRUE)
 	add_test(
 		NAME native-howdy-privileged-install-paths
 		COMMAND
@@ -935,9 +932,6 @@ if(BUILD_TESTING)
 			"${howdy_integration_dir}/privileged_install_paths_test.sh"
 			"${PROJECT_SOURCE_DIR}"
 			"${PROJECT_BINARY_DIR}/privileged-install-path-cases"
-	)
-	set_tests_properties(
-		native-howdy-privileged-install-paths PROPERTIES RUN_SERIAL TRUE
 	)
 	if(NOT CMAKE_CROSSCOMPILING)
 		add_test(

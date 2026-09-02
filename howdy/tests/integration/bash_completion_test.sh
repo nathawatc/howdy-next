@@ -7,8 +7,40 @@ completion_file=$2
 
 bash -n "$completion_file"
 
+completion_cache_dir=$(mktemp -d)
+trap 'rm -rf -- "$completion_cache_dir"' EXIT
+
 howdy() {
-	"$howdy_binary" "$@"
+	if [[ ${1-} != __complete ]]; then
+		"$howdy_binary" "$@"
+		return
+	fi
+
+	local cache_key cache_output cache_status output status
+	printf -v cache_key '%q ' "$@"
+	cache_key=$(printf '%s' "$cache_key" | sha256sum)
+	cache_key=${cache_key%% *}
+	cache_output="$completion_cache_dir/$cache_key.output"
+	cache_status="$completion_cache_dir/$cache_key.status"
+	if [[ -f $cache_status ]]; then
+		cat "$cache_output"
+		IFS= read -r status <"$cache_status"
+		return "$status"
+	fi
+
+	if output=$("$howdy_binary" "$@"); then
+		status=0
+	else
+		status=$?
+	fi
+	if [[ -n $output ]]; then
+		printf '%s\n' "$output" >"$cache_output"
+	else
+		: >"$cache_output"
+	fi
+	printf '%s\n' "$status" >"$cache_status"
+	cat "$cache_output"
+	return "$status"
 }
 
 source "$completion_file"
