@@ -1,9 +1,11 @@
+#include "config/config_test_hooks.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "config/config_validation.hpp"
 #include "test_support.hpp"
 
 #include <clocale>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -108,6 +110,7 @@ namespace howdy::test {
 	}  // namespace
 
 	auto run_config_read_update_tests(ConfigUtilsTestContext &context) -> bool {
+		namespace fs = std::filesystem;
 		using howdy::test::expect;
 		bool ok = true;
 		ok &= expect(write_config_test_file(context.config_path, "[core]\n"
@@ -125,6 +128,29 @@ namespace howdy::test {
 		ok &= expect(lines.size() == 5, "read_config_lines returns expected line count");
 		ok &= expect(!lines.empty() && lines[0] == "[core]\n",
 		             "read_config_lines preserves newlines");
+
+		{
+			bool       replacement_ok = false;
+			const auto backup_path    = context.temp_root / "backup-read-lines.ini";
+			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+				replacement_ok = rename(context.config_path.c_str(), backup_path.c_str()) == 0 &&
+				                 symlink("/dev/null", context.config_path.c_str()) == 0;
+			});
+
+			const auto read_lines = howdy::native::read_config_lines(context.config_path, false);
+			ok &= expect(replacement_ok, "read_config_lines pathname replacement succeeded");
+			ok &= expect(read_lines.size() == 5 && read_lines[0] == "[core]\n",
+			             "read_config_lines reads from opened descriptor, not replaced pathname");
+			std::error_code ec;
+			fs::remove(context.config_path, ec);
+			fs::remove(backup_path, ec);
+			ok &= expect(write_config_test_file(context.config_path, "[core]\n"
+			                                                         "disabled = false\n"
+			                                                         "\n"
+			                                                         "[video]\n"
+			                                                         "dark_threshold = 60\n"),
+			             "restore baseline config after hook test");
+		}
 
 		ok &= expect(write_config_test_file(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");

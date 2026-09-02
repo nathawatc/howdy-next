@@ -2,9 +2,11 @@
 #include "cli/config_cli_test_support.hpp"
 #include "cli/config_edit_session.hpp"
 #include "config/config_limits.hpp"
+#include "config/config_test_hooks.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -160,12 +162,78 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
+		auto production_edit_reads_are_descriptor_bound() -> bool {
+			namespace fs = std::filesystem;
+
+			const auto temp_template   = fs::current_path() / "howdy-config-cli-identity-XXXXXX";
+			const auto template_string = temp_template.string();
+			std::vector<char> writable(template_string.begin(), template_string.end());
+			writable.push_back('\0');
+			const char *created_path = mkdtemp(writable.data());
+			if (!expect(created_path != nullptr, "create edit identity temp directory")) {
+				return false;
+			}
+
+			bool              ok = true;
+			const fs::path    temp_root(created_path);
+			const fs::path    config_path = temp_root / "config.ini";
+			const fs::path    backup_path = temp_root / "config-backup.ini";
+			const std::string original    = "[core]\ndisabled = false\n";
+			const auto        dependencies =
+			    howdy::native::config_internal::default_config_edit_dependencies();
+			std::error_code error;
+
+			auto write_secure_config = [&]() -> bool {
+				return write_file(config_path, original) && chmod(config_path.c_str(), 0644) == 0;
+			};
+			auto replace_with_symlink = [&]() -> bool {
+				return rename(config_path.c_str(), backup_path.c_str()) == 0 &&
+				       symlink("/dev/null", config_path.c_str()) == 0;
+			};
+
+			ok &= expect(write_secure_config(), "write edit identity source config");
+			{
+				bool                                                replacement_ok = false;
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+					replacement_ok = replace_with_symlink();
+				});
+
+				const auto copy =
+				    dependencies.create_temp_copy(dependencies.context, config_path, std::nullopt);
+				ok &= expect(replacement_ok, "create_temp_copy hook replaces source pathname");
+				ok &= expect(copy.has_value() && copy->original_content == original,
+				             "create_temp_copy consumes opened config descriptor");
+				if (copy.has_value()) {
+					dependencies.remove_if_exists(dependencies.context, copy->path);
+				}
+			}
+			fs::remove(config_path, error);
+			fs::remove(backup_path, error);
+
+			ok &= expect(write_secure_config(), "restore edit identity source config");
+			{
+				bool                                                replacement_ok = false;
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+					replacement_ok = replace_with_symlink();
+				});
+
+				const bool matches =
+				    dependencies.file_content_matches(dependencies.context, config_path, original);
+				ok &= expect(replacement_ok && matches,
+				             "file_content_matches consumes opened config descriptor");
+			}
+
+			fs::remove_all(temp_root, error);
+			return ok;
+		}
+
 	}  // namespace
 
 	auto run_config_cli_integration_tests() -> bool {
 		bool ok = true;
 		ok &= public_entrypoint_preserves_invalid_edit();
 		ok &= production_config_reads_are_bounded();
+		ok &= production_edit_reads_are_descriptor_bound();
 		return ok;
 	}
 

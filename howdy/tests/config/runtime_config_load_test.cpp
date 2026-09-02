@@ -1,10 +1,15 @@
+#include "config/config_limits.hpp"
+#include "config/config_test_hooks.hpp"
 #include "config/runtime_config.hpp"
 #include "test_support.hpp"
 
+#include <cerrno>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <unistd.h>
 #include <vector>
 
 #include <sys/stat.h>
@@ -76,9 +81,84 @@ auto main() -> int {
 	ok &= expect(valid.path == valid_path, "default loader resolves config path");
 	ok &= expect(valid.error_message.empty(), "valid config has no error");
 
+	const auto        large_runtime_path    = temp_root / "large-runtime.ini";
+	const std::string large_runtime_content = "[core]\ndisabled = false\n[video]\ntimeout = 7\n" +
+	                                          std::string(howdy::native::kMaxConfigFileSize, '\n');
+	ok &= expect(large_runtime_content.size() > howdy::native::kMaxConfigFileSize,
+	             "large runtime config exceeds bounded config size");
+	ok &=
+	    expect(write_file(large_runtime_path, large_runtime_content), "write large runtime config");
+	ok &= expect(chmod(large_runtime_path.c_str(), 0644) == 0, "secure large runtime config");
+	const auto large_runtime = howdy::native::load_runtime_config(large_runtime_path, std::nullopt);
+	ok &= expect(large_runtime.ok && large_runtime.config.has_value() &&
+	                 large_runtime.config->video.timeout == 7,
+	             "runtime config accepts content above bounded config size");
+
+	const auto      dir_config_path = temp_root / "dir-config.ini";
+	std::error_code ec;
+	fs::create_directory(dir_config_path, ec);
+	ok &= expect(!ec, "create directory config path");
+	const auto dir_result = howdy::native::load_runtime_config(dir_config_path, std::nullopt);
+	ok &= expect_failure(dir_result, RuntimeConfigLoadStatus::kPathError,
+	                     "directory config is rejected");
+
+	{
+		const auto invariant_path = temp_root / "invariant.ini";
+		ok &= expect(write_file(invariant_path, "[core]\ndisabled = false\n[video]\ntimeout = 7\n"),
+		             "write invariant original config");
+		ok &= expect(chmod(invariant_path.c_str(), 0644) == 0, "secure invariant config");
+
+		bool       replacement_ok   = false;
+		const auto backup_invariant = temp_root / "invariant-backup.ini";
+		{
+			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+				replacement_ok = rename(invariant_path.c_str(), backup_invariant.c_str()) == 0 &&
+				                 symlink("/dev/null", invariant_path.c_str()) == 0;
+			});
+
+			const auto invariant_result =
+			    howdy::native::load_runtime_config(invariant_path, std::nullopt);
+			ok &= expect(replacement_ok, "invariant pathname replacement succeeded");
+			ok &= expect(invariant_result.ok,
+			             "load succeeds using already opened and validated descriptor");
+			if (invariant_result.config.has_value()) {
+				ok &= expect(invariant_result.config->video.timeout == 7,
+				             "consumed object is the opened descriptor (timeout 7), not "
+				             "replaced pathname symlink");
+				ok &= expect(!invariant_result.config->core.disabled,
+				             "consumed object is original disabled state");
+			}
+		}
+		fs::remove(invariant_path, ec);
+		fs::remove(backup_invariant, ec);
+
+		ok &= expect(write_file(invariant_path, "[core]\ndisabled = false\n"),
+		             "write insecure opened config");
+		ok &= expect(chmod(invariant_path.c_str(), 0666) == 0, "make initially world-writable");
+
+		bool insecure_replacement_ok = false;
+		{
+			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+				insecure_replacement_ok =
+				    rename(invariant_path.c_str(), backup_invariant.c_str()) == 0 &&
+				    write_file(invariant_path, "[core]\ndisabled = false\n") &&
+				    chmod(invariant_path.c_str(), 0644) == 0;
+			});
+
+			const auto insecure_opened_result =
+			    howdy::native::load_runtime_config(invariant_path, std::nullopt);
+			ok &= expect(insecure_replacement_ok,
+			             "insecure invariant pathname replacement succeeded");
+			ok &= expect_failure(insecure_opened_result, RuntimeConfigLoadStatus::kPathError,
+			                     "opened descriptor with insecure mode is rejected even if "
+			                     "disk path replaced with safe file");
+		}
+	}
+
 	const auto missing_path = temp_root / "missing.ini";
 	const auto missing      = howdy::native::load_runtime_config(missing_path, std::nullopt);
 	ok &= expect_failure(missing, RuntimeConfigLoadStatus::kPathError, "missing config");
+	ok &= expect(missing.error_code == ENOENT, "missing config preserves open errno");
 
 	const auto malformed_path = temp_root / "malformed.ini";
 	ok &= expect(write_file(malformed_path, "[core\n"), "write malformed config");
@@ -103,14 +183,7 @@ auto main() -> int {
 	ok &= expect(invalid.error_message.contains(invalid_path.string() + ": "),
 	             "invalid runtime message separates path and validation detail");
 
-	const auto insecure_path = temp_root / "insecure.ini";
-	ok &= expect(write_file(insecure_path, "[core]\ndisabled = false\n"), "write insecure config");
-	ok &= expect(chmod(insecure_path.c_str(), 0666) == 0, "make config insecure");
-	const auto insecure = howdy::native::load_runtime_config(insecure_path, std::nullopt);
-	ok &= expect_failure(insecure, RuntimeConfigLoadStatus::kPathError, "insecure config");
-
-	const auto      insecure_root = temp_root / "insecure-root";
-	std::error_code ec;
+	const auto insecure_root = temp_root / "insecure-root";
 	fs::create_directories(insecure_root, ec);
 	ok &= expect(!ec, "create insecure trust root");
 	const auto insecure_root_config = insecure_root / "config.ini";

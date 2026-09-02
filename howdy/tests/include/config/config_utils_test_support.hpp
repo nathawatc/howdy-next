@@ -8,6 +8,7 @@
 #include <string>
 
 #include <sys/resource.h>
+#include <sys/stat.h>
 
 namespace howdy::test {
 
@@ -20,7 +21,13 @@ namespace howdy::test {
 
 	inline auto write_config_test_file(const std::filesystem::path &path,
 	                                   const std::string           &content) -> bool {
-		return write_file(path, content);
+		const bool ok = write_file(path, content);
+		if (ok) {
+			if (chmod(path.c_str(), 0644) != 0) {
+				return false;
+			}
+		}
+		return ok;
 	}
 
 	inline auto read_config_test_file(const std::filesystem::path &path) -> std::string {

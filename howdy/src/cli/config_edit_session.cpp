@@ -1,6 +1,7 @@
 #include "cli/config_edit_session.hpp"
 
-#include "config/config_limits.hpp"
+#include "config/config_test_hooks.hpp"
+#include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "support/fd_io.hpp"
 #include "support/invoking_user_env.hpp"
@@ -59,16 +60,6 @@ namespace howdy::native::config_internal {
 			howdy::native::reset_invoking_user_environment(invoking_user);
 		}
 
-		auto read_config_content(int fd, std::string *content) -> bool {
-			auto result = howdy::native::read_fd_to_string_bounded(
-			    {.fd = fd, .max_bytes = howdy::native::kMaxConfigFileSize + 1});
-			if (result.read_error || result.output.size() > howdy::native::kMaxConfigFileSize) {
-				return false;
-			}
-			*content = std::move(result.output);
-			return true;
-		}
-
 		auto create_temp_copy(const fs::path                                   &source_path,
 		                      const std::optional<howdy::native::InvokingUser> &invoking_user,
 		                      std::string *source_content = nullptr) -> std::optional<fs::path> {
@@ -76,16 +67,24 @@ namespace howdy::native::config_internal {
 				source_content->clear();
 			}
 
-			const int input_fd = open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			const int input_fd =
+			    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
 			if (input_fd < 0) {
 				return std::nullopt;
 			}
-			std::string content;
-			if (!read_config_content(input_fd, &content)) {
+			if (config_test_hooks::current()) {
+				config_test_hooks::current()();
+			}
+			const auto security = howdy::native::check_secure_config_fd(input_fd, source_path);
+			if (!security.ok) {
 				close(input_fd);
 				return std::nullopt;
 			}
+			auto content = howdy::native::read_config_from_fd(input_fd);
 			close(input_fd);
+			if (!content.has_value()) {
+				return std::nullopt;
+			}
 
 			fs::path          temp_dir      = fs::temp_directory_path();
 			std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
@@ -109,7 +108,7 @@ namespace howdy::native::config_internal {
 				ok = false;
 			}
 
-			if (ok && !howdy::native::write_all_to_fd(fd, content)) {
+			if (ok && !howdy::native::write_all_to_fd(fd, *content)) {
 				ok = false;
 			}
 
@@ -129,7 +128,7 @@ namespace howdy::native::config_internal {
 				return std::nullopt;
 			}
 			if (source_content != nullptr) {
-				*source_content = std::move(content);
+				*source_content = std::move(*content);
 			}
 
 			return temp_path;
@@ -186,21 +185,32 @@ namespace howdy::native::config_internal {
 				return false;
 			}
 
-			const bool ok = read_config_content(input_fd, content);
+			auto snapshot = howdy::native::read_config_from_fd(input_fd);
 			close(input_fd);
-			return ok;
+			if (!snapshot.has_value()) {
+				return false;
+			}
+			*content = std::move(*snapshot);
+			return true;
 		}
 
 		auto file_content_matches(const fs::path &path, const std::string &expected) -> bool {
-			const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
 			if (input_fd < 0) {
 				return false;
 			}
+			if (config_test_hooks::current()) {
+				config_test_hooks::current()();
+			}
+			const auto security = howdy::native::check_secure_config_fd(input_fd, path);
+			if (!security.ok) {
+				close(input_fd);
+				return false;
+			}
 
-			std::string current;
-			const bool  ok = read_config_content(input_fd, &current);
+			const auto current = howdy::native::read_config_from_fd(input_fd);
 			close(input_fd);
-			return ok && current == expected;
+			return current.has_value() && *current == expected;
 		}
 
 		auto resolve_invoking_user_dependency(void *context)

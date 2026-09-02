@@ -3,6 +3,7 @@
 #include "config/config_limits.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_schema.hpp"
+#include "config/config_test_hooks.hpp"
 #include "config/config_validation.hpp"
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
@@ -65,17 +66,17 @@ namespace howdy::native {
 			}
 		};
 
-		auto read_config_from_fd(int fd) -> std::optional<std::string> {
-			if (lseek(fd, 0, SEEK_SET) < 0) {
-				return std::nullopt;
+		auto acquire_config_lock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
+		    -> bool {
+			guard.fd = open_lock_file(config_path);
+			if (guard.fd >= 0 && lock_fd(guard.fd)) {
+				return true;
 			}
-
-			const auto result =
-			    read_fd_to_string_bounded({.fd = fd, .max_bytes = kMaxConfigFileSize + 1});
-			if (result.read_error || result.output.size() > kMaxConfigFileSize) {
-				return std::nullopt;
+			if (guard.fd >= 0) {
+				close(guard.fd);
+				guard.fd = -1;
 			}
-			return result.output;
+			return false;
 		}
 
 		auto split_lines_preserve_newlines(const std::string &content) -> std::vector<std::string> {
@@ -117,44 +118,27 @@ namespace howdy::native {
 	    -> std::vector<std::string> {
 		std::vector<std::string> lines;
 
-		int lock_fd_handle = -1;
-		if (lock) {
-			lock_fd_handle = open_lock_file(config_path);
-			if (lock_fd_handle < 0 || !lock_fd(lock_fd_handle)) {
-				if (lock_fd_handle >= 0) {
-					close(lock_fd_handle);
-				}
-				return lines;
-			}
-		}
-
-		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-		if (fd < 0) {
-			if (lock_fd_handle >= 0) {
-				unlock_fd(lock_fd_handle);
-				close(lock_fd_handle);
-			}
+		ConfigLockGuard config_lock;
+		if (lock && !acquire_config_lock(config_lock, config_path)) {
 			return lines;
 		}
 
-		const auto security = check_secure_config_path(config_path);
+		ScopedFd fd(open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (fd.get() < 0) {
+			return lines;
+		}
+		if (config_test_hooks::current()) {
+			config_test_hooks::current()();
+		}
+
+		const auto security = check_secure_config_fd(fd.get(), config_path);
 		if (!security.ok) {
-			close(fd);
-			if (lock_fd_handle >= 0) {
-				unlock_fd(lock_fd_handle);
-				close(lock_fd_handle);
-			}
 			return lines;
 		}
 
-		const auto content = read_config_from_fd(fd);
+		const auto content = read_config_from_fd(fd.get());
 		if (content.has_value()) {
 			lines = split_lines_preserve_newlines(*content);
-		}
-		close(fd);
-		if (lock_fd_handle >= 0) {
-			unlock_fd(lock_fd_handle);
-			close(lock_fd_handle);
 		}
 		return lines;
 	}
@@ -238,34 +222,22 @@ namespace howdy::native {
 			return false;
 		}
 
-		auto acquire_config_lock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
-		    -> bool {
-			guard.fd = open_lock_file(config_path);
-			if (guard.fd >= 0 && lock_fd(guard.fd)) {
-				return true;
-			}
-			if (guard.fd >= 0) {
-				close(guard.fd);
-				guard.fd = -1;
-			}
-			return false;
-		}
-
 		auto expected_content_matches(const std::filesystem::path &config_path,
 		                              const std::string &expected, std::string *error_message)
 		    -> bool {
-			const int input_fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-			if (input_fd < 0) {
+			ScopedFd input_fd(
+			    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			if (input_fd.get() < 0) {
 				return fail_with(error_message, kConfigFileOpenFailureMessage);
 			}
-			struct stat opened_stat{};
-			const bool  opened_ok =
-			    fstat(input_fd, &opened_stat) == 0 && S_ISREG(opened_stat.st_mode);
-			const auto current_content = opened_ok ? read_config_from_fd(input_fd) : std::nullopt;
-			close(input_fd);
-			if (!opened_ok) {
-				return fail_with(error_message, kConfigFileInspectFailureMessage);
+			if (config_test_hooks::current()) {
+				config_test_hooks::current()();
 			}
+			const auto security = check_secure_config_fd(input_fd.get(), config_path);
+			if (!security.ok) {
+				return fail_with(error_message, security.error_message);
+			}
+			const auto current_content = read_config_from_fd(input_fd.get());
 			if (!current_content.has_value()) {
 				return fail_with(error_message, kConfigFileReadFailureMessage);
 			}
@@ -497,18 +469,21 @@ namespace howdy::native {
 			return fail_with(error_message, kConfigFileLockFailureMessage);
 		}
 
-		const auto security = check_secure_config_path(config_path);
+		ScopedFd fd(open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (fd.get() < 0) {
+			return fail_with(error_message, kConfigFileOpenFailureMessage);
+		}
+		if (config_test_hooks::current()) {
+			config_test_hooks::current()();
+		}
+
+		const auto security = check_secure_config_fd(fd.get(), config_path);
 		if (!security.ok) {
 			return fail_with(error_message, security.error_message);
 		}
 
-		const int fd = open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-		if (fd < 0) {
-			return fail_with(error_message, kConfigFileOpenFailureMessage);
-		}
-
-		const auto current_content = read_config_from_fd(fd);
-		close(fd);
+		const auto current_content = read_config_from_fd(fd.get());
+		fd.reset();
 		if (!current_content.has_value()) {
 			return fail_with(error_message, kConfigFileReadFailureMessage);
 		}

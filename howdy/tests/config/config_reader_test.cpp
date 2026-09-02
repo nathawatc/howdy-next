@@ -466,6 +466,14 @@ auto main() -> int {
 	ok &= expect(howdy::native::read_runtime_int(negative_fps, OptionId::video_device_fps) == 0,
 	             "negative fps still falls back to runtime default");
 
+	const howdy::native::ConfigReader memory_with_path(
+	    "/custom/config.ini", "[video]\ntimeout = 12\ndark_threshold = 42.0\n");
+	ok &= expect(memory_with_path.ok(), "ConfigReader(path, content) parses valid ini buffer");
+	ok &= expect(memory_with_path.get_int("video", "timeout", 3) == 12,
+	             "ConfigReader(path, content) parses timeout value");
+	ok &= expect(near(memory_with_path.get_float("video", "dark_threshold", 0.0F), 42.0F),
+	             "ConfigReader(path, content) parses dark_threshold value");
+
 	fs::remove_all(temp_root, ec);
 	if (!ok) {
 		return 1;

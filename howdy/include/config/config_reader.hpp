@@ -2,6 +2,7 @@
 
 #include <INIReader.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace howdy::native {
@@ -9,6 +10,7 @@ namespace howdy::native {
 	class ConfigReader {
 	public:
 		explicit ConfigReader(std::string path);
+		ConfigReader(std::string path, std::string_view content);
 
 		[[nodiscard]] auto ok() const -> bool;
 		[[nodiscard]] auto parse_error() const -> int;

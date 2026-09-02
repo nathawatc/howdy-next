@@ -10,6 +10,10 @@ namespace howdy::native {
 	    : path_(std::move(path))
 	    , reader_(path_) {}
 
+	ConfigReader::ConfigReader(std::string path, std::string_view content)
+	    : path_(std::move(path))
+	    , reader_(content.data(), content.size()) {}
+
 	auto ConfigReader::ok() const -> bool {
 		return reader_.ParseError() == 0;
 	}

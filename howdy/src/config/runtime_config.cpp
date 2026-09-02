@@ -2,14 +2,37 @@
 
 #include "config/config_reader.hpp"
 #include "config/config_schema.hpp"
+#include "config/config_test_hooks.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
+#include "support/atomic_files.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <string>
 #include <utility>
 
 namespace howdy::native {
+	namespace config_test_hooks {
+
+		auto current() -> AfterOpenBeforeRead & {
+			static AfterOpenBeforeRead hook;
+			return hook;
+		}
+
+		ScopedHooks::ScopedHooks(AfterOpenBeforeRead hook)
+		    : previous_(std::move(current())) {
+			current() = std::move(hook);
+		}
+
+		ScopedHooks::~ScopedHooks() {
+			current() = std::move(previous_);
+		}
+
+	}  // namespace config_test_hooks
+
 	namespace {
 
 		template <RuntimeConfigLoadStatus status>
@@ -164,13 +187,35 @@ namespace howdy::native {
 
 	auto load_runtime_config(const std::filesystem::path &config_path,
 	                         const std::optional<uid_t>   owner_uid) -> RuntimeConfigLoadResult {
-		const auto security = check_secure_config_path(config_path, owner_uid);
+		const int opened_fd =
+		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+		if (opened_fd < 0) {
+			const int open_error = errno;
+			return failure_result<RuntimeConfigLoadStatus::kPathError>(
+			    config_path,
+			    "Failed to inspect Config file: " + config_path.string() + " (" +
+			        std::strerror(open_error) + ")" + config_access_error_hint(open_error),
+			    open_error);
+		}
+		ScopedFd fd(opened_fd);
+		if (config_test_hooks::current()) {
+			config_test_hooks::current()();
+		}
+
+		const auto security = check_secure_config_fd(fd.get(), config_path, owner_uid);
 		if (!security.ok) {
 			return failure_result<RuntimeConfigLoadStatus::kPathError>(
 			    config_path, security.error_message, security.error_code);
 		}
 
-		const ConfigReader reader(config_path.string());
+		const auto content = read_config_from_fd(fd.get(), std::nullopt);
+		fd.reset();
+		if (!content.has_value()) {
+			return failure_result<RuntimeConfigLoadStatus::kParseError>(
+			    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
+		}
+
+		const ConfigReader reader(config_path.string(), *content);
 		if (!reader.ok()) {
 			return failure_result<RuntimeConfigLoadStatus::kParseError>(
 			    config_path, "Failed to parse config: " + config_path.string() + " (error " +

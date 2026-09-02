@@ -1,10 +1,14 @@
 #pragma once
 
+#include "config/config_limits.hpp"
 #include "support/atomic_files.hpp"
+#include "support/fd_io.hpp"
 #include "support/file_security.hpp"
 
 #include <cerrno>
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unistd.h>
@@ -32,6 +36,39 @@ namespace howdy::native {
 		       " cannot inspect the restricted Howdy config path. PAM consumers such "
 		       "as lock screens must call pam_howdy from a privileged authentication "
 		       "helper; do not make /etc/howdy or config.ini world-readable";
+	}
+
+	inline auto check_secure_config_fd(int fd, const std::filesystem::path &config_path,
+	                                   const std::optional<uid_t> owner_uid)
+	    -> ConfigPathCheckResult {
+		const auto parent = config_path.parent_path();
+		if (parent.empty()) {
+			return ConfigPathCheckResult{
+			    .ok = false,
+			    .error_message =
+			        "Config file must have a parent directory: " + config_path.string(),
+			    .error_code = 0,
+			};
+		}
+
+		const auto file_security = check_secure_root_owned_fd_with_directory(
+		    fd, config_path, {.directory = "Config directory", .file = kConfigFileLabel},
+		    owner_uid);
+		if (!file_security.ok) {
+			return ConfigPathCheckResult{
+			    .ok            = false,
+			    .error_message = file_security.error_message +
+			                     config_access_error_hint(file_security.error_code),
+			    .error_code    = file_security.error_code,
+			};
+		}
+
+		return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
+	}
+
+	inline auto check_secure_config_fd(int fd, const std::filesystem::path &config_path)
+	    -> ConfigPathCheckResult {
+		return check_secure_config_fd(fd, config_path, default_secure_owner_uid());
 	}
 
 	inline auto check_secure_config_path(const std::filesystem::path &config_path)
@@ -67,6 +104,22 @@ namespace howdy::native {
 	inline auto check_secure_config_path(const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult {
 		return check_secure_config_path(config_path, default_secure_owner_uid());
+	}
+
+	inline auto read_config_from_fd(int                              fd,
+	                                const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
+	    -> std::optional<std::string> {
+		if (lseek(fd, 0, SEEK_SET) < 0) {
+			return std::nullopt;
+		}
+
+		const auto read_limit = max_bytes.has_value() ? *max_bytes + std::size_t{1}
+		                                              : std::numeric_limits<std::size_t>::max();
+		const auto result     = read_fd_to_string_bounded({.fd = fd, .max_bytes = read_limit});
+		if (result.read_error || (max_bytes.has_value() && result.output.size() > *max_bytes)) {
+			return std::nullopt;
+		}
+		return result.output;
 	}
 
 	auto is_safe_ini_scalar_value(std::string_view value) -> bool;

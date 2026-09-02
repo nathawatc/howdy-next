@@ -3,6 +3,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -17,6 +18,12 @@ namespace {
 
 	auto secure_file(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
 		return howdy::native::check_secure_root_owned_file(path, "Test file", std::nullopt);
+	}
+
+	auto secure_fd(int fd, const std::filesystem::path &path,
+	               std::optional<uid_t> owner_uid = std::nullopt)
+	    -> howdy::native::SecurePathCheckResult {
+		return howdy::native::check_secure_root_owned_fd(fd, path, "Test file", owner_uid);
 	}
 
 	auto secure_dir(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
@@ -34,6 +41,12 @@ namespace {
 	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::check_secure_root_owned_file_with_directory(
 		    path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt);
+	}
+
+	auto secure_fd_with_directory(int fd, const std::filesystem::path &path)
+	    -> howdy::native::SecurePathCheckResult {
+		return howdy::native::check_secure_root_owned_fd_with_directory(
+		    fd, path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt);
 	}
 
 }  // namespace
@@ -57,8 +70,30 @@ auto main() -> int {
 	ok &= expect(secure_file(safe_file).ok, "safe regular file is accepted");
 	ok &= expect(secure_dir(safe_dir).ok, "safe directory is accepted");
 
+	int safe_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	ok &= expect(safe_fd >= 0, "open safe file descriptor");
+	if (safe_fd >= 0) {
+		ok &= expect(secure_fd(safe_fd, safe_file).ok, "safe descriptor is accepted");
+		ok &= expect(!secure_fd(safe_fd, safe_file, static_cast<uid_t>(geteuid() == 0 ? 1 : 0)).ok,
+		             "descriptor with wrong owner is rejected");
+		ok &= expect(secure_fd_with_directory(safe_fd, safe_file).ok,
+		             "safe descriptor with directory is accepted");
+		close(safe_fd);
+	}
+	errno                 = EACCES;
+	const auto invalid_fd = secure_fd(-1, safe_file);
+	ok &= expect(!invalid_fd.ok && invalid_fd.error_code == EBADF,
+	             "invalid descriptor is rejected with EBADF");
+
 	ok &= expect(chmod(safe_file.c_str(), 0664) == 0, "make file group-writable");
 	ok &= expect(!secure_file(safe_file).ok, "group-writable file is rejected");
+	int group_writable_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	ok &= expect(group_writable_fd >= 0, "open group-writable file descriptor");
+	if (group_writable_fd >= 0) {
+		ok &= expect(!secure_fd(group_writable_fd, safe_file).ok,
+		             "group-writable descriptor is rejected");
+		close(group_writable_fd);
+	}
 	ok &= expect(chmod(safe_file.c_str(), 0644) == 0, "restore file mode");
 
 	ok &= expect(chmod(safe_file.c_str(), 0666) == 0, "make file world-writable");
@@ -72,6 +107,19 @@ auto main() -> int {
 	ok &= expect(chmod(safe_dir.c_str(), 0777) == 0, "make dir world-writable");
 	ok &= expect(!secure_dir(safe_dir).ok, "world-writable directory is rejected");
 	ok &= expect(chmod(safe_dir.c_str(), 0755) == 0, "restore dir mode after world writable");
+
+	int dir_fd = open(safe_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+	ok &= expect(dir_fd >= 0, "open directory descriptor");
+	if (dir_fd >= 0) {
+		ok &=
+		    expect(howdy::native::check_secure_fd(dir_fd, howdy::native::SecurePathKind::kDirectory,
+		                                          safe_dir, "Test directory", std::nullopt)
+		               .ok,
+		           "directory descriptor is accepted for directory check");
+		ok &= expect(!secure_fd(dir_fd, safe_dir).ok,
+		             "directory descriptor is rejected for regular file check");
+		close(dir_fd);
+	}
 
 	const auto symlink_path = temp_root / "file-symlink";
 	fs::remove(symlink_path, ec);
@@ -88,6 +136,13 @@ auto main() -> int {
 	ok &= expect(link(safe_file.c_str(), hardlink_path.c_str()) == 0, "create hardlink");
 	ok &=
 	    expect(!secure_file(safe_file).ok, "hardlinked regular file is rejected by current policy");
+	int hardlink_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	ok &= expect(hardlink_fd >= 0, "open hardlinked file descriptor");
+	if (hardlink_fd >= 0) {
+		ok &= expect(!secure_fd(hardlink_fd, safe_file).ok,
+		             "hardlinked descriptor is rejected by current policy");
+		close(hardlink_fd);
+	}
 	fs::remove(hardlink_path, ec);
 	ec.clear();
 	ok &= expect(secure_file(safe_file).ok, "file is accepted after hardlink removal");
