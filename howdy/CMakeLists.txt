@@ -171,7 +171,12 @@ target_link_libraries(
 	PRIVATE howdy_vision_core
 )
 
-add_library(howdy_compare_privileges STATIC src/compare/privileges.cpp)
+add_library(
+	howdy_compare_privileges STATIC
+	src/compare/privileges.cpp
+	src/compare/privileges/operations.cpp
+	src/compare/privileges/verification.cpp
+)
 howdy_configure_native_target(howdy_compare_privileges)
 
 add_library(howdy_compare_sandbox STATIC src/compare/sandbox.cpp)

@@ -86,6 +86,17 @@ Do not create a split by pattern alone, and do not imply every command needs a
   exception boundary. Keep user-visible output and policy decisions there.
 - Compare capture tests use injected capture/clock callbacks; compare engine
   tests use injected inference callbacks and stay ONNX-free.
+- Compare privilege dropping is organized as one security-sensitive subsystem
+  split across:
+  - `src/compare/privileges.cpp`: high-level privilege-drop policy/orchestration
+  - `src/compare/privileges/operations.cpp`: production syscall adapters and
+    account lookup
+  - `src/compare/privileges/verification.cpp`: credential/capability transition
+    and verification
+  - `src/compare/privileges/internal.hpp`: private cross-TU implementation
+    contract (internal plumbing only, not installed, not public)
+  - `include/compare/privileges_internal.hpp`: existing test/dependency-injection
+    contract, distinct from the private production header
 
 ## Production Cohesion
 
@@ -100,6 +111,14 @@ maintenance problem requires change:
 - `auth_helper/runtime.cpp`
 - `app/command_catalog.cpp`
 - `cli/download_models.cpp`
+- Compare privilege dropping (`src/compare/privileges.cpp`,
+  `src/compare/privileges/operations.cpp`,
+  `src/compare/privileges/verification.cpp`, and
+  `src/compare/privileges/internal.hpp`): treat these files as one cohesive,
+  security-sensitive subsystem. Do not fragment the subsystem further merely
+  because individual files become long. Explicitly preserve privilege
+  transition ordering, identity ownership assumptions, capability clearing,
+  root-regain checks, and fatal fail-closed behavior.
 
 ## Tests
 
