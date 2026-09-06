@@ -864,5 +864,4 @@ namespace howdy::native::auth_helper {
 		    production_acl_operations());
 	}
 
-
 }  // namespace howdy::native::auth_helper

@@ -16,7 +16,6 @@ namespace howdy::native::auth_helper {
 		int                   lease_fd = -1;
 	};
 
-
 	struct RuntimeIdentity {
 		uid_t uid = 0;
 		gid_t gid = 0;

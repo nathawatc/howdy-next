@@ -1,6 +1,6 @@
 # PAM Module Knowledge Base
 
-**Updated:** 2026-08-15
+**Updated:** 2026-09-06
 
 ## Scope
 
@@ -9,21 +9,22 @@ PAM-enabled services.
 
 ## Where to Look
 
-| File                                          | Role                                                                           |
-| --------------------------------------------- | ------------------------------------------------------------------------------ |
-| `src/module/main.cpp`                         | PAM authentication entry point                                                 |
-| `src/module/unsupported_entrypoints.cpp`      | Unsupported PAM hooks returning `PAM_IGNORE`                                   |
-| `src/module/auth_flow.cpp`                    | Auth policy, readiness, status mapping, and coordinator composition            |
-| `src/runtime/runtime_session.cpp`             | Auth-helper staging, typed config load, and staged cleanup                     |
-| `src/runtime/auth_helper_process.cpp`         | Auth-helper process setup, bounded output, protocol parsing, wait, and cleanup |
-| `src/runtime/compare_process.cpp`             | Compare launch environment/argv, descriptor closure, timeout, and reap         |
-| `src/prompt/prompt_coordinator.cpp`           | Compare lifecycle, worker ownership, prompt race, and restoration              |
-| `src/prompt/native_prompt_conversation.cpp`   | Native TTY conversation, abort, and fail-closed restoration                    |
-| `src/prompt/observed_prompt_conversation.cpp` | Caller-thread secret-prompt observation and synchronous delegation             |
-| `src/prompt/conversation_response.cpp`        | Secure PAM conversation-response erasure and release                           |
-| `include/runtime/runtime_session.hpp`         | One-shot staged runtime/config boundary                                        |
-| `include/prompt/prompt_coordinator.hpp`       | Compare launch, worker, and prompt-race boundary                               |
-| `CMakeLists.txt`                              | PAM build and logical test-suite source lists                                  |
+| File                                          | Role                                                                                                                                                            |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/module/main.cpp`                         | PAM authentication entry point                                                                                                                                  |
+| `src/module/unsupported_entrypoints.cpp`      | Unsupported PAM hooks returning `PAM_IGNORE`                                                                                                                    |
+| `src/module/auth_flow.cpp`                    | Auth policy, readiness, status mapping, and coordinator composition                                                                                             |
+| `src/runtime/runtime_session.cpp`             | Auth-helper staging, typed config load, and staged cleanup                                                                                                      |
+| `src/runtime/auth_helper_process.cpp`         | Auth-helper high-level orchestration and public API                                                                                                             |
+| `src/runtime/auth_helper_process/`            | Private implementation: spawn (`spawn.cpp`), bounded I/O and wait (`io.cpp`), lease transport/validation (`lease.cpp`), and internal contracts (`internal.hpp`) |
+| `src/runtime/compare_process.cpp`             | Compare launch environment/argv, descriptor closure, timeout, and reap                                                                                          |
+| `src/prompt/prompt_coordinator.cpp`           | Compare lifecycle, worker ownership, prompt race, and restoration                                                                                               |
+| `src/prompt/native_prompt_conversation.cpp`   | Native TTY conversation, abort, and fail-closed restoration                                                                                                     |
+| `src/prompt/observed_prompt_conversation.cpp` | Caller-thread secret-prompt observation and synchronous delegation                                                                                              |
+| `src/prompt/conversation_response.cpp`        | Secure PAM conversation-response erasure and release                                                                                                            |
+| `include/runtime/runtime_session.hpp`         | One-shot staged runtime/config boundary                                                                                                                         |
+| `include/prompt/prompt_coordinator.hpp`       | Compare launch, worker, and prompt-race boundary                                                                                                                |
+| `CMakeLists.txt`                              | PAM build and logical test-suite source lists                                                                                                                   |
 
 ## Security Invariants
 
@@ -127,10 +128,18 @@ focused sibling sources listed in `pam/CMakeLists.txt`.
 
 ## Production Cohesion
 
-Do not split these cohesive security-sensitive state/process boundaries merely
+Do not fragment these cohesive security-sensitive state/process boundaries merely
 for LOC. Child lifecycle, race, restoration, and ownership invariants are
 simpler to audit while they remain together:
 
-- `src/runtime/auth_helper_process.cpp`
+- `auth_helper_process` subsystem: remains one security-sensitive process/lifecycle
+  subsystem split strictly across `src/runtime/auth_helper_process.cpp` (high-level
+  orchestration and public API) and the private `src/runtime/auth_helper_process/`
+  implementation directory (`spawn.cpp` for descriptor/spawn setup, `io.cpp` for
+  bounded I/O, timeout, wait, and reap, `lease.cpp` for lease transport and
+  validation, and `internal.hpp` for private implementation plumbing). Do not
+  fragment this subsystem further merely for LOC; future changes must preserve
+  process, descriptor-ownership, timeout, cleanup, protocol, and lease-validation
+  invariants across the entire subsystem.
 - `src/prompt/prompt_coordinator.cpp`
 - `src/prompt/native_prompt_conversation.cpp`

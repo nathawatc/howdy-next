@@ -710,7 +710,6 @@ namespace {
 		return ok;
 	}
 
-
 }  // namespace
 
 auto run_auth_helper_staging_tests(const std::filesystem::path    &temp_root,

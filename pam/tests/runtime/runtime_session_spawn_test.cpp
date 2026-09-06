@@ -3,8 +3,8 @@
 
 #include <chrono>
 #include <cstring>
-#include <filesystem>
 #include <fcntl.h>
+#include <filesystem>
 
 #include <sys/file.h>
 #include <sys/socket.h>
@@ -200,10 +200,11 @@ namespace {
 	};
 
 	auto exec_probe_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
-		const auto           &context = *static_cast<const ExecProbeContext *>(request.context);
-		std::string           marker  = context.marker.string();
-		std::array<char *, 4> arguments = {const_cast<char *>("pam_runtime_session_test"),
-		                                   const_cast<char *>("--fd3-probe"), marker.data(), nullptr};
+		const auto           &context     = *static_cast<const ExecProbeContext *>(request.context);
+		std::string           marker      = context.marker.string();
+		std::array<char *, 4> arguments   = {const_cast<char *>("pam_runtime_session_test"),
+		                                     const_cast<char *>("--fd3-probe"), marker.data(),
+		                                     nullptr};
 		std::array<char *, 1> environment = {nullptr};
 		return posix_spawn(request.child_pid, "/proc/self/exe", request.actions, nullptr,
 		                   arguments.data(), environment.data());

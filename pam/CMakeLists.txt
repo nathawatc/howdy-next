@@ -15,6 +15,9 @@ target_include_directories(
 add_library(
 	pam_runtime STATIC
 	src/runtime/auth_helper_process.cpp
+	src/runtime/auth_helper_process/io.cpp
+	src/runtime/auth_helper_process/lease.cpp
+	src/runtime/auth_helper_process/spawn.cpp
 	src/runtime/compare_process.cpp
 	src/runtime/environment.cpp
 	src/runtime/lid_probe.cpp

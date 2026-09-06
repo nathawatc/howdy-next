@@ -123,7 +123,6 @@ namespace howdy::native::auth_helper_protocol {
 		return true;
 	}
 
-
 	inline auto matches_prepared_runtime_layout(const std::filesystem::path &runtime_dir,
 	                                            const std::filesystem::path &config_path,
 	                                            const std::filesystem::path &user_models_dir,
