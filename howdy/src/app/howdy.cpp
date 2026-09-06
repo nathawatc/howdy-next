@@ -1,7 +1,6 @@
-#include "app/command_catalog.hpp"
 #include "app/howdy.hpp"
-#include "howdy/cli/internal.hpp"
-#include "howdy/completion/internal.hpp"
+
+#include "app/command_catalog.hpp"
 #include "app/howdy/internal.hpp"
 #include "cli/add.hpp"
 #include "cli/clear.hpp"
@@ -13,6 +12,8 @@
 #include "cli/set.hpp"
 #include "cli/snapshot.hpp"
 #include "cli/test.hpp"
+#include "howdy/cli/internal.hpp"
+#include "howdy/completion/internal.hpp"
 #include "howdy/version_format.hpp"
 #include "support/invoking_user.hpp"
 #include "support/user_names.hpp"

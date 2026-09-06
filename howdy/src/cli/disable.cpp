@@ -1,4 +1,5 @@
 #include "cli/disable.hpp"
+
 #include "cli/disable/internal.hpp"
 #include "config/config_schema.hpp"
 #include "config/config_utils.hpp"

@@ -1,6 +1,10 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 
-add_library(howdy_config_schema STATIC src/config/config_schema.cpp)
+add_library(howdy_config_schema STATIC
+	src/config/config_schema.cpp
+	src/config/config_schema/internal.hpp
+	src/config/config_schema/validation.cpp
+)
 howdy_configure_native_target(howdy_config_schema)
 
 add_library(howdy_config_template STATIC src/config/config_template.cpp)
@@ -13,6 +17,9 @@ add_library(
 	src/config/config_reader.cpp
 	src/config/runtime_config.cpp
 	src/config/config_utils.cpp
+	src/config/config_utils/internal.hpp
+	src/config/config_utils/file_ops.cpp
+	src/config/config_utils/key_file.cpp
 	src/config/config_validation.cpp
 )
 howdy_configure_native_target(howdy_config)
@@ -127,7 +134,11 @@ target_link_libraries(
 		howdy_opencv
 )
 
-add_library(howdy_user_model_codec STATIC src/storage/user_model_codec.cpp)
+add_library(howdy_user_model_codec STATIC
+	src/storage/user_model_codec.cpp
+	src/storage/user_model_codec/internal.hpp
+	src/storage/user_model_codec/parsing.cpp
+)
 howdy_configure_native_target(howdy_user_model_codec)
 target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
 

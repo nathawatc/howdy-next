@@ -1,6 +1,6 @@
 #include "config/config_limits.hpp"
-#include "config/test_hooks.hpp"
 #include "config/runtime_config.hpp"
+#include "config/test_hooks.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>

@@ -1,7 +1,7 @@
 #include "prompt/native_prompt_conversation.hpp"
 
-#include "prompt/internal_fd.hpp"
 #include "prompt/conversation_response.hpp"
+#include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_input.hpp"
 #include "support/fd_io.hpp"
 

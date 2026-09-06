@@ -1,0 +1,74 @@
+#pragma once
+
+#include "config/config_utils.hpp"
+
+#include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <sys/stat.h>
+
+namespace howdy::native::config_utils_internal {
+
+	constexpr auto kConfigFileOpenFailureMessage    = "Failed to open config file";
+	constexpr auto kConfigFileInspectFailureMessage = "Failed to inspect config file";
+	constexpr auto kConfigFileReadFailureMessage    = "Failed to read config file";
+	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
+	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
+
+	struct __attribute__((visibility("hidden"))) ConfigLockGuard {
+		int fd = -1;
+
+		ConfigLockGuard() = default;
+		~ConfigLockGuard();
+		ConfigLockGuard(const ConfigLockGuard &)                     = delete;
+		auto operator=(const ConfigLockGuard &) -> ConfigLockGuard & = delete;
+		ConfigLockGuard(ConfigLockGuard &&other) noexcept;
+		auto operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard &;
+	};
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	acquire_config_lock(ConfigLockGuard &guard, const std::filesystem::path &config_path) -> bool;
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	expected_content_matches(const std::filesystem::path &config_path, const std::string &expected,
+	                         std::string *error_message) -> bool;
+
+	enum class ConfigInstallResult : std::uint8_t {
+		ok,
+		stage_failed,
+		not_committed,
+		committed_not_durable,
+	};
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	install_config_content(const std::filesystem::path &config_path, const std::string &content,
+	                       const struct stat &current_stat, SyncParentDirectoryFn sync_parent)
+	    -> ConfigInstallResult;
+
+	struct ConfigLineReplacement {
+		std::string_view   section;
+		const std::string &key;
+		const std::string &value;
+	};
+
+	enum class ConfigLineReplaceResult : std::uint8_t {
+		not_found,
+		replaced,
+		duplicate,
+	};
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	split_lines_preserve_newlines(const std::string &content) -> std::vector<std::string>;
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	join_lines(const std::vector<std::string> &lines) -> std::string;
+
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	replace_line_value(std::vector<std::string> &lines, ConfigLineReplacement replacement)
+	    -> ConfigLineReplaceResult;
+
+}  // namespace howdy::native::config_utils_internal

@@ -1,7 +1,7 @@
-#include "config/test_hooks.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "config/config_validation.hpp"
+#include "config/test_hooks.hpp"
 #include "test_support.hpp"
 
 #include <clocale>

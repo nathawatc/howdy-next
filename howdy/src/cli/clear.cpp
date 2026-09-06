@@ -1,4 +1,5 @@
 #include "cli/clear.hpp"
+
 #include "cli/clear/internal.hpp"
 #include "storage/user_models.hpp"
 

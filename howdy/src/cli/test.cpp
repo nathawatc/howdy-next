@@ -1,4 +1,5 @@
 #include "cli/test.hpp"
+
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
 #include "cli/test/preview_session.hpp"

@@ -1,8 +1,8 @@
 #include "cli/config/edit_session.hpp"
 
-#include "config/test_hooks.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
+#include "config/test_hooks.hpp"
 #include "support/fd_io.hpp"
 #include "support/invoking_user_env.hpp"
 

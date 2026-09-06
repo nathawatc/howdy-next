@@ -1,4 +1,5 @@
 #include "cli/snapshot.hpp"
+
 #include "cli/snapshot/internal.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"

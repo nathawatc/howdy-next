@@ -1,6 +1,6 @@
 #include "app/command_catalog.hpp"
-#include "app/howdy_dispatch_test_support.hpp"
 #include "app/howdy/internal.hpp"
+#include "app/howdy_dispatch_test_support.hpp"
 #include "cli/add.hpp"
 #include "cli/clear.hpp"
 #include "cli/list.hpp"

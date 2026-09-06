@@ -1,4 +1,5 @@
 #include "cli/remove.hpp"
+
 #include "cli/remove/internal.hpp"
 #include "storage/user_models.hpp"
 

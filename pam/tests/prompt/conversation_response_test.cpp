@@ -1,5 +1,5 @@
-#include "prompt/conversation_response/internal.hpp"
 #include "prompt/conversation_response.hpp"
+#include "prompt/conversation_response/internal.hpp"
 #include "test_support.hpp"
 
 #include <array>

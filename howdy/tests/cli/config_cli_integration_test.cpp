@@ -1,6 +1,6 @@
 #include "cli/config.hpp"
-#include "cli/config_cli_test_support.hpp"
 #include "cli/config/edit_session.hpp"
+#include "cli/config_cli_test_support.hpp"
 #include "config/config_limits.hpp"
 #include "config/test_hooks.hpp"
 #include "test_support.hpp"

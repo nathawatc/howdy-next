@@ -397,6 +397,8 @@ add_library(
 	howdy_command_catalog
 	STATIC
 	howdy/src/app/command_catalog.cpp
+	howdy/src/app/command_catalog/internal.hpp
+	howdy/src/app/command_catalog/validation.cpp
 )
 howdy_configure_native_target(howdy_command_catalog)
 
