@@ -61,21 +61,18 @@ cmake --preset release \
   -DHOWDY_PAM_DIR=/path/to/pam/security
 ```
 
-### Debug
+Install with the configured prefix:
 
 ```sh
-cmake --preset debug
-cmake --build --preset debug --parallel "$(nproc)"
-ctest --preset debug
+sudo cmake --install build
 ```
-
-- Install with configured prefix: `sudo cmake --install build`
 
 `cmake --install --prefix` is intentionally unsupported because runtime paths
 are generated during configuration. Reconfigure with
 `-DCMAKE_INSTALL_PREFIX=<path>` to change the install prefix.
 
-See [Contributing](CONTRIBUTING.md) for workflow and rules.
+See [Contributing](CONTRIBUTING.md) for development, Debug builds, testing, and
+contribution workflow.
 
 ### Setup
 
