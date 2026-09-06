@@ -42,7 +42,13 @@ For CLI work across mirrored include/source/test paths, also read
   work.
 - Use shared model readiness/integrity checks from
   `model_assets/model_file.hpp` and user-model readiness code before inference
-  or authentication paths.
+  or authentication paths. User-model readiness is organized across:
+  - `src/storage/user_model_readiness.cpp`: high-level readiness routing and
+    canonical model readiness/security checks
+  - `src/storage/user_model_readiness/staged.cpp`: auth-helper staged-runtime
+    path, ACL, directory, visible/backing model validation
+  - `src/storage/user_model_readiness/internal.hpp`: private cross-TU
+    staged-readiness contract (internal plumbing only, not installed, not public)
 - Auth-helper protocol keys are shared through
   `protocol/auth_helper_protocol.hpp`; validate both required keys and reject
   malformed, duplicate, unknown, or incomplete output.
@@ -119,6 +125,12 @@ maintenance problem requires change:
   because individual files become long. Explicitly preserve privilege
   transition ordering, identity ownership assumptions, capability clearing,
   root-regain checks, and fatal fail-closed behavior.
+- User-model readiness (`src/storage/user_model_readiness.cpp`,
+  `src/storage/user_model_readiness/staged.cpp`, and
+  `src/storage/user_model_readiness/internal.hpp`): treat these files as one
+  cohesive, security-sensitive subsystem. Do not fragment the subsystem
+  further merely for LOC. Explicitly preserve the invariant that staged runtime
+  validation remains descriptor-relative and fail-closed.
 
 ## Tests
 

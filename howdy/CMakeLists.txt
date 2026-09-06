@@ -81,6 +81,7 @@ target_link_libraries(howdy_runtime_paths PUBLIC howdy_config)
 add_library(
 	howdy_user_model_readiness STATIC
 	src/storage/user_model_readiness.cpp
+	src/storage/user_model_readiness/staged.cpp
 )
 howdy_configure_native_target(howdy_user_model_readiness)
 target_link_libraries(howdy_user_model_readiness PRIVATE PkgConfig::LIBACL)
