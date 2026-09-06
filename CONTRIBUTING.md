@@ -23,7 +23,9 @@ contribution under the GNU General Public License v3.0 or later
 
 ## Basic Workflow
 
-Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja.
+Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja. Installing `ccache` is
+recommended for faster incremental rebuilds. Howdy uses it automatically when
+available; pass `-DHOWDY_USE_CCACHE=OFF` at configure time to disable it.
 
 ### Release
 

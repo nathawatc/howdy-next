@@ -89,10 +89,22 @@ option(
 	OFF
 )
 option(
+	HOWDY_USE_CCACHE
+	"Use ccache to accelerate C++ recompilation when available"
+	ON
+)
+option(
 	HOWDY_ENABLE_PRIVILEGED_TESTS
 	"Enable installed PAM/setuid end-to-end tests"
 	OFF
 )
+
+if(HOWDY_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+	find_program(HOWDY_CCACHE_PROGRAM ccache)
+	if(HOWDY_CCACHE_PROGRAM)
+		set(CMAKE_CXX_COMPILER_LAUNCHER "${HOWDY_CCACHE_PROGRAM}")
+	endif()
+endif()
 
 if(
 	BUILD_TESTING
