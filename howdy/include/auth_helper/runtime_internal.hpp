@@ -34,8 +34,4 @@ namespace howdy::native::auth_helper::internal {
 	prepare_runtime_auth_files(const std::string &user, StagedIdentity identity,
 	                           const RuntimeSources &sources, const AclOperations &operations)
 	    -> std::optional<PreparedPaths>;
-	__attribute__((visibility("hidden"))) auto
-	cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid,
-	                           const std::filesystem::path &runtime_root, uid_t owner_uid = 0,
-	                           gid_t owner_gid = 0) -> CleanupRuntimeResult;
 }  // namespace howdy::native::auth_helper::internal

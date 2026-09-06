@@ -710,37 +710,6 @@ namespace {
 		return ok;
 	}
 
-	auto expect_cleanup_migration(const std::filesystem::path &temp_root, uid_t target_uid,
-	                              const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
-		using howdy::native::auth_helper::internal::cleanup_runtime_auth_files;
-		bool ok      = true;
-		auto fixture = make_fixture(temp_root, "cleanup", target_uid);
-		if (!fixture.has_value()) {
-			return false;
-		}
-		auto prepared = prepare(*fixture, operations);
-		ok &= expect(prepared.has_value(), "creates fixed cleanup fixture");
-		close_lease(prepared);
-		if (prepared.has_value()) {
-			ok &= expect(cleanup_runtime_auth_files(prepared->runtime_dir, target_uid,
-			                                        fixture->root, geteuid(), getegid())
-			                     .ok &&
-			                 std::filesystem::exists(prepared->runtime_dir),
-			             "fixed generation cleanup validates then preserves slot");
-		}
-		const auto      legacy = fixture->root / ("pam-" + std::to_string(target_uid) + "-Ab12Z9");
-		std::error_code ec;
-		std::filesystem::create_directories(legacy / "models", ec);
-		ok &=
-		    expect(!ec && chmod(legacy.c_str(), 0500) == 0, "creates old random runtime directory");
-		ok &= expect(
-		    cleanup_runtime_auth_files(legacy, target_uid, fixture->root, geteuid(), getegid())
-		            .ok &&
-		        !std::filesystem::exists(legacy),
-		    "cleanup removes old HEAD random directory");
-		return ok;
-	}
 
 }  // namespace
 
@@ -766,7 +735,6 @@ auto run_auth_helper_staging_tests(const std::filesystem::path    &temp_root,
 	ok &= expect_partial_slot_fallback(temp_root, target_uid, context.operations);
 	ok &= expect_malformed_slot_discovery(temp_root, target_uid, context.operations);
 	ok &= expect_malformed_objects_fail(temp_root, target_uid, context.operations);
-	ok &= expect_cleanup_migration(temp_root, target_uid, context.operations);
 	if (context.acl_supported) {
 		ok &= expect_cross_uid_acl_access(temp_root, context.production_operations);
 	}

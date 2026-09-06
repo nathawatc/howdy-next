@@ -719,47 +719,6 @@ namespace howdy::native::auth_helper {
 			return std::nullopt;
 		}
 
-		auto remove_tree_contents(int directory_fd) -> bool {
-			UniqueFd duplicate(dup(directory_fd));
-			if (duplicate.get() < 0) {
-				return false;
-			}
-			DIR *directory = fdopendir(duplicate.release());
-			if (directory == nullptr) {
-				return false;
-			}
-			bool ok = true;
-			while (ok) {
-				errno         = 0;
-				dirent *entry = readdir(directory);
-				if (entry == nullptr) {
-					ok = errno == 0;
-					break;
-				}
-				const std::string_view name(entry->d_name);
-				if (name == "." || name == "..") {
-					continue;
-				}
-				struct stat stat_{};
-				if (fstatat(directory_fd, entry->d_name, &stat_, AT_SYMLINK_NOFOLLOW) != 0) {
-					ok = false;
-					break;
-				}
-				if (S_ISDIR(stat_.st_mode)) {
-					UniqueFd child(openat(directory_fd, entry->d_name,
-					                      O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-					if (child.get() < 0 || fchmod(child.get(), 0700) != 0 ||
-					    !remove_tree_contents(child.get()) ||
-					    unlinkat(directory_fd, entry->d_name, AT_REMOVEDIR) != 0) {
-						ok = false;
-					}
-				} else if (unlinkat(directory_fd, entry->d_name, 0) != 0) {
-					ok = false;
-				}
-			}
-			return closedir(directory) == 0 && ok;
-		}
-
 	}  // namespace
 
 	namespace internal {
@@ -888,64 +847,6 @@ namespace howdy::native::auth_helper {
 			                              operations);
 		}
 
-		auto cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid,
-		                                const std::filesystem::path &runtime_root, uid_t owner_uid,
-		                                gid_t owner_gid) -> CleanupRuntimeResult {
-			if (!auth_helper_protocol::is_canonical_absolute_path(path) ||
-			    !auth_helper_protocol::is_canonical_absolute_path(runtime_root) ||
-			    path.parent_path() != runtime_root) {
-				return {.ok            = false,
-				        .error_message = "Refusing to clean unexpected runtime directory"};
-			}
-			auto root = open_or_create_root(runtime_root, owner_uid, owner_gid);
-			if (!root.has_value()) {
-				return {.ok = false, .error_message = "Refusing to clean insecure runtime root"};
-			}
-
-			uid_t                 parsed_uid = 0;
-			RuntimeGenerationSlot generation{};
-			if (auth_helper_protocol::parse_runtime_generation_name(path.filename().string(),
-			                                                        &parsed_uid, &generation)) {
-				if (parsed_uid != uid) {
-					return {.ok            = false,
-					        .error_message = "Refusing to clean another user's runtime directory"};
-				}
-				auto slot =
-				    open_slot(root->get(), runtime_root, generation,
-				              {.target_uid = uid, .owner_uid = owner_uid, .owner_gid = owner_gid},
-				              production_acl_operations(), false);
-				return slot.has_value()
-				           ? CleanupRuntimeResult{.ok = true}
-				           : CleanupRuntimeResult{.ok = false,
-				                                  .error_message =
-				                                      "Refusing to clean malformed runtime slot"};
-			}
-
-			if (!auth_helper_protocol::matches_legacy_runtime_directory_name(
-			        path.filename().string(), uid)) {
-				return {.ok            = false,
-				        .error_message = "Refusing to clean unexpected runtime directory"};
-			}
-			UniqueFd directory(openat(root->get(), path.filename().c_str(),
-			                          O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (directory.get() < 0) {
-				return errno == ENOENT
-				           ? CleanupRuntimeResult{.ok = true}
-				           : CleanupRuntimeResult{.ok = false,
-				                                  .error_message =
-				                                      "Failed to inspect runtime directory"};
-			}
-			struct stat stat_{};
-			if (fstat(directory.get(), &stat_) != 0 || !S_ISDIR(stat_.st_mode) ||
-			    stat_.st_uid != owner_uid || stat_.st_gid != owner_gid ||
-			    (stat_.st_mode & (S_IWGRP | S_IWOTH)) != 0 || fchmod(directory.get(), 0700) != 0 ||
-			    !remove_tree_contents(directory.get()) ||
-			    unlinkat(root->get(), path.filename().c_str(), AT_REMOVEDIR) != 0) {
-				return {.ok = false, .error_message = "Failed to clean runtime directory"};
-			}
-			return {.ok = true};
-		}
-
 	}  // namespace internal
 
 	auto runtime_root() -> std::filesystem::path {
@@ -963,10 +864,5 @@ namespace howdy::native::auth_helper {
 		    production_acl_operations());
 	}
 
-	auto cleanup_runtime_auth_files(const std::filesystem::path &path, RuntimeIdentity identity)
-	    -> CleanupRuntimeResult {
-		(void)identity.gid;
-		return internal::cleanup_runtime_auth_files(path, identity.uid, runtime_root(), 0, 0);
-	}
 
 }  // namespace howdy::native::auth_helper

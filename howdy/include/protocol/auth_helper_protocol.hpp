@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
@@ -124,18 +123,6 @@ namespace howdy::native::auth_helper_protocol {
 		return true;
 	}
 
-	inline auto matches_legacy_runtime_directory_name(std::string_view name, uid_t uid) noexcept
-	    -> bool {
-		const auto prefix = prepared_runtime_directory_prefix(uid);
-		if (!name.starts_with(prefix) ||
-		    name.size() != prefix.size() + kPreparedRuntimeDirectorySuffixLength) {
-			return false;
-		}
-		return std::ranges::all_of(name.substr(prefix.size()), [](const char character) -> bool {
-			return (character >= '0' && character <= '9') ||
-			       (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
-		});
-	}
 
 	inline auto matches_prepared_runtime_layout(const std::filesystem::path &runtime_dir,
 	                                            const std::filesystem::path &config_path,

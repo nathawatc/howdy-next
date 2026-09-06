@@ -331,12 +331,6 @@ if(BUILD_TESTING)
 		COMMAND howdy_auth_helper prepare ../alice
 	)
 	howdy_expect_test_failure(native-auth-helper-prepare-guard)
-	add_test(
-		NAME native-auth-helper-cleanup-guard
-		COMMAND howdy_auth_helper cleanup /tmp/not-howdy-runtime
-	)
-	howdy_expect_test_failure(native-auth-helper-cleanup-guard)
-
 	add_executable(
 		howdy_auth_helper_test
 		tests/auth_helper/auth_helper_test.cpp

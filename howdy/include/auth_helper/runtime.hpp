@@ -16,10 +16,6 @@ namespace howdy::native::auth_helper {
 		int                   lease_fd = -1;
 	};
 
-	struct CleanupRuntimeResult {
-		bool        ok = false;
-		std::string error_message;
-	};
 
 	struct RuntimeIdentity {
 		uid_t uid = 0;
@@ -29,7 +25,5 @@ namespace howdy::native::auth_helper {
 	auto runtime_root() -> std::filesystem::path;
 	auto prepare_runtime_auth_files(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths>;
-	auto cleanup_runtime_auth_files(const std::filesystem::path &path, RuntimeIdentity identity)
-	    -> CleanupRuntimeResult;
 
 }  // namespace howdy::native::auth_helper

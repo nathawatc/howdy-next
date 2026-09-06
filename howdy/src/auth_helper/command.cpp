@@ -19,8 +19,7 @@
 namespace howdy::native::auth_helper::command {
 	namespace {
 		auto usage(const char *argv0) -> void {
-			std::cout << "Usage: " << argv0 << " prepare <user>\n"
-			          << "       " << argv0 << " cleanup <runtime-dir>\n";
+			std::cout << "Usage: " << argv0 << " prepare <user>\n";
 		}
 
 		auto fail(const std::string &message) -> int {
@@ -121,27 +120,10 @@ namespace howdy::native::auth_helper::command {
 		return 0;
 	}
 
-	auto cleanup_for_user(const std::filesystem::path &path) -> int {
-		if (geteuid() != 0) {
-			return fail("howdy-auth-helper must be installed setuid root");
-		}
-		const uid_t   uid   = getuid();
-		const passwd *entry = getpwuid(uid);
-		if (entry == nullptr) {
-			return fail("Failed to resolve calling user");
-		}
-		const auto result = howdy::native::auth_helper::cleanup_runtime_auth_files(
-		    path, {.uid = uid, .gid = entry->pw_gid});
-		return result.ok ? 0 : fail(result.error_message);
-	}
-
 	auto run(int argc, char **argv) -> int {
 		if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
 			usage(argv[0]);
 			return 0;
-		}
-		if (argc == 3 && std::string(argv[1]) == "cleanup") {
-			return cleanup_for_user(argv[2]);
 		}
 		if (argc == 3 && std::string(argv[1]) == "prepare") {
 			return prepare_for_user(argv[2]);
