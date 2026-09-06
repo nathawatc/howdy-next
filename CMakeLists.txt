@@ -82,6 +82,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_OPTIMIZE_DEPENDENCIES ON)
 
 option(
 	HOWDY_WARNINGS_AS_ERRORS
@@ -121,6 +122,9 @@ endif()
 
 set(howdy_cxx_compiler "$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>")
 add_compile_options(
+	# Build performance.
+	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-pipe>"
+
 	# High-signal compiler diagnostics.
 	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wall>"
 	"$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>:-Wextra>"
