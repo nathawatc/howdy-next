@@ -24,7 +24,11 @@ PAM-enabled services.
 | `src/prompt/conversation_response.cpp`        | Secure PAM conversation-response erasure and release                                                                                                            |
 | `include/runtime/runtime_session.hpp`         | One-shot staged runtime/config boundary                                                                                                                         |
 | `include/prompt/prompt_coordinator.hpp`       | Compare launch, worker, and prompt-race boundary                                                                                                                |
-| `CMakeLists.txt`                              | PAM build and logical test-suite source lists                                                                                                                   |
+| `CMakeLists.txt`                              | PAM production target/install graph and test includes                                                                                                           |
+| `cmake/tests/module.cmake`                    | Module/auth test targets and registrations                                                                                                                      |
+| `cmake/tests/runtime.cmake`                   | Runtime test targets and registrations                                                                                                                          |
+| `cmake/tests/prompt.cmake`                    | Prompt/conversation test targets and registrations                                                                                                              |
+| `cmake/tests/integration.cmake`               | Installed and privileged integration/E2E test targets and registrations                                                                                         |
 
 ## Security Invariants
 
@@ -81,7 +85,7 @@ PAM-enabled services.
 ## Test Organization
 
 CTest logical suites may contain multiple translation units. Inspect
-`pam/CMakeLists.txt` and sibling test sources; a driver is not the complete
+`pam/cmake/tests/*.cmake` and sibling test sources; a driver is not the complete
 suite. Shared headers used only by tests live under `tests/include/`.
 
 ### Auth Flow Logical Suite
@@ -124,7 +128,8 @@ Retain runtime-session multi-source mapping:
   paths.
 
 The prompt-coordinator and runtime-session CTest suites likewise use their
-focused sibling sources listed in `pam/CMakeLists.txt`.
+focused sibling sources listed in `pam/cmake/tests/prompt.cmake` and
+`pam/cmake/tests/runtime.cmake`.
 
 ## Production Cohesion
 
