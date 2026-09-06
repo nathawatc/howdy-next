@@ -13,7 +13,8 @@ Read repo guidelines before issue or PR:
 - [Repository Guidelines](AGENTS.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 
-`AGENTS.md`: main contributor reference for layout, build, test, style, commit, PR, security.
+`AGENTS.md` defines repository-wide rules. Read the nearest subsystem
+`AGENTS.md` for local ownership, security, and test guidance.
 
 ## Licensing
 

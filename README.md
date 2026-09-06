@@ -95,9 +95,9 @@ See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for
 common issues.
 
 > [!WARNING]
-> Howdy weaker than password. Similar faces or photos may fool it.
-> IR reduces spoofing. Invisible in photos and LCD displays.
-> Never use as sole auth method.
+> Howdy is weaker than a password. Similar faces or photos may fool it.
+> IR reduces spoofing because IR light is not reproduced by photos or LCD displays.
+> Never use Howdy as the sole authentication method.
 
 ## License
 
