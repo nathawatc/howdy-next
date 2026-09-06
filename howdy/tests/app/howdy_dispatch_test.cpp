@@ -1,10 +1,10 @@
 #include "app/command_catalog.hpp"
 #include "app/howdy_dispatch_test_support.hpp"
-#include "app/howdy_internal.hpp"
-#include "cli/add_cli.hpp"
-#include "cli/clear_cli.hpp"
-#include "cli/list_cli.hpp"
-#include "cli/remove_cli.hpp"
+#include "app/howdy/internal.hpp"
+#include "cli/add.hpp"
+#include "cli/clear.hpp"
+#include "cli/list.hpp"
+#include "cli/remove.hpp"
 #include "test_support.hpp"
 
 #include <array>

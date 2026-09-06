@@ -1,4 +1,4 @@
-#include "compare/processing_internal.hpp"
+#include "compare/processing.hpp"
 #include "test_support.hpp"
 
 #include <array>

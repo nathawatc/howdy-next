@@ -1,4 +1,4 @@
-#include "cli/snapshot_internal.hpp"
+#include "cli/snapshot/internal.hpp"
 #include "test_support.hpp"
 #include "vision/frame_validation.hpp"
 

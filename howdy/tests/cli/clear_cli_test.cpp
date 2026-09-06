@@ -1,5 +1,5 @@
-#include "cli/clear_cli.hpp"
-#include "cli/clear_internal.hpp"
+#include "cli/clear.hpp"
+#include "cli/clear/internal.hpp"
 #include "test_support.hpp"
 
 #include <array>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "compare/privileges.hpp"
-#include "compare/privileges_internal.hpp"
+#include "compare/privileges/internal.hpp"
 
 #include <sys/types.h>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cli/test_preview_session.hpp"
+#include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_models.hpp"
 

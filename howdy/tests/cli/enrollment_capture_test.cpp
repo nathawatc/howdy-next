@@ -1,4 +1,4 @@
-#include "cli/enrollment_capture.hpp"
+#include "cli/add/enrollment_capture.hpp"
 #include "test_support.hpp"
 
 #include <cstddef>

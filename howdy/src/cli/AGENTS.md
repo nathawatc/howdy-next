@@ -10,18 +10,17 @@ snapshot generation. Keep `howdy` as the sole installed user-facing command.
 ## Where to Look
 
 - Unified dispatch: `howdy/src/app/howdy.cpp` owns target-user/root policy and
-  command execution; `howdy/src/app/howdy_cli.cpp` owns argv parsing, validation,
-  help, and usage errors; `howdy/src/app/howdy_completion.cpp` owns the hidden
+  command execution; `howdy/src/app/howdy/cli.cpp` owns argv parsing, validation,
+  help, and usage errors; `howdy/src/app/howdy/completion.cpp` owns the hidden
   completion protocol; `howdy/src/bin/howdy_main.cpp` owns the process entrypoint.
-- Add policy: `howdy/src/cli/add.cpp` — argument/label policy,
+- Add production facade: `howdy/src/cli/add.cpp` — production `RuntimeConfig`
+  loading, `FaceModel` lifecycle, existing-model inspection,
+  `VideoCapture`/enrollment adapter, storage adapters, and `add_main()`.
+- Add workflow: `howdy/src/cli/add/workflow.cpp` — argument/label policy,
   status/diagnostic mapping, and `add_main_with_dependencies()`.
-- Add production adapters: `howdy/src/cli/add_main.cpp` — production
-  `RuntimeConfig` loading, `FaceModel` lifecycle, existing-model inspection,
-  `VideoCapture`/enrollment adapter, storage adapters, and production
-  `add_main()`.
 - Clear all: `howdy/src/cli/clear.cpp` — inspect and delete all user models.
 - Edit config: `howdy/src/cli/config.cpp` and
-  `howdy/src/cli/config_edit_session.cpp` — safe editor workflow and atomic
+  `howdy/src/cli/config/edit_session.cpp` — safe editor workflow and atomic
   installation.
 - Toggle auth: `howdy/src/cli/disable.cpp` — enable or disable auth.
 - List models: `howdy/src/cli/list.cpp` — show user-model IDs.
@@ -29,52 +28,53 @@ snapshot generation. Keep `howdy` as the sole installed user-facing command.
 - Set config: `howdy/src/cli/set.cpp` — update one config value atomically.
 - Download ONNX: `howdy/src/cli/download_models.cpp` — pinned packaged-model
   fetch, integrity, and installation policy.
-- Snapshot policy/writer: `howdy/src/cli/snapshot.cpp` — frame validation,
-  secure snapshot directory, composition/writer, staged atomic installation,
-  and `snapshot_main_with_dependencies()`.
-- Snapshot production adapters: `howdy/src/cli/snapshot_main.cpp` — production
-  camera capture, timestamp/path generation, `cv::imencode`, runtime adapters,
-  and production `snapshot_main()`.
+- Snapshot production facade: `howdy/src/cli/snapshot.cpp` — production camera
+  capture, timestamp/path generation, `cv::imencode`, runtime adapters, and
+  `snapshot_main()`.
+- Snapshot workflow/writer: `howdy/src/cli/snapshot/workflow.cpp` — frame
+  validation, secure snapshot directory, composition/writer, staged atomic
+  installation, and `snapshot_main_with_dependencies()`.
 - Camera test: `howdy/src/cli/test.cpp` — one CLI/composition source for
   production preview setup and `test_main_with_dependencies()`/`test_main()`.
-  Reusable preview responsibilities live in `test_preview_session.*`,
-  `test_preview_renderer.*`, and `preview_engine.*`; do not invent a second
+  Reusable preview responsibilities live in `test/preview_session.*`,
+  `test/preview_renderer.*`, and `preview_engine.*`; do not invent a second
   production entrypoint source for this command.
 
 ## Internal Headers and Injection Seams
 
 CLI commands use dependency injection for deterministic tests.
 
-- `include/app/howdy_internal.hpp`: `HowdyDependencies`,
+- `include/app/howdy/internal.hpp`: `HowdyDependencies`,
   `howdy_main_with_dependencies()`
-- `include/cli/add_internal.hpp`: `AddDependencies`,
+- `include/cli/add/internal.hpp`: `AddDependencies`,
   `add_main_with_dependencies()`
-- `include/cli/clear_internal.hpp`: `ClearDependencies`,
+- `include/cli/clear/internal.hpp`: `ClearDependencies`,
   `clear_main_with_dependencies()`
-- `include/cli/disable_internal.hpp`: `DisableDependencies`,
+- `include/cli/disable/internal.hpp`: `DisableDependencies`,
   `disable_main_with_dependencies()`
-- `include/cli/list_internal.hpp`: `ListDependencies`,
+- `include/cli/list/internal.hpp`: `ListDependencies`,
   `list_main_with_dependencies()`
-- `include/cli/remove_internal.hpp`: `RemoveDependencies`,
+- `include/cli/remove/internal.hpp`: `RemoveDependencies`,
   `remove_main_with_dependencies()`
-- `include/cli/set_internal.hpp`: `SetDependencies`,
+- `include/cli/set/internal.hpp`: `SetDependencies`,
   `set_main_with_dependencies()`
-- `include/cli/config_internal.hpp`: `ConfigDependencies`, `TempConfigCopy`,
+- `include/cli/config/internal.hpp`: `ConfigDependencies`, `TempConfigCopy`,
   `config_main_with_dependencies()`
-- `include/cli/test_cli_internal.hpp`: `TestDependencies`,
+- `include/cli/test/internal.hpp`: `TestDependencies`,
   `test_main_with_dependencies()`, `run_preview_preflight()`, and
   `has_graphical_display_environment()`
-- `include/cli/snapshot_internal.hpp`: `SnapshotDependencies`,
+- `include/cli/snapshot/internal.hpp`: `SnapshotDependencies`,
   `SnapshotWriterDependencies`, `snapshot_main_with_dependencies()`,
   `write_snapshot_at_path()`, and `write_snapshot_with_unique_path()`
-- `include/cli/enrollment_capture.hpp`: `capture_enrollment_sample()`,
+- `include/cli/add/enrollment_capture.hpp`: `capture_enrollment_sample()`,
   `EnrollmentCaptureResult`, and `classify_enrollment_capture_failure()`
-- `include/cli/download_models_internal.hpp`: download-model internals
+- `include/cli/download_models/internal.hpp`: download-model internals
 
-`add.cpp` and `snapshot.cpp` contain shared/injected command policy. Their
-`*_main.cpp` files contain production integration only because those existing
-boundaries reduce dependency coupling. This is not a requirement for every CLI
-command.
+At module scope, a CLI command exposes only its `<command>.cpp` /
+`<command>.hpp` facade. Additional implementation files live under the matching
+`<command>/` directory. Shared/test-facing internal contracts use
+`include/cli/<command>/internal.hpp`; private source-only helpers stay under
+`src/cli/<command>/`. Do not create empty mirror directories solely for symmetry.
 
 `snapshot_internal::kSnapshotFrameCount` is the single frame-count invariant
 shared by injected snapshot policy and production camera capture.
@@ -82,7 +82,7 @@ shared by injected snapshot policy and production camera capture.
 ## Conventions
 
 - Add commands through dispatcher dependencies in
-  `include/app/howdy_internal.hpp`; do not add standalone executables.
+  `include/app/howdy/internal.hpp`; do not add standalone executables.
 - Dispatcher owns top-level syntax, `--` end-of-options handling, command
   metadata validation, `-U/--user` target resolution, root requirement, root-user
   rejection, and invalid model-user validation. It forwards applicable normalized

@@ -1,5 +1,5 @@
-#include "cli/disable_cli.hpp"
-#include "cli/disable_internal.hpp"
+#include "cli/disable.hpp"
+#include "cli/disable/internal.hpp"
 #include "test_support.hpp"
 
 #include <array>

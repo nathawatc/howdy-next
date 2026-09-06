@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cli/config_edit_session.hpp"
+#include "cli/config/edit_session.hpp"
 
 namespace howdy::native::config_internal {
 

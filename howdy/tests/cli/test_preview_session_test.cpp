@@ -1,5 +1,5 @@
-#include "cli/test_cli_internal.hpp"
-#include "cli/test_preview_session.hpp"
+#include "cli/test/internal.hpp"
+#include "cli/test/preview_session.hpp"
 #include "test_support.hpp"
 
 #include <chrono>

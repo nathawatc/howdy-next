@@ -12,7 +12,7 @@ PAM-enabled services.
 | File                                          | Role                                                                                                                                                            |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/module/main.cpp`                         | PAM authentication entry point                                                                                                                                  |
-| `src/module/unsupported_entrypoints.cpp`      | Unsupported PAM hooks returning `PAM_IGNORE`                                                                                                                    |
+| `src/module/main/unsupported_entrypoints.cpp` | Unsupported PAM hooks returning `PAM_IGNORE`                                                                                                                    |
 | `src/module/auth_flow.cpp`                    | Auth policy, readiness, status mapping, and coordinator composition                                                                                             |
 | `src/runtime/runtime_session.cpp`             | Auth-helper staging, typed config load, and staged cleanup                                                                                                      |
 | `src/runtime/auth_helper_process.cpp`         | Auth-helper high-level orchestration and public API                                                                                                             |

@@ -1,4 +1,4 @@
-#include "internal_fd.hpp"
+#include "prompt/internal_fd.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>

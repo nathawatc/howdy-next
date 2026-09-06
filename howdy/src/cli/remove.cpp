@@ -1,5 +1,5 @@
-#include "cli/remove_cli.hpp"
-#include "cli/remove_internal.hpp"
+#include "cli/remove.hpp"
+#include "cli/remove/internal.hpp"
 #include "storage/user_models.hpp"
 
 #include <charconv>

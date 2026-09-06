@@ -1,5 +1,5 @@
 #include "config/config_limits.hpp"
-#include "config/config_test_hooks.hpp"
+#include "config/test_hooks.hpp"
 #include "config/runtime_config.hpp"
 #include "test_support.hpp"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "compare/privileges_internal.hpp"
+#include "compare/privileges/internal.hpp"
 #include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 

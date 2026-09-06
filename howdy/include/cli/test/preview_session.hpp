@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cli/test_cli_internal.hpp"
+#include "cli/test/internal.hpp"
 #include "config/runtime_config.hpp"
 #include "vision/preview_engine.hpp"
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cli/add_internal.hpp"
+#include "cli/add/internal.hpp"
 #include "test_support.hpp"
 
 #include <sstream>

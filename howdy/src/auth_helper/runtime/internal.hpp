@@ -2,7 +2,7 @@
 
 #include "auth_helper/acl.hpp"
 #include "auth_helper/runtime.hpp"
-#include "auth_helper/runtime_internal.hpp"
+#include "auth_helper/runtime/internal.hpp"
 
 #include <array>
 #include <filesystem>

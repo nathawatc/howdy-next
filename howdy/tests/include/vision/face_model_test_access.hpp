@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vision/face_model_internal.hpp"
+#include "vision/face_model/internal.hpp"
 
 #include <utility>
 

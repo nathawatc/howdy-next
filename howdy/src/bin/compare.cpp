@@ -2,7 +2,7 @@
 #include "compare/capture_session.hpp"
 #include "compare/engine.hpp"
 #include "compare/logic.hpp"
-#include "compare/processing_internal.hpp"
+#include "compare/processing.hpp"
 #include "compare/sandbox.hpp"
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"

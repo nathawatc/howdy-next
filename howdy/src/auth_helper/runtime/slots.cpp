@@ -1,6 +1,6 @@
 #include "auth_helper/acl.hpp"
 #include "auth_helper/runtime.hpp"
-#include "auth_helper/runtime_internal.hpp"
+#include "auth_helper/runtime/internal.hpp"
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"

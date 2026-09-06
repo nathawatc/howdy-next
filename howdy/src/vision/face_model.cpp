@@ -2,8 +2,8 @@
 
 #include "config/runtime_paths.hpp"
 #include "model_assets/model_file.hpp"
-#include "vision/face_encoding_internal.hpp"
-#include "vision/face_model_internal.hpp"
+#include "vision/face_encoding/internal.hpp"
+#include "vision/face_model/internal.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <exception>

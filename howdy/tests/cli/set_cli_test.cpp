@@ -1,4 +1,4 @@
-#include "cli/set_internal.hpp"
+#include "cli/set/internal.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>

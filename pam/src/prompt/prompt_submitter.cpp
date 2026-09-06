@@ -1,6 +1,6 @@
 #include "prompt/prompt_submitter.hpp"
 
-#include "internal_fd.hpp"
+#include "prompt/internal_fd.hpp"
 
 #include <fcntl.h>
 #include <memory>

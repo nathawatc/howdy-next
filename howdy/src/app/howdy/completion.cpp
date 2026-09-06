@@ -1,5 +1,5 @@
 #include "app/command_catalog.hpp"
-#include "app/howdy_completion_internal.hpp"
+#include "completion/internal.hpp"
 #include "config/config_schema.hpp"
 
 #include <algorithm>

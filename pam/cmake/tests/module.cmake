@@ -35,7 +35,7 @@ howdy_add_pam_test(
 	pam_abi_entrypoints_test
 	pam-abi-entrypoints
 	tests/module/abi_entrypoints_test.cpp
-	src/module/unsupported_entrypoints.cpp
+	src/module/main/unsupported_entrypoints.cpp
 )
 target_link_libraries(pam_abi_entrypoints_test PRIVATE pam_entrypoint)
 

@@ -1,6 +1,6 @@
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "auth_helper/command.hpp"
-#include "auth_helper/runtime_internal.hpp"
+#include "auth_helper/runtime/internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "test_support.hpp"
 

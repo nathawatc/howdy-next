@@ -3,7 +3,7 @@
 #include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "auth_helper/auth_helper_test_io.hpp"
-#include "auth_helper/runtime_internal.hpp"
+#include "auth_helper/runtime/internal.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cli/download_models_internal.hpp"
+#include "cli/download_models/internal.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>

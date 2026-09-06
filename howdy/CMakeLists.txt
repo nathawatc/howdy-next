@@ -73,7 +73,7 @@ add_library(
 	howdy_runtime_paths
 	STATIC
 	src/config/runtime_paths.cpp
-	src/config/runtime_config_defaults.cpp
+	src/config/runtime_config/defaults.cpp
 )
 howdy_configure_native_target(howdy_runtime_paths)
 target_link_libraries(howdy_runtime_paths PUBLIC howdy_config)
@@ -81,6 +81,7 @@ target_link_libraries(howdy_runtime_paths PUBLIC howdy_config)
 add_library(
 	howdy_user_model_readiness STATIC
 	src/storage/user_model_readiness.cpp
+	src/storage/user_model_readiness/internal.hpp
 	src/storage/user_model_readiness/staged.cpp
 )
 howdy_configure_native_target(howdy_user_model_readiness)
@@ -114,8 +115,8 @@ target_link_libraries(
 add_library(
 	howdy_test_preview
 	STATIC
-	src/cli/test_preview_session.cpp
-	src/cli/test_preview_renderer.cpp
+	src/cli/test/preview_session.cpp
+	src/cli/test/preview_renderer.cpp
 )
 howdy_configure_native_target(howdy_test_preview)
 target_link_libraries(
@@ -175,6 +176,7 @@ target_link_libraries(
 add_library(
 	howdy_compare_privileges STATIC
 	src/compare/privileges.cpp
+	src/compare/privileges/internal.hpp
 	src/compare/privileges/operations.cpp
 	src/compare/privileges/verification.cpp
 )
@@ -214,6 +216,7 @@ add_library(
 	howdy_auth_helper_core STATIC
 	src/auth_helper/acl.cpp
 	src/auth_helper/runtime.cpp
+	src/auth_helper/runtime/internal.hpp
 	src/auth_helper/runtime/sources.cpp
 	src/auth_helper/runtime/slots.cpp
 	src/auth_helper/command.cpp
@@ -243,20 +246,22 @@ add_library(
 	howdy_cli
 	STATIC
 	src/app/howdy.cpp
-	src/app/howdy_cli.cpp
-	src/app/howdy_completion.cpp
+	src/app/howdy/cli.cpp
+	src/app/howdy/cli/internal.hpp
+	src/app/howdy/completion.cpp
+	src/app/howdy/completion/internal.hpp
 	src/cli/add.cpp
-	src/cli/add_main.cpp
+	src/cli/add/workflow.cpp
 	src/cli/clear.cpp
 	src/cli/config.cpp
-	src/cli/config_edit_session.cpp
+	src/cli/config/edit_session.cpp
 	src/cli/disable.cpp
 	src/cli/download_models.cpp
 	src/cli/list.cpp
 	src/cli/remove.cpp
 	src/cli/set.cpp
 	src/cli/snapshot.cpp
-	src/cli/snapshot_main.cpp
+	src/cli/snapshot/workflow.cpp
 	src/cli/test.cpp
 )
 howdy_configure_native_target(howdy_cli)

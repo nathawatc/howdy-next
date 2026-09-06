@@ -19,7 +19,7 @@ For CLI work across mirrored include/source/test paths, also read
 - `config/config_schema.*` is the single source of truth for runtime option
   metadata, validation rules, and packaged fallback values. Generate packaged
   `config.ini` from it; do not edit generated config manually. Keep runtime-only
-  defaults in `src/config/runtime_config_defaults.cpp`.
+  defaults in `src/config/runtime_config/defaults.cpp`.
 - Use `support/fd_io.hpp` functions such as
   `read_fd_to_string_bounded()` and `write_all_to_fd()` for bounded FD I/O.
 - Use `vision/frame_validation.hpp` before frame transformations or inference.
@@ -52,7 +52,7 @@ For CLI work across mirrored include/source/test paths, also read
 - Auth-helper protocol keys are shared through
   `protocol/auth_helper_protocol.hpp`; validate both required keys and reject
   malformed, duplicate, unknown, or incomplete output.
-- `storage/user_model_store_test_hooks.hpp` remains under production includes
+- `storage/user_model_store/test_hooks.hpp` remains under production includes
   because `user_model_store.cpp` implements always-linked deterministic hooks.
   Do not expose package test include directories to production targets.
 - Keep OpenCV include directories marked as system includes through
@@ -62,21 +62,21 @@ For CLI work across mirrored include/source/test paths, also read
 
 Production CLI integration adapters may be separated from injected/shared
 command policy when an existing dependency boundary already permits separation.
-Do not create a split by pattern alone, and do not imply every command needs a
-`*_main.cpp` file.
+Do not create a split by pattern alone. A component may expose at most its
+`<component>.cpp` / `<component>.hpp` facade at module scope; additional
+implementation files belong under the matching `<component>/` directory.
 
-- `src/cli/add.cpp` owns command policy and
-  `add_main_with_dependencies()`:
-  argument/label policy, status/diagnostic mapping, and injected orchestration.
-- `src/cli/add_main.cpp` owns production `RuntimeConfig` loading,
-  `FaceModel` lifecycle, existing-model inspection,
-  `VideoCapture`/enrollment integration, storage adapters, and production
-  `add_main()`.
-- `src/cli/snapshot.cpp` owns frame validation, secure snapshot-directory
+- `src/cli/add.cpp` owns production `RuntimeConfig` loading, `FaceModel`
+  lifecycle, existing-model inspection, `VideoCapture`/enrollment integration,
+  storage adapters, and production `add_main()`.
+- `src/cli/add/workflow.cpp` owns injected add command policy:
+  argument/label policy, status/diagnostic mapping, and
+  `add_main_with_dependencies()`.
+- `src/cli/snapshot.cpp` owns production camera capture, timestamp/path
+  generation, `cv::imencode`, runtime adapters, and production `snapshot_main()`.
+- `src/cli/snapshot/workflow.cpp` owns frame validation, secure snapshot-directory
   handling, composition/writing, staged atomic installation, and
   `snapshot_main_with_dependencies()`.
-- `src/cli/snapshot_main.cpp` owns production camera capture, timestamp/path
-  generation, `cv::imencode`, runtime adapters, and production `snapshot_main()`.
 
 ## Compare Runtime Boundaries
 
@@ -101,7 +101,7 @@ Do not create a split by pattern alone, and do not imply every command needs a
     and verification
   - `src/compare/privileges/internal.hpp`: private cross-TU implementation
     contract (internal plumbing only, not installed, not public)
-  - `include/compare/privileges_internal.hpp`: existing test/dependency-injection
+  - `include/compare/privileges/internal.hpp`: existing test/dependency-injection
     contract, distinct from the private production header
 
 ## Production Cohesion

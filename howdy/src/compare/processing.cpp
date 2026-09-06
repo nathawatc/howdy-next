@@ -1,4 +1,4 @@
-#include "compare/processing_internal.hpp"
+#include "compare/processing.hpp"
 
 namespace howdy::native::compare_processing_internal {
 

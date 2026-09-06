@@ -1,5 +1,5 @@
-#include "cli/download_models_cli.hpp"
-#include "cli/download_models_internal.hpp"
+#include "cli/download_models.hpp"
+#include "cli/download_models/internal.hpp"
 #include "config/runtime_paths.hpp"
 #include "model_assets/model_file.hpp"
 #include "support/atomic_files.hpp"

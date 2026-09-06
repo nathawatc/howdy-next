@@ -1,5 +1,5 @@
-#include "cli/list_cli.hpp"
-#include "cli/list_internal.hpp"
+#include "cli/list.hpp"
+#include "cli/list/internal.hpp"
 #include "storage/user_models.hpp"
 
 #include <array>

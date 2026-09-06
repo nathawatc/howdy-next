@@ -15,6 +15,7 @@ target_include_directories(
 add_library(
 	pam_runtime STATIC
 	src/runtime/auth_helper_process.cpp
+	src/runtime/auth_helper_process/internal.hpp
 	src/runtime/auth_helper_process/io.cpp
 	src/runtime/auth_helper_process/lease.cpp
 	src/runtime/auth_helper_process/spawn.cpp
@@ -90,7 +91,7 @@ target_link_libraries(
 add_library(
 	pam_howdy MODULE
 	src/module/main.cpp
-	src/module/unsupported_entrypoints.cpp
+	src/module/main/unsupported_entrypoints.cpp
 )
 howdy_configure_pam_target(pam_howdy)
 target_compile_definitions(

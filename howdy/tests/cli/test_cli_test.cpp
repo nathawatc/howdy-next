@@ -1,4 +1,4 @@
-#include "cli/test_cli_internal.hpp"
+#include "cli/test/internal.hpp"
 #include "test_support.hpp"
 #include "vision/preview_engine.hpp"
 

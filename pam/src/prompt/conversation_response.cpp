@@ -1,6 +1,6 @@
 #include "prompt/conversation_response.hpp"
 
-#include "conversation_response_internal.hpp"
+#include "prompt/conversation_response/internal.hpp"
 
 #include <cstdlib>
 #include <cstring>

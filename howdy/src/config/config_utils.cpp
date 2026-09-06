@@ -3,7 +3,7 @@
 #include "config/config_limits.hpp"
 #include "config/config_reader.hpp"
 #include "config/config_schema.hpp"
-#include "config/config_test_hooks.hpp"
+#include "config/test_hooks.hpp"
 #include "config/config_validation.hpp"
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"

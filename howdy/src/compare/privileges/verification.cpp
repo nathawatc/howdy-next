@@ -1,5 +1,5 @@
 #include "compare/privileges.hpp"
-#include "compare/privileges_internal.hpp"
+#include "compare/privileges/internal.hpp"
 #include "internal.hpp"
 #include "protocol/compare_exit.hpp"
 

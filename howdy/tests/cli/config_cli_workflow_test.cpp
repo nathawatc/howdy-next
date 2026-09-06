@@ -1,5 +1,5 @@
 #include "cli/config_cli_test_support.hpp"
-#include "cli/config_internal.hpp"
+#include "cli/config/internal.hpp"
 #include "test_support.hpp"
 
 #include <array>

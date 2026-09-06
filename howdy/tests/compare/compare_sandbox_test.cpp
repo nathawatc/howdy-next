@@ -1,5 +1,5 @@
 #include "compare/sandbox.hpp"
-#include "compare/sandbox_internal.hpp"
+#include "compare/sandbox/internal.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>

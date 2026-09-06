@@ -1,5 +1,5 @@
-#include "cli/config_cli.hpp"
-#include "cli/config_internal.hpp"
+#include "cli/config.hpp"
+#include "cli/config/internal.hpp"
 #include "config/config_utils.hpp"
 
 #include <filesystem>

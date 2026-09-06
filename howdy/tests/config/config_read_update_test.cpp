@@ -1,4 +1,4 @@
-#include "config/config_test_hooks.hpp"
+#include "config/test_hooks.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "config/config_validation.hpp"

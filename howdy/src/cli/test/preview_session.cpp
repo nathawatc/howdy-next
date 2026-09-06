@@ -1,4 +1,4 @@
-#include "cli/test_preview_session.hpp"
+#include "cli/test/preview_session.hpp"
 
 #include <algorithm>
 #include <chrono>

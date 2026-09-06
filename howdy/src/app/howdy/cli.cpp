@@ -1,5 +1,5 @@
 #include "app/command_catalog.hpp"
-#include "app/howdy_cli_internal.hpp"
+#include "cli/internal.hpp"
 
 #include <algorithm>
 #include <iomanip>

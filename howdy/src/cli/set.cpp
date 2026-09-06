@@ -1,5 +1,5 @@
-#include "cli/set_cli.hpp"
-#include "cli/set_internal.hpp"
+#include "cli/set.hpp"
+#include "cli/set/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 

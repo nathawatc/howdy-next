@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/command_catalog.hpp"
-#include "app/howdy_internal.hpp"
+#include "app/howdy/internal.hpp"
 
 #include <array>
 #include <optional>

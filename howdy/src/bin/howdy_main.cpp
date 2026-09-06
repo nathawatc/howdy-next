@@ -1,4 +1,4 @@
-#include "app/howdy_cli.hpp"
+#include "app/howdy.hpp"
 
 #include <exception>
 #include <iostream>

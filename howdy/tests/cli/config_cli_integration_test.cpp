@@ -1,8 +1,8 @@
-#include "cli/config_cli.hpp"
+#include "cli/config.hpp"
 #include "cli/config_cli_test_support.hpp"
-#include "cli/config_edit_session.hpp"
+#include "cli/config/edit_session.hpp"
 #include "config/config_limits.hpp"
-#include "config/config_test_hooks.hpp"
+#include "config/test_hooks.hpp"
 #include "test_support.hpp"
 
 #include <array>

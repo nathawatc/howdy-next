@@ -1,5 +1,5 @@
 #include "test_support.hpp"
-#include "vision/face_encoding_internal.hpp"
+#include "vision/face_encoding/internal.hpp"
 
 #include <cstdint>
 #include <limits>

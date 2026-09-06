@@ -1,7 +1,7 @@
 #include "auth_helper/runtime.hpp"
 
 #include "auth_helper/acl.hpp"
-#include "auth_helper/runtime_internal.hpp"
+#include "auth_helper/runtime/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/auth_helper_protocol.hpp"
