@@ -56,3 +56,12 @@ target_link_libraries(
 	pam_auth_flow_helpers_test
 	PRIVATE pam_entrypoint pam_module
 )
+
+add_test(
+	NAME pam-module-exports
+	COMMAND
+		"${CMAKE_COMMAND}"
+		"-DNM=${CMAKE_NM}"
+		"-DMODULE=$<TARGET_FILE:pam_howdy>"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests/check_module_exports.cmake"
+)

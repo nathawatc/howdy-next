@@ -98,6 +98,7 @@ target_compile_definitions(
 	pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
 target_link_libraries(pam_howdy PRIVATE pam_production_entrypoint)
+target_link_options(pam_howdy PRIVATE "LINKER:--exclude-libs,ALL")
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
 install(
 	TARGETS pam_howdy
