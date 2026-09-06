@@ -54,7 +54,10 @@ add_library(
 )
 howdy_configure_pam_target(pam_module)
 target_compile_definitions(
-	pam_module PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+	pam_module
+	PRIVATE
+		HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+		LOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}"
 )
 target_link_libraries(
 	pam_module
