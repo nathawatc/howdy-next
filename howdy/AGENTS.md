@@ -114,9 +114,17 @@ maintenance problem requires change:
 - `storage/user_model_codec.cpp`
 - `config/config_schema.cpp`
 - `config/config_utils.cpp`
-- `auth_helper/runtime.cpp`
 - `app/command_catalog.cpp`
 - `cli/download_models.cpp`
+- Auth-helper runtime (`src/auth_helper/runtime.cpp`,
+  `src/auth_helper/runtime/sources.cpp`,
+  `src/auth_helper/runtime/slots.cpp`, and
+  `src/auth_helper/runtime/internal.hpp`): treat these files as one cohesive,
+  security-sensitive subsystem. Do not fragment the subsystem further merely
+  because individual files become long. Explicitly preserve descriptor-relative
+  validation, ACL/mode/owner checks, source-stability verification,
+  generation-slot locking, fresh-slot reuse, slot refresh ordering, lease
+  identity, and fail-closed invalid state handling.
 - Compare privilege dropping (`src/compare/privileges.cpp`,
   `src/compare/privileges/operations.cpp`,
   `src/compare/privileges/verification.cpp`, and

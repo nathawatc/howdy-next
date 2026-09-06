@@ -214,6 +214,8 @@ add_library(
 	howdy_auth_helper_core STATIC
 	src/auth_helper/acl.cpp
 	src/auth_helper/runtime.cpp
+	src/auth_helper/runtime/sources.cpp
+	src/auth_helper/runtime/slots.cpp
 	src/auth_helper/command.cpp
 )
 howdy_configure_native_target(howdy_auth_helper_core)
