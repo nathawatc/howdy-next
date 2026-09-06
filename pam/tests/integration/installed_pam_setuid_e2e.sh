@@ -162,7 +162,7 @@ IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<<"$passwd_record"
 [[ $selected_uid =~ ^[0-9]+$ && $selected_uid -gt 0 ]] || skip "selected account must be non-root"
 [[ $selected_gid =~ ^[0-9]+$ ]] || skip "selected account has invalid primary GID"
 getent group "$selected_gid" >/dev/null || skip "selected account primary group does not exist"
-for command in setpriv findmnt flock mount umount realpath cmake python3 stat getfacl; do
+for command in setpriv findmnt flock mount umount realpath cmake stat getfacl; do
 	command -v "$command" >/dev/null || skip "$command unavailable"
 done
 validate_opt_directory || fail "unsafe /opt directory"
@@ -270,17 +270,16 @@ grep -Fx "inline constexpr auto kConfiguredUserModelsDir = \"$models\";" "$paths
 grep -Fx "inline constexpr auto kAuthHelperPath = \"$helper\";" "$paths_header" >/dev/null ||
 	fail "compiled helper path mismatch"
 
-python3 - "$config" <<'PY'
-from pathlib import Path
-import sys
-p = Path(sys.argv[1]); text = p.read_text()
-for key, value in {"disabled": "true", "abort_if_ssh": "false", "abort_if_lid_closed": "false"}.items():
-    lines = text.splitlines()
-    hits = [i for i, line in enumerate(lines) if line.startswith(f"{key} = ")]
-    if len(hits) != 1: raise SystemExit(f"expected one {key} setting")
-    lines[hits[0]] = f"{key} = {value}"; text = "\n".join(lines) + "\n"
-p.write_text(text)
-PY
+for setting in \
+	"disabled true" \
+	"abort_if_ssh false" \
+	"abort_if_lid_closed false"; do
+	key=${setting%% *}
+	value=${setting#* }
+	count=$(grep -c "^${key} = " "$config" || true)
+	[[ $count -eq 1 ]] || fail "expected one $key setting"
+	sed -i "s/^${key} = .*/${key} = ${value}/" "$config"
+done
 chown 0:0 "$config"; chmod 0640 "$config"
 source_model=$user_models_dir/$selected_user.dat
 write_source_model() {

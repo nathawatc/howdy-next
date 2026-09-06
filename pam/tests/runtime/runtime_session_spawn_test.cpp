@@ -4,10 +4,12 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 
 namespace {
@@ -198,16 +200,13 @@ namespace {
 	};
 
 	auto exec_probe_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
-		const auto           &context   = *static_cast<const ExecProbeContext *>(request.context);
-		std::string           code      = "import pathlib,socket,sys; s=socket.socket(fileno=3); "
-		                                  "assert s.family==socket.AF_UNIX and s.type==socket.SOCK_SEQPACKET; "
-		                                  "pathlib.Path(sys.argv[1]).touch()";
-		std::string           marker    = context.marker.string();
-		std::array<char *, 5> arguments = {const_cast<char *>("python3"), const_cast<char *>("-c"),
-		                                   code.data(), marker.data(), nullptr};
+		const auto           &context = *static_cast<const ExecProbeContext *>(request.context);
+		std::string           marker  = context.marker.string();
+		std::array<char *, 4> arguments = {const_cast<char *>("pam_runtime_session_test"),
+		                                   const_cast<char *>("--fd3-probe"), marker.data(), nullptr};
 		std::array<char *, 1> environment = {nullptr};
-		return posix_spawnp(request.child_pid, "python3", request.actions, nullptr,
-		                    arguments.data(), environment.data());
+		return posix_spawn(request.child_pid, "/proc/self/exe", request.actions, nullptr,
+		                   arguments.data(), environment.data());
 	}
 
 	auto test_real_descriptor_collision() -> bool {
@@ -543,6 +542,28 @@ namespace {
 	}
 
 }  // namespace
+
+auto run_runtime_session_fd3_probe(const char *marker_path) -> int {
+	int       socket_type = 0;
+	socklen_t type_length = sizeof(socket_type);
+	if (getsockopt(3, SOL_SOCKET, SO_TYPE, &socket_type, &type_length) != 0 ||
+	    socket_type != SOCK_SEQPACKET) {
+		return EXIT_FAILURE;
+	}
+
+	sockaddr_un address{};
+	socklen_t   address_length = sizeof(address);
+	if (getsockname(3, reinterpret_cast<sockaddr *>(&address), &address_length) != 0 ||
+	    address.sun_family != AF_UNIX) {
+		return EXIT_FAILURE;
+	}
+
+	const int marker_fd = open(marker_path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+	if (marker_fd < 0) {
+		return EXIT_FAILURE;
+	}
+	return close(marker_fd) == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
 
 auto run_runtime_session_spawn_tests() -> bool {
 	bool ok = true;

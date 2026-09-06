@@ -553,7 +553,11 @@ namespace {
 
 }  // namespace
 
-auto main() -> int {
+auto main(int argc, char **argv) -> int {
+	if (argc == 3 && std::string_view(argv[1]) == "--fd3-probe") {
+		return run_runtime_session_fd3_probe(argv[2]);
+	}
+
 	bool ok = true;
 	ok &= test_direct_success();
 	ok &= test_direct_parse_failure();
