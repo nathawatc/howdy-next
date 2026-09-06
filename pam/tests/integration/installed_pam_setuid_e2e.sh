@@ -4,6 +4,14 @@ set -euo pipefail
 skip() { printf 'SKIP: %s\n' "$1"; exit 77; }
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 as_user() { setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups "$@"; }
+assert_locked() {
+	local path=$1 message=$2 status
+	set +e
+	flock -n "$path" true
+	status=$?
+	set -e
+	[[ $status -eq 1 ]] || fail "$message: flock exited $status"
+}
 validate_install_prefix() {
 	local input=$1 normalized parent basename canonical_parent
 	validated_install_prefix=
@@ -89,9 +97,9 @@ if [[ ${1:-} == --validate-paths ]]; then
 	exit 0
 fi
 
-[[ $# -eq 7 ]] || fail "expected seven path arguments"
+[[ $# -eq 8 ]] || fail "expected eight path arguments"
 build_dir=$1 raw_install_prefix=$2 raw_pam_dir=$3 raw_helper_dir=$4 raw_config_dir=$5
-raw_user_models_dir=$6 driver=$7
+raw_user_models_dir=$6 driver=$7 runtime_driver=$8
 validate_install_prefix "$raw_install_prefix" || fail "unsafe isolated install prefix"
 install_prefix=$validated_install_prefix
 validate_install_subdir "$raw_pam_dir" || fail "unsafe PAM directory"
@@ -154,7 +162,7 @@ IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<<"$passwd_record"
 [[ $selected_uid =~ ^[0-9]+$ && $selected_uid -gt 0 ]] || skip "selected account must be non-root"
 [[ $selected_gid =~ ^[0-9]+$ ]] || skip "selected account has invalid primary GID"
 getent group "$selected_gid" >/dev/null || skip "selected account primary group does not exist"
-for command in setpriv findmnt getfacl mount umount realpath cmake python3; do
+for command in setpriv findmnt flock mount umount realpath cmake python3 stat getfacl; do
 	command -v "$command" >/dev/null || skip "$command unavailable"
 done
 validate_opt_directory || fail "unsafe /opt directory"
@@ -162,12 +170,32 @@ validate_opt_directory || fail "unsafe /opt directory"
 runtime_before=$(mktemp)
 runtime_after=$(mktemp)
 source_snapshot=$(mktemp)
-helper_output_file=$(mktemp)
-service_dir= prepared_root= masked_config_dir= cleanup_install_prefix= config_masked=false
+source_model_snapshot=$(mktemp)
+model_b_snapshot=$(mktemp)
+model_c_snapshot=$(mktemp)
+third_error=$(mktemp)
+service_dir= masked_config_dir= cleanup_install_prefix= config_masked=false
 runtime_isolated=false helper=
+a_pid= b_pid= c_pid= a_write_fd= b_write_fd= c_write_fd=
 cleanup() {
 	status=$?
 	trap - EXIT HUP INT TERM
+	trap '' PIPE
+	for holder in a b c; do
+		case $holder in
+			a) pid=${a_pid:-}; fd=${a_write_fd:-} ;;
+			b) pid=${b_pid:-}; fd=${b_write_fd:-} ;;
+			c) pid=${c_pid:-}; fd=${c_write_fd:-} ;;
+		esac
+		if [[ -n $fd ]]; then
+			printf 'release\n' >&"$fd" 2>/dev/null || true
+			eval "exec ${fd}>&-"
+		fi
+		if [[ -n $pid ]]; then
+			kill "$pid" >/dev/null 2>&1 || true
+			wait "$pid" >/dev/null 2>&1 || true
+		fi
+	done
 	if $runtime_isolated; then
 		cleanup_new_runtime_dirs "$runtime_before"
 		snapshot_runtime_dirs "$runtime_after"
@@ -184,7 +212,8 @@ cleanup() {
 		$(realpath -e -- "$cleanup_install_prefix") == "$cleanup_install_prefix" ]]; then
 		rm -rf -- "$cleanup_install_prefix"
 	fi
-	rm -f -- "$runtime_before" "$runtime_after" "$source_snapshot" "$helper_output_file"
+	rm -f -- "$runtime_before" "$runtime_after" "$source_snapshot" \
+		"$source_model_snapshot" "$model_b_snapshot" "$model_c_snapshot" "$third_error"
 	exit "$status"
 }
 trap cleanup EXIT
@@ -253,8 +282,35 @@ for key, value in {"disabled": "true", "abort_if_ssh": "false", "abort_if_lid_cl
 p.write_text(text)
 PY
 chown 0:0 "$config"; chmod 0640 "$config"
+source_model=$user_models_dir/$selected_user.dat
+write_source_model() {
+	local generation=$1 first=$2 second=$3
+	printf '[{"id":0,"time":%s,"label":"e2e","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[%s,%s]]}]\n' \
+		"$generation" "$first" "$second" >"$source_model"
+}
+write_source_model 1 0.1 0.2
+chown 0:0 "$source_model"
+chmod 0600 "$source_model"
+canonical_source_model=$(realpath -e -- "$source_model") || fail "cannot canonicalize source model"
+[[ $canonical_source_model == "$source_model" ]] || fail "source model path changed identity"
+source_model_metadata=$(stat -c '%u:%g:%a:%h:%d:%i' "$source_model")
+cp -- "$source_model" "$source_model_snapshot"
 cp --preserve=mode,ownership,timestamps "$config" "$source_snapshot"
 as_user test ! -r "$config" || fail "protected source config is readable by selected user"
+as_user test ! -r "$source_model" || fail "protected source model is readable by selected user"
+
+unrelated_uid= unrelated_gid=
+while IFS=: read -r _ _ candidate_uid candidate_gid _; do
+	if [[ $candidate_uid =~ ^[0-9]+$ && $candidate_gid =~ ^[0-9]+$ &&
+		$candidate_uid -gt 0 && $candidate_uid -ne $selected_uid ]]; then
+		unrelated_uid=$candidate_uid
+		unrelated_gid=$candidate_gid
+		break
+	fi
+done < <(getent passwd)
+[[ -n $unrelated_uid ]] || skip "unrelated non-root account unavailable"
+setpriv --reuid "$unrelated_uid" --regid "$unrelated_gid" --clear-groups true ||
+	skip "unrelated account credential transition unavailable"
 
 if [[ -e /etc/howdy ]]; then
 	[[ -d /etc/howdy && ! -L /etc/howdy ]] || skip "host /etc/howdy cannot be masked safely"
@@ -281,91 +337,174 @@ if as_user "$helper" prepare root >/dev/null 2>&1; then
 	fail "helper prepared files for different username"
 fi
 
+probe_error=$(mktemp)
+if as_user "$helper" prepare "$selected_user" 3>&- >/dev/null 2>"$probe_error"; then
+	rm -f "$probe_error"
+	fail "direct helper prepare succeeded without descriptor 3"
+fi
+expected_lease_error="howdy-auth-helper requires an inherited lease socket on descriptor 3"
+[[ $(<"$probe_error") == "$expected_lease_error" ]] || {
+	cat "$probe_error" >&2
+	rm -f "$probe_error"
+	fail "direct helper missing-fd error mismatch"
+}
+rm -f "$probe_error"
+
 snapshot_runtime_dirs "$runtime_before"
-if ! as_user "$helper" prepare "$selected_user" >"$helper_output_file"; then
-	fail "helper prepare failed"
-fi
-if [[ ${HOWDY_E2E_MALFORM_PROTOCOL:-0} == 1 ]]; then
-	printf 'UNKNOWN_KEY=injected\n' >>"$helper_output_file"
-fi
-mapfile -t helper_output <"$helper_output_file"
-[[ ${#helper_output[@]} -eq 2 ]] || fail "helper protocol returned wrong line count"
-declare -A protocol=()
-for line in "${helper_output[@]}"; do
-	[[ $line == *=* ]] || fail "helper protocol line lacks separator"
-	key=${line%%=*}; value=${line#*=}
-	[[ $key == CONFIG_PATH || $key == USER_MODELS_DIR ]] || fail "helper protocol returned unknown key"
-	[[ -z ${protocol[$key]+set} ]] || fail "helper protocol returned duplicate key"
-	[[ $value == /* ]] || fail "helper protocol returned relative path"
-	protocol[$key]=$value
-done
-[[ -n ${protocol[CONFIG_PATH]:-} && -n ${protocol[USER_MODELS_DIR]:-} ]] || fail "helper protocol omitted key"
-staged_config=${protocol[CONFIG_PATH]}; staged_models=${protocol[USER_MODELS_DIR]}
-prepared_candidate=${staged_config%/config.ini}
-[[ $prepared_candidate != "$staged_config" ]] || fail "staged config has unexpected filename"
-[[ -d $prepared_candidate && ! -L $prepared_candidate ]] || fail "runtime root is not real directory"
-prepared_canonical=$(realpath -e -- "$prepared_candidate") || fail "cannot canonicalize runtime root"
-[[ $prepared_candidate == "$prepared_canonical" ]] || fail "runtime root contains path traversal"
-prepared_parent=$(realpath -e -- "$prepared_canonical/..") || fail "cannot canonicalize runtime parent"
-[[ $prepared_parent == /run/howdy ]] || fail "runtime root has unexpected parent"
-prepared_basename=${prepared_canonical##*/}
-[[ $prepared_basename == pam-"$selected_uid"-* &&
-	$prepared_basename != pam-"$selected_uid"- ]] || fail "runtime root has unexpected basename"
-if grep -Fx "$prepared_basename" "$runtime_before" >/dev/null; then
-	fail "helper reused pre-existing runtime root"
-fi
-prepared_root=$prepared_canonical
-[[ $staged_models == "$prepared_root/models" ]] || fail "staged paths do not share runtime root"
-[[ $(stat -c '%u:%g' "$prepared_root") == 0:0 ]] || fail "runtime directory is not root-owned"
-[[ $(stat -c '%u:%g' /run/howdy) == 0:0 ]] || fail "runtime root is not root-owned"
-runtime_mode=$(stat -c '%a' /run/howdy)
-(( (8#$runtime_mode & 0022) == 0 )) || fail "runtime root is group/world writable"
-if ! cmp -s "$config" "$staged_config"; then
-	sha256sum "$config" "$staged_config" >&2
-	diff -u "$config" "$staged_config" >&2 || true
-	fail "staged config differs from source"
-fi
+[[ ! -s $runtime_before ]] || fail "isolated runtime unexpectedly contains selected-user generations"
 
-expected_dir_acl=$(printf 'user::r-x\nuser:%s:r-x\ngroup::---\nmask::r-x\nother::---' "$selected_user")
-[[ $(getfacl -cpE "$prepared_root") == "$expected_dir_acl" ]] || fail "staged directory ACL mismatch"
-expected_file_acl=$(printf 'user::r--\nuser:%s:r--\ngroup::---\nmask::r--\nother::---' "$selected_user")
-[[ $(getfacl -cpE "$staged_config") == "$expected_file_acl" ]] || fail "staged config ACL mismatch"
-expected_hash=$(sha256sum "$config" | awk '{ print $1 }')
-staged_user_hash=$(as_user sha256sum "$staged_config" | awk '{ print $1 }') ||
-	fail "selected user cannot read staged config"
-[[ $staged_user_hash == "$expected_hash" ]] || fail "selected user read unexpected staged data"
+coproc HOLD_A {
+	exec setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups \
+		"$runtime_driver" --hold "$selected_user" "$config" "$user_models_dir"
+}
+exec {a_read_fd}<&"${HOLD_A[0]}"
+exec {a_write_fd}>&"${HOLD_A[1]}"
+a_pid=$HOLD_A_PID
+read -r -t 10 gen_a <&"$a_read_fd" || fail "first runtime holder did not become ready"
+exec {a_read_fd}<&-
+expected_gen0=/run/howdy/pam-$selected_uid-gen000
+expected_gen1=/run/howdy/pam-$selected_uid-gen001
+[[ $gen_a == "$expected_gen0" ]] || fail "first runtime generation mismatch: $gen_a"
+cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" ||
+	fail "first runtime generation content mismatch"
+assert_locked "$gen_a.lock" "first active lease permits exclusive lock"
 
-other_record=$(getent passwd | awk -F: -v uid="$selected_uid" '$3 > 0 && $3 != uid { print; exit }')
-if [[ -n $other_record ]]; then
-	IFS=: read -r _ _ other_uid other_gid _ _ _ <<<"$other_record"
-	if getent group "$other_gid" >/dev/null; then
-		setpriv --reuid "$other_uid" --regid "$other_gid" --init-groups test ! -r "$staged_config" ||
-			fail "another account can read staged config"
-		printf 'Other-user ACL isolation: UID %s\n' "$other_uid"
+write_source_model 2 0.3 0.4
+[[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
+	fail "first source-model mutation changed security metadata or inode"
+cp -- "$source_model" "$model_b_snapshot"
+coproc HOLD_B {
+	exec setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups \
+		"$runtime_driver" --hold "$selected_user" "$config" "$user_models_dir"
+}
+exec {b_read_fd}<&"${HOLD_B[0]}"
+exec {b_write_fd}>&"${HOLD_B[1]}"
+b_pid=$HOLD_B_PID
+read -r -t 10 gen_b <&"$b_read_fd" || fail "second runtime holder did not become ready"
+exec {b_read_fd}<&-
+[[ $gen_b == "$expected_gen1" ]] || fail "second runtime generation mismatch: $gen_b"
+cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" ||
+	fail "second runtime generation did not stage second source content"
+cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" ||
+	fail "first active runtime generation changed after source mutation"
+assert_locked "$gen_a.lock" "first lease released while active"
+assert_locked "$gen_b.lock" "second active lease permits exclusive lock"
+
+write_source_model 3 0.5 0.6
+[[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
+	fail "second source-model mutation changed security metadata or inode"
+cp -- "$source_model" "$model_c_snapshot"
+set +e
+as_user "$runtime_driver" --try "$selected_user" "$config" "$user_models_dir" \
+	>/dev/null 2>"$third_error"
+third_status=$?
+set -e
+[[ $third_status -eq 1 ]] || fail "third runtime request did not fail closed: $third_status"
+[[ $(<"$third_error") == 'Runtime staging failed' ]] || fail "third runtime failure mismatch"
+
+snapshot_runtime_dirs "$runtime_after"
+mapfile -t runtime_names <"$runtime_after"
+[[ ${#runtime_names[@]} -eq 2 && ${runtime_names[0]} == "${expected_gen0##*/}" &&
+	${runtime_names[1]} == "${expected_gen1##*/}" ]] ||
+	fail "runtime generations are not exactly gen000 and gen001"
+
+printf 'release\n' >&"$a_write_fd"
+exec {a_write_fd}>&-
+wait "$a_pid" || fail "first runtime holder failed during release"
+a_pid=
+a_write_fd=
+flock -n "$gen_a.lock" true || fail "released first lease remains locked"
+
+coproc HOLD_C {
+	exec setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups \
+		"$runtime_driver" --hold "$selected_user" "$config" "$user_models_dir"
+}
+exec {c_read_fd}<&"${HOLD_C[0]}"
+exec {c_write_fd}>&"${HOLD_C[1]}"
+c_pid=$HOLD_C_PID
+read -r -t 10 gen_c <&"$c_read_fd" || fail "reused runtime holder did not become ready"
+exec {c_read_fd}<&-
+[[ $gen_c == "$gen_a" ]] || fail "released runtime slot was not reused"
+cmp -s "$model_c_snapshot" "$gen_c/models/$selected_user.dat" ||
+	fail "reused runtime slot did not stage third source content"
+cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" ||
+	fail "second active runtime generation changed during slot reuse"
+assert_locked "$gen_b.lock" "second lease released while active"
+assert_locked "$gen_c.lock" "reused active lease permits exclusive lock"
+
+[[ $(stat -c '%u:%g:%a' /run/howdy) == 0:0:711 ]] || fail "runtime root metadata mismatch"
+printf -v expected_directory_acl 'user::rwx\nuser:%s:r-x\ngroup::---\nmask::r-x\nother::---' "$selected_uid"
+printf -v expected_file_acl 'user::rw-\nuser:%s:r--\ngroup::---\nmask::r--\nother::---' "$selected_uid"
+assert_acl() {
+	local path=$1 expected=$2 actual
+	actual=$(getfacl -cpn -- "$path") || fail "cannot inspect ACL: $path"
+	[[ $actual == "$expected" ]] || fail "ACL mismatch: $path"
+}
+validate_generation() {
+	local generation=$1 lock=$1.lock models_dir=$1/models visible=$1/models/$selected_user.dat
+	local backing=$1/.model_backing
+	[[ $(stat -c '%u:%g:%a' "$generation") == 0:0:750 ]] || fail "runtime generation metadata mismatch: $generation"
+	[[ $(stat -c '%u:%g:%a' "$models_dir") == 0:0:750 ]] || fail "staged models directory metadata mismatch: $models_dir"
+	[[ $(stat -c '%u:%g:%a:%h' "$generation/config.ini") == 0:0:640:1 ]] || fail "staged config metadata mismatch: $generation"
+	[[ $(stat -c '%u:%g:%a:%h' "$lock") == 0:0:600:1 ]] || fail "runtime lock metadata mismatch: $lock"
+	[[ $(stat -c '%u:%g:%a:%h' "$backing") == 0:0:640:2 ]] || fail "model backing metadata mismatch: $backing"
+	[[ $(stat -c '%u:%g:%a:%h' "$visible") == 0:0:640:2 ]] || fail "visible model metadata mismatch: $visible"
+	[[ $(stat -c '%d:%i' "$backing") == "$(stat -c '%d:%i' "$visible")" ]] || fail "model backing and visible inode differ"
+	assert_acl "$generation" "$expected_directory_acl"
+	assert_acl "$models_dir" "$expected_directory_acl"
+	assert_acl "$generation/config.ini" "$expected_file_acl"
+	assert_acl "$visible" "$expected_file_acl"
+	assert_acl "$backing" "$expected_file_acl"
+	as_user cat "$generation/config.ini" >/dev/null || fail "selected user cannot read staged config"
+	as_user cat "$visible" >/dev/null || fail "selected user cannot read staged model"
+	if setpriv --reuid "$unrelated_uid" --regid "$unrelated_gid" --clear-groups cat "$generation/config.ini" >/dev/null 2>&1; then
+		fail "unrelated user can read staged config"
 	fi
-fi
+	if setpriv --reuid "$unrelated_uid" --regid "$unrelated_gid" --clear-groups cat "$visible" >/dev/null 2>&1; then
+		fail "unrelated user can read staged model"
+	fi
+}
+validate_generation "$gen_b"
+validate_generation "$gen_c"
 
-as_user "$helper" cleanup "$prepared_root"
-[[ ! -e $prepared_root ]] || fail "direct helper cleanup left runtime directory"
-prepared_root=
-cmp -s "$config" "$source_snapshot" || fail "direct helper changed source config"
+printf 'release\n' >&"$b_write_fd"
+exec {b_write_fd}>&-
+wait "$b_pid" || fail "second runtime holder failed during release"
+b_pid=
+b_write_fd=
+printf 'release\n' >&"$c_write_fd"
+exec {c_write_fd}>&-
+wait "$c_pid" || fail "reused runtime holder failed during release"
+c_pid=
+c_write_fd=
+flock -n "$gen_b.lock" true || fail "released second lease remains locked"
+flock -n "$gen_c.lock" true || fail "released reused lease remains locked"
 
-snapshot_runtime_dirs "$runtime_before"
-compare_before=$(pgrep -x howdy-compare 2>/dev/null | sort || true)
+cat "$source_model_snapshot" >"$source_model"
+[[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
+	fail "restored source model metadata or inode changed"
+cmp -s "$source_model" "$source_model_snapshot" || fail "source model content was not restored"
+as_user test ! -r "$source_model" || fail "restored source model is readable by selected user"
+
 service_dir=$(mktemp -d -p "$install_prefix" 'pam service-ทดสอบ.XXXXXX')
 chmod 0755 "$service_dir"
 printf 'auth required %s workaround=off\n' "$module" >"$service_dir/howdy-e2e"
 chmod 0644 "$service_dir/howdy-e2e"
 as_user "$driver" howdy-e2e "$selected_user" "$service_dir"
-snapshot_runtime_dirs "$runtime_after"
-cmp -s "$runtime_before" "$runtime_after" || fail "PAM flow changed runtime directory set"
-compare_after=$(pgrep -x howdy-compare 2>/dev/null | sort || true)
-[[ $compare_after == "$compare_before" ]] || fail "PAM flow changed compare process set"
-cmp -s "$config" "$source_snapshot" || fail "PAM flow changed source config"
-[[ $(stat -c '%u:%g:%a' "$config_dir") == 0:0:750 ]] || fail "PAM changed config directory"
-[[ $(stat -c '%u:%g:%a' "$config") == 0:0:640 ]] || fail "PAM changed config permissions"
+flock -n "$expected_gen0.lock" true || fail "PAM flow retained gen000 lease"
+flock -n "$expected_gen1.lock" true || fail "PAM flow retained gen001 lease"
+cmp -s "$config" "$source_snapshot" || fail "runtime flow changed source config"
+cmp -s "$source_model" "$source_model_snapshot" || fail "PAM flow changed restored source model"
+[[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
+	fail "PAM flow changed source model metadata or inode"
+as_user test ! -r "$source_model" || fail "PAM flow exposed source model to selected user"
+[[ $(stat -c '%u:%g:%a' "$config_dir") == 0:0:750 ]] || fail "runtime flow changed config directory"
+[[ $(stat -c '%u:%g:%a' "$config") == 0:0:640 ]] || fail "runtime flow changed config permissions"
 
 printf 'Installed module: %s\nInstalled helper: %s\n' "$module" "$helper"
 printf 'Selected account: %s (UID %s)\n' "$selected_user" "$selected_uid"
-printf 'Direct helper: prepare, ACL verification, cleanup passed\n'
-printf 'PAM result: PAM_AUTHINFO_UNAVAIL\nRuntime cleanup: passed\n'
+printf 'Runtime leases: stale two-slot exhaustion and released-slot refresh passed\n'
+printf 'Runtime files: three content generations, exact metadata/ACLs, links, load/access passed\n'
+printf 'Canonical source model: restored, unchanged, protected\n'
+printf 'Direct helper missing-fd rejection: passed\n'
+printf 'PAM-only result: PAM_AUTHINFO_UNAVAIL\nRuntime cleanup: passed\n'

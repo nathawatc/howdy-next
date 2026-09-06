@@ -1,637 +1,744 @@
-#include "auth_helper/auth_helper_acl_fake.hpp"
-#include "auth_helper/auth_helper_acl_policy.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
-#include "auth_helper/auth_helper_test_io.hpp"
 #include "auth_helper/command.hpp"
 #include "auth_helper/runtime_internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
+#include "test_support.hpp"
 
+#include <array>
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <grp.h>
 #include <iostream>
-#include <set>
+#include <optional>
+#include <pwd.h>
 #include <sstream>
 #include <string>
 #include <tuple>
 #include <unistd.h>
 
+#include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
-	using namespace howdy::test::auth_helper;
+	using howdy::native::auth_helper::PreparedPaths;
+	using howdy::native::auth_helper::internal::RuntimeSources;
+	using howdy::native::auth_helper::internal::StagedIdentity;
+	using howdy::test::expect;
+	using howdy::test::read_file;
+	using howdy::test::write_file;
 
-	auto child_can_access_staged_files(const howdy::native::auth_helper::PreparedPaths &prepared,
-	                                   uid_t uid, gid_t gid, bool expect_access) -> bool {
+	struct Fixture {
+		std::filesystem::path root;
+		std::filesystem::path source;
+		std::filesystem::path config;
+		std::filesystem::path models;
+		StagedIdentity        identity;
+		RuntimeSources        sources;
+	};
+
+	auto close_lease(std::optional<PreparedPaths> &prepared) -> void {
+		if (prepared.has_value() && prepared->lease_fd >= 0) {
+			(void)close(prepared->lease_fd);
+			prepared->lease_fd = -1;
+		}
+	}
+
+	auto inode_of(const std::filesystem::path &path) -> std::optional<std::pair<dev_t, ino_t>> {
+		struct stat stat_{};
+		if (lstat(path.c_str(), &stat_) != 0) {
+			return std::nullopt;
+		}
+		return std::pair{stat_.st_dev, stat_.st_ino};
+	}
+
+	auto child_access_matches(const PreparedPaths &prepared, uid_t uid, gid_t gid,
+	                          bool expected_access) -> std::optional<bool> {
 		const pid_t child = fork();
 		if (child == 0) {
 			if (setgroups(0, nullptr) != 0 || setgid(gid) != 0 || setuid(uid) != 0) {
 				_exit(2);
 			}
-			const int runtime_fd =
-			    open(prepared.runtime_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-			const int models_fd =
-			    open(prepared.user_models_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-			const int config_fd = open(prepared.config_path.c_str(), O_RDONLY | O_CLOEXEC);
-			const int model_fd =
-			    open((prepared.user_models_dir / "alice.dat").c_str(), O_RDONLY | O_CLOEXEC);
-			if (runtime_fd >= 0) {
-				close(runtime_fd);
+			const std::array descriptors = {
+			    open(prepared.runtime_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC),
+			    open(prepared.user_models_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC),
+			    open(prepared.config_path.c_str(), O_RDONLY | O_CLOEXEC),
+			    open((prepared.user_models_dir / "alice.dat").c_str(), O_RDONLY | O_CLOEXEC),
+			};
+			bool matches = true;
+			for (const int fd : descriptors) {
+				matches = matches && ((fd >= 0) == expected_access);
+				if (fd >= 0) {
+					(void)close(fd);
+				}
 			}
-			if (models_fd >= 0) {
-				close(models_fd);
-			}
-			if (config_fd >= 0) {
-				close(config_fd);
-			}
-			if (model_fd >= 0) {
-				close(model_fd);
-			}
-			const bool accessible =
-			    runtime_fd >= 0 && models_fd >= 0 && config_fd >= 0 && model_fd >= 0;
-			_exit(accessible == expect_access ? 0 : 1);
+			_exit(matches ? 0 : 1);
 		}
 		if (child < 0) {
-			return false;
+			return std::nullopt;
 		}
-		int status = 0;
-		return waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+		int   status = 0;
+		pid_t waited;
+		do {
+			waited = waitpid(child, &status, 0);
+		} while (waited < 0 && errno == EINTR);
+		if (waited != child || !WIFEXITED(status) || WEXITSTATUS(status) == 2) {
+			return std::nullopt;
+		}
+		return WEXITSTATUS(status) == 0;
 	}
 
-	auto runtime_dirs_for_uid(const std::filesystem::path &runtime_root, uid_t uid)
-	    -> std::set<std::filesystem::path> {
+	auto make_fixture(const std::filesystem::path &temp_root, std::string_view name,
+	                  uid_t target_uid) -> std::optional<Fixture> {
 		namespace fs = std::filesystem;
-
-		std::set<fs::path> paths;
-		std::error_code    ec;
-		const auto         prefix = "pam-" + std::to_string(uid) + "-";
-		for (const auto &entry : fs::directory_iterator(runtime_root, ec)) {
-			if (entry.path().filename().string().starts_with(prefix)) {
-				paths.insert(entry.path());
-			}
-		}
-		return paths;
-	}
-
-	auto expect_prepare_cleanup_guards() -> bool {
-		using howdy::native::auth_helper::command::cleanup_for_user;
-		using howdy::native::auth_helper::command::prepare_for_user;
-
-		bool ok = true;
-		if (geteuid() == 0) {
-			ok &= expect(prepare_for_user("../alice") == 1, "root prepare rejects invalid user");
-			ok &= expect(cleanup_for_user("/tmp/not-howdy-runtime") == 1,
-			             "root cleanup rejects unexpected path");
-			const auto missing_expected = std::filesystem::path("/run/howdy") /
-			                              ("pam-" + std::to_string(getuid()) + "-missing");
-			ok &= expect(cleanup_for_user(missing_expected) == 0,
-			             "root cleanup accepts missing expected runtime dir");
-		} else {
-			ok &= expect(prepare_for_user("../alice") == 1, "non-root prepare fails closed");
-			ok &= expect(cleanup_for_user("/run/howdy/pam-0-missing") == 1,
-			             "non-root cleanup fails closed");
-		}
-
-		return ok;
-	}
-
-	auto expect_cleanup_runtime_auth_files(const std::filesystem::path &temp_root) -> bool {
-		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::cleanup_runtime_auth_files;
-
-		bool            ok = true;
-		std::error_code ec;
-		const auto      fixture_root = temp_root / "cleanup-runtime-auth-files";
-		const auto      runtime_root = fixture_root / "runtime-root";
-		const auto      uid          = getuid();
-		const auto      gid          = getgid();
-		const howdy::native::auth_helper::RuntimeIdentity identity{.uid = uid, .gid = gid};
-		const auto  prefix       = "pam-" + std::to_string(uid) + "-";
-		const uid_t non_root_uid = 1;
-		const gid_t wrong_gid    = gid == 0 ? static_cast<gid_t>(1) : static_cast<gid_t>(0);
-
-		fs::remove_all(fixture_root, ec);
-		fs::create_directories(runtime_root, ec);
-		ok &= expect(!ec, "creates cleanup runtime fixtures");
-		ok &= expect(chmod(runtime_root.c_str(), 0711) == 0, "secures cleanup runtime root");
-
-		const auto wrong_parent = fixture_root / "wrong-parent" / (prefix + "wrong-parent");
-		ok &= expect(!cleanup_runtime_auth_files(wrong_parent, identity.uid, runtime_root).ok,
-		             "wrong cleanup parent is rejected");
-
-		const auto wrong_prefix = runtime_root / ("pam-" + std::to_string(uid + 1) + "-wrong");
-		ok &= expect(!cleanup_runtime_auth_files(wrong_prefix, identity.uid, runtime_root).ok,
-		             "wrong pam uid prefix is rejected");
-
-		const auto missing_runtime_dir = runtime_root / (prefix + "missing");
-		ok &= expect(cleanup_runtime_auth_files(missing_runtime_dir, identity.uid, runtime_root).ok,
-		             "missing expected runtime dir succeeds");
-		ok &=
-		    expect(!fs::exists(missing_runtime_dir), "missing expected runtime dir stays missing");
-
-		const auto regular_file = runtime_root / (prefix + "regular");
-		ok &= expect(write_file(regular_file, "cleanup"), "writes runtime cleanup file");
-		ok &= expect(!cleanup_runtime_auth_files(regular_file, identity.uid, runtime_root).ok,
-		             "regular file is rejected for cleanup");
-		ok &= expect(fs::exists(regular_file), "regular file remains after rejected cleanup");
-		fs::remove(regular_file, ec);
-		ec.clear();
-
-		const auto symlink_target = fixture_root / "cleanup-target";
-		const auto symlink_path   = runtime_root / (prefix + "symlink");
-		ok &= expect(write_file(symlink_target, "target"), "writes cleanup symlink target");
-		if (symlink(symlink_target.c_str(), symlink_path.c_str()) == 0) {
-			ok &= expect(!cleanup_runtime_auth_files(symlink_path, identity.uid, runtime_root).ok,
-			             "symlink is rejected for cleanup");
-			ok &= expect(fs::exists(symlink_path), "symlink remains after rejected cleanup");
-			fs::remove(symlink_path, ec);
-			ec.clear();
-		} else {
-			std::cerr << "SKIP: cleanup symlink fixture creation failed: " << std::strerror(errno)
-			          << "\n";
-		}
-		fs::remove(symlink_target, ec);
-		ec.clear();
-
-		const auto privileged_probe = fixture_root / "privileged-cleanup-probe";
-		fs::create_directories(privileged_probe, ec);
-		ok &= expect(!ec, "creates privileged cleanup probe");
-		const bool can_setup_privileged_cleanup =
-		    chown(privileged_probe.c_str(), non_root_uid, gid) == 0 &&
-		    chown(privileged_probe.c_str(), 0, wrong_gid) == 0 &&
-		    chown(privileged_probe.c_str(), 0, gid) == 0;
-		const bool      restored_privileged_probe = chown(privileged_probe.c_str(), uid, gid) == 0;
-		std::error_code privileged_probe_cleanup_ec;
-		fs::remove_all(privileged_probe, privileged_probe_cleanup_ec);
-		const bool cleaned_up_privileged_probe =
-		    restored_privileged_probe && !privileged_probe_cleanup_ec;
-		ec.clear();
-
-		if (!can_setup_privileged_cleanup) {
-			std::cerr << "SKIP: cleanup ownership/mode cases need required chown capabilities\n";
-		} else {
-			const bool privileged_probe_cleanup_ok =
-			    expect(cleaned_up_privileged_probe, "cleans up privileged cleanup probe");
-			ok &= privileged_probe_cleanup_ok;
-			if (privileged_probe_cleanup_ok) {
-				const auto group_writable_dir = runtime_root / (prefix + "group-writable");
-				fs::create_directories(group_writable_dir, ec);
-				ok &= expect(!ec, "creates group-writable cleanup directory");
-				ok &= expect(chown(group_writable_dir.c_str(), 0, gid) == 0,
-				             "sets root-owned group-writable cleanup directory");
-				ok &= expect(chmod(group_writable_dir.c_str(), 0770) == 0,
-				             "makes cleanup directory group-writable");
-				ok &= expect(
-				    !cleanup_runtime_auth_files(group_writable_dir, identity.uid, runtime_root).ok,
-				    "group-writable directory is rejected");
-				fs::remove_all(group_writable_dir, ec);
-				ec.clear();
-
-				const auto world_writable_dir = runtime_root / (prefix + "world-writable");
-				fs::create_directories(world_writable_dir, ec);
-				ok &= expect(!ec, "creates world-writable cleanup directory");
-				ok &= expect(chown(world_writable_dir.c_str(), 0, gid) == 0,
-				             "sets root-owned world-writable cleanup directory");
-				ok &= expect(chmod(world_writable_dir.c_str(), 0777) == 0,
-				             "makes cleanup directory world-writable");
-				ok &= expect(
-				    !cleanup_runtime_auth_files(world_writable_dir, identity.uid, runtime_root).ok,
-				    "world-writable directory is rejected");
-				fs::remove_all(world_writable_dir, ec);
-				ec.clear();
-
-				const auto valid_runtime_dir = runtime_root / (prefix + "valid");
-				fs::create_directories(valid_runtime_dir, ec);
-				ok &= expect(!ec, "creates valid cleanup directory");
-				ok &= expect(chown(valid_runtime_dir.c_str(), 0, gid) == 0,
-				             "sets root-owned valid cleanup directory");
-				ok &= expect(chmod(valid_runtime_dir.c_str(), 0711) == 0,
-				             "secures valid cleanup directory");
-				ok &= expect(
-				    cleanup_runtime_auth_files(valid_runtime_dir, identity.uid, runtime_root).ok,
-				    "valid runtime directory is removed");
-				ok &= expect(!fs::exists(valid_runtime_dir), "valid runtime directory is gone");
-
-				const auto wrong_owner_dir = runtime_root / (prefix + "wrong-owner");
-				fs::create_directories(wrong_owner_dir, ec);
-				ok &= expect(!ec, "creates wrong-owner cleanup directory");
-				ok &= expect(chown(wrong_owner_dir.c_str(), non_root_uid, gid) == 0,
-				             "sets wrong-owner cleanup directory");
-				ok &= expect(
-				    !cleanup_runtime_auth_files(wrong_owner_dir, identity.uid, runtime_root).ok,
-				    "wrong owner is rejected");
-				fs::remove_all(wrong_owner_dir, ec);
-				ec.clear();
-
-				const auto wrong_gid_dir = runtime_root / (prefix + "wrong-gid");
-				fs::create_directories(wrong_gid_dir, ec);
-				ok &= expect(!ec, "creates wrong-gid cleanup directory");
-				ok &= expect(chown(wrong_gid_dir.c_str(), 0, wrong_gid) == 0,
-				             "sets wrong-gid cleanup directory");
-				ok &= expect(
-				    !cleanup_runtime_auth_files(wrong_gid_dir, identity.uid, runtime_root).ok,
-				    "wrong gid is rejected");
-				fs::remove_all(wrong_gid_dir, ec);
-				ec.clear();
-			}
-		}
-
-		fs::remove_all(fixture_root, ec);
-		ok &= expect(!ec, "cleans cleanup runtime fixtures");
-		return ok;
-	}
-
-	auto expect_prepare_runtime_auth_files(
-	    const std::filesystem::path &temp_root, bool acl_functional, uid_t target_uid,
-	    const howdy::native::auth_helper::AclOperations &operations) -> bool {
-		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::prepare_runtime_auth_files;
-
-		bool            ok = true;
-		std::error_code ec;
-		const auto      fixture_dir  = temp_root / "prepare-runtime-auth-files";
-		const auto      runtime_root = fixture_dir / "runtime-root";
-		const auto      source_dir   = fixture_dir / "source";
-		const auto      original_dir = fs::current_path();
-		const auto      config_path  = fs::path("./config.ini");
-		const auto      models_dir   = fs::path("./models");
-		const auto      model_path   = models_dir / "alice.dat";
-		const uid_t     owner_uid    = geteuid();
-		const howdy::native::auth_helper::internal::StagedIdentity identity{
-		    .target_uid = target_uid, .owner_uid = owner_uid, .owner_gid = getegid()};
-		const howdy::native::auth_helper::internal::RuntimeSources source_paths{
-		    .runtime_root    = runtime_root,
-		    .config          = config_path,
-		    .user_models_dir = models_dir,
+		Fixture fixture;
+		fixture.root     = temp_root / (std::string(name) + "-runtime");
+		fixture.source   = temp_root / (std::string(name) + "-source");
+		fixture.config   = fixture.source / "config.ini";
+		fixture.models   = fixture.source / "models";
+		fixture.identity = {
+		    .target_uid = target_uid, .owner_uid = geteuid(), .owner_gid = getegid()};
+		fixture.sources = {
+		    .runtime_root    = fixture.root,
+		    .config          = "./config.ini",
+		    .user_models_dir = "./models",
 		};
-		fs::remove_all(fixture_dir, ec);
-		fs::create_directories(runtime_root, ec);
-		ok &= expect(!ec, "creates injected runtime root");
-		ok &= expect(chmod(runtime_root.c_str(), 0711) == 0, "secures injected runtime root");
-		fs::create_directories(source_dir / "models", ec);
-		ok &= expect(!ec, "creates prepare runtime auth files fixtures");
-		fs::current_path(source_dir, ec);
-		ok &= expect(!ec, "uses relative secure source paths");
-		ok &= expect(write_file(config_path, "config-content"), "writes secure source config");
-		ok &= expect(chmod(fixture_dir.c_str(), 0755) == 0, "secures source fixture directory");
-		ok &= expect(chmod(source_dir.c_str(), 0755) == 0, "secures source directory");
-		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures source config");
-		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
-
-		const auto invalid_runtime_root = fixture_dir / "runtime-root-file";
-		ok &= expect(write_file(invalid_runtime_root, "not a directory"),
-		             "writes invalid runtime root fixture");
-		const auto before_invalid_root = runtime_dirs_for_uid(fixture_dir, target_uid);
-		const auto invalid_root_prepare =
-		    prepare_runtime_auth_files("alice", identity,
-		                               {.runtime_root    = invalid_runtime_root,
-		                                .config          = config_path,
-		                                .user_models_dir = models_dir},
-		                               operations);
-		ok &= expect(!invalid_root_prepare.has_value(),
-		             "regular runtime root rejects higher-level preparation");
-		ok &= expect(runtime_dirs_for_uid(fixture_dir, target_uid) == before_invalid_root,
-		             "invalid runtime root leaves no partial runtime directory");
-
-		if (acl_functional) {
-			const auto before_success = runtime_dirs_for_uid(runtime_root, target_uid);
-			const auto prepared =
-			    prepare_runtime_auth_files("alice", identity, source_paths, operations);
-			ok &=
-			    expect(prepared.has_value(), "missing source user model still prepares auth files");
-			if (prepared.has_value()) {
-				const auto prefix = "pam-" + std::to_string(target_uid) + "-";
-				ok &= expect(prepared->runtime_dir.parent_path() == runtime_root,
-				             "prepared runtime directory uses injected runtime root");
-				ok &= expect(prepared->runtime_dir.filename().string().starts_with(prefix),
-				             "prepared runtime directory uses pam uid prefix");
-				ok &= expect(prepared->config_path == prepared->runtime_dir / "config.ini",
-				             "prepared config path uses runtime directory");
-				ok &= expect(prepared->user_models_dir == prepared->runtime_dir / "models",
-				             "prepared models path uses runtime directory");
-				ok &= expect(fs::is_directory(prepared->runtime_dir),
-				             "successful prepare creates runtime directory");
-				ok &= expect(read_file(prepared->config_path) == "config-content",
-				             "successful prepare stages config.ini");
-				ok &= expect(fs::is_directory(prepared->user_models_dir),
-				             "successful prepare creates models directory");
-				ok &= expect(!fs::exists(prepared->user_models_dir / "alice.dat"),
-				             "missing source user model remains unstaged");
-				ok &= expect(chmod(prepared->user_models_dir.c_str(), 0700) == 0,
-				             "reopens successful prepared models directory for cleanup");
-				ok &= expect(chmod(prepared->runtime_dir.c_str(), 0700) == 0,
-				             "reopens successful prepared runtime directory for cleanup");
-				fs::remove_all(prepared->runtime_dir, ec);
-				ok &= expect(!ec, "cleans successful prepared runtime directory");
-			}
-			ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_success,
-			             "successful prepare fixture leaves no runtime directory");
-		}
-
-		const auto before_config_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-		ok &= expect(!prepare_runtime_auth_files("alice", identity,
-		                                         {.runtime_root    = runtime_root,
-		                                          .config          = source_dir / "missing.ini",
-		                                          .user_models_dir = models_dir},
-		                                         operations)
-		                  .has_value(),
-		             "failed config staging rejects prepare");
-		ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_config_failure,
-		             "failed config staging removes private runtime directory");
-
-		if (geteuid() == 0) {
-			std::cerr << "SKIP: config copy permission failure requires non-root test process\n";
-		} else {
-			ok &= expect(chmod(config_path.c_str(), 0000) == 0, "makes source config unreadable");
-			const auto before_config_copy_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-			ok &= expect(!prepare_runtime_auth_files("alice", identity, source_paths, operations)
-			                  .has_value(),
-			             "failed config copy rejects prepare");
-			ok &=
-			    expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_config_copy_failure,
-			           "failed config copy removes private runtime directory");
-			ok &= expect(chmod(config_path.c_str(), 0644) == 0, "restores source config");
-		}
-
-		if (acl_functional) {
-			ok &= expect(write_file(model_path, "model-content"), "writes secure source model");
-			ok &= expect(chmod(model_path.c_str(), 0644) == 0, "secures source model");
-			const auto before_model_success = runtime_dirs_for_uid(runtime_root, target_uid);
-			const auto prepared_with_model =
-			    prepare_runtime_auth_files("alice", identity, source_paths, operations);
-			ok &=
-			    expect(prepared_with_model.has_value(), "secure source model prepares auth files");
-			if (prepared_with_model.has_value()) {
-				ok &= expect(read_file(prepared_with_model->user_models_dir / "alice.dat") ==
-				                 "model-content",
-				             "successful prepare stages user model");
-				ok &= expect(chmod(prepared_with_model->user_models_dir.c_str(), 0700) == 0,
-				             "reopens prepared models directory with model for cleanup");
-				ok &= expect(chmod(prepared_with_model->runtime_dir.c_str(), 0700) == 0,
-				             "reopens prepared runtime directory with model for cleanup");
-				fs::remove_all(prepared_with_model->runtime_dir, ec);
-				ok &= expect(!ec, "cleans prepared runtime directory with model");
-			}
-			ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_model_success,
-			             "successful model prepare fixture leaves no runtime directory");
-
-			ok &= expect(write_file(model_path, "model-content"), "writes insecure source model");
-			ok &= expect(chmod(model_path.c_str(), 0664) == 0, "makes source model insecure");
-			const auto before_model_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-			ok &= expect(!prepare_runtime_auth_files("alice", identity, source_paths, operations)
-			                  .has_value(),
-			             "insecure source model rejects prepare");
-			ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_model_failure,
-			             "insecure source model failure removes private runtime directory");
-		}
-
-		fs::current_path(original_dir, ec);
-		ok &= expect(!ec, "restores test working directory");
-		fs::remove_all(fixture_dir, ec);
-		ok &= expect(!ec, "cleans prepare runtime auth files fixtures");
-		return ok;
-	}
-
-	auto
-	expect_wrong_owner_config_rejected(const std::filesystem::path                     &temp_root,
-	                                   const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
-		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::prepare_runtime_auth_files;
-
-		if (geteuid() != 0) {
-			std::cerr << "SKIP: wrong-owner config fixture requires chown capability\n";
-			return true;
-		}
-
-		bool            ok = true;
 		std::error_code ec;
-		const auto      fixture_dir  = temp_root / "wrong-owner-config";
-		const auto      runtime_root = fixture_dir / "runtime-root";
-		const auto      source_dir   = fixture_dir / "source";
-		const auto      config_path  = source_dir / "config.ini";
-		const auto      models_dir   = source_dir / "models";
-		fs::create_directories(runtime_root, ec);
-		ok &= expect(!ec, "creates wrong-owner runtime root");
+		fs::remove_all(fixture.root, ec);
 		ec.clear();
-		fs::create_directories(models_dir, ec);
-		ok &= expect(!ec, "creates wrong-owner models directory");
-		ok &= expect(write_file(config_path, "config-content"), "writes wrong-owner source config");
-		ok &=
-		    expect(chmod(fixture_dir.c_str(), 0755) == 0, "secures wrong-owner fixture directory");
-		ok &= expect(chmod(source_dir.c_str(), 0755) == 0, "secures wrong-owner source directory");
-		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures wrong-owner models directory");
-		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures wrong-owner source config");
-		if (chown(config_path.c_str(), 61006, 0) != 0) {
-			std::cerr << "SKIP: wrong-owner config fixture chown failed: " << std::strerror(errno)
-			          << "\n";
-			fs::remove_all(fixture_dir, ec);
-			return ok;
+		fs::remove_all(fixture.source, ec);
+		ec.clear();
+		fs::create_directories(fixture.models, ec);
+		if (ec || chmod(fixture.source.c_str(), 0755) != 0 ||
+		    chmod(fixture.models.c_str(), 0755) != 0 ||
+		    !write_file(fixture.config, "config-v1\n") ||
+		    chmod(fixture.config.c_str(), 0644) != 0) {
+			return std::nullopt;
 		}
-		const auto before_prepare = runtime_dirs_for_uid(runtime_root, getuid());
-		const auto prepared       = prepare_runtime_auth_files(
-		    "alice", {.target_uid = getuid(), .owner_uid = 0, .owner_gid = getegid()},
-		    {.runtime_root = runtime_root, .config = config_path, .user_models_dir = models_dir},
-		    operations);
-		ok &= expect(!prepared.has_value(), "wrong-owner config rejects runtime preparation");
-		ok &= expect(runtime_dirs_for_uid(runtime_root, getuid()) == before_prepare,
-		             "wrong-owner config removes partial runtime tree");
-		fs::remove_all(fixture_dir, ec);
-		ok &= expect(!ec, "cleans wrong-owner config fixtures");
-		return ok;
+		return fixture;
 	}
 
-	auto expect_acl_setup_failure(const std::filesystem::path &temp_root) -> bool {
-		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::prepare_runtime_auth_files;
-
-		bool            ok = true;
+	auto prepare(const Fixture                                   &fixture,
+	             const howdy::native::auth_helper::AclOperations &operations)
+	    -> std::optional<PreparedPaths> {
 		std::error_code ec;
-		const auto      fixture_dir  = temp_root / "acl-setup-failure";
-		const auto      runtime_root = fixture_dir / "runtime-root";
-		const auto      source_dir   = fixture_dir / "source";
-		const auto      original_dir = fs::current_path();
-		const auto      config_path  = fs::path("./config.ini");
-		const auto      models_dir   = fs::path("./models");
-		const uid_t     target_uid   = geteuid() == 0 ? 61001 : geteuid();
-
-		fs::create_directories(runtime_root, ec);
-		ok &= expect(!ec, "creates ACL failure runtime root");
-		ec.clear();
-		fs::create_directories(source_dir / "models", ec);
-		ok &= expect(!ec, "creates ACL failure source models directory");
-		fs::current_path(source_dir, ec);
-		ok &= expect(!ec, "uses relative ACL failure source paths");
-		ok &= expect(write_file(config_path, "config-content"), "writes ACL failure source config");
-		ok &= expect(write_file(models_dir / "alice.dat", "model-content"),
-		             "writes ACL failure source model");
-		ok &=
-		    expect(chmod(fixture_dir.c_str(), 0755) == 0, "secures ACL failure fixture directory");
-		ok &= expect(chmod(source_dir.c_str(), 0755) == 0, "secures ACL failure source directory");
-		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures ACL failure source config");
-		ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
-		             "secures ACL failure source models directory");
-		ok &= expect(chmod((models_dir / "alice.dat").c_str(), 0644) == 0,
-		             "secures ACL failure source model");
-
-		FakeAclContext state;
-		state.set_failure                 = true;
-		const auto         before_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-		std::ostringstream failure_output;
-		auto              *previous_cerr  = std::cerr.rdbuf(failure_output.rdbuf());
-		const auto         failed_prepare = prepare_runtime_auth_files(
-		    "alice", {.target_uid = target_uid, .owner_uid = geteuid(), .owner_gid = getegid()},
-		    {.runtime_root = runtime_root, .config = config_path, .user_models_dir = models_dir},
-		    state.operations());
-		std::cerr.rdbuf(previous_cerr);
-		ok &= expect(!failed_prepare.has_value(), "ACL setup failure rejects preparation");
-		ok &= expect(failure_output.str().contains("acl_set_fd for staged object"),
-		             "ACL setup failure logs operation");
-		ok &= expect(failure_output.str().contains(runtime_root.string()),
-		             "ACL setup failure logs staged path");
-		ok &= expect(failure_output.str().contains(std::strerror(EIO)),
-		             "ACL setup failure logs saved errno");
-		ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_failure,
-		             "ACL setup failure removes partial runtime directory");
-
-		state.clear();
-		state.verification_failure               = true;
-		const auto         before_verify_failure = runtime_dirs_for_uid(runtime_root, target_uid);
-		std::ostringstream verify_failure_output;
-		previous_cerr                    = std::cerr.rdbuf(verify_failure_output.rdbuf());
-		const auto verify_failed_prepare = prepare_runtime_auth_files(
-		    "alice", {.target_uid = target_uid, .owner_uid = geteuid(), .owner_gid = getegid()},
-		    {.runtime_root = runtime_root, .config = config_path, .user_models_dir = models_dir},
-		    state.operations());
-		std::cerr.rdbuf(previous_cerr);
-		ok &= expect(!verify_failed_prepare.has_value(), "ACL policy mismatch rejects preparation");
-		ok &= expect(verify_failure_output.str().contains("ACL policy mismatch"),
-		             "ACL policy mismatch logs policy diagnostic");
-		ok &= expect(verify_failure_output.str().contains(runtime_root.string()),
-		             "ACL policy mismatch logs staged path");
-		ok &= expect(!verify_failure_output.str().contains("Success"),
-		             "ACL policy mismatch does not log misleading Success errno");
-		ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_verify_failure,
-		             "ACL policy mismatch removes partial runtime directory");
-
-		fs::current_path(original_dir, ec);
-		ok &= expect(!ec, "restores ACL failure test working directory");
-		fs::remove_all(fixture_dir, ec);
-		ok &= expect(!ec, "cleans ACL failure fixtures");
-		return ok;
-	}
-
-	auto
-	expect_staged_acl_confidentiality(const std::filesystem::path                     &temp_root,
-	                                  const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
-		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::prepare_runtime_auth_files;
-
-		bool            ok = true;
-		std::error_code ec;
-		const auto      fixture_dir   = temp_root / "staged-acl-confidentiality";
-		const auto      runtime_root  = fixture_dir / "runtime-root";
-		const auto      source_dir    = fixture_dir / "source";
-		const auto      original_dir  = fs::current_path();
-		const auto      config_path   = fs::path("./config.ini");
-		const auto      models_dir    = fs::path("./models");
-		const uid_t     target_uid    = geteuid() == 0 ? 61001 : geteuid();
-		const uid_t     shared_uid    = 61002;
-		const uid_t     unrelated_uid = 61003;
-		const gid_t     shared_gid    = 61004;
-		const gid_t     unrelated_gid = 61005;
-		const uid_t     owner_uid     = geteuid();
-		const gid_t     owner_gid     = getegid();
-
-		fs::create_directories(runtime_root, ec);
-		ok &= expect(!ec, "creates ACL runtime root");
-		ec.clear();
-		fs::create_directories(source_dir / "models", ec);
-		ok &= expect(!ec, "creates ACL source models directory");
-		fs::current_path(source_dir, ec);
-		ok &= expect(!ec, "uses relative ACL source paths");
-		ok &= expect(write_file(config_path, "config-content"), "writes ACL source config");
-		ok &= expect(write_file(models_dir / "alice.dat", "model-content"),
-		             "writes ACL source model");
-		ok &= expect(chmod(fixture_dir.c_str(), 0755) == 0, "secures ACL fixture directory");
-		ok &= expect(chmod(source_dir.c_str(), 0755) == 0, "secures ACL source directory");
-		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "secures ACL source config");
-		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures ACL source models directory");
-		ok &= expect(chmod((models_dir / "alice.dat").c_str(), 0644) == 0,
-		             "secures ACL source model");
-
-		const auto before_prepare = runtime_dirs_for_uid(runtime_root, target_uid);
-		const auto prepared       = prepare_runtime_auth_files(
-		    "alice", {.target_uid = target_uid, .owner_uid = owner_uid, .owner_gid = owner_gid},
-		    {.runtime_root = runtime_root, .config = config_path, .user_models_dir = models_dir},
-		    operations);
-		ok &= expect(prepared.has_value(), "ACL runtime preparation succeeds");
-		if (prepared.has_value()) {
-			for (const auto &[path, directory, label] : {
-			         std::tuple{prepared->runtime_dir, true, "runtime directory"},
-			         std::tuple{prepared->user_models_dir, true, "models directory"},
-			         std::tuple{prepared->config_path, false, "config file"},
-			         std::tuple{prepared->user_models_dir / "alice.dat", false, "model file"},
-			     }) {
-				struct stat stat_{};
-				ok &= expect(lstat(path.c_str(), &stat_) == 0, std::string("stats ") + label);
-				ok &= expect(stat_.st_uid == owner_uid && stat_.st_gid == owner_gid,
-				             std::string(label) + " remains expected privileged owner");
-				ok &= expect_private_acl(path, target_uid, directory, label);
-			}
-			if (geteuid() == 0) {
-				ok &= expect(child_can_access_staged_files(*prepared, target_uid, shared_gid, true),
-				             "named target UID can traverse and read staged files");
-				ok &=
-				    expect(child_can_access_staged_files(*prepared, shared_uid, shared_gid, false),
-				           "same primary GID UID cannot traverse or read staged files");
-				ok &= expect(
-				    child_can_access_staged_files(*prepared, unrelated_uid, unrelated_gid, false),
-				    "unrelated UID cannot traverse or read staged files");
-			} else {
-				std::cerr << "SKIP: cross-UID access checks require root\n";
-			}
-			ok &= expect(chmod(prepared->user_models_dir.c_str(), 0700) == 0,
-			             "reopens ACL prepared models directory for cleanup");
-			ok &= expect(chmod(prepared->runtime_dir.c_str(), 0700) == 0,
-			             "reopens ACL prepared runtime directory for cleanup");
-			fs::remove_all(prepared->runtime_dir, ec);
-			ok &= expect(!ec, "cleans ACL prepared runtime directory");
+		const auto      previous = std::filesystem::current_path();
+		std::filesystem::current_path(fixture.source, ec);
+		if (ec) {
+			return std::nullopt;
 		}
-		ok &= expect(runtime_dirs_for_uid(runtime_root, target_uid) == before_prepare,
-		             "ACL prepared runtime directory is removed");
-
-		fs::current_path(original_dir, ec);
-		ok &= expect(!ec, "restores ACL test working directory");
-		fs::remove_all(fixture_dir, ec);
-		ok &= expect(!ec, "cleans ACL staging fixtures");
-		return ok;
+		auto result = howdy::native::auth_helper::internal::prepare_runtime_auth_files(
+		    "alice", fixture.identity, fixture.sources, operations);
+		std::filesystem::current_path(previous, ec);
+		return ec ? std::nullopt : std::move(result);
 	}
 
-	auto expect_stdout_protocol() -> bool {
+	auto expect_protocol_paths() -> bool {
 		using namespace howdy::native::auth_helper_protocol;
-		using howdy::native::auth_helper::command::print_prepared_paths;
-
 		bool ok = true;
-		ok &= expect(std::string(kConfigPathKey) == "CONFIG_PATH",
-		             "config path protocol key remains unchanged");
-		ok &= expect(std::string(kUserModelsDirKey) == "USER_MODELS_DIR",
-		             "user models directory protocol key remains unchanged");
+		for (const auto &[name, expected_uid, expected_slot, valid] : {
+		         std::tuple{"pam-0-gen000", uid_t{0}, RuntimeGenerationSlot::kSlot0, true},
+		         std::tuple{"pam-42-gen001", uid_t{42}, RuntimeGenerationSlot::kSlot1, true},
+		         std::tuple{"pam-042-gen000", uid_t{0}, RuntimeGenerationSlot::kSlot0, false},
+		         std::tuple{"pam--gen000", uid_t{0}, RuntimeGenerationSlot::kSlot0, false},
+		         std::tuple{"pam-42-gen002", uid_t{0}, RuntimeGenerationSlot::kSlot0, false},
+		         std::tuple{"pam-42-gen000x", uid_t{0}, RuntimeGenerationSlot::kSlot0, false},
+		     }) {
+			uid_t                 uid = 0;
+			RuntimeGenerationSlot slot{};
+			const bool            parsed = parse_runtime_generation_name(name, &uid, &slot);
+			ok &= expect(parsed == valid, std::string("generation parser classification: ") + name);
+			if (valid) {
+				ok &= expect(uid == expected_uid && slot == expected_slot,
+				             std::string("generation parser value: ") + name);
+			}
+		}
+		ok &= expect(prepared_runtime_generation_name(1000, RuntimeGenerationSlot::kSlot0) ==
+		                 "pam-1000-gen000",
+		             "slot 0 name is exact");
+		ok &= expect(prepared_runtime_generation_name(1000, RuntimeGenerationSlot::kSlot1) ==
+		                 "pam-1000-gen001",
+		             "slot 1 name is exact");
 
 		std::ostringstream output;
 		auto              *previous = std::cout.rdbuf(output.rdbuf());
-		print_prepared_paths("/run/howdy/pam-1000-example/config.ini",
-		                     "/run/howdy/pam-1000-example/models");
+		howdy::native::auth_helper::command::print_prepared_paths(
+		    "/run/howdy/pam-1000-gen000/config.ini", "/run/howdy/pam-1000-gen000/models");
 		std::cout.rdbuf(previous);
+		ok &= expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-gen000/config.ini\n"
+		                             "USER_MODELS_DIR=/run/howdy/pam-1000-gen000/models\n",
+		             "stdout protocol remains exact");
+		return ok;
+	}
 
-		ok &= expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-example/config.ini\n"
-		                             "USER_MODELS_DIR=/run/howdy/pam-1000-example/models\n",
-		             "prepare stdout protocol remains unchanged");
+	auto expect_cross_uid_acl_access(
+	    const std::filesystem::path                     &temp_root,
+	    const howdy::native::auth_helper::AclOperations &production_operations) -> bool {
+		if (geteuid() != 0 || getuid() != geteuid()) {
+			std::cerr << "SKIP: cross-UID staged access checks require real root\n";
+			return true;
+		}
+		constexpr uid_t target_uid    = 61001;
+		constexpr uid_t unrelated_uid = 61002;
+		constexpr gid_t shared_gid    = 61003;
+		constexpr gid_t unrelated_gid = 61004;
+		auto            fixture       = make_fixture(temp_root, "acl-access", target_uid);
+		if (!fixture.has_value() || !write_file(fixture->models / "alice.dat", "model-content\n") ||
+		    chmod((fixture->models / "alice.dat").c_str(), 0644) != 0) {
+			return false;
+		}
+		auto prepared = prepare(*fixture, production_operations);
+		bool ok       = expect(prepared.has_value(), "real ACL preparation succeeds");
+		if (!prepared.has_value()) {
+			return false;
+		}
+		for (const auto &[uid, gid, expected_access, label] : {
+		         std::tuple{target_uid, shared_gid, true,
+		                    "named target UID traverses and reads staged files"},
+		         std::tuple{unrelated_uid, shared_gid, false,
+		                    "unrelated UID with same GID cannot access staged files"},
+		         std::tuple{unrelated_uid, unrelated_gid, false,
+		                    "unrelated UID and GID cannot access staged files"},
+		     }) {
+			const auto result = child_access_matches(*prepared, uid, gid, expected_access);
+			if (!result.has_value()) {
+				std::cerr << "SKIP: cross-UID credential transition unavailable\n";
+				break;
+			}
+			ok &= expect(*result, label);
+		}
+		close_lease(prepared);
+		return ok;
+	}
+
+	auto count_runtime_generations(const std::filesystem::path &root) -> std::size_t {
+		using namespace howdy::native::auth_helper_protocol;
+		std::size_t count = 0;
+		for (const auto &entry : std::filesystem::directory_iterator(root)) {
+			uid_t                 uid = 0;
+			RuntimeGenerationSlot slot{};
+			if (parse_runtime_generation_name(entry.path().filename().string(), &uid, &slot)) {
+				++count;
+			}
+		}
+		return count;
+	}
+
+	auto exclusive_lock_is_contended(int fd) -> bool {
+		errno = 0;
+		return flock(fd, LOCK_EX | LOCK_NB) != 0 && (errno == EWOULDBLOCK || errno == EAGAIN);
+	}
+
+	auto
+	expect_read_only_lease(const std::optional<howdy::native::auth_helper::PreparedPaths> &prepared)
+	    -> bool {
+		if (!prepared.has_value() || prepared->lease_fd < 0) {
+			return expect(false, "first prepare returns lease");
+		}
+
+		bool ok = true;
+		ok &= expect((fcntl(prepared->lease_fd, F_GETFD) & FD_CLOEXEC) != 0,
+		             "returned lease is close-on-exec");
+		ok &= expect((fcntl(prepared->lease_fd, F_GETFL) & O_ACCMODE) == O_RDONLY,
+		             "returned lease is read-only");
+		errno                     = 0;
+		const bool write_rejected = write(prepared->lease_fd, "x", 1) == -1 && errno == EBADF;
+		ok &= expect(write_rejected, "returned lease rejects writes");
+		errno = 0;
+		const bool truncate_rejected =
+		    ftruncate(prepared->lease_fd, 1) == -1 && (errno == EINVAL || errno == EBADF);
+		ok &= expect(truncate_rejected, "returned lease rejects truncation");
+		return ok;
+	}
+
+	auto expect_reuse_and_inode_bound(const Fixture                                   &fixture,
+	                                  const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using namespace howdy::native::auth_helper_protocol;
+		bool ok    = true;
+		auto first = prepare(fixture, operations);
+		ok &= expect_read_only_lease(first);
+		if (!first.has_value()) {
+			return false;
+		}
+		const auto config_inode  = inode_of(first->config_path);
+		const auto backing_path  = first->runtime_dir / kPreparedModelBackingFileName;
+		const auto backing_inode = inode_of(backing_path);
+		ok &= expect(count_runtime_generations(fixture.root) == 2,
+		             "exactly two fixed generation directories exist");
+		ok &= expect(config_inode.has_value() && backing_inode.has_value(),
+		             "persistent config and backing inodes exist");
+
+		auto second = prepare(fixture, operations);
+		ok &= expect(second.has_value() && second->runtime_dir == first->runtime_dir,
+		             "fresh prepare reuses same slot");
+		if (!second.has_value()) {
+			close_lease(first);
+			return false;
+		}
+		ok &= expect(inode_of(second->config_path) == config_inode &&
+		                 inode_of(second->runtime_dir / kPreparedModelBackingFileName) ==
+		                     backing_inode,
+		             "fresh prepare reuses exact backing inodes");
+		for (int attempt = 0; attempt < 16; ++attempt) {
+			auto repeated = prepare(fixture, operations);
+			ok &= expect(repeated.has_value() && repeated->runtime_dir == first->runtime_dir &&
+			                 inode_of(repeated->config_path) == config_inode &&
+			                 inode_of(repeated->runtime_dir / kPreparedModelBackingFileName) ==
+			                     backing_inode,
+			             "repeated prepare preserves fixed slot and backing inodes");
+			close_lease(repeated);
+		}
+
+		const auto lock_path = prepared_runtime_generation_lock_path(first->runtime_dir);
+		const int  probe     = open(lock_path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+		ok &= expect(probe >= 0, "opens independent lease probe");
+		if (probe >= 0) {
+			ok &= expect(exclusive_lock_is_contended(probe),
+			             "active returned leases hold shared locks");
+			close_lease(first);
+			ok &= expect(exclusive_lock_is_contended(probe),
+			             "second lease uses fresh open file description");
+			close_lease(second);
+			ok &= expect(flock(probe, LOCK_EX | LOCK_NB) == 0, "last lease close releases slot");
+			(void)flock(probe, LOCK_UN);
+			(void)close(probe);
+		}
+
+		ok &= expect(write_file(fixture.config, "config-v2-longer\n"), "updates source config");
+		const int map_fd = open(first->config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		void     *mapping =
+		    map_fd < 0 ? MAP_FAILED : mmap(nullptr, 10, PROT_READ, MAP_SHARED, map_fd, 0);
+		ok &= expect(mapping != MAP_FAILED, "holds mapping to persistent config inode");
+		auto refreshed = prepare(fixture, operations);
+		ok &= expect(refreshed.has_value() && refreshed->runtime_dir == first->runtime_dir,
+		             "unleased mapped slot updates in place");
+		if (!refreshed.has_value()) {
+			if (map_fd >= 0) {
+				(void)close(map_fd);
+			}
+			if (mapping != MAP_FAILED) {
+				(void)munmap(mapping, 10);
+			}
+			return false;
+		}
+		ok &= expect(inode_of(refreshed->config_path) == config_inode &&
+		                 inode_of(refreshed->runtime_dir / kPreparedModelBackingFileName) ==
+		                     backing_inode,
+		             "refresh preserves actual backing inode bound");
+		ok &= expect(read_file(refreshed->config_path) == "config-v2-longer\n",
+		             "refresh writes new config content");
+		std::array<char, 10> held_fd_content{};
+		ok &= expect(map_fd >= 0 &&
+		                 pread(map_fd, held_fd_content.data(), held_fd_content.size(), 0) ==
+		                     static_cast<ssize_t>(held_fd_content.size()) &&
+		                 std::string_view(held_fd_content.data(), held_fd_content.size()) ==
+		                     "config-v2-",
+		             "held fd observes in-place update");
+		ok &= expect(mapping != MAP_FAILED &&
+		                 std::string_view(static_cast<const char *>(mapping), 10) == "config-v2-",
+		             "held mapping remains attached to updated inode");
+		close_lease(refreshed);
+		if (map_fd >= 0) {
+			(void)close(map_fd);
+		}
+		if (mapping != MAP_FAILED) {
+			(void)munmap(mapping, 10);
+		}
+		return ok;
+	}
+
+	auto expect_two_slot_limit(const Fixture                                   &fixture,
+	                           const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		bool ok = true;
+		ok &= expect(write_file(fixture.config, "slot-a\n"), "writes slot A source");
+		auto first = prepare(fixture, operations);
+		ok &= expect(first.has_value(), "leases slot A");
+		ok &= expect(write_file(fixture.config, "slot-b\n"), "writes slot B source");
+		auto second = prepare(fixture, operations);
+		ok &= expect(second.has_value() && first.has_value() &&
+		                 second->runtime_dir != first->runtime_dir,
+		             "active stale slot selects second fixed slot");
+		ok &= expect(write_file(fixture.config, "slot-c\n"), "writes slot C source");
+		auto blocked = prepare(fixture, operations);
+		ok &= expect(!blocked.has_value(), "two active stale slots fail closed");
+
+		const auto first_generation_inode =
+		    first.has_value() ? inode_of(first->runtime_dir) : std::nullopt;
+		const auto first_lock_inode =
+		    first.has_value()
+		        ? inode_of(
+		              howdy::native::auth_helper_protocol::prepared_runtime_generation_lock_path(
+		                  first->runtime_dir))
+		        : std::nullopt;
+		const auto first_models_inode =
+		    first.has_value() ? inode_of(first->user_models_dir) : std::nullopt;
+		const auto first_config_inode =
+		    first.has_value() ? inode_of(first->config_path) : std::nullopt;
+		const auto first_backing_inode =
+		    first.has_value()
+		        ? inode_of(first->runtime_dir /
+		                   howdy::native::auth_helper_protocol::kPreparedModelBackingFileName)
+		        : std::nullopt;
+		close_lease(first);
+		auto reused = prepare(fixture, operations);
+		ok &= expect(
+		    reused.has_value() && first_generation_inode.has_value() &&
+		        inode_of(reused->runtime_dir) == first_generation_inode &&
+		        inode_of(howdy::native::auth_helper_protocol::prepared_runtime_generation_lock_path(
+		            reused->runtime_dir)) == first_lock_inode &&
+		        inode_of(reused->user_models_dir) == first_models_inode &&
+		        inode_of(reused->config_path) == first_config_inode &&
+		        inode_of(reused->runtime_dir /
+		                 howdy::native::auth_helper_protocol::kPreparedModelBackingFileName) ==
+		            first_backing_inode,
+		    "freed slot reuses same paths and actual inodes");
+		close_lease(second);
+		close_lease(reused);
+		return ok;
+	}
+
+	auto expect_present_absent(const Fixture                                   &fixture,
+	                           const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		bool       ok           = true;
+		const auto source_model = fixture.models / "alice.dat";
+		ok &=
+		    expect(write_file(source_model, "model-v1\n") && chmod(source_model.c_str(), 0644) == 0,
+		           "creates secure source model");
+		auto present = prepare(fixture, operations);
+		ok &= expect(present.has_value(), "present model prepares");
+		if (!present.has_value()) {
+			return false;
+		}
+		const auto backing = present->runtime_dir /
+		                     howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
+		const auto visible = present->user_models_dir / "alice.dat";
+		const auto backing_inode = inode_of(backing);
+		ok &= expect(backing_inode.has_value() && inode_of(visible) == backing_inode,
+		             "visible model is backing hard link");
+		struct stat present_stat{};
+		ok &= expect(lstat(backing.c_str(), &present_stat) == 0 && present_stat.st_nlink == 2,
+		             "present backing has exactly two links");
+		const int model_fd = open(visible.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		void     *mapping =
+		    model_fd < 0 ? MAP_FAILED : mmap(nullptr, 9, PROT_READ, MAP_SHARED, model_fd, 0);
+		ok &= expect(mapping != MAP_FAILED, "holds mapping to persistent model inode");
+		close_lease(present);
+
+		ok &= expect(write_file(source_model, "model-v2\n"), "updates source model");
+		auto                refreshed = prepare(fixture, operations);
+		std::array<char, 9> held_content{};
+		ok &= expect(refreshed.has_value() && inode_of(backing) == backing_inode &&
+		                 inode_of(visible) == backing_inode,
+		             "model refresh preserves backing and visible inode identity");
+		ok &= expect(model_fd >= 0 &&
+		                 pread(model_fd, held_content.data(), held_content.size(), 0) ==
+		                     static_cast<ssize_t>(held_content.size()) &&
+		                 std::string_view(held_content.data(), held_content.size()) == "model-v2\n",
+		             "held model fd observes in-place refresh");
+		ok &= expect(mapping != MAP_FAILED &&
+		                 std::string_view(static_cast<const char *>(mapping), 9) == "model-v2\n",
+		             "held model mapping observes in-place refresh");
+		close_lease(refreshed);
+
+		std::error_code ec;
+		std::filesystem::remove(source_model, ec);
+		ok &= expect(!ec, "removes source model");
+		auto        absent = prepare(fixture, operations);
+		struct stat absent_stat{};
+		struct stat held_absent_stat{};
+		ok &= expect(absent.has_value() && !std::filesystem::exists(visible) &&
+		                 inode_of(backing) == backing_inode &&
+		                 lstat(backing.c_str(), &absent_stat) == 0 && absent_stat.st_nlink == 1 &&
+		                 absent_stat.st_size == 0 && fstat(model_fd, &held_absent_stat) == 0 &&
+		                 held_absent_stat.st_dev == absent_stat.st_dev &&
+		                 held_absent_stat.st_ino == absent_stat.st_ino,
+		             "absent cycle keeps empty persistent backing inode");
+		close_lease(absent);
+
+		ok &=
+		    expect(write_file(source_model, "model-v3\n") && chmod(source_model.c_str(), 0644) == 0,
+		           "restores source model");
+		auto                restored = prepare(fixture, operations);
+		std::array<char, 9> restored_held_content{};
+		ok &= expect(restored.has_value() && inode_of(backing) == backing_inode &&
+		                 inode_of(visible) == backing_inode && mapping != MAP_FAILED &&
+		                 std::string_view(static_cast<const char *>(mapping), 9) == "model-v3\n" &&
+		                 pread(model_fd, restored_held_content.data(), restored_held_content.size(),
+		                       0) == static_cast<ssize_t>(restored_held_content.size()) &&
+		                 std::string_view(restored_held_content.data(),
+		                                  restored_held_content.size()) == "model-v3\n",
+		             "present cycle restores link without replacing held backing inode");
+		close_lease(restored);
+		if (mapping != MAP_FAILED) {
+			(void)munmap(mapping, 9);
+		}
+		if (model_fd >= 0) {
+			(void)close(model_fd);
+		}
+		return ok;
+	}
+
+	auto expect_partial_slot_fallback(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                  const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using namespace howdy::native::auth_helper_protocol;
+		bool ok      = true;
+		auto fixture = make_fixture(temp_root, "partial-slot", target_uid);
+		auto slot0   = fixture.has_value() ? prepare(*fixture, operations) : std::nullopt;
+		ok &= expect(slot0.has_value(), "creates complete slot0 fixture");
+		close_lease(slot0);
+		if (!fixture.has_value() || !slot0.has_value()) {
+			return false;
+		}
+
+		const auto      slot0_backing       = slot0->runtime_dir / kPreparedModelBackingFileName;
+		const auto      slot0_backing_inode = inode_of(slot0_backing);
+		const auto      slot0_models_inode  = inode_of(slot0->user_models_dir);
+		std::error_code ec;
+		std::filesystem::remove(slot0->config_path, ec);
+		const auto expected_slot1 = prepared_runtime_generation_dir(fixture->root, target_uid,
+		                                                            RuntimeGenerationSlot::kSlot1);
+		auto       slot1          = prepare(*fixture, operations);
+		ok &= expect(!ec && slot1.has_value() && slot1->runtime_dir == expected_slot1 &&
+		                 !std::filesystem::exists(slot0->config_path) &&
+		                 inode_of(slot0_backing) == slot0_backing_inode &&
+		                 inode_of(slot0->user_models_dir) == slot0_models_inode,
+		             "partial slot0 stays untouched while empty slot1 serves");
+		if (!slot1.has_value()) {
+			return false;
+		}
+		const auto slot1_config_inode = inode_of(slot1->config_path);
+		const auto slot1_backing_inode =
+		    inode_of(slot1->runtime_dir / kPreparedModelBackingFileName);
+		auto repeated = prepare(*fixture, operations);
+		ok &= expect(repeated.has_value() && repeated->runtime_dir == slot1->runtime_dir &&
+		                 inode_of(repeated->config_path) == slot1_config_inode &&
+		                 inode_of(repeated->runtime_dir / kPreparedModelBackingFileName) ==
+		                     slot1_backing_inode,
+		             "slot1 reuse stays on persistent bounded inodes");
+
+		const auto slot0_lock = prepared_runtime_generation_lock_path(slot0->runtime_dir);
+		const int  probe      = open(slot0_lock.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+		const bool lock_clean = probe >= 0 && flock(probe, LOCK_EX | LOCK_NB) == 0;
+		ok &= expect(lock_clean, "abandoned malformed slot0 retains no helper lock");
+		if (lock_clean) {
+			(void)flock(probe, LOCK_UN);
+		}
+		if (probe >= 0) {
+			(void)close(probe);
+		}
+		close_lease(slot1);
+		close_lease(repeated);
+		return ok;
+	}
+
+	auto
+	expect_malformed_slot_discovery(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using namespace howdy::native::auth_helper_protocol;
+		bool ok = true;
+
+		auto symlink_fixture = make_fixture(temp_root, "malformed-symlink", target_uid);
+		if (symlink_fixture.has_value()) {
+			std::error_code ec;
+			std::filesystem::create_directories(symlink_fixture->root, ec);
+			(void)chmod(symlink_fixture->root.c_str(), 0711);
+			const auto slot0 = prepared_runtime_generation_dir(symlink_fixture->root, target_uid,
+			                                                   RuntimeGenerationSlot::kSlot0);
+			const auto slot1 = prepared_runtime_generation_dir(symlink_fixture->root, target_uid,
+			                                                   RuntimeGenerationSlot::kSlot1);
+			ok &= expect(symlink(symlink_fixture->source.c_str(), slot0.c_str()) == 0,
+			             "creates slot symlink");
+			const auto malformed_inode = inode_of(slot0);
+			auto       fallback        = prepare(*symlink_fixture, operations);
+			ok &= expect(fallback.has_value() && fallback->runtime_dir == slot1 &&
+			                 inode_of(slot0) == malformed_inode,
+			             "malformed generation directory remains while healthy slot serves");
+			close_lease(fallback);
+		}
+
+		auto lock_fixture = make_fixture(temp_root, "malformed-lock", target_uid);
+		auto lock_prepared =
+		    lock_fixture.has_value() ? prepare(*lock_fixture, operations) : std::nullopt;
+		ok &= expect(lock_prepared.has_value(), "creates lock fixture");
+		close_lease(lock_prepared);
+		if (lock_prepared.has_value()) {
+			const auto lock_path =
+			    prepared_runtime_generation_lock_path(lock_prepared->runtime_dir);
+			const auto lock_inode = inode_of(lock_path);
+			ok &= expect(chmod(lock_path.c_str(), 0644) == 0, "malforms lock mode");
+			auto        fallback = prepare(*lock_fixture, operations);
+			struct stat lock_stat{};
+			ok &= expect(fallback.has_value() &&
+			                 fallback->runtime_dir != lock_prepared->runtime_dir &&
+			                 inode_of(lock_path) == lock_inode &&
+			                 lstat(lock_path.c_str(), &lock_stat) == 0 &&
+			                 (lock_stat.st_mode & 07777) == 0644,
+			             "malformed lock remains while healthy slot serves");
+			close_lease(fallback);
+		}
+
+		auto both_fixture = make_fixture(temp_root, "both-slots-malformed", target_uid);
+		auto both_prepared =
+		    both_fixture.has_value() ? prepare(*both_fixture, operations) : std::nullopt;
+		ok &= expect(both_prepared.has_value(), "creates both-slot malformed fixture");
+		close_lease(both_prepared);
+		if (both_fixture.has_value() && both_prepared.has_value()) {
+			const auto slot0_lock =
+			    prepared_runtime_generation_lock_path(both_prepared->runtime_dir);
+			const auto slot1      = prepared_runtime_generation_dir(both_fixture->root, target_uid,
+			                                                        RuntimeGenerationSlot::kSlot1);
+			const auto lock_inode = inode_of(slot0_lock);
+			const auto slot_inode = inode_of(slot1);
+			ok &= expect(chmod(slot0_lock.c_str(), 0644) == 0 && chmod(slot1.c_str(), 0700) == 0,
+			             "malforms both fixed slots");
+			auto        result = prepare(*both_fixture, operations);
+			struct stat lock_stat{};
+			struct stat slot_stat{};
+			ok &= expect(
+			    !result.has_value() && inode_of(slot0_lock) == lock_inode &&
+			        inode_of(slot1) == slot_inode && lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
+			        lstat(slot1.c_str(), &slot_stat) == 0 && (lock_stat.st_mode & 07777) == 0644 &&
+			        (slot_stat.st_mode & 07777) == 0700,
+			    "two malformed slots fail closed without repair");
+			const int  probe = open(slot0_lock.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+			const bool clean = probe >= 0 && flock(probe, LOCK_EX | LOCK_NB) == 0;
+			ok &= expect(clean, "failed slot discovery leaves no lock held");
+			if (clean) {
+				(void)flock(probe, LOCK_UN);
+			}
+			if (probe >= 0) {
+				(void)close(probe);
+			}
+		}
+		return ok;
+	}
+
+	auto expect_malformed_objects_fail(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                   const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using namespace howdy::native::auth_helper_protocol;
+		bool ok = true;
+
+		auto mode_fixture = make_fixture(temp_root, "malformed-mode", target_uid);
+		auto mode_prepared =
+		    mode_fixture.has_value() ? prepare(*mode_fixture, operations) : std::nullopt;
+		ok &= expect(mode_prepared.has_value(), "creates mode fixture");
+		close_lease(mode_prepared);
+		if (mode_prepared.has_value()) {
+			ok &= expect(chmod(mode_prepared->config_path.c_str(), 0600) == 0,
+			             "malforms config mode");
+			auto        fallback = prepare(*mode_fixture, operations);
+			struct stat damaged_stat{};
+			ok &= expect(fallback.has_value() &&
+			                 fallback->runtime_dir != mode_prepared->runtime_dir &&
+			                 lstat(mode_prepared->config_path.c_str(), &damaged_stat) == 0 &&
+			                 (damaged_stat.st_mode & 07777) == 0600,
+			             "malformed config remains untouched while other slot serves");
+			close_lease(fallback);
+		}
+
+		auto link_fixture = make_fixture(temp_root, "malformed-link", target_uid);
+		auto link_prepared =
+		    link_fixture.has_value() ? prepare(*link_fixture, operations) : std::nullopt;
+		ok &= expect(link_prepared.has_value(), "creates link fixture");
+		close_lease(link_prepared);
+		if (link_prepared.has_value()) {
+			const auto extra = temp_root / "unexpected-config-link";
+			ok &= expect(link(link_prepared->config_path.c_str(), extra.c_str()) == 0,
+			             "adds unexpected config hard link");
+			auto        fallback = prepare(*link_fixture, operations);
+			struct stat damaged_stat{};
+			ok &= expect(fallback.has_value() &&
+			                 fallback->runtime_dir != link_prepared->runtime_dir &&
+			                 lstat(link_prepared->config_path.c_str(), &damaged_stat) == 0 &&
+			                 damaged_stat.st_nlink == 2,
+			             "unexpected link count remains untouched while other slot serves");
+			close_lease(fallback);
+		}
+
+		auto visible_fixture = make_fixture(temp_root, "malformed-visible", target_uid);
+		if (visible_fixture.has_value()) {
+			const auto source_model = visible_fixture->models / "alice.dat";
+			ok &= expect(write_file(source_model, "model\n") &&
+			                 chmod(source_model.c_str(), 0644) == 0,
+			             "creates visible identity source");
+			auto visible_prepared = prepare(*visible_fixture, operations);
+			ok &= expect(visible_prepared.has_value(), "creates visible identity fixture");
+			close_lease(visible_prepared);
+			if (visible_prepared.has_value()) {
+				const auto      visible = visible_prepared->user_models_dir / "alice.dat";
+				std::error_code ec;
+				std::filesystem::remove(visible, ec);
+				ok &= expect(!ec && write_file(visible, "foreign inode\n"),
+				             "replaces visible name with foreign inode");
+				const auto foreign_inode = inode_of(visible);
+				auto       fallback      = prepare(*visible_fixture, operations);
+				ok &= expect(fallback.has_value() &&
+				                 fallback->runtime_dir != visible_prepared->runtime_dir &&
+				                 inode_of(visible) == foreign_inode,
+				             "visible mismatch remains untouched while other slot serves");
+				close_lease(fallback);
+			}
+		}
+
+		if (geteuid() == 0) {
+			auto owner_fixture = make_fixture(temp_root, "malformed-owner", target_uid);
+			auto owner_prepared =
+			    owner_fixture.has_value() ? prepare(*owner_fixture, operations) : std::nullopt;
+			ok &= expect(owner_prepared.has_value(), "creates owner fixture");
+			close_lease(owner_prepared);
+			if (owner_prepared.has_value()) {
+				ok &= expect(chown(owner_prepared->config_path.c_str(), 61007, getegid()) == 0,
+				             "malforms config owner");
+				auto        fallback = prepare(*owner_fixture, operations);
+				struct stat damaged_stat{};
+				ok &= expect(fallback.has_value() &&
+				                 fallback->runtime_dir != owner_prepared->runtime_dir &&
+				                 lstat(owner_prepared->config_path.c_str(), &damaged_stat) == 0 &&
+				                 damaged_stat.st_uid == 61007,
+				             "malformed owner remains untouched while other slot serves");
+				close_lease(fallback);
+			}
+		}
+		return ok;
+	}
+
+	auto expect_cleanup_migration(const std::filesystem::path &temp_root, uid_t target_uid,
+	                              const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using howdy::native::auth_helper::internal::cleanup_runtime_auth_files;
+		bool ok      = true;
+		auto fixture = make_fixture(temp_root, "cleanup", target_uid);
+		if (!fixture.has_value()) {
+			return false;
+		}
+		auto prepared = prepare(*fixture, operations);
+		ok &= expect(prepared.has_value(), "creates fixed cleanup fixture");
+		close_lease(prepared);
+		if (prepared.has_value()) {
+			ok &= expect(cleanup_runtime_auth_files(prepared->runtime_dir, target_uid,
+			                                        fixture->root, geteuid(), getegid())
+			                     .ok &&
+			                 std::filesystem::exists(prepared->runtime_dir),
+			             "fixed generation cleanup validates then preserves slot");
+		}
+		const auto      legacy = fixture->root / ("pam-" + std::to_string(target_uid) + "-Ab12Z9");
+		std::error_code ec;
+		std::filesystem::create_directories(legacy / "models", ec);
+		ok &=
+		    expect(!ec && chmod(legacy.c_str(), 0500) == 0, "creates old random runtime directory");
+		ok &= expect(
+		    cleanup_runtime_auth_files(legacy, target_uid, fixture->root, geteuid(), getegid())
+		            .ok &&
+		        !std::filesystem::exists(legacy),
+		    "cleanup removes old HEAD random directory");
 		return ok;
 	}
 
@@ -639,29 +746,29 @@ namespace {
 
 auto run_auth_helper_staging_tests(const std::filesystem::path    &temp_root,
                                    const AuthHelperStagingContext &context) -> bool {
-	bool ok = true;
-	if (context.acl_supported && geteuid() == 0 && getuid() == geteuid()) {
-		constexpr uid_t kDistinctTargetUid = 61001;
-		ok &= expect_prepare_runtime_auth_files(temp_root, true, kDistinctTargetUid,
-		                                        context.fake_acl.operations());
-		ok &= expect_fake_acl_activity(context.fake_acl, "distinct-target fake ACL preparation");
-		ok &= expect_fake_acl_target(context.fake_acl, kDistinctTargetUid, geteuid());
-		ok &= reset_fake_acl_backend(context.fake_acl);
+	bool ok = expect_protocol_paths();
+	if (!context.acl_functional) {
+		std::cerr << "SKIP: fixed-slot tests require functional ACL operations\n";
+		return ok;
 	}
-	ok &= expect_prepare_cleanup_guards();
-	ok &= expect_cleanup_runtime_auth_files(temp_root);
-	ok &= expect_wrong_owner_config_rejected(temp_root, context.operations);
-	ok &= expect_prepare_runtime_auth_files(temp_root, context.acl_functional,
-	                                        context.functional_target_uid, context.operations);
-	if (context.use_fake_acl) {
-		ok &= expect_fake_acl_activity(context.fake_acl, "prepare_runtime_auth_files");
-		ok &= expect_fake_acl_target(context.fake_acl, context.functional_target_uid, geteuid());
-		ok &= reset_fake_acl_backend(context.fake_acl);
+	const uid_t target_uid = context.functional_target_uid;
+	for (const auto &[name, test] : {
+	         std::pair{"model", expect_present_absent},
+	         std::pair{"reuse", expect_reuse_and_inode_bound},
+	         std::pair{"limit", expect_two_slot_limit},
+	     }) {
+		auto fixture = make_fixture(temp_root, name, target_uid);
+		ok &= expect(fixture.has_value(), std::string("creates ") + name + " fixture");
+		if (fixture.has_value()) {
+			ok &= test(*fixture, context.operations);
+		}
 	}
-	ok &= expect_acl_setup_failure(temp_root);
+	ok &= expect_partial_slot_fallback(temp_root, target_uid, context.operations);
+	ok &= expect_malformed_slot_discovery(temp_root, target_uid, context.operations);
+	ok &= expect_malformed_objects_fail(temp_root, target_uid, context.operations);
+	ok &= expect_cleanup_migration(temp_root, target_uid, context.operations);
 	if (context.acl_supported) {
-		ok &= expect_staged_acl_confidentiality(temp_root, context.production_operations);
+		ok &= expect_cross_uid_acl_access(temp_root, context.production_operations);
 	}
-	ok &= expect_stdout_protocol();
 	return ok;
 }

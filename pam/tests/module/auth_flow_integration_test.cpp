@@ -149,9 +149,8 @@ namespace {
 		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
 		                 PAM_SUCCESS,
 		             "successful staged runtime continues authentication");
-		ok &= expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2 &&
-		                 fixture.runtime.cleanup_calls == 1,
-		             "successful staged runtime reloads config and cleans up");
+		ok &= expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2,
+		             "successful staged runtime reloads config without generation cleanup");
 		return ok;
 	}
 
@@ -564,9 +563,6 @@ namespace {
 		});
 		expect_invalid("missing runtime prepare callback", [](auto &dependencies) -> void {
 			dependencies.runtime_session.prepare_runtime = nullptr;
-		});
-		expect_invalid("missing runtime cleanup callback", [](auto &dependencies) -> void {
-			dependencies.runtime_session.cleanup_runtime = nullptr;
 		});
 		expect_invalid("missing runtime effective-UID callback", [](auto &dependencies) -> void {
 			dependencies.runtime_session.effective_uid = nullptr;

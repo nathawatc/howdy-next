@@ -3,6 +3,7 @@
 #include "runtime/runtime_session_test_groups.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -26,9 +27,14 @@ namespace {
 
 	auto make_prepared_runtime(std::string_view suffix) -> howdy::pam::PreparedRuntimeFiles {
 		const auto root =
-		    howdy::native::auth_helper_protocol::prepared_runtime_root() /
-		    (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(getuid()) +
-		     std::string(suffix));
+		    suffix == "sibling"
+		        ? howdy::native::auth_helper_protocol::prepared_runtime_root() /
+		              (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(
+		                   getuid()) +
+		               std::string(suffix))
+		        : howdy::native::auth_helper_protocol::prepared_runtime_generation_dir(
+		              howdy::native::auth_helper_protocol::prepared_runtime_root(), getuid(),
+		              howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		return {
 		    .root_dir    = root,
 		    .config_path = howdy::native::auth_helper_protocol::prepared_config_path(root).string(),
@@ -41,7 +47,7 @@ namespace {
 		std::vector<howdy::native::RuntimeConfigLoadResult> load_results;
 		std::vector<std::filesystem::path>                  load_paths;
 		std::vector<std::string>                            prepare_usernames;
-		std::vector<std::filesystem::path>                  cleanup_roots;
+		std::vector<int>                                    issued_lease_fds;
 		int                                                 effective_uid_calls = 0;
 		bool                                                prepare_succeeds    = true;
 		uid_t                                               effective_uid       = 0;
@@ -51,7 +57,6 @@ namespace {
 	struct CallbackCounts {
 		std::size_t load          = 0;
 		std::size_t prepare       = 0;
-		std::size_t cleanup       = 0;
 		int         effective_uid = 0;
 
 		auto operator==(const CallbackCounts &) const -> bool = default;
@@ -92,13 +97,15 @@ namespace {
 		if (!fake.prepare_succeeds) {
 			return false;
 		}
-		*prepared = fake.prepared;
+		std::array<int, 2> lease_pipe{};
+		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
+			return false;
+		}
+		(void)close(lease_pipe[1]);
+		*prepared          = fake.prepared;
+		prepared->lease_fd = lease_pipe[0];
+		fake.issued_lease_fds.push_back(lease_pipe[0]);
 		return true;
-	}
-
-	auto cleanup_runtime(void *context, const std::filesystem::path &root_dir) -> void {
-		auto &fake = *static_cast<FakeContext *>(context);
-		fake.cleanup_roots.push_back(root_dir);
 	}
 
 	auto load_runtime_config(void *context, const std::filesystem::path &config_path)
@@ -122,24 +129,31 @@ namespace {
 		return howdy::pam::RuntimeSessionDependencies{
 		    .context             = context,
 		    .prepare_runtime     = prepare_runtime,
-		    .cleanup_runtime     = cleanup_runtime,
 		    .load_runtime_config = load_runtime_config,
 		    .effective_uid       = effective_uid,
 		};
+	}
+
+	auto issued_lease_has_state(const FakeContext &context, bool open) -> bool {
+		if (context.issued_lease_fds.empty()) {
+			return false;
+		}
+		errno              = 0;
+		const bool is_open = fcntl(context.issued_lease_fds.back(), F_GETFD) >= 0;
+		return is_open == open && (is_open || errno == EBADF);
 	}
 
 	auto callback_counts(const FakeContext &context) -> CallbackCounts {
 		return CallbackCounts{
 		    .load          = context.load_paths.size(),
 		    .prepare       = context.prepare_usernames.size(),
-		    .cleanup       = context.cleanup_roots.size(),
 		    .effective_uid = context.effective_uid_calls,
 		};
 	}
 
 	auto no_callbacks_ran(const FakeContext &context) -> bool {
 		return context.load_paths.empty() && context.prepare_usernames.empty() &&
-		       context.cleanup_roots.empty() && context.effective_uid_calls == 0;
+		       context.effective_uid_calls == 0;
 	}
 
 	auto test_direct_success() -> bool {
@@ -160,7 +174,6 @@ namespace {
 			ok &= expect(session.user_models_dir() == kConfiguredModels,
 			             "direct success retains configured models path");
 		}
-		ok &= expect(context.cleanup_roots.empty(), "direct success does not clean up");
 		return ok;
 	}
 
@@ -177,7 +190,7 @@ namespace {
 				return false;
 			}
 		}
-		return expect(context.cleanup_roots.empty(), "direct parse failure does not clean up");
+		return true;
 	}
 
 	auto test_root_eacces_failure() -> bool {
@@ -231,11 +244,9 @@ namespace {
 			             "staged success uses staged config");
 			ok &= expect(session.user_models_dir() == staged_runtime.user_models_dir,
 			             "staged success uses staged models");
-			ok &= expect(context.cleanup_roots.empty(), "staged success defers cleanup");
 		}
-		ok &= expect(context.cleanup_roots ==
-		                 std::vector<std::filesystem::path>{staged_runtime.root_dir},
-		             "staged success cleans up once at destruction");
+		ok &= expect(issued_lease_has_state(context, false),
+		             "staged success closes lease at destruction");
 		return ok;
 	}
 
@@ -258,7 +269,7 @@ namespace {
 				return false;
 			}
 		}
-		return expect(context.cleanup_roots.empty(), "prepare failure does not clean up");
+		return true;
 	}
 
 	auto test_staged_config_failure() -> bool {
@@ -275,17 +286,17 @@ namespace {
 			const auto                 result = session.load_for_user("alice");
 			ok &= expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			             "staged parse failure returns config-load failure");
-			ok &= expect(context.cleanup_roots.empty(), "staged parse failure defers cleanup");
+			ok &= expect(issued_lease_has_state(context, true),
+			             "staged parse failure retains lease until destruction");
 		}
-		ok &= expect(context.cleanup_roots ==
-		                 std::vector<std::filesystem::path>{staged_runtime.root_dir},
-		             "staged parse failure cleans up once at destruction");
+		ok &= expect(issued_lease_has_state(context, false),
+		             "staged parse failure closes lease at destruction");
 		return ok;
 	}
 
 	auto test_missing_dependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 4; ++missing) {
+		for (int missing = 0; missing < 3; ++missing) {
 			FakeContext context;
 			auto        deps = dependencies(&context);
 			switch (missing) {
@@ -293,12 +304,9 @@ namespace {
 					deps.prepare_runtime = nullptr;
 					break;
 				case 1:
-					deps.cleanup_runtime = nullptr;
-					break;
-				case 2:
 					deps.load_runtime_config = nullptr;
 					break;
-				case 3:
+				case 2:
 					deps.effective_uid = nullptr;
 					break;
 				default:
@@ -331,7 +339,7 @@ namespace {
 				return false;
 			}
 		}
-		return expect(context.cleanup_roots.size() == 1, "scope exit invokes cleanup exactly once");
+		return expect(issued_lease_has_state(context, false), "scope exit closes staged lease");
 	}
 
 	auto test_direct_success_is_one_shot() -> bool {
@@ -355,10 +363,7 @@ namespace {
 			             "direct re-entry preserves configured config path");
 			ok &= expect(session.user_models_dir() == kConfiguredModels,
 			             "direct re-entry preserves configured models path");
-			ok &= expect(context.cleanup_roots.empty(), "direct re-entry does not clean up early");
 		}
-		ok &= expect(context.cleanup_roots.empty(),
-		             "direct re-entry does not clean up at destruction");
 		return ok;
 	}
 
@@ -391,9 +396,11 @@ namespace {
 			             "staged re-entry preserves runtime-a config");
 			ok &= expect(session.user_models_dir() == runtime.user_models_dir,
 			             "staged re-entry preserves runtime-a models");
+			ok &= expect(issued_lease_has_state(context, true),
+			             "staged re-entry retains original lease");
 		}
-		ok &= expect(context.cleanup_roots == std::vector<std::filesystem::path>{runtime.root_dir},
-		             "staged re-entry cleans runtime-a exactly once");
+		ok &= expect(issued_lease_has_state(context, false),
+		             "staged re-entry closes original lease at destruction");
 		return ok;
 	}
 
@@ -418,9 +425,11 @@ namespace {
 			             "failed staged one-shot rejects second load");
 			ok &= expect(callback_counts(context) == counts_after_first,
 			             "failed staged re-entry invokes no callbacks");
+			ok &= expect(issued_lease_has_state(context, true),
+			             "failed staged re-entry retains original lease");
 		}
-		ok &= expect(context.cleanup_roots == std::vector<std::filesystem::path>{runtime.root_dir},
-		             "failed staged re-entry cleans original root exactly once");
+		ok &= expect(issued_lease_has_state(context, false),
+		             "failed staged re-entry closes original lease at destruction");
 		return ok;
 	}
 
@@ -443,7 +452,6 @@ namespace {
 			ok &= expect(no_callbacks_ran(context),
 			             "invalid dependency re-entry invokes no callbacks");
 		}
-		ok &= expect(context.cleanup_roots.empty(), "invalid dependency re-entry never cleans up");
 		return ok;
 	}
 
@@ -454,7 +462,6 @@ namespace {
 		struct TestCase {
 			std::string_view                 name;
 			howdy::pam::PreparedRuntimeFiles prepared;
-			bool                             cleanup_expected = false;
 		};
 
 		const auto valid   = make_prepared_runtime("valid1");
@@ -497,45 +504,22 @@ namespace {
 		outside_root.user_models_dir      = "/tmp/howdy-auth-helper-runtime/models";
 
 		const std::vector<TestCase> test_cases = {
-		    {.name = "empty config path", .prepared = empty_config, .cleanup_expected = true},
-		    {.name = "empty models path", .prepared = empty_models, .cleanup_expected = true},
+		    {.name = "empty config path", .prepared = empty_config},
+		    {.name = "empty models path", .prepared = empty_models},
 		    {.name = "empty root path", .prepared = empty_root},
-		    {.name             = "config path outside prepared runtime root",
-		     .prepared         = config_outside,
-		     .cleanup_expected = true},
-		    {.name             = "user-model directory outside prepared runtime root",
-		     .prepared         = models_outside,
-		     .cleanup_expected = true},
-		    {.name             = "sibling path with valid-looking basename",
-		     .prepared         = sibling_models,
-		     .cleanup_expected = true},
-		    {.name             = "invalid prepared runtime suffix",
-		     .prepared         = sibling,
-		     .cleanup_expected = true},
-		    {.name             = "config and models paths swapped",
-		     .prepared         = swapped_paths,
-		     .cleanup_expected = true},
-		    {.name             = "unexpected nested config path",
-		     .prepared         = nested_config,
-		     .cleanup_expected = true},
-		    {.name             = "models path with parent traversal",
-		     .prepared         = escaped_models,
-		     .cleanup_expected = true},
-		    {.name             = "equivalent noncanonical runtime root",
-		     .prepared         = noncanonical_root,
-		     .cleanup_expected = true},
-		    {.name             = "unexpected config basename",
-		     .prepared         = wrong_config_name,
-		     .cleanup_expected = true},
-		    {.name             = "unexpected models basename",
-		     .prepared         = wrong_models_name,
-		     .cleanup_expected = true},
-		    {.name             = "relative prepared paths",
-		     .prepared         = relative_paths,
-		     .cleanup_expected = true},
-		    {.name             = "runtime root outside /run/howdy",
-		     .prepared         = outside_root,
-		     .cleanup_expected = true},
+		    {.name = "config path outside prepared runtime root", .prepared = config_outside},
+		    {.name     = "user-model directory outside prepared runtime root",
+		     .prepared = models_outside},
+		    {.name = "sibling path with valid-looking basename", .prepared = sibling_models},
+		    {.name = "invalid prepared runtime suffix", .prepared = sibling},
+		    {.name = "config and models paths swapped", .prepared = swapped_paths},
+		    {.name = "unexpected nested config path", .prepared = nested_config},
+		    {.name = "models path with parent traversal", .prepared = escaped_models},
+		    {.name = "equivalent noncanonical runtime root", .prepared = noncanonical_root},
+		    {.name = "unexpected config basename", .prepared = wrong_config_name},
+		    {.name = "unexpected models basename", .prepared = wrong_models_name},
+		    {.name = "relative prepared paths", .prepared = relative_paths},
+		    {.name = "runtime root outside /run/howdy", .prepared = outside_root},
 		};
 
 		bool ok = true;
@@ -558,17 +542,11 @@ namespace {
 				             name + " preserves configured config path");
 				ok &= expect(session.user_models_dir() == kConfiguredModels,
 				             name + " preserves configured models path");
-				const auto expected_cleanup_count = test_case.cleanup_expected ? 1U : 0U;
-				ok &= expect(context.cleanup_roots.size() == expected_cleanup_count,
-				             name + " has expected immediate cleanup");
-				if (test_case.cleanup_expected && !context.cleanup_roots.empty()) {
-					ok &= expect(context.cleanup_roots.front() == test_case.prepared.root_dir,
-					             name + " cleans prepared root");
-				}
+				ok &= expect(issued_lease_has_state(context, false),
+				             name + " closes rejected lease immediately");
 			}
-			const auto expected_cleanup_count = test_case.cleanup_expected ? 1U : 0U;
-			ok &= expect(context.cleanup_roots.size() == expected_cleanup_count,
-			             std::string(test_case.name) + " does not clean twice at destruction");
+			ok &= expect(issued_lease_has_state(context, false),
+			             std::string(test_case.name) + " keeps rejected lease closed");
 		}
 		return ok;
 	}

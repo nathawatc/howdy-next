@@ -26,12 +26,6 @@ namespace howdy::native::auth_helper::internal {
 	    -> bool;
 	__attribute__((visibility("hidden"))) auto
 	secure_source_file_stat(int fd, const std::string &label, uid_t owner_uid) -> bool;
-	__attribute__((visibility("hidden"))) auto write_all(int fd, const char *data, ssize_t size)
-	    -> bool;
-	__attribute__((visibility("hidden"))) auto
-	copy_file(const std::filesystem::path &source, const std::filesystem::path &destination,
-	          const std::string &label, StagedIdentity identity, const AclOperations &operations)
-	    -> bool;
 	__attribute__((visibility("hidden"))) auto
 	select_source_model_path(const std::filesystem::path &source_user_models_dir,
 	                         const std::string &user, std::optional<uid_t> owner_uid,
@@ -42,5 +36,6 @@ namespace howdy::native::auth_helper::internal {
 	    -> std::optional<PreparedPaths>;
 	__attribute__((visibility("hidden"))) auto
 	cleanup_runtime_auth_files(const std::filesystem::path &path, uid_t uid,
-	                           const std::filesystem::path &runtime_root) -> CleanupRuntimeResult;
+	                           const std::filesystem::path &runtime_root, uid_t owner_uid = 0,
+	                           gid_t owner_gid = 0) -> CleanupRuntimeResult;
 }  // namespace howdy::native::auth_helper::internal

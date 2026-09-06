@@ -55,6 +55,12 @@ namespace howdy::native {
 			       (opened_file.st_mode & (S_IWGRP | S_IWOTH)) == 0 && opened_file.st_nlink == 1;
 		}
 
+		auto opened_model_file_is_secure_for_read(int fd, const std::filesystem::path &path,
+		                                          const struct stat &opened_file) -> bool {
+			return opened_model_file_is_secure(opened_file) ||
+			       (opened_file.st_nlink == 2 && validate_staged_user_model_file(fd, path));
+		}
+
 		auto snapshot_model_file(const std::filesystem::path &path)
 		    -> std::optional<UserModelFileSnapshot> {
 			struct stat st{};
@@ -482,7 +488,7 @@ namespace howdy::native {
 			            "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
-		if (!opened_model_file_is_secure(opened_file)) {
+		if (!opened_model_file_is_secure_for_read(fd, path, opened_file)) {
 			return user_model_codec::Document{
 			    failure(UserModelStatus::kInsecurePath,
 			            "Opened user model file failed security validation: " + path.string()),

@@ -3,10 +3,12 @@
 #include "module/auth_flow.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -69,7 +71,6 @@ namespace howdy::test::auth_flow {
 		bool                                   detection_notice = true;
 		int                                    load_calls       = 0;
 		int                                    prepare_calls    = 0;
-		int                                    cleanup_calls    = 0;
 		int                                    timeout          = 5;
 		uid_t                                  effective_uid    = 0;
 		bool                                   prepare_result   = false;
@@ -113,23 +114,22 @@ namespace howdy::test::auth_flow {
 		if (!state->prepare_result) {
 			return false;
 		}
-		const auto root =
-		    howdy::native::auth_helper_protocol::prepared_runtime_root() /
-		    (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(getuid()) +
-		     "flow01");
+		const auto root = howdy::native::auth_helper_protocol::prepared_runtime_generation_dir(
+		    howdy::native::auth_helper_protocol::prepared_runtime_root(), getuid(),
+		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
+		std::array<int, 2> lease_pipe = {-1, -1};
+		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
+			return false;
+		}
+		(void)close(lease_pipe[1]);
 		*prepared = {
 		    .root_dir    = root,
 		    .config_path = howdy::native::auth_helper_protocol::prepared_config_path(root).string(),
 		    .user_models_dir =
 		        howdy::native::auth_helper_protocol::prepared_user_models_dir(root).string(),
+		    .lease_fd = lease_pipe[0],
 		};
 		return true;
-	}
-
-	inline auto flow_cleanup_runtime(void *context, const std::filesystem::path &root_dir) -> void {
-		(void)root_dir;
-		auto *state = static_cast<RuntimeFlowState *>(context);
-		++state->cleanup_calls;
 	}
 
 	inline auto flow_load_runtime_config(void *context, const std::filesystem::path &path)
@@ -257,7 +257,6 @@ namespace howdy::test::auth_flow {
 		        {
 		            .context             = &fixture->runtime,
 		            .prepare_runtime     = flow_prepare_runtime,
-		            .cleanup_runtime     = flow_cleanup_runtime,
 		            .load_runtime_config = flow_load_runtime_config,
 		            .effective_uid       = flow_effective_uid,
 		        },

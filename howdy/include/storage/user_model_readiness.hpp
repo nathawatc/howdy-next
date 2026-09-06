@@ -16,6 +16,10 @@ namespace howdy::native {
 		std::filesystem::path path;
 	};
 
+	auto validate_staged_user_model_file(int fd, const std::filesystem::path &path,
+	                                     std::optional<uid_t> owner_uid = static_cast<uid_t>(0))
+	    -> bool;
+
 	auto check_user_model_readiness(const std::filesystem::path &models_dir,
 	                                const std::string &user, std::optional<uid_t> owner_uid)
 	    -> UserModelReadinessResult;

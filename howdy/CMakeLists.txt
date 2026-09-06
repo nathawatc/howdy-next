@@ -114,6 +114,7 @@ add_library(
 	src/storage/user_model_readiness.cpp
 )
 howdy_configure_native_target(howdy_user_model_readiness)
+target_link_libraries(howdy_user_model_readiness PRIVATE PkgConfig::LIBACL)
 
 add_library(howdy_model_file STATIC src/model_assets/model_file.cpp)
 howdy_configure_native_target(howdy_model_file)

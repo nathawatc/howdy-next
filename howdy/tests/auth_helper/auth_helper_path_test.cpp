@@ -142,161 +142,8 @@ namespace {
 		return ok;
 	}
 
-	auto expect_write_all_helper(const std::filesystem::path &temp_root) -> bool {
-		using howdy::native::auth_helper::internal::write_all;
-
-		bool ok = true;
-		ok &= expect(!write_all(-1, "x", 1), "invalid write fd is rejected");
-
-		const auto no_op_path = temp_root / "write-all-no-op-output";
-		ok &= expect(write_file(no_op_path, "unchanged"), "writes no-op output fixture");
-		ScopedFd no_op_fd(open(no_op_path.c_str(), O_WRONLY | O_CLOEXEC));
-		ok &= expect(no_op_fd.get() >= 0, "opens no-op output file");
-		ok &= expect(write_all(no_op_fd.get(), "ignored", 0), "zero-sized write is a no-op");
-		ok &= expect(write_all(no_op_fd.get(), "ignored", -1), "negative-sized write is a no-op");
-		no_op_fd.reset();
-		ok &=
-		    expect(read_file(no_op_path) == "unchanged", "no-op writes preserve destination file");
-
-		const auto output_path = temp_root / "write-all-output";
-		ScopedFd   output_fd(
-		    open(output_path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
-		ok &= expect(output_fd.get() >= 0, "creates write-all output file");
-		constexpr auto kOutput = "alpha\nbeta\n";
-		ok &=
-		    expect(write_all(output_fd.get(), kOutput, static_cast<ssize_t>(std::strlen(kOutput))),
-		           "writes complete buffer");
-		output_fd.reset();
-		ok &= expect(read_file(output_path) == kOutput, "write-all output matches input");
-
-		return ok;
-	}
-
-	auto expect_copy_file_for_user(const std::filesystem::path &temp_root, bool acl_functional,
-	                               bool real_acl_supported,
-	                               const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
-		using howdy::native::auth_helper::internal::copy_file;
-
-		bool ok = true;
-		ok &= expect(!copy_file(temp_root / "missing", temp_root / "dest", "Missing",
-		                        {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-		                        operations),
-		             "missing source copy fails");
-
-		const auto real_source    = temp_root / "real-source";
-		const auto symlink_source = temp_root / "symlink-source";
-		ok &= expect(write_file(real_source, "real"), "writes real source");
-		if (symlink(real_source.c_str(), symlink_source.c_str()) == 0) {
-			ok &= expect(!copy_file(symlink_source, temp_root / "symlink-dest", "Symlink",
-			                        {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-			                        operations),
-			             "symlink source copy fails closed");
-		} else {
-			std::cerr << "SKIP: symlink source creation failed: " << std::strerror(errno) << "\n";
-		}
-
-		if (geteuid() == 0 && acl_functional) {
-			const auto destination = temp_root / "copied-source";
-			ok &= expect(chmod(real_source.c_str(), 0644) == 0, "sets secure source mode");
-			ok &= expect(copy_file(real_source, destination, "Source",
-			                       {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-			                       operations),
-			             "secure source copy succeeds as root");
-			ok &= expect(read_file(destination) == "real", "copied file preserves content");
-
-			struct stat stat_{};
-			ok &= expect(lstat(destination.c_str(), &stat_) == 0, "stats copied file");
-			ok &= expect(stat_.st_uid == 0 && stat_.st_gid == 0, "copied file owner is root:root");
-			if (real_acl_supported) {
-				ok &= expect_private_acl(destination, geteuid(), false, "copied file");
-			}
-			ok &= expect(!copy_file(real_source, destination, "Existing",
-			                        {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-			                        operations),
-			             "existing destination copy fails");
-		} else if (geteuid() != 0) {
-			std::cerr << "SKIP: successful auth-helper copy requires root-owned source\n";
-		}
-
-		return ok;
-	}
-
-	auto expect_fake_acl_backend(const std::filesystem::path &temp_root) -> bool {
-		using howdy::native::auth_helper::internal::copy_file;
-
-		if (geteuid() != 0) {
-			std::cerr << "SKIP: fake ACL production-copy test requires root-owned source\n";
-			return true;
-		}
-
-		bool            ok = true;
-		std::error_code ec;
-		const auto      source = temp_root / "fake-acl-source";
-		ok &= expect(write_file(source, "source"), "writes fake ACL source");
-		ok &= expect(chmod(source.c_str(), 0644) == 0, "secures fake ACL source");
-
-		FakeAclContext state;
-		const auto     success_destination = temp_root / "fake-acl-success";
-		ok &= expect(copy_file(source, success_destination, "Fake ACL source",
-		                       {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-		                       state.operations()),
-		             "production ACL setup succeeds through fake backend");
-		ok &= expect_fake_acl_activity(state, "fake ACL backend");
-		ok &= expect_fake_acl_descriptor_isolation(state);
-		ok &= reset_fake_acl_backend(state);
-
-		state.set_failure                    = true;
-		const auto setup_failure_destination = temp_root / "fake-acl-setup-failure";
-		ok &= expect(!copy_file(source, setup_failure_destination, "Fake ACL source",
-		                        {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-		                        state.operations()),
-		             "ACL setup injection propagates through fake backend");
-		ok &= expect(state.set_descriptors.empty() && state.get_descriptors.empty(),
-		             "setup injection records no successful ACL I/O");
-		ok &= reset_fake_acl_backend(state);
-
-		state.verification_failure                  = true;
-		const auto verification_failure_destination = temp_root / "fake-acl-verification-failure";
-		ok &= expect(!copy_file(source, verification_failure_destination, "Fake ACL source",
-		                        {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-		                        state.operations()),
-		             "ACL verification injection propagates through fake backend");
-		ok &= expect(state.set_descriptors.size() == 1 && state.get_descriptors.size() == 1,
-		             "verification injection follows production ACL setup");
-		ok &= reset_fake_acl_backend(state);
-
-		std::filesystem::remove(success_destination, ec);
-		ec.clear();
-		std::filesystem::remove(setup_failure_destination, ec);
-		ec.clear();
-		std::filesystem::remove(verification_failure_destination, ec);
-		return ok;
-	}
-
-	auto expect_invalid_acl_operations(const std::filesystem::path &temp_root) -> bool {
-		using howdy::native::auth_helper::set_private_acl_with_operations;
-
-		const auto     path = temp_root / "invalid-acl-operations";
-		ScopedFd       fd(open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600));
-		bool           ok = expect(fd.get() >= 0, "creates invalid ACL operations fixture");
-		FakeAclContext state;
-		auto           operations = state.operations();
-		operations.acl_get_fd     = nullptr;
-		ok &= expect(!set_private_acl_with_operations(fd.get(), path, geteuid(), false, operations),
-		             "missing ACL get callback fails closed");
-		operations            = state.operations();
-		operations.acl_set_fd = nullptr;
-		ok &= expect(!set_private_acl_with_operations(fd.get(), path, geteuid(), false, operations),
-		             "missing ACL set callback fails closed");
-		return ok;
-	}
-
-	auto expect_source_model_readiness(const std::filesystem::path &temp_root, bool acl_functional,
-	                                   const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
+	auto expect_source_model_readiness(const std::filesystem::path &temp_root) -> bool {
 		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::copy_file;
 		using howdy::native::auth_helper::internal::select_source_model_path;
 
 		bool                    ok = true;
@@ -371,17 +218,6 @@ namespace {
 			ec.clear();
 		}
 
-		if (geteuid() == 0 && acl_functional) {
-			const auto staged_path = temp_root / "staged-alice.dat";
-			ok &= expect(copy_file(model_path, staged_path, "User model file",
-			                       {.target_uid = geteuid(), .owner_uid = 0, .owner_gid = 0},
-			                       operations),
-			             "secure source model is staged");
-			ok &= expect(fs::exists(staged_path), "staged source model exists");
-		} else if (geteuid() != 0) {
-			std::cerr << "SKIP: successful auth-helper staging requires root-owned source\n";
-		}
-
 		const auto symlink_target = models_dir / "target.dat";
 		ok &= expect(write_file(symlink_target, "target"), "writes source model symlink target");
 		fs::remove(model_path, ec);
@@ -452,27 +288,11 @@ namespace {
 
 }  // namespace
 
-auto run_auth_helper_path_tests(const std::filesystem::path &temp_root, bool acl_functional,
-                                bool                                             acl_supported,
-                                const howdy::native::auth_helper::AclOperations &operations,
-                                howdy::test::auth_helper::FakeAclContext        &fake_acl,
-                                bool use_fake_acl) -> bool {
+auto run_auth_helper_path_tests(const std::filesystem::path &temp_root) -> bool {
 	bool ok = true;
 	ok &= expect_acl_probe_classification(temp_root);
 	ok &= expect_runtime_root_validation(temp_root);
 	ok &= expect_secure_source_file_stat(temp_root);
-	ok &= expect_write_all_helper(temp_root);
-	ok &= expect_invalid_acl_operations(temp_root);
-	ok &= expect_fake_acl_backend(temp_root);
-	ok &= expect_copy_file_for_user(temp_root, acl_functional, acl_supported, operations);
-	if (use_fake_acl) {
-		ok &= expect_fake_acl_activity(fake_acl, "copy_file_for_user");
-		ok &= reset_fake_acl_backend(fake_acl);
-	}
-	ok &= expect_source_model_readiness(temp_root, acl_functional, operations);
-	if (use_fake_acl) {
-		ok &= expect_fake_acl_activity(fake_acl, "source_model_readiness");
-		ok &= reset_fake_acl_backend(fake_acl);
-	}
+	ok &= expect_source_model_readiness(temp_root);
 	return ok;
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "storage/staged_runtime_policy.hpp"
+
 #include <filesystem>
 #include <unistd.h>
 
@@ -15,10 +17,12 @@ namespace howdy::native::auth_helper {
 	auto production_acl_operations() -> AclOperations;
 
 	__attribute__((visibility("hidden"))) auto
-	set_private_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
-	                                bool directory, const AclOperations &operations) -> bool;
-
+	set_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                   const StagedAclPolicy &policy,
+	                                   const AclOperations   &operations) -> bool;
 	__attribute__((visibility("hidden"))) auto
-	set_private_acl(int fd, const std::filesystem::path &path, uid_t uid, bool directory) -> bool;
+	verify_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                      const StagedAclPolicy &policy,
+	                                      const AclOperations   &operations) -> bool;
 
 }  // namespace howdy::native::auth_helper

@@ -38,7 +38,7 @@ namespace howdy::native::auth_helper {
 		};
 
 		auto acl_entry_has_permissions(acl_entry_t entry, acl_tag_t tag, const void *qualifier,
-		                               int permissions) -> AclVerifyResult {
+		                               acl_perm_t permissions) -> AclVerifyResult {
 			acl_tag_t entry_tag;
 			if (acl_get_tag_type(entry, &entry_tag) != 0) {
 				return {.status       = AclVerifyStatus::kReadError,
@@ -104,8 +104,13 @@ namespace howdy::native::auth_helper {
 			return acl_set_fd(fd, acl);
 		}
 
-		auto verify_private_acl(int fd, bool directory, uid_t uid, const AclOperations &operations)
-		    -> AclVerifyResult {
+		constexpr auto acl_permissions(StagedAclPermissions permissions) -> acl_perm_t {
+			return (permissions.read ? ACL_READ : 0) | (permissions.write ? ACL_WRITE : 0) |
+			       (permissions.execute ? ACL_EXECUTE : 0);
+		}
+
+		auto inspect_acl(int fd, const StagedAclPolicy &policy, uid_t uid,
+		                 const AclOperations &operations) -> AclVerifyResult {
 			acl_t acl = operations.acl_get_fd(operations.context, fd);
 			if (acl == nullptr) {
 				return {.status       = AclVerifyStatus::kReadError,
@@ -113,12 +118,18 @@ namespace howdy::native::auth_helper {
 				        .operation    = "acl_get_fd"};
 			}
 
-			const int            permissions   = directory ? (ACL_READ | ACL_EXECUTE) : ACL_READ;
-			constexpr std::array kExpectedTags = {ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_MASK,
-			                                      ACL_OTHER};
-			std::size_t          entry_count   = 0;
-			acl_entry_t          entry;
-			int                  entry_id = ACL_FIRST_ENTRY;
+			const std::array extended_tags = {ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_MASK,
+			                                  ACL_OTHER};
+			const std::array basic_tags    = {ACL_USER_OBJ, ACL_GROUP_OBJ, ACL_OTHER, acl_tag_t{},
+			                                  acl_tag_t{}};
+			const auto      &tags          = policy.has_named_target ? extended_tags : basic_tags;
+			const std::array permissions   = {
+			    policy.owner, policy.has_named_target ? policy.target : policy.group,
+			    policy.has_named_target ? policy.group : policy.other, policy.mask, policy.other};
+			const std::size_t expected_count = policy.has_named_target ? 5 : 3;
+			std::size_t       entry_count    = 0;
+			acl_entry_t       entry;
+			int               entry_id = ACL_FIRST_ENTRY;
 			while (true) {
 				const int entry_result = acl_get_entry(acl, entry_id, &entry);
 				if (entry_result < 0) {
@@ -132,36 +143,23 @@ namespace howdy::native::auth_helper {
 					break;
 				}
 				entry_id = ACL_NEXT_ENTRY;
-				if (entry_count >= kExpectedTags.size()) {
+				if (entry_count >= expected_count) {
 					acl_free(acl);
 					return {.status = AclVerifyStatus::kMalformed};
 				}
-				acl_tag_t tag;
-				if (acl_get_tag_type(entry, &tag) != 0) {
-					const int error_number = errno;
-					acl_free(acl);
-					return {.status       = AclVerifyStatus::kReadError,
-					        .error_number = error_number,
-					        .operation    = "acl_get_tag_type"};
-				}
-				if (tag != kExpectedTags[entry_count]) {
-					acl_free(acl);
-					return {.status = AclVerifyStatus::kMalformed};
-				}
-				++entry_count;
+				const auto tag    = tags[entry_count];
 				const auto result = acl_entry_has_permissions(
 				    entry, tag, tag == ACL_USER ? static_cast<const void *>(&uid) : nullptr,
-				    tag == ACL_GROUP_OBJ || tag == ACL_OTHER ? 0 : permissions);
+				    acl_permissions(permissions[entry_count]));
 				if (result.status != AclVerifyStatus::kOk) {
 					acl_free(acl);
 					return result;
 				}
+				++entry_count;
 			}
 			acl_free(acl);
-			if (entry_count != kExpectedTags.size()) {
-				return {.status = AclVerifyStatus::kMalformed};
-			}
-			return {.status = AclVerifyStatus::kOk};
+			return {.status = entry_count == expected_count ? AclVerifyStatus::kOk
+			                                                : AclVerifyStatus::kMalformed};
 		}
 
 		auto log_acl_verify_failure(const std::filesystem::path &path,
@@ -212,50 +210,46 @@ namespace howdy::native::auth_helper {
 		    .context = nullptr, .acl_get_fd = production_get_fd, .acl_set_fd = production_set_fd};
 	}
 
-	auto set_private_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
-	                                     bool directory, const AclOperations &operations) -> bool {
+	auto set_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                        const StagedAclPolicy &policy,
+	                                        const AclOperations   &operations) -> bool {
 		if (operations.acl_get_fd == nullptr || operations.acl_set_fd == nullptr) {
-			errno                  = EINVAL;
-			const int error_number = errno;
-			return log_errno_failure("apply ACL to staged object", path, error_number);
+			errno = EINVAL;
+			return log_errno_failure("apply ACL to persistent object", path, errno);
 		}
-		const acl_perm_t permissions = directory ? (kAclRead | kAclExecute) : kAclRead;
-		acl_t            acl         = acl_init(5);
+		acl_t acl = acl_init(policy.has_named_target ? 5 : 3);
 		if (acl == nullptr) {
-			const int error_number = errno;
-			return log_errno_failure("allocate ACL for staged object", path, error_number);
+			return log_errno_failure("allocate ACL for persistent object", path, errno);
 		}
-
-		if (!add_acl_entry(acl, path, ACL_USER_OBJ, nullptr, permissions) ||
-		    !add_acl_entry(acl, path, ACL_USER, &uid, permissions) ||
-		    !add_acl_entry(acl, path, ACL_GROUP_OBJ, nullptr, 0) ||
-		    !add_acl_entry(acl, path, ACL_MASK, nullptr, permissions) ||
-		    !add_acl_entry(acl, path, ACL_OTHER, nullptr, 0)) {
+		if (!add_acl_entry(acl, path, ACL_USER_OBJ, nullptr, acl_permissions(policy.owner)) ||
+		    (policy.has_named_target &&
+		     !add_acl_entry(acl, path, ACL_USER, &uid, acl_permissions(policy.target))) ||
+		    !add_acl_entry(acl, path, ACL_GROUP_OBJ, nullptr, acl_permissions(policy.group)) ||
+		    (policy.has_named_target &&
+		     !add_acl_entry(acl, path, ACL_MASK, nullptr, acl_permissions(policy.mask))) ||
+		    !add_acl_entry(acl, path, ACL_OTHER, nullptr, acl_permissions(policy.other)) ||
+		    acl_valid(acl) != 0) {
 			acl_free(acl);
 			return false;
-		}
-		if (acl_valid(acl) != 0) {
-			const int error_number = errno;
-			acl_free(acl);
-			return log_errno_failure("acl_valid for staged object", path, error_number);
 		}
 		if (operations.acl_set_fd(operations.context, fd, acl) != 0) {
 			const int error_number = errno;
 			acl_free(acl);
-			return log_errno_failure("acl_set_fd for staged object", path, error_number);
+			return log_errno_failure("acl_set_fd for persistent object", path, error_number);
 		}
 		acl_free(acl);
-		const auto verification = verify_private_acl(fd, directory, uid, operations);
-		if (verification.status != AclVerifyStatus::kOk) {
-			return log_acl_verify_failure(path, verification);
-		}
-		return true;
+		return verify_persistent_acl_with_operations(fd, path, uid, policy, operations);
 	}
 
-	auto set_private_acl(int fd, const std::filesystem::path &path, uid_t uid, bool directory)
-	    -> bool {
-		return set_private_acl_with_operations(fd, path, uid, directory,
-		                                       production_acl_operations());
+	auto verify_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                           const StagedAclPolicy &policy,
+	                                           const AclOperations   &operations) -> bool {
+		if (operations.acl_get_fd == nullptr) {
+			errno = EINVAL;
+			return log_errno_failure("verify ACL on persistent object", path, errno);
+		}
+		const auto result = inspect_acl(fd, policy, uid, operations);
+		return result.status == AclVerifyStatus::kOk ? true : log_acl_verify_failure(path, result);
 	}
 
 }  // namespace howdy::native::auth_helper

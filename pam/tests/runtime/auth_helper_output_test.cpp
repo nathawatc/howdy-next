@@ -301,16 +301,18 @@ namespace {
 			std::string user_models_dir;
 		};
 
-		const auto runtime_dir =
-		    prepared_runtime_root() / (prepared_runtime_directory_prefix(getuid()) + "parse1");
+		const auto runtime_dir = prepared_runtime_generation_dir(prepared_runtime_root(), getuid(),
+		                                                         RuntimeGenerationSlot::kSlot0);
 		const auto config_path = prepared_config_path(runtime_dir);
 		const auto models_dir  = prepared_user_models_dir(runtime_dir);
-		const auto sibling_dir =
+		const auto sibling_dir = prepared_runtime_generation_dir(prepared_runtime_root(), getuid(),
+		                                                         RuntimeGenerationSlot::kSlot1);
+		const auto invalid_dir =
 		    prepared_runtime_root() / (prepared_runtime_directory_prefix(getuid()) + "sibling");
-		const auto foreign_dir =
-		    prepared_runtime_root() /
-		    (prepared_runtime_directory_prefix(static_cast<uid_t>(getuid() + 1)) + "alien1");
-		const auto output_for = [](const fs::path &config, const fs::path &models) -> std::string {
+		const auto foreign_dir = prepared_runtime_generation_dir(prepared_runtime_root(),
+		                                                         static_cast<uid_t>(getuid() + 1),
+		                                                         RuntimeGenerationSlot::kSlot0);
+		const auto output_for  = [](const fs::path &config, const fs::path &models) -> std::string {
 			return "CONFIG_PATH=" + config.string() + "\nUSER_MODELS_DIR=" + models.string() + "\n";
 		};
 
@@ -330,8 +332,8 @@ namespace {
 		     .output      = output_for(config_path, prepared_user_models_dir(sibling_dir)),
 		     .expected_ok = false},
 		    {.name        = "invalid prepared runtime suffix is rejected",
-		     .output      = output_for(prepared_config_path(sibling_dir),
-		                               prepared_user_models_dir(sibling_dir)),
+		     .output      = output_for(prepared_config_path(invalid_dir),
+		                               prepared_user_models_dir(invalid_dir)),
 		     .expected_ok = false},
 		    {.name        = "config and models paths swapped are rejected",
 		     .output      = output_for(runtime_dir / kPreparedUserModelsDirectoryName,

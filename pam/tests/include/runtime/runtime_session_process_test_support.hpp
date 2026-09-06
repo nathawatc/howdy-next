@@ -1,4 +1,5 @@
 #pragma once
+
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "test_support.hpp"
@@ -6,7 +7,6 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <paths.hpp>
@@ -17,16 +17,15 @@
 #include <utility>
 #include <vector>
 
-#include <sys/wait.h>
-
 namespace howdy::test::runtime_session {
 	using howdy::test::expect;
 
 	inline auto test_prepared_runtime_root(std::string_view suffix = "helper")
 	    -> std::filesystem::path {
-		return howdy::native::auth_helper_protocol::prepared_runtime_root() /
-		       (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(getuid()) +
-		        std::string(suffix));
+		(void)suffix;
+		return howdy::native::auth_helper_protocol::prepared_runtime_generation_dir(
+		    howdy::native::auth_helper_protocol::prepared_runtime_root(), getuid(),
+		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 	}
 
 	inline auto test_prepared_runtime_config_path(std::string_view suffix = "helper")
@@ -47,116 +46,125 @@ namespace howdy::test::runtime_session {
 	}
 
 	struct AuthHelperSpawnFake {
+		std::string                      fail_operation;
 		std::vector<std::string>         operations;
-		std::vector<std::array<int, 2>>  pipe_fds;
-		std::vector<int>                 pipe_flags;
 		std::vector<std::pair<int, int>> duplicate_fd_requests;
 		std::vector<std::pair<int, int>> dup2_fds;
 		std::vector<int>                 action_close_fds;
 		std::vector<int>                 action_closefrom_fds;
 		std::vector<int>                 parent_close_fds;
+		std::vector<int>                 pipe_flags;
+		std::vector<std::array<int, 3>>  socket_parameters;
 		std::vector<std::string>         spawn_argv;
 		std::vector<std::string>         spawn_env;
 		std::vector<std::string>         log_messages;
 		std::string                      spawn_path;
-		std::array<int, 2>               next_pipe_fds          = {10, 11};
-		int                              next_duplicate_fd      = 20;
-		int                              actions_init_result    = 0;
-		int                              stdout_dup_result      = 0;
-		int                              stderr_dup_result      = 0;
-		int                              first_close_result     = 0;
-		int                              final_close_result     = 0;
-		int                              closefrom_result       = 0;
-		int                              actions_destroy_result = 0;
-		int                              spawn_result           = 0;
-		int                              actions_init_calls     = 0;
-		int                              actions_destroy_calls  = 0;
-		int                              spawn_calls            = 0;
-		int                              output_reader_calls    = 0;
-		pid_t                            spawned_pid            = -1;
-		std::string                      helper_output;
+		std::array<int, 2>               next_pipe_fds     = {10, 11};
+		std::array<int, 2>               next_socket_fds   = {12, 13};
+		int                              next_duplicate_fd = 20;
+		int                              spawn_calls       = 0;
+		int                              destroy_calls     = 0;
+		int                              inherited_fd      = -1;
+		bool                             destroy_fails     = false;
+		pid_t                            spawned_pid       = -1;
 	};
 
-	inline auto fake_pipe2(void *context, int *pipe_fds, int flags) -> int {
+	inline auto fake_result(AuthHelperSpawnFake &fake, std::string_view operation) -> int {
+		fake.operations.emplace_back(operation);
+		if (fake.fail_operation != operation) {
+			return 0;
+		}
+		errno = EIO;
+		return EIO;
+	}
+
+	inline auto fake_pipe2(void *context, int *fds, int flags) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("pipe2");
-		fake.pipe_fds.push_back(fake.next_pipe_fds);
 		fake.pipe_flags.push_back(flags);
-		pipe_fds[0] = fake.next_pipe_fds[0];
-		pipe_fds[1] = fake.next_pipe_fds[1];
-		return 0;
+		fds[0] = fake.next_pipe_fds[0];
+		fds[1] = fake.next_pipe_fds[1];
+		return fake_result(fake, "pipe2");
+	}
+
+	inline auto fake_socketpair(void *context, int domain, int type, int protocol, int *fds)
+	    -> int {
+		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
+		fake.socket_parameters.push_back({domain, type, protocol});
+		fds[0] = fake.next_socket_fds[0];
+		fds[1] = fake.next_socket_fds[1];
+		return fake_result(fake, "socketpair");
 	}
 
 	inline auto fake_duplicate_fd(void *context, int fd, int minimum_fd) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("duplicate_fd");
 		fake.duplicate_fd_requests.emplace_back(fd, minimum_fd);
+		fake.operations.emplace_back("duplicate_fd");
+		if (fake.fail_operation == "duplicate_fd") {
+			errno = EIO;
+			return -1;
+		}
 		return fake.next_duplicate_fd++;
 	}
 
 	inline auto fake_actions_init(void *context, posix_spawn_file_actions_t *actions) -> int {
 		(void)actions;
-		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("actions_init");
-		++fake.actions_init_calls;
-		return fake.actions_init_result;
+		return fake_result(*static_cast<AuthHelperSpawnFake *>(context), "actions_init");
 	}
 
-	inline auto fake_actions_adddup2(void *context, posix_spawn_file_actions_t *actions, int old_fd,
-	                                 int new_fd) -> int {
+	inline auto fake_actions_adddup2(void *context, posix_spawn_file_actions_t *actions,
+	                                 int source_fd, int target_fd) -> int {
 		(void)actions;
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back(new_fd == STDOUT_FILENO ? "actions_adddup2_stdout"
-		                                                     : "actions_adddup2_stderr");
-		fake.dup2_fds.emplace_back(old_fd, new_fd);
-		return new_fd == STDOUT_FILENO ? fake.stdout_dup_result : fake.stderr_dup_result;
+		fake.dup2_fds.emplace_back(source_fd, target_fd);
+		if (target_fd == STDOUT_FILENO) {
+			return fake_result(fake, "dup_stdout");
+		}
+		return fake_result(fake, target_fd == STDERR_FILENO ? "dup_stderr" : "dup_lease");
 	}
 
 	inline auto fake_actions_addclose(void *context, posix_spawn_file_actions_t *actions, int fd)
 	    -> int {
 		(void)actions;
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back(fake.action_close_fds.empty() ? "actions_addclose_read"
-		                                                           : "actions_addclose_write");
 		fake.action_close_fds.push_back(fd);
-		return fake.action_close_fds.size() == 1 ? fake.first_close_result
-		                                         : fake.final_close_result;
+		static constexpr std::array names = {"close_output_read", "close_output_write",
+		                                     "close_lease_parent", "close_lease_child"};
+		return fake_result(fake,
+		                   names[std::min(fake.action_close_fds.size() - 1, names.size() - 1)]);
 	}
 
 	inline auto fake_actions_addclosefrom(void *context, posix_spawn_file_actions_t *actions,
 	                                      int from_fd) -> int {
 		(void)actions;
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("actions_addclosefrom");
 		fake.action_closefrom_fds.push_back(from_fd);
-		return fake.closefrom_result;
+		return fake_result(fake, "closefrom");
 	}
 
 	inline auto fake_actions_destroy(void *context, posix_spawn_file_actions_t *actions) -> int {
 		(void)actions;
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("actions_destroy");
-		++fake.actions_destroy_calls;
-		return fake.actions_destroy_result;
+		++fake.destroy_calls;
+		const int result = fake_result(fake, "destroy");
+		return fake.destroy_fails ? EIO : result;
 	}
 
 	inline auto fake_spawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(request.context);
-		fake.operations.emplace_back("spawn");
 		++fake.spawn_calls;
 		fake.spawn_path = request.path;
-		for (auto *const *argument = request.argv; argument != nullptr && *argument != nullptr;
+		for (const auto *argument = request.argv; argument != nullptr && *argument != nullptr;
 		     ++argument) {
 			fake.spawn_argv.emplace_back(*argument);
 		}
-		for (auto *const *environment = request.envp;
+		for (const auto *environment = request.envp;
 		     environment != nullptr && *environment != nullptr; ++environment) {
 			fake.spawn_env.emplace_back(*environment);
 		}
-		if (fake.spawn_result != 0) {
-			return fake.spawn_result;
+		const int result = fake_result(fake, "spawn");
+		if (result != 0) {
+			return result;
 		}
-
 		const pid_t pid = fork();
 		if (pid < 0) {
 			return errno;
@@ -171,25 +179,12 @@ namespace howdy::test::runtime_session {
 
 	inline auto fake_close(void *context, int fd) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("close");
 		fake.parent_close_fds.push_back(fd);
+		fake.operations.emplace_back("close");
 		return 0;
 	}
 
-	inline auto
-	fake_auth_helper_output_reader(void                                              *context,
-	                               [[maybe_unused]] howdy::native::BoundedReadRequest request)
-	    -> howdy::native::BoundedReadResult {
-		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
-		fake.operations.emplace_back("read_output");
-		++fake.output_reader_calls;
-		return {
-		    .output =
-		        fake.helper_output.empty() ? test_prepared_runtime_output() : fake.helper_output,
-		};
-	}
-
-	inline auto fake_auth_helper_spawn_log(void *context, std::string_view message) -> void {
+	inline void fake_auth_helper_spawn_log(void *context, std::string_view message) {
 		static_cast<AuthHelperSpawnFake *>(context)->log_messages.emplace_back(message);
 	}
 
@@ -198,6 +193,7 @@ namespace howdy::test::runtime_session {
 		auto operations                 = howdy::pam::auth_helper_process::production_operations();
 		operations.context              = fake;
 		operations.pipe2                = fake_pipe2;
+		operations.socketpair           = fake_socketpair;
 		operations.duplicate_fd         = fake_duplicate_fd;
 		operations.actions_init         = fake_actions_init;
 		operations.actions_adddup2      = fake_actions_adddup2;
@@ -206,72 +202,43 @@ namespace howdy::test::runtime_session {
 		operations.actions_destroy      = fake_actions_destroy;
 		operations.spawn                = fake_spawn;
 		operations.close                = fake_close;
-		operations.read_bounded         = fake_auth_helper_output_reader;
 		operations.log_observer         = fake_auth_helper_spawn_log;
 		return operations;
 	}
 
-	inline auto expect_parent_pipe_closed_once(const AuthHelperSpawnFake &fake,
-	                                           std::string_view           name) -> bool {
-		return expect(std::count(fake.parent_close_fds.begin(), fake.parent_close_fds.end(),
-		                         fake.next_pipe_fds[0]) == 1,
-		              std::string(name) + " closes parent read fd once") &&
-		       expect(std::count(fake.parent_close_fds.begin(), fake.parent_close_fds.end(),
-		                         fake.next_pipe_fds[1]) == 1,
-		              std::string(name) + " closes parent write fd once");
+	inline auto expect_closed_exactly_once(const AuthHelperSpawnFake &fake,
+	                                       const std::vector<int>    &expected_fds,
+	                                       std::string_view           name) -> bool {
+		bool ok = expect(fake.parent_close_fds.size() == expected_fds.size(),
+		                 std::string(name) + " closes expected parent descriptor count");
+		for (const int fd : expected_fds) {
+			ok &= expect(
+			    std::count(fake.parent_close_fds.begin(), fake.parent_close_fds.end(), fd) == 1,
+			    std::string(name) + " closes parent fd " + std::to_string(fd) + " once");
+		}
+		return ok;
 	}
 
-	inline auto action_operations(const AuthHelperSpawnFake &fake) -> std::vector<std::string> {
-		std::vector<std::string> actions;
-		for (const auto &operation : fake.operations) {
-			if (operation.starts_with("actions_")) {
-				actions.push_back(operation);
-			}
-		}
-		return actions;
+	inline auto expect_operation_prefix(const AuthHelperSpawnFake      &fake,
+	                                    const std::vector<std::string> &prefix,
+	                                    std::string_view                name) -> bool {
+		return expect(fake.operations.size() >= prefix.size() &&
+		                  std::equal(prefix.begin(), prefix.end(), fake.operations.begin()),
+		              std::string(name) + " stops after expected operation prefix");
 	}
 
-	inline auto expect_primary_spawn_error(const AuthHelperSpawnFake &fake,
-	                                       std::string_view operation, int error_code,
-	                                       std::string_view name) -> bool {
-		return expect(!fake.log_messages.empty(), std::string(name) + " logs primary error") &&
-		       expect(fake.log_messages.front().contains(operation),
-		              std::string(name) + " first log names failed operation") &&
-		       expect(fake.log_messages.front().contains(std::strerror(error_code)),
-		              std::string(name) + " first log includes strerror") &&
-		       expect(fake.log_messages.front().contains(std::to_string(error_code)),
-		              std::string(name) + " first log includes numeric error");
-	}
-
-	inline auto expect_destroy_error_after_primary(const AuthHelperSpawnFake &fake,
-	                                               std::string_view           name) -> bool {
-		return expect(fake.log_messages.size() >= 2,
-		              std::string(name) + " logs destroy error after primary error") &&
-		       expect(fake.log_messages[1].contains("posix_spawn_file_actions_destroy"),
-		              std::string(name) + " second log names action destroy") &&
-		       expect(fake.log_messages[1].contains(std::strerror(EIO)),
-		              std::string(name) + " second log includes destroy strerror") &&
-		       expect(fake.log_messages[1].contains(std::to_string(EIO)),
-		              std::string(name) + " second log includes destroy numeric error");
-	}
-
-	inline auto expect_child_reaped(AuthHelperSpawnFake *fake, std::string_view name) -> bool {
-		if (fake->spawned_pid < 0) {
-			return true;
+	inline auto expect_log(const AuthHelperSpawnFake &fake, std::size_t index,
+	                       std::string_view operation, std::string_view name) -> bool {
+		bool ok = expect(fake.log_messages.size() > index, std::string(name) + " logs failure");
+		if (fake.log_messages.size() <= index) {
+			return false;
 		}
-
-		int status             = 0;
-		errno                  = 0;
-		const auto wait_result = waitpid(fake->spawned_pid, &status, WNOHANG);
-		if (wait_result == fake->spawned_pid) {
-			return expect(false, std::string(name) + " leaves no unreaped helper child");
-		}
-		if (wait_result == 0) {
-			(void)waitpid(fake->spawned_pid, &status, 0);
-			return expect(false, std::string(name) + " leaves no active helper child");
-		}
-		return expect(wait_result == -1 && errno == ECHILD,
-		              std::string(name) + " reaps helper child");
+		ok &= expect(fake.log_messages[index].contains(operation),
+		             std::string(name) + " log names failed operation");
+		ok &= expect(fake.log_messages[index].contains(std::strerror(EIO)) &&
+		                 fake.log_messages[index].contains(std::to_string(EIO)),
+		             std::string(name) + " log includes error text and number");
+		return ok;
 	}
 
 }  // namespace howdy::test::runtime_session

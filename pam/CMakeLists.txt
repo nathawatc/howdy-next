@@ -302,6 +302,15 @@ if(BUILD_TESTING)
 			)
 			howdy_configure_pam_target(pam_installed_e2e_driver)
 			target_link_libraries(pam_installed_e2e_driver PRIVATE PAM::PAM)
+			add_executable(
+				pam_installed_runtime_e2e_driver
+				tests/integration/installed_runtime_e2e_driver.cpp
+			)
+			howdy_configure_pam_target(pam_installed_runtime_e2e_driver)
+			target_link_libraries(
+				pam_installed_runtime_e2e_driver
+				PRIVATE pam_runtime howdy_user_models howdy_user_model_readiness
+			)
 			add_test(
 				NAME installed-pam-setuid-e2e
 				COMMAND
@@ -314,6 +323,7 @@ if(BUILD_TESTING)
 					"${HOWDY_CONFIG_DIR}"
 					"${HOWDY_USER_MODELS_DIR}"
 					"$<TARGET_FILE:pam_installed_e2e_driver>"
+					"$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
 			)
 			add_test(
 				NAME installed-pam-setuid-install-environment
@@ -328,6 +338,7 @@ if(BUILD_TESTING)
 					"${HOWDY_CONFIG_DIR}"
 					"${HOWDY_USER_MODELS_DIR}"
 					"$<TARGET_FILE:pam_installed_e2e_driver>"
+					"$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
 			)
 		else()
 			add_test(

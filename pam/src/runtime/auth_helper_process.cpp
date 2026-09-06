@@ -7,6 +7,7 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/runtime_session.hpp"
+#include "storage/staged_runtime_policy.hpp"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +26,9 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include <sys/file.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 
 namespace {
@@ -133,13 +137,22 @@ namespace {
 	}
 
 	auto terminate_and_reap_helper_process(pid_t child_pid) -> int {
+		int         status              = 0;
+		const pid_t initial_wait_result = waitpid(child_pid, &status, WNOHANG);
+		if (initial_wait_result == child_pid) {
+			return status;
+		}
+		if (initial_wait_result < 0 && errno == ECHILD) {
+			return make_wait_exit_status(CompareExit::kAbort);
+		}
+
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)", strerror(errno),
 			       errno);
 		}
 
 		for (int attempts = 0; attempts < 50; ++attempts) {
-			int         status      = 0;
+			status                  = 0;
 			const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
 			if (wait_result == child_pid) {
 				return status;
@@ -321,21 +334,15 @@ namespace {
 		capture_auth_helper_log(operations, message);
 	}
 
-	void log_cleanup_timeout(const AuthHelperSpawnOperations &operations) {
-		constexpr std::string_view message = "Howdy auth helper cleanup timed out";
-		syslog(LOG_WARNING, "%.*s", static_cast<int>(message.size()), message.data());
-		capture_auth_helper_log(operations, message);
-	}
-
-	void write_helper_cleanup_failure_log(const AuthHelperSpawnOperations &operations) {
-		constexpr std::string_view message = "Howdy auth helper cleanup failed";
-		syslog(LOG_WARNING, "%.*s", static_cast<int>(message.size()), message.data());
-		capture_auth_helper_log(operations, message);
-	}
-
 	auto production_pipe2(void *context, int *pipe_fds, int flags) -> int {
 		(void)context;
 		return pipe2(pipe_fds, flags);
+	}
+
+	auto production_socketpair(void *context, int domain, int type, int protocol, int *socket_fds)
+	    -> int {
+		(void)context;
+		return socketpair(domain, type, protocol, socket_fds);
 	}
 
 	auto production_duplicate_fd(void *context, int fd, int minimum_fd) -> int {
@@ -391,6 +398,7 @@ namespace {
 	auto production_auth_helper_spawn_operations() -> AuthHelperSpawnOperations {
 		return {
 		    .pipe2                = production_pipe2,
+		    .socketpair           = production_socketpair,
 		    .duplicate_fd         = production_duplicate_fd,
 		    .actions_init         = production_actions_init,
 		    .actions_adddup2      = production_actions_adddup2,
@@ -423,18 +431,18 @@ namespace {
 		fd = -1;
 	}
 
-	auto normalize_pipe_fds(const AuthHelperSpawnOperations &operations,
-	                        std::array<int, 2>              &output_pipe) -> bool {
-		for (int &pipe_fd : output_pipe) {
-			if (pipe_fd > STDERR_FILENO) {
+	auto normalize_pipe_fds(const AuthHelperSpawnOperations &operations, std::array<int, 2> &pipe,
+	                        int minimum_fd) -> bool {
+		for (int &pipe_fd : pipe) {
+			if (pipe_fd >= minimum_fd) {
 				continue;
 			}
 			const int normalized_fd =
-			    operations.duplicate_fd(operations.context, pipe_fd, STDERR_FILENO + 1);
+			    operations.duplicate_fd(operations.context, pipe_fd, minimum_fd);
 			if (normalized_fd < 0) {
 				write_helper_spawn_error_log(operations, "fcntl(F_DUPFD_CLOEXEC)", errno);
-				close_owned_pipe_fd(operations, output_pipe[0]);
-				close_owned_pipe_fd(operations, output_pipe[1]);
+				close_owned_pipe_fd(operations, pipe[0]);
+				close_owned_pipe_fd(operations, pipe[1]);
 				return false;
 			}
 			close_owned_pipe_fd(operations, pipe_fd);
@@ -444,7 +452,8 @@ namespace {
 	}
 
 	struct PreparedHelperSpawn {
-		std::array<int, 2>         output_pipe = {-1, -1};
+		std::array<int, 2>         output_pipe  = {-1, -1};
+		std::array<int, 2>         lease_socket = {-1, -1};
 		posix_spawn_file_actions_t actions{};
 	};
 
@@ -462,6 +471,8 @@ namespace {
 		destroy_spawn_actions(operations, &spawn->actions);
 		close_owned_pipe_fd(operations, spawn->output_pipe[0]);
 		close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+		close_owned_pipe_fd(operations, spawn->lease_socket[0]);
+		close_owned_pipe_fd(operations, spawn->lease_socket[1]);
 		return false;
 	}
 
@@ -471,7 +482,21 @@ namespace {
 			syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)", strerror(errno), errno);
 			return false;
 		}
-		if (!normalize_pipe_fds(operations, spawn->output_pipe)) {
+		if (!normalize_pipe_fds(operations, spawn->output_pipe, STDERR_FILENO + 1)) {
+			return false;
+		}
+		if (operations.socketpair(operations.context, AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0,
+		                          spawn->lease_socket.data()) != 0) {
+			syslog(LOG_ERR, "Failed to create auth helper lease socketpair: %s (%d)",
+			       strerror(errno), errno);
+			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+			close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+			return false;
+		}
+		if (!normalize_pipe_fds(operations, spawn->lease_socket,
+		                        howdy::native::auth_helper_protocol::kLeaseSocketFd + 1)) {
+			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+			close_owned_pipe_fd(operations, spawn->output_pipe[1]);
 			return false;
 		}
 		const int init_result = operations.actions_init(operations.context, &spawn->actions);
@@ -479,6 +504,8 @@ namespace {
 			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_init", init_result);
 			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
 			close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+			close_owned_pipe_fd(operations, spawn->lease_socket[0]);
+			close_owned_pipe_fd(operations, spawn->lease_socket[1]);
 			return false;
 		}
 
@@ -508,8 +535,31 @@ namespace {
 				    operations, spawn, "posix_spawn_file_actions_addclose(pipe write end)", result);
 			}
 		}
+		result = operations.actions_addclose(operations.context, &spawn->actions,
+		                                     spawn->lease_socket[0]);
+		if (result != 0) {
+			return fail_spawn_setup(operations, spawn,
+			                        "posix_spawn_file_actions_addclose(lease parent end)", result);
+		}
 		result =
-		    operations.actions_addclosefrom(operations.context, &spawn->actions, STDERR_FILENO + 1);
+		    operations.actions_adddup2(operations.context, &spawn->actions, spawn->lease_socket[1],
+		                               howdy::native::auth_helper_protocol::kLeaseSocketFd);
+		if (result != 0) {
+			return fail_spawn_setup(operations, spawn, "posix_spawn_file_actions_adddup2(lease fd)",
+			                        result);
+		}
+		if (spawn->lease_socket[1] != howdy::native::auth_helper_protocol::kLeaseSocketFd) {
+			result = operations.actions_addclose(operations.context, &spawn->actions,
+			                                     spawn->lease_socket[1]);
+			if (result != 0) {
+				return fail_spawn_setup(operations, spawn,
+				                        "posix_spawn_file_actions_addclose(lease child end)",
+				                        result);
+			}
+		}
+		result = operations.actions_addclosefrom(
+		    operations.context, &spawn->actions,
+		    howdy::native::auth_helper_protocol::kLeaseSocketFd + 1);
 		if (result != 0) {
 			return fail_spawn_setup(operations, spawn, "posix_spawn_file_actions_addclosefrom",
 			                        result);
@@ -536,29 +586,244 @@ namespace {
 		}
 		destroy_spawn_actions(operations, &spawn->actions);
 		close_owned_pipe_fd(operations, spawn->output_pipe[1]);
+		close_owned_pipe_fd(operations, spawn->lease_socket[1]);
 		if (result != 0) {
 			close_owned_pipe_fd(operations, spawn->output_pipe[0]);
+			close_owned_pipe_fd(operations, spawn->lease_socket[0]);
 			return false;
 		}
 		return true;
 	}
 
-	auto collect_prepare_output(const AuthHelperSpawnOperations &operations,
-	                            PreparedHelperSpawn *spawn, pid_t child_pid,
-	                            HelperDeadline deadline, std::string *output) -> bool {
-		const auto result =
-		    read_auth_helper_output_until(spawn->output_pipe[0], output, operations, deadline);
-		close_owned_pipe_fd(operations, spawn->output_pipe[0]);
-		if (result == HelperReadResult::kComplete) {
-			return true;
+	enum class LeaseReceiveResult : std::uint8_t {
+		kReceived,
+		kRetry,
+		kInvalid,
+	};
+
+	void close_control_descriptors(msghdr *message) {
+		for (cmsghdr *control = CMSG_FIRSTHDR(message); control != nullptr;
+		     control          = CMSG_NXTHDR(message, control)) {
+			if (control->cmsg_level != SOL_SOCKET || control->cmsg_type != SCM_RIGHTS ||
+			    control->cmsg_len < CMSG_LEN(0)) {
+				continue;
+			}
+			const std::size_t count = (control->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+			for (std::size_t index = 0; index < count; ++index) {
+				int descriptor = -1;
+				std::memcpy(&descriptor, CMSG_DATA(control) + (index * sizeof(int)), sizeof(int));
+				if (descriptor >= 0) {
+					(void)close(descriptor);
+				}
+			}
 		}
-		if (result == HelperReadResult::kTimedOut) {
-			log_prepare_timeout(operations);
-		} else if (result == HelperReadResult::kOutputLimit) {
-			syslog(LOG_ERR, "Howdy auth helper reached output limit");
+	}
+
+	auto receive_lease_descriptor_once(int socket_fd, int *lease_fd) -> LeaseReceiveResult {
+		char  marker = 0;
+		iovec data{.iov_base = &marker, .iov_len = sizeof(marker)};
+		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
+		       control_buffer{};
+		msghdr message{};
+		message.msg_iov        = &data;
+		message.msg_iovlen     = 1;
+		message.msg_control    = control_buffer.data();
+		message.msg_controllen = control_buffer.size();
+
+		const ssize_t received = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+		if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+			return LeaseReceiveResult::kRetry;
 		}
-		(void)terminate_and_reap_helper_process(child_pid);
-		return false;
+		if (received != 1 || marker != 'L' || (message.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) != 0) {
+			close_control_descriptors(&message);
+			return LeaseReceiveResult::kInvalid;
+		}
+
+		cmsghdr *control = CMSG_FIRSTHDR(&message);
+		if (control == nullptr || control->cmsg_level != SOL_SOCKET ||
+		    control->cmsg_type != SCM_RIGHTS || control->cmsg_len != CMSG_LEN(sizeof(int)) ||
+		    CMSG_NXTHDR(&message, control) != nullptr) {
+			close_control_descriptors(&message);
+			return LeaseReceiveResult::kInvalid;
+		}
+
+		int descriptor = -1;
+		std::memcpy(&descriptor, CMSG_DATA(control), sizeof(descriptor));
+		const int descriptor_flags = descriptor >= 0 ? fcntl(descriptor, F_GETFD) : -1;
+		if (descriptor < 0 || descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) {
+			if (descriptor >= 0) {
+				(void)close(descriptor);
+			}
+			return LeaseReceiveResult::kInvalid;
+		}
+
+		*lease_fd = descriptor;
+		return LeaseReceiveResult::kReceived;
+	}
+
+	auto receive_lease_descriptor_until(int socket_fd, int *lease_fd, HelperDeadline deadline)
+	    -> bool {
+		if (socket_fd < 0 || lease_fd == nullptr) {
+			return false;
+		}
+		*lease_fd = -1;
+		while (true) {
+			pollfd    descriptor{.fd = socket_fd, .events = POLLIN, .revents = 0};
+			const int result = poll(&descriptor, 1, deadline_poll_timeout(deadline));
+			if (result < 0 && errno == EINTR) {
+				continue;
+			}
+			if (result <= 0 || (descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
+				return false;
+			}
+			const auto receive_result = receive_lease_descriptor_once(socket_fd, lease_fd);
+			if (receive_result == LeaseReceiveResult::kRetry) {
+				continue;
+			}
+			return receive_result == LeaseReceiveResult::kReceived;
+		}
+	}
+
+	auto lease_socket_has_clean_eof(int socket_fd) -> bool {
+		char  byte = 0;
+		iovec data{.iov_base = &byte, .iov_len = sizeof(byte)};
+		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
+		       control_buffer{};
+		msghdr message{};
+		message.msg_iov        = &data;
+		message.msg_iovlen     = 1;
+		message.msg_control    = control_buffer.data();
+		message.msg_controllen = control_buffer.size();
+		const ssize_t received = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+		if (received != 0) {
+			if (received > 0) {
+				close_control_descriptors(&message);
+			}
+			return false;
+		}
+		return CMSG_FIRSTHDR(&message) == nullptr;
+	}
+
+	auto validate_lease_descriptor_impl(int lease_fd, const std::filesystem::path &root_dir,
+	                                    uid_t owner_uid) -> bool {
+		if (lease_fd < 0 || root_dir.empty() || root_dir.filename().empty()) {
+			return false;
+		}
+
+		const int  flags = fcntl(lease_fd, F_GETFL);
+		const auto policy =
+		    howdy::native::staged_runtime_policy(howdy::native::StagedRuntimeRole::kLock);
+		struct stat lease_stat{};
+		if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || !policy.exact_link_count.has_value() ||
+		    fstat(lease_fd, &lease_stat) != 0 || !S_ISREG(lease_stat.st_mode) ||
+		    lease_stat.st_uid != owner_uid || lease_stat.st_nlink != *policy.exact_link_count ||
+		    (lease_stat.st_mode & 07777) != policy.mode) {
+			return false;
+		}
+
+		const int parent_fd =
+		    open(root_dir.parent_path().c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+		if (parent_fd < 0) {
+			return false;
+		}
+		const std::string lock_name = root_dir.filename().string() + ".lock";
+		struct stat       path_stat{};
+		const bool        identity_ok =
+		    fstatat(parent_fd, lock_name.c_str(), &path_stat, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    S_ISREG(path_stat.st_mode) && path_stat.st_uid == owner_uid &&
+		    path_stat.st_nlink == *policy.exact_link_count &&
+		    (path_stat.st_mode & 07777) == policy.mode && path_stat.st_dev == lease_stat.st_dev &&
+		    path_stat.st_ino == lease_stat.st_ino;
+		(void)close(parent_fd);
+		return identity_ok && flock(lease_fd, LOCK_SH | LOCK_NB) == 0;
+	}
+
+	enum class PrepareIoResult : std::uint8_t {
+		kPending,
+		kComplete,
+		kFailed,
+	};
+
+	auto read_prepare_output_once(int output_fd, std::string *output) -> PrepareIoResult {
+		std::array<char, 4096> buffer{};
+		const ssize_t          size = read(output_fd, buffer.data(), buffer.size());
+		if (size > 0) {
+			if (output->size() + static_cast<std::size_t>(size) >= kAuthHelperOutputLimit) {
+				syslog(LOG_ERR, "Howdy auth helper reached output limit");
+				return PrepareIoResult::kFailed;
+			}
+			output->append(buffer.data(), static_cast<std::size_t>(size));
+			return PrepareIoResult::kPending;
+		}
+		if (size == 0) {
+			return PrepareIoResult::kComplete;
+		}
+		if (errno == EINTR || errno == EAGAIN) {
+			return PrepareIoResult::kPending;
+		}
+		log_auth_helper_read_error(errno);
+		return PrepareIoResult::kFailed;
+	}
+
+	auto receive_prepare_lease_once(int socket_fd, int *lease_fd) -> PrepareIoResult {
+		const auto result = receive_lease_descriptor_once(socket_fd, lease_fd);
+		if (result == LeaseReceiveResult::kReceived) {
+			return PrepareIoResult::kComplete;
+		}
+		if (result == LeaseReceiveResult::kRetry) {
+			return PrepareIoResult::kPending;
+		}
+		syslog(LOG_ERR, "Howdy auth helper returned malformed lease descriptor");
+		return PrepareIoResult::kFailed;
+	}
+
+	auto poll_descriptor_failed(const pollfd &descriptor) -> bool {
+		return descriptor.fd >= 0 && (descriptor.revents & (POLLERR | POLLNVAL)) != 0;
+	}
+
+	auto collect_prepare_response(const AuthHelperSpawnOperations &operations,
+	                              PreparedHelperSpawn *spawn, HelperDeadline deadline,
+	                              std::string *output, int *lease_fd) -> bool {
+		output->clear();
+		*lease_fd       = -1;
+		bool output_eof = false;
+
+		while (!output_eof || *lease_fd < 0) {
+			std::array<pollfd, 2> descriptors = {
+			    pollfd{
+			        .fd = output_eof ? -1 : spawn->output_pipe[0], .events = POLLIN, .revents = 0},
+			    pollfd{.fd      = *lease_fd >= 0 ? -1 : spawn->lease_socket[0],
+			           .events  = POLLIN,
+			           .revents = 0},
+			};
+			const int poll_result =
+			    poll(descriptors.data(), descriptors.size(), deadline_poll_timeout(deadline));
+			if (poll_result < 0 && errno == EINTR) {
+				continue;
+			}
+			if (poll_result <= 0) {
+				log_prepare_timeout(operations);
+				return false;
+			}
+
+			if (poll_descriptor_failed(descriptors[0]) || poll_descriptor_failed(descriptors[1])) {
+				return false;
+			}
+			if (descriptors[0].fd >= 0 && (descriptors[0].revents & (POLLIN | POLLHUP)) != 0) {
+				const auto result = read_prepare_output_once(spawn->output_pipe[0], output);
+				if (result == PrepareIoResult::kFailed) {
+					return false;
+				}
+				output_eof = result == PrepareIoResult::kComplete;
+			}
+
+			if (descriptors[1].fd >= 0 && (descriptors[1].revents & (POLLIN | POLLHUP)) != 0 &&
+			    receive_prepare_lease_once(spawn->lease_socket[0], lease_fd) ==
+			        PrepareIoResult::kFailed) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	auto validate_prepare_helper(pid_t child_pid, HelperDeadline deadline,
@@ -607,73 +872,38 @@ namespace {
 			return false;
 		}
 		std::string helper_output;
-		if (!collect_prepare_output(operations, &spawn, child_pid, deadline, &helper_output)) {
+		int         lease_fd = -1;
+		const bool  collected =
+		    collect_prepare_response(operations, &spawn, deadline, &helper_output, &lease_fd);
+		close_owned_pipe_fd(operations, spawn.output_pipe[0]);
+		if (!collected) {
+			close_owned_pipe_fd(operations, spawn.lease_socket[0]);
+			close_owned_pipe_fd(operations, lease_fd);
+			(void)terminate_and_reap_helper_process(child_pid);
 			return false;
 		}
 		if (!validate_prepare_helper(child_pid, deadline, helper_output, operations)) {
+			close_owned_pipe_fd(operations, spawn.lease_socket[0]);
+			close_owned_pipe_fd(operations, lease_fd);
 			return false;
 		}
-		return assign_prepared_paths(helper_output, prepared);
+		if (!lease_socket_has_clean_eof(spawn.lease_socket[0])) {
+			syslog(LOG_ERR, "Howdy auth helper returned extra lease data");
+			close_owned_pipe_fd(operations, spawn.lease_socket[0]);
+			close_owned_pipe_fd(operations, lease_fd);
+			return false;
+		}
+		close_owned_pipe_fd(operations, spawn.lease_socket[0]);
+		if (!assign_prepared_paths(helper_output, prepared) ||
+		    !validate_lease_descriptor_impl(lease_fd, prepared->root_dir, 0)) {
+			syslog(LOG_ERR, "Howdy auth helper lease validation failed");
+			close_owned_pipe_fd(operations, lease_fd);
+			return false;
+		}
+		prepared->lease_fd = lease_fd;
+		return true;
 	}
 
-	auto cleanup_runtime_auth_files_until(const std::filesystem::path     &root_dir,
-	                                      const AuthHelperSpawnOperations &operations,
-	                                      HelperDeadline                   deadline) -> void {
-		std::string                root_dir_string = root_dir.string();
-		std::array<char *, 4>      args = {const_cast<char *>(kAuthHelperPath),
-		                                   const_cast<char *>("cleanup"),
-		                                   const_cast<char *>(root_dir_string.c_str()), nullptr};
-		std::array<char *, 1>      env  = {nullptr};
-		posix_spawn_file_actions_t file_actions{};
-		const int init_result = operations.actions_init(operations.context, &file_actions);
-		if (init_result != 0) {
-			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_init", init_result);
-			return;
-		}
-
-		const int closefrom_result =
-		    operations.actions_addclosefrom(operations.context, &file_actions, STDERR_FILENO + 1);
-		if (closefrom_result != 0) {
-			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_addclosefrom",
-			                             closefrom_result);
-			destroy_spawn_actions(operations, &file_actions);
-			return;
-		}
-
-		pid_t     child_pid    = -1;
-		const int spawn_result = operations.spawn({.context   = operations.context,
-		                                           .child_pid = &child_pid,
-		                                           .path      = kAuthHelperPath,
-		                                           .actions   = &file_actions,
-		                                           .argv      = args.data(),
-		                                           .envp      = env.data()});
-		if (spawn_result != 0) {
-			syslog(LOG_WARNING, "Can't spawn the howdy auth helper cleanup: %s (%d)",
-			       strerror(spawn_result), spawn_result);
-		}
-		destroy_spawn_actions(operations, &file_actions);
-		if (spawn_result != 0) {
-			return;
-		}
-
-		int        status      = 0;
-		const auto wait_result = wait_for_helper_process_until(child_pid, deadline, &status);
-		if (wait_result == HelperWaitResult::kTimedOut) {
-			log_cleanup_timeout(operations);
-			return;
-		}
-		if (wait_result != HelperWaitResult::kExited || !WIFEXITED(status) ||
-		    WEXITSTATUS(status) != EXIT_SUCCESS) {
-			write_helper_cleanup_failure_log(operations);
-		}
-	}
-
-	auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
-		auto operations         = production_auth_helper_spawn_operations();
-		operations.read_bounded = nullptr;
-		cleanup_runtime_auth_files_until(root_dir, operations,
-		                                 std::chrono::steady_clock::now() + kAuthHelperTimeout);
-	}
 }  // namespace
 
 namespace howdy::pam::auth_helper_process {
@@ -686,6 +916,16 @@ namespace howdy::pam::auth_helper_process {
 		return kAuthHelperOutputLimit;
 	}
 
+	auto receive_lease_descriptor(int socket_fd, int *lease_fd,
+	                              std::chrono::steady_clock::time_point deadline) -> bool {
+		return ::receive_lease_descriptor_until(socket_fd, lease_fd, deadline);
+	}
+
+	auto validate_lease_descriptor(int lease_fd, const std::filesystem::path &root_dir,
+	                               uid_t owner_uid) -> bool {
+		return ::validate_lease_descriptor_impl(lease_fd, root_dir, owner_uid);
+	}
+
 	auto prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
 	                                const Operations &operations) -> bool {
 		return prepare_runtime_auth_files(username, prepared, operations,
@@ -696,12 +936,6 @@ namespace howdy::pam::auth_helper_process {
 	                                const Operations                     &operations,
 	                                std::chrono::steady_clock::time_point deadline) -> bool {
 		return ::prepare_runtime_auth_files_until(username, prepared, operations, deadline);
-	}
-
-	auto cleanup_runtime_auth_files(const std::filesystem::path          &root_dir,
-	                                const Operations                     &operations,
-	                                std::chrono::steady_clock::time_point deadline) -> void {
-		::cleanup_runtime_auth_files_until(root_dir, operations, deadline);
 	}
 
 	auto read_output(Process process, std::string *output, const Operations &operations,
@@ -734,22 +968,6 @@ namespace howdy::pam::auth_helper_process {
 		return true;
 	}
 
-	auto wait_for_cleanup_helper(pid_t child_pid, const Operations &operations,
-	                             std::chrono::steady_clock::time_point deadline) -> bool {
-		int        status      = 0;
-		const auto wait_result = wait_for_helper_process_until(child_pid, deadline, &status);
-		if (wait_result == HelperWaitResult::kTimedOut) {
-			log_cleanup_timeout(operations);
-			return false;
-		}
-		if (wait_result != HelperWaitResult::kExited || !WIFEXITED(status) ||
-		    WEXITSTATUS(status) != EXIT_SUCCESS) {
-			write_helper_cleanup_failure_log(operations);
-			return false;
-		}
-		return true;
-	}
-
 	auto parse_output(const std::string &output) -> Output {
 		return ::parse_auth_helper_output(output);
 	}
@@ -764,10 +982,6 @@ namespace howdy::pam::auth_helper_process {
 		operations.read_bounded = nullptr;
 		return ::prepare_runtime_auth_files_until(
 		    username, prepared, operations, std::chrono::steady_clock::now() + kAuthHelperTimeout);
-	}
-
-	auto cleanup_runtime_auth_files(const std::filesystem::path &root_dir) -> void {
-		::cleanup_runtime_auth_files(root_dir);
 	}
 
 }  // namespace howdy::pam::auth_helper_process

@@ -4,8 +4,6 @@
 #include "runtime/auth_helper_process.hpp"
 
 #include <cerrno>
-#include <exception>
-#include <syslog.h>
 #include <unistd.h>
 #include <utility>
 
@@ -23,12 +21,6 @@ namespace {
 		return howdy::pam::auth_helper_process::prepare_runtime_auth_files(username, prepared);
 	}
 
-	auto cleanup_runtime_files_dependency(void *context, const std::filesystem::path &root_dir)
-	    -> void {
-		(void)context;
-		howdy::pam::auth_helper_process::cleanup_runtime_auth_files(root_dir);
-	}
-
 	auto load_runtime_config_dependency(void *context, const std::filesystem::path &config_path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
@@ -42,20 +34,6 @@ namespace {
 }  // namespace
 
 namespace howdy::pam {
-	namespace {
-
-		auto invoke_cleanup(const RuntimeSessionDependencies &dependencies,
-		                    const std::filesystem::path      &runtime_root) noexcept -> void {
-			try {
-				dependencies.cleanup_runtime(dependencies.context, runtime_root);
-			} catch (const std::exception &error) {
-				syslog(LOG_WARNING, "Howdy auth helper cleanup failed: %s", error.what());
-			} catch (...) {
-				syslog(LOG_WARNING, "Howdy auth helper cleanup failed with non-standard exception");
-			}
-		}
-
-	}  // namespace
 
 	RuntimeSession::RuntimeSession(std::string                configured_config_path,
 	                               std::string                configured_user_models_dir,
@@ -65,12 +43,10 @@ namespace howdy::pam {
 	    , dependencies_(dependencies) {}
 
 	RuntimeSession::~RuntimeSession() {
-		if (!cleanup_active_ || runtime_root_.empty()) {
-			return;
+		if (lease_fd_ >= 0) {
+			(void)close(lease_fd_);
+			lease_fd_ = -1;
 		}
-
-		cleanup_active_ = false;
-		invoke_cleanup(dependencies_, runtime_root_);
 	}
 
 	auto RuntimeSession::load_for_user(std::string_view username) -> RuntimeSessionLoadResult {
@@ -81,7 +57,7 @@ namespace howdy::pam {
 		}
 		load_started_ = true;
 
-		if (dependencies_.prepare_runtime == nullptr || dependencies_.cleanup_runtime == nullptr ||
+		if (dependencies_.prepare_runtime == nullptr ||
 		    dependencies_.load_runtime_config == nullptr ||
 		    dependencies_.effective_uid == nullptr) {
 			return {};
@@ -105,15 +81,19 @@ namespace howdy::pam {
 
 		PreparedRuntimeFiles prepared;
 		if (!dependencies_.prepare_runtime(dependencies_.context, username, &prepared)) {
+			if (prepared.lease_fd >= 0) {
+				(void)close(prepared.lease_fd);
+			}
 			return RuntimeSessionLoadResult{
 			    .status        = RuntimeSessionLoadStatus::kPrepareFailed,
 			    .config_result = std::move(config_result),
 			};
 		}
 		if (prepared.config_path.empty() || prepared.user_models_dir.empty() ||
-		    prepared.root_dir.empty() || !prepared_runtime_files_match_contract(prepared)) {
-			if (!prepared.root_dir.empty()) {
-				invoke_cleanup(dependencies_, prepared.root_dir);
+		    prepared.root_dir.empty() || prepared.lease_fd < 0 ||
+		    !prepared_runtime_files_match_contract(prepared)) {
+			if (prepared.lease_fd >= 0) {
+				(void)close(prepared.lease_fd);
 			}
 			return RuntimeSessionLoadResult{
 			    .status        = RuntimeSessionLoadStatus::kPrepareFailed,
@@ -121,10 +101,10 @@ namespace howdy::pam {
 			};
 		}
 
-		config_path_     = std::move(prepared.config_path);
-		user_models_dir_ = std::move(prepared.user_models_dir);
-		runtime_root_    = std::move(prepared.root_dir);
-		cleanup_active_  = true;
+		config_path_      = std::move(prepared.config_path);
+		user_models_dir_  = std::move(prepared.user_models_dir);
+		lease_fd_         = prepared.lease_fd;
+		prepared.lease_fd = -1;
 
 		config_result = dependencies_.load_runtime_config(dependencies_.context, config_path_);
 		const bool config_ok =
@@ -146,13 +126,12 @@ namespace howdy::pam {
 	}
 
 	auto RuntimeSession::staged() const -> bool {
-		return cleanup_active_;
+		return lease_fd_ >= 0;
 	}
 
 	auto production_runtime_session_dependencies() -> RuntimeSessionDependencies {
 		return RuntimeSessionDependencies{
 		    .prepare_runtime     = prepare_runtime_files_dependency,
-		    .cleanup_runtime     = cleanup_runtime_files_dependency,
 		    .load_runtime_config = load_runtime_config_dependency,
 		    .effective_uid       = effective_uid_dependency,
 		};

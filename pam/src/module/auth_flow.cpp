@@ -86,9 +86,8 @@ namespace {
 		const auto &runtime     = dependencies.runtime_session;
 		const auto &prompt      = dependencies.prompt_coordinator;
 		const auto &eligibility = dependencies.eligibility;
-		return runtime.prepare_runtime != nullptr && runtime.cleanup_runtime != nullptr &&
-		       runtime.load_runtime_config != nullptr && runtime.effective_uid != nullptr &&
-		       prompt.spawn_compare_process != nullptr &&
+		return runtime.prepare_runtime != nullptr && runtime.load_runtime_config != nullptr &&
+		       runtime.effective_uid != nullptr && prompt.spawn_compare_process != nullptr &&
 		       prompt.wait_for_compare_process != nullptr &&
 		       prompt.input_prompt_preflight != nullptr &&
 		       prompt.create_prompt_submitter != nullptr &&

@@ -15,12 +15,11 @@ namespace howdy::pam {
 		std::filesystem::path root_dir;
 		std::string           config_path;
 		std::string           user_models_dir;
+		int                   lease_fd = -1;
 	};
 
 	using PrepareRuntimeFilesFn = bool (*)(void *context, std::string_view username,
 	                                       PreparedRuntimeFiles *prepared);
-
-	using CleanupRuntimeFilesFn = void (*)(void *context, const std::filesystem::path &root_dir);
 
 	using LoadRuntimeConfigFn = howdy::native::RuntimeConfigLoadResult (*)(
 	    void *context, const std::filesystem::path &config_path);
@@ -30,7 +29,6 @@ namespace howdy::pam {
 	struct RuntimeSessionDependencies {
 		void                 *context             = nullptr;
 		PrepareRuntimeFilesFn prepare_runtime     = nullptr;
-		CleanupRuntimeFilesFn cleanup_runtime     = nullptr;
 		LoadRuntimeConfigFn   load_runtime_config = nullptr;
 		EffectiveUidFn        effective_uid       = nullptr;
 	};
@@ -76,9 +74,8 @@ namespace howdy::pam {
 		std::string                config_path_;
 		std::string                user_models_dir_;
 		RuntimeSessionDependencies dependencies_;
-		std::filesystem::path      runtime_root_;
-		bool                       cleanup_active_ = false;
-		bool                       load_started_   = false;
+		int                        lease_fd_     = -1;
+		bool                       load_started_ = false;
 	};
 
 	auto production_runtime_session_dependencies() -> RuntimeSessionDependencies;

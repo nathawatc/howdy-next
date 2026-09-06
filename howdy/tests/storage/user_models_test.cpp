@@ -232,6 +232,34 @@ namespace howdy::test::user_models {
 		ok &= expect(fs::remove(hardlink_path, ec), "remove hard-linked model file");
 		ec.clear();
 
+		{
+			const int model_fd = open(model_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			ok &= expect(model_fd >= 0, "open canonical model for staged-path rejection checks");
+			if (model_fd >= 0) {
+				const auto       uid             = std::to_string(getuid());
+				const auto       wrong_uid       = std::to_string(getuid() == 0 ? 1 : 0);
+				const std::array malformed_paths = {
+				    fs::path("/tmp/howdy/pam-" + uid + "-gen000/models/alice.dat"),
+				    fs::path("/run/howdy/pam-" + wrong_uid + "-gen000/models/alice.dat"),
+				    fs::path("/run/howdy/pam-" + uid + "-gen002/models/alice.dat"),
+				    fs::path("/run/howdy/pam-0" + uid + "-gen000/models/alice.dat"),
+				    fs::path("/run/howdy/pam-" + uid + "-gen000/not-models/alice.dat"),
+				    fs::path("/run/howdy/pam-" + uid + "-gen000/models/../alice.dat"),
+				};
+				for (const auto &path : malformed_paths) {
+					ok &= expect(!howdy::native::validate_staged_user_model_file(model_fd, path),
+					             "staged validator rejects malformed path: " + path.string());
+				}
+				const auto relative_staged_models = fs::path("pam-" + uid + "-gen000") / "models";
+				const auto relative_staged        = howdy::native::check_user_model_readiness(
+				    relative_staged_models, "alice", std::nullopt);
+				ok &=
+				    expect(relative_staged.status == howdy::native::UserModelStatus::kInsecurePath,
+				           "relative staged-looking model path is rejected as malformed");
+				ok &= expect(close(model_fd) == 0, "close staged-path rejection model");
+			}
+		}
+
 		when_supported(
 		    geteuid() != 0,
 		    [&] -> void {

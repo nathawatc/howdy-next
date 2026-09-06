@@ -34,8 +34,7 @@ auto main() -> int {
 	const auto     production_operations = howdy::native::auth_helper::production_acl_operations();
 	const auto     operations = use_fake_acl ? fake_acl.operations() : production_operations;
 
-	ok &= run_auth_helper_path_tests(temp_root, acl_functional, acl_supported, operations, fake_acl,
-	                                 use_fake_acl);
+	ok &= run_auth_helper_path_tests(temp_root);
 	ok &=
 	    run_auth_helper_staging_tests(temp_root, {
 	                                                 .acl_functional        = acl_functional,
