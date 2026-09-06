@@ -11,10 +11,6 @@ howdy_add_pam_test(
 	tests/prompt/internal_fd_test.cpp
 )
 target_link_libraries(pam_internal_fd_test PRIVATE pam_prompt)
-target_include_directories(
-	pam_internal_fd_test
-	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/prompt"
-)
 
 howdy_add_pam_test(
 	pam_native_prompt_conversation_test
@@ -25,10 +21,6 @@ howdy_add_pam_test(
 	tests/prompt/native_prompt_input_test.cpp
 )
 target_link_libraries(pam_native_prompt_conversation_test PRIVATE pam_prompt)
-target_include_directories(
-	pam_native_prompt_conversation_test
-	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
 
 howdy_add_pam_test(
 	pam_observed_prompt_conversation_test
@@ -43,10 +35,6 @@ howdy_add_pam_test(
 	tests/prompt/conversation_response_test.cpp
 )
 target_link_libraries(pam_conversation_response_test PRIVATE pam_prompt)
-target_include_directories(
-	pam_conversation_response_test
-	PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/prompt"
-)
 
 howdy_add_pam_test(
 	pam_conversation_test
