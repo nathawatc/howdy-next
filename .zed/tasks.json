@@ -190,7 +190,7 @@
 	},
 	{
 		"label": "CMake: Build Privileged E2E",
-		"command": "cmake --build build-e2e --parallel \"$(nproc)\"",
+		"command": "cmake --build build-e2e --target howdy-installed-e2e-artifacts --parallel \"$(nproc)\"",
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,

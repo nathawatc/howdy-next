@@ -311,6 +311,19 @@ if(BUILD_TESTING)
 				pam_installed_runtime_e2e_driver
 				PRIVATE pam_runtime howdy_user_models howdy_user_model_readiness
 			)
+			add_custom_target(
+				howdy-installed-e2e-artifacts
+				DEPENDS
+					howdy
+					howdy_compare
+					howdy_auth_helper
+					pam_howdy
+					howdy_packaged_config
+					howdy_docs
+					howdy-gmo
+					pam_installed_e2e_driver
+					pam_installed_runtime_e2e_driver
+			)
 			add_test(
 				NAME installed-pam-setuid-e2e
 				COMMAND

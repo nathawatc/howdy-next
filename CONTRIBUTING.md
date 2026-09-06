@@ -75,7 +75,9 @@ cmake -S . -B build-e2e \
     -DCMAKE_INSTALL_PREFIX=/opt/howdy-installed-pam-e2e-local \
     -DHOWDY_WARNINGS_AS_ERRORS=ON \
     -DHOWDY_ENABLE_PRIVILEGED_TESTS=ON
-cmake --build build-e2e --parallel "$(nproc)"
+cmake --build build-e2e \
+    --target howdy-installed-e2e-artifacts \
+    --parallel "$(nproc)"
 run0 --setenv=HOWDY_E2E_USER="$USER" \
     ctest --test-dir build-e2e --output-on-failure -R '^installed-pam-setuid-e2e$'
 ```
