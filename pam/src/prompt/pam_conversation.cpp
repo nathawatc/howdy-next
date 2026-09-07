@@ -11,13 +11,13 @@ namespace {
 		ConversationResponseOwner() = default;
 
 		~ConversationResponseOwner() {
-			howdy::pam::secure_free_conversation_responses(&responses_, 1);
+			howdy::pam::SecureFreeConversationResponses(&responses_, 1);
 		}
 
 		ConversationResponseOwner(const ConversationResponseOwner &)                     = delete;
 		auto operator=(const ConversationResponseOwner &) -> ConversationResponseOwner & = delete;
 
-		[[nodiscard]] auto pointer() -> struct pam_response ** {
+		[[nodiscard]] auto Pointer() -> struct pam_response ** {
 			return &responses_;
 		}
 
@@ -32,7 +32,7 @@ namespace howdy::pam {
 	PamConversation::PamConversation(struct pam_conv callback)
 	    : callback_(callback) {}
 
-	auto PamConversation::acquire(pam_handle_t *pamh, PamConversation *output) noexcept -> int {
+	auto PamConversation::Acquire(pam_handle_t *pamh, PamConversation *output) noexcept -> int {
 		if (pamh == nullptr || output == nullptr) {
 			syslog(LOG_ERR, "PAM conversation is unavailable");
 			return PAM_SYSTEM_ERR;
@@ -59,7 +59,7 @@ namespace howdy::pam {
 		return PAM_SUCCESS;
 	}
 
-	auto PamConversation::send(const ConversationMessage &message) const noexcept -> int {
+	auto PamConversation::Send(const ConversationMessage &message) const noexcept -> int {
 		if (callback_.conv == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
@@ -70,7 +70,7 @@ namespace howdy::pam {
 		ConversationResponseOwner response_owner;
 
 		try {
-			return callback_.conv(1, &message_pointer, response_owner.pointer(),
+			return callback_.conv(1, &message_pointer, response_owner.Pointer(),
 			                      callback_.appdata_ptr);
 		} catch (...) {
 			return PAM_CONV_ERR;

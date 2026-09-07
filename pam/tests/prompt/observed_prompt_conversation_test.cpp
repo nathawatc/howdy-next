@@ -23,10 +23,10 @@ namespace howdy::pam {
 			SetPamItemFn set_item;
 		};
 
-		static auto create(pam_handle_t *pamh, SecretPromptObserver observer,
+		static auto Create(pam_handle_t *pamh, SecretPromptObserver observer,
 		                   InjectedOperations injected_operations)
 		    -> std::unique_ptr<ObservedPromptConversation> {
-			auto operations     = ObservedPromptConversation::production_operations();
+			auto operations     = ObservedPromptConversation::ProductionOperations();
 			operations.context  = injected_operations.context;
 			operations.get_item = injected_operations.get_item;
 			operations.set_item = injected_operations.set_item;
@@ -34,7 +34,7 @@ namespace howdy::pam {
 			    new ObservedPromptConversation(pamh, observer, operations));
 		}
 
-		static auto override_conversation(const ObservedPromptConversation &conversation)
+		static auto OverrideConversation(const ObservedPromptConversation &conversation)
 		    -> struct pam_conv {
 			return conversation.override_conv_;
 		}
@@ -79,8 +79,8 @@ namespace {
 		bool throw_end   = false;
 	};
 
-	auto delegated_conversation(int num_msg, const struct pam_message **messages,
-	                            struct pam_response **response, void *appdata_ptr) -> int {
+	auto DelegatedConversation(int num_msg, const struct pam_message **messages,
+	                           struct pam_response **response, void *appdata_ptr) -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -112,12 +112,12 @@ namespace {
 		return state->result;
 	}
 
-	auto begin_prompt(void *context) -> howdy::pam::SecretPromptGeneration {
+	auto BeginPrompt(void *context) -> howdy::pam::SecretPromptGeneration {
 		auto &observer = *static_cast<ObserverState *>(context);
 		return static_cast<howdy::pam::SecretPromptGeneration>(++observer.begin_calls);
 	}
 
-	void end_prompt(void *context, howdy::pam::SecretPromptGeneration /*generation*/) {
+	void EndPrompt(void *context, howdy::pam::SecretPromptGeneration /*generation*/) {
 		auto &observer = *static_cast<ObserverState *>(context);
 		++observer.end_calls;
 		if (observer.throw_end) {
@@ -125,8 +125,8 @@ namespace {
 		}
 	}
 
-	auto injected_get_item(void        *context, pam_handle_t        */*pamh*/, int /*item_type*/,
-	                       const void **item) -> int {
+	auto InjectedGetItem(void        *context, pam_handle_t        */*pamh*/, int /*item_type*/,
+	                     const void **item) -> int {
 		auto &state = *static_cast<OperationState *>(context);
 		++state.get_calls;
 		if (item == nullptr) {
@@ -139,8 +139,8 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	auto injected_set_item(void       *context, pam_handle_t       */*pamh*/, int /*item_type*/,
-	                       const void *item) -> int {
+	auto InjectedSetItem(void       *context, pam_handle_t       */*pamh*/, int /*item_type*/,
+	                     const void *item) -> int {
 		auto &state = *static_cast<OperationState *>(context);
 
 		if (item != nullptr) {
@@ -150,21 +150,21 @@ namespace {
 		return index < state.set_results.size() ? state.set_results[index] : PAM_SYSTEM_ERR;
 	}
 
-	auto make_dispatch_wrapper(OperationState *operations, DispatchState *dispatch,
-	                           ObserverState *observer)
+	auto MakeDispatchWrapper(OperationState *operations, DispatchState *dispatch,
+	                         ObserverState *observer)
 	    -> std::unique_ptr<ObservedPromptConversation> {
 		operations->original = {
-		    .conv        = delegated_conversation,
+		    .conv        = DelegatedConversation,
 		    .appdata_ptr = dispatch,
 		};
-		return ObservedPromptConversationTestAccess::create(
+		return ObservedPromptConversationTestAccess::Create(
 		    reinterpret_cast<pam_handle_t *>(0x1),
-		    {.context = observer, .begin = begin_prompt, .end = end_prompt},
-		    {.context = operations, .get_item = injected_get_item, .set_item = injected_set_item});
+		    {.context = observer, .begin = BeginPrompt, .end = EndPrompt},
+		    {.context = operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem});
 	}
 
-	auto make_messages(std::array<struct pam_message, 3>         *messages,
-	                   std::array<const struct pam_message *, 3> *message_ptrs) -> void {
+	auto MakeMessages(std::array<struct pam_message, 3>         *messages,
+	                  std::array<const struct pam_message *, 3> *message_ptrs) -> void {
 		*messages     = {{
 		    {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
 		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
@@ -173,20 +173,20 @@ namespace {
 		*message_ptrs = {{messages->data(), messages->data() + 1, messages->data() + 2}};
 	}
 
-	auto test_response_cleanup_contract() -> bool {
+	auto TestResponseCleanupContract() -> bool {
 		bool ok = true;
 
 		{
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kAllocated, .result = PAM_SUCCESS};
 			ObserverState  observer;
-			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
-			make_messages(&messages, &message_ptrs);
+			MakeMessages(&messages, &message_ptrs);
 			struct pam_response *responses = nullptr;
 			const auto           conversation =
-			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 
 			ok &= expect(conversation.conv(3, message_ptrs.data(), &responses,
 			                               conversation.appdata_ptr) == PAM_SUCCESS,
@@ -207,13 +207,13 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
 			ObserverState  observer{.throw_end = true};
-			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
-			make_messages(&messages, &message_ptrs);
+			MakeMessages(&messages, &message_ptrs);
 			auto      *responses = reinterpret_cast<struct pam_response *>(0x1);
 			const auto conversation =
-			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			ok &= expect(conversation.conv(3, message_ptrs.data(), &responses,
 			                               conversation.appdata_ptr) == PAM_SUCCESS,
 			             "observer end exception does not change delegated success");
@@ -226,12 +226,12 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
 			ObserverState  observer;
-			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "notice"};
 			const struct pam_message *message_ptr = &message;
 			auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
 			const auto                conversation =
-			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			ok &= expect(conversation.conv(1, &message_ptr, &responses, conversation.appdata_ptr) ==
 			                 PAM_SUCCESS,
 			             "non-secret prompt delegates successfully");
@@ -248,13 +248,13 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = mode, .result = PAM_CONV_ERR};
 			ObserverState  observer;
-			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
-			make_messages(&messages, &message_ptrs);
+			MakeMessages(&messages, &message_ptrs);
 			auto      *responses = reinterpret_cast<struct pam_response *>(0x1);
 			const auto conversation =
-			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			const int result =
 			    conversation.conv(3, message_ptrs.data(), &responses, conversation.appdata_ptr);
 
@@ -270,12 +270,12 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kAllocated, .result = PAM_CONV_ERR};
 			ObserverState  observer;
-			auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
+			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
-			make_messages(&messages, &message_ptrs);
+			MakeMessages(&messages, &message_ptrs);
 			const auto conversation =
-			    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 
 			ok &= expect(conversation.conv(3, message_ptrs.data(), nullptr,
 			                               conversation.appdata_ptr) == PAM_CONV_ERR,
@@ -291,7 +291,7 @@ namespace {
 		return ok;
 	}
 
-	auto call_late(const struct pam_conv &conversation) -> bool {
+	auto CallLate(const struct pam_conv &conversation) -> bool {
 		const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 		const struct pam_message *message_ptr = &message;
 		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
@@ -300,111 +300,110 @@ namespace {
 		       response == nullptr;
 	}
 
-	auto test_constructor_and_install_guards() -> bool {
+	auto TestConstructorAndInstallGuards() -> bool {
 		bool                       ok = true;
 		OperationState             operations;
 		ObserverState              observer;
 		const SecretPromptObserver valid_observer{
-		    .context = &observer, .begin = begin_prompt, .end = end_prompt};
+		    .context = &observer, .begin = BeginPrompt, .end = EndPrompt};
 		const auto make = [&](pam_handle_t *pamh, SecretPromptObserver prompt_observer,
 		                      ObservedPromptConversationTestAccess::InjectedOperations injected)
 		    -> std::unique_ptr<ObservedPromptConversation> {
-			return ObservedPromptConversationTestAccess::create(pamh, prompt_observer, injected);
+			return ObservedPromptConversationTestAccess::Create(pamh, prompt_observer, injected);
 		};
 
-		ok &= expect(!make(nullptr, valid_observer,
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "null PAM handle makes observed wrapper unavailable");
-		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1),
-		                   {.context = &observer, .begin = nullptr, .end = end_prompt},
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "missing observer begin callback makes wrapper unavailable");
-		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1),
-		                   {.context = &observer, .begin = begin_prompt, .end = nullptr},
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "missing observer end callback makes wrapper unavailable");
 		ok &= expect(
-		    !make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		          {.context = &operations, .get_item = nullptr, .set_item = injected_set_item})
-		         ->available(),
-		    "missing PAM get-item operation makes wrapper unavailable");
+		    !make(
+		         nullptr, valid_observer,
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "null PAM handle makes observed wrapper unavailable");
+		ok &= expect(
+		    !make(
+		         reinterpret_cast<pam_handle_t *>(0x1),
+		         {.context = &observer, .begin = nullptr, .end = EndPrompt},
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "missing observer begin callback makes wrapper unavailable");
+		ok &= expect(
+		    !make(
+		         reinterpret_cast<pam_handle_t *>(0x1),
+		         {.context = &observer, .begin = BeginPrompt, .end = nullptr},
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "missing observer end callback makes wrapper unavailable");
+		ok &=
+		    expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		                 {.context = &operations, .get_item = nullptr, .set_item = InjectedSetItem})
+		                ->Available(),
+		           "missing PAM get-item operation makes wrapper unavailable");
 
 		operations.get_result = PAM_SYSTEM_ERR;
-		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "PAM conversation lookup failure makes wrapper unavailable");
+		ok &= expect(
+		    !make(
+		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "PAM conversation lookup failure makes wrapper unavailable");
 		operations.get_result       = PAM_SUCCESS;
 		operations.return_null_item = true;
-		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "null PAM conversation item makes wrapper unavailable");
+		ok &= expect(
+		    !make(
+		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "null PAM conversation item makes wrapper unavailable");
 		operations.return_null_item = false;
 		operations.original         = {};
-		ok &= expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		                   {.context  = &operations,
-		                    .get_item = injected_get_item,
-		                    .set_item = injected_set_item})
-		                  ->available(),
-		             "null original conversation callback makes wrapper unavailable");
+		ok &= expect(
+		    !make(
+		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
+		         ->Available(),
+		    "null original conversation callback makes wrapper unavailable");
 
-		operations.original = {.conv = delegated_conversation, .appdata_ptr = nullptr};
+		operations.original = {.conv = DelegatedConversation, .appdata_ptr = nullptr};
 		auto no_set =
 		    make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		         {.context = &operations, .get_item = injected_get_item, .set_item = nullptr});
-		ok &= expect(no_set->available() && no_set->install() == PAM_SYSTEM_ERR,
+		         {.context = &operations, .get_item = InjectedGetItem, .set_item = nullptr});
+		ok &= expect(no_set->Available() && no_set->Install() == PAM_SYSTEM_ERR,
 		             "missing PAM set-item operation rejects install");
 		operations.set_results[0] = PAM_SYSTEM_ERR;
 		auto failed_set           = make(
 		    reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
-		    {.context = &operations, .get_item = injected_get_item, .set_item = injected_set_item});
-		ok &= expect(failed_set->available() && failed_set->install() == PAM_SYSTEM_ERR,
+		    {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem});
+		ok &= expect(failed_set->Available() && failed_set->Install() == PAM_SYSTEM_ERR,
 		             "PAM conversation install failure is returned");
 		return ok;
 	}
 
-	auto test_destroyed_installed_wrapper_fails_closed() -> bool {
+	auto TestDestroyedInstalledWrapperFailsClosed() -> bool {
 		OperationState operations;
 		DispatchState  dispatch;
 		ObserverState  observer;
-		auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
-		bool           ok = expect(wrapper->install() == PAM_SUCCESS,
+		auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+		bool           ok = expect(wrapper->Install() == PAM_SUCCESS,
 		                           "installed observed wrapper prepares unsafe-destruction case");
-		const auto     installed =
-		    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
+		const auto installed = ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 		wrapper.reset();
-		return ok && expect(call_late(installed),
+		return ok && expect(CallLate(installed),
 		                    "destroyed installed wrapper retains fail-closed callback context");
 	}
 
-	auto test_restore_result(ConversationRestoreResult expected, std::array<int, 3> set_results,
-	                         const char *label) -> bool {
+	auto TestRestoreResult(ConversationRestoreResult expected, std::array<int, 3> set_results,
+	                       const char *label) -> bool {
 		OperationState operations{.set_results = set_results};
 		DispatchState  dispatch;
 		ObserverState  observer;
-		auto           wrapper = make_dispatch_wrapper(&operations, &dispatch, &observer);
-		bool ok = expect(wrapper->available(), std::string(label) + ": wrapper is available") &&
-		          expect(wrapper->install() == PAM_SUCCESS,
+		auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+		bool ok = expect(wrapper->Available(), std::string(label) + ": wrapper is available") &&
+		          expect(wrapper->Install() == PAM_SUCCESS,
 		                 std::string(label) + ": wrapper installs through injected PAM operation");
 		const auto override_conversation =
-		    ObservedPromptConversationTestAccess::override_conversation(*wrapper);
-		const auto result = wrapper->restore_original();
+		    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
+		const auto result = wrapper->RestoreOriginal();
 		ok &= expect(result == expected, std::string(label) + ": returns explicit restore result");
-		ok &= expect(wrapper->restore_original() == ConversationRestoreResult::kOriginalRestored,
+		ok &= expect(wrapper->RestoreOriginal() == ConversationRestoreResult::kOriginalRestored,
 		             std::string(label) + ": repeated restore is already complete");
 		const auto restored_conversation = operations.last_set;
 		const int  calls_before_destroy  = operations.set_calls;
@@ -413,14 +412,14 @@ namespace {
 		             std::string(label) + ": destructor performs no PAM operation");
 
 		if (expected == ConversationRestoreResult::kOriginalRestored) {
-			ok &= expect(restored_conversation.conv == delegated_conversation,
+			ok &= expect(restored_conversation.conv == DelegatedConversation,
 			             std::string(label) + ": original callback is restored");
 		} else {
-			ok &= expect(call_late(restored_conversation),
+			ok &= expect(CallLate(restored_conversation),
 			             std::string(label) + ": installed fail-closed callback rejects late call");
 		}
 		if (expected == ConversationRestoreResult::kUnsafe) {
-			ok &= expect(call_late(override_conversation),
+			ok &= expect(CallLate(override_conversation),
 			             std::string(label) + ": quarantined callback rejects late call");
 			ok &= expect(observer.begin_calls == 0 && observer.end_calls == 0,
 			             std::string(label) + ": destroyed observer context is never reached");
@@ -432,15 +431,14 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= test_response_cleanup_contract();
-	ok &= test_constructor_and_install_guards();
-	ok &= test_destroyed_installed_wrapper_fails_closed();
-	ok &= test_restore_result(ConversationRestoreResult::kOriginalRestored,
-	                          {PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}, "original restoration");
-	ok &=
-	    test_restore_result(ConversationRestoreResult::kFailClosedInstalled,
+	ok &= TestResponseCleanupContract();
+	ok &= TestConstructorAndInstallGuards();
+	ok &= TestDestroyedInstalledWrapperFailsClosed();
+	ok &= TestRestoreResult(ConversationRestoreResult::kOriginalRestored,
+	                        {PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS}, "original restoration");
+	ok &= TestRestoreResult(ConversationRestoreResult::kFailClosedInstalled,
 	                        {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SUCCESS}, "fail-closed restoration");
-	ok &= test_restore_result(ConversationRestoreResult::kUnsafe,
-	                          {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SYSTEM_ERR}, "unsafe restoration");
+	ok &= TestRestoreResult(ConversationRestoreResult::kUnsafe,
+	                        {PAM_SUCCESS, PAM_SYSTEM_ERR, PAM_SYSTEM_ERR}, "unsafe restoration");
 	return ok ? 0 : 1;
 }

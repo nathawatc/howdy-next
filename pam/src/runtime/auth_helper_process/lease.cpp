@@ -24,7 +24,7 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::HelperDeadline;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
 
-	void close_control_descriptors(msghdr *message) {
+	void CloseControlDescriptors(msghdr *message) {
 		for (cmsghdr *control = CMSG_FIRSTHDR(message); control != nullptr;
 		     control          = CMSG_NXTHDR(message, control)) {
 			if (control->cmsg_level != SOL_SOCKET || control->cmsg_type != SCM_RIGHTS ||
@@ -46,7 +46,7 @@ namespace {
 
 namespace howdy::pam::auth_helper_process::internal {
 
-	auto receive_lease_descriptor_once(int socket_fd, int *lease_fd) -> LeaseReceiveResult {
+	auto ReceiveLeaseDescriptorOnce(int socket_fd, int *lease_fd) -> LeaseReceiveResult {
 		char  marker = 0;
 		iovec data{.iov_base = &marker, .iov_len = sizeof(marker)};
 		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
@@ -62,7 +62,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			return LeaseReceiveResult::kRetry;
 		}
 		if (received != 1 || marker != 'L' || (message.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) != 0) {
-			close_control_descriptors(&message);
+			CloseControlDescriptors(&message);
 			return LeaseReceiveResult::kInvalid;
 		}
 
@@ -70,7 +70,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (control == nullptr || control->cmsg_level != SOL_SOCKET ||
 		    control->cmsg_type != SCM_RIGHTS || control->cmsg_len != CMSG_LEN(sizeof(int)) ||
 		    CMSG_NXTHDR(&message, control) != nullptr) {
-			close_control_descriptors(&message);
+			CloseControlDescriptors(&message);
 			return LeaseReceiveResult::kInvalid;
 		}
 
@@ -88,7 +88,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		return LeaseReceiveResult::kReceived;
 	}
 
-	auto receive_lease_descriptor_until(int socket_fd, int *lease_fd, HelperDeadline deadline)
+	auto ReceiveLeaseDescriptorUntil(int socket_fd, int *lease_fd, HelperDeadline deadline)
 	    -> bool {
 		if (socket_fd < 0 || lease_fd == nullptr) {
 			return false;
@@ -96,14 +96,14 @@ namespace howdy::pam::auth_helper_process::internal {
 		*lease_fd = -1;
 		while (true) {
 			pollfd    descriptor{.fd = socket_fd, .events = POLLIN, .revents = 0};
-			const int result = poll(&descriptor, 1, deadline_poll_timeout(deadline));
+			const int result = poll(&descriptor, 1, DeadlinePollTimeout(deadline));
 			if (result < 0 && errno == EINTR) {
 				continue;
 			}
 			if (result <= 0 || (descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
 				return false;
 			}
-			const auto receive_result = receive_lease_descriptor_once(socket_fd, lease_fd);
+			const auto receive_result = ReceiveLeaseDescriptorOnce(socket_fd, lease_fd);
 			if (receive_result == LeaseReceiveResult::kRetry) {
 				continue;
 			}
@@ -111,7 +111,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
-	auto lease_socket_has_clean_eof(int socket_fd) -> bool {
+	auto LeaseSocketHasCleanEof(int socket_fd) -> bool {
 		char  byte = 0;
 		iovec data{.iov_base = &byte, .iov_len = sizeof(byte)};
 		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
@@ -124,22 +124,22 @@ namespace howdy::pam::auth_helper_process::internal {
 		const ssize_t received = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
 		if (received != 0) {
 			if (received > 0) {
-				close_control_descriptors(&message);
+				CloseControlDescriptors(&message);
 			}
 			return false;
 		}
 		return CMSG_FIRSTHDR(&message) == nullptr;
 	}
 
-	auto validate_lease_descriptor(int lease_fd, const std::filesystem::path &root_dir,
-	                               uid_t owner_uid) -> bool {
+	auto ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir,
+	                             uid_t owner_uid) -> bool {
 		if (lease_fd < 0 || root_dir.empty() || root_dir.filename().empty()) {
 			return false;
 		}
 
 		const int  flags = fcntl(lease_fd, F_GETFL);
 		const auto policy =
-		    howdy::native::staged_runtime_policy(howdy::native::StagedRuntimeRole::kLock);
+		    howdy::native::GetStagedRuntimePolicy(howdy::native::StagedRuntimeRole::kLock);
 		struct stat lease_stat{};
 		if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || !policy.exact_link_count.has_value() ||
 		    fstat(lease_fd, &lease_stat) != 0 || !S_ISREG(lease_stat.st_mode) ||

@@ -10,20 +10,19 @@
 #include <vector>
 
 namespace {
-	auto production_get_item(void * /*context*/, pam_handle_t *pamh, int item_type,
-	                         const void **item) -> int {
+	auto ProductionGetItem(void * /*context*/, pam_handle_t *pamh, int item_type, const void **item)
+	    -> int {
 		return pam_get_item(pamh, item_type, item);
 	}
 
-	auto production_set_item(void * /*context*/, pam_handle_t *pamh, int item_type,
-	                         const void *item) -> int {
+	auto ProductionSetItem(void * /*context*/, pam_handle_t *pamh, int item_type, const void *item)
+	    -> int {
 		return pam_set_item(pamh, item_type, item);
 	}
 
-	auto observed_prompt_fail_closed_dispatch(int /*num_msg*/,
-	                                          const struct pam_message ** /*messages*/,
-	                                          struct pam_response **response,
-	                                          void * /*appdata_ptr*/) -> int {
+	auto ObservedPromptFailClosedDispatch(int /*num_msg*/, const struct pam_message ** /*messages*/,
+	                                      struct pam_response **response, void * /*appdata_ptr*/)
+	    -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -42,7 +41,7 @@ namespace howdy::pam {
 
 	ObservedPromptConversation::ObservedPromptConversation(pam_handle_t        *pamh,
 	                                                       SecretPromptObserver observer)
-	    : ObservedPromptConversation(pamh, observer, production_operations()) {}
+	    : ObservedPromptConversation(pamh, observer, ProductionOperations()) {}
 
 	ObservedPromptConversation::ObservedPromptConversation(pam_handle_t        *pamh,
 	                                                       SecretPromptObserver observer,
@@ -65,28 +64,28 @@ namespace howdy::pam {
 		context_           = std::make_unique<DispatchContext>();
 		context_->original = original;
 		context_->observer = observer;
-		override_conv_     = {.conv = dispatch, .appdata_ptr = context_.get()};
+		override_conv_     = {.conv = Dispatch, .appdata_ptr = context_.get()};
 	}
 
-	auto ObservedPromptConversation::production_operations() -> Operations {
+	auto ObservedPromptConversation::ProductionOperations() -> Operations {
 		return {
-		    .get_item = production_get_item,
-		    .set_item = production_set_item,
+		    .get_item = ProductionGetItem,
+		    .set_item = ProductionSetItem,
 		};
 	}
 
 	ObservedPromptConversation::~ObservedPromptConversation() {
 		if (installed_ && context_ != nullptr) {
-			retain_unsafe_context();
+			RetainUnsafeContext();
 		}
 	}
 
-	auto ObservedPromptConversation::available() const -> bool {
+	auto ObservedPromptConversation::Available() const -> bool {
 		return pamh_ != nullptr && context_ != nullptr;
 	}
 
-	auto ObservedPromptConversation::install() -> int {
-		if (!available() || operations_.set_item == nullptr) {
+	auto ObservedPromptConversation::Install() -> int {
+		if (!Available() || operations_.set_item == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
 		const int result =
@@ -97,7 +96,7 @@ namespace howdy::pam {
 		return result;
 	}
 
-	auto ObservedPromptConversation::dispatch(int num_msg, const struct pam_message **messages,
+	auto ObservedPromptConversation::Dispatch(int num_msg, const struct pam_message **messages,
 	                                          struct pam_response **response, void *appdata_ptr)
 	    -> int {
 		if (response == nullptr) {
@@ -141,7 +140,7 @@ namespace howdy::pam {
 			const int result =
 			    context->original.conv(num_msg, messages, response, context->original.appdata_ptr);
 			if (result != PAM_SUCCESS) {
-				secure_free_conversation_responses(response, num_msg);
+				SecureFreeConversationResponses(response, num_msg);
 			}
 			return result;
 		} catch (const std::exception &error) {
@@ -150,11 +149,11 @@ namespace howdy::pam {
 		} catch (...) {
 			syslog(LOG_ERR, "Unhandled non-standard exception in observed PAM conversation");
 		}
-		secure_free_conversation_responses(response, num_msg);
+		SecureFreeConversationResponses(response, num_msg);
 		return PAM_CONV_ERR;
 	}
 
-	void ObservedPromptConversation::retain_unsafe_context() noexcept {
+	void ObservedPromptConversation::RetainUnsafeContext() noexcept {
 		context_->fail_closed.store(true);
 		static std::mutex                                    quarantine_mutex;
 		static std::vector<std::unique_ptr<DispatchContext>> quarantine;
@@ -169,7 +168,7 @@ namespace howdy::pam {
 		}
 	}
 
-	auto ObservedPromptConversation::restore_original() noexcept -> ConversationRestoreResult {
+	auto ObservedPromptConversation::RestoreOriginal() noexcept -> ConversationRestoreResult {
 		if (!installed_) {
 			return ConversationRestoreResult::kOriginalRestored;
 		}
@@ -180,18 +179,18 @@ namespace howdy::pam {
 			return ConversationRestoreResult::kOriginalRestored;
 		}
 
-		static const struct pam_conv fail_closed_conv{
-		    .conv        = observed_prompt_fail_closed_dispatch,
+		static const struct pam_conv kFailClosedConv{
+		    .conv        = ObservedPromptFailClosedDispatch,
 		    .appdata_ptr = nullptr,
 		};
 		if (pamh_ != nullptr && operations_.set_item != nullptr &&
-		    operations_.set_item(operations_.context, pamh_, PAM_CONV, &fail_closed_conv) ==
+		    operations_.set_item(operations_.context, pamh_, PAM_CONV, &kFailClosedConv) ==
 		        PAM_SUCCESS) {
 			installed_ = false;
 			return ConversationRestoreResult::kFailClosedInstalled;
 		}
 
-		retain_unsafe_context();
+		RetainUnsafeContext();
 		installed_ = false;
 		return ConversationRestoreResult::kUnsafe;
 	}

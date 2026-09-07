@@ -27,17 +27,17 @@ namespace howdy::test::prompt_coordinator {
 		std::vector<std::string>          environment;
 	};
 
-	inline auto capture_posix_spawn_file_actions_init(void                       *context,
-	                                                  posix_spawn_file_actions_t *actions) -> int {
+	inline auto CapturePosixSpawnFileActionsInit(void *context, posix_spawn_file_actions_t *actions)
+	    -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(context);
 		++capture.init_calls;
 		capture.initialized_actions = actions;
 		return capture.init_result;
 	}
 
-	inline auto capture_posix_spawn_file_actions_addclosefrom(void                       *context,
-	                                                          posix_spawn_file_actions_t *actions,
-	                                                          int from_fd) -> int {
+	inline auto CapturePosixSpawnFileActionsAddclosefrom(void                       *context,
+	                                                     posix_spawn_file_actions_t *actions,
+	                                                     int from_fd) -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(context);
 		++capture.addclosefrom_calls;
 		capture.closefrom_actions = actions;
@@ -45,17 +45,15 @@ namespace howdy::test::prompt_coordinator {
 		return capture.addclosefrom_result;
 	}
 
-	inline auto capture_posix_spawn_file_actions_destroy(void                       *context,
-	                                                     posix_spawn_file_actions_t *actions)
-	    -> int {
+	inline auto CapturePosixSpawnFileActionsDestroy(void                       *context,
+	                                                posix_spawn_file_actions_t *actions) -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(context);
 		++capture.destroy_calls;
 		capture.destroyed_actions = actions;
 		return 0;
 	}
 
-	inline auto capture_posix_spawn(const howdy::pam::compare_process::SpawnRequest &request)
-	    -> int {
+	inline auto CapturePosixSpawn(const howdy::pam::compare_process::SpawnRequest &request) -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(request.context);
 		++capture.spawn_calls;
 		capture.spawn_actions = request.actions;
@@ -73,13 +71,13 @@ namespace howdy::test::prompt_coordinator {
 		return capture.spawn_result;
 	}
 
-	inline auto posix_spawn_operations(void *context) -> howdy::pam::compare_process::Operations {
+	inline auto PosixSpawnOperations(void *context) -> howdy::pam::compare_process::Operations {
 		return {
 		    .context                   = context,
-		    .file_actions_init         = capture_posix_spawn_file_actions_init,
-		    .file_actions_addclosefrom = capture_posix_spawn_file_actions_addclosefrom,
-		    .file_actions_destroy      = capture_posix_spawn_file_actions_destroy,
-		    .spawn                     = capture_posix_spawn,
+		    .file_actions_init         = CapturePosixSpawnFileActionsInit,
+		    .file_actions_addclosefrom = CapturePosixSpawnFileActionsAddclosefrom,
+		    .file_actions_destroy      = CapturePosixSpawnFileActionsDestroy,
+		    .spawn                     = CapturePosixSpawn,
 		};
 	}
 

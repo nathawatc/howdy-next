@@ -73,9 +73,9 @@ namespace howdy::native::compare_privileges_internal {
 		FatalExitFn  fatal_exit    = nullptr;
 	};
 
-	[[noreturn]] void fatal_compare_privilege_failure(void *context, FatalExitRequest request);
+	[[noreturn]] void FatalComparePrivilegeFailure(void *context, FatalExitRequest request);
 
-	[[nodiscard]] auto drop_compare_privileges(const ComparePrivilegeDependencies &dependencies)
+	[[nodiscard]] auto DropComparePrivileges(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult;
 
 }  // namespace howdy::native::compare_privileges_internal

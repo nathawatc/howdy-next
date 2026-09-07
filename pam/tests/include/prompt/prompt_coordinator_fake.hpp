@@ -133,7 +133,7 @@ namespace howdy::test::prompt_coordinator {
 		explicit FakePromptSubmitter(FakeContext *context)
 		    : context_(context) {}
 
-		void submit_prompt() override {
+		void SubmitPrompt() override {
 			context_->submission_thread = std::this_thread::get_id();
 			const auto wait_for_release = [this] -> void {
 				std::unique_lock<std::mutex> lock(context_->submission_mutex);
@@ -145,7 +145,7 @@ namespace howdy::test::prompt_coordinator {
 			};
 			if (context_->coordinator_for_submission != nullptr) {
 				context_->submission_started_before_password_return =
-				    !howdy::pam::PromptCoordinatorTestAccess::password_call_returned(
+				    !howdy::pam::PromptCoordinatorTestAccess::PasswordCallReturned(
 				        *context_->coordinator_for_submission);
 			}
 			++context_->prompt_submissions;
@@ -175,15 +175,15 @@ namespace howdy::test::prompt_coordinator {
 		explicit FakeNativePrompt(FakeContext *context)
 		    : context_(context) {}
 
-		[[nodiscard]] auto available() const -> bool override {
+		[[nodiscard]] auto Available() const -> bool override {
 			return context_->native_available;
 		}
 
-		[[nodiscard]] auto terminal_restore_failed() const noexcept -> bool override {
+		[[nodiscard]] auto TerminalRestoreFailed() const noexcept -> bool override {
 			return context_->native_terminal_restore_failed;
 		}
 
-		auto install() -> int override {
+		auto Install() -> int override {
 			context_->native_install_thread = std::this_thread::get_id();
 			if (context_->native_install_result == PAM_SUCCESS) {
 				context_->native_prompt_installed = true;
@@ -191,14 +191,14 @@ namespace howdy::test::prompt_coordinator {
 			return context_->native_install_result;
 		}
 
-		void request_abort() override {
+		void RequestAbort() override {
 			context_->native_abort_thread = std::this_thread::get_id();
 			++context_->native_abort_calls;
 			context_->native_prompt_completed = true;
 			context_->native_prompt_condition.notify_one();
 		}
 
-		auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override {
+		auto RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult override {
 			context_->native_restore_thread = std::this_thread::get_id();
 			++context_->native_restore_calls;
 			return context_->native_restore_result;
@@ -213,15 +213,15 @@ namespace howdy::test::prompt_coordinator {
 		explicit FakeSecretPromptConversation(FakeContext *context)
 		    : context_(context) {}
 
-		[[nodiscard]] auto available() const -> bool override {
+		[[nodiscard]] auto Available() const -> bool override {
 			return context_->secret_prompt_available;
 		}
 
-		auto install() -> int override {
+		auto Install() -> int override {
 			return context_->secret_prompt_install_result;
 		}
 
-		auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override {
+		auto RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult override {
 			++context_->secret_restore_calls;
 			return context_->secret_restore_result;
 		}
@@ -241,9 +241,8 @@ namespace howdy::test::prompt_coordinator {
 		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
 
-	inline auto spawn_compare_process(void                                   *context,
-	                                  const howdy::pam::CompareLaunchRequest &request,
-	                                  pid_t                                  *child_pid) -> int {
+	inline auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
+	                                pid_t *child_pid) -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 
 		++fake.spawn_calls;
@@ -261,7 +260,7 @@ namespace howdy::test::prompt_coordinator {
 		return 0;
 	}
 
-	inline auto wait_for_native_prompt_completion(FakeContext &fake) -> bool {
+	inline auto WaitForNativePromptCompletion(FakeContext &fake) -> bool {
 		std::unique_lock<std::mutex> lock(fake.native_prompt_mutex);
 		if (!fake.native_prompt_condition.wait_for(lock, 2s, [&fake] -> bool {
 			    return fake.native_prompt_seen.load();
@@ -280,10 +279,10 @@ namespace howdy::test::prompt_coordinator {
 		return true;
 	}
 
-	inline auto wait_for_compare(void *context, pid_t child_pid,
-	                             [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
-	                             void                                      *cancellation_context,
-	                             howdy::pam::CompareCancellationRequestedFn cancellation_requested)
+	inline auto WaitForCompare(void *context, pid_t child_pid,
+	                           [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
+	                           void                                      *cancellation_context,
+	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
@@ -293,8 +292,8 @@ namespace howdy::test::prompt_coordinator {
 			throw std::runtime_error("simulated compare wait failure");
 		}
 		if (fake.request_native_prompt) {
-			if (!wait_for_native_prompt_completion(fake)) {
-				howdy::pam::compare_process::cancel_and_reap(child_pid);
+			if (!WaitForNativePromptCompletion(fake)) {
+				howdy::pam::compare_process::CancelAndReap(child_pid);
 				return static_cast<int>(CompareExit::kAbort) << 8;
 			}
 		}
@@ -322,7 +321,7 @@ namespace howdy::test::prompt_coordinator {
 				++fake.terminate_calls;
 				fake.terminated_pid = child_pid;
 				(void)kill(child_pid, SIGTERM);
-				if (!howdy::test::process::reap_test_child(child_pid, &status)) {
+				if (!howdy::test::process::ReapTestChild(child_pid, &status)) {
 					return static_cast<int>(CompareExit::kAbort) << 8;
 				}
 				fake.last_wait_status = status;
@@ -336,7 +335,7 @@ namespace howdy::test::prompt_coordinator {
 		}
 	}
 
-	inline auto watchdog_wait_for_compare(
+	inline auto WatchdogWaitForCompare(
 	    void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	    void                                      *cancellation_context,
 	    howdy::pam::CompareCancellationRequestedFn cancellation_requested) -> int {
@@ -345,7 +344,7 @@ namespace howdy::test::prompt_coordinator {
 		fake.waited_pid      = child_pid;
 		const auto remaining = std::max(deadline - std::chrono::steady_clock::now(),
 		                                std::chrono::steady_clock::duration::zero());
-		const int  status    = howdy::pam::compare_process::wait_until(
+		const int  status    = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + remaining, cancellation_context,
 		    cancellation_requested);
 		if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
@@ -356,13 +355,13 @@ namespace howdy::test::prompt_coordinator {
 		return status;
 	}
 
-	inline auto input_preflight(void *context) -> bool {
+	inline auto InputPreflight(void *context) -> bool {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.preflight_calls;
 		return fake.preflight_result;
 	}
 
-	inline auto create_prompt_submitter(void *context) -> std::unique_ptr<PromptSubmitter> {
+	inline auto CreatePromptSubmitter(void *context) -> std::unique_ptr<PromptSubmitter> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.prompt_submitter_constructions;
 		if (fake.fail_prompt_submitter_construction) {
@@ -374,7 +373,7 @@ namespace howdy::test::prompt_coordinator {
 		return std::make_unique<FakePromptSubmitter>(&fake);
 	}
 
-	inline auto create_native_prompt(void *context, pam_handle_t *pamh)
+	inline auto CreateNativePrompt(void *context, pam_handle_t *pamh)
 	    -> std::unique_ptr<NativePrompt> {
 		(void)pamh;
 		auto &fake                = *static_cast<FakeContext *>(context);
@@ -388,8 +387,8 @@ namespace howdy::test::prompt_coordinator {
 		return std::make_unique<FakeNativePrompt>(&fake);
 	}
 
-	inline auto create_secret_prompt_conversation(void *context, pam_handle_t *pamh,
-	                                              howdy::pam::SecretPromptObserver observer)
+	inline auto CreateSecretPromptConversation(void *context, pam_handle_t *pamh,
+	                                           howdy::pam::SecretPromptObserver observer)
 	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
 		(void)pamh;
 		auto &fake                  = *static_cast<FakeContext *>(context);
@@ -406,7 +405,7 @@ namespace howdy::test::prompt_coordinator {
 		return std::make_unique<FakeSecretPromptConversation>(&fake);
 	}
 
-	inline auto request_token_until_release(FakeContext &fake) -> std::tuple<int, const char *> {
+	inline auto RequestTokenUntilRelease(FakeContext &fake) -> std::tuple<int, const char *> {
 		std::unique_lock<std::mutex> lock(fake.token_mutex);
 		fake.before_conversation = true;
 		fake.token_condition.notify_all();
@@ -422,7 +421,7 @@ namespace howdy::test::prompt_coordinator {
 		return {fake.token_result, nullptr};
 	}
 
-	inline auto request_real_auth_token(FakeContext &fake, pam_handle_t *pamh)
+	inline auto RequestRealAuthToken(FakeContext &fake, pam_handle_t *pamh)
 	    -> std::tuple<int, const char *> {
 		if (fake.block_before_conversation) {
 			std::unique_lock<std::mutex> lock(fake.token_mutex);
@@ -459,7 +458,7 @@ namespace howdy::test::prompt_coordinator {
 		return {result, nullptr};
 	}
 
-	inline auto request_auth_token(void *context, pam_handle_t *pamh)
+	inline auto RequestAuthToken(void *context, pam_handle_t *pamh)
 	    -> std::tuple<int, const char *> {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.auth_token_calls;
@@ -490,10 +489,10 @@ namespace howdy::test::prompt_coordinator {
 		} generation_scope{.observer = fake.secret_prompt_observer, .generation = generation};
 
 		if (fake.block_token_until_release) {
-			return request_token_until_release(fake);
+			return RequestTokenUntilRelease(fake);
 		}
 		if (fake.use_real_auth_token) {
-			return request_real_auth_token(fake, pamh);
+			return RequestRealAuthToken(fake, pamh);
 		}
 		if (fake.token_waits_for_reap) {
 			std::unique_lock<std::mutex> lock(fake.reap_mutex);
@@ -529,36 +528,36 @@ namespace howdy::test::prompt_coordinator {
 		return {fake.token_result, nullptr};
 	}
 
-	inline auto dependencies(FakeContext *context) -> PromptCoordinatorDependencies {
+	inline auto Dependencies(FakeContext *context) -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
 		    .context                           = context,
-		    .spawn_compare_process             = spawn_compare_process,
-		    .wait_for_compare_process          = wait_for_compare,
-		    .input_prompt_preflight            = input_preflight,
-		    .create_prompt_submitter           = create_prompt_submitter,
-		    .create_native_prompt              = create_native_prompt,
-		    .create_secret_prompt_conversation = create_secret_prompt_conversation,
-		    .request_auth_token                = request_auth_token,
+		    .spawn_compare_process             = SpawnCompareProcess,
+		    .wait_for_compare_process          = WaitForCompare,
+		    .input_prompt_preflight            = InputPreflight,
+		    .create_prompt_submitter           = CreatePromptSubmitter,
+		    .create_native_prompt              = CreateNativePrompt,
+		    .create_secret_prompt_conversation = CreateSecretPromptConversation,
+		    .request_auth_token                = RequestAuthToken,
 		};
 	}
 
-	inline auto wait_for_submission_ready(FakeContext                        &context,
-	                                      std::chrono::steady_clock::duration timeout) -> bool {
+	inline auto WaitForSubmissionReady(FakeContext                        &context,
+	                                   std::chrono::steady_clock::duration timeout) -> bool {
 		std::unique_lock<std::mutex> lock(context.submission_mutex);
 		return context.submission_condition.wait_for(lock, timeout, [&context] -> bool {
 			return context.submission_ready.load();
 		});
 	}
 
-	inline auto wait_for_submission_finished(FakeContext                        &context,
-	                                         std::chrono::steady_clock::duration timeout) -> bool {
+	inline auto WaitForSubmissionFinished(FakeContext                        &context,
+	                                      std::chrono::steady_clock::duration timeout) -> bool {
 		std::unique_lock<std::mutex> lock(context.submission_mutex);
 		return context.submission_condition.wait_for(lock, timeout, [&context] -> bool {
 			return context.submission_finished.load();
 		});
 	}
 
-	inline void release_submission(FakeContext &context) {
+	inline void ReleaseSubmission(FakeContext &context) {
 		{
 			std::scoped_lock lock(context.submission_mutex);
 			context.release_submission = true;
@@ -566,7 +565,7 @@ namespace howdy::test::prompt_coordinator {
 		context.submission_condition.notify_all();
 	}
 
-	inline auto callback_counts(const FakeContext &context) -> CallbackCounts {
+	inline auto GetCallbackCounts(const FakeContext &context) -> CallbackCounts {
 		return CallbackCounts{
 		    .spawn     = context.spawn_calls.load(),
 		    .wait      = context.wait_calls.load(),
@@ -577,10 +576,10 @@ namespace howdy::test::prompt_coordinator {
 		};
 	}
 
-	inline auto make_compare_request(std::string_view config_path     = "/etc/howdy/config.ini",
-	                                 std::string_view username        = "alice",
-	                                 std::string_view user_models_dir = "/etc/howdy/models",
-	                                 bool             staged_runtime  = false)
+	inline auto MakeCompareRequest(std::string_view config_path     = "/etc/howdy/config.ini",
+	                               std::string_view username        = "alice",
+	                               std::string_view user_models_dir = "/etc/howdy/models",
+	                               bool             staged_runtime  = false)
 	    -> howdy::pam::CompareLaunchRequest {
 		return {
 		    .config_path     = std::string(config_path),
@@ -590,7 +589,7 @@ namespace howdy::test::prompt_coordinator {
 		};
 	}
 
-	inline auto timeout_wait_status() -> int {
+	inline auto TimeoutWaitStatus() -> int {
 		return static_cast<int>(CompareExit::kTimeoutReached) << 8;
 	}
 }  // namespace howdy::test::prompt_coordinator

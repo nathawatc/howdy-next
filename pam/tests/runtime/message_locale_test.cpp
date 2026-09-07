@@ -37,7 +37,7 @@ namespace {
 			}
 		}
 
-		void set(const char *value) {
+		void Set(const char *value) {
 			setenv(name_.c_str(), value, 1);
 		}
 
@@ -47,18 +47,18 @@ namespace {
 		bool        had_original_ = false;
 	};
 
-	auto current_global_locale() -> std::string {
+	auto CurrentGlobalLocale() -> std::string {
 		const char *locale = std::setlocale(LC_ALL, nullptr);
 		return locale == nullptr ? std::string{} : std::string(locale);
 	}
 
-	auto current_text_domain() -> std::string {
+	auto CurrentTextDomain() -> std::string {
 		const char *domain = textdomain(nullptr);
 		return domain == nullptr ? std::string{} : std::string(domain);
 	}
 
-	template <std::size_t Size>
-	auto first_available_locale(const std::array<const char *, Size> &candidates, int mask) -> const
+	template <std::size_t size>
+	auto FirstAvailableLocale(const std::array<const char *, size> &candidates, int mask) -> const
 	    char * {
 		for (const char *candidate : candidates) {
 			locale_t locale = newlocale(mask, candidate, nullptr);
@@ -70,14 +70,14 @@ namespace {
 		return nullptr;
 	}
 
-	auto locale_category_name(locale_t locale, int category) -> std::string {
+	auto LocaleCategoryName(locale_t locale, int category) -> std::string {
 		return nl_langinfo_l(_NL_LOCALE_NAME(category), locale);
 	}
 
-	auto expect_environment_selected_categories() -> bool {
+	auto ExpectEnvironmentSelectedCategories() -> bool {
 		const std::array<const char *, 2> candidates = {"C.UTF-8", "C.utf8"};
 		const char *const                 selected_locale =
-		    first_available_locale(candidates, LC_MESSAGES_MASK | LC_CTYPE_MASK);
+		    FirstAvailableLocale(candidates, LC_MESSAGES_MASK | LC_CTYPE_MASK);
 		if (selected_locale == nullptr) {
 			return true;
 		}
@@ -97,16 +97,16 @@ namespace {
 
 		const locale_t    previous_locale = uselocale(baseline_locale);
 		ScopedEnvironment environment("LC_ALL");
-		environment.set(selected_locale);
+		environment.Set(selected_locale);
 		bool ok = true;
 		{
 			ScopedMessageLocale message_locale;
 			const locale_t      active_locale = uselocale(nullptr);
-			ok &= expect(locale_category_name(active_locale, LC_MESSAGES) ==
-			                 locale_category_name(expected_locale, LC_MESSAGES),
+			ok &= expect(LocaleCategoryName(active_locale, LC_MESSAGES) ==
+			                 LocaleCategoryName(expected_locale, LC_MESSAGES),
 			             "locale guard applies environment-selected LC_MESSAGES");
-			ok &= expect(locale_category_name(active_locale, LC_CTYPE) ==
-			                 locale_category_name(expected_locale, LC_CTYPE),
+			ok &= expect(LocaleCategoryName(active_locale, LC_CTYPE) ==
+			                 LocaleCategoryName(expected_locale, LC_CTYPE),
 			             "locale guard applies environment-selected LC_CTYPE");
 		}
 		ok &= expect(uselocale(nullptr) == baseline_locale,
@@ -126,17 +126,17 @@ auto main() -> int {
 	bool ok = true;
 
 	const locale_t    host_locale   = uselocale(nullptr);
-	const std::string global_locale = current_global_locale();
-	const std::string text_domain   = current_text_domain();
+	const std::string global_locale = CurrentGlobalLocale();
+	const std::string text_domain   = CurrentTextDomain();
 	{
 		ScopedMessageLocale message_locale;
 	}
 	ok &= expect(uselocale(nullptr) == host_locale, "normal scope restores host thread locale");
-	ok &= expect(current_global_locale() == global_locale,
+	ok &= expect(CurrentGlobalLocale() == global_locale,
 	             "normal scope leaves process-global locale unchanged");
-	ok &= expect(current_text_domain() == text_domain,
+	ok &= expect(CurrentTextDomain() == text_domain,
 	             "normal scope leaves host gettext domain unchanged");
-	ok &= expect_environment_selected_categories();
+	ok &= ExpectEnvironmentSelectedCategories();
 
 	bool threw = false;
 	try {
@@ -151,14 +151,14 @@ auto main() -> int {
 
 	{
 		ScopedEnvironment invalid_locale("LC_ALL");
-		invalid_locale.set("howdy-invalid-locale");
+		invalid_locale.Set("howdy-invalid-locale");
 		ScopedMessageLocale message_locale;
 		ok &= expect(uselocale(nullptr) == host_locale,
 		             "failed locale setup leaves existing thread locale usable");
 	}
 	ok &= expect(uselocale(nullptr) == host_locale,
 	             "failed locale setup remains safe during destruction");
-	ok &= expect(current_global_locale() == global_locale,
+	ok &= expect(CurrentGlobalLocale() == global_locale,
 	             "failed locale setup leaves process-global locale unchanged");
 
 	return ok ? 0 : 1;

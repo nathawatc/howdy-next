@@ -26,10 +26,9 @@ namespace {
 auto main() -> int {
 	using namespace howdy::test::download_models;
 	const UmaskGuard umask_guard(0022);
-	const std::array results = {run_download_models_entrypoint_tests(), run_atomic_files_tests(),
-	                            run_download_models_integrity_tests(),
-	                            run_download_models_manifest_tests(),
-	                            run_download_models_proxy_tests()};
+	const std::array results = {RunDownloadModelsEntrypointTests(), RunAtomicFilesTests(),
+	                            RunDownloadModelsIntegrityTests(), RunDownloadModelsManifestTests(),
+	                            RunDownloadModelsProxyTests()};
 	const bool       ok      = std::ranges::all_of(results, [](bool value) -> bool {
 		return value;
 	});

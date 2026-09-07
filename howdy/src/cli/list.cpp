@@ -22,7 +22,7 @@ namespace {
 		bool        plain = false;
 	};
 
-	auto parse_list_args(int argc, char **argv) -> std::optional<ListArgs> {
+	auto ParseListArgs(int argc, char **argv) -> std::optional<ListArgs> {
 		ListArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -44,13 +44,12 @@ namespace {
 		return args;
 	}
 
-	auto list_cli_user_model_entries_dependency([[maybe_unused]] void *context,
-	                                            const std::string     &user)
+	auto ListCliUserModelEntriesDependency([[maybe_unused]] void *context, const std::string &user)
 	    -> howdy::native::UserModelListResult {
-		return howdy::native::list_user_model_entries(user, {});
+		return howdy::native::ListUserModelEntries(user, {});
 	}
 
-	auto csv_field(const std::string_view value) -> std::string {
+	auto CsvField(const std::string_view value) -> std::string {
 		if (!value.contains(',') && !value.contains('"')) {
 			return std::string(value);
 		}
@@ -69,14 +68,14 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **argv,
-                                                               const ListDependencies &dependencies)
+auto howdy::native::list_internal::ListMainWithDependencies(int argc, char **argv,
+                                                            const ListDependencies &dependencies)
     -> int {
 	if (dependencies.list_user_model_entries == nullptr) {
 		return kListExitAbort;
 	}
 
-	const auto args = parse_list_args(argc, argv);
+	const auto args = ParseListArgs(argc, argv);
 	if (!args.has_value()) {
 		return kListExitAbort;
 	}
@@ -104,9 +103,10 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 		if (args->plain) {
 			std::cout << ",";
 		} else {
-			constexpr std::size_t kIdColumnWidth = 4;
-			const auto            id_size        = std::to_string(model.id).size();
-			std::cout << std::string(id_size < kIdColumnWidth ? kIdColumnWidth - id_size : 0, ' ');
+			constexpr std::size_t id_column_width = 4;
+			const auto            id_size         = std::to_string(model.id).size();
+			std::cout << std::string(id_size < id_column_width ? id_column_width - id_size : 0,
+			                         ' ');
 		}
 		std::array<char, 32> buffer{};
 		std::tm              local_time{};
@@ -119,20 +119,20 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 		}
 		std::cout << (valid_time ? buffer.data() : "invalid-time");
 		std::cout << (args->plain ? "," : "  ");
-		std::cout << (args->plain ? csv_field(model.label) : model.label) << "\n";
+		std::cout << (args->plain ? CsvField(model.label) : model.label) << "\n";
 	}
 
 	std::cout << "\n";
 	return kListExitOk;
 }
 
-auto list_main(int argc, char **argv) -> int {
+auto ListMain(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kListExitAbort;
 	}
-	return howdy::native::list_internal::list_main_with_dependencies(
+	return howdy::native::list_internal::ListMainWithDependencies(
 	    argc, argv,
 	    howdy::native::list_internal::ListDependencies{
-	        .list_user_model_entries = list_cli_user_model_entries_dependency,
+	        .list_user_model_entries = ListCliUserModelEntriesDependency,
 	    });
 }

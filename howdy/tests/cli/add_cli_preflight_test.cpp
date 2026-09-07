@@ -7,7 +7,7 @@ namespace howdy::test::add_cli {
 
 	namespace {
 
-		auto invalid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+		auto InvalidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 			return howdy::native::RuntimeConfigLoadResult{
 			    .ok            = false,
 			    .status        = howdy::native::RuntimeConfigLoadStatus::kInvalidRuntimeValue,
@@ -15,11 +15,11 @@ namespace howdy::test::add_cli {
 			};
 		}
 
-		auto invalid_runtime_config_stops_before_preflight() -> bool {
-			auto context          = make_success_context();
-			context.config_result = invalid_config_load_result();
+		auto InvalidRuntimeConfigStopsBeforePreflight() -> bool {
+			auto context          = MakeSuccessContext();
+			context.config_result = InvalidConfigLoadResult();
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "invalid runtime config returns 1");
@@ -38,8 +38,8 @@ namespace howdy::test::add_cli {
 			std::string                                     test_name;
 		};
 
-		auto preflight_failure_stops_before_prompt(const PreflightFailureCase &test_case) -> bool {
-			auto context             = make_success_context();
+		auto PreflightFailureStopsBeforePrompt(const PreflightFailureCase &test_case) -> bool {
+			auto context             = MakeSuccessContext();
 			context.preflight_result = howdy::native::add_internal::AddPreflightResult{
 			    .status        = test_case.status,
 			    .error_message = test_case.message,
@@ -49,7 +49,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
 			ok &= expect(result == 1, test_case.test_name + " returns 1");
@@ -65,30 +65,30 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto face_model_preflight_failure_stops_before_prompt() -> bool {
-			return preflight_failure_stops_before_prompt(
+		auto FaceModelPreflightFailureStopsBeforePrompt() -> bool {
+			return PreflightFailureStopsBeforePrompt(
 			    {.status    = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
 			     .message   = "face failed",
 			     .test_name = "face-model preflight failure"});
 		}
 
-		auto incompatible_existing_model_stops_before_prompt() -> bool {
-			return preflight_failure_stops_before_prompt(
+		auto IncompatibleExistingModelStopsBeforePrompt() -> bool {
+			return PreflightFailureStopsBeforePrompt(
 			    {.status =
 			         howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible,
 			     .message   = "",
 			     .test_name = "incompatible existing model"});
 		}
 
-		auto existing_model_error_stops_before_prompt() -> bool {
-			return preflight_failure_stops_before_prompt(
+		auto ExistingModelErrorStopsBeforePrompt() -> bool {
+			return PreflightFailureStopsBeforePrompt(
 			    {.status    = howdy::native::add_internal::AddPreflightStatus::kExistingModelError,
 			     .message   = "storage failed",
 			     .test_name = "existing model preflight error"});
 		}
 
-		auto unknown_preflight_status_fails_closed_before_prompt() -> bool {
-			auto context             = make_success_context();
+		auto UnknownPreflightStatusFailsClosedBeforePrompt() -> bool {
+			auto context             = MakeSuccessContext();
 			context.preflight_result = howdy::native::add_internal::AddPreflightResult{
 			    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 			    .status = static_cast<howdy::native::add_internal::AddPreflightStatus>(99),
@@ -100,7 +100,7 @@ namespace howdy::test::add_cli {
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 			ErrorRedirect  error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "unknown preflight status returns 1");
@@ -116,16 +116,16 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto incomplete_dependencies_stop_before_callbacks() -> bool {
-			auto context = make_success_context();
+		auto IncompleteDependenciesStopBeforeCallbacks() -> bool {
+			auto context = MakeSuccessContext();
 
-			const int result = run_add_with_dependencies(
+			const int result = RunAddWithDependencies(
 			    howdy::native::add_internal::AddDependencies{
 			        .context              = &context,
-			        .load_runtime_config  = load_runtime_config_callback,
+			        .load_runtime_config  = LoadRuntimeConfigCallback,
 			        .preflight_enrollment = nullptr,
-			        .capture_enrollment   = capture_enrollment_callback,
-			        .append_user_model    = append_user_model_entry_callback,
+			        .capture_enrollment   = CaptureEnrollmentCallback,
+			        .append_user_model    = AppendUserModelEntryCallback,
 			    },
 			    {"howdy-add", "alice", "front-door"});
 
@@ -144,18 +144,18 @@ namespace howdy::test::add_cli {
 
 	}  // namespace
 
-	auto run_add_cli_preflight_tests() -> bool {
+	auto RunAddCliPreflightTests() -> bool {
 		bool ok = true;
-		ok &= invalid_runtime_config_stops_before_preflight();
-		ok &= face_model_preflight_failure_stops_before_prompt();
-		ok &= incompatible_existing_model_stops_before_prompt();
-		ok &= existing_model_error_stops_before_prompt();
-		ok &= unknown_preflight_status_fails_closed_before_prompt();
+		ok &= InvalidRuntimeConfigStopsBeforePreflight();
+		ok &= FaceModelPreflightFailureStopsBeforePrompt();
+		ok &= IncompatibleExistingModelStopsBeforePrompt();
+		ok &= ExistingModelErrorStopsBeforePrompt();
+		ok &= UnknownPreflightStatusFailsClosedBeforePrompt();
 		return ok;
 	}
 
-	auto run_add_cli_dependency_validation_tests() -> bool {
-		return incomplete_dependencies_stop_before_callbacks();
+	auto RunAddCliDependencyValidationTests() -> bool {
+		return IncompleteDependenciesStopBeforeCallbacks();
 	}
 
 }  // namespace howdy::test::add_cli

@@ -6,7 +6,7 @@ namespace howdy::native::config_internal {
 
 	using ConfigDependencies = ConfigEditDependencies;
 
-	auto config_main_with_dependencies(int argc, char **argv,
-	                                   const ConfigDependencies &dependencies) -> int;
+	auto ConfigMainWithDependencies(int argc, char **argv, const ConfigDependencies &dependencies)
+	    -> int;
 
 }  // namespace howdy::native::config_internal

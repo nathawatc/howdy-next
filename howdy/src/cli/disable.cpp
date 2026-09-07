@@ -17,26 +17,26 @@ namespace {
 	constexpr int kDisableExitOk    = 0;
 	constexpr int kDisableExitAbort = 1;
 
-	auto resolve_config_path_dependency([[maybe_unused]] void *context) -> std::filesystem::path {
-		return howdy::native::resolve_config_path();
+	auto ResolveConfigPathDependency([[maybe_unused]] void *context) -> std::filesystem::path {
+		return howdy::native::ResolveConfigPath();
 	}
 
-	auto load_runtime_config_dependency([[maybe_unused]] void       *context,
-	                                    const std::filesystem::path &config_path)
+	auto LoadRuntimeConfigDependency([[maybe_unused]] void       *context,
+	                                 const std::filesystem::path &config_path)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		return howdy::native::load_runtime_config(config_path);
+		return howdy::native::LoadRuntimeConfig(config_path);
 	}
 
-	auto update_config_value_dependency([[maybe_unused]] void       *context,
-	                                    const std::filesystem::path &config_path,
-	                                    const std::string &key, const std::string &value,
-	                                    std::string *error_message, bool lock,
-	                                    bool validate_runtime) -> bool {
-		return howdy::native::update_config_value(config_path, key, error_message, value, lock,
-		                                          validate_runtime);
+	auto UpdateConfigValueDependency([[maybe_unused]] void       *context,
+	                                 const std::filesystem::path &config_path,
+	                                 const std::string &key, const std::string &value,
+	                                 std::string *error_message, bool lock, bool validate_runtime)
+	    -> bool {
+		return howdy::native::UpdateConfigValue(config_path, key, error_message, value, lock,
+		                                        validate_runtime);
 	}
 
-	auto parse_argument(int argc, char **argv) -> std::optional<std::string> {
+	auto ParseArgument(int argc, char **argv) -> std::optional<std::string> {
 		if (argc < 2) {
 			return std::nullopt;
 		}
@@ -63,13 +63,13 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::disable_internal::disable_main_with_dependencies(
+auto howdy::native::disable_internal::DisableMainWithDependencies(
     int argc, char **argv, const DisableDependencies &dependencies) -> int {
 	if (argc < 2) {
 		std::cout << "Specify 0 or false to enable, or 1 or true to disable Howdy\n";
 		return kDisableExitAbort;
 	}
-	const auto argument = parse_argument(argc, argv);
+	const auto argument = ParseArgument(argc, argv);
 	if (!argument.has_value()) {
 		std::cout << "Invalid arguments for disable\n";
 		return kDisableExitAbort;
@@ -107,8 +107,8 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		return kDisableExitAbort;
 	}
 
-	const auto &disabled_option = howdy::native::config_schema::runtime_config_option(
-	    howdy::native::config_schema::OptionId::core_disabled);
+	const auto &disabled_option = howdy::native::config_schema::RuntimeConfigOption(
+	    howdy::native::config_schema::OptionId::kCoreDisabled);
 	std::string error_message;
 	if (!dependencies.update_config_value(dependencies.context, config_path,
 	                                      std::string(disabled_option.key), out_value,
@@ -123,12 +123,12 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 	return kDisableExitOk;
 }
 
-auto disable_main(int argc, char **argv) -> int {
-	return howdy::native::disable_internal::disable_main_with_dependencies(
+auto DisableMain(int argc, char **argv) -> int {
+	return howdy::native::disable_internal::DisableMainWithDependencies(
 	    argc, argv,
 	    {
-	        .resolve_config_path = resolve_config_path_dependency,
-	        .load_runtime_config = load_runtime_config_dependency,
-	        .update_config_value = update_config_value_dependency,
+	        .resolve_config_path = ResolveConfigPathDependency,
+	        .load_runtime_config = LoadRuntimeConfigDependency,
+	        .update_config_value = UpdateConfigValueDependency,
 	    });
 }

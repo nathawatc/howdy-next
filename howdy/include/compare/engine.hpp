@@ -73,9 +73,9 @@ namespace howdy::native {
 		              std::vector<std::vector<float>> known_encodings);
 
 		// frame_number is one-based and preserves current rotation cadence.
-		auto process_gray_frame(cv::Mat gray_frame, int frame_number) -> CompareFrameResult;
+		auto ProcessGrayFrame(cv::Mat gray_frame, int frame_number) -> CompareFrameResult;
 
-		auto process_face_frame(const cv::Mat &working_frame) -> CompareInferenceResult;
+		auto ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult;
 
 	private:
 		VideoConfig        config_;

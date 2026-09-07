@@ -17,6 +17,6 @@ namespace howdy::pam::detail {
 		void (*release)(ConversationResponseAllocation allocation) noexcept = nullptr;
 	};
 
-	void secure_free_conversation_responses(struct pam_response **responses, int count,
-	                                        ConversationResponseOperations operations) noexcept;
+	void SecureFreeConversationResponses(struct pam_response **responses, int count,
+	                                     ConversationResponseOperations operations) noexcept;
 }  // namespace howdy::pam::detail

@@ -18,12 +18,12 @@ auto main() -> int {
 	fs::create_directories(context.temp_root, ec);
 	ok &= expect(!ec, "create temp root");
 
-	ok &= howdy::test::run_config_read_update_tests(context);
-	ok &= howdy::test::run_config_atomic_write_tests(context);
-	ok &= howdy::test::run_config_atomic_replace_tests(context);
-	ok &= howdy::test::run_config_lock_failure_tests(context);
-	ok &= howdy::test::run_config_atomic_replace_tail_tests(context);
-	ok &= howdy::test::run_config_path_security_tests(context);
+	ok &= howdy::test::RunConfigReadUpdateTests(context);
+	ok &= howdy::test::RunConfigAtomicWriteTests(context);
+	ok &= howdy::test::RunConfigAtomicReplaceTests(context);
+	ok &= howdy::test::RunConfigLockFailureTests(context);
+	ok &= howdy::test::RunConfigAtomicReplaceTailTests(context);
+	ok &= howdy::test::RunConfigPathSecurityTests(context);
 
 	fs::remove_all(context.temp_root, ec);
 	return ok ? 0 : 1;

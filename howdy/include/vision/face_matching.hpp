@@ -19,7 +19,7 @@ namespace howdy::native {
 	};
 
 	namespace face_matching_detail {
-		[[nodiscard]] inline auto vector_norm(const std::vector<float> &values)
+		[[nodiscard]] inline auto VectorNorm(const std::vector<float> &values)
 		    -> std::optional<float> {
 			float squared_norm = 0.0F;
 			for (float value : values) {
@@ -35,8 +35,8 @@ namespace howdy::native {
 			return std::isfinite(norm) ? std::optional<float>{norm} : std::nullopt;
 		}
 
-		[[nodiscard]] inline auto cosine_score(const std::vector<float> &candidate,
-		                                       const std::vector<float> &probe, float probe_norm)
+		[[nodiscard]] inline auto CosineScore(const std::vector<float> &candidate,
+		                                      const std::vector<float> &probe, float probe_norm)
 		    -> std::optional<float> {
 			if (candidate.size() != probe.size()) {
 				return std::nullopt;
@@ -48,7 +48,7 @@ namespace howdy::native {
 				}
 				dot += candidate[element] * probe[element];
 			}
-			const auto candidate_norm = vector_norm(candidate);
+			const auto candidate_norm = VectorNorm(candidate);
 			if (!candidate_norm.has_value() || !std::isfinite(dot)) {
 				return std::nullopt;
 			}
@@ -56,16 +56,16 @@ namespace howdy::native {
 			return std::isfinite(score) ? std::optional<float>{score} : std::nullopt;
 		}
 
-		[[nodiscard]] inline auto cosine_match(const std::vector<std::vector<float>> &known,
-		                                       const std::vector<float> &probe, float threshold)
+		[[nodiscard]] inline auto CosineMatch(const std::vector<std::vector<float>> &known,
+		                                      const std::vector<float> &probe, float threshold)
 		    -> FaceMatch {
-			const auto probe_norm = vector_norm(probe);
+			const auto probe_norm = VectorNorm(probe);
 			if (!probe_norm.has_value()) {
 				return {.score = -1.0F};
 			}
 			FaceMatch match{.score = -1.0F};
 			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto score = cosine_score(known[index], probe, *probe_norm);
+				const auto score = CosineScore(known[index], probe, *probe_norm);
 				if (score.has_value() && (match.index < 0 || *score > match.score)) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
@@ -75,8 +75,8 @@ namespace howdy::native {
 			return match;
 		}
 
-		[[nodiscard]] inline auto distance_score(const std::vector<float> &candidate,
-		                                         const std::vector<float> &probe)
+		[[nodiscard]] inline auto DistanceScore(const std::vector<float> &candidate,
+		                                        const std::vector<float> &probe)
 		    -> std::optional<float> {
 			if (candidate.size() != probe.size() ||
 			    !std::ranges::all_of(candidate, [](float value) -> bool {
@@ -92,8 +92,8 @@ namespace howdy::native {
 			return std::sqrt(sum);
 		}
 
-		[[nodiscard]] inline auto distance_match(const std::vector<std::vector<float>> &known,
-		                                         const std::vector<float> &probe, float threshold)
+		[[nodiscard]] inline auto DistanceMatch(const std::vector<std::vector<float>> &known,
+		                                        const std::vector<float> &probe, float threshold)
 		    -> FaceMatch {
 			FaceMatch match{.score = std::numeric_limits<float>::max()};
 			if (!std::ranges::all_of(probe, [](float value) -> bool {
@@ -102,7 +102,7 @@ namespace howdy::native {
 				return match;
 			}
 			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto score = distance_score(known[index], probe);
+				const auto score = DistanceScore(known[index], probe);
 				if (score.has_value() && *score < match.score) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
@@ -113,11 +113,10 @@ namespace howdy::native {
 		}
 	}  // namespace face_matching_detail
 
-	[[nodiscard]] inline auto find_best_face_match(const std::vector<std::vector<float>> &known,
-	                                               const std::vector<float>              &probe,
-	                                               FaceMetric metric, float threshold)
-	    -> FaceMatch {
-		const auto *policy = face_metric_policy(metric);
+	[[nodiscard]] inline auto FindBestFaceMatch(const std::vector<std::vector<float>> &known,
+	                                            const std::vector<float> &probe, FaceMetric metric,
+	                                            float threshold) -> FaceMatch {
+		const auto *policy = GetFaceMetricPolicy(metric);
 		if (policy == nullptr) {
 			return {};
 		}
@@ -127,10 +126,10 @@ namespace howdy::native {
 		}
 		switch (metric) {
 			case FaceMetric::kCosine:
-				return face_matching_detail::cosine_match(known, probe, threshold);
+				return face_matching_detail::CosineMatch(known, probe, threshold);
 			case FaceMetric::kL2:
 			case FaceMetric::kL2Norm:
-				return face_matching_detail::distance_match(known, probe, threshold);
+				return face_matching_detail::DistanceMatch(known, probe, threshold);
 		}
 		return {};
 	}

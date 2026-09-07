@@ -26,6 +26,6 @@ namespace howdy::native {
 		int                    error_number = 0;
 	};
 
-	[[nodiscard]] auto apply_compare_sandbox(int timeout_seconds) -> CompareSandboxResult;
+	[[nodiscard]] auto ApplyCompareSandbox(int timeout_seconds) -> CompareSandboxResult;
 
 }  // namespace howdy::native

@@ -21,7 +21,7 @@ namespace {
 	using howdy::pam::detail::ScopedFd;
 	using howdy::test::expect;
 
-	auto descriptor_is_closed(int fd) -> bool {
+	auto DescriptorIsClosed(int fd) -> bool {
 		if (fd < 0) {
 			return true;
 		}
@@ -32,7 +32,7 @@ namespace {
 		return errno == EBADF;
 	}
 
-	auto descriptor_is_open(int fd) -> bool {
+	auto DescriptorIsOpen(int fd) -> bool {
 		if (fd < 0) {
 			return false;
 		}
@@ -40,7 +40,7 @@ namespace {
 		return fcntl(fd, F_GETFD) != -1;
 	}
 
-	auto open_high_fd() -> int {
+	auto OpenHighFd() -> int {
 		const int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
 		if (fd < 0 || fd > STDERR_FILENO) {
 			return fd;
@@ -50,7 +50,7 @@ namespace {
 		return high_fd;
 	}
 
-	auto close_standard_descriptors() -> bool {
+	auto CloseStandardDescriptors() -> bool {
 		return std::ranges::all_of(std::array{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO},
 		                           [](const int fd) -> bool {
 			                           return close(fd) == 0 || errno == EBADF;
@@ -58,7 +58,7 @@ namespace {
 	}
 
 	template <typename Function>
-	auto run_isolated(Function function, std::string_view name) -> bool {
+	auto RunIsolated(Function function, std::string_view name) -> bool {
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
 			return expect(false, std::string(name) + " forks isolated child");
@@ -80,39 +80,39 @@ namespace {
 		              std::string(name) + " preserves parent descriptors");
 	}
 
-	auto test_scoped_fd_lifecycle() -> bool {
+	auto TestScopedFdLifecycle() -> bool {
 		bool     ok = true;
 		ScopedFd default_fd;
-		ok &= expect(!default_fd.valid() && default_fd.get() == -1,
+		ok &= expect(!default_fd.Valid() && default_fd.Get() == -1,
 		             "default ScopedFd owns invalid descriptor");
 
-		const int owned_fd = open_high_fd();
+		const int owned_fd = OpenHighFd();
 		if (!expect(owned_fd > STDERR_FILENO, "opens valid descriptor for ScopedFd")) {
 			return false;
 		}
 		{
 			ScopedFd fd(owned_fd);
-			ok &= expect(fd.valid() && fd.get() == owned_fd, "ScopedFd owns valid descriptor");
-			ok &= expect(descriptor_is_open(owned_fd),
+			ok &= expect(fd.Valid() && fd.Get() == owned_fd, "ScopedFd owns valid descriptor");
+			ok &= expect(DescriptorIsOpen(owned_fd),
 			             "owned descriptor remains open before destruction");
 		}
-		ok &= expect(descriptor_is_closed(owned_fd), "ScopedFd closes owned descriptor");
+		ok &= expect(DescriptorIsClosed(owned_fd), "ScopedFd closes owned descriptor");
 
-		const int move_source_fd = open_high_fd();
+		const int move_source_fd = OpenHighFd();
 		if (!expect(move_source_fd > STDERR_FILENO, "opens move-constructor descriptor")) {
 			return false;
 		}
 		{
 			ScopedFd source(move_source_fd);
 			ScopedFd moved(std::move(source));
-			ok &= expect(moved.valid() && moved.get() == move_source_fd,
+			ok &= expect(moved.Valid() && moved.Get() == move_source_fd,
 			             "move constructor transfers descriptor");
 		}
-		ok &= expect(descriptor_is_closed(move_source_fd),
+		ok &= expect(DescriptorIsClosed(move_source_fd),
 		             "moved ScopedFd closes transferred descriptor");
 
-		const int previous_fd = open_high_fd();
-		const int incoming_fd = open_high_fd();
+		const int previous_fd = OpenHighFd();
+		const int incoming_fd = OpenHighFd();
 		if (!expect(previous_fd > STDERR_FILENO && incoming_fd > STDERR_FILENO,
 		            "opens move-assignment descriptors")) {
 			if (previous_fd >= 0) {
@@ -127,38 +127,38 @@ namespace {
 			ScopedFd destination(previous_fd);
 			ScopedFd source(incoming_fd);
 			destination = std::move(source);
-			ok &= expect(destination.valid() && destination.get() == incoming_fd,
+			ok &= expect(destination.Valid() && destination.Get() == incoming_fd,
 			             "move assignment transfers incoming descriptor");
-			ok &= expect(descriptor_is_closed(previous_fd),
+			ok &= expect(DescriptorIsClosed(previous_fd),
 			             "move assignment closes previous owned descriptor");
-			ok &= expect(descriptor_is_open(incoming_fd),
+			ok &= expect(DescriptorIsOpen(incoming_fd),
 			             "move assignment keeps incoming descriptor open");
 		}
-		ok &= expect(descriptor_is_closed(incoming_fd),
+		ok &= expect(DescriptorIsClosed(incoming_fd),
 		             "move-assigned ScopedFd closes incoming descriptor");
 
-		const int released_fd = open_high_fd();
+		const int released_fd = OpenHighFd();
 		if (!expect(released_fd > STDERR_FILENO, "opens release descriptor")) {
 			return false;
 		}
 		{
 			ScopedFd fd(released_fd);
-			ok &= expect(fd.release() == released_fd && !fd.valid(),
+			ok &= expect(fd.Release() == released_fd && !fd.Valid(),
 			             "release returns descriptor and invalidates ScopedFd");
-			ok &= expect(descriptor_is_open(released_fd),
+			ok &= expect(DescriptorIsOpen(released_fd),
 			             "released descriptor stays open after release");
 		}
-		ok &= expect(descriptor_is_open(released_fd),
+		ok &= expect(DescriptorIsOpen(released_fd),
 		             "released descriptor is not closed by destruction");
 		(void)close(released_fd);
 		return ok &&
-		       expect(descriptor_is_closed(released_fd), "released descriptor closes explicitly");
+		       expect(DescriptorIsClosed(released_fd), "released descriptor closes explicitly");
 	}
 
-	auto test_internal_pipe_validity() -> bool {
+	auto TestInternalPipeValidity() -> bool {
 		bool      ok       = true;
-		const int read_fd  = open_high_fd();
-		const int write_fd = open_high_fd();
+		const int read_fd  = OpenHighFd();
+		const int write_fd = OpenHighFd();
 		if (!expect(read_fd > STDERR_FILENO && write_fd > STDERR_FILENO && read_fd != write_fd,
 		            "opens distinct high descriptors for valid InternalPipe")) {
 			if (read_fd >= 0) {
@@ -171,52 +171,52 @@ namespace {
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(read_fd), .write = ScopedFd(write_fd)};
-			ok &= expect(pipe.valid(), "distinct high InternalPipe endpoints are valid");
+			ok &= expect(pipe.Valid(), "distinct high InternalPipe endpoints are valid");
 		}
 
-		const int invalid_write_fd = open_high_fd();
+		const int invalid_write_fd = OpenHighFd();
 		if (!expect(invalid_write_fd > STDERR_FILENO, "opens endpoint for invalid InternalPipe")) {
 			return false;
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(), .write = ScopedFd(invalid_write_fd)};
-			ok &= expect(!pipe.valid(), "invalid InternalPipe endpoint fails validation");
+			ok &= expect(!pipe.Valid(), "invalid InternalPipe endpoint fails validation");
 		}
-		return ok && expect(descriptor_is_closed(invalid_write_fd),
+		return ok && expect(DescriptorIsClosed(invalid_write_fd),
 		                    "invalid InternalPipe endpoint is still owned and closed");
 	}
 
-	auto test_internal_pipe_low_and_identical_endpoints() -> bool {
-		if (!close_standard_descriptors()) {
+	auto TestInternalPipeLowAndIdenticalEndpoints() -> bool {
+		if (!CloseStandardDescriptors()) {
 			return false;
 		}
 		for (const int low_fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
-			const int high_fd = open_high_fd();
+			const int high_fd = OpenHighFd();
 			if (high_fd <= STDERR_FILENO) {
 				return false;
 			}
 			{
 				InternalPipe pipe{.read = ScopedFd(low_fd), .write = ScopedFd(high_fd)};
-				if (pipe.valid()) {
+				if (pipe.Valid()) {
 					return false;
 				}
 			}
-			if (!descriptor_is_closed(high_fd)) {
+			if (!DescriptorIsClosed(high_fd)) {
 				return false;
 			}
 		}
 
-		const int identical_fd = open_high_fd();
+		const int identical_fd = OpenHighFd();
 		if (identical_fd <= STDERR_FILENO) {
 			return false;
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(identical_fd), .write = ScopedFd(identical_fd)};
-			if (pipe.valid()) {
+			if (pipe.Valid()) {
 				return false;
 			}
 		}
-		return descriptor_is_closed(identical_fd);
+		return DescriptorIsClosed(identical_fd);
 	}
 
 	struct DuplicateContext {
@@ -227,7 +227,7 @@ namespace {
 		int                              result_low = STDERR_FILENO;
 	};
 
-	auto duplicate_for_test(void *context, int fd, int minimum_fd) -> int {
+	auto DuplicateForTest(void *context, int fd, int minimum_fd) -> int {
 		auto &state = *static_cast<DuplicateContext *>(context);
 		++state.calls;
 		state.requests.emplace_back(fd, minimum_fd);
@@ -241,35 +241,35 @@ namespace {
 		return fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
 	}
 
-	auto test_normalize_high_and_invalid() -> bool {
+	auto TestNormalizeHighAndInvalid() -> bool {
 		bool                       ok = true;
 		DuplicateContext           context;
-		const InternalFdOperations operations{.context = &context, .duplicate = duplicate_for_test};
+		const InternalFdOperations operations{.context = &context, .duplicate = DuplicateForTest};
 
 		ScopedFd invalid;
 		auto     still_invalid =
-		    howdy::pam::detail::normalize_internal_fd(std::move(invalid), &operations);
-		ok &= expect(!still_invalid.valid(), "invalid normalize input remains invalid");
+		    howdy::pam::detail::NormalizeInternalFd(std::move(invalid), &operations);
+		ok &= expect(!still_invalid.Valid(), "invalid normalize input remains invalid");
 		ok &= expect(context.calls == 0, "invalid normalize input skips duplicate callback");
 
-		const int high_fd = open_high_fd();
+		const int high_fd = OpenHighFd();
 		if (!expect(high_fd > STDERR_FILENO, "opens high normalize input")) {
 			return false;
 		}
 		{
 			ScopedFd input(high_fd);
 			auto     normalized =
-			    howdy::pam::detail::normalize_internal_fd(std::move(input), &operations);
-			ok &= expect(normalized.valid() && normalized.get() == high_fd,
+			    howdy::pam::detail::NormalizeInternalFd(std::move(input), &operations);
+			ok &= expect(normalized.Valid() && normalized.Get() == high_fd,
 			             "high normalize input passes through unchanged");
 			ok &= expect(context.calls == 0, "high normalize input skips duplicate callback");
 		}
-		return ok && expect(descriptor_is_closed(high_fd),
-		                    "high normalize descriptor closes by ownership");
+		return ok &&
+		       expect(DescriptorIsClosed(high_fd), "high normalize descriptor closes by ownership");
 	}
 
-	auto test_normalize_low_and_failures() -> bool {
-		if (!close_standard_descriptors()) {
+	auto TestNormalizeLowAndFailures() -> bool {
+		if (!CloseStandardDescriptors()) {
 			return false;
 		}
 
@@ -278,13 +278,12 @@ namespace {
 			return false;
 		}
 		{
-			auto normalized =
-			    howdy::pam::detail::normalize_internal_fd(ScopedFd(production_low_fd));
-			if (!normalized.valid() || normalized.get() <= STDERR_FILENO) {
+			auto normalized = howdy::pam::detail::NormalizeInternalFd(ScopedFd(production_low_fd));
+			if (!normalized.Valid() || normalized.Get() <= STDERR_FILENO) {
 				return false;
 			}
 		}
-		if (!descriptor_is_closed(production_low_fd)) {
+		if (!DescriptorIsClosed(production_low_fd)) {
 			return false;
 		}
 
@@ -297,12 +296,12 @@ namespace {
 			}
 		}
 		DuplicateContext           context;
-		const InternalFdOperations operations{.context = &context, .duplicate = duplicate_for_test};
+		const InternalFdOperations operations{.context = &context, .duplicate = DuplicateForTest};
 		for (const int low_fd : low_fds) {
 			ScopedFd input(low_fd);
 			auto     normalized =
-			    howdy::pam::detail::normalize_internal_fd(std::move(input), &operations);
-			if (!normalized.valid() || normalized.get() <= STDERR_FILENO) {
+			    howdy::pam::detail::NormalizeInternalFd(std::move(input), &operations);
+			if (!normalized.Valid() || normalized.Get() <= STDERR_FILENO) {
 				return false;
 			}
 		}
@@ -313,7 +312,7 @@ namespace {
 			return false;
 		}
 		for (const int low_fd : low_fds) {
-			if (!descriptor_is_closed(low_fd)) {
+			if (!DescriptorIsClosed(low_fd)) {
 				return false;
 			}
 		}
@@ -323,9 +322,9 @@ namespace {
 			return false;
 		}
 		const InternalFdOperations missing_callback_operations{.context = &context};
-		auto missing_callback_result = howdy::pam::detail::normalize_internal_fd(
+		auto missing_callback_result = howdy::pam::detail::NormalizeInternalFd(
 		    ScopedFd(missing_callback_fd), &missing_callback_operations);
-		if (missing_callback_result.valid() || !descriptor_is_closed(missing_callback_fd)) {
+		if (missing_callback_result.Valid() || !DescriptorIsClosed(missing_callback_fd)) {
 			return false;
 		}
 
@@ -336,11 +335,11 @@ namespace {
 		DuplicateContext failed_duplicate;
 		failed_duplicate.fail = true;
 		const InternalFdOperations failed_duplicate_operations{.context   = &failed_duplicate,
-		                                                       .duplicate = duplicate_for_test};
-		auto failed_duplicate_result = howdy::pam::detail::normalize_internal_fd(
+		                                                       .duplicate = DuplicateForTest};
+		auto failed_duplicate_result = howdy::pam::detail::NormalizeInternalFd(
 		    ScopedFd(failed_duplicate_fd), &failed_duplicate_operations);
-		if (failed_duplicate_result.valid() || failed_duplicate.calls != 1 ||
-		    !descriptor_is_closed(failed_duplicate_fd)) {
+		if (failed_duplicate_result.Valid() || failed_duplicate.calls != 1 ||
+		    !DescriptorIsClosed(failed_duplicate_fd)) {
 			return false;
 		}
 
@@ -351,11 +350,11 @@ namespace {
 		DuplicateContext low_result;
 		low_result.return_low = true;
 		const InternalFdOperations low_result_operations{.context   = &low_result,
-		                                                 .duplicate = duplicate_for_test};
-		auto low_result_descriptor = howdy::pam::detail::normalize_internal_fd(
+		                                                 .duplicate = DuplicateForTest};
+		auto                       low_result_descriptor = howdy::pam::detail::NormalizeInternalFd(
 		    ScopedFd(low_result_fd), &low_result_operations);
-		return !low_result_descriptor.valid() && low_result.calls == 1 &&
-		       descriptor_is_closed(low_result_fd);
+		return !low_result_descriptor.Valid() && low_result.calls == 1 &&
+		       DescriptorIsClosed(low_result_fd);
 	}
 
 	struct PipeContext {
@@ -367,11 +366,11 @@ namespace {
 		std::size_t                      fail_duplicate_call = 0;
 	};
 
-	auto record_pipe_raw_fds(PipeContext &state, int *pipe_fds) -> void {
+	auto RecordPipeRawFds(PipeContext &state, int *pipe_fds) -> void {
 		state.raw_fds = {pipe_fds[0], pipe_fds[1]};
 	}
 
-	auto create_high_pipe(void *context, int *pipe_fds, int flags) -> int {
+	auto CreateHighPipe(void *context, int *pipe_fds, int flags) -> int {
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
 		if (pipe2(pipe_fds, flags) != 0) {
@@ -391,21 +390,21 @@ namespace {
 				pipe_fd = high_fd;
 			}
 		}
-		record_pipe_raw_fds(state, pipe_fds);
+		RecordPipeRawFds(state, pipe_fds);
 		return 0;
 	}
 
-	auto create_raw_pipe(void *context, int *pipe_fds, int flags) -> int {
+	auto CreateRawPipe(void *context, int *pipe_fds, int flags) -> int {
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
 		const int result = pipe2(pipe_fds, flags);
 		if (result == 0) {
-			record_pipe_raw_fds(state, pipe_fds);
+			RecordPipeRawFds(state, pipe_fds);
 		}
 		return result;
 	}
 
-	auto create_failed_pipe(void *context, int * /*pipe_fds*/, int flags) -> int {
+	auto CreateFailedPipe(void *context, int * /*pipe_fds*/, int flags) -> int {
 		(void)flags;
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
@@ -413,28 +412,28 @@ namespace {
 		return -1;
 	}
 
-	auto create_invalid_pipe(void *context, int *pipe_fds, int flags) -> int {
+	auto CreateInvalidPipe(void *context, int *pipe_fds, int flags) -> int {
 		(void)flags;
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
-		pipe_fds[0] = open_high_fd();
+		pipe_fds[0] = OpenHighFd();
 		pipe_fds[1] = -1;
-		record_pipe_raw_fds(state, pipe_fds);
+		RecordPipeRawFds(state, pipe_fds);
 		return pipe_fds[0] < 0 ? -1 : 0;
 	}
 
-	auto create_identical_pipe(void *context, int *pipe_fds, int flags) -> int {
+	auto CreateIdenticalPipe(void *context, int *pipe_fds, int flags) -> int {
 		(void)flags;
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
-		const int fd = open_high_fd();
+		const int fd = OpenHighFd();
 		pipe_fds[0]  = fd;
 		pipe_fds[1]  = fd;
-		record_pipe_raw_fds(state, pipe_fds);
+		RecordPipeRawFds(state, pipe_fds);
 		return fd < 0 ? -1 : 0;
 	}
 
-	auto duplicate_pipe_fd(void *context, int fd, int minimum_fd) -> int {
+	auto DuplicatePipeFd(void *context, int fd, int minimum_fd) -> int {
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.duplicate_calls;
 		state.duplicate_requests.emplace_back(fd, minimum_fd);
@@ -449,96 +448,95 @@ namespace {
 		return duplicate_fd;
 	}
 
-	auto recorded_pipe_descriptors_are_closed(const PipeContext &state) -> bool {
+	auto RecordedPipeDescriptorsAreClosed(const PipeContext &state) -> bool {
 		return std::ranges::all_of(std::array{state.raw_fds[0], state.raw_fds[1],
 		                                      state.duplicate_fds[0], state.duplicate_fds[1]},
 		                           [](const int fd) -> bool {
-			                           return descriptor_is_closed(fd);
+			                           return DescriptorIsClosed(fd);
 		                           });
 	}
 
-	auto test_production_internal_pipe() -> bool {
-		auto pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC);
-		return pipe.valid() && pipe.read.get() > STDERR_FILENO &&
-		       pipe.write.get() > STDERR_FILENO && pipe.read.get() != pipe.write.get();
+	auto TestProductionInternalPipe() -> bool {
+		auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC);
+		return pipe.Valid() && pipe.read.Get() > STDERR_FILENO &&
+		       pipe.write.Get() > STDERR_FILENO && pipe.read.Get() != pipe.write.Get();
 	}
 
-	auto test_create_internal_pipe_paths() -> bool {
+	auto TestCreateInternalPipePaths() -> bool {
 		bool ok = true;
 
 		PipeContext                missing_context;
 		const InternalFdOperations missing_create_operations{.context   = &missing_context,
-		                                                     .duplicate = duplicate_pipe_fd};
+		                                                     .duplicate = DuplicatePipeFd};
 		auto                       missing_create =
-		    howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &missing_create_operations);
-		ok &= expect(!missing_create.valid() && missing_context.create_calls == 0,
+		    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &missing_create_operations);
+		ok &= expect(!missing_create.Valid() && missing_context.create_calls == 0,
 		             "missing create_pipe callback fails closed");
 
 		PipeContext                failed_context;
 		const InternalFdOperations failed_create_operations{.context     = &failed_context,
-		                                                    .duplicate   = duplicate_pipe_fd,
-		                                                    .create_pipe = create_failed_pipe};
+		                                                    .duplicate   = DuplicatePipeFd,
+		                                                    .create_pipe = CreateFailedPipe};
 		auto                       failed_create =
-		    howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &failed_create_operations);
-		ok &= expect(!failed_create.valid() && failed_context.create_calls == 1,
+		    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &failed_create_operations);
+		ok &= expect(!failed_create.Valid() && failed_context.create_calls == 1,
 		             "create_pipe failure fails closed");
-		ok &= expect(recorded_pipe_descriptors_are_closed(failed_context),
+		ok &= expect(RecordedPipeDescriptorsAreClosed(failed_context),
 		             "create_pipe failure leaves no descriptors to close");
 
 		PipeContext                high_context;
-		const InternalFdOperations high_operations{.context     = &high_context,
-		                                           .duplicate   = duplicate_pipe_fd,
-		                                           .create_pipe = create_high_pipe};
+		const InternalFdOperations high_operations{
+		    .context = &high_context, .duplicate = DuplicatePipeFd, .create_pipe = CreateHighPipe};
 		{
-			auto high_pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &high_operations);
-			ok &= expect(high_pipe.valid() && high_pipe.read.get() > STDERR_FILENO &&
-			                 high_pipe.write.get() > STDERR_FILENO &&
-			                 high_pipe.read.get() != high_pipe.write.get(),
+			auto high_pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &high_operations);
+			ok &= expect(high_pipe.Valid() && high_pipe.read.Get() > STDERR_FILENO &&
+			                 high_pipe.write.Get() > STDERR_FILENO &&
+			                 high_pipe.read.Get() != high_pipe.write.Get(),
 			             "high-descriptor internal pipe succeeds");
 			ok &= expect(high_context.duplicate_calls == 0,
 			             "high-descriptor internal pipe skips normalization callback");
 		}
-		ok &= expect(recorded_pipe_descriptors_are_closed(high_context),
+		ok &= expect(RecordedPipeDescriptorsAreClosed(high_context),
 		             "successful high-descriptor pipe closes owned endpoints");
 
 		PipeContext                invalid_context;
 		const InternalFdOperations invalid_operations{.context     = &invalid_context,
-		                                              .duplicate   = duplicate_pipe_fd,
-		                                              .create_pipe = create_invalid_pipe};
+		                                              .duplicate   = DuplicatePipeFd,
+		                                              .create_pipe = CreateInvalidPipe};
 		{
 			auto invalid_pipe =
-			    howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &invalid_operations);
-			ok &= expect(!invalid_pipe.valid(), "invalid final pipe endpoint fails closed");
+			    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &invalid_operations);
+			ok &= expect(!invalid_pipe.Valid(), "invalid final pipe endpoint fails closed");
 		}
-		ok &= expect(recorded_pipe_descriptors_are_closed(invalid_context),
+		ok &= expect(RecordedPipeDescriptorsAreClosed(invalid_context),
 		             "invalid final pipe endpoint does not leak");
 
 		PipeContext                identical_context;
 		const InternalFdOperations identical_operations{.context     = &identical_context,
-		                                                .duplicate   = duplicate_pipe_fd,
-		                                                .create_pipe = create_identical_pipe};
+		                                                .duplicate   = DuplicatePipeFd,
+		                                                .create_pipe = CreateIdenticalPipe};
 		{
 			auto identical_pipe =
-			    howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &identical_operations);
-			ok &= expect(!identical_pipe.valid(), "identical final pipe endpoints fail closed");
+			    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &identical_operations);
+			ok &= expect(!identical_pipe.Valid(), "identical final pipe endpoints fail closed");
 		}
-		return ok && expect(recorded_pipe_descriptors_are_closed(identical_context),
+		return ok && expect(RecordedPipeDescriptorsAreClosed(identical_context),
 		                    "identical final pipe endpoints do not leak");
 	}
 
-	auto test_create_internal_pipe_low_and_normalization_failures() -> bool {
-		if (!close_standard_descriptors()) {
+	auto TestCreateInternalPipeLowAndNormalizationFailures() -> bool {
+		if (!CloseStandardDescriptors()) {
 			return false;
 		}
 
 		PipeContext                success_context;
 		const InternalFdOperations success_operations{.context     = &success_context,
-		                                              .duplicate   = duplicate_pipe_fd,
-		                                              .create_pipe = create_raw_pipe};
+		                                              .duplicate   = DuplicatePipeFd,
+		                                              .create_pipe = CreateRawPipe};
 		{
-			auto pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &success_operations);
-			if (!pipe.valid() || pipe.read.get() <= STDERR_FILENO ||
-			    pipe.write.get() <= STDERR_FILENO || pipe.read.get() == pipe.write.get()) {
+			auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &success_operations);
+			if (!pipe.Valid() || pipe.read.Get() <= STDERR_FILENO ||
+			    pipe.write.Get() <= STDERR_FILENO || pipe.read.Get() == pipe.write.Get()) {
 				return false;
 			}
 		}
@@ -546,7 +544,7 @@ namespace {
 		    success_context.duplicate_requests !=
 		        std::vector<std::pair<int, int>>{{STDIN_FILENO, STDERR_FILENO + 1},
 		                                         {STDOUT_FILENO, STDERR_FILENO + 1}} ||
-		    !recorded_pipe_descriptors_are_closed(success_context)) {
+		    !RecordedPipeDescriptorsAreClosed(success_context)) {
 			return false;
 		}
 
@@ -554,16 +552,15 @@ namespace {
 			PipeContext failure_context;
 			failure_context.fail_duplicate_call = failure_call;
 			const InternalFdOperations failure_operations{.context     = &failure_context,
-			                                              .duplicate   = duplicate_pipe_fd,
-			                                              .create_pipe = create_raw_pipe};
+			                                              .duplicate   = DuplicatePipeFd,
+			                                              .create_pipe = CreateRawPipe};
 			{
-				auto pipe =
-				    howdy::pam::detail::create_internal_pipe(O_CLOEXEC, &failure_operations);
-				if (pipe.valid() || failure_context.duplicate_calls != failure_call) {
+				auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &failure_operations);
+				if (pipe.Valid() || failure_context.duplicate_calls != failure_call) {
 					return false;
 				}
 			}
-			if (!recorded_pipe_descriptors_are_closed(failure_context)) {
+			if (!RecordedPipeDescriptorsAreClosed(failure_context)) {
 				return false;
 			}
 		}
@@ -573,15 +570,15 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= test_scoped_fd_lifecycle();
-	ok &= test_internal_pipe_validity();
-	ok &= run_isolated(test_internal_pipe_low_and_identical_endpoints,
-	                   "low and identical InternalPipe endpoints");
-	ok &= test_normalize_high_and_invalid();
-	ok &= run_isolated(test_normalize_low_and_failures, "low and failing descriptor normalization");
-	ok &= run_isolated(test_production_internal_pipe, "production internal pipe operations");
-	ok &= test_create_internal_pipe_paths();
-	ok &= run_isolated(test_create_internal_pipe_low_and_normalization_failures,
-	                   "low and failing internal pipe creation");
+	ok &= TestScopedFdLifecycle();
+	ok &= TestInternalPipeValidity();
+	ok &= RunIsolated(TestInternalPipeLowAndIdenticalEndpoints,
+	                  "low and identical InternalPipe endpoints");
+	ok &= TestNormalizeHighAndInvalid();
+	ok &= RunIsolated(TestNormalizeLowAndFailures, "low and failing descriptor normalization");
+	ok &= RunIsolated(TestProductionInternalPipe, "production internal pipe operations");
+	ok &= TestCreateInternalPipePaths();
+	ok &= RunIsolated(TestCreateInternalPipeLowAndNormalizationFailures,
+	                  "low and failing internal pipe creation");
 	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

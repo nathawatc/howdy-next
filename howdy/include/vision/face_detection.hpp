@@ -27,11 +27,11 @@ namespace howdy::native {
 		std::vector<FaceDetection> detections;
 		std::string                error_message;
 
-		[[nodiscard]] auto ok() const -> bool {
+		[[nodiscard]] auto Ok() const -> bool {
 			return status == FaceDetectionStatus::kOk;
 		}
 	};
 
-	[[nodiscard]] auto parse_yunet_detections(const cv::Mat &rows) -> FaceDetectionResult;
+	[[nodiscard]] auto ParseYunetDetections(const cv::Mat &rows) -> FaceDetectionResult;
 
 }  // namespace howdy::native

@@ -27,21 +27,21 @@ namespace howdy::pam::compare_process {
 		int (*spawn)(const SpawnRequest &)                                = nullptr;
 	};
 
-	__attribute__((visibility("hidden"))) auto production_operations() -> Operations;
-	__attribute__((visibility("hidden"))) auto spawn(const CompareLaunchRequest &request,
+	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	__attribute__((visibility("hidden"))) auto Spawn(const CompareLaunchRequest &request,
 	                                                 pid_t *child_pid, const Operations &operations)
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int;
+	WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int;
 	__attribute__((visibility("hidden"))) auto
-	wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	           void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
+	WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int;
+	Spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int;
 	__attribute__((visibility("hidden"))) auto
-	wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested) -> int;
-	__attribute__((visibility("hidden"))) void cancel_and_reap(pid_t child_pid) noexcept;
+	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid) noexcept;
 
 }  // namespace howdy::pam::compare_process

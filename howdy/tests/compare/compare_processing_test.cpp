@@ -24,7 +24,7 @@ namespace {
 		std::vector<std::string> events;
 	};
 
-	auto open_capture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
+	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("open");
 		return {
@@ -34,7 +34,7 @@ namespace {
 		};
 	}
 
-	auto drop_privileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
+	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("drop");
 		return {
@@ -45,41 +45,41 @@ namespace {
 		};
 	}
 
-	void construct_engine(void *raw_context) {
+	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("engine");
 	}
 
-	void reset_timeout(void *raw_context) {
+	void ResetTimeout(void *raw_context) {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("reset");
 	}
 
-	auto run_frame_loop(void *raw_context) -> CompareExit {
+	auto RunFrameLoop(void *raw_context) -> CompareExit {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("first next_frame");
 		return context.processing_exit;
 	}
 
-	auto dependencies_for(FakeContext &context) -> CompareProcessingDependencies {
+	auto DependenciesFor(FakeContext &context) -> CompareProcessingDependencies {
 		return {
 		    .context          = &context,
-		    .open_capture     = open_capture,
-		    .drop_privileges  = drop_privileges,
-		    .construct_engine = construct_engine,
-		    .reset_timeout    = reset_timeout,
-		    .run_frame_loop   = run_frame_loop,
+		    .open_capture     = OpenCapture,
+		    .drop_privileges  = DropPrivileges,
+		    .construct_engine = ConstructEngine,
+		    .reset_timeout    = ResetTimeout,
+		    .run_frame_loop   = RunFrameLoop,
 		};
 	}
 
-	auto run(FakeContext &context) -> CompareProcessingResult {
-		return howdy::native::compare_processing_internal::run_compare_processing(
-		    dependencies_for(context));
+	auto Run(FakeContext &context) -> CompareProcessingResult {
+		return howdy::native::compare_processing_internal::RunCompareProcessing(
+		    DependenciesFor(context));
 	}
 
-	auto test_successful_privilege_validation_reaches_processing() -> bool {
+	auto TestSuccessfulPrivilegeValidationReachesProcessing() -> bool {
 		FakeContext context;
-		const auto  result = run(context);
+		const auto  result = Run(context);
 
 		bool        ok              = true;
 		const auto *processing_exit = std::get_if<CompareExit>(&result);
@@ -94,10 +94,10 @@ namespace {
 		return ok;
 	}
 
-	auto test_open_failure() -> bool {
+	auto TestOpenFailure() -> bool {
 		FakeContext context;
 		context.open_status = CompareCaptureOpenStatus::kOpenFailed;
-		const auto result   = run(context);
+		const auto result   = Run(context);
 
 		bool        ok             = true;
 		const auto *capture_result = std::get_if<howdy::native::CompareCaptureOpenResult>(&result);
@@ -113,10 +113,10 @@ namespace {
 		return ok;
 	}
 
-	auto test_invalid_camera_dependencies() -> bool {
+	auto TestInvalidCameraDependencies() -> bool {
 		FakeContext context;
 		context.open_status = CompareCaptureOpenStatus::kInvalidDependencies;
-		const auto result   = run(context);
+		const auto result   = Run(context);
 
 		bool        ok             = true;
 		const auto *capture_result = std::get_if<howdy::native::CompareCaptureOpenResult>(&result);
@@ -131,10 +131,10 @@ namespace {
 		return ok;
 	}
 
-	auto test_non_root_capability_failure_stops_processing() -> bool {
+	auto TestNonRootCapabilityFailureStopsProcessing() -> bool {
 		FakeContext context;
 		context.privilege_status = ComparePrivilegeStatus::kVerificationFailure;
-		const auto result        = run(context);
+		const auto result        = Run(context);
 
 		bool        ok               = true;
 		const auto *privilege_result = std::get_if<howdy::native::ComparePrivilegeResult>(&result);
@@ -150,7 +150,7 @@ namespace {
 		return ok;
 	}
 
-	auto test_filesystem_identity_failures_stop_processing() -> bool {
+	auto TestFilesystemIdentityFailuresStopProcessing() -> bool {
 		struct FailureCase {
 			const char *label;
 			const char *error;
@@ -168,7 +168,7 @@ namespace {
 			FakeContext context;
 			context.privilege_status = ComparePrivilegeStatus::kVerificationFailure;
 			context.privilege_error  = test_case.error;
-			const auto  result       = run(context);
+			const auto  result       = Run(context);
 			const auto *privilege_result =
 			    std::get_if<howdy::native::ComparePrivilegeResult>(&result);
 			ok &= expect(privilege_result != nullptr,
@@ -187,10 +187,10 @@ namespace {
 		return ok;
 	}
 
-	auto test_processing_result_propagates() -> bool {
+	auto TestProcessingResultPropagates() -> bool {
 		FakeContext context;
 		context.processing_exit = CompareExit::kTooDark;
-		const auto result       = run(context);
+		const auto result       = Run(context);
 
 		bool        ok              = true;
 		const auto *processing_exit = std::get_if<CompareExit>(&result);
@@ -202,11 +202,11 @@ namespace {
 		return ok;
 	}
 
-	auto test_missing_callbacks() -> bool {
+	auto TestMissingCallbacks() -> bool {
 		bool ok = true;
 		for (int missing = 0; missing < 5; missing++) {
 			FakeContext context;
-			auto        dependencies = dependencies_for(context);
+			auto        dependencies = DependenciesFor(context);
 			switch (missing) {
 				case 0:
 					dependencies.open_capture = nullptr;
@@ -228,7 +228,7 @@ namespace {
 			}
 
 			const auto result =
-			    howdy::native::compare_processing_internal::run_compare_processing(dependencies);
+			    howdy::native::compare_processing_internal::RunCompareProcessing(dependencies);
 			ok &= expect(std::holds_alternative<CompareProcessingInvalidDependencies>(result),
 			             "missing callback returns invalid-dependencies stage result");
 			ok &= expect(context.events.empty(),
@@ -241,12 +241,12 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= test_successful_privilege_validation_reaches_processing();
-	ok &= test_open_failure();
-	ok &= test_invalid_camera_dependencies();
-	ok &= test_non_root_capability_failure_stops_processing();
-	ok &= test_filesystem_identity_failures_stop_processing();
-	ok &= test_processing_result_propagates();
-	ok &= test_missing_callbacks();
+	ok &= TestSuccessfulPrivilegeValidationReachesProcessing();
+	ok &= TestOpenFailure();
+	ok &= TestInvalidCameraDependencies();
+	ok &= TestNonRootCapabilityFailureStopsProcessing();
+	ok &= TestFilesystemIdentityFailuresStopProcessing();
+	ok &= TestProcessingResultPropagates();
+	ok &= TestMissingCallbacks();
 	return ok ? 0 : 1;
 }

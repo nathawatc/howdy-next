@@ -52,20 +52,20 @@ namespace howdy::pam::auth_eligibility {
 		    void *context, const std::filesystem::path &models_dir, const char *username) = nullptr;
 	};
 
-	auto classify_model_readiness(const howdy::native::UserModelReadinessResult &readiness)
+	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
 	    -> ModelCondition;
 
-	auto production_authentication_eligibility_dependencies()
-	    -> AuthenticationEligibilityDependencies;
+	auto ProductionAuthenticationEligibilityDependencies() -> AuthenticationEligibilityDependencies;
 
-	auto decide_authentication_eligibility(const howdy::native::RuntimeConfig &config,
-	                                       const AuthenticationConditions     &conditions)
+	auto DecideAuthenticationEligibility(const howdy::native::RuntimeConfig &config,
+	                                     const AuthenticationConditions     &conditions)
 	    -> AuthenticationEligibilityResult;
 
-	auto evaluate_authentication_eligibility(
-	    pam_handle_t *pamh, const howdy::native::RuntimeConfig &config, const char *username,
-	    const std::filesystem::path                 &models_dir,
-	    const AuthenticationEligibilityDependencies &dependencies)
+	auto
+	EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
+	                                  const howdy::native::RuntimeConfig &config,
+	                                  const char *username, const std::filesystem::path &models_dir,
+	                                  const AuthenticationEligibilityDependencies &dependencies)
 	    -> AuthenticationEligibilityResult;
 
 }  // namespace howdy::pam::auth_eligibility

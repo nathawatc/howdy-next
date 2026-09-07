@@ -27,7 +27,7 @@ namespace howdy::pam::runtime {
 			}
 		};
 
-		auto glob_error_message(int return_value, int error_number) -> std::string {
+		auto GlobErrorMessage(int return_value, int error_number) -> std::string {
 			std::string message = "Failed to read files from glob: " + std::to_string(return_value);
 			if (error_number != 0) {
 				const std::error_code error(error_number, std::generic_category());
@@ -38,17 +38,17 @@ namespace howdy::pam::runtime {
 			return message;
 		}
 
-		auto file_error_message(const char *path) -> std::string {
+		auto FileErrorMessage(const char *path) -> std::string {
 			return "Failed to read lid state file: " + std::string(path == nullptr ? "" : path);
 		}
 
 	}  // namespace
 
-	auto read_lid_state() -> LidStateResult {
-		return read_lid_state_from_pattern(kLidStatePattern);
+	auto ReadLidState() -> LidStateResult {
+		return ReadLidStateFromPattern(kLidStatePattern);
 	}
 
-	auto read_lid_state_from_pattern(std::string_view pattern) -> LidStateResult {
+	auto ReadLidStateFromPattern(std::string_view pattern) -> LidStateResult {
 		if (pattern.empty() || pattern.contains('\0')) {
 			return {
 			    .status        = LidProbeStatus::kError,
@@ -66,7 +66,7 @@ namespace howdy::pam::runtime {
 			return {
 			    .status        = LidProbeStatus::kError,
 			    .state         = LidState::kUnknown,
-			    .error_message = glob_error_message(return_value, error_number),
+			    .error_message = GlobErrorMessage(return_value, error_number),
 			};
 		}
 
@@ -87,7 +87,7 @@ namespace howdy::pam::runtime {
 			std::string   lid_state;
 			if (!std::getline(file, lid_state)) {
 				if (read_error.empty()) {
-					read_error = file_error_message(path);
+					read_error = FileErrorMessage(path);
 				}
 				continue;
 			}

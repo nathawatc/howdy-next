@@ -20,8 +20,8 @@ namespace howdy::native {
 
 	namespace detail {
 
-		inline auto is_allowed_capture_device_path(std::string_view             device_path,
-		                                           const std::filesystem::path &root) -> bool {
+		inline auto IsAllowedCaptureDevicePath(std::string_view             device_path,
+		                                       const std::filesystem::path &root) -> bool {
 			if (device_path.empty() || device_path == kNoCaptureDevice) {
 				return true;
 			}
@@ -68,14 +68,14 @@ namespace howdy::native {
 				return false;
 			}
 
-			struct stat stat_{};
-			return stat(resolved_path.c_str(), &stat_) == 0 && S_ISCHR(stat_.st_mode);
+			struct stat file_stat{};
+			return stat(resolved_path.c_str(), &file_stat) == 0 && S_ISCHR(file_stat.st_mode);
 		}
 
 	}  // namespace detail
 
-	inline auto is_allowed_capture_device_path(std::string_view device_path) -> bool {
-		return detail::is_allowed_capture_device_path(device_path, {});
+	inline auto IsAllowedCaptureDevicePath(std::string_view device_path) -> bool {
+		return detail::IsAllowedCaptureDevicePath(device_path, {});
 	}
 
 }  // namespace howdy::native

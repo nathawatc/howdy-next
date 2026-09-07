@@ -8,21 +8,21 @@ namespace {
 	using namespace howdy::test::process;
 	using namespace howdy::test::prompt_coordinator;
 
-	auto test_launch_request(const howdy::pam::CompareLaunchRequest &request,
-	                         const std::string                      &expected_config_path,
-	                         const std::string                      &expected_username,
-	                         const std::string                      &expected_user_models_dir,
-	                         bool expected_staged_runtime, const std::string &label) -> bool {
+	auto TestLaunchRequest(const howdy::pam::CompareLaunchRequest &request,
+	                       const std::string                      &expected_config_path,
+	                       const std::string                      &expected_username,
+	                       const std::string                      &expected_user_models_dir,
+	                       bool expected_staged_runtime, const std::string &label) -> bool {
 		FakeContext context;
-		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        result = coordinator.run(request);
+		                              Dependencies(&context), std::chrono::seconds(5));
+		const auto        result = coordinator.Run(request);
 		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns Howdy result") &&
 		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
@@ -37,31 +37,30 @@ namespace {
 		              label + " preserves models directory") &&
 		       expect(context.spawned_staged_runtime == expected_staged_runtime,
 		              label + " preserves staged-runtime selection") &&
-		       expect(child_reaped(child_pid), label + " reaps child");
+		       expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
-	auto test_direct_runtime_launch_request() -> bool {
-		return test_launch_request(
-		    make_compare_request("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
+	auto TestDirectRuntimeLaunchRequest() -> bool {
+		return TestLaunchRequest(
+		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
 		    "/etc/howdy/config.ini", "alice", "/etc/howdy/models", false, "direct runtime request");
 	}
 
-	auto test_staged_runtime_launch_request() -> bool {
-		return test_launch_request(make_compare_request("/run/howdy/runtime/config.ini", "alice",
-		                                                "/run/howdy/runtime/models", true),
-		                           "/run/howdy/runtime/config.ini", "alice",
-		                           "/run/howdy/runtime/models", true, "staged runtime request");
+	auto TestStagedRuntimeLaunchRequest() -> bool {
+		return TestLaunchRequest(MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
+		                                            "/run/howdy/runtime/models", true),
+		                         "/run/howdy/runtime/config.ini", "alice",
+		                         "/run/howdy/runtime/models", true, "staged runtime request");
 	}
 
-	auto test_production_spawn_adapter(const howdy::pam::CompareLaunchRequest &request,
-	                                   const std::vector<std::string>         &expected_argv,
-	                                   const std::string                      &label,
-	                                   const std::vector<std::string>         &expected_environment)
-	    -> bool {
+	auto TestProductionSpawnAdapter(const howdy::pam::CompareLaunchRequest &request,
+	                                const std::vector<std::string>         &expected_argv,
+	                                const std::string                      &label,
+	                                const std::vector<std::string> &expected_environment) -> bool {
 		PosixSpawnCapture capture;
 		pid_t             child_pid = -1;
-		const int result = howdy::pam::compare_process::spawn(request, &child_pid,
-		                                                      posix_spawn_operations(&capture));
+		const int         result =
+		    howdy::pam::compare_process::Spawn(request, &child_pid, PosixSpawnOperations(&capture));
 
 		return expect(result == 0, label + " returns spawn success") &&
 		       expect(capture.init_calls == 1, label + " initializes file actions once") &&
@@ -84,22 +83,22 @@ namespace {
 		              label + " preserves exact environment");
 	}
 
-	auto test_production_direct_runtime_environment() -> bool {
-		return test_production_spawn_adapter(
-		    make_compare_request("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
+	auto TestProductionDirectRuntimeEnvironment() -> bool {
+		return TestProductionSpawnAdapter(
+		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
 		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
 		    "production direct runtime", {});
 	}
 
-	auto test_production_staged_runtime_environment() -> bool {
-		return test_production_spawn_adapter(
-		    make_compare_request("/run/howdy/runtime/config.ini", "alice",
-		                         "/run/howdy/runtime/models", true),
+	auto TestProductionStagedRuntimeEnvironment() -> bool {
+		return TestProductionSpawnAdapter(
+		    MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
+		                       "/run/howdy/runtime/models", true),
 		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
 		    "production staged runtime", {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"});
 	}
 
-	auto test_owned_launch_request_from_temporaries() -> bool {
+	auto TestOwnedLaunchRequestFromTemporaries() -> bool {
 		const howdy::pam::CompareLaunchRequest request = {
 		    .config_path     = std::string("/run/howdy/temporary/config.ini"),
 		    .username        = std::string("temporary-user"),
@@ -107,18 +106,18 @@ namespace {
 		    .staged_runtime  = true,
 		};
 
-		return test_production_spawn_adapter(
+		return TestProductionSpawnAdapter(
 		    request,
 		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
 		    "owned temporary request", {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"});
 	}
 
-	auto test_production_file_actions_init_failure() -> bool {
+	auto TestProductionFileActionsInitFailure() -> bool {
 		PosixSpawnCapture capture;
 		capture.init_result = ENOMEM;
 		pid_t     child_pid = -1;
-		const int result    = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
-		                                                         posix_spawn_operations(&capture));
+		const int result    = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
+		                                                         PosixSpawnOperations(&capture));
 
 		return expect(result == ENOMEM, "file-actions init failure preserves error") &&
 		       expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
@@ -130,12 +129,12 @@ namespace {
 		       expect(child_pid == -1, "file-actions init failure leaves child PID unchanged");
 	}
 
-	auto test_production_closefrom_failure() -> bool {
+	auto TestProductionClosefromFailure() -> bool {
 		PosixSpawnCapture capture;
 		capture.addclosefrom_result = EINVAL;
 		pid_t     child_pid         = -1;
-		const int result = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
-		                                                      posix_spawn_operations(&capture));
+		const int result = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
+		                                                      PosixSpawnOperations(&capture));
 
 		return expect(result == EINVAL, "close-from setup failure preserves error") &&
 		       expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
@@ -151,12 +150,12 @@ namespace {
 		       expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
 	}
 
-	auto test_production_spawn_failure() -> bool {
+	auto TestProductionSpawnFailure() -> bool {
 		PosixSpawnCapture capture;
 		capture.spawn_result = EACCES;
 		pid_t     child_pid  = -1;
-		const int result = howdy::pam::compare_process::spawn(make_compare_request(), &child_pid,
-		                                                      posix_spawn_operations(&capture));
+		const int result     = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
+		                                                          PosixSpawnOperations(&capture));
 
 		return expect(result == EACCES, "production spawn failure preserves error") &&
 		       expect(capture.init_calls == 1, "production spawn failure initializes once") &&
@@ -178,53 +177,53 @@ namespace {
 		              "production spawn failure preserves empty direct environment");
 	}
 
-	auto test_spawn_failure() -> bool {
+	auto TestSpawnFailure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
+		                              Dependencies(&context), std::chrono::seconds(5));
 
-		const auto result = coordinator.run(make_compare_request());
+		const auto result = coordinator.Run(MakeCompareRequest());
 		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "spawn failure returns compare-spawn-failed result") &&
-		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		       expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
 		              "spawn failure invokes no downstream callbacks") &&
 		       expect(context.spawned_pid == -1, "spawn failure creates no child task");
 	}
 
-	auto test_invalid_spawn_pid() -> bool {
+	auto TestInvalidSpawnPid() -> bool {
 		FakeContext context;
 		context.next_child_pid = -1;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
+		                              Dependencies(&context), std::chrono::seconds(5));
 
-		const auto result = coordinator.run(make_compare_request());
+		const auto result = coordinator.Run(MakeCompareRequest());
 		return expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "invalid spawn PID returns compare-spawn-failed result") &&
-		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		       expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
 		              "invalid spawn PID invokes no downstream callbacks");
 	}
 
-	auto test_one_shot_after_spawn_failure() -> bool {
+	auto TestOneShotAfterSpawnFailure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              dependencies(&context), std::chrono::seconds(5));
+		                              Dependencies(&context), std::chrono::seconds(5));
 
-		const auto first  = coordinator.run(make_compare_request());
-		const auto second = coordinator.run(
-		    make_compare_request("/different/config.ini", "bob", "/different/models", true));
+		const auto first  = coordinator.Run(MakeCompareRequest());
+		const auto second = coordinator.Run(
+		    MakeCompareRequest("/different/config.ini", "bob", "/different/models", true));
 		return expect(first.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "spawn-failure one-shot first run reports spawn failure") &&
 		       expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "spawn-failure one-shot second run is rejected") &&
-		       expect(callback_counts(context) == CallbackCounts{.spawn = 1},
+		       expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
 		              "spawn-failure one-shot invokes spawn only once");
 	}
 
-	auto test_invalid_dependencies() -> bool {
+	auto TestInvalidDependencies() -> bool {
 		bool ok = true;
 		for (int missing = 0; missing < 6; ++missing) {
 			FakeContext context;
-			auto        deps = dependencies(&context);
+			auto        deps = Dependencies(&context);
 			switch (missing) {
 				case 0:
 					deps.spawn_compare_process = nullptr;
@@ -250,61 +249,61 @@ namespace {
 
 			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps,
 			                              std::chrono::seconds(5));
-			ok &= expect(!coordinator.valid(), "missing dependency is invalid");
-			const auto before = callback_counts(context);
-			const auto result = coordinator.run(make_compare_request());
+			ok &= expect(!coordinator.Valid(), "missing dependency is invalid");
+			const auto before = GetCallbackCounts(context);
+			const auto result = coordinator.Run(MakeCompareRequest());
 			ok &= expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
 			             "invalid coordinator returns invalid-dependencies result");
-			ok &= expect(callback_counts(context) == before,
+			ok &= expect(GetCallbackCounts(context) == before,
 			             "invalid coordinator invokes no callback");
 		}
 		return ok;
 	}
 
-	auto test_one_shot() -> bool {
+	auto TestOneShot() -> bool {
 		FakeContext context;
-		const pid_t child_pid = spawn_child(EXIT_SUCCESS);
+		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
 		if (!expect(child_pid > 0, "one-shot child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              dependencies(&context), std::chrono::seconds(5));
-		const auto        first = coordinator.run(make_compare_request());
+		                              Dependencies(&context), std::chrono::seconds(5));
+		const auto        first = coordinator.Run(MakeCompareRequest());
 		if (!expect(first.decision == PromptCoordinatorDecision::kHowdyResult,
 		            "one-shot first run succeeds")) {
 			return false;
 		}
-		const auto before = callback_counts(context);
-		const auto second = coordinator.run(make_compare_request("/different/config.ini"));
+		const auto before = GetCallbackCounts(context);
+		const auto second = coordinator.Run(MakeCompareRequest("/different/config.ini"));
 		return expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "one-shot second run is rejected") &&
 		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "one-shot first run spawns child once") &&
 		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "one-shot first run waits for spawned child") &&
-		       expect(callback_counts(context) == before,
+		       expect(GetCallbackCounts(context) == before,
 		              "one-shot second run invokes no callback") &&
-		       expect(child_reaped(child_pid), "one-shot first run reaps child");
+		       expect(ChildReaped(child_pid), "one-shot first run reaps child");
 	}
 
 }  // namespace
 
-auto run_prompt_adapter_tests() -> bool {
+auto RunPromptAdapterTests() -> bool {
 	bool ok = true;
-	ok &= test_direct_runtime_launch_request();
-	ok &= test_staged_runtime_launch_request();
-	ok &= test_production_direct_runtime_environment();
-	ok &= test_production_staged_runtime_environment();
-	ok &= test_owned_launch_request_from_temporaries();
-	ok &= test_production_file_actions_init_failure();
-	ok &= test_production_closefrom_failure();
-	ok &= test_production_spawn_failure();
-	ok &= test_spawn_failure();
-	ok &= test_invalid_spawn_pid();
-	ok &= test_one_shot_after_spawn_failure();
-	ok &= test_invalid_dependencies();
-	ok &= test_one_shot();
+	ok &= TestDirectRuntimeLaunchRequest();
+	ok &= TestStagedRuntimeLaunchRequest();
+	ok &= TestProductionDirectRuntimeEnvironment();
+	ok &= TestProductionStagedRuntimeEnvironment();
+	ok &= TestOwnedLaunchRequestFromTemporaries();
+	ok &= TestProductionFileActionsInitFailure();
+	ok &= TestProductionClosefromFailure();
+	ok &= TestProductionSpawnFailure();
+	ok &= TestSpawnFailure();
+	ok &= TestInvalidSpawnPid();
+	ok &= TestOneShotAfterSpawnFailure();
+	ok &= TestInvalidDependencies();
+	ok &= TestOneShot();
 	return ok;
 }

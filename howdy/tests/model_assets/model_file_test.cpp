@@ -17,10 +17,10 @@ namespace {
 
 	constexpr auto kFixture = "known model fixture";
 
-	auto readiness(const std::filesystem::path &path, const std::string_view label = "Model file",
+	auto Readiness(const std::filesystem::path &path, const std::string_view label = "Model file",
 	               const std::optional<uid_t> owner_uid = std::nullopt)
 	    -> howdy::native::OpenCvModelReadiness {
-		return howdy::native::check_opencv_model_readiness_with_label(path, label, owner_uid);
+		return howdy::native::CheckOpencvModelReadinessWithLabel(path, label, owner_uid);
 	}
 
 }  // namespace
@@ -37,38 +37,38 @@ auto main() -> int {
 	ok &= expect(!ec, "create temp root");
 
 	const auto parentless           = fs::path("model.onnx");
-	const auto parentless_readiness = readiness(parentless);
+	const auto parentless_readiness = Readiness(parentless);
 	ok &= expect(parentless_readiness.status == OpenCvModelStatus::kInsecure &&
 	                 parentless_readiness.error_message.contains("parent directory"),
 	             "parentless model path is insecure");
 
 	const auto valid = temp_root / "valid.onnx";
 	ok &= expect(write_file(valid, kFixture), "write matching model");
-	ok &= expect(readiness(valid).status == OpenCvModelStatus::kOk,
+	ok &= expect(Readiness(valid).status == OpenCvModelStatus::kOk,
 	             "secure non-placeholder model is ready");
 
 	const auto empty = temp_root / "empty.onnx";
 	ok &= expect(write_file(empty, ""), "write empty model");
-	ok &= expect(readiness(empty).status == OpenCvModelStatus::kInvalid, "empty model is invalid");
-	const auto empty_readiness = readiness(empty);
+	ok &= expect(Readiness(empty).status == OpenCvModelStatus::kInvalid, "empty model is invalid");
+	const auto empty_readiness = Readiness(empty);
 	ok &= expect(empty_readiness.error_message.contains("empty"),
 	             "empty model diagnostic identifies empty file");
 
 	const auto lfs_pointer = temp_root / "lfs-pointer.onnx";
 	ok &= expect(write_file(lfs_pointer, "version https://git-lfs.github.com/spec/v1\n"),
 	             "write Git LFS pointer");
-	ok &= expect(readiness(lfs_pointer).status == OpenCvModelStatus::kInvalid,
+	ok &= expect(Readiness(lfs_pointer).status == OpenCvModelStatus::kInvalid,
 	             "Git LFS pointer is invalid");
 
 	const auto mixed_lfs_pointer = temp_root / "mixed-lfs-pointer.onnx";
 	ok &= expect(write_file(mixed_lfs_pointer, " \tVeRsIoN HTTPS://GIT-LFS.GITHUB.COM/SPEC/V1\n"),
 	             "write mixed-case Git LFS pointer");
-	ok &= expect(readiness(mixed_lfs_pointer).status == OpenCvModelStatus::kInvalid,
+	ok &= expect(Readiness(mixed_lfs_pointer).status == OpenCvModelStatus::kInvalid,
 	             "mixed-case Git LFS pointer with leading whitespace is invalid");
 
 	const auto html = temp_root / "html.onnx";
 	ok &= expect(write_file(html, "<html>download error</html>"), "write HTML placeholder");
-	const auto html_readiness = readiness(html, "Custom model");
+	const auto html_readiness = Readiness(html, "Custom model");
 	ok &=
 	    expect(html_readiness.status == OpenCvModelStatus::kInvalid, "HTML placeholder is invalid");
 	ok &= expect(html_readiness.error_message.contains("Custom model") &&
@@ -79,30 +79,30 @@ auto main() -> int {
 	ok &= expect(write_file(xml, "<?xml version=\"1.0\"?><error>download failed</error>"),
 	             "write XML placeholder");
 	ok &=
-	    expect(readiness(xml).status == OpenCvModelStatus::kInvalid, "XML placeholder is invalid");
+	    expect(Readiness(xml).status == OpenCvModelStatus::kInvalid, "XML placeholder is invalid");
 
 	const auto markup = temp_root / "markup.onnx";
 	ok &= expect(write_file(markup, " \t\r\n<response>download failed</response>"),
 	             "write generic markup placeholder");
-	ok &= expect(readiness(markup).status == OpenCvModelStatus::kInvalid,
+	ok &= expect(Readiness(markup).status == OpenCvModelStatus::kInvalid,
 	             "trimmed generic markup placeholder is invalid");
 
 	const auto whitespace = temp_root / "whitespace.onnx";
 	ok &= expect(write_file(whitespace, " \t\r\n"), "write whitespace-only model content");
-	ok &= expect(readiness(whitespace).status == OpenCvModelStatus::kOk,
+	ok &= expect(Readiness(whitespace).status == OpenCvModelStatus::kOk,
 	             "whitespace-only model content is not a placeholder");
 
 	const auto missing = temp_root / "missing.onnx";
-	ok &= expect(readiness(missing).status == OpenCvModelStatus::kMissing,
+	ok &= expect(Readiness(missing).status == OpenCvModelStatus::kMissing,
 	             "missing model remains missing");
 
 	const auto insecure = temp_root / "insecure.onnx";
 	ok &= expect(write_file(insecure, kFixture), "write insecure model");
 	ok &= expect(chmod(insecure.c_str(), 0664) == 0, "make model group-writable");
-	ok &= expect(readiness(insecure).status == OpenCvModelStatus::kInsecure,
+	ok &= expect(Readiness(insecure).status == OpenCvModelStatus::kInsecure,
 	             "group-writable model remains insecure");
 	ok &= expect(chmod(insecure.c_str(), 0602) == 0, "make model world-writable only");
-	const auto world_writable_readiness = readiness(insecure);
+	const auto world_writable_readiness = Readiness(insecure);
 	ok &= expect(world_writable_readiness.status == OpenCvModelStatus::kInsecure &&
 	                 world_writable_readiness.error_message.contains("world-writable"),
 	             "world-writable-only model remains insecure");
@@ -112,7 +112,7 @@ auto main() -> int {
 	ok &= expect(write_file(unreadable, kFixture), "write unreadable model");
 	ok &= expect(chmod(unreadable.c_str(), 0000) == 0, "make model unreadable");
 	if (geteuid() != 0) {
-		const auto unreadable_readiness = readiness(unreadable);
+		const auto unreadable_readiness = Readiness(unreadable);
 		ok &= expect(unreadable_readiness.status == OpenCvModelStatus::kInsecure &&
 		                 unreadable_readiness.error_message.contains("Failed to open"),
 		             "unreadable model fails at open");
@@ -121,7 +121,7 @@ auto main() -> int {
 
 	const auto directory = temp_root / "directory.onnx";
 	fs::create_directory(directory, ec);
-	ok &= expect(!ec && readiness(directory).status == OpenCvModelStatus::kInsecure,
+	ok &= expect(!ec && Readiness(directory).status == OpenCvModelStatus::kInsecure,
 	             "directory used as model remains insecure");
 
 	const auto insecure_parent = temp_root / "group-writable-parent";
@@ -130,16 +130,16 @@ auto main() -> int {
 	ok &= expect(!ec && write_file(insecure_child, kFixture) &&
 	                 chmod(insecure_parent.c_str(), 0775) == 0,
 	             "create group-writable model parent");
-	ok &= expect(readiness(insecure_child).status == OpenCvModelStatus::kInsecure,
+	ok &= expect(Readiness(insecure_child).status == OpenCvModelStatus::kInsecure,
 	             "group-writable model parent remains insecure");
 
 	const uid_t supplied_owner = getuid() == 0 ? static_cast<uid_t>(1) : static_cast<uid_t>(0);
-	const auto  owner_mismatch = howdy::native::check_secure_path(
+	const auto  owner_mismatch = howdy::native::CheckSecurePath(
 	    valid, howdy::native::SecurePathKind::kRegularFile, "Model file", supplied_owner);
 	ok &= expect(!owner_mismatch.ok &&
 	                 owner_mismatch.error_message.contains("UID " + std::to_string(supplied_owner)),
 	             "owner mismatch reports supplied UID");
-	const auto owner_checked_readiness = readiness(valid, "Model file", supplied_owner);
+	const auto owner_checked_readiness = Readiness(valid, "Model file", supplied_owner);
 	ok &= expect(
 	    owner_checked_readiness.status == OpenCvModelStatus::kInsecure &&
 	        owner_checked_readiness.error_message.contains("UID " + std::to_string(supplied_owner)),
@@ -147,14 +147,14 @@ auto main() -> int {
 
 	const auto symlink = temp_root / "symlink.onnx";
 	fs::create_symlink(valid, symlink, ec);
-	ok &= expect(!ec && readiness(symlink).status == OpenCvModelStatus::kInsecure,
+	ok &= expect(!ec && Readiness(symlink).status == OpenCvModelStatus::kInsecure,
 	             "symlink model remains insecure");
 
 	const auto hard_link_source = temp_root / "hard-link-source.onnx";
 	const auto hard_link        = temp_root / "hard-link.onnx";
 	ok &= expect(write_file(hard_link_source, kFixture), "create hard-link source");
 	fs::create_hard_link(hard_link_source, hard_link, ec);
-	ok &= expect(!ec && readiness(hard_link).status == OpenCvModelStatus::kInsecure,
+	ok &= expect(!ec && Readiness(hard_link).status == OpenCvModelStatus::kInsecure,
 	             "hard-linked model remains insecure");
 
 	fs::remove_all(temp_root, ec);

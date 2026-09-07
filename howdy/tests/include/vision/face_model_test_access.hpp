@@ -9,7 +9,7 @@ namespace howdy::native {
 	public:
 		using Backend = FaceModel::Backend;
 
-		static auto create(const FaceConfig &config, Backend backend) -> FaceModel {
+		static auto Create(const FaceConfig &config, Backend backend) -> FaceModel {
 			return {config, std::move(backend)};
 		}
 	};
@@ -18,8 +18,8 @@ namespace howdy::native {
 	public:
 		using Backend = FaceModelBackendFactory::Backend;
 
-		static auto create(const FaceConfig &config, Backend backend) -> FaceModel {
-			return FaceModelBackendFactory::create(config, std::move(backend));
+		static auto Create(const FaceConfig &config, Backend backend) -> FaceModel {
+			return FaceModelBackendFactory::Create(config, std::move(backend));
 		}
 	};
 

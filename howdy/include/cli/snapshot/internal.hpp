@@ -54,25 +54,25 @@ namespace howdy::native::snapshot_internal {
 	struct SnapshotWriterDependencies {
 		void                 *context      = nullptr;
 		SnapshotEncodeImageFn encode_image = nullptr;
-		SyncParentDirectoryFn sync_parent  = sync_parent_directory;
+		SyncParentDirectoryFn sync_parent  = SyncParentDirectory;
 	};
 
-	auto ensure_snapshot_directory(const std::filesystem::path &directory) -> bool;
+	auto EnsureSnapshotDirectory(const std::filesystem::path &directory) -> bool;
 
-	auto write_snapshot_at_path(const std::vector<cv::Mat>       &frames,
-	                            const std::vector<std::string>   &text_lines,
-	                            const std::filesystem::path      &path,
-	                            const SnapshotWriterDependencies &dependencies,
-	                            AtomicFileCommitResult           *commit_result = nullptr) -> bool;
+	auto WriteSnapshotAtPath(const std::vector<cv::Mat>       &frames,
+	                         const std::vector<std::string>   &text_lines,
+	                         const std::filesystem::path      &path,
+	                         const SnapshotWriterDependencies &dependencies,
+	                         AtomicFileCommitResult           *commit_result = nullptr) -> bool;
 
-	auto write_snapshot_with_unique_path(const std::vector<cv::Mat>       &frames,
-	                                     const std::vector<std::string>   &text_lines,
-	                                     const std::filesystem::path      &base_path,
-	                                     const SnapshotWriterDependencies &dependencies,
-	                                     AtomicFileCommitResult           *commit_result = nullptr)
+	auto WriteSnapshotWithUniquePath(const std::vector<cv::Mat>       &frames,
+	                                 const std::vector<std::string>   &text_lines,
+	                                 const std::filesystem::path      &base_path,
+	                                 const SnapshotWriterDependencies &dependencies,
+	                                 AtomicFileCommitResult           *commit_result = nullptr)
 	    -> std::filesystem::path;
 
-	auto snapshot_main_with_dependencies(int argc, char **argv,
-	                                     const SnapshotDependencies &dependencies) -> int;
+	auto SnapshotMainWithDependencies(int argc, char **argv,
+	                                  const SnapshotDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::snapshot_internal

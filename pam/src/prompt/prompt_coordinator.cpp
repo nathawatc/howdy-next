@@ -28,12 +28,12 @@ namespace {
 
 	constexpr auto kPromptCompletionGrace = std::chrono::milliseconds(100);
 
-	auto input_workaround_access() -> int {
+	auto InputWorkaroundAccess() -> int {
 		return euidaccess("/dev/uinput", W_OK | R_OK);
 	}
 
-	auto input_prompt_workaround_preflight() -> bool {
-		if (input_workaround_access() != 0) {
+	auto InputPromptWorkaroundPreflight() -> bool {
+		if (InputWorkaroundAccess() != 0) {
 			const int access_errno = errno;
 			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
 			       access_errno);
@@ -43,12 +43,12 @@ namespace {
 		return true;
 	}
 
-	auto input_prompt_preflight_dependency(void *context) -> bool {
+	auto InputPromptPreflightDependency(void *context) -> bool {
 		(void)context;
-		return input_prompt_workaround_preflight();
+		return InputPromptWorkaroundPreflight();
 	}
 
-	auto request_auth_token_dependency(void *context, pam_handle_t *pamh)
+	auto RequestAuthTokenDependency(void *context, pam_handle_t *pamh)
 	    -> std::tuple<int, const char *> {
 		(void)context;
 		const char *auth_tok_ptr = nullptr;
@@ -57,20 +57,20 @@ namespace {
 		return {auth_result, auth_tok_ptr};
 	}
 
-	auto create_prompt_submitter_dependency(void *context)
+	auto CreatePromptSubmitterDependency(void *context)
 	    -> std::unique_ptr<howdy::pam::PromptSubmitter> {
 		(void)context;
-		return howdy::pam::create_uinput_prompt_submitter();
+		return howdy::pam::CreateUinputPromptSubmitter();
 	}
 
-	auto create_native_prompt_dependency(void *context, pam_handle_t *pamh)
+	auto CreateNativePromptDependency(void *context, pam_handle_t *pamh)
 	    -> std::unique_ptr<NativePrompt> {
 		(void)context;
 		return std::make_unique<NativePromptConversation>(pamh);
 	}
 
-	auto create_secret_prompt_conversation_dependency(void *context, pam_handle_t *pamh,
-	                                                  howdy::pam::SecretPromptObserver observer)
+	auto CreateSecretPromptConversationDependency(void *context, pam_handle_t *pamh,
+	                                              howdy::pam::SecretPromptObserver observer)
 	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
 		(void)context;
 		return std::make_unique<howdy::pam::ObservedPromptConversation>(pamh, observer);
@@ -92,7 +92,7 @@ namespace howdy::pam {
 	    , dependencies_(dependencies)
 	    , effective_workaround_(workaround) {}
 
-	auto PromptCoordinator::valid() const -> bool {
+	auto PromptCoordinator::Valid() const -> bool {
 		return dependencies_.spawn_compare_process != nullptr &&
 		       dependencies_.wait_for_compare_process != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
@@ -103,13 +103,13 @@ namespace howdy::pam {
 		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
 	}
 
-	auto PromptCoordinator::cancellation_requested(void *context) -> bool {
+	auto PromptCoordinator::CancellationRequested(void *context) -> bool {
 		auto            &coordinator = *static_cast<PromptCoordinator *>(context);
 		std::scoped_lock lock(coordinator.mutex_);
 		return coordinator.state_.cancellation_requested;
 	}
 
-	auto PromptCoordinator::secret_prompt_begin(void *context) noexcept -> SecretPromptGeneration {
+	auto PromptCoordinator::SecretPromptBegin(void *context) noexcept -> SecretPromptGeneration {
 		auto                  &coordinator = *static_cast<PromptCoordinator *>(context);
 		SecretPromptGeneration generation  = 0;
 		{
@@ -133,8 +133,8 @@ namespace howdy::pam {
 		return generation;
 	}
 
-	void PromptCoordinator::secret_prompt_end(void                  *context,
-	                                          SecretPromptGeneration generation) noexcept {
+	void PromptCoordinator::SecretPromptEnd(void                  *context,
+	                                        SecretPromptGeneration generation) noexcept {
 		auto &coordinator = *static_cast<PromptCoordinator *>(context);
 		{
 			std::scoped_lock lock(coordinator.mutex_);
@@ -151,23 +151,23 @@ namespace howdy::pam {
 		coordinator.condition_.notify_all();
 	}
 
-	auto PromptCoordinator::wait_for_compare(
+	auto PromptCoordinator::WaitForCompare(
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept -> int {
 		int status = static_cast<int>(howdy::native::CompareExit::kAbort) << 8;
 		try {
 			status = dependencies_.wait_for_compare_process(
-			    dependencies_.context, child_pid, compare_deadline, this, cancellation_requested);
+			    dependencies_.context, child_pid, compare_deadline, this, CancellationRequested);
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
-			compare_process::cancel_and_reap(child_pid);
+			compare_process::CancelAndReap(child_pid);
 		} catch (...) {
 			syslog(LOG_ERR, "Compare wait failed with non-standard exception");
-			compare_process::cancel_and_reap(child_pid);
+			compare_process::CancelAndReap(child_pid);
 		}
 		return status;
 	}
 
-	auto PromptCoordinator::publish_compare_completion(int status) -> SuccessAction {
+	auto PromptCoordinator::PublishCompareCompletion(int status) -> SuccessAction {
 		std::unique_lock<std::mutex> lock(mutex_);
 		state_.compare_status    = status;
 		state_.compare_succeeded = WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS;
@@ -200,9 +200,9 @@ namespace howdy::pam {
 		return SuccessAction::kSubmitPrompt;
 	}
 
-	void PromptCoordinator::request_native_abort() noexcept {
+	void PromptCoordinator::RequestNativeAbort() noexcept {
 		try {
-			native_prompt_->request_abort();
+			native_prompt_->RequestAbort();
 		} catch (const std::exception &error) {
 			syslog(LOG_WARNING, "Native prompt abort failed: %s", error.what());
 		} catch (...) {
@@ -210,7 +210,7 @@ namespace howdy::pam {
 		}
 	}
 
-	auto PromptCoordinator::wait_for_prompt_submission_claim() -> bool {
+	auto PromptCoordinator::WaitForPromptSubmissionClaim() -> bool {
 		std::unique_lock<std::mutex> lock(mutex_);
 		condition_.wait(lock, [this] -> bool {
 			return state_.password_call_returned || state_.shutdown_requested ||
@@ -231,7 +231,7 @@ namespace howdy::pam {
 		return true;
 	}
 
-	auto PromptCoordinator::submit_prompt_and_record_result() noexcept -> PromptSubmissionResult {
+	auto PromptCoordinator::SubmitPromptAndRecordResult() noexcept -> PromptSubmissionResult {
 		{
 			std::scoped_lock lock(mutex_);
 			if (state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
@@ -260,7 +260,7 @@ namespace howdy::pam {
 			if (prompt_submitter_ == nullptr) {
 				submission_failed = true;
 			} else {
-				prompt_submitter_->submit_prompt();
+				prompt_submitter_->SubmitPrompt();
 			}
 		} catch (const std::exception &error) {
 			syslog(LOG_WARNING, "Input prompt submission failed: %s", error.what());
@@ -286,27 +286,27 @@ namespace howdy::pam {
 		return PromptSubmissionResult::kStop;
 	}
 
-	void PromptCoordinator::submit_prompt_for_generations() noexcept {
+	void PromptCoordinator::SubmitPromptForGenerations() noexcept {
 		while (true) {
-			const auto result = submit_prompt_and_record_result();
-			if (result != PromptSubmissionResult::kRetry || !wait_for_prompt_submission_claim()) {
+			const auto result = SubmitPromptAndRecordResult();
+			if (result != PromptSubmissionResult::kRetry || !WaitForPromptSubmissionClaim()) {
 				return;
 			}
 		}
 	}
 
-	void PromptCoordinator::compare_worker(
+	void PromptCoordinator::CompareWorker(
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept {
-		const int           status = wait_for_compare(child_pid, compare_deadline);
-		const SuccessAction action = publish_compare_completion(status);
+		const int           status = WaitForCompare(child_pid, compare_deadline);
+		const SuccessAction action = PublishCompareCompletion(status);
 		if (action == SuccessAction::kAbortNative) {
-			request_native_abort();
+			RequestNativeAbort();
 		} else if (action == SuccessAction::kSubmitPrompt) {
-			submit_prompt_for_generations();
+			SubmitPromptForGenerations();
 		}
 	}
 
-	void PromptCoordinator::disable_native_workaround(bool unavailable) {
+	void PromptCoordinator::DisableNativeWorkaround(bool unavailable) {
 		const bool fallback_to_input = requested_workaround_ == Workaround::kNativeInput;
 		if (unavailable) {
 			syslog(LOG_INFO,
@@ -318,7 +318,7 @@ namespace howdy::pam {
 		native_prompt_.reset();
 	}
 
-	void PromptCoordinator::configure_native_workaround() {
+	void PromptCoordinator::ConfigureNativeWorkaround() {
 		try {
 			native_prompt_ = dependencies_.create_native_prompt(dependencies_.context, pamh_);
 		} catch (const std::exception &error) {
@@ -328,35 +328,35 @@ namespace howdy::pam {
 			       "Native prompt conversation setup failed with non-standard exception");
 		}
 
-		if (native_prompt_ == nullptr || !native_prompt_->available()) {
-			disable_native_workaround(true);
+		if (native_prompt_ == nullptr || !native_prompt_->Available()) {
+			DisableNativeWorkaround(true);
 			return;
 		}
 
-		const int install_result = native_prompt_->install();
+		const int install_result = native_prompt_->Install();
 		if (install_result == PAM_SUCCESS) {
 			effective_workaround_ = Workaround::kNative;
 			return;
 		}
 		syslog(LOG_WARNING, "Failed to install native prompt conversation: %d", install_result);
-		disable_native_workaround(false);
+		DisableNativeWorkaround(false);
 	}
 
-	auto PromptCoordinator::configure_prompt_workaround() -> bool {
+	auto PromptCoordinator::ConfigurePromptWorkaround() -> bool {
 		const bool wants_native_prompt = requested_workaround_ == Workaround::kNative ||
 		                                 requested_workaround_ == Workaround::kNativeInput;
 		if (wants_native_prompt && ask_auth_tok_ && !existing_auth_token_) {
-			configure_native_workaround();
+			ConfigureNativeWorkaround();
 		}
 
-		configure_input_workaround();
+		ConfigureInputWorkaround();
 		return effective_workaround_ == Workaround::kNative
 		           ? native_prompt_ != nullptr && !existing_auth_token_
-		           : should_ask_for_password(ask_auth_tok_, effective_workaround_,
-		                                     existing_auth_token_);
+		           : ShouldAskForPassword(ask_auth_tok_, effective_workaround_,
+		                                  existing_auth_token_);
 	}
 
-	void PromptCoordinator::configure_input_workaround() {
+	void PromptCoordinator::ConfigureInputWorkaround() {
 		if (effective_workaround_ != Workaround::kInput || !ask_auth_tok_ || existing_auth_token_) {
 			return;
 		}
@@ -389,10 +389,10 @@ namespace howdy::pam {
 		try {
 			secret_prompt_conversation_ = dependencies_.create_secret_prompt_conversation(
 			    dependencies_.context, pamh_,
-			    {.context = this, .begin = secret_prompt_begin, .end = secret_prompt_end});
+			    {.context = this, .begin = SecretPromptBegin, .end = SecretPromptEnd});
 			if (secret_prompt_conversation_ == nullptr ||
-			    !secret_prompt_conversation_->available() ||
-			    secret_prompt_conversation_->install() != PAM_SUCCESS) {
+			    !secret_prompt_conversation_->Available() ||
+			    secret_prompt_conversation_->Install() != PAM_SUCCESS) {
 				syslog(LOG_ERR, "Input prompt observation setup failed");
 				secret_prompt_conversation_.reset();
 				prompt_submitter_.reset();
@@ -411,12 +411,12 @@ namespace howdy::pam {
 		}
 	}
 
-	auto PromptCoordinator::restore_prompt_conversation() noexcept -> ConversationRestoreResult {
+	auto PromptCoordinator::RestorePromptConversation() noexcept -> ConversationRestoreResult {
 		auto result = ConversationRestoreResult::kOriginalRestored;
 		if (secret_prompt_conversation_ != nullptr) {
-			result = secret_prompt_conversation_->restore_original();
+			result = secret_prompt_conversation_->RestoreOriginal();
 		} else if (native_prompt_ != nullptr) {
-			result = native_prompt_->restore_original();
+			result = native_prompt_->RestoreOriginal();
 		}
 		if (result == ConversationRestoreResult::kOriginalRestored) {
 			return result;
@@ -427,7 +427,7 @@ namespace howdy::pam {
 		return result;
 	}
 
-	void PromptCoordinator::initialize_run_state(bool ask_pass) {
+	void PromptCoordinator::InitializeRunState(bool ask_pass) {
 		std::scoped_lock lock(mutex_);
 		if (!ask_pass) {
 			return;
@@ -437,12 +437,12 @@ namespace howdy::pam {
 		                        : PromptSubmissionState::kNotApplicable;
 	}
 
-	void PromptCoordinator::publish_password_call_entered() {
+	void PromptCoordinator::PublishPasswordCallEntered() {
 		std::scoped_lock lock(mutex_);
 		state_.password_call_entered = true;
 	}
 
-	void PromptCoordinator::cleanup_spawned_child(
+	void PromptCoordinator::CleanupSpawnedChild(
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept {
 		{
 			std::scoped_lock lock(mutex_);
@@ -450,11 +450,11 @@ namespace howdy::pam {
 			state_.shutdown_requested     = true;
 		}
 		condition_.notify_all();
-		compare_worker(child_pid, compare_deadline);
-		(void)restore_prompt_conversation();
+		CompareWorker(child_pid, compare_deadline);
+		(void)RestorePromptConversation();
 	}
 
-	auto PromptCoordinator::request_password() noexcept -> int {
+	auto PromptCoordinator::RequestPassword() noexcept -> int {
 		try {
 			const auto [result, password] =
 			    dependencies_.request_auth_token(dependencies_.context, pamh_);
@@ -468,7 +468,7 @@ namespace howdy::pam {
 		return PAM_SYSTEM_ERR;
 	}
 
-	void PromptCoordinator::publish_password_call_returned() {
+	void PromptCoordinator::PublishPasswordCallReturned() {
 		{
 			std::scoped_lock lock(mutex_);
 			state_.password_call_returned = true;
@@ -485,7 +485,7 @@ namespace howdy::pam {
 		condition_.notify_all();
 	}
 
-	auto PromptCoordinator::build_result(bool ask_pass, int pam_result) -> PromptCoordinatorResult {
+	auto PromptCoordinator::BuildResult(bool ask_pass, int pam_result) -> PromptCoordinatorResult {
 		std::scoped_lock        lock(mutex_);
 		PromptCoordinatorResult result{
 		    .compare_status = state_.compare_status,
@@ -501,13 +501,13 @@ namespace howdy::pam {
 		return result;
 	}
 
-	auto PromptCoordinator::run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
+	auto PromptCoordinator::Run(const CompareLaunchRequest &request) -> PromptCoordinatorResult {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
 		}
 		run_started_ = true;
 
-		if (!valid()) {
+		if (!Valid()) {
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 
@@ -530,45 +530,45 @@ namespace howdy::pam {
 
 		bool ask_pass = false;
 		try {
-			ask_pass = configure_prompt_workaround();
+			ask_pass = ConfigurePromptWorkaround();
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Prompt workaround setup failed: %s", error.what());
-			cleanup_spawned_child(child_pid, compare_deadline);
+			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		} catch (...) {
 			syslog(LOG_ERR, "Prompt workaround setup failed with non-standard exception");
-			cleanup_spawned_child(child_pid, compare_deadline);
+			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 
-		initialize_run_state(ask_pass);
+		InitializeRunState(ask_pass);
 
 		std::thread child_thread;
 		try {
 			child_thread =
-			    std::thread(&PromptCoordinator::compare_worker, this, child_pid, compare_deadline);
+			    std::thread(&PromptCoordinator::CompareWorker, this, child_pid, compare_deadline);
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Failed to start compare wait worker: %s", error.what());
-			cleanup_spawned_child(child_pid, compare_deadline);
+			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
 		}
 		int pam_result = PAM_SUCCESS;
 		if (ask_pass) {
-			publish_password_call_entered();
-			pam_result = request_password();
-			publish_password_call_returned();
+			PublishPasswordCallEntered();
+			pam_result = RequestPassword();
+			PublishPasswordCallReturned();
 		}
 
 		child_thread.join();
 		const bool terminal_restore_failed =
-		    native_prompt_ != nullptr && native_prompt_->terminal_restore_failed();
-		const auto restore_result = restore_prompt_conversation();
+		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
+		const auto restore_result = RestorePromptConversation();
 		if (terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			pam_result = PAM_SYSTEM_ERR;
 		}
 
-		auto result = build_result(ask_pass, pam_result);
+		auto result = BuildResult(ask_pass, pam_result);
 		if (terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
@@ -577,15 +577,15 @@ namespace howdy::pam {
 		return result;
 	}
 
-	auto production_prompt_coordinator_dependencies() -> PromptCoordinatorDependencies {
+	auto ProductionPromptCoordinatorDependencies() -> PromptCoordinatorDependencies {
 		return PromptCoordinatorDependencies{
-		    .spawn_compare_process             = compare_process::spawn,
-		    .wait_for_compare_process          = compare_process::wait,
-		    .input_prompt_preflight            = input_prompt_preflight_dependency,
-		    .create_prompt_submitter           = create_prompt_submitter_dependency,
-		    .create_native_prompt              = create_native_prompt_dependency,
-		    .create_secret_prompt_conversation = create_secret_prompt_conversation_dependency,
-		    .request_auth_token                = request_auth_token_dependency,
+		    .spawn_compare_process             = compare_process::Spawn,
+		    .wait_for_compare_process          = compare_process::Wait,
+		    .input_prompt_preflight            = InputPromptPreflightDependency,
+		    .create_prompt_submitter           = CreatePromptSubmitterDependency,
+		    .create_native_prompt              = CreateNativePromptDependency,
+		    .create_secret_prompt_conversation = CreateSecretPromptConversationDependency,
+		    .request_auth_token                = RequestAuthTokenDependency,
 		};
 	}
 

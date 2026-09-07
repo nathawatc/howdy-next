@@ -45,21 +45,21 @@ namespace howdy::native::test_cli_internal {
 		                   howdy::native::PreviewEngine     &preview_engine,
 		                   TestPreviewSessionDependencies    dependencies);
 
-		auto run(cv::Mat prefetched_gray_frame) -> TestPreviewResult;
+		auto Run(cv::Mat prefetched_gray_frame) -> TestPreviewResult;
 
 	private:
-		[[nodiscard]] auto dependencies_valid() const -> bool;
+		[[nodiscard]] auto DependenciesValid() const -> bool;
 
 		const howdy::native::VideoConfig &config_;
 		howdy::native::PreviewEngine     &preview_engine_;
 		TestPreviewSessionDependencies    dependencies_;
 	};
 
-	auto run_preview_session_with_retained_frame(TestPreviewSession &session,
-	                                             const cv::Mat      &prefetched_gray_frame)
+	auto RunPreviewSessionWithRetainedFrame(TestPreviewSession &session,
+	                                        const cv::Mat      &prefetched_gray_frame)
 	    -> TestPreviewResult;
-	auto run_preview_session_with_retained_frame(TestPreviewSession &session,
-	                                             cv::Mat           &&prefetched_gray_frame)
+	auto RunPreviewSessionWithRetainedFrame(TestPreviewSession &session,
+	                                        cv::Mat           &&prefetched_gray_frame)
 	    -> TestPreviewResult = delete;
 
 }  // namespace howdy::native::test_cli_internal

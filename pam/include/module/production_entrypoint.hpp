@@ -4,7 +4,7 @@
 
 namespace howdy::pam {
 
-	__attribute__((visibility("hidden"))) auto production_entrypoint_dependencies() noexcept
+	__attribute__((visibility("hidden"))) auto ProductionEntrypointDependencies() noexcept
 	    -> EntrypointDependencies;
 
 }  // namespace howdy::pam

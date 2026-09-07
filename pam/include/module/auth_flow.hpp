@@ -21,25 +21,25 @@ namespace howdy::pam::auth_flow {
 		howdy::pam::auth_eligibility::AuthenticationEligibilityDependencies eligibility;
 	};
 
-	__attribute__((visibility("hidden"))) auto production_identify_dependencies()
+	__attribute__((visibility("hidden"))) auto ProductionIdentifyDependencies()
 	    -> IdentifyDependencies;
 
 	__attribute__((visibility("hidden"))) auto
-	identify_with_dependencies(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok,
-	                           const IdentifyDependencies &dependencies) -> int;
+	IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok,
+	                         const IdentifyDependencies &dependencies) -> int;
 
 	__attribute__((visibility("hidden"))) void
-	send_conversation_message(const ConversationFn &conv_function, int msg_type,
-	                          const std::string &message);
+	SendConversationMessage(const ConversationFn &conv_function, int msg_type,
+	                        const std::string &message);
 
-	__attribute__((visibility("hidden"))) auto auth_token_present(pam_handle_t *pamh) -> bool;
+	__attribute__((visibility("hidden"))) auto AuthTokenPresent(pam_handle_t *pamh) -> bool;
 
-	__attribute__((visibility("hidden"))) auto howdy_error(int                   status,
-	                                                       const ConversationFn &conv_function)
+	__attribute__((visibility("hidden"))) auto HowdyError(int                   status,
+	                                                      const ConversationFn &conv_function)
 	    -> int;
 
 	__attribute__((visibility("hidden"))) auto
-	howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
-	             const ConversationFn &conv_function) -> int;
+	HowdyStatus(const char *username, int status, const howdy::native::RuntimeConfig &config,
+	            const ConversationFn &conv_function) -> int;
 
 }  // namespace howdy::pam::auth_flow

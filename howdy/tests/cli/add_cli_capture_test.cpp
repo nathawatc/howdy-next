@@ -8,7 +8,7 @@ namespace howdy::test::add_cli {
 
 	namespace {
 
-		auto capture_failure_result(howdy::native::EnrollmentCaptureResult capture_result)
+		auto CaptureFailureResult(howdy::native::EnrollmentCaptureResult capture_result)
 		    -> howdy::native::add_internal::AddEnrollmentResult {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kCaptureFailure,
@@ -16,13 +16,13 @@ namespace howdy::test::add_cli {
 			};
 		}
 
-		auto black_frame_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
+		auto BlackFrameCaptureResult() -> howdy::native::add_internal::AddEnrollmentResult {
 			howdy::native::EnrollmentCaptureResult capture_result;
 			capture_result.black_frames = 1;
-			return capture_failure_result(std::move(capture_result));
+			return CaptureFailureResult(std::move(capture_result));
 		}
 
-		auto only_too_dark_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
+		auto OnlyTooDarkCaptureResult() -> howdy::native::add_internal::AddEnrollmentResult {
 			howdy::native::EnrollmentCaptureResult capture_result;
 			capture_result.valid_frames       = 2;
 			capture_result.dark_tries         = 2;
@@ -30,10 +30,10 @@ namespace howdy::test::add_cli {
 			capture_result.empty_frames       = 0;
 			capture_result.read_failures      = 0;
 			capture_result.dark_running_total = 80.0;
-			return capture_failure_result(std::move(capture_result));
+			return CaptureFailureResult(std::move(capture_result));
 		}
 
-		auto no_sufficiently_bright_capture_result()
+		auto NoSufficientlyBrightCaptureResult()
 		    -> howdy::native::add_internal::AddEnrollmentResult {
 			howdy::native::EnrollmentCaptureResult capture_result;
 			capture_result.valid_frames  = 1;
@@ -41,24 +41,24 @@ namespace howdy::test::add_cli {
 			capture_result.black_frames  = 0;
 			capture_result.empty_frames  = 1;
 			capture_result.read_failures = 0;
-			return capture_failure_result(std::move(capture_result));
+			return CaptureFailureResult(std::move(capture_result));
 		}
 
-		auto no_usable_frames_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
+		auto NoUsableFramesCaptureResult() -> howdy::native::add_internal::AddEnrollmentResult {
 			howdy::native::EnrollmentCaptureResult capture_result;
 			capture_result.valid_frames  = 0;
 			capture_result.read_failures = 1;
-			return capture_failure_result(std::move(capture_result));
+			return CaptureFailureResult(std::move(capture_result));
 		}
 
-		auto no_face_detected_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
+		auto NoFaceDetectedCaptureResult() -> howdy::native::add_internal::AddEnrollmentResult {
 			howdy::native::EnrollmentCaptureResult capture_result;
 			capture_result.valid_frames = 1;
 			capture_result.dark_tries   = 0;
-			return capture_failure_result(std::move(capture_result));
+			return CaptureFailureResult(std::move(capture_result));
 		}
 
-		auto enrollment_failure_result(howdy::native::add_internal::AddEnrollmentStatus status)
+		auto EnrollmentFailureResult(howdy::native::add_internal::AddEnrollmentStatus status)
 		    -> howdy::native::add_internal::AddEnrollmentResult {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status        = status,
@@ -66,9 +66,8 @@ namespace howdy::test::add_cli {
 			};
 		}
 
-		auto expect_capture_failure_stops_before_append(const AddCliTestContext &context,
-		                                                int result, const std::string &test_name)
-		    -> bool {
+		auto ExpectCaptureFailureStopsBeforeAppend(const AddCliTestContext &context, int result,
+		                                           const std::string &test_name) -> bool {
 			bool ok = true;
 			ok &= expect(result == 1, test_name + " returns 1");
 			ok &=
@@ -78,13 +77,13 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto enrollment_failure_status_stops_before_append(
+		auto EnrollmentFailureStatusStopsBeforeAppend(
 		    howdy::native::add_internal::AddEnrollmentStatus status, const std::string &test_name)
 		    -> bool {
-			auto context           = make_success_context();
-			context.capture_result = enrollment_failure_result(status);
+			auto context           = MakeSuccessContext();
+			context.capture_result = EnrollmentFailureResult(status);
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 1, test_name + " returns 1");
@@ -94,64 +93,63 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto face_model_enrollment_failure_stops_before_append() -> bool {
-			return enrollment_failure_status_stops_before_append(
+		auto FaceModelEnrollmentFailureStopsBeforeAppend() -> bool {
+			return EnrollmentFailureStatusStopsBeforeAppend(
 			    howdy::native::add_internal::AddEnrollmentStatus::kFaceModelError,
 			    "face-model enrollment failure");
 		}
 
-		auto capture_open_failure_stops_before_append() -> bool {
-			return enrollment_failure_status_stops_before_append(
+		auto CaptureOpenFailureStopsBeforeAppend() -> bool {
+			return EnrollmentFailureStatusStopsBeforeAppend(
 			    howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError,
 			    "capture open failure");
 		}
 
-		auto unconfigured_camera_error_is_propagated() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = enrollment_failure_result(
+		auto UnconfiguredCameraErrorIsPropagated() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = EnrollmentFailureResult(
 			    howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError);
 			context.capture_result.error_message =
 			    "Camera is not configured; set video.device_path";
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
-			bool ok =
-			    expect_capture_failure_stops_before_append(context, result, "unconfigured camera");
+			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result, "unconfigured camera");
 			ok &= expect(error.str() == context.capture_result.error_message + "\n",
 			             "unconfigured camera prints only concise error in add");
 			return ok;
 		}
 
-		auto black_frame_capture_failure_stops_before_append() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = black_frame_capture_result();
+		auto BlackFrameCaptureFailureStopsBeforeAppend() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = BlackFrameCaptureResult();
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			const auto error_output = error.str();
-			bool ok = expect_capture_failure_stops_before_append(context, result,
-			                                                     "black-frame capture failure");
+			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
+			                                                      "black-frame capture failure");
 			ok &= expect(
 			    error_output.contains("Camera returned only black frames; check the IR emitter"),
 			    "black-frame capture failure prints IR emitter diagnostic");
 			return ok;
 		}
 
-		auto only_too_dark_capture_failure_prints_diagnostic() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = only_too_dark_capture_result();
+		auto OnlyTooDarkCaptureFailurePrintsDiagnostic() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = OnlyTooDarkCaptureResult();
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			const auto error_output = error.str();
-			bool ok = expect_capture_failure_stops_before_append(context, result,
-			                                                     "only-too-dark capture failure");
+			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
+			                                                      "only-too-dark capture failure");
 			ok &= expect(error_output.contains("All frames were too dark; check dark_threshold"),
 			             "only-too-dark capture failure prints dark threshold diagnostic");
 			ok &= expect(error_output.contains("Average darkness: 40, Threshold: 32"),
@@ -159,16 +157,16 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto no_sufficiently_bright_capture_failure_prints_diagnostic() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = no_sufficiently_bright_capture_result();
+		auto NoSufficientlyBrightCaptureFailurePrintsDiagnostic() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = NoSufficientlyBrightCaptureResult();
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			const auto error_output = error.str();
-			bool       ok           = expect_capture_failure_stops_before_append(
+			bool       ok           = ExpectCaptureFailureStopsBeforeAppend(
 			    context, result, "no-sufficiently-bright capture failure");
 			ok &= expect(error_output.contains("No sufficiently bright frames captured, aborting"),
 			             "no-sufficiently-bright capture failure prints diagnostic");
@@ -178,46 +176,46 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto no_usable_frames_capture_failure_prints_diagnostic() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = no_usable_frames_capture_result();
+		auto NoUsableFramesCaptureFailurePrintsDiagnostic() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = NoUsableFramesCaptureResult();
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			const auto error_output = error.str();
-			bool       ok           = expect_capture_failure_stops_before_append(
-			    context, result, "no-usable-frames capture failure");
+			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
+			                                                "no-usable-frames capture failure");
 			ok &= expect(error_output.contains("No usable frames captured, aborting"),
 			             "no-usable-frames capture failure prints diagnostic");
 			return ok;
 		}
 
-		auto no_face_detected_capture_failure_prints_diagnostic() -> bool {
-			auto context           = make_success_context();
-			context.capture_result = no_face_detected_capture_result();
+		auto NoFaceDetectedCaptureFailurePrintsDiagnostic() -> bool {
+			auto context           = MakeSuccessContext();
+			context.capture_result = NoFaceDetectedCaptureResult();
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			const auto error_output = error.str();
-			bool       ok           = expect_capture_failure_stops_before_append(
-			    context, result, "no-face-detected capture failure");
+			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
+			                                                "no-face-detected capture failure");
 			ok &= expect(error_output.contains("No face detected, aborting"),
 			             "no-face-detected capture failure prints diagnostic");
 			return ok;
 		}
 
-		auto multiple_faces_failure_stops_before_append() -> bool {
-			return enrollment_failure_status_stops_before_append(
+		auto MultipleFacesFailureStopsBeforeAppend() -> bool {
+			return EnrollmentFailureStatusStopsBeforeAppend(
 			    howdy::native::add_internal::AddEnrollmentStatus::kMultipleFaces,
 			    "multiple-faces failure");
 		}
 
-		auto encoding_failure_stops_before_append() -> bool {
-			auto context           = make_success_context();
+		auto EncodingFailureStopsBeforeAppend() -> bool {
+			auto context           = MakeSuccessContext();
 			context.capture_result = howdy::native::add_internal::AddEnrollmentResult{
 			    .status        = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
 			    .error_message = "SFace feature extraction failed: synthetic failure",
@@ -225,7 +223,7 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "encoding failure returns 1");
@@ -235,8 +233,8 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto unknown_enrollment_status_fails_closed_before_append() -> bool {
-			auto context           = make_success_context();
+		auto UnknownEnrollmentStatusFailsClosedBeforeAppend() -> bool {
+			auto context           = MakeSuccessContext();
 			context.capture_result = howdy::native::add_internal::AddEnrollmentResult{
 			    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 			    .status = static_cast<howdy::native::add_internal::AddEnrollmentStatus>(99),
@@ -244,7 +242,7 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "unknown enrollment status returns 1");
@@ -258,19 +256,19 @@ namespace howdy::test::add_cli {
 
 	}  // namespace
 
-	auto run_add_cli_capture_tests() -> bool {
+	auto RunAddCliCaptureTests() -> bool {
 		bool ok = true;
-		ok &= face_model_enrollment_failure_stops_before_append();
-		ok &= capture_open_failure_stops_before_append();
-		ok &= unconfigured_camera_error_is_propagated();
-		ok &= black_frame_capture_failure_stops_before_append();
-		ok &= only_too_dark_capture_failure_prints_diagnostic();
-		ok &= no_sufficiently_bright_capture_failure_prints_diagnostic();
-		ok &= no_usable_frames_capture_failure_prints_diagnostic();
-		ok &= no_face_detected_capture_failure_prints_diagnostic();
-		ok &= multiple_faces_failure_stops_before_append();
-		ok &= encoding_failure_stops_before_append();
-		ok &= unknown_enrollment_status_fails_closed_before_append();
+		ok &= FaceModelEnrollmentFailureStopsBeforeAppend();
+		ok &= CaptureOpenFailureStopsBeforeAppend();
+		ok &= UnconfiguredCameraErrorIsPropagated();
+		ok &= BlackFrameCaptureFailureStopsBeforeAppend();
+		ok &= OnlyTooDarkCaptureFailurePrintsDiagnostic();
+		ok &= NoSufficientlyBrightCaptureFailurePrintsDiagnostic();
+		ok &= NoUsableFramesCaptureFailurePrintsDiagnostic();
+		ok &= NoFaceDetectedCaptureFailurePrintsDiagnostic();
+		ok &= MultipleFacesFailureStopsBeforeAppend();
+		ok &= EncodingFailureStopsBeforeAppend();
+		ok &= UnknownEnrollmentStatusFailsClosedBeforeAppend();
 		return ok;
 	}
 

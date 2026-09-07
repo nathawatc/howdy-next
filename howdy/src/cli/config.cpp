@@ -14,13 +14,12 @@ namespace {
 	constexpr int kConfigExitOk    = 0;
 	constexpr int kConfigExitAbort = 1;
 
-	void print_editor_ready(void *context, const std::string &editor) {
+	void PrintEditorReady(void *context, const std::string &editor) {
 		(void)context;
 		std::cout << "Editing config.ini in " << fs::path(editor).filename().string() << "\n";
 	}
 
-	void
-	print_config_install_error(const howdy::native::config_internal::ConfigEditResult &result) {
+	void PrintConfigInstallError(const howdy::native::config_internal::ConfigEditResult &result) {
 		if (result.error == howdy::native::kUpdatedConfigInvalidMessage) {
 			std::cout << "Edited config is invalid and was not installed: "
 			          << result.temp_path.string() << "\n";
@@ -33,19 +32,19 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::config_internal::config_main_with_dependencies(
+auto howdy::native::config_internal::ConfigMainWithDependencies(
     int argc, char **argv, const ConfigDependencies &dependencies) -> int {
 	if (argc != 1) {
 		std::cout << "Invalid arguments for config\n";
 		return kConfigExitAbort;
 	}
 	(void)argv;
-	if (!config_edit_dependencies_available(dependencies)) {
+	if (!ConfigEditDependenciesAvailable(dependencies)) {
 		return kConfigExitAbort;
 	}
 
 	const ConfigEditSession session(dependencies);
-	const auto result = session.run(ConfigEditRequest{.editor_ready = print_editor_ready});
+	const auto result = session.Run(ConfigEditRequest{.editor_ready = PrintEditorReady});
 
 	switch (result.status) {
 		case ConfigEditStatus::kDependenciesUnavailable:
@@ -79,14 +78,14 @@ auto howdy::native::config_internal::config_main_with_dependencies(
 		case ConfigEditStatus::kInvalidEditedConfig:
 		case ConfigEditStatus::kConfigChanged:
 		case ConfigEditStatus::kInstallFailed:
-			print_config_install_error(result);
+			PrintConfigInstallError(result);
 			return kConfigExitAbort;
 	}
 
 	return kConfigExitAbort;
 }
 
-auto config_main(int argc, char **argv) -> int {
-	return howdy::native::config_internal::config_main_with_dependencies(
-	    argc, argv, howdy::native::config_internal::default_config_edit_dependencies());
+auto ConfigMain(int argc, char **argv) -> int {
+	return howdy::native::config_internal::ConfigMainWithDependencies(
+	    argc, argv, howdy::native::config_internal::DefaultConfigEditDependencies());
 }

@@ -27,63 +27,63 @@ namespace {
 	constexpr std::size_t kInitialPasswdBufferSize = 1024;
 	constexpr std::size_t kMaximumPasswdBufferSize = std::size_t{64} * 1024;
 
-	auto system_getpwnam_r([[maybe_unused]] void *context, const char *name, passwd *pwd,
-	                       char *buffer, std::size_t buffer_size, passwd **result) -> int {
+	auto SystemGetpwnamR([[maybe_unused]] void *context, const char *name, passwd *pwd,
+	                     char *buffer, std::size_t buffer_size, passwd **result) -> int {
 		return getpwnam_r(name, pwd, buffer, buffer_size, result);
 	}
 
-	auto system_prctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
-	                  unsigned long argument3, unsigned long argument4, unsigned long argument5)
+	auto SystemPrctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
+	                 unsigned long argument3, unsigned long argument4, unsigned long argument5)
 	    -> int {
 		return prctl(operation, argument2, argument3, argument4, argument5);
 	}
 
-	auto system_getgroups([[maybe_unused]] void *context, int size, gid_t *groups) -> int {
+	auto SystemGetgroups([[maybe_unused]] void *context, int size, gid_t *groups) -> int {
 		return getgroups(size, groups);
 	}
 
-	auto system_setgroups([[maybe_unused]] void *context, std::size_t count, const gid_t *groups)
+	auto SystemSetgroups([[maybe_unused]] void *context, std::size_t count, const gid_t *groups)
 	    -> int {
 		return setgroups(count, groups);
 	}
 
-	auto system_setresgid([[maybe_unused]] void *context, gid_t real, gid_t effective, gid_t saved)
+	auto SystemSetresgid([[maybe_unused]] void *context, gid_t real, gid_t effective, gid_t saved)
 	    -> int {
 		return setresgid(real, effective, saved);
 	}
 
-	auto system_setresuid([[maybe_unused]] void *context, uid_t real, uid_t effective, uid_t saved)
+	auto SystemSetresuid([[maybe_unused]] void *context, uid_t real, uid_t effective, uid_t saved)
 	    -> int {
 		return setresuid(real, effective, saved);
 	}
 
-	auto system_capset([[maybe_unused]] void *context, const __user_cap_header_struct *header,
-	                   const __user_cap_data_struct *data) -> int {
+	auto SystemCapset([[maybe_unused]] void *context, const __user_cap_header_struct *header,
+	                  const __user_cap_data_struct *data) -> int {
 		return static_cast<int>(syscall(SYS_capset, header, data));
 	}
 
-	auto system_capget([[maybe_unused]] void *context, __user_cap_header_struct *header,
-	                   __user_cap_data_struct *data) -> int {
+	auto SystemCapget([[maybe_unused]] void *context, __user_cap_header_struct *header,
+	                  __user_cap_data_struct *data) -> int {
 		return static_cast<int>(syscall(SYS_capget, header, data));
 	}
 
-	auto system_getresgid([[maybe_unused]] void *context, GroupIdOutputs outputs) -> int {
+	auto SystemGetresgid([[maybe_unused]] void *context, GroupIdOutputs outputs) -> int {
 		return getresgid(outputs.real, outputs.effective, outputs.saved);
 	}
 
-	auto system_getresuid([[maybe_unused]] void *context, UserIdOutputs outputs) -> int {
+	auto SystemGetresuid([[maybe_unused]] void *context, UserIdOutputs outputs) -> int {
 		return getresuid(outputs.real, outputs.effective, outputs.saved);
 	}
 
-	auto system_query_fsuid([[maybe_unused]] void *context) -> uid_t {
+	auto SystemQueryFsuid([[maybe_unused]] void *context) -> uid_t {
 		return static_cast<uid_t>(setfsuid(static_cast<uid_t>(-1)));
 	}
 
-	auto system_query_fsgid([[maybe_unused]] void *context) -> gid_t {
+	auto SystemQueryFsgid([[maybe_unused]] void *context) -> gid_t {
 		return static_cast<gid_t>(setfsgid(static_cast<gid_t>(-1)));
 	}
 
-	auto system_setuid([[maybe_unused]] void *context, uid_t uid) -> int {
+	auto SystemSetuid([[maybe_unused]] void *context, uid_t uid) -> int {
 		return setuid(uid);
 	}
 
@@ -91,27 +91,27 @@ namespace {
 
 namespace howdy::native::compare_privileges_internal {
 
-	auto default_dependencies() -> ComparePrivilegeDependencies {
+	auto DefaultDependencies() -> ComparePrivilegeDependencies {
 		return {
 		    .context       = nullptr,
-		    .getpwnam_r    = system_getpwnam_r,
-		    .prctl         = system_prctl,
-		    .getgroups     = system_getgroups,
-		    .setgroups     = system_setgroups,
-		    .setresgid     = system_setresgid,
-		    .setresuid     = system_setresuid,
-		    .capset        = system_capset,
-		    .capget        = system_capget,
-		    .getresgid     = system_getresgid,
-		    .getresuid     = system_getresuid,
-		    .query_fsuid   = system_query_fsuid,
-		    .query_fsgid   = system_query_fsgid,
-		    .regain_setuid = system_setuid,
-		    .fatal_exit    = fatal_compare_privilege_failure,
+		    .getpwnam_r    = SystemGetpwnamR,
+		    .prctl         = SystemPrctl,
+		    .getgroups     = SystemGetgroups,
+		    .setgroups     = SystemSetgroups,
+		    .setresgid     = SystemSetresgid,
+		    .setresuid     = SystemSetresuid,
+		    .capset        = SystemCapset,
+		    .capget        = SystemCapget,
+		    .getresgid     = SystemGetresgid,
+		    .getresuid     = SystemGetresuid,
+		    .query_fsuid   = SystemQueryFsuid,
+		    .query_fsgid   = SystemQueryFsgid,
+		    .regain_setuid = SystemSetuid,
+		    .fatal_exit    = FatalComparePrivilegeFailure,
 		};
 	}
 
-	auto lookup_nobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup {
+	auto LookupNobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup {
 		passwd            nobody{};
 		passwd           *lookup_result = nullptr;
 		std::vector<char> buffer(kInitialPasswdBufferSize);

@@ -13,7 +13,7 @@ namespace howdy::native::config_template {
 		std::string error;
 	};
 
-	[[nodiscard]] auto render_default_config(std::span<const config_schema::Option> options)
+	[[nodiscard]] auto RenderDefaultConfig(std::span<const config_schema::Option> options)
 	    -> ConfigTemplateRenderResult;
 
 }  // namespace howdy::native::config_template

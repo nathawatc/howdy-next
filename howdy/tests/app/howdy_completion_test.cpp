@@ -16,22 +16,22 @@ namespace howdy::test::dispatch {
 
 		using howdy::test::expect;
 
-		using howdy::native::command_catalog;
+		using howdy::native::CommandCatalog;
 		using howdy::native::CommandId;
 		using howdy::native::GlobalOptionDescriptor;
 		using howdy::native::GlobalOptionId;
 		using howdy::native::howdy_internal::CommandMain;
 
-		auto expected_runtime_config_keys() -> std::string {
+		auto ExpectedRuntimeConfigKeys() -> std::string {
 			std::string expected;
-			for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			for (const auto &option : howdy::native::config_schema::RuntimeConfigOptions()) {
 				expected += option.key;
 				expected += '\n';
 			}
 			return expected;
 		}
 
-		auto expected_config_option_values(const howdy::native::config_schema::Option &option)
+		auto ExpectedConfigOptionValues(const howdy::native::config_schema::Option &option)
 		    -> std::string {
 			std::string expected;
 			if (!option.choices.empty()) {
@@ -41,15 +41,15 @@ namespace howdy::test::dispatch {
 				}
 				return expected;
 			}
-			if (option.type == howdy::native::config_schema::ValueType::boolean) {
+			if (option.type == howdy::native::config_schema::ValueType::kBoolean) {
 				return "false\ntrue\n";
 			}
 			return {};
 		}
 
-		auto expected_global_option_completion() -> std::string {
+		auto ExpectedGlobalOptionCompletion() -> std::string {
 			std::string expected;
-			for (const auto &option : howdy::native::global_option_catalog()) {
+			for (const auto &option : howdy::native::GlobalOptionCatalog()) {
 				for (const auto spelling : {option.short_name, option.long_name}) {
 					if (!spelling.empty()) {
 						expected += spelling;
@@ -69,13 +69,13 @@ namespace howdy::test::dispatch {
 			return expected;
 		}
 
-		auto test_completion_metadata_behavior() -> bool {
+		auto TestCompletionMetadataBehavior() -> bool {
 			bool ok = true;
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "__complete", "global-options"});
+				const auto result = Run(context, {"howdy", "__complete", "global-options"});
 				ok &= expect(
-				    result.status == 0 && result.output == expected_global_option_completion() &&
+				    result.status == 0 && result.output == ExpectedGlobalOptionCompletion() &&
 				        result.error.empty(),
 				    "global option completion query returns catalog aliases and argument metadata");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
@@ -85,7 +85,7 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-options", "test"});
+				    Run(context, {"howdy", "__complete", "command-options", "test"});
 				ok &= expect(result.status == 0 &&
 				                 result.output ==
 				                     "-U\t1\tnone\n--user\t1\tnone\n-h\t0\tnone\n--help\t0\tnone\n"
@@ -98,7 +98,7 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-options", "disable"});
+				    Run(context, {"howdy", "__complete", "command-options", "disable"});
 				ok &=
 				    expect(result.status == 0 && result.output == "-h\t0\tnone\n--help\t0\tnone\n",
 				           "universal command help is advertised without inapplicable options");
@@ -106,7 +106,7 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-max-positionals", "set"});
+				    Run(context, {"howdy", "__complete", "command-max-positionals", "set"});
 				ok &= expect(result.status == 0, "command positional completion query succeeds");
 				ok &= expect(result.output == "2\n",
 				             "command positional completion metadata follows catalog maximum");
@@ -120,7 +120,7 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-values", "disable", "0"});
+				    Run(context, {"howdy", "__complete", "command-values", "disable", "0"});
 				ok &= expect(result.status == 0 && result.output == "false\ntrue\n",
 				             "boolean command completion comes from command metadata");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
@@ -130,24 +130,24 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-values", "set", "0"});
-				ok &= expect(result.status == 0 && result.output == expected_runtime_config_keys(),
+				    Run(context, {"howdy", "__complete", "command-values", "set", "0"});
+				ok &= expect(result.status == 0 && result.output == ExpectedRuntimeConfigKeys(),
 				             "set key completion follows runtime config schema order");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 				                 !context.command_id.has_value(),
 				             "set key completion skips normal dispatch flow");
 			}
-			for (const auto &option : howdy::native::config_schema::runtime_config_options()) {
+			for (const auto &option : howdy::native::config_schema::RuntimeConfigOptions()) {
 				Context    context;
-				const auto result = run(context, {"howdy", "__complete", "command-values", "set",
+				const auto result = Run(context, {"howdy", "__complete", "command-values", "set",
 				                                  "1", std::string(option.key)});
 				ok &= expect(
-				    result.status == 0 && result.output == expected_config_option_values(option),
+				    result.status == 0 && result.output == ExpectedConfigOptionValues(option),
 				    "set value completion follows schema metadata for " + std::string(option.key));
 			}
 			{
 				Context    context;
-				const auto result = run(
+				const auto result = Run(
 				    context, {"howdy", "__complete", "command-values", "set", "1", "unknown_key"});
 				ok &= expect(result.status == 0 && result.output.empty(),
 				             "unknown set key has no completion candidates");
@@ -155,13 +155,13 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-values", "set", "1"});
+				    Run(context, {"howdy", "__complete", "command-values", "set", "1"});
 				ok &= expect(result.status != 0 && result.output.empty(),
 				             "set value completion without key is malformed");
 			}
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "__complete", "command-values", "set",
+				const auto result = Run(context, {"howdy", "__complete", "command-values", "set",
 				                                  "1", "timeout", "extra"});
 				ok &= expect(result.status != 0 && result.output.empty(),
 				             "set value completion with malformed context is rejected");
@@ -169,7 +169,7 @@ namespace howdy::test::dispatch {
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "command-values", "version", "0"});
+				    Run(context, {"howdy", "__complete", "command-values", "version", "0"});
 				ok &= expect(result.status == 0 && result.output.empty(),
 				             "unrelated command has no positional completion values");
 				ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
@@ -184,31 +184,31 @@ namespace howdy::test::dispatch {
 			};
 			for (const auto &arguments : invalid_queries) {
 				Context    context;
-				const auto result = run(context, arguments);
+				const auto result = Run(context, arguments);
 				ok &= expect(result.status != 0 && result.output.empty(),
 				             "invalid command completion value query is rejected cleanly");
 			}
 			return ok;
 		}
 
-		auto test_completion_behavior() -> bool {
+		auto TestCompletionBehavior() -> bool {
 			bool ok = true;
-			ok &= test_completion_metadata_behavior();
+			ok &= TestCompletionMetadataBehavior();
 
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "--help"});
+				const auto result = Run(context, {"howdy", "--help"});
 				ok &= expect(result.status == 0 && result.error.empty() &&
 				                 result.output.starts_with(
 				                     "Usage: howdy [OPTIONS] <COMMAND>\n\nCommands:\n"),
 				             "top-level help uses clap-style headings and usage");
-				for (const auto &command : command_catalog()) {
+				for (const auto &command : CommandCatalog()) {
 					ok &= expect(result.output.contains(command.name),
 					             "help lists every catalog command");
 					ok &= expect(result.output.contains(command.summary),
 					             "help uses every catalog summary");
 				}
-				for (const auto &option : howdy::native::global_option_catalog()) {
+				for (const auto &option : howdy::native::GlobalOptionCatalog()) {
 					ok &= expect(result.output.contains(option.summary),
 					             "help uses every catalog option summary");
 				}
@@ -219,9 +219,9 @@ namespace howdy::test::dispatch {
 			}
 			{
 				Context     context;
-				const auto  result = run(context, {"howdy", "__complete", "commands"});
+				const auto  result = Run(context, {"howdy", "__complete", "commands"});
 				std::string expected;
-				for (const auto &command : command_catalog()) {
+				for (const auto &command : CommandCatalog()) {
 					expected += command.name;
 					expected += '\n';
 				}
@@ -235,20 +235,20 @@ namespace howdy::test::dispatch {
 			}
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "__complete", "commands", "--", "-y"});
+				const auto result = Run(context, {"howdy", "__complete", "commands", "--", "-y"});
 				ok &= expect(result.status == 0 && result.output == "add\nclear\nremove\n",
 				             "command completion filters by applicable yes option");
 			}
 			{
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "__complete", "commands", "--", "--plain"});
+				    Run(context, {"howdy", "__complete", "commands", "--", "--plain"});
 				ok &= expect(result.status == 0 && result.output == "add\nlist\n",
 				             "command completion filters by applicable plain option");
 			}
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "__complete", "commands", "--", "-U"});
+				const auto result = Run(context, {"howdy", "__complete", "commands", "--", "-U"});
 				ok &= expect(result.status == 0 &&
 				                 result.output == "add\nclear\nlist\nremove\ntest\n",
 				             "command completion filters by applicable user option");
@@ -270,7 +270,7 @@ namespace howdy::test::dispatch {
 				};
 				for (const auto &arguments : malformed_queries) {
 					Context    context;
-					const auto result = run(context, arguments);
+					const auto result = Run(context, arguments);
 					ok &= expect(result.status != 0, "malformed completion query is rejected");
 					ok &= expect(!result.output.contains("add\n"),
 					             "malformed completion query prints no command list");
@@ -284,7 +284,7 @@ namespace howdy::test::dispatch {
 			}
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "config", "--help"});
+				const auto result = Run(context, {"howdy", "config", "--help"});
 				ok &=
 				    expect(result.status == 0 && result.error.empty() &&
 				               result.output.starts_with(
@@ -297,7 +297,7 @@ namespace howdy::test::dispatch {
 			}
 			{
 				Context    context;
-				const auto result = run(context, {"howdy", "test", "--help"});
+				const auto result = Run(context, {"howdy", "test", "--help"});
 				ok &=
 				    expect(result.status == 0 && result.output.contains("--device <DEVICE>") &&
 				               result.output.contains("-U, --user <USER>"),
@@ -305,19 +305,19 @@ namespace howdy::test::dispatch {
 			}
 			{
 				ok &= expect(
-				    howdy::native::format_version(howdy::native::kProjectVersion, "abcdef1234") ==
+				    howdy::native::FormatVersion(howdy::native::kProjectVersion, "abcdef1234") ==
 				        "Howdy Next " + std::string(howdy::native::kProjectVersion) +
 				            " (abcdef1234)",
 				    "version formatter includes ten-character commit");
-				ok &= expect(howdy::native::format_version(howdy::native::kProjectVersion, "") ==
+				ok &= expect(howdy::native::FormatVersion(howdy::native::kProjectVersion, "") ==
 				                 "Howdy Next " + std::string(howdy::native::kProjectVersion),
 				             "version formatter omits empty commit");
 				Context    context;
 				const auto result =
-				    run(context, {"howdy", "version"}, nullptr,
+				    Run(context, {"howdy", "version"}, nullptr,
 				        std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)>{});
-				const auto expected = howdy::native::format_version(howdy::native::kProjectVersion,
-				                                                    howdy::native::kBuildCommit) +
+				const auto expected = howdy::native::FormatVersion(howdy::native::kProjectVersion,
+				                                                   howdy::native::kBuildCommit) +
 				                      "\n";
 				ok &= expect(result.status == 0 && result.output == expected,
 				             "version output is formatted");
@@ -332,8 +332,8 @@ namespace howdy::test::dispatch {
 
 	}  // namespace
 
-	auto run_howdy_completion_tests() -> bool {
-		return test_completion_behavior();
+	auto RunHowdyCompletionTests() -> bool {
+		return TestCompletionBehavior();
 	}
 
 }  // namespace howdy::test::dispatch

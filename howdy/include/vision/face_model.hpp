@@ -32,16 +32,16 @@ namespace howdy::native {
 
 		explicit FaceModel(const FaceConfig &config);
 
-		[[nodiscard]] auto ok() const -> bool;
-		[[nodiscard]] auto error_category() const -> FaceModelErrorCategory;
-		[[nodiscard]] auto error_message() const -> const std::string &;
-		[[nodiscard]] auto metric() const -> FaceMetric;
+		[[nodiscard]] auto Ok() const -> bool;
+		[[nodiscard]] auto ErrorCategory() const -> FaceModelErrorCategory;
+		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
+		[[nodiscard]] auto Metric() const -> FaceMetric;
 
-		[[nodiscard]] static auto prepare_frame(const cv::Mat &frame) -> cv::Mat;
-		auto                      detect(const cv::Mat &frame) -> FaceDetectionResult;
-		auto encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
-		[[nodiscard]] auto best_match(const std::vector<std::vector<float>> &known,
-		                              const std::vector<float> &probe) const -> FaceMatch;
+		[[nodiscard]] static auto PrepareFrame(const cv::Mat &frame) -> cv::Mat;
+		auto                      Detect(const cv::Mat &frame) -> FaceDetectionResult;
+		auto Encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
+		[[nodiscard]] auto BestMatch(const std::vector<std::vector<float>> &known,
+		                             const std::vector<float> &probe) const -> FaceMatch;
 
 	private:
 		struct Backend;
@@ -49,9 +49,9 @@ namespace howdy::native {
 		friend class FaceModelBackendFactory;
 
 		FaceModel(const FaceConfig &config, Backend backend);
-		void initialize(const FaceConfig &config);
-		void set_input_size_from_frame(const cv::Mat &frame);
-		void set_error(FaceModelErrorCategory category, std::string message);
+		void Initialize(const FaceConfig &config);
+		void SetInputSizeFromFrame(const cv::Mat &frame);
+		void SetError(FaceModelErrorCategory category, std::string message);
 
 		bool                          ok_             = false;
 		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;

@@ -27,7 +27,7 @@ namespace howdy::native {
 		int         error_code = 0;
 	};
 
-	inline auto config_access_error_hint(int error_code) -> std::string {
+	inline auto ConfigAccessErrorHint(int error_code) -> std::string {
 		if (error_code != EACCES || geteuid() == 0) {
 			return {};
 		}
@@ -38,9 +38,8 @@ namespace howdy::native {
 		       "helper; do not make /etc/howdy or config.ini world-readable";
 	}
 
-	inline auto check_secure_config_fd(int fd, const std::filesystem::path &config_path,
-	                                   const std::optional<uid_t> owner_uid)
-	    -> ConfigPathCheckResult {
+	inline auto CheckSecureConfigFd(int fd, const std::filesystem::path &config_path,
+	                                const std::optional<uid_t> owner_uid) -> ConfigPathCheckResult {
 		const auto parent = config_path.parent_path();
 		if (parent.empty()) {
 			return ConfigPathCheckResult{
@@ -51,31 +50,31 @@ namespace howdy::native {
 			};
 		}
 
-		const auto file_security = check_secure_root_owned_fd_with_directory(
+		const auto file_security = CheckSecureRootOwnedFdWithDirectory(
 		    fd, config_path, {.directory = "Config directory", .file = kConfigFileLabel},
 		    owner_uid);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
-			    .ok            = false,
-			    .error_message = file_security.error_message +
-			                     config_access_error_hint(file_security.error_code),
-			    .error_code    = file_security.error_code,
+			    .ok = false,
+			    .error_message =
+			        file_security.error_message + ConfigAccessErrorHint(file_security.error_code),
+			    .error_code = file_security.error_code,
 			};
 		}
 
 		return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 	}
 
-	inline auto check_secure_config_fd(int fd, const std::filesystem::path &config_path)
+	inline auto CheckSecureConfigFd(int fd, const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult {
-		return check_secure_config_fd(fd, config_path, default_secure_owner_uid());
+		return CheckSecureConfigFd(fd, config_path, DefaultSecureOwnerUid());
 	}
 
-	inline auto check_secure_config_path(const std::filesystem::path &config_path)
+	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult;
 
-	inline auto check_secure_config_path(const std::filesystem::path &config_path,
-	                                     const std::optional<uid_t>   owner_uid)
+	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path,
+	                                  const std::optional<uid_t>   owner_uid)
 	    -> ConfigPathCheckResult {
 		const auto parent = config_path.parent_path();
 		if (parent.empty()) {
@@ -87,27 +86,27 @@ namespace howdy::native {
 			};
 		}
 
-		const auto file_security = check_secure_root_owned_file_with_directory(
+		const auto file_security = CheckSecureRootOwnedFileWithDirectory(
 		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
-			    .ok            = false,
-			    .error_message = file_security.error_message +
-			                     config_access_error_hint(file_security.error_code),
-			    .error_code    = file_security.error_code,
+			    .ok = false,
+			    .error_message =
+			        file_security.error_message + ConfigAccessErrorHint(file_security.error_code),
+			    .error_code = file_security.error_code,
 			};
 		}
 
 		return ConfigPathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 	}
 
-	inline auto check_secure_config_path(const std::filesystem::path &config_path)
+	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult {
-		return check_secure_config_path(config_path, default_secure_owner_uid());
+		return CheckSecureConfigPath(config_path, DefaultSecureOwnerUid());
 	}
 
-	inline auto read_config_from_fd(int                              fd,
-	                                const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
+	inline auto ReadConfigFromFd(int                              fd,
+	                             const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
 	    -> std::optional<std::string> {
 		if (lseek(fd, 0, SEEK_SET) < 0) {
 			return std::nullopt;
@@ -115,34 +114,35 @@ namespace howdy::native {
 
 		const auto read_limit = max_bytes.has_value() ? *max_bytes + std::size_t{1}
 		                                              : std::numeric_limits<std::size_t>::max();
-		const auto result     = read_fd_to_string_bounded({.fd = fd, .max_bytes = read_limit});
+		const auto result     = ReadFdToStringBounded({.fd = fd, .max_bytes = read_limit});
 		if (result.read_error || (max_bytes.has_value() && result.output.size() > *max_bytes)) {
 			return std::nullopt;
 		}
 		return result.output;
 	}
 
-	auto is_safe_ini_scalar_value(std::string_view value) -> bool;
-	auto read_config_lines(const std::filesystem::path &config_path, bool lock = false)
+	auto IsSafeIniScalarValue(std::string_view value) -> bool;
+	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock = false)
 	    -> std::vector<std::string>;
-	auto atomic_write_lines(const std::filesystem::path    &config_path,
-	                        const std::vector<std::string> &lines,
-	                        SyncParentDirectoryFn           sync_parent = sync_parent_directory)
+	auto AtomicWriteLines(const std::filesystem::path    &config_path,
+	                      const std::vector<std::string> &lines,
+	                      SyncParentDirectoryFn           sync_parent = SyncParentDirectory)
 	    -> AtomicFileCommitResult;
-	auto validate_config_content(const std::string &content, std::string *error_message) -> bool;
-	auto replace_config_content_atomically(
-	    const std::filesystem::path &config_path, const std::string &content,
-	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,
-	    const std::string    *expected_current_content = nullptr,
-	    SyncParentDirectoryFn sync_parent              = sync_parent_directory) -> bool;
-	auto update_config_value(const std::filesystem::path &config_path, const std::string &key,
-	                         std::string *error_message, const std::string &value,
-	                         bool lock = false, bool validate_runtime = true) -> bool;
+	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool;
+	auto ReplaceConfigContentAtomically(const std::filesystem::path &config_path,
+	                                    const std::string           &content,
+	                                    std::string *error_message = nullptr, bool lock = true,
+	                                    bool                  validate_runtime         = true,
+	                                    const std::string    *expected_current_content = nullptr,
+	                                    SyncParentDirectoryFn sync_parent = SyncParentDirectory)
+	    -> bool;
+	auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
+	                       std::string *error_message, const std::string &value, bool lock = false,
+	                       bool validate_runtime = true) -> bool;
 
-	inline auto update_config_value(const std::filesystem::path &config_path,
-	                                const std::string &key, const std::string &value,
-	                                bool lock = false) -> bool {
-		return update_config_value(config_path, key, nullptr, value, lock, true);
+	inline auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
+	                              const std::string &value, bool lock = false) -> bool {
+		return UpdateConfigValue(config_path, key, nullptr, value, lock, true);
 	}
 
 }  // namespace howdy::native

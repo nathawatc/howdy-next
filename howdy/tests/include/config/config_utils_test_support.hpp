@@ -19,8 +19,8 @@ namespace howdy::test {
 		std::string           config_over_limit = std::string(native::kMaxConfigFileSize + 1, 'x');
 	};
 
-	inline auto write_config_test_file(const std::filesystem::path &path,
-	                                   const std::string           &content) -> bool {
+	inline auto WriteConfigTestFile(const std::filesystem::path &path, const std::string &content)
+	    -> bool {
 		const bool ok = write_file(path, content);
 		if (ok) {
 			if (chmod(path.c_str(), 0644) != 0) {
@@ -30,11 +30,11 @@ namespace howdy::test {
 		return ok;
 	}
 
-	inline auto read_config_test_file(const std::filesystem::path &path) -> std::string {
+	inline auto ReadConfigTestFile(const std::filesystem::path &path) -> std::string {
 		return read_file(path);
 	}
 
-	inline auto fail_parent_sync(const std::filesystem::path & /*path*/) -> bool {
+	inline auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {
 		return false;
 	}
 
@@ -55,12 +55,12 @@ namespace howdy::test {
 			}
 		}
 
-		[[nodiscard]] auto ready() const -> bool {
+		[[nodiscard]] auto Ready() const -> bool {
 			return have_original && signal_changed;
 		}
 
-		auto set_zero() -> bool {
-			if (!ready()) {
+		auto SetZero() -> bool {
+			if (!Ready()) {
 				return false;
 			}
 
@@ -74,7 +74,7 @@ namespace howdy::test {
 			return true;
 		}
 
-		auto restore() -> bool {
+		auto Restore() -> bool {
 			bool ok = true;
 			if (limit_changed) {
 				ok            = setrlimit(RLIMIT_FSIZE, &original) == 0;
@@ -88,15 +88,15 @@ namespace howdy::test {
 		}
 
 		~FileSizeLimitGuard() {
-			(void)restore();
+			(void)Restore();
 		}
 	};
 
-	auto run_config_read_update_tests(ConfigUtilsTestContext &context) -> bool;
-	auto run_config_atomic_write_tests(ConfigUtilsTestContext &context) -> bool;
-	auto run_config_atomic_replace_tests(ConfigUtilsTestContext &context) -> bool;
-	auto run_config_lock_failure_tests(ConfigUtilsTestContext &context) -> bool;
-	auto run_config_atomic_replace_tail_tests(ConfigUtilsTestContext &context) -> bool;
-	auto run_config_path_security_tests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigReadUpdateTests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigAtomicWriteTests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigAtomicReplaceTests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigLockFailureTests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigAtomicReplaceTailTests(ConfigUtilsTestContext &context) -> bool;
+	auto RunConfigPathSecurityTests(ConfigUtilsTestContext &context) -> bool;
 
 }  // namespace howdy::test

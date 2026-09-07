@@ -23,7 +23,7 @@ namespace {
 		bool        yes         = false;
 	};
 
-	auto parse_remove_args(int argc, char **argv) -> std::optional<RemoveArgs> {
+	auto ParseRemoveArgs(int argc, char **argv) -> std::optional<RemoveArgs> {
 		RemoveArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -52,29 +52,29 @@ namespace {
 		return args;
 	}
 
-	auto remove_cli_user_model_entries_dependency([[maybe_unused]] void *context,
-	                                              const std::string     &user)
+	auto RemoveCliUserModelEntriesDependency([[maybe_unused]] void *context,
+	                                         const std::string     &user)
 	    -> howdy::native::UserModelListResult {
-		return howdy::native::list_user_model_entries(user, {});
+		return howdy::native::ListUserModelEntries(user, {});
 	}
 
-	auto remove_user_model_entry_if_matches_dependency(
+	auto RemoveUserModelEntryIfMatchesDependency(
 	    [[maybe_unused]] void *context, const std::string &user,
 	    const howdy::native::UserModelEntryExpectation &expected)
 	    -> howdy::native::UserModelMutationResult {
-		return howdy::native::remove_user_model_entry_if_matches(user, expected);
+		return howdy::native::RemoveUserModelEntryIfMatches(user, expected);
 	}
 
 }  // namespace
 
-auto howdy::native::remove_internal::remove_main_with_dependencies(
+auto howdy::native::remove_internal::RemoveMainWithDependencies(
     int argc, char **argv, const RemoveDependencies &dependencies) -> int {
 	if (dependencies.list_user_model_entries == nullptr ||
 	    dependencies.remove_user_model_entry_if_matches == nullptr) {
 		return kRemoveExitAbort;
 	}
 
-	const auto args = parse_remove_args(argc, argv);
+	const auto args = ParseRemoveArgs(argc, argv);
 	if (!args.has_value()) {
 		return kRemoveExitAbort;
 	}
@@ -160,14 +160,14 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	return kRemoveExitOk;
 }
 
-auto remove_main(int argc, char **argv) -> int {
+auto RemoveMain(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kRemoveExitAbort;
 	}
-	return howdy::native::remove_internal::remove_main_with_dependencies(
+	return howdy::native::remove_internal::RemoveMainWithDependencies(
 	    argc, argv,
 	    howdy::native::remove_internal::RemoveDependencies{
-	        .list_user_model_entries            = remove_cli_user_model_entries_dependency,
-	        .remove_user_model_entry_if_matches = remove_user_model_entry_if_matches_dependency,
+	        .list_user_model_entries            = RemoveCliUserModelEntriesDependency,
+	        .remove_user_model_entry_if_matches = RemoveUserModelEntryIfMatchesDependency,
 	    });
 }

@@ -29,67 +29,65 @@ namespace howdy::native::auth_helper_protocol {
 		kSlot1,
 	};
 
-	inline auto prepared_runtime_root() -> std::filesystem::path {
+	inline auto PreparedRuntimeRoot() -> std::filesystem::path {
 		return kPreparedRuntimeRoot;
 	}
 
-	inline auto prepared_runtime_directory_prefix(uid_t uid) -> std::string {
+	inline auto PreparedRuntimeDirectoryPrefix(uid_t uid) -> std::string {
 		return std::string(kPreparedRuntimeDirectoryPrefix) + std::to_string(uid) + "-";
 	}
 
-	inline auto prepared_runtime_directory_template(uid_t uid) -> std::string {
-		return prepared_runtime_directory_prefix(uid) +
+	inline auto PreparedRuntimeDirectoryTemplate(uid_t uid) -> std::string {
+		return PreparedRuntimeDirectoryPrefix(uid) +
 		       std::string(kPreparedRuntimeDirectorySuffixTemplate);
 	}
 
-	inline auto runtime_generation_suffix(RuntimeGenerationSlot slot) -> std::string_view {
+	inline auto RuntimeGenerationSuffix(RuntimeGenerationSlot slot) -> std::string_view {
 		return slot == RuntimeGenerationSlot::kSlot0 ? "gen000" : "gen001";
 	}
 
-	inline auto prepared_runtime_generation_name(uid_t uid, RuntimeGenerationSlot slot)
+	inline auto PreparedRuntimeGenerationName(uid_t uid, RuntimeGenerationSlot slot)
 	    -> std::string {
-		return prepared_runtime_directory_prefix(uid) +
-		       std::string(runtime_generation_suffix(slot));
+		return PreparedRuntimeDirectoryPrefix(uid) + std::string(RuntimeGenerationSuffix(slot));
 	}
 
-	inline auto prepared_runtime_generation_dir(const std::filesystem::path &root, uid_t uid,
-	                                            RuntimeGenerationSlot slot)
-	    -> std::filesystem::path {
-		return root / prepared_runtime_generation_name(uid, slot);
+	inline auto PreparedRuntimeGenerationDir(const std::filesystem::path &root, uid_t uid,
+	                                         RuntimeGenerationSlot slot) -> std::filesystem::path {
+		return root / PreparedRuntimeGenerationName(uid, slot);
 	}
 
-	inline auto prepared_runtime_generation_lock_name(uid_t uid, RuntimeGenerationSlot slot)
+	inline auto PreparedRuntimeGenerationLockName(uid_t uid, RuntimeGenerationSlot slot)
 	    -> std::string {
-		return prepared_runtime_generation_name(uid, slot) + ".lock";
+		return PreparedRuntimeGenerationName(uid, slot) + ".lock";
 	}
 
-	inline auto prepared_runtime_generation_lock_path(const std::filesystem::path &root, uid_t uid,
-	                                                  RuntimeGenerationSlot slot)
+	inline auto PreparedRuntimeGenerationLockPath(const std::filesystem::path &root, uid_t uid,
+	                                              RuntimeGenerationSlot slot)
 	    -> std::filesystem::path {
-		return root / prepared_runtime_generation_lock_name(uid, slot);
+		return root / PreparedRuntimeGenerationLockName(uid, slot);
 	}
 
-	inline auto prepared_runtime_generation_lock_path(const std::filesystem::path &runtime_dir)
+	inline auto PreparedRuntimeGenerationLockPath(const std::filesystem::path &runtime_dir)
 	    -> std::filesystem::path {
 		return {runtime_dir.string() + ".lock"};
 	}
 
-	inline auto prepared_config_path(const std::filesystem::path &runtime_dir)
+	inline auto PreparedConfigPath(const std::filesystem::path &runtime_dir)
 	    -> std::filesystem::path {
 		return runtime_dir / kPreparedConfigFileName;
 	}
 
-	inline auto prepared_user_models_dir(const std::filesystem::path &runtime_dir)
+	inline auto PreparedUserModelsDir(const std::filesystem::path &runtime_dir)
 	    -> std::filesystem::path {
 		return runtime_dir / kPreparedUserModelsDirectoryName;
 	}
 
-	inline auto is_canonical_absolute_path(const std::filesystem::path &path) -> bool {
+	inline auto IsCanonicalAbsolutePath(const std::filesystem::path &path) -> bool {
 		return path.is_absolute() && path.string() == path.lexically_normal().string();
 	}
 
-	inline auto parse_runtime_generation_name(std::string_view name, uid_t *uid,
-	                                          RuntimeGenerationSlot *slot) noexcept -> bool {
+	inline auto ParseRuntimeGenerationName(std::string_view name, uid_t *uid,
+	                                       RuntimeGenerationSlot *slot) noexcept -> bool {
 		constexpr std::string_view prefix = kPreparedRuntimeDirectoryPrefix;
 		if (uid == nullptr || slot == nullptr || !name.starts_with(prefix)) {
 			return false;
@@ -123,24 +121,24 @@ namespace howdy::native::auth_helper_protocol {
 		return true;
 	}
 
-	inline auto matches_prepared_runtime_layout(const std::filesystem::path &runtime_dir,
-	                                            const std::filesystem::path &config_path,
-	                                            const std::filesystem::path &user_models_dir,
-	                                            uid_t                        expected_uid) -> bool {
-		if (!is_canonical_absolute_path(runtime_dir) || !is_canonical_absolute_path(config_path) ||
-		    !is_canonical_absolute_path(user_models_dir) ||
-		    runtime_dir.parent_path() != prepared_runtime_root()) {
+	inline auto MatchesPreparedRuntimeLayout(const std::filesystem::path &runtime_dir,
+	                                         const std::filesystem::path &config_path,
+	                                         const std::filesystem::path &user_models_dir,
+	                                         uid_t                        expected_uid) -> bool {
+		if (!IsCanonicalAbsolutePath(runtime_dir) || !IsCanonicalAbsolutePath(config_path) ||
+		    !IsCanonicalAbsolutePath(user_models_dir) ||
+		    runtime_dir.parent_path() != PreparedRuntimeRoot()) {
 			return false;
 		}
 
 		uid_t                 parsed_uid = 0;
 		RuntimeGenerationSlot slot{};
-		if (!parse_runtime_generation_name(runtime_dir.filename().string(), &parsed_uid, &slot) ||
+		if (!ParseRuntimeGenerationName(runtime_dir.filename().string(), &parsed_uid, &slot) ||
 		    parsed_uid != expected_uid) {
 			return false;
 		}
-		return config_path == prepared_config_path(runtime_dir) &&
-		       user_models_dir == prepared_user_models_dir(runtime_dir);
+		return config_path == PreparedConfigPath(runtime_dir) &&
+		       user_models_dir == PreparedUserModelsDir(runtime_dir);
 	}
 
 }  // namespace howdy::native::auth_helper_protocol

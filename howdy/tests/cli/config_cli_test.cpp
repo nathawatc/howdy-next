@@ -17,8 +17,8 @@ auto main() -> int {
 	using namespace howdy::test::config_cli;
 
 	bool ok = true;
-	ok &= run_config_cli_callback_exception_test();
-	ok &= run_config_cli_integration_tests();
-	ok &= run_config_cli_workflow_tests();
+	ok &= RunConfigCliCallbackExceptionTest();
+	ok &= RunConfigCliIntegrationTests();
+	ok &= RunConfigCliWorkflowTests();
 	return ok ? 0 : 1;
 }

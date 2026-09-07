@@ -14,7 +14,7 @@ namespace {
 
 	using howdy::pam::EntrypointDependencies;
 	using howdy::pam::PamModuleArguments;
-	using howdy::pam::run_authentication_entrypoint;
+	using howdy::pam::RunAuthenticationEntrypoint;
 	using howdy::test::expect;
 
 	struct AuthCall {
@@ -53,7 +53,7 @@ namespace {
 			}
 		}
 
-		void set(const char *value) {
+		void Set(const char *value) {
 			setenv(name_.c_str(), value, 1);
 		}
 
@@ -63,8 +63,8 @@ namespace {
 		bool        had_original_ = false;
 	};
 
-	auto fake_authenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
-	                       bool request_auth_token) -> int {
+	auto FakeAuthenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                      bool request_auth_token) -> int {
 		auto &call = *static_cast<AuthCall *>(context);
 		++call.calls;
 		call.actual_context            = context;
@@ -80,14 +80,14 @@ namespace {
 		return call.result;
 	}
 
-	auto dependencies_for(AuthCall &call) -> EntrypointDependencies {
+	auto DependenciesFor(AuthCall &call) -> EntrypointDependencies {
 		return {
 		    .context      = &call,
-		    .authenticate = fake_authenticate,
+		    .authenticate = FakeAuthenticate,
 		};
 	}
 
-	auto expect_locale_restored(AuthCall &call, int expected_result) -> bool {
+	auto ExpectLocaleRestored(AuthCall &call, int expected_result) -> bool {
 		const locale_t    host_locale = uselocale(nullptr);
 		const char       *domain_ptr  = textdomain(nullptr);
 		const std::string host_domain =
@@ -95,7 +95,7 @@ namespace {
 		bool escaped = false;
 		int  result  = PAM_SUCCESS;
 		try {
-			result = run_authentication_entrypoint(nullptr, {}, true, dependencies_for(call));
+			result = RunAuthenticationEntrypoint(nullptr, {}, true, DependenciesFor(call));
 		} catch (...) {
 			escaped = true;
 		}
@@ -125,8 +125,8 @@ auto main() -> int {
 	};
 	call.expected_context = &call;
 	const int callback_result =
-	    run_authentication_entrypoint(call.expected_pamh, call.expected_args,
-	                                  call.expected_request_auth_token, dependencies_for(call));
+	    RunAuthenticationEntrypoint(call.expected_pamh, call.expected_args,
+	                                call.expected_request_auth_token, DependenciesFor(call));
 	ok &= expect(callback_result == PAM_AUTH_ERR, "entrypoint propagates callback result");
 	ok &= expect(call.calls == 1, "entrypoint invokes callback exactly once");
 	ok &= expect(call.actual_context == call.expected_context, "entrypoint forwards context");
@@ -140,21 +140,21 @@ auto main() -> int {
 
 	call        = {};
 	call.result = PAM_USER_UNKNOWN;
-	ok &= expect_locale_restored(call, PAM_USER_UNKNOWN);
+	ok &= ExpectLocaleRestored(call, PAM_USER_UNKNOWN);
 	ok &= expect(call.calls == 1, "failure callback still runs exactly once");
 
 	call            = {};
 	call.throw_mode = 1;
-	ok &= expect_locale_restored(call, PAM_SYSTEM_ERR);
+	ok &= ExpectLocaleRestored(call, PAM_SYSTEM_ERR);
 	ok &= expect(call.calls == 1, "std exception callback runs exactly once");
 
 	call            = {};
 	call.throw_mode = 2;
-	ok &= expect_locale_restored(call, PAM_SYSTEM_ERR);
+	ok &= ExpectLocaleRestored(call, PAM_SYSTEM_ERR);
 	ok &= expect(call.calls == 1, "unknown exception callback runs exactly once");
 
 	const locale_t null_callback_locale = uselocale(nullptr);
-	const int      null_callback_result = run_authentication_entrypoint(
+	const int      null_callback_result = RunAuthenticationEntrypoint(
 	    nullptr, {}, true, {.context = nullptr, .authenticate = nullptr});
 	ok &=
 	    expect(null_callback_result == PAM_SYSTEM_ERR, "null authentication callback fails closed");
@@ -163,9 +163,9 @@ auto main() -> int {
 
 	{
 		ScopedEnvironment invalid_locale("LC_ALL");
-		invalid_locale.set("howdy-invalid-locale");
+		invalid_locale.Set("howdy-invalid-locale");
 		call = {};
-		ok &= expect(run_authentication_entrypoint(nullptr, {}, true, dependencies_for(call)) ==
+		ok &= expect(RunAuthenticationEntrypoint(nullptr, {}, true, DependenciesFor(call)) ==
 		                 PAM_SUCCESS,
 		             "locale setup failure does not fail authentication");
 		ok &= expect(call.calls == 1, "locale setup failure still invokes authentication once");
@@ -180,7 +180,7 @@ auto main() -> int {
 		return domain == nullptr ? std::string{} : std::string(domain);
 	}();
 	call = {};
-	ok &= expect(run_authentication_entrypoint(nullptr, {}, false, dependencies_for(call)) ==
+	ok &= expect(RunAuthenticationEntrypoint(nullptr, {}, false, DependenciesFor(call)) ==
 	                 PAM_SUCCESS,
 	             "entrypoint forwards false auth-token request");
 	ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == global_locale,

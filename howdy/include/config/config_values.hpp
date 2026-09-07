@@ -12,31 +12,31 @@
 
 namespace howdy::native {
 
-	inline auto runtime_option(config_schema::OptionId id, config_schema::ValueType type)
+	inline auto RuntimeOption(config_schema::OptionId id, config_schema::ValueType type)
 	    -> const config_schema::Option & {
-		const auto &option = config_schema::runtime_config_option(id);
+		const auto &option = config_schema::RuntimeConfigOption(id);
 		if (option.type != type) {
 			std::abort();
 		}
 		return option;
 	}
 
-	inline auto read_runtime_bool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
-		const auto &option = runtime_option(id, config_schema::ValueType::boolean);
+	inline auto ReadRuntimeBool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
+		const auto &option = RuntimeOption(id, config_schema::ValueType::kBoolean);
 		if (!option.fallback.has_boolean) {
 			std::abort();
 		}
-		return reader.get_bool(std::string(option.section), std::string(option.key),
-		                       option.fallback.boolean);
+		return reader.GetBool(std::string(option.section), std::string(option.key),
+		                      option.fallback.boolean);
 	}
 
-	inline auto read_runtime_int(const ConfigReader &reader, config_schema::OptionId id) -> int {
-		const auto &option = runtime_option(id, config_schema::ValueType::integer);
+	inline auto ReadRuntimeInt(const ConfigReader &reader, config_schema::OptionId id) -> int {
+		const auto &option = RuntimeOption(id, config_schema::ValueType::kInteger);
 		if (!option.fallback.has_integer) {
 			std::abort();
 		}
-		const int value = reader.get_int(std::string(option.section), std::string(option.key),
-		                                 option.fallback.integer);
+		const int value = reader.GetInt(std::string(option.section), std::string(option.key),
+		                                option.fallback.integer);
 		if (option.range.has_allowed_value &&
 		    value == static_cast<int>(option.range.allowed_value)) {
 			return value;
@@ -47,29 +47,28 @@ namespace howdy::native {
 		           : option.fallback.integer;
 	}
 
-	inline auto read_runtime_float(const ConfigReader &reader, config_schema::OptionId id)
-	    -> float {
-		const auto &option = runtime_option(id, config_schema::ValueType::floating_point);
+	inline auto ReadRuntimeFloat(const ConfigReader &reader, config_schema::OptionId id) -> float {
+		const auto &option = RuntimeOption(id, config_schema::ValueType::kFloatingPoint);
 		if (!option.fallback.has_floating_point) {
 			std::abort();
 		}
-		const float value = reader.get_float(std::string(option.section), std::string(option.key),
-		                                     option.fallback.floating_point);
+		const float value = reader.GetFloat(std::string(option.section), std::string(option.key),
+		                                    option.fallback.floating_point);
 		return value >= option.range.minimum && value <= option.range.maximum
 		           ? value
 		           : option.fallback.floating_point;
 	}
 
-	inline auto read_runtime_string(const ConfigReader &reader, config_schema::OptionId id)
+	inline auto ReadRuntimeString(const ConfigReader &reader, config_schema::OptionId id)
 	    -> std::string {
-		const auto &option = runtime_option(id, config_schema::ValueType::string);
+		const auto &option = RuntimeOption(id, config_schema::ValueType::kString);
 		if (!option.fallback.has_string) {
 			std::abort();
 		}
-		auto value = reader.get(std::string(option.section), std::string(option.key),
+		auto value = reader.Get(std::string(option.section), std::string(option.key),
 		                        std::string(option.fallback.string));
 		if (option.choices.empty() ||
-		    option.special_rule == config_schema::SpecialRule::device_path) {
+		    option.special_rule == config_schema::SpecialRule::kDevicePath) {
 			return value;
 		}
 
@@ -81,27 +80,27 @@ namespace howdy::native {
 		           : std::string(option.fallback.string);
 	}
 
-	inline auto read_sface_metric(const ConfigReader &reader) -> std::optional<FaceMetric> {
-		const auto &option = runtime_option(config_schema::OptionId::face_sface_metric,
-		                                    config_schema::ValueType::string);
+	inline auto ReadSfaceMetric(const ConfigReader &reader) -> std::optional<FaceMetric> {
+		const auto &option = RuntimeOption(config_schema::OptionId::kFaceSfaceMetric,
+		                                   config_schema::ValueType::kString);
 		if (!option.fallback.has_string) {
 			std::abort();
 		}
-		const auto value = reader.get(std::string(option.section), std::string(option.key),
+		const auto value = reader.Get(std::string(option.section), std::string(option.key),
 		                              std::string(option.fallback.string));
-		return parse_face_metric(value.empty() ? option.fallback.string : value);
+		return ParseFaceMetric(value.empty() ? option.fallback.string : value);
 	}
 
-	inline auto read_sface_threshold(const ConfigReader &reader, FaceMetric metric) -> float {
-		const auto &option = runtime_option(config_schema::OptionId::face_sface_threshold,
-		                                    config_schema::ValueType::floating_point);
-		const auto *policy = face_metric_policy(metric);
-		if (option.special_rule != config_schema::SpecialRule::sface_threshold ||
+	inline auto ReadSfaceThreshold(const ConfigReader &reader, FaceMetric metric) -> float {
+		const auto &option = RuntimeOption(config_schema::OptionId::kFaceSfaceThreshold,
+		                                   config_schema::ValueType::kFloatingPoint);
+		const auto *policy = GetFaceMetricPolicy(metric);
+		if (option.special_rule != config_schema::SpecialRule::kSfaceThreshold ||
 		    !option.fallback.has_floating_point || policy == nullptr) {
 			std::abort();
 		}
-		const float value = reader.get_float(std::string(option.section), std::string(option.key),
-		                                     option.fallback.floating_point);
+		const float value = reader.GetFloat(std::string(option.section), std::string(option.key),
+		                                    option.fallback.floating_point);
 		return value >= option.range.minimum && value <= policy->threshold_maximum
 		           ? value
 		           : option.fallback.floating_point;

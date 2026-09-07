@@ -40,7 +40,7 @@ namespace {
 		rlim_t                 minimum_hard;
 	};
 
-	auto finite_min(rlim_t preferred, rlim_t inherited) -> rlim_t {
+	auto FiniteMin(rlim_t preferred, rlim_t inherited) -> rlim_t {
 		if (inherited == RLIM_INFINITY) {
 			return preferred;
 		}
@@ -52,7 +52,7 @@ namespace {
 		rlim_t margin  = 0;
 	};
 
-	auto timeout_limit(TimeoutLimit limit) -> rlim_t {
+	auto ComputeTimeoutLimit(TimeoutLimit limit) -> rlim_t {
 		const auto timeout =
 		    limit.seconds > 0 ? static_cast<rlim_t>(limit.seconds) : static_cast<rlim_t>(0);
 		if (timeout > kMaximumFiniteLimit - limit.margin) {
@@ -61,7 +61,7 @@ namespace {
 		return timeout + limit.margin;
 	}
 
-	auto apply_limit(const LimitPolicy &policy, const CompareSandboxDependencies &dependencies)
+	auto ApplyLimit(const LimitPolicy &policy, const CompareSandboxDependencies &dependencies)
 	    -> CompareSandboxResult {
 		rlimit inherited{};
 		if (dependencies.getrlimit(dependencies.context, policy.system_resource, &inherited) != 0) {
@@ -72,9 +72,9 @@ namespace {
 			};
 		}
 
-		const rlim_t target_hard = finite_min(policy.preferred_hard, inherited.rlim_max);
+		const rlim_t target_hard = FiniteMin(policy.preferred_hard, inherited.rlim_max);
 		const rlim_t target_soft =
-		    finite_min(finite_min(policy.preferred_soft, inherited.rlim_cur), target_hard);
+		    FiniteMin(FiniteMin(policy.preferred_soft, inherited.rlim_cur), target_hard);
 		if (target_soft < policy.minimum_soft || target_hard < policy.minimum_hard) {
 			return {
 			    .status       = CompareSandboxStatus::kLimitBelowMinimum,
@@ -97,18 +97,18 @@ namespace {
 		return {};
 	}
 
-	auto system_getrlimit([[maybe_unused]] void *context, RlimitResource resource, rlimit *limit)
+	auto SystemGetrlimit([[maybe_unused]] void *context, RlimitResource resource, rlimit *limit)
 	    -> int {
 		return getrlimit(resource, limit);
 	}
 
-	auto system_setrlimit([[maybe_unused]] void *context, RlimitResource resource,
-	                      const rlimit *limit) -> int {
+	auto SystemSetrlimit([[maybe_unused]] void *context, RlimitResource resource,
+	                     const rlimit *limit) -> int {
 		return setrlimit(resource, limit);
 	}
 
-	auto system_prctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
-	                  unsigned long argument3, unsigned long argument4, unsigned long argument5)
+	auto SystemPrctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
+	                 unsigned long argument3, unsigned long argument4, unsigned long argument5)
 	    -> int {
 		return prctl(operation, argument2, argument3, argument4, argument5);
 	}
@@ -117,7 +117,7 @@ namespace {
 
 namespace howdy::native::compare_sandbox_internal {
 
-	auto apply_compare_sandbox(int timeout_seconds, const CompareSandboxDependencies &dependencies)
+	auto ApplyCompareSandbox(int timeout_seconds, const CompareSandboxDependencies &dependencies)
 	    -> CompareSandboxResult {
 		if (dependencies.prctl == nullptr || dependencies.getrlimit == nullptr ||
 		    dependencies.setrlimit == nullptr) {
@@ -137,15 +137,15 @@ namespace howdy::native::compare_sandbox_internal {
 		}
 
 		const rlim_t minimum_cpu =
-		    timeout_limit({.seconds = timeout_seconds, .margin = kCpuSoftMargin});
+		    ComputeTimeoutLimit({.seconds = timeout_seconds, .margin = kCpuSoftMargin});
 		const std::array<LimitPolicy, 4> policies{{
 		    {
 		        .system_resource = RLIMIT_CPU,
 		        .resource        = CompareSandboxResource::kCpu,
 		        .preferred_soft  = std::max(minimum_cpu, kCpuSoftFloor),
-		        .preferred_hard =
-		            std::max(timeout_limit({.seconds = timeout_seconds, .margin = kCpuHardMargin}),
-		                     kCpuHardFloor),
+		        .preferred_hard  = std::max(
+		            ComputeTimeoutLimit({.seconds = timeout_seconds, .margin = kCpuHardMargin}),
+		            kCpuHardFloor),
 		        .minimum_soft = minimum_cpu,
 		        .minimum_hard = minimum_cpu,
 		    },
@@ -176,7 +176,7 @@ namespace howdy::native::compare_sandbox_internal {
 		}};
 
 		for (const auto &policy : policies) {
-			const auto result = apply_limit(policy, dependencies);
+			const auto result = ApplyLimit(policy, dependencies);
 			if (result.status != CompareSandboxStatus::kOk) {
 				return result;
 			}
@@ -188,14 +188,14 @@ namespace howdy::native::compare_sandbox_internal {
 
 namespace howdy::native {
 
-	auto apply_compare_sandbox(int timeout_seconds) -> CompareSandboxResult {
-		return compare_sandbox_internal::apply_compare_sandbox(timeout_seconds,
-		                                                       {
-		                                                           .context   = nullptr,
-		                                                           .getrlimit = system_getrlimit,
-		                                                           .setrlimit = system_setrlimit,
-		                                                           .prctl     = system_prctl,
-		                                                       });
+	auto ApplyCompareSandbox(int timeout_seconds) -> CompareSandboxResult {
+		return compare_sandbox_internal::ApplyCompareSandbox(timeout_seconds,
+		                                                     {
+		                                                         .context   = nullptr,
+		                                                         .getrlimit = SystemGetrlimit,
+		                                                         .setrlimit = SystemSetrlimit,
+		                                                         .prctl     = SystemPrctl,
+		                                                     });
 	}
 
 }  // namespace howdy::native

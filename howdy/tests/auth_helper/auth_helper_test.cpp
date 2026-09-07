@@ -19,7 +19,7 @@ auto main() -> int {
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
 	ok &= expect(!ec, "creates auth-helper temp root");
-	const auto acl_support_result = acl_support(temp_root);
+	const auto acl_support_result = ProbeAclSupport(temp_root);
 	if (acl_support_result == AclSupport::kUnsupported) {
 		std::cerr << "SKIP: filesystem does not support usable POSIX named-user ACLs\n";
 	} else if (acl_support_result == AclSupport::kError) {
@@ -31,20 +31,19 @@ auto main() -> int {
 	const uid_t functional_target_uid =
 	    use_fake_acl && geteuid() == 0 && getuid() == geteuid() ? 61001 : getuid();
 	FakeAclContext fake_acl;
-	const auto     production_operations = howdy::native::auth_helper::production_acl_operations();
-	const auto     operations = use_fake_acl ? fake_acl.operations() : production_operations;
+	const auto     production_operations = howdy::native::auth_helper::ProductionAclOperations();
+	const auto     operations = use_fake_acl ? fake_acl.Operations() : production_operations;
 
-	ok &= run_auth_helper_path_tests(temp_root);
-	ok &=
-	    run_auth_helper_staging_tests(temp_root, {
-	                                                 .acl_functional        = acl_functional,
-	                                                 .acl_supported         = acl_supported,
-	                                                 .functional_target_uid = functional_target_uid,
-	                                                 .operations            = operations,
-	                                                 .production_operations = production_operations,
-	                                                 .fake_acl              = fake_acl,
-	                                                 .use_fake_acl          = use_fake_acl,
-	                                             });
+	ok &= RunAuthHelperPathTests(temp_root);
+	ok &= RunAuthHelperStagingTests(temp_root, {
+	                                               .acl_functional        = acl_functional,
+	                                               .acl_supported         = acl_supported,
+	                                               .functional_target_uid = functional_target_uid,
+	                                               .operations            = operations,
+	                                               .production_operations = production_operations,
+	                                               .fake_acl              = fake_acl,
+	                                               .use_fake_acl          = use_fake_acl,
+	                                           });
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

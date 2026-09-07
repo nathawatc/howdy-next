@@ -29,7 +29,7 @@ namespace {
 		int                                                match_calls   = 0;
 	};
 
-	auto prepare_frame(void *raw_context, const cv::Mat &frame) -> cv::Mat {
+	auto PrepareFrame(void *raw_context, const cv::Mat &frame) -> cv::Mat {
 		if (raw_context == nullptr) {
 			throw std::logic_error("prepare callback received null context");
 		}
@@ -43,7 +43,7 @@ namespace {
 		return prepared;
 	}
 
-	auto detect_faces(void *raw_context, [[maybe_unused]] const cv::Mat &frame)
+	auto DetectFaces(void *raw_context, [[maybe_unused]] const cv::Mat &frame)
 	    -> howdy::native::FaceDetectionResult {
 		if (raw_context == nullptr) {
 			throw std::logic_error("detect callback received null context");
@@ -53,8 +53,8 @@ namespace {
 		return context.detection_result;
 	}
 
-	auto encode_face(void *raw_context, [[maybe_unused]] const cv::Mat &frame,
-	                 [[maybe_unused]] const howdy::native::FaceDetection &detection)
+	auto EncodeFace(void *raw_context, [[maybe_unused]] const cv::Mat &frame,
+	                [[maybe_unused]] const howdy::native::FaceDetection &detection)
 	    -> howdy::native::FaceEncodingResult {
 		if (raw_context == nullptr) {
 			throw std::logic_error("encode callback received null context");
@@ -67,9 +67,8 @@ namespace {
 		return context.encoding_result;
 	}
 
-	auto match_face(void                                                   *raw_context,
-	                [[maybe_unused]] const std::vector<std::vector<float>> &known,
-	                [[maybe_unused]] const std::vector<float> &probe) -> howdy::native::FaceMatch {
+	auto MatchFace(void *raw_context, [[maybe_unused]] const std::vector<std::vector<float>> &known,
+	               [[maybe_unused]] const std::vector<float> &probe) -> howdy::native::FaceMatch {
 		if (raw_context == nullptr) {
 			throw std::logic_error("match callback received null context");
 		}
@@ -78,7 +77,7 @@ namespace {
 		return context.match_result;
 	}
 
-	auto now(void *raw_context) -> std::chrono::steady_clock::time_point {
+	auto Now(void *raw_context) -> std::chrono::steady_clock::time_point {
 		if (raw_context == nullptr) {
 			throw std::logic_error("clock callback received null context");
 		}
@@ -86,7 +85,7 @@ namespace {
 		return context.now_results[context.next_now++];
 	}
 
-	auto valid_encoding() -> howdy::native::FaceEncodingResult {
+	auto ValidEncoding() -> howdy::native::FaceEncodingResult {
 		return {
 		    .status        = howdy::native::FaceEncodingStatus::kOk,
 		    .encoding      = std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F),
@@ -94,47 +93,47 @@ namespace {
 		};
 	}
 
-	auto test_video_config(float dark_threshold = 50.0F) -> howdy::native::VideoConfig {
+	auto TestVideoConfig(float dark_threshold = 50.0F) -> howdy::native::VideoConfig {
 		howdy::native::VideoConfig config{};
 		config.dark_threshold = dark_threshold;
 		return config;
 	}
 
-	auto make_context() -> Context {
+	auto MakeContext() -> Context {
 		return {
 		    .detection_result = {.status = howdy::native::FaceDetectionStatus::kOk},
-		    .encoding_result  = valid_encoding(),
+		    .encoding_result  = ValidEncoding(),
 		};
 	}
 
-	auto inference_dependencies(Context &context) -> howdy::native::PreviewInferenceDependencies {
+	auto InferenceDependencies(Context &context) -> howdy::native::PreviewInferenceDependencies {
 		return {
 		    .context       = &context,
-		    .prepare_frame = prepare_frame,
-		    .detect_faces  = detect_faces,
-		    .encode_face   = encode_face,
-		    .match_face    = match_face,
+		    .prepare_frame = PrepareFrame,
+		    .detect_faces  = DetectFaces,
+		    .encode_face   = EncodeFace,
+		    .match_face    = MatchFace,
 		};
 	}
 
-	auto make_engine(Context &context, float dark_threshold = 99.0F, bool matching_enabled = true)
+	auto MakeEngine(Context &context, float dark_threshold = 99.0F, bool matching_enabled = true)
 	    -> howdy::native::PreviewEngine {
-		auto config = test_video_config(dark_threshold);
+		auto config = TestVideoConfig(dark_threshold);
 		return howdy::native::PreviewEngine(
-		    config, inference_dependencies(context),
+		    config, InferenceDependencies(context),
 		    {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)}, 1, matching_enabled);
 	}
 
-	auto face() -> howdy::native::FaceDetection {
+	auto Face() -> howdy::native::FaceDetection {
 		return {.box = cv::Rect2f(1.0F, 2.0F, 3.0F, 4.0F), .confidence = 0.9F};
 	}
 
-	auto invalid_and_dark_frames_stop_before_inference() -> bool {
-		auto       context = make_context();
-		auto       engine  = make_engine(context);
-		const auto empty   = engine.process_gray_frame({});
-		const auto invalid = engine.process_gray_frame(cv::Mat(4, 4, CV_8UC3));
-		const auto black   = engine.process_gray_frame(cv::Mat::zeros(8, 8, CV_8UC1));
+	auto InvalidAndDarkFramesStopBeforeInference() -> bool {
+		auto       context = MakeContext();
+		auto       engine  = MakeEngine(context);
+		const auto empty   = engine.ProcessGrayFrame({});
+		const auto invalid = engine.ProcessGrayFrame(cv::Mat(4, 4, CV_8UC3));
+		const auto black   = engine.ProcessGrayFrame(cv::Mat::zeros(8, 8, CV_8UC1));
 		bool       ok      = true;
 		ok &= expect(empty.status == howdy::native::PreviewFrameStatus::kInvalidFrame,
 		             "empty frame is invalid");
@@ -147,33 +146,33 @@ namespace {
 		return ok;
 	}
 
-	auto too_dark_frame_is_distinct() -> bool {
-		auto    context = make_context();
-		auto    engine  = make_engine(context, 40.0F);
+	auto TooDarkFrameIsDistinct() -> bool {
+		auto    context = MakeContext();
+		auto    engine  = MakeEngine(context, 40.0F);
 		cv::Mat frame(8, 8, CV_8UC1, cv::Scalar(40));
 		frame.rowRange(0, 4).setTo(0);
-		const auto result = engine.process_gray_frame(std::move(frame));
+		const auto result = engine.ProcessGrayFrame(std::move(frame));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kTooDark,
 		              "non-black dark frame is too dark") &&
 		       expect(context.detect_calls == 0, "too-dark frame skips detector");
 	}
 
-	auto no_face_is_successful_detection() -> bool {
-		auto       context = make_context();
-		auto       engine  = make_engine(context);
-		const auto result  = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+	auto NoFaceIsSuccessfulDetection() -> bool {
+		auto       context = MakeContext();
+		auto       engine  = MakeEngine(context);
+		const auto result  = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kNoFace,
 		              "zero detections report no face") &&
 		       expect(context.detect_calls == 1 && context.encode_calls == 0,
 		              "no face stops before encoder");
 	}
 
-	auto matching_states_preserve_payload() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face()};
+	auto MatchingStatesPreservePayload() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face()};
 		context.match_result                = {.index = 0, .score = 0.812F, .accepted = false};
-		auto engine                         = make_engine(context);
-		auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto engine                         = MakeEngine(context);
+		auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		bool ok     = true;
 		ok &= expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		             "rejected match reports unmatched face");
@@ -182,7 +181,7 @@ namespace {
 		             "unmatched face preserves score");
 
 		context.match_result = {.index = 0, .score = 0.923F, .accepted = true};
-		result               = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		result               = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		ok &= expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
 		             "accepted match reports matched face");
 		ok &= expect(result.faces[0].match.index == 0 && result.faces[0].match.score == 0.923F,
@@ -190,18 +189,18 @@ namespace {
 		return ok;
 	}
 
-	auto normal_inference_reports_inference_time() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face()};
+	auto NormalInferenceReportsInferenceTime() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face()};
 		const auto start                    = std::chrono::steady_clock::time_point{};
 		context.now_results                 = {start, start + std::chrono::milliseconds(37)};
-		auto dependencies                   = inference_dependencies(context);
-		dependencies.now                    = now;
-		auto                         config = test_video_config();
+		auto dependencies                   = InferenceDependencies(context);
+		dependencies.now                    = Now;
+		auto                         config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(
 		    config, dependencies, {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
 		    1, true);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		              "normal inference completes") &&
 		       expect(result.inference_time == std::chrono::milliseconds(37),
@@ -213,14 +212,14 @@ namespace {
 		              "inference timing covers full inference path");
 	}
 
-	auto detection_failure_does_not_degrade() -> bool {
-		auto context             = make_context();
+	auto DetectionFailureDoesNotDegrade() -> bool {
+		auto context             = MakeContext();
 		context.detection_result = {
 		    .status        = howdy::native::FaceDetectionStatus::kInferenceError,
 		    .error_message = "detector failed",
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "detector failure remains explicit") &&
 		       expect(result.error_message == "detector failed", "detector diagnostic preserved") &&
@@ -228,14 +227,14 @@ namespace {
 		              "detector failure skips encoder and matcher");
 	}
 
-	auto empty_detection_failure_gets_fallback_diagnostic() -> bool {
-		auto context             = make_context();
+	auto EmptyDetectionFailureGetsFallbackDiagnostic() -> bool {
+		auto context             = MakeContext();
 		context.detection_result = {
 		    .status        = howdy::native::FaceDetectionStatus::kInferenceError,
 		    .error_message = {},
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "empty detector failure remains explicit") &&
 		       expect(result.error_message == "Face detection failed",
@@ -244,11 +243,11 @@ namespace {
 		              "empty detector failure skips encoder and matcher");
 	}
 
-	auto invalid_prepared_frame_stops_before_detector() -> bool {
-		auto context             = make_context();
+	auto InvalidPreparedFrameStopsBeforeDetector() -> bool {
+		auto context             = MakeContext();
 		context.invalid_prepared = true;
-		auto       engine        = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine        = MakeEngine(context);
+		const auto result        = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "invalid prepared frame reports detection failure") &&
 		       expect(!result.error_message.empty(), "invalid prepared frame gets diagnostic") &&
@@ -257,15 +256,15 @@ namespace {
 		              "invalid prepared frame skips detector, encoder, and matcher");
 	}
 
-	auto encoding_failure_does_not_match() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face()};
+	auto EncodingFailureDoesNotMatch() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face()};
 		context.encoding_result             = {
 		    .status        = howdy::native::FaceEncodingStatus::kInferenceError,
 		    .error_message = "encoder failed",
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "encoder failure remains explicit") &&
 		       expect(result.error_message == "encoder failed", "encoder diagnostic preserved") &&
@@ -276,19 +275,19 @@ namespace {
 		       expect(context.match_calls == 0, "encoder failure skips matcher");
 	}
 
-	auto first_face_encoding_failure_preserves_second_match() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face(), face()};
+	auto FirstFaceEncodingFailurePreservesSecondMatch() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face(), Face()};
 		context.match_result                = {.index = 0, .score = 0.91F, .accepted = true};
 		context.encoding_results            = {
 		    {
 		        .status        = howdy::native::FaceEncodingStatus::kInferenceError,
 		        .error_message = "first encoder failed",
 		    },
-		    valid_encoding(),
+		    ValidEncoding(),
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
 		              "second face match determines frame status") &&
 		       expect(context.encode_calls == 2, "encoding continues after first face failure") &&
@@ -301,9 +300,9 @@ namespace {
 		              "failed first face and matched second face remain visible");
 	}
 
-	auto all_face_encodings_fail_without_matching() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face(), face()};
+	auto AllFaceEncodingsFailWithoutMatching() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face(), Face()};
 		context.encoding_results            = {
 		    {
 		        .status        = howdy::native::FaceEncodingStatus::kInferenceError,
@@ -314,8 +313,8 @@ namespace {
 		        .error_message = "second encoder failed",
 		    },
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "all encoding failures remain explicit") &&
 		       expect(result.error_message == "first encoder failed",
@@ -330,16 +329,16 @@ namespace {
 		              "all failed faces retain per-face state");
 	}
 
-	auto malformed_success_encoding_does_not_match() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face()};
+	auto MalformedSuccessEncodingDoesNotMatch() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face()};
 		context.encoding_result             = {
 		    .status        = howdy::native::FaceEncodingStatus::kOk,
 		    .encoding      = {0.25F},
 		    .error_message = {},
 		};
-		auto       engine = make_engine(context);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		auto       engine = MakeEngine(context);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "malformed claimed-success encoding fails") &&
 		       expect(result.error_message == "Face encoding returned invalid embedding",
@@ -347,18 +346,18 @@ namespace {
 		       expect(context.match_calls == 0, "malformed encoding skips matcher");
 	}
 
-	auto matching_disabled_reports_detected_faces() -> bool {
-		auto context                        = make_context();
-		context.detection_result.detections = {face()};
-		auto                         config = test_video_config();
+	auto MatchingDisabledReportsDetectedFaces() -> bool {
+		auto context                        = MakeContext();
+		context.detection_result.detections = {Face()};
+		auto                         config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(config,
 		                                    {
 		                                        .context       = &context,
-		                                        .prepare_frame = prepare_frame,
-		                                        .detect_faces  = detect_faces,
+		                                        .prepare_frame = PrepareFrame,
+		                                        .detect_faces  = DetectFaces,
 		                                    },
 		                                    {}, 0, false);
-		const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return expect(result.status == howdy::native::PreviewFrameStatus::kFacesDetected,
 		              "matching-disabled face gets detected-only status") &&
 		       expect(result.faces.size() == 1 && !result.faces[0].matching_attempted,
@@ -367,14 +366,14 @@ namespace {
 		              "matching-disabled face skips encoder and matcher");
 	}
 
-	auto invalid_accepted_match_results_fail_closed() -> bool {
+	auto InvalidAcceptedMatchResultsFailClosed() -> bool {
 		auto run_invalid_match = [](howdy::native::FaceMatch match,
 		                            const std::string       &subject) -> bool {
-			auto context                        = make_context();
-			context.detection_result.detections = {face()};
+			auto context                        = MakeContext();
+			context.detection_result.detections = {Face()};
 			context.match_result                = match;
-			auto       engine                   = make_engine(context);
-			const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+			auto       engine                   = MakeEngine(context);
+			const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 			return expect(result.status == howdy::native::PreviewFrameStatus::kInvalidMatchResult,
 			              subject + " returns invalid match result") &&
 			       expect(result.error_message == "Face matcher returned invalid match result",
@@ -396,15 +395,15 @@ namespace {
 		return ok;
 	}
 
-	auto invalid_dependency_matrix_fails_closed() -> bool {
+	auto InvalidDependencyMatrixFailsClosed() -> bool {
 		auto run_missing_dependency = [](auto               clear_dependency,
 		                                 const std::string &subject) -> auto {
-			auto context      = make_context();
-			auto dependencies = inference_dependencies(context);
+			auto context      = MakeContext();
+			auto dependencies = InferenceDependencies(context);
 			clear_dependency(dependencies);
-			auto                         config = test_video_config();
+			auto                         config = TestVideoConfig();
 			howdy::native::PreviewEngine engine(config, dependencies, {}, 0, true);
-			const auto result = engine.process_gray_frame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+			const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 			return expect(result.status == howdy::native::PreviewFrameStatus::kInvalidDependencies,
 			              subject + " returns invalid dependencies") &&
 			       expect(result.error_message ==
@@ -453,20 +452,20 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= invalid_and_dark_frames_stop_before_inference();
-	ok &= too_dark_frame_is_distinct();
-	ok &= no_face_is_successful_detection();
-	ok &= matching_states_preserve_payload();
-	ok &= normal_inference_reports_inference_time();
-	ok &= detection_failure_does_not_degrade();
-	ok &= empty_detection_failure_gets_fallback_diagnostic();
-	ok &= invalid_prepared_frame_stops_before_detector();
-	ok &= encoding_failure_does_not_match();
-	ok &= first_face_encoding_failure_preserves_second_match();
-	ok &= all_face_encodings_fail_without_matching();
-	ok &= malformed_success_encoding_does_not_match();
-	ok &= matching_disabled_reports_detected_faces();
-	ok &= invalid_accepted_match_results_fail_closed();
-	ok &= invalid_dependency_matrix_fails_closed();
+	ok &= InvalidAndDarkFramesStopBeforeInference();
+	ok &= TooDarkFrameIsDistinct();
+	ok &= NoFaceIsSuccessfulDetection();
+	ok &= MatchingStatesPreservePayload();
+	ok &= NormalInferenceReportsInferenceTime();
+	ok &= DetectionFailureDoesNotDegrade();
+	ok &= EmptyDetectionFailureGetsFallbackDiagnostic();
+	ok &= InvalidPreparedFrameStopsBeforeDetector();
+	ok &= EncodingFailureDoesNotMatch();
+	ok &= FirstFaceEncodingFailurePreservesSecondMatch();
+	ok &= AllFaceEncodingsFailWithoutMatching();
+	ok &= MalformedSuccessEncodingDoesNotMatch();
+	ok &= MatchingDisabledReportsDetectedFaces();
+	ok &= InvalidAcceptedMatchResultsFailClosed();
+	ok &= InvalidDependencyMatrixFailsClosed();
 	return ok ? 0 : 1;
 }

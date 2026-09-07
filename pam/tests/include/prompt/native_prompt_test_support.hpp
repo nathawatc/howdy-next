@@ -27,13 +27,13 @@ public:
 		int (*set_pam_item)(void *, pam_handle_t *, int, const void *) = nullptr;
 	};
 
-	static auto create(Descriptors descriptors) -> std::unique_ptr<NativePromptConversation> {
-		return create(descriptors, Operations{});
+	static auto Create(Descriptors descriptors) -> std::unique_ptr<NativePromptConversation> {
+		return Create(descriptors, Operations{});
 	}
 
-	static auto create(Descriptors descriptors, Operations operations)
+	static auto Create(Descriptors descriptors, Operations operations)
 	    -> std::unique_ptr<NativePromptConversation> {
-		auto production = NativePromptConversation::production_operations();
+		auto production = NativePromptConversation::ProductionOperations();
 		NativePromptConversation::Operations injected{
 		    .context = operations.context,
 		    .poll_prompt =
@@ -56,71 +56,71 @@ public:
 		                                 injected));
 	}
 
-	static auto dispatch(int num_msg, const struct pam_message **messages,
+	static auto Dispatch(int num_msg, const struct pam_message **messages,
 	                     struct pam_response **response, void *appdata_ptr) -> int {
 		auto *conversation = static_cast<NativePromptConversation *>(appdata_ptr);
-		return NativePromptConversation::dispatch(
+		return NativePromptConversation::Dispatch(
 		    num_msg, messages, response,
 		    conversation == nullptr ? nullptr : conversation->dispatch_context_.get());
 	}
 
-	static auto prompt_input(NativePromptConversation &conversation,
-	                         const struct pam_message &message, char **response, bool hide_input)
+	static auto PromptInput(NativePromptConversation &conversation,
+	                        const struct pam_message &message, char **response, bool hide_input)
 	    -> int {
-		return conversation.prompt_input(message, response, hide_input);
+		return conversation.PromptInput(message, response, hide_input);
 	}
 
-	[[nodiscard]] static auto terminal_restore_failed(const NativePromptConversation &conversation)
+	[[nodiscard]] static auto TerminalRestoreFailed(const NativePromptConversation &conversation)
 	    -> bool {
 		return conversation.terminal_restore_failed_.load();
 	}
 
-	static void replace_descriptors(NativePromptConversation &conversation,
-	                                Descriptors               descriptors) {
+	static void ReplaceDescriptors(NativePromptConversation &conversation,
+	                               Descriptors               descriptors) {
 		conversation.tty_fd_     = descriptors.tty_fd;
 		conversation.abort_pipe_ = {descriptors.abort_read_fd, descriptors.abort_write_fd};
 	}
 
-	static void close_abort_write_fd(NativePromptConversation &conversation) {
+	static void CloseAbortWriteFd(NativePromptConversation &conversation) {
 		::close(conversation.abort_pipe_[1]);
 		conversation.abort_pipe_[1] = -1;
 	}
 
-	static void set_installed(NativePromptConversation &conversation, bool installed) {
+	static void SetInstalled(NativePromptConversation &conversation, bool installed) {
 		conversation.installed_ = installed;
 	}
 
-	static void set_pam_handle(NativePromptConversation &conversation, pam_handle_t *pamh) {
+	static void SetPamHandle(NativePromptConversation &conversation, pam_handle_t *pamh) {
 		conversation.pamh_ = pamh;
 	}
 
-	static auto override_conversation(const NativePromptConversation &conversation)
+	static auto OverrideConversation(const NativePromptConversation &conversation)
 	    -> struct pam_conv {
 		return conversation.override_conv_;
 
 	}
 
 	[[nodiscard]] static auto
-	installed(const NativePromptConversation &conversation) -> bool {
+	Installed(const NativePromptConversation &conversation) -> bool {
 		return conversation.installed_;
 	}
 
-	[[nodiscard]] static auto tty_fd(const NativePromptConversation &conversation) -> int {
+	[[nodiscard]] static auto TtyFd(const NativePromptConversation &conversation) -> int {
 		return conversation.tty_fd_;
 	}
 
-	[[nodiscard]] static auto abort_read_fd(const NativePromptConversation &conversation) -> int {
+	[[nodiscard]] static auto AbortReadFd(const NativePromptConversation &conversation) -> int {
 		return conversation.abort_pipe_[0];
 	}
 
-	[[nodiscard]] static auto abort_write_fd(const NativePromptConversation &conversation) -> int {
+	[[nodiscard]] static auto AbortWriteFd(const NativePromptConversation &conversation) -> int {
 		return conversation.abort_pipe_[1];
 	}
 };
 
 using ScopedFd = howdy::test::ScopedFd;
 
-inline auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
+inline auto OpenPtyPair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 	master_fd->reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
 	if (master_fd->get() < 0) {
 		return false;
@@ -146,7 +146,7 @@ inline auto open_pty_pair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 	return true;
 }
 
-inline auto open_pipe(std::array<ScopedFd, 2> *fds) -> bool {
+inline auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 	std::array<int, 2> raw_fds{{-1, -1}};
 	if (pipe2(raw_fds.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
 		return false;
@@ -163,7 +163,7 @@ struct ReadBuffer {
 	std::size_t size = 0;
 };
 
-inline auto read_with_timeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_t {
+inline auto ReadWithTimeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_t {
 	struct pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
 
 	while (true) {
@@ -188,8 +188,8 @@ inline auto read_with_timeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssiz
 	}
 }
 
-inline auto create_conversation(NativePromptConversationTestAccess::Descriptors descriptors,
-                                NativePromptConversationTestAccess::Operations  operations = {})
+inline auto CreateConversation(NativePromptConversationTestAccess::Descriptors descriptors,
+                               NativePromptConversationTestAccess::Operations  operations = {})
     -> std::unique_ptr<NativePromptConversation> {
-	return NativePromptConversationTestAccess::create(descriptors, operations);
+	return NativePromptConversationTestAccess::Create(descriptors, operations);
 }

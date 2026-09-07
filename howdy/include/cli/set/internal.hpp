@@ -17,7 +17,6 @@ namespace howdy::native::set_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto set_main_with_dependencies(int argc, char **argv, const SetDependencies &dependencies)
-	    -> int;
+	auto SetMainWithDependencies(int argc, char **argv, const SetDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::set_internal

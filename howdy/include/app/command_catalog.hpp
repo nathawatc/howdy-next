@@ -50,7 +50,7 @@ namespace howdy::native {
 
 	using GlobalOptionMask = std::uint8_t;
 
-	constexpr auto global_option_bit(GlobalOptionId id) -> GlobalOptionMask {
+	constexpr auto GlobalOptionBit(GlobalOptionId id) -> GlobalOptionMask {
 		if (id == GlobalOptionId::kCount) {
 			return 0;
 		}
@@ -93,22 +93,22 @@ namespace howdy::native {
 		bool                       parses_after_command;
 	};
 
-	[[nodiscard]] auto command_catalog() -> std::span<const CommandDescriptor>;
-	[[nodiscard]] auto validate_command_catalog(std::span<const CommandDescriptor> commands,
-	                                            bool require_complete = false)
+	[[nodiscard]] auto CommandCatalog() -> std::span<const CommandDescriptor>;
+	[[nodiscard]] auto ValidateCommandCatalog(std::span<const CommandDescriptor> commands,
+	                                          bool require_complete = false)
 	    -> std::optional<std::string>;
-	[[nodiscard]] auto global_option_catalog() -> std::span<const GlobalOptionDescriptor>;
-	[[nodiscard]] auto
-	validate_global_option_catalog(std::span<const GlobalOptionDescriptor> options,
-	                               bool require_complete = false) -> std::optional<std::string>;
-	[[nodiscard]] auto find_command(std::string_view name) -> const CommandDescriptor *;
-	[[nodiscard]] auto command_accepts_global_option(const CommandDescriptor &command,
-	                                                 GlobalOptionId           id) -> bool;
-	[[nodiscard]] auto find_command_option(const CommandDescriptor &command,
-	                                       std::string_view         spelling)
+	[[nodiscard]] auto GlobalOptionCatalog() -> std::span<const GlobalOptionDescriptor>;
+	[[nodiscard]] auto ValidateGlobalOptionCatalog(std::span<const GlobalOptionDescriptor> options,
+	                                               bool require_complete = false)
+	    -> std::optional<std::string>;
+	[[nodiscard]] auto FindCommand(std::string_view name) -> const CommandDescriptor *;
+	[[nodiscard]] auto CommandAcceptsGlobalOption(const CommandDescriptor &command,
+	                                              GlobalOptionId           id) -> bool;
+	[[nodiscard]] auto FindCommandOption(const CommandDescriptor &command,
+	                                     std::string_view         spelling)
 	    -> const CommandOptionDescriptor *;
-	[[nodiscard]] auto find_global_option(GlobalOptionId id) -> const GlobalOptionDescriptor *;
-	[[nodiscard]] auto find_global_option(std::string_view spelling)
+	[[nodiscard]] auto FindGlobalOption(GlobalOptionId id) -> const GlobalOptionDescriptor *;
+	[[nodiscard]] auto FindGlobalOption(std::string_view spelling)
 	    -> const GlobalOptionDescriptor *;
 
 }  // namespace howdy::native

@@ -8,8 +8,8 @@ namespace howdy::test::compare_engine {
 	using howdy::test::expect;
 	using howdy::test::expect_near;
 
-	inline auto make_video_config(float dark_threshold = 25.0F, float max_height = 100.0F,
-	                              int rotate = 0, bool clahe_enabled = false)
+	inline auto MakeVideoConfig(float dark_threshold = 25.0F, float max_height = 100.0F,
+	                            int rotate = 0, bool clahe_enabled = false)
 	    -> howdy::native::VideoConfig {
 		return {
 		    .timeout              = 1,
@@ -31,5 +31,5 @@ namespace howdy::test::compare_engine {
 
 }  // namespace howdy::test::compare_engine
 
-auto run_compare_engine_frame_tests() -> bool;
-auto run_compare_engine_inference_tests() -> bool;
+auto RunCompareEngineFrameTests() -> bool;
+auto RunCompareEngineInferenceTests() -> bool;

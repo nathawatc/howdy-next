@@ -32,11 +32,11 @@ namespace howdy::test::dispatch {
 		std::string error;
 	};
 
-	auto run(Context &context, std::vector<std::string> arguments) -> RunResult;
-	auto run(Context &context, std::vector<std::string> arguments, CommandMain list_callback)
+	auto Run(Context &context, std::vector<std::string> arguments) -> RunResult;
+	auto Run(Context &context, std::vector<std::string> arguments, CommandMain list_callback)
 	    -> RunResult;
-	auto run(Context &context, std::vector<std::string> arguments, CommandMain list_callback,
+	auto Run(Context &context, std::vector<std::string> arguments, CommandMain list_callback,
 	         CommandMains command_mains) -> RunResult;
-	auto run_howdy_completion_tests() -> bool;
+	auto RunHowdyCompletionTests() -> bool;
 
 }  // namespace howdy::test::dispatch

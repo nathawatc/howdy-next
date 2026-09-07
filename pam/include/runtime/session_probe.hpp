@@ -10,9 +10,9 @@ namespace howdy::pam::runtime {
 		bool ssh_session = false;
 	};
 
-	auto probe_session_state(pam_handle_t *pamh, const EnvironmentLookupDependencies &dependencies)
+	auto ProbeSessionState(pam_handle_t *pamh, const EnvironmentLookupDependencies &dependencies)
 	    -> SessionState;
 
-	auto production_ssh_session_present(void *context, pam_handle_t *pamh) -> bool;
+	auto ProductionSshSessionPresent(void *context, pam_handle_t *pamh) -> bool;
 
 }  // namespace howdy::pam::runtime

@@ -9,19 +9,19 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 
-auto closed_stdin_preserved_with_terminal_stdout() -> bool;
-auto closed_stdout_preserved_with_terminal_stdin() -> bool;
-auto closed_stderr_preserved_with_terminal_stdin() -> bool;
-auto closed_stdin_stdout_preserved_with_terminal_stderr() -> bool;
-auto closed_all_stdio_remain_closed() -> bool;
-auto tty_normalization_failure_preserves_closed_stdin() -> bool;
-auto abort_pipe_creation_failure_is_transactional() -> bool;
-auto abort_pipe_first_normalization_failure_is_transactional() -> bool;
-auto abort_pipe_second_normalization_failure_is_transactional() -> bool;
+auto ClosedStdinPreservedWithTerminalStdout() -> bool;
+auto ClosedStdoutPreservedWithTerminalStdin() -> bool;
+auto ClosedStderrPreservedWithTerminalStdin() -> bool;
+auto ClosedStdinStdoutPreservedWithTerminalStderr() -> bool;
+auto ClosedAllStdioRemainClosed() -> bool;
+auto TtyNormalizationFailurePreservesClosedStdin() -> bool;
+auto AbortPipeCreationFailureIsTransactional() -> bool;
+auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool;
+auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool;
 
 namespace {
-	auto eligibility_conversation(int /*num_msg*/, const struct pam_message ** /*messages*/,
-	                              struct pam_response **response, void * /*context*/) -> int {
+	auto EligibilityConversation(int /*num_msg*/, const struct pam_message ** /*messages*/,
+	                             struct pam_response **response, void * /*context*/) -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -34,14 +34,14 @@ namespace {
 		bool                exhaust_tty_duplication = false;
 	};
 
-	auto redirect_stdio_to_null(int null_fd) -> bool {
+	auto RedirectStdioToNull(int null_fd) -> bool {
 		return std::ranges::all_of(std::array{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO},
 		                           [null_fd](const int fd) -> bool {
 			                           return dup2(null_fd, fd) == fd;
 		                           });
 	}
 
-	auto close_test_stdio(const std::array<bool, 3> &closed_stdio) -> bool {
+	auto CloseTestStdio(const std::array<bool, 3> &closed_stdio) -> bool {
 		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
 			if (closed_stdio[static_cast<std::size_t>(fd)] && close(fd) != 0) {
 				return false;
@@ -50,7 +50,7 @@ namespace {
 		return true;
 	}
 
-	auto descriptor_is_closed(int fd) -> bool {
+	auto DescriptorIsClosed(int fd) -> bool {
 		errno = 0;
 		return fcntl(fd, F_GETFD) == -1 && errno == EBADF;
 	}
@@ -62,7 +62,7 @@ namespace {
 		struct stat metadata{};
 	};
 
-	auto standard_descriptor_identities() -> std::array<DescriptorIdentity, 3> {
+	auto StandardDescriptorIdentities() -> std::array<DescriptorIdentity, 3> {
 		std::array<DescriptorIdentity, 3> identities{};
 		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
 			auto &identity = identities[static_cast<std::size_t>(fd)];
@@ -74,8 +74,8 @@ namespace {
 		return identities;
 	}
 
-	auto standard_descriptors_match(const std::array<DescriptorIdentity, 3> &expected) -> bool {
-		const auto actual = standard_descriptor_identities();
+	auto StandardDescriptorsMatch(const std::array<DescriptorIdentity, 3> &expected) -> bool {
+		const auto actual = StandardDescriptorIdentities();
 		for (std::size_t index = 0; index < expected.size(); ++index) {
 			if (actual[index].open != expected[index].open) {
 				return false;
@@ -95,10 +95,10 @@ namespace {
 		return true;
 	}
 
-	auto test_internal_descriptors_preserve_stdio(NativeFdScenario scenario) -> bool {
+	auto TestInternalDescriptorsPreserveStdio(NativeFdScenario scenario) -> bool {
 		ScopedFd master_fd;
 		ScopedFd slave_fd;
-		if (!open_pty_pair(&master_fd, &slave_fd)) {
+		if (!OpenPtyPair(&master_fd, &slave_fd)) {
 			return false;
 		}
 		const char *slave_name = ptsname(master_fd.get());
@@ -115,7 +115,7 @@ namespace {
 		if (null_fd.get() < 0) {
 			return false;
 		}
-		if (!redirect_stdio_to_null(null_fd.get())) {
+		if (!RedirectStdioToNull(null_fd.get())) {
 			return false;
 		}
 		if (scenario.terminal_stdio >= 0 &&
@@ -127,7 +127,7 @@ namespace {
 			return false;
 		}
 
-		const struct pam_conv original{.conv = eligibility_conversation, .appdata_ptr = nullptr};
+		const struct pam_conv original{.conv = EligibilityConversation, .appdata_ptr = nullptr};
 		pam_handle_t         *pamh = nullptr;
 		if (pam_start("howdy-native-fd-test", "alice", &original, &pamh) != PAM_SUCCESS) {
 			return false;
@@ -136,7 +136,7 @@ namespace {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
-		if (!close_test_stdio(scenario.closed_stdio)) {
+		if (!CloseTestStdio(scenario.closed_stdio)) {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
@@ -147,16 +147,16 @@ namespace {
 				return false;
 			}
 		}
-		const auto stdio_before = standard_descriptor_identities();
+		const auto stdio_before = StandardDescriptorIdentities();
 
 		NativePromptConversation conversation(pamh);
-		const bool               available = conversation.available();
+		const bool               available = conversation.Available();
 		const std::array         internal_fds{
-		    NativePromptConversationTestAccess::tty_fd(conversation),
-		    NativePromptConversationTestAccess::abort_read_fd(conversation),
-		    NativePromptConversationTestAccess::abort_write_fd(conversation),
+		    NativePromptConversationTestAccess::TtyFd(conversation),
+		    NativePromptConversationTestAccess::AbortReadFd(conversation),
+		    NativePromptConversationTestAccess::AbortWriteFd(conversation),
 		};
-		const bool  stdio_preserved = standard_descriptors_match(stdio_before);
+		const bool  stdio_preserved = StandardDescriptorsMatch(stdio_before);
 		struct stat terminal_after{};
 		const bool  terminal_preserved =
 		    scenario.terminal_stdio < 0 || (fstat(scenario.terminal_stdio, &terminal_after) == 0 &&
@@ -186,7 +186,7 @@ namespace {
 		std::array<int, 2> duplicated{{-1, -1}};
 	};
 
-	auto injected_internal_duplicate(void *context, int fd, int minimum_fd) -> int {
+	auto InjectedInternalDuplicate(void *context, int fd, int minimum_fd) -> int {
 		auto &failure = *static_cast<InternalFdFailureContext *>(context);
 		++failure.duplicate_calls;
 		if (failure.duplicate_calls == failure.fail_duplicate_call) {
@@ -200,7 +200,7 @@ namespace {
 		return duplicated;
 	}
 
-	auto injected_internal_pipe(void *context, int *pipe_fds, int flags) -> int {
+	auto InjectedInternalPipe(void *context, int *pipe_fds, int flags) -> int {
 		auto &failure = *static_cast<InternalFdFailureContext *>(context);
 		if (failure.fail_pipe) {
 			errno = EMFILE;
@@ -213,81 +213,81 @@ namespace {
 		return result;
 	}
 
-	auto recorded_descriptors_are_closed(const InternalFdFailureContext &failure) -> bool {
+	auto RecordedDescriptorsAreClosed(const InternalFdFailureContext &failure) -> bool {
 		return std::ranges::all_of(std::array{failure.raw_pipe[0], failure.raw_pipe[1],
 		                                      failure.duplicated[0], failure.duplicated[1]},
 		                           [](const int fd) -> bool {
-			                           return fd < 0 || descriptor_is_closed(fd);
+			                           return fd < 0 || DescriptorIsClosed(fd);
 		                           });
 	}
 
-	auto internal_pipe_failure_is_transactional(std::size_t         fail_duplicate_call,
-	                                            std::array<bool, 3> closed_stdio,
-	                                            bool                fail_pipe = false) -> bool {
-		if (!close_test_stdio(closed_stdio)) {
+	auto InternalPipeFailureIsTransactional(std::size_t         fail_duplicate_call,
+	                                        std::array<bool, 3> closed_stdio,
+	                                        bool                fail_pipe = false) -> bool {
+		if (!CloseTestStdio(closed_stdio)) {
 			return false;
 		}
-		const auto               stdio_before = standard_descriptor_identities();
+		const auto               stdio_before = StandardDescriptorIdentities();
 		InternalFdFailureContext context{
 		    .fail_duplicate_call = fail_duplicate_call,
 		    .fail_pipe           = fail_pipe,
 		};
 		const howdy::pam::detail::InternalFdOperations operations{
 		    .context     = &context,
-		    .duplicate   = injected_internal_duplicate,
-		    .create_pipe = injected_internal_pipe,
+		    .duplicate   = InjectedInternalDuplicate,
+		    .create_pipe = InjectedInternalPipe,
 		};
-		auto pipe = howdy::pam::detail::create_internal_pipe(O_CLOEXEC | O_NONBLOCK, &operations);
-		if (pipe.valid() || !recorded_descriptors_are_closed(context)) {
+		auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK, &operations);
+		if (pipe.Valid() || !RecordedDescriptorsAreClosed(context)) {
 			return false;
 		}
-		if (!standard_descriptors_match(stdio_before)) {
+		if (!StandardDescriptorsMatch(stdio_before)) {
 			return false;
 		}
-		auto conversation = create_conversation({});
-		return !conversation->available();
+		auto conversation = CreateConversation({});
+		return !conversation->Available();
 	}
 }  // namespace
 
-auto closed_stdin_preserved_with_terminal_stdout() -> bool {
-	return test_internal_descriptors_preserve_stdio(
+auto ClosedStdinPreservedWithTerminalStdout() -> bool {
+	return TestInternalDescriptorsPreserveStdio(
 	    {.closed_stdio = {true, false, false}, .terminal_stdio = STDOUT_FILENO});
 }
 
-auto closed_stdout_preserved_with_terminal_stdin() -> bool {
-	return test_internal_descriptors_preserve_stdio(
+auto ClosedStdoutPreservedWithTerminalStdin() -> bool {
+	return TestInternalDescriptorsPreserveStdio(
 	    {.closed_stdio = {false, true, false}, .terminal_stdio = STDIN_FILENO});
 }
 
-auto closed_stderr_preserved_with_terminal_stdin() -> bool {
-	return test_internal_descriptors_preserve_stdio(
+auto ClosedStderrPreservedWithTerminalStdin() -> bool {
+	return TestInternalDescriptorsPreserveStdio(
 	    {.closed_stdio = {false, false, true}, .terminal_stdio = STDIN_FILENO});
 }
 
-auto closed_stdin_stdout_preserved_with_terminal_stderr() -> bool {
-	return test_internal_descriptors_preserve_stdio(
+auto ClosedStdinStdoutPreservedWithTerminalStderr() -> bool {
+	return TestInternalDescriptorsPreserveStdio(
 	    {.closed_stdio = {true, true, false}, .terminal_stdio = STDERR_FILENO});
 }
 
-auto closed_all_stdio_remain_closed() -> bool {
-	return test_internal_descriptors_preserve_stdio(
+auto ClosedAllStdioRemainClosed() -> bool {
+	return TestInternalDescriptorsPreserveStdio(
 	    {.closed_stdio = {true, true, true}, .terminal_stdio = -1});
 }
 
-auto tty_normalization_failure_preserves_closed_stdin() -> bool {
-	return test_internal_descriptors_preserve_stdio({.closed_stdio   = {true, false, false},
-	                                                 .terminal_stdio = STDOUT_FILENO,
-	                                                 .exhaust_tty_duplication = true});
+auto TtyNormalizationFailurePreservesClosedStdin() -> bool {
+	return TestInternalDescriptorsPreserveStdio({.closed_stdio            = {true, false, false},
+	                                             .terminal_stdio          = STDOUT_FILENO,
+	                                             .exhaust_tty_duplication = true});
 }
 
-auto abort_pipe_creation_failure_is_transactional() -> bool {
-	return internal_pipe_failure_is_transactional(0, {}, true);
+auto AbortPipeCreationFailureIsTransactional() -> bool {
+	return InternalPipeFailureIsTransactional(0, {}, true);
 }
 
-auto abort_pipe_first_normalization_failure_is_transactional() -> bool {
-	return internal_pipe_failure_is_transactional(1, {true, false, false});
+auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool {
+	return InternalPipeFailureIsTransactional(1, {true, false, false});
 }
 
-auto abort_pipe_second_normalization_failure_is_transactional() -> bool {
-	return internal_pipe_failure_is_transactional(2, {true, true, false});
+auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool {
+	return InternalPipeFailureIsTransactional(2, {true, true, false});
 }

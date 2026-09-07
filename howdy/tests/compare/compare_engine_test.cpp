@@ -2,7 +2,7 @@
 
 auto main() -> int {
 	bool ok = true;
-	ok &= run_compare_engine_frame_tests();
-	ok &= run_compare_engine_inference_tests();
+	ok &= RunCompareEngineFrameTests();
+	ok &= RunCompareEngineInferenceTests();
 	return ok ? 0 : 1;
 }

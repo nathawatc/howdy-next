@@ -5,7 +5,7 @@
 
 namespace howdy::native {
 
-	inline auto format_version(std::string_view project_version, std::string_view build_commit)
+	inline auto FormatVersion(std::string_view project_version, std::string_view build_commit)
 	    -> std::string {
 		std::string output = "Howdy Next ";
 		output += project_version;

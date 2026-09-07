@@ -20,9 +20,8 @@ namespace howdy::native::user_model_codec_internal {
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	decode_document_json(std::string_view input, const std::string &expected_backend,
-	                     std::optional<FaceMetric> expected_metric,
-	                     const std::string &expected_model, bool strict_shape)
-	    -> DecodedDocumentJson;
+	DecodeDocumentJson(std::string_view input, const std::string &expected_backend,
+	                   std::optional<FaceMetric> expected_metric, const std::string &expected_model,
+	                   bool strict_shape) -> DecodedDocumentJson;
 
 }  // namespace howdy::native::user_model_codec_internal

@@ -23,33 +23,33 @@ namespace {
 		std::optional<howdy::native::FaceModel> face_model;
 	};
 
-	auto add_cli_load_runtime_config_dependency(void *context)
+	auto AddCliLoadRuntimeConfigDependency(void *context)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
-		return howdy::native::load_runtime_config();
+		return howdy::native::LoadRuntimeConfig();
 	}
 
-	auto append_user_model_entry_dependency(void *context, const std::string &user,
-	                                        const howdy::native::NewUserModelEntry &entry)
+	auto AppendUserModelEntryDependency(void *context, const std::string &user,
+	                                    const howdy::native::NewUserModelEntry &entry)
 	    -> howdy::native::UserModelMutationResult {
 		(void)context;
-		return howdy::native::append_user_model_entry(user, entry);
+		return howdy::native::AppendUserModelEntry(user, entry);
 	}
 
-	auto is_existing_model_incompatible_status(howdy::native::UserModelStatus status) -> bool {
+	auto IsExistingModelIncompatibleStatus(howdy::native::UserModelStatus status) -> bool {
 		return status == howdy::native::UserModelStatus::kIncompatibleBackend ||
 		       status == howdy::native::UserModelStatus::kIncompatibleMetric ||
 		       status == howdy::native::UserModelStatus::kIncompatibleModel;
 	}
 
-	auto is_existing_model_allowed_status(howdy::native::UserModelStatus status) -> bool {
+	auto IsExistingModelAllowedStatus(howdy::native::UserModelStatus status) -> bool {
 		return status == howdy::native::UserModelStatus::kOk ||
 		       status == howdy::native::UserModelStatus::kNoModel ||
 		       status == howdy::native::UserModelStatus::kNoModelDirectory;
 	}
 
-	auto preflight_enrollment_dependency(void *context, const std::string &user,
-	                                     const howdy::native::RuntimeConfig &config)
+	auto PreflightEnrollmentDependency(void *context, const std::string &user,
+	                                   const howdy::native::RuntimeConfig &config)
 	    -> howdy::native::add_internal::AddPreflightResult {
 		auto *production_context = static_cast<AddProductionContext *>(context);
 		if (production_context == nullptr) {
@@ -60,23 +60,23 @@ namespace {
 		}
 
 		auto &face_model = production_context->face_model.emplace(config.face);
-		if (!face_model.ok()) {
+		if (!face_model.Ok()) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status        = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
-			    .error_message = face_model.error_message(),
+			    .error_message = face_model.ErrorMessage(),
 			};
 		}
 
-		const auto entries = howdy::native::list_user_model_entries(
-		    user, howdy::native::FaceModel::kBackendName, face_model.metric(),
+		const auto entries = howdy::native::ListUserModelEntries(
+		    user, howdy::native::FaceModel::kBackendName, face_model.Metric(),
 		    howdy::native::FaceModel::kSfaceModel);
-		if (is_existing_model_incompatible_status(entries.status)) {
+		if (IsExistingModelIncompatibleStatus(entries.status)) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status =
 			        howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible,
 			};
 		}
-		if (!is_existing_model_allowed_status(entries.status)) {
+		if (!IsExistingModelAllowedStatus(entries.status)) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status = howdy::native::add_internal::AddPreflightStatus::kExistingModelError,
 			    .error_message = entries.error_message,
@@ -88,9 +88,9 @@ namespace {
 		};
 	}
 
-	auto capture_enrollment_dependency(void *context, const std::string &user,
-	                                   const howdy::native::RuntimeConfig &config, bool plain,
-	                                   const std::string &label)
+	auto CaptureEnrollmentDependency(void *context, const std::string &user,
+	                                 const howdy::native::RuntimeConfig &config, bool plain,
+	                                 const std::string &label)
 	    -> howdy::native::add_internal::AddEnrollmentResult {
 		(void)user;
 		(void)label;
@@ -104,18 +104,18 @@ namespace {
 		}
 
 		auto &face_model = *production_context->face_model;
-		if (!face_model.ok()) {
+		if (!face_model.Ok()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status        = howdy::native::add_internal::AddEnrollmentStatus::kFaceModelError,
-			    .error_message = face_model.error_message(),
+			    .error_message = face_model.ErrorMessage(),
 			};
 		}
 
-		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
-		if (!capture.open()) {
+		howdy::native::VideoCapture capture(howdy::native::LoadCaptureSettings(config.video));
+		if (!capture.Open()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status = howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError,
-			    .error_message = capture.error_message(),
+			    .error_message = capture.ErrorMessage(),
 			};
 		}
 
@@ -125,9 +125,9 @@ namespace {
 		std::this_thread::sleep_for(std::chrono::seconds(2));
 
 		auto capture_result =
-		    howdy::native::capture_enrollment_sample(capture, face_model, config.video, kMaxFrames);
+		    howdy::native::CaptureEnrollmentSample(capture, face_model, config.video, kMaxFrames);
 
-		capture.release();
+		capture.Release();
 
 		if (capture_result.detector_status != howdy::native::FaceDetectionStatus::kOk) {
 			return howdy::native::add_internal::AddEnrollmentResult{
@@ -152,8 +152,8 @@ namespace {
 		}
 
 		auto encoding_result =
-		    face_model.encode(capture_result.frame, capture_result.faces.front());
-		if (!encoding_result.ok()) {
+		    face_model.Encode(capture_result.frame, capture_result.faces.front());
+		if (!encoding_result.Ok()) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
 			    .error_message  = std::move(encoding_result.error_message),
@@ -164,22 +164,22 @@ namespace {
 		return howdy::native::add_internal::AddEnrollmentResult{
 		    .status         = howdy::native::add_internal::AddEnrollmentStatus::kOk,
 		    .capture_result = std::move(capture_result),
-		    .metric         = face_model.metric(),
+		    .metric         = face_model.Metric(),
 		    .encoding       = std::move(encoding_result.encoding),
 		};
 	}
 
 }  // namespace
 
-auto add_main(int argc, char **argv) -> int {
+auto AddMain(int argc, char **argv) -> int {
 	AddProductionContext context;
-	return howdy::native::add_internal::add_main_with_dependencies(
+	return howdy::native::add_internal::AddMainWithDependencies(
 	    argc, argv,
 	    howdy::native::add_internal::AddDependencies{
 	        .context              = &context,
-	        .load_runtime_config  = add_cli_load_runtime_config_dependency,
-	        .preflight_enrollment = preflight_enrollment_dependency,
-	        .capture_enrollment   = capture_enrollment_dependency,
-	        .append_user_model    = append_user_model_entry_dependency,
+	        .load_runtime_config  = AddCliLoadRuntimeConfigDependency,
+	        .preflight_enrollment = PreflightEnrollmentDependency,
+	        .capture_enrollment   = CaptureEnrollmentDependency,
+	        .append_user_model    = AppendUserModelEntryDependency,
 	    });
 }

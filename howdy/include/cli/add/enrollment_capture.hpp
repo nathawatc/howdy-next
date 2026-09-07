@@ -36,7 +36,7 @@ namespace howdy::native {
 	};
 
 	[[nodiscard]] inline auto
-	classify_enrollment_capture_failure(const EnrollmentCaptureResult &result)
+	ClassifyEnrollmentCaptureFailure(const EnrollmentCaptureResult &result)
 	    -> EnrollmentCaptureFailure {
 		if (result.valid_frames == 0 && result.black_frames > 0 && result.empty_frames == 0 &&
 		    result.read_failures == 0) {
@@ -56,35 +56,35 @@ namespace howdy::native {
 	}
 
 	template <typename Capture, typename FaceModel>
-	auto capture_enrollment_sample(Capture &capture, FaceModel &face_model,
-	                               const VideoConfig &video_config, int max_frames)
+	auto CaptureEnrollmentSample(Capture &capture, FaceModel &face_model,
+	                             const VideoConfig &video_config, int max_frames)
 	    -> EnrollmentCaptureResult {
 		const float dark_threshold = video_config.dark_threshold;
-		auto        clahe          = make_clahe(video_config);
+		auto        clahe          = MakeClahe(video_config);
 
 		EnrollmentCaptureResult result;
 		cv::Mat                 gray;
 
 		for (int frame_count = 0; frame_count < max_frames; ++frame_count) {
-			if (!capture.read(result.frame, &gray)) {
+			if (!capture.Read(result.frame, &gray)) {
 				result.read_failures++;
 				continue;
 			}
 
-			if (validate_frame(gray, FrameChannelPolicy::kGray) != FrameValidationStatus::kValid) {
+			if (ValidateFrame(gray, FrameChannelPolicy::kGray) != FrameValidationStatus::kValid) {
 				result.empty_frames++;
 				continue;
 			}
 
-			apply_clahe_if_enabled(gray, video_config, clahe);
+			ApplyClaheIfEnabled(gray, video_config, clahe);
 
-			const auto brightness = measure_brightness(gray);
+			const auto brightness = MeasureBrightness(gray);
 			if (brightness.hist_total == 0.0 || brightness.darkness >= kBrightnessPercentScale) {
 				result.black_frames++;
 				continue;
 			}
 			switch (
-			    classify_brightness(brightness.hist_total, brightness.darkness, dark_threshold)) {
+			    ClassifyBrightness(brightness.hist_total, brightness.darkness, dark_threshold)) {
 				case BrightnessDecision::kBlackFrame:
 					result.black_frames++;
 					continue;
@@ -99,9 +99,9 @@ namespace howdy::native {
 					break;
 			}
 
-			auto       prepared         = face_model.prepare_frame(gray);
-			const auto detection_result = face_model.detect(prepared);
-			if (!detection_result.ok()) {
+			auto       prepared         = face_model.PrepareFrame(gray);
+			const auto detection_result = face_model.Detect(prepared);
+			if (!detection_result.Ok()) {
 				result.detector_status        = detection_result.status;
 				result.detector_error_message = detection_result.error_message;
 				break;

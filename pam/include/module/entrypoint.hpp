@@ -15,12 +15,12 @@ namespace howdy::pam {
 	};
 
 	__attribute__((visibility("hidden"))) auto
-	run_authentication_entrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
-	                              bool                          request_auth_token,
-	                              const EntrypointDependencies &dependencies) noexcept -> int;
+	RunAuthenticationEntrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
+	                            bool                          request_auth_token,
+	                            const EntrypointDependencies &dependencies) noexcept -> int;
 
 	__attribute__((visibility("hidden"))) auto
-	run_pam_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv,
-	                     const EntrypointDependencies &dependencies) noexcept -> int;
+	RunPamAuthenticate(pam_handle_t *pamh, int flags, int argc, const char **argv,
+	                   const EntrypointDependencies &dependencies) noexcept -> int;
 
 }  // namespace howdy::pam

@@ -22,7 +22,7 @@ namespace howdy::native::user_model_store_test_hooks {
 		std::optional<int>                                 rollback_exchange_errno;
 	};
 
-	[[nodiscard]] auto current() -> Hooks &;
+	[[nodiscard]] auto Current() -> Hooks &;
 
 	class ScopedHooks {
 	public:

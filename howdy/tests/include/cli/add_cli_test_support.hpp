@@ -66,7 +66,7 @@ namespace howdy::test::add_cli {
 		std::vector<std::string>                         events;
 	};
 
-	inline auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+	inline auto ValidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 		howdy::native::RuntimeConfig config;
 		config.video.dark_threshold = 32.0F;
 		return howdy::native::RuntimeConfigLoadResult{
@@ -76,13 +76,13 @@ namespace howdy::test::add_cli {
 		};
 	}
 
-	inline auto successful_preflight_result() -> howdy::native::add_internal::AddPreflightResult {
+	inline auto SuccessfulPreflightResult() -> howdy::native::add_internal::AddPreflightResult {
 		return howdy::native::add_internal::AddPreflightResult{
 		    .status = howdy::native::add_internal::AddPreflightStatus::kOk,
 		};
 	}
 
-	inline auto successful_capture_result() -> howdy::native::add_internal::AddEnrollmentResult {
+	inline auto SuccessfulCaptureResult() -> howdy::native::add_internal::AddEnrollmentResult {
 		return howdy::native::add_internal::AddEnrollmentResult{
 		    .status   = howdy::native::add_internal::AddEnrollmentStatus::kOk,
 		    .metric   = howdy::native::FaceMetric::kCosine,
@@ -90,7 +90,7 @@ namespace howdy::test::add_cli {
 		};
 	}
 
-	inline auto load_runtime_config_callback(void *raw_context)
+	inline auto LoadRuntimeConfigCallback(void *raw_context)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		auto *context = static_cast<AddCliTestContext *>(raw_context);
 		++context->load_calls;
@@ -98,8 +98,8 @@ namespace howdy::test::add_cli {
 		return context->config_result;
 	}
 
-	inline auto preflight_enrollment_callback(void *raw_context, const std::string &user,
-	                                          const howdy::native::RuntimeConfig &config)
+	inline auto PreflightEnrollmentCallback(void *raw_context, const std::string &user,
+	                                        const howdy::native::RuntimeConfig &config)
 	    -> howdy::native::add_internal::AddPreflightResult {
 		auto *context = static_cast<AddCliTestContext *>(raw_context);
 		++context->preflight_calls;
@@ -113,9 +113,9 @@ namespace howdy::test::add_cli {
 		return context->preflight_result;
 	}
 
-	inline auto capture_enrollment_callback(void *raw_context, const std::string &user,
-	                                        const howdy::native::RuntimeConfig &config, bool plain,
-	                                        const std::string &label)
+	inline auto CaptureEnrollmentCallback(void *raw_context, const std::string &user,
+	                                      const howdy::native::RuntimeConfig &config, bool plain,
+	                                      const std::string &label)
 	    -> howdy::native::add_internal::AddEnrollmentResult {
 		auto *context = static_cast<AddCliTestContext *>(raw_context);
 		++context->capture_calls;
@@ -127,8 +127,8 @@ namespace howdy::test::add_cli {
 		return context->capture_result;
 	}
 
-	inline auto append_user_model_entry_callback(void *raw_context, const std::string &user,
-	                                             const howdy::native::NewUserModelEntry &entry)
+	inline auto AppendUserModelEntryCallback(void *raw_context, const std::string &user,
+	                                         const howdy::native::NewUserModelEntry &entry)
 	    -> howdy::native::UserModelMutationResult {
 		auto *context = static_cast<AddCliTestContext *>(raw_context);
 		++context->append_calls;
@@ -138,47 +138,47 @@ namespace howdy::test::add_cli {
 		return context->append_result;
 	}
 
-	inline auto test_dependencies(AddCliTestContext &context)
+	inline auto TestDependencies(AddCliTestContext &context)
 	    -> howdy::native::add_internal::AddDependencies {
 		return howdy::native::add_internal::AddDependencies{
 		    .context              = &context,
-		    .load_runtime_config  = load_runtime_config_callback,
-		    .preflight_enrollment = preflight_enrollment_callback,
-		    .capture_enrollment   = capture_enrollment_callback,
-		    .append_user_model    = append_user_model_entry_callback,
+		    .load_runtime_config  = LoadRuntimeConfigCallback,
+		    .preflight_enrollment = PreflightEnrollmentCallback,
+		    .capture_enrollment   = CaptureEnrollmentCallback,
+		    .append_user_model    = AppendUserModelEntryCallback,
 		};
 	}
 
-	inline auto run_add_with_dependencies(howdy::native::add_internal::AddDependencies dependencies,
-	                                      std::vector<std::string> arguments) -> int {
+	inline auto RunAddWithDependencies(howdy::native::add_internal::AddDependencies dependencies,
+	                                   std::vector<std::string> arguments) -> int {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
 			argv.push_back(argument.data());
 		}
-		return howdy::native::add_internal::add_main_with_dependencies(
-		    static_cast<int>(argv.size()), argv.data(), dependencies);
+		return howdy::native::add_internal::AddMainWithDependencies(static_cast<int>(argv.size()),
+		                                                            argv.data(), dependencies);
 	}
 
-	inline auto run_add(AddCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return run_add_with_dependencies(test_dependencies(context), std::move(arguments));
+	inline auto RunAdd(AddCliTestContext &context, std::vector<std::string> arguments) -> int {
+		return RunAddWithDependencies(TestDependencies(context), std::move(arguments));
 	}
 
-	inline auto make_success_context() -> AddCliTestContext {
+	inline auto MakeSuccessContext() -> AddCliTestContext {
 		AddCliTestContext context;
-		context.config_result    = valid_config_load_result();
-		context.preflight_result = successful_preflight_result();
-		context.capture_result   = successful_capture_result();
+		context.config_result    = ValidConfigLoadResult();
+		context.preflight_result = SuccessfulPreflightResult();
+		context.capture_result   = SuccessfulCaptureResult();
 		context.append_result    = howdy::native::UserModelMutationResult{
 		    .status = howdy::native::UserModelStatus::kOk,
 		};
 		return context;
 	}
 
-	auto run_add_cli_success_tests() -> bool;
-	auto run_add_cli_preflight_tests() -> bool;
-	auto run_add_cli_capture_tests() -> bool;
-	auto run_add_cli_argument_tests() -> bool;
-	auto run_add_cli_dependency_validation_tests() -> bool;
+	auto RunAddCliSuccessTests() -> bool;
+	auto RunAddCliPreflightTests() -> bool;
+	auto RunAddCliCaptureTests() -> bool;
+	auto RunAddCliArgumentTests() -> bool;
+	auto RunAddCliDependencyValidationTests() -> bool;
 
 }  // namespace howdy::test::add_cli

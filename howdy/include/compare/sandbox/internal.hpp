@@ -20,8 +20,8 @@ namespace howdy::native::compare_sandbox_internal {
 		PrctlFn     prctl     = nullptr;
 	};
 
-	[[nodiscard]] auto apply_compare_sandbox(int                               timeout_seconds,
-	                                         const CompareSandboxDependencies &dependencies)
+	[[nodiscard]] auto ApplyCompareSandbox(int                               timeout_seconds,
+	                                       const CompareSandboxDependencies &dependencies)
 	    -> CompareSandboxResult;
 
 }  // namespace howdy::native::compare_sandbox_internal

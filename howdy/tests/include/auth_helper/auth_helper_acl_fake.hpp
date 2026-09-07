@@ -26,10 +26,10 @@ namespace howdy::test::auth_helper {
 		bool                 verification_failure = false;
 
 		~FakeAclContext() {
-			clear();
+			Clear();
 		}
 
-		void clear() {
+		void Clear() {
 			for (const auto &[fd, acl] : fake_acls) {
 				(void)fd;
 				acl_free(acl);
@@ -43,10 +43,10 @@ namespace howdy::test::auth_helper {
 			verification_failure = false;
 		}
 
-		[[nodiscard]] auto operations() -> howdy::native::auth_helper::AclOperations;
+		[[nodiscard]] auto Operations() -> howdy::native::auth_helper::AclOperations;
 	};
 
-	inline auto fake_acl_set_fd(void *context, int fd, acl_t acl) -> int {
+	inline auto FakeAclSetFd(void *context, int fd, acl_t acl) -> int {
 		auto &state = *static_cast<FakeAclContext *>(context);
 		if (state.set_failure) {
 			errno = EIO;
@@ -87,7 +87,7 @@ namespace howdy::test::auth_helper {
 		return 0;
 	}
 
-	inline auto fake_acl_get_fd(void *context, int fd) -> acl_t {
+	inline auto FakeAclGetFd(void *context, int fd) -> acl_t {
 		auto &state = *static_cast<FakeAclContext *>(context);
 		state.get_descriptors.push_back(fd);
 		if (state.verification_failure) {
@@ -101,11 +101,11 @@ namespace howdy::test::auth_helper {
 		return acl_dup(stored->second);
 	}
 
-	inline auto FakeAclContext::operations() -> howdy::native::auth_helper::AclOperations {
-		return {.context = this, .acl_get_fd = fake_acl_get_fd, .acl_set_fd = fake_acl_set_fd};
+	inline auto FakeAclContext::Operations() -> howdy::native::auth_helper::AclOperations {
+		return {.context = this, .acl_get_fd = FakeAclGetFd, .acl_set_fd = FakeAclSetFd};
 	}
 
-	inline auto expect_fake_acl_activity(const FakeAclContext &state, const std::string &label)
+	inline auto ExpectFakeAclActivity(const FakeAclContext &state, const std::string &label)
 	    -> bool {
 		bool ok = true;
 		ok &= expect(!state.fake_acls.empty(), label + " stores production ACLs by descriptor");
@@ -115,7 +115,7 @@ namespace howdy::test::auth_helper {
 		return ok;
 	}
 
-	inline auto fake_acl_has_named_user(acl_t acl, uid_t uid) -> bool {
+	inline auto FakeAclHasNamedUser(acl_t acl, uid_t uid) -> bool {
 		acl_entry_t entry;
 		int         entry_id = ACL_FIRST_ENTRY;
 		while (acl_get_entry(acl, entry_id, &entry) == 1) {
@@ -137,14 +137,14 @@ namespace howdy::test::auth_helper {
 		return false;
 	}
 
-	inline auto expect_fake_acl_target(const FakeAclContext &state, uid_t target_uid,
-	                                   uid_t owner_uid) -> bool {
+	inline auto ExpectFakeAclTarget(const FakeAclContext &state, uid_t target_uid, uid_t owner_uid)
+	    -> bool {
 		bool target_found = false;
 		bool owner_found  = false;
 		for (const auto &[fd, acl] : state.fake_acls) {
 			(void)fd;
-			target_found |= fake_acl_has_named_user(acl, target_uid);
-			owner_found |= fake_acl_has_named_user(acl, owner_uid);
+			target_found |= FakeAclHasNamedUser(acl, target_uid);
+			owner_found |= FakeAclHasNamedUser(acl, owner_uid);
 		}
 		bool ok = expect(target_found, "production ACL contains requested named-user UID");
 		if (target_uid != owner_uid) {
@@ -154,19 +154,19 @@ namespace howdy::test::auth_helper {
 		return ok;
 	}
 
-	inline auto expect_fake_acl_descriptor_isolation(FakeAclContext &state) -> bool {
+	inline auto ExpectFakeAclDescriptorIsolation(FakeAclContext &state) -> bool {
 		if (state.fake_acls.empty()) {
 			return expect(false, "fake ACL descriptor isolation has stored ACL");
 		}
 		const int original_fd = state.fake_acls.begin()->first;
 		errno                 = 0;
-		acl_t wrong_acl       = fake_acl_get_fd(&state, -1);
+		acl_t wrong_acl       = FakeAclGetFd(&state, -1);
 		bool  ok              = expect(wrong_acl == nullptr && errno == ENODATA,
 		                               "fake ACL verification rejects different descriptor");
 		if (wrong_acl != nullptr) {
 			acl_free(wrong_acl);
 		}
-		acl_t original_acl = fake_acl_get_fd(&state, original_fd);
+		acl_t original_acl = FakeAclGetFd(&state, original_fd);
 		ok &= expect(original_acl != nullptr && acl_valid(original_acl) == 0,
 		             "fake ACL verification accepts original descriptor");
 		if (original_acl != nullptr) {
@@ -175,8 +175,8 @@ namespace howdy::test::auth_helper {
 		return ok;
 	}
 
-	inline auto reset_fake_acl_backend(FakeAclContext &state) -> bool {
-		state.clear();
+	inline auto ResetFakeAclBackend(FakeAclContext &state) -> bool {
+		state.Clear();
 		return expect(state.fake_acls.empty() && state.set_descriptors.empty() &&
 		                  state.get_descriptors.empty(),
 		              "fake ACL reset frees all descriptor ACLs and clears state");

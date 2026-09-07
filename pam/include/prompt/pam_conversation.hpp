@@ -15,10 +15,10 @@ namespace howdy::pam {
 	public:
 		PamConversation() = default;
 
-		[[nodiscard]] static auto acquire(pam_handle_t *pamh, PamConversation *output) noexcept
+		[[nodiscard]] static auto Acquire(pam_handle_t *pamh, PamConversation *output) noexcept
 		    -> int;
 
-		[[nodiscard]] auto send(const ConversationMessage &message) const noexcept -> int;
+		[[nodiscard]] auto Send(const ConversationMessage &message) const noexcept -> int;
 
 	private:
 		explicit PamConversation(struct pam_conv callback);

@@ -23,8 +23,8 @@ namespace howdy::test::config_cli {
 		std::streambuf *original_;
 	};
 
-	auto run_config_cli_callback_exception_test() -> bool;
-	auto run_config_cli_integration_tests() -> bool;
-	auto run_config_cli_workflow_tests() -> bool;
+	auto RunConfigCliCallbackExceptionTest() -> bool;
+	auto RunConfigCliIntegrationTests() -> bool;
+	auto RunConfigCliWorkflowTests() -> bool;
 
 }  // namespace howdy::test::config_cli

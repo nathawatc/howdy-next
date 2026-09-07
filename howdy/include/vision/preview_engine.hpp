@@ -26,7 +26,7 @@ namespace howdy::native {
 	                                            const std::vector<float>              &probe);
 	using PreviewNowFn          = std::chrono::steady_clock::time_point (*)(void *context);
 
-	inline auto preview_steady_clock_now(void *context) -> std::chrono::steady_clock::time_point {
+	inline auto PreviewSteadyClockNow(void *context) -> std::chrono::steady_clock::time_point {
 		(void)context;
 		return std::chrono::steady_clock::now();
 	}
@@ -37,7 +37,7 @@ namespace howdy::native {
 		DetectPreviewFacesFn  detect_faces  = nullptr;
 		EncodePreviewFaceFn   encode_face   = nullptr;
 		MatchPreviewFaceFn    match_face    = nullptr;
-		PreviewNowFn          now           = preview_steady_clock_now;
+		PreviewNowFn          now           = PreviewSteadyClockNow;
 	};
 
 	enum class PreviewFrameStatus : std::uint8_t {
@@ -83,7 +83,7 @@ namespace howdy::native {
 		              std::vector<std::vector<float>> known_encodings,
 		              std::size_t known_model_count, bool matching_enabled);
 
-		auto process_gray_frame(cv::Mat gray_frame) -> PreviewFrameResult;
+		auto ProcessGrayFrame(cv::Mat gray_frame) -> PreviewFrameResult;
 
 	private:
 		struct EncodedFace {
@@ -91,12 +91,12 @@ namespace howdy::native {
 			std::vector<float> encoding;
 		};
 
-		[[nodiscard]] auto dependencies_valid() const -> bool;
-		auto encode_faces(const cv::Mat &prepared, const std::vector<FaceDetection> &detections,
-		                  std::vector<PreviewFaceResult> &faces, std::string &first_error) const
+		[[nodiscard]] auto DependenciesValid() const -> bool;
+		auto EncodeFaces(const cv::Mat &prepared, const std::vector<FaceDetection> &detections,
+		                 std::vector<PreviewFaceResult> &faces, std::string &first_error) const
 		    -> std::vector<EncodedFace>;
-		auto match_faces(const std::vector<EncodedFace> &encodings,
-		                 std::vector<PreviewFaceResult> &faces) -> std::optional<bool>;
+		auto MatchFaces(const std::vector<EncodedFace> &encodings,
+		                std::vector<PreviewFaceResult> &faces) -> std::optional<bool>;
 
 		VideoConfig                     config_;
 		cv::Ptr<cv::CLAHE>              clahe_;

@@ -1,18 +1,18 @@
 #include "compare/compare_privileges_test_support.hpp"
 
-auto run_compare_privileges_non_root_tests() -> bool;
+auto RunComparePrivilegesNonRootTests() -> bool;
 
 namespace howdy::test::compare_privileges {
 	namespace {
 
-		auto test_non_root() -> bool {
+		auto TestNonRoot() -> bool {
 			bool ok = true;
 
 			FakePrivilegeContext context;
-			set_non_root_identity(context);
-			const auto result = drop(context);
-			ok &= expect(result.ok(), "matching non-root credentials succeed");
-			ok &= expect_events(context, expected_non_root_events(), "non-root sequence is exact");
+			SetNonRootIdentity(context);
+			const auto result = Drop(context);
+			ok &= expect(result.Ok(), "matching non-root credentials succeed");
+			ok &= ExpectEvents(context, ExpectedNonRootEvents(), "non-root sequence is exact");
 			ok &= expect(context.lookup_calls == 0, "non-root process does not resolve nobody");
 			ok &= expect(context.capset_header_valid && context.capset_data_zero,
 			             "non-root capset clears all capability sets");
@@ -31,9 +31,9 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext invalid_context;
 				invalid_context.uids      = uids;
 				invalid_context.gids      = gids;
-				const auto invalid_result = drop(invalid_context);
-				ok &= verify_fatal_result(invalid_context, invalid_result,
-				                          {"getresuid", "getresgid", "fatal"}, label);
+				const auto invalid_result = Drop(invalid_context);
+				ok &= VerifyFatalResult(invalid_context, invalid_result,
+				                        {"getresuid", "getresgid", "fatal"}, label);
 			}
 
 			for (const auto &[groups, label] :
@@ -43,12 +43,12 @@ namespace howdy::test::compare_privileges {
 			         {{10, 44, 998}, "multiple supplementary groups"},
 			         {{1000}, "effective GID duplicated in supplementary groups"}}) {
 				FakePrivilegeContext group_context;
-				set_non_root_identity(group_context);
+				SetNonRootIdentity(group_context);
 				group_context.supplementary_groups = groups;
-				const auto group_result            = drop(group_context);
-				ok &= expect(group_result.ok(), label + " are preserved");
-				ok &= expect_events(group_context, expected_non_root_events(),
-				                    label + " preserve non-root verification order");
+				const auto group_result            = Drop(group_context);
+				ok &= expect(group_result.Ok(), label + " are preserved");
+				ok &= ExpectEvents(group_context, ExpectedNonRootEvents(),
+				                   label + " preserve non-root verification order");
 				ok &= expect(group_context.group_count == 1 &&
 				                 group_context.group_pointer == &group_pointer_sentinel,
 				             label + " do not invoke setgroups");
@@ -70,33 +70,32 @@ namespace howdy::test::compare_privileges {
 			          {"getresuid", "getresgid", "query fsuid", "query fsgid"},
 			          "mismatched nonzero fsgid"}}) {
 				FakePrivilegeContext filesystem_context;
-				set_non_root_identity(filesystem_context);
+				SetNonRootIdentity(filesystem_context);
 				filesystem_context.fsuid     = fsuid;
 				filesystem_context.fsgid     = fsgid;
-				const auto filesystem_result = drop(filesystem_context);
+				const auto filesystem_result = Drop(filesystem_context);
 				auto       expected          = events;
 				expected.emplace_back("fatal");
-				ok &= verify_fatal_result(filesystem_context, filesystem_result, expected, label);
+				ok &= VerifyFatalResult(filesystem_context, filesystem_result, expected, label);
 			}
 
 			for (const auto &[capability, label] : kInitiallyFatalCapabilityCases) {
 				FakePrivilegeContext capability_context;
-				set_non_root_identity(capability_context);
-				set_capability(capability_context.capabilities, capability);
-				const auto capability_result = drop(capability_context);
-				ok &= verify_fatal_result(capability_context, capability_result,
-				                          {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				                           "read capability sets", "fatal"},
-				                          std::string("initial non-root ") + label + " capability");
+				SetNonRootIdentity(capability_context);
+				SetCapability(capability_context.capabilities, capability);
+				const auto capability_result = Drop(capability_context);
+				ok &= VerifyFatalResult(capability_context, capability_result,
+				                        {"getresuid", "getresgid", "query fsuid", "query fsgid",
+				                         "read capability sets", "fatal"},
+				                        std::string("initial non-root ") + label + " capability");
 			}
 
 			for (const auto &[capability, label] : kCapabilityCases) {
 				FakePrivilegeContext residual_context;
-				set_non_root_identity(residual_context);
-				set_capability(residual_context.capabilities_after_capset, capability);
-				const auto residual_result = drop(residual_context);
-				ok &=
-				    verify_fatal_result(residual_context, residual_result,
+				SetNonRootIdentity(residual_context);
+				SetCapability(residual_context.capabilities_after_capset, capability);
+				const auto residual_result = Drop(residual_context);
+				ok &= VerifyFatalResult(residual_context, residual_result,
 				                        {"getresuid", "getresgid", "query fsuid", "query fsgid",
 				                         "read capability sets", "clear ambient capabilities",
 				                         "clear capability sets", "read capability sets", "fatal"},
@@ -115,10 +114,10 @@ namespace howdy::test::compare_privileges {
 			           "clear capability sets", "read capability sets", "fatal"},
 			          "final capability inspection failure"}}) {
 				FakePrivilegeContext capability_context;
-				set_non_root_identity(capability_context);
+				SetNonRootIdentity(capability_context);
 				capability_context.failure   = failure;
-				const auto capability_result = drop(capability_context);
-				ok &= verify_fatal_result(capability_context, capability_result, events, label);
+				const auto capability_result = Drop(capability_context);
+				ok &= VerifyFatalResult(capability_context, capability_result, events, label);
 			}
 
 			for (const auto &[failure, suffix, label] :
@@ -132,9 +131,9 @@ namespace howdy::test::compare_privileges {
 			           "fatal"},
 			          "successful non-root root regain"}}) {
 				FakePrivilegeContext failure_context;
-				set_non_root_identity(failure_context);
+				SetNonRootIdentity(failure_context);
 				failure_context.failure   = failure;
-				const auto failure_result = drop(failure_context);
+				const auto failure_result = Drop(failure_context);
 				auto       expected       = std::vector<std::string>{"getresuid",
 				                                                     "getresgid",
 				                                                     "query fsuid",
@@ -142,19 +141,19 @@ namespace howdy::test::compare_privileges {
 				                                                     "read capability sets",
 				                                                     "clear ambient capabilities"};
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
-				ok &= verify_fatal_result(failure_context, failure_result, expected, label);
+				ok &= VerifyFatalResult(failure_context, failure_result, expected, label);
 			}
 			return ok;
 		}
 
-		auto test_waylock_inheritable_capability() -> bool {
+		auto TestWaylockInheritableCapability() -> bool {
 			FakePrivilegeContext context;
-			set_non_root_identity(context);
-			set_wake_alarm_inheritable(context.capabilities);
-			const auto result = drop(context);
+			SetNonRootIdentity(context);
+			SetWakeAlarmInheritable(context.capabilities);
+			const auto result = Drop(context);
 
 			bool ok = true;
-			ok &= expect(result.ok(), "Waylock inheritable-only capability sanitizes successfully");
+			ok &= expect(result.Ok(), "Waylock inheritable-only capability sanitizes successfully");
 			ok &= expect(context.fatal_calls == 0,
 			             "Waylock inheritable-only capability does not invoke fatal callback");
 			ok &= expect(std::count(context.events.begin(), context.events.end(),
@@ -168,13 +167,13 @@ namespace howdy::test::compare_privileges {
 			             "Waylock inheritable-only capability performs final capget verification");
 			ok &= expect(context.regain_uid == 0,
 			             "Waylock inheritable-only capability performs root-regain probe");
-			ok &= expect_events(
-			    context, expected_non_root_events(),
+			ok &= ExpectEvents(
+			    context, ExpectedNonRootEvents(),
 			    "Waylock inheritable-only capability continues through processing gate");
 			return ok;
 		}
 
-		auto test_waylock_inheritable_sanitization_failures() -> bool {
+		auto TestWaylockInheritableSanitizationFailures() -> bool {
 			struct FailureCase {
 				FailureOperation         failure;
 				bool                     retain_inheritable;
@@ -205,21 +204,20 @@ namespace howdy::test::compare_privileges {
 			bool ok = true;
 			for (const auto &test_case : cases) {
 				FakePrivilegeContext context;
-				set_non_root_identity(context);
-				set_wake_alarm_inheritable(context.capabilities);
+				SetNonRootIdentity(context);
+				SetWakeAlarmInheritable(context.capabilities);
 				context.failure = test_case.failure;
 				if (test_case.retain_inheritable) {
-					set_wake_alarm_inheritable(context.capabilities_after_capset);
+					SetWakeAlarmInheritable(context.capabilities_after_capset);
 				}
-				const auto result = drop(context);
-				ok &=
-				    verify_fatal_result(context, result, test_case.events,
+				const auto result = Drop(context);
+				ok &= VerifyFatalResult(context, result, test_case.events,
 				                        std::string("Waylock inheritable-only ") + test_case.label);
 			}
 			return ok;
 		}
 
-		auto test_initial_credential_inspection_failures() -> bool {
+		auto TestInitialCredentialInspectionFailures() -> bool {
 			bool ok = true;
 			for (const auto &[failure, events, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
@@ -228,12 +226,12 @@ namespace howdy::test::compare_privileges {
 			          {"getresuid", "getresgid"},
 			          "initial GID inspection"}}) {
 				FakePrivilegeContext context;
-				set_non_root_identity(context);
+				SetNonRootIdentity(context);
 				context.failure     = failure;
-				const auto result   = drop(context);
+				const auto result   = Drop(context);
 				auto       expected = events;
 				expected.emplace_back("fatal");
-				ok &= verify_fatal_result(context, result, expected, label);
+				ok &= VerifyFatalResult(context, result, expected, label);
 				ok &= expect(context.lookup_calls == 0, label + " does not resolve nobody");
 			}
 			return ok;
@@ -241,17 +239,17 @@ namespace howdy::test::compare_privileges {
 
 	}  // namespace
 
-	inline auto run_compare_privileges_non_root_tests_impl() -> bool {
+	inline auto RunComparePrivilegesNonRootTestsImpl() -> bool {
 		bool ok = true;
-		ok &= test_non_root();
-		ok &= test_waylock_inheritable_capability();
-		ok &= test_waylock_inheritable_sanitization_failures();
-		ok &= test_initial_credential_inspection_failures();
+		ok &= TestNonRoot();
+		ok &= TestWaylockInheritableCapability();
+		ok &= TestWaylockInheritableSanitizationFailures();
+		ok &= TestInitialCredentialInspectionFailures();
 		return ok;
 	}
 
 }  // namespace howdy::test::compare_privileges
 
-auto run_compare_privileges_non_root_tests() -> bool {
-	return howdy::test::compare_privileges::run_compare_privileges_non_root_tests_impl();
+auto RunComparePrivilegesNonRootTests() -> bool {
+	return howdy::test::compare_privileges::RunComparePrivilegesNonRootTestsImpl();
 }

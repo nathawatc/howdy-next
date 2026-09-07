@@ -30,54 +30,54 @@ namespace howdy::test::download_models {
 			std::vector<CurlSetoptCall> calls;
 		};
 
-		auto setopt_result(CurlSetoptRecorder &recorder, const CURLoption option) -> CURLcode {
+		auto SetoptResult(CurlSetoptRecorder &recorder, const CURLoption option) -> CURLcode {
 			return recorder.failing_option.has_value() && *recorder.failing_option == option
 			           ? CURLE_UNKNOWN_OPTION
 			           : CURLE_OK;
 		}
 
-		auto fake_setopt_long(void *context, CURL * /*curl*/, CURLoption option, long value)
+		auto FakeSetoptLong(void *context, CURL * /*curl*/, CURLoption option, long value)
 		    -> CURLcode {
 			auto *recorder = static_cast<CurlSetoptRecorder *>(context);
 			if (recorder == nullptr) {
 				return CURLE_FAILED_INIT;
 			}
-			const CURLcode result = setopt_result(*recorder, option);
+			const CURLcode result = SetoptResult(*recorder, option);
 			recorder->calls.push_back({.option = option, .result = result, .long_value = value});
 			return result;
 		}
 
-		auto fake_setopt_off_t(void *context, CURL * /*curl*/, CURLoption option, curl_off_t value)
+		auto FakeSetoptOffT(void *context, CURL * /*curl*/, CURLoption option, curl_off_t value)
 		    -> CURLcode {
 			auto *recorder = static_cast<CurlSetoptRecorder *>(context);
 			if (recorder == nullptr) {
 				return CURLE_FAILED_INIT;
 			}
-			const CURLcode result = setopt_result(*recorder, option);
+			const CURLcode result = SetoptResult(*recorder, option);
 			recorder->calls.push_back({.option = option, .result = result, .off_t_value = value});
 			return result;
 		}
 
-		auto fake_setopt_string(void *context, CURL * /*curl*/, CURLoption option,
-		                        const char *value) -> CURLcode {
+		auto FakeSetoptString(void *context, CURL * /*curl*/, CURLoption option, const char *value)
+		    -> CURLcode {
 			auto *recorder = static_cast<CurlSetoptRecorder *>(context);
 			if (recorder == nullptr) {
 				return CURLE_FAILED_INIT;
 			}
-			const CURLcode result = setopt_result(*recorder, option);
+			const CURLcode result = SetoptResult(*recorder, option);
 			recorder->calls.push_back({.option = option, .result = result, .string_value = value});
 			return result;
 		}
 
-		auto recorder_setopt_operations(CurlSetoptRecorder &recorder)
+		auto RecorderSetoptOperations(CurlSetoptRecorder &recorder)
 		    -> howdy::native::download_models_internal::CurlSetoptOperations {
 			return {.context    = &recorder,
-			        .set_long   = fake_setopt_long,
-			        .set_off_t  = fake_setopt_off_t,
-			        .set_string = fake_setopt_string};
+			        .set_long   = FakeSetoptLong,
+			        .set_off_t  = FakeSetoptOffT,
+			        .set_string = FakeSetoptString};
 		}
 
-		auto configured_long(const CurlSetoptRecorder &recorder, CURLoption option, long value)
+		auto ConfiguredLong(const CurlSetoptRecorder &recorder, CURLoption option, long value)
 		    -> bool {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
@@ -86,8 +86,8 @@ namespace howdy::test::download_models {
 			    });
 		}
 
-		auto configured_off_t(const CurlSetoptRecorder &recorder, CURLoption option,
-		                      curl_off_t value) -> bool {
+		auto ConfiguredOffT(const CurlSetoptRecorder &recorder, CURLoption option, curl_off_t value)
+		    -> bool {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
 				    return call.option == option && call.result == CURLE_OK &&
@@ -95,8 +95,8 @@ namespace howdy::test::download_models {
 			    });
 		}
 
-		auto configured_string(const CurlSetoptRecorder &recorder, CURLoption option,
-		                       std::string_view value) -> bool {
+		auto ConfiguredString(const CurlSetoptRecorder &recorder, CURLoption option,
+		                      std::string_view value) -> bool {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
 				    return call.option == option && call.result == CURLE_OK &&
@@ -104,7 +104,7 @@ namespace howdy::test::download_models {
 			    });
 		}
 
-		auto configured_option(const CurlSetoptRecorder &recorder, CURLoption option) -> bool {
+		auto ConfiguredOption(const CurlSetoptRecorder &recorder, CURLoption option) -> bool {
 			return std::ranges::any_of(recorder.calls,
 			                           [option](const CurlSetoptCall &call) -> bool {
 				                           return call.option == option;
@@ -113,7 +113,7 @@ namespace howdy::test::download_models {
 
 	}  // namespace
 
-	auto run_download_models_entrypoint_tests() -> bool {
+	auto RunDownloadModelsEntrypointTests() -> bool {
 		namespace fs = std::filesystem;
 
 		bool            ok        = true;
@@ -124,77 +124,77 @@ namespace howdy::test::download_models {
 		ok &= expect(!ec, "create temp root");
 
 		CurlSetoptRecorder successful_policy_recorder;
-		ok &= expect(howdy::native::download_models_internal::configure_transfer_policy(
-		                 nullptr, recorder_setopt_operations(successful_policy_recorder)),
+		ok &= expect(howdy::native::download_models_internal::ConfigureTransferPolicy(
+		                 nullptr, RecorderSetoptOperations(successful_policy_recorder)),
 		             "transfer policy configures successfully");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_FOLLOWLOCATION, 1L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_FOLLOWLOCATION, 1L),
 		             "transfer policy follows redirects");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_SSL_VERIFYPEER, 1L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_SSL_VERIFYPEER, 1L),
 		             "transfer policy verifies TLS peer");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_SSL_VERIFYHOST, 2L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_SSL_VERIFYHOST, 2L),
 		             "transfer policy verifies TLS host");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_NOSIGNAL, 1L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_NOSIGNAL, 1L),
 		             "transfer policy disables signals");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_CONNECTTIMEOUT, 15L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_CONNECTTIMEOUT, 15L),
 		             "transfer policy configures connect timeout");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_TIMEOUT, 300L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_TIMEOUT, 300L),
 		             "transfer policy configures total timeout");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_LOW_SPEED_LIMIT, 1024L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_LOW_SPEED_LIMIT, 1024L),
 		             "transfer policy configures low-speed limit");
-		ok &= expect(configured_long(successful_policy_recorder, CURLOPT_LOW_SPEED_TIME, 30L),
+		ok &= expect(ConfiguredLong(successful_policy_recorder, CURLOPT_LOW_SPEED_TIME, 30L),
 		             "transfer policy configures low-speed timeout");
-		ok &= expect(
-		    configured_off_t(successful_policy_recorder, CURLOPT_MAXFILESIZE_LARGE,
-		                     static_cast<curl_off_t>(
-		                         howdy::native::download_models_internal::kMaxDownloadBytes)),
-		    "transfer policy configures maximum download size");
-		ok &= expect(configured_string(successful_policy_recorder, CURLOPT_PROTOCOLS_STR, "https"),
+		ok &=
+		    expect(ConfiguredOffT(successful_policy_recorder, CURLOPT_MAXFILESIZE_LARGE,
+		                          static_cast<curl_off_t>(
+		                              howdy::native::download_models_internal::kMaxDownloadBytes)),
+		           "transfer policy configures maximum download size");
+		ok &= expect(ConfiguredString(successful_policy_recorder, CURLOPT_PROTOCOLS_STR, "https"),
 		             "transfer policy restricts initial URLs to HTTPS");
 		ok &= expect(
-		    configured_string(successful_policy_recorder, CURLOPT_REDIR_PROTOCOLS_STR, "https"),
+		    ConfiguredString(successful_policy_recorder, CURLOPT_REDIR_PROTOCOLS_STR, "https"),
 		    "transfer policy restricts redirects to HTTPS");
 
 		CurlSetoptRecorder initial_protocol_failure_recorder{
 		    .failing_option = CURLOPT_PROTOCOLS_STR,
 		};
-		ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
-		                 nullptr, recorder_setopt_operations(initial_protocol_failure_recorder)),
+		ok &= expect(!howdy::native::download_models_internal::ConfigureTransferPolicy(
+		                 nullptr, RecorderSetoptOperations(initial_protocol_failure_recorder)),
 		             "initial HTTPS restriction failure aborts transfer policy");
-		ok &= expect(configured_option(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR),
+		ok &= expect(ConfiguredOption(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR),
 		             "initial HTTPS restriction is attempted");
 		ok &= expect(
-		    !configured_string(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR, "https"),
+		    !ConfiguredString(initial_protocol_failure_recorder, CURLOPT_PROTOCOLS_STR, "https"),
 		    "failed initial HTTPS restriction is not reported as configured");
 		ok &= expect(
-		    !configured_option(initial_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
+		    !ConfiguredOption(initial_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
 		    "initial HTTPS restriction failure skips redirect restriction");
 
 		CurlSetoptRecorder redirect_protocol_failure_recorder{
 		    .failing_option = CURLOPT_REDIR_PROTOCOLS_STR,
 		};
-		ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
-		                 nullptr, recorder_setopt_operations(redirect_protocol_failure_recorder)),
+		ok &= expect(!howdy::native::download_models_internal::ConfigureTransferPolicy(
+		                 nullptr, RecorderSetoptOperations(redirect_protocol_failure_recorder)),
 		             "redirect HTTPS restriction failure aborts transfer policy");
 		ok &= expect(
-		    configured_option(redirect_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
+		    ConfiguredOption(redirect_protocol_failure_recorder, CURLOPT_REDIR_PROTOCOLS_STR),
 		    "redirect HTTPS restriction is attempted");
-		ok &= expect(!configured_string(redirect_protocol_failure_recorder,
-		                                CURLOPT_REDIR_PROTOCOLS_STR, "https"),
+		ok &= expect(!ConfiguredString(redirect_protocol_failure_recorder,
+		                               CURLOPT_REDIR_PROTOCOLS_STR, "https"),
 		             "failed redirect HTTPS restriction is not reported as configured");
 
 		CurlSetoptRecorder existing_policy_failure_recorder{
 		    .failing_option = CURLOPT_CONNECTTIMEOUT,
 		};
-		ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
-		                 nullptr, recorder_setopt_operations(existing_policy_failure_recorder)),
+		ok &= expect(!howdy::native::download_models_internal::ConfigureTransferPolicy(
+		                 nullptr, RecorderSetoptOperations(existing_policy_failure_recorder)),
 		             "existing transfer policy failure aborts configuration");
-		ok &= expect(!configured_option(existing_policy_failure_recorder, CURLOPT_TIMEOUT),
+		ok &= expect(!ConfiguredOption(existing_policy_failure_recorder, CURLOPT_TIMEOUT),
 		             "existing transfer policy failure short-circuits later options");
 
 		CurlSetoptRecorder missing_callback_recorder;
-		auto missing_callback_operations = recorder_setopt_operations(missing_callback_recorder);
+		auto missing_callback_operations = RecorderSetoptOperations(missing_callback_recorder);
 		missing_callback_operations.set_string = nullptr;
-		ok &= expect(!howdy::native::download_models_internal::configure_transfer_policy(
+		ok &= expect(!howdy::native::download_models_internal::ConfigureTransferPolicy(
 		                 nullptr, missing_callback_operations),
 		             "missing transfer policy callback fails closed");
 		ok &= expect(missing_callback_recorder.calls.empty(),
@@ -207,20 +207,20 @@ namespace howdy::test::download_models {
 		int null_download_exit = 0;
 		{
 			EnvVarGuard models_env("HOWDY_MODELS_DIR", null_download_models_dir.string());
-			reset_dependency_attempts();
-			ok &= expect(capture_download_models_stdout(
+			ResetDependencyAttempts();
+			ok &= expect(CaptureDownloadModelsStdout(
 			                 null_download_output, &null_download_exit,
 			                 howdy::native::download_models_internal::DownloadModelsDependencies{
 			                     .download_file        = nullptr,
-			                     .model_file_owner_uid = test_model_file_owner_uid,
+			                     .model_file_owner_uid = TestModelFileOwnerUid,
 			                 }),
 			             "capture null download callback output");
 		}
 		ok &= expect(null_download_exit == EXIT_FAILURE, "null download callback aborts");
 		ok &= expect(read_file(null_download_output).empty(),
 		             "null download callback emits no output");
-		ok &= expect(attempted_downloads() == 0, "null download callback invokes no download");
-		ok &= expect(attempted_owner_uid_lookups() == 0,
+		ok &= expect(AttemptedDownloads() == 0, "null download callback invokes no download");
+		ok &= expect(AttemptedOwnerUidLookups() == 0,
 		             "null download callback invokes no owner lookup");
 		ok &= expect(!fs::exists(null_download_models_dir, ec) && !ec,
 		             "null download callback creates no models directory");
@@ -232,20 +232,20 @@ namespace howdy::test::download_models {
 		int null_owner_exit = 0;
 		{
 			EnvVarGuard models_env("HOWDY_MODELS_DIR", null_owner_models_dir.string());
-			reset_dependency_attempts();
-			ok &= expect(capture_download_models_stdout(
+			ResetDependencyAttempts();
+			ok &= expect(CaptureDownloadModelsStdout(
 			                 null_owner_output, &null_owner_exit,
 			                 howdy::native::download_models_internal::DownloadModelsDependencies{
-			                     .download_file        = fake_download_file,
+			                     .download_file        = FakeDownloadFile,
 			                     .model_file_owner_uid = nullptr,
 			                 }),
 			             "capture null owner callback output");
 		}
 		ok &= expect(null_owner_exit == EXIT_FAILURE, "null owner callback aborts");
 		ok &= expect(read_file(null_owner_output).empty(), "null owner callback emits no output");
-		ok &= expect(attempted_downloads() == 0, "null owner callback invokes no download");
-		ok &= expect(attempted_owner_uid_lookups() == 0,
-		             "null owner callback invokes no owner lookup");
+		ok &= expect(AttemptedDownloads() == 0, "null owner callback invokes no download");
+		ok &=
+		    expect(AttemptedOwnerUidLookups() == 0, "null owner callback invokes no owner lookup");
 		ok &= expect(!fs::exists(null_owner_models_dir, ec) && !ec,
 		             "null owner callback creates no models directory");
 
@@ -258,13 +258,13 @@ namespace howdy::test::download_models {
 
 		int existing_exit = 0;
 		ok &= expect(
-		    run_first_download_attempt(
-		        {.models_dir = existing_models_dir, .output = existing_output}, &existing_exit),
+		    RunFirstDownloadAttempt({.models_dir = existing_models_dir, .output = existing_output},
+		                            &existing_exit),
 		    "capture existing-directory download-models output");
 		const auto existing_stdout = read_file(existing_output);
 		ok &=
 		    expect(existing_exit == EXIT_FAILURE, "stubbed download aborts after readiness passes");
-		ok &= expect(attempted_downloads() == 1,
+		ok &= expect(AttemptedDownloads() == 1,
 		             "missing model in existing secure directory reaches download");
 		ok &= expect(existing_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
 		             "existing secure directory starts first model download");
@@ -277,7 +277,7 @@ namespace howdy::test::download_models {
 		             "missing parent models directory starts absent");
 
 		int missing_parent_exit = 0;
-		ok &= expect(run_first_download_attempt(
+		ok &= expect(RunFirstDownloadAttempt(
 		                 {.models_dir = missing_parent_models_dir, .output = missing_parent_output},
 		                 &missing_parent_exit),
 		             "capture missing-parent download-models output");
@@ -286,7 +286,7 @@ namespace howdy::test::download_models {
 		             "stubbed download aborts after missing parent creation");
 		ok &= expect(fs::is_directory(missing_parent_models_dir, ec) && !ec,
 		             "download-models creates missing models directory before readiness checks");
-		ok &= expect(attempted_downloads() == 1,
+		ok &= expect(AttemptedDownloads() == 1,
 		             "missing model after parent creation reaches download");
 		ok &=
 		    expect(missing_parent_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
@@ -303,11 +303,11 @@ namespace howdy::test::download_models {
 		if (symlink(symlink_target.c_str(), symlink_parent.c_str()) == 0) {
 			int symlink_exit = 0;
 			ok &= expect(
-			    run_first_download_attempt(
+			    RunFirstDownloadAttempt(
 			        {.models_dir = symlink_models_dir, .output = symlink_output}, &symlink_exit),
 			    "capture symlink-parent download-models output");
 			const auto symlink_stdout = read_file(symlink_output);
-			ok &= expect(symlink_exit == EXIT_FAILURE && attempted_downloads() == 0,
+			ok &= expect(symlink_exit == EXIT_FAILURE && AttemptedDownloads() == 0,
 			             "symlink parent aborts before download");
 			ok &= expect(!fs::exists(symlink_models_dir, ec) && !ec,
 			             "symlink parent is not used to create models directory");
@@ -327,11 +327,11 @@ namespace howdy::test::download_models {
 		             "create unsafe writable parent directory");
 		int unsafe_parent_exit = 0;
 		ok &= expect(
-		    run_first_download_attempt({.models_dir = unsafe_models_dir, .output = unsafe_output},
-		                               &unsafe_parent_exit),
+		    RunFirstDownloadAttempt({.models_dir = unsafe_models_dir, .output = unsafe_output},
+		                            &unsafe_parent_exit),
 		    "capture unsafe-parent download-models output");
 		const auto unsafe_parent_stdout = read_file(unsafe_output);
-		ok &= expect(unsafe_parent_exit == EXIT_FAILURE && attempted_downloads() == 0,
+		ok &= expect(unsafe_parent_exit == EXIT_FAILURE && AttemptedDownloads() == 0,
 		             "unsafe parent aborts before download");
 		ok &= expect(!fs::exists(unsafe_models_dir, ec) && !ec,
 		             "unsafe parent is not used to create models directory");
@@ -349,12 +349,12 @@ namespace howdy::test::download_models {
 
 		int blocked_exit = 0;
 		ok &=
-		    expect(run_first_download_attempt(
+		    expect(RunFirstDownloadAttempt(
 		               {.models_dir = blocked_models_dir, .output = blocked_output}, &blocked_exit),
 		           "capture blocked models-dir download-models output");
 		const auto blocked_stdout = read_file(blocked_output);
 		ok &= expect(blocked_exit == EXIT_FAILURE, "blocked models directory aborts cleanly");
-		ok &= expect(attempted_downloads() == 0,
+		ok &= expect(AttemptedDownloads() == 0,
 		             "blocked models directory stops before first download");
 		ok &= expect(blocked_stdout.contains("Failed to create models directory:"),
 		             "blocked models directory reports setup failure");

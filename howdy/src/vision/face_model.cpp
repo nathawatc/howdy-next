@@ -28,16 +28,16 @@ namespace howdy::native {
 		// Temporary OpenCV 5 workaround: force New DNN graph engine and forbid
 		// Classic-engine fallback, which cannot load Howdy's supported ONNX models.
 		// Remove after upstream makes New engine selection/failure behavior suitable.
-		auto force_opencv_new_dnn_engine() -> bool {
+		auto ForceOpencvNewDnnEngine() -> bool {
 			return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
 		}
 
-		void align_face(void *context, const FaceAlignmentRequest &request) {
+		void AlignFace(void *context, const FaceAlignmentRequest &request) {
 			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(request.frame, request.face,
 			                                                        request.aligned);
 		}
 
-		void extract_feature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
+		void ExtractFeature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
 			static_cast<cv::FaceRecognizerSF *>(context)->feature(aligned, feature);
 		}
 	}  // namespace
@@ -47,8 +47,8 @@ namespace howdy::native {
 	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_shared<Backend>()) {
 		backend_->check_readiness = [](const std::filesystem::path &path) -> OpenCvModelReadiness {
-			return check_opencv_model_readiness_with_label(path, "OpenCV face model file",
-			                                               static_cast<uid_t>(0));
+			return CheckOpencvModelReadinessWithLabel(path, "OpenCV face model file",
+			                                          static_cast<uid_t>(0));
 		};
 		backend_->create_detector = [](const std::string &path, const cv::Size &size,
 		                               float score_threshold, float nms_threshold,
@@ -59,7 +59,7 @@ namespace howdy::native {
 		backend_->create_recognizer = [](const std::string &path) -> cv::Ptr<cv::FaceRecognizerSF> {
 			return cv::FaceRecognizerSF::create(path, "");
 		};
-		initialize(config);
+		Initialize(config);
 		if (ok_) {
 			const auto detector      = detector_;
 			backend_->set_input_size = [detector](const cv::Size &size) -> void {
@@ -75,11 +75,11 @@ namespace howdy::native {
 	    : metric_(config.sface_metric)
 	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_shared<Backend>(std::move(backend))) {
-		initialize(config);
+		Initialize(config);
 	}
 
-	void FaceModel::initialize(const FaceConfig &config) {
-		const auto models_dir      = resolve_models_dir();
+	void FaceModel::Initialize(const FaceConfig &config) {
+		const auto models_dir      = ResolveModelsDir();
 		const auto yunet_model     = (models_dir / kYunetModel).string();
 		const auto sface_model     = (models_dir / kSfaceModel).string();
 		const auto score_threshold = config.yunet_score_threshold;
@@ -87,7 +87,7 @@ namespace howdy::native {
 		const auto top_k           = config.yunet_top_k;
 
 		if (backend_ == nullptr || !backend_->check_readiness) {
-			set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
+			SetError(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
 			return;
 		}
 
@@ -96,86 +96,86 @@ namespace howdy::native {
 			try {
 				readiness = backend_->check_readiness(model_path);
 			} catch (const std::exception &) {
-				set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
+				SetError(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
 				return;
 			}
 			if (readiness.status != OpenCvModelStatus::kOk) {
-				set_error(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
+				SetError(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
 				return;
 			}
 		}
 
-		if (!force_opencv_new_dnn_engine()) {
-			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          "OpenCV New DNN graph engine could not be configured");
+		if (!ForceOpencvNewDnnEngine()) {
+			SetError(FaceModelErrorCategory::kDetectorInitialization,
+			         "OpenCV New DNN graph engine could not be configured");
 			return;
 		}
 
 		if (!backend_->create_detector) {
-			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          kFaceDetectorInitializationMessage);
+			SetError(FaceModelErrorCategory::kDetectorInitialization,
+			         kFaceDetectorInitializationMessage);
 			return;
 		}
 		try {
 			detector_ = backend_->create_detector(yunet_model, input_size_, score_threshold,
 			                                      nms_threshold, top_k);
 		} catch (const cv::Exception &) {
-			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          kFaceDetectorInitializationMessage);
+			SetError(FaceModelErrorCategory::kDetectorInitialization,
+			         kFaceDetectorInitializationMessage);
 			return;
 		} catch (const std::exception &) {
-			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          kFaceDetectorInitializationMessage);
+			SetError(FaceModelErrorCategory::kDetectorInitialization,
+			         kFaceDetectorInitializationMessage);
 			return;
 		}
 		if (detector_.empty()) {
-			set_error(FaceModelErrorCategory::kDetectorInitialization,
-			          kFaceDetectorInitializationMessage);
+			SetError(FaceModelErrorCategory::kDetectorInitialization,
+			         kFaceDetectorInitializationMessage);
 			return;
 		}
 
 		if (!backend_->create_recognizer) {
-			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          kFaceRecognizerInitializationMessage);
+			SetError(FaceModelErrorCategory::kRecognizerInitialization,
+			         kFaceRecognizerInitializationMessage);
 			return;
 		}
 		try {
 			recognizer_ = backend_->create_recognizer(sface_model);
 		} catch (const cv::Exception &) {
-			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          kFaceRecognizerInitializationMessage);
+			SetError(FaceModelErrorCategory::kRecognizerInitialization,
+			         kFaceRecognizerInitializationMessage);
 			return;
 		} catch (const std::exception &) {
-			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          kFaceRecognizerInitializationMessage);
+			SetError(FaceModelErrorCategory::kRecognizerInitialization,
+			         kFaceRecognizerInitializationMessage);
 			return;
 		}
 		if (recognizer_.empty()) {
-			set_error(FaceModelErrorCategory::kRecognizerInitialization,
-			          kFaceRecognizerInitializationMessage);
+			SetError(FaceModelErrorCategory::kRecognizerInitialization,
+			         kFaceRecognizerInitializationMessage);
 			return;
 		}
 
 		ok_ = true;
 	}
 
-	auto FaceModel::ok() const -> bool {
+	auto FaceModel::Ok() const -> bool {
 		return ok_;
 	}
 
-	auto FaceModel::error_category() const -> FaceModelErrorCategory {
+	auto FaceModel::ErrorCategory() const -> FaceModelErrorCategory {
 		return error_category_;
 	}
 
-	auto FaceModel::error_message() const -> const std::string & {
+	auto FaceModel::ErrorMessage() const -> const std::string & {
 		return error_message_;
 	}
 
-	auto FaceModel::metric() const -> FaceMetric {
+	auto FaceModel::Metric() const -> FaceMetric {
 		return metric_;
 	}
 
-	auto FaceModel::prepare_frame(const cv::Mat &frame) -> cv::Mat {
+	auto FaceModel::PrepareFrame(const cv::Mat &frame) -> cv::Mat {
 		if (frame.channels() == 1) {
 			cv::Mat converted;
 			cv::cvtColor(frame, converted, cv::COLOR_GRAY2BGR);
@@ -189,14 +189,14 @@ namespace howdy::native {
 		return frame;
 	}
 
-	auto FaceModel::detect(const cv::Mat &frame) -> FaceDetectionResult {
+	auto FaceModel::Detect(const cv::Mat &frame) -> FaceDetectionResult {
 		if (!ok_) {
 			return {
 			    .status        = FaceDetectionStatus::kInferenceError,
 			    .error_message = kFaceModelNotReadyMessage,
 			};
 		}
-		if (validate_frame(frame, FrameChannelPolicy::kCameraInput) !=
+		if (ValidateFrame(frame, FrameChannelPolicy::kCameraInput) !=
 		    FrameValidationStatus::kValid) {
 			return {
 			    .status        = FaceDetectionStatus::kInferenceError,
@@ -211,7 +211,7 @@ namespace howdy::native {
 		}
 
 		try {
-			cv::Mat prepared = prepare_frame(frame);
+			cv::Mat prepared = PrepareFrame(frame);
 			if (cv::Size(prepared.cols, prepared.rows) != input_size_ &&
 			    !backend_->set_input_size) {
 				return {
@@ -219,11 +219,11 @@ namespace howdy::native {
 				    .error_message = "Internal error: missing face input-size backend callback",
 				};
 			}
-			set_input_size_from_frame(prepared);
+			SetInputSizeFromFrame(prepared);
 
 			cv::Mat faces;
 			backend_->detect(prepared, faces);
-			return parse_yunet_detections(faces);
+			return ParseYunetDetections(faces);
 		} catch (const cv::Exception &) {
 			return FaceDetectionResult{
 			    .status        = FaceDetectionStatus::kInferenceError,
@@ -237,14 +237,14 @@ namespace howdy::native {
 		}
 	}
 
-	auto FaceModel::encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult {
+	auto FaceModel::Encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult {
 		if (!ok_) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
 			    .error_message = kFaceModelNotReadyMessage,
 			};
 		}
-		if (validate_frame(frame, FrameChannelPolicy::kCameraInput) !=
+		if (ValidateFrame(frame, FrameChannelPolicy::kCameraInput) !=
 		    FrameValidationStatus::kValid) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
@@ -260,7 +260,7 @@ namespace howdy::native {
 
 		cv::Mat prepared;
 		try {
-			prepared = prepare_frame(frame);
+			prepared = PrepareFrame(frame);
 		} catch (const cv::Exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
@@ -269,12 +269,12 @@ namespace howdy::native {
 		}
 
 		try {
-			return encode_sface(prepared, face,
-			                    {
-			                        .context         = recognizer_.get(),
-			                        .align_face      = align_face,
-			                        .extract_feature = extract_feature,
-			                    });
+			return EncodeSface(prepared, face,
+			                   {
+			                       .context         = recognizer_.get(),
+			                       .align_face      = AlignFace,
+			                       .extract_feature = ExtractFeature,
+			                   });
 		} catch (const cv::Exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,
@@ -288,12 +288,12 @@ namespace howdy::native {
 		}
 	}
 
-	auto FaceModel::best_match(const std::vector<std::vector<float>> &known,
-	                           const std::vector<float>              &probe) const -> FaceMatch {
-		return find_best_face_match(known, probe, metric_, threshold_);
+	auto FaceModel::BestMatch(const std::vector<std::vector<float>> &known,
+	                          const std::vector<float>              &probe) const -> FaceMatch {
+		return FindBestFaceMatch(known, probe, metric_, threshold_);
 	}
 
-	void FaceModel::set_input_size_from_frame(const cv::Mat &frame) {
+	void FaceModel::SetInputSizeFromFrame(const cv::Mat &frame) {
 		const cv::Size new_size(frame.cols, frame.rows);
 		if (new_size == input_size_) {
 			return;
@@ -303,7 +303,7 @@ namespace howdy::native {
 		input_size_ = new_size;
 	}
 
-	void FaceModel::set_error(FaceModelErrorCategory category, std::string message) {
+	void FaceModel::SetError(FaceModelErrorCategory category, std::string message) {
 		error_category_ = category;
 		error_message_  = std::move(message);
 		ok_             = false;

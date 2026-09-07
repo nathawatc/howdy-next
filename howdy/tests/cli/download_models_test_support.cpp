@@ -17,23 +17,23 @@ namespace howdy::test::download_models {
 	std::vector<std::string> downloaded_urls;
 	bool                     download_succeeds = false;
 
-	void reset_dependency_attempts() {
+	void ResetDependencyAttempts() {
 		download_attempts  = 0;
 		owner_uid_attempts = 0;
 		fstat_attempts     = 0;
 		downloaded_urls.clear();
 	}
 
-	auto attempted_downloads() -> int {
+	auto AttemptedDownloads() -> int {
 		return download_attempts;
 	}
 
-	auto attempted_owner_uid_lookups() -> int {
+	auto AttemptedOwnerUidLookups() -> int {
 		return owner_uid_attempts;
 	}
 
-	auto fake_download_file(const std::string                                           &url,
-	                        howdy::native::download_models_internal::StagedDownloadFile &staged)
+	auto FakeDownloadFile(const std::string                                           &url,
+	                      howdy::native::download_models_internal::StagedDownloadFile &staged)
 	    -> bool {
 		(void)url;
 		(void)staged;
@@ -41,20 +41,21 @@ namespace howdy::test::download_models {
 		return false;
 	}
 
-	auto successful_fake_download_file(
-	    const std::string &url, howdy::native::download_models_internal::StagedDownloadFile &staged)
+	auto
+	SuccessfulFakeDownloadFile(const std::string                                           &url,
+	                           howdy::native::download_models_internal::StagedDownloadFile &staged)
 	    -> bool {
 		++download_attempts;
 		downloaded_urls.push_back(url);
 		return download_succeeds &&
-		       howdy::native::write_all_to_fd(staged.fd.get(), downloaded_content);
+		       howdy::native::WriteAllToFd(staged.fd.Get(), downloaded_content);
 	}
 
-	auto failing_sha256_file(int /*fd*/) -> std::optional<std::string> {
+	auto FailingSha256File(int /*fd*/) -> std::optional<std::string> {
 		return std::nullopt;
 	}
 
-	auto selectively_failing_fstat(const int fd, struct stat *stat_buf) -> int {
+	auto SelectivelyFailingFstat(const int fd, struct stat *stat_buf) -> int {
 		++fstat_attempts;
 		if (fstat_attempts == failing_fstat_attempt) {
 			errno = EIO;
@@ -63,14 +64,14 @@ namespace howdy::test::download_models {
 		return fstat(fd, stat_buf);
 	}
 
-	auto test_model_file_owner_uid() -> std::optional<uid_t> {
+	auto TestModelFileOwnerUid() -> std::optional<uid_t> {
 		++owner_uid_attempts;
 		return std::nullopt;
 	}
 
 	namespace {
 
-		auto get_env_value(const char *name) -> std::optional<std::string> {
+		auto GetEnvValue(const char *name) -> std::optional<std::string> {
 			const char *value = std::getenv(name);
 			if (value == nullptr) {
 				return std::nullopt;
@@ -82,7 +83,7 @@ namespace howdy::test::download_models {
 
 	EnvVarGuard::EnvVarGuard(const char *env_name, const std::string &value)
 	    : name(env_name)
-	    , previous(get_env_value(env_name)) {
+	    , previous(GetEnvValue(env_name)) {
 		setenv(name, value.c_str(), 1);
 	}
 
@@ -135,19 +136,19 @@ namespace howdy::test::download_models {
 				}
 			}
 
-			[[nodiscard]] auto ok() const -> bool {
+			[[nodiscard]] auto Ok() const -> bool {
 				return active;
 			}
 		};
 
 	}  // namespace
 
-	auto capture_download_models_stdout(
+	auto CaptureDownloadModelsStdout(
 	    const std::filesystem::path &path, int *exit_code,
 	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
 	    -> bool {
 		StdoutRedirectGuard stdout_redirect(path);
-		if (!stdout_redirect.ok()) {
+		if (!stdout_redirect.Ok()) {
 			return false;
 		}
 
@@ -155,39 +156,38 @@ namespace howdy::test::download_models {
 		    const_cast<char *>("howdy-download-models"),
 		    nullptr,
 		};
-		*exit_code =
-		    howdy::native::download_models_internal::download_models_main_with_dependencies(
-		        1, argv.data(), dependencies);
+		*exit_code = howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
+		    1, argv.data(), dependencies);
 		return true;
 	}
 
 	auto
-	run_test_download(const DownloadPaths &paths, int *exit_code,
-	                  const std::span<const howdy::native::OpenCvModelDescriptor>   models,
-	                  const howdy::native::download_models_internal::DownloadFileFn download_file,
-	                  const howdy::native::download_models_internal::Sha256FileFn   sha256_file,
-	                  const howdy::native::download_models_internal::FstatFn fstat_file) -> bool {
+	RunTestDownload(const DownloadPaths &paths, int *exit_code,
+	                const std::span<const howdy::native::OpenCvModelDescriptor>   models,
+	                const howdy::native::download_models_internal::DownloadFileFn download_file,
+	                const howdy::native::download_models_internal::Sha256FileFn   sha256_file,
+	                const howdy::native::download_models_internal::FstatFn fstat_file) -> bool {
 		EnvVarGuard models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
-		reset_dependency_attempts();
-		return capture_download_models_stdout(
+		ResetDependencyAttempts();
+		return CaptureDownloadModelsStdout(
 		    paths.output, exit_code,
 		    howdy::native::download_models_internal::DownloadModelsDependencies{
 		        .download_file        = download_file,
-		        .model_file_owner_uid = test_model_file_owner_uid,
+		        .model_file_owner_uid = TestModelFileOwnerUid,
 		        .sha256_file          = sha256_file,
 		        .fstat_file           = fstat_file,
 		        .models               = models,
 		    });
 	}
 
-	auto run_first_download_attempt(const DownloadPaths &paths, int *exit_code) -> bool {
+	auto RunFirstDownloadAttempt(const DownloadPaths &paths, int *exit_code) -> bool {
 		EnvVarGuard models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
-		reset_dependency_attempts();
-		return capture_download_models_stdout(
+		ResetDependencyAttempts();
+		return CaptureDownloadModelsStdout(
 		    paths.output, exit_code,
 		    howdy::native::download_models_internal::DownloadModelsDependencies{
-		        .download_file        = fake_download_file,
-		        .model_file_owner_uid = test_model_file_owner_uid,
+		        .download_file        = FakeDownloadFile,
+		        .model_file_owner_uid = TestModelFileOwnerUid,
 		    });
 	}
 

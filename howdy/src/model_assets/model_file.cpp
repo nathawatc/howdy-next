@@ -30,7 +30,7 @@ namespace howdy::native {
 
 		// Keep runtime readiness bounded to metadata checks and prefix reads. Full-file
 		// SHA-256 integrity validation belongs to download-models, not FaceModel/PAM.
-		auto check_placeholder_prefix(const int fd) -> PlaceholderCheckResult {
+		auto CheckPlaceholderPrefix(const int fd) -> PlaceholderCheckResult {
 			std::array<char, 128> buffer{};
 			ssize_t               bytes_read = -1;
 			do {
@@ -59,9 +59,9 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto check_opencv_model_readiness_with_label(const std::filesystem::path &path,
-	                                             const std::string_view       label,
-	                                             const std::optional<uid_t>  &owner_uid)
+	auto CheckOpencvModelReadinessWithLabel(const std::filesystem::path &path,
+	                                        const std::string_view       label,
+	                                        const std::optional<uid_t>  &owner_uid)
 	    -> OpenCvModelReadiness {
 		const auto parent = path.parent_path();
 		if (parent.empty()) {
@@ -70,7 +70,7 @@ namespace howdy::native {
 			            std::string(label) + " must have a parent directory: " + path.string()};
 		}
 		const auto directory_security =
-		    check_secure_root_owned_directory_tree(parent, kModelsDirectoryLabel, owner_uid);
+		    CheckSecureRootOwnedDirectoryTree(parent, kModelsDirectoryLabel, owner_uid);
 		if (!directory_security.ok) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = directory_security.error_message};
@@ -86,8 +86,8 @@ namespace howdy::native {
 			        .error_message = "Failed to inspect " + std::string(label) + ": " +
 			                         path.string() + " (" + std::strerror(errno) + ")"};
 		}
-		if (const auto security = check_secure_path_stat(path_stat, SecurePathKind::kRegularFile,
-		                                                 path, label, owner_uid);
+		if (const auto security = CheckSecurePathStat(path_stat, SecurePathKind::kRegularFile, path,
+		                                              label, owner_uid);
 		    !security.ok) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = security.error_message};
@@ -112,8 +112,8 @@ namespace howdy::native {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Model file changed while opening: " + path.string()};
 		}
-		if (const auto security = check_secure_path_stat(opened_stat, SecurePathKind::kRegularFile,
-		                                                 path, label, owner_uid);
+		if (const auto security = CheckSecurePathStat(opened_stat, SecurePathKind::kRegularFile,
+		                                              path, label, owner_uid);
 		    !security.ok) {
 			close(fd);
 			return {.status        = OpenCvModelStatus::kInsecure,
@@ -126,7 +126,7 @@ namespace howdy::native {
 			            "Model file is empty for " + std::string(label) + ": " + path.string()};
 		}
 
-		const auto placeholder = check_placeholder_prefix(fd);
+		const auto placeholder = CheckPlaceholderPrefix(fd);
 		close(fd);
 		if (placeholder.status == PlaceholderStatus::kReadError) {
 			return {.status        = OpenCvModelStatus::kInsecure,

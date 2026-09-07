@@ -10,7 +10,7 @@ namespace {
 
 	using howdy::pam::EntrypointDependencies;
 	using howdy::pam::PamModuleArguments;
-	using howdy::pam::run_pam_authenticate;
+	using howdy::pam::RunPamAuthenticate;
 	using howdy::test::expect;
 
 	struct CallbackState {
@@ -23,8 +23,8 @@ namespace {
 		bool               request_auth_token = false;
 	};
 
-	auto fake_authenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
-	                       bool request_auth_token) -> int {
+	auto FakeAuthenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                      bool request_auth_token) -> int {
 		auto &state = *static_cast<CallbackState *>(context);
 		++state.calls;
 		state.context            = context;
@@ -40,10 +40,10 @@ namespace {
 		return state.result;
 	}
 
-	auto dependencies_for(CallbackState &state) -> EntrypointDependencies {
+	auto DependenciesFor(CallbackState &state) -> EntrypointDependencies {
 		return {
 		    .context      = &state,
-		    .authenticate = fake_authenticate,
+		    .authenticate = FakeAuthenticate,
 		};
 	}
 
@@ -57,8 +57,8 @@ auto main() -> int {
 	auto *const                 pamh   = reinterpret_cast<pam_handle_t *>(&marker);
 	CallbackState               state{.result = PAM_AUTH_ERR};
 
-	const int result = run_pam_authenticate(pamh, 73, static_cast<int>(argv.size()), argv.data(),
-	                                        dependencies_for(state));
+	const int result = RunPamAuthenticate(pamh, 73, static_cast<int>(argv.size()), argv.data(),
+	                                      DependenciesFor(state));
 	ok &= expect(result == PAM_AUTH_ERR, "ABI adapter propagates callback result");
 	ok &= expect(state.calls == 1, "ABI adapter invokes callback exactly once");
 	ok &= expect(state.context == &state, "ABI adapter forwards dependency context");
@@ -76,7 +76,7 @@ auto main() -> int {
 	bool escaped          = false;
 	int  exception_result = PAM_SUCCESS;
 	try {
-		exception_result = run_pam_authenticate(pamh, 0, 0, nullptr, dependencies_for(state));
+		exception_result = RunPamAuthenticate(pamh, 0, 0, nullptr, DependenciesFor(state));
 	} catch (...) {
 		escaped = true;
 	}
@@ -89,7 +89,7 @@ auto main() -> int {
 	escaped          = false;
 	int std_result   = PAM_SUCCESS;
 	try {
-		std_result = run_pam_authenticate(pamh, 0, 0, nullptr, dependencies_for(state));
+		std_result = RunPamAuthenticate(pamh, 0, 0, nullptr, DependenciesFor(state));
 	} catch (...) {
 		escaped = true;
 	}
@@ -102,7 +102,7 @@ auto main() -> int {
 	escaped            = false;
 	int unknown_result = PAM_SUCCESS;
 	try {
-		unknown_result = run_pam_authenticate(pamh, 0, 0, nullptr, dependencies_for(state));
+		unknown_result = RunPamAuthenticate(pamh, 0, 0, nullptr, DependenciesFor(state));
 	} catch (...) {
 		escaped = true;
 	}
@@ -111,10 +111,10 @@ auto main() -> int {
 	ok &= expect(state.calls == 1, "unknown exception callback runs once");
 	ok &= expect(!escaped, "unknown exception does not cross ABI adapter");
 
-	ok &= expect(
-	    run_pam_authenticate(pamh, 0, 0, nullptr, {.context = nullptr, .authenticate = nullptr}) ==
-	        PAM_SYSTEM_ERR,
-	    "ABI adapter rejects null callback");
+	ok &=
+	    expect(RunPamAuthenticate(pamh, 0, 0, nullptr,
+	                              {.context = nullptr, .authenticate = nullptr}) == PAM_SYSTEM_ERR,
+	           "ABI adapter rejects null callback");
 
 	ok &= expect(pam_sm_open_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
 	             "open_session remains ignored");

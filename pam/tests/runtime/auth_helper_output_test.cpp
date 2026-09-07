@@ -16,14 +16,14 @@
 
 #include <sys/wait.h>
 
-auto run_auth_helper_fd_tests() -> bool;
-auto run_auth_helper_output_tests() -> bool;
+auto RunAuthHelperFdTests() -> bool;
+auto RunAuthHelperOutputTests() -> bool;
 
 namespace {
 	using howdy::test::expect;
 
-	auto fake_partial_read_error(void                                              *context,
-	                             [[maybe_unused]] howdy::native::BoundedReadRequest request)
+	auto FakePartialReadError(void                                              *context,
+	                          [[maybe_unused]] howdy::native::BoundedReadRequest request)
 	    -> howdy::native::BoundedReadResult {
 		(void)context;
 		howdy::native::BoundedReadResult result;
@@ -33,19 +33,19 @@ namespace {
 		return result;
 	}
 
-	auto read_auth_helper_output(pid_t child_pid, int output_fd, std::string *output,
-	                             howdy::pam::auth_helper_process::OutputReader reader = nullptr)
+	auto ReadAuthHelperOutput(pid_t child_pid, int output_fd, std::string *output,
+	                          howdy::pam::auth_helper_process::OutputReader reader = nullptr)
 	    -> bool {
-		auto operations         = howdy::pam::auth_helper_process::production_operations();
+		auto operations         = howdy::pam::auth_helper_process::ProductionOperations();
 		operations.read_bounded = reader;
-		return howdy::pam::auth_helper_process::read_output(
+		return howdy::pam::auth_helper_process::ReadOutput(
 		    {.child_pid = child_pid, .output_fd = output_fd}, output, operations,
 		    std::chrono::steady_clock::now() + std::chrono::seconds(10));
 	}
 
-	auto read_fd_to_string(int fd) -> std::string {
-		return howdy::native::read_fd_to_string_bounded(
-		           {.fd = fd, .max_bytes = howdy::pam::auth_helper_process::output_limit()})
+	auto ReadFdToString(int fd) -> std::string {
+		return howdy::native::ReadFdToStringBounded(
+		           {.fd = fd, .max_bytes = howdy::pam::auth_helper_process::OutputLimit()})
 		    .output;
 	}
 
@@ -56,7 +56,7 @@ namespace {
 		ScopedFd    fd;
 	};
 
-	auto open_pipe(std::array<ScopedFd, 2> *fds) -> bool {
+	auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 		std::array<int, 2> raw_fds{{-1, -1}};
 		if (pipe(raw_fds.data()) != 0) {
 			return false;
@@ -66,11 +66,11 @@ namespace {
 		return true;
 	}
 
-	auto write_all(int fd, const std::string &data) -> bool {
-		return howdy::native::write_all_to_fd(fd, data);
+	auto WriteAll(int fd, const std::string &data) -> bool {
+		return howdy::native::WriteAllToFd(fd, data);
 	}
 
-	auto create_temp_file(const std::string &label) -> std::optional<TemporaryFile> {
+	auto CreateTempFile(const std::string &label) -> std::optional<TemporaryFile> {
 		const std::string template_path = "/tmp/howdy-auth-flow-" + label + "-XXXXXX";
 		std::vector<char> path_buffer(template_path.begin(), template_path.end());
 		path_buffer.push_back('\0');
@@ -82,49 +82,49 @@ namespace {
 		return TemporaryFile{.path = path_buffer.data(), .fd = std::move(fd)};
 	}
 
-	auto expect_fd_reading() -> bool {
+	auto ExpectFdReading() -> bool {
 		bool                    ok = true;
 		std::array<ScopedFd, 2> empty_pipe;
-		ok &= expect(open_pipe(&empty_pipe), "creates empty input pipe");
+		ok &= expect(OpenPipe(&empty_pipe), "creates empty input pipe");
 		empty_pipe[1].reset();
-		ok &= expect(read_fd_to_string(empty_pipe[0].get()).empty(), "reads empty input");
-		ok &= expect(read_fd_to_string(-1).empty(), "read failure returns collected empty output");
+		ok &= expect(ReadFdToString(empty_pipe[0].get()).empty(), "reads empty input");
+		ok &= expect(ReadFdToString(-1).empty(), "read failure returns collected empty output");
 
 		std::array<ScopedFd, 2> small_pipe;
-		ok &= expect(open_pipe(&small_pipe), "creates small input pipe");
+		ok &= expect(OpenPipe(&small_pipe), "creates small input pipe");
 		const std::string small_output = "small helper output\n";
-		ok &= expect(write_all(small_pipe[1].get(), small_output), "writes small helper output");
+		ok &= expect(WriteAll(small_pipe[1].get(), small_output), "writes small helper output");
 		small_pipe[1].reset();
-		ok &= expect(read_fd_to_string(small_pipe[0].get()) == small_output,
+		ok &= expect(ReadFdToString(small_pipe[0].get()) == small_output,
 		             "reads complete small helper output");
 
-		auto bounded_file = create_temp_file("output");
+		auto bounded_file = CreateTempFile("output");
 		ok &= expect(bounded_file.has_value(), "creates bounded input file");
 		if (!bounded_file.has_value()) {
 			return false;
 		}
 		unlink(bounded_file->path.c_str());
 		const std::string limit_output(16384, 'x');
-		ok &= expect(write_all(bounded_file->fd.get(), limit_output),
+		ok &= expect(WriteAll(bounded_file->fd.get(), limit_output),
 		             "writes oversized helper output");
 		ok &= expect(lseek(bounded_file->fd.get(), 0, SEEK_SET) == 0,
 		             "rewinds oversized helper output");
-		const std::string bounded_output = read_fd_to_string(bounded_file->fd.get());
+		const std::string bounded_output = ReadFdToString(bounded_file->fd.get());
 		ok &= expect(bounded_output == limit_output.substr(0, 9216),
 		             "stops reading after bounded output threshold");
 
 		return ok;
 	}
 
-	auto expect_auth_helper_output_limit_terminates_child() -> bool {
+	auto ExpectAuthHelperOutputLimitTerminatesChild() -> bool {
 		bool                    ok = true;
 		std::array<ScopedFd, 2> output_pipe;
-		ok &= expect(open_pipe(&output_pipe), "creates output-limit auth-helper pipe");
+		ok &= expect(OpenPipe(&output_pipe), "creates output-limit auth-helper pipe");
 		if (!ok) {
 			return false;
 		}
 
-		const std::string limit_output(howdy::pam::auth_helper_process::output_limit(), 'h');
+		const std::string limit_output(howdy::pam::auth_helper_process::OutputLimit(), 'h');
 		const pid_t       child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks output-limit auth-helper child");
 		if (child_pid < 0) {
@@ -132,7 +132,7 @@ namespace {
 		}
 		if (child_pid == 0) {
 			output_pipe[0].reset();
-			const bool wrote = write_all(output_pipe[1].get(), limit_output);
+			const bool wrote = WriteAll(output_pipe[1].get(), limit_output);
 			usleep(2000000);
 			_exit(wrote ? 0 : 1);
 		}
@@ -141,7 +141,7 @@ namespace {
 		std::string helper_output;
 		const auto  start = std::chrono::steady_clock::now();
 		const bool  helper_ok =
-		    read_auth_helper_output(child_pid, output_pipe[0].get(), &helper_output);
+		    ReadAuthHelperOutput(child_pid, output_pipe[0].get(), &helper_output);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 
 		ok &= expect(!helper_ok, "auth-helper output limit fails closed");
@@ -159,7 +159,7 @@ namespace {
 		return ok;
 	}
 
-	auto expect_auth_helper_output_read_error_terminates_child() -> bool {
+	auto ExpectAuthHelperOutputReadErrorTerminatesChild() -> bool {
 		bool        ok        = true;
 		const pid_t child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks read-error auth-helper child");
@@ -173,7 +173,7 @@ namespace {
 
 		std::string helper_output;
 		const auto  start     = std::chrono::steady_clock::now();
-		const bool  helper_ok = read_auth_helper_output(child_pid, -1, &helper_output);
+		const bool  helper_ok = ReadAuthHelperOutput(child_pid, -1, &helper_output);
 		const auto  elapsed   = std::chrono::steady_clock::now() - start;
 
 		ok &= expect(!helper_ok, "auth-helper read error fails closed");
@@ -210,7 +210,7 @@ namespace {
 		return ok;
 	}
 
-	auto expect_auth_helper_output_partial_read_error_discards_output() -> bool {
+	auto ExpectAuthHelperOutputPartialReadErrorDiscardsOutput() -> bool {
 		bool        ok        = true;
 		const pid_t child_pid = fork();
 		ok &= expect(child_pid >= 0, "forks partial-read-error auth-helper child");
@@ -224,7 +224,7 @@ namespace {
 
 		std::string helper_output = "previous output";
 		const bool  helper_ok =
-		    read_auth_helper_output(child_pid, -1, &helper_output, fake_partial_read_error);
+		    ReadAuthHelperOutput(child_pid, -1, &helper_output, FakePartialReadError);
 
 		ok &= expect(!helper_ok, "auth-helper partial read error fails closed");
 		ok &= expect(helper_output.empty(), "auth-helper partial read error discards output");
@@ -249,11 +249,10 @@ namespace {
 		return ok;
 	}
 
-	auto read_clean_auth_helper_output(const std::string &child_output, std::string *read_output,
-	                                   int child_exit_status = EXIT_SUCCESS)
-	    -> std::optional<bool> {
+	auto ReadCleanAuthHelperOutput(const std::string &child_output, std::string *read_output,
+	                               int child_exit_status = EXIT_SUCCESS) -> std::optional<bool> {
 		std::array<ScopedFd, 2> output_pipe;
-		if (!open_pipe(&output_pipe)) {
+		if (!OpenPipe(&output_pipe)) {
 			return std::nullopt;
 		}
 
@@ -263,21 +262,21 @@ namespace {
 		}
 		if (child_pid == 0) {
 			output_pipe[0].reset();
-			const bool wrote = write_all(output_pipe[1].get(), child_output);
+			const bool wrote = WriteAll(output_pipe[1].get(), child_output);
 			output_pipe[1].reset();
 			_exit(wrote ? child_exit_status : EXIT_FAILURE);
 		}
 
 		output_pipe[1].reset();
-		return read_auth_helper_output(child_pid, output_pipe[0].get(), read_output);
+		return ReadAuthHelperOutput(child_pid, output_pipe[0].get(), read_output);
 	}
 
-	auto expect_auth_helper_output_child_failure_discards_output() -> bool {
+	auto ExpectAuthHelperOutputChildFailureDiscardsOutput() -> bool {
 		const std::string child_output  = "CONFIG_PATH=/run/howdy/config.ini\n"
 		                                  "USER_MODELS_DIR=/run/howdy/models\n";
 		std::string       actual_output = "previous output";
 		const auto        read_result =
-		    read_clean_auth_helper_output(child_output, &actual_output, EXIT_FAILURE);
+		    ReadCleanAuthHelperOutput(child_output, &actual_output, EXIT_FAILURE);
 
 		bool ok = true;
 		ok &= expect(read_result.has_value(), "failed auth-helper child exits cleanly");
@@ -289,7 +288,7 @@ namespace {
 		return ok;
 	}
 
-	auto expect_auth_helper_output_protocol_validation() -> bool {
+	auto ExpectAuthHelperOutputProtocolValidation() -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		namespace fs = std::filesystem;
 
@@ -301,18 +300,17 @@ namespace {
 			std::string user_models_dir;
 		};
 
-		const auto runtime_dir = prepared_runtime_generation_dir(prepared_runtime_root(), getuid(),
-		                                                         RuntimeGenerationSlot::kSlot0);
-		const auto config_path = prepared_config_path(runtime_dir);
-		const auto models_dir  = prepared_user_models_dir(runtime_dir);
-		const auto sibling_dir = prepared_runtime_generation_dir(prepared_runtime_root(), getuid(),
-		                                                         RuntimeGenerationSlot::kSlot1);
+		const auto runtime_dir = PreparedRuntimeGenerationDir(PreparedRuntimeRoot(), getuid(),
+		                                                      RuntimeGenerationSlot::kSlot0);
+		const auto config_path = PreparedConfigPath(runtime_dir);
+		const auto models_dir  = PreparedUserModelsDir(runtime_dir);
+		const auto sibling_dir = PreparedRuntimeGenerationDir(PreparedRuntimeRoot(), getuid(),
+		                                                      RuntimeGenerationSlot::kSlot1);
 		const auto invalid_dir =
-		    prepared_runtime_root() / (prepared_runtime_directory_prefix(getuid()) + "sibling");
-		const auto foreign_dir = prepared_runtime_generation_dir(prepared_runtime_root(),
-		                                                         static_cast<uid_t>(getuid() + 1),
-		                                                         RuntimeGenerationSlot::kSlot0);
-		const auto output_for  = [](const fs::path &config, const fs::path &models) -> std::string {
+		    PreparedRuntimeRoot() / (PreparedRuntimeDirectoryPrefix(getuid()) + "sibling");
+		const auto foreign_dir = PreparedRuntimeGenerationDir(
+		    PreparedRuntimeRoot(), static_cast<uid_t>(getuid() + 1), RuntimeGenerationSlot::kSlot0);
+		const auto output_for = [](const fs::path &config, const fs::path &models) -> std::string {
 			return "CONFIG_PATH=" + config.string() + "\nUSER_MODELS_DIR=" + models.string() + "\n";
 		};
 
@@ -329,11 +327,11 @@ namespace {
 		     .output      = output_for(config_path, "/var/lib/howdy/models"),
 		     .expected_ok = false},
 		    {.name        = "sibling runtime paths are rejected",
-		     .output      = output_for(config_path, prepared_user_models_dir(sibling_dir)),
+		     .output      = output_for(config_path, PreparedUserModelsDir(sibling_dir)),
 		     .expected_ok = false},
-		    {.name        = "invalid prepared runtime suffix is rejected",
-		     .output      = output_for(prepared_config_path(invalid_dir),
-		                               prepared_user_models_dir(invalid_dir)),
+		    {.name = "invalid prepared runtime suffix is rejected",
+		     .output =
+		         output_for(PreparedConfigPath(invalid_dir), PreparedUserModelsDir(invalid_dir)),
 		     .expected_ok = false},
 		    {.name        = "config and models paths swapped are rejected",
 		     .output      = output_for(runtime_dir / kPreparedUserModelsDirectoryName,
@@ -349,9 +347,9 @@ namespace {
 		    {.name        = "equivalent noncanonical models path is rejected",
 		     .output      = output_for(config_path, runtime_dir / "models" / ".." / "models"),
 		     .expected_ok = false},
-		    {.name        = "foreign UID runtime path is rejected",
-		     .output      = output_for(prepared_config_path(foreign_dir),
-		                               prepared_user_models_dir(foreign_dir)),
+		    {.name = "foreign UID runtime path is rejected",
+		     .output =
+		         output_for(PreparedConfigPath(foreign_dir), PreparedUserModelsDir(foreign_dir)),
 		     .expected_ok = false},
 		    {.name        = "relative runtime paths are rejected",
 		     .output      = output_for("relative/config.ini", "relative/models"),
@@ -364,7 +362,7 @@ namespace {
 		    {.name   = "duplicate USER_MODELS_DIR is rejected",
 		     .output = "CONFIG_PATH=" + config_path.string() +
 		               "\nUSER_MODELS_DIR=" + models_dir.string() +
-		               "\nUSER_MODELS_DIR=" + prepared_user_models_dir(sibling_dir).string() + "\n",
+		               "\nUSER_MODELS_DIR=" + PreparedUserModelsDir(sibling_dir).string() + "\n",
 		     .expected_ok = false},
 		    {.name        = "missing CONFIG_PATH is rejected",
 		     .output      = "USER_MODELS_DIR=" + models_dir.string() + "\n",
@@ -398,8 +396,7 @@ namespace {
 		bool ok = true;
 		for (const auto &test_case : cases) {
 			std::string actual_output;
-			const auto  read_result =
-			    read_clean_auth_helper_output(test_case.output, &actual_output);
+			const auto  read_result = ReadCleanAuthHelperOutput(test_case.output, &actual_output);
 			ok &= expect(read_result.has_value(), test_case.name + " helper exits cleanly");
 			if (!read_result.has_value()) {
 				continue;
@@ -409,7 +406,7 @@ namespace {
 			if (!test_case.expected_ok) {
 				ok &= expect(actual_output.empty(), test_case.name + " discards malformed output");
 			}
-			const auto parsed = howdy::pam::auth_helper_process::parse_output(test_case.output);
+			const auto parsed = howdy::pam::auth_helper_process::ParseOutput(test_case.output);
 			ok &=
 			    expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {
@@ -427,16 +424,16 @@ namespace {
 
 }  // namespace
 
-auto run_auth_helper_fd_tests() -> bool {
-	return expect_fd_reading();
+auto RunAuthHelperFdTests() -> bool {
+	return ExpectFdReading();
 }
 
-auto run_auth_helper_output_tests() -> bool {
+auto RunAuthHelperOutputTests() -> bool {
 	bool ok = true;
-	ok &= expect_auth_helper_output_limit_terminates_child();
-	ok &= expect_auth_helper_output_read_error_terminates_child();
-	ok &= expect_auth_helper_output_partial_read_error_discards_output();
-	ok &= expect_auth_helper_output_child_failure_discards_output();
-	ok &= expect_auth_helper_output_protocol_validation();
+	ok &= ExpectAuthHelperOutputLimitTerminatesChild();
+	ok &= ExpectAuthHelperOutputReadErrorTerminatesChild();
+	ok &= ExpectAuthHelperOutputPartialReadErrorDiscardsOutput();
+	ok &= ExpectAuthHelperOutputChildFailureDiscardsOutput();
+	ok &= ExpectAuthHelperOutputProtocolValidation();
 	return ok;
 }

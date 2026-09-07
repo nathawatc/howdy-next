@@ -24,7 +24,7 @@ namespace {
 	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
 
-	[[nodiscard]] auto has_valid_snapshot_frames(const std::vector<cv::Mat> &frames) -> bool {
+	[[nodiscard]] auto HasValidSnapshotFrames(const std::vector<cv::Mat> &frames) -> bool {
 		if (frames.empty()) {
 			return false;
 		}
@@ -34,7 +34,7 @@ namespace {
 		int        combined_width = 0;
 
 		for (const auto &frame : frames) {
-			if (howdy::native::validate_frame(frame, howdy::native::FrameChannelPolicy::kBgr) !=
+			if (howdy::native::ValidateFrame(frame, howdy::native::FrameChannelPolicy::kBgr) !=
 			    howdy::native::FrameValidationStatus::kValid) {
 				return false;
 			}
@@ -49,7 +49,7 @@ namespace {
 		return true;
 	}
 
-	[[nodiscard]] auto snapshot_image_extension(const std::filesystem::path &path) -> std::string {
+	[[nodiscard]] auto SnapshotImageExtension(const std::filesystem::path &path) -> std::string {
 		const auto filename     = path.filename().string();
 		const auto suffix_start = filename.rfind('.');
 		return suffix_start == std::string::npos ? std::string{} : filename.substr(suffix_start);
@@ -57,12 +57,12 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::snapshot_internal::ensure_snapshot_directory(
+auto howdy::native::snapshot_internal::EnsureSnapshotDirectory(
     const std::filesystem::path &directory) -> bool {
 	const auto log_root = directory.parent_path();
 	if (std::filesystem::exists(log_root)) {
 		const auto root_security =
-		    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
+		    howdy::native::CheckSecureRootOwnedDirectoryTree(log_root, "Log directory");
 		if (!root_security.ok) {
 			std::cerr << root_security.error_message << "\n";
 			return false;
@@ -82,14 +82,14 @@ auto howdy::native::snapshot_internal::ensure_snapshot_directory(
 	}
 
 	const auto root_security =
-	    howdy::native::check_secure_root_owned_directory_tree(log_root, "Log directory");
+	    howdy::native::CheckSecureRootOwnedDirectoryTree(log_root, "Log directory");
 	if (!root_security.ok) {
 		std::cerr << root_security.error_message << "\n";
 		return false;
 	}
 
 	const auto directory_security =
-	    howdy::native::check_secure_root_owned_directory_tree(directory, "Snapshot directory");
+	    howdy::native::CheckSecureRootOwnedDirectoryTree(directory, "Snapshot directory");
 	if (!directory_security.ok) {
 		std::cerr << directory_security.error_message << "\n";
 		return false;
@@ -97,7 +97,7 @@ auto howdy::native::snapshot_internal::ensure_snapshot_directory(
 	return true;
 }
 
-auto howdy::native::snapshot_internal::write_snapshot_at_path(
+auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
     const std::filesystem::path &path, const SnapshotWriterDependencies &dependencies,
     AtomicFileCommitResult *commit_result) -> bool {
@@ -107,21 +107,21 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 	if (dependencies.encode_image == nullptr || dependencies.sync_parent == nullptr) {
 		return false;
 	}
-	if (!has_valid_snapshot_frames(frames)) {
+	if (!HasValidSnapshotFrames(frames)) {
 		return false;
 	}
-	const auto extension = snapshot_image_extension(path);
+	const auto extension = SnapshotImageExtension(path);
 	if (extension.empty()) {
 		return false;
 	}
 
-	if (!ensure_snapshot_directory(path.parent_path())) {
+	if (!EnsureSnapshotDirectory(path.parent_path())) {
 		return false;
 	}
 
-	auto staged = howdy::native::prepare_staged_file(
-	    path, ".howdy-snapshot-", kSnapshotFileMode,
-	    howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+	auto staged =
+	    howdy::native::PrepareStagedFile(path, ".howdy-snapshot-", kSnapshotFileMode,
+	                                     howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
 	if (!staged.has_value()) {
 		return false;
 	}
@@ -144,26 +144,26 @@ auto howdy::native::snapshot_internal::write_snapshot_at_path(
 		std::vector<uchar> encoded_bytes;
 		if (!dependencies.encode_image(dependencies.context, extension, snap, &encoded_bytes) ||
 		    encoded_bytes.empty() ||
-		    !howdy::native::write_all_to_fd(staged->fd.get(),
-		                                    reinterpret_cast<const char *>(encoded_bytes.data()),
-		                                    encoded_bytes.size())) {
-			howdy::native::cleanup_staged_file(*staged);
+		    !howdy::native::WriteAllToFd(staged->fd.Get(),
+		                                 reinterpret_cast<const char *>(encoded_bytes.data()),
+		                                 encoded_bytes.size())) {
+			howdy::native::CleanupStagedFile(*staged);
 			return false;
 		}
 	} catch (...) {
-		howdy::native::cleanup_staged_file(*staged);
+		howdy::native::CleanupStagedFile(*staged);
 		return false;
 	}
-	const auto result = howdy::native::install_staged_file(
+	const auto result = howdy::native::InstallStagedFile(
 	    *staged, path, dependencies.sync_parent,
 	    howdy::native::AtomicFileInstallPolicy::kNoReplaceExisting);
 	if (commit_result != nullptr) {
 		*commit_result = result;
 	}
-	return howdy::native::atomic_file_commit_is_durable(result);
+	return howdy::native::AtomicFileCommitIsDurable(result);
 }
 
-auto howdy::native::snapshot_internal::write_snapshot_with_unique_path(
+auto howdy::native::snapshot_internal::WriteSnapshotWithUniquePath(
     const std::vector<cv::Mat> &frames, const std::vector<std::string> &text_lines,
     const std::filesystem::path &base_path, const SnapshotWriterDependencies &dependencies,
     AtomicFileCommitResult *commit_result) -> std::filesystem::path {
@@ -179,8 +179,7 @@ auto howdy::native::snapshot_internal::write_snapshot_with_unique_path(
 		                                                  std::to_string(collision_index) +
 		                                                  base_path.extension().string());
 		AtomicFileCommitResult candidate_result = AtomicFileCommitResult::kNotCommitted;
-		if (write_snapshot_at_path(frames, text_lines, candidate, dependencies,
-		                           &candidate_result)) {
+		if (WriteSnapshotAtPath(frames, text_lines, candidate, dependencies, &candidate_result)) {
 			if (commit_result != nullptr) {
 				*commit_result = candidate_result;
 			}
@@ -202,7 +201,7 @@ auto howdy::native::snapshot_internal::write_snapshot_with_unique_path(
 	return {};
 }
 
-auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
+auto howdy::native::snapshot_internal::SnapshotMainWithDependencies(
     int argc, char **argv, const SnapshotDependencies &dependencies) -> int {
 	if (argc != 1) {
 		std::cerr << "Invalid arguments for snapshot\n";

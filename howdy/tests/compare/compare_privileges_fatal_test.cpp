@@ -8,19 +8,19 @@
 
 #include <sys/wait.h>
 
-auto run_compare_privileges_fatal_tests() -> bool;
+auto RunComparePrivilegesFatalTests() -> bool;
 
 namespace {
 
 	using howdy::native::CompareExit;
 	using howdy::test::expect;
 	using howdy::test::compare_privileges::FakePrivilegeContext;
-	using howdy::test::compare_privileges::make_dependencies;
-	using howdy::test::compare_privileges::set_non_root_identity;
+	using howdy::test::compare_privileges::MakeDependencies;
+	using howdy::test::compare_privileges::SetNonRootIdentity;
 
 	int marker_fd = -1;
 
-	void write_marker() {
+	void WriteMarker() {
 		if (marker_fd >= 0) {
 			const char    marker  = 'a';
 			const ssize_t written = write(marker_fd, &marker, 1);
@@ -38,7 +38,7 @@ namespace {
 		}
 	};
 
-	auto test_production_non_root_identity_fatal_uses_exit() -> bool {
+	auto TestProductionNonRootIdentityFatalUsesExit() -> bool {
 		std::array<int, 2> pipe_fds{};
 		if (pipe(pipe_fds.data()) != 0) {
 			return expect(false, "fatal regression pipe creation succeeds");
@@ -53,7 +53,7 @@ namespace {
 		if (child == 0) {
 			close(pipe_fds[0]);
 			marker_fd = pipe_fds[1];
-			(void)std::atexit(write_marker);
+			(void)std::atexit(WriteMarker);
 			DestructorMarker marker;
 			const int        null_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
 			if (null_fd >= 0) {
@@ -62,12 +62,12 @@ namespace {
 			}
 
 			FakePrivilegeContext context;
-			set_non_root_identity(context);
+			SetNonRootIdentity(context);
 			context.uids[2]   = 0;
-			auto dependencies = make_dependencies(context);
+			auto dependencies = MakeDependencies(context);
 			dependencies.fatal_exit =
-			    howdy::native::compare_privileges_internal::fatal_compare_privilege_failure;
-			(void)howdy::native::compare_privileges_internal::drop_compare_privileges(dependencies);
+			    howdy::native::compare_privileges_internal::FatalComparePrivilegeFailure;
+			(void)howdy::native::compare_privileges_internal::DropComparePrivileges(dependencies);
 			_exit(99);
 		}
 
@@ -97,6 +97,6 @@ namespace {
 
 }  // namespace
 
-auto run_compare_privileges_fatal_tests() -> bool {
-	return test_production_non_root_identity_fatal_uses_exit();
+auto RunComparePrivilegesFatalTests() -> bool {
+	return TestProductionNonRootIdentityFatalUsesExit();
 }

@@ -39,23 +39,23 @@ namespace {
 		RuntimeSources        sources;
 	};
 
-	auto close_lease(std::optional<PreparedPaths> &prepared) -> void {
+	auto CloseLease(std::optional<PreparedPaths> &prepared) -> void {
 		if (prepared.has_value() && prepared->lease_fd >= 0) {
 			(void)close(prepared->lease_fd);
 			prepared->lease_fd = -1;
 		}
 	}
 
-	auto inode_of(const std::filesystem::path &path) -> std::optional<std::pair<dev_t, ino_t>> {
-		struct stat stat_{};
-		if (lstat(path.c_str(), &stat_) != 0) {
+	auto InodeOf(const std::filesystem::path &path) -> std::optional<std::pair<dev_t, ino_t>> {
+		struct stat stat{};
+		if (lstat(path.c_str(), &stat) != 0) {
 			return std::nullopt;
 		}
-		return std::pair{stat_.st_dev, stat_.st_ino};
+		return std::pair{stat.st_dev, stat.st_ino};
 	}
 
-	auto child_access_matches(const PreparedPaths &prepared, uid_t uid, gid_t gid,
-	                          bool expected_access) -> std::optional<bool> {
+	auto ChildAccessMatches(const PreparedPaths &prepared, uid_t uid, gid_t gid,
+	                        bool expected_access) -> std::optional<bool> {
 		const pid_t child = fork();
 		if (child == 0) {
 			if (setgroups(0, nullptr) != 0 || setgid(gid) != 0 || setuid(uid) != 0) {
@@ -90,8 +90,8 @@ namespace {
 		return WEXITSTATUS(status) == 0;
 	}
 
-	auto make_fixture(const std::filesystem::path &temp_root, std::string_view name,
-	                  uid_t target_uid) -> std::optional<Fixture> {
+	auto MakeFixture(const std::filesystem::path &temp_root, std::string_view name,
+	                 uid_t target_uid) -> std::optional<Fixture> {
 		namespace fs = std::filesystem;
 		Fixture fixture;
 		fixture.root     = temp_root / (std::string(name) + "-runtime");
@@ -120,7 +120,7 @@ namespace {
 		return fixture;
 	}
 
-	auto prepare(const Fixture                                   &fixture,
+	auto Prepare(const Fixture                                   &fixture,
 	             const howdy::native::auth_helper::AclOperations &operations)
 	    -> std::optional<PreparedPaths> {
 		std::error_code ec;
@@ -129,13 +129,13 @@ namespace {
 		if (ec) {
 			return std::nullopt;
 		}
-		auto result = howdy::native::auth_helper::internal::prepare_runtime_auth_files(
+		auto result = howdy::native::auth_helper::internal::PrepareRuntimeAuthFiles(
 		    "alice", fixture.identity, fixture.sources, operations);
 		std::filesystem::current_path(previous, ec);
 		return ec ? std::nullopt : std::move(result);
 	}
 
-	auto expect_protocol_paths() -> bool {
+	auto ExpectProtocolPaths() -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		bool ok = true;
 		for (const auto &[name, expected_uid, expected_slot, valid] : {
@@ -148,23 +148,23 @@ namespace {
 		     }) {
 			uid_t                 uid = 0;
 			RuntimeGenerationSlot slot{};
-			const bool            parsed = parse_runtime_generation_name(name, &uid, &slot);
+			const bool            parsed = ParseRuntimeGenerationName(name, &uid, &slot);
 			ok &= expect(parsed == valid, std::string("generation parser classification: ") + name);
 			if (valid) {
 				ok &= expect(uid == expected_uid && slot == expected_slot,
 				             std::string("generation parser value: ") + name);
 			}
 		}
-		ok &= expect(prepared_runtime_generation_name(1000, RuntimeGenerationSlot::kSlot0) ==
+		ok &= expect(PreparedRuntimeGenerationName(1000, RuntimeGenerationSlot::kSlot0) ==
 		                 "pam-1000-gen000",
 		             "slot 0 name is exact");
-		ok &= expect(prepared_runtime_generation_name(1000, RuntimeGenerationSlot::kSlot1) ==
+		ok &= expect(PreparedRuntimeGenerationName(1000, RuntimeGenerationSlot::kSlot1) ==
 		                 "pam-1000-gen001",
 		             "slot 1 name is exact");
 
 		std::ostringstream output;
 		auto              *previous = std::cout.rdbuf(output.rdbuf());
-		howdy::native::auth_helper::command::print_prepared_paths(
+		howdy::native::auth_helper::command::PrintPreparedPaths(
 		    "/run/howdy/pam-1000-gen000/config.ini", "/run/howdy/pam-1000-gen000/models");
 		std::cout.rdbuf(previous);
 		ok &= expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-gen000/config.ini\n"
@@ -173,9 +173,10 @@ namespace {
 		return ok;
 	}
 
-	auto expect_cross_uid_acl_access(
-	    const std::filesystem::path                     &temp_root,
-	    const howdy::native::auth_helper::AclOperations &production_operations) -> bool {
+	auto
+	ExpectCrossUidAclAccess(const std::filesystem::path                     &temp_root,
+	                        const howdy::native::auth_helper::AclOperations &production_operations)
+	    -> bool {
 		if (geteuid() != 0 || getuid() != geteuid()) {
 			std::cerr << "SKIP: cross-UID staged access checks require real root\n";
 			return true;
@@ -184,12 +185,12 @@ namespace {
 		constexpr uid_t unrelated_uid = 61002;
 		constexpr gid_t shared_gid    = 61003;
 		constexpr gid_t unrelated_gid = 61004;
-		auto            fixture       = make_fixture(temp_root, "acl-access", target_uid);
+		auto            fixture       = MakeFixture(temp_root, "acl-access", target_uid);
 		if (!fixture.has_value() || !write_file(fixture->models / "alice.dat", "model-content\n") ||
 		    chmod((fixture->models / "alice.dat").c_str(), 0644) != 0) {
 			return false;
 		}
-		auto prepared = prepare(*fixture, production_operations);
+		auto prepared = Prepare(*fixture, production_operations);
 		bool ok       = expect(prepared.has_value(), "real ACL preparation succeeds");
 		if (!prepared.has_value()) {
 			return false;
@@ -202,37 +203,37 @@ namespace {
 		         std::tuple{unrelated_uid, unrelated_gid, false,
 		                    "unrelated UID and GID cannot access staged files"},
 		     }) {
-			const auto result = child_access_matches(*prepared, uid, gid, expected_access);
+			const auto result = ChildAccessMatches(*prepared, uid, gid, expected_access);
 			if (!result.has_value()) {
 				std::cerr << "SKIP: cross-UID credential transition unavailable\n";
 				break;
 			}
 			ok &= expect(*result, label);
 		}
-		close_lease(prepared);
+		CloseLease(prepared);
 		return ok;
 	}
 
-	auto count_runtime_generations(const std::filesystem::path &root) -> std::size_t {
+	auto CountRuntimeGenerations(const std::filesystem::path &root) -> std::size_t {
 		using namespace howdy::native::auth_helper_protocol;
 		std::size_t count = 0;
 		for (const auto &entry : std::filesystem::directory_iterator(root)) {
 			uid_t                 uid = 0;
 			RuntimeGenerationSlot slot{};
-			if (parse_runtime_generation_name(entry.path().filename().string(), &uid, &slot)) {
+			if (ParseRuntimeGenerationName(entry.path().filename().string(), &uid, &slot)) {
 				++count;
 			}
 		}
 		return count;
 	}
 
-	auto exclusive_lock_is_contended(int fd) -> bool {
+	auto ExclusiveLockIsContended(int fd) -> bool {
 		errno = 0;
 		return flock(fd, LOCK_EX | LOCK_NB) != 0 && (errno == EWOULDBLOCK || errno == EAGAIN);
 	}
 
 	auto
-	expect_read_only_lease(const std::optional<howdy::native::auth_helper::PreparedPaths> &prepared)
+	ExpectReadOnlyLease(const std::optional<howdy::native::auth_helper::PreparedPaths> &prepared)
 	    -> bool {
 		if (!prepared.has_value() || prepared->lease_fd < 0) {
 			return expect(false, "first prepare returns lease");
@@ -253,55 +254,55 @@ namespace {
 		return ok;
 	}
 
-	auto expect_reuse_and_inode_bound(const Fixture                                   &fixture,
-	                                  const howdy::native::auth_helper::AclOperations &operations)
+	auto ExpectReuseAndInodeBound(const Fixture                                   &fixture,
+	                              const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		bool ok    = true;
-		auto first = prepare(fixture, operations);
-		ok &= expect_read_only_lease(first);
+		auto first = Prepare(fixture, operations);
+		ok &= ExpectReadOnlyLease(first);
 		if (!first.has_value()) {
 			return false;
 		}
-		const auto config_inode  = inode_of(first->config_path);
+		const auto config_inode  = InodeOf(first->config_path);
 		const auto backing_path  = first->runtime_dir / kPreparedModelBackingFileName;
-		const auto backing_inode = inode_of(backing_path);
-		ok &= expect(count_runtime_generations(fixture.root) == 2,
+		const auto backing_inode = InodeOf(backing_path);
+		ok &= expect(CountRuntimeGenerations(fixture.root) == 2,
 		             "exactly two fixed generation directories exist");
 		ok &= expect(config_inode.has_value() && backing_inode.has_value(),
 		             "persistent config and backing inodes exist");
 
-		auto second = prepare(fixture, operations);
+		auto second = Prepare(fixture, operations);
 		ok &= expect(second.has_value() && second->runtime_dir == first->runtime_dir,
 		             "fresh prepare reuses same slot");
 		if (!second.has_value()) {
-			close_lease(first);
+			CloseLease(first);
 			return false;
 		}
-		ok &= expect(inode_of(second->config_path) == config_inode &&
-		                 inode_of(second->runtime_dir / kPreparedModelBackingFileName) ==
+		ok &= expect(InodeOf(second->config_path) == config_inode &&
+		                 InodeOf(second->runtime_dir / kPreparedModelBackingFileName) ==
 		                     backing_inode,
 		             "fresh prepare reuses exact backing inodes");
 		for (int attempt = 0; attempt < 16; ++attempt) {
-			auto repeated = prepare(fixture, operations);
+			auto repeated = Prepare(fixture, operations);
 			ok &= expect(repeated.has_value() && repeated->runtime_dir == first->runtime_dir &&
-			                 inode_of(repeated->config_path) == config_inode &&
-			                 inode_of(repeated->runtime_dir / kPreparedModelBackingFileName) ==
+			                 InodeOf(repeated->config_path) == config_inode &&
+			                 InodeOf(repeated->runtime_dir / kPreparedModelBackingFileName) ==
 			                     backing_inode,
 			             "repeated prepare preserves fixed slot and backing inodes");
-			close_lease(repeated);
+			CloseLease(repeated);
 		}
 
-		const auto lock_path = prepared_runtime_generation_lock_path(first->runtime_dir);
+		const auto lock_path = PreparedRuntimeGenerationLockPath(first->runtime_dir);
 		const int  probe     = open(lock_path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
 		ok &= expect(probe >= 0, "opens independent lease probe");
 		if (probe >= 0) {
-			ok &= expect(exclusive_lock_is_contended(probe),
-			             "active returned leases hold shared locks");
-			close_lease(first);
-			ok &= expect(exclusive_lock_is_contended(probe),
+			ok &=
+			    expect(ExclusiveLockIsContended(probe), "active returned leases hold shared locks");
+			CloseLease(first);
+			ok &= expect(ExclusiveLockIsContended(probe),
 			             "second lease uses fresh open file description");
-			close_lease(second);
+			CloseLease(second);
 			ok &= expect(flock(probe, LOCK_EX | LOCK_NB) == 0, "last lease close releases slot");
 			(void)flock(probe, LOCK_UN);
 			(void)close(probe);
@@ -312,7 +313,7 @@ namespace {
 		void     *mapping =
 		    map_fd < 0 ? MAP_FAILED : mmap(nullptr, 10, PROT_READ, MAP_SHARED, map_fd, 0);
 		ok &= expect(mapping != MAP_FAILED, "holds mapping to persistent config inode");
-		auto refreshed = prepare(fixture, operations);
+		auto refreshed = Prepare(fixture, operations);
 		ok &= expect(refreshed.has_value() && refreshed->runtime_dir == first->runtime_dir,
 		             "unleased mapped slot updates in place");
 		if (!refreshed.has_value()) {
@@ -324,8 +325,8 @@ namespace {
 			}
 			return false;
 		}
-		ok &= expect(inode_of(refreshed->config_path) == config_inode &&
-		                 inode_of(refreshed->runtime_dir / kPreparedModelBackingFileName) ==
+		ok &= expect(InodeOf(refreshed->config_path) == config_inode &&
+		                 InodeOf(refreshed->runtime_dir / kPreparedModelBackingFileName) ==
 		                     backing_inode,
 		             "refresh preserves actual backing inode bound");
 		ok &= expect(read_file(refreshed->config_path) == "config-v2-longer\n",
@@ -340,7 +341,7 @@ namespace {
 		ok &= expect(mapping != MAP_FAILED &&
 		                 std::string_view(static_cast<const char *>(mapping), 10) == "config-v2-",
 		             "held mapping remains attached to updated inode");
-		close_lease(refreshed);
+		CloseLease(refreshed);
 		if (map_fd >= 0) {
 			(void)close(map_fd);
 		}
@@ -350,66 +351,63 @@ namespace {
 		return ok;
 	}
 
-	auto expect_two_slot_limit(const Fixture                                   &fixture,
-	                           const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
+	auto ExpectTwoSlotLimit(const Fixture                                   &fixture,
+	                        const howdy::native::auth_helper::AclOperations &operations) -> bool {
 		bool ok = true;
 		ok &= expect(write_file(fixture.config, "slot-a\n"), "writes slot A source");
-		auto first = prepare(fixture, operations);
+		auto first = Prepare(fixture, operations);
 		ok &= expect(first.has_value(), "leases slot A");
 		ok &= expect(write_file(fixture.config, "slot-b\n"), "writes slot B source");
-		auto second = prepare(fixture, operations);
+		auto second = Prepare(fixture, operations);
 		ok &= expect(second.has_value() && first.has_value() &&
 		                 second->runtime_dir != first->runtime_dir,
 		             "active stale slot selects second fixed slot");
 		ok &= expect(write_file(fixture.config, "slot-c\n"), "writes slot C source");
-		auto blocked = prepare(fixture, operations);
+		auto blocked = Prepare(fixture, operations);
 		ok &= expect(!blocked.has_value(), "two active stale slots fail closed");
 
 		const auto first_generation_inode =
-		    first.has_value() ? inode_of(first->runtime_dir) : std::nullopt;
+		    first.has_value() ? InodeOf(first->runtime_dir) : std::nullopt;
 		const auto first_lock_inode =
 		    first.has_value()
-		        ? inode_of(
-		              howdy::native::auth_helper_protocol::prepared_runtime_generation_lock_path(
-		                  first->runtime_dir))
+		        ? InodeOf(howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath(
+		              first->runtime_dir))
 		        : std::nullopt;
 		const auto first_models_inode =
-		    first.has_value() ? inode_of(first->user_models_dir) : std::nullopt;
+		    first.has_value() ? InodeOf(first->user_models_dir) : std::nullopt;
 		const auto first_config_inode =
-		    first.has_value() ? inode_of(first->config_path) : std::nullopt;
+		    first.has_value() ? InodeOf(first->config_path) : std::nullopt;
 		const auto first_backing_inode =
 		    first.has_value()
-		        ? inode_of(first->runtime_dir /
-		                   howdy::native::auth_helper_protocol::kPreparedModelBackingFileName)
+		        ? InodeOf(first->runtime_dir /
+		                  howdy::native::auth_helper_protocol::kPreparedModelBackingFileName)
 		        : std::nullopt;
-		close_lease(first);
-		auto reused = prepare(fixture, operations);
+		CloseLease(first);
+		auto reused = Prepare(fixture, operations);
 		ok &= expect(
 		    reused.has_value() && first_generation_inode.has_value() &&
-		        inode_of(reused->runtime_dir) == first_generation_inode &&
-		        inode_of(howdy::native::auth_helper_protocol::prepared_runtime_generation_lock_path(
+		        InodeOf(reused->runtime_dir) == first_generation_inode &&
+		        InodeOf(howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath(
 		            reused->runtime_dir)) == first_lock_inode &&
-		        inode_of(reused->user_models_dir) == first_models_inode &&
-		        inode_of(reused->config_path) == first_config_inode &&
-		        inode_of(reused->runtime_dir /
-		                 howdy::native::auth_helper_protocol::kPreparedModelBackingFileName) ==
+		        InodeOf(reused->user_models_dir) == first_models_inode &&
+		        InodeOf(reused->config_path) == first_config_inode &&
+		        InodeOf(reused->runtime_dir /
+		                howdy::native::auth_helper_protocol::kPreparedModelBackingFileName) ==
 		            first_backing_inode,
 		    "freed slot reuses same paths and actual inodes");
-		close_lease(second);
-		close_lease(reused);
+		CloseLease(second);
+		CloseLease(reused);
 		return ok;
 	}
 
-	auto expect_present_absent(const Fixture                                   &fixture,
-	                           const howdy::native::auth_helper::AclOperations &operations)
-	    -> bool {
+	auto ExpectPresentAbsent(const Fixture                                   &fixture,
+	                         const howdy::native::auth_helper::AclOperations &operations) -> bool {
 		bool       ok           = true;
 		const auto source_model = fixture.models / "alice.dat";
 		ok &=
 		    expect(write_file(source_model, "model-v1\n") && chmod(source_model.c_str(), 0644) == 0,
 		           "creates secure source model");
-		auto present = prepare(fixture, operations);
+		auto present = Prepare(fixture, operations);
 		ok &= expect(present.has_value(), "present model prepares");
 		if (!present.has_value()) {
 			return false;
@@ -417,8 +415,8 @@ namespace {
 		const auto backing = present->runtime_dir /
 		                     howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
 		const auto visible = present->user_models_dir / "alice.dat";
-		const auto backing_inode = inode_of(backing);
-		ok &= expect(backing_inode.has_value() && inode_of(visible) == backing_inode,
+		const auto backing_inode = InodeOf(backing);
+		ok &= expect(backing_inode.has_value() && InodeOf(visible) == backing_inode,
 		             "visible model is backing hard link");
 		struct stat present_stat{};
 		ok &= expect(lstat(backing.c_str(), &present_stat) == 0 && present_stat.st_nlink == 2,
@@ -427,13 +425,13 @@ namespace {
 		void     *mapping =
 		    model_fd < 0 ? MAP_FAILED : mmap(nullptr, 9, PROT_READ, MAP_SHARED, model_fd, 0);
 		ok &= expect(mapping != MAP_FAILED, "holds mapping to persistent model inode");
-		close_lease(present);
+		CloseLease(present);
 
 		ok &= expect(write_file(source_model, "model-v2\n"), "updates source model");
-		auto                refreshed = prepare(fixture, operations);
+		auto                refreshed = Prepare(fixture, operations);
 		std::array<char, 9> held_content{};
-		ok &= expect(refreshed.has_value() && inode_of(backing) == backing_inode &&
-		                 inode_of(visible) == backing_inode,
+		ok &= expect(refreshed.has_value() && InodeOf(backing) == backing_inode &&
+		                 InodeOf(visible) == backing_inode,
 		             "model refresh preserves backing and visible inode identity");
 		ok &= expect(model_fd >= 0 &&
 		                 pread(model_fd, held_content.data(), held_content.size(), 0) ==
@@ -443,37 +441,37 @@ namespace {
 		ok &= expect(mapping != MAP_FAILED &&
 		                 std::string_view(static_cast<const char *>(mapping), 9) == "model-v2\n",
 		             "held model mapping observes in-place refresh");
-		close_lease(refreshed);
+		CloseLease(refreshed);
 
 		std::error_code ec;
 		std::filesystem::remove(source_model, ec);
 		ok &= expect(!ec, "removes source model");
-		auto        absent = prepare(fixture, operations);
+		auto        absent = Prepare(fixture, operations);
 		struct stat absent_stat{};
 		struct stat held_absent_stat{};
 		ok &= expect(absent.has_value() && !std::filesystem::exists(visible) &&
-		                 inode_of(backing) == backing_inode &&
+		                 InodeOf(backing) == backing_inode &&
 		                 lstat(backing.c_str(), &absent_stat) == 0 && absent_stat.st_nlink == 1 &&
 		                 absent_stat.st_size == 0 && fstat(model_fd, &held_absent_stat) == 0 &&
 		                 held_absent_stat.st_dev == absent_stat.st_dev &&
 		                 held_absent_stat.st_ino == absent_stat.st_ino,
 		             "absent cycle keeps empty persistent backing inode");
-		close_lease(absent);
+		CloseLease(absent);
 
 		ok &=
 		    expect(write_file(source_model, "model-v3\n") && chmod(source_model.c_str(), 0644) == 0,
 		           "restores source model");
-		auto                restored = prepare(fixture, operations);
+		auto                restored = Prepare(fixture, operations);
 		std::array<char, 9> restored_held_content{};
-		ok &= expect(restored.has_value() && inode_of(backing) == backing_inode &&
-		                 inode_of(visible) == backing_inode && mapping != MAP_FAILED &&
+		ok &= expect(restored.has_value() && InodeOf(backing) == backing_inode &&
+		                 InodeOf(visible) == backing_inode && mapping != MAP_FAILED &&
 		                 std::string_view(static_cast<const char *>(mapping), 9) == "model-v3\n" &&
 		                 pread(model_fd, restored_held_content.data(), restored_held_content.size(),
 		                       0) == static_cast<ssize_t>(restored_held_content.size()) &&
 		                 std::string_view(restored_held_content.data(),
 		                                  restored_held_content.size()) == "model-v3\n",
 		             "present cycle restores link without replacing held backing inode");
-		close_lease(restored);
+		CloseLease(restored);
 		if (mapping != MAP_FAILED) {
 			(void)munmap(mapping, 9);
 		}
@@ -483,46 +481,46 @@ namespace {
 		return ok;
 	}
 
-	auto expect_partial_slot_fallback(const std::filesystem::path &temp_root, uid_t target_uid,
-	                                  const howdy::native::auth_helper::AclOperations &operations)
+	auto ExpectPartialSlotFallback(const std::filesystem::path &temp_root, uid_t target_uid,
+	                               const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		bool ok      = true;
-		auto fixture = make_fixture(temp_root, "partial-slot", target_uid);
-		auto slot0   = fixture.has_value() ? prepare(*fixture, operations) : std::nullopt;
+		auto fixture = MakeFixture(temp_root, "partial-slot", target_uid);
+		auto slot0   = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
 		ok &= expect(slot0.has_value(), "creates complete slot0 fixture");
-		close_lease(slot0);
+		CloseLease(slot0);
 		if (!fixture.has_value() || !slot0.has_value()) {
 			return false;
 		}
 
 		const auto      slot0_backing       = slot0->runtime_dir / kPreparedModelBackingFileName;
-		const auto      slot0_backing_inode = inode_of(slot0_backing);
-		const auto      slot0_models_inode  = inode_of(slot0->user_models_dir);
+		const auto      slot0_backing_inode = InodeOf(slot0_backing);
+		const auto      slot0_models_inode  = InodeOf(slot0->user_models_dir);
 		std::error_code ec;
 		std::filesystem::remove(slot0->config_path, ec);
-		const auto expected_slot1 = prepared_runtime_generation_dir(fixture->root, target_uid,
-		                                                            RuntimeGenerationSlot::kSlot1);
-		auto       slot1          = prepare(*fixture, operations);
+		const auto expected_slot1 =
+		    PreparedRuntimeGenerationDir(fixture->root, target_uid, RuntimeGenerationSlot::kSlot1);
+		auto slot1 = Prepare(*fixture, operations);
 		ok &= expect(!ec && slot1.has_value() && slot1->runtime_dir == expected_slot1 &&
 		                 !std::filesystem::exists(slot0->config_path) &&
-		                 inode_of(slot0_backing) == slot0_backing_inode &&
-		                 inode_of(slot0->user_models_dir) == slot0_models_inode,
+		                 InodeOf(slot0_backing) == slot0_backing_inode &&
+		                 InodeOf(slot0->user_models_dir) == slot0_models_inode,
 		             "partial slot0 stays untouched while empty slot1 serves");
 		if (!slot1.has_value()) {
 			return false;
 		}
-		const auto slot1_config_inode = inode_of(slot1->config_path);
+		const auto slot1_config_inode = InodeOf(slot1->config_path);
 		const auto slot1_backing_inode =
-		    inode_of(slot1->runtime_dir / kPreparedModelBackingFileName);
-		auto repeated = prepare(*fixture, operations);
+		    InodeOf(slot1->runtime_dir / kPreparedModelBackingFileName);
+		auto repeated = Prepare(*fixture, operations);
 		ok &= expect(repeated.has_value() && repeated->runtime_dir == slot1->runtime_dir &&
-		                 inode_of(repeated->config_path) == slot1_config_inode &&
-		                 inode_of(repeated->runtime_dir / kPreparedModelBackingFileName) ==
+		                 InodeOf(repeated->config_path) == slot1_config_inode &&
+		                 InodeOf(repeated->runtime_dir / kPreparedModelBackingFileName) ==
 		                     slot1_backing_inode,
 		             "slot1 reuse stays on persistent bounded inodes");
 
-		const auto slot0_lock = prepared_runtime_generation_lock_path(slot0->runtime_dir);
+		const auto slot0_lock = PreparedRuntimeGenerationLockPath(slot0->runtime_dir);
 		const int  probe      = open(slot0_lock.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
 		const bool lock_clean = probe >= 0 && flock(probe, LOCK_EX | LOCK_NB) == 0;
 		ok &= expect(lock_clean, "abandoned malformed slot0 retains no helper lock");
@@ -532,78 +530,74 @@ namespace {
 		if (probe >= 0) {
 			(void)close(probe);
 		}
-		close_lease(slot1);
-		close_lease(repeated);
+		CloseLease(slot1);
+		CloseLease(repeated);
 		return ok;
 	}
 
-	auto
-	expect_malformed_slot_discovery(const std::filesystem::path &temp_root, uid_t target_uid,
-	                                const howdy::native::auth_helper::AclOperations &operations)
+	auto ExpectMalformedSlotDiscovery(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                  const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		bool ok = true;
 
-		auto symlink_fixture = make_fixture(temp_root, "malformed-symlink", target_uid);
+		auto symlink_fixture = MakeFixture(temp_root, "malformed-symlink", target_uid);
 		if (symlink_fixture.has_value()) {
 			std::error_code ec;
 			std::filesystem::create_directories(symlink_fixture->root, ec);
 			(void)chmod(symlink_fixture->root.c_str(), 0711);
-			const auto slot0 = prepared_runtime_generation_dir(symlink_fixture->root, target_uid,
-			                                                   RuntimeGenerationSlot::kSlot0);
-			const auto slot1 = prepared_runtime_generation_dir(symlink_fixture->root, target_uid,
-			                                                   RuntimeGenerationSlot::kSlot1);
+			const auto slot0 = PreparedRuntimeGenerationDir(symlink_fixture->root, target_uid,
+			                                                RuntimeGenerationSlot::kSlot0);
+			const auto slot1 = PreparedRuntimeGenerationDir(symlink_fixture->root, target_uid,
+			                                                RuntimeGenerationSlot::kSlot1);
 			ok &= expect(symlink(symlink_fixture->source.c_str(), slot0.c_str()) == 0,
 			             "creates slot symlink");
-			const auto malformed_inode = inode_of(slot0);
-			auto       fallback        = prepare(*symlink_fixture, operations);
+			const auto malformed_inode = InodeOf(slot0);
+			auto       fallback        = Prepare(*symlink_fixture, operations);
 			ok &= expect(fallback.has_value() && fallback->runtime_dir == slot1 &&
-			                 inode_of(slot0) == malformed_inode,
+			                 InodeOf(slot0) == malformed_inode,
 			             "malformed generation directory remains while healthy slot serves");
-			close_lease(fallback);
+			CloseLease(fallback);
 		}
 
-		auto lock_fixture = make_fixture(temp_root, "malformed-lock", target_uid);
+		auto lock_fixture = MakeFixture(temp_root, "malformed-lock", target_uid);
 		auto lock_prepared =
-		    lock_fixture.has_value() ? prepare(*lock_fixture, operations) : std::nullopt;
+		    lock_fixture.has_value() ? Prepare(*lock_fixture, operations) : std::nullopt;
 		ok &= expect(lock_prepared.has_value(), "creates lock fixture");
-		close_lease(lock_prepared);
+		CloseLease(lock_prepared);
 		if (lock_prepared.has_value()) {
-			const auto lock_path =
-			    prepared_runtime_generation_lock_path(lock_prepared->runtime_dir);
-			const auto lock_inode = inode_of(lock_path);
+			const auto lock_path  = PreparedRuntimeGenerationLockPath(lock_prepared->runtime_dir);
+			const auto lock_inode = InodeOf(lock_path);
 			ok &= expect(chmod(lock_path.c_str(), 0644) == 0, "malforms lock mode");
-			auto        fallback = prepare(*lock_fixture, operations);
+			auto        fallback = Prepare(*lock_fixture, operations);
 			struct stat lock_stat{};
-			ok &= expect(fallback.has_value() &&
-			                 fallback->runtime_dir != lock_prepared->runtime_dir &&
-			                 inode_of(lock_path) == lock_inode &&
-			                 lstat(lock_path.c_str(), &lock_stat) == 0 &&
-			                 (lock_stat.st_mode & 07777) == 0644,
-			             "malformed lock remains while healthy slot serves");
-			close_lease(fallback);
+			ok &= expect(
+			    fallback.has_value() && fallback->runtime_dir != lock_prepared->runtime_dir &&
+			        InodeOf(lock_path) == lock_inode && lstat(lock_path.c_str(), &lock_stat) == 0 &&
+			        (lock_stat.st_mode & 07777) == 0644,
+			    "malformed lock remains while healthy slot serves");
+			CloseLease(fallback);
 		}
 
-		auto both_fixture = make_fixture(temp_root, "both-slots-malformed", target_uid);
+		auto both_fixture = MakeFixture(temp_root, "both-slots-malformed", target_uid);
 		auto both_prepared =
-		    both_fixture.has_value() ? prepare(*both_fixture, operations) : std::nullopt;
+		    both_fixture.has_value() ? Prepare(*both_fixture, operations) : std::nullopt;
 		ok &= expect(both_prepared.has_value(), "creates both-slot malformed fixture");
-		close_lease(both_prepared);
+		CloseLease(both_prepared);
 		if (both_fixture.has_value() && both_prepared.has_value()) {
-			const auto slot0_lock =
-			    prepared_runtime_generation_lock_path(both_prepared->runtime_dir);
-			const auto slot1      = prepared_runtime_generation_dir(both_fixture->root, target_uid,
-			                                                        RuntimeGenerationSlot::kSlot1);
-			const auto lock_inode = inode_of(slot0_lock);
-			const auto slot_inode = inode_of(slot1);
+			const auto slot0_lock = PreparedRuntimeGenerationLockPath(both_prepared->runtime_dir);
+			const auto slot1      = PreparedRuntimeGenerationDir(both_fixture->root, target_uid,
+			                                                     RuntimeGenerationSlot::kSlot1);
+			const auto lock_inode = InodeOf(slot0_lock);
+			const auto slot_inode = InodeOf(slot1);
 			ok &= expect(chmod(slot0_lock.c_str(), 0644) == 0 && chmod(slot1.c_str(), 0700) == 0,
 			             "malforms both fixed slots");
-			auto        result = prepare(*both_fixture, operations);
+			auto        result = Prepare(*both_fixture, operations);
 			struct stat lock_stat{};
 			struct stat slot_stat{};
 			ok &= expect(
-			    !result.has_value() && inode_of(slot0_lock) == lock_inode &&
-			        inode_of(slot1) == slot_inode && lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
+			    !result.has_value() && InodeOf(slot0_lock) == lock_inode &&
+			        InodeOf(slot1) == slot_inode && lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
 			        lstat(slot1.c_str(), &slot_stat) == 0 && (lock_stat.st_mode & 07777) == 0644 &&
 			        (slot_stat.st_mode & 07777) == 0700,
 			    "two malformed slots fail closed without repair");
@@ -620,91 +614,91 @@ namespace {
 		return ok;
 	}
 
-	auto expect_malformed_objects_fail(const std::filesystem::path &temp_root, uid_t target_uid,
-	                                   const howdy::native::auth_helper::AclOperations &operations)
+	auto ExpectMalformedObjectsFail(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		using namespace howdy::native::auth_helper_protocol;
 		bool ok = true;
 
-		auto mode_fixture = make_fixture(temp_root, "malformed-mode", target_uid);
+		auto mode_fixture = MakeFixture(temp_root, "malformed-mode", target_uid);
 		auto mode_prepared =
-		    mode_fixture.has_value() ? prepare(*mode_fixture, operations) : std::nullopt;
+		    mode_fixture.has_value() ? Prepare(*mode_fixture, operations) : std::nullopt;
 		ok &= expect(mode_prepared.has_value(), "creates mode fixture");
-		close_lease(mode_prepared);
+		CloseLease(mode_prepared);
 		if (mode_prepared.has_value()) {
 			ok &= expect(chmod(mode_prepared->config_path.c_str(), 0600) == 0,
 			             "malforms config mode");
-			auto        fallback = prepare(*mode_fixture, operations);
+			auto        fallback = Prepare(*mode_fixture, operations);
 			struct stat damaged_stat{};
 			ok &= expect(fallback.has_value() &&
 			                 fallback->runtime_dir != mode_prepared->runtime_dir &&
 			                 lstat(mode_prepared->config_path.c_str(), &damaged_stat) == 0 &&
 			                 (damaged_stat.st_mode & 07777) == 0600,
 			             "malformed config remains untouched while other slot serves");
-			close_lease(fallback);
+			CloseLease(fallback);
 		}
 
-		auto link_fixture = make_fixture(temp_root, "malformed-link", target_uid);
+		auto link_fixture = MakeFixture(temp_root, "malformed-link", target_uid);
 		auto link_prepared =
-		    link_fixture.has_value() ? prepare(*link_fixture, operations) : std::nullopt;
+		    link_fixture.has_value() ? Prepare(*link_fixture, operations) : std::nullopt;
 		ok &= expect(link_prepared.has_value(), "creates link fixture");
-		close_lease(link_prepared);
+		CloseLease(link_prepared);
 		if (link_prepared.has_value()) {
 			const auto extra = temp_root / "unexpected-config-link";
 			ok &= expect(link(link_prepared->config_path.c_str(), extra.c_str()) == 0,
 			             "adds unexpected config hard link");
-			auto        fallback = prepare(*link_fixture, operations);
+			auto        fallback = Prepare(*link_fixture, operations);
 			struct stat damaged_stat{};
 			ok &= expect(fallback.has_value() &&
 			                 fallback->runtime_dir != link_prepared->runtime_dir &&
 			                 lstat(link_prepared->config_path.c_str(), &damaged_stat) == 0 &&
 			                 damaged_stat.st_nlink == 2,
 			             "unexpected link count remains untouched while other slot serves");
-			close_lease(fallback);
+			CloseLease(fallback);
 		}
 
-		auto visible_fixture = make_fixture(temp_root, "malformed-visible", target_uid);
+		auto visible_fixture = MakeFixture(temp_root, "malformed-visible", target_uid);
 		if (visible_fixture.has_value()) {
 			const auto source_model = visible_fixture->models / "alice.dat";
 			ok &= expect(write_file(source_model, "model\n") &&
 			                 chmod(source_model.c_str(), 0644) == 0,
 			             "creates visible identity source");
-			auto visible_prepared = prepare(*visible_fixture, operations);
+			auto visible_prepared = Prepare(*visible_fixture, operations);
 			ok &= expect(visible_prepared.has_value(), "creates visible identity fixture");
-			close_lease(visible_prepared);
+			CloseLease(visible_prepared);
 			if (visible_prepared.has_value()) {
 				const auto      visible = visible_prepared->user_models_dir / "alice.dat";
 				std::error_code ec;
 				std::filesystem::remove(visible, ec);
 				ok &= expect(!ec && write_file(visible, "foreign inode\n"),
 				             "replaces visible name with foreign inode");
-				const auto foreign_inode = inode_of(visible);
-				auto       fallback      = prepare(*visible_fixture, operations);
+				const auto foreign_inode = InodeOf(visible);
+				auto       fallback      = Prepare(*visible_fixture, operations);
 				ok &= expect(fallback.has_value() &&
 				                 fallback->runtime_dir != visible_prepared->runtime_dir &&
-				                 inode_of(visible) == foreign_inode,
+				                 InodeOf(visible) == foreign_inode,
 				             "visible mismatch remains untouched while other slot serves");
-				close_lease(fallback);
+				CloseLease(fallback);
 			}
 		}
 
 		if (geteuid() == 0) {
-			auto owner_fixture = make_fixture(temp_root, "malformed-owner", target_uid);
+			auto owner_fixture = MakeFixture(temp_root, "malformed-owner", target_uid);
 			auto owner_prepared =
-			    owner_fixture.has_value() ? prepare(*owner_fixture, operations) : std::nullopt;
+			    owner_fixture.has_value() ? Prepare(*owner_fixture, operations) : std::nullopt;
 			ok &= expect(owner_prepared.has_value(), "creates owner fixture");
-			close_lease(owner_prepared);
+			CloseLease(owner_prepared);
 			if (owner_prepared.has_value()) {
 				ok &= expect(chown(owner_prepared->config_path.c_str(), 61007, getegid()) == 0,
 				             "malforms config owner");
-				auto        fallback = prepare(*owner_fixture, operations);
+				auto        fallback = Prepare(*owner_fixture, operations);
 				struct stat damaged_stat{};
 				ok &= expect(fallback.has_value() &&
 				                 fallback->runtime_dir != owner_prepared->runtime_dir &&
 				                 lstat(owner_prepared->config_path.c_str(), &damaged_stat) == 0 &&
 				                 damaged_stat.st_uid == 61007,
 				             "malformed owner remains untouched while other slot serves");
-				close_lease(fallback);
+				CloseLease(fallback);
 			}
 		}
 		return ok;
@@ -712,30 +706,30 @@ namespace {
 
 }  // namespace
 
-auto run_auth_helper_staging_tests(const std::filesystem::path    &temp_root,
-                                   const AuthHelperStagingContext &context) -> bool {
-	bool ok = expect_protocol_paths();
+auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
+                               const AuthHelperStagingContext &context) -> bool {
+	bool ok = ExpectProtocolPaths();
 	if (!context.acl_functional) {
 		std::cerr << "SKIP: fixed-slot tests require functional ACL operations\n";
 		return ok;
 	}
 	const uid_t target_uid = context.functional_target_uid;
 	for (const auto &[name, test] : {
-	         std::pair{"model", expect_present_absent},
-	         std::pair{"reuse", expect_reuse_and_inode_bound},
-	         std::pair{"limit", expect_two_slot_limit},
+	         std::pair{"model", ExpectPresentAbsent},
+	         std::pair{"reuse", ExpectReuseAndInodeBound},
+	         std::pair{"limit", ExpectTwoSlotLimit},
 	     }) {
-		auto fixture = make_fixture(temp_root, name, target_uid);
+		auto fixture = MakeFixture(temp_root, name, target_uid);
 		ok &= expect(fixture.has_value(), std::string("creates ") + name + " fixture");
 		if (fixture.has_value()) {
 			ok &= test(*fixture, context.operations);
 		}
 	}
-	ok &= expect_partial_slot_fallback(temp_root, target_uid, context.operations);
-	ok &= expect_malformed_slot_discovery(temp_root, target_uid, context.operations);
-	ok &= expect_malformed_objects_fail(temp_root, target_uid, context.operations);
+	ok &= ExpectPartialSlotFallback(temp_root, target_uid, context.operations);
+	ok &= ExpectMalformedSlotDiscovery(temp_root, target_uid, context.operations);
+	ok &= ExpectMalformedObjectsFail(temp_root, target_uid, context.operations);
 	if (context.acl_supported) {
-		ok &= expect_cross_uid_acl_access(temp_root, context.production_operations);
+		ok &= ExpectCrossUidAclAccess(temp_root, context.production_operations);
 	}
 	return ok;
 }

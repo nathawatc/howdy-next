@@ -1,3 +1,3 @@
 #pragma once
 
-auto snapshot_main(int argc, char **argv) -> int;
+auto SnapshotMain(int argc, char **argv) -> int;

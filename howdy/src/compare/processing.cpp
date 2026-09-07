@@ -2,7 +2,7 @@
 
 namespace howdy::native::compare_processing_internal {
 
-	auto run_compare_processing(const CompareProcessingDependencies &dependencies)
+	auto RunCompareProcessing(const CompareProcessingDependencies &dependencies)
 	    -> CompareProcessingResult {
 		if (dependencies.open_capture == nullptr || dependencies.drop_privileges == nullptr ||
 		    dependencies.construct_engine == nullptr || dependencies.reset_timeout == nullptr ||
@@ -16,7 +16,7 @@ namespace howdy::native::compare_processing_internal {
 		}
 
 		auto privilege_result = dependencies.drop_privileges(dependencies.context);
-		if (!privilege_result.ok()) {
+		if (!privilege_result.Ok()) {
 			return privilege_result;
 		}
 

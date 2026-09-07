@@ -18,11 +18,11 @@ namespace howdy::test::user_models {
 	using howdy::test::read_file;
 	using howdy::test::write_file;
 
-	inline auto nested_array(std::size_t depth) -> std::string {
+	inline auto NestedArray(std::size_t depth) -> std::string {
 		return std::string(depth, '[') + "0" + std::string(depth, ']');
 	}
 
-	inline auto expectation_from_entry(const howdy::native::UserModelEntry &entry)
+	inline auto ExpectationFromEntry(const howdy::native::UserModelEntry &entry)
 	    -> howdy::native::UserModelEntryExpectation {
 		return howdy::native::UserModelEntryExpectation{
 		    .id      = entry.id,
@@ -64,8 +64,8 @@ namespace howdy::test::user_models {
 		bool                  swapped = false;
 	};
 
-	inline auto replace_with_victim_symlink_after_lock(PostLockSymlinkSwap         *swap,
-	                                                   const std::filesystem::path &path) -> void {
+	inline auto ReplaceWithVictimSymlinkAfterLock(PostLockSymlinkSwap         *swap,
+	                                              const std::filesystem::path &path) -> void {
 		++swap->calls;
 		const auto      symlink_path = path.string() + ".post-lock-symlink";
 		std::error_code ec;
@@ -81,8 +81,8 @@ namespace howdy::test::user_models {
 		swap->swapped = true;
 	}
 
-	inline auto replace_with_regular_file_after_lock(PostLockRegularFileSwap     *swap,
-	                                                 const std::filesystem::path &path) -> void {
+	inline auto ReplaceWithRegularFileAfterLock(PostLockRegularFileSwap     *swap,
+	                                            const std::filesystem::path &path) -> void {
 		++swap->calls;
 		if (rename(swap->replacement_path.c_str(), path.c_str()) != 0) {
 			return;
@@ -90,8 +90,8 @@ namespace howdy::test::user_models {
 		swap->swapped = true;
 	}
 
-	inline auto install_replacement_before_lock(AbaRegularFileSwap          *swap,
-	                                            const std::filesystem::path &path) -> void {
+	inline auto InstallReplacementBeforeLock(AbaRegularFileSwap          *swap,
+	                                         const std::filesystem::path &path) -> void {
 		++swap->before_lock_calls;
 		if (rename(path.c_str(), swap->original_saved_path.c_str()) != 0) {
 			return;
@@ -103,8 +103,8 @@ namespace howdy::test::user_models {
 		swap->installed_b = true;
 	}
 
-	inline auto restore_original_after_lock(AbaRegularFileSwap          *swap,
-	                                        const std::filesystem::path &path) -> void {
+	inline auto RestoreOriginalAfterLock(AbaRegularFileSwap          *swap,
+	                                     const std::filesystem::path &path) -> void {
 		++swap->after_lock_calls;
 		if (rename(path.c_str(), swap->locked_replacement_saved_path.c_str()) != 0) {
 			return;
@@ -116,8 +116,8 @@ namespace howdy::test::user_models {
 		swap->restored_a = true;
 	}
 
-	inline auto replace_path_preserving_original(PreservingRegularFileSwap   *swap,
-	                                             const std::filesystem::path &path) -> void {
+	inline auto ReplacePathPreservingOriginal(PreservingRegularFileSwap   *swap,
+	                                          const std::filesystem::path &path) -> void {
 		++swap->calls;
 		swap->target_path = path;
 		if (rename(path.c_str(), swap->displaced_path.c_str()) != 0) {
@@ -130,7 +130,7 @@ namespace howdy::test::user_models {
 		swap->swapped = true;
 	}
 
-	inline auto expect_readiness_checks(const std::filesystem::path &temp_root) -> bool {
+	inline auto ExpectReadinessChecks(const std::filesystem::path &temp_root) -> bool {
 		namespace fs = std::filesystem;
 		using howdy::native::UserModelStatus;
 
@@ -142,14 +142,14 @@ namespace howdy::test::user_models {
 		fs::remove_all(models_dir, ec);
 		ec.clear();
 		{
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kNoModelDirectory,
 			             "readiness missing model directory returns kNoModelDirectory");
 		}
 		{
 			const auto result =
-			    howdy::native::check_user_model_readiness(models_dir, "../alice", std::nullopt);
+			    howdy::native::CheckUserModelReadiness(models_dir, "../alice", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInvalidUser,
 			             "readiness invalid username returns kInvalidUser");
 		}
@@ -164,7 +164,7 @@ namespace howdy::test::user_models {
 		ok &= expect(chmod(real_models_dir.c_str(), 0755) == 0,
 		             "set real readiness models directory mode");
 		if (symlink(real_models_dir.c_str(), symlink_models_dir.c_str()) == 0) {
-			const auto result = howdy::native::check_user_model_readiness(
+			const auto result = howdy::native::CheckUserModelReadiness(
 			    symlink_models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInsecurePath,
 			             "readiness rejects symlinked models directory");
@@ -181,7 +181,7 @@ namespace howdy::test::user_models {
 		fs::remove(dangling_models_dir, ec);
 		ec.clear();
 		if (symlink(missing_models_target.c_str(), dangling_models_dir.c_str()) == 0) {
-			const auto result = howdy::native::check_user_model_readiness(
+			const auto result = howdy::native::CheckUserModelReadiness(
 			    dangling_models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInsecurePath,
 			             "readiness rejects dangling symlinked models directory");
@@ -196,8 +196,8 @@ namespace howdy::test::user_models {
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0,
 		             "set explicit readiness models directory mode");
 		{
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kNoModel,
 			             "readiness missing model file returns kNoModel");
 		}
@@ -205,8 +205,8 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, "not-json"), "write readiness model file");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "set readiness model file mode");
 		{
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kOk,
 			             "readiness accepts secure model without parsing JSON");
 			ok &= expect(result.path == model_path, "readiness respects explicit models directory");
@@ -217,8 +217,8 @@ namespace howdy::test::user_models {
 		fs::remove(model_path, ec);
 		ec.clear();
 		if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInsecurePath,
 			             "readiness rejects symlinked model file");
 			ok &= expect(fs::remove(model_path, ec), "remove readiness model symlink");
@@ -229,8 +229,8 @@ namespace howdy::test::user_models {
 
 		const auto missing_target = models_dir / "readiness-missing-target.dat";
 		if (symlink(missing_target.c_str(), model_path.c_str()) == 0) {
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInsecurePath,
 			             "readiness rejects dangling model symlink");
 			ok &= expect(fs::remove(model_path, ec), "remove dangling readiness model symlink");
@@ -242,8 +242,8 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, "not-json"), "restore readiness model after symlink");
 		const auto hardlink_path = models_dir / "readiness-hardlink.dat";
 		if (link(model_path.c_str(), hardlink_path.c_str()) == 0) {
-			const auto result = howdy::native::check_user_model_readiness(
-			    models_dir, "readiness-user", std::nullopt);
+			const auto result =
+			    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt);
 			ok &= expect(result.status == UserModelStatus::kInsecurePath,
 			             "readiness rejects hard-linked model file");
 			ok &= expect(fs::remove(hardlink_path, ec), "remove readiness hardlink");
@@ -254,12 +254,12 @@ namespace howdy::test::user_models {
 
 		ok &= expect(chmod(model_path.c_str(), 0664) == 0, "make readiness model group-writable");
 		ok &= expect(
-		    howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+		    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt)
 		            .status == UserModelStatus::kInsecurePath,
 		    "readiness rejects group-writable model file");
 		ok &= expect(chmod(model_path.c_str(), 0666) == 0, "make readiness model world-writable");
 		ok &= expect(
-		    howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+		    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt)
 		            .status == UserModelStatus::kInsecurePath,
 		    "readiness rejects world-writable model file");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restore readiness model file mode");
@@ -267,13 +267,13 @@ namespace howdy::test::user_models {
 		ok &= expect(chmod(models_dir.c_str(), 0775) == 0,
 		             "make readiness models directory group-writable");
 		ok &= expect(
-		    howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+		    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt)
 		            .status == UserModelStatus::kInsecurePath,
 		    "readiness rejects group-writable models directory");
 		ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
 		             "make readiness models directory world-writable");
 		ok &= expect(
-		    howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+		    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt)
 		            .status == UserModelStatus::kInsecurePath,
 		    "readiness rejects world-writable models directory");
 		ok &=
@@ -284,7 +284,7 @@ namespace howdy::test::user_models {
 		fs::create_directory(model_path, ec);
 		ok &= expect(!ec, "create non-regular readiness model path");
 		ok &= expect(
-		    howdy::native::check_user_model_readiness(models_dir, "readiness-user", std::nullopt)
+		    howdy::native::CheckUserModelReadiness(models_dir, "readiness-user", std::nullopt)
 		            .status == UserModelStatus::kInsecurePath,
 		    "readiness rejects non-regular model file");
 
@@ -293,14 +293,14 @@ namespace howdy::test::user_models {
 	}
 
 	template <typename Value, typename Callback>
-	void with_present(const std::optional<Value> &value, Callback callback) {
+	void WithPresent(const std::optional<Value> &value, Callback callback) {
 		if (value.has_value()) {
 			callback();
 		}
 	}
 
 	template <typename Callback>
-	void when_supported(bool supported, Callback callback, std::string_view skip_message) {
+	void WhenSupported(bool supported, Callback callback, std::string_view skip_message) {
 		if (supported) {
 			callback();
 		} else {
@@ -308,7 +308,7 @@ namespace howdy::test::user_models {
 		}
 	}
 
-	inline auto staged_user_model_paths(const std::filesystem::path &models_dir)
+	inline auto StagedUserModelPaths(const std::filesystem::path &models_dir)
 	    -> std::vector<std::filesystem::path> {
 		std::vector<std::filesystem::path> paths;
 		for (const auto &entry : std::filesystem::directory_iterator(models_dir)) {
@@ -319,8 +319,8 @@ namespace howdy::test::user_models {
 		return paths;
 	}
 
-	auto test_user_model_loading() -> bool;
-	auto test_user_model_mutation_start() -> bool;
-	auto test_user_model_mutation_failures() -> bool;
+	auto TestUserModelLoading() -> bool;
+	auto TestUserModelMutationStart() -> bool;
+	auto TestUserModelMutationFailures() -> bool;
 
 }  // namespace howdy::test::user_models

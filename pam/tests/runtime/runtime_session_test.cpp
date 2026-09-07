@@ -25,21 +25,21 @@ namespace {
 	constexpr auto kConfiguredConfig = "/etc/howdy/config.ini";
 	constexpr auto kConfiguredModels = "/var/lib/howdy/models";
 
-	auto make_prepared_runtime(std::string_view suffix) -> howdy::pam::PreparedRuntimeFiles {
+	auto MakePreparedRuntime(std::string_view suffix) -> howdy::pam::PreparedRuntimeFiles {
 		const auto root =
 		    suffix == "sibling"
-		        ? howdy::native::auth_helper_protocol::prepared_runtime_root() /
-		              (howdy::native::auth_helper_protocol::prepared_runtime_directory_prefix(
+		        ? howdy::native::auth_helper_protocol::PreparedRuntimeRoot() /
+		              (howdy::native::auth_helper_protocol::PreparedRuntimeDirectoryPrefix(
 		                   getuid()) +
 		               std::string(suffix))
-		        : howdy::native::auth_helper_protocol::prepared_runtime_generation_dir(
-		              howdy::native::auth_helper_protocol::prepared_runtime_root(), getuid(),
+		        : howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
+		              howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), getuid(),
 		              howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		return {
 		    .root_dir    = root,
-		    .config_path = howdy::native::auth_helper_protocol::prepared_config_path(root).string(),
+		    .config_path = howdy::native::auth_helper_protocol::PreparedConfigPath(root).string(),
 		    .user_models_dir =
-		        howdy::native::auth_helper_protocol::prepared_user_models_dir(root).string(),
+		        howdy::native::auth_helper_protocol::PreparedUserModelsDir(root).string(),
 		};
 	}
 
@@ -51,7 +51,7 @@ namespace {
 		int                                                 effective_uid_calls = 0;
 		bool                                                prepare_succeeds    = true;
 		uid_t                                               effective_uid       = 0;
-		howdy::pam::PreparedRuntimeFiles prepared = make_prepared_runtime("stage1");
+		howdy::pam::PreparedRuntimeFiles prepared = MakePreparedRuntime("stage1");
 	};
 
 	struct CallbackCounts {
@@ -62,7 +62,7 @@ namespace {
 		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
 
-	auto success_result(const std::filesystem::path &path)
+	auto SuccessResult(const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		return howdy::native::RuntimeConfigLoadResult{
 		    .ok     = true,
@@ -72,7 +72,7 @@ namespace {
 		};
 	}
 
-	auto path_error_result(int error_code) -> howdy::native::RuntimeConfigLoadResult {
+	auto PathErrorResult(int error_code) -> howdy::native::RuntimeConfigLoadResult {
 		return howdy::native::RuntimeConfigLoadResult{
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kPathError,
 		    .path          = kConfiguredConfig,
@@ -81,7 +81,7 @@ namespace {
 		};
 	}
 
-	auto parse_error_result(const std::filesystem::path &path)
+	auto ParseErrorResult(const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		return howdy::native::RuntimeConfigLoadResult{
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kParseError,
@@ -90,8 +90,8 @@ namespace {
 		};
 	}
 
-	auto prepare_runtime(void *context, std::string_view username,
-	                     howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+	auto PrepareRuntime(void *context, std::string_view username,
+	                    howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
 		auto &fake = *static_cast<FakeContext *>(context);
 		fake.prepare_usernames.emplace_back(username);
 		if (!fake.prepare_succeeds) {
@@ -108,33 +108,33 @@ namespace {
 		return true;
 	}
 
-	auto load_runtime_config(void *context, const std::filesystem::path &config_path)
+	auto LoadRuntimeConfig(void *context, const std::filesystem::path &config_path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		auto &fake = *static_cast<FakeContext *>(context);
 		fake.load_paths.push_back(config_path);
 		const auto result_index = fake.load_paths.size() - 1;
 		if (result_index >= fake.load_results.size()) {
-			return parse_error_result(config_path);
+			return ParseErrorResult(config_path);
 		}
 		return fake.load_results[result_index];
 	}
 
-	auto effective_uid(void *context) -> uid_t {
+	auto EffectiveUid(void *context) -> uid_t {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.effective_uid_calls;
 		return fake.effective_uid;
 	}
 
-	auto dependencies(FakeContext *context) -> howdy::pam::RuntimeSessionDependencies {
+	auto Dependencies(FakeContext *context) -> howdy::pam::RuntimeSessionDependencies {
 		return howdy::pam::RuntimeSessionDependencies{
 		    .context             = context,
-		    .prepare_runtime     = prepare_runtime,
-		    .load_runtime_config = load_runtime_config,
-		    .effective_uid       = effective_uid,
+		    .prepare_runtime     = PrepareRuntime,
+		    .load_runtime_config = LoadRuntimeConfig,
+		    .effective_uid       = EffectiveUid,
 		};
 	}
 
-	auto issued_lease_has_state(const FakeContext &context, bool open) -> bool {
+	auto IssuedLeaseHasState(const FakeContext &context, bool open) -> bool {
 		if (context.issued_lease_fds.empty()) {
 			return false;
 		}
@@ -143,7 +143,7 @@ namespace {
 		return is_open == open && (is_open || errno == EBADF);
 	}
 
-	auto callback_counts(const FakeContext &context) -> CallbackCounts {
+	auto GetCallbackCounts(const FakeContext &context) -> CallbackCounts {
 		return CallbackCounts{
 		    .load          = context.load_paths.size(),
 		    .prepare       = context.prepare_usernames.size(),
@@ -151,38 +151,38 @@ namespace {
 		};
 	}
 
-	auto no_callbacks_ran(const FakeContext &context) -> bool {
+	auto NoCallbacksRan(const FakeContext &context) -> bool {
 		return context.load_paths.empty() && context.prepare_usernames.empty() &&
 		       context.effective_uid_calls == 0;
 	}
 
-	auto test_direct_success() -> bool {
-		FakeContext context{.load_results = {success_result(kConfiguredConfig)}};
+	auto TestDirectSuccess() -> bool {
+		FakeContext context{.load_results = {SuccessResult(kConfiguredConfig)}};
 		bool        ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 result = session.load_for_user("alice");
-			ok &= expect(result.ok(), "direct success returns ok");
+			                                   Dependencies(&context));
+			const auto                 result = session.LoadForUser("alice");
+			ok &= expect(result.Ok(), "direct success returns ok");
 			ok &=
 			    expect(context.load_paths == std::vector<std::filesystem::path>{kConfiguredConfig},
 			           "direct success loads configured path once");
 			ok &= expect(context.prepare_usernames.empty(), "direct success does not prepare");
-			ok &= expect(!session.staged(), "direct success is not staged");
-			ok &= expect(session.config_path() == kConfiguredConfig,
+			ok &= expect(!session.Staged(), "direct success is not staged");
+			ok &= expect(session.ConfigPath() == kConfiguredConfig,
 			             "direct success retains configured config path");
-			ok &= expect(session.user_models_dir() == kConfiguredModels,
+			ok &= expect(session.UserModelsDir() == kConfiguredModels,
 			             "direct success retains configured models path");
 		}
 		return ok;
 	}
 
-	auto test_direct_parse_failure() -> bool {
-		FakeContext context{.load_results = {parse_error_result(kConfiguredConfig)}};
+	auto TestDirectParseFailure() -> bool {
+		FakeContext context{.load_results = {ParseErrorResult(kConfiguredConfig)}};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 result = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 result = session.LoadForUser("alice");
 			if (!expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			            "direct parse failure returns config-load failure") ||
 			    !expect(context.prepare_usernames.empty(),
@@ -193,73 +193,73 @@ namespace {
 		return true;
 	}
 
-	auto test_root_eacces_failure() -> bool {
+	auto TestRootEaccesFailure() -> bool {
 		FakeContext context{
-		    .load_results  = {path_error_result(EACCES)},
+		    .load_results  = {PathErrorResult(EACCES)},
 		    .effective_uid = 0,
 		};
 		howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-		                                   dependencies(&context));
-		const auto                 result = session.load_for_user("alice");
+		                                   Dependencies(&context));
+		const auto                 result = session.LoadForUser("alice");
 		return expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 		              "root EACCES returns config-load failure") &&
 		       expect(context.effective_uid_calls == 1, "root EACCES checks effective UID") &&
 		       expect(context.prepare_usernames.empty(), "root EACCES does not prepare");
 	}
 
-	auto test_non_root_non_eacces_failure() -> bool {
+	auto TestNonRootNonEaccesFailure() -> bool {
 		FakeContext context{
-		    .load_results  = {path_error_result(ENOENT)},
+		    .load_results  = {PathErrorResult(ENOENT)},
 		    .effective_uid = 1000,
 		};
 		howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-		                                   dependencies(&context));
-		const auto                 result = session.load_for_user("alice");
+		                                   Dependencies(&context));
+		const auto                 result = session.LoadForUser("alice");
 		return expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 		              "non-root non-EACCES returns config-load failure") &&
 		       expect(context.effective_uid_calls == 0, "non-EACCES does not need effective UID") &&
 		       expect(context.prepare_usernames.empty(), "non-root non-EACCES does not prepare");
 	}
 
-	auto test_staged_success() -> bool {
-		const auto  staged_runtime = make_prepared_runtime("stage1");
+	auto TestStagedSuccess() -> bool {
+		const auto  staged_runtime = MakePreparedRuntime("stage1");
 		FakeContext context{
-		    .load_results = {path_error_result(EACCES), success_result(staged_runtime.config_path)},
+		    .load_results  = {PathErrorResult(EACCES), SuccessResult(staged_runtime.config_path)},
 		    .effective_uid = 1000,
 		};
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 result = session.load_for_user("alice");
-			ok &= expect(result.ok(), "staged config success returns ok");
+			                                   Dependencies(&context));
+			const auto                 result = session.LoadForUser("alice");
+			ok &= expect(result.Ok(), "staged config success returns ok");
 			ok &= expect(context.load_paths ==
 			                 std::vector<std::filesystem::path>{kConfiguredConfig,
 			                                                    staged_runtime.config_path},
 			             "staged success loads configured then staged path");
 			ok &= expect(context.prepare_usernames == std::vector<std::string>{"alice"},
 			             "staged success prepares once for alice");
-			ok &= expect(session.staged(), "staged success reports staged");
-			ok &= expect(session.config_path() == staged_runtime.config_path,
+			ok &= expect(session.Staged(), "staged success reports staged");
+			ok &= expect(session.ConfigPath() == staged_runtime.config_path,
 			             "staged success uses staged config");
-			ok &= expect(session.user_models_dir() == staged_runtime.user_models_dir,
+			ok &= expect(session.UserModelsDir() == staged_runtime.user_models_dir,
 			             "staged success uses staged models");
 		}
-		ok &= expect(issued_lease_has_state(context, false),
+		ok &= expect(IssuedLeaseHasState(context, false),
 		             "staged success closes lease at destruction");
 		return ok;
 	}
 
-	auto test_prepare_failure() -> bool {
+	auto TestPrepareFailure() -> bool {
 		FakeContext context{
-		    .load_results     = {path_error_result(EACCES)},
+		    .load_results     = {PathErrorResult(EACCES)},
 		    .prepare_succeeds = false,
 		    .effective_uid    = 1000,
 		};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 result = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 result = session.LoadForUser("alice");
 			if (!expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed,
 			            "prepare failure returns prepare-failed") ||
 			    !expect(context.load_paths.size() == 1,
@@ -272,33 +272,32 @@ namespace {
 		return true;
 	}
 
-	auto test_staged_config_failure() -> bool {
-		const auto  staged_runtime = make_prepared_runtime("stage1");
+	auto TestStagedConfigFailure() -> bool {
+		const auto  staged_runtime = MakePreparedRuntime("stage1");
 		FakeContext context{
-		    .load_results  = {path_error_result(EACCES),
-		                      parse_error_result(staged_runtime.config_path)},
+		    .load_results = {PathErrorResult(EACCES), ParseErrorResult(staged_runtime.config_path)},
 		    .effective_uid = 1000,
 		};
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 result = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 result = session.LoadForUser("alice");
 			ok &= expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			             "staged parse failure returns config-load failure");
-			ok &= expect(issued_lease_has_state(context, true),
+			ok &= expect(IssuedLeaseHasState(context, true),
 			             "staged parse failure retains lease until destruction");
 		}
-		ok &= expect(issued_lease_has_state(context, false),
+		ok &= expect(IssuedLeaseHasState(context, false),
 		             "staged parse failure closes lease at destruction");
 		return ok;
 	}
 
-	auto test_missing_dependencies() -> bool {
+	auto TestMissingDependencies() -> bool {
 		bool ok = true;
 		for (int missing = 0; missing < 3; ++missing) {
 			FakeContext context;
-			auto        deps = dependencies(&context);
+			auto        deps = Dependencies(&context);
 			switch (missing) {
 				case 0:
 					deps.prepare_runtime = nullptr;
@@ -315,157 +314,157 @@ namespace {
 
 			{
 				howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels, deps);
-				const auto                 result = session.load_for_user("alice");
+				const auto                 result = session.LoadForUser("alice");
 				ok &= expect(result.status ==
 				                 howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies,
 				             "missing dependency returns invalid-dependencies");
 			}
-			ok &= expect(no_callbacks_ran(context), "missing dependency invokes no callbacks");
+			ok &= expect(NoCallbacksRan(context), "missing dependency invokes no callbacks");
 		}
 		return ok;
 	}
 
-	auto test_no_duplicate_cleanup() -> bool {
-		const auto  staged_runtime = make_prepared_runtime("stage1");
+	auto TestNoDuplicateCleanup() -> bool {
+		const auto  staged_runtime = MakePreparedRuntime("stage1");
 		FakeContext context{
-		    .load_results = {path_error_result(EACCES), success_result(staged_runtime.config_path)},
+		    .load_results  = {PathErrorResult(EACCES), SuccessResult(staged_runtime.config_path)},
 		    .effective_uid = 1000,
 		};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			if (!expect(session.load_for_user("alice").ok(),
+			                                   Dependencies(&context));
+			if (!expect(session.LoadForUser("alice").Ok(),
 			            "duplicate-cleanup setup stages successfully")) {
 				return false;
 			}
 		}
-		return expect(issued_lease_has_state(context, false), "scope exit closes staged lease");
+		return expect(IssuedLeaseHasState(context, false), "scope exit closes staged lease");
 	}
 
-	auto test_direct_success_is_one_shot() -> bool {
-		FakeContext context{.load_results = {success_result(kConfiguredConfig)}};
+	auto TestDirectSuccessIsOneShot() -> bool {
+		FakeContext context{.load_results = {SuccessResult(kConfiguredConfig)}};
 		bool        ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 first = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 first = session.LoadForUser("alice");
 			ok &= expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kOk,
 			             "direct one-shot first load succeeds");
-			const auto counts_after_first = callback_counts(context);
+			const auto counts_after_first = GetCallbackCounts(context);
 
-			const auto second = session.load_for_user("bob");
+			const auto second = session.LoadForUser("bob");
 			ok &= expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "direct one-shot rejects second load");
-			ok &= expect(!second.ok(), "already-loaded direct result is not ok");
-			ok &= expect(callback_counts(context) == counts_after_first,
+			ok &= expect(!second.Ok(), "already-loaded direct result is not ok");
+			ok &= expect(GetCallbackCounts(context) == counts_after_first,
 			             "direct re-entry invokes no callbacks");
-			ok &= expect(session.config_path() == kConfiguredConfig,
+			ok &= expect(session.ConfigPath() == kConfiguredConfig,
 			             "direct re-entry preserves configured config path");
-			ok &= expect(session.user_models_dir() == kConfiguredModels,
+			ok &= expect(session.UserModelsDir() == kConfiguredModels,
 			             "direct re-entry preserves configured models path");
 		}
 		return ok;
 	}
 
-	auto test_staged_success_is_one_shot() -> bool {
-		const auto  runtime = make_prepared_runtime("run001");
+	auto TestStagedSuccessIsOneShot() -> bool {
+		const auto  runtime = MakePreparedRuntime("run001");
 		FakeContext context{
-		    .load_results  = {path_error_result(EACCES), success_result(runtime.config_path)},
+		    .load_results  = {PathErrorResult(EACCES), SuccessResult(runtime.config_path)},
 		    .effective_uid = 1000,
 		    .prepared      = runtime,
 		};
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 first = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 first = session.LoadForUser("alice");
 			ok &= expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kOk,
 			             "staged one-shot first load succeeds");
-			ok &= expect(session.config_path() == runtime.config_path,
+			ok &= expect(session.ConfigPath() == runtime.config_path,
 			             "staged one-shot activates runtime-a config");
-			ok &= expect(session.user_models_dir() == runtime.user_models_dir,
+			ok &= expect(session.UserModelsDir() == runtime.user_models_dir,
 			             "staged one-shot activates runtime-a models");
-			const auto counts_after_first = callback_counts(context);
+			const auto counts_after_first = GetCallbackCounts(context);
 
-			const auto second = session.load_for_user("bob");
+			const auto second = session.LoadForUser("bob");
 			ok &= expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "staged one-shot rejects second load");
-			ok &= expect(callback_counts(context) == counts_after_first,
+			ok &= expect(GetCallbackCounts(context) == counts_after_first,
 			             "staged re-entry invokes no callbacks");
-			ok &= expect(session.config_path() == runtime.config_path,
+			ok &= expect(session.ConfigPath() == runtime.config_path,
 			             "staged re-entry preserves runtime-a config");
-			ok &= expect(session.user_models_dir() == runtime.user_models_dir,
+			ok &= expect(session.UserModelsDir() == runtime.user_models_dir,
 			             "staged re-entry preserves runtime-a models");
-			ok &= expect(issued_lease_has_state(context, true),
+			ok &= expect(IssuedLeaseHasState(context, true),
 			             "staged re-entry retains original lease");
 		}
-		ok &= expect(issued_lease_has_state(context, false),
+		ok &= expect(IssuedLeaseHasState(context, false),
 		             "staged re-entry closes original lease at destruction");
 		return ok;
 	}
 
-	auto test_failed_staged_load_is_one_shot() -> bool {
-		const auto  runtime = make_prepared_runtime("fail01");
+	auto TestFailedStagedLoadIsOneShot() -> bool {
+		const auto  runtime = MakePreparedRuntime("fail01");
 		FakeContext context{
-		    .load_results  = {path_error_result(EACCES), parse_error_result(runtime.config_path)},
+		    .load_results  = {PathErrorResult(EACCES), ParseErrorResult(runtime.config_path)},
 		    .effective_uid = 1000,
 		    .prepared      = runtime,
 		};
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   dependencies(&context));
-			const auto                 first = session.load_for_user("alice");
+			                                   Dependencies(&context));
+			const auto                 first = session.LoadForUser("alice");
 			ok &= expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			             "failed staged one-shot reports config failure");
-			const auto counts_after_first = callback_counts(context);
+			const auto counts_after_first = GetCallbackCounts(context);
 
-			const auto second = session.load_for_user("bob");
+			const auto second = session.LoadForUser("bob");
 			ok &= expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "failed staged one-shot rejects second load");
-			ok &= expect(callback_counts(context) == counts_after_first,
+			ok &= expect(GetCallbackCounts(context) == counts_after_first,
 			             "failed staged re-entry invokes no callbacks");
-			ok &= expect(issued_lease_has_state(context, true),
+			ok &= expect(IssuedLeaseHasState(context, true),
 			             "failed staged re-entry retains original lease");
 		}
-		ok &= expect(issued_lease_has_state(context, false),
+		ok &= expect(IssuedLeaseHasState(context, false),
 		             "failed staged re-entry closes original lease at destruction");
 		return ok;
 	}
 
-	auto test_invalid_dependencies_are_one_shot() -> bool {
+	auto TestInvalidDependenciesAreOneShot() -> bool {
 		FakeContext context;
-		auto        deps     = dependencies(&context);
+		auto        deps     = Dependencies(&context);
 		deps.prepare_runtime = nullptr;
 		bool ok              = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels, deps);
-			const auto                 first = session.load_for_user("alice");
+			const auto                 first = session.LoadForUser("alice");
 			ok &= expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies,
 			             "invalid dependency first load fails validation");
-			ok &= expect(no_callbacks_ran(context),
+			ok &= expect(NoCallbacksRan(context),
 			             "invalid dependency first load invokes no callbacks");
 
-			const auto second = session.load_for_user("bob");
+			const auto second = session.LoadForUser("bob");
 			ok &= expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "invalid dependency session rejects second load");
-			ok &= expect(no_callbacks_ran(context),
-			             "invalid dependency re-entry invokes no callbacks");
+			ok &=
+			    expect(NoCallbacksRan(context), "invalid dependency re-entry invokes no callbacks");
 		}
 		return ok;
 	}
 
-	auto test_invalid_prepared_runtime_files() -> bool {
+	auto TestInvalidPreparedRuntimeFiles() -> bool {
 		namespace fs = std::filesystem;
-		using howdy::native::auth_helper_protocol::prepared_user_models_dir;
+		using howdy::native::auth_helper_protocol::PreparedUserModelsDir;
 
 		struct TestCase {
 			std::string_view                 name;
 			howdy::pam::PreparedRuntimeFiles prepared;
 		};
 
-		const auto valid   = make_prepared_runtime("valid1");
-		const auto sibling = make_prepared_runtime("sibling");
+		const auto valid   = MakePreparedRuntime("valid1");
+		const auto sibling = MakePreparedRuntime("sibling");
 
 		auto empty_config = valid;
 		empty_config.config_path.clear();
@@ -479,7 +478,7 @@ namespace {
 		auto models_outside            = valid;
 		models_outside.user_models_dir = "/var/lib/howdy/models";
 		auto sibling_models            = valid;
-		sibling_models.user_models_dir = prepared_user_models_dir(sibling.root_dir).string();
+		sibling_models.user_models_dir = PreparedUserModelsDir(sibling.root_dir).string();
 		auto swapped_paths             = valid;
 		swapped_paths.config_path      = valid.user_models_dir;
 		swapped_paths.user_models_dir  = valid.config_path;
@@ -525,27 +524,27 @@ namespace {
 		bool ok = true;
 		for (const auto &test_case : test_cases) {
 			FakeContext context{
-			    .load_results  = {path_error_result(EACCES)},
+			    .load_results  = {PathErrorResult(EACCES)},
 			    .effective_uid = 1000,
 			    .prepared      = test_case.prepared,
 			};
 			{
 				howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-				                                   dependencies(&context));
-				const auto                 result = session.load_for_user("alice");
+				                                   Dependencies(&context));
+				const auto                 result = session.LoadForUser("alice");
 				const std::string          name(test_case.name);
 				ok &= expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed,
 				             name + " is rejected");
 				ok &= expect(context.load_paths.size() == 1, name + " does not load staged config");
-				ok &= expect(!session.staged(), name + " is not staged");
-				ok &= expect(session.config_path() == kConfiguredConfig,
+				ok &= expect(!session.Staged(), name + " is not staged");
+				ok &= expect(session.ConfigPath() == kConfiguredConfig,
 				             name + " preserves configured config path");
-				ok &= expect(session.user_models_dir() == kConfiguredModels,
+				ok &= expect(session.UserModelsDir() == kConfiguredModels,
 				             name + " preserves configured models path");
-				ok &= expect(issued_lease_has_state(context, false),
+				ok &= expect(IssuedLeaseHasState(context, false),
 				             name + " closes rejected lease immediately");
 			}
-			ok &= expect(issued_lease_has_state(context, false),
+			ok &= expect(IssuedLeaseHasState(context, false),
 			             std::string(test_case.name) + " keeps rejected lease closed");
 		}
 		return ok;
@@ -555,25 +554,25 @@ namespace {
 
 auto main(int argc, char **argv) -> int {
 	if (argc == 3 && std::string_view(argv[1]) == "--fd3-probe") {
-		return run_runtime_session_fd3_probe(argv[2]);
+		return RunRuntimeSessionFd3Probe(argv[2]);
 	}
 
 	bool ok = true;
-	ok &= test_direct_success();
-	ok &= test_direct_parse_failure();
-	ok &= test_root_eacces_failure();
-	ok &= test_non_root_non_eacces_failure();
-	ok &= test_staged_success();
-	ok &= test_prepare_failure();
-	ok &= test_staged_config_failure();
-	ok &= test_missing_dependencies();
-	ok &= test_no_duplicate_cleanup();
-	ok &= test_direct_success_is_one_shot();
-	ok &= test_staged_success_is_one_shot();
-	ok &= test_failed_staged_load_is_one_shot();
-	ok &= test_invalid_dependencies_are_one_shot();
-	ok &= run_runtime_session_spawn_tests();
-	ok &= run_runtime_session_deadline_tests();
-	ok &= test_invalid_prepared_runtime_files();
+	ok &= TestDirectSuccess();
+	ok &= TestDirectParseFailure();
+	ok &= TestRootEaccesFailure();
+	ok &= TestNonRootNonEaccesFailure();
+	ok &= TestStagedSuccess();
+	ok &= TestPrepareFailure();
+	ok &= TestStagedConfigFailure();
+	ok &= TestMissingDependencies();
+	ok &= TestNoDuplicateCleanup();
+	ok &= TestDirectSuccessIsOneShot();
+	ok &= TestStagedSuccessIsOneShot();
+	ok &= TestFailedStagedLoadIsOneShot();
+	ok &= TestInvalidDependenciesAreOneShot();
+	ok &= RunRuntimeSessionSpawnTests();
+	ok &= RunRuntimeSessionDeadlineTests();
+	ok &= TestInvalidPreparedRuntimeFiles();
 	return ok ? 0 : 1;
 }

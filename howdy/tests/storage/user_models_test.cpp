@@ -6,7 +6,7 @@
 namespace howdy::test::user_models {
 	using namespace howdy::test::user_models;
 
-	auto test_user_model_loading() -> bool {
+	auto TestUserModelLoading() -> bool {
 		namespace fs = std::filesystem;
 
 		bool            ok        = true;
@@ -19,19 +19,19 @@ namespace howdy::test::user_models {
 
 		const auto models_dir = temp_root / "models";
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
-		ok &= expect_readiness_checks(temp_root);
+		ok &= ExpectReadinessChecks(temp_root);
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", {});
+			const auto result = howdy::native::ListUserModelEntries("alice", {});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
 			             "missing model directory returns kNoModelDirectory");
 		}
 		{
-			const auto result = howdy::native::load_user_models("alice", "opencv_dnn_sface");
+			const auto result = howdy::native::LoadUserModels("alice", "opencv_dnn_sface");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
 			             "load remaps missing model directory to kNoModel");
 		}
 		{
-			const auto result = howdy::native::inspect_user_model_file("alice");
+			const auto result = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
 			             "inspect returns kNoModelDirectory");
 		}
@@ -39,40 +39,40 @@ namespace howdy::test::user_models {
 		ok &= expect(!ec, "create models dir");
 
 		const std::string backend = "opencv_dnn_sface";
-		ok &= expect(howdy::native::is_valid_model_user_name("alice@example.com"),
+		ok &= expect(howdy::native::IsValidModelUserName("alice@example.com"),
 		             "domain-style usernames remain valid");
-		ok &= expect(!howdy::native::is_valid_model_user_name("../alice"),
+		ok &= expect(!howdy::native::IsValidModelUserName("../alice"),
 		             "malformed path-traversal username input is rejected");
-		ok &= expect(!howdy::native::is_valid_model_user_name("alice..bob"),
+		ok &= expect(!howdy::native::IsValidModelUserName("alice..bob"),
 		             "malformed username containing dot-dot is rejected");
-		ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "../alice").has_value(),
+		ok &= expect(!howdy::native::ResolveUserModelPath(models_dir, "../alice").has_value(),
 		             "unsafe model paths are not constructed");
-		ok &= expect(!howdy::native::resolve_user_model_path(models_dir, "alice..bob").has_value(),
+		ok &= expect(!howdy::native::ResolveUserModelPath(models_dir, "alice..bob").has_value(),
 		             "dot-dot username input is rejected before model path construction");
 
 		{
-			const auto result = howdy::native::load_user_models("../alice", backend);
+			const auto result = howdy::native::LoadUserModels("../alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidUser,
 			             "invalid username returns kInvalidUser");
 		}
 
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
 			             "missing file returns kNoModel");
 		}
 		{
-			const auto result = howdy::native::inspect_user_model_file("alice");
+			const auto result = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
 			             "inspect returns kNoModel");
 		}
 
 		const auto model_path = models_dir / "alice.dat";
-		when_supported(
+		WhenSupported(
 		    mkfifo(model_path.c_str(), 0600) == 0,
 		    [&] -> void {
 			    const auto started = std::chrono::steady_clock::now();
-			    const auto result  = howdy::native::load_user_models("alice", backend);
+			    const auto result  = howdy::native::LoadUserModels("alice", backend);
 			    const auto elapsed = std::chrono::steady_clock::now() - started;
 			    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			                 "FIFO model target is rejected");
@@ -84,19 +84,19 @@ namespace howdy::test::user_models {
 		    "FIFO model target creation failed");
 		ok &= expect(write_file(model_path, "not-json"), "write malformed model file");
 		{
-			const auto result = howdy::native::inspect_user_model_file("alice");
+			const auto result = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "inspect accepts malformed JSON without parsing");
 		}
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "malformed json returns kParseError");
 		}
 
 		ok &= expect(write_file(model_path, "[]"), "write empty model list");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
 			             "empty model list returns kNoModel");
 		}
@@ -106,7 +106,7 @@ namespace howdy::test::user_models {
 		               R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
 		    "write incompatible backend model");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleBackend,
 			             "incompatible backend is detected");
 		}
@@ -118,7 +118,7 @@ namespace howdy::test::user_models {
 ])"),
 		             "write valid models");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "valid models return kOk");
 			ok &= expect(result.stored.encodings.size() == 3, "three valid encodings loaded");
@@ -138,7 +138,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":9,"label":"bad/name","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
 		    "write unsafe label model");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "model label containing path separator is rejected");
 		}
@@ -149,7 +149,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":9,"label":"bad\nname","backend":"opencv_dnn_sface","data":[[0.1,0.2]]}])"),
 		    "write control-character label model");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "model label containing newline is rejected");
 		}
@@ -168,10 +168,10 @@ namespace howdy::test::user_models {
 		    "write symlink target model");
 		fs::remove(model_path, ec);
 		ec.clear();
-		when_supported(
+		WhenSupported(
 		    symlink(symlink_target.c_str(), model_path.c_str()) == 0,
 		    [&] -> void {
-			    const auto result = howdy::native::load_user_models("alice", backend);
+			    const auto result = howdy::native::LoadUserModels("alice", backend);
 			    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			                 "symlinked model file is rejected");
 			    ok &= expect(fs::remove(model_path, ec), "remove symlinked model path");
@@ -186,10 +186,10 @@ namespace howdy::test::user_models {
 
 		fs::remove(model_path, ec);
 		ec.clear();
-		when_supported(
+		WhenSupported(
 		    symlink(model_path.c_str(), model_path.c_str()) == 0,
 		    [&] -> void {
-			    const auto result = howdy::native::list_user_model_entries("alice", backend);
+			    const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			    ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			                 "self-referential model symlink is rejected");
 			    ok &= expect(unlink(model_path.c_str()) == 0,
@@ -205,7 +205,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(chmod(model_path.c_str(), 0664) == 0, "make model file group-writable");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "group-writable model file is rejected");
 		}
@@ -213,7 +213,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(chmod(model_path.c_str(), 0666) == 0, "make model file world-writable");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "world-writable model file is rejected");
 		}
@@ -225,7 +225,7 @@ namespace howdy::test::user_models {
 		ok &= expect(link(model_path.c_str(), hardlink_path.c_str()) == 0,
 		             "create hard-linked model file");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "hard-linked model file is rejected");
 		}
@@ -247,11 +247,11 @@ namespace howdy::test::user_models {
 				    fs::path("/run/howdy/pam-" + uid + "-gen000/models/../alice.dat"),
 				};
 				for (const auto &path : malformed_paths) {
-					ok &= expect(!howdy::native::validate_staged_user_model_file(model_fd, path),
+					ok &= expect(!howdy::native::ValidateStagedUserModelFile(model_fd, path),
 					             "staged validator rejects malformed path: " + path.string());
 				}
 				const auto relative_staged_models = fs::path("pam-" + uid + "-gen000") / "models";
-				const auto relative_staged        = howdy::native::check_user_model_readiness(
+				const auto relative_staged        = howdy::native::CheckUserModelReadiness(
 				    relative_staged_models, "alice", std::nullopt);
 				ok &=
 				    expect(relative_staged.status == howdy::native::UserModelStatus::kInsecurePath,
@@ -260,11 +260,11 @@ namespace howdy::test::user_models {
 			}
 		}
 
-		when_supported(
+		WhenSupported(
 		    geteuid() != 0,
 		    [&] -> void {
 			    ok &= expect(chmod(model_path.c_str(), 0000) == 0, "make model file unreadable");
-			    const auto result = howdy::native::load_user_models("alice", backend);
+			    const auto result = howdy::native::LoadUserModels("alice", backend);
 			    ok &= expect(result.status != howdy::native::UserModelStatus::kOk,
 			                 "unreadable model file fails safely");
 			    ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restore unreadable model file");
@@ -273,7 +273,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(chmod(models_dir.c_str(), 0775) == 0, "make models dir group-writable");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "group-writable model dir is rejected");
 		}
@@ -281,7 +281,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(chmod(models_dir.c_str(), 0777) == 0, "make models dir world-writable");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "world-writable model dir is rejected");
 		}
@@ -295,19 +295,19 @@ namespace howdy::test::user_models {
 		oversized_encoding += "]]}]";
 		ok &= expect(write_file(model_path, oversized_encoding), "write oversized encoding");
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "oversized encoding is rejected");
 		}
 
 		ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong top-level JSON shape");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects wrong top-level JSON shape");
 		}
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "load remaps invalid-shape model JSON to kParseError");
 		}
@@ -318,7 +318,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":-1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
 		    "write negative ID model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects negative model IDs");
 		}
@@ -329,7 +329,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":"first","backend":"opencv_dnn_sface","data":[[0.1]]},{"id":1,"time":2,"label":"second","backend":"opencv_dnn_sface","data":[[0.2]]}])"),
 		    "write duplicate ID models");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects duplicate model IDs");
 		}
@@ -340,7 +340,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":"1","time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
 		    "write non-integer ID model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-integer model IDs");
 		}
@@ -351,7 +351,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":2147483647,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
 		    "write max-int ID model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects max-int model IDs");
 		}
@@ -362,7 +362,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":"now","label":"bad","backend":"opencv_dnn_sface","data":[[0.1]]}])"),
 		    "write non-integer timestamp model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-integer timestamps");
 		}
@@ -373,7 +373,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":7,"backend":"opencv_dnn_sface","data":[[0.1]]}])"),
 		    "write non-string label model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-string labels");
 		}
@@ -384,7 +384,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,"bad"]]}])"),
 		    "write non-numeric encoding value model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-numeric encoding values");
 		}
@@ -395,7 +395,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,[0.2]]]}])"),
 		    "write nested encoding array model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects nested encoding arrays");
 		}
@@ -406,7 +406,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[0.1,{}]]}])"),
 		    "write nested encoding object model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects nested encoding objects");
 		}
@@ -417,7 +417,7 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"time":1,"label":"bad","backend":"opencv_dnn_sface","data":[[1e999]]}])"),
 		    "write non-finite encoding value model");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status != howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing rejects non-finite encoding values when representable");
 		}
@@ -428,13 +428,13 @@ namespace howdy::test::user_models {
 		        R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","metric":"l2","model":"sface.onnx","data":[[0.1]]}])"),
 		    "write incompatible metric model");
 		{
-			const auto result = howdy::native::list_user_model_entries(
+			const auto result = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleMetric,
 			             "lifecycle listing rejects incompatible metric");
 		}
 		{
-			const auto result = howdy::native::list_user_model_entries(
+			const auto result = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kL2, "other.onnx");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kIncompatibleModel,
 			             "lifecycle listing rejects incompatible model metadata");
@@ -446,12 +446,12 @@ namespace howdy::test::user_models {
 		oversized_json += "\"}]";
 		ok &= expect(write_file(model_path, oversized_json), "write oversized model JSON");
 		{
-			const auto result = howdy::native::list_user_model_entries("alice", backend);
+			const auto result = howdy::native::ListUserModelEntries("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
 			             "lifecycle listing rejects oversized model JSON");
 		}
 		{
-			const auto result = howdy::native::load_user_models("alice", backend);
+			const auto result = howdy::native::LoadUserModels("alice", backend);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "load remaps oversized model JSON to kParseError");
 		}
@@ -459,14 +459,14 @@ namespace howdy::test::user_models {
 		fs::remove(model_path, ec);
 		ec.clear();
 		{
-			const auto result = howdy::native::clear_user_model_entries("alice");
+			const auto result = howdy::native::ClearUserModelEntries("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kNoModel,
 			             "clear reports no model file without parsing");
 		}
 
 		ok &= expect(write_file(model_path, "not-json"), "write malformed model before clear");
 		{
-			const auto result = howdy::native::clear_user_model_entries("alice");
+			const auto result = howdy::native::ClearUserModelEntries("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "clear removes malformed JSON");
 			ok &= expect(!fs::exists(model_path), "clear deletes malformed JSON model file");
@@ -474,7 +474,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(write_file(model_path, oversized_json), "write oversized model before clear");
 		{
-			const auto result = howdy::native::clear_user_model_entries("alice");
+			const auto result = howdy::native::ClearUserModelEntries("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "clear removes oversized JSON");
 			ok &= expect(!fs::exists(model_path), "clear deletes oversized JSON model file");
@@ -482,7 +482,7 @@ namespace howdy::test::user_models {
 
 		ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong-shape model before clear");
 		{
-			const auto result = howdy::native::clear_user_model_entries("alice");
+			const auto result = howdy::native::ClearUserModelEntries("alice");
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "clear removes wrong-shape JSON");
 			ok &= expect(!fs::exists(model_path), "clear deletes wrong-shape JSON model file");
@@ -491,13 +491,13 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, "not-json"),
 		             "write malformed model before verified clear");
 		{
-			const auto inspection = howdy::native::inspect_user_model_file("alice");
+			const auto inspection = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
 			                 inspection.snapshot.has_value(),
 			             "verified clear inspects malformed JSON without parsing");
-			with_present(inspection.snapshot, [&] -> void {
-				const auto result = howdy::native::clear_user_model_entries_if_unchanged(
-				    "alice", *inspection.snapshot);
+			WithPresent(inspection.snapshot, [&] -> void {
+				const auto result =
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *inspection.snapshot);
 				ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 				             "verified clear removes unchanged malformed JSON");
 			});
@@ -508,13 +508,13 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, oversized_json),
 		             "write oversized model before verified clear");
 		{
-			const auto inspection = howdy::native::inspect_user_model_file("alice");
+			const auto inspection = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
 			                 inspection.snapshot.has_value(),
 			             "verified clear inspects oversized JSON without parsing");
-			with_present(inspection.snapshot, [&] -> void {
-				const auto result = howdy::native::clear_user_model_entries_if_unchanged(
-				    "alice", *inspection.snapshot);
+			WithPresent(inspection.snapshot, [&] -> void {
+				const auto result =
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *inspection.snapshot);
 				ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 				             "verified clear removes unchanged oversized JSON");
 			});
@@ -525,13 +525,13 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, R"({"id":1})"),
 		             "write wrong-shape model before verified clear");
 		{
-			const auto inspection = howdy::native::inspect_user_model_file("alice");
+			const auto inspection = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
 			                 inspection.snapshot.has_value(),
 			             "verified clear inspects wrong-shape JSON without parsing");
-			with_present(inspection.snapshot, [&] -> void {
-				const auto result = howdy::native::clear_user_model_entries_if_unchanged(
-				    "alice", *inspection.snapshot);
+			WithPresent(inspection.snapshot, [&] -> void {
+				const auto result =
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *inspection.snapshot);
 				ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 				             "verified clear removes unchanged wrong-shape JSON");
 			});
@@ -541,15 +541,15 @@ namespace howdy::test::user_models {
 
 		ok &= expect(write_file(model_path, "not-json"), "write model before stale verified clear");
 		{
-			const auto inspection = howdy::native::inspect_user_model_file("alice");
+			const auto inspection = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
 			                 inspection.snapshot.has_value(),
 			             "verified clear captures file snapshot");
 			ok &= expect(write_file(model_path, "changed-json"),
 			             "rewrite model after clear inspection");
-			with_present(inspection.snapshot, [&] -> void {
-				const auto result = howdy::native::clear_user_model_entries_if_unchanged(
-				    "alice", *inspection.snapshot);
+			WithPresent(inspection.snapshot, [&] -> void {
+				const auto result =
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *inspection.snapshot);
 				ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
 				             "verified clear aborts when model file changes after inspection");
 			});
@@ -559,7 +559,7 @@ namespace howdy::test::user_models {
 		ok &= expect(write_file(model_path, R"([{"id":0,"time":1,"label":"one","data":[[1.0]]}])"),
 		             "write same-size model before stale clear");
 		{
-			const auto inspection = howdy::native::inspect_user_model_file("alice");
+			const auto inspection = howdy::native::InspectUserModelFile("alice");
 			ok &= expect(inspection.status == howdy::native::UserModelStatus::kOk &&
 			                 inspection.snapshot.has_value(),
 			             "verified clear captures snapshot before same-size rewrite");
@@ -567,7 +567,7 @@ namespace howdy::test::user_models {
 			ok &= expect(
 			    write_file(model_path, R"([{"id":0,"time":1,"label":"two","data":[[1.0]]}])"),
 			    "rewrite model with same-size content after clear inspection");
-			with_present(inspection.snapshot, [&] -> void {
+			WithPresent(inspection.snapshot, [&] -> void {
 				const std::array<timespec, 2> times{
 				    timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
 				             .tv_nsec = inspection.snapshot->mtime_nanosecs},
@@ -576,8 +576,8 @@ namespace howdy::test::user_models {
 				};
 				ok &= expect(utimensat(AT_FDCWD, model_path.c_str(), times.data(), 0) == 0,
 				             "restore old model mtime after same-size rewrite");
-				const auto result = howdy::native::clear_user_model_entries_if_unchanged(
-				    "alice", *inspection.snapshot);
+				const auto result =
+				    howdy::native::ClearUserModelEntriesIfUnchanged("alice", *inspection.snapshot);
 				ok &= expect(result.status == howdy::native::UserModelStatus::kModelChanged,
 				             "verified clear detects same-size rewrite with restored mtime");
 			});
@@ -598,14 +598,13 @@ namespace howdy::test::user_models {
 			    .model     = "sface.onnx",
 			    .encodings = {{0.3F, 0.4F}},
 			};
-			const auto result =
-			    howdy::native::append_user_model_entry("alice", default_label_entry);
+			const auto result = howdy::native::AppendUserModelEntry("alice", default_label_entry);
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "append assigns actual ID from locked storage state");
 			ok &= expect(result.entry.id == 11, "append returns actual created model ID");
 			ok &= expect(result.entry.label == "Model #11",
 			             "append default label matches actual created model ID");
-			const auto listing = howdy::native::list_user_model_entries(
+			const auto listing = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
 			ok &= expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2 && listing.entries[1].id == 11 &&
@@ -618,9 +617,9 @@ namespace howdy::test::user_models {
 
 auto main() -> int {
 	const std::array results = {
-	    howdy::test::user_models::test_user_model_loading(),
-	    howdy::test::user_models::test_user_model_mutation_start(),
-	    howdy::test::user_models::test_user_model_mutation_failures(),
+	    howdy::test::user_models::TestUserModelLoading(),
+	    howdy::test::user_models::TestUserModelMutationStart(),
+	    howdy::test::user_models::TestUserModelMutationFailures(),
 	};
 	const bool ok = std::ranges::all_of(results, [](bool value) -> bool {
 		return value;

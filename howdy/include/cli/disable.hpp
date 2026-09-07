@@ -1,3 +1,3 @@
 #pragma once
 
-auto disable_main(int argc, char **argv) -> int;
+auto DisableMain(int argc, char **argv) -> int;

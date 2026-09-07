@@ -56,7 +56,6 @@ namespace howdy::native::add_internal {
 		AppendUserModelEntryFn append_user_model    = nullptr;
 	};
 
-	auto add_main_with_dependencies(int argc, char **argv, const AddDependencies &dependencies)
-	    -> int;
+	auto AddMainWithDependencies(int argc, char **argv, const AddDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::add_internal

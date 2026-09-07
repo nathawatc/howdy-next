@@ -14,48 +14,47 @@ namespace howdy::native {
 	    : path_(std::move(path))
 	    , reader_(content.data(), content.size()) {}
 
-	auto ConfigReader::ok() const -> bool {
+	auto ConfigReader::Ok() const -> bool {
 		return reader_.ParseError() == 0;
 	}
 
-	auto ConfigReader::parse_error() const -> int {
+	auto ConfigReader::ParseError() const -> int {
 		return reader_.ParseError();
 	}
 
-	auto ConfigReader::get(const std::string &section, const std::string &name,
+	auto ConfigReader::Get(const std::string &section, const std::string &name,
 	                       const std::string &fallback) const -> std::string {
 		return reader_.Get(section, name, fallback);
 	}
 
-	auto ConfigReader::get_int(const std::string &section, const std::string &name,
-	                           int fallback) const -> int {
+	auto ConfigReader::GetInt(const std::string &section, const std::string &name,
+	                          int fallback) const -> int {
 		return static_cast<int>(reader_.GetInteger(section, name, fallback));
 	}
 
-	auto ConfigReader::get_float(const std::string &section, const std::string &name,
-	                             float fallback) const -> float {
+	auto ConfigReader::GetFloat(const std::string &section, const std::string &name,
+	                            float fallback) const -> float {
 		const auto value = reader_.Get(section, name, "");
-		if (const auto parsed = parse_config_float_strict(value)) {
+		if (const auto parsed = ParseConfigFloatStrict(value)) {
 			return *parsed;
 		}
 		return fallback;
 	}
 
-	auto ConfigReader::get_bool(const std::string &section, const std::string &name,
-	                            bool fallback) const -> bool {
+	auto ConfigReader::GetBool(const std::string &section, const std::string &name,
+	                           bool fallback) const -> bool {
 		return reader_.GetBoolean(section, name, fallback);
 	}
 
-	auto ConfigReader::sections() const -> std::vector<std::string> {
+	auto ConfigReader::Sections() const -> std::vector<std::string> {
 		return reader_.Sections();
 	}
 
-	auto ConfigReader::keys(const std::string &section) const -> std::vector<std::string> {
+	auto ConfigReader::Keys(const std::string &section) const -> std::vector<std::string> {
 		return reader_.Keys(section);
 	}
 
-	auto ConfigReader::has_value(const std::string &section, const std::string &name) const
-	    -> bool {
+	auto ConfigReader::HasValue(const std::string &section, const std::string &name) const -> bool {
 		return reader_.HasValue(section, name);
 	}
 

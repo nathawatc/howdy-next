@@ -34,7 +34,7 @@ namespace howdy::test::process {
 		ScopedSignalBlock(const ScopedSignalBlock &)                     = delete;
 		auto operator=(const ScopedSignalBlock &) -> ScopedSignalBlock & = delete;
 
-		[[nodiscard]] auto valid() const noexcept -> bool {
+		[[nodiscard]] auto Valid() const noexcept -> bool {
 			return valid_;
 		}
 
@@ -43,7 +43,7 @@ namespace howdy::test::process {
 		bool     valid_ = false;
 	};
 
-	inline auto reap_test_child(pid_t child_pid, int *status) -> bool {
+	inline auto ReapTestChild(pid_t child_pid, int *status) -> bool {
 		pid_t waited;
 		do {
 			waited = waitpid(child_pid, status, 0);
@@ -55,7 +55,7 @@ namespace howdy::test::process {
 		return false;
 	}
 
-	inline auto spawn_child(int exit_code, std::chrono::milliseconds delay = {}) -> pid_t {
+	inline auto SpawnChild(int exit_code, std::chrono::milliseconds delay = {}) -> pid_t {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
 			std::this_thread::sleep_for(delay);
@@ -64,11 +64,11 @@ namespace howdy::test::process {
 		return child_pid;
 	}
 
-	inline auto spawn_exiting_child(int exit_code) -> pid_t {
-		return spawn_child(exit_code);
+	inline auto SpawnExitingChild(int exit_code) -> pid_t {
+		return SpawnChild(exit_code);
 	}
 
-	inline auto spawn_signaled_child(int signal_number) -> pid_t {
+	inline auto SpawnSignaledChild(int signal_number) -> pid_t {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
 			raise(signal_number);
@@ -77,7 +77,7 @@ namespace howdy::test::process {
 		return child_pid;
 	}
 
-	inline auto spawn_blocked_child() -> pid_t {
+	inline auto SpawnBlockedChild() -> pid_t {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
 			while (true) {
@@ -87,9 +87,9 @@ namespace howdy::test::process {
 		return child_pid;
 	}
 
-	inline void ignore_sigterm([[maybe_unused]] int signal_number) {}
+	inline void IgnoreSigterm([[maybe_unused]] int signal_number) {}
 
-	inline auto spawn_sigterm_ignoring_child() -> pid_t {
+	inline auto SpawnSigtermIgnoringChild() -> pid_t {
 		std::array<int, 2> ready_pipe = {-1, -1};
 		if (pipe(ready_pipe.data()) != 0) {
 			return -1;
@@ -99,7 +99,7 @@ namespace howdy::test::process {
 		if (child_pid == 0) {
 			close(ready_pipe[0]);
 			struct sigaction action = {};
-			action.sa_handler       = ignore_sigterm;
+			action.sa_handler       = IgnoreSigterm;
 			sigemptyset(&action.sa_mask);
 			if (sigaction(SIGTERM, &action, nullptr) != 0) {
 				_exit(EXIT_FAILURE);
@@ -125,14 +125,14 @@ namespace howdy::test::process {
 		if (child_pid <= 0 || ready != '1') {
 			if (child_pid > 0) {
 				(void)kill(child_pid, SIGKILL);
-				(void)reap_test_child(child_pid, nullptr);
+				(void)ReapTestChild(child_pid, nullptr);
 			}
 			return -1;
 		}
 		return child_pid;
 	}
 
-	inline auto child_reaped(pid_t child_pid) -> bool {
+	inline auto ChildReaped(pid_t child_pid) -> bool {
 		errno                   = 0;
 		const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
 		return wait_result == -1 && errno == ECHILD;

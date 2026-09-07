@@ -8,7 +8,7 @@
 #endif
 
 #ifndef HOWDY_MAIN_DISPATCH
-#	define HOWDY_MAIN_DISPATCH howdy_main
+#	define HOWDY_MAIN_DISPATCH HowdyMain
 #endif
 
 auto HOWDY_MAIN_DISPATCH(int argc, char **argv) -> int;

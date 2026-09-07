@@ -38,7 +38,7 @@ namespace howdy::native::test_cli_internal {
 	    , preview_engine_(preview_engine)
 	    , dependencies_(dependencies) {}
 
-	auto TestPreviewSession::dependencies_valid() const -> bool {
+	auto TestPreviewSession::DependenciesValid() const -> bool {
 		return dependencies_.capture_context != nullptr &&
 		       dependencies_.read_gray_frame != nullptr &&
 		       (config_.exposure == -1 || dependencies_.restore_exposure != nullptr) &&
@@ -47,8 +47,8 @@ namespace howdy::native::test_cli_internal {
 		       dependencies_.sleep != nullptr;
 	}
 
-	auto TestPreviewSession::run(cv::Mat prefetched_gray_frame) -> TestPreviewResult {
-		if (!dependencies_valid()) {
+	auto TestPreviewSession::Run(cv::Mat prefetched_gray_frame) -> TestPreviewResult {
+		if (!DependenciesValid()) {
 			return {
 			    .status        = TestPreviewStatus::kFaceModelError,
 			    .error_message = "Internal error: missing test preview session dependency",
@@ -83,8 +83,8 @@ namespace howdy::native::test_cli_internal {
 				return {.status = TestPreviewStatus::kCameraReadError};
 			}
 
-			auto frame_result  = preview_engine_.process_gray_frame(std::move(gray_frame));
-			auto frame_failure = map_preview_frame_failure(frame_result);
+			auto frame_result  = preview_engine_.ProcessGrayFrame(std::move(gray_frame));
+			auto frame_failure = MapPreviewFrameFailure(frame_result);
 			if (frame_failure.status != TestPreviewStatus::kOk) {
 				return frame_failure;
 			}
@@ -108,13 +108,13 @@ namespace howdy::native::test_cli_internal {
 		return {.status = TestPreviewStatus::kOk};
 	}
 
-	auto run_preview_session_with_retained_frame(TestPreviewSession &session,
-	                                             const cv::Mat      &prefetched_gray_frame)
+	auto RunPreviewSessionWithRetainedFrame(TestPreviewSession &session,
+	                                        const cv::Mat      &prefetched_gray_frame)
 	    -> TestPreviewResult {
-		return session.run(prefetched_gray_frame);
+		return session.Run(prefetched_gray_frame);
 	}
 
-	auto map_preview_frame_failure(const howdy::native::PreviewFrameResult &result)
+	auto MapPreviewFrameFailure(const howdy::native::PreviewFrameResult &result)
 	    -> TestPreviewResult {
 		switch (result.status) {
 			case howdy::native::PreviewFrameStatus::kInvalidFrame:

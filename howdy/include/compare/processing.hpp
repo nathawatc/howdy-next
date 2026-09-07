@@ -29,7 +29,7 @@ namespace howdy::native::compare_processing_internal {
 		RunFrameLoopFn    run_frame_loop   = nullptr;
 	};
 
-	[[nodiscard]] auto run_compare_processing(const CompareProcessingDependencies &dependencies)
+	[[nodiscard]] auto RunCompareProcessing(const CompareProcessingDependencies &dependencies)
 	    -> CompareProcessingResult;
 
 }  // namespace howdy::native::compare_processing_internal

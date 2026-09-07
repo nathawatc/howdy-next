@@ -56,7 +56,7 @@ namespace howdy::test::config_cli {
 			std::optional<std::string> original_;
 		};
 
-		auto path_reported_after(const std::string &output, const std::string &prefix)
+		auto PathReportedAfter(const std::string &output, const std::string &prefix)
 		    -> std::filesystem::path {
 			const auto start = output.find(prefix);
 			if (start == std::string::npos) {
@@ -67,7 +67,7 @@ namespace howdy::test::config_cli {
 			return output.substr(path_start, path_end - path_start);
 		}
 
-		auto public_entrypoint_preserves_invalid_edit() -> bool {
+		auto PublicEntrypointPreservesInvalidEdit() -> bool {
 			namespace fs = std::filesystem;
 
 			const std::string temp_template =
@@ -102,13 +102,13 @@ namespace howdy::test::config_cli {
 			int                   exit_code = 0;
 			{
 				ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
-				exit_code = config_main(1, argv.data());
+				exit_code = ConfigMain(1, argv.data());
 			}
 
 			constexpr std::string_view recovery_prefix =
 			    "Edited config is invalid and was not installed: ";
 			const auto reported_temp_path =
-			    path_reported_after(output.str(), std::string(recovery_prefix));
+			    PathReportedAfter(output.str(), std::string(recovery_prefix));
 			ok &= expect(exit_code == 1, "integration aborts invalid edit");
 			ok &= expect(output.str() == "Editing config.ini in fake-editor\n" +
 			                                 std::string(recovery_prefix) +
@@ -124,12 +124,12 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
-		auto production_config_reads_are_bounded() -> bool {
+		auto ProductionConfigReadsAreBounded() -> bool {
 			namespace fs = std::filesystem;
 
 			bool       ok = true;
 			const auto dependencies =
-			    howdy::native::config_internal::default_config_edit_dependencies();
+			    howdy::native::config_internal::DefaultConfigEditDependencies();
 			const fs::path    source_path = fs::current_path() / "howdy-config-cli-size-test.ini";
 			const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
@@ -162,7 +162,7 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
-		auto production_edit_reads_are_descriptor_bound() -> bool {
+		auto ProductionEditReadsAreDescriptorBound() -> bool {
 			namespace fs = std::filesystem;
 
 			const auto temp_template   = fs::current_path() / "howdy-config-cli-identity-XXXXXX";
@@ -180,7 +180,7 @@ namespace howdy::test::config_cli {
 			const fs::path    backup_path = temp_root / "config-backup.ini";
 			const std::string original    = "[core]\ndisabled = false\n";
 			const auto        dependencies =
-			    howdy::native::config_internal::default_config_edit_dependencies();
+			    howdy::native::config_internal::DefaultConfigEditDependencies();
 			std::error_code error;
 
 			auto write_secure_config = [&]() -> bool {
@@ -229,11 +229,11 @@ namespace howdy::test::config_cli {
 
 	}  // namespace
 
-	auto run_config_cli_integration_tests() -> bool {
+	auto RunConfigCliIntegrationTests() -> bool {
 		bool ok = true;
-		ok &= public_entrypoint_preserves_invalid_edit();
-		ok &= production_config_reads_are_bounded();
-		ok &= production_edit_reads_are_descriptor_bound();
+		ok &= PublicEntrypointPreservesInvalidEdit();
+		ok &= ProductionConfigReadsAreBounded();
+		ok &= ProductionEditReadsAreDescriptorBound();
 		return ok;
 	}
 

@@ -1,3 +1,3 @@
 #pragma once
 
-auto add_main(int argc, char **argv) -> int;
+auto AddMain(int argc, char **argv) -> int;

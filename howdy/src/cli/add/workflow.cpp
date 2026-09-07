@@ -25,7 +25,7 @@ namespace {
 		bool        yes            = false;
 	};
 
-	auto parse_add_args(int argc, char **argv) -> std::optional<AddArgs> {
+	auto ParseAddArgs(int argc, char **argv) -> std::optional<AddArgs> {
 		AddArgs args;
 		if (argc < 2) {
 			std::cerr << "Usage: howdy-add <user> [label] [--plain] [-y]\n";
@@ -62,9 +62,9 @@ namespace {
 		return args;
 	}
 
-	void print_capture_failure(const howdy::native::EnrollmentCaptureResult &capture_result,
-	                           float                                         dark_threshold) {
-		switch (howdy::native::classify_enrollment_capture_failure(capture_result)) {
+	void PrintCaptureFailure(const howdy::native::EnrollmentCaptureResult &capture_result,
+	                         float                                         dark_threshold) {
+		switch (howdy::native::ClassifyEnrollmentCaptureFailure(capture_result)) {
 			case howdy::native::EnrollmentCaptureFailure::kOnlyBlackFrames:
 				std::cerr << "Camera returned only black frames; check the IR emitter\n";
 				break;
@@ -88,8 +88,8 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **argv,
-                                                             const AddDependencies &dependencies)
+auto howdy::native::add_internal::AddMainWithDependencies(int argc, char **argv,
+                                                          const AddDependencies &dependencies)
     -> int {
 	if (dependencies.load_runtime_config == nullptr ||
 	    dependencies.preflight_enrollment == nullptr ||
@@ -97,11 +97,11 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 		return kAddExitAbort;
 	}
 
-	const auto args = parse_add_args(argc, argv);
+	const auto args = ParseAddArgs(argc, argv);
 	if (!args.has_value()) {
 		return kAddExitAbort;
 	}
-	if (args->label_provided && !howdy::native::is_valid_model_label(args->label)) {
+	if (args->label_provided && !howdy::native::IsValidModelLabel(args->label)) {
 		std::cerr << "Invalid model label\n";
 		return kAddExitAbort;
 	}
@@ -141,7 +141,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 			label = input.substr(0, 24);
 		}
 	}
-	if (!howdy::native::is_valid_model_label(label)) {
+	if (!howdy::native::IsValidModelLabel(label)) {
 		std::cerr << "Invalid model label\n";
 		return kAddExitAbort;
 	}
@@ -156,7 +156,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 			std::cerr << enrollment_result.error_message << "\n";
 			return kAddExitAbort;
 		case AddEnrollmentStatus::kCaptureFailure:
-			print_capture_failure(enrollment_result.capture_result, config.video.dark_threshold);
+			PrintCaptureFailure(enrollment_result.capture_result, config.video.dark_threshold);
 			return kAddExitAbort;
 		case AddEnrollmentStatus::kMultipleFaces:
 			std::cerr << "Multiple faces detected, aborting\n";

@@ -45,7 +45,7 @@ namespace howdy::pam {
 		RuntimeSessionLoadStatus status = RuntimeSessionLoadStatus::kInvalidDependencies;
 		howdy::native::RuntimeConfigLoadResult config_result;
 
-		[[nodiscard]] auto ok() const -> bool {
+		[[nodiscard]] auto Ok() const -> bool {
 			return status == RuntimeSessionLoadStatus::kOk &&
 			       config_result.status == howdy::native::RuntimeConfigLoadStatus::kOk &&
 			       config_result.config.has_value();
@@ -64,11 +64,11 @@ namespace howdy::pam {
 
 		~RuntimeSession();
 
-		auto load_for_user(std::string_view username) -> RuntimeSessionLoadResult;
+		auto LoadForUser(std::string_view username) -> RuntimeSessionLoadResult;
 
-		[[nodiscard]] auto config_path() const -> const std::string &;
-		[[nodiscard]] auto user_models_dir() const -> const std::string &;
-		[[nodiscard]] auto staged() const -> bool;
+		[[nodiscard]] auto ConfigPath() const -> const std::string &;
+		[[nodiscard]] auto UserModelsDir() const -> const std::string &;
+		[[nodiscard]] auto Staged() const -> bool;
 
 	private:
 		std::string                config_path_;
@@ -78,6 +78,6 @@ namespace howdy::pam {
 		bool                       load_started_ = false;
 	};
 
-	auto production_runtime_session_dependencies() -> RuntimeSessionDependencies;
+	auto ProductionRuntimeSessionDependencies() -> RuntimeSessionDependencies;
 
 }  // namespace howdy::pam

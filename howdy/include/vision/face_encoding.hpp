@@ -25,7 +25,7 @@ namespace howdy::native {
 		std::vector<float> encoding;
 		std::string        error_message = "Face encoding returned no data";
 
-		[[nodiscard]] auto ok() const -> bool {
+		[[nodiscard]] auto Ok() const -> bool {
 			return status == FaceEncodingStatus::kOk && encoding.size() == kSfaceEmbeddingSize &&
 			       std::ranges::all_of(encoding, [](float value) -> bool {
 				       return std::isfinite(value);

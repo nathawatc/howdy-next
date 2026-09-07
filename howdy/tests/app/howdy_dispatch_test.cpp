@@ -24,19 +24,19 @@ namespace howdy::test::dispatch {
 
 		Context *active_context = nullptr;
 
-		auto resolve_user(void *raw_context) -> std::string {
+		auto ResolveUser(void *raw_context) -> std::string {
 			auto &context = *static_cast<Context *>(raw_context);
 			++context.resolve_user_calls;
 			return context.resolved_user;
 		}
 
-		auto effective_uid(void *raw_context) -> uid_t {
+		auto EffectiveUid(void *raw_context) -> uid_t {
 			auto &context = *static_cast<Context *>(raw_context);
 			++context.effective_uid_calls;
 			return context.effective_uid;
 		}
 
-		auto command_stub(CommandId command_id, int argc, char **argv) -> int {
+		auto CommandStub(CommandId command_id, int argc, char **argv) -> int {
 			active_context->command_id = command_id;
 			active_context->command_arguments.clear();
 			for (int index = 0; index < argc; ++index) {
@@ -47,66 +47,66 @@ namespace howdy::test::dispatch {
 			return active_context->command_result;
 		}
 
-		auto add_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kAdd, argc, argv);
+		auto AddStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kAdd, argc, argv);
 		}
 
-		auto clear_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kClear, argc, argv);
+		auto ClearStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kClear, argc, argv);
 		}
 
-		auto config_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kConfig, argc, argv);
+		auto ConfigStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kConfig, argc, argv);
 		}
 
-		auto disable_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kDisable, argc, argv);
+		auto DisableStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kDisable, argc, argv);
 		}
 
-		auto download_models_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kDownloadModels, argc, argv);
+		auto DownloadModelsStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kDownloadModels, argc, argv);
 		}
 
-		auto list_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kList, argc, argv);
+		auto ListStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kList, argc, argv);
 		}
 
-		auto remove_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kRemove, argc, argv);
+		auto RemoveStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kRemove, argc, argv);
 		}
 
-		auto set_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kSet, argc, argv);
+		auto SetStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kSet, argc, argv);
 		}
 
-		auto snapshot_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kSnapshot, argc, argv);
+		auto SnapshotStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kSnapshot, argc, argv);
 		}
 
-		auto test_stub(int argc, char **argv) -> int {
-			return command_stub(CommandId::kTest, argc, argv);
+		auto TestStub(int argc, char **argv) -> int {
+			return CommandStub(CommandId::kTest, argc, argv);
 		}
 
-		auto default_command_mains() -> CommandMains {
+		auto DefaultCommandMains() -> CommandMains {
 			return {
-			    add_stub,  clear_stub,  config_stub, disable_stub,  download_models_stub,
-			    list_stub, remove_stub, set_stub,    snapshot_stub, test_stub,
+			    AddStub,  ClearStub,  ConfigStub, DisableStub,  DownloadModelsStub,
+			    ListStub, RemoveStub, SetStub,    SnapshotStub, TestStub,
 			    nullptr,
 			};
 		}
 
 	}  // namespace
 
-	auto run(Context &context, std::vector<std::string> arguments) -> RunResult {
-		return run(context, std::move(arguments), list_stub, default_command_mains());
+	auto Run(Context &context, std::vector<std::string> arguments) -> RunResult {
+		return Run(context, std::move(arguments), ListStub, DefaultCommandMains());
 	}
 
-	auto run(Context &context, std::vector<std::string> arguments, CommandMain list_callback)
+	auto Run(Context &context, std::vector<std::string> arguments, CommandMain list_callback)
 	    -> RunResult {
-		return run(context, std::move(arguments), list_callback, default_command_mains());
+		return Run(context, std::move(arguments), list_callback, DefaultCommandMains());
 	}
 
-	auto run(Context &context, std::vector<std::string> arguments, CommandMain list_callback,
+	auto Run(Context &context, std::vector<std::string> arguments, CommandMain list_callback,
 	         CommandMains command_mains) -> RunResult {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
@@ -120,12 +120,12 @@ namespace howdy::test::dispatch {
 		auto              *old_error                              = std::cerr.rdbuf(error.rdbuf());
 		active_context                                            = &context;
 		command_mains[static_cast<std::size_t>(CommandId::kList)] = list_callback;
-		const auto status = howdy::native::howdy_internal::howdy_main_with_dependencies(
+		const auto status = howdy::native::howdy_internal::HowdyMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(),
 		    HowdyDependencies{
 		        .context       = &context,
-		        .resolve_user  = resolve_user,
-		        .effective_uid = effective_uid,
+		        .resolve_user  = ResolveUser,
+		        .effective_uid = EffectiveUid,
 		        .command_mains = command_mains,
 		    });
 		active_context = nullptr;
@@ -144,15 +144,15 @@ namespace {
 
 	using howdy::test::expect;
 
-	using howdy::native::command_catalog;
+	using howdy::native::CommandCatalog;
 	using howdy::native::CommandId;
 	using howdy::native::CommandKind;
 	using howdy::test::dispatch::Context;
-	using howdy::test::dispatch::run;
+	using howdy::test::dispatch::Run;
 
-	auto test_missing_callback() -> bool {
+	auto TestMissingCallback() -> bool {
 		Context    context;
-		const auto result = run(context, {"howdy", "-U", "alice", "list"}, nullptr);
+		const auto result = Run(context, {"howdy", "-U", "alice", "list"}, nullptr);
 		bool       ok     = true;
 		ok &= expect(result.status == 1, "null command callback returns runtime failure");
 		ok &= expect(result.output.empty() &&
@@ -167,7 +167,7 @@ namespace {
 		return ok;
 	}
 
-	auto test_strict_syntax_cases() -> bool {
+	auto TestStrictSyntaxCases() -> bool {
 		bool ok = true;
 		for (const auto &arguments : std::vector<std::vector<std::string>>{
 		         {"howdy", "add", "one", "two"},
@@ -186,7 +186,7 @@ namespace {
 		         {"howdy", "version", "typo"},
 		     }) {
 			Context    context;
-			const auto result = run(context, arguments);
+			const auto result = Run(context, arguments);
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error.starts_with("error: ") && !context.command_id.has_value(),
 			             "strict command syntax uses clap-style usage failure before callback");
@@ -195,7 +195,7 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(
+			const auto result = Run(
 			    context, {"howdy", "test", "--device", "/dev/video0", "--device", "/dev/video1"});
 			ok &= expect(result.status == 2 &&
 			                 result.error.contains("cannot be used multiple times") &&
@@ -205,13 +205,13 @@ namespace {
 		return ok;
 	}
 
-	auto test_unknown_command_precedence() -> bool {
+	auto TestUnknownCommandPrecedence() -> bool {
 		bool ok = true;
 		for (const uid_t effective_uid : {static_cast<uid_t>(1000), static_cast<uid_t>(0)}) {
 			Context context;
 			context.effective_uid = effective_uid;
 			context.resolved_user = "root";
-			const auto result     = run(context, {"howdy", "vers"});
+			const auto result     = Run(context, {"howdy", "vers"});
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error.starts_with("error: unrecognized subcommand 'vers'\n"),
 			             "unknown command uses clap-style subcommand error before other checks");
@@ -222,11 +222,11 @@ namespace {
 		return ok;
 	}
 
-	auto test_empty_user_options() -> bool {
+	auto TestEmptyUserOptions() -> bool {
 		bool ok = true;
 		for (const auto &user_option : {std::string{"-U"}, std::string{"--user"}}) {
 			Context    context;
-			const auto result = run(context, {"howdy", user_option, "", "clear", "-y"});
+			const auto result = Run(context, {"howdy", user_option, "", "clear", "-y"});
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error.contains("value cannot be empty"),
 			             "explicit empty user is rejected as usage error");
@@ -237,11 +237,11 @@ namespace {
 		return ok;
 	}
 
-	auto test_clap_style_usage_errors() -> bool {
+	auto TestClapStyleUsageErrors() -> bool {
 		bool ok = true;
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "-t"});
+			const auto result = Run(context, {"howdy", "-t"});
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error == "error: unexpected argument '-t' found\n\n"
 			                                 "Usage: howdy [OPTIONS] <COMMAND>\n\n"
@@ -250,7 +250,7 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "clear", "-t"});
+			const auto result = Run(context, {"howdy", "clear", "-t"});
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error.contains("error: unexpected argument '-t' found\n") &&
 			                 result.error.contains("Usage: howdy clear [OPTIONS]\n") &&
@@ -259,7 +259,7 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "clear", "typo"});
+			const auto result = Run(context, {"howdy", "clear", "typo"});
 			ok &= expect(result.status == 2 && result.output.empty() &&
 			                 result.error.contains("error: unexpected argument 'typo' found\n") &&
 			                 result.error.contains("Usage: howdy clear [OPTIONS]\n"),
@@ -267,14 +267,14 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "add", "-t"});
+			const auto result = Run(context, {"howdy", "add", "-t"});
 			ok &= expect(result.status == 2 &&
 			                 result.error.contains("tip: to pass '-t' as a value, use '-- -t'"),
 			             "option-looking positional gets actionable double-dash tip");
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "remove"});
+			const auto result = Run(context, {"howdy", "remove"});
 			ok &= expect(
 			    result.status == 2 &&
 			        result.error.contains(
@@ -283,7 +283,7 @@ namespace {
 		}
 		{
 			Context    context;
-			const auto result = run(context, {"howdy", "set", "device_path"});
+			const auto result = Run(context, {"howdy", "set", "device_path"});
 			ok &= expect(
 			    result.status == 2 &&
 			        result.error.contains(
@@ -293,10 +293,10 @@ namespace {
 		return ok;
 	}
 
-	auto test_catalog_dispatch() -> bool {
+	auto TestCatalogDispatch() -> bool {
 		bool        ok                  = true;
 		std::size_t dispatched_commands = 0;
-		for (const auto &command : command_catalog()) {
+		for (const auto &command : CommandCatalog()) {
 			if (command.kind != CommandKind::kEntrypoint) {
 				continue;
 			}
@@ -320,11 +320,11 @@ namespace {
 				default:
 					break;
 			}
-			const auto result = run(context, std::move(arguments));
+			const auto result = Run(context, std::move(arguments));
 			ok &= expect(result.status == 0 && context.command_id == command.id,
 			             "every catalog command maps to matching entrypoint");
 		}
-		ok &= expect(dispatched_commands + 1 == command_catalog().size(),
+		ok &= expect(dispatched_commands + 1 == CommandCatalog().size(),
 		             "every production command is covered by dispatch test");
 		return ok;
 	}
@@ -336,26 +336,26 @@ auto main() -> int {
 
 	{
 		Context    context;
-		const auto result = run(context, {"howdy"});
+		const auto result = Run(context, {"howdy"});
 		ok &= expect(result.status == 0 &&
 		                 result.output.starts_with("Usage: howdy [OPTIONS] <COMMAND>"),
 		             "no command prints top-level help");
 	}
-	ok &= howdy::test::dispatch::run_howdy_completion_tests();
-	ok &= test_missing_callback();
+	ok &= howdy::test::dispatch::RunHowdyCompletionTests();
+	ok &= TestMissingCallback();
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "unknown"});
+		const auto result = Run(context, {"howdy", "unknown"});
 		ok &= expect(result.status == 2 && result.output.empty() &&
 		                 result.error.contains("unrecognized subcommand 'unknown'"),
 		             "unknown command rejected as usage error");
 	}
-	ok &= test_unknown_command_precedence();
+	ok &= TestUnknownCommandPrecedence();
 	{
 		Context context;
 		context.command_result = 23;
 		const auto result =
-		    run(context, {"howdy", "-U", "bob", "--plain", "-y", "add", "front-door"});
+		    Run(context, {"howdy", "-U", "bob", "--plain", "-y", "add", "front-door"});
 		ok &= expect(result.status == 23, "command return code passed through");
 		ok &= expect(context.resolve_user_calls == 0,
 		             "short user option skips default user resolution");
@@ -370,7 +370,7 @@ auto main() -> int {
 		Context context;
 		context.command_result = 23;
 		context.resolved_user  = "root";
-		const auto result      = run(context, {"howdy", "config"});
+		const auto result      = Run(context, {"howdy", "config"});
 		ok &= expect(result.status == 23, "non-user command dispatched");
 		ok &= expect(context.resolve_user_calls == 0,
 		             "non-user command skips target-user resolution");
@@ -380,7 +380,7 @@ auto main() -> int {
 	{
 		Context context;
 		context.command_result = 23;
-		const auto result      = run(context, {"howdy", "list"});
+		const auto result      = Run(context, {"howdy", "list"});
 		ok &= expect(result.status == 23, "default-user command return code passed through");
 		ok &= expect(context.resolve_user_calls == 1,
 		             "default user resolved when user option is omitted");
@@ -390,7 +390,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "--user", "bob", "list"});
+		const auto result = Run(context, {"howdy", "--user", "bob", "list"});
 		ok &= expect(result.status == 0, "long user option command dispatched");
 		ok &= expect(context.resolve_user_calls == 0,
 		             "long user option skips default user resolution");
@@ -398,10 +398,10 @@ auto main() -> int {
 		ok &= expect(context.command_arguments == std::vector<std::string>{"howdy-list", "bob"},
 		             "long user option injected into list arguments");
 	}
-	ok &= test_empty_user_options();
+	ok &= TestEmptyUserOptions();
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "", "list"});
+		const auto result = Run(context, {"howdy", "", "list"});
 		ok &= expect(result.status == 2 && result.output.empty() &&
 		                 result.error.contains("unrecognized subcommand ''"),
 		             "empty command token is not command absence");
@@ -411,7 +411,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "add", "--", "-y"});
+		const auto result = Run(context, {"howdy", "add", "--", "-y"});
 		ok &= expect(result.status == 0, "end-of-options literal label dispatches");
 		ok &= expect(context.command_arguments ==
 		                 std::vector<std::string>{"howdy-add", "alice", "--", "-y"},
@@ -420,7 +420,7 @@ auto main() -> int {
 	{
 		Context context;
 		context.effective_uid = 1000;
-		const auto result     = run(context, {"howdy", "add", "label; echo unsafe"});
+		const auto result     = Run(context, {"howdy", "add", "label; echo unsafe"});
 		ok &=
 		    expect(result.status == 1 && result.output == "This command requires root privileges.\n"
 		                                                  "Run it again with sudo.\n",
@@ -431,7 +431,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "list", ""});
+		const auto result = Run(context, {"howdy", "list", ""});
 		ok &= expect(result.status != 0 && !context.command_id.has_value(),
 		             "surplus empty positional argument is rejected");
 		ok &= expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
@@ -439,7 +439,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "-U"});
+		const auto result = Run(context, {"howdy", "-U"});
 		ok &= expect(result.status == 2, "trailing short user option rejected");
 		ok &=
 		    expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
@@ -453,7 +453,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "--user"});
+		const auto result = Run(context, {"howdy", "--user"});
 		ok &= expect(result.status == 2, "trailing long user option rejected");
 		ok &= expect(result.error.contains("--user <USER>") &&
 		                 result.error.contains("none was supplied"),
@@ -467,7 +467,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "list", "-U"});
+		const auto result = Run(context, {"howdy", "list", "-U"});
 		ok &= expect(result.status == 2, "trailing short user option after command rejected");
 		ok &=
 		    expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
@@ -480,7 +480,7 @@ auto main() -> int {
 	}
 	{
 		Context    context;
-		const auto result = run(context, {"howdy", "add", "--user"});
+		const auto result = Run(context, {"howdy", "add", "--user"});
 		ok &= expect(result.status == 2, "trailing long user option after command rejected");
 		ok &= expect(result.error.contains("--user <USER>") &&
 		                 result.error.contains("none was supplied"),
@@ -494,16 +494,16 @@ auto main() -> int {
 	{
 		Context context;
 		context.effective_uid = 1000;
-		const auto result     = run(context, {"howdy", "list"});
+		const auto result     = Run(context, {"howdy", "list"});
 		ok &=
 		    expect(result.status == 1 && result.output == "This command requires root privileges.\n"
 		                                                  "Run it again with sudo.\n",
 		           "root check runs before dispatch");
 		ok &= expect(context.command_arguments.empty(), "non-root command not dispatched");
 	}
-	ok &= test_clap_style_usage_errors();
-	ok &= test_strict_syntax_cases();
-	ok &= test_catalog_dispatch();
+	ok &= TestClapStyleUsageErrors();
+	ok &= TestStrictSyntaxCases();
+	ok &= TestCatalogDispatch();
 	{
 		auto                  add_name = std::to_array("howdy-add");
 		std::array<char *, 1> add_argv{add_name.data()};
@@ -513,13 +513,13 @@ auto main() -> int {
 		std::array<char *, 1> list_argv{list_name.data()};
 		auto                  remove_name = std::to_array("howdy-remove");
 		std::array<char *, 1> remove_argv{remove_name.data()};
-		ok &= expect(add_main(1, add_argv.data()) == 1,
-		             "add entrypoint returns on invalid arguments");
-		ok &= expect(clear_main(1, clear_argv.data()) == 1,
+		ok &=
+		    expect(AddMain(1, add_argv.data()) == 1, "add entrypoint returns on invalid arguments");
+		ok &= expect(ClearMain(1, clear_argv.data()) == 1,
 		             "clear entrypoint returns on invalid arguments");
-		ok &= expect(list_main(1, list_argv.data()) == 1,
+		ok &= expect(ListMain(1, list_argv.data()) == 1,
 		             "list entrypoint returns on invalid arguments");
-		ok &= expect(remove_main(1, remove_argv.data()) == 1,
+		ok &= expect(RemoveMain(1, remove_argv.data()) == 1,
 		             "remove entrypoint returns on invalid arguments");
 	}
 

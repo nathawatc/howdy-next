@@ -6,7 +6,7 @@ namespace howdy::native::config_test_hooks {
 
 	using AfterOpenBeforeRead = std::function<void()>;
 
-	[[nodiscard]] auto current() -> AfterOpenBeforeRead &;
+	[[nodiscard]] auto Current() -> AfterOpenBeforeRead &;
 
 	class ScopedHooks {
 	public:

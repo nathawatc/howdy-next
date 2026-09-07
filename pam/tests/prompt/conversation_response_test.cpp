@@ -18,21 +18,21 @@ namespace {
 		std::size_t           count = 0;
 	};
 
-	void record_erase(howdy::pam::detail::ConversationResponseAllocation allocation,
-	                  std::size_t                                        length) noexcept {
+	void RecordErase(howdy::pam::detail::ConversationResponseAllocation allocation,
+	                 std::size_t                                        length) noexcept {
 		auto &state                 = *static_cast<Context *>(allocation.context);
 		state.events[state.count++] = {
 		    .pointer = allocation.pointer, .length = length, .erase = true};
 		explicit_bzero(allocation.pointer, length);
 	}
 
-	void record_release(howdy::pam::detail::ConversationResponseAllocation allocation) noexcept {
+	void RecordRelease(howdy::pam::detail::ConversationResponseAllocation allocation) noexcept {
 		auto &state                 = *static_cast<Context *>(allocation.context);
 		state.events[state.count++] = {.pointer = allocation.pointer, .erase = false};
 		std::free(allocation.pointer);
 	}
 
-	auto make_responses(std::initializer_list<const char *> values) -> struct pam_response * {
+	auto MakeResponses(std::initializer_list<const char *> values) -> struct pam_response * {
 		auto *responses = static_cast<struct pam_response *>(
 		    std::calloc(values.size(), sizeof(struct pam_response)));
 		std::size_t index = 0;
@@ -42,12 +42,12 @@ namespace {
 		return responses;
 	}
 
-	auto test_cleanup(std::initializer_list<const char *> values) -> bool {
+	auto TestCleanup(std::initializer_list<const char *> values) -> bool {
 		Context context;
-		auto   *responses = make_responses(values);
-		howdy::pam::detail::secure_free_conversation_responses(
+		auto   *responses = MakeResponses(values);
+		howdy::pam::detail::SecureFreeConversationResponses(
 		    &responses, static_cast<int>(values.size()),
-		    {.context = &context, .erase = record_erase, .release = record_release});
+		    {.context = &context, .erase = RecordErase, .release = RecordRelease});
 		bool        ok = howdy::test::expect(responses == nullptr, "cleanup nulls caller pointer");
 		std::size_t strings = 0;
 		for (const char *value : values) {
@@ -69,12 +69,12 @@ namespace {
 auto main() -> int {
 	bool                 ok        = true;
 	struct pam_response *responses = nullptr;
-	howdy::pam::secure_free_conversation_responses(&responses, 0);
-	howdy::pam::secure_free_conversation_responses(nullptr, 0);
-	ok &= test_cleanup({""});
-	ok &= test_cleanup({"secret"});
-	ok &= test_cleanup({"one", "two"});
-	ok &= test_cleanup({"partial", nullptr, "last"});
-	ok &= test_cleanup({nullptr, nullptr});
+	howdy::pam::SecureFreeConversationResponses(&responses, 0);
+	howdy::pam::SecureFreeConversationResponses(nullptr, 0);
+	ok &= TestCleanup({""});
+	ok &= TestCleanup({"secret"});
+	ok &= TestCleanup({"one", "two"});
+	ok &= TestCleanup({"partial", nullptr, "last"});
+	ok &= TestCleanup({nullptr, nullptr});
 	return ok ? 0 : 1;
 }

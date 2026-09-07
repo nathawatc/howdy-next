@@ -1,11 +1,11 @@
-auto run_compare_privileges_non_root_tests() -> bool;
-auto run_compare_privileges_privileged_tests() -> bool;
-auto run_compare_privileges_fatal_tests() -> bool;
+auto RunComparePrivilegesNonRootTests() -> bool;
+auto RunComparePrivilegesPrivilegedTests() -> bool;
+auto RunComparePrivilegesFatalTests() -> bool;
 
 auto main() -> int {
 	bool ok = true;
-	ok &= run_compare_privileges_non_root_tests();
-	ok &= run_compare_privileges_privileged_tests();
-	ok &= run_compare_privileges_fatal_tests();
+	ok &= RunComparePrivilegesNonRootTests();
+	ok &= RunComparePrivilegesPrivilegedTests();
+	ok &= RunComparePrivilegesFatalTests();
 	return ok ? 0 : 1;
 }

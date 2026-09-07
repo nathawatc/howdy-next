@@ -29,8 +29,8 @@ namespace howdy::test::auth_helper {
 		std::string_view operation;
 	};
 
-	inline auto acl_entry_has_permissions(acl_entry_t entry, acl_tag_t tag, const void *qualifier,
-	                                      int permissions) -> AclCheckResult {
+	inline auto AclEntryHasPermissions(acl_entry_t entry, acl_tag_t tag, const void *qualifier,
+	                                   int permissions) -> AclCheckResult {
 		acl_tag_t entry_tag;
 		if (acl_get_tag_type(entry, &entry_tag) != 0) {
 			return {.status       = AclCheckStatus::kError,
@@ -83,7 +83,7 @@ namespace howdy::test::auth_helper {
 		return {.status = matches ? AclCheckStatus::kMatch : AclCheckStatus::kMismatch};
 	}
 
-	inline auto check_private_acl(const std::filesystem::path &path, uid_t uid, bool directory)
+	inline auto CheckPrivateAcl(const std::filesystem::path &path, uid_t uid, bool directory)
 	    -> AclCheckResult {
 		acl_t acl = acl_get_file(path.c_str(), ACL_TYPE_ACCESS);
 		if (acl == nullptr) {
@@ -123,7 +123,7 @@ namespace howdy::test::auth_helper {
 				acl_free(acl);
 				return {.status = AclCheckStatus::kMismatch};
 			}
-			const auto entry_check = acl_entry_has_permissions(
+			const auto entry_check = AclEntryHasPermissions(
 			    entry, tag, tag == ACL_USER ? static_cast<const void *>(&uid) : nullptr,
 			    tag == ACL_GROUP_OBJ || tag == ACL_OTHER ? 0 : permissions);
 			if (entry_check.status != AclCheckStatus::kMatch) {
@@ -135,9 +135,9 @@ namespace howdy::test::auth_helper {
 		return {.status = entry_count == 5 ? AclCheckStatus::kMatch : AclCheckStatus::kMismatch};
 	}
 
-	inline auto expect_private_acl(const std::filesystem::path &path, uid_t uid, bool directory,
-	                               const std::string &label) -> bool {
-		const auto result = check_private_acl(path, uid, directory);
+	inline auto ExpectPrivateAcl(const std::filesystem::path &path, uid_t uid, bool directory,
+	                             const std::string &label) -> bool {
+		const auto result = CheckPrivateAcl(path, uid, directory);
 		if (result.status == AclCheckStatus::kError) {
 			return expect(false, label + " ACL check " + std::string(result.operation) + ": " +
 			                         std::strerror(result.error_number));

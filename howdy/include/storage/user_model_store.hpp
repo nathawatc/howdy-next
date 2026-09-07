@@ -23,9 +23,9 @@ namespace howdy::native {
 		    -> UserModelStoreTransaction & = default;
 		~UserModelStoreTransaction();
 
-		[[nodiscard]] auto write_document(const user_model_codec::Document &document) const
+		[[nodiscard]] auto WriteDocument(const user_model_codec::Document &document) const
 		    -> AtomicFileCommitResult;
-		[[nodiscard]] auto remove_file() const -> AtomicFileCommitResult;
+		[[nodiscard]] auto RemoveFile() const -> AtomicFileCommitResult;
 
 	private:
 		std::filesystem::path path_;
@@ -37,16 +37,15 @@ namespace howdy::native {
 		UserModelStoreTransaction(std::filesystem::path path, ScopedFileLock namespace_lock,
 		                          ScopedFileLock lock, bool created_empty_file);
 
-		[[nodiscard]] auto path() const -> const std::filesystem::path &;
-		[[nodiscard]] auto path_matches_locked_file() const -> bool;
-		[[nodiscard]] auto snapshot() const -> std::optional<UserModelFileSnapshot>;
-		[[nodiscard]] auto snapshot_matches(const UserModelFileSnapshot &expected) const
+		[[nodiscard]] auto Path() const -> const std::filesystem::path &;
+		[[nodiscard]] auto PathMatchesLockedFile() const -> bool;
+		[[nodiscard]] auto Snapshot() const -> std::optional<UserModelFileSnapshot>;
+		[[nodiscard]] auto SnapshotMatches(const UserModelFileSnapshot &expected) const
 		    -> std::optional<bool>;
 
 		friend class UserModelStore;
-		friend auto
-		clear_user_model_entries_if_unchanged(const std::string           &user,
-		                                      const UserModelFileSnapshot &expected_snapshot)
+		friend auto ClearUserModelEntriesIfUnchanged(const std::string           &user,
+		                                             const UserModelFileSnapshot &expected_snapshot)
 		    -> UserModelMutationResult;
 	};
 
@@ -65,9 +64,9 @@ namespace howdy::native {
 	public:
 		UserModelStore() = default;
 
-		[[nodiscard]] static auto begin_mutation(const std::string &user)
+		[[nodiscard]] static auto BeginMutation(const std::string &user)
 		    -> UserModelStoreMutationResult;
-		[[nodiscard]] static auto lock_existing(const std::string &user)
+		[[nodiscard]] static auto LockExisting(const std::string &user)
 		    -> UserModelStoreTransactionResult;
 
 	private:
@@ -84,32 +83,30 @@ namespace howdy::native {
 			std::filesystem::path path;
 		};
 
-		[[nodiscard]] static auto resolve(const std::string &user, bool create_directory,
+		[[nodiscard]] static auto Resolve(const std::string &user, bool create_directory,
 		                                  std::optional<uid_t> owner_uid) -> UserModelPathResult;
-		[[nodiscard]] static auto load_document(const std::string           &user,
-		                                        const UserModelExpectations &expectations,
-		                                        std::optional<uid_t>         owner_uid)
+		[[nodiscard]] static auto LoadDocument(const std::string           &user,
+		                                       const UserModelExpectations &expectations,
+		                                       std::optional<uid_t>         owner_uid)
 		    -> user_model_codec::Document;
-		[[nodiscard]] static auto inspect(const std::string &user) -> UserModelInspectResult;
-		[[nodiscard]] static auto load_document_from_path(const std::filesystem::path &path,
-		                                                  const UserModelExpectations &expectations)
+		[[nodiscard]] static auto Inspect(const std::string &user) -> UserModelInspectResult;
+		[[nodiscard]] static auto LoadDocumentFromPath(const std::filesystem::path &path,
+		                                               const UserModelExpectations &expectations)
 		    -> user_model_codec::Document;
-		[[nodiscard]] static auto load_document_from_fd(int fd, const std::filesystem::path &path,
-		                                                const UserModelExpectations &expectations,
-		                                                bool treat_empty_as_no_model)
+		[[nodiscard]] static auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
+		                                             const UserModelExpectations &expectations,
+		                                             bool treat_empty_as_no_model)
 		    -> user_model_codec::Document;
-		[[nodiscard]] static auto inspect_regular_file_status(const std::filesystem::path &path,
-		                                                      std::string                 *message)
-		    -> UserModelStatus;
+		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
+		                                                   std::string *message) -> UserModelStatus;
 
-		friend auto list_user_model_entries(const std::string        &user,
-		                                    const std::string        &expected_backend,
-		                                    std::optional<FaceMetric> expected_metric,
-		                                    const std::string        &expected_model)
-		    -> UserModelListResult;
-		friend auto inspect_user_model_file(const std::string &user) -> UserModelInspectResult;
-		friend auto load_user_models(const std::string &user, const std::string &expected_backend,
-		                             std::optional<uid_t> owner_uid) -> UserModelLoadResult;
+		friend auto ListUserModelEntries(const std::string        &user,
+		                                 const std::string        &expected_backend,
+		                                 std::optional<FaceMetric> expected_metric,
+		                                 const std::string &expected_model) -> UserModelListResult;
+		friend auto InspectUserModelFile(const std::string &user) -> UserModelInspectResult;
+		friend auto LoadUserModels(const std::string &user, const std::string &expected_backend,
+		                           std::optional<uid_t> owner_uid) -> UserModelLoadResult;
 	};
 
 }  // namespace howdy::native

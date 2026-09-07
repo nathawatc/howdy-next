@@ -33,18 +33,19 @@ namespace howdy::test::download_models {
 	extern bool                     download_succeeds;
 	extern int                      failing_fstat_attempt;
 
-	void reset_dependency_attempts();
-	auto attempted_downloads() -> int;
-	auto attempted_owner_uid_lookups() -> int;
-	auto fake_download_file(const std::string                                           &url,
-	                        howdy::native::download_models_internal::StagedDownloadFile &staged)
+	void ResetDependencyAttempts();
+	auto AttemptedDownloads() -> int;
+	auto AttemptedOwnerUidLookups() -> int;
+	auto FakeDownloadFile(const std::string                                           &url,
+	                      howdy::native::download_models_internal::StagedDownloadFile &staged)
 	    -> bool;
-	auto successful_fake_download_file(
-	    const std::string &url, howdy::native::download_models_internal::StagedDownloadFile &staged)
+	auto
+	SuccessfulFakeDownloadFile(const std::string                                           &url,
+	                           howdy::native::download_models_internal::StagedDownloadFile &staged)
 	    -> bool;
-	auto failing_sha256_file(int fd) -> std::optional<std::string>;
-	auto selectively_failing_fstat(int fd, struct stat *stat_buf) -> int;
-	auto test_model_file_owner_uid() -> std::optional<uid_t>;
+	auto FailingSha256File(int fd) -> std::optional<std::string>;
+	auto SelectivelyFailingFstat(int fd, struct stat *stat_buf) -> int;
+	auto TestModelFileOwnerUid() -> std::optional<uid_t>;
 
 	struct EnvVarGuard {
 		const char                *name;
@@ -61,23 +62,23 @@ namespace howdy::test::download_models {
 		std::filesystem::path output;
 	};
 
-	auto capture_download_models_stdout(
+	auto CaptureDownloadModelsStdout(
 	    const std::filesystem::path &path, int *exit_code,
 	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
 	    -> bool;
-	auto run_test_download(const DownloadPaths &paths, int *exit_code,
-	                       std::span<const howdy::native::OpenCvModelDescriptor>   models,
-	                       howdy::native::download_models_internal::DownloadFileFn download_file,
-	                       howdy::native::download_models_internal::Sha256FileFn   sha256_file =
-	                           howdy::native::download_models_internal::sha256_file_descriptor,
-	                       howdy::native::download_models_internal::FstatFn fstat_file = ::fstat)
+	auto RunTestDownload(const DownloadPaths &paths, int *exit_code,
+	                     std::span<const howdy::native::OpenCvModelDescriptor>   models,
+	                     howdy::native::download_models_internal::DownloadFileFn download_file,
+	                     howdy::native::download_models_internal::Sha256FileFn   sha256_file =
+	                         howdy::native::download_models_internal::Sha256FileDescriptor,
+	                     howdy::native::download_models_internal::FstatFn fstat_file = ::fstat)
 	    -> bool;
-	auto run_first_download_attempt(const DownloadPaths &paths, int *exit_code) -> bool;
+	auto RunFirstDownloadAttempt(const DownloadPaths &paths, int *exit_code) -> bool;
 
-	auto run_download_models_entrypoint_tests() -> bool;
-	auto run_atomic_files_tests() -> bool;
-	auto run_download_models_integrity_tests() -> bool;
-	auto run_download_models_manifest_tests() -> bool;
-	auto run_download_models_proxy_tests() -> bool;
+	auto RunDownloadModelsEntrypointTests() -> bool;
+	auto RunAtomicFilesTests() -> bool;
+	auto RunDownloadModelsIntegrityTests() -> bool;
+	auto RunDownloadModelsManifestTests() -> bool;
+	auto RunDownloadModelsProxyTests() -> bool;
 
 }  // namespace howdy::test::download_models

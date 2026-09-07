@@ -31,64 +31,63 @@ namespace howdy::native::auth_helper {
 		using internal::RuntimeSources;
 		using internal::StagedIdentity;
 
-		auto log_slots_errno_failure(std::string_view operation, const std::filesystem::path &path,
-		                             int error_number) -> bool {
+		auto LogSlotsErrnoFailure(std::string_view operation, const std::filesystem::path &path,
+		                          int error_number) -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
 			          << "': " << std::strerror(error_number) << "\n";
 			return false;
 		}
 
-		auto validate_regular(const struct stat &stat_, StagedIdentity identity,
-		                      StagedRuntimeRole role) -> bool {
-			const auto policy = staged_runtime_policy(role);
-			return policy.exact_link_count.has_value() && S_ISREG(stat_.st_mode) &&
-			       stat_.st_uid == identity.owner_uid && stat_.st_gid == identity.owner_gid &&
-			       (stat_.st_mode & 07777) == policy.mode &&
-			       stat_.st_nlink == *policy.exact_link_count;
+		auto ValidateRegular(const struct stat &stat, StagedIdentity identity,
+		                     StagedRuntimeRole role) -> bool {
+			const auto policy = GetStagedRuntimePolicy(role);
+			return policy.exact_link_count.has_value() && S_ISREG(stat.st_mode) &&
+			       stat.st_uid == identity.owner_uid && stat.st_gid == identity.owner_gid &&
+			       (stat.st_mode & 07777) == policy.mode &&
+			       stat.st_nlink == *policy.exact_link_count;
 		}
 
-		auto validate_directory(const struct stat &stat_, StagedIdentity identity,
-		                        StagedRuntimeRole role) -> bool {
-			const auto policy = staged_runtime_policy(role);
-			return S_ISDIR(stat_.st_mode) && stat_.st_uid == identity.owner_uid &&
-			       stat_.st_gid == identity.owner_gid && (stat_.st_mode & 07777) == policy.mode;
+		auto ValidateDirectory(const struct stat &stat, StagedIdentity identity,
+		                       StagedRuntimeRole role) -> bool {
+			const auto policy = GetStagedRuntimePolicy(role);
+			return S_ISDIR(stat.st_mode) && stat.st_uid == identity.owner_uid &&
+			       stat.st_gid == identity.owner_gid && (stat.st_mode & 07777) == policy.mode;
 		}
 
-		auto set_owner(int fd, StagedIdentity identity) -> bool {
-			struct stat stat_{};
-			if (fstat(fd, &stat_) != 0) {
+		auto SetOwner(int fd, StagedIdentity identity) -> bool {
+			struct stat stat{};
+			if (fstat(fd, &stat) != 0) {
 				return false;
 			}
-			return (stat_.st_uid == identity.owner_uid && stat_.st_gid == identity.owner_gid) ||
+			return (stat.st_uid == identity.owner_uid && stat.st_gid == identity.owner_gid) ||
 			       fchown(fd, identity.owner_uid, identity.owner_gid) == 0;
 		}
 
-		auto apply_private_acl(int fd, const std::filesystem::path &path, StagedIdentity identity,
-		                       StagedRuntimeRole role, const AclOperations &operations) -> bool {
-			const auto policy = staged_runtime_policy(role);
-			return set_owner(fd, identity) && fchmod(fd, 0600) == 0 &&
-			       set_persistent_acl_with_operations(fd, path, identity.target_uid, policy.acl,
-			                                          operations) &&
+		auto ApplyPrivateAcl(int fd, const std::filesystem::path &path, StagedIdentity identity,
+		                     StagedRuntimeRole role, const AclOperations &operations) -> bool {
+			const auto policy = GetStagedRuntimePolicy(role);
+			return SetOwner(fd, identity) && fchmod(fd, 0600) == 0 &&
+			       SetPersistentAclWithOperations(fd, path, identity.target_uid, policy.acl,
+			                                      operations) &&
 			       fchmod(fd, policy.mode) == 0 &&
-			       verify_persistent_acl_with_operations(fd, path, identity.target_uid, policy.acl,
-			                                             operations);
+			       VerifyPersistentAclWithOperations(fd, path, identity.target_uid, policy.acl,
+			                                         operations);
 		}
 
-		auto apply_owner_only_acl(int fd, const std::filesystem::path &path, StagedRuntimeRole role,
-		                          const AclOperations &operations) -> bool {
-			const auto policy = staged_runtime_policy(role);
+		auto ApplyOwnerOnlyAcl(int fd, const std::filesystem::path &path, StagedRuntimeRole role,
+		                       const AclOperations &operations) -> bool {
+			const auto policy = GetStagedRuntimePolicy(role);
 			return fchmod(fd, policy.mode) == 0 &&
-			       set_persistent_acl_with_operations(fd, path, uid_t{0}, policy.acl, operations) &&
+			       SetPersistentAclWithOperations(fd, path, uid_t{0}, policy.acl, operations) &&
 			       fchmod(fd, policy.mode) == 0 &&
-			       verify_persistent_acl_with_operations(fd, path, uid_t{0}, policy.acl,
-			                                             operations);
+			       VerifyPersistentAclWithOperations(fd, path, uid_t{0}, policy.acl, operations);
 		}
 
-		auto open_slot_directory(int root_fd, const std::filesystem::path &root,
-		                         RuntimeGenerationSlot generation, StagedIdentity identity,
-		                         const AclOperations &operations, bool create)
+		auto OpenSlotDirectory(int root_fd, const std::filesystem::path &root,
+		                       RuntimeGenerationSlot generation, StagedIdentity identity,
+		                       const AclOperations &operations, bool create)
 		    -> std::optional<runtime_internal::UniqueFd> {
-			const auto name = auth_helper_protocol::prepared_runtime_generation_name(
+			const auto name = auth_helper_protocol::PreparedRuntimeGenerationName(
 			    identity.target_uid, generation);
 			bool created = false;
 			if (create && mkdirat(root_fd, name.c_str(), 0700) == 0) {
@@ -98,29 +97,29 @@ namespace howdy::native::auth_helper {
 			}
 			runtime_internal::UniqueFd fd(
 			    openat(root_fd, name.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.get() < 0) {
+			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
 			const auto path = root / name;
-			if (created && !apply_private_acl(fd.get(), path, identity,
-			                                  StagedRuntimeRole::kSharedDirectory, operations)) {
+			if (created && !ApplyPrivateAcl(fd.Get(), path, identity,
+			                                StagedRuntimeRole::kSharedDirectory, operations)) {
 				return std::nullopt;
 			}
-			struct stat stat_{};
-			if (fstat(fd.get(), &stat_) != 0 ||
-			    !validate_directory(stat_, identity, StagedRuntimeRole::kSharedDirectory) ||
-			    !verify_persistent_acl_with_operations(
-			        fd.get(), path, identity.target_uid,
-			        staged_runtime_policy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
+			struct stat stat{};
+			if (fstat(fd.Get(), &stat) != 0 ||
+			    !ValidateDirectory(stat, identity, StagedRuntimeRole::kSharedDirectory) ||
+			    !VerifyPersistentAclWithOperations(
+			        fd.Get(), path, identity.target_uid,
+			        GetStagedRuntimePolicy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
 				std::cerr << "Runtime slot failed strict validation: " << path << "\n";
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto open_models_directory(int slot_fd, const std::filesystem::path &slot_path,
-		                           StagedIdentity identity, const AclOperations &operations,
-		                           bool create) -> std::optional<runtime_internal::UniqueFd> {
+		auto OpenModelsDirectory(int slot_fd, const std::filesystem::path &slot_path,
+		                         StagedIdentity identity, const AclOperations &operations,
+		                         bool create) -> std::optional<runtime_internal::UniqueFd> {
 			bool created = false;
 			if (create && mkdirat(slot_fd, auth_helper_protocol::kPreparedUserModelsDirectoryName,
 			                      0700) == 0) {
@@ -131,27 +130,27 @@ namespace howdy::native::auth_helper {
 			runtime_internal::UniqueFd fd(
 			    openat(slot_fd, auth_helper_protocol::kPreparedUserModelsDirectoryName,
 			           O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.get() < 0) {
+			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
-			const auto path = auth_helper_protocol::prepared_user_models_dir(slot_path);
-			if (created && !apply_private_acl(fd.get(), path, identity,
-			                                  StagedRuntimeRole::kSharedDirectory, operations)) {
+			const auto path = auth_helper_protocol::PreparedUserModelsDir(slot_path);
+			if (created && !ApplyPrivateAcl(fd.Get(), path, identity,
+			                                StagedRuntimeRole::kSharedDirectory, operations)) {
 				return std::nullopt;
 			}
-			struct stat stat_{};
-			if (fstat(fd.get(), &stat_) != 0 ||
-			    !validate_directory(stat_, identity, StagedRuntimeRole::kSharedDirectory) ||
-			    !verify_persistent_acl_with_operations(
-			        fd.get(), path, identity.target_uid,
-			        staged_runtime_policy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
+			struct stat stat{};
+			if (fstat(fd.Get(), &stat) != 0 ||
+			    !ValidateDirectory(stat, identity, StagedRuntimeRole::kSharedDirectory) ||
+			    !VerifyPersistentAclWithOperations(
+			        fd.Get(), path, identity.target_uid,
+			        GetStagedRuntimePolicy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto open_config_file(int slot_fd, const std::filesystem::path &slot_path,
-		                      StagedIdentity identity, const AclOperations &operations, bool create)
+		auto OpenConfigFile(int slot_fd, const std::filesystem::path &slot_path,
+		                    StagedIdentity identity, const AclOperations &operations, bool create)
 		    -> std::optional<runtime_internal::UniqueFd> {
 			bool created = false;
 			int  raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedConfigFileName,
@@ -162,28 +161,28 @@ namespace howdy::native::auth_helper {
 				created = raw_fd >= 0;
 			}
 			runtime_internal::UniqueFd fd(raw_fd);
-			if (fd.get() < 0) {
+			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
-			const auto path = auth_helper_protocol::prepared_config_path(slot_path);
-			if (created && !apply_private_acl(fd.get(), path, identity, StagedRuntimeRole::kConfig,
-			                                  operations)) {
+			const auto path = auth_helper_protocol::PreparedConfigPath(slot_path);
+			if (created && !ApplyPrivateAcl(fd.Get(), path, identity, StagedRuntimeRole::kConfig,
+			                                operations)) {
 				return std::nullopt;
 			}
-			struct stat stat_{};
-			if (fstat(fd.get(), &stat_) != 0 ||
-			    !validate_regular(stat_, identity, StagedRuntimeRole::kConfig) ||
-			    !verify_persistent_acl_with_operations(
-			        fd.get(), path, identity.target_uid,
-			        staged_runtime_policy(StagedRuntimeRole::kConfig).acl, operations)) {
+			struct stat stat{};
+			if (fstat(fd.Get(), &stat) != 0 ||
+			    !ValidateRegular(stat, identity, StagedRuntimeRole::kConfig) ||
+			    !VerifyPersistentAclWithOperations(
+			        fd.Get(), path, identity.target_uid,
+			        GetStagedRuntimePolicy(StagedRuntimeRole::kConfig).acl, operations)) {
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto open_model_backing(int slot_fd, const std::filesystem::path &slot_path,
-		                        StagedIdentity identity, const AclOperations &operations,
-		                        bool create) -> std::optional<runtime_internal::UniqueFd> {
+		auto OpenModelBacking(int slot_fd, const std::filesystem::path &slot_path,
+		                      StagedIdentity identity, const AclOperations &operations, bool create)
+		    -> std::optional<runtime_internal::UniqueFd> {
 			bool created = false;
 			int  raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedModelBackingFileName,
 			                      O_RDWR | O_CLOEXEC | O_NOFOLLOW);
@@ -193,26 +192,26 @@ namespace howdy::native::auth_helper {
 				created = raw_fd >= 0;
 			}
 			runtime_internal::UniqueFd fd(raw_fd);
-			if (fd.get() < 0) {
+			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
 			const auto path = slot_path / auth_helper_protocol::kPreparedModelBackingFileName;
-			if (created && (!set_owner(fd.get(), identity) ||
-			                !apply_owner_only_acl(fd.get(), path, StagedRuntimeRole::kAbsentModel,
-			                                      operations))) {
+			if (created &&
+			    (!SetOwner(fd.Get(), identity) ||
+			     !ApplyOwnerOnlyAcl(fd.Get(), path, StagedRuntimeRole::kAbsentModel, operations))) {
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto models_directory_contains_only(int models_fd, std::string_view expected_name,
-		                                    bool expected_present) -> bool {
+		auto ModelsDirectoryContainsOnly(int models_fd, std::string_view expected_name,
+		                                 bool expected_present) -> bool {
 			runtime_internal::UniqueFd duplicate(
 			    openat(models_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-			if (duplicate.get() < 0) {
+			if (duplicate.Get() < 0) {
 				return false;
 			}
-			DIR *directory = fdopendir(duplicate.release());
+			DIR *directory = fdopendir(duplicate.Release());
 			if (directory == nullptr) {
 				return false;
 			}
@@ -246,14 +245,14 @@ namespace howdy::native::auth_helper {
 			kInvalid,
 		};
 
-		auto slot_initialization(int slot_fd) -> SlotInitialization {
+		auto SlotInitialization(int slot_fd) -> SlotInitialization {
 			std::array<bool, 3>  present{};
 			constexpr std::array names = {auth_helper_protocol::kPreparedConfigFileName,
 			                              auth_helper_protocol::kPreparedUserModelsDirectoryName,
 			                              auth_helper_protocol::kPreparedModelBackingFileName};
 			for (std::size_t index = 0; index < names.size(); ++index) {
-				struct stat stat_{};
-				if (fstatat(slot_fd, names[index], &stat_, AT_SYMLINK_NOFOLLOW) == 0) {
+				struct stat stat{};
+				if (fstatat(slot_fd, names[index], &stat, AT_SYMLINK_NOFOLLOW) == 0) {
 					present[index] = true;
 				} else if (errno != ENOENT) {
 					return SlotInitialization::kInvalid;
@@ -266,9 +265,9 @@ namespace howdy::native::auth_helper {
 			                                                      : SlotInitialization::kInvalid;
 		}
 
-		auto inspect_model_state(int models_fd, const std::filesystem::path &slot_path,
-		                         const std::string &user, int backing_fd, StagedIdentity identity,
-		                         const AclOperations &operations) -> ModelState {
+		auto InspectModelState(int models_fd, const std::filesystem::path &slot_path,
+		                       const std::string &user, int backing_fd, StagedIdentity identity,
+		                       const AclOperations &operations) -> ModelState {
 			struct stat backing_stat{};
 			if (fstat(backing_fd, &backing_stat) != 0 || !S_ISREG(backing_stat.st_mode) ||
 			    backing_stat.st_uid != identity.owner_uid ||
@@ -278,7 +277,7 @@ namespace howdy::native::auth_helper {
 			const auto backing_path =
 			    slot_path / auth_helper_protocol::kPreparedModelBackingFileName;
 			const auto model_path =
-			    auth_helper_protocol::prepared_user_models_dir(slot_path) / (user + ".dat");
+			    auth_helper_protocol::PreparedUserModelsDir(slot_path) / (user + ".dat");
 			struct stat visible_stat{};
 			const bool  visible = fstatat(models_fd, (user + ".dat").c_str(), &visible_stat,
 			                              AT_SYMLINK_NOFOLLOW) == 0;
@@ -286,91 +285,89 @@ namespace howdy::native::auth_helper {
 				return ModelState::kInvalid;
 			}
 			if (!visible) {
-				const auto policy = staged_runtime_policy(StagedRuntimeRole::kAbsentModel);
-				return validate_regular(backing_stat, identity, StagedRuntimeRole::kAbsentModel) &&
-				               verify_persistent_acl_with_operations(
-				                   backing_fd, backing_path, uid_t{0}, policy.acl, operations) &&
-				               models_directory_contains_only(models_fd, user + ".dat", false)
+				const auto policy = GetStagedRuntimePolicy(StagedRuntimeRole::kAbsentModel);
+				return ValidateRegular(backing_stat, identity, StagedRuntimeRole::kAbsentModel) &&
+				               VerifyPersistentAclWithOperations(backing_fd, backing_path, uid_t{0},
+				                                                 policy.acl, operations) &&
+				               ModelsDirectoryContainsOnly(models_fd, user + ".dat", false)
 				           ? ModelState::kAbsent
 				           : ModelState::kInvalid;
 			}
-			return validate_regular(backing_stat, identity, StagedRuntimeRole::kPresentModel) &&
-			               validate_regular(visible_stat, identity,
-			                                StagedRuntimeRole::kPresentModel) &&
+			return ValidateRegular(backing_stat, identity, StagedRuntimeRole::kPresentModel) &&
+			               ValidateRegular(visible_stat, identity,
+			                               StagedRuntimeRole::kPresentModel) &&
 			               backing_stat.st_dev == visible_stat.st_dev &&
 			               backing_stat.st_ino == visible_stat.st_ino &&
-			               verify_persistent_acl_with_operations(
+			               VerifyPersistentAclWithOperations(
 			                   backing_fd, model_path, identity.target_uid,
-			                   staged_runtime_policy(StagedRuntimeRole::kPresentModel).acl,
+			                   GetStagedRuntimePolicy(StagedRuntimeRole::kPresentModel).acl,
 			                   operations) &&
-			               models_directory_contains_only(models_fd, user + ".dat", true)
+			               ModelsDirectoryContainsOnly(models_fd, user + ".dat", true)
 			           ? ModelState::kPresent
 			           : ModelState::kInvalid;
 		}
 
-		auto slot_is_fresh(runtime_internal::Slot                            &slot,
-		                   const runtime_internal::SourceFile                &config_source,
-		                   const std::optional<runtime_internal::SourceFile> &model_source,
-		                   const std::string &user, StagedIdentity identity,
-		                   const AclOperations &operations) -> bool {
+		auto SlotIsFresh(runtime_internal::Slot                            &slot,
+		                 const runtime_internal::SourceFile                &config_source,
+		                 const std::optional<runtime_internal::SourceFile> &model_source,
+		                 const std::string &user, StagedIdentity identity,
+		                 const AclOperations &operations) -> bool {
 			auto models =
-			    open_models_directory(slot.dir_fd.get(), slot.path, identity, operations, false);
-			auto config =
-			    open_config_file(slot.dir_fd.get(), slot.path, identity, operations, false);
+			    OpenModelsDirectory(slot.dir_fd.Get(), slot.path, identity, operations, false);
+			auto config = OpenConfigFile(slot.dir_fd.Get(), slot.path, identity, operations, false);
 			auto backing =
-			    open_model_backing(slot.dir_fd.get(), slot.path, identity, operations, false);
+			    OpenModelBacking(slot.dir_fd.Get(), slot.path, identity, operations, false);
 			if (!models.has_value() || !config.has_value() || !backing.has_value()) {
 				return false;
 			}
-			const auto model_state = inspect_model_state(models->get(), slot.path, user,
-			                                             backing->get(), identity, operations);
+			const auto model_state = InspectModelState(models->Get(), slot.path, user,
+			                                           backing->Get(), identity, operations);
 			if (model_state == ModelState::kInvalid ||
-			    !runtime_internal::compare_files(config_source.fd.get(), config->get()) ||
-			    !runtime_internal::source_unchanged(config_source)) {
+			    !runtime_internal::CompareFiles(config_source.fd.Get(), config->Get()) ||
+			    !runtime_internal::SourceUnchanged(config_source)) {
 				return false;
 			}
 			if (!model_source.has_value()) {
 				return model_state == ModelState::kAbsent;
 			}
 			return model_state == ModelState::kPresent &&
-			       runtime_internal::compare_files(model_source->fd.get(), backing->get()) &&
-			       runtime_internal::source_unchanged(*model_source);
+			       runtime_internal::CompareFiles(model_source->fd.Get(), backing->Get()) &&
+			       runtime_internal::SourceUnchanged(*model_source);
 		}
 
-		auto update_slot(runtime_internal::Slot                            &slot,
-		                 const runtime_internal::SourceFile                &config_source,
-		                 const std::optional<runtime_internal::SourceFile> &model_source,
-		                 const std::string &user, StagedIdentity identity,
-		                 const AclOperations &operations) -> bool {
-			const auto initialization = slot_initialization(slot.dir_fd.get());
+		auto UpdateSlot(runtime_internal::Slot                            &slot,
+		                const runtime_internal::SourceFile                &config_source,
+		                const std::optional<runtime_internal::SourceFile> &model_source,
+		                const std::string &user, StagedIdentity identity,
+		                const AclOperations &operations) -> bool {
+			const auto initialization = SlotInitialization(slot.dir_fd.Get());
 			if (initialization == SlotInitialization::kInvalid) {
 				std::cerr << "Persistent runtime objects are incomplete in " << slot.path << "\n";
 				return false;
 			}
 			const bool create = initialization == SlotInitialization::kEmpty;
 			auto       models =
-			    open_models_directory(slot.dir_fd.get(), slot.path, identity, operations, create);
+			    OpenModelsDirectory(slot.dir_fd.Get(), slot.path, identity, operations, create);
 			auto config =
-			    open_config_file(slot.dir_fd.get(), slot.path, identity, operations, create);
+			    OpenConfigFile(slot.dir_fd.Get(), slot.path, identity, operations, create);
 			auto backing =
-			    open_model_backing(slot.dir_fd.get(), slot.path, identity, operations, create);
+			    OpenModelBacking(slot.dir_fd.Get(), slot.path, identity, operations, create);
 			if (!models.has_value() || !config.has_value() || !backing.has_value()) {
 				std::cerr << "Failed to open persistent runtime objects in " << slot.path
 				          << " (models=" << models.has_value() << ", config=" << config.has_value()
 				          << ", backing=" << backing.has_value() << ")\n";
 				return false;
 			}
-			const auto state = inspect_model_state(models->get(), slot.path, user, backing->get(),
-			                                       identity, operations);
+			const auto state = InspectModelState(models->Get(), slot.path, user, backing->Get(),
+			                                     identity, operations);
 			if (state == ModelState::kInvalid) {
 				std::cerr << "Persistent model state failed strict validation in " << slot.path
 				          << "\n";
 				return false;
 			}
-			if (!runtime_internal::copy_source_to_open_file(config_source, config->get()) ||
-			    !apply_private_acl(config->get(),
-			                       auth_helper_protocol::prepared_config_path(slot.path), identity,
-			                       StagedRuntimeRole::kConfig, operations)) {
+			if (!runtime_internal::CopySourceToOpenFile(config_source, config->Get()) ||
+			    !ApplyPrivateAcl(config->Get(), auth_helper_protocol::PreparedConfigPath(slot.path),
+			                     identity, StagedRuntimeRole::kConfig, operations)) {
 				std::cerr << "Failed to update persistent config in " << slot.path << "\n";
 				return false;
 			}
@@ -379,117 +376,116 @@ namespace howdy::native::auth_helper {
 			const auto        backing_path =
 			    slot.path / auth_helper_protocol::kPreparedModelBackingFileName;
 			const auto visible_path =
-			    auth_helper_protocol::prepared_user_models_dir(slot.path) / model_name;
+			    auth_helper_protocol::PreparedUserModelsDir(slot.path) / model_name;
 			if (model_source.has_value()) {
-				if (!runtime_internal::copy_source_to_open_file(*model_source, backing->get()) ||
-				    !apply_private_acl(backing->get(), visible_path, identity,
-				                       StagedRuntimeRole::kPresentModel, operations)) {
+				if (!runtime_internal::CopySourceToOpenFile(*model_source, backing->Get()) ||
+				    !ApplyPrivateAcl(backing->Get(), visible_path, identity,
+				                     StagedRuntimeRole::kPresentModel, operations)) {
 					std::cerr << "Failed to update persistent model in " << slot.path << "\n";
 					return false;
 				}
 				if (state == ModelState::kAbsent &&
-				    linkat(slot.dir_fd.get(), auth_helper_protocol::kPreparedModelBackingFileName,
-				           models->get(), model_name.c_str(), 0) != 0) {
-					return log_slots_errno_failure("link visible model", visible_path, errno);
+				    linkat(slot.dir_fd.Get(), auth_helper_protocol::kPreparedModelBackingFileName,
+				           models->Get(), model_name.c_str(), 0) != 0) {
+					return LogSlotsErrnoFailure("link visible model", visible_path, errno);
 				}
 			} else {
 				if (state == ModelState::kPresent &&
-				    unlinkat(models->get(), model_name.c_str(), 0) != 0) {
+				    unlinkat(models->Get(), model_name.c_str(), 0) != 0) {
 					return false;
 				}
-				if (ftruncate(backing->get(), 0) != 0 || !howdy::native::sync_fd(backing->get()) ||
-				    !apply_owner_only_acl(backing->get(), backing_path,
-				                          StagedRuntimeRole::kAbsentModel, operations)) {
+				if (ftruncate(backing->Get(), 0) != 0 || !howdy::native::SyncFd(backing->Get()) ||
+				    !ApplyOwnerOnlyAcl(backing->Get(), backing_path,
+				                       StagedRuntimeRole::kAbsentModel, operations)) {
 					return false;
 				}
 			}
-			if (!howdy::native::sync_fd(models->get()) ||
-			    !howdy::native::sync_fd(slot.dir_fd.get())) {
+			if (!howdy::native::SyncFd(models->Get()) ||
+			    !howdy::native::SyncFd(slot.dir_fd.Get())) {
 				std::cerr << "Failed to sync persistent runtime directories in " << slot.path
 				          << "\n";
 				return false;
 			}
-			const bool valid = inspect_model_state(models->get(), slot.path, user, backing->get(),
-			                                       identity, operations) != ModelState::kInvalid;
+			const bool valid = InspectModelState(models->Get(), slot.path, user, backing->Get(),
+			                                     identity, operations) != ModelState::kInvalid;
 			if (!valid) {
 				std::cerr << "Updated model state failed strict validation in " << slot.path
 				          << "\n";
 			}
-			return valid && runtime_internal::source_unchanged(config_source) &&
-			       (!model_source.has_value() || runtime_internal::source_unchanged(*model_source));
+			return valid && runtime_internal::SourceUnchanged(config_source) &&
+			       (!model_source.has_value() || runtime_internal::SourceUnchanged(*model_source));
 		}
 
-		auto open_slot(int root_fd, const std::filesystem::path &root,
-		               RuntimeGenerationSlot generation, StagedIdentity identity,
-		               const AclOperations &operations, bool create)
+		auto OpenSlot(int root_fd, const std::filesystem::path &root,
+		              RuntimeGenerationSlot generation, StagedIdentity identity,
+		              const AclOperations &operations, bool create)
 		    -> std::optional<runtime_internal::Slot> {
-			const auto lock_name = auth_helper_protocol::prepared_runtime_generation_lock_name(
+			const auto lock_name = auth_helper_protocol::PreparedRuntimeGenerationLockName(
 			    identity.target_uid, generation);
-			auto lock = runtime_internal::open_root_only_lock(root_fd, lock_name, root / lock_name,
-			                                                  identity, operations, create);
+			auto lock = runtime_internal::OpenRootOnlyLock(root_fd, lock_name, root / lock_name,
+			                                               identity, operations, create);
 			if (!lock.has_value()) {
 				return std::nullopt;
 			}
 			auto directory =
-			    open_slot_directory(root_fd, root, generation, identity, operations, create);
+			    OpenSlotDirectory(root_fd, root, generation, identity, operations, create);
 			if (!directory.has_value()) {
 				return std::nullopt;
 			}
 			return runtime_internal::Slot{.path =
-			                                  auth_helper_protocol::prepared_runtime_generation_dir(
+			                                  auth_helper_protocol::PreparedRuntimeGenerationDir(
 			                                      root, identity.target_uid, generation),
 			                              .lock_fd = std::move(*lock),
 			                              .dir_fd  = std::move(*directory)};
 		}
 
-		auto prepared_paths(runtime_internal::Slot &slot) -> std::optional<PreparedPaths> {
+		auto BuildPreparedPaths(runtime_internal::Slot &slot) -> std::optional<PreparedPaths> {
 			const auto lock_path = std::filesystem::path(slot.path.string() + ".lock");
 			runtime_internal::UniqueFd lease(
 			    open(lock_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
 			struct stat writable_stat{};
 			struct stat lease_stat{};
-			const auto  policy = staged_runtime_policy(StagedRuntimeRole::kLock);
-			if (lease.get() < 0 || fstat(slot.lock_fd.get(), &writable_stat) != 0 ||
-			    fstat(lease.get(), &lease_stat) != 0 || writable_stat.st_dev != lease_stat.st_dev ||
+			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kLock);
+			if (lease.Get() < 0 || fstat(slot.lock_fd.Get(), &writable_stat) != 0 ||
+			    fstat(lease.Get(), &lease_stat) != 0 || writable_stat.st_dev != lease_stat.st_dev ||
 			    writable_stat.st_ino != lease_stat.st_ino || !S_ISREG(lease_stat.st_mode) ||
 			    (lease_stat.st_mode & 07777) != policy.mode ||
 			    !policy.exact_link_count.has_value() ||
 			    lease_stat.st_nlink != *policy.exact_link_count ||
-			    flock(lease.get(), LOCK_SH | LOCK_NB) != 0) {
+			    flock(lease.Get(), LOCK_SH | LOCK_NB) != 0) {
 				return std::nullopt;
 			}
-			return PreparedPaths{
-			    .runtime_dir     = slot.path,
-			    .config_path     = auth_helper_protocol::prepared_config_path(slot.path),
-			    .user_models_dir = auth_helper_protocol::prepared_user_models_dir(slot.path),
-			    .lease_fd        = lease.release()};
+			return PreparedPaths{.runtime_dir = slot.path,
+			                     .config_path = auth_helper_protocol::PreparedConfigPath(slot.path),
+			                     .user_models_dir =
+			                         auth_helper_protocol::PreparedUserModelsDir(slot.path),
+			                     .lease_fd = lease.Release()};
 		}
 	}  // namespace
 
 	namespace runtime_internal {
 
-		auto open_or_create_root(const std::filesystem::path &path, uid_t owner_uid,
-		                         gid_t owner_gid) -> std::optional<UniqueFd> {
-			if (!internal::validate_runtime_root(path, owner_uid, owner_gid)) {
+		auto OpenOrCreateRoot(const std::filesystem::path &path, uid_t owner_uid, gid_t owner_gid)
+		    -> std::optional<UniqueFd> {
+			if (!internal::ValidateRuntimeRoot(path, owner_uid, owner_gid)) {
 				return std::nullopt;
 			}
 			UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.get() < 0) {
+			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
-			struct stat stat_{};
-			const auto  policy = staged_runtime_policy(StagedRuntimeRole::kRuntimeRoot);
-			if (fstat(fd.get(), &stat_) != 0 || !S_ISDIR(stat_.st_mode) ||
-			    stat_.st_uid != owner_uid || stat_.st_gid != owner_gid ||
-			    (stat_.st_mode & 07777) != policy.mode) {
+			struct stat stat{};
+			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
+			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
+			    stat.st_gid != owner_gid || (stat.st_mode & 07777) != policy.mode) {
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto open_root_only_lock(int root_fd, const std::string &name,
-		                         const std::filesystem::path &display_path, StagedIdentity identity,
-		                         const AclOperations &operations, bool create)
+		auto OpenRootOnlyLock(int root_fd, const std::string &name,
+		                      const std::filesystem::path &display_path, StagedIdentity identity,
+		                      const AclOperations &operations, bool create)
 		    -> std::optional<UniqueFd> {
 			bool created = false;
 			int  raw_fd  = openat(root_fd, name.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
@@ -499,78 +495,77 @@ namespace howdy::native::auth_helper {
 				created = raw_fd >= 0;
 			}
 			UniqueFd fd(raw_fd);
-			if (fd.get() < 0) {
-				log_slots_errno_failure("open runtime lock", display_path, errno);
+			if (fd.Get() < 0) {
+				LogSlotsErrnoFailure("open runtime lock", display_path, errno);
 				return std::nullopt;
 			}
-			if (created && (!set_owner(fd.get(), identity) ||
-			                !apply_owner_only_acl(fd.get(), display_path, StagedRuntimeRole::kLock,
-			                                      operations))) {
+			if (created && (!SetOwner(fd.Get(), identity) ||
+			                !ApplyOwnerOnlyAcl(fd.Get(), display_path, StagedRuntimeRole::kLock,
+			                                   operations))) {
 				return std::nullopt;
 			}
-			struct stat stat_{};
-			const auto  policy = staged_runtime_policy(StagedRuntimeRole::kLock);
-			if (fstat(fd.get(), &stat_) != 0 ||
-			    !validate_regular(stat_, identity, StagedRuntimeRole::kLock) ||
-			    !verify_persistent_acl_with_operations(fd.get(), display_path, uid_t{0}, policy.acl,
-			                                           operations)) {
+			struct stat stat{};
+			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kLock);
+			if (fstat(fd.Get(), &stat) != 0 ||
+			    !ValidateRegular(stat, identity, StagedRuntimeRole::kLock) ||
+			    !VerifyPersistentAclWithOperations(fd.Get(), display_path, uid_t{0}, policy.acl,
+			                                       operations)) {
 				std::cerr << "Runtime lock failed strict validation: " << display_path << "\n";
 				return std::nullopt;
 			}
 			return fd;
 		}
 
-		auto open_slots(int root_fd, const RuntimeSources &sources, StagedIdentity identity,
-		                const AclOperations &operations) -> std::optional<SlotSet> {
+		auto OpenSlots(int root_fd, const RuntimeSources &sources, StagedIdentity identity,
+		               const AclOperations &operations) -> std::optional<SlotSet> {
 			constexpr std::array generations = {RuntimeGenerationSlot::kSlot0,
 			                                    RuntimeGenerationSlot::kSlot1};
 			SlotSet              slots;
 			bool                 any_valid = false;
 			for (std::size_t index = 0; index < slots.size(); ++index) {
-				slots[index] = open_slot(root_fd, sources.runtime_root, generations[index],
-				                         identity, operations, true);
+				slots[index] = OpenSlot(root_fd, sources.runtime_root, generations[index], identity,
+				                        operations, true);
 				any_valid    = any_valid || slots[index].has_value();
 			}
 			return any_valid ? std::optional<SlotSet>{std::move(slots)} : std::nullopt;
 		}
 
-		auto lease_fresh_slot(SlotSet &slots, const SourceFile &config_source,
-		                      const std::optional<SourceFile> &model_source,
-		                      const std::string &user, StagedIdentity identity,
-		                      const AclOperations &operations) -> std::optional<PreparedPaths> {
+		auto LeaseFreshSlot(SlotSet &slots, const SourceFile &config_source,
+		                    const std::optional<SourceFile> &model_source, const std::string &user,
+		                    StagedIdentity identity, const AclOperations &operations)
+		    -> std::optional<PreparedPaths> {
 			for (auto &slot : slots) {
-				if (!slot.has_value() || flock(slot->lock_fd.get(), LOCK_SH | LOCK_NB) != 0) {
+				if (!slot.has_value() || flock(slot->lock_fd.Get(), LOCK_SH | LOCK_NB) != 0) {
 					continue;
 				}
-				if (slot_is_fresh(*slot, config_source, model_source, user, identity, operations)) {
-					auto prepared = prepared_paths(*slot);
+				if (SlotIsFresh(*slot, config_source, model_source, user, identity, operations)) {
+					auto prepared = BuildPreparedPaths(*slot);
 					if (prepared.has_value()) {
 						return prepared;
 					}
 				}
-				(void)flock(slot->lock_fd.get(), LOCK_UN);
+				(void)flock(slot->lock_fd.Get(), LOCK_UN);
 			}
 			return std::nullopt;
 		}
 
-		auto refresh_available_slot(SlotSet &slots, const SourceFile &config_source,
-		                            const std::optional<SourceFile> &model_source,
-		                            const std::string &user, StagedIdentity identity,
-		                            const AclOperations &operations)
-		    -> std::optional<PreparedPaths> {
+		auto RefreshAvailableSlot(SlotSet &slots, const SourceFile &config_source,
+		                          const std::optional<SourceFile> &model_source,
+		                          const std::string &user, StagedIdentity identity,
+		                          const AclOperations &operations) -> std::optional<PreparedPaths> {
 			for (auto &slot : slots) {
-				if (!slot.has_value() || flock(slot->lock_fd.get(), LOCK_EX | LOCK_NB) != 0) {
+				if (!slot.has_value() || flock(slot->lock_fd.Get(), LOCK_EX | LOCK_NB) != 0) {
 					continue;
 				}
-				if (!update_slot(*slot, config_source, model_source, user, identity, operations)) {
-					slot->lock_fd.reset();
+				if (!UpdateSlot(*slot, config_source, model_source, user, identity, operations)) {
+					slot->lock_fd.Reset();
 					continue;
 				}
-				if (flock(slot->lock_fd.get(), LOCK_SH | LOCK_NB) != 0) {
-					slot->lock_fd.reset();
+				if (flock(slot->lock_fd.Get(), LOCK_SH | LOCK_NB) != 0) {
+					slot->lock_fd.Reset();
 					continue;
 				}
-				auto prepared = prepared_paths(*slot);
+				auto prepared = BuildPreparedPaths(*slot);
 				if (prepared.has_value()) {
 					return prepared;
 				}
@@ -583,26 +578,25 @@ namespace howdy::native::auth_helper {
 
 	namespace internal {
 
-		auto validate_runtime_root(const std::filesystem::path &path, uid_t owner_uid,
-		                           gid_t owner_gid) -> bool {
-			const auto policy  = staged_runtime_policy(StagedRuntimeRole::kRuntimeRoot);
+		auto ValidateRuntimeRoot(const std::filesystem::path &path, uid_t owner_uid,
+		                         gid_t owner_gid) -> bool {
+			const auto policy  = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
 			const bool created = mkdir(path.c_str(), policy.mode) == 0;
 			if (!created && errno != EEXIST) {
-				return log_slots_errno_failure("create runtime directory", path, errno);
+				return LogSlotsErrnoFailure("create runtime directory", path, errno);
 			}
 			runtime_internal::UniqueFd fd(
 			    open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.get() < 0) {
-				return log_slots_errno_failure("open runtime directory", path, errno);
+			if (fd.Get() < 0) {
+				return LogSlotsErrnoFailure("open runtime directory", path, errno);
 			}
-			if (created && (fchown(fd.get(), owner_uid, owner_gid) != 0 ||
-			                fchmod(fd.get(), policy.mode) != 0)) {
+			if (created && (fchown(fd.Get(), owner_uid, owner_gid) != 0 ||
+			                fchmod(fd.Get(), policy.mode) != 0)) {
 				return false;
 			}
-			struct stat stat_{};
-			if (fstat(fd.get(), &stat_) != 0 || !S_ISDIR(stat_.st_mode) ||
-			    stat_.st_uid != owner_uid || stat_.st_gid != owner_gid ||
-			    (stat_.st_mode & 07777) != policy.mode) {
+			struct stat stat{};
+			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
+			    stat.st_gid != owner_gid || (stat.st_mode & 07777) != policy.mode) {
 				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
 				return false;
 			}

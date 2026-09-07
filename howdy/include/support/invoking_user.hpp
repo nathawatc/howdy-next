@@ -22,7 +22,7 @@ namespace howdy::native {
 	namespace detail {
 
 		template <typename IdType>
-		inline auto parse_id_env(const char *value) -> std::optional<IdType> {
+		inline auto ParseIdEnv(const char *value) -> std::optional<IdType> {
 			if (value == nullptr || value[0] == '\0') {
 				return std::nullopt;
 			}
@@ -40,15 +40,15 @@ namespace howdy::native {
 
 	}  // namespace detail
 
-	inline auto parse_uid_env(const char *value) -> std::optional<uid_t> {
-		return detail::parse_id_env<uid_t>(value);
+	inline auto ParseUidEnv(const char *value) -> std::optional<uid_t> {
+		return detail::ParseIdEnv<uid_t>(value);
 	}
 
-	inline auto parse_gid_env(const char *value) -> std::optional<gid_t> {
-		return detail::parse_id_env<gid_t>(value);
+	inline auto ParseGidEnv(const char *value) -> std::optional<gid_t> {
+		return detail::ParseIdEnv<gid_t>(value);
 	}
 
-	inline auto invoking_user_from_pwd(const passwd &pwd, gid_t gid_override) -> InvokingUser {
+	inline auto InvokingUserFromPwd(const passwd &pwd, gid_t gid_override) -> InvokingUser {
 		return InvokingUser{
 		    .uid   = pwd.pw_uid,
 		    .gid   = gid_override,
@@ -58,24 +58,24 @@ namespace howdy::native {
 		};
 	}
 
-	inline auto resolve_invoking_user() -> std::optional<InvokingUser> {
-		if (const auto sudo_uid = parse_uid_env(std::getenv("SUDO_UID"))) {
+	inline auto ResolveInvokingUser() -> std::optional<InvokingUser> {
+		if (const auto sudo_uid = ParseUidEnv(std::getenv("SUDO_UID"))) {
 			if (passwd *pwd = getpwuid(*sudo_uid); pwd != nullptr) {
-				const auto sudo_gid = parse_gid_env(std::getenv("SUDO_GID")).value_or(pwd->pw_gid);
-				return invoking_user_from_pwd(*pwd, sudo_gid);
+				const auto sudo_gid = ParseGidEnv(std::getenv("SUDO_GID")).value_or(pwd->pw_gid);
+				return InvokingUserFromPwd(*pwd, sudo_gid);
 			}
 		}
 
 		if (const char *doas_user = std::getenv(kDoasUserEnvironmentVariable);
 		    doas_user != nullptr && doas_user[0] != '\0') {
 			if (passwd *pwd = getpwnam(doas_user); pwd != nullptr) {
-				return invoking_user_from_pwd(*pwd, pwd->pw_gid);
+				return InvokingUserFromPwd(*pwd, pwd->pw_gid);
 			}
 		}
 
-		if (const auto pkexec_uid = parse_uid_env(std::getenv(kPkexecUidEnvironmentVariable))) {
+		if (const auto pkexec_uid = ParseUidEnv(std::getenv(kPkexecUidEnvironmentVariable))) {
 			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
-				return invoking_user_from_pwd(*pwd, pwd->pw_gid);
+				return InvokingUserFromPwd(*pwd, pwd->pw_gid);
 			}
 		}
 

@@ -13,21 +13,21 @@ namespace howdy::docs {
 		std::string output;
 		std::string error;
 
-		[[nodiscard]] auto ok() const -> bool {
+		[[nodiscard]] auto Ok() const -> bool {
 			return error.empty();
 		}
 	};
 
-	[[nodiscard]] auto render_command_reference(std::span<const native::CommandDescriptor> commands)
+	[[nodiscard]] auto RenderCommandReference(std::span<const native::CommandDescriptor> commands)
 	    -> RenderResult;
 	[[nodiscard]] auto
-	render_global_option_reference(std::span<const native::GlobalOptionDescriptor> options)
+	RenderGlobalOptionReference(std::span<const native::GlobalOptionDescriptor> options)
 	    -> RenderResult;
 	[[nodiscard]] auto
-	render_workaround_reference(std::span<const pam::WorkaroundDescriptor> workarounds,
-	                            pam::Workaround default_mode) -> RenderResult;
+	RenderWorkaroundReference(std::span<const pam::WorkaroundDescriptor> workarounds,
+	                          pam::Workaround default_mode) -> RenderResult;
 	[[nodiscard]] auto
-	render_config_option_reference(std::span<const native::config_schema::Option> options)
+	RenderConfigOptionReference(std::span<const native::config_schema::Option> options)
 	    -> RenderResult;
 
 }  // namespace howdy::docs

@@ -27,11 +27,11 @@ namespace howdy::pam {
 
 	}  // namespace
 
-	auto workaround_catalog() -> std::span<const WorkaroundDescriptor> {
+	auto WorkaroundCatalog() -> std::span<const WorkaroundDescriptor> {
 		return kWorkaroundCatalog;
 	}
 
-	auto find_workaround(std::string_view value) -> const WorkaroundDescriptor * {
+	auto FindWorkaround(std::string_view value) -> const WorkaroundDescriptor * {
 		for (const auto &descriptor : kWorkaroundCatalog) {
 			if (descriptor.value == value) {
 				return &descriptor;

@@ -21,8 +21,8 @@ namespace howdy::native::auth_helper {
 		gid_t gid = 0;
 	};
 
-	auto runtime_root() -> std::filesystem::path;
-	auto prepare_runtime_auth_files(const std::string &user, RuntimeIdentity identity)
+	auto RuntimeRoot() -> std::filesystem::path;
+	auto PrepareRuntimeAuthFiles(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths>;
 
 }  // namespace howdy::native::auth_helper

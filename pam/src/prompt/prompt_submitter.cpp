@@ -25,22 +25,22 @@ namespace {
 
 			libevdev_enable_event_type(raw_device_.get(), EV_KEY);
 			libevdev_enable_event_code(raw_device_.get(), EV_KEY, KEY_ENTER, nullptr);
-			uinput_fd_ = howdy::pam::detail::normalize_internal_fd(
+			uinput_fd_ = howdy::pam::detail::NormalizeInternalFd(
 			    howdy::pam::detail::ScopedFd(open("/dev/uinput", O_RDWR | O_NONBLOCK | O_CLOEXEC)));
-			if (!uinput_fd_.valid()) {
+			if (!uinput_fd_.Valid()) {
 				throw std::runtime_error("Failed to open uinput device");
 			}
 
 			libevdev_uinput *raw_uinput    = nullptr;
 			const int        create_result = libevdev_uinput_create_from_device(
-			    raw_device_.get(), uinput_fd_.get(), &raw_uinput);
+			    raw_device_.get(), uinput_fd_.Get(), &raw_uinput);
 			if (create_result != 0) {
 				throw std::runtime_error("Failed to create uinput device");
 			}
 			raw_uinput_device_.reset(raw_uinput);
 		}
 
-		void submit_prompt() override {
+		void SubmitPrompt() override {
 			if (libevdev_uinput_write_event(raw_uinput_device_.get(), EV_KEY, KEY_ENTER, 1) != 0 ||
 			    libevdev_uinput_write_event(raw_uinput_device_.get(), EV_SYN, SYN_REPORT, 0) != 0 ||
 			    libevdev_uinput_write_event(raw_uinput_device_.get(), EV_KEY, KEY_ENTER, 0) != 0 ||
@@ -58,7 +58,7 @@ namespace {
 }  // namespace
 
 namespace howdy::pam {
-	auto create_uinput_prompt_submitter() -> std::unique_ptr<PromptSubmitter> {
+	auto CreateUinputPromptSubmitter() -> std::unique_ptr<PromptSubmitter> {
 		return std::make_unique<UinputPromptSubmitter>();
 	}
 }  // namespace howdy::pam

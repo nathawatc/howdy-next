@@ -4,12 +4,12 @@
 
 namespace howdy::native {
 
-	auto load_runtime_config(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult {
-		return load_runtime_config(config_path, default_secure_owner_uid());
+	auto LoadRuntimeConfig(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult {
+		return LoadRuntimeConfig(config_path, DefaultSecureOwnerUid());
 	}
 
-	auto load_runtime_config() -> RuntimeConfigLoadResult {
-		return load_runtime_config(resolve_config_path());
+	auto LoadRuntimeConfig() -> RuntimeConfigLoadResult {
+		return LoadRuntimeConfig(ResolveConfigPath());
 	}
 
 }  // namespace howdy::native

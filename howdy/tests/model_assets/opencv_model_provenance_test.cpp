@@ -95,13 +95,12 @@ Source:
 - <https://github.com/opencv/opencv_zoo/tree/fedcba9876543210fedcba9876543210fedcba98/models/fixture>
 )";
 
-	auto is_hex_digit(const char value) -> bool {
+	auto IsHexDigit(const char value) -> bool {
 		return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') ||
 		       (value >= 'A' && value <= 'F');
 	}
 
-	auto parse_opencv_zoo_url(const OpenCvModelDescriptor &model)
-	    -> std::optional<OpenCvZooUrlParts> {
+	auto ParseOpencvZooUrl(const OpenCvModelDescriptor &model) -> std::optional<OpenCvZooUrlParts> {
 		if (!model.url.starts_with(kOpenCvZooRawPrefix)) {
 			return std::nullopt;
 		}
@@ -117,7 +116,7 @@ Source:
 			return std::nullopt;
 		}
 		for (const char value : revision) {
-			if (!is_hex_digit(value)) {
+			if (!IsHexDigit(value)) {
 				return std::nullopt;
 			}
 		}
@@ -135,17 +134,17 @@ Source:
 		};
 	}
 
-	auto backticked(std::string_view value) -> std::string {
+	auto Backticked(std::string_view value) -> std::string {
 		std::string result{"`"};
 		result += value;
 		result += '`';
 		return result;
 	}
 
-	auto find_notice_section(std::string_view notice, const OpenCvModelDescriptor &model)
+	auto FindNoticeSection(std::string_view notice, const OpenCvModelDescriptor &model)
 	    -> NoticeSectionLookup {
 		NoticeSectionLookup result{};
-		const auto          filename_marker = backticked(model.filename);
+		const auto          filename_marker = Backticked(model.filename);
 		auto section_start = notice.starts_with("## ") ? std::size_t{0} : notice.find("\n## ");
 
 		while (section_start != std::string_view::npos) {
@@ -168,37 +167,37 @@ Source:
 		return result;
 	}
 
-	auto failure(std::string message) -> ProvenanceCheck {
+	auto Failure(std::string message) -> ProvenanceCheck {
 		return {.ok = false, .error = std::move(message)};
 	}
 
-	auto check_model_provenance(std::string_view notice, const OpenCvModelDescriptor &model)
+	auto CheckModelProvenance(std::string_view notice, const OpenCvModelDescriptor &model)
 	    -> ProvenanceCheck {
-		const auto url_parts = parse_opencv_zoo_url(model);
+		const auto url_parts = ParseOpencvZooUrl(model);
 		if (!url_parts.has_value()) {
-			return failure("official OpenCV Zoo URL malformed for: " + std::string(model.filename));
+			return Failure("official OpenCV Zoo URL malformed for: " + std::string(model.filename));
 		}
 
-		const auto lookup = find_notice_section(notice, model);
+		const auto lookup = FindNoticeSection(notice, model);
 		if (lookup.matches == 0) {
-			return failure("artifact section not found for: " + std::string(model.filename));
+			return Failure("artifact section not found for: " + std::string(model.filename));
 		}
 		if (lookup.matches != 1) {
-			return failure("artifact filename identifies multiple notice sections for: " +
+			return Failure("artifact filename identifies multiple notice sections for: " +
 			               std::string(model.filename));
 		}
 
 		std::string sha_field{"SHA-256: "};
-		sha_field += backticked(model.sha256);
+		sha_field += Backticked(model.sha256);
 		if (!lookup.section.contains(sha_field)) {
-			return failure("notice SHA-256 does not match manifest for: " +
+			return Failure("notice SHA-256 does not match manifest for: " +
 			               std::string(model.filename));
 		}
 
 		std::string revision_field{"OpenCV Zoo, revision "};
-		revision_field += backticked(url_parts->revision);
+		revision_field += Backticked(url_parts->revision);
 		if (!lookup.section.contains(revision_field)) {
-			return failure("notice OpenCV Zoo revision does not match manifest for: " +
+			return Failure("notice OpenCV Zoo revision does not match manifest for: " +
 			               std::string(model.filename));
 		}
 
@@ -210,14 +209,14 @@ Source:
 		source_link += source_url;
 		source_link += '>';
 		if (!lookup.section.contains(source_link)) {
-			return failure("notice source URL does not match manifest for: " +
+			return Failure("notice source URL does not match manifest for: " +
 			               std::string(model.filename));
 		}
 
 		return {.ok = true, .error = {}};
 	}
 
-	auto read_text_file(const std::filesystem::path &path) -> std::optional<std::string> {
+	auto ReadTextFile(const std::filesystem::path &path) -> std::optional<std::string> {
 		std::ifstream input(path, std::ios::binary);
 		if (!input.is_open()) {
 			return std::nullopt;
@@ -230,18 +229,18 @@ Source:
 		return contents;
 	}
 
-	auto test_fixture_checks() -> bool {
+	auto TestFixtureChecks() -> bool {
 		bool ok = true;
 
-		const auto matching = check_model_provenance(kMatchingFixtureNotice, kFixtureModel);
+		const auto matching = CheckModelProvenance(kMatchingFixtureNotice, kFixtureModel);
 		ok &= expect(matching.ok, "matching provenance fixture passes");
 
-		const auto wrong_sha = check_model_provenance(kWrongShaFixtureNotice, kFixtureModel);
+		const auto wrong_sha = CheckModelProvenance(kWrongShaFixtureNotice, kFixtureModel);
 		ok &= expect(!wrong_sha.ok && wrong_sha.error.contains("SHA-256"),
 		             "wrong SHA fails within artifact section");
 
 		const auto wrong_revision =
-		    check_model_provenance(kWrongRevisionFixtureNotice, kFixtureModel);
+		    CheckModelProvenance(kWrongRevisionFixtureNotice, kFixtureModel);
 		ok &= expect(!wrong_revision.ok && wrong_revision.error.contains("revision"),
 		             "wrong revision fails within artifact section");
 
@@ -253,7 +252,7 @@ Source:
 		    .sha256   = kFixtureModel.sha256,
 		    .size     = kFixtureModel.size,
 		};
-		const auto malformed = check_model_provenance(kMatchingFixtureNotice, malformed_model);
+		const auto malformed = CheckModelProvenance(kMatchingFixtureNotice, malformed_model);
 		ok &= expect(!malformed.ok && malformed.error.contains("URL malformed"),
 		             "malformed OpenCV Zoo URL is rejected");
 
@@ -263,16 +262,16 @@ Source:
 }  // namespace
 
 auto main() -> int {
-	bool ok = test_fixture_checks();
+	bool ok = TestFixtureChecks();
 
 	const auto notice_path = std::filesystem::path(HOWDY_SOURCE_DIR) / "THIRD_PARTY_NOTICES.md";
-	const auto notice      = read_text_file(notice_path);
+	const auto notice      = ReadTextFile(notice_path);
 	if (!notice.has_value()) {
 		return expect(false, "read third-party notice: " + notice_path.string()) ? 0 : 1;
 	}
 
-	for (const auto &model : howdy::native::official_opencv_models()) {
-		const auto result = check_model_provenance(*notice, model);
+	for (const auto &model : howdy::native::OfficialOpencvModels()) {
+		const auto result = CheckModelProvenance(*notice, model);
 		ok &= expect(result.ok, result.error);
 	}
 

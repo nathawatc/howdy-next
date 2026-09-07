@@ -4,23 +4,23 @@
 
 namespace {
 
-	auto production_authenticate(void *context, pam_handle_t *pamh,
-	                             howdy::pam::PamModuleArguments arguments, bool request_auth_token)
+	auto ProductionAuthenticate(void *context, pam_handle_t *pamh,
+	                            howdy::pam::PamModuleArguments arguments, bool request_auth_token)
 	    -> int {
 		(void)context;
-		return howdy::pam::auth_flow::identify_with_dependencies(
+		return howdy::pam::auth_flow::IdentifyWithDependencies(
 		    pamh, arguments, request_auth_token,
-		    howdy::pam::auth_flow::production_identify_dependencies());
+		    howdy::pam::auth_flow::ProductionIdentifyDependencies());
 	}
 
 }  // namespace
 
 namespace howdy::pam {
 
-	auto production_entrypoint_dependencies() noexcept -> EntrypointDependencies {
+	auto ProductionEntrypointDependencies() noexcept -> EntrypointDependencies {
 		return {
 		    .context      = nullptr,
-		    .authenticate = production_authenticate,
+		    .authenticate = ProductionAuthenticate,
 		};
 	}
 

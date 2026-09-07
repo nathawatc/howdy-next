@@ -43,7 +43,7 @@ namespace {
 		howdy::native::UserModelEntryExpectation expected;
 	};
 
-	auto valid_entry() -> howdy::native::UserModelEntry {
+	auto ValidEntry() -> howdy::native::UserModelEntry {
 		return {
 		    .id      = 3,
 		    .time    = 1234,
@@ -54,20 +54,20 @@ namespace {
 		};
 	}
 
-	auto success_context() -> RemoveCliTestContext {
+	auto SuccessContext() -> RemoveCliTestContext {
 		RemoveCliTestContext context;
 		context.list_result = {
 		    .status  = howdy::native::UserModelStatus::kOk,
-		    .entries = {valid_entry()},
+		    .entries = {ValidEntry()},
 		};
 		context.remove_result = {
 		    .status = howdy::native::UserModelStatus::kOk,
-		    .entry  = valid_entry(),
+		    .entry  = ValidEntry(),
 		};
 		return context;
 	}
 
-	auto list_callback(void *raw_context, const std::string &user)
+	auto ListCallback(void *raw_context, const std::string &user)
 	    -> howdy::native::UserModelListResult {
 		auto *context = static_cast<RemoveCliTestContext *>(raw_context);
 		++context->list_calls;
@@ -75,8 +75,8 @@ namespace {
 		return context->list_result;
 	}
 
-	auto remove_callback(void *raw_context, const std::string &user,
-	                     const howdy::native::UserModelEntryExpectation &expected)
+	auto RemoveCallback(void *raw_context, const std::string &user,
+	                    const howdy::native::UserModelEntryExpectation &expected)
 	    -> howdy::native::UserModelMutationResult {
 		auto *context = static_cast<RemoveCliTestContext *>(raw_context);
 		++context->remove_calls;
@@ -85,7 +85,7 @@ namespace {
 		return context->remove_result;
 	}
 
-	auto run_remove_with_dependencies(
+	auto RunRemoveWithDependencies(
 	    std::vector<std::string>                                  arguments,
 	    const howdy::native::remove_internal::RemoveDependencies &dependencies,
 	    const std::string &input = {}) -> std::pair<int, std::string> {
@@ -98,26 +98,25 @@ namespace {
 		std::istringstream input_stream(input);
 		std::ostringstream output_stream;
 		StreamRedirect redirect(std::cin, input_stream.rdbuf(), std::cout, output_stream.rdbuf());
-		const int      result = howdy::native::remove_internal::remove_main_with_dependencies(
+		const int      result = howdy::native::remove_internal::RemoveMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(), dependencies);
 		return {result, output_stream.str()};
 	}
 
-	auto run_remove(RemoveCliTestContext &context, std::vector<std::string> arguments,
-	                const std::string &input = {}) -> std::pair<int, std::string> {
-		return run_remove_with_dependencies(
-		    std::move(arguments),
-		    {
-		        .context                            = &context,
-		        .list_user_model_entries            = list_callback,
-		        .remove_user_model_entry_if_matches = remove_callback,
-		    },
-		    input);
+	auto RunRemove(RemoveCliTestContext &context, std::vector<std::string> arguments,
+	               const std::string &input = {}) -> std::pair<int, std::string> {
+		return RunRemoveWithDependencies(std::move(arguments),
+		                                 {
+		                                     .context                            = &context,
+		                                     .list_user_model_entries            = ListCallback,
+		                                     .remove_user_model_entry_if_matches = RemoveCallback,
+		                                 },
+		                                 input);
 	}
 
-	auto missing_user_returns_without_callbacks() -> bool {
+	auto MissingUserReturnsWithoutCallbacks() -> bool {
 		RemoveCliTestContext context;
-		auto [result, output] = run_remove(context, {"howdy-remove"});
+		auto [result, output] = RunRemove(context, {"howdy-remove"});
 		bool ok               = true;
 		ok &= expect(result == 1, "missing user returns 1");
 		ok &= expect(output.empty(), "missing user stays silent");
@@ -126,15 +125,15 @@ namespace {
 		return ok;
 	}
 
-	auto public_missing_user_returns_error() -> bool {
+	auto PublicMissingUserReturnsError() -> bool {
 		auto                  command = std::to_array("howdy-remove");
 		std::array<char *, 1> argv{command.data()};
-		return expect(remove_main(1, argv.data()) == 1, "public missing user returns status 1");
+		return expect(RemoveMain(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
-	auto missing_model_id_prints_guidance() -> bool {
-		auto context               = success_context();
-		auto [result, output]      = run_remove(context, {"howdy-remove", "alice"});
+	auto MissingModelIdPrintsGuidance() -> bool {
+		auto context               = SuccessContext();
+		auto [result, output]      = RunRemove(context, {"howdy-remove", "alice"});
 		const std::string expected = "Please specify the model ID to remove.\n"
 		                             "For example:\n\n\thowdy remove 0\n\n"
 		                             "You can find the IDs by running:\n\n\thowdy list\n\n";
@@ -144,7 +143,7 @@ namespace {
 		              "missing model ID skips callbacks");
 	}
 
-	auto list_statuses_preserve_messages() -> bool {
+	auto ListStatusesPreserveMessages() -> bool {
 		bool ok = true;
 		for (const auto &[status, error, expected] :
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
@@ -157,9 +156,9 @@ namespace {
 		         {howdy::native::UserModelStatus::kParseError, "storage failed",
 		          "storage failed\n"},
 		     }) {
-			auto context          = success_context();
+			auto context          = SuccessContext();
 			context.list_result   = {.status = status, .error_message = error};
-			auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3"});
+			auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"});
 			ok &= expect(result == 1, "list failure returns 1");
 			ok &= expect(output == expected, "list failure preserves message");
 			ok &= expect(context.list_calls == 1 && context.remove_calls == 0,
@@ -168,11 +167,11 @@ namespace {
 		return ok;
 	}
 
-	auto invalid_and_missing_ids_abort() -> bool {
+	auto InvalidAndMissingIdsAbort() -> bool {
 		bool ok = true;
 		for (const std::string id : {"abc", "3x", "03", "4"}) {
-			auto context          = success_context();
-			auto [result, output] = run_remove(context, {"howdy-remove", "alice", id});
+			auto context          = SuccessContext();
+			auto [result, output] = RunRemove(context, {"howdy-remove", "alice", id});
 			ok &= expect(result == 1, "invalid or missing ID returns 1");
 			ok &= expect(output == "No model with ID " + id + " exists for alice\n",
 			             "invalid or missing ID preserves message");
@@ -181,9 +180,9 @@ namespace {
 		return ok;
 	}
 
-	auto rejected_confirmation_aborts() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3"}, "n\n");
+	auto RejectedConfirmationAborts() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
 		       expect(output == "Model \"front door\" will be removed for alice.\n"
 		                        "Continue? [y/N]: \nNo confirmation received; aborting.\n",
@@ -191,9 +190,9 @@ namespace {
 		       expect(context.remove_calls == 0, "rejected confirmation skips removal");
 	}
 
-	auto accepted_confirmation_passes_complete_expectation() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3"}, "Y\n");
+	auto AcceptedConfirmationPassesCompleteExpectation() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"}, "Y\n");
 		const auto &expected  = context.expected;
 		bool        ok        = true;
 		ok &= expect(result == 0, "accepted confirmation returns 0");
@@ -212,15 +211,15 @@ namespace {
 		return ok;
 	}
 
-	auto incomplete_dependencies_abort_without_callbacks() -> bool {
-		auto context = success_context();
+	auto IncompleteDependenciesAbortWithoutCallbacks() -> bool {
+		auto context = SuccessContext();
 		auto [null_list_result, null_list_output] =
-		    run_remove_with_dependencies({"howdy-remove", "alice", "3"},
-		                                 {
-		                                     .context                            = &context,
-		                                     .list_user_model_entries            = nullptr,
-		                                     .remove_user_model_entry_if_matches = remove_callback,
-		                                 });
+		    RunRemoveWithDependencies({"howdy-remove", "alice", "3"},
+		                              {
+		                                  .context                            = &context,
+		                                  .list_user_model_entries            = nullptr,
+		                                  .remove_user_model_entry_if_matches = RemoveCallback,
+		                              });
 
 		bool ok = true;
 		ok &= expect(null_list_result == 1, "null list callback returns 1");
@@ -228,10 +227,10 @@ namespace {
 		ok &= expect(context.list_calls == 0 && context.remove_calls == 0,
 		             "null list callback skips storage callbacks");
 
-		auto [null_remove_result, null_remove_output] = run_remove_with_dependencies(
+		auto [null_remove_result, null_remove_output] = RunRemoveWithDependencies(
 		    {"howdy-remove", "alice", "3"}, {
 		                                        .context                            = &context,
-		                                        .list_user_model_entries            = list_callback,
+		                                        .list_user_model_entries            = ListCallback,
 		                                        .remove_user_model_entry_if_matches = nullptr,
 		                                    });
 		ok &= expect(null_remove_result == 1, "null remove callback returns 1");
@@ -241,30 +240,30 @@ namespace {
 		return ok;
 	}
 
-	auto yes_flag_bypasses_confirmation() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3", "-y"});
+	auto YesFlagBypassesConfirmation() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
 		return expect(result == 0, "-y returns 0") &&
 		       expect(output == "Removed model 3\n", "-y skips confirmation prompt") &&
 		       expect(context.remove_calls == 1, "-y removes once");
 	}
 
-	auto remove_failure_forwards_error() -> bool {
-		auto context          = success_context();
+	auto RemoveFailureForwardsError() -> bool {
+		auto context          = SuccessContext();
 		context.remove_result = {
 		    .status        = howdy::native::UserModelStatus::kModelChanged,
 		    .error_message = "model changed",
 		};
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3", "-y"});
+		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
 		return expect(result == 1, "stale removal returns 1") &&
 		       expect(output == "model changed\n", "stale removal forwards exact error") &&
 		       expect(context.remove_calls == 1, "stale removal called once");
 	}
 
-	auto last_model_success_prints_disabled_message() -> bool {
-		auto context                       = success_context();
+	auto LastModelSuccessPrintsDisabledMessage() -> bool {
+		auto context                       = SuccessContext();
 		context.remove_result.removed_last = true;
-		auto [result, output] = run_remove(context, {"howdy-remove", "alice", "3", "-y"});
+		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
 		return expect(result == 0, "last-model removal returns 0") &&
 		       expect(output ==
 		                  "Removed final face model; face verification disabled for this user\n",
@@ -275,16 +274,16 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= missing_user_returns_without_callbacks();
-	ok &= public_missing_user_returns_error();
-	ok &= missing_model_id_prints_guidance();
-	ok &= list_statuses_preserve_messages();
-	ok &= invalid_and_missing_ids_abort();
-	ok &= rejected_confirmation_aborts();
-	ok &= accepted_confirmation_passes_complete_expectation();
-	ok &= incomplete_dependencies_abort_without_callbacks();
-	ok &= yes_flag_bypasses_confirmation();
-	ok &= remove_failure_forwards_error();
-	ok &= last_model_success_prints_disabled_message();
+	ok &= MissingUserReturnsWithoutCallbacks();
+	ok &= PublicMissingUserReturnsError();
+	ok &= MissingModelIdPrintsGuidance();
+	ok &= ListStatusesPreserveMessages();
+	ok &= InvalidAndMissingIdsAbort();
+	ok &= RejectedConfirmationAborts();
+	ok &= AcceptedConfirmationPassesCompleteExpectation();
+	ok &= IncompleteDependenciesAbortWithoutCallbacks();
+	ok &= YesFlagBypassesConfirmation();
+	ok &= RemoveFailureForwardsError();
+	ok &= LastModelSuccessPrintsDisabledMessage();
 	return ok ? 0 : 1;
 }

@@ -54,28 +54,28 @@ namespace howdy::pam::auth_helper_process {
 		int   output_fd = -1;
 	};
 
-	__attribute__((visibility("hidden"))) auto production_operations() -> Operations;
-	__attribute__((visibility("hidden"))) auto output_limit() -> std::size_t;
+	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	__attribute__((visibility("hidden"))) auto OutputLimit() -> std::size_t;
 	__attribute__((visibility("hidden"))) auto
-	receive_lease_descriptor(int socket_fd, int *lease_fd,
-	                         std::chrono::steady_clock::time_point deadline) -> bool;
+	ReceiveLeaseDescriptor(int socket_fd, int *lease_fd,
+	                       std::chrono::steady_clock::time_point deadline) -> bool;
 	__attribute__((visibility("hidden"))) auto
-	validate_lease_descriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
+	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
 	    -> bool;
 	__attribute__((visibility("hidden"))) auto
-	prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
-	                           const Operations &operations) -> bool;
+	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
+	                        const Operations &operations) -> bool;
 	__attribute__((visibility("hidden"))) auto
-	prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared,
-	                           const Operations                     &operations,
-	                           std::chrono::steady_clock::time_point deadline) -> bool;
+	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
+	                        const Operations                     &operations,
+	                        std::chrono::steady_clock::time_point deadline) -> bool;
 	__attribute__((visibility("hidden"))) auto
-	read_output(Process process, std::string *output, const Operations &operations,
-	            std::chrono::steady_clock::time_point deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto parse_output(const std::string &output) -> Output;
-	__attribute__((visibility("hidden"))) auto wait_for_helper(pid_t child_pid) -> int;
+	ReadOutput(Process process, std::string *output, const Operations &operations,
+	           std::chrono::steady_clock::time_point deadline) -> bool;
+	__attribute__((visibility("hidden"))) auto ParseOutput(const std::string &output) -> Output;
+	__attribute__((visibility("hidden"))) auto WaitForHelper(pid_t child_pid) -> int;
 
 	__attribute__((visibility("hidden"))) auto
-	prepare_runtime_auth_files(std::string_view username, PreparedRuntimeFiles *prepared) -> bool;
+	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared) -> bool;
 
 }  // namespace howdy::pam::auth_helper_process

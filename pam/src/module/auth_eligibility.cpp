@@ -13,21 +13,20 @@ namespace howdy::pam::auth_eligibility {
 
 	namespace {
 
-		auto invalid_dependencies() -> AuthenticationEligibilityResult {
+		auto InvalidDependencies() -> AuthenticationEligibilityResult {
 			return {
 			    .status        = AuthenticationEligibility::kRuntimeError,
 			    .error_message = "Authentication eligibility dependencies are invalid",
 			};
 		}
 
-		auto production_read_lid_state(void *context) -> howdy::pam::runtime::LidStateResult {
+		auto ProductionReadLidState(void *context) -> howdy::pam::runtime::LidStateResult {
 			(void)context;
-			return howdy::pam::runtime::read_lid_state();
+			return howdy::pam::runtime::ReadLidState();
 		}
 
-		auto production_check_model_readiness(void                        *context,
-		                                      const std::filesystem::path &models_dir,
-		                                      const char                  *username)
+		auto ProductionCheckModelReadiness(void *context, const std::filesystem::path &models_dir,
+		                                   const char *username)
 		    -> howdy::native::UserModelReadinessResult {
 			(void)context;
 			if (username == nullptr || *username == '\0') {
@@ -36,13 +35,13 @@ namespace howdy::pam::auth_eligibility {
 				    .error_message = "Invalid username",
 				};
 			}
-			return howdy::native::check_user_model_readiness(models_dir, std::string(username),
-			                                                 static_cast<uid_t>(0));
+			return howdy::native::CheckUserModelReadiness(models_dir, std::string(username),
+			                                              static_cast<uid_t>(0));
 		}
 
 	}  // namespace
 
-	auto classify_model_readiness(const howdy::native::UserModelReadinessResult &readiness)
+	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
 	    -> ModelCondition {
 		using enum howdy::native::UserModelStatus;
 		switch (readiness.status) {
@@ -74,18 +73,18 @@ namespace howdy::pam::auth_eligibility {
 		return ModelCondition::kInvalidStorage;
 	}
 
-	auto production_authentication_eligibility_dependencies()
+	auto ProductionAuthenticationEligibilityDependencies()
 	    -> AuthenticationEligibilityDependencies {
 		return {
 		    .context               = nullptr,
-		    .ssh_session_present   = howdy::pam::runtime::production_ssh_session_present,
-		    .read_lid_state        = production_read_lid_state,
-		    .check_model_readiness = production_check_model_readiness,
+		    .ssh_session_present   = howdy::pam::runtime::ProductionSshSessionPresent,
+		    .read_lid_state        = ProductionReadLidState,
+		    .check_model_readiness = ProductionCheckModelReadiness,
 		};
 	}
 
-	auto decide_authentication_eligibility(const howdy::native::RuntimeConfig &config,
-	                                       const AuthenticationConditions     &conditions)
+	auto DecideAuthenticationEligibility(const howdy::native::RuntimeConfig &config,
+	                                     const AuthenticationConditions     &conditions)
 	    -> AuthenticationEligibilityResult {
 		if (config.core.disabled) {
 			return {.status = AuthenticationEligibility::kDisabled};
@@ -115,25 +114,26 @@ namespace howdy::pam::auth_eligibility {
 		return {.status = AuthenticationEligibility::kRuntimeError};
 	}
 
-	auto evaluate_authentication_eligibility(
-	    pam_handle_t *pamh, const howdy::native::RuntimeConfig &config, const char *username,
-	    const std::filesystem::path                 &models_dir,
-	    const AuthenticationEligibilityDependencies &dependencies)
+	auto
+	EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
+	                                  const howdy::native::RuntimeConfig &config,
+	                                  const char *username, const std::filesystem::path &models_dir,
+	                                  const AuthenticationEligibilityDependencies &dependencies)
 	    -> AuthenticationEligibilityResult {
 		if (dependencies.ssh_session_present == nullptr || dependencies.read_lid_state == nullptr ||
 		    dependencies.check_model_readiness == nullptr) {
-			return invalid_dependencies();
+			return InvalidDependencies();
 		}
 
 		AuthenticationConditions conditions;
 		if (config.core.disabled) {
-			return decide_authentication_eligibility(config, conditions);
+			return DecideAuthenticationEligibility(config, conditions);
 		}
 
 		if (config.core.abort_if_ssh) {
 			conditions.ssh_session = dependencies.ssh_session_present(dependencies.context, pamh);
 			if (conditions.ssh_session) {
-				return decide_authentication_eligibility(config, conditions);
+				return DecideAuthenticationEligibility(config, conditions);
 			}
 		}
 
@@ -146,7 +146,7 @@ namespace howdy::pam::auth_eligibility {
 			}
 			conditions.lid_state = lid_result.state;
 			if (conditions.lid_state == howdy::pam::runtime::LidState::kClosed) {
-				auto result               = decide_authentication_eligibility(config, conditions);
+				auto result               = DecideAuthenticationEligibility(config, conditions);
 				result.diagnostic_message = std::move(lid_diagnostic);
 				return result;
 			}
@@ -154,15 +154,15 @@ namespace howdy::pam::auth_eligibility {
 
 		if (username == nullptr || *username == '\0') {
 			conditions.model_condition = ModelCondition::kInvalidUser;
-			auto result                = decide_authentication_eligibility(config, conditions);
+			auto result                = DecideAuthenticationEligibility(config, conditions);
 			result.diagnostic_message  = std::move(lid_diagnostic);
 			return result;
 		}
 
 		const auto readiness =
 		    dependencies.check_model_readiness(dependencies.context, models_dir, username);
-		conditions.model_condition = classify_model_readiness(readiness);
-		auto result                = decide_authentication_eligibility(config, conditions);
+		conditions.model_condition = ClassifyModelReadiness(readiness);
+		auto result                = DecideAuthenticationEligibility(config, conditions);
 		result.diagnostic_message  = std::move(lid_diagnostic);
 		if (result.status == AuthenticationEligibility::kInvalidModelStorage) {
 			result.error_message = readiness.error_message;

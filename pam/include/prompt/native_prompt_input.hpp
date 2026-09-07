@@ -15,12 +15,12 @@ namespace howdy::pam::native_prompt_input {
 		auto operator=(const SensitiveBuffer &) -> SensitiveBuffer & = delete;
 		~SensitiveBuffer();
 
-		[[nodiscard]] auto empty() const -> bool;
-		[[nodiscard]] auto full() const -> bool;
-		void               push_back(char value);
-		void               pop_back();
-		[[nodiscard]] auto data() const -> const char *;
-		[[nodiscard]] auto size() const -> std::size_t;
+		[[nodiscard]] auto Empty() const -> bool;
+		[[nodiscard]] auto Full() const -> bool;
+		void               PushBack(char value);
+		void               PopBack();
+		[[nodiscard]] auto Data() const -> const char *;
+		[[nodiscard]] auto Size() const -> std::size_t;
 
 	private:
 		std::array<char, kMaxPromptResponseBytes> data_{};
@@ -28,13 +28,13 @@ namespace howdy::pam::native_prompt_input {
 	};
 
 	enum class CharacterResult : std::uint8_t {
-		keep_reading,
-		complete,
-		abort,
+		kEepReading,
+		kComplete,
+		kAbort,
 	};
 
-	__attribute__((visibility("hidden"))) auto process_character(char ch, SensitiveBuffer &password,
-	                                                             bool &response_too_long)
+	__attribute__((visibility("hidden"))) auto ProcessCharacter(char ch, SensitiveBuffer &password,
+	                                                            bool &response_too_long)
 	    -> CharacterResult;
 
 }  // namespace howdy::pam::native_prompt_input

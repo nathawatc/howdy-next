@@ -77,9 +77,9 @@ namespace howdy::pam {
 
 		~PromptCoordinator() = default;
 
-		[[nodiscard]] auto valid() const -> bool;
+		[[nodiscard]] auto Valid() const -> bool;
 
-		auto run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
+		auto Run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
 	private:
 		friend class PromptCoordinatorTestAccess;
@@ -120,31 +120,31 @@ namespace howdy::pam {
 			bool                   shutdown_requested       = false;
 		};
 
-		static auto cancellation_requested(void *context) -> bool;
-		static auto secret_prompt_begin(void *context) noexcept -> SecretPromptGeneration;
-		static void secret_prompt_end(void *context, SecretPromptGeneration generation) noexcept;
+		static auto CancellationRequested(void *context) -> bool;
+		static auto SecretPromptBegin(void *context) noexcept -> SecretPromptGeneration;
+		static void SecretPromptEnd(void *context, SecretPromptGeneration generation) noexcept;
 		[[nodiscard]] auto
-		wait_for_compare(pid_t                                 child_pid,
-		                 std::chrono::steady_clock::time_point compare_deadline) noexcept -> int;
-		[[nodiscard]] auto publish_compare_completion(int status) -> SuccessAction;
-		void               request_native_abort() noexcept;
-		[[nodiscard]] auto wait_for_prompt_submission_claim() -> bool;
-		[[nodiscard]] auto submit_prompt_and_record_result() noexcept -> PromptSubmissionResult;
-		void               submit_prompt_for_generations() noexcept;
-		void compare_worker(pid_t                                 child_pid,
-		                    std::chrono::steady_clock::time_point compare_deadline) noexcept;
-		void configure_native_workaround();
-		void disable_native_workaround(bool unavailable);
-		[[nodiscard]] auto configure_prompt_workaround() -> bool;
-		void               configure_input_workaround();
-		void               initialize_run_state(bool ask_pass);
-		void               publish_password_call_entered();
-		void cleanup_spawned_child(pid_t                                 child_pid,
-		                           std::chrono::steady_clock::time_point compare_deadline) noexcept;
-		[[nodiscard]] auto request_password() noexcept -> int;
-		void               publish_password_call_returned();
-		[[nodiscard]] auto build_result(bool ask_pass, int pam_result) -> PromptCoordinatorResult;
-		[[nodiscard]] auto restore_prompt_conversation() noexcept -> ConversationRestoreResult;
+		WaitForCompare(pid_t                                 child_pid,
+		               std::chrono::steady_clock::time_point compare_deadline) noexcept -> int;
+		[[nodiscard]] auto PublishCompareCompletion(int status) -> SuccessAction;
+		void               RequestNativeAbort() noexcept;
+		[[nodiscard]] auto WaitForPromptSubmissionClaim() -> bool;
+		[[nodiscard]] auto SubmitPromptAndRecordResult() noexcept -> PromptSubmissionResult;
+		void               SubmitPromptForGenerations() noexcept;
+		void CompareWorker(pid_t                                 child_pid,
+		                   std::chrono::steady_clock::time_point compare_deadline) noexcept;
+		void ConfigureNativeWorkaround();
+		void DisableNativeWorkaround(bool unavailable);
+		[[nodiscard]] auto ConfigurePromptWorkaround() -> bool;
+		void               ConfigureInputWorkaround();
+		void               InitializeRunState(bool ask_pass);
+		void               PublishPasswordCallEntered();
+		void CleanupSpawnedChild(pid_t                                 child_pid,
+		                         std::chrono::steady_clock::time_point compare_deadline) noexcept;
+		[[nodiscard]] auto RequestPassword() noexcept -> int;
+		void               PublishPasswordCallReturned();
+		[[nodiscard]] auto BuildResult(bool ask_pass, int pam_result) -> PromptCoordinatorResult;
+		[[nodiscard]] auto RestorePromptConversation() noexcept -> ConversationRestoreResult;
 
 		pam_handle_t                             *pamh_                 = nullptr;
 		Workaround                                requested_workaround_ = Workaround::kOff;
@@ -162,6 +162,6 @@ namespace howdy::pam {
 		bool                                      run_started_          = false;
 	};
 
-	auto production_prompt_coordinator_dependencies() -> PromptCoordinatorDependencies;
+	auto ProductionPromptCoordinatorDependencies() -> PromptCoordinatorDependencies;
 
 }  // namespace howdy::pam

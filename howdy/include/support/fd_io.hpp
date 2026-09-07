@@ -22,7 +22,7 @@ namespace howdy::native {
 		std::size_t max_bytes = 0;
 	};
 
-	inline auto write_all_to_fd(int fd, const char *data, std::size_t size) -> bool {
+	inline auto WriteAllToFd(int fd, const char *data, std::size_t size) -> bool {
 		if (data == nullptr && size > 0) {
 			return false;
 		}
@@ -45,11 +45,11 @@ namespace howdy::native {
 		return true;
 	}
 
-	inline auto write_all_to_fd(int fd, std::string_view content) -> bool {
-		return write_all_to_fd(fd, content.data(), content.size());
+	inline auto WriteAllToFd(int fd, std::string_view content) -> bool {
+		return WriteAllToFd(fd, content.data(), content.size());
 	}
 
-	inline auto sync_fd(int fd) -> bool {
+	inline auto SyncFd(int fd) -> bool {
 		if (fd < 0) {
 			return false;
 		}
@@ -62,7 +62,7 @@ namespace howdy::native {
 		return true;
 	}
 
-	inline auto read_fd_to_string_bounded(BoundedReadRequest request) -> BoundedReadResult {
+	inline auto ReadFdToStringBounded(BoundedReadRequest request) -> BoundedReadResult {
 		BoundedReadResult result;
 		if (request.max_bytes == 0) {
 			return result;

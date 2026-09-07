@@ -7,12 +7,12 @@ namespace howdy::pam::runtime {
 
 	namespace {
 
-		auto valid_environment_name(std::string_view name) -> bool {
+		auto ValidEnvironmentName(std::string_view name) -> bool {
 			return !name.empty() && !name.contains('=') && !name.contains('\0');
 		}
 
-		auto production_pam_environment(void *context, pam_handle_t *pamh, const char *name)
-		    -> const char * {
+		auto ProductionPamEnvironment(void *context, pam_handle_t *pamh, const char *name) -> const
+		    char * {
 			(void)context;
 			if (pamh == nullptr) {
 				return nullptr;
@@ -20,32 +20,32 @@ namespace howdy::pam::runtime {
 			return pam_getenv(pamh, name);
 		}
 
-		auto production_process_environment(void *context, const char *name) -> const char * {
+		auto ProductionProcessEnvironment(void *context, const char *name) -> const char * {
 			(void)context;
 			return std::getenv(name);
 		}
 
 	}  // namespace
 
-	auto production_environment_lookup_dependencies() -> EnvironmentLookupDependencies {
+	auto ProductionEnvironmentLookupDependencies() -> EnvironmentLookupDependencies {
 		return {
 		    .context             = nullptr,
-		    .pam_environment     = production_pam_environment,
-		    .process_environment = production_process_environment,
+		    .pam_environment     = ProductionPamEnvironment,
+		    .process_environment = ProductionProcessEnvironment,
 		};
 	}
 
-	auto find_environment_variable(pam_handle_t *pamh, std::string_view name,
-	                               const EnvironmentLookupDependencies &dependencies)
+	auto FindEnvironmentVariable(pam_handle_t *pamh, std::string_view name,
+	                             const EnvironmentLookupDependencies &dependencies)
 	    -> EnvironmentSource {
-		constexpr std::size_t kNameBufferCapacity = 64;
-		if (!valid_environment_name(name) || name.size() >= kNameBufferCapacity ||
+		constexpr std::size_t name_buffer_capacity = 64;
+		if (!ValidEnvironmentName(name) || name.size() >= name_buffer_capacity ||
 		    (dependencies.pam_environment == nullptr &&
 		     dependencies.process_environment == nullptr)) {
 			return EnvironmentSource::kMissing;
 		}
 
-		std::array<char, kNameBufferCapacity> name_buffer{};
+		std::array<char, name_buffer_capacity> name_buffer{};
 		for (std::size_t index = 0; index < name.size(); ++index) {
 			name_buffer[index] = name[index];
 		}

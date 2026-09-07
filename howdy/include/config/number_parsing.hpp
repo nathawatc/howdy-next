@@ -8,7 +8,7 @@
 
 namespace howdy::native {
 
-	inline auto parse_config_float_strict(std::string_view value) -> std::optional<float> {
+	inline auto ParseConfigFloatStrict(std::string_view value) -> std::optional<float> {
 		if (value.empty()) {
 			return std::nullopt;
 		}

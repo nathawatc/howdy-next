@@ -22,34 +22,34 @@ namespace {
 
 	namespace snapshot_internal = howdy::native::snapshot_internal;
 
-	auto snapshot_path() -> std::filesystem::path {
+	auto SnapshotPath() -> std::filesystem::path {
 		const auto now  = std::chrono::system_clock::now();
 		const auto time = std::chrono::system_clock::to_time_t(now);
 		std::tm    buffer{};
 		gmtime_r(&time, &buffer);
 		std::array<char, 32> filename{};
 		std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg", &buffer);
-		return howdy::native::resolve_log_path() / "snapshots" / filename.data();
+		return howdy::native::ResolveLogPath() / "snapshots" / filename.data();
 	}
 
-	auto encode_image_dependency(void *context, std::string_view extension, const cv::Mat &image,
-	                             std::vector<uchar> *encoded) -> bool {
+	auto EncodeImageDependency(void *context, std::string_view extension, const cv::Mat &image,
+	                           std::vector<uchar> *encoded) -> bool {
 		(void)context;
 		return cv::imencode(std::string(extension), image, *encoded);
 	}
 
-	auto generate_snapshot(const std::vector<cv::Mat>     &frames,
-	                       const std::vector<std::string> &text_lines) -> std::filesystem::path {
-		const auto base_path    = snapshot_path();
+	auto GenerateSnapshot(const std::vector<cv::Mat>     &frames,
+	                      const std::vector<std::string> &text_lines) -> std::filesystem::path {
+		const auto base_path    = SnapshotPath();
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
 		    .context      = nullptr,
-		    .encode_image = encode_image_dependency,
+		    .encode_image = EncodeImageDependency,
 		};
 		howdy::native::AtomicFileCommitResult commit_result;
-		auto filepath = snapshot_internal::write_snapshot_with_unique_path(
+		auto filepath = snapshot_internal::WriteSnapshotWithUniquePath(
 		    frames, text_lines, base_path, dependencies, &commit_result);
 		if (filepath.empty()) {
-			if (howdy::native::atomic_file_may_have_committed(commit_result)) {
+			if (howdy::native::AtomicFileMayHaveCommitted(commit_result)) {
 				std::cerr << "Snapshot was written, but its directory could not be synced; verify "
 				             "the file before retrying\n";
 			}
@@ -58,21 +58,21 @@ namespace {
 		return filepath;
 	}
 
-	auto snapshot_cli_load_runtime_config_dependency(void *context)
+	auto SnapshotCliLoadRuntimeConfigDependency(void *context)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
-		return howdy::native::load_runtime_config();
+		return howdy::native::LoadRuntimeConfig();
 	}
 
-	auto capture_frames_dependency(void *context, const howdy::native::RuntimeConfig &config)
+	auto CaptureFramesDependency(void *context, const howdy::native::RuntimeConfig &config)
 	    -> snapshot_internal::SnapshotCaptureResult {
 		(void)context;
 
-		howdy::native::VideoCapture capture(howdy::native::load_capture_settings(config.video));
-		if (!capture.open()) {
+		howdy::native::VideoCapture capture(howdy::native::LoadCaptureSettings(config.video));
+		if (!capture.Open()) {
 			return snapshot_internal::SnapshotCaptureResult{
 			    .status        = snapshot_internal::SnapshotCaptureStatus::kOpenError,
-			    .error_message = capture.error_message(),
+			    .error_message = capture.ErrorMessage(),
 			};
 		}
 
@@ -80,15 +80,15 @@ namespace {
 		frames.reserve(snapshot_internal::kSnapshotFrameCount);
 		while (frames.size() < snapshot_internal::kSnapshotFrameCount) {
 			cv::Mat frame;
-			if (!capture.read(frame)) {
-				capture.release();
+			if (!capture.Read(frame)) {
+				capture.Release();
 				return snapshot_internal::SnapshotCaptureResult{
 				    .status = snapshot_internal::SnapshotCaptureStatus::kReadError,
 				};
 			}
 			frames.push_back(frame);
 		}
-		capture.release();
+		capture.Release();
 
 		return snapshot_internal::SnapshotCaptureResult{
 		    .status = snapshot_internal::SnapshotCaptureStatus::kOk,
@@ -96,8 +96,8 @@ namespace {
 		};
 	}
 
-	auto write_snapshot_dependency(void *context, const std::vector<cv::Mat> &frames,
-	                               const howdy::native::RuntimeConfig &config)
+	auto WriteSnapshotDependency(void *context, const std::vector<cv::Mat> &frames,
+	                             const howdy::native::RuntimeConfig &config)
 	    -> snapshot_internal::SnapshotWriteResult {
 		(void)context;
 
@@ -108,7 +108,7 @@ namespace {
 		std::array<char, 64> timestr{};
 		std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer);
 
-		const auto filepath = generate_snapshot(
+		const auto filepath = GenerateSnapshot(
 		    frames, {
 		                "GENERATED SNAPSHOT",
 		                std::string("Date: ") + timestr.data(),
@@ -126,12 +126,12 @@ namespace {
 
 }  // namespace
 
-auto snapshot_main(int argc, char **argv) -> int {
-	return howdy::native::snapshot_internal::snapshot_main_with_dependencies(
+auto SnapshotMain(int argc, char **argv) -> int {
+	return howdy::native::snapshot_internal::SnapshotMainWithDependencies(
 	    argc, argv,
 	    howdy::native::snapshot_internal::SnapshotDependencies{
-	        .load_runtime_config = snapshot_cli_load_runtime_config_dependency,
-	        .capture_frames      = capture_frames_dependency,
-	        .write_snapshot      = write_snapshot_dependency,
+	        .load_runtime_config = SnapshotCliLoadRuntimeConfigDependency,
+	        .capture_frames      = CaptureFramesDependency,
+	        .write_snapshot      = WriteSnapshotDependency,
 	    });
 }

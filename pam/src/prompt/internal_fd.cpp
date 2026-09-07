@@ -6,17 +6,17 @@
 #include <utility>
 
 namespace {
-	auto production_duplicate(void * /*context*/, int fd, int minimum_fd) -> int {
+	auto ProductionDuplicate(void * /*context*/, int fd, int minimum_fd) -> int {
 		return fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
 	}
 
-	auto production_create_pipe(void * /*context*/, int *pipe_fds, int flags) -> int {
+	auto ProductionCreatePipe(void * /*context*/, int *pipe_fds, int flags) -> int {
 		return pipe2(pipe_fds, flags);
 	}
 
 	const howdy::pam::detail::InternalFdOperations kProductionOperations{
-	    .duplicate   = production_duplicate,
-	    .create_pipe = production_create_pipe,
+	    .duplicate   = ProductionDuplicate,
+	    .create_pipe = ProductionCreatePipe,
 	};
 }  // namespace
 
@@ -32,38 +32,38 @@ namespace howdy::pam::detail {
 	}
 
 	ScopedFd::ScopedFd(ScopedFd &&other) noexcept
-	    : fd_(other.release()) {}
+	    : fd_(other.Release()) {}
 
 	auto ScopedFd::operator=(ScopedFd &&other) noexcept -> ScopedFd & {
 		if (this != &other) {
 			ScopedFd old(fd_);
-			fd_ = other.release();
+			fd_ = other.Release();
 		}
 		return *this;
 	}
 
-	auto ScopedFd::get() const noexcept -> int {
+	auto ScopedFd::Get() const noexcept -> int {
 		return fd_;
 	}
 
-	auto ScopedFd::valid() const noexcept -> bool {
+	auto ScopedFd::Valid() const noexcept -> bool {
 		return fd_ >= 0;
 	}
 
-	auto ScopedFd::release() noexcept -> int {
+	auto ScopedFd::Release() noexcept -> int {
 		const int fd = fd_;
 		fd_          = -1;
 		return fd;
 	}
 
-	auto InternalPipe::valid() const noexcept -> bool {
-		return read.get() > STDERR_FILENO && write.get() > STDERR_FILENO &&
-		       read.get() != write.get();
+	auto InternalPipe::Valid() const noexcept -> bool {
+		return read.Get() > STDERR_FILENO && write.Get() > STDERR_FILENO &&
+		       read.Get() != write.Get();
 	}
 
-	auto normalize_internal_fd(ScopedFd fd, const InternalFdOperations *operations) noexcept
+	auto NormalizeInternalFd(ScopedFd fd, const InternalFdOperations *operations) noexcept
 	    -> ScopedFd {
-		if (!fd.valid() || fd.get() > STDERR_FILENO) {
+		if (!fd.Valid() || fd.Get() > STDERR_FILENO) {
 			return fd;
 		}
 
@@ -71,14 +71,14 @@ namespace howdy::pam::detail {
 		if (active.duplicate == nullptr) {
 			return {};
 		}
-		ScopedFd normalized(active.duplicate(active.context, fd.get(), STDERR_FILENO + 1));
-		if (normalized.get() <= STDERR_FILENO) {
+		ScopedFd normalized(active.duplicate(active.context, fd.Get(), STDERR_FILENO + 1));
+		if (normalized.Get() <= STDERR_FILENO) {
 			return {};
 		}
 		return normalized;
 	}
 
-	auto create_internal_pipe(int flags, const InternalFdOperations *operations) noexcept
+	auto CreateInternalPipe(int flags, const InternalFdOperations *operations) noexcept
 	    -> InternalPipe {
 		const auto &active = operations == nullptr ? kProductionOperations : *operations;
 		if (active.create_pipe == nullptr) {
@@ -91,12 +91,12 @@ namespace howdy::pam::detail {
 		}
 
 		InternalPipe pipe{.read = ScopedFd(raw_fds[0]), .write = ScopedFd(raw_fds[1])};
-		pipe.read = normalize_internal_fd(std::move(pipe.read), operations);
-		if (!pipe.read.valid()) {
+		pipe.read = NormalizeInternalFd(std::move(pipe.read), operations);
+		if (!pipe.read.Valid()) {
 			return {};
 		}
-		pipe.write = normalize_internal_fd(std::move(pipe.write), operations);
-		if (!pipe.valid()) {
+		pipe.write = NormalizeInternalFd(std::move(pipe.write), operations);
+		if (!pipe.Valid()) {
 			return {};
 		}
 		return InternalPipe{.read = std::move(pipe.read), .write = std::move(pipe.write)};

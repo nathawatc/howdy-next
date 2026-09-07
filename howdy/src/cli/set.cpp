@@ -15,16 +15,16 @@ namespace {
 	constexpr int kSetExitOk    = 0;
 	constexpr int kSetExitAbort = 1;
 
-	auto set_cli_resolve_config_path_dependency([[maybe_unused]] void *context)
+	auto SetCliResolveConfigPathDependency([[maybe_unused]] void *context)
 	    -> std::filesystem::path {
-		return howdy::native::resolve_config_path();
+		return howdy::native::ResolveConfigPath();
 	}
 
-	auto update_config_value_dependency([[maybe_unused]] void       *context,
-	                                    const std::filesystem::path &config_path,
-	                                    const std::string &key, const std::string &value,
-	                                    std::string *error_message, bool lock) -> bool {
-		return howdy::native::update_config_value(config_path, key, error_message, value, lock);
+	auto UpdateConfigValueDependency([[maybe_unused]] void       *context,
+	                                 const std::filesystem::path &config_path,
+	                                 const std::string &key, const std::string &value,
+	                                 std::string *error_message, bool lock) -> bool {
+		return howdy::native::UpdateConfigValue(config_path, key, error_message, value, lock);
 	}
 
 	struct SetArgs {
@@ -32,7 +32,7 @@ namespace {
 		std::string value;
 	};
 
-	auto parse_set_args(int argc, char **argv) -> std::optional<SetArgs> {
+	auto ParseSetArgs(int argc, char **argv) -> std::optional<SetArgs> {
 		SetArgs     args;
 		std::size_t positional_count = 0;
 		bool        options_ended    = false;
@@ -59,8 +59,8 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **argv,
-                                                             const SetDependencies &dependencies)
+auto howdy::native::set_internal::SetMainWithDependencies(int argc, char **argv,
+                                                          const SetDependencies &dependencies)
     -> int {
 	if (argc < 3) {
 		std::cout << "Please specify a setting and value.\n";
@@ -68,7 +68,7 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 		std::cout << "\n\thowdy set sface_threshold 0.363\n\n";
 		return kSetExitAbort;
 	}
-	const auto args = parse_set_args(argc, argv);
+	const auto args = ParseSetArgs(argc, argv);
 	if (!args.has_value()) {
 		std::cout << "Invalid arguments for set\n";
 		return kSetExitAbort;
@@ -81,7 +81,7 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 	const auto &config_path = dependencies.resolve_config_path(dependencies.context);
 	const auto &key         = args->key;
 	const auto &value       = args->value;
-	if (!howdy::native::is_safe_ini_scalar_value(value)) {
+	if (!howdy::native::IsSafeIniScalarValue(value)) {
 		std::cout << "Config values must be single-line scalars and cannot start with [\n";
 		return kSetExitAbort;
 	}
@@ -97,11 +97,11 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 	return kSetExitOk;
 }
 
-auto set_main(int argc, char **argv) -> int {
-	return howdy::native::set_internal::set_main_with_dependencies(
+auto SetMain(int argc, char **argv) -> int {
+	return howdy::native::set_internal::SetMainWithDependencies(
 	    argc, argv,
 	    howdy::native::set_internal::SetDependencies{
-	        .resolve_config_path = set_cli_resolve_config_path_dependency,
-	        .update_config_value = update_config_value_dependency,
+	        .resolve_config_path = SetCliResolveConfigPathDependency,
+	        .update_config_value = UpdateConfigValueDependency,
 	    });
 }

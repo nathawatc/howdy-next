@@ -20,6 +20,6 @@ struct AuthHelperStagingContext {
 	bool                                             use_fake_acl;
 };
 
-auto run_auth_helper_path_tests(const std::filesystem::path &temp_root) -> bool;
-auto run_auth_helper_staging_tests(const std::filesystem::path    &temp_root,
-                                   const AuthHelperStagingContext &context) -> bool;
+auto RunAuthHelperPathTests(const std::filesystem::path &temp_root) -> bool;
+auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
+                               const AuthHelperStagingContext &context) -> bool;

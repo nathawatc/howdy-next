@@ -33,11 +33,11 @@ namespace {
 
 	using howdy::native::CompareExit;
 
-	auto make_compare_wait_exit_status(CompareExit exit_code) -> int {
+	auto MakeCompareWaitExitStatus(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
 
-	auto try_wait_for_compare(pid_t child_pid, int *status) -> bool {
+	auto TryWaitForCompare(pid_t child_pid, int *status) -> bool {
 		while (true) {
 			const pid_t result = waitpid(child_pid, status, WNOHANG);
 			if (result == child_pid) {
@@ -50,19 +50,19 @@ namespace {
 				continue;
 			}
 			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
-			*status = make_compare_wait_exit_status(CompareExit::kAbort);
+			*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
 			return true;
 		}
 	}
 
-	auto wait_for_compare_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	                            void                                      *cancellation_context,
-	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
-	                            bool *cancelled) -> std::optional<int> {
+	auto WaitForCompareUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	                         void                                      *cancellation_context,
+	                         howdy::pam::CompareCancellationRequestedFn cancellation_requested,
+	                         bool *cancelled) -> std::optional<int> {
 		using Clock = std::chrono::steady_clock;
 		while (true) {
 			int status = 0;
-			if (try_wait_for_compare(child_pid, &status)) {
+			if (TryWaitForCompare(child_pid, &status)) {
 				return status;
 			}
 			if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
@@ -79,21 +79,21 @@ namespace {
 		}
 	}
 
-	auto wait_for_compare_process(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	                              void                                      *cancellation_context,
-	                              howdy::pam::CompareCancellationRequestedFn cancellation_requested)
+	auto WaitForCompareProcess(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	                           void                                      *cancellation_context,
+	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		using Clock = std::chrono::steady_clock;
 
 		bool cancelled = false;
-		if (const auto status = wait_for_compare_until(child_pid, deadline, cancellation_context,
-		                                               cancellation_requested, &cancelled);
+		if (const auto status = WaitForCompareUntil(child_pid, deadline, cancellation_context,
+		                                            cancellation_requested, &cancelled);
 		    status.has_value()) {
 			return *status;
 		}
 
 		int status = 0;
-		if (try_wait_for_compare(child_pid, &status)) {
+		if (TryWaitForCompare(child_pid, &status)) {
 			return status;
 		}
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
@@ -102,11 +102,11 @@ namespace {
 		}
 
 		bool ignored_cancellation = false;
-		if (wait_for_compare_until(child_pid, Clock::now() + kCompareTerminationGrace, nullptr,
-		                           nullptr, &ignored_cancellation)
+		if (WaitForCompareUntil(child_pid, Clock::now() + kCompareTerminationGrace, nullptr,
+		                        nullptr, &ignored_cancellation)
 		        .has_value()) {
-			return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
-			                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
+			                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
 		}
 		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
@@ -117,8 +117,8 @@ namespace {
 			status             = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
-				return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
-				                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
+				return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
+				                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
 			}
 			if (result < 0 && errno == EINTR) {
 				continue;
@@ -127,31 +127,29 @@ namespace {
 				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
 				       strerror(errno), errno);
 			}
-			return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
-			                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
+			                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
 		}
 	}
 
-	auto call_posix_spawn_file_actions_init(void *context, posix_spawn_file_actions_t *actions)
-	    -> int {
+	auto CallPosixSpawnFileActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
 		(void)context;
 		return posix_spawn_file_actions_init(actions);
 	}
 
-	auto call_posix_spawn_file_actions_addclosefrom(void                       *context,
-	                                                posix_spawn_file_actions_t *actions,
-	                                                int                         from_fd) -> int {
+	auto CallPosixSpawnFileActionsAddclosefrom(void *context, posix_spawn_file_actions_t *actions,
+	                                           int from_fd) -> int {
 		(void)context;
 		return posix_spawn_file_actions_addclosefrom_np(actions, from_fd);
 	}
 
-	auto call_posix_spawn_file_actions_destroy(void *context, posix_spawn_file_actions_t *actions)
+	auto CallPosixSpawnFileActionsDestroy(void *context, posix_spawn_file_actions_t *actions)
 	    -> int {
 		(void)context;
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto call_posix_spawn(const CompareSpawnRequest &request) -> int {
+	auto CallPosixSpawn(const CompareSpawnRequest &request) -> int {
 		(void)request.context;
 		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
 		                   request.envp);
@@ -159,14 +157,14 @@ namespace {
 
 	constexpr CompareOperations kPosixSpawnOperations = {
 	    .context                   = nullptr,
-	    .file_actions_init         = call_posix_spawn_file_actions_init,
-	    .file_actions_addclosefrom = call_posix_spawn_file_actions_addclosefrom,
-	    .file_actions_destroy      = call_posix_spawn_file_actions_destroy,
-	    .spawn                     = call_posix_spawn,
+	    .file_actions_init         = CallPosixSpawnFileActionsInit,
+	    .file_actions_addclosefrom = CallPosixSpawnFileActionsAddclosefrom,
+	    .file_actions_destroy      = CallPosixSpawnFileActionsDestroy,
+	    .spawn                     = CallPosixSpawn,
 	};
 
-	auto spawn_compare_process(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                           const CompareOperations &operations) -> int {
+	auto SpawnCompareProcess(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
+	                         const CompareOperations &operations) -> int {
 		const std::string config_path(request.config_path);
 		const std::string username(request.username);
 
@@ -218,41 +216,40 @@ namespace {
 
 namespace howdy::pam::compare_process {
 
-	auto production_operations() -> CompareOperations {
+	auto ProductionOperations() -> CompareOperations {
 		return kPosixSpawnOperations;
 	}
 
-	auto spawn(const CompareLaunchRequest &request, pid_t *child_pid,
+	auto Spawn(const CompareLaunchRequest &request, pid_t *child_pid,
 	           const CompareOperations &operations) -> int {
-		return spawn_compare_process(request, child_pid, operations);
+		return SpawnCompareProcess(request, child_pid, operations);
 	}
 
-	auto wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int {
-		return wait_for_compare_process(child_pid, deadline, nullptr, nullptr);
+	auto WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int {
+		return WaitForCompareProcess(child_pid, deadline, nullptr, nullptr);
 	}
 
-	auto wait_until(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	                void                          *cancellation_context,
-	                CompareCancellationRequestedFn cancellation_requested) -> int {
-		return wait_for_compare_process(child_pid, deadline, cancellation_context,
-		                                cancellation_requested);
+	auto WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	               void                          *cancellation_context,
+	               CompareCancellationRequestedFn cancellation_requested) -> int {
+		return WaitForCompareProcess(child_pid, deadline, cancellation_context,
+		                             cancellation_requested);
 	}
 
-	auto spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int {
+	auto Spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int {
 		(void)context;
-		return spawn(request, child_pid, production_operations());
+		return Spawn(request, child_pid, ProductionOperations());
 	}
 
-	auto wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	auto Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		(void)context;
-		return wait_until(child_pid, deadline, cancellation_context, cancellation_requested);
+		return WaitUntil(child_pid, deadline, cancellation_context, cancellation_requested);
 	}
 
-	void cancel_and_reap(pid_t child_pid) noexcept {
-		(void)wait_for_compare_process(child_pid, std::chrono::steady_clock::now(), nullptr,
-		                               nullptr);
+	void CancelAndReap(pid_t child_pid) noexcept {
+		(void)WaitForCompareProcess(child_pid, std::chrono::steady_clock::now(), nullptr, nullptr);
 	}
 
 }  // namespace howdy::pam::compare_process

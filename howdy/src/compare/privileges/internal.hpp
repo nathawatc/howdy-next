@@ -22,35 +22,35 @@ namespace howdy::native::compare_privileges_internal {
 		ComparePrivilegeResult error{.status = ComparePrivilegeStatus::kOk};
 	};
 
-	[[nodiscard]] __attribute__((visibility("hidden"))) auto default_dependencies()
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto DefaultDependencies()
 	    -> ComparePrivilegeDependencies;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	lookup_nobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup;
+	LookupNobody(const ComparePrivilegeDependencies &dependencies) -> NobodyLookup;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	fatal_verification_failure(const ComparePrivilegeDependencies &dependencies)
+	FatalVerificationFailure(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	read_process_identity(const ComparePrivilegeDependencies &dependencies,
-	                      ProcessIdentity                    *identity) -> bool;
+	ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies, ProcessIdentity *identity)
+	    -> bool;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	handle_unprivileged_caller(const ComparePrivilegeDependencies &dependencies, uid_t real_uid,
-	                           uid_t effective_uid, uid_t saved_uid, gid_t real_gid,
-	                           gid_t effective_gid, gid_t saved_gid) -> ComparePrivilegeResult;
+	HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies, uid_t real_uid,
+	                         uid_t effective_uid, uid_t saved_uid, gid_t real_gid,
+	                         gid_t effective_gid, gid_t saved_gid) -> ComparePrivilegeResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	prepare_capability_drop(const ComparePrivilegeDependencies &dependencies)
+	PrepareCapabilityDrop(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	transition_identity(const ComparePrivilegeDependencies &dependencies, uid_t target_uid,
-	                    gid_t target_gid) -> bool;
+	TransitionIdentity(const ComparePrivilegeDependencies &dependencies, uid_t target_uid,
+	                   gid_t target_gid) -> bool;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	verify_dropped_identity(const ComparePrivilegeDependencies &dependencies, uid_t target_uid,
-	                        gid_t target_gid) -> bool;
+	VerifyDroppedIdentity(const ComparePrivilegeDependencies &dependencies, uid_t target_uid,
+	                      gid_t target_gid) -> bool;
 
 }  // namespace howdy::native::compare_privileges_internal

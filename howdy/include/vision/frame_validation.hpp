@@ -23,8 +23,8 @@ namespace howdy::native {
 		kBgr,
 	};
 
-	[[nodiscard]] inline auto is_supported_frame_channel_count(int                channels,
-	                                                           FrameChannelPolicy policy) -> bool {
+	[[nodiscard]] inline auto IsSupportedFrameChannelCount(int channels, FrameChannelPolicy policy)
+	    -> bool {
 		switch (policy) {
 			case FrameChannelPolicy::kCameraInput:
 				return channels == 1 || channels == 3 || channels == 4;
@@ -36,8 +36,7 @@ namespace howdy::native {
 		return false;
 	}
 
-	[[nodiscard]] inline auto validate_frame(const cv::Mat     &frame,
-	                                         FrameChannelPolicy channel_policy)
+	[[nodiscard]] inline auto ValidateFrame(const cv::Mat &frame, FrameChannelPolicy channel_policy)
 	    -> FrameValidationStatus {
 		if (frame.empty()) {
 			return FrameValidationStatus::kEmpty;
@@ -49,7 +48,7 @@ namespace howdy::native {
 		if (frame.rows > kMaxFrameDimension || frame.cols > kMaxFrameDimension) {
 			return FrameValidationStatus::kOversizedDimensions;
 		}
-		if (!is_supported_frame_channel_count(frame.channels(), channel_policy)) {
+		if (!IsSupportedFrameChannelCount(frame.channels(), channel_policy)) {
 			return FrameValidationStatus::kUnsupportedChannelCount;
 		}
 		if (frame.depth() != CV_8U) {

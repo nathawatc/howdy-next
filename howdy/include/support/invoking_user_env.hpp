@@ -13,7 +13,7 @@ namespace howdy::native {
 	inline constexpr auto kWaylandDisplayEnvironmentVariable = "WAYLAND_DISPLAY";
 	inline constexpr auto kXdgRuntimeDirEnvironmentVariable  = "XDG_RUNTIME_DIR";
 
-	inline void set_user_env_var(const char *name, const std::string &value) {
+	inline void SetUserEnvVar(const char *name, const std::string &value) {
 		if (value.empty()) {
 			unsetenv(name);
 			return;
@@ -21,11 +21,11 @@ namespace howdy::native {
 		setenv(name, value.c_str(), 1);
 	}
 
-	inline void reset_invoking_user_environment(const InvokingUser &invoking_user) {
-		set_user_env_var("HOME", invoking_user.home);
-		set_user_env_var("LOGNAME", invoking_user.name);
-		set_user_env_var("USER", invoking_user.name);
-		set_user_env_var("SHELL", invoking_user.shell);
+	inline void ResetInvokingUserEnvironment(const InvokingUser &invoking_user) {
+		SetUserEnvVar("HOME", invoking_user.home);
+		SetUserEnvVar("LOGNAME", invoking_user.name);
+		SetUserEnvVar("USER", invoking_user.name);
+		SetUserEnvVar("SHELL", invoking_user.shell);
 
 		unsetenv("XDG_CONFIG_HOME");
 		unsetenv("XDG_CACHE_HOME");
@@ -33,7 +33,7 @@ namespace howdy::native {
 		unsetenv("XDG_STATE_HOME");
 	}
 
-	inline auto find_wayland_display(const std::filesystem::path &runtime_dir)
+	inline auto FindWaylandDisplay(const std::filesystem::path &runtime_dir)
 	    -> std::optional<std::string> {
 		std::optional<std::string>          display;
 		std::error_code                     ec;
@@ -76,7 +76,7 @@ namespace howdy::native {
 		return display;
 	}
 
-	inline void prepare_invoking_user_gui_environment(const InvokingUser &invoking_user) {
+	inline void PrepareInvokingUserGuiEnvironment(const InvokingUser &invoking_user) {
 		unsetenv("WAYLAND_SOCKET");
 		unsetenv(kXdgRuntimeDirEnvironmentVariable);
 		unsetenv("DBUS_SESSION_BUS_ADDRESS");
@@ -85,18 +85,18 @@ namespace howdy::native {
 		    std::filesystem::path("/run/user") / std::to_string(invoking_user.uid);
 		std::error_code ec;
 		if (std::filesystem::is_directory(runtime_dir, ec) && !ec) {
-			set_user_env_var(kXdgRuntimeDirEnvironmentVariable, runtime_dir.string());
+			SetUserEnvVar(kXdgRuntimeDirEnvironmentVariable, runtime_dir.string());
 
 			const auto session_bus = runtime_dir / "bus";
 			ec.clear();
 			if (std::filesystem::exists(session_bus, ec) && !ec) {
-				set_user_env_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + session_bus.string());
+				SetUserEnvVar("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + session_bus.string());
 			}
 
 			const char *wayland_display = std::getenv(kWaylandDisplayEnvironmentVariable);
 			if (wayland_display == nullptr || wayland_display[0] == '\0') {
-				if (const auto display = find_wayland_display(runtime_dir)) {
-					set_user_env_var(kWaylandDisplayEnvironmentVariable, *display);
+				if (const auto display = FindWaylandDisplay(runtime_dir)) {
+					SetUserEnvVar(kWaylandDisplayEnvironmentVariable, *display);
 				}
 			}
 		}
@@ -105,14 +105,14 @@ namespace howdy::native {
 			const auto xauthority = std::filesystem::path(invoking_user.home) / ".Xauthority";
 			ec.clear();
 			if (std::filesystem::is_regular_file(xauthority, ec) && !ec) {
-				set_user_env_var("XAUTHORITY", xauthority.string());
+				SetUserEnvVar("XAUTHORITY", xauthority.string());
 			}
 		}
 	}
 
-	inline void reset_invoking_user_gui_environment(const InvokingUser &invoking_user) {
-		reset_invoking_user_environment(invoking_user);
-		prepare_invoking_user_gui_environment(invoking_user);
+	inline void ResetInvokingUserGuiEnvironment(const InvokingUser &invoking_user) {
+		ResetInvokingUserEnvironment(invoking_user);
+		PrepareInvokingUserGuiEnvironment(invoking_user);
 	}
 
 }  // namespace howdy::native

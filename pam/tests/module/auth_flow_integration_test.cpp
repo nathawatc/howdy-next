@@ -15,13 +15,13 @@
 
 #include <sys/wait.h>
 
-auto run_auth_flow_integration_tests() -> bool;
+auto RunAuthFlowIntegrationTests() -> bool;
 
 namespace {
 	using namespace howdy::test::auth_flow;
 	using namespace howdy::test::process;
 
-	using howdy::pam::run_authentication_entrypoint;
+	using howdy::pam::RunAuthenticationEntrypoint;
 	using howdy::test::expect;
 
 	class ScopedEnv {
@@ -50,27 +50,26 @@ namespace {
 		std::optional<std::string> original_;
 	};
 
-	auto expect_authentication_notice_and_conversation_guards() -> bool {
+	auto ExpectAuthenticationNoticeAndConversationGuards() -> bool {
 		EligibilityFlowFixture fixture;
-		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
 		struct pam_conv        conversation{
-		    .conv        = test_conversation,
+		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
 		ok &=
-		    expect(pam_handle.start(&conversation) == PAM_SUCCESS, "notice test starts PAM handle");
-		if (pam_handle.get() == nullptr) {
+		    expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "notice test starts PAM handle");
+		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
 
 		state.result = PAM_CONV_ERR;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "detection notice conversation failure does not abort authentication");
 		ok &= expect(state.calls == 1 && state.last_msg_type == PAM_TEXT_INFO,
 		             "enabled detection notice sends text message");
@@ -78,10 +77,9 @@ namespace {
 		fixture.runtime.detection_notice = false;
 		state.result                     = PAM_SUCCESS;
 		state.calls                      = 0;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "disabled detection notice leaves authentication successful");
 		ok &= expect(state.calls == 0, "disabled detection notice sends no message");
 
@@ -89,40 +87,40 @@ namespace {
 		    .conv        = nullptr,
 		    .appdata_ptr = nullptr,
 		};
-		ok &= expect(pam_set_item(pam_handle.get(), PAM_CONV, &unavailable) == PAM_SUCCESS,
+		ok &= expect(pam_set_item(pam_handle.Get(), PAM_CONV, &unavailable) == PAM_SUCCESS,
 		             "installs unavailable PAM conversation");
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SYSTEM_ERR,
-		             "unavailable PAM conversation fails closed");
+		ok &=
+		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                       {.context      = &dependencies,
+		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+		           "unavailable PAM conversation fails closed");
 		return ok;
 	}
 
-	auto expect_runtime_load_failure_paths() -> bool {
+	auto ExpectRuntimeLoadFailurePaths() -> bool {
 		EligibilityFlowFixture fixture;
-		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
 		struct pam_conv        conversation{
-		    .conv        = test_conversation,
+		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
-		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+		ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 		             "runtime failure test starts PAM handle");
-		if (pam_handle.get() == nullptr) {
+		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
 
 		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
 		fixture.runtime.initial_error_code  = EACCES;
 		fixture.runtime.effective_uid       = 1000;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SYSTEM_ERR,
-		             "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
+		ok &=
+		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                       {.context      = &dependencies,
+		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+		           "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
 		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "runtime staging attempts preparation after inaccessible config");
 
@@ -130,11 +128,11 @@ namespace {
 		fixture.runtime.initial_error_code  = 0;
 		fixture.runtime.effective_uid       = 0;
 		fixture.runtime.load_calls          = 0;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SYSTEM_ERR,
-		             "runtime configuration failure maps to PAM_SYSTEM_ERR");
+		ok &=
+		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                       {.context      = &dependencies,
+		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+		           "runtime configuration failure maps to PAM_SYSTEM_ERR");
 		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "non-staging runtime failure skips preparation");
 
@@ -144,30 +142,29 @@ namespace {
 		fixture.runtime.prepare_result      = true;
 		fixture.runtime.staged_load_status  = howdy::native::RuntimeConfigLoadStatus::kOk;
 		fixture.runtime.load_calls          = 0;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "successful staged runtime continues authentication");
 		ok &= expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2,
 		             "successful staged runtime reloads config without generation cleanup");
 		return ok;
 	}
 
-	auto expect_authentication_preserves_host_locale_state() -> bool {
+	auto ExpectAuthenticationPreservesHostLocaleState() -> bool {
 		EligibilityFlowFixture fixture;
-		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 
 		ConversationState state;
 		struct pam_conv   conversation{
-		    .conv        = test_conversation,
+		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
 		ok &=
-		    expect(pam_handle.start(&conversation) == PAM_SUCCESS, "locale test starts PAM handle");
-		if (pam_handle.get() == nullptr) {
+		    expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "locale test starts PAM handle");
+		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
 
@@ -198,17 +195,16 @@ namespace {
 			             std::string(scenario) + ": authentication restores host gettext domain");
 		};
 
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "successful authentication enters locale test flow");
 		expect_host_state("successful authentication");
 
 		fixture.runtime.disabled = true;
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		ok &= expect(RunAuthenticationEntrypoint(
+		                 pam_handle.Get(), {}, true,
+		                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 		                 PAM_AUTHINFO_UNAVAIL,
 		             "disabled early return preserves PAM behavior in locale test");
 		expect_host_state("disabled early return");
@@ -218,9 +214,9 @@ namespace {
 		    .status        = howdy::native::UserModelStatus::kInsecurePath,
 		    .error_message = "locale test model failure",
 		};
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+		ok &= expect(RunAuthenticationEntrypoint(
+		                 pam_handle.Get(), {}, true,
+		                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 		                 PAM_AUTHINFO_UNAVAIL,
 		             "model failure returns through locale test flow");
 		expect_host_state("model failure");
@@ -234,20 +230,20 @@ namespace {
 		return ok;
 	}
 
-	auto expect_authentication_eligibility_integration() -> bool {
+	auto ExpectAuthenticationEligibilityIntegration() -> bool {
 		EligibilityFlowFixture fixture;
-		auto                   dependencies = make_eligibility_flow_dependencies(&fixture);
+		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 
 		ConversationState state;
 		struct pam_conv   conversation{
-		    .conv        = test_conversation,
+		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
-		ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+		ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 		             "eligibility integration starts PAM handle");
-		if (pam_handle.get() == nullptr) {
+		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
 
@@ -267,9 +263,9 @@ namespace {
 			const std::string name(scenario);
 			const int         prompt_before = fixture.prompt.spawn_calls;
 			reset_probe_calls();
-			const int result = run_authentication_entrypoint(
-			    pam_handle.get(), {}, true,
-			    {.context = &dependencies, .authenticate = identify_for_test});
+			const int result = RunAuthenticationEntrypoint(
+			    pam_handle.Get(), {}, true,
+			    {.context = &dependencies, .authenticate = IdentifyForTest});
 			ok &= expect(result == PAM_AUTHINFO_UNAVAIL,
 			             name + ": ineligible result maps to PAM_AUTHINFO_UNAVAIL");
 			ok &= expect(fixture.prompt.spawn_calls == prompt_before,
@@ -349,10 +345,9 @@ namespace {
 		fixture.eligibility.readiness          = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_lid_diagnostic = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "eligible authentication continues after non-fatal lid diagnostic");
 		ok &= expect(fixture.prompt.spawn_calls == prompt_before_lid_diagnostic + 1,
 		             "non-fatal lid diagnostic does not suppress compare process");
@@ -364,10 +359,9 @@ namespace {
 		fixture.eligibility.readiness    = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_eligible = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(run_authentication_entrypoint(
-		                 pam_handle.get(), {}, true,
-		                 {.context = &dependencies, .authenticate = identify_for_test}) ==
-		                 PAM_SUCCESS,
+		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "eligible authentication enters prompt coordination");
 		ok &= expect(fixture.prompt.spawn_calls == prompt_before_eligible + 1,
 		             "eligible authentication spawns compare process");
@@ -378,7 +372,7 @@ namespace {
 		return ok;
 	}
 
-	auto expect_prompt_result_mapping() -> bool {
+	auto ExpectPromptResultMapping() -> bool {
 		using howdy::native::CompareExit;
 		using howdy::pam::PamModuleArguments;
 		using howdy::test::prompt_coordinator::FakeContext;
@@ -404,28 +398,28 @@ namespace {
 			const auto [name, blocked_child, child_exit, token_result, expected_result] = test_case;
 			EligibilityFlowFixture fixture;
 			fixture.runtime.detection_notice = false;
-			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
 			FakeContext prompt_context;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
 
 			ConversationState state;
 			struct pam_conv   conversation{
-			    .conv        = test_conversation,
+			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             std::string(name) + ": starts PAM handle");
-			if (pam_handle.get() == nullptr) {
+			if (pam_handle.Get() == nullptr) {
 				return;
 			}
 
 			pid_t child_pid = -1;
 			if (blocked_child) {
-				child_pid = spawn_blocked_child();
+				child_pid = SpawnBlockedChild();
 			} else {
-				child_pid = spawn_exiting_child(child_exit);
+				child_pid = SpawnExitingChild(child_exit);
 			}
 			ok &= expect(child_pid > 0, std::string(name) + ": spawns compare child");
 			if (child_pid <= 0) {
@@ -437,9 +431,9 @@ namespace {
 			prompt_context.token_delay =
 			    blocked_child ? std::chrono::milliseconds(50) : std::chrono::milliseconds(0);
 
-			const int result = run_authentication_entrypoint(
-			    pam_handle.get(), input_arguments, true,
-			    {.context = &dependencies, .authenticate = identify_for_test});
+			const int result = RunAuthenticationEntrypoint(
+			    pam_handle.Get(), input_arguments, true,
+			    {.context = &dependencies, .authenticate = IdentifyForTest});
 			ok &= expect(result == expected_result,
 			             std::string(name) + ": maps prompt result (got " + std::to_string(result) +
 			                 ", auth calls " +
@@ -480,23 +474,23 @@ namespace {
 		{
 			EligibilityFlowFixture fixture;
 			fixture.runtime.detection_notice = false;
-			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
 			FakeContext prompt_context;
 			prompt_context.spawn_result = EIO;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
 			ConversationState state;
 			struct pam_conv   conversation{
-			    .conv        = test_conversation,
+			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             "compare spawn failure starts PAM handle");
-			if (pam_handle.get() != nullptr) {
-				ok &= expect(run_authentication_entrypoint(
-				                 pam_handle.get(), input_arguments, true,
-				                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+			if (pam_handle.Get() != nullptr) {
+				ok &= expect(RunAuthenticationEntrypoint(
+				                 pam_handle.Get(), input_arguments, true,
+				                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 				                 PAM_SYSTEM_ERR,
 				             "compare spawn failure maps to PAM_SYSTEM_ERR");
 			}
@@ -506,22 +500,22 @@ namespace {
 			EligibilityFlowFixture fixture;
 			fixture.runtime.detection_notice = false;
 			fixture.runtime.timeout          = -3;
-			auto        dependencies         = make_eligibility_flow_dependencies(&fixture);
+			auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
 			FakeContext prompt_context;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
 			ConversationState state;
 			struct pam_conv   conversation{
-			    .conv        = test_conversation,
+			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.start(&conversation) == PAM_SUCCESS,
+			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             "invalid coordinator timeout starts PAM handle");
-			if (pam_handle.get() != nullptr) {
-				ok &= expect(run_authentication_entrypoint(
-				                 pam_handle.get(), input_arguments, true,
-				                 {.context = &dependencies, .authenticate = identify_for_test}) ==
+			if (pam_handle.Get() != nullptr) {
+				ok &= expect(RunAuthenticationEntrypoint(
+				                 pam_handle.Get(), input_arguments, true,
+				                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 				                 PAM_SYSTEM_ERR,
 				             "invalid coordinator timeout maps to PAM_SYSTEM_ERR");
 			}
@@ -529,9 +523,9 @@ namespace {
 		return ok;
 	}
 
-	auto expect_invalid_eligibility_dependencies_fail_closed() -> bool {
+	auto ExpectInvalidEligibilityDependenciesFailClosed() -> bool {
 		EligibilityFlowFixture fixture;
-		const auto             base = make_eligibility_flow_dependencies(&fixture);
+		const auto             base = MakeEligibilityFlowDependencies(&fixture);
 		bool                   ok   = true;
 
 		const auto expect_invalid = [&](const char *scenario, auto invalidate) -> void {
@@ -540,7 +534,7 @@ namespace {
 			const int runtime_calls = fixture.runtime.load_calls;
 			const int prompt_calls  = fixture.prompt.spawn_calls;
 			const int result =
-			    howdy::pam::auth_flow::identify_with_dependencies(nullptr, {}, true, dependencies);
+			    howdy::pam::auth_flow::IdentifyWithDependencies(nullptr, {}, true, dependencies);
 			const std::string name(scenario);
 			ok &= expect(result == PAM_SYSTEM_ERR,
 			             name + ": invalid dependency contract maps to PAM_SYSTEM_ERR");
@@ -597,13 +591,13 @@ namespace {
 
 }  // namespace
 
-auto run_auth_flow_integration_tests() -> bool {
+auto RunAuthFlowIntegrationTests() -> bool {
 	bool ok = true;
-	ok &= expect_authentication_notice_and_conversation_guards();
-	ok &= expect_runtime_load_failure_paths();
-	ok &= expect_prompt_result_mapping();
-	ok &= expect_authentication_preserves_host_locale_state();
-	ok &= expect_authentication_eligibility_integration();
-	ok &= expect_invalid_eligibility_dependencies_fail_closed();
+	ok &= ExpectAuthenticationNoticeAndConversationGuards();
+	ok &= ExpectRuntimeLoadFailurePaths();
+	ok &= ExpectPromptResultMapping();
+	ok &= ExpectAuthenticationPreservesHostLocaleState();
+	ok &= ExpectAuthenticationEligibilityIntegration();
+	ok &= ExpectInvalidEligibilityDependenciesFailClosed();
 	return ok;
 }

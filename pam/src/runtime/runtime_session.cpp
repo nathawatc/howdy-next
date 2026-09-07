@@ -8,26 +8,26 @@
 #include <utility>
 
 namespace {
-	auto prepared_runtime_files_match_contract(const howdy::pam::PreparedRuntimeFiles &prepared)
+	auto PreparedRuntimeFilesMatchContract(const howdy::pam::PreparedRuntimeFiles &prepared)
 	    -> bool {
-		return howdy::native::auth_helper_protocol::matches_prepared_runtime_layout(
+		return howdy::native::auth_helper_protocol::MatchesPreparedRuntimeLayout(
 		    prepared.root_dir, std::filesystem::path(prepared.config_path),
 		    std::filesystem::path(prepared.user_models_dir), getuid());
 	}
 
-	auto prepare_runtime_files_dependency(void *context, std::string_view username,
-	                                      howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+	auto PrepareRuntimeFilesDependency(void *context, std::string_view username,
+	                                   howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
 		(void)context;
-		return howdy::pam::auth_helper_process::prepare_runtime_auth_files(username, prepared);
+		return howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(username, prepared);
 	}
 
-	auto load_runtime_config_dependency(void *context, const std::filesystem::path &config_path)
+	auto LoadRuntimeConfigDependency(void *context, const std::filesystem::path &config_path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
-		return howdy::native::load_runtime_config(config_path, static_cast<uid_t>(0));
+		return howdy::native::LoadRuntimeConfig(config_path, static_cast<uid_t>(0));
 	}
 
-	auto effective_uid_dependency(void *context) -> uid_t {
+	auto EffectiveUidDependency(void *context) -> uid_t {
 		(void)context;
 		return geteuid();
 	}
@@ -49,7 +49,7 @@ namespace howdy::pam {
 		}
 	}
 
-	auto RuntimeSession::load_for_user(std::string_view username) -> RuntimeSessionLoadResult {
+	auto RuntimeSession::LoadForUser(std::string_view username) -> RuntimeSessionLoadResult {
 		if (load_started_) {
 			return {
 			    .status = RuntimeSessionLoadStatus::kAlreadyLoaded,
@@ -91,7 +91,7 @@ namespace howdy::pam {
 		}
 		if (prepared.config_path.empty() || prepared.user_models_dir.empty() ||
 		    prepared.root_dir.empty() || prepared.lease_fd < 0 ||
-		    !prepared_runtime_files_match_contract(prepared)) {
+		    !PreparedRuntimeFilesMatchContract(prepared)) {
 			if (prepared.lease_fd >= 0) {
 				(void)close(prepared.lease_fd);
 			}
@@ -117,23 +117,23 @@ namespace howdy::pam {
 		};
 	}
 
-	auto RuntimeSession::config_path() const -> const std::string & {
+	auto RuntimeSession::ConfigPath() const -> const std::string & {
 		return config_path_;
 	}
 
-	auto RuntimeSession::user_models_dir() const -> const std::string & {
+	auto RuntimeSession::UserModelsDir() const -> const std::string & {
 		return user_models_dir_;
 	}
 
-	auto RuntimeSession::staged() const -> bool {
+	auto RuntimeSession::Staged() const -> bool {
 		return lease_fd_ >= 0;
 	}
 
-	auto production_runtime_session_dependencies() -> RuntimeSessionDependencies {
+	auto ProductionRuntimeSessionDependencies() -> RuntimeSessionDependencies {
 		return RuntimeSessionDependencies{
-		    .prepare_runtime     = prepare_runtime_files_dependency,
-		    .load_runtime_config = load_runtime_config_dependency,
-		    .effective_uid       = effective_uid_dependency,
+		    .prepare_runtime     = PrepareRuntimeFilesDependency,
+		    .load_runtime_config = LoadRuntimeConfigDependency,
+		    .effective_uid       = EffectiveUidDependency,
 		};
 	}
 

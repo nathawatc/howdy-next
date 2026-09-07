@@ -19,8 +19,8 @@ namespace {
 	using howdy::test::write_file;
 	namespace fs = std::filesystem;
 
-	auto run_generator(const fs::path &generator_path, std::vector<std::string> arguments,
-	                   bool limit_file_size) -> int {
+	auto RunGenerator(const fs::path &generator_path, std::vector<std::string> arguments,
+	                  bool limit_file_size) -> int {
 		arguments.insert(arguments.begin(), generator_path.string());
 		const pid_t child = fork();
 		if (child < 0) {
@@ -81,9 +81,9 @@ auto main(int argc, char **argv) -> int {
 		return 1;
 	}
 
-	ok &= expect(run_generator(generator_path, {}, false) == 2,
+	ok &= expect(RunGenerator(generator_path, {}, false) == 2,
 	             "missing generator arguments return usage status");
-	ok &= expect(run_generator(generator_path, {"--output"}, false) == 2,
+	ok &= expect(RunGenerator(generator_path, {"--output"}, false) == 2,
 	             "incomplete output argument returns usage status");
 
 	const auto output = root / "generated" / "config.ini";
@@ -93,7 +93,7 @@ auto main(int argc, char **argv) -> int {
 	const auto unrelated_temporary = fs::path(output.string() + ".tmp");
 	ok &= expect(write_file(unrelated_temporary, "must remain untouched\n"),
 	             "create unrelated output.tmp file");
-	ok &= expect(run_generator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
 	             "generator writes new output");
 	const auto generated_content = read_file(output);
 	ok &= expect(!generated_content.empty(), "successful generation creates non-empty output");
@@ -101,7 +101,7 @@ auto main(int argc, char **argv) -> int {
 	             "generator preserves unrelated output.tmp file");
 
 	ok &= expect(write_file(output, "old config\n"), "create existing output");
-	ok &= expect(run_generator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
 	             "generator replaces existing output");
 	ok &= expect(read_file(output) == generated_content,
 	             "replacement output is deterministic generated content");
@@ -113,7 +113,7 @@ auto main(int argc, char **argv) -> int {
 	const auto staged_before =
 	    count_files_with_prefix(failed_output.parent_path(), ".howdy-atomic-");
 	const int failed_write_status =
-	    run_generator(generator_path, {"--output", failed_output.string()}, true);
+	    RunGenerator(generator_path, {"--output", failed_output.string()}, true);
 	ok &= expect(failed_write_status != 0, "failed atomic write returns nonzero");
 	ok &= expect(read_file(failed_output) == "preserve this config\n",
 	             "failed atomic write preserves existing output");
@@ -123,8 +123,8 @@ auto main(int argc, char **argv) -> int {
 
 	const auto blocked_parent = root / "blocked-parent";
 	ok &= expect(write_file(blocked_parent, "not a directory\n"), "create invalid output parent");
-	ok &= expect(run_generator(generator_path,
-	                           {"--output", (blocked_parent / "config.ini").string()}, false) != 0,
+	ok &= expect(RunGenerator(generator_path,
+	                          {"--output", (blocked_parent / "config.ini").string()}, false) != 0,
 	             "invalid output directory returns nonzero");
 	ok &= expect(read_file(blocked_parent) == "not a directory\n",
 	             "invalid output directory remains unchanged");

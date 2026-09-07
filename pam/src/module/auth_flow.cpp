@@ -33,11 +33,11 @@ namespace {
 	using howdy::native::CompareExit;
 	using howdy::pam::auth_flow::ConversationFn;
 
-	auto compare_status_is(int status, CompareExit exit_code) -> bool {
+	auto CompareStatusIs(int status, CompareExit exit_code) -> bool {
 		return WIFEXITED(status) && WEXITSTATUS(status) == static_cast<int>(exit_code);
 	}
 
-	auto get_username(pam_handle_t *pamh, const char **username) -> int {
+	auto GetUsername(pam_handle_t *pamh, const char **username) -> int {
 		const int result = pam_get_user(pamh, username, nullptr);
 		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
 			syslog(LOG_ERR, "Unable to determine the user.");
@@ -46,8 +46,8 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	void send_detection_notice(const howdy::native::RuntimeConfig &config,
-	                           const ConversationFn               &conv_function) {
+	void SendDetectionNotice(const howdy::native::RuntimeConfig &config,
+	                         const ConversationFn               &conv_function) {
 		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
 		bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
 		if (!config.core.detection_notice) {
@@ -55,27 +55,27 @@ namespace {
 		}
 		const int result = conv_function({
 		    .style = PAM_TEXT_INFO,
-		    .text  = howdy::pam::translate("Starting face verification"),
+		    .text  = howdy::pam::Translate("Starting face verification"),
 		});
 		if (result != PAM_SUCCESS) {
 			syslog(LOG_ERR, "Unable to show the detection notice.");
 		}
 	}
 
-	auto map_prompt_result(const howdy::pam::PromptCoordinatorResult &result, const char *username,
-	                       const howdy::native::RuntimeConfig &config,
-	                       const ConversationFn               &conv_function) -> int {
+	auto MapPromptResult(const howdy::pam::PromptCoordinatorResult &result, const char *username,
+	                     const howdy::native::RuntimeConfig &config,
+	                     const ConversationFn               &conv_function) -> int {
 		switch (result.decision) {
 			case howdy::pam::PromptCoordinatorDecision::kPamResult:
 				return result.pam_status != PAM_SUCCESS ? result.pam_status : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kPasswordFallback:
 				return result.pam_status != PAM_SUCCESS
-				           ? howdy::pam::auth_flow::howdy_status(username, result.compare_status,
-				                                                 config, conv_function)
+				           ? howdy::pam::auth_flow::HowdyStatus(username, result.compare_status,
+				                                                config, conv_function)
 				           : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
-				return howdy::pam::auth_flow::howdy_status(username, result.compare_status, config,
-				                                           conv_function);
+				return howdy::pam::auth_flow::HowdyStatus(username, result.compare_status, config,
+				                                          conv_function);
 			case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
 			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
 			case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
@@ -84,7 +84,7 @@ namespace {
 		return PAM_SYSTEM_ERR;
 	}
 
-	auto dependencies_valid(const howdy::pam::auth_flow::IdentifyDependencies &dependencies)
+	auto DependenciesValid(const howdy::pam::auth_flow::IdentifyDependencies &dependencies)
 	    -> bool {
 		const auto &runtime     = dependencies.runtime_session;
 		const auto &prompt      = dependencies.prompt_coordinator;
@@ -105,29 +105,29 @@ namespace {
 
 namespace howdy::pam::auth_flow {
 
-	auto send_conversation_message(const ConversationFn &conv_function, int msg_type,
-	                               const std::string &message) -> void {
+	auto SendConversationMessage(const ConversationFn &conv_function, int msg_type,
+	                             const std::string &message) -> void {
 		const int result = conv_function({.style = msg_type, .text = message});
 		if (result != PAM_SUCCESS) {
 			syslog(LOG_WARNING, "Could not send PAM status message: %d", result);
 		}
 	}
 
-	auto auth_token_present(pam_handle_t *pamh) -> bool {
+	auto AuthTokenPresent(pam_handle_t *pamh) -> bool {
 		const void *auth_token = nullptr;
 		const int   result     = pam_get_item(pamh, PAM_AUTHTOK, &auth_token);
 		return result == PAM_SUCCESS && auth_token != nullptr;
 	}
 
-	auto howdy_error(int status, const ConversationFn &conv_function) -> int {
-		const auto decision = map_compare_wait_status(status);
-		if (decision.conversation_kind == ConversationKind::Error) {
-			send_conversation_message(conv_function, PAM_ERROR_MSG, decision.conversation_message);
-		} else if (decision.conversation_kind == ConversationKind::Info) {
-			send_conversation_message(conv_function, PAM_TEXT_INFO, decision.conversation_message);
+	auto HowdyError(int status, const ConversationFn &conv_function) -> int {
+		const auto decision = MapCompareWaitStatus(status);
+		if (decision.conversation_kind == ConversationKind::kError) {
+			SendConversationMessage(conv_function, PAM_ERROR_MSG, decision.conversation_message);
+		} else if (decision.conversation_kind == ConversationKind::kInfo) {
+			SendConversationMessage(conv_function, PAM_TEXT_INFO, decision.conversation_message);
 		}
 
-		if (compare_status_is(status, CompareExit::kNoFaceModel)) {
+		if (CompareStatusIs(status, CompareExit::kNoFaceModel)) {
 			syslog(LOG_NOTICE, "%s", decision.log_message.c_str());
 		} else if (WIFEXITED(status)) {
 			syslog(LOG_ERR, "%s", decision.log_message.c_str());
@@ -138,15 +138,15 @@ namespace howdy::pam::auth_flow {
 		return PAM_AUTH_ERR;
 	}
 
-	auto howdy_status(const char *username, int status, const howdy::native::RuntimeConfig &config,
-	                  const ConversationFn &conv_function) -> int {
+	auto HowdyStatus(const char *username, int status, const howdy::native::RuntimeConfig &config,
+	                 const ConversationFn &conv_function) -> int {
 		if (status != EXIT_SUCCESS) {
-			return howdy_error(status, conv_function);
+			return HowdyError(status, conv_function);
 		}
 
 		if (!config.core.no_confirmation) {
-			send_conversation_message(conv_function, PAM_TEXT_INFO,
-			                          build_confirmation_message(username));
+			SendConversationMessage(conv_function, PAM_TEXT_INFO,
+			                        BuildConfirmationMessage(username));
 		}
 
 		syslog(LOG_INFO, "%s", kFaceVerificationSucceededMessage);
@@ -155,7 +155,7 @@ namespace howdy::pam::auth_flow {
 
 	namespace {
 
-		void log_eligibility_result(
+		void LogEligibilityResult(
 		    const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) {
 			using howdy::pam::auth_eligibility::AuthenticationEligibility;
 
@@ -198,28 +198,28 @@ namespace howdy::pam::auth_flow {
 
 	}  // namespace
 
-	auto production_identify_dependencies() -> IdentifyDependencies {
+	auto ProductionIdentifyDependencies() -> IdentifyDependencies {
 		return {
-		    .runtime_session    = production_runtime_session_dependencies(),
-		    .prompt_coordinator = production_prompt_coordinator_dependencies(),
+		    .runtime_session    = ProductionRuntimeSessionDependencies(),
+		    .prompt_coordinator = ProductionPromptCoordinatorDependencies(),
 		    .eligibility =
-		        howdy::pam::auth_eligibility::production_authentication_eligibility_dependencies(),
+		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityDependencies(),
 		};
 	}
 
-	auto identify_with_dependencies(pam_handle_t *pamh, PamModuleArguments arguments,
-	                                bool ask_auth_tok, const IdentifyDependencies &dependencies)
+	auto IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments,
+	                              bool ask_auth_tok, const IdentifyDependencies &dependencies)
 	    -> int {
 		(void)arguments.flags;
 
 		openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
-		if (!dependencies_valid(dependencies)) {
+		if (!DependenciesValid(dependencies)) {
 			return PAM_SYSTEM_ERR;
 		}
 
 		const char *username = nullptr;
-		int         pam_res  = get_username(pamh, &username);
+		int         pam_res  = GetUsername(pamh, &username);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
@@ -227,7 +227,7 @@ namespace howdy::pam::auth_flow {
 		howdy::pam::RuntimeSession runtime_session(kConfiguredConfigPath, kConfiguredUserModelsDir,
 		                                           dependencies.runtime_session);
 
-		const auto runtime_result = runtime_session.load_for_user(username);
+		const auto runtime_result = runtime_session.LoadForUser(username);
 		if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
 		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies ||
 		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
@@ -243,47 +243,46 @@ namespace howdy::pam::auth_flow {
 		const auto &config = *runtime_result.config_result.config;
 
 		const auto eligibility_result =
-		    howdy::pam::auth_eligibility::evaluate_authentication_eligibility(
-		        pamh, config, username, runtime_session.user_models_dir(),
-		        dependencies.eligibility);
-		log_eligibility_result(eligibility_result);
-		pam_res = map_authentication_eligibility(eligibility_result);
+		    howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility(
+		        pamh, config, username, runtime_session.UserModelsDir(), dependencies.eligibility);
+		LogEligibilityResult(eligibility_result);
+		pam_res = MapAuthenticationEligibility(eligibility_result);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
 
 		howdy::pam::PamConversation conversation;
-		pam_res = howdy::pam::PamConversation::acquire(pamh, &conversation);
+		pam_res = howdy::pam::PamConversation::Acquire(pamh, &conversation);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
 		const ConversationFn conv_function =
 		    [&conversation](const howdy::pam::ConversationMessage &message) noexcept -> int {
-			return conversation.send(message);
+			return conversation.Send(message);
 		};
 
-		send_detection_notice(config, conv_function);
+		SendDetectionNotice(config, conv_function);
 
-		const PamOptions pam_options         = parse_pam_options(arguments);
-		const bool       existing_auth_token = auth_flow::auth_token_present(pamh);
+		const PamOptions pam_options         = ParsePamOptions(arguments);
+		const bool       existing_auth_token = auth_flow::AuthTokenPresent(pamh);
 
 		howdy::pam::PromptCoordinator coordinator(
 		    pamh, pam_options.workaround, ask_auth_tok, existing_auth_token,
 		    dependencies.prompt_coordinator,
 		    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
 
-		if (!coordinator.valid()) {
+		if (!coordinator.Valid()) {
 			return PAM_SYSTEM_ERR;
 		}
 
 		const howdy::pam::CompareLaunchRequest compare_request = {
-		    .config_path     = runtime_session.config_path(),
+		    .config_path     = runtime_session.ConfigPath(),
 		    .username        = username,
-		    .user_models_dir = runtime_session.user_models_dir(),
-		    .staged_runtime  = runtime_session.staged(),
+		    .user_models_dir = runtime_session.UserModelsDir(),
+		    .staged_runtime  = runtime_session.Staged(),
 		};
 
-		return map_prompt_result(coordinator.run(compare_request), username, config, conv_function);
+		return MapPromptResult(coordinator.Run(compare_request), username, config, conv_function);
 	}
 
 }  // namespace howdy::pam::auth_flow

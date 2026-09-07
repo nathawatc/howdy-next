@@ -68,18 +68,17 @@ namespace howdy::native::test_cli_internal {
 		RunPreviewFn        run_preview         = nullptr;
 	};
 
-	auto test_main_with_dependencies(int argc, char **argv, const TestDependencies &dependencies)
+	auto TestMainWithDependencies(int argc, char **argv, const TestDependencies &dependencies)
 	    -> int;
-	auto map_preview_frame_failure(const howdy::native::PreviewFrameResult &result)
+	auto MapPreviewFrameFailure(const howdy::native::PreviewFrameResult &result)
 	    -> TestPreviewResult;
-	auto run_preview_preflight(const howdy::native::RuntimeConfig &config, const std::string &user,
-	                           const TestPreviewPreflightDependencies &dependencies,
-	                           const std::string &device_path) -> TestPreviewResult;
-	void run_with_preview_cleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
-	                              PreviewCleanupBodyFn body);
+	auto RunPreviewPreflight(const howdy::native::RuntimeConfig &config, const std::string &user,
+	                         const TestPreviewPreflightDependencies &dependencies,
+	                         const std::string &device_path) -> TestPreviewResult;
+	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
+	                           PreviewCleanupBodyFn body);
 
-	auto has_graphical_display_environment(std::string_view display,
-	                                       std::string_view wayland_display,
-	                                       std::string_view runtime_dir) -> bool;
+	auto HasGraphicalDisplayEnvironment(std::string_view display, std::string_view wayland_display,
+	                                    std::string_view runtime_dir) -> bool;
 
 }  // namespace howdy::native::test_cli_internal

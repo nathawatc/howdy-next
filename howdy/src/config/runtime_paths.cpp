@@ -10,12 +10,12 @@ namespace howdy::native {
 
 	namespace {
 
-		auto allow_env_path_overrides() -> bool {
+		auto AllowEnvPathOverrides() -> bool {
 			return geteuid() == getuid() && getegid() == getgid();
 		}
 
-		auto path_from_env(const char *name) -> std::filesystem::path {
-			if (!allow_env_path_overrides()) {
+		auto PathFromEnv(const char *name) -> std::filesystem::path {
+			if (!AllowEnvPathOverrides()) {
 				return {};
 			}
 
@@ -30,28 +30,28 @@ namespace howdy::native {
 			return {};
 		}
 
-		auto select_runtime_path(const char *env_name, const std::filesystem::path &configured_path)
+		auto SelectRuntimePath(const char *env_name, const std::filesystem::path &configured_path)
 		    -> std::filesystem::path {
-			const auto env_path = path_from_env(env_name);
+			const auto env_path = PathFromEnv(env_name);
 			return env_path.empty() ? configured_path : env_path;
 		}
 
 	}  // namespace
 
-	auto resolve_config_path() -> std::filesystem::path {
-		return select_runtime_path("HOWDY_CONFIG", kConfiguredConfigPath);
+	auto ResolveConfigPath() -> std::filesystem::path {
+		return SelectRuntimePath("HOWDY_CONFIG", kConfiguredConfigPath);
 	}
 
-	auto resolve_models_dir() -> std::filesystem::path {
-		return select_runtime_path("HOWDY_MODELS_DIR", kConfiguredModelsDir);
+	auto ResolveModelsDir() -> std::filesystem::path {
+		return SelectRuntimePath("HOWDY_MODELS_DIR", kConfiguredModelsDir);
 	}
 
-	auto resolve_user_models_dir() -> std::filesystem::path {
-		return select_runtime_path("HOWDY_USER_MODELS_DIR", kConfiguredUserModelsDir);
+	auto ResolveUserModelsDir() -> std::filesystem::path {
+		return SelectRuntimePath("HOWDY_USER_MODELS_DIR", kConfiguredUserModelsDir);
 	}
 
-	auto resolve_log_path() -> std::filesystem::path {
-		return select_runtime_path("HOWDY_LOG_PATH", kConfiguredLogPath);
+	auto ResolveLogPath() -> std::filesystem::path {
+		return SelectRuntimePath("HOWDY_LOG_PATH", kConfiguredLogPath);
 	}
 
 }  // namespace howdy::native

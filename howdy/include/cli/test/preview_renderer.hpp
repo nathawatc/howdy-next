@@ -30,20 +30,20 @@ namespace howdy::native::test_cli_internal {
 		                    std::vector<howdy::native::EncodingModelInfo> models,
 		                    TestPreviewRendererDependencies               dependencies = {});
 
-		void initialize();
-		void shutdown();
+		void Initialize();
+		void Shutdown();
 
-		auto present(const howdy::native::PreviewFrameResult &frame_result,
+		auto Present(const howdy::native::PreviewFrameResult &frame_result,
 		             const TestPreviewFrameStats             &stats) -> bool;
 
-		[[nodiscard]] auto slow_mode() const -> bool;
+		[[nodiscard]] auto SlowMode() const -> bool;
 
 	private:
 		// OpenCV MouseCallback requires int, int, int, int, void *.
 		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-		static void mouse_callback(int event, int x, int y, int flags, void *userdata);
-		static void print_text(cv::Mat &overlay, int line_number, int height,
-		                       const std::string &text);
+		static void MouseCallback(int event, int x, int y, int flags, void *userdata);
+		static void PrintText(cv::Mat &overlay, int line_number, int height,
+		                      const std::string &text);
 
 		howdy::native::VideoConfig                    config_;
 		std::vector<howdy::native::EncodingModelInfo> models_;
@@ -58,16 +58,16 @@ namespace howdy::native::test_cli_internal {
 	public:
 		explicit TestPreviewRendererCleanup(std::optional<TestPreviewRenderer> &renderer);
 		~TestPreviewRendererCleanup() noexcept;
-		void cleanup();
+		void Cleanup();
 
 	private:
 		std::optional<TestPreviewRenderer> &renderer_;
 		bool                                cleanup_attempted_ = false;
 	};
 
-	void replace_test_preview_renderer(std::optional<TestPreviewRenderer>           &renderer,
-	                                   howdy::native::VideoConfig                    config,
-	                                   std::vector<howdy::native::EncodingModelInfo> models,
-	                                   TestPreviewRendererDependencies dependencies = {});
+	void ReplaceTestPreviewRenderer(std::optional<TestPreviewRenderer>           &renderer,
+	                                howdy::native::VideoConfig                    config,
+	                                std::vector<howdy::native::EncodingModelInfo> models,
+	                                TestPreviewRendererDependencies dependencies = {});
 
 }  // namespace howdy::native::test_cli_internal

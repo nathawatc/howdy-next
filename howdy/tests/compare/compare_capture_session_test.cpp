@@ -42,21 +42,21 @@ namespace {
 		int                                   calls = 0;
 	};
 
-	auto fake_open(void *context) -> bool {
+	auto FakeOpen(void *context) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.open_calls++;
 		capture.events.emplace_back("open");
 		return capture.open_result;
 	}
 
-	auto fake_warm_up(void *context) -> bool {
+	auto FakeWarmUp(void *context) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.warm_up_calls++;
 		capture.events.emplace_back("warm-up");
 		return capture.warm_up_result;
 	}
 
-	auto fake_read_gray_frame(void *context, cv::Mat &gray_frame) -> bool {
+	auto FakeReadGrayFrame(void *context, cv::Mat &gray_frame) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.read_calls++;
 		capture.events.emplace_back("read");
@@ -67,11 +67,11 @@ namespace {
 		return true;
 	}
 
-	auto fake_error_message(void *context) -> std::string {
+	auto FakeErrorMessage(void *context) -> std::string {
 		return static_cast<FakeCaptureContext *>(context)->error;
 	}
 
-	auto fake_set_property(void *context, howdy::native::CaptureProperty property) -> bool {
+	auto FakeSetProperty(void *context, howdy::native::CaptureProperty property) -> bool {
 		auto &capture = *static_cast<FakeCaptureContext *>(context);
 		capture.property_calls.push_back({
 		    .property = property.id,
@@ -87,34 +87,34 @@ namespace {
 		return capture.set_property_result;
 	}
 
-	auto fake_set_property_without_context([[maybe_unused]] void                          *context,
-	                                       [[maybe_unused]] howdy::native::CaptureProperty property)
+	auto FakeSetPropertyWithoutContext([[maybe_unused]] void                          *context,
+	                                   [[maybe_unused]] howdy::native::CaptureProperty property)
 	    -> bool {
 		set_property_calls_without_context++;
 		return true;
 	}
 
-	auto fake_now(void *context) -> std::chrono::steady_clock::time_point {
+	auto FakeNow(void *context) -> std::chrono::steady_clock::time_point {
 		auto &clock = *static_cast<FakeClockContext *>(context);
 		clock.calls++;
 		return clock.now;
 	}
 
-	auto make_dependencies(FakeCaptureContext &capture, FakeClockContext &clock)
+	auto MakeDependencies(FakeCaptureContext &capture, FakeClockContext &clock)
 	    -> howdy::native::CompareCaptureDependencies {
 		return {
 		    .capture_context = &capture,
-		    .open_capture    = fake_open,
-		    .warm_up_capture = fake_warm_up,
-		    .read_gray_frame = fake_read_gray_frame,
-		    .error_message   = fake_error_message,
-		    .set_property    = fake_set_property,
+		    .open_capture    = FakeOpen,
+		    .warm_up_capture = FakeWarmUp,
+		    .read_gray_frame = FakeReadGrayFrame,
+		    .error_message   = FakeErrorMessage,
+		    .set_property    = FakeSetProperty,
 		    .clock_context   = &clock,
-		    .now             = fake_now,
+		    .now             = FakeNow,
 		};
 	}
 
-	auto make_video_config() -> howdy::native::VideoConfig {
+	auto MakeVideoConfig() -> howdy::native::VideoConfig {
 		return {
 		    .timeout              = 2,
 		    .device_path          = "dummy",
@@ -133,7 +133,7 @@ namespace {
 		};
 	}
 
-	auto matrix_equal(const cv::Mat &actual, const cv::Mat &expected) -> bool {
+	auto MatrixEqual(const cv::Mat &actual, const cv::Mat &expected) -> bool {
 		return actual.size() == expected.size() && actual.type() == expected.type() &&
 		       cv::countNonZero(actual != expected) == 0;
 	}
@@ -150,11 +150,11 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               dependencies = make_dependencies(capture, clock);
+		auto               dependencies = MakeDependencies(capture, clock);
 		dependencies.read_gray_frame    = nullptr;
-		howdy::native::CompareCaptureSession session(make_video_config(), dependencies);
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(), dependencies);
 
-		const auto result = session.open();
+		const auto result = session.Open();
 		ok &= expect(result.status == CompareCaptureOpenStatus::kInvalidDependencies,
 		             "invalid dependencies reject open");
 		ok &= expect(capture.open_calls == 0, "invalid dependencies do not call open");
@@ -166,10 +166,10 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.open_result = false;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		const auto result = session.open();
+		const auto result = session.Open();
 		ok &= expect(result.status == CompareCaptureOpenStatus::kOpenFailed,
 		             "open failure has open-failed status");
 		ok &= expect(result.error_message == "synthetic capture failure",
@@ -182,10 +182,10 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.warm_up_result = false;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		const auto result = session.open();
+		const auto result = session.Open();
 		ok &= expect(capture.open_calls == 1, "warm-up failure opens capture first");
 		ok &= expect(capture.events == std::vector<std::string>{"open", "warm-up"},
 		             "warm-up failure occurs after capture open");
@@ -194,7 +194,7 @@ auto main() -> int {
 		ok &= expect(result.error_message == "synthetic capture failure",
 		             "warm-up failure preserves error message");
 		ok &= expect(clock.calls == 0, "warm-up failure does not start timeout clock");
-		const auto next = session.next_frame();
+		const auto next = session.NextFrame();
 		ok &= expect(next.status == CompareCaptureFrameStatus::kNotOpen,
 		             "warm-up failure leaves session closed");
 		ok &= expect(capture.read_calls == 0, "warm-up failure prevents frame reads");
@@ -203,15 +203,15 @@ auto main() -> int {
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "reopen-failure session opens initially");
 		capture.open_result = false;
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOpenFailed,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOpenFailed,
 		             "failed reopen has open-failed status");
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kNotOpen,
 		             "failed reopen leaves session closed");
 		ok &= expect(capture.read_calls == 0, "failed reopen prevents additional read");
@@ -221,13 +221,13 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.next_gray_frame   = cv::Mat_<unsigned char>({2, 3}, {2, 7, 1, 8, 2, 8});
-		auto dependencies         = make_dependencies(capture, clock);
+		auto dependencies         = MakeDependencies(capture, clock);
 		dependencies.set_property = nullptr;
-		howdy::native::CompareCaptureSession session(make_video_config(), dependencies);
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(), dependencies);
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "disabled exposure does not require property setter");
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kFrameReady,
 		             "disabled exposure reads without property setter");
 		ok &= expect(capture.open_calls == 1, "missing optional setter still opens capture");
@@ -237,15 +237,15 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config       = make_video_config();
-		auto               dependencies = make_dependencies(capture, clock);
+		auto               config       = MakeVideoConfig();
+		auto               dependencies = MakeDependencies(capture, clock);
 		config.exposure                 = 37;
 		dependencies.set_property       = nullptr;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kInvalidDependencies,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kInvalidDependencies,
 		             "configured exposure requires property setter");
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(capture.open_calls == 0, "missing required setter prevents capture open");
 		ok &= expect(clock.calls == 0, "missing required setter does not start clock");
 		ok &= expect(capture.property_calls.empty(),
@@ -255,24 +255,24 @@ auto main() -> int {
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kNotOpen,
 		             "read before open has not-open status");
 		ok &= expect(capture.read_calls == 0, "read before open does not call read");
-		ok &= expect(session.stats().frames == 0, "read before open does not count frame");
+		ok &= expect(session.Stats().frames == 0, "read before open does not count frame");
 	}
 
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		session.reset_timeout_clock();
-		const auto &stats = session.stats();
+		session.ResetTimeoutClock();
+		const auto &stats = session.Stats();
 		ok &= expect(clock.calls == 0, "timeout reset before open does not call clock");
 		ok &= expect(stats.frames == 0 && stats.black_frames == 0 && stats.dark_frames == 0 &&
 		                 stats.valid_frames == 0 && stats.dark_running_total == 0.0,
@@ -283,13 +283,13 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {1, 2, 3, 4, 5, 6});
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "timeout-boundary session opens");
 		clock.now         = std::chrono::steady_clock::time_point{} + 2s;
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kTimeout,
 		             "exact timeout boundary times out");
 		ok &= expect(capture.read_calls == 0, "exact timeout boundary does not call read");
@@ -300,26 +300,26 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {8, 6, 7, 5, 3, 0});
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "timeout-reset session opens");
 		clock.now = std::chrono::steady_clock::time_point{} + 2s;
-		session.reset_timeout_clock();
-		ok &= expect(session.stats().frames == 0 && session.stats().black_frames == 0 &&
-		                 session.stats().dark_frames == 0 && session.stats().valid_frames == 0 &&
-		                 session.stats().dark_running_total == 0.0,
+		session.ResetTimeoutClock();
+		ok &= expect(session.Stats().frames == 0 && session.Stats().black_frames == 0 &&
+		                 session.Stats().dark_frames == 0 && session.Stats().valid_frames == 0 &&
+		                 session.Stats().dark_running_total == 0.0,
 		             "timeout reset does not change statistics");
 
 		clock.now        = std::chrono::steady_clock::time_point{} + 4s;
-		const auto ready = session.next_frame();
+		const auto ready = session.NextFrame();
 		ok &= expect(ready.status == CompareCaptureFrameStatus::kTimeout,
 		             "reset timeout boundary times out");
 		ok &= expect(ready.frame_number == 1, "timeout after reset is frame one");
 
 		clock.now          = std::chrono::steady_clock::time_point{} + 5s;
-		const auto timeout = session.next_frame();
+		const auto timeout = session.NextFrame();
 		ok &= expect(timeout.status == CompareCaptureFrameStatus::kTimeout,
 		             "elapsed time after reset boundary times out");
 		ok &= expect(timeout.frame_number == 2, "second timeout after reset is frame two");
@@ -331,17 +331,17 @@ auto main() -> int {
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
 		ok &=
-		    expect(session.open().status == CompareCaptureOpenStatus::kOk, "timeout session opens");
+		    expect(session.Open().status == CompareCaptureOpenStatus::kOk, "timeout session opens");
 		clock.now         = std::chrono::steady_clock::time_point{} + 3s;
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kTimeout,
 		             "elapsed time above timeout times out");
 		ok &= expect(result.frame_number == 1, "timeout returns incremented frame number");
-		ok &= expect(session.stats().frames == 1, "timeout increments frame statistics");
+		ok &= expect(session.Stats().frames == 1, "timeout increments frame statistics");
 		ok &= expect(capture.read_calls == 0, "timeout does not call read");
 	}
 
@@ -349,54 +349,54 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.read_result = false;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "read-failure session opens");
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kReadFailed,
 		             "failed read has read-failed status");
 		ok &= expect(result.error_message == "synthetic capture failure",
 		             "read failure preserves error message");
 		ok &= expect(result.frame_number == 1, "read failure returns frame one");
 		ok &= expect(capture.read_calls == 1, "read failure calls read once");
-		ok &= expect(session.stats().frames == 1, "read failure increments frame statistics");
+		ok &= expect(session.Stats().frames == 1, "read failure increments frame statistics");
 	}
 
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.next_gray_frame = cv::Mat_<unsigned char>({2, 3}, {3, 1, 4, 1, 5, 9});
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "successful-read session opens");
-		const auto result = session.next_frame();
+		const auto result = session.NextFrame();
 		ok &= expect(result.status == CompareCaptureFrameStatus::kFrameReady,
 		             "successful read returns frame-ready status");
-		ok &= expect(matrix_equal(result.gray_frame, capture.next_gray_frame),
+		ok &= expect(MatrixEqual(result.gray_frame, capture.next_gray_frame),
 		             "successful read returns grayscale copy");
 		ok &= expect(result.frame_number == 1, "successful read returns frame one");
 		ok &= expect(result.gray_frame.data != capture.next_gray_frame.data,
 		             "returned grayscale frame does not alias source");
-		ok &= expect(session.stats().frames == 1, "successful read increments frame statistics");
+		ok &= expect(session.Stats().frames == 1, "successful read increments frame statistics");
 	}
 
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "statistics session opens");
-		session.record_black_frame();
-		session.record_dark_frame(12.5F);
-		session.record_ready_frame(3.25F);
+		session.RecordBlackFrame();
+		session.RecordDarkFrame(12.5F);
+		session.RecordReadyFrame(3.25F);
 
-		const auto &stats = session.stats();
+		const auto &stats = session.Stats();
 		ok &= expect(stats.frames == 0, "classification statistics do not count capture frames");
 		ok &= expect(stats.black_frames == 1, "black-frame statistic increments");
 		ok &= expect(stats.dark_frames == 1, "dark-frame statistic increments");
@@ -408,11 +408,11 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config = make_video_config();
+		auto               config = MakeVideoConfig();
 		config.exposure           = 37;
-		howdy::native::CompareCaptureSession session(config, make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(config, MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "configured-exposure session opens");
 		ok &= expect(capture.events ==
 		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
@@ -421,7 +421,7 @@ auto main() -> int {
 		ok &= expect(capture.property_calls.size() == 2,
 		             "configured exposure makes two initial property calls");
 
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(capture.property_calls.size() == 4,
 		             "configured exposure restoration makes two more property calls");
 		ok &= expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
@@ -447,19 +447,19 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config      = make_video_config();
+		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = make_dependencies(capture, clock);
+		auto dependencies              = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 1;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		const auto result = session.open();
+		const auto result = session.Open();
 		ok &= expect(result.status == CompareCaptureOpenStatus::kOk,
 		             "initial property exception does not abort open");
 		ok &= expect(capture.events ==
 		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
 		             "initial property exception does not skip warm-up");
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(capture.property_calls.size() == 4,
 		             "initial property exception preserves later restoration");
 	}
@@ -467,17 +467,17 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config      = make_video_config();
+		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = make_dependencies(capture, clock);
+		auto dependencies              = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 3;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "first property exception session opens");
 		bool restore_threw = false;
 		try {
-			session.restore_exposure();
+			session.RestoreExposure();
 		} catch (const cv::Exception &) {
 			restore_threw = true;
 		}
@@ -489,17 +489,17 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config      = make_video_config();
+		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = make_dependencies(capture, clock);
+		auto dependencies              = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 4;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "second property exception session opens");
 		bool restore_threw = false;
 		try {
-			session.restore_exposure();
+			session.RestoreExposure();
 		} catch (const cv::Exception &) {
 			restore_threw = true;
 		}
@@ -511,15 +511,15 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config   = make_video_config();
+		auto               config   = MakeVideoConfig();
 		config.exposure             = 37;
-		auto dependencies           = make_dependencies(capture, clock);
+		auto dependencies           = MakeDependencies(capture, clock);
 		capture.set_property_result = false;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "false property result session opens");
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(capture.property_calls.size() == 4,
 		             "false property results preserve best-effort application and restoration");
 	}
@@ -527,15 +527,15 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config          = make_video_config();
-		auto               dependencies    = make_dependencies(capture, clock);
+		auto               config          = MakeVideoConfig();
+		auto               dependencies    = MakeDependencies(capture, clock);
 		config.exposure                    = 37;
 		dependencies.capture_context       = nullptr;
-		dependencies.set_property          = fake_set_property_without_context;
+		dependencies.set_property          = FakeSetPropertyWithoutContext;
 		set_property_calls_without_context = 0;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(set_property_calls_without_context == 0,
 		             "invalid capture context does not invoke property setter");
 	}
@@ -543,14 +543,14 @@ auto main() -> int {
 	{
 		FakeCaptureContext                   capture;
 		FakeClockContext                     clock;
-		howdy::native::CompareCaptureSession session(make_video_config(),
-		                                             make_dependencies(capture, clock));
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
 
-		ok &= expect(session.open().status == CompareCaptureOpenStatus::kOk,
+		ok &= expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "disabled exposure session opens");
 		ok &= expect(capture.events == std::vector<std::string>{"open", "warm-up"},
 		             "disabled exposure leaves camera properties untouched");
-		session.restore_exposure();
+		session.RestoreExposure();
 		ok &= expect(capture.property_calls.empty(), "disabled exposure makes no property calls");
 	}
 

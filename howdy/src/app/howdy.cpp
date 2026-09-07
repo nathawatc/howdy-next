@@ -37,7 +37,7 @@ namespace {
 	using howdy::native::howdy_internal::CommandMain;
 	using howdy::native::howdy_internal::HowdyDependencies;
 
-	auto resolve_user(void *context) -> std::string {
+	auto ResolveUser(void *context) -> std::string {
 		(void)context;
 		for (const char *name : {"SUDO_USER", howdy::native::kDoasUserEnvironmentVariable}) {
 			if (const char *value = std::getenv(name); value != nullptr && value[0] != '\0') {
@@ -45,7 +45,7 @@ namespace {
 			}
 		}
 
-		if (const auto pkexec_uid = howdy::native::parse_uid_env(
+		if (const auto pkexec_uid = howdy::native::ParseUidEnv(
 		        std::getenv(howdy::native::kPkexecUidEnvironmentVariable))) {
 			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
 				return {pwd->pw_name};
@@ -58,37 +58,36 @@ namespace {
 		return {};
 	}
 
-	auto effective_uid(void *context) -> uid_t {
+	auto EffectiveUid(void *context) -> uid_t {
 		(void)context;
 		return geteuid();
 	}
 
-	auto production_command_mains()
+	auto ProductionCommandMains()
 	    -> std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)> {
 		std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)>
 		    command_mains{};
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kAdd)]     = add_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kClear)]   = clear_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kConfig)]  = config_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDisable)] = disable_main;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kAdd)]     = AddMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kClear)]   = ClearMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kConfig)]  = ConfigMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDisable)] = DisableMain;
 		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDownloadModels)] =
-		    download_models_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kList)]   = list_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kRemove)] = remove_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSet)]    = set_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)] =
-		    snapshot_main;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kTest)] = test_main;
+		    DownloadModelsMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kList)]     = ListMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kRemove)]   = RemoveMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSet)]      = SetMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)] = SnapshotMain;
+		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kTest)]     = TestMain;
 		return command_mains;
 	}
 
-	auto handle_special_command(const ParsedCommandLine &parsed) -> std::optional<int> {
+	auto HandleSpecialCommand(const ParsedCommandLine &parsed) -> std::optional<int> {
 		if (!parsed.command.has_value()) {
-			howdy::native::howdy_cli_internal::print_help();
+			howdy::native::howdy_cli_internal::PrintHelp();
 			return 0;
 		}
 		if (parsed.help_requested && !parsed.help_after_command) {
-			howdy::native::howdy_cli_internal::print_help();
+			howdy::native::howdy_cli_internal::PrintHelp();
 			return 0;
 		}
 		if (*parsed.command != "__complete") {
@@ -99,11 +98,11 @@ namespace {
 		for (const auto &argument : parsed.arguments) {
 			completion_arguments.push_back(argument.value);
 		}
-		return howdy::native::howdy_completion_internal::handle_completion_query(
+		return howdy::native::howdy_completion_internal::HandleCompletionQuery(
 		    completion_arguments, parsed.global_option_seen);
 	}
 
-	auto resolve_model_user(ParsedCommandLine &parsed, const HowdyDependencies &dependencies)
+	auto ResolveModelUser(ParsedCommandLine &parsed, const HowdyDependencies &dependencies)
 	    -> bool {
 		if (!parsed.user.has_value()) {
 			if (dependencies.resolve_user == nullptr) {
@@ -115,15 +114,15 @@ namespace {
 			std::cout << "Unable to determine the user; please use --user\n";
 			return false;
 		}
-		if (!howdy::native::is_valid_model_user_name(*parsed.user)) {
+		if (!howdy::native::IsValidModelUserName(*parsed.user)) {
 			std::cout << howdy::native::kInvalidUserNameMessage << "\n";
 			return false;
 		}
 		return true;
 	}
 
-	auto build_command_argv_strings(const howdy::native::CommandDescriptor &command,
-	                                const ParsedCommandLine &parsed, std::string_view user)
+	auto BuildCommandArgvStrings(const howdy::native::CommandDescriptor &command,
+	                             const ParsedCommandLine &parsed, std::string_view user)
 	    -> std::vector<std::string> {
 		std::vector<std::string> argv_strings;
 		argv_strings.push_back("howdy-" + std::string(command.name));
@@ -157,38 +156,39 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::howdy_internal::howdy_main_with_dependencies(
-    int argc, char **argv, const HowdyDependencies &dependencies) -> int {
+auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **argv,
+                                                              const HowdyDependencies &dependencies)
+    -> int {
 	if (const auto error =
-	        howdy::native::validate_command_catalog(howdy::native::command_catalog(), true)) {
+	        howdy::native::ValidateCommandCatalog(howdy::native::CommandCatalog(), true)) {
 		std::cerr << "howdy: command catalog validation failed: " << *error << '\n';
 		return 1;
 	}
-	if (const auto error = howdy::native::validate_global_option_catalog(
-	        howdy::native::global_option_catalog(), true)) {
+	if (const auto error = howdy::native::ValidateGlobalOptionCatalog(
+	        howdy::native::GlobalOptionCatalog(), true)) {
 		std::cerr << "howdy: global option catalog validation failed: " << *error << '\n';
 		return 1;
 	}
 
 	ParsedCommandLine parsed;
 	if (const auto parse_error =
-	        howdy::native::howdy_cli_internal::parse_command_line(argc, argv, parsed);
+	        howdy::native::howdy_cli_internal::ParseCommandLine(argc, argv, parsed);
 	    parse_error.has_value()) {
 		const auto *command =
-		    parsed.command.has_value() ? howdy::native::find_command(*parsed.command) : nullptr;
-		return howdy::native::howdy_cli_internal::print_cli_syntax_error(*parse_error, command);
+		    parsed.command.has_value() ? howdy::native::FindCommand(*parsed.command) : nullptr;
+		return howdy::native::howdy_cli_internal::PrintCliSyntaxError(*parse_error, command);
 	}
 
-	if (const auto special_result = handle_special_command(parsed); special_result.has_value()) {
+	if (const auto special_result = HandleSpecialCommand(parsed); special_result.has_value()) {
 		return *special_result;
 	}
 	if (!parsed.command.has_value()) {
 		return 1;
 	}
 	const auto &command_name       = parsed.command.value();
-	const auto *command_descriptor = howdy::native::find_command(command_name);
+	const auto *command_descriptor = howdy::native::FindCommand(command_name);
 	if (command_descriptor == nullptr) {
-		return howdy::native::howdy_cli_internal::print_cli_syntax_error(
+		return howdy::native::howdy_cli_internal::PrintCliSyntaxError(
 		    CliSyntaxError{
 		        .kind  = CliSyntaxErrorKind::kUnrecognizedSubcommand,
 		        .value = command_name,
@@ -196,25 +196,24 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		    nullptr);
 	}
 	if (parsed.help_requested && parsed.help_after_command) {
-		howdy::native::howdy_cli_internal::print_command_help(*command_descriptor);
+		howdy::native::howdy_cli_internal::PrintCommandHelp(*command_descriptor);
 		return 0;
 	}
 	if (const auto error =
-	        howdy::native::howdy_cli_internal::command_syntax_error(parsed, *command_descriptor);
+	        howdy::native::howdy_cli_internal::CommandSyntaxError(parsed, *command_descriptor);
 	    error.has_value()) {
-		return howdy::native::howdy_cli_internal::print_cli_syntax_error(*error,
-		                                                                 command_descriptor);
+		return howdy::native::howdy_cli_internal::PrintCliSyntaxError(*error, command_descriptor);
 	}
 	if (command_descriptor->kind == howdy::native::CommandKind::kVersion) {
-		std::cout << howdy::native::format_version(howdy::native::kProjectVersion,
-		                                           howdy::native::kBuildCommit)
+		std::cout << howdy::native::FormatVersion(howdy::native::kProjectVersion,
+		                                          howdy::native::kBuildCommit)
 		          << "\n";
 		return 0;
 	}
 
 	const bool needs_user_argument =
 	    command_descriptor->user_target == howdy::native::UserTargetMode::kModelUser;
-	if (needs_user_argument && !resolve_model_user(parsed, dependencies)) {
+	if (needs_user_argument && !ResolveModelUser(parsed, dependencies)) {
 		return 1;
 	}
 	if (dependencies.effective_uid == nullptr ||
@@ -240,8 +239,8 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 		return 1;
 	}
 
-	auto argv_strings = build_command_argv_strings(*command_descriptor, parsed,
-	                                               parsed.user.value_or(std::string{}));
+	auto argv_strings =
+	    BuildCommandArgvStrings(*command_descriptor, parsed, parsed.user.value_or(std::string{}));
 
 	std::vector<char *> command_argv;
 	command_argv.reserve(argv_strings.size() + 1);
@@ -253,12 +252,12 @@ auto howdy::native::howdy_internal::howdy_main_with_dependencies(
 	return selected_main(static_cast<int>(argv_strings.size()), command_argv.data());
 }
 
-auto howdy_main(int argc, char **argv) -> int {
-	return howdy::native::howdy_internal::howdy_main_with_dependencies(
+auto HowdyMain(int argc, char **argv) -> int {
+	return howdy::native::howdy_internal::HowdyMainWithDependencies(
 	    argc, argv,
 	    {
-	        .resolve_user  = resolve_user,
-	        .effective_uid = effective_uid,
-	        .command_mains = production_command_mains(),
+	        .resolve_user  = ResolveUser,
+	        .effective_uid = EffectiveUid,
+	        .command_mains = ProductionCommandMains(),
 	    });
 }

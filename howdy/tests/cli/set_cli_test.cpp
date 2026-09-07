@@ -31,15 +31,15 @@ namespace {
 		std::string output;
 	};
 
-	auto resolve_config_path(void *context) -> std::filesystem::path {
+	auto ResolveConfigPath(void *context) -> std::filesystem::path {
 		auto &test_context = *static_cast<TestContext *>(context);
 		++test_context.resolve_calls;
 		return test_context.config_path;
 	}
 
-	auto update_config_value(void *context, const std::filesystem::path &config_path,
-	                         const std::string &key, const std::string &value,
-	                         std::string *error_message, bool lock) -> bool {
+	auto UpdateConfigValue(void *context, const std::filesystem::path &config_path,
+	                       const std::string &key, const std::string &value,
+	                       std::string *error_message, bool lock) -> bool {
 		auto &test_context = *static_cast<TestContext *>(context);
 		++test_context.update_calls;
 		test_context.received_path  = config_path;
@@ -50,15 +50,15 @@ namespace {
 		return test_context.update_result;
 	}
 
-	auto dependencies_for(TestContext &context) -> SetDependencies {
+	auto DependenciesFor(TestContext &context) -> SetDependencies {
 		return {
 		    .context             = &context,
-		    .resolve_config_path = resolve_config_path,
-		    .update_config_value = update_config_value,
+		    .resolve_config_path = ResolveConfigPath,
+		    .update_config_value = UpdateConfigValue,
 		};
 	}
 
-	auto run_set(std::vector<std::string> arguments, const SetDependencies &dependencies)
+	auto RunSet(std::vector<std::string> arguments, const SetDependencies &dependencies)
 	    -> RunResult {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size() + 1);
@@ -69,7 +69,7 @@ namespace {
 
 		std::ostringstream output;
 		auto              *previous_buffer = std::cout.rdbuf(output.rdbuf());
-		const int          exit_code = howdy::native::set_internal::set_main_with_dependencies(
+		const int          exit_code       = howdy::native::set_internal::SetMainWithDependencies(
 		    static_cast<int>(arguments.size()), argv.data(), dependencies);
 		std::cout.rdbuf(previous_buffer);
 		return {.exit_code = exit_code, .output = output.str()};
@@ -88,7 +88,7 @@ auto main() -> int {
 	for (const auto &arguments :
 	     {std::vector<std::string>{"howdy-set"}, std::vector<std::string>{"howdy-set", "key"}}) {
 		TestContext context;
-		const auto  result = run_set(arguments, dependencies_for(context));
+		const auto  result = RunSet(arguments, DependenciesFor(context));
 		ok &= expect(result.exit_code == 1, "missing arguments abort");
 		ok &= expect(result.output == usage, "missing arguments print usage");
 		ok &= expect(context.resolve_calls == 0, "missing arguments skip resolver");
@@ -97,7 +97,7 @@ auto main() -> int {
 
 	for (const auto &value : {std::string("line\nbreak"), std::string("[section]")}) {
 		TestContext context;
-		const auto  result = run_set({"howdy-set", "key", value}, dependencies_for(context));
+		const auto  result = RunSet({"howdy-set", "key", value}, DependenciesFor(context));
 		ok &= expect(result.exit_code == 1, "unsafe scalar aborts");
 		ok &= expect(result.output == unsafe_value_error, "unsafe scalar prints error");
 		ok &= expect(context.resolve_calls == 1, "unsafe scalar resolves path first");
@@ -106,8 +106,7 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result =
-		    run_set({"howdy-set", "key", "--", "-value"}, dependencies_for(context));
+		const auto  result = RunSet({"howdy-set", "key", "--", "-value"}, DependenciesFor(context));
 		ok &= expect(result.exit_code == 0, "end-of-options value update succeeds");
 		ok &= expect(context.received_key == "key" && context.received_value == "-value",
 		             "end-of-options preserves option-looking config value");
@@ -116,7 +115,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		const auto  result =
-		    run_set({"howdy-set", "sface_threshold", "0.363"}, dependencies_for(context));
+		    RunSet({"howdy-set", "sface_threshold", "0.363"}, DependenciesFor(context));
 		ok &= expect(result.exit_code == 0, "successful update succeeds");
 		ok &= expect(result.output == "Config option updated\n", "success output exact");
 		ok &= expect(context.resolve_calls == 1, "success calls resolver once");
@@ -134,7 +133,7 @@ auto main() -> int {
 		    .update_result = false,
 		    .update_error  = error,
 		};
-		const auto result = run_set({"howdy-set", "key", "value"}, dependencies_for(context));
+		const auto result = RunSet({"howdy-set", "key", "value"}, DependenciesFor(context));
 		ok &= expect(result.exit_code == 1, "updater failure aborts");
 		ok &= expect(result.output == expected_output, "updater failure output exact");
 		ok &= expect(!result.output.contains("Config option updated"),
@@ -143,8 +142,8 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result = run_set({"howdy-set", "sface_threshold", "0.363", "ignored"},
-		                             dependencies_for(context));
+		const auto  result =
+		    RunSet({"howdy-set", "sface_threshold", "0.363", "ignored"}, DependenciesFor(context));
 		ok &= expect(result.exit_code == 1, "extra argument is rejected");
 		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
 		             "extra argument skips config mutation callbacks");
@@ -152,9 +151,9 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		auto        dependencies         = dependencies_for(context);
+		auto        dependencies         = DependenciesFor(context);
 		dependencies.resolve_config_path = nullptr;
-		const auto result                = run_set({"howdy-set", "key", "value"}, dependencies);
+		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
 		ok &= expect(result.exit_code == 1, "null resolver aborts");
 		ok &= expect(result.output.empty(), "null resolver prints nothing");
 		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
@@ -163,9 +162,9 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		auto        dependencies         = dependencies_for(context);
+		auto        dependencies         = DependenciesFor(context);
 		dependencies.update_config_value = nullptr;
-		const auto result                = run_set({"howdy-set", "key", "value"}, dependencies);
+		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
 		ok &= expect(result.exit_code == 1, "null updater aborts");
 		ok &= expect(result.output.empty(), "null updater prints nothing");
 		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,

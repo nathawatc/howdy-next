@@ -48,7 +48,7 @@ namespace howdy::native {
 		return spellings;
 	}();
 
-	[[nodiscard]] constexpr auto face_metric_threshold_maximum() noexcept -> float {
+	[[nodiscard]] constexpr auto FaceMetricThresholdMaximum() noexcept -> float {
 		float maximum = 0.0F;
 		for (const auto &policy : kFaceMetricPolicies) {
 			maximum = std::max(maximum, policy.threshold_maximum);
@@ -56,7 +56,8 @@ namespace howdy::native {
 		return maximum;
 	}
 
-	[[nodiscard]] constexpr auto face_metric_policy(FaceMetric metric) -> const FaceMetricPolicy * {
+	[[nodiscard]] constexpr auto GetFaceMetricPolicy(FaceMetric metric)
+	    -> const FaceMetricPolicy * {
 		for (const auto &policy : kFaceMetricPolicies) {
 			if (policy.metric == metric) {
 				return &policy;
@@ -65,12 +66,12 @@ namespace howdy::native {
 		return nullptr;
 	}
 
-	[[nodiscard]] constexpr auto face_metric_spelling(FaceMetric metric) -> std::string_view {
-		const auto *policy = face_metric_policy(metric);
+	[[nodiscard]] constexpr auto FaceMetricSpelling(FaceMetric metric) -> std::string_view {
+		const auto *policy = GetFaceMetricPolicy(metric);
 		return policy == nullptr ? std::string_view{} : policy->spelling;
 	}
 
-	[[nodiscard]] inline auto face_metric_equal(std::string_view value, std::string_view spelling)
+	[[nodiscard]] inline auto FaceMetricEqual(std::string_view value, std::string_view spelling)
 	    -> bool {
 		if (value.size() != spelling.size()) {
 			return false;
@@ -85,10 +86,9 @@ namespace howdy::native {
 		return true;
 	}
 
-	[[nodiscard]] inline auto parse_face_metric(std::string_view value)
-	    -> std::optional<FaceMetric> {
+	[[nodiscard]] inline auto ParseFaceMetric(std::string_view value) -> std::optional<FaceMetric> {
 		for (const auto &policy : kFaceMetricPolicies) {
-			if (face_metric_equal(value, policy.spelling)) {
+			if (FaceMetricEqual(value, policy.spelling)) {
 				return policy.metric;
 			}
 		}

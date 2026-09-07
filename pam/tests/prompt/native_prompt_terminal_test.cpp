@@ -9,22 +9,22 @@
 
 using howdy::test::expect;
 
-auto expect_native_terminal_eligibility() -> bool;
-auto expect_native_terminal_aliases() -> bool;
-auto expect_invalid_pam_tty_is_unavailable() -> bool;
+auto ExpectNativeTerminalEligibility() -> bool;
+auto ExpectNativeTerminalAliases() -> bool;
+auto ExpectInvalidPamTtyIsUnavailable() -> bool;
 
-auto expect_native_terminal_eligibility() -> bool {
+auto ExpectNativeTerminalEligibility() -> bool {
 	ScopedFd                first_master;
 	ScopedFd                first_slave;
 	ScopedFd                second_master;
 	ScopedFd                second_slave;
 	std::array<ScopedFd, 2> pipes;
 	bool                    ok = true;
-	ok &= expect(open_pty_pair(&first_master, &first_slave),
+	ok &= expect(OpenPtyPair(&first_master, &first_slave),
 	             "native eligibility opens interactive terminal");
-	ok &= expect(open_pty_pair(&second_master, &second_slave),
+	ok &= expect(OpenPtyPair(&second_master, &second_slave),
 	             "native eligibility opens mismatched terminal");
-	ok &= expect(open_pipe(&pipes), "native eligibility opens graphical stdio substitute");
+	ok &= expect(OpenPipe(&pipes), "native eligibility opens graphical stdio substitute");
 	if (!ok) {
 		return false;
 	}
@@ -42,38 +42,36 @@ auto expect_native_terminal_eligibility() -> bool {
 		if (terminal_fd < 0) {
 			_exit(EXIT_FAILURE);
 		}
-		const bool normal = native_prompt_terminal_is_interactive({.tty    = terminal_fd,
-		                                                           .input  = terminal_fd,
-		                                                           .output = terminal_fd,
-		                                                           .error  = terminal_fd});
-		const bool redirected_stdout =
-		    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
-		                                           .input  = terminal_fd,
-		                                           .output = pipes[1].get(),
-		                                           .error  = terminal_fd});
-		const bool stdout_only = native_prompt_terminal_is_interactive({.tty    = terminal_fd,
-		                                                                .input  = pipes[0].get(),
-		                                                                .output = terminal_fd,
-		                                                                .error  = pipes[1].get()});
-		const bool stderr_only = native_prompt_terminal_is_interactive({.tty    = terminal_fd,
-		                                                                .input  = pipes[0].get(),
-		                                                                .output = pipes[1].get(),
-		                                                                .error  = terminal_fd});
-		const bool unrelated_stdio =
-		    native_prompt_terminal_is_interactive({.tty    = terminal_fd,
-		                                           .input  = pipes[0].get(),
-		                                           .output = pipes[1].get(),
-		                                           .error  = pipes[1].get()});
-		const bool regular_pam_tty = native_prompt_terminal_is_interactive({.tty   = pipes[0].get(),
-		                                                                    .input = terminal_fd,
-		                                                                    .output = terminal_fd,
-		                                                                    .error  = terminal_fd});
-		const unsigned failures    = static_cast<unsigned>(!normal) |
-		                             (static_cast<unsigned>(!redirected_stdout) << 1U) |
-		                             (static_cast<unsigned>(!stdout_only) << 2U) |
-		                             (static_cast<unsigned>(!stderr_only) << 3U) |
-		                             (static_cast<unsigned>(unrelated_stdio) << 4U) |
-		                             (static_cast<unsigned>(regular_pam_tty) << 5U);
+		const bool normal            = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
+		                                                                  .input  = terminal_fd,
+		                                                                  .output = terminal_fd,
+		                                                                  .error  = terminal_fd});
+		const bool redirected_stdout = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
+		                                                                  .input  = terminal_fd,
+		                                                                  .output = pipes[1].get(),
+		                                                                  .error  = terminal_fd});
+		const bool stdout_only       = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
+		                                                                  .input  = pipes[0].get(),
+		                                                                  .output = terminal_fd,
+		                                                                  .error  = pipes[1].get()});
+		const bool stderr_only       = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
+		                                                                  .input  = pipes[0].get(),
+		                                                                  .output = pipes[1].get(),
+		                                                                  .error  = terminal_fd});
+		const bool unrelated_stdio   = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
+		                                                                  .input  = pipes[0].get(),
+		                                                                  .output = pipes[1].get(),
+		                                                                  .error  = pipes[1].get()});
+		const bool regular_pam_tty   = NativePromptTerminalIsInteractive({.tty    = pipes[0].get(),
+		                                                                  .input  = terminal_fd,
+		                                                                  .output = terminal_fd,
+		                                                                  .error  = terminal_fd});
+		const unsigned failures      = static_cast<unsigned>(!normal) |
+		                               (static_cast<unsigned>(!redirected_stdout) << 1U) |
+		                               (static_cast<unsigned>(!stdout_only) << 2U) |
+		                               (static_cast<unsigned>(!stderr_only) << 3U) |
+		                               (static_cast<unsigned>(unrelated_stdio) << 4U) |
+		                               (static_cast<unsigned>(regular_pam_tty) << 5U);
 		_exit(static_cast<int>(failures));
 	}
 	if (!expect(terminal_child > 0, "native eligibility spawns terminal child")) {
@@ -104,33 +102,32 @@ auto expect_native_terminal_eligibility() -> bool {
 			             "regular-file PAM_TTY rejects native mode for fallback");
 		}
 	}
-	ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
-	                                                     .input  = first_slave.get(),
-	                                                     .output = first_slave.get(),
-	                                                     .error  = first_slave.get()}),
+	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
+	                                                 .input  = first_slave.get(),
+	                                                 .output = first_slave.get(),
+	                                                 .error  = first_slave.get()}),
 	             "foreground mismatch rejects native mode for fallback");
-	ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
-	                                                     .input  = second_slave.get(),
-	                                                     .output = second_slave.get(),
-	                                                     .error  = second_slave.get()}),
+	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
+	                                                 .input  = second_slave.get(),
+	                                                 .output = second_slave.get(),
+	                                                 .error  = second_slave.get()}),
 	             "different interactive descriptors reject native mode for fallback");
-	ok &= expect(!native_prompt_terminal_is_interactive({.tty    = first_slave.get(),
-	                                                     .input  = pipes[0].get(),
-	                                                     .output = pipes[1].get(),
-	                                                     .error  = pipes[1].get()}),
+	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
+	                                                 .input  = pipes[0].get(),
+	                                                 .output = pipes[1].get(),
+	                                                 .error  = pipes[1].get()}),
 	             "GDM-like unrelated stdio rejects native mode for fallback");
 	return ok;
 }
 
-auto expect_native_terminal_aliases() -> bool {
+auto ExpectNativeTerminalAliases() -> bool {
 	ScopedFd first_master;
 	ScopedFd first_slave;
 	ScopedFd second_master;
 	ScopedFd second_slave;
 	bool     ok = true;
-	ok &= expect(open_pty_pair(&first_master, &first_slave), "native alias test opens first PTY");
-	ok &=
-	    expect(open_pty_pair(&second_master, &second_slave), "native alias test opens second PTY");
+	ok &= expect(OpenPtyPair(&first_master, &first_slave), "native alias test opens first PTY");
+	ok &= expect(OpenPtyPair(&second_master, &second_slave), "native alias test opens second PTY");
 	if (!ok) {
 		return false;
 	}
@@ -160,11 +157,11 @@ auto expect_native_terminal_aliases() -> bool {
 			_exit(EXIT_FAILURE);
 		}
 
-		const bool path_target_alias = native_prompt_terminal_is_interactive(
+		const bool path_target_alias = NativePromptTerminalIsInteractive(
 		    {.tty = terminal_fd, .input = alias_fd, .output = -1, .error = -1});
-		const bool alias_target_path = native_prompt_terminal_is_interactive(
+		const bool alias_target_path = NativePromptTerminalIsInteractive(
 		    {.tty = alias_fd, .input = terminal_fd, .output = -1, .error = -1});
-		const bool different_pty_same_session = native_prompt_terminal_is_interactive(
+		const bool different_pty_same_session = NativePromptTerminalIsInteractive(
 		    {.tty = terminal_fd, .input = other_fd, .output = -1, .error = -1});
 		const unsigned failures = static_cast<unsigned>(!path_target_alias) |
 		                          (static_cast<unsigned>(!alias_target_path) << 1U) |
@@ -193,9 +190,8 @@ auto expect_native_terminal_aliases() -> bool {
 }
 
 namespace {
-	auto native_prompt_terminal_test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
-	                                      struct pam_response **response, void *appdata_ptr)
-	    -> int {
+	auto NativePromptTerminalTestConv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+	                                  struct pam_response **response, void *appdata_ptr) -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -203,10 +199,10 @@ namespace {
 	}
 }  // namespace
 
-auto expect_invalid_pam_tty_is_unavailable() -> bool {
+auto ExpectInvalidPamTtyIsUnavailable() -> bool {
 	int             appdata = 42;
 	struct pam_conv original_conv{
-	    .conv        = native_prompt_terminal_test_conv,
+	    .conv        = NativePromptTerminalTestConv,
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;
@@ -219,7 +215,7 @@ auto expect_invalid_pam_tty_is_unavailable() -> bool {
 	bool ok = true;
 	{
 		NativePromptConversation conversation(pamh);
-		ok &= expect(!conversation.available(), "missing PAM_TTY disables native prompt");
+		ok &= expect(!conversation.Available(), "missing PAM_TTY disables native prompt");
 	}
 
 	std::string path_template = "/tmp/howdy-pam-tty-XXXXXX";
@@ -229,7 +225,7 @@ auto expect_invalid_pam_tty_is_unavailable() -> bool {
 		ok &= expect(pam_set_item(pamh, PAM_TTY, path_template.data()) == PAM_SUCCESS,
 		             "regular PAM_TTY test sets PAM item");
 		NativePromptConversation conversation(pamh);
-		ok &= expect(!conversation.available(), "regular-file PAM_TTY disables native prompt");
+		ok &= expect(!conversation.Available(), "regular-file PAM_TTY disables native prompt");
 		close(regular_fd);
 		unlink(path_template.data());
 	}

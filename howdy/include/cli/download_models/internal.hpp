@@ -39,23 +39,22 @@ namespace howdy::native::download_models_internal {
 		                       const char *value)                                      = nullptr;
 	};
 
-	[[nodiscard]] auto sha256_file_descriptor(int fd) -> std::optional<std::string>;
-	[[nodiscard]] auto configure_transfer_policy(CURL *curl, const CurlSetoptOperations &operations)
+	[[nodiscard]] auto Sha256FileDescriptor(int fd) -> std::optional<std::string>;
+	[[nodiscard]] auto ConfigureTransferPolicy(CURL *curl, const CurlSetoptOperations &operations)
 	    -> bool;
 
 	struct DownloadModelsDependencies {
 		DownloadFileFn                         download_file;
 		ModelFileOwnerUidFn                    model_file_owner_uid;
-		Sha256FileFn                           sha256_file = sha256_file_descriptor;
+		Sha256FileFn                           sha256_file = Sha256FileDescriptor;
 		FstatFn                                fstat_file  = ::fstat;
-		std::span<const OpenCvModelDescriptor> models      = official_opencv_models();
+		std::span<const OpenCvModelDescriptor> models      = OfficialOpencvModels();
 	};
 
-	auto download_models_write_callback(void *contents, std::size_t size, std::size_t nmemb,
-	                                    void *userp) -> std::size_t;
+	auto DownloadModelsWriteCallback(void *contents, std::size_t size, std::size_t nmemb,
+	                                 void *userp) -> std::size_t;
 
-	auto download_models_main_with_dependencies(int argc, char **argv,
-	                                            const DownloadModelsDependencies &dependencies)
-	    -> int;
+	auto DownloadModelsMainWithDependencies(int argc, char **argv,
+	                                        const DownloadModelsDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::download_models_internal

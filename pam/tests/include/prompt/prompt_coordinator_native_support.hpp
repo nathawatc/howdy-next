@@ -12,8 +12,8 @@ namespace howdy::test::prompt_coordinator {
 
 	using howdy::test::ScopedFd;
 
-	inline auto original_conversation(int num_msg, const struct pam_message **messages,
-	                                  struct pam_response **response, void *appdata_ptr) -> int {
+	inline auto OriginalConversation(int num_msg, const struct pam_message **messages,
+	                                 struct pam_response **response, void *appdata_ptr) -> int {
 		(void)num_msg;
 		(void)messages;
 		if (response != nullptr) {
@@ -29,7 +29,7 @@ namespace howdy::test::prompt_coordinator {
 	public:
 		explicit NativePamFixture(FakeContext *context)
 		    : context_(context)
-		    , original_conv_{.conv = original_conversation, .appdata_ptr = context} {}
+		    , original_conv_{.conv = OriginalConversation, .appdata_ptr = context} {}
 
 		NativePamFixture(const NativePamFixture &)                     = delete;
 		auto operator=(const NativePamFixture &) -> NativePamFixture & = delete;
@@ -40,7 +40,7 @@ namespace howdy::test::prompt_coordinator {
 			}
 		}
 
-		auto start(bool with_tty) -> bool {
+		auto Start(bool with_tty) -> bool {
 			if (pam_start("howdy-prompt-coordinator-test", "test-user", &original_conv_, &pamh_) !=
 			    PAM_SUCCESS) {
 				return false;
@@ -62,11 +62,11 @@ namespace howdy::test::prompt_coordinator {
 			return true;
 		}
 
-		[[nodiscard]] auto pamh() const -> pam_handle_t * {
+		[[nodiscard]] auto Pamh() const -> pam_handle_t * {
 			return pamh_;
 		}
 
-		[[nodiscard]] auto original_conversation_restored() const -> bool {
+		[[nodiscard]] auto OriginalConversationRestored() const -> bool {
 			const void *item = nullptr;
 			if (pam_get_item(pamh_, PAM_CONV, &item) != PAM_SUCCESS || item == nullptr) {
 				return false;

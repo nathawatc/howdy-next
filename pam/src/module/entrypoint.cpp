@@ -7,9 +7,9 @@
 
 namespace howdy::pam {
 
-	auto run_authentication_entrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
-	                                   bool                          request_auth_token,
-	                                   const EntrypointDependencies &dependencies) noexcept -> int {
+	auto RunAuthenticationEntrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
+	                                 bool                          request_auth_token,
+	                                 const EntrypointDependencies &dependencies) noexcept -> int {
 		ScopedMessageLocale message_locale;
 		try {
 			if (dependencies.authenticate == nullptr) {
@@ -26,15 +26,15 @@ namespace howdy::pam {
 		}
 	}
 
-	auto run_pam_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv,
-	                          const EntrypointDependencies &dependencies) noexcept -> int {
-		return run_authentication_entrypoint(pamh,
-		                                     {
-		                                         .flags = flags,
-		                                         .argc  = argc,
-		                                         .argv  = argv,
-		                                     },
-		                                     true, dependencies);
+	auto RunPamAuthenticate(pam_handle_t *pamh, int flags, int argc, const char **argv,
+	                        const EntrypointDependencies &dependencies) noexcept -> int {
+		return RunAuthenticationEntrypoint(pamh,
+		                                   {
+		                                       .flags = flags,
+		                                       .argc  = argc,
+		                                       .argv  = argv,
+		                                   },
+		                                   true, dependencies);
 	}
 
 }  // namespace howdy::pam

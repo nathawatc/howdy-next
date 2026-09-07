@@ -14,15 +14,15 @@ namespace howdy::native::auth_helper {
 		auto (*acl_set_fd)(void *context, int fd, acl_t acl) -> int = nullptr;
 	};
 
-	auto production_acl_operations() -> AclOperations;
+	auto ProductionAclOperations() -> AclOperations;
 
 	__attribute__((visibility("hidden"))) auto
-	set_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
-	                                   const StagedAclPolicy &policy,
-	                                   const AclOperations   &operations) -> bool;
+	SetPersistentAclWithOperations(int fd, const std::filesystem::path &path, uid_t uid,
+	                               const StagedAclPolicy &policy, const AclOperations &operations)
+	    -> bool;
 	__attribute__((visibility("hidden"))) auto
-	verify_persistent_acl_with_operations(int fd, const std::filesystem::path &path, uid_t uid,
-	                                      const StagedAclPolicy &policy,
-	                                      const AclOperations   &operations) -> bool;
+	VerifyPersistentAclWithOperations(int fd, const std::filesystem::path &path, uid_t uid,
+	                                  const StagedAclPolicy &policy,
+	                                  const AclOperations   &operations) -> bool;
 
 }  // namespace howdy::native::auth_helper

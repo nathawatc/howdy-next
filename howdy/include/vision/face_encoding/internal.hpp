@@ -22,8 +22,8 @@ namespace howdy::native {
 		ExtractFaceFeatureFn extract_feature = nullptr;
 	};
 
-	[[nodiscard]] auto encode_sface(const cv::Mat &frame, const FaceDetection &face,
-	                                const FaceEncodingDependencies &dependencies)
+	[[nodiscard]] auto EncodeSface(const cv::Mat &frame, const FaceDetection &face,
+	                               const FaceEncodingDependencies &dependencies)
 	    -> FaceEncodingResult;
 
 }  // namespace howdy::native

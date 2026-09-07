@@ -9,26 +9,26 @@
 
 namespace {
 
-	using howdy::native::command_catalog;
+	using howdy::native::CommandCatalog;
 	using howdy::native::CommandCompletionKind;
 	using howdy::native::CommandDescriptor;
 	using howdy::native::CommandId;
 	using howdy::native::CommandKind;
-	using howdy::native::find_command;
-	using howdy::native::find_global_option;
-	using howdy::native::global_option_catalog;
+	using howdy::native::FindCommand;
+	using howdy::native::FindGlobalOption;
+	using howdy::native::GlobalOptionCatalog;
 	using howdy::native::GlobalOptionCompletionKind;
 	using howdy::native::GlobalOptionDescriptor;
 	using howdy::native::GlobalOptionId;
 	using howdy::native::UserTargetMode;
-	using howdy::native::validate_command_catalog;
-	using howdy::native::validate_global_option_catalog;
+	using howdy::native::ValidateCommandCatalog;
+	using howdy::native::ValidateGlobalOptionCatalog;
 	using howdy::test::expect;
 
-	auto test_global_options() -> bool {
+	auto TestGlobalOptions() -> bool {
 		bool                                        ok = true;
 		const std::array<GlobalOptionDescriptor, 0> empty_options{};
-		ok &= expect(validate_global_option_catalog(empty_options).value_or("").contains("empty"),
+		ok &= expect(ValidateGlobalOptionCatalog(empty_options).value_or("").contains("empty"),
 		             "empty global option catalog is rejected");
 		constexpr std::array expected_options{
 		    std::tuple{GlobalOptionId::kUser, std::string_view{"-U"}, std::string_view{"--user"},
@@ -40,14 +40,14 @@ namespace {
 		    std::tuple{GlobalOptionId::kHelp, std::string_view{"-h"}, std::string_view{"--help"},
 		               std::string_view{""}, GlobalOptionCompletionKind::kNone, false},
 		};
-		const auto options = global_option_catalog();
+		const auto options = GlobalOptionCatalog();
 		ok &= expect(options.size() == expected_options.size(),
 		             "global option catalog size is stable");
 		ok &= expect(options.size() == static_cast<std::size_t>(GlobalOptionId::kCount),
 		             "every global option ID has a catalog slot");
-		ok &= expect(!validate_global_option_catalog(options, true).has_value(),
+		ok &= expect(!ValidateGlobalOptionCatalog(options, true).has_value(),
 		             "global option catalog invariants hold");
-		ok &= expect(find_global_option("") == nullptr, "empty option spelling is not searchable");
+		ok &= expect(FindGlobalOption("") == nullptr, "empty option spelling is not searchable");
 		for (std::size_t index = 0; index < options.size(); ++index) {
 			const auto &option                 = options[index];
 			const auto &[id, short_name, long_name, argument_name, completion,
@@ -58,14 +58,14 @@ namespace {
 			               option.completion == completion &&
 			               option.parses_after_command == parses_after_command,
 			           "global option syntax and completion metadata are stable");
-			ok &= expect(find_global_option(option.id) == &option,
+			ok &= expect(FindGlobalOption(option.id) == &option,
 			             "global option ID resolves to its catalog entry");
 			if (!option.short_name.empty()) {
-				ok &= expect(find_global_option(option.short_name) == &option,
+				ok &= expect(FindGlobalOption(option.short_name) == &option,
 				             "short option lookup uses catalog entry");
 			}
 			if (!option.long_name.empty()) {
-				ok &= expect(find_global_option(option.long_name) == &option,
+				ok &= expect(FindGlobalOption(option.long_name) == &option,
 				             "long option lookup uses catalog entry");
 			}
 		}
@@ -81,9 +81,8 @@ namespace {
 		                           .argument_name = "",
 		                           .summary       = "Two"},
 		};
-		ok &=
-		    expect(validate_global_option_catalog(duplicate_ids).value_or("").contains("duplicate"),
-		           "duplicate global option IDs are rejected");
+		ok &= expect(ValidateGlobalOptionCatalog(duplicate_ids).value_or("").contains("duplicate"),
+		             "duplicate global option IDs are rejected");
 		const auto duplicate_spellings = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
 		                           .short_name    = "-a",
@@ -96,9 +95,8 @@ namespace {
 		                           .argument_name = "",
 		                           .summary       = "Two"},
 		};
-		ok &=
-		    expect(validate_global_option_catalog(duplicate_spellings).value_or("").contains("-a"),
-		           "duplicate global option spellings are rejected");
+		ok &= expect(ValidateGlobalOptionCatalog(duplicate_spellings).value_or("").contains("-a"),
+		             "duplicate global option spellings are rejected");
 		const auto no_spelling = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
 		                           .short_name    = "",
@@ -106,7 +104,7 @@ namespace {
 		                           .argument_name = "",
 		                           .summary       = "Option"},
 		};
-		ok &= expect(validate_global_option_catalog(no_spelling).value_or("").contains("spelling"),
+		ok &= expect(ValidateGlobalOptionCatalog(no_spelling).value_or("").contains("spelling"),
 		             "global option without spelling is rejected");
 		const auto empty_option_summary = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
@@ -116,7 +114,7 @@ namespace {
 		                           .summary       = ""},
 		};
 		ok &= expect(
-		    validate_global_option_catalog(empty_option_summary).value_or("").contains("summary"),
+		    ValidateGlobalOptionCatalog(empty_option_summary).value_or("").contains("summary"),
 		    "empty global option summary is rejected");
 		const auto invalid_option_completion = std::array{
 		    GlobalOptionDescriptor{
@@ -127,7 +125,7 @@ namespace {
 		        .summary       = "Option",
 		        .completion    = std::bit_cast<GlobalOptionCompletionKind>(std::uint8_t{255})},
 		};
-		ok &= expect(validate_global_option_catalog(invalid_option_completion)
+		ok &= expect(ValidateGlobalOptionCatalog(invalid_option_completion)
 		                 .value_or("")
 		                 .contains("completion"),
 		             "unknown global option completion kind is rejected");
@@ -139,7 +137,7 @@ namespace {
 		                           .summary       = "Option"},
 		};
 		ok &= expect(
-		    validate_global_option_catalog(invalid_option_id).value_or("").contains("invalid id"),
+		    ValidateGlobalOptionCatalog(invalid_option_id).value_or("").contains("invalid id"),
 		    "invalid global option ID is rejected");
 		const auto missing_option_id = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
@@ -148,10 +146,9 @@ namespace {
 		                           .argument_name = "USER",
 		                           .summary       = "Option"},
 		};
-		ok &= expect(validate_global_option_catalog(missing_option_id, true)
-		                 .value_or("")
-		                 .contains("missing"),
-		             "missing production global option ID is rejected");
+		ok &= expect(
+		    ValidateGlobalOptionCatalog(missing_option_id, true).value_or("").contains("missing"),
+		    "missing production global option ID is rejected");
 		const auto repeated_alias = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
 		                           .short_name    = "-a",
@@ -159,9 +156,8 @@ namespace {
 		                           .argument_name = "USER",
 		                           .summary       = "Option"},
 		};
-		ok &=
-		    expect(validate_global_option_catalog(repeated_alias).value_or("").contains("repeats"),
-		           "global option aliases cannot repeat");
+		ok &= expect(ValidateGlobalOptionCatalog(repeated_alias).value_or("").contains("repeats"),
+		             "global option aliases cannot repeat");
 		const auto missing_option_argument = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
 		                           .short_name    = "-a",
@@ -170,10 +166,9 @@ namespace {
 		                           .summary       = "Option",
 		                           .completion    = GlobalOptionCompletionKind::kUser},
 		};
-		ok &= expect(validate_global_option_catalog(missing_option_argument)
-		                 .value_or("")
-		                 .contains("argument"),
-		             "argument completion requires argument metadata");
+		ok &= expect(
+		    ValidateGlobalOptionCatalog(missing_option_argument).value_or("").contains("argument"),
+		    "argument completion requires argument metadata");
 		const auto unsupported_option_argument = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kPlain,
 		                           .short_name    = "",
@@ -181,7 +176,7 @@ namespace {
 		                           .argument_name = "VALUE",
 		                           .summary       = "Option"},
 		};
-		ok &= expect(validate_global_option_catalog(unsupported_option_argument)
+		ok &= expect(ValidateGlobalOptionCatalog(unsupported_option_argument)
 		                 .value_or("")
 		                 .contains("unsupported"),
 		             "unsupported option argument metadata is rejected");
@@ -193,19 +188,19 @@ namespace {
 		                           .summary       = "Option",
 		                           .completion    = GlobalOptionCompletionKind::kUser},
 		};
-		ok &= expect(validate_global_option_catalog(misplaced_user_completion)
+		ok &= expect(ValidateGlobalOptionCatalog(misplaced_user_completion)
 		                 .value_or("")
 		                 .contains("user completion"),
 		             "user completion requires user option metadata");
 		return ok;
 	}
 
-	auto test_command_catalog_validation() -> bool {
+	auto TestCommandCatalogValidation() -> bool {
 		bool                                   ok = true;
 		const std::array<CommandDescriptor, 0> empty_commands{};
-		ok &= expect(validate_command_catalog(empty_commands).value_or("").contains("empty"),
+		ok &= expect(ValidateCommandCatalog(empty_commands).value_or("").contains("empty"),
 		             "empty command catalog is rejected");
-		ok &= expect(!validate_command_catalog(command_catalog(), true).has_value(),
+		ok &= expect(!ValidateCommandCatalog(CommandCatalog(), true).has_value(),
 		             "production command catalog is valid and complete");
 		const auto duplicate_ids = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -219,7 +214,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(duplicate_ids).value_or("").contains("duplicate"),
+		ok &= expect(ValidateCommandCatalog(duplicate_ids).value_or("").contains("duplicate"),
 		             "duplicate command IDs are rejected");
 		const auto duplicate_names = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -233,7 +228,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(duplicate_names).value_or("").contains("name"),
+		ok &= expect(ValidateCommandCatalog(duplicate_names).value_or("").contains("name"),
 		             "duplicate command names are rejected");
 		const auto invalid_id = std::array{
 		    CommandDescriptor{.id          = CommandId::kCount,
@@ -242,7 +237,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(invalid_id).value_or("").contains("invalid id"),
+		ok &= expect(ValidateCommandCatalog(invalid_id).value_or("").contains("invalid id"),
 		             "invalid command ID is rejected");
 		const auto empty_name = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -251,7 +246,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(empty_name).value_or("").contains("name"),
+		ok &= expect(ValidateCommandCatalog(empty_name).value_or("").contains("name"),
 		             "empty command name is rejected");
 		const auto empty_summary = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -260,7 +255,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(empty_summary).value_or("").contains("summary"),
+		ok &= expect(ValidateCommandCatalog(empty_summary).value_or("").contains("summary"),
 		             "empty command summary is rejected");
 		const auto invalid_metadata = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -269,7 +264,7 @@ namespace {
 		                      .kind        = std::bit_cast<CommandKind>(std::uint8_t{255}),
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(invalid_metadata).value_or("").contains("kind"),
+		ok &= expect(ValidateCommandCatalog(invalid_metadata).value_or("").contains("kind"),
 		             "unknown command kind is rejected");
 		const auto invalid_user_target = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -278,9 +273,9 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = std::bit_cast<UserTargetMode>(std::uint8_t{255})},
 		};
-		ok &= expect(
-		    validate_command_catalog(invalid_user_target).value_or("").contains("user-target"),
-		    "unknown command user-target mode is rejected");
+		ok &=
+		    expect(ValidateCommandCatalog(invalid_user_target).value_or("").contains("user-target"),
+		           "unknown command user-target mode is rejected");
 		const auto invalid_completion = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
 		                      .name        = "invalid",
@@ -290,9 +285,8 @@ namespace {
 		                      .completion =
 		                          std::bit_cast<CommandCompletionKind>(std::uint8_t{255})},
 		};
-		ok &=
-		    expect(validate_command_catalog(invalid_completion).value_or("").contains("completion"),
-		           "unknown command completion kind is rejected");
+		ok &= expect(ValidateCommandCatalog(invalid_completion).value_or("").contains("completion"),
+		             "unknown command completion kind is rejected");
 		const auto reusable_boolean_completion = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
 		                      .name        = "add",
@@ -301,7 +295,7 @@ namespace {
 		                      .user_target = UserTargetMode::kNone,
 		                      .completion  = CommandCompletionKind::kBoolean},
 		};
-		ok &= expect(!validate_command_catalog(reusable_boolean_completion).has_value(),
+		ok &= expect(!ValidateCommandCatalog(reusable_boolean_completion).has_value(),
 		             "boolean completion kind is reusable metadata");
 		const auto reusable_config_completion = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -311,7 +305,7 @@ namespace {
 		                      .user_target = UserTargetMode::kNone,
 		                      .completion  = CommandCompletionKind::kConfigSet},
 		};
-		ok &= expect(!validate_command_catalog(reusable_config_completion).has_value(),
+		ok &= expect(!ValidateCommandCatalog(reusable_config_completion).has_value(),
 		             "config completion kind is reusable metadata");
 		const auto reusable_version_kind = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -320,7 +314,7 @@ namespace {
 		                      .kind        = CommandKind::kVersion,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(!validate_command_catalog(reusable_version_kind).has_value(),
+		ok &= expect(!ValidateCommandCatalog(reusable_version_kind).has_value(),
 		             "version command kind is reusable metadata");
 		const auto invalid_version_target = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
@@ -329,9 +323,8 @@ namespace {
 		                      .kind        = CommandKind::kVersion,
 		                      .user_target = UserTargetMode::kModelUser},
 		};
-		ok &=
-		    expect(validate_command_catalog(invalid_version_target).value_or("").contains("target"),
-		           "version command user-target mismatch is rejected");
+		ok &= expect(ValidateCommandCatalog(invalid_version_target).value_or("").contains("target"),
+		             "version command user-target mismatch is rejected");
 		const auto invalid_version_completion = std::array{
 		    CommandDescriptor{.id          = CommandId::kAdd,
 		                      .name        = "example",
@@ -340,7 +333,7 @@ namespace {
 		                      .user_target = UserTargetMode::kNone,
 		                      .completion  = CommandCompletionKind::kBoolean},
 		};
-		ok &= expect(validate_command_catalog(invalid_version_completion)
+		ok &= expect(ValidateCommandCatalog(invalid_version_completion)
 		                 .value_or("")
 		                 .contains("completion values"),
 		             "version command completion mismatch is rejected");
@@ -351,7 +344,7 @@ namespace {
 		                      .kind        = CommandKind::kEntrypoint,
 		                      .user_target = UserTargetMode::kNone},
 		};
-		ok &= expect(validate_command_catalog(missing_id, true).value_or("").contains("missing"),
+		ok &= expect(ValidateCommandCatalog(missing_id, true).value_or("").contains("missing"),
 		             "missing production command ID is rejected");
 		return ok;
 	}
@@ -404,20 +397,20 @@ auto main() -> int {
 	};
 	const std::array<howdy::native::GlobalOptionMask, static_cast<std::size_t>(CommandId::kCount)>
 	           expected_global_options{
-	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kPlain) |
-	                   global_option_bit(GlobalOptionId::kYes),
-	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kYes),
+	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kPlain) |
+	                   GlobalOptionBit(GlobalOptionId::kYes),
+	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kYes),
 	               0,
 	               0,
 	               0,
-	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kPlain),
-	               global_option_bit(GlobalOptionId::kUser) | global_option_bit(GlobalOptionId::kYes),
+	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kPlain),
+	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kYes),
 	               0,
 	               0,
-	               global_option_bit(GlobalOptionId::kUser),
+	               GlobalOptionBit(GlobalOptionId::kUser),
 	               0,
 	           };
-	const auto commands = command_catalog();
+	const auto commands = CommandCatalog();
 	ok &= expect(commands.size() == expected_command_ids.size(), "command catalog size is stable");
 	ok &= expect(commands.size() == static_cast<std::size_t>(CommandId::kCount),
 	             "every command ID has a catalog slot");
@@ -442,23 +435,23 @@ auto main() -> int {
 		ok &= expect(index < expected_global_options.size() &&
 		                 command.global_options == expected_global_options[index],
 		             "command global options are catalogued");
-		ok &= expect(find_command(command.name) == &command, "command lookup uses catalog entry");
+		ok &= expect(FindCommand(command.name) == &command, "command lookup uses catalog entry");
 	}
 	{
-		const auto *test_command = find_command("test");
+		const auto *test_command = FindCommand("test");
 		ok &= expect(test_command != nullptr && test_command->options.size() == 1,
 		             "test command has one command-specific option");
-		ok &= expect(test_command != nullptr && find_command_option(*test_command, "--device") ==
+		ok &= expect(test_command != nullptr && FindCommandOption(*test_command, "--device") ==
 		                                            &test_command->options.front(),
 		             "test device option resolves through command catalog");
 		ok &= expect(test_command != nullptr &&
-		                 find_command_option(*test_command, "--unknown") == nullptr,
+		                 FindCommandOption(*test_command, "--unknown") == nullptr,
 		             "unknown command option has no catalog entry");
 	}
-	ok &= expect(find_command("unknown") == nullptr, "unknown command has no completion metadata");
+	ok &= expect(FindCommand("unknown") == nullptr, "unknown command has no completion metadata");
 
-	ok &= test_command_catalog_validation();
-	ok &= test_global_options();
+	ok &= TestCommandCatalogValidation();
+	ok &= TestGlobalOptions();
 
 	return ok ? 0 : 1;
 }

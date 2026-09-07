@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 namespace {
-	auto wait_for_release() -> bool {
+	auto WaitForRelease() -> bool {
 		std::string command;
 		return std::getline(std::cin, command) && command == "release";
 	}
@@ -25,9 +25,9 @@ auto main(int argc, char **argv) -> int {
 	}
 
 	howdy::pam::RuntimeSession session(argv[3], argv[4],
-	                                   howdy::pam::production_runtime_session_dependencies());
-	const auto                 result = session.load_for_user(argv[2]);
-	if (!result.ok() || !session.staged()) {
+	                                   howdy::pam::ProductionRuntimeSessionDependencies());
+	const auto                 result = session.LoadForUser(argv[2]);
+	if (!result.Ok() || !session.Staged()) {
 		if (std::string_view(argv[1]) == "--try" &&
 		    result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed) {
 			std::cerr << "Runtime staging failed\n";
@@ -39,20 +39,20 @@ auto main(int argc, char **argv) -> int {
 		}
 		return 1;
 	}
-	if (setenv("HOWDY_USER_MODELS_DIR", session.user_models_dir().c_str(), 1) != 0) {
+	if (setenv("HOWDY_USER_MODELS_DIR", session.UserModelsDir().c_str(), 1) != 0) {
 		std::cerr << "Failed to select staged user-model directory: " << strerror(errno) << "\n";
 		return 1;
 	}
 	const auto models =
-	    howdy::native::load_user_models(argv[2], "opencv_dnn_sface", static_cast<uid_t>(0));
+	    howdy::native::LoadUserModels(argv[2], "opencv_dnn_sface", static_cast<uid_t>(0));
 	if (models.status != howdy::native::UserModelStatus::kOk || models.stored.encodings.empty()) {
 		std::cerr << "Production user-model load failed: " << models.error_message << "\n";
 		return 1;
 	}
 
-	std::cout << std::filesystem::path(session.config_path()).parent_path().string() << '\n'
+	std::cout << std::filesystem::path(session.ConfigPath()).parent_path().string() << '\n'
 	          << std::flush;
-	if (std::string_view(argv[1]) == "--hold" && !wait_for_release()) {
+	if (std::string_view(argv[1]) == "--hold" && !WaitForRelease()) {
 		std::cerr << "Failed to read exact release command\n";
 		return 1;
 	}

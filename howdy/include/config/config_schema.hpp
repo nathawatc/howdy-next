@@ -16,45 +16,45 @@ namespace howdy::native::config_schema {
 	};
 
 	enum class ValueType : std::uint8_t {
-		boolean,
-		integer,
-		floating_point,
-		string,
+		kBoolean,
+		kInteger,
+		kFloatingPoint,
+		kString,
 	};
 
 	enum class SpecialRule : std::uint8_t {
-		none,
-		device_path,
-		sface_threshold,
+		kNone,
+		kDevicePath,
+		kSfaceThreshold,
 	};
 
 	enum class OptionId : std::uint8_t {
-		core_detection_notice,
-		core_no_confirmation,
-		core_abort_if_ssh,
-		core_abort_if_lid_closed,
-		core_disabled,
-		video_timeout,
-		video_device_path,
-		video_warn_no_device,
-		video_max_height,
-		video_frame_width,
-		video_frame_height,
-		video_clahe_enabled,
-		video_clahe_clip_limit,
-		video_clahe_tile_grid_size,
-		video_dark_threshold,
-		video_force_mjpeg,
-		video_exposure,
-		video_device_fps,
-		video_rotate,
-		face_yunet_score_threshold,
-		face_yunet_nms_threshold,
-		face_yunet_top_k,
-		face_sface_metric,
-		face_sface_threshold,
-		debug_end_report,
-		count,
+		kCoreDetectionNotice,
+		kCoreNoConfirmation,
+		kCoreAbortIfSsh,
+		kCoreAbortIfLidClosed,
+		kCoreDisabled,
+		kVideoTimeout,
+		kVideoDevicePath,
+		kVideoWarnNoDevice,
+		kVideoMaxHeight,
+		kVideoFrameWidth,
+		kVideoFrameHeight,
+		kVideoClaheEnabled,
+		kVideoClaheClipLimit,
+		kVideoClaheTileGridSize,
+		kVideoDarkThreshold,
+		kVideoForceMjpeg,
+		kVideoExposure,
+		kVideoDeviceFps,
+		kVideoRotate,
+		kFaceYunetScoreThreshold,
+		kFaceYunetNmsThreshold,
+		kFaceYunetTopK,
+		kFaceSfaceMetric,
+		kFaceSfaceThreshold,
+		kDebugEndReport,
+		kCount,
 	};
 
 	struct NumericRange {
@@ -88,36 +88,36 @@ namespace howdy::native::config_schema {
 		std::string_view                  description;
 	};
 
-	constexpr auto bool_default(bool value) -> RuntimeDefault {
+	constexpr auto BoolDefault(bool value) -> RuntimeDefault {
 		return {.has_boolean = true, .boolean = value};
 	}
 
-	constexpr auto int_default(int value) -> RuntimeDefault {
+	constexpr auto IntDefault(int value) -> RuntimeDefault {
 		return {.has_integer = true, .integer = value};
 	}
 
-	constexpr auto float_default(float value) -> RuntimeDefault {
+	constexpr auto FloatDefault(float value) -> RuntimeDefault {
 		return {.has_floating_point = true, .floating_point = value};
 	}
 
-	constexpr auto string_default(std::string_view value) -> RuntimeDefault {
+	constexpr auto StringDefault(std::string_view value) -> RuntimeDefault {
 		return {.has_string = true, .string = value};
 	}
 
-	inline constexpr FaceMetric sface_default_metric = FaceMetric::kCosine;
+	inline constexpr FaceMetric kSfaceDefaultMetric = FaceMetric::kCosine;
 
-	auto is_accepted_boolean_text(std::string_view value) -> bool;
-	auto format_integer_value(int value) -> std::optional<std::string>;
-	auto format_floating_point_value(float value) -> std::optional<std::string>;
-	auto format_fallback_value(const Option &option) -> std::optional<std::string>;
+	auto IsAcceptedBooleanText(std::string_view value) -> bool;
+	auto FormatIntegerValue(int value) -> std::optional<std::string>;
+	auto FormatFloatingPointValue(float value) -> std::optional<std::string>;
+	auto FormatFallbackValue(const Option &option) -> std::optional<std::string>;
 
-	auto validate_options(std::span<const Option> options) -> std::optional<std::string>;
-	auto runtime_config_options() -> std::span<const Option>;
-	auto runtime_config_option(OptionId id) -> const Option &;
-	auto runtime_config_option(std::string_view section, std::string_view key) -> const Option *;
-	auto runtime_default_bool(OptionId id) -> bool;
-	auto runtime_default_int(OptionId id) -> int;
-	auto runtime_default_float(OptionId id) -> float;
-	auto runtime_default_string(OptionId id) -> std::string_view;
+	auto ValidateOptions(std::span<const Option> options) -> std::optional<std::string>;
+	auto RuntimeConfigOptions() -> std::span<const Option>;
+	auto RuntimeConfigOption(OptionId id) -> const Option &;
+	auto RuntimeConfigOption(std::string_view section, std::string_view key) -> const Option *;
+	auto RuntimeDefaultBool(OptionId id) -> bool;
+	auto RuntimeDefaultInt(OptionId id) -> int;
+	auto RuntimeDefaultFloat(OptionId id) -> float;
+	auto RuntimeDefaultString(OptionId id) -> std::string_view;
 
 }  // namespace howdy::native::config_schema

@@ -27,7 +27,7 @@ namespace howdy::native::user_model_codec {
 			yyjson_mut_doc_free(mutable_doc);
 		}
 
-		auto ensure_mutable() -> bool {
+		auto EnsureMutable() -> bool {
 			if (mutable_doc != nullptr) {
 				return true;
 			}
@@ -58,14 +58,14 @@ namespace howdy::native::user_model_codec {
 
 	namespace {
 
-		auto failure(UserModelStatus status, std::string message) -> UserModelListResult {
+		auto Failure(UserModelStatus status, std::string message) -> UserModelListResult {
 			return UserModelListResult{
 			    .status        = status,
 			    .error_message = std::move(message),
 			};
 		}
 
-		auto add_entry_value(yyjson_mut_doc *document, const UserModelEntry &entry)
+		auto AddEntryValue(yyjson_mut_doc *document, const UserModelEntry &entry)
 		    -> yyjson_mut_val * {
 			auto *model = yyjson_mut_obj(document);
 			if (model == nullptr || !yyjson_mut_obj_add_sint(document, model, "time", entry.time) ||
@@ -101,7 +101,7 @@ namespace howdy::native::user_model_codec {
 				if (!metric.has_value()) {
 					return true;
 				}
-				const auto spelling = face_metric_spelling(*metric);
+				const auto spelling = FaceMetricSpelling(*metric);
 				return !spelling.empty() &&
 				       yyjson_mut_obj_add_strncpy(document, model, "metric", spelling.data(),
 				                                  spelling.size());
@@ -128,10 +128,10 @@ namespace howdy::native::user_model_codec {
 	Document::Document(Document &&) noexcept                     = default;
 	auto Document::operator=(Document &&) noexcept -> Document & = default;
 
-	auto decode_document(std::string_view input, const std::string &expected_backend,
-	                     std::optional<FaceMetric> expected_metric,
-	                     const std::string &expected_model, bool strict_shape) -> Document {
-		auto decoded = user_model_codec_internal::decode_document_json(
+	auto DecodeDocument(std::string_view input, const std::string &expected_backend,
+	                    std::optional<FaceMetric> expected_metric,
+	                    const std::string &expected_model, bool strict_shape) -> Document {
+		auto decoded = user_model_codec_internal::DecodeDocumentJson(
 		    input, expected_backend, expected_metric, expected_model, strict_shape);
 		if (decoded.doc == nullptr) {
 			return Document(std::move(decoded.result));
@@ -145,11 +145,11 @@ namespace howdy::native::user_model_codec {
 			return {std::move(decoded.result), std::move(impl)};
 		} catch (const std::bad_alloc &) {
 			return Document{
-			    failure(UserModelStatus::kParseError, "Failed to process user model JSON")};
+			    Failure(UserModelStatus::kParseError, "Failed to process user model JSON")};
 		}
 	}
 
-	auto append_entry(Document &document, const UserModelEntry &entry) -> bool {
+	auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool {
 		try {
 			if (document.impl_ == nullptr) {
 				document.impl_ = std::make_unique<Document::Impl>();
@@ -157,26 +157,26 @@ namespace howdy::native::user_model_codec {
 		} catch (const std::bad_alloc &) {
 			return false;
 		}
-		if (!document.impl_->ensure_mutable()) {
+		if (!document.impl_->EnsureMutable()) {
 			return false;
 		}
 		auto *root = yyjson_mut_doc_get_root(document.impl_->mutable_doc);
 		if (!yyjson_mut_is_arr(root)) {
 			return false;
 		}
-		auto *model = add_entry_value(document.impl_->mutable_doc, entry);
+		auto *model = AddEntryValue(document.impl_->mutable_doc, entry);
 		return model != nullptr && yyjson_mut_arr_append(root, model);
 	}
 
-	auto erase_entry(Document &document, std::size_t index) -> bool {
-		if (document.impl_ == nullptr || !document.impl_->ensure_mutable()) {
+	auto EraseEntry(Document &document, std::size_t index) -> bool {
+		if (document.impl_ == nullptr || !document.impl_->EnsureMutable()) {
 			return false;
 		}
 		auto *root = yyjson_mut_doc_get_root(document.impl_->mutable_doc);
 		return yyjson_mut_arr_remove(root, index) != nullptr;
 	}
 
-	auto is_empty(const Document &document) -> bool {
+	auto IsEmpty(const Document &document) -> bool {
 		if (document.impl_ == nullptr) {
 			return true;
 		}
@@ -189,7 +189,7 @@ namespace howdy::native::user_model_codec {
 		return true;
 	}
 
-	auto serialize_document(const Document &document) -> std::optional<std::string> {
+	auto SerializeDocument(const Document &document) -> std::optional<std::string> {
 		if (document.impl_ == nullptr) {
 			return std::nullopt;
 		}
@@ -217,15 +217,15 @@ namespace howdy::native::user_model_codec {
 		}
 	}
 
-	auto validate_encoding(const std::vector<float> &encoding) -> UserModelListResult {
+	auto ValidateEncoding(const std::vector<float> &encoding) -> UserModelListResult {
 		if (encoding.empty() || encoding.size() > user_model_limits::kMaxEncodingLength) {
-			return failure(UserModelStatus::kOversized,
+			return Failure(UserModelStatus::kOversized,
 			               std::string(user_model_codec_internal::kStoredEncodingLimitMessage));
 		}
 		if (!std::ranges::all_of(encoding, [](float value) -> bool {
 			    return std::isfinite(value);
 		    })) {
-			return failure(UserModelStatus::kInvalidShape,
+			return Failure(UserModelStatus::kInvalidShape,
 			               std::string(user_model_codec_internal::kStoredEncodingInvalidMessage));
 		}
 		return UserModelListResult{.status = UserModelStatus::kOk};

@@ -55,8 +55,8 @@ namespace {
 		howdy::native::RuntimeConfig open_config;
 	};
 
-	auto expect_sequence(const std::vector<std::string> &actual,
-	                     const std::vector<std::string> &expected, const std::string &message)
+	auto ExpectSequence(const std::vector<std::string> &actual,
+	                    const std::vector<std::string> &expected, const std::string &message)
 	    -> bool {
 		if (actual == expected) {
 			return true;
@@ -74,7 +74,7 @@ namespace {
 		return false;
 	}
 
-	auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+	auto ValidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 		howdy::native::RuntimeConfig config;
 		config.video.dark_threshold = 41.0F;
 		config.video.device_path    = "/dev/video-default";
@@ -85,7 +85,7 @@ namespace {
 		};
 	}
 
-	auto invalid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+	auto InvalidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 		return howdy::native::RuntimeConfigLoadResult{
 		    .ok            = false,
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kInvalidRuntimeValue,
@@ -93,14 +93,14 @@ namespace {
 		};
 	}
 
-	auto load_runtime_config_callback(void *raw_context) -> howdy::native::RuntimeConfigLoadResult {
+	auto LoadRuntimeConfigCallback(void *raw_context) -> howdy::native::RuntimeConfigLoadResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->load_calls;
 		return context->config_result;
 	}
 
-	auto face_model_ready_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
-	                               const std::string &user)
+	auto FaceModelReadyCallback(void *raw_context, const howdy::native::RuntimeConfig &config,
+	                            const std::string &user)
 	    -> howdy::native::test_cli_internal::TestPreflightOperationResult {
 		(void)config;
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
@@ -115,15 +115,15 @@ namespace {
 		return howdy::native::test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
-	auto has_graphical_display_callback(void *raw_context) -> bool {
+	auto HasGraphicalDisplayCallback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->display_calls;
 		context->sequence.emplace_back("display");
 		return context->graphical_display;
 	}
 
-	auto open_camera_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
-	                          const std::string &device_path)
+	auto OpenCameraCallback(void *raw_context, const howdy::native::RuntimeConfig &config,
+	                        const std::string &device_path)
 	    -> howdy::native::test_cli_internal::TestPreflightOperationResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->open_calls;
@@ -138,88 +138,88 @@ namespace {
 		return howdy::native::test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
-	auto read_camera_callback(void *raw_context) -> bool {
+	auto ReadCameraCallback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->read_calls;
 		context->sequence.emplace_back("read");
 		return context->camera_read_ok;
 	}
 
-	auto switch_gui_user_callback(void *raw_context) -> bool {
+	auto SwitchGuiUserCallback(void *raw_context) -> bool {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->gui_calls;
 		context->sequence.emplace_back("switch_gui_user");
 		return context->gui_user_ok;
 	}
 
-	void initialize_gui_callback(void *raw_context) {
+	void InitializeGuiCallback(void *raw_context) {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->gui_init_calls;
 		context->sequence.emplace_back("initialize_gui");
 	}
 
-	auto preflight_dependencies(TestCliTestContext &context)
+	auto PreflightDependencies(TestCliTestContext &context)
 	    -> howdy::native::test_cli_internal::TestPreviewPreflightDependencies {
 		return howdy::native::test_cli_internal::TestPreviewPreflightDependencies{
 		    .context               = &context,
-		    .face_model_ready      = face_model_ready_callback,
-		    .has_graphical_display = has_graphical_display_callback,
-		    .open_camera           = open_camera_callback,
-		    .read_camera           = read_camera_callback,
-		    .switch_gui_user       = switch_gui_user_callback,
-		    .initialize_gui        = initialize_gui_callback,
+		    .face_model_ready      = FaceModelReadyCallback,
+		    .has_graphical_display = HasGraphicalDisplayCallback,
+		    .open_camera           = OpenCameraCallback,
+		    .read_camera           = ReadCameraCallback,
+		    .switch_gui_user       = SwitchGuiUserCallback,
+		    .initialize_gui        = InitializeGuiCallback,
 		};
 	}
 
-	auto run_preview_callback(void *raw_context, const howdy::native::RuntimeConfig &config,
-	                          const std::string &user, const std::string &device_path)
+	auto RunPreviewCallback(void *raw_context, const howdy::native::RuntimeConfig &config,
+	                        const std::string &user, const std::string &device_path)
 	    -> howdy::native::test_cli_internal::TestPreviewResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->preview_calls;
 		context->preview_config      = config;
 		context->preview_user        = user;
 		context->preview_device_path = device_path;
-		return howdy::native::test_cli_internal::run_preview_preflight(
-		    config, user, preflight_dependencies(*context), device_path);
+		return howdy::native::test_cli_internal::RunPreviewPreflight(
+		    config, user, PreflightDependencies(*context), device_path);
 	}
 
-	auto test_dependencies(TestCliTestContext &context)
+	auto TestDependencies(TestCliTestContext &context)
 	    -> howdy::native::test_cli_internal::TestDependencies {
 		return howdy::native::test_cli_internal::TestDependencies{
 		    .context             = &context,
-		    .load_runtime_config = load_runtime_config_callback,
-		    .run_preview         = run_preview_callback,
+		    .load_runtime_config = LoadRuntimeConfigCallback,
+		    .run_preview         = RunPreviewCallback,
 		};
 	}
 
-	auto run_test_with_dependencies(howdy::native::test_cli_internal::TestDependencies dependencies,
-	                                std::vector<std::string> arguments) -> int {
+	auto RunTestWithDependencies(howdy::native::test_cli_internal::TestDependencies dependencies,
+	                             std::vector<std::string> arguments) -> int {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
 			argv.push_back(argument.data());
 		}
-		return howdy::native::test_cli_internal::test_main_with_dependencies(
+		return howdy::native::test_cli_internal::TestMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(), dependencies);
 	}
 
-	auto run_test(TestCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return run_test_with_dependencies(test_dependencies(context), std::move(arguments));
+	auto RunTest(TestCliTestContext &context, std::vector<std::string> arguments) -> int {
+		return RunTestWithDependencies(TestDependencies(context), std::move(arguments));
 	}
 
-	auto make_success_context() -> TestCliTestContext {
+	auto MakeSuccessContext() -> TestCliTestContext {
 		TestCliTestContext context;
-		context.config_result = valid_config_load_result();
+		context.config_result = ValidConfigLoadResult();
 		return context;
 	}
 
-	auto invalid_runtime_config_stops_before_preview() -> bool {
-		auto context          = make_success_context();
-		context.config_result = invalid_config_load_result();
+	auto InvalidRuntimeConfigStopsBeforePreview() -> bool {
+		auto context          = MakeSuccessContext();
+		context.config_result = InvalidConfigLoadResult();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "invalid runtime config returns 1");
@@ -231,14 +231,14 @@ namespace {
 		return ok;
 	}
 
-	auto face_model_failure_returns_error() -> bool {
-		auto context             = make_success_context();
+	auto FaceModelFailureReturnsError() -> bool {
+		auto context             = MakeSuccessContext();
 		context.face_model_ok    = false;
 		context.face_model_error = "face model failed";
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test", "alice"});
+		const int result = RunTest(context, {"howdy-test", "alice"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "face model failure returns 1");
@@ -254,8 +254,8 @@ namespace {
 		return ok;
 	}
 
-	auto preview_frame_failures_map_to_cli_stop_status() -> bool {
-		const auto invalid_frame = howdy::native::test_cli_internal::map_preview_frame_failure({
+	auto PreviewFrameFailuresMapToCliStopStatus() -> bool {
+		const auto invalid_frame = howdy::native::test_cli_internal::MapPreviewFrameFailure({
 		    .status        = howdy::native::PreviewFrameStatus::kInvalidFrame,
 		    .error_message = "invalid camera frame",
 		});
@@ -268,7 +268,7 @@ namespace {
 		auto expect_face_model_error = [](howdy::native::PreviewFrameStatus status,
 		                                  const std::string                &diagnostic,
 		                                  const std::string                &subject) -> bool {
-			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
+			const auto result = howdy::native::test_cli_internal::MapPreviewFrameFailure({
 			    .status        = status,
 			    .error_message = diagnostic,
 			});
@@ -290,10 +290,10 @@ namespace {
 		return ok;
 	}
 
-	auto preview_non_terminal_frames_map_to_ok() -> bool {
+	auto PreviewNonTerminalFramesMapToOk() -> bool {
 		auto expect_continue = [](howdy::native::PreviewFrameStatus status,
 		                          const std::string                &subject) -> bool {
-			const auto result = howdy::native::test_cli_internal::map_preview_frame_failure({
+			const auto result = howdy::native::test_cli_internal::MapPreviewFrameFailure({
 			    .status = status,
 			});
 			return expect(result.status == howdy::native::test_cli_internal::TestPreviewStatus::kOk,
@@ -313,13 +313,13 @@ namespace {
 		return ok;
 	}
 
-	auto missing_graphical_environment_prints_diagnostic() -> bool {
-		auto context              = make_success_context();
+	auto MissingGraphicalEnvironmentPrintsDiagnostic() -> bool {
+		auto context              = MakeSuccessContext();
 		context.graphical_display = false;
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -345,14 +345,14 @@ namespace {
 		return ok;
 	}
 
-	auto camera_open_failure_prints_device_and_capture_error() -> bool {
-		auto context              = make_success_context();
+	auto CameraOpenFailurePrintsDeviceAndCaptureError() -> bool {
+		auto context              = MakeSuccessContext();
 		context.camera_open_ok    = false;
 		context.camera_open_error = "camera open failed";
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -371,13 +371,13 @@ namespace {
 		return ok;
 	}
 
-	auto camera_read_failure_prints_diagnostic() -> bool {
-		auto context           = make_success_context();
+	auto CameraReadFailurePrintsDiagnostic() -> bool {
+		auto context           = MakeSuccessContext();
 		context.camera_read_ok = false;
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "camera read failure returns 1");
@@ -391,13 +391,13 @@ namespace {
 		return ok;
 	}
 
-	auto gui_user_switch_failure_prints_diagnostic() -> bool {
-		auto context        = make_success_context();
+	auto GuiUserSwitchFailurePrintsDiagnostic() -> bool {
+		auto context        = MakeSuccessContext();
 		context.gui_user_ok = false;
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -415,12 +415,12 @@ namespace {
 		return ok;
 	}
 
-	auto successful_preview_returns_zero() -> bool {
-		auto               context = make_success_context();
+	auto SuccessfulPreviewReturnsZero() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test", "alice"});
+		const int result = RunTest(context, {"howdy-test", "alice"});
 
 		bool ok = true;
 		ok &= expect(result == 0, "successful preview returns 0");
@@ -439,12 +439,12 @@ namespace {
 		return ok;
 	}
 
-	auto configured_device_default_is_used_for_camera_open() -> bool {
-		auto               context = make_success_context();
+	auto ConfiguredDeviceDefaultIsUsedForCameraOpen() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		bool ok = true;
 		ok &= expect(result == 0, "configured device default returns 0");
@@ -457,8 +457,8 @@ namespace {
 		return ok;
 	}
 
-	auto unconfigured_camera_error_is_printed() -> bool {
-		auto context = make_success_context();
+	auto UnconfiguredCameraErrorIsPrinted() -> bool {
+		auto context = MakeSuccessContext();
 		if (!context.config_result.config.has_value()) {
 			return expect(false, "success context has valid config");
 		}
@@ -468,7 +468,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int  result     = run_test(context, {"howdy-test"});
+		const int  result     = RunTest(context, {"howdy-test"});
 		const auto error_text = error.str();
 
 		bool ok = true;
@@ -480,12 +480,12 @@ namespace {
 		return ok;
 	}
 
-	auto device_override_is_used_for_camera_open() -> bool {
-		auto               context = make_success_context();
+	auto DeviceOverrideIsUsedForCameraOpen() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test", "--device", "/dev/video1"});
+		const int result = RunTest(context, {"howdy-test", "--device", "/dev/video1"});
 
 		bool ok = true;
 		ok &= expect(result == 0, "device override returns 0");
@@ -498,12 +498,12 @@ namespace {
 		return ok;
 	}
 
-	auto missing_device_value_is_rejected_before_runtime_work() -> bool {
-		auto               context = make_success_context();
+	auto MissingDeviceValueIsRejectedBeforeRuntimeWork() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test", "--device"});
+		const int result = RunTest(context, {"howdy-test", "--device"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "missing device value returns 1");
@@ -514,7 +514,7 @@ namespace {
 		return ok;
 	}
 
-	auto invalid_device_options_stop_before_runtime_work() -> bool {
+	auto InvalidDeviceOptionsStopBeforeRuntimeWork() -> bool {
 		bool ok = true;
 		for (const auto &arguments : std::vector<std::vector<std::string>>{
 		         {"howdy-test", "--device", ""},
@@ -522,11 +522,11 @@ namespace {
 		         {"howdy-test", "--unknown"},
 		         {"howdy-test", "--device", "/dev/video0", "--device", "/dev/video1"},
 		     }) {
-			auto               context = make_success_context();
+			auto               context = MakeSuccessContext();
 			std::ostringstream error;
 			StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-			const int result = run_test(context, arguments);
+			const int result = RunTest(context, arguments);
 
 			ok &= expect(result == 1, "invalid device option returns 1");
 			ok &= expect(context.load_calls == 0 && context.preview_calls == 0,
@@ -537,53 +537,52 @@ namespace {
 		return ok;
 	}
 
-	auto gui_initialization_runs_before_first_camera_read() -> bool {
-		auto               context = make_success_context();
+	auto GuiInitializationRunsBeforeFirstCameraRead() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_test(context, {"howdy-test"});
+		const int result = RunTest(context, {"howdy-test"});
 
 		bool ok = true;
 		ok &= expect(result == 0, "GUI/read sequence returns 0");
-		ok &= expect_sequence(
-		    context.sequence,
-		    {"face", "display", "open", "switch_gui_user", "initialize_gui", "read"},
-		    "GUI initialization runs before first camera read");
+		ok &=
+		    ExpectSequence(context.sequence,
+		                   {"face", "display", "open", "switch_gui_user", "initialize_gui", "read"},
+		                   "GUI initialization runs before first camera read");
 		ok &= expect(error.str().empty(), "GUI/read sequence writes no failure diagnostic");
 		return ok;
 	}
 
-	auto graphical_environment_helper_checks_display_values() -> bool {
+	auto GraphicalEnvironmentHelperChecksDisplayValues() -> bool {
 		namespace test_cli_internal = howdy::native::test_cli_internal;
 
 		bool ok = true;
-		ok &= expect(!test_cli_internal::has_graphical_display_environment("", "", ""),
+		ok &= expect(!test_cli_internal::HasGraphicalDisplayEnvironment("", "", ""),
 		             "empty display values are not graphical");
-		ok &= expect(test_cli_internal::has_graphical_display_environment(":0", "", ""),
+		ok &= expect(test_cli_internal::HasGraphicalDisplayEnvironment(":0", "", ""),
 		             "DISPLAY enables graphical environment");
-		ok &= expect(!test_cli_internal::has_graphical_display_environment("", "wayland-0", ""),
+		ok &= expect(!test_cli_internal::HasGraphicalDisplayEnvironment("", "wayland-0", ""),
 		             "Wayland display without runtime dir is not graphical");
 		ok &= expect(
-		    test_cli_internal::has_graphical_display_environment("", "wayland-0", "/run/user/1000"),
+		    test_cli_internal::HasGraphicalDisplayEnvironment("", "wayland-0", "/run/user/1000"),
 		    "Wayland display with runtime dir is graphical");
-		ok &=
-		    expect(!test_cli_internal::has_graphical_display_environment("", "", "/run/user/1000"),
-		           "empty DISPLAY does not count as graphical");
+		ok &= expect(!test_cli_internal::HasGraphicalDisplayEnvironment("", "", "/run/user/1000"),
+		             "empty DISPLAY does not count as graphical");
 		return ok;
 	}
 
-	auto missing_preflight_dependency_callbacks_fail_closed() -> bool {
-		auto context = make_success_context();
+	auto MissingPreflightDependencyCallbacksFailClosed() -> bool {
+		auto context = MakeSuccessContext();
 		if (!context.config_result.config.has_value()) {
 			return expect(false, "success context has valid config");
 		}
-		auto dependencies = preflight_dependencies(context);
+		auto dependencies = PreflightDependencies(context);
 
 		auto run_missing_preflight = [&](auto clear_callback, const std::string &message) -> bool {
 			auto missing_dependencies = dependencies;
 			clear_callback(missing_dependencies);
-			const auto result = howdy::native::test_cli_internal::run_preview_preflight(
+			const auto result = howdy::native::test_cli_internal::RunPreviewPreflight(
 			    *context.config_result.config, "", missing_dependencies, "");
 			return expect(result.status ==
 			                  howdy::native::test_cli_internal::TestPreviewStatus::kFaceModelError,
@@ -628,32 +627,32 @@ namespace {
 		return ok;
 	}
 
-	auto missing_dependency_callbacks_fail_closed() -> bool {
+	auto MissingDependencyCallbacksFailClosed() -> bool {
 		bool ok = true;
 		{
-			auto context                     = make_success_context();
-			auto dependencies                = test_dependencies(context);
+			auto context                     = MakeSuccessContext();
+			auto dependencies                = TestDependencies(context);
 			dependencies.load_runtime_config = nullptr;
 
-			const int result = run_test_with_dependencies(dependencies, {"howdy-test"});
+			const int result = RunTestWithDependencies(dependencies, {"howdy-test"});
 
 			ok &= expect(result == 1, "missing load dependency returns 1");
 			ok &= expect(context.load_calls == 0, "missing load dependency skips load");
 			ok &= expect(context.preview_calls == 0, "missing load dependency skips preview");
 		}
 		{
-			auto context             = make_success_context();
-			auto dependencies        = test_dependencies(context);
+			auto context             = MakeSuccessContext();
+			auto dependencies        = TestDependencies(context);
 			dependencies.run_preview = nullptr;
 
-			const int result = run_test_with_dependencies(dependencies, {"howdy-test"});
+			const int result = RunTestWithDependencies(dependencies, {"howdy-test"});
 
 			ok &= expect(result == 1, "missing preview dependency returns 1");
 			ok &= expect(context.load_calls == 0, "missing preview dependency skips load");
 			ok &= expect(context.preview_calls == 0, "missing preview dependency skips preview");
 		}
 		{
-			const int result = run_test_with_dependencies(
+			const int result = RunTestWithDependencies(
 			    howdy::native::test_cli_internal::TestDependencies{}, {"howdy-test"});
 
 			ok &= expect(result == 1, "empty dependencies return 1");
@@ -665,23 +664,23 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= invalid_runtime_config_stops_before_preview();
-	ok &= face_model_failure_returns_error();
-	ok &= preview_frame_failures_map_to_cli_stop_status();
-	ok &= preview_non_terminal_frames_map_to_ok();
-	ok &= missing_graphical_environment_prints_diagnostic();
-	ok &= camera_open_failure_prints_device_and_capture_error();
-	ok &= camera_read_failure_prints_diagnostic();
-	ok &= gui_user_switch_failure_prints_diagnostic();
-	ok &= successful_preview_returns_zero();
-	ok &= configured_device_default_is_used_for_camera_open();
-	ok &= unconfigured_camera_error_is_printed();
-	ok &= device_override_is_used_for_camera_open();
-	ok &= missing_device_value_is_rejected_before_runtime_work();
-	ok &= invalid_device_options_stop_before_runtime_work();
-	ok &= gui_initialization_runs_before_first_camera_read();
-	ok &= graphical_environment_helper_checks_display_values();
-	ok &= missing_preflight_dependency_callbacks_fail_closed();
-	ok &= missing_dependency_callbacks_fail_closed();
+	ok &= InvalidRuntimeConfigStopsBeforePreview();
+	ok &= FaceModelFailureReturnsError();
+	ok &= PreviewFrameFailuresMapToCliStopStatus();
+	ok &= PreviewNonTerminalFramesMapToOk();
+	ok &= MissingGraphicalEnvironmentPrintsDiagnostic();
+	ok &= CameraOpenFailurePrintsDeviceAndCaptureError();
+	ok &= CameraReadFailurePrintsDiagnostic();
+	ok &= GuiUserSwitchFailurePrintsDiagnostic();
+	ok &= SuccessfulPreviewReturnsZero();
+	ok &= ConfiguredDeviceDefaultIsUsedForCameraOpen();
+	ok &= UnconfiguredCameraErrorIsPrinted();
+	ok &= DeviceOverrideIsUsedForCameraOpen();
+	ok &= MissingDeviceValueIsRejectedBeforeRuntimeWork();
+	ok &= InvalidDeviceOptionsStopBeforeRuntimeWork();
+	ok &= GuiInitializationRunsBeforeFirstCameraRead();
+	ok &= GraphicalEnvironmentHelperChecksDisplayValues();
+	ok &= MissingPreflightDependencyCallbacksFailClosed();
+	ok &= MissingDependencyCallbacksFailClosed();
 	return ok ? 0 : 1;
 }

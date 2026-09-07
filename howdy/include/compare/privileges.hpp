@@ -17,11 +17,11 @@ namespace howdy::native {
 		ComparePrivilegeStatus status = ComparePrivilegeStatus::kVerificationFailure;
 		std::string            error_message;
 
-		[[nodiscard]] auto ok() const noexcept -> bool {
+		[[nodiscard]] auto Ok() const noexcept -> bool {
 			return status == ComparePrivilegeStatus::kOk;
 		}
 	};
 
-	[[nodiscard]] auto drop_compare_privileges() -> ComparePrivilegeResult;
+	[[nodiscard]] auto DropComparePrivileges() -> ComparePrivilegeResult;
 
 }  // namespace howdy::native

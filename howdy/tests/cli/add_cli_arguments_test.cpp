@@ -8,9 +8,9 @@ namespace howdy::test::add_cli {
 
 	namespace {
 
-		auto successful_enrollment_appends_expected_model() -> bool {
-			auto      context = make_success_context();
-			const int result  = run_add(context, {"howdy-add", "alice", "front-door"});
+		auto SuccessfulEnrollmentAppendsExpectedModel() -> bool {
+			auto      context = MakeSuccessContext();
+			const int result  = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "successful add returns 0");
@@ -47,14 +47,14 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto successful_interactive_flow_prompts_after_preflight() -> bool {
-			auto               context = make_success_context();
+		auto SuccessfulInteractiveFlowPromptsAfterPreflight() -> bool {
+			auto               context = MakeSuccessContext();
 			std::istringstream input("front-door\n");
 			std::ostringstream output;
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "interactive successful add returns 0");
@@ -74,14 +74,14 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto explicit_empty_label_still_prompts() -> bool {
-			auto               context = make_success_context();
+		auto ExplicitEmptyLabelStillPrompts() -> bool {
+			auto               context = MakeSuccessContext();
 			std::istringstream input("front-door\n");
 			std::ostringstream output;
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", ""});
+			const int result = RunAdd(context, {"howdy-add", "alice", ""});
 
 			bool ok = true;
 			ok &= expect(result == 0, "explicit empty label add returns 0");
@@ -94,14 +94,14 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto plain_mode_skips_label_prompt() -> bool {
-			auto               context = make_success_context();
+		auto PlainModeSkipsLabelPrompt() -> bool {
+			auto               context = MakeSuccessContext();
 			std::istringstream input("front-door\n");
 			std::ostringstream output;
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "--plain"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "--plain"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "plain add returns 0");
@@ -116,14 +116,14 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto yes_flag_skips_label_prompt() -> bool {
-			auto               context = make_success_context();
+		auto YesFlagSkipsLabelPrompt() -> bool {
+			auto               context = MakeSuccessContext();
 			std::istringstream input("front-door\n");
 			std::ostringstream output;
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice", "-y"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "-y"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "yes add returns 0");
@@ -136,10 +136,10 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto long_yes_argument_is_rejected() -> bool {
-			auto context = make_success_context();
+		auto LongYesArgumentIsRejected() -> bool {
+			auto context = MakeSuccessContext();
 
-			const int result = run_add(context, {"howdy-add", "alice", "--yes"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "--yes"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "unknown long yes argument returns 1");
@@ -149,10 +149,10 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto command_label_preserves_csv_characters() -> bool {
-			auto context = make_success_context();
+		auto CommandLabelPreservesCsvCharacters() -> bool {
+			auto context = MakeSuccessContext();
 
-			const int result = run_add(context, {"howdy-add", "alice", "front,\"door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front,\"door"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "CSV-character label add returns 0");
@@ -163,10 +163,10 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto invalid_label_stops_before_capture() -> bool {
-			auto context = make_success_context();
+		auto InvalidLabelStopsBeforeCapture() -> bool {
+			auto context = MakeSuccessContext();
 
-			const int result = run_add(context, {"howdy-add", "alice", "bad/name"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "bad/name"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "invalid label returns 1");
@@ -177,13 +177,13 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto interactive_label_truncates_to_24_characters() -> bool {
-			auto               context = make_success_context();
+		auto InteractiveLabelTruncatesTo24Characters() -> bool {
+			auto               context = MakeSuccessContext();
 			std::istringstream input("abcdefghijklmnopqrstuvwxyz\n");
 			std::ostringstream output;
 			StreamRedirect     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = run_add(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
 			ok &= expect(result == 0, "long interactive label add returns 0");
@@ -194,14 +194,14 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto append_failure_returns_error() -> bool {
-			auto context          = make_success_context();
+		auto AppendFailureReturnsError() -> bool {
+			auto context          = MakeSuccessContext();
 			context.append_result = howdy::native::UserModelMutationResult{
 			    .status        = howdy::native::UserModelStatus::kWriteFailed,
 			    .error_message = "append failed",
 			};
 
-			const int result = run_add(context, {"howdy-add", "alice", "front-door"});
+			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
 			ok &= expect(result == 1, "append failure returns 1");
@@ -213,23 +213,23 @@ namespace howdy::test::add_cli {
 
 	}  // namespace
 
-	auto run_add_cli_success_tests() -> bool {
+	auto RunAddCliSuccessTests() -> bool {
 		bool ok = true;
-		ok &= successful_enrollment_appends_expected_model();
-		ok &= successful_interactive_flow_prompts_after_preflight();
+		ok &= SuccessfulEnrollmentAppendsExpectedModel();
+		ok &= SuccessfulInteractiveFlowPromptsAfterPreflight();
 		return ok;
 	}
 
-	auto run_add_cli_argument_tests() -> bool {
+	auto RunAddCliArgumentTests() -> bool {
 		bool ok = true;
-		ok &= explicit_empty_label_still_prompts();
-		ok &= plain_mode_skips_label_prompt();
-		ok &= yes_flag_skips_label_prompt();
-		ok &= long_yes_argument_is_rejected();
-		ok &= command_label_preserves_csv_characters();
-		ok &= invalid_label_stops_before_capture();
-		ok &= interactive_label_truncates_to_24_characters();
-		ok &= append_failure_returns_error();
+		ok &= ExplicitEmptyLabelStillPrompts();
+		ok &= PlainModeSkipsLabelPrompt();
+		ok &= YesFlagSkipsLabelPrompt();
+		ok &= LongYesArgumentIsRejected();
+		ok &= CommandLabelPreservesCsvCharacters();
+		ok &= InvalidLabelStopsBeforeCapture();
+		ok &= InteractiveLabelTruncatesTo24Characters();
+		ok &= AppendFailureReturnsError();
 		return ok;
 	}
 

@@ -8,7 +8,7 @@ namespace {
 
 	using howdy::test::expect;
 
-	auto argv_from(std::vector<std::string> &args) -> std::vector<char *> {
+	auto ArgvFrom(std::vector<std::string> &args) -> std::vector<char *> {
 		std::vector<char *> result;
 		result.reserve(args.size());
 		for (auto &arg : args) {
@@ -24,9 +24,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "alice"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kOk,
 		             "simple user parse succeeds");
 		ok &= expect(result.args.user == "alice", "user parsed");
@@ -35,9 +35,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "--config", "/x.ini", "bob"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &=
 		    expect(result.status == howdy::native::CompareArgsStatus::kOk, "config parse succeeds");
 		ok &= expect(result.args.user == "bob", "user parsed after config");
@@ -46,9 +46,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "alice", "bob"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "surplus user is error");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "surplus user aborts");
@@ -58,9 +58,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "--help"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kHelp,
 		             "help produces help status");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kSuccess,
@@ -70,9 +70,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "--bad"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "unknown arg is error");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "unknown arg aborts");
@@ -82,9 +82,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "missing user is error");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "missing user aborts");
@@ -92,9 +92,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "../alice"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "compare rejects path traversal username input");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,
@@ -103,9 +103,9 @@ auto main() -> int {
 
 	{
 		std::vector<std::string> args = {"howdy-compare", "alice..bob"};
-		auto                     argv = argv_from(args);
-		const auto result = howdy::native::parse_compare_args(static_cast<int>(argv.size()),
-		                                                      argv.data(), "/tmp/config.ini");
+		auto                     argv = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
 		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "compare rejects malformed dot-dot username input");
 		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,

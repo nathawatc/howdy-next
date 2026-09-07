@@ -10,30 +10,30 @@
 
 namespace {
 
-	auto open_capture_dependency(void *context) -> bool {
-		return static_cast<howdy::native::VideoCapture *>(context)->open(false);
+	auto OpenCaptureDependency(void *context) -> bool {
+		return static_cast<howdy::native::VideoCapture *>(context)->Open(false);
 	}
 
-	auto warm_up_capture_dependency(void *context) -> bool {
-		return static_cast<howdy::native::VideoCapture *>(context)->warm_up();
+	auto WarmUpCaptureDependency(void *context) -> bool {
+		return static_cast<howdy::native::VideoCapture *>(context)->WarmUp();
 	}
 
-	auto read_gray_frame_dependency(void *context, cv::Mat &gray_frame) -> bool {
+	auto ReadGrayFrameDependency(void *context, cv::Mat &gray_frame) -> bool {
 		cv::Mat frame;
-		return static_cast<howdy::native::VideoCapture *>(context)->read(frame, &gray_frame);
+		return static_cast<howdy::native::VideoCapture *>(context)->Read(frame, &gray_frame);
 	}
 
-	auto capture_error_message_dependency(void *context) -> std::string {
-		return static_cast<howdy::native::VideoCapture *>(context)->error_message();
+	auto CaptureErrorMessageDependency(void *context) -> std::string {
+		return static_cast<howdy::native::VideoCapture *>(context)->ErrorMessage();
 	}
 
-	auto set_capture_property_dependency(void *context, howdy::native::CaptureProperty property)
+	auto SetCapturePropertyDependency(void *context, howdy::native::CaptureProperty property)
 	    -> bool {
-		return static_cast<howdy::native::VideoCapture *>(context)->set(property.id,
+		return static_cast<howdy::native::VideoCapture *>(context)->Set(property.id,
 		                                                                property.value);
 	}
 
-	auto steady_now_dependency([[maybe_unused]] void *context)
+	auto SteadyNowDependency([[maybe_unused]] void *context)
 	    -> std::chrono::steady_clock::time_point {
 		return std::chrono::steady_clock::now();
 	}
@@ -45,16 +45,16 @@ namespace howdy::native {
 	CompareCaptureSession::CompareCaptureSession(
 	    const VideoConfig &config)  // NOLINT(modernize-pass-by-value)
 	    : config_(config)
-	    , capture_(load_capture_settings(config_)) {
+	    , capture_(LoadCaptureSettings(config_)) {
 		dependencies_ = {
 		    .capture_context = &capture_,
-		    .open_capture    = open_capture_dependency,
-		    .warm_up_capture = warm_up_capture_dependency,
-		    .read_gray_frame = read_gray_frame_dependency,
-		    .error_message   = capture_error_message_dependency,
-		    .set_property    = set_capture_property_dependency,
+		    .open_capture    = OpenCaptureDependency,
+		    .warm_up_capture = WarmUpCaptureDependency,
+		    .read_gray_frame = ReadGrayFrameDependency,
+		    .error_message   = CaptureErrorMessageDependency,
+		    .set_property    = SetCapturePropertyDependency,
 		    .clock_context   = nullptr,
-		    .now             = steady_now_dependency,
+		    .now             = SteadyNowDependency,
 		};
 	}
 
@@ -62,10 +62,10 @@ namespace howdy::native {
 	    const VideoConfig         &config,  // NOLINT(modernize-pass-by-value)
 	    CompareCaptureDependencies dependencies)
 	    : config_(config)
-	    , capture_(load_capture_settings(config_))
+	    , capture_(LoadCaptureSettings(config_))
 	    , dependencies_(dependencies) {}
 
-	auto CompareCaptureSession::dependencies_valid() const -> bool {
+	auto CompareCaptureSession::DependenciesValid() const -> bool {
 		return dependencies_.capture_context != nullptr && dependencies_.open_capture != nullptr &&
 		       dependencies_.warm_up_capture != nullptr &&
 		       dependencies_.read_gray_frame != nullptr && dependencies_.error_message != nullptr &&
@@ -73,9 +73,9 @@ namespace howdy::native {
 		       dependencies_.now != nullptr;
 	}
 
-	auto CompareCaptureSession::open() -> CompareCaptureOpenResult {
+	auto CompareCaptureSession::Open() -> CompareCaptureOpenResult {
 		is_open_ = false;
-		if (!dependencies_valid()) {
+		if (!DependenciesValid()) {
 			return {
 			    .status = CompareCaptureOpenStatus::kInvalidDependencies,
 			};
@@ -90,7 +90,7 @@ namespace howdy::native {
 
 		is_open_ = true;
 		stats_   = {};
-		restore_exposure();
+		RestoreExposure();
 		if (!dependencies_.warm_up_capture(dependencies_.capture_context)) {
 			is_open_ = false;
 			return {
@@ -104,8 +104,8 @@ namespace howdy::native {
 		};
 	}
 
-	auto CompareCaptureSession::next_frame() -> CompareCaptureFrameResult {
-		if (!dependencies_valid()) {
+	auto CompareCaptureSession::NextFrame() -> CompareCaptureFrameResult {
+		if (!DependenciesValid()) {
 			return {
 			    .status = CompareCaptureFrameStatus::kInvalidDependencies,
 			};
@@ -141,32 +141,32 @@ namespace howdy::native {
 		};
 	}
 
-	void CompareCaptureSession::reset_timeout_clock() {
-		if (!is_open_ || !dependencies_valid()) {
+	void CompareCaptureSession::ResetTimeoutClock() {
+		if (!is_open_ || !DependenciesValid()) {
 			return;
 		}
 
 		loop_start_ = dependencies_.now(dependencies_.clock_context);
 	}
 
-	void CompareCaptureSession::record_black_frame() {
+	void CompareCaptureSession::RecordBlackFrame() {
 		stats_.black_frames++;
 	}
 
-	void CompareCaptureSession::record_dark_frame(float darkness) {
+	void CompareCaptureSession::RecordDarkFrame(float darkness) {
 		stats_.dark_running_total += darkness;
 		stats_.valid_frames++;
 		stats_.dark_frames++;
 	}
 
-	void CompareCaptureSession::record_ready_frame(float darkness) {
+	void CompareCaptureSession::RecordReadyFrame(float darkness) {
 		stats_.dark_running_total += darkness;
 		stats_.valid_frames++;
 	}
 
 	void
-	CompareCaptureSession::restore_exposure() {  // NOLINT(readability-make-member-function-const)
-		if (!is_open_ || !dependencies_valid() || config_.exposure == -1) {
+	CompareCaptureSession::RestoreExposure() {  // NOLINT(readability-make-member-function-const)
+		if (!is_open_ || !DependenciesValid() || config_.exposure == -1) {
 			return;
 		}
 
@@ -186,7 +186,7 @@ namespace howdy::native {
 		}
 	}
 
-	auto CompareCaptureSession::stats() const -> const CompareCaptureStats & {
+	auto CompareCaptureSession::Stats() const -> const CompareCaptureStats & {
 		return stats_;
 	}
 

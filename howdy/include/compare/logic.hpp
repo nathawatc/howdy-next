@@ -28,18 +28,18 @@ namespace howdy::native {
 		int rotation = 0;
 	};
 
-	auto update_best_score(float current, float score, FaceMetric metric) -> float;
+	auto UpdateBestScore(float current, float score, FaceMetric metric) -> float;
 
-	auto classify_brightness(double hist_total, float darkness, float dark_threshold)
+	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision;
 
-	auto timeout_exit(int dark_tries, int valid_frames) -> CompareExit;
-	auto compare_resize_scale(FrameGeometry frame, float max_height) -> double;
-	auto compare_abort_from_cv_exception(const cv::Exception &error, std::ostream &stream,
-	                                     std::string_view context) -> CompareExit;
-	auto compare_abort_from_exception(const std::exception &error, std::ostream &stream,
-	                                  std::string_view context) -> CompareExit;
-	auto compare_abort_from_unknown_exception(std::ostream &stream, std::string_view context)
+	auto TimeoutExit(int dark_tries, int valid_frames) -> CompareExit;
+	auto CompareResizeScale(FrameGeometry frame, float max_height) -> double;
+	auto CompareAbortFromCvException(const cv::Exception &error, std::ostream &stream,
+	                                 std::string_view context) -> CompareExit;
+	auto CompareAbortFromException(const std::exception &error, std::ostream &stream,
+	                               std::string_view context) -> CompareExit;
+	auto CompareAbortFromUnknownException(std::ostream &stream, std::string_view context)
 	    -> CompareExit;
 
 }  // namespace howdy::native

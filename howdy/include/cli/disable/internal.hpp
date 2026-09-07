@@ -24,7 +24,7 @@ namespace howdy::native::disable_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto disable_main_with_dependencies(int argc, char **argv,
-	                                    const DisableDependencies &dependencies) -> int;
+	auto DisableMainWithDependencies(int argc, char **argv, const DisableDependencies &dependencies)
+	    -> int;
 
 }  // namespace howdy::native::disable_internal

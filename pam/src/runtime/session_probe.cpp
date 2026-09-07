@@ -16,10 +16,10 @@ namespace howdy::pam::runtime {
 
 	}  // namespace
 
-	auto probe_session_state(pam_handle_t *pamh, const EnvironmentLookupDependencies &dependencies)
+	auto ProbeSessionState(pam_handle_t *pamh, const EnvironmentLookupDependencies &dependencies)
 	    -> SessionState {
 		for (const std::string_view marker : kSshEnvironmentMarkers) {
-			if (find_environment_variable(pamh, marker, dependencies) !=
+			if (FindEnvironmentVariable(pamh, marker, dependencies) !=
 			    EnvironmentSource::kMissing) {
 				return {.ssh_session = true};
 			}
@@ -27,9 +27,9 @@ namespace howdy::pam::runtime {
 		return {.ssh_session = false};
 	}
 
-	auto production_ssh_session_present(void *context, pam_handle_t *pamh) -> bool {
+	auto ProductionSshSessionPresent(void *context, pam_handle_t *pamh) -> bool {
 		(void)context;
-		return probe_session_state(pamh, production_environment_lookup_dependencies()).ssh_session;
+		return ProbeSessionState(pamh, ProductionEnvironmentLookupDependencies()).ssh_session;
 	}
 
 }  // namespace howdy::pam::runtime

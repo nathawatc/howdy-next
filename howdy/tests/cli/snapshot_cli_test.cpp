@@ -42,7 +42,7 @@ namespace {
 		std::size_t                                             write_frame_count = 0;
 	};
 
-	auto valid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+	auto ValidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 		howdy::native::RuntimeConfig config;
 		config.video.dark_threshold = 41.0F;
 		config.face.sface_threshold = 0.42F;
@@ -53,7 +53,7 @@ namespace {
 		};
 	}
 
-	auto invalid_config_load_result() -> howdy::native::RuntimeConfigLoadResult {
+	auto InvalidConfigLoadResult() -> howdy::native::RuntimeConfigLoadResult {
 		return howdy::native::RuntimeConfigLoadResult{
 		    .ok            = false,
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kInvalidRuntimeValue,
@@ -61,7 +61,7 @@ namespace {
 		};
 	}
 
-	auto dummy_frames() -> std::vector<cv::Mat> {
+	auto DummyFrames() -> std::vector<cv::Mat> {
 		return {
 		    cv::Mat(1, 1, CV_8UC3, cv::Scalar(1, 2, 3)),
 		    cv::Mat(1, 1, CV_8UC3, cv::Scalar(4, 5, 6)),
@@ -70,20 +70,20 @@ namespace {
 		};
 	}
 
-	auto successful_capture_result() -> howdy::native::snapshot_internal::SnapshotCaptureResult {
+	auto SuccessfulCaptureResult() -> howdy::native::snapshot_internal::SnapshotCaptureResult {
 		return howdy::native::snapshot_internal::SnapshotCaptureResult{
 		    .status = howdy::native::snapshot_internal::SnapshotCaptureStatus::kOk,
-		    .frames = dummy_frames(),
+		    .frames = DummyFrames(),
 		};
 	}
 
-	auto load_runtime_config_callback(void *raw_context) -> howdy::native::RuntimeConfigLoadResult {
+	auto LoadRuntimeConfigCallback(void *raw_context) -> howdy::native::RuntimeConfigLoadResult {
 		auto *context = static_cast<SnapshotCliTestContext *>(raw_context);
 		++context->load_calls;
 		return context->config_result;
 	}
 
-	auto capture_frames_callback(void *raw_context, const howdy::native::RuntimeConfig &config)
+	auto CaptureFramesCallback(void *raw_context, const howdy::native::RuntimeConfig &config)
 	    -> howdy::native::snapshot_internal::SnapshotCaptureResult {
 		auto *context = static_cast<SnapshotCliTestContext *>(raw_context);
 		++context->capture_calls;
@@ -91,8 +91,8 @@ namespace {
 		return context->capture_result;
 	}
 
-	auto write_snapshot_callback(void *raw_context, const std::vector<cv::Mat> &frames,
-	                             const howdy::native::RuntimeConfig &config)
+	auto WriteSnapshotCallback(void *raw_context, const std::vector<cv::Mat> &frames,
+	                           const howdy::native::RuntimeConfig &config)
 	    -> howdy::native::snapshot_internal::SnapshotWriteResult {
 		auto *context = static_cast<SnapshotCliTestContext *>(raw_context);
 		++context->write_calls;
@@ -101,36 +101,36 @@ namespace {
 		return context->write_result;
 	}
 
-	auto test_dependencies(SnapshotCliTestContext &context)
+	auto TestDependencies(SnapshotCliTestContext &context)
 	    -> howdy::native::snapshot_internal::SnapshotDependencies {
 		return howdy::native::snapshot_internal::SnapshotDependencies{
 		    .context             = &context,
-		    .load_runtime_config = load_runtime_config_callback,
-		    .capture_frames      = capture_frames_callback,
-		    .write_snapshot      = write_snapshot_callback,
+		    .load_runtime_config = LoadRuntimeConfigCallback,
+		    .capture_frames      = CaptureFramesCallback,
+		    .write_snapshot      = WriteSnapshotCallback,
 		};
 	}
 
-	auto run_snapshot_with_dependencies(
-	    howdy::native::snapshot_internal::SnapshotDependencies dependencies,
-	    std::vector<std::string>                               arguments) -> int {
+	auto
+	RunSnapshotWithDependencies(howdy::native::snapshot_internal::SnapshotDependencies dependencies,
+	                            std::vector<std::string> arguments) -> int {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
 			argv.push_back(argument.data());
 		}
-		return howdy::native::snapshot_internal::snapshot_main_with_dependencies(
+		return howdy::native::snapshot_internal::SnapshotMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(), dependencies);
 	}
 
-	auto run_snapshot(SnapshotCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return run_snapshot_with_dependencies(test_dependencies(context), std::move(arguments));
+	auto RunSnapshot(SnapshotCliTestContext &context, std::vector<std::string> arguments) -> int {
+		return RunSnapshotWithDependencies(TestDependencies(context), std::move(arguments));
 	}
 
-	auto make_success_context() -> SnapshotCliTestContext {
+	auto MakeSuccessContext() -> SnapshotCliTestContext {
 		SnapshotCliTestContext context;
-		context.config_result  = valid_config_load_result();
-		context.capture_result = successful_capture_result();
+		context.config_result  = ValidConfigLoadResult();
+		context.capture_result = SuccessfulCaptureResult();
 		context.write_result   = howdy::native::snapshot_internal::SnapshotWriteResult{
 		    .ok   = true,
 		    .path = "/tmp/howdy-test/snapshots/test.jpg",
@@ -138,13 +138,13 @@ namespace {
 		return context;
 	}
 
-	auto invalid_runtime_config_stops_before_capture_and_write() -> bool {
-		auto context          = make_success_context();
-		context.config_result = invalid_config_load_result();
+	auto InvalidRuntimeConfigStopsBeforeCaptureAndWrite() -> bool {
+		auto context          = MakeSuccessContext();
+		context.config_result = InvalidConfigLoadResult();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "invalid runtime config returns 1");
@@ -156,8 +156,8 @@ namespace {
 		return ok;
 	}
 
-	auto camera_open_failure_stops_before_write() -> bool {
-		auto context           = make_success_context();
+	auto CameraOpenFailureStopsBeforeWrite() -> bool {
+		auto context           = MakeSuccessContext();
 		context.capture_result = howdy::native::snapshot_internal::SnapshotCaptureResult{
 		    .status        = howdy::native::snapshot_internal::SnapshotCaptureStatus::kOpenError,
 		    .error_message = "Camera is not configured; set video.device_path",
@@ -165,7 +165,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "camera open failure returns 1");
@@ -179,15 +179,15 @@ namespace {
 		return ok;
 	}
 
-	auto camera_read_failure_stops_before_write() -> bool {
-		auto context           = make_success_context();
+	auto CameraReadFailureStopsBeforeWrite() -> bool {
+		auto context           = MakeSuccessContext();
 		context.capture_result = howdy::native::snapshot_internal::SnapshotCaptureResult{
 		    .status = howdy::native::snapshot_internal::SnapshotCaptureStatus::kReadError,
 		};
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "camera read failure returns 1");
@@ -199,19 +199,19 @@ namespace {
 		return ok;
 	}
 
-	auto unexpected_successful_capture_frame_count_stops_before_write(std::size_t frame_count,
-	                                                                  const std::string &test_name)
+	auto UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(std::size_t        frame_count,
+	                                                           const std::string &test_name)
 	    -> bool {
-		auto context = make_success_context();
+		auto context = MakeSuccessContext();
 		context.capture_result.frames.clear();
-		const auto frames = dummy_frames();
+		const auto frames = DummyFrames();
 		for (std::size_t index = 0; index < frame_count; ++index) {
 			context.capture_result.frames.push_back(frames[index % frames.size()]);
 		}
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, test_name + " returns 1");
@@ -224,30 +224,30 @@ namespace {
 		return ok;
 	}
 
-	auto zero_frame_successful_capture_stops_before_write() -> bool {
-		return unexpected_successful_capture_frame_count_stops_before_write(
+	auto ZeroFrameSuccessfulCaptureStopsBeforeWrite() -> bool {
+		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(
 		    0, "zero-frame successful capture");
 	}
 
-	auto short_successful_capture_stops_before_write() -> bool {
-		return unexpected_successful_capture_frame_count_stops_before_write(
-		    kSnapshotFrameCount - 1, "short successful capture");
+	auto ShortSuccessfulCaptureStopsBeforeWrite() -> bool {
+		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(kSnapshotFrameCount - 1,
+		                                                             "short successful capture");
 	}
 
-	auto oversized_successful_capture_stops_before_write() -> bool {
-		return unexpected_successful_capture_frame_count_stops_before_write(
+	auto OversizedSuccessfulCaptureStopsBeforeWrite() -> bool {
+		return UnexpectedSuccessfulCaptureFrameCountStopsBeforeWrite(
 		    kSnapshotFrameCount + 1, "oversized successful capture");
 	}
 
-	auto unknown_capture_status_fails_closed() -> bool {
-		auto context = make_success_context();
+	auto UnknownCaptureStatusFailsClosed() -> bool {
+		auto context = MakeSuccessContext();
 		context.capture_result.status =
 		    std::bit_cast<howdy::native::snapshot_internal::SnapshotCaptureStatus>(
 		        std::uint8_t{UINT8_MAX});
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "unknown capture status returns 1");
@@ -259,15 +259,15 @@ namespace {
 		return ok;
 	}
 
-	auto empty_write_path_returns_error() -> bool {
-		auto context         = make_success_context();
+	auto EmptyWritePathReturnsError() -> bool {
+		auto context         = MakeSuccessContext();
 		context.write_result = howdy::native::snapshot_internal::SnapshotWriteResult{
 		    .ok = true,
 		};
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "empty write path returns 1");
@@ -279,13 +279,13 @@ namespace {
 		return ok;
 	}
 
-	auto write_failure_returns_error() -> bool {
-		auto context         = make_success_context();
+	auto WriteFailureReturnsError() -> bool {
+		auto context         = MakeSuccessContext();
 		context.write_result = howdy::native::snapshot_internal::SnapshotWriteResult{};
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
 		ok &= expect(result == 1, "write failure returns 1");
@@ -298,14 +298,14 @@ namespace {
 		return ok;
 	}
 
-	auto missing_dependency_callbacks_stop_before_callbacks() -> bool {
+	auto MissingDependencyCallbacksStopBeforeCallbacks() -> bool {
 		bool ok = true;
 		{
-			auto context                     = make_success_context();
-			auto dependencies                = test_dependencies(context);
+			auto context                     = MakeSuccessContext();
+			auto dependencies                = TestDependencies(context);
 			dependencies.load_runtime_config = nullptr;
 
-			const int result = run_snapshot_with_dependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
 			ok &= expect(result == 1, "missing load dependency returns 1");
 			ok &= expect(context.load_calls == 0, "missing load dependency skips load");
@@ -313,11 +313,11 @@ namespace {
 			ok &= expect(context.write_calls == 0, "missing load dependency skips write");
 		}
 		{
-			auto context                = make_success_context();
-			auto dependencies           = test_dependencies(context);
+			auto context                = MakeSuccessContext();
+			auto dependencies           = TestDependencies(context);
 			dependencies.capture_frames = nullptr;
 
-			const int result = run_snapshot_with_dependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
 			ok &= expect(result == 1, "missing capture dependency returns 1");
 			ok &= expect(context.load_calls == 0, "missing capture dependency skips load");
@@ -325,11 +325,11 @@ namespace {
 			ok &= expect(context.write_calls == 0, "missing capture dependency skips write");
 		}
 		{
-			auto context                = make_success_context();
-			auto dependencies           = test_dependencies(context);
+			auto context                = MakeSuccessContext();
+			auto dependencies           = TestDependencies(context);
 			dependencies.write_snapshot = nullptr;
 
-			const int result = run_snapshot_with_dependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
 			ok &= expect(result == 1, "missing write dependency returns 1");
 			ok &= expect(context.load_calls == 0, "missing write dependency skips load");
@@ -339,12 +339,12 @@ namespace {
 		return ok;
 	}
 
-	auto success_prints_generated_path() -> bool {
-		auto               context = make_success_context();
+	auto SuccessPrintsGeneratedPath() -> bool {
+		auto               context = MakeSuccessContext();
 		std::ostringstream output;
 		StreamRedirect     output_redirect(std::cout, output.rdbuf());
 
-		const int result = run_snapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		const auto output_text = output.str();
 		bool       ok          = true;
@@ -370,16 +370,16 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= invalid_runtime_config_stops_before_capture_and_write();
-	ok &= camera_open_failure_stops_before_write();
-	ok &= camera_read_failure_stops_before_write();
-	ok &= zero_frame_successful_capture_stops_before_write();
-	ok &= short_successful_capture_stops_before_write();
-	ok &= oversized_successful_capture_stops_before_write();
-	ok &= unknown_capture_status_fails_closed();
-	ok &= write_failure_returns_error();
-	ok &= empty_write_path_returns_error();
-	ok &= missing_dependency_callbacks_stop_before_callbacks();
-	ok &= success_prints_generated_path();
+	ok &= InvalidRuntimeConfigStopsBeforeCaptureAndWrite();
+	ok &= CameraOpenFailureStopsBeforeWrite();
+	ok &= CameraReadFailureStopsBeforeWrite();
+	ok &= ZeroFrameSuccessfulCaptureStopsBeforeWrite();
+	ok &= ShortSuccessfulCaptureStopsBeforeWrite();
+	ok &= OversizedSuccessfulCaptureStopsBeforeWrite();
+	ok &= UnknownCaptureStatusFailsClosed();
+	ok &= WriteFailureReturnsError();
+	ok &= EmptyWritePathReturnsError();
+	ok &= MissingDependencyCallbacksStopBeforeCallbacks();
+	ok &= SuccessPrintsGeneratedPath();
 	return ok ? 0 : 1;
 }

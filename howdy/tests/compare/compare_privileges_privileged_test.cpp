@@ -1,17 +1,16 @@
 #include "compare/compare_privileges_test_support.hpp"
 
-auto run_compare_privileges_privileged_tests() -> bool;
+auto RunComparePrivilegesPrivilegedTests() -> bool;
 
 namespace howdy::test::compare_privileges {
 	namespace {
 
-		auto test_privileged_success() -> bool {
+		auto TestPrivilegedSuccess() -> bool {
 			FakePrivilegeContext context;
-			const auto           result = drop(context);
+			const auto           result = Drop(context);
 			bool                 ok     = true;
-			ok &= expect(result.ok(), "privileged credential drop succeeds");
-			ok &= expect_events(context, expected_privileged_events(),
-			                    "privileged sequence is exact");
+			ok &= expect(result.Ok(), "privileged credential drop succeeds");
+			ok &= ExpectEvents(context, ExpectedPrivilegedEvents(), "privileged sequence is exact");
 			ok &= expect(context.lookup_name == "nobody", "lookup resolves exactly nobody");
 			ok &= expect(context.group_count == 0 && context.group_pointer == nullptr,
 			             "setgroups receives zero and null pointer");
@@ -40,10 +39,10 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext privileged_context;
 				privileged_context.uids      = uids;
 				privileged_context.gids      = gids;
-				const auto privileged_result = drop(privileged_context);
-				ok &= expect(privileged_result.ok(), label + " enter privileged drop path");
-				ok &= expect_events(privileged_context, expected_privileged_events(),
-				                    label + " preserve privileged operation order");
+				const auto privileged_result = Drop(privileged_context);
+				ok &= expect(privileged_result.Ok(), label + " enter privileged drop path");
+				ok &= ExpectEvents(privileged_context, ExpectedPrivilegedEvents(),
+				                   label + " preserve privileged operation order");
 				ok &= expect(privileged_context.uids ==
 				                 std::array<uid_t, 3>{privileged_context.target_uid,
 				                                      privileged_context.target_uid,
@@ -58,18 +57,18 @@ namespace howdy::test::compare_privileges {
 
 			FakePrivilegeContext safe_securebits_context;
 			safe_securebits_context.securebits = SECBIT_NOROOT;
-			const auto safe_securebits_result  = drop(safe_securebits_context);
-			ok &= expect(safe_securebits_result.ok(), "unrelated safe securebit remains allowed");
+			const auto safe_securebits_result  = Drop(safe_securebits_context);
+			ok &= expect(safe_securebits_result.Ok(), "unrelated safe securebit remains allowed");
 			return ok;
 		}
 
-		auto test_privileged_residual_capabilities() -> bool {
+		auto TestPrivilegedResidualCapabilities() -> bool {
 			bool ok = true;
 			for (const auto &[capability, label] : kCapabilityCases) {
 				FakePrivilegeContext context;
-				set_capability(context.capabilities_after_capset, capability);
-				const auto result = drop(context);
-				ok &= verify_fatal_result(
+				SetCapability(context.capabilities_after_capset, capability);
+				const auto result = Drop(context);
+				ok &= VerifyFatalResult(
 				    context, result,
 				    {"getresuid", "getresgid", "lookup", "query securebits",
 				     "clear ambient capabilities", "clear supplementary groups", "setresgid",
@@ -85,22 +84,22 @@ namespace howdy::test::compare_privileges {
 			return ok;
 		}
 
-		auto test_lookup_and_identity_failures() -> bool {
+		auto TestLookupAndIdentityFailures() -> bool {
 			bool ok = true;
 			for (const auto &[mode, label] : std::vector<std::pair<LookupMode, std::string>>{
 			         {LookupMode::kMissing, "missing"}, {LookupMode::kError, "error"}}) {
 				FakePrivilegeContext context;
 				context.lookup_mode = mode;
-				const auto result   = drop(context);
+				const auto result   = Drop(context);
 				ok &= expect(result.status == ComparePrivilegeStatus::kLookupFailed,
 				             "account " + label + " fails closed");
-				ok &= expect_events(context, {"getresuid", "getresgid", "lookup"},
-				                    "lookup failure stops all later operations");
+				ok &= ExpectEvents(context, {"getresuid", "getresgid", "lookup"},
+				                   "lookup failure stops all later operations");
 			}
 
 			FakePrivilegeContext erange_context;
 			erange_context.lookup_mode = LookupMode::kErange;
-			const auto erange_result   = drop(erange_context);
+			const auto erange_result   = Drop(erange_context);
 			ok &= expect(erange_result.status == ComparePrivilegeStatus::kLookupFailed,
 			             "repeated ERANGE fails closed");
 			ok &= expect(erange_context.largest_lookup_buffer == std::size_t{64} * 1024,
@@ -116,16 +115,16 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.target_uid = root_uid ? 0 : context.target_uid;
 				context.target_gid = root_gid ? 0 : context.target_gid;
-				const auto result  = drop(context);
+				const auto result  = Drop(context);
 				ok &= expect(result.status == ComparePrivilegeStatus::kInvalidIdentity,
 				             "root " + label + " is rejected");
-				ok &= expect_events(context, {"getresuid", "getresgid", "lookup"},
-				                    "invalid identity stops all later operations");
+				ok &= ExpectEvents(context, {"getresuid", "getresgid", "lookup"},
+				                   "invalid identity stops all later operations");
 			}
 			return ok;
 		}
 
-		auto test_privileged_pre_mutation_failures() -> bool {
+		auto TestPrivilegedPreMutationFailures() -> bool {
 			struct FailureCase {
 				FailureOperation         failure;
 				ComparePrivilegeStatus   status;
@@ -149,14 +148,14 @@ namespace howdy::test::compare_privileges {
 			for (const auto &test_case : cases) {
 				FakePrivilegeContext context;
 				context.failure   = test_case.failure;
-				const auto result = drop(context);
+				const auto result = Drop(context);
 				ok &= expect(result.status == test_case.status,
 				             test_case.label + " returns structured failure");
-				ok &= expect(!result.ok(), test_case.label + " is not success");
+				ok &= expect(!result.Ok(), test_case.label + " is not success");
 				ok &= expect(context.fatal_calls == 0,
 				             test_case.label + " does not fatal before UID drop");
-				ok &= expect_events(context, test_case.events,
-				                    test_case.label + " stops later operations");
+				ok &= ExpectEvents(context, test_case.events,
+				                   test_case.label + " stops later operations");
 			}
 
 			for (const auto &[securebits, label] : std::array<std::pair<int, const char *>, 2>{
@@ -164,17 +163,17 @@ namespace howdy::test::compare_privileges {
 			          {SECBIT_NO_SETUID_FIXUP, "NO_SETUID_FIXUP"}}}) {
 				FakePrivilegeContext context;
 				context.securebits = securebits;
-				const auto result  = drop(context);
+				const auto result  = Drop(context);
 				ok &= expect(result.status == ComparePrivilegeStatus::kCapabilityFailure,
 				             std::string(label) + " is rejected");
 				ok &=
-				    expect_events(context, {"getresuid", "getresgid", "lookup", "query securebits"},
-				                  std::string(label) + " stops before credential mutation");
+				    ExpectEvents(context, {"getresuid", "getresgid", "lookup", "query securebits"},
+				                 std::string(label) + " stops before credential mutation");
 			}
 			return ok;
 		}
 
-		auto test_privileged_failure_paths() -> bool {
+		auto TestPrivilegedFailurePaths() -> bool {
 			const std::vector<std::string> through_setresuid{"getresuid",
 			                                                 "getresgid",
 			                                                 "lookup",
@@ -203,8 +202,8 @@ namespace howdy::test::compare_privileges {
 			          "setresuid failure"}}) {
 				FakePrivilegeContext context;
 				context.failure   = failure;
-				const auto result = drop(context);
-				ok &= verify_fatal_result(context, result, events, label);
+				const auto result = Drop(context);
+				ok &= VerifyFatalResult(context, result, events, label);
 			}
 
 			for (const auto &[failure, suffix, label] :
@@ -229,10 +228,10 @@ namespace howdy::test::compare_privileges {
 			          "successful root regain"}}) {
 				FakePrivilegeContext context;
 				context.failure     = failure;
-				const auto result   = drop(context);
+				const auto result   = Drop(context);
 				auto       expected = through_setresuid;
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
-				ok &= verify_fatal_result(context, result, expected, label);
+				ok &= VerifyFatalResult(context, result, expected, label);
 			}
 
 			for (const auto &[gid_mismatch, uid_mismatch, suffix, label] :
@@ -242,11 +241,11 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.gid_mismatch = gid_mismatch;
 				context.uid_mismatch = uid_mismatch;
-				const auto result    = drop(context);
+				const auto result    = Drop(context);
 				auto       expected  = through_setresuid;
 				expected.insert(expected.end(), {"clear capability sets", "read capability sets"});
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
-				ok &= verify_fatal_result(context, result, expected, label);
+				ok &= VerifyFatalResult(context, result, expected, label);
 			}
 
 			auto through_identity_verification = through_setresuid;
@@ -264,10 +263,10 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.fsuid_mismatch = fsuid_mismatch;
 				context.fsgid_mismatch = fsgid_mismatch;
-				const auto result      = drop(context);
+				const auto result      = Drop(context);
 				auto       expected    = through_identity_verification;
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
-				ok &= verify_fatal_result(context, result, expected, label);
+				ok &= VerifyFatalResult(context, result, expected, label);
 				ok &= expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
 				                                                      context.target_uid,
 				                                                      context.target_uid},
@@ -276,37 +275,37 @@ namespace howdy::test::compare_privileges {
 
 			FakePrivilegeContext group_query_context;
 			group_query_context.failure   = FailureOperation::kGetgroups;
-			const auto group_query_result = drop(group_query_context);
+			const auto group_query_result = Drop(group_query_context);
 			auto       group_query_events = through_identity_verification;
 			group_query_events.insert(
 			    group_query_events.end(),
 			    {"query fsuid", "query fsgid", "query supplementary groups", "fatal"});
-			ok &= verify_fatal_result(group_query_context, group_query_result, group_query_events,
-			                          "post-drop supplementary-group query failure");
+			ok &= VerifyFatalResult(group_query_context, group_query_result, group_query_events,
+			                        "post-drop supplementary-group query failure");
 
 			FakePrivilegeContext residual_group_context;
 			residual_group_context.supplementary_groups                        = {2000};
 			residual_group_context.retain_supplementary_groups_after_setgroups = true;
-			const auto residual_group_result = drop(residual_group_context);
-			ok &= verify_fatal_result(residual_group_context, residual_group_result,
-			                          group_query_events, "post-drop residual supplementary group");
+			const auto residual_group_result = Drop(residual_group_context);
+			ok &= VerifyFatalResult(residual_group_context, residual_group_result,
+			                        group_query_events, "post-drop residual supplementary group");
 			return ok;
 		}
 
 	}  // namespace
 
-	inline auto run_compare_privileges_privileged_tests_impl() -> bool {
+	inline auto RunComparePrivilegesPrivilegedTestsImpl() -> bool {
 		bool ok = true;
-		ok &= test_privileged_success();
-		ok &= test_privileged_residual_capabilities();
-		ok &= test_lookup_and_identity_failures();
-		ok &= test_privileged_pre_mutation_failures();
-		ok &= test_privileged_failure_paths();
+		ok &= TestPrivilegedSuccess();
+		ok &= TestPrivilegedResidualCapabilities();
+		ok &= TestLookupAndIdentityFailures();
+		ok &= TestPrivilegedPreMutationFailures();
+		ok &= TestPrivilegedFailurePaths();
 		return ok;
 	}
 
 }  // namespace howdy::test::compare_privileges
 
-auto run_compare_privileges_privileged_tests() -> bool {
-	return howdy::test::compare_privileges::run_compare_privileges_privileged_tests_impl();
+auto RunComparePrivilegesPrivilegedTests() -> bool {
+	return howdy::test::compare_privileges::RunComparePrivilegesPrivilegedTestsImpl();
 }

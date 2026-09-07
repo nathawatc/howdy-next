@@ -10,55 +10,55 @@ namespace howdy::pam::native_prompt_input {
 		length_ = 0;
 	}
 
-	auto SensitiveBuffer::empty() const -> bool {
+	auto SensitiveBuffer::Empty() const -> bool {
 		return length_ == 0;
 	}
 
-	auto SensitiveBuffer::full() const -> bool {
+	auto SensitiveBuffer::Full() const -> bool {
 		return length_ == data_.size();
 	}
 
-	void SensitiveBuffer::push_back(char value) {
+	void SensitiveBuffer::PushBack(char value) {
 		data_[length_++] = value;
 	}
 
-	void SensitiveBuffer::pop_back() {
+	void SensitiveBuffer::PopBack() {
 		if (length_ > 0) {
 			data_[--length_] = '\0';
 		}
 	}
 
-	auto SensitiveBuffer::data() const -> const char * {
+	auto SensitiveBuffer::Data() const -> const char * {
 		return data_.data();
 	}
 
-	auto SensitiveBuffer::size() const -> std::size_t {
+	auto SensitiveBuffer::Size() const -> std::size_t {
 		return length_;
 	}
 
-	auto process_character(char ch, SensitiveBuffer &password, bool &response_too_long)
+	auto ProcessCharacter(char ch, SensitiveBuffer &password, bool &response_too_long)
 	    -> CharacterResult {
 		if (ch == '\n' || ch == '\r') {
-			return CharacterResult::complete;
+			return CharacterResult::kComplete;
 		}
 		if (ch == 3) {
-			return CharacterResult::abort;
+			return CharacterResult::kAbort;
 		}
 		if (ch == '\b' || ch == 127) {
-			if (!password.empty()) {
-				password.pop_back();
+			if (!password.Empty()) {
+				password.PopBack();
 			}
-			return CharacterResult::keep_reading;
+			return CharacterResult::kEepReading;
 		}
 		if (response_too_long) {
-			return CharacterResult::keep_reading;
+			return CharacterResult::kEepReading;
 		}
-		if (password.full()) {
+		if (password.Full()) {
 			response_too_long = true;
-			return CharacterResult::keep_reading;
+			return CharacterResult::kEepReading;
 		}
-		password.push_back(ch);
-		return CharacterResult::keep_reading;
+		password.PushBack(ch);
+		return CharacterResult::kEepReading;
 	}
 
 }  // namespace howdy::pam::native_prompt_input

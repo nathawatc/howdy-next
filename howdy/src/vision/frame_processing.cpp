@@ -10,7 +10,7 @@
 
 namespace howdy::native {
 
-	auto make_clahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE> {
+	auto MakeClahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE> {
 		if (!config.clahe_enabled) {
 			return {};
 		}
@@ -18,25 +18,24 @@ namespace howdy::native {
 		                       cv::Size(config.clahe_tile_grid_size, config.clahe_tile_grid_size));
 	}
 
-	void apply_clahe_if_enabled(cv::Mat &gray, const VideoConfig &config,
-	                            cv::Ptr<cv::CLAHE> &clahe) {
+	void ApplyClaheIfEnabled(cv::Mat &gray, const VideoConfig &config, cv::Ptr<cv::CLAHE> &clahe) {
 		if (config.clahe_enabled && !clahe.empty()) {
 			clahe->apply(gray, gray);
 		}
 	}
 
-	auto measure_brightness(const cv::Mat &gray) -> BrightnessStats {
+	auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats {
 		BrightnessStats stats;
 		if (gray.empty()) {
 			return stats;
 		}
 
 		cv::Mat                         hist;
-		static const std::vector<int>   hist_size{8};
-		static const std::vector<float> hist_range{0.0F, 256.0F};
-		static const std::vector<int>   channels{0};
+		static const std::vector<int>   kHistSize{8};
+		static const std::vector<float> kHistRange{0.0F, 256.0F};
+		static const std::vector<int>   kChannels{0};
 		const std::vector<cv::Mat>      images{gray};
-		cv::calcHist(images, channels, cv::Mat(), hist, hist_size, hist_range);
+		cv::calcHist(images, kChannels, cv::Mat(), hist, kHistSize, kHistRange);
 
 		stats.hist_total = cv::sum(hist)[0];
 		if (stats.hist_total != 0.0) {

@@ -16,9 +16,8 @@ namespace howdy::native {
 		std::array<float, 8> bins_percent{};
 	};
 
-	auto make_clahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE>;
-	void apply_clahe_if_enabled(cv::Mat &gray, const VideoConfig &config,
-	                            cv::Ptr<cv::CLAHE> &clahe);
-	auto measure_brightness(const cv::Mat &gray) -> BrightnessStats;
+	auto MakeClahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE>;
+	void ApplyClaheIfEnabled(cv::Mat &gray, const VideoConfig &config, cv::Ptr<cv::CLAHE> &clahe);
+	auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats;
 
 }  // namespace howdy::native

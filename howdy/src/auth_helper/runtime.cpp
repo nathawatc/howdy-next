@@ -19,47 +19,46 @@
 namespace howdy::native::auth_helper {
 	namespace internal {
 
-		auto prepare_runtime_auth_files(const std::string &user, StagedIdentity identity,
-		                                const RuntimeSources &sources,
-		                                const AclOperations  &operations)
+		auto PrepareRuntimeAuthFiles(const std::string &user, StagedIdentity identity,
+		                             const RuntimeSources &sources, const AclOperations &operations)
 		    -> std::optional<PreparedPaths> {
-			auto root = runtime_internal::open_or_create_root(
-			    sources.runtime_root, identity.owner_uid, identity.owner_gid);
+			auto root = runtime_internal::OpenOrCreateRoot(sources.runtime_root, identity.owner_uid,
+			                                               identity.owner_gid);
 			if (!root.has_value()) {
 				return std::nullopt;
 			}
 			const auto allocation_name = ".pam-" + std::to_string(identity.target_uid) + ".lock";
-			auto       allocation      = runtime_internal::open_root_only_lock(
-			    root->get(), allocation_name, sources.runtime_root / allocation_name, identity,
+			auto       allocation      = runtime_internal::OpenRootOnlyLock(
+			    root->Get(), allocation_name, sources.runtime_root / allocation_name, identity,
 			    operations, true);
 			if (!allocation.has_value()) {
 				return std::nullopt;
 			}
-			while (flock(allocation->get(), LOCK_EX) != 0) {
+			while (flock(allocation->Get(), LOCK_EX) != 0) {
 				if (errno != EINTR) {
 					return std::nullopt;
 				}
 			}
 
-			auto config_source = runtime_internal::open_source_file(
+			auto config_source = runtime_internal::OpenSourceFile(
 			    sources.config, howdy::native::kConfigFileLabel, identity.owner_uid);
 			if (!config_source.has_value()) {
 				return std::nullopt;
 			}
-			const auto config_security = howdy::native::check_secure_config_fd(
-			    config_source->fd.get(), sources.config, identity.owner_uid);
+			const auto config_security = howdy::native::CheckSecureConfigFd(
+			    config_source->fd.Get(), sources.config, identity.owner_uid);
 			if (!config_security.ok) {
 				std::cerr << config_security.error_message << "\n";
 				return std::nullopt;
 			}
 			std::optional<std::filesystem::path> model_path;
-			if (!select_source_model_path(sources.user_models_dir, user, identity.owner_uid,
-			                              model_path)) {
+			if (!SelectSourceModelPath(sources.user_models_dir, user, identity.owner_uid,
+			                           model_path)) {
 				return std::nullopt;
 			}
 			std::optional<runtime_internal::SourceFile> model_source;
 			if (model_path.has_value()) {
-				model_source = runtime_internal::open_source_file(
+				model_source = runtime_internal::OpenSourceFile(
 				    *model_path, std::string(howdy::native::kUserModelFileLabel),
 				    identity.owner_uid);
 				if (!model_source.has_value()) {
@@ -67,34 +66,34 @@ namespace howdy::native::auth_helper {
 				}
 			}
 
-			auto slots = runtime_internal::open_slots(root->get(), sources, identity, operations);
+			auto slots = runtime_internal::OpenSlots(root->Get(), sources, identity, operations);
 			if (!slots.has_value()) {
 				return std::nullopt;
 			}
-			if (auto fresh = runtime_internal::lease_fresh_slot(
-			        *slots, *config_source, model_source, user, identity, operations);
+			if (auto fresh = runtime_internal::LeaseFreshSlot(*slots, *config_source, model_source,
+			                                                  user, identity, operations);
 			    fresh.has_value()) {
 				return fresh;
 			}
-			return runtime_internal::refresh_available_slot(*slots, *config_source, model_source,
-			                                                user, identity, operations);
+			return runtime_internal::RefreshAvailableSlot(*slots, *config_source, model_source,
+			                                              user, identity, operations);
 		}
 
 	}  // namespace internal
 
-	auto runtime_root() -> std::filesystem::path {
-		return auth_helper_protocol::prepared_runtime_root();
+	auto RuntimeRoot() -> std::filesystem::path {
+		return auth_helper_protocol::PreparedRuntimeRoot();
 	}
 
-	auto prepare_runtime_auth_files(const std::string &user, RuntimeIdentity identity)
+	auto PrepareRuntimeAuthFiles(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths> {
 		(void)identity.gid;
-		return internal::prepare_runtime_auth_files(
+		return internal::PrepareRuntimeAuthFiles(
 		    user, {.target_uid = identity.uid, .owner_uid = 0, .owner_gid = 0},
-		    {.runtime_root    = runtime_root(),
-		     .config          = howdy::native::resolve_config_path(),
-		     .user_models_dir = howdy::native::resolve_user_models_dir()},
-		    production_acl_operations());
+		    {.runtime_root    = RuntimeRoot(),
+		     .config          = howdy::native::ResolveConfigPath(),
+		     .user_models_dir = howdy::native::ResolveUserModelsDir()},
+		    ProductionAclOperations());
 	}
 
 }  // namespace howdy::native::auth_helper

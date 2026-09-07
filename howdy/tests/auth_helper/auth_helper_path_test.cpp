@@ -23,12 +23,12 @@ namespace {
 	using namespace howdy::test::auth_helper;
 	using howdy::test::ScopedFd;
 
-	auto expect_acl_probe_classification(const std::filesystem::path &temp_root) -> bool {
+	auto ExpectAclProbeClassification(const std::filesystem::path &temp_root) -> bool {
 		std::ostringstream output;
 		auto              *previous_cerr = std::cerr.rdbuf(output.rdbuf());
-		const auto         eopnotsupp    = acl_support(temp_root, EOPNOTSUPP);
-		const auto         enotsupp      = acl_support(temp_root, ENOTSUP);
-		const auto         eio           = acl_support(temp_root, EIO);
+		const auto         eopnotsupp    = ProbeAclSupport(temp_root, EOPNOTSUPP);
+		const auto         enotsupp      = ProbeAclSupport(temp_root, ENOTSUP);
+		const auto         eio           = ProbeAclSupport(temp_root, EIO);
 		std::cerr.rdbuf(previous_cerr);
 		bool ok = true;
 		ok &= expect(eopnotsupp == AclSupport::kUnsupported,
@@ -39,16 +39,16 @@ namespace {
 		return ok;
 	}
 
-	auto expect_runtime_root_validation(const std::filesystem::path &temp_root) -> bool {
-		using howdy::native::auth_helper::runtime_root;
-		using howdy::native::auth_helper::internal::validate_runtime_root;
+	auto ExpectRuntimeRootValidation(const std::filesystem::path &temp_root) -> bool {
+		using howdy::native::auth_helper::RuntimeRoot;
+		using howdy::native::auth_helper::internal::ValidateRuntimeRoot;
 
 		bool ok = true;
-		ok &= expect(runtime_root() == "/run/howdy", "runtime root is fixed under /run/howdy");
+		ok &= expect(RuntimeRoot() == "/run/howdy", "runtime root is fixed under /run/howdy");
 
 		const auto regular_path = temp_root / "runtime-root-file";
 		ok &= expect(write_file(regular_path, "not a directory"), "writes runtime root file");
-		ok &= expect(!validate_runtime_root(regular_path, 0, 0),
+		ok &= expect(!ValidateRuntimeRoot(regular_path, 0, 0),
 		             "regular runtime root path is rejected");
 
 		const auto      user_owned_dir = temp_root / "runtime-root-dir";
@@ -59,7 +59,7 @@ namespace {
 		const auto missing_dir = temp_root / "runtime-root-missing";
 		ok &= expect(!std::filesystem::exists(missing_dir),
 		             "runtime root creation path starts missing");
-		ok &= expect(validate_runtime_root(missing_dir, geteuid(), getegid()),
+		ok &= expect(ValidateRuntimeRoot(missing_dir, geteuid(), getegid()),
 		             "missing runtime root is created for current effective identity");
 		struct stat missing_stat{};
 		ok &= expect(lstat(missing_dir.c_str(), &missing_stat) == 0, "stats created runtime root");
@@ -72,25 +72,25 @@ namespace {
 		    expect((missing_stat.st_mode & 0777) == 0711, "created runtime root has expected mode");
 
 		if (geteuid() == 0) {
-			ok &= expect(validate_runtime_root(user_owned_dir, 0, 0),
+			ok &= expect(ValidateRuntimeRoot(user_owned_dir, 0, 0),
 			             "root-owned runtime root directory is accepted");
 		} else {
-			ok &= expect(!validate_runtime_root(user_owned_dir, 0, 0),
+			ok &= expect(!ValidateRuntimeRoot(user_owned_dir, 0, 0),
 			             "user-owned runtime root directory is rejected");
 		}
 
 		return ok;
 	}
 
-	auto expect_secure_source_file_stat(const std::filesystem::path &temp_root) -> bool {
-		using howdy::native::auth_helper::internal::secure_source_file_stat;
+	auto ExpectSecureSourceFileStat(const std::filesystem::path &temp_root) -> bool {
+		using howdy::native::auth_helper::internal::SecureSourceFileStat;
 
 		bool ok = true;
-		ok &= expect(!secure_source_file_stat(-1, "Invalid fd", 0), "invalid fd is rejected");
+		ok &= expect(!SecureSourceFileStat(-1, "Invalid fd", 0), "invalid fd is rejected");
 
 		ScopedFd dir_fd(open(temp_root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
 		ok &= expect(dir_fd.get() >= 0, "opens directory fd");
-		ok &= expect(!secure_source_file_stat(dir_fd.get(), "Directory", 0),
+		ok &= expect(!SecureSourceFileStat(dir_fd.get(), "Directory", 0),
 		             "directory fd is rejected as source file");
 
 		const auto regular_path = temp_root / "source-file";
@@ -98,7 +98,7 @@ namespace {
 		ok &= expect(chmod(regular_path.c_str(), 0664) == 0, "makes source group-writable");
 		ScopedFd group_writable_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
 		ok &= expect(group_writable_fd.get() >= 0, "opens group-writable source");
-		ok &= expect(!secure_source_file_stat(group_writable_fd.get(), "Group writable source", 0),
+		ok &= expect(!SecureSourceFileStat(group_writable_fd.get(), "Group writable source", 0),
 		             "group-writable source is rejected");
 		group_writable_fd.reset();
 
@@ -108,8 +108,8 @@ namespace {
 		struct stat world_stat{};
 		ok &=
 		    expect(fstat(world_writable_fd.get(), &world_stat) == 0, "stats world-writable source");
-		ok &= expect(!secure_source_file_stat(world_writable_fd.get(), "World writable source",
-		                                      world_stat.st_uid),
+		ok &= expect(!SecureSourceFileStat(world_writable_fd.get(), "World writable source",
+		                                   world_stat.st_uid),
 		             "world-writable source is rejected");
 		world_writable_fd.reset();
 
@@ -121,8 +121,8 @@ namespace {
 			struct stat hard_link_stat{};
 			ok &=
 			    expect(fstat(hard_link_fd.get(), &hard_link_stat) == 0, "stats hard-linked source");
-			ok &= expect(!secure_source_file_stat(hard_link_fd.get(), "Hard-linked source",
-			                                      hard_link_stat.st_uid),
+			ok &= expect(!SecureSourceFileStat(hard_link_fd.get(), "Hard-linked source",
+			                                   hard_link_stat.st_uid),
 			             "hard-linked source is rejected");
 			hard_link_fd.reset();
 			ok &= expect(unlink(hard_link_path.c_str()) == 0, "removes hard-linked source fixture");
@@ -132,19 +132,19 @@ namespace {
 		ScopedFd regular_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
 		ok &= expect(regular_fd.get() >= 0, "opens regular source");
 		if (geteuid() == 0) {
-			ok &= expect(secure_source_file_stat(regular_fd.get(), "Root source", 0),
+			ok &= expect(SecureSourceFileStat(regular_fd.get(), "Root source", 0),
 			             "root-owned regular source is accepted");
 		} else {
-			ok &= expect(!secure_source_file_stat(regular_fd.get(), "User source", 0),
+			ok &= expect(!SecureSourceFileStat(regular_fd.get(), "User source", 0),
 			             "non-root-owned regular source is rejected");
 		}
 
 		return ok;
 	}
 
-	auto expect_source_model_readiness(const std::filesystem::path &temp_root) -> bool {
+	auto ExpectSourceModelReadiness(const std::filesystem::path &temp_root) -> bool {
 		namespace fs = std::filesystem;
-		using howdy::native::auth_helper::internal::select_source_model_path;
+		using howdy::native::auth_helper::internal::SelectSourceModelPath;
 
 		bool                    ok = true;
 		std::error_code         ec;
@@ -152,7 +152,7 @@ namespace {
 		const auto              missing_dir = temp_root / "missing-source-models";
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(select_source_model_path(missing_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(SelectSourceModelPath(missing_dir, "alice", std::nullopt, selected_path),
 		             "missing source models directory is treated as no staged model");
 		ok &=
 		    expect(!selected_path.has_value(), "missing source models directory selects no model");
@@ -164,28 +164,27 @@ namespace {
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!select_source_model_path(models_dir, "../alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "../alice", std::nullopt, selected_path),
 		             "invalid source model user fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "invalid source model user clears stale selected path");
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "missing source model file preserves prepare behavior");
 		ok &= expect(!selected_path.has_value(), "missing source model file selects no model");
 
 		ok &= expect(write_file(model_path, "not-json"), "writes secure source model");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "secures source model file");
-		ok &= expect(select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "secure source model is accepted without parsing");
 		ok &= expect(selected_path == model_path, "secure source model path is selected");
 
 		const auto relative_models_dir = fs::relative(models_dir, fs::current_path(), ec);
 		ok &= expect(!ec, "resolves relative source models directory");
 		selected_path = temp_root / "unexpected.dat";
-		ok &=
-		    expect(select_source_model_path(relative_models_dir, "alice", geteuid(), selected_path),
-		           "secure source model is accepted with calling uid owner check");
+		ok &= expect(SelectSourceModelPath(relative_models_dir, "alice", geteuid(), selected_path),
+		             "secure source model is accepted with calling uid owner check");
 		ok &=
 		    expect(selected_path.has_value(), "calling uid owner check selects source model path");
 		ok &= expect(selected_path.has_value() && selected_path->filename() == "alice.dat",
@@ -199,15 +198,15 @@ namespace {
 		const uid_t mismatched_owner =
 		    model_stat.st_uid == 0 ? static_cast<uid_t>(1) : static_cast<uid_t>(0);
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!select_source_model_path(relative_models_dir, "alice", mismatched_owner,
-		                                       selected_path),
-		             "secure source model with mismatched owner uid fails closed");
+		ok &= expect(
+		    !SelectSourceModelPath(relative_models_dir, "alice", mismatched_owner, selected_path),
+		    "secure source model with mismatched owner uid fails closed");
 		ok &= expect(!selected_path.has_value(), "mismatched owner uid clears stale selected path");
 
 		if (geteuid() == 0) {
 			selected_path = temp_root / "unexpected.dat";
-			ok &= expect(select_source_model_path(relative_models_dir, "alice",
-			                                      static_cast<uid_t>(0), selected_path),
+			ok &= expect(SelectSourceModelPath(relative_models_dir, "alice", static_cast<uid_t>(0),
+			                                   selected_path),
 			             "secure source model is accepted with root owner check");
 			ok &= expect(selected_path.has_value(), "root owner check selects source model path");
 			ok &= expect(selected_path.has_value() && selected_path->filename() == "alice.dat",
@@ -224,9 +223,8 @@ namespace {
 		ec.clear();
 		if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
 			selected_path = temp_root / "unexpected.dat";
-			ok &=
-			    expect(!select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
-			           "symlinked source model file fails closed");
+			ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
+			             "symlinked source model file fails closed");
 			ok &= expect(!selected_path.has_value(),
 			             "symlinked source model file clears stale selected path");
 			fs::remove(model_path, ec);
@@ -245,7 +243,7 @@ namespace {
 		if (symlink(real_models_dir.c_str(), symlink_models_dir.c_str()) == 0) {
 			selected_path = temp_root / "unexpected.dat";
 			ok &= expect(
-			    !select_source_model_path(symlink_models_dir, "alice", std::nullopt, selected_path),
+			    !SelectSourceModelPath(symlink_models_dir, "alice", std::nullopt, selected_path),
 			    "symlinked source models directory fails closed");
 			ok &= expect(!selected_path.has_value(),
 			             "symlinked source models directory clears stale selected path");
@@ -260,26 +258,26 @@ namespace {
 		ok &=
 		    expect(chmod(model_path.c_str(), 0664) == 0, "makes source model file group-writable");
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "group-writable source model file fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "group-writable source model file clears stale selected path");
 		ok &=
 		    expect(chmod(model_path.c_str(), 0666) == 0, "makes source model file world-writable");
-		ok &= expect(!select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "world-writable source model file fails closed");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restores source model file mode");
 
 		ok &= expect(chmod(models_dir.c_str(), 0775) == 0,
 		             "makes source models directory group-writable");
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "group-writable source models directory fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "group-writable source models directory clears stale selected path");
 		ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
 		             "makes source models directory world-writable");
-		ok &= expect(!select_source_model_path(models_dir, "alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
 		             "world-writable source models directory fails closed");
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "restores source models directory mode");
 
@@ -288,11 +286,11 @@ namespace {
 
 }  // namespace
 
-auto run_auth_helper_path_tests(const std::filesystem::path &temp_root) -> bool {
+auto RunAuthHelperPathTests(const std::filesystem::path &temp_root) -> bool {
 	bool ok = true;
-	ok &= expect_acl_probe_classification(temp_root);
-	ok &= expect_runtime_root_validation(temp_root);
-	ok &= expect_secure_source_file_stat(temp_root);
-	ok &= expect_source_model_readiness(temp_root);
+	ok &= ExpectAclProbeClassification(temp_root);
+	ok &= ExpectRuntimeRootValidation(temp_root);
+	ok &= ExpectSecureSourceFileStat(temp_root);
+	ok &= ExpectSourceModelReadiness(temp_root);
 	return ok;
 }

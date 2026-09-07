@@ -46,7 +46,7 @@ namespace {
 		howdy::native::UserModelFileSnapshot   received_snapshot;
 	};
 
-	auto valid_snapshot() -> howdy::native::UserModelFileSnapshot {
+	auto ValidSnapshot() -> howdy::native::UserModelFileSnapshot {
 		return {
 		    .dev            = 11,
 		    .inode          = 22,
@@ -58,17 +58,17 @@ namespace {
 		};
 	}
 
-	auto success_context() -> ClearCliTestContext {
+	auto SuccessContext() -> ClearCliTestContext {
 		ClearCliTestContext context;
 		context.inspect_result = {
 		    .status   = howdy::native::UserModelStatus::kOk,
-		    .snapshot = valid_snapshot(),
+		    .snapshot = ValidSnapshot(),
 		};
 		context.clear_result = {.status = howdy::native::UserModelStatus::kOk};
 		return context;
 	}
 
-	auto inspect_callback(void *raw_context, const std::string &user)
+	auto InspectCallback(void *raw_context, const std::string &user)
 	    -> howdy::native::UserModelInspectResult {
 		auto *context = static_cast<ClearCliTestContext *>(raw_context);
 		++context->inspect_calls;
@@ -76,8 +76,8 @@ namespace {
 		return context->inspect_result;
 	}
 
-	auto clear_callback(void *raw_context, const std::string &user,
-	                    const howdy::native::UserModelFileSnapshot &expected_snapshot)
+	auto ClearCallback(void *raw_context, const std::string &user,
+	                   const howdy::native::UserModelFileSnapshot &expected_snapshot)
 	    -> howdy::native::UserModelMutationResult {
 		auto *context = static_cast<ClearCliTestContext *>(raw_context);
 		++context->clear_calls;
@@ -86,10 +86,10 @@ namespace {
 		return context->clear_result;
 	}
 
-	auto run_clear_with_dependencies(
-	    std::vector<std::string>                                arguments,
-	    const howdy::native::clear_internal::ClearDependencies &dependencies,
-	    const std::string &input = {}) -> std::pair<int, std::string> {
+	auto
+	RunClearWithDependencies(std::vector<std::string>                                arguments,
+	                         const howdy::native::clear_internal::ClearDependencies &dependencies,
+	                         const std::string &input = {}) -> std::pair<int, std::string> {
 		std::vector<char *> argv;
 		argv.reserve(arguments.size());
 		for (auto &argument : arguments) {
@@ -99,45 +99,44 @@ namespace {
 		std::istringstream input_stream(input);
 		std::ostringstream output_stream;
 		StreamRedirect redirect(std::cin, input_stream.rdbuf(), std::cout, output_stream.rdbuf());
-		const int      result = howdy::native::clear_internal::clear_main_with_dependencies(
+		const int      result = howdy::native::clear_internal::ClearMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(), dependencies);
 		return {result, output_stream.str()};
 	}
 
-	auto run_clear(ClearCliTestContext &context, std::vector<std::string> arguments,
-	               const std::string &input = {}) -> std::pair<int, std::string> {
-		return run_clear_with_dependencies(
-		    std::move(arguments),
-		    {
-		        .context                               = &context,
-		        .inspect_user_model_file               = inspect_callback,
-		        .clear_user_model_entries_if_unchanged = clear_callback,
-		    },
-		    input);
+	auto RunClear(ClearCliTestContext &context, std::vector<std::string> arguments,
+	              const std::string &input = {}) -> std::pair<int, std::string> {
+		return RunClearWithDependencies(std::move(arguments),
+		                                {
+		                                    .context                 = &context,
+		                                    .inspect_user_model_file = InspectCallback,
+		                                    .clear_user_model_entries_if_unchanged = ClearCallback,
+		                                },
+		                                input);
 	}
 
-	auto missing_user_returns_without_callbacks() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_clear(context, {"howdy-clear"});
+	auto MissingUserReturnsWithoutCallbacks() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {"howdy-clear"});
 		return expect(result == 1, "missing user returns 1") &&
 		       expect(output.empty(), "missing user stays silent") &&
 		       expect(context.inspect_calls == 0 && context.clear_calls == 0,
 		              "missing user skips callbacks");
 	}
 
-	auto public_missing_user_returns_error() -> bool {
+	auto PublicMissingUserReturnsError() -> bool {
 		auto                  command = std::to_array("howdy-clear");
 		std::array<char *, 1> argv{command.data()};
-		return expect(clear_main(1, argv.data()) == 1, "public missing user returns status 1");
+		return expect(ClearMain(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
-	auto incomplete_dependencies_abort_without_callbacks() -> bool {
-		auto context                                    = success_context();
-		auto [null_inspect_result, null_inspect_output] = run_clear_with_dependencies(
+	auto IncompleteDependenciesAbortWithoutCallbacks() -> bool {
+		auto context                                    = SuccessContext();
+		auto [null_inspect_result, null_inspect_output] = RunClearWithDependencies(
 		    {"howdy-clear", "alice"}, {
 		                                  .context                               = &context,
 		                                  .inspect_user_model_file               = nullptr,
-		                                  .clear_user_model_entries_if_unchanged = clear_callback,
+		                                  .clear_user_model_entries_if_unchanged = ClearCallback,
 		                              });
 		bool ok = true;
 		ok &= expect(null_inspect_result == 1, "null inspect callback returns 1");
@@ -145,10 +144,10 @@ namespace {
 		ok &= expect(context.inspect_calls == 0 && context.clear_calls == 0,
 		             "null inspect callback skips callbacks");
 
-		auto [null_clear_result, null_clear_output] = run_clear_with_dependencies(
+		auto [null_clear_result, null_clear_output] = RunClearWithDependencies(
 		    {"howdy-clear", "alice"}, {
 		                                  .context                               = &context,
-		                                  .inspect_user_model_file               = inspect_callback,
+		                                  .inspect_user_model_file               = InspectCallback,
 		                                  .clear_user_model_entries_if_unchanged = nullptr,
 		                              });
 		ok &= expect(null_clear_result == 1, "null clear callback returns 1");
@@ -158,7 +157,7 @@ namespace {
 		return ok;
 	}
 
-	auto inspection_outcomes_preserve_messages() -> bool {
+	auto InspectionOutcomesPreserveMessages() -> bool {
 		bool ok = true;
 		for (const auto &[status, error, snapshot, expected] : std::vector<
 		         std::tuple<howdy::native::UserModelStatus, std::string,
@@ -178,10 +177,10 @@ namespace {
 		          std::nullopt,
 		          "Failed to inspect user model file\n"},
 		     }) {
-			auto context           = success_context();
+			auto context           = SuccessContext();
 			context.inspect_result = {
 			    .status = status, .error_message = error, .snapshot = snapshot};
-			auto [result, output] = run_clear(context, {"howdy-clear", "alice", "-y"});
+			auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
 			ok &= expect(result == 1, "inspection outcome returns 1");
 			ok &= expect(output == expected, "inspection outcome preserves message");
 			ok &= expect(context.inspect_calls == 1 && context.clear_calls == 0,
@@ -190,9 +189,9 @@ namespace {
 		return ok;
 	}
 
-	auto rejected_confirmation_aborts() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_clear(context, {"howdy-clear", "alice"}, "n\n");
+	auto RejectedConfirmationAborts() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {"howdy-clear", "alice"}, "n\n");
 		return expect(result == 1, "rejected confirmation returns 1") &&
 		       expect(output == "This will remove all face models for alice\n"
 		                        "Continue? [y/N]: "
@@ -202,9 +201,9 @@ namespace {
 		              "rejected confirmation inspects once and skips clear");
 	}
 
-	auto accepted_confirmation_passes_snapshot() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_clear(context, {"howdy-clear", "alice"}, "Y\n");
+	auto AcceptedConfirmationPassesSnapshot() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {"howdy-clear", "alice"}, "Y\n");
 		const auto &snapshot  = context.received_snapshot;
 		bool        ok        = true;
 		ok &= expect(result == 0, "accepted confirmation returns 0");
@@ -222,16 +221,16 @@ namespace {
 		return ok;
 	}
 
-	auto yes_flag_bypasses_confirmation() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_clear(context, {"howdy-clear", "alice", "-y"});
+	auto YesFlagBypassesConfirmation() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
 		return expect(result == 0, "-y returns 0") &&
 		       expect(output == "\nModels cleared\n", "-y preserves output without prompt") &&
 		       expect(context.inspect_calls == 1 && context.clear_calls == 1,
 		              "-y inspects and clears once");
 	}
 
-	auto clear_outcomes_preserve_messages() -> bool {
+	auto ClearOutcomesPreserveMessages() -> bool {
 		bool ok = true;
 		for (const auto &[status, error, expected] :
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
@@ -240,9 +239,9 @@ namespace {
 		         {howdy::native::UserModelStatus::kModelChanged, "model changed",
 		          "model changed\n"},
 		     }) {
-			auto context          = success_context();
+			auto context          = SuccessContext();
 			context.clear_result  = {.status = status, .error_message = error};
-			auto [result, output] = run_clear(context, {"howdy-clear", "alice", "-y"});
+			auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
 			ok &= expect(result == 1, "clear outcome returns 1");
 			ok &= expect(output == expected, "clear outcome preserves message");
 			ok &= expect(context.inspect_calls == 1 && context.clear_calls == 1,
@@ -251,14 +250,14 @@ namespace {
 		return ok;
 	}
 
-	auto successful_clear_preserves_output() -> bool {
-		auto context          = success_context();
-		auto [result, output] = run_clear(context, {"howdy-clear", "alice", "-y"});
+	auto SuccessfulClearPreservesOutput() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
 		return expect(result == 0, "successful clear returns 0") &&
 		       expect(output == "\nModels cleared\n", "successful clear preserves output");
 	}
 
-	auto public_clear_removes_unparseable_model_files() -> bool {
+	auto PublicClearRemovesUnparseableModelFiles() -> bool {
 		namespace fs = std::filesystem;
 
 		const char                      *existing_models_dir = std::getenv("HOWDY_USER_MODELS_DIR");
@@ -292,7 +291,7 @@ namespace {
 			std::ostringstream         output_stream;
 			StreamRedirect             redirect(std::cin, input_stream.rdbuf(), std::cout,
 			                                    output_stream.rdbuf());
-			return clear_main(static_cast<int>(argv.size()), argv.data());
+			return ClearMain(static_cast<int>(argv.size()), argv.data());
 		};
 
 		ok &= expect(write_file(model_path, "not-json"), "write malformed model JSON");
@@ -324,15 +323,15 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= missing_user_returns_without_callbacks();
-	ok &= public_missing_user_returns_error();
-	ok &= incomplete_dependencies_abort_without_callbacks();
-	ok &= inspection_outcomes_preserve_messages();
-	ok &= rejected_confirmation_aborts();
-	ok &= accepted_confirmation_passes_snapshot();
-	ok &= yes_flag_bypasses_confirmation();
-	ok &= clear_outcomes_preserve_messages();
-	ok &= successful_clear_preserves_output();
-	ok &= public_clear_removes_unparseable_model_files();
+	ok &= MissingUserReturnsWithoutCallbacks();
+	ok &= PublicMissingUserReturnsError();
+	ok &= IncompleteDependenciesAbortWithoutCallbacks();
+	ok &= InspectionOutcomesPreserveMessages();
+	ok &= RejectedConfirmationAborts();
+	ok &= AcceptedConfirmationPassesSnapshot();
+	ok &= YesFlagBypassesConfirmation();
+	ok &= ClearOutcomesPreserveMessages();
+	ok &= SuccessfulClearPreservesOutput();
+	ok &= PublicClearRemovesUnparseableModelFiles();
 	return ok ? 0 : 1;
 }

@@ -45,20 +45,20 @@ namespace howdy::test::download_models {
 		    },
 		};
 
-		auto official_manifest_download_file(
+		auto OfficialManifestDownloadFile(
 		    const std::string                                           &url,
 		    howdy::native::download_models_internal::StagedDownloadFile &staged) -> bool {
 			++download_attempts;
 			downloaded_urls.push_back(url);
 			for (const auto &artifact : kPinnedModelArtifacts) {
 				if (artifact.url == url) {
-					return ftruncate(staged.fd.get(), static_cast<off_t>(artifact.size)) == 0;
+					return ftruncate(staged.fd.Get(), static_cast<off_t>(artifact.size)) == 0;
 				}
 			}
 			return false;
 		}
 
-		auto official_manifest_sha256_file(const int fd) -> std::optional<std::string> {
+		auto OfficialManifestSha256File(const int fd) -> std::optional<std::string> {
 			struct stat stat_buf{};
 			if (fstat(fd, &stat_buf) != 0 || stat_buf.st_size < 0) {
 				return std::nullopt;
@@ -73,7 +73,7 @@ namespace howdy::test::download_models {
 
 	}  // namespace
 
-	auto run_download_models_manifest_tests() -> bool {
+	auto RunDownloadModelsManifestTests() -> bool {
 		namespace fs              = std::filesystem;
 		bool            ok        = true;
 		const auto      temp_root = fs::current_path() / "howdy-download-models-test";
@@ -82,11 +82,10 @@ namespace howdy::test::download_models {
 		const auto manifest_models_dir = temp_root / "manifest-models";
 		const auto manifest_output     = temp_root / "manifest-output.txt";
 		int        manifest_exit       = 0;
-		ok &= expect(
-		    run_test_download({.models_dir = manifest_models_dir, .output = manifest_output},
-		                      &manifest_exit, howdy::native::official_opencv_models(),
-		                      official_manifest_download_file, official_manifest_sha256_file),
-		    "run official manifest downloads");
+		ok &= expect(RunTestDownload({.models_dir = manifest_models_dir, .output = manifest_output},
+		                             &manifest_exit, howdy::native::OfficialOpencvModels(),
+		                             OfficialManifestDownloadFile, OfficialManifestSha256File),
+		             "run official manifest downloads");
 		std::error_code yunet_size_ec;
 		std::error_code sface_size_ec;
 		ok &= expect(manifest_exit == 0 && downloaded_urls.size() == kPinnedModelArtifacts.size() &&

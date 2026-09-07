@@ -31,23 +31,23 @@ namespace howdy::native::user_model_codec {
 
 		Document(UserModelListResult result, std::unique_ptr<Impl> impl);
 
-		friend auto decode_document(std::string_view input, const std::string &expected_backend,
-		                            std::optional<FaceMetric> expected_metric,
-		                            const std::string &expected_model, bool strict_shape)
+		friend auto DecodeDocument(std::string_view input, const std::string &expected_backend,
+		                           std::optional<FaceMetric> expected_metric,
+		                           const std::string &expected_model, bool strict_shape)
 		    -> Document;
-		friend auto append_entry(Document &document, const UserModelEntry &entry) -> bool;
-		friend auto erase_entry(Document &document, std::size_t index) -> bool;
-		friend auto is_empty(const Document &document) -> bool;
-		friend auto serialize_document(const Document &document) -> std::optional<std::string>;
+		friend auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool;
+		friend auto EraseEntry(Document &document, std::size_t index) -> bool;
+		friend auto IsEmpty(const Document &document) -> bool;
+		friend auto SerializeDocument(const Document &document) -> std::optional<std::string>;
 	};
 
-	auto decode_document(std::string_view input, const std::string &expected_backend,
-	                     std::optional<FaceMetric> expected_metric,
-	                     const std::string &expected_model, bool strict_shape = true) -> Document;
-	auto append_entry(Document &document, const UserModelEntry &entry) -> bool;
-	auto erase_entry(Document &document, std::size_t index) -> bool;
-	auto is_empty(const Document &document) -> bool;
-	auto serialize_document(const Document &document) -> std::optional<std::string>;
-	auto validate_encoding(const std::vector<float> &encoding) -> UserModelListResult;
+	auto DecodeDocument(std::string_view input, const std::string &expected_backend,
+	                    std::optional<FaceMetric> expected_metric,
+	                    const std::string &expected_model, bool strict_shape = true) -> Document;
+	auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool;
+	auto EraseEntry(Document &document, std::size_t index) -> bool;
+	auto IsEmpty(const Document &document) -> bool;
+	auto SerializeDocument(const Document &document) -> std::optional<std::string>;
+	auto ValidateEncoding(const std::vector<float> &encoding) -> UserModelListResult;
 
 }  // namespace howdy::native::user_model_codec

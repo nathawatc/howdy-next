@@ -16,7 +16,7 @@ namespace howdy::pam {
 		std::string_view summary;
 	};
 
-	[[nodiscard]] auto workaround_catalog() -> std::span<const WorkaroundDescriptor>;
-	[[nodiscard]] auto find_workaround(std::string_view value) -> const WorkaroundDescriptor *;
+	[[nodiscard]] auto WorkaroundCatalog() -> std::span<const WorkaroundDescriptor>;
+	[[nodiscard]] auto FindWorkaround(std::string_view value) -> const WorkaroundDescriptor *;
 
 }  // namespace howdy::pam

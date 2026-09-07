@@ -44,13 +44,12 @@ namespace howdy::native::howdy_cli_internal {
 		std::vector<ParsedArgument> arguments;
 	};
 
-	auto parse_command_line(int argc, char **argv, ParsedCommandLine &parsed)
+	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError>;
-	auto command_syntax_error(const ParsedCommandLine &parsed, const CommandDescriptor &command)
+	auto CommandSyntaxError(const ParsedCommandLine &parsed, const CommandDescriptor &command)
 	    -> std::optional<CliSyntaxError>;
-	auto print_cli_syntax_error(const CliSyntaxError &error, const CommandDescriptor *command)
-	    -> int;
-	void print_help();
-	void print_command_help(const CommandDescriptor &command);
+	auto PrintCliSyntaxError(const CliSyntaxError &error, const CommandDescriptor *command) -> int;
+	void PrintHelp();
+	void PrintCommandHelp(const CommandDescriptor &command);
 
 }  // namespace howdy::native::howdy_cli_internal

@@ -12,7 +12,7 @@ namespace howdy::pam {
 	};
 
 	__attribute__((visibility("hidden"))) auto
-	should_ask_for_password(bool ask_auth_tok, Workaround workaround, bool auth_token_available)
+	ShouldAskForPassword(bool ask_auth_tok, Workaround workaround, bool auth_token_available)
 	    -> bool;
 
 }  // namespace howdy::pam

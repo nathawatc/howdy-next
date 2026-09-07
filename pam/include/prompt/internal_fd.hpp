@@ -13,9 +13,9 @@ namespace howdy::pam::detail {
 		ScopedFd(ScopedFd &&other) noexcept;
 		auto operator=(ScopedFd &&other) noexcept -> ScopedFd &;
 
-		[[nodiscard]] auto get() const noexcept -> int;
-		[[nodiscard]] auto valid() const noexcept -> bool;
-		auto               release() noexcept -> int;
+		[[nodiscard]] auto Get() const noexcept -> int;
+		[[nodiscard]] auto Valid() const noexcept -> bool;
+		auto               Release() noexcept -> int;
 
 	private:
 		int fd_ = -1;
@@ -31,14 +31,14 @@ namespace howdy::pam::detail {
 		ScopedFd read;
 		ScopedFd write;
 
-		[[nodiscard]] auto valid() const noexcept -> bool;
+		[[nodiscard]] auto Valid() const noexcept -> bool;
 	};
 
 	[[nodiscard]] auto
-	normalize_internal_fd(ScopedFd fd, const InternalFdOperations *operations = nullptr) noexcept
+	NormalizeInternalFd(ScopedFd fd, const InternalFdOperations *operations = nullptr) noexcept
 	    -> ScopedFd;
-	[[nodiscard]] auto
-	create_internal_pipe(int flags, const InternalFdOperations *operations = nullptr) noexcept
+	[[nodiscard]] auto CreateInternalPipe(int                         flags,
+	                                      const InternalFdOperations *operations = nullptr) noexcept
 	    -> InternalPipe;
 
 }  // namespace howdy::pam::detail

@@ -19,7 +19,7 @@ namespace howdy::native::remove_internal {
 		RemoveUserModelEntryIfMatchesFn remove_user_model_entry_if_matches = nullptr;
 	};
 
-	auto remove_main_with_dependencies(int argc, char **argv,
-	                                   const RemoveDependencies &dependencies) -> int;
+	auto RemoveMainWithDependencies(int argc, char **argv, const RemoveDependencies &dependencies)
+	    -> int;
 
 }  // namespace howdy::native::remove_internal

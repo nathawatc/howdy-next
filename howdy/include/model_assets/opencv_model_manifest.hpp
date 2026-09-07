@@ -43,8 +43,7 @@ namespace howdy::native {
 	    kSfaceModelDescriptor,
 	};
 
-	[[nodiscard]] constexpr auto official_opencv_models()
-	    -> std::span<const OpenCvModelDescriptor> {
+	[[nodiscard]] constexpr auto OfficialOpencvModels() -> std::span<const OpenCvModelDescriptor> {
 		return kOfficialOpenCvModels;
 	}
 

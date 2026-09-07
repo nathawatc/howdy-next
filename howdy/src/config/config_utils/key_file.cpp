@@ -10,7 +10,7 @@
 
 namespace howdy::native {
 
-	auto is_safe_ini_scalar_value(std::string_view value) -> bool {
+	auto IsSafeIniScalarValue(std::string_view value) -> bool {
 		if (!value.empty() && value.front() == '[') {
 			return false;
 		}
@@ -26,7 +26,7 @@ namespace howdy::native::config_utils_internal {
 
 	namespace {
 
-		auto ini_identifier_equal(std::string_view left, std::string_view right) -> bool {
+		auto IniIdentifierEqual(std::string_view left, std::string_view right) -> bool {
 			return left.size() == right.size() &&
 			       std::ranges::equal(
 			           left, right, [](unsigned char left_char, unsigned char right_char) -> bool {
@@ -34,10 +34,10 @@ namespace howdy::native::config_utils_internal {
 			           });
 		}
 
-		auto section_name(std::string_view line) -> std::optional<std::string_view> {
-			constexpr std::string_view kUtf8Bom = "\xEF\xBB\xBF";
-			if (line.starts_with(kUtf8Bom)) {
-				line.remove_prefix(kUtf8Bom.size());
+		auto SectionName(std::string_view line) -> std::optional<std::string_view> {
+			constexpr std::string_view utf8_bom = "\xEF\xBB\xBF";
+			if (line.starts_with(utf8_bom)) {
+				line.remove_prefix(utf8_bom.size());
 			}
 			if (line.empty() || line.front() != '[') {
 				return std::nullopt;
@@ -49,7 +49,7 @@ namespace howdy::native::config_utils_internal {
 			return line.substr(1, end - 1);
 		}
 
-		auto assignment_name(std::string_view line) -> std::optional<std::string_view> {
+		auto AssignmentName(std::string_view line) -> std::optional<std::string_view> {
 			const auto separator = line.find_first_of("=:");
 			if (separator == std::string_view::npos) {
 				return std::nullopt;
@@ -63,7 +63,7 @@ namespace howdy::native::config_utils_internal {
 
 	}  // namespace
 
-	auto split_lines_preserve_newlines(const std::string &content) -> std::vector<std::string> {
+	auto SplitLinesPreserveNewlines(const std::string &content) -> std::vector<std::string> {
 		std::vector<std::string> lines;
 		std::size_t              start = 0;
 		while (start < content.size()) {
@@ -78,7 +78,7 @@ namespace howdy::native::config_utils_internal {
 		return lines;
 	}
 
-	auto join_lines(const std::vector<std::string> &lines) -> std::string {
+	auto JoinLines(const std::vector<std::string> &lines) -> std::string {
 		std::string content;
 		for (const auto &line : lines) {
 			content += line;
@@ -86,7 +86,7 @@ namespace howdy::native::config_utils_internal {
 		return content;
 	}
 
-	auto replace_line_value(std::vector<std::string> &lines, ConfigLineReplacement replacement)
+	auto ReplaceLineValue(std::vector<std::string> &lines, ConfigLineReplacement replacement)
 	    -> ConfigLineReplaceResult {
 		std::string_view current_section;
 		bool             has_previous_name = false;
@@ -103,42 +103,42 @@ namespace howdy::native::config_utils_internal {
 			if (has_previous_name && stripped_pos != 0) {
 				continue;
 			}
-			if (const auto section = section_name(stripped)) {
+			if (const auto section = SectionName(stripped)) {
 				current_section   = *section;
 				has_previous_name = false;
 				continue;
 			}
 
-			const auto name = assignment_name(stripped);
+			const auto name = AssignmentName(stripped);
 			if (name.has_value()) {
 				has_previous_name = true;
-				if (!ini_identifier_equal(current_section, replacement.section) ||
-				    !ini_identifier_equal(*name, replacement.key)) {
+				if (!IniIdentifierEqual(current_section, replacement.section) ||
+				    !IniIdentifierEqual(*name, replacement.key)) {
 					continue;
 				}
 			} else {
 				const auto name_end = stripped.find_first_of(" \t");
-				if (!ini_identifier_equal(current_section, replacement.section) ||
+				if (!IniIdentifierEqual(current_section, replacement.section) ||
 				    name_end == std::string_view::npos ||
-				    !ini_identifier_equal(stripped.substr(0, name_end), replacement.key)) {
+				    !IniIdentifierEqual(stripped.substr(0, name_end), replacement.key)) {
 					continue;
 				}
 				has_previous_name = true;
 			}
 
 			if (matching_line != nullptr) {
-				return ConfigLineReplaceResult::duplicate;
+				return ConfigLineReplaceResult::kDuplicate;
 			}
 			matching_line = &line;
 		}
 		if (matching_line == nullptr) {
-			return ConfigLineReplaceResult::not_found;
+			return ConfigLineReplaceResult::kNotFound;
 		}
 		*matching_line = replacement.key;
 		*matching_line += " = ";
 		*matching_line += replacement.value;
 		*matching_line += '\n';
-		return ConfigLineReplaceResult::replaced;
+		return ConfigLineReplaceResult::kReplaced;
 	}
 
 }  // namespace howdy::native::config_utils_internal

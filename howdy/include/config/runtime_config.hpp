@@ -37,17 +37,17 @@ namespace howdy::native {
 		int         rotate{};
 	};
 
-	auto default_video_config() -> VideoConfig;
+	auto DefaultVideoConfig() -> VideoConfig;
 
 	struct FaceConfig {
 		float      yunet_score_threshold{};
 		float      yunet_nms_threshold{};
 		int        yunet_top_k{};
-		FaceMetric sface_metric = config_schema::sface_default_metric;
+		FaceMetric sface_metric = config_schema::kSfaceDefaultMetric;
 		float      sface_threshold{};
 	};
 
-	auto default_face_config() -> FaceConfig;
+	auto DefaultFaceConfig() -> FaceConfig;
 
 	struct DebugConfig {
 		bool end_report{};
@@ -78,11 +78,11 @@ namespace howdy::native {
 		int                          error_code = 0;
 	};
 
-	auto load_runtime_config(const std::filesystem::path &config_path,
-	                         std::optional<uid_t>         owner_uid) -> RuntimeConfigLoadResult;
+	auto LoadRuntimeConfig(const std::filesystem::path &config_path, std::optional<uid_t> owner_uid)
+	    -> RuntimeConfigLoadResult;
 #ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-	auto load_runtime_config(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult;
-	auto load_runtime_config() -> RuntimeConfigLoadResult;
+	auto LoadRuntimeConfig(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult;
+	auto LoadRuntimeConfig() -> RuntimeConfigLoadResult;
 #endif
 
 }  // namespace howdy::native

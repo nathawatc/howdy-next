@@ -14,7 +14,7 @@ namespace {
 	constexpr auto kChildKilledBySignalPrefix = "Child killed by signal ";
 }
 
-auto map_authentication_eligibility(
+auto MapAuthenticationEligibility(
     const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) -> int {
 	using howdy::pam::auth_eligibility::AuthenticationEligibility;
 	switch (result.status) {
@@ -32,7 +32,7 @@ auto map_authentication_eligibility(
 	return PAM_SYSTEM_ERR;
 }
 
-auto map_compare_wait_status(int status) -> CompareStatusDecision {
+auto MapCompareWaitStatus(int status) -> CompareStatusDecision {
 	CompareStatusDecision decision;
 	decision.pam_result = PAM_AUTH_ERR;
 
@@ -47,26 +47,26 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 				decision.log_message = "Face verification unavailable: no enrolled face model";
 				break;
 			case howdy::native::CompareExit::kTimeoutReached:
-				decision.conversation_kind = ConversationKind::Error;
+				decision.conversation_kind = ConversationKind::kError;
 				decision.conversation_message =
-				    howdy::pam::translate("Face verification timed out");
+				    howdy::pam::Translate("Face verification timed out");
 				decision.log_message = "Face verification timed out";
 				break;
 			case howdy::native::CompareExit::kAbort:
 				decision.log_message = "Face verification aborted";
 				break;
 			case howdy::native::CompareExit::kTooDark:
-				decision.conversation_kind = ConversationKind::Error;
+				decision.conversation_kind = ConversationKind::kError;
 				decision.conversation_message =
-				    howdy::pam::translate("Camera image is too dark for detection");
+				    howdy::pam::Translate("Camera image is too dark for detection");
 				decision.log_message = "Face verification failed: camera image too dark";
 				break;
 			case howdy::native::CompareExit::kInvalidDevice:
 				decision.log_message = "Face verification failed: cannot open configured camera";
 				break;
 			default:
-				decision.conversation_kind    = ConversationKind::Error;
-				decision.conversation_message = build_unknown_error_message(exit_status);
+				decision.conversation_kind    = ConversationKind::kError;
+				decision.conversation_message = BuildUnknownErrorMessage(exit_status);
 				decision.log_message          = "Face verification failed: unknown error";
 				break;
 		}
@@ -88,8 +88,8 @@ auto map_compare_wait_status(int status) -> CompareStatusDecision {
 	return decision;
 }
 
-auto build_confirmation_message(std::string_view username) -> std::string {
-	std::string template_text   = howdy::pam::translate("Face matched user {}");
+auto BuildConfirmationMessage(std::string_view username) -> std::string {
+	std::string template_text   = howdy::pam::Translate("Face matched user {}");
 	const auto  placeholder_pos = template_text.find("{}");
 	if (placeholder_pos != std::string::npos) {
 		template_text.replace(placeholder_pos, 2, std::string(username));
@@ -97,8 +97,8 @@ auto build_confirmation_message(std::string_view username) -> std::string {
 	return template_text;
 }
 
-auto build_unknown_error_message(int exit_status) -> std::string {
-	std::string template_text   = howdy::pam::translate("Unknown error: {}");
+auto BuildUnknownErrorMessage(int exit_status) -> std::string {
+	std::string template_text   = howdy::pam::Translate("Unknown error: {}");
 	const auto  placeholder_pos = template_text.find("{}");
 	if (placeholder_pos != std::string::npos) {
 		template_text.replace(placeholder_pos, 2, std::to_string(exit_status));

@@ -26,7 +26,7 @@ namespace {
 
 	using howdy::native::CompareExit;
 
-	auto sandbox_resource_name(howdy::native::CompareSandboxResource resource) -> const char * {
+	auto SandboxResourceName(howdy::native::CompareSandboxResource resource) -> const char * {
 		switch (resource) {
 			case howdy::native::CompareSandboxResource::kCpu:
 				return "CPU";
@@ -42,7 +42,7 @@ namespace {
 		return "unknown";
 	}
 
-	void report_sandbox_failure(const howdy::native::CompareSandboxResult &result) {
+	void ReportSandboxFailure(const howdy::native::CompareSandboxResult &result) {
 		switch (result.status) {
 			case howdy::native::CompareSandboxStatus::kOk:
 				return;
@@ -50,15 +50,15 @@ namespace {
 				std::cerr << "Failed to enable no_new_privs sandboxing";
 				break;
 			case howdy::native::CompareSandboxStatus::kLimitInspectionFailure:
-				std::cerr << "Failed to inspect " << sandbox_resource_name(result.resource)
+				std::cerr << "Failed to inspect " << SandboxResourceName(result.resource)
 				          << " sandbox limit";
 				break;
 			case howdy::native::CompareSandboxStatus::kLimitBelowMinimum:
-				std::cerr << "Inherited " << sandbox_resource_name(result.resource)
+				std::cerr << "Inherited " << SandboxResourceName(result.resource)
 				          << " limit is below Howdy's minimum sandbox policy\n";
 				return;
 			case howdy::native::CompareSandboxStatus::kLimitApplicationFailure:
-				std::cerr << "Failed to apply " << sandbox_resource_name(result.resource)
+				std::cerr << "Failed to apply " << SandboxResourceName(result.resource)
 				          << " sandbox limit";
 				break;
 		}
@@ -68,25 +68,25 @@ namespace {
 		std::cerr << "\n";
 	}
 
-	auto prepare_face_frame_dependency(void *context, const cv::Mat &frame) -> cv::Mat {
+	auto PrepareFaceFrameDependency(void *context, const cv::Mat &frame) -> cv::Mat {
 		(void)context;
-		return howdy::native::FaceModel::prepare_frame(frame);
+		return howdy::native::FaceModel::PrepareFrame(frame);
 	}
 
-	auto detect_faces_dependency(void *context, const cv::Mat &frame)
+	auto DetectFacesDependency(void *context, const cv::Mat &frame)
 	    -> howdy::native::FaceDetectionResult {
-		return static_cast<howdy::native::FaceModel *>(context)->detect(frame);
+		return static_cast<howdy::native::FaceModel *>(context)->Detect(frame);
 	}
 
-	auto encode_face_dependency(void *context, const cv::Mat &frame,
-	                            const howdy::native::FaceDetection &face)
+	auto EncodeFaceDependency(void *context, const cv::Mat &frame,
+	                          const howdy::native::FaceDetection &face)
 	    -> howdy::native::FaceEncodingResult {
-		return static_cast<howdy::native::FaceModel *>(context)->encode(frame, face);
+		return static_cast<howdy::native::FaceModel *>(context)->Encode(frame, face);
 	}
 
-	auto find_best_match_dependency(void *context, const std::vector<std::vector<float>> &known,
-	                                const std::vector<float> &probe) -> howdy::native::FaceMatch {
-		return static_cast<howdy::native::FaceModel *>(context)->best_match(known, probe);
+	auto FindBestMatchDependency(void *context, const std::vector<std::vector<float>> &known,
+	                             const std::vector<float> &probe) -> howdy::native::FaceMatch {
+		return static_cast<howdy::native::FaceModel *>(context)->BestMatch(known, probe);
 	}
 
 	struct CompareProductionContext {
@@ -99,44 +99,44 @@ namespace {
 		std::optional<howdy::native::CompareEngine> compare_engine;
 	};
 
-	auto open_capture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
+	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		return context.capture_session.open();
+		return context.capture_session.Open();
 	}
 
-	auto drop_privileges([[maybe_unused]] void *raw_context)
+	auto DropPrivileges([[maybe_unused]] void *raw_context)
 	    -> howdy::native::ComparePrivilegeResult {
-		return howdy::native::drop_compare_privileges();
+		return howdy::native::DropComparePrivileges();
 	}
 
-	void construct_engine(void *raw_context) {
+	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
 		context.compare_engine.emplace(context.video_config,
 		                               howdy::native::CompareInferenceDependencies{
 		                                   .context            = &context.face_model,
-		                                   .prepare_face_frame = prepare_face_frame_dependency,
-		                                   .detect_faces       = detect_faces_dependency,
-		                                   .encode_face        = encode_face_dependency,
-		                                   .find_best_match    = find_best_match_dependency,
+		                                   .prepare_face_frame = PrepareFaceFrameDependency,
+		                                   .detect_faces       = DetectFacesDependency,
+		                                   .encode_face        = EncodeFaceDependency,
+		                                   .find_best_match    = FindBestMatchDependency,
 		                               },
 		                               context.stored_encodings.encodings);
 	}
 
-	void reset_timeout(void *raw_context) {
+	void ResetTimeout(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		context.capture_session.reset_timeout_clock();
+		context.capture_session.ResetTimeoutClock();
 	}
 
-	auto handle_capture_result(CompareProductionContext                       &context,
-	                           const howdy::native::CompareCaptureFrameResult &result)
+	auto HandleCaptureResult(CompareProductionContext                       &context,
+	                         const howdy::native::CompareCaptureFrameResult &result)
 	    -> std::optional<CompareExit> {
 		switch (result.status) {
 			case howdy::native::CompareCaptureFrameStatus::kFrameReady:
 				return std::nullopt;
 			case howdy::native::CompareCaptureFrameStatus::kTimeout: {
-				const auto &stats = context.capture_session.stats();
+				const auto &stats = context.capture_session.Stats();
 				const auto  exit_code =
-				    howdy::native::timeout_exit(stats.dark_frames, stats.valid_frames);
+				    howdy::native::TimeoutExit(stats.dark_frames, stats.valid_frames);
 				if (exit_code == CompareExit::kTooDark) {
 					std::cerr << howdy::native::kAllFramesTooDarkMessage << '\n';
 					std::cerr << howdy::native::kAverageDarknessLabel
@@ -163,14 +163,14 @@ namespace {
 		kInvalidDevice,
 	};
 
-	auto handle_frame_result(howdy::native::CompareCaptureSession    &capture_session,
-	                         const howdy::native::CompareFrameResult &result) -> FrameHandling {
+	auto HandleFrameResult(howdy::native::CompareCaptureSession    &capture_session,
+	                       const howdy::native::CompareFrameResult &result) -> FrameHandling {
 		switch (result.status) {
 			case howdy::native::CompareFrameStatus::kBlackFrame:
-				capture_session.record_black_frame();
+				capture_session.RecordBlackFrame();
 				return FrameHandling::kSkip;
 			case howdy::native::CompareFrameStatus::kTooDark:
-				capture_session.record_dark_frame(result.brightness.darkness);
+				capture_session.RecordDarkFrame(result.brightness.darkness);
 				return FrameHandling::kSkip;
 			case howdy::native::CompareFrameStatus::kInvalidInput:
 				std::cerr << result.error_message << "\n";
@@ -179,18 +179,18 @@ namespace {
 				std::cerr << result.error_message << "\n";
 				return FrameHandling::kAbort;
 			case howdy::native::CompareFrameStatus::kReady:
-				capture_session.record_ready_frame(result.brightness.darkness);
+				capture_session.RecordReadyFrame(result.brightness.darkness);
 				return FrameHandling::kInfer;
 		}
 		return FrameHandling::kAbort;
 	}
 
-	void emit_success_report(const CompareProductionContext              &context,
-	                         const howdy::native::CompareInferenceResult &result) {
+	void EmitSuccessReport(const CompareProductionContext              &context,
+	                       const howdy::native::CompareInferenceResult &result) {
 		if (!context.end_report) {
 			return;
 		}
-		const auto &stats    = context.capture_session.stats();
+		const auto &stats    = context.capture_session.Stats();
 		const auto  total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 		                           std::chrono::steady_clock::now() - context.start_time)
 		                           .count();
@@ -207,14 +207,14 @@ namespace {
 		}
 	}
 
-	auto handle_inference_result(const CompareProductionContext              &context,
-	                             const howdy::native::CompareInferenceResult &result)
+	auto HandleInferenceResult(const CompareProductionContext              &context,
+	                           const howdy::native::CompareInferenceResult &result)
 	    -> std::optional<CompareExit> {
 		switch (result.status) {
 			case howdy::native::CompareInferenceStatus::kNoMatch:
 				return std::nullopt;
 			case howdy::native::CompareInferenceStatus::kMatch:
-				emit_success_report(context, result);
+				EmitSuccessReport(context, result);
 				return CompareExit::kSuccess;
 			case howdy::native::CompareInferenceStatus::kInvalidPreparedFrame:
 			case howdy::native::CompareInferenceStatus::kDetectionFailed:
@@ -228,7 +228,7 @@ namespace {
 		return CompareExit::kAbort;
 	}
 
-	auto run_frame_loop(void *raw_context) -> CompareExit {
+	auto RunFrameLoop(void *raw_context) -> CompareExit {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
 		if (!context.compare_engine.has_value()) {
 			return CompareExit::kAbort;
@@ -237,16 +237,15 @@ namespace {
 		auto &compare_engine  = *context.compare_engine;
 
 		while (true) {
-			auto capture_result = capture_session.next_frame();
-			if (const auto exit = handle_capture_result(context, capture_result);
-			    exit.has_value()) {
+			auto capture_result = capture_session.NextFrame();
+			if (const auto exit = HandleCaptureResult(context, capture_result); exit.has_value()) {
 				return *exit;
 			}
 
-			const auto frame_result = compare_engine.process_gray_frame(
+			const auto frame_result = compare_engine.ProcessGrayFrame(
 			    std::move(capture_result.gray_frame), capture_result.frame_number);
 
-			switch (handle_frame_result(capture_session, frame_result)) {
+			switch (HandleFrameResult(capture_session, frame_result)) {
 				case FrameHandling::kInfer:
 					break;
 				case FrameHandling::kSkip:
@@ -258,14 +257,14 @@ namespace {
 			}
 
 			const auto inference_result =
-			    compare_engine.process_face_frame(frame_result.working_frame);
+			    compare_engine.ProcessFaceFrame(frame_result.working_frame);
 
-			if (const auto exit = handle_inference_result(context, inference_result);
+			if (const auto exit = HandleInferenceResult(context, inference_result);
 			    exit.has_value()) {
 				return *exit;
 			}
 
-			capture_session.restore_exposure();
+			capture_session.RestoreExposure();
 		}
 	}
 
@@ -274,8 +273,8 @@ namespace {
 auto main(int argc, char **argv) -> int {
 	try {
 		const auto start_time   = std::chrono::steady_clock::now();
-		const auto parse_result = howdy::native::parse_compare_args(
-		    argc, argv, howdy::native::resolve_config_path().string());
+		const auto parse_result = howdy::native::ParseCompareArgs(
+		    argc, argv, howdy::native::ResolveConfigPath().string());
 		if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
 			std::cout << parse_result.message;
 			return static_cast<int>(parse_result.exit_code);
@@ -289,7 +288,7 @@ auto main(int argc, char **argv) -> int {
 		const auto &args = parse_result.args;
 
 		auto config_result =
-		    howdy::native::load_runtime_config(args.config_path, static_cast<uid_t>(0));
+		    howdy::native::LoadRuntimeConfig(args.config_path, static_cast<uid_t>(0));
 		if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 		    !config_result.config.has_value()) {
 			std::cerr << config_result.error_message << "\n";
@@ -297,13 +296,13 @@ auto main(int argc, char **argv) -> int {
 		}
 		const auto &config = *config_result.config;
 
-		const auto sandbox_result = howdy::native::apply_compare_sandbox(config.video.timeout);
+		const auto sandbox_result = howdy::native::ApplyCompareSandbox(config.video.timeout);
 		if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
-			report_sandbox_failure(sandbox_result);
+			ReportSandboxFailure(sandbox_result);
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
-		const auto loaded_models = howdy::native::load_user_models(
+		const auto loaded_models = howdy::native::LoadUserModels(
 		    args.user, howdy::native::FaceModel::kBackendName, static_cast<uid_t>(0));
 		if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
 			std::cerr << loaded_models.error_message << "\n";
@@ -326,8 +325,8 @@ auto main(int argc, char **argv) -> int {
 		}
 
 		howdy::native::FaceModel face_model(config.face);
-		if (!face_model.ok()) {
-			std::cerr << face_model.error_message() << "\n";
+		if (!face_model.Ok()) {
+			std::cerr << face_model.ErrorMessage() << "\n";
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
@@ -342,13 +341,13 @@ auto main(int argc, char **argv) -> int {
 		    .end_report       = config.debug.end_report,
 		};
 		const auto processing_result =
-		    howdy::native::compare_processing_internal::run_compare_processing({
+		    howdy::native::compare_processing_internal::RunCompareProcessing({
 		        .context          = &processing_context,
-		        .open_capture     = open_capture,
-		        .drop_privileges  = drop_privileges,
-		        .construct_engine = construct_engine,
-		        .reset_timeout    = reset_timeout,
-		        .run_frame_loop   = run_frame_loop,
+		        .open_capture     = OpenCapture,
+		        .drop_privileges  = DropPrivileges,
+		        .construct_engine = ConstructEngine,
+		        .reset_timeout    = ResetTimeout,
+		        .run_frame_loop   = RunFrameLoop,
 		    });
 		if (std::holds_alternative<
 		        howdy::native::compare_processing_internal::CompareProcessingInvalidDependencies>(
@@ -369,7 +368,7 @@ auto main(int argc, char **argv) -> int {
 		}
 		if (const auto *privilege_result =
 		        std::get_if<howdy::native::ComparePrivilegeResult>(&processing_result)) {
-			if (!privilege_result->ok()) {
+			if (!privilege_result->Ok()) {
 				std::cerr << "Failed to drop compare privileges: "
 				          << privilege_result->error_message << "\n";
 			}
@@ -378,13 +377,13 @@ auto main(int argc, char **argv) -> int {
 		return static_cast<int>(std::get<CompareExit>(processing_result));
 
 	} catch (const cv::Exception &error) {
-		return static_cast<int>(howdy::native::compare_abort_from_cv_exception(
+		return static_cast<int>(howdy::native::CompareAbortFromCvException(
 		    error, std::cerr, "authentication compare path"));
 	} catch (const std::exception &error) {
-		return static_cast<int>(howdy::native::compare_abort_from_exception(
+		return static_cast<int>(howdy::native::CompareAbortFromException(
 		    error, std::cerr, "authentication compare path"));
 	} catch (...) {
-		return static_cast<int>(howdy::native::compare_abort_from_unknown_exception(
+		return static_cast<int>(howdy::native::CompareAbortFromUnknownException(
 		    std::cerr, "authentication compare path"));
 	}
 }

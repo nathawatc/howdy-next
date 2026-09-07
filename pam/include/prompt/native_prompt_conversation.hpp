@@ -20,11 +20,11 @@ class NativePrompt {
 public:
 	virtual ~NativePrompt() = default;
 
-	[[nodiscard]] virtual auto available() const -> bool                              = 0;
-	virtual auto               install() -> int                                       = 0;
-	virtual void               request_abort()                                        = 0;
-	[[nodiscard]] virtual auto terminal_restore_failed() const noexcept -> bool       = 0;
-	virtual auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult = 0;
+	[[nodiscard]] virtual auto Available() const -> bool                             = 0;
+	virtual auto               Install() -> int                                      = 0;
+	virtual void               RequestAbort()                                        = 0;
+	[[nodiscard]] virtual auto TerminalRestoreFailed() const noexcept -> bool        = 0;
+	virtual auto RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult = 0;
 };
 
 class NativePromptConversation final : public NativePrompt {
@@ -35,11 +35,11 @@ public:
 	NativePromptConversation(const NativePromptConversation &)                     = delete;
 	auto operator=(const NativePromptConversation &) -> NativePromptConversation & = delete;
 
-	[[nodiscard]] auto available() const -> bool override;
-	auto               install() -> int override;
-	void               request_abort() override;
-	[[nodiscard]] auto terminal_restore_failed() const noexcept -> bool override;
-	auto restore_original() noexcept -> howdy::pam::ConversationRestoreResult override;
+	[[nodiscard]] auto Available() const -> bool override;
+	auto               Install() -> int override;
+	void               RequestAbort() override;
+	[[nodiscard]] auto TerminalRestoreFailed() const noexcept -> bool override;
+	auto               RestoreOriginal() noexcept -> howdy::pam::ConversationRestoreResult override;
 
 private:
 	friend class NativePromptConversationTestAccess;
@@ -66,30 +66,29 @@ private:
 	};
 
 	enum class PromptIoResult : std::uint8_t {
-		retry,
-		ready,
-		abort,
+		kRetry,
+		kReady,
+		kAbort,
 	};
 
 	NativePromptConversation(pam_handle_t *pamh, struct pam_conv original_conv,
 	                         bool has_original_conv, Descriptors descriptors,
 	                         Operations operations);
-	static auto production_operations() -> Operations;
+	static auto ProductionOperations() -> Operations;
 
-	static auto dispatch(int num_msg, const struct pam_message **msgm,
+	static auto Dispatch(int num_msg, const struct pam_message **msgm,
 	                     struct pam_response **response, void *appdata_ptr) -> int;
-	auto        handle(int num_msg, const struct pam_message **msgm, struct pam_response **response)
+	auto        Handle(int num_msg, const struct pam_message **msgm, struct pam_response **response)
 	    -> int;
-	[[nodiscard]] auto write_message_line(const struct pam_message &message) const -> int;
-	auto prompt_input(const struct pam_message &message, char **response, bool hide_input) -> int;
-	auto poll_prompt(std::array<struct pollfd, 2> &fds) const -> int;
-	auto read_prompt_char(char *ch) const -> ssize_t;
-	auto poll_prompt_state(std::array<struct pollfd, 2> &fds) -> PromptIoResult;
-	auto read_prompt_state(char *ch) -> PromptIoResult;
-	auto wait_for_prompt_character(char *ch) -> PromptIoResult;
-	[[nodiscard]] auto restore_prompt_terminal(const struct termios &original_termios) const
-	    -> bool;
-	void retain_unsafe_dispatch_context() noexcept;
+	[[nodiscard]] auto WriteMessageLine(const struct pam_message &message) const -> int;
+	auto PromptInput(const struct pam_message &message, char **response, bool hide_input) -> int;
+	auto PollPrompt(std::array<struct pollfd, 2> &fds) const -> int;
+	auto ReadPromptChar(char *ch) const -> ssize_t;
+	auto PollPromptState(std::array<struct pollfd, 2> &fds) -> PromptIoResult;
+	auto ReadPromptState(char *ch) -> PromptIoResult;
+	auto WaitForPromptCharacter(char *ch) -> PromptIoResult;
+	[[nodiscard]] auto RestorePromptTerminal(const struct termios &original_termios) const -> bool;
+	void               RetainUnsafeDispatchContext() noexcept;
 
 	pam_handle_t                    *pamh_ = nullptr;
 	struct pam_conv                  original_conv_{};
@@ -112,6 +111,6 @@ struct NativeTerminalDescriptors {
 };
 
 __attribute__((visibility("hidden"))) auto
-native_prompt_terminal_is_interactive(const NativeTerminalDescriptors &descriptors) -> bool;
+NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool;
 
 #endif  // HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP

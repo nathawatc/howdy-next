@@ -40,11 +40,11 @@ namespace howdy::test::auth_flow {
 			}
 		}
 
-		auto start(const struct pam_conv *conversation, const char *username = "test-user") -> int {
+		auto Start(const struct pam_conv *conversation, const char *username = "test-user") -> int {
 			return pam_start("howdy-auth-flow-test", username, conversation, &pamh_);
 		}
 
-		[[nodiscard]] auto get() const -> pam_handle_t * {
+		[[nodiscard]] auto Get() const -> pam_handle_t * {
 			return pamh_;
 		}
 
@@ -53,9 +53,9 @@ namespace howdy::test::auth_flow {
 	};
 
 	enum class ResponseMode : std::uint8_t {
-		None,
-		Empty,
-		Secret,
+		kNone,
+		kEmpty,
+		kSecret,
 	};
 
 	struct ConversationState {
@@ -63,7 +63,7 @@ namespace howdy::test::auth_flow {
 		int          calls         = 0;
 		int          last_msg_type = 0;
 		std::string  last_message;
-		ResponseMode response_mode = ResponseMode::None;
+		ResponseMode response_mode = ResponseMode::kNone;
 	};
 
 	struct RuntimeFlowState {
@@ -106,16 +106,16 @@ namespace howdy::test::auth_flow {
 		PromptFlowState      prompt;
 	};
 
-	inline auto flow_prepare_runtime(void *context, std::string_view username,
-	                                 howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+	inline auto FlowPrepareRuntime(void *context, std::string_view username,
+	                               howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
 		(void)username;
 		auto *state = static_cast<RuntimeFlowState *>(context);
 		++state->prepare_calls;
 		if (!state->prepare_result) {
 			return false;
 		}
-		const auto root = howdy::native::auth_helper_protocol::prepared_runtime_generation_dir(
-		    howdy::native::auth_helper_protocol::prepared_runtime_root(), getuid(),
+		const auto root = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
+		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), getuid(),
 		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		std::array<int, 2> lease_pipe = {-1, -1};
 		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
@@ -124,15 +124,15 @@ namespace howdy::test::auth_flow {
 		(void)close(lease_pipe[1]);
 		*prepared = {
 		    .root_dir    = root,
-		    .config_path = howdy::native::auth_helper_protocol::prepared_config_path(root).string(),
+		    .config_path = howdy::native::auth_helper_protocol::PreparedConfigPath(root).string(),
 		    .user_models_dir =
-		        howdy::native::auth_helper_protocol::prepared_user_models_dir(root).string(),
+		        howdy::native::auth_helper_protocol::PreparedUserModelsDir(root).string(),
 		    .lease_fd = lease_pipe[0],
 		};
 		return true;
 	}
 
-	inline auto flow_load_runtime_config(void *context, const std::filesystem::path &path)
+	inline auto FlowLoadRuntimeConfig(void *context, const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		auto *state = static_cast<RuntimeFlowState *>(context);
 		++state->load_calls;
@@ -167,26 +167,26 @@ namespace howdy::test::auth_flow {
 		};
 	}
 
-	inline auto flow_effective_uid(void *context) -> uid_t {
+	inline auto FlowEffectiveUid(void *context) -> uid_t {
 		auto *state = static_cast<RuntimeFlowState *>(context);
 		return state->effective_uid;
 	}
 
-	inline auto flow_ssh_session_present(void *context, pam_handle_t *pamh) -> bool {
+	inline auto FlowSshSessionPresent(void *context, pam_handle_t *pamh) -> bool {
 		(void)pamh;
 		auto *state = static_cast<EligibilityFlowState *>(context);
 		++state->ssh_calls;
 		return state->ssh;
 	}
 
-	inline auto flow_read_lid_state(void *context) -> howdy::pam::runtime::LidStateResult {
+	inline auto FlowReadLidState(void *context) -> howdy::pam::runtime::LidStateResult {
 		auto *state = static_cast<EligibilityFlowState *>(context);
 		++state->lid_calls;
 		return state->lid;
 	}
 
-	inline auto flow_check_model_readiness(void *context, const std::filesystem::path &models_dir,
-	                                       const char *username)
+	inline auto FlowCheckModelReadiness(void *context, const std::filesystem::path &models_dir,
+	                                    const char *username)
 	    -> howdy::native::UserModelReadinessResult {
 		(void)models_dir;
 		(void)username;
@@ -195,8 +195,8 @@ namespace howdy::test::auth_flow {
 		return state->readiness;
 	}
 
-	inline auto flow_spawn_compare(void *context, const howdy::pam::CompareLaunchRequest &request,
-	                               pid_t *child_pid) -> int {
+	inline auto FlowSpawnCompare(void *context, const howdy::pam::CompareLaunchRequest &request,
+	                             pid_t *child_pid) -> int {
 		(void)request;
 		auto *state = static_cast<PromptFlowState *>(context);
 		++state->spawn_calls;
@@ -204,10 +204,10 @@ namespace howdy::test::auth_flow {
 		return 0;
 	}
 
-	inline auto flow_wait_compare(void *context, pid_t child_pid,
-	                              std::chrono::steady_clock::time_point      deadline,
-	                              void                                      *cancellation_context,
-	                              howdy::pam::CompareCancellationRequestedFn cancellation_requested)
+	inline auto FlowWaitCompare(void *context, pid_t child_pid,
+	                            std::chrono::steady_clock::time_point      deadline,
+	                            void                                      *cancellation_context,
+	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested)
 	    -> int {
 		(void)context;
 		(void)child_pid;
@@ -217,25 +217,25 @@ namespace howdy::test::auth_flow {
 		return 0;
 	}
 
-	inline auto flow_input_prompt_preflight(void *context) -> bool {
+	inline auto FlowInputPromptPreflight(void *context) -> bool {
 		(void)context;
 		return true;
 	}
 
-	inline auto flow_create_prompt_submitter(void *context) -> std::unique_ptr<PromptSubmitter> {
+	inline auto FlowCreatePromptSubmitter(void *context) -> std::unique_ptr<PromptSubmitter> {
 		(void)context;
 		return nullptr;
 	}
 
-	inline auto flow_create_native_prompt(void *context, pam_handle_t *pamh)
+	inline auto FlowCreateNativePrompt(void *context, pam_handle_t *pamh)
 	    -> std::unique_ptr<NativePrompt> {
 		(void)context;
 		(void)pamh;
 		return nullptr;
 	}
 
-	inline auto flow_create_secret_prompt_conversation(void *context, pam_handle_t *pamh,
-	                                                   howdy::pam::SecretPromptObserver observer)
+	inline auto FlowCreateSecretPromptConversation(void *context, pam_handle_t *pamh,
+	                                               howdy::pam::SecretPromptObserver observer)
 	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
 		(void)context;
 		(void)pamh;
@@ -243,54 +243,54 @@ namespace howdy::test::auth_flow {
 		return nullptr;
 	}
 
-	inline auto flow_request_auth_token(void *context, pam_handle_t *pamh)
+	inline auto FlowRequestAuthToken(void *context, pam_handle_t *pamh)
 	    -> std::tuple<int, const char *> {
 		(void)context;
 		(void)pamh;
 		return {PAM_SUCCESS, nullptr};
 	}
 
-	inline auto make_eligibility_flow_dependencies(EligibilityFlowFixture *fixture)
+	inline auto MakeEligibilityFlowDependencies(EligibilityFlowFixture *fixture)
 	    -> howdy::pam::auth_flow::IdentifyDependencies {
 		return {
 		    .runtime_session =
 		        {
 		            .context             = &fixture->runtime,
-		            .prepare_runtime     = flow_prepare_runtime,
-		            .load_runtime_config = flow_load_runtime_config,
-		            .effective_uid       = flow_effective_uid,
+		            .prepare_runtime     = FlowPrepareRuntime,
+		            .load_runtime_config = FlowLoadRuntimeConfig,
+		            .effective_uid       = FlowEffectiveUid,
 		        },
 		    .prompt_coordinator =
 		        {
 		            .context                           = &fixture->prompt,
-		            .spawn_compare_process             = flow_spawn_compare,
-		            .wait_for_compare_process          = flow_wait_compare,
-		            .input_prompt_preflight            = flow_input_prompt_preflight,
-		            .create_prompt_submitter           = flow_create_prompt_submitter,
-		            .create_native_prompt              = flow_create_native_prompt,
-		            .create_secret_prompt_conversation = flow_create_secret_prompt_conversation,
-		            .request_auth_token                = flow_request_auth_token,
+		            .spawn_compare_process             = FlowSpawnCompare,
+		            .wait_for_compare_process          = FlowWaitCompare,
+		            .input_prompt_preflight            = FlowInputPromptPreflight,
+		            .create_prompt_submitter           = FlowCreatePromptSubmitter,
+		            .create_native_prompt              = FlowCreateNativePrompt,
+		            .create_secret_prompt_conversation = FlowCreateSecretPromptConversation,
+		            .request_auth_token                = FlowRequestAuthToken,
 		        },
 		    .eligibility =
 		        {
 		            .context               = &fixture->eligibility,
-		            .ssh_session_present   = flow_ssh_session_present,
-		            .read_lid_state        = flow_read_lid_state,
-		            .check_model_readiness = flow_check_model_readiness,
+		            .ssh_session_present   = FlowSshSessionPresent,
+		            .read_lid_state        = FlowReadLidState,
+		            .check_model_readiness = FlowCheckModelReadiness,
 		        },
 		};
 	}
 
-	inline auto identify_for_test(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
-	                              bool ask_auth_tok) -> int {
+	inline auto IdentifyForTest(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                            bool ask_auth_tok) -> int {
 		const auto *dependencies =
 		    static_cast<const howdy::pam::auth_flow::IdentifyDependencies *>(context);
-		return howdy::pam::auth_flow::identify_with_dependencies(pamh, arguments, ask_auth_tok,
-		                                                         *dependencies);
+		return howdy::pam::auth_flow::IdentifyWithDependencies(pamh, arguments, ask_auth_tok,
+		                                                       *dependencies);
 	}
 
-	inline auto test_conversation(int num_msg, const struct pam_message **messages,
-	                              struct pam_response **response, void *appdata_ptr) -> int {
+	inline auto TestConversation(int num_msg, const struct pam_message **messages,
+	                             struct pam_response **response, void *appdata_ptr) -> int {
 		auto *state = static_cast<ConversationState *>(appdata_ptr);
 		if (state == nullptr || num_msg != 1 || messages == nullptr || messages[0] == nullptr ||
 		    response == nullptr) {
@@ -302,12 +302,12 @@ namespace howdy::test::auth_flow {
 		state->last_message  = messages[0]->msg == nullptr ? "" : messages[0]->msg;
 		*response            = nullptr;
 
-		if (state->response_mode != ResponseMode::None) {
+		if (state->response_mode != ResponseMode::kNone) {
 			*response = static_cast<struct pam_response *>(calloc(1, sizeof(struct pam_response)));
 			if (*response == nullptr) {
 				return PAM_BUF_ERR;
 			}
-			if (state->response_mode == ResponseMode::Secret) {
+			if (state->response_mode == ResponseMode::kSecret) {
 				constexpr const char *secret = "temporary-secret";
 				const auto            length = std::strlen(secret) + 1;
 				(*response)->resp            = static_cast<char *>(std::malloc(length));

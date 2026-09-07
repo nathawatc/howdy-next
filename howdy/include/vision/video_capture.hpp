@@ -27,7 +27,7 @@ namespace howdy::native {
 		int         device_fps     = 0;
 	};
 
-	auto load_capture_settings(const VideoConfig &config) -> CaptureSettings;
+	auto LoadCaptureSettings(const VideoConfig &config) -> CaptureSettings;
 
 	class VideoCaptureTestAccess;
 
@@ -35,30 +35,30 @@ namespace howdy::native {
 	public:
 		explicit VideoCapture(CaptureSettings settings);
 
-		auto open(bool perform_warm_up = true) -> bool;
-		auto warm_up() -> bool;
-		auto grab() -> bool;
-		auto read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
-		void release();
+		auto Open(bool perform_warm_up = true) -> bool;
+		auto WarmUp() -> bool;
+		auto Grab() -> bool;
+		auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
+		void Release();
 
-		[[nodiscard]] auto is_open() const -> bool;
-		[[nodiscard]] auto get(int property) const -> double;
-		auto               set(int property, double value) -> bool;
+		[[nodiscard]] auto IsOpen() const -> bool;
+		[[nodiscard]] auto Get(int property) const -> double;
+		auto               Set(int property, double value) -> bool;
 
-		[[nodiscard]] auto error() const -> CaptureError;
-		[[nodiscard]] auto error_message() const -> const std::string &;
-		[[nodiscard]] auto settings() const -> const CaptureSettings &;
+		[[nodiscard]] auto Error() const -> CaptureError;
+		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
+		[[nodiscard]] auto Settings() const -> const CaptureSettings &;
 
 	private:
 		class FrameReader {
 		public:
 			virtual ~FrameReader()                    = default;
-			virtual auto read(cv::Mat &frame) -> bool = 0;
+			virtual auto Read(cv::Mat &frame) -> bool = 0;
 		};
 
 		VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader);
 
-		void set_error(CaptureError error, std::string message);
+		void SetError(CaptureError error, std::string message);
 
 		friend class VideoCaptureTestAccess;
 

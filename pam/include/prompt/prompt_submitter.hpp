@@ -8,10 +8,10 @@ namespace howdy::pam {
 	public:
 		virtual ~PromptSubmitter() = default;
 
-		virtual void submit_prompt() = 0;
+		virtual void SubmitPrompt() = 0;
 	};
 
-	auto create_uinput_prompt_submitter() -> std::unique_ptr<PromptSubmitter>;
+	auto CreateUinputPromptSubmitter() -> std::unique_ptr<PromptSubmitter>;
 
 }  // namespace howdy::pam
 

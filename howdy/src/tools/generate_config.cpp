@@ -9,20 +9,20 @@
 
 namespace {
 
-	auto write_output_atomically(const std::filesystem::path &output_path, std::string_view content)
+	auto WriteOutputAtomically(const std::filesystem::path &output_path, std::string_view content)
 	    -> std::optional<std::string> {
-		const auto result = howdy::native::write_atomic_file(output_path, content);
-		if (howdy::native::atomic_file_commit_is_durable(result)) {
+		const auto result = howdy::native::WriteAtomicFile(output_path, content);
+		if (howdy::native::AtomicFileCommitIsDurable(result)) {
 			return std::nullopt;
 		}
-		if (howdy::native::atomic_file_may_have_committed(result)) {
+		if (howdy::native::AtomicFileMayHaveCommitted(result)) {
 			return "cannot durably replace output " + output_path.string() +
 			       "; output was replaced, but its parent directory could not be synchronized";
 		}
 		return "cannot atomically write output " + output_path.string();
 	}
 
-	void print_usage() {
+	void PrintUsage() {
 		std::cerr << "Usage: howdy_config_generator --output <path>\n";
 	}
 
@@ -30,19 +30,19 @@ namespace {
 
 auto main(int argc, char **argv) -> int {
 	if (argc != 3 || std::string_view(argv[1]) != "--output" || std::string_view(argv[2]).empty()) {
-		print_usage();
+		PrintUsage();
 		return 2;
 	}
 
-	const auto rendered = howdy::native::config_template::render_default_config(
-	    howdy::native::config_schema::runtime_config_options());
+	const auto rendered = howdy::native::config_template::RenderDefaultConfig(
+	    howdy::native::config_schema::RuntimeConfigOptions());
 	if (!rendered.ok) {
 		std::cerr << "howdy_config_generator: rendering failed: " << rendered.error << '\n';
 		return 1;
 	}
 
 	const std::filesystem::path output_path(argv[2]);
-	if (const auto error = write_output_atomically(output_path, rendered.content)) {
+	if (const auto error = WriteOutputAtomically(output_path, rendered.content)) {
 		std::cerr << "howdy_config_generator: " << *error << '\n';
 		return 1;
 	}

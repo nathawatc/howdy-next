@@ -33,39 +33,39 @@ namespace howdy::native {
 		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
 
 		ScopedFd(ScopedFd &&other) noexcept
-		    : fd_(other.release()) {}
+		    : fd_(other.Release()) {}
 
 		auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
 			if (this != &other) {
-				reset(other.release());
+				Reset(other.Release());
 			}
 			return *this;
 		}
 
 		~ScopedFd() {
-			reset();
+			Reset();
 		}
 
-		[[nodiscard]] auto get() const -> int {
+		[[nodiscard]] auto Get() const -> int {
 			return fd_;
 		}
 
-		[[nodiscard]] auto close() -> bool {
+		[[nodiscard]] auto Close() -> bool {
 			if (fd_ < 0) {
 				return true;
 			}
-			const int fd = release();
+			const int fd = Release();
 			return ::close(fd) == 0;
 		}
 
-		void reset(int fd = -1) {
+		void Reset(int fd = -1) {
 			if (fd_ >= 0) {
 				::close(fd_);
 			}
 			fd_ = fd;
 		}
 
-		[[nodiscard]] auto release() -> int {
+		[[nodiscard]] auto Release() -> int {
 			const int fd = fd_;
 			fd_          = -1;
 			return fd;
@@ -104,51 +104,49 @@ namespace howdy::native {
 		kStateUncertain,
 	};
 
-	[[nodiscard]] constexpr auto atomic_file_may_have_committed(AtomicFileCommitResult result)
-	    -> bool {
+	[[nodiscard]] constexpr auto AtomicFileMayHaveCommitted(AtomicFileCommitResult result) -> bool {
 		return result == AtomicFileCommitResult::kCommitted ||
 		       result == AtomicFileCommitResult::kCommittedSyncFailed ||
 		       result == AtomicFileCommitResult::kStateUncertain;
 	}
 
-	[[nodiscard]] constexpr auto atomic_file_commit_is_durable(AtomicFileCommitResult result)
-	    -> bool {
+	[[nodiscard]] constexpr auto AtomicFileCommitIsDurable(AtomicFileCommitResult result) -> bool {
 		return result == AtomicFileCommitResult::kCommitted;
 	}
 
 	using SyncParentDirectoryFn = bool (*)(const std::filesystem::path &path);
 
-	inline auto sync_parent_directory(const std::filesystem::path &path) -> bool {
+	inline auto SyncParentDirectory(const std::filesystem::path &path) -> bool {
 		const auto parent =
 		    path.parent_path().empty() ? std::filesystem::path(".") : path.parent_path();
 		ScopedFd dir_fd(open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-		if (dir_fd.get() < 0) {
+		if (dir_fd.Get() < 0) {
 			return false;
 		}
 
-		if (!sync_fd(dir_fd.get())) {
+		if (!SyncFd(dir_fd.Get())) {
 			return false;
 		}
-		return dir_fd.close();
+		return dir_fd.Close();
 	}
 
-	inline auto remove_file_and_sync(const std::filesystem::path &path) -> AtomicFileCommitResult {
+	inline auto RemoveFileAndSync(const std::filesystem::path &path) -> AtomicFileCommitResult {
 		std::error_code ec;
 		const bool      removed = std::filesystem::remove(path, ec);
 		if (ec || !removed) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		return sync_parent_directory(path) ? AtomicFileCommitResult::kCommitted
-		                                   : AtomicFileCommitResult::kCommittedSyncFailed;
+		return SyncParentDirectory(path) ? AtomicFileCommitResult::kCommitted
+		                                 : AtomicFileCommitResult::kCommittedSyncFailed;
 	}
 
-	inline void cleanup_staged_file(StagedFile &staged) {
-		staged.fd.reset();
+	inline void CleanupStagedFile(StagedFile &staged) {
+		staged.fd.Reset();
 		std::error_code ec;
 		std::filesystem::remove(staged.path, ec);
 	}
 
-	inline auto prepare_staged_file(
+	inline auto PrepareStagedFile(
 	    const std::filesystem::path &destination, std::string_view temp_prefix,
 	    mode_t                   default_mode    = kDefaultAtomicFileMode,
 	    StagedFileMetadataPolicy metadata_policy = StagedFileMetadataPolicy::kPreserveExisting,
@@ -159,7 +157,7 @@ namespace howdy::native {
 		if (parent_policy == StagedFileParentPolicy::kRequireExisting) {
 			ScopedFd parent_fd(
 			    open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (parent_fd.get() < 0) {
+			if (parent_fd.Get() < 0) {
 				return std::nullopt;
 			}
 		} else {
@@ -181,21 +179,21 @@ namespace howdy::native {
 		writable.push_back('\0');
 
 		ScopedFd fd(mkostemp(writable.data(), O_CLOEXEC));
-		if (fd.get() < 0) {
+		if (fd.Get() < 0) {
 			return std::nullopt;
 		}
 
 		const std::filesystem::path temp_path(writable.data());
 		if (have_current_stat && metadata_policy == StagedFileMetadataPolicy::kPreserveExisting) {
-			if (fchown(fd.get(), current_stat.st_uid, current_stat.st_gid) != 0 ||
-			    fchmod(fd.get(), current_stat.st_mode & 07777) != 0) {
-				fd.reset();
+			if (fchown(fd.Get(), current_stat.st_uid, current_stat.st_gid) != 0 ||
+			    fchmod(fd.Get(), current_stat.st_mode & 07777) != 0) {
+				fd.Reset();
 				std::error_code ec;
 				std::filesystem::remove(temp_path, ec);
 				return std::nullopt;
 			}
-		} else if (fchmod(fd.get(), default_mode) != 0) {
-			fd.reset();
+		} else if (fchmod(fd.Get(), default_mode) != 0) {
+			fd.Reset();
 			std::error_code ec;
 			std::filesystem::remove(temp_path, ec);
 			return std::nullopt;
@@ -204,27 +202,27 @@ namespace howdy::native {
 		return StagedFile{.fd = std::move(fd), .path = temp_path};
 	}
 
-	inline auto install_staged_file(
+	inline auto InstallStagedFile(
 	    StagedFile &staged, const std::filesystem::path &destination,
-	    SyncParentDirectoryFn   sync_parent    = sync_parent_directory,
+	    SyncParentDirectoryFn   sync_parent    = SyncParentDirectory,
 	    AtomicFileInstallPolicy install_policy = AtomicFileInstallPolicy::kReplaceExisting)
 	    -> AtomicFileCommitResult {
 		if (staged.path.empty()) {
-			staged.fd.reset();
+			staged.fd.Reset();
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		if (staged.fd.get() < 0) {
-			cleanup_staged_file(staged);
-			return AtomicFileCommitResult::kNotCommitted;
-		}
-
-		if (!sync_fd(staged.fd.get())) {
-			cleanup_staged_file(staged);
+		if (staged.fd.Get() < 0) {
+			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		if (!staged.fd.close()) {
-			cleanup_staged_file(staged);
+		if (!SyncFd(staged.fd.Get())) {
+			CleanupStagedFile(staged);
+			return AtomicFileCommitResult::kNotCommitted;
+		}
+
+		if (!staged.fd.Close()) {
+			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
@@ -232,7 +230,7 @@ namespace howdy::native {
 			std::error_code ec;
 			std::filesystem::rename(staged.path, destination, ec);
 			if (ec) {
-				cleanup_staged_file(staged);
+				CleanupStagedFile(staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
 		} else {
@@ -244,7 +242,7 @@ namespace howdy::native {
 			} while (rename_result != 0 && errno == EINTR);
 			if (rename_result != 0) {
 				const int error_number = errno;
-				cleanup_staged_file(staged);
+				CleanupStagedFile(staged);
 				return error_number == EEXIST ? AtomicFileCommitResult::kDestinationExists
 				                              : AtomicFileCommitResult::kNotCommitted;
 			}
@@ -259,20 +257,20 @@ namespace howdy::native {
 		                     : AtomicFileCommitResult::kCommittedSyncFailed;
 	}
 
-	inline auto write_atomic_file(const std::filesystem::path &path, std::string_view content,
-	                              mode_t default_mode = kDefaultAtomicFileMode)
+	inline auto WriteAtomicFile(const std::filesystem::path &path, std::string_view content,
+	                            mode_t default_mode = kDefaultAtomicFileMode)
 	    -> AtomicFileCommitResult {
-		auto staged = prepare_staged_file(path, ".howdy-atomic-", default_mode);
+		auto staged = PrepareStagedFile(path, ".howdy-atomic-", default_mode);
 		if (!staged.has_value()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		if (!write_all_to_fd(staged->fd.get(), content)) {
-			cleanup_staged_file(*staged);
+		if (!WriteAllToFd(staged->fd.Get(), content)) {
+			CleanupStagedFile(*staged);
 			return AtomicFileCommitResult::kNotCommitted;
 		}
 
-		return install_staged_file(*staged, path);
+		return InstallStagedFile(*staged, path);
 	}
 
 }  // namespace howdy::native

@@ -4,10 +4,10 @@ auto main() -> int {
 	using namespace howdy::test::add_cli;
 
 	bool ok = true;
-	ok &= run_add_cli_success_tests();
-	ok &= run_add_cli_preflight_tests();
-	ok &= run_add_cli_capture_tests();
-	ok &= run_add_cli_argument_tests();
-	ok &= run_add_cli_dependency_validation_tests();
+	ok &= RunAddCliSuccessTests();
+	ok &= RunAddCliPreflightTests();
+	ok &= RunAddCliCaptureTests();
+	ok &= RunAddCliArgumentTests();
+	ok &= RunAddCliDependencyValidationTests();
 	return ok ? 0 : 1;
 }

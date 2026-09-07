@@ -3,8 +3,8 @@
 #include <security/pam_appl.h>
 
 namespace {
-	auto reject_conversation(int message_count, const pam_message **messages,
-	                         pam_response **responses, void *data) -> int {
+	auto RejectConversation(int message_count, const pam_message **messages,
+	                        pam_response **responses, void *data) -> int {
 		(void)message_count;
 		(void)messages;
 		(void)responses;
@@ -20,7 +20,7 @@ auto main(int argc, char **argv) -> int {
 		return 2;
 	}
 
-	pam_conv      conversation{.conv = reject_conversation, .appdata_ptr = nullptr};
+	pam_conv      conversation{.conv = RejectConversation, .appdata_ptr = nullptr};
 	pam_handle_t *handle   = nullptr;
 	const int start_result = pam_start_confdir(argv[1], argv[2], &conversation, argv[3], &handle);
 	if (start_result != PAM_SUCCESS) {

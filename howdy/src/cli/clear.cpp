@@ -20,7 +20,7 @@ namespace {
 		bool        yes = false;
 	};
 
-	auto parse_clear_args(int argc, char **argv) -> std::optional<ClearArgs> {
+	auto ParseClearArgs(int argc, char **argv) -> std::optional<ClearArgs> {
 		ClearArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -45,28 +45,29 @@ namespace {
 		return args;
 	}
 
-	auto inspect_user_model_file_dependency([[maybe_unused]] void *context, const std::string &user)
+	auto InspectUserModelFileDependency([[maybe_unused]] void *context, const std::string &user)
 	    -> howdy::native::UserModelInspectResult {
-		return howdy::native::inspect_user_model_file(user);
+		return howdy::native::InspectUserModelFile(user);
 	}
 
-	auto clear_user_model_entries_if_unchanged_dependency(
+	auto ClearUserModelEntriesIfUnchangedDependency(
 	    [[maybe_unused]] void *context, const std::string &user,
 	    const howdy::native::UserModelFileSnapshot &expected_snapshot)
 	    -> howdy::native::UserModelMutationResult {
-		return howdy::native::clear_user_model_entries_if_unchanged(user, expected_snapshot);
+		return howdy::native::ClearUserModelEntriesIfUnchanged(user, expected_snapshot);
 	}
 
 }  // namespace
 
-auto howdy::native::clear_internal::clear_main_with_dependencies(
-    int argc, char **argv, const ClearDependencies &dependencies) -> int {
+auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **argv,
+                                                              const ClearDependencies &dependencies)
+    -> int {
 	if (dependencies.inspect_user_model_file == nullptr ||
 	    dependencies.clear_user_model_entries_if_unchanged == nullptr) {
 		return kClearExitAbort;
 	}
 
-	const auto args = parse_clear_args(argc, argv);
+	const auto args = ParseClearArgs(argc, argv);
 	if (!args.has_value()) {
 		return kClearExitAbort;
 	}
@@ -118,15 +119,14 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	return kClearExitOk;
 }
 
-auto clear_main(int argc, char **argv) -> int {
+auto ClearMain(int argc, char **argv) -> int {
 	if (argc < 2) {
 		return kClearExitAbort;
 	}
-	return howdy::native::clear_internal::clear_main_with_dependencies(
+	return howdy::native::clear_internal::ClearMainWithDependencies(
 	    argc, argv,
 	    {
-	        .inspect_user_model_file = inspect_user_model_file_dependency,
-	        .clear_user_model_entries_if_unchanged =
-	            clear_user_model_entries_if_unchanged_dependency,
+	        .inspect_user_model_file               = InspectUserModelFileDependency,
+	        .clear_user_model_entries_if_unchanged = ClearUserModelEntriesIfUnchangedDependency,
 	    });
 }

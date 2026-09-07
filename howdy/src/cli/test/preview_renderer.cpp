@@ -27,7 +27,7 @@ namespace howdy::native::test_cli_internal {
 	    , models_(std::move(models))
 	    , dependencies_(dependencies) {}
 
-	void TestPreviewRenderer::initialize() {
+	void TestPreviewRenderer::Initialize() {
 		if (initialized_) {
 			return;
 		}
@@ -39,18 +39,18 @@ namespace howdy::native::test_cli_internal {
 				dependencies_.initialize({.context = dependencies_.context, .renderer = this});
 			} else {
 				cv::namedWindow(kWindowName);
-				cv::setMouseCallback(kWindowName, mouse_callback, this);
+				cv::setMouseCallback(kWindowName, MouseCallback, this);
 			}
 		} catch (...) {
 			try {
-				shutdown();
+				Shutdown();
 			} catch (...) {  // NOLINT(bugprone-empty-catch)
 			}
 			throw;
 		}
 	}
 
-	void TestPreviewRenderer::shutdown() {
+	void TestPreviewRenderer::Shutdown() {
 		if (!initialized_) {
 			return;
 		}
@@ -90,7 +90,7 @@ namespace howdy::native::test_cli_internal {
 		}
 	}
 
-	auto TestPreviewRenderer::present(const howdy::native::PreviewFrameResult &frame_result,
+	auto TestPreviewRenderer::Present(const howdy::native::PreviewFrameResult &frame_result,
 	                                  const TestPreviewFrameStats             &stats) -> bool {
 		const auto &gray_frame = frame_result.gray_frame;
 		cv::Mat     overlay;
@@ -106,15 +106,15 @@ namespace howdy::native::test_cli_internal {
 			cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
 		}
 
-		print_text(overlay, 0, height,
-		           "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
-		print_text(overlay, 1, height, "FPS: " + std::to_string(stats.fps));
-		print_text(overlay, 2, height, "FRAMES: " + std::to_string(stats.total_frames));
-		print_text(overlay, 3, height,
-		           "INFERENCE: " + std::to_string(frame_result.inference_time.count()) + "ms");
-		print_text(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
-		print_text(overlay, 5, height,
-		           std::string("CLAHE: ") + (config_.clahe_enabled ? "on" : "off"));
+		PrintText(overlay, 0, height,
+		          "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
+		PrintText(overlay, 1, height, "FPS: " + std::to_string(stats.fps));
+		PrintText(overlay, 2, height, "FRAMES: " + std::to_string(stats.total_frames));
+		PrintText(overlay, 3, height,
+		          "INFERENCE: " + std::to_string(frame_result.inference_time.count()) + "ms");
+		PrintText(overlay, 4, height, "BACKEND: OpenCV YuNet/SFace");
+		PrintText(overlay, 5, height,
+		          std::string("CLAHE: ") + (config_.clahe_enabled ? "on" : "off"));
 
 		if (slow_mode_) {
 			cv::putText(overlay, "SLOW MODE", cv::Point(width - 66, height - 10),
@@ -176,7 +176,7 @@ namespace howdy::native::test_cli_internal {
 		return cv::waitKey(1) == -1;
 	}
 
-	auto TestPreviewRenderer::slow_mode() const -> bool {
+	auto TestPreviewRenderer::SlowMode() const -> bool {
 		return slow_mode_;
 	}
 
@@ -186,34 +186,34 @@ namespace howdy::native::test_cli_internal {
 
 	TestPreviewRendererCleanup::~TestPreviewRendererCleanup() noexcept {
 		try {
-			cleanup();
+			Cleanup();
 		} catch (...) {  // NOLINT(bugprone-empty-catch)
 		}
 	}
 
-	void TestPreviewRendererCleanup::cleanup() {
+	void TestPreviewRendererCleanup::Cleanup() {
 		if (cleanup_attempted_) {
 			return;
 		}
 		cleanup_attempted_ = true;
 		if (renderer_.has_value()) {
-			renderer_->shutdown();
+			renderer_->Shutdown();
 		}
 	}
 
-	void replace_test_preview_renderer(std::optional<TestPreviewRenderer>           &renderer,
-	                                   howdy::native::VideoConfig                    config,
-	                                   std::vector<howdy::native::EncodingModelInfo> models,
-	                                   TestPreviewRendererDependencies               dependencies) {
+	void ReplaceTestPreviewRenderer(std::optional<TestPreviewRenderer>           &renderer,
+	                                howdy::native::VideoConfig                    config,
+	                                std::vector<howdy::native::EncodingModelInfo> models,
+	                                TestPreviewRendererDependencies               dependencies) {
 		if (renderer.has_value()) {
-			renderer->shutdown();
+			renderer->Shutdown();
 		}
 		renderer.emplace(std::move(config), std::move(models), dependencies);
 	}
 
 	// OpenCV MouseCallback requires int, int, int, int, void *.
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-	void TestPreviewRenderer::mouse_callback(int event, int x, int y, int flags, void *userdata) {
+	void TestPreviewRenderer::MouseCallback(int event, int x, int y, int flags, void *userdata) {
 		(void)x;
 		(void)y;
 		(void)flags;
@@ -223,8 +223,8 @@ namespace howdy::native::test_cli_internal {
 		}
 	}
 
-	void TestPreviewRenderer::print_text(cv::Mat &overlay, int line_number, int height,
-	                                     const std::string &text) {
+	void TestPreviewRenderer::PrintText(cv::Mat &overlay, int line_number, int height,
+	                                    const std::string &text) {
 		cv::putText(overlay, text, cv::Point(10, height - 10 - (10 * line_number)),
 		            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
 	}

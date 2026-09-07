@@ -19,7 +19,7 @@ namespace howdy::native::clear_internal {
 		ClearUserModelEntriesIfUnchangedFn clear_user_model_entries_if_unchanged = nullptr;
 	};
 
-	auto clear_main_with_dependencies(int argc, char **argv, const ClearDependencies &dependencies)
+	auto ClearMainWithDependencies(int argc, char **argv, const ClearDependencies &dependencies)
 	    -> int;
 
 }  // namespace howdy::native::clear_internal

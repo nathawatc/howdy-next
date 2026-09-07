@@ -4,7 +4,7 @@
 
 namespace howdy::pam {
 
-	inline auto translate(const char *message) -> const char * {
+	inline auto Translate(const char *message) -> const char * {
 		return dgettext(GETTEXT_PACKAGE, message);
 	}
 

@@ -18,7 +18,7 @@ namespace {
 		int frame_number = 0;
 	};
 
-	auto apply_rotation(const cv::Mat &frame, RotationState state) -> cv::Mat {
+	auto ApplyRotation(const cv::Mat &frame, RotationState state) -> cv::Mat {
 		if (state.rotation == 1) {
 			if (state.frame_number % 3 == 1) {
 				cv::Mat rotated;
@@ -41,8 +41,8 @@ namespace {
 		return frame;
 	}
 
-	auto frame_validation_message(const std::string &subject, const cv::Mat &frame,
-	                              howdy::native::FrameValidationStatus status) -> std::string {
+	auto FrameValidationMessage(const std::string &subject, const cv::Mat &frame,
+	                            howdy::native::FrameValidationStatus status) -> std::string {
 		switch (status) {
 			case howdy::native::FrameValidationStatus::kValid:
 				return {};
@@ -71,7 +71,7 @@ namespace howdy::native {
 	// NOLINTNEXTLINE(modernize-pass-by-value)
 	CompareEngine::CompareEngine(const VideoConfig &config)
 	    : config_(config)
-	    , clahe_(make_clahe(config_)) {}
+	    , clahe_(MakeClahe(config_)) {}
 
 	// Public API accepts a const reference; engine intentionally owns a config copy.
 	// NOLINTNEXTLINE(modernize-pass-by-value)
@@ -79,26 +79,26 @@ namespace howdy::native {
 	                             CompareInferenceDependencies    inference_dependencies,
 	                             std::vector<std::vector<float>> known_encodings)
 	    : config_(config)
-	    , clahe_(make_clahe(config_))
+	    , clahe_(MakeClahe(config_))
 	    , inference_dependencies_(inference_dependencies)
 	    , known_encodings_(std::move(known_encodings)) {}
 
-	auto CompareEngine::process_gray_frame(cv::Mat gray_frame, int frame_number)
+	auto CompareEngine::ProcessGrayFrame(cv::Mat gray_frame, int frame_number)
 	    -> CompareFrameResult {
-		const auto input_validation = validate_frame(gray_frame, FrameChannelPolicy::kGray);
+		const auto input_validation = ValidateFrame(gray_frame, FrameChannelPolicy::kGray);
 		if (input_validation != FrameValidationStatus::kValid) {
 			return {
-			    .status        = CompareFrameStatus::kInvalidInput,
-			    .error_message = frame_validation_message("Camera grayscale frame", gray_frame,
-			                                              input_validation),
+			    .status = CompareFrameStatus::kInvalidInput,
+			    .error_message =
+			        FrameValidationMessage("Camera grayscale frame", gray_frame, input_validation),
 			};
 		}
 
-		apply_clahe_if_enabled(gray_frame, config_, clahe_);
+		ApplyClaheIfEnabled(gray_frame, config_, clahe_);
 
-		const auto brightness = measure_brightness(gray_frame);
-		switch (classify_brightness(brightness.hist_total, brightness.darkness,
-		                            config_.dark_threshold)) {
+		const auto brightness = MeasureBrightness(gray_frame);
+		switch (ClassifyBrightness(brightness.hist_total, brightness.darkness,
+		                           config_.dark_threshold)) {
 			case BrightnessDecision::kBlackFrame:
 				return {
 				    .status     = CompareFrameStatus::kBlackFrame,
@@ -115,7 +115,7 @@ namespace howdy::native {
 
 		cv::Mat working_frame = gray_frame;
 
-		const double scaling_factor = compare_resize_scale(
+		const double scaling_factor = CompareResizeScale(
 		    {.width = gray_frame.cols, .height = gray_frame.rows, .rotation = config_.rotate},
 		    config_.max_height);
 
@@ -124,16 +124,16 @@ namespace howdy::native {
 			           cv::INTER_AREA);
 		}
 
-		working_frame = apply_rotation(working_frame,
-		                               {.rotation = config_.rotate, .frame_number = frame_number});
+		working_frame = ApplyRotation(working_frame,
+		                              {.rotation = config_.rotate, .frame_number = frame_number});
 
-		const auto working_validation = validate_frame(working_frame, FrameChannelPolicy::kGray);
+		const auto working_validation = ValidateFrame(working_frame, FrameChannelPolicy::kGray);
 		if (working_validation != FrameValidationStatus::kValid) {
 			return {
 			    .status        = CompareFrameStatus::kInvalidPreprocessed,
 			    .brightness    = brightness,
-			    .error_message = frame_validation_message("Frame after preprocessing",
-			                                              working_frame, working_validation),
+			    .error_message = FrameValidationMessage("Frame after preprocessing", working_frame,
+			                                            working_validation),
 			};
 		}
 
@@ -144,7 +144,7 @@ namespace howdy::native {
 		};
 	}
 
-	auto CompareEngine::process_face_frame(const cv::Mat &working_frame) -> CompareInferenceResult {
+	auto CompareEngine::ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult {
 		if (inference_dependencies_.context == nullptr ||
 		    inference_dependencies_.prepare_face_frame == nullptr ||
 		    inference_dependencies_.detect_faces == nullptr ||
@@ -157,18 +157,18 @@ namespace howdy::native {
 
 		const auto prepared = inference_dependencies_.prepare_face_frame(
 		    inference_dependencies_.context, working_frame);
-		const auto prepared_validation = validate_frame(prepared, FrameChannelPolicy::kBgr);
+		const auto prepared_validation = ValidateFrame(prepared, FrameChannelPolicy::kBgr);
 		if (prepared_validation != FrameValidationStatus::kValid) {
 			return {
 			    .status        = CompareInferenceStatus::kInvalidPreparedFrame,
-			    .error_message = frame_validation_message("Prepared frame for face detection",
-			                                              prepared, prepared_validation),
+			    .error_message = FrameValidationMessage("Prepared frame for face detection",
+			                                            prepared, prepared_validation),
 			};
 		}
 
 		const auto detection_result =
 		    inference_dependencies_.detect_faces(inference_dependencies_.context, prepared);
-		if (!detection_result.ok()) {
+		if (!detection_result.Ok()) {
 			return {
 			    .status        = CompareInferenceStatus::kDetectionFailed,
 			    .error_message = detection_result.error_message,
@@ -180,7 +180,7 @@ namespace howdy::native {
 		for (const auto &face : detection_result.detections) {
 			const auto encoding_result = inference_dependencies_.encode_face(
 			    inference_dependencies_.context, prepared, face);
-			if (!encoding_result.ok()) {
+			if (!encoding_result.Ok()) {
 				if (first_encoding_error.empty()) {
 					first_encoding_error = encoding_result.error_message.empty()
 					                           ? kInvalidFaceEncodingMessage

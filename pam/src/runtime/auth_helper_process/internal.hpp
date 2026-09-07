@@ -46,40 +46,37 @@ namespace howdy::pam::auth_helper_process::internal {
 	};
 
 	// spawn.cpp
-	__attribute__((visibility("hidden"))) auto production_operations() -> Operations;
-	__attribute__((visibility("hidden"))) void close_owned_fd(const Operations &operations,
-	                                                          int              &fd);
-	__attribute__((visibility("hidden"))) auto setup_helper_spawn(const Operations    &operations,
-	                                                              PreparedHelperSpawn *spawn)
-	    -> bool;
-	__attribute__((visibility("hidden"))) auto spawn_prepare_helper(std::string_view     username,
-	                                                                const Operations    &operations,
-	                                                                PreparedHelperSpawn *spawn,
-	                                                                pid_t *child_pid) -> bool;
+	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	__attribute__((visibility("hidden"))) void CloseOwnedFd(const Operations &operations, int &fd);
+	__attribute__((visibility("hidden"))) auto SetupHelperSpawn(const Operations    &operations,
+	                                                            PreparedHelperSpawn *spawn) -> bool;
+	__attribute__((visibility("hidden"))) auto SpawnPrepareHelper(std::string_view     username,
+	                                                              const Operations    &operations,
+	                                                              PreparedHelperSpawn *spawn,
+	                                                              pid_t *child_pid) -> bool;
 
 	// io.cpp
-	__attribute__((visibility("hidden"))) auto deadline_poll_timeout(HelperDeadline deadline)
-	    -> int;
-	__attribute__((visibility("hidden"))) auto wait_for_helper_process(pid_t child_pid) -> int;
-	__attribute__((visibility("hidden"))) auto terminate_and_reap_helper_process(pid_t child_pid)
+	__attribute__((visibility("hidden"))) auto DeadlinePollTimeout(HelperDeadline deadline) -> int;
+	__attribute__((visibility("hidden"))) auto WaitForHelperProcess(pid_t child_pid) -> int;
+	__attribute__((visibility("hidden"))) auto TerminateAndReapHelperProcess(pid_t child_pid)
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	wait_for_helper_process_until(pid_t child_pid, HelperDeadline deadline, int *status)
+	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status)
 	    -> HelperWaitResult;
 	__attribute__((visibility("hidden"))) auto
-	read_auth_helper_output_until(int output_fd, std::string *output, const Operations &operations,
-	                              HelperDeadline deadline) -> HelperReadResult;
-	__attribute__((visibility("hidden"))) void log_auth_helper_read_error(int error_number);
+	ReadAuthHelperOutputUntil(int output_fd, std::string *output, const Operations &operations,
+	                          HelperDeadline deadline) -> HelperReadResult;
+	__attribute__((visibility("hidden"))) void LogAuthHelperReadError(int error_number);
 
 	// lease.cpp
-	__attribute__((visibility("hidden"))) auto receive_lease_descriptor_once(int  socket_fd,
-	                                                                         int *lease_fd)
+	__attribute__((visibility("hidden"))) auto ReceiveLeaseDescriptorOnce(int  socket_fd,
+	                                                                      int *lease_fd)
 	    -> LeaseReceiveResult;
 	__attribute__((visibility("hidden"))) auto
-	receive_lease_descriptor_until(int socket_fd, int *lease_fd, HelperDeadline deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto lease_socket_has_clean_eof(int socket_fd) -> bool;
+	ReceiveLeaseDescriptorUntil(int socket_fd, int *lease_fd, HelperDeadline deadline) -> bool;
+	__attribute__((visibility("hidden"))) auto LeaseSocketHasCleanEof(int socket_fd) -> bool;
 	__attribute__((visibility("hidden"))) auto
-	validate_lease_descriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
+	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
 	    -> bool;
 
 }  // namespace howdy::pam::auth_helper_process::internal

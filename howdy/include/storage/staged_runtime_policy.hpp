@@ -42,7 +42,7 @@ namespace howdy::native {
 	inline constexpr StagedAclPermissions kAclReadExecute{.read = true, .execute = true};
 	inline constexpr StagedAclPermissions kAclAll{.read = true, .write = true, .execute = true};
 
-	[[nodiscard]] constexpr auto staged_runtime_policy(StagedRuntimeRole role)
+	[[nodiscard]] constexpr auto GetStagedRuntimePolicy(StagedRuntimeRole role)
 	    -> StagedRuntimePolicy {
 		switch (role) {
 			case StagedRuntimeRole::kRuntimeRoot:

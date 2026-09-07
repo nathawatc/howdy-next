@@ -28,7 +28,7 @@ namespace {
 
 	constexpr auto kHelperWaitPollInterval = std::chrono::milliseconds(10);
 
-	auto make_auth_helper_wait_exit_status(CompareExit exit_code) -> int {
+	auto MakeAuthHelperWaitExitStatus(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
 
@@ -39,17 +39,17 @@ namespace {
 		kError,
 	};
 
-	auto poll_auth_helper_output(int output_fd, HelperDeadline deadline) -> HelperPollResult {
+	auto PollAuthHelperOutput(int output_fd, HelperDeadline deadline) -> HelperPollResult {
 		pollfd    descriptor{.fd = output_fd, .events = POLLIN, .revents = 0};
 		const int poll_result =
 		    poll(&descriptor, 1,
-		         howdy::pam::auth_helper_process::internal::deadline_poll_timeout(deadline));
+		         howdy::pam::auth_helper_process::internal::DeadlinePollTimeout(deadline));
 		if (poll_result < 0) {
 			if (errno == EINTR) {
 				return HelperPollResult::kRetry;
 			}
 			const int read_error = errno;
-			howdy::pam::auth_helper_process::internal::log_auth_helper_read_error(read_error);
+			howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(read_error);
 			return HelperPollResult::kError;
 		}
 		if (poll_result == 0) {
@@ -57,24 +57,24 @@ namespace {
 		}
 		if ((descriptor.revents & (POLLNVAL | POLLERR)) != 0) {
 			const int read_error = (descriptor.revents & POLLNVAL) != 0 ? EBADF : EIO;
-			howdy::pam::auth_helper_process::internal::log_auth_helper_read_error(read_error);
+			howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(read_error);
 			return HelperPollResult::kError;
 		}
 		return (descriptor.revents & (POLLIN | POLLHUP)) == 0 ? HelperPollResult::kRetry
 		                                                      : HelperPollResult::kReady;
 	}
 
-	auto read_auth_helper_output_from_fd(int output_fd, std::string &output,
-	                                     HelperDeadline deadline) -> HelperReadResult {
+	auto ReadAuthHelperOutputFromFd(int output_fd, std::string &output, HelperDeadline deadline)
+	    -> HelperReadResult {
 		if (output_fd < 0) {
 			constexpr int read_error = EBADF;
-			howdy::pam::auth_helper_process::internal::log_auth_helper_read_error(read_error);
+			howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(read_error);
 			return HelperReadResult::kReadError;
 		}
 
 		std::array<char, 4096> buffer{};
 		while (true) {
-			const auto poll_result = poll_auth_helper_output(output_fd, deadline);
+			const auto poll_result = PollAuthHelperOutput(output_fd, deadline);
 			if (poll_result == HelperPollResult::kRetry) {
 				continue;
 			}
@@ -107,7 +107,7 @@ namespace {
 			if (errno != EINTR && errno != EAGAIN) {
 				const int read_error = errno;
 				output.clear();
-				howdy::pam::auth_helper_process::internal::log_auth_helper_read_error(read_error);
+				howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(read_error);
 				return HelperReadResult::kReadError;
 			}
 		}
@@ -117,12 +117,12 @@ namespace {
 
 namespace howdy::pam::auth_helper_process::internal {
 
-	void log_auth_helper_read_error(int error_number) {
+	void LogAuthHelperReadError(int error_number) {
 		syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(error_number),
 		       error_number);
 	}
 
-	auto deadline_poll_timeout(HelperDeadline deadline) -> int {
+	auto DeadlinePollTimeout(HelperDeadline deadline) -> int {
 		const auto remaining = deadline - std::chrono::steady_clock::now();
 		if (remaining <= HelperDeadline::duration::zero()) {
 			return 0;
@@ -130,7 +130,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		return static_cast<int>(std::chrono::ceil<std::chrono::milliseconds>(remaining).count());
 	}
 
-	auto wait_for_helper_process(pid_t child_pid) -> int {
+	auto WaitForHelperProcess(pid_t child_pid) -> int {
 		while (true) {
 			int         status      = 0;
 			const pid_t wait_result = waitpid(child_pid, &status, 0);
@@ -140,18 +140,18 @@ namespace howdy::pam::auth_helper_process::internal {
 			if (wait_result < 0 && errno == EINTR) {
 				continue;
 			}
-			return make_auth_helper_wait_exit_status(CompareExit::kAbort);
+			return MakeAuthHelperWaitExitStatus(CompareExit::kAbort);
 		}
 	}
 
-	auto terminate_and_reap_helper_process(pid_t child_pid) -> int {
+	auto TerminateAndReapHelperProcess(pid_t child_pid) -> int {
 		int         status              = 0;
 		const pid_t initial_wait_result = waitpid(child_pid, &status, WNOHANG);
 		if (initial_wait_result == child_pid) {
 			return status;
 		}
 		if (initial_wait_result < 0 && errno == ECHILD) {
-			return make_auth_helper_wait_exit_status(CompareExit::kAbort);
+			return MakeAuthHelperWaitExitStatus(CompareExit::kAbort);
 		}
 
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
@@ -169,7 +169,7 @@ namespace howdy::pam::auth_helper_process::internal {
 				if (errno == EINTR) {
 					continue;
 				}
-				return make_auth_helper_wait_exit_status(CompareExit::kAbort);
+				return MakeAuthHelperWaitExitStatus(CompareExit::kAbort);
 			}
 			usleep(10000);
 		}
@@ -178,10 +178,10 @@ namespace howdy::pam::auth_helper_process::internal {
 			syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)", strerror(errno),
 			       errno);
 		}
-		return wait_for_helper_process(child_pid);
+		return WaitForHelperProcess(child_pid);
 	}
 
-	auto wait_for_helper_process_until(pid_t child_pid, HelperDeadline deadline, int *status)
+	auto WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status)
 	    -> HelperWaitResult {
 		while (true) {
 			const pid_t wait_result = waitpid(child_pid, status, WNOHANG);
@@ -194,24 +194,23 @@ namespace howdy::pam::auth_helper_process::internal {
 					continue;
 				}
 				if (errno != ECHILD) {
-					(void)terminate_and_reap_helper_process(child_pid);
+					(void)TerminateAndReapHelperProcess(child_pid);
 				}
 				return HelperWaitResult::kWaitError;
 			}
 			if (std::chrono::steady_clock::now() >= deadline) {
-				(void)terminate_and_reap_helper_process(child_pid);
+				(void)TerminateAndReapHelperProcess(child_pid);
 				return HelperWaitResult::kTimedOut;
 			}
 			const auto wake_time =
 			    std::min(deadline, std::chrono::steady_clock::now() + kHelperWaitPollInterval);
-			(void)poll(nullptr, 0, deadline_poll_timeout(wake_time));
+			(void)poll(nullptr, 0, DeadlinePollTimeout(wake_time));
 		}
 	}
 
-	auto
-	read_auth_helper_output_until(int output_fd, std::string *output,
-	                              const howdy::pam::auth_helper_process::Operations &operations,
-	                              HelperDeadline deadline) -> HelperReadResult {
+	auto ReadAuthHelperOutputUntil(int output_fd, std::string *output,
+	                               const howdy::pam::auth_helper_process::Operations &operations,
+	                               HelperDeadline deadline) -> HelperReadResult {
 		if (output == nullptr) {
 			return HelperReadResult::kReadError;
 		}
@@ -221,7 +220,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			const auto helper_output = operations.read_bounded(
 			    operations.context, {.fd = output_fd, .max_bytes = kAuthHelperOutputLimit});
 			if (helper_output.read_error) {
-				log_auth_helper_read_error(helper_output.error_number);
+				LogAuthHelperReadError(helper_output.error_number);
 				return HelperReadResult::kReadError;
 			}
 			if (helper_output.hit_limit) {
@@ -235,7 +234,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			return HelperReadResult::kComplete;
 		}
 
-		return read_auth_helper_output_from_fd(output_fd, *output, deadline);
+		return ReadAuthHelperOutputFromFd(output_fd, *output, deadline);
 	}
 
 }  // namespace howdy::pam::auth_helper_process::internal

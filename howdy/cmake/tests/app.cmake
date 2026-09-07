@@ -36,6 +36,6 @@ howdy_add_native_test(
 target_compile_definitions(
 	howdy_main_test
 	PRIVATE
-		HOWDY_MAIN_ENTRYPOINT=howdy_main_test_entry
-		HOWDY_MAIN_DISPATCH=howdy_main_test_dispatch
+		HOWDY_MAIN_ENTRYPOINT=HowdyMainTestEntry
+		HOWDY_MAIN_DISPATCH=HowdyMainTestDispatch
 )

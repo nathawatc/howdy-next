@@ -27,8 +27,8 @@ namespace howdy::test::auth_helper {
 		kError,
 	};
 
-	inline auto add_acl_probe_entry(acl_t &acl, acl_tag_t tag, const void *qualifier,
-	                                acl_perm_t permissions) -> bool {
+	inline auto AddAclProbeEntry(acl_t &acl, acl_tag_t tag, const void *qualifier,
+	                             acl_perm_t permissions) -> bool {
 		acl_entry_t   entry;
 		acl_permset_t permission_set;
 		if (acl_create_entry(&acl, &entry) != 0 || acl_set_tag_type(entry, tag) != 0 ||
@@ -50,14 +50,14 @@ namespace howdy::test::auth_helper {
 		int  error_number    = 0;
 	};
 
-	inline auto configure_acl_probe(acl_t &acl, int fd, const std::filesystem::path &probe_path,
-	                                std::optional<int> injected_error) -> AclProbeResult {
+	inline auto ConfigureAclProbe(acl_t &acl, int fd, const std::filesystem::path &probe_path,
+	                              std::optional<int> injected_error) -> AclProbeResult {
 		const uid_t uid          = geteuid();
-		bool        ready        = add_acl_probe_entry(acl, ACL_USER_OBJ, nullptr, kAclRead) &&
-		                           add_acl_probe_entry(acl, ACL_USER, &uid, kAclRead) &&
-		                           add_acl_probe_entry(acl, ACL_GROUP_OBJ, nullptr, 0) &&
-		                           add_acl_probe_entry(acl, ACL_MASK, nullptr, kAclRead) &&
-		                           add_acl_probe_entry(acl, ACL_OTHER, nullptr, 0);
+		bool        ready        = AddAclProbeEntry(acl, ACL_USER_OBJ, nullptr, kAclRead) &&
+		                           AddAclProbeEntry(acl, ACL_USER, &uid, kAclRead) &&
+		                           AddAclProbeEntry(acl, ACL_GROUP_OBJ, nullptr, 0) &&
+		                           AddAclProbeEntry(acl, ACL_MASK, nullptr, kAclRead) &&
+		                           AddAclProbeEntry(acl, ACL_OTHER, nullptr, 0);
 		int         error_number = ready ? 0 : errno;
 		if (ready && acl_valid(acl) != 0) {
 			error_number = errno;
@@ -75,7 +75,7 @@ namespace howdy::test::auth_helper {
 		if (!ready) {
 			return {.error_number = error_number};
 		}
-		const auto acl_check = check_private_acl(probe_path, uid, false);
+		const auto acl_check = CheckPrivateAcl(probe_path, uid, false);
 		if (acl_check.status == AclCheckStatus::kError) {
 			return {.error_number = acl_check.error_number};
 		}
@@ -86,8 +86,8 @@ namespace howdy::test::auth_helper {
 		return {.ready = true};
 	}
 
-	inline auto acl_support(const std::filesystem::path &root,
-	                        std::optional<int> injected_error = std::nullopt) -> AclSupport {
+	inline auto ProbeAclSupport(const std::filesystem::path &root,
+	                            std::optional<int> injected_error = std::nullopt) -> AclSupport {
 		const auto probe_path = root / "acl-support-probe";
 		const int  fd =
 		    open(probe_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
@@ -104,7 +104,7 @@ namespace howdy::test::auth_helper {
 		if (acl == nullptr) {
 			probe_result.error_number = errno;
 		} else {
-			probe_result = configure_acl_probe(acl, fd, probe_path, injected_error);
+			probe_result = ConfigureAclProbe(acl, fd, probe_path, injected_error);
 			if (probe_result.ready) {
 				result = AclSupport::kSupported;
 			}

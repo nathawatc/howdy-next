@@ -31,7 +31,7 @@ namespace {
 		std::chrono::steady_clock::time_point                 now;
 	};
 
-	auto prepare_frame(void *context, const cv::Mat &gray_frame) -> cv::Mat {
+	auto PrepareFrame(void *context, const cv::Mat &gray_frame) -> cv::Mat {
 		auto *session_context = static_cast<SessionContext *>(context);
 		if (session_context->invalid_prepare) {
 			return {};
@@ -41,17 +41,17 @@ namespace {
 		return prepared;
 	}
 
-	auto detect_faces(void *context, const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
+	auto DetectFaces(void *context, const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
 		(void)context;
 		(void)frame;
 		return {};
 	}
 
-	auto engine_now(void *context) -> std::chrono::steady_clock::time_point {
+	auto EngineNow(void *context) -> std::chrono::steady_clock::time_point {
 		return static_cast<SessionContext *>(context)->now;
 	}
 
-	auto read_gray_frame(void *context, cv::Mat &gray_frame) -> bool {
+	auto ReadGrayFrame(void *context, cv::Mat &gray_frame) -> bool {
 		auto *session_context = static_cast<SessionContext *>(context);
 		session_context->read_calls++;
 		session_context->restore_calls_at_read = session_context->restore_calls;
@@ -62,12 +62,12 @@ namespace {
 		return true;
 	}
 
-	void restore_exposure(void *context) {
+	void RestoreExposure(void *context) {
 		static_cast<SessionContext *>(context)->restore_calls++;
 	}
 
-	auto present_frame(void *context, const howdy::native::PreviewFrameResult &frame_result,
-	                   const test_cli_internal::TestPreviewFrameStats &stats) -> bool {
+	auto PresentFrame(void *context, const howdy::native::PreviewFrameResult &frame_result,
+	                  const test_cli_internal::TestPreviewFrameStats &stats) -> bool {
 		(void)frame_result;
 		auto *session_context = static_cast<SessionContext *>(context);
 		session_context->present_calls++;
@@ -78,29 +78,29 @@ namespace {
 		return session_context->present_calls < session_context->stop_after;
 	}
 
-	auto slow_mode(void *context) -> bool {
+	auto SlowMode(void *context) -> bool {
 		return static_cast<SessionContext *>(context)->slow_mode;
 	}
 
-	auto session_now(void *context) -> std::chrono::steady_clock::time_point {
+	auto SessionNow(void *context) -> std::chrono::steady_clock::time_point {
 		return static_cast<SessionContext *>(context)->now;
 	}
 
-	void sleep_for(void *context, std::chrono::milliseconds duration) {
+	void SleepFor(void *context, std::chrono::milliseconds duration) {
 		auto *session_context = static_cast<SessionContext *>(context);
 		session_context->sleep_calls++;
 		session_context->slept_for += duration;
 	}
 
-	auto make_engine(SessionContext &context, const howdy::native::VideoConfig &config)
+	auto MakeEngine(SessionContext &context, const howdy::native::VideoConfig &config)
 	    -> howdy::native::PreviewEngine {
 		return {
 		    config,
 		    {
 		        .context       = &context,
-		        .prepare_frame = prepare_frame,
-		        .detect_faces  = detect_faces,
-		        .now           = engine_now,
+		        .prepare_frame = PrepareFrame,
+		        .detect_faces  = DetectFaces,
+		        .now           = EngineNow,
 		    },
 		    {},
 		    0,
@@ -108,36 +108,36 @@ namespace {
 		};
 	}
 
-	auto make_dependencies(SessionContext &context)
+	auto MakeDependencies(SessionContext &context)
 	    -> test_cli_internal::TestPreviewSessionDependencies {
 		return {
 		    .capture_context  = &context,
-		    .read_gray_frame  = read_gray_frame,
-		    .restore_exposure = restore_exposure,
+		    .read_gray_frame  = ReadGrayFrame,
+		    .restore_exposure = RestoreExposure,
 		    .renderer_context = &context,
-		    .present          = present_frame,
-		    .slow_mode        = slow_mode,
+		    .present          = PresentFrame,
+		    .slow_mode        = SlowMode,
 		    .clock_context    = &context,
-		    .now              = session_now,
+		    .now              = SessionNow,
 		    .sleep_context    = &context,
-		    .sleep            = sleep_for,
+		    .sleep            = SleepFor,
 		};
 	}
 
-	auto gray_frame() -> cv::Mat {
+	auto GrayFrame() -> cv::Mat {
 		return cv::Mat(8, 8, CV_8UC1, cv::Scalar(128)).clone();
 	}
 
-	auto first_frame_quit_restores_configured_exposure() -> bool {
+	auto FirstFrameQuitRestoresConfiguredExposure() -> bool {
 		SessionContext             context;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
-		auto                                  engine = make_engine(context, config);
-		test_cli_internal::TestPreviewSession session(config, engine, make_dependencies(context));
+		auto                                  engine = MakeEngine(context, config);
+		test_cli_internal::TestPreviewSession session(config, engine, MakeDependencies(context));
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
@@ -154,24 +154,24 @@ namespace {
 		return ok;
 	}
 
-	auto retained_production_frame_supports_two_preview_runs() -> bool {
+	auto RetainedProductionFrameSupportsTwoPreviewRuns() -> bool {
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                                = false;
 		config.dark_threshold                               = 100.0F;
-		auto                                  preview_frame = gray_frame();
+		auto                                  preview_frame = GrayFrame();
 		SessionContext                        first_context;
-		auto                                  first_engine = make_engine(first_context, config);
+		auto                                  first_engine = MakeEngine(first_context, config);
 		test_cli_internal::TestPreviewSession first_session(config, first_engine,
-		                                                    make_dependencies(first_context));
+		                                                    MakeDependencies(first_context));
 		SessionContext                        second_context;
-		auto                                  second_engine = make_engine(second_context, config);
+		auto                                  second_engine = MakeEngine(second_context, config);
 		test_cli_internal::TestPreviewSession second_session(config, second_engine,
-		                                                     make_dependencies(second_context));
+		                                                     MakeDependencies(second_context));
 
-		const auto first_result = test_cli_internal::run_preview_session_with_retained_frame(
-		    first_session, preview_frame);
-		const auto second_result = test_cli_internal::run_preview_session_with_retained_frame(
-		    second_session, preview_frame);
+		const auto first_result =
+		    test_cli_internal::RunPreviewSessionWithRetainedFrame(first_session, preview_frame);
+		const auto second_result =
+		    test_cli_internal::RunPreviewSessionWithRetainedFrame(second_session, preview_frame);
 
 		bool ok = true;
 		ok &= expect(first_result.status == test_cli_internal::TestPreviewStatus::kOk,
@@ -187,16 +187,16 @@ namespace {
 		return ok;
 	}
 
-	auto disabled_exposure_skips_restore() -> bool {
+	auto DisabledExposureSkipsRestore() -> bool {
 		SessionContext             context;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = -1;
-		auto                                  engine = make_engine(context, config);
-		test_cli_internal::TestPreviewSession session(config, engine, make_dependencies(context));
+		auto                                  engine = MakeEngine(context, config);
+		test_cli_internal::TestPreviewSession session(config, engine, MakeDependencies(context));
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
@@ -205,17 +205,17 @@ namespace {
 		return ok;
 	}
 
-	auto camera_read_failure_after_prefetch_maps_to_camera_error() -> bool {
+	auto CameraReadFailureAfterPrefetchMapsToCameraError() -> bool {
 		SessionContext context;
 		context.stop_after = 2;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
-		auto                                  engine = make_engine(context, config);
-		test_cli_internal::TestPreviewSession session(config, engine, make_dependencies(context));
+		auto                                  engine = MakeEngine(context, config);
+		test_cli_internal::TestPreviewSession session(config, engine, MakeDependencies(context));
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kCameraReadError,
@@ -229,19 +229,19 @@ namespace {
 		return ok;
 	}
 
-	auto slow_mode_sleeps_and_restores_exposure_between_frames() -> bool {
+	auto SlowModeSleepsAndRestoresExposureBetweenFrames() -> bool {
 		SessionContext context;
-		context.frames.push_back(gray_frame());
+		context.frames.push_back(GrayFrame());
 		context.slow_mode  = true;
 		context.stop_after = 2;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
-		auto                                  engine = make_engine(context, config);
-		test_cli_internal::TestPreviewSession session(config, engine, make_dependencies(context));
+		auto                                  engine = MakeEngine(context, config);
+		test_cli_internal::TestPreviewSession session(config, engine, MakeDependencies(context));
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
@@ -255,17 +255,17 @@ namespace {
 		return ok;
 	}
 
-	auto inference_failure_stops_before_presenter() -> bool {
+	auto InferenceFailureStopsBeforePresenter() -> bool {
 		SessionContext context;
 		context.invalid_prepare = true;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                         = false;
 		config.dark_threshold                        = 100.0F;
 		config.exposure                              = 17;
-		auto                                  engine = make_engine(context, config);
-		test_cli_internal::TestPreviewSession session(config, engine, make_dependencies(context));
+		auto                                  engine = MakeEngine(context, config);
+		test_cli_internal::TestPreviewSession session(config, engine, MakeDependencies(context));
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
@@ -278,17 +278,17 @@ namespace {
 		return ok;
 	}
 
-	auto missing_dependency_fails_closed() -> bool {
+	auto MissingDependencyFailsClosed() -> bool {
 		SessionContext             context;
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled  = false;
 		config.dark_threshold = 100.0F;
-		auto engine           = make_engine(context, config);
-		auto dependencies     = make_dependencies(context);
+		auto engine           = MakeEngine(context, config);
+		auto dependencies     = MakeDependencies(context);
 		dependencies.present  = nullptr;
 		test_cli_internal::TestPreviewSession session(config, engine, dependencies);
 
-		const auto result = session.run(gray_frame());
+		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
 		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
@@ -301,17 +301,17 @@ namespace {
 
 }  // namespace
 
-auto run_test_preview_renderer_tests() -> bool;
+auto RunTestPreviewRendererTests() -> bool;
 
 auto main() -> int {
 	bool ok = true;
-	ok &= first_frame_quit_restores_configured_exposure();
-	ok &= retained_production_frame_supports_two_preview_runs();
-	ok &= run_test_preview_renderer_tests();
-	ok &= disabled_exposure_skips_restore();
-	ok &= camera_read_failure_after_prefetch_maps_to_camera_error();
-	ok &= slow_mode_sleeps_and_restores_exposure_between_frames();
-	ok &= inference_failure_stops_before_presenter();
-	ok &= missing_dependency_fails_closed();
+	ok &= FirstFrameQuitRestoresConfiguredExposure();
+	ok &= RetainedProductionFrameSupportsTwoPreviewRuns();
+	ok &= RunTestPreviewRendererTests();
+	ok &= DisabledExposureSkipsRestore();
+	ok &= CameraReadFailureAfterPrefetchMapsToCameraError();
+	ok &= SlowModeSleepsAndRestoresExposureBetweenFrames();
+	ok &= InferenceFailureStopsBeforePresenter();
+	ok &= MissingDependencyFailsClosed();
 	return ok ? 0 : 1;
 }

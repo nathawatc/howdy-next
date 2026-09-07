@@ -26,7 +26,7 @@ namespace howdy::native {
 		CompareArgs       args;
 	};
 
-	auto parse_compare_args(int argc, char **argv, const std::string &default_config_path)
+	auto ParseCompareArgs(int argc, char **argv, const std::string &default_config_path)
 	    -> CompareArgsParseResult;
 
 }  // namespace howdy::native

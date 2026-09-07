@@ -8,8 +8,8 @@
 
 namespace howdy::native {
 
-	auto encode_sface(const cv::Mat &frame, const FaceDetection &face,
-	                  const FaceEncodingDependencies &dependencies) -> FaceEncodingResult {
+	auto EncodeSface(const cv::Mat &frame, const FaceDetection &face,
+	                 const FaceEncodingDependencies &dependencies) -> FaceEncodingResult {
 		if (dependencies.context == nullptr || dependencies.align_face == nullptr ||
 		    dependencies.extract_feature == nullptr) {
 			return {

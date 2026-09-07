@@ -123,15 +123,15 @@ namespace howdy::test::compare_privileges {
 		std::string fatal_message;
 	};
 
-	inline auto expect_events(const FakePrivilegeContext     &context,
-	                          const std::vector<std::string> &expected, const std::string &message)
+	inline auto ExpectEvents(const FakePrivilegeContext     &context,
+	                         const std::vector<std::string> &expected, const std::string &message)
 	    -> bool {
 		return expect(context.events == expected, message);
 	}
 
-	inline auto fake_getpwnam_r(void *raw_context, const char *name, passwd *pwd,
-	                            [[maybe_unused]] char *buffer, std::size_t buffer_size,
-	                            passwd **result) -> int {
+	inline auto FakeGetpwnamR(void *raw_context, const char *name, passwd *pwd,
+	                          [[maybe_unused]] char *buffer, std::size_t buffer_size,
+	                          passwd **result) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("lookup");
 		context.lookup_name = name;
@@ -157,9 +157,9 @@ namespace howdy::test::compare_privileges {
 		return EIO;
 	}
 
-	inline auto fake_prctl(void *raw_context, int operation, unsigned long argument2,
-	                       unsigned long argument3, unsigned long argument4,
-	                       unsigned long argument5) -> int {
+	inline auto FakePrctl(void *raw_context, int operation, unsigned long argument2,
+	                      unsigned long argument3, unsigned long argument4, unsigned long argument5)
+	    -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		if (operation == PR_GET_SECUREBITS) {
 			context.events.emplace_back("query securebits");
@@ -176,7 +176,7 @@ namespace howdy::test::compare_privileges {
 	}
 
 	// NOLINTNEXTLINE(readability-non-const-parameter) -- POSIX callback signature.
-	inline auto fake_getgroups(void *raw_context, int size, gid_t *groups) -> int {
+	inline auto FakeGetgroups(void *raw_context, int size, gid_t *groups) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("query supplementary groups");
 		context.getgroups_calls++;
@@ -186,7 +186,7 @@ namespace howdy::test::compare_privileges {
 		return static_cast<int>(context.supplementary_groups.size());
 	}
 
-	inline auto fake_setgroups(void *raw_context, std::size_t count, const gid_t *groups) -> int {
+	inline auto FakeSetgroups(void *raw_context, std::size_t count, const gid_t *groups) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("clear supplementary groups");
 		context.group_count   = count;
@@ -200,7 +200,7 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_setresgid(void *raw_context, gid_t real, gid_t effective, gid_t saved) -> int {
+	inline auto FakeSetresgid(void *raw_context, gid_t real, gid_t effective, gid_t saved) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("setresgid");
 		context.set_gids = {real, effective, saved};
@@ -212,7 +212,7 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_setresuid(void *raw_context, uid_t real, uid_t effective, uid_t saved) -> int {
+	inline auto FakeSetresuid(void *raw_context, uid_t real, uid_t effective, uid_t saved) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("setresuid");
 		context.set_uids = {real, effective, saved};
@@ -224,16 +224,16 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto valid_capability_header(const __user_cap_header_struct &header) -> bool {
+	inline auto ValidCapabilityHeader(const __user_cap_header_struct &header) -> bool {
 		return header.version == _LINUX_CAPABILITY_VERSION_3 && header.pid == 0;
 	}
 
-	inline auto fake_capset(void *raw_context, const __user_cap_header_struct *header,
-	                        const __user_cap_data_struct *data) -> int {
+	inline auto FakeCapset(void *raw_context, const __user_cap_header_struct *header,
+	                       const __user_cap_data_struct *data) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("clear capability sets");
 		context.capset_calls++;
-		context.capset_header_valid = header != nullptr && valid_capability_header(*header);
+		context.capset_header_valid = header != nullptr && ValidCapabilityHeader(*header);
 		context.capset_data_zero    = data != nullptr;
 		for (std::size_t index = 0;
 		     data != nullptr && index < static_cast<std::size_t>(_LINUX_CAPABILITY_U32S_3);
@@ -248,12 +248,12 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_capget(void *raw_context, __user_cap_header_struct *header,
-	                        __user_cap_data_struct *data) -> int {
+	inline auto FakeCapget(void *raw_context, __user_cap_header_struct *header,
+	                       __user_cap_data_struct *data) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("read capability sets");
 		context.capget_calls++;
-		context.capget_header_valid = header != nullptr && valid_capability_header(*header);
+		context.capget_header_valid = header != nullptr && ValidCapabilityHeader(*header);
 		if (context.failure == FailureOperation::kCapget ||
 		    (context.failure == FailureOperation::kInitialCapget && context.capget_calls == 1) ||
 		    (context.failure == FailureOperation::kFinalCapget && context.capget_calls > 1)) {
@@ -266,7 +266,7 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_getresgid(void *raw_context, GroupIdOutputs outputs) -> int {
+	inline auto FakeGetresgid(void *raw_context, GroupIdOutputs outputs) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("getresgid");
 		context.getresgid_calls++;
@@ -282,7 +282,7 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_getresuid(void *raw_context, UserIdOutputs outputs) -> int {
+	inline auto FakeGetresuid(void *raw_context, UserIdOutputs outputs) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("getresuid");
 		context.getresuid_calls++;
@@ -298,26 +298,26 @@ namespace howdy::test::compare_privileges {
 		return 0;
 	}
 
-	inline auto fake_query_fsuid(void *raw_context) -> uid_t {
+	inline auto FakeQueryFsuid(void *raw_context) -> uid_t {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("query fsuid");
 		return context.fsuid;
 	}
 
-	inline auto fake_query_fsgid(void *raw_context) -> gid_t {
+	inline auto FakeQueryFsgid(void *raw_context) -> gid_t {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("query fsgid");
 		return context.fsgid;
 	}
 
-	inline auto fake_setuid(void *raw_context, uid_t uid) -> int {
+	inline auto FakeSetuid(void *raw_context, uid_t uid) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("root-regain probe");
 		context.regain_uid = uid;
 		return context.failure == FailureOperation::kRegainSucceeds ? 0 : -1;
 	}
 
-	inline void fake_fatal_exit(void *raw_context, FatalExitRequest request) {
+	inline void FakeFatalExit(void *raw_context, FatalExitRequest request) {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		context.events.emplace_back("fatal");
 		context.fatal_calls++;
@@ -325,32 +325,32 @@ namespace howdy::test::compare_privileges {
 		context.fatal_message.assign(request.message, request.message_size);
 	}
 
-	inline auto make_dependencies(FakePrivilegeContext &context) -> ComparePrivilegeDependencies {
+	inline auto MakeDependencies(FakePrivilegeContext &context) -> ComparePrivilegeDependencies {
 		return {
 		    .context       = &context,
-		    .getpwnam_r    = fake_getpwnam_r,
-		    .prctl         = fake_prctl,
-		    .getgroups     = fake_getgroups,
-		    .setgroups     = fake_setgroups,
-		    .setresgid     = fake_setresgid,
-		    .setresuid     = fake_setresuid,
-		    .capset        = fake_capset,
-		    .capget        = fake_capget,
-		    .getresgid     = fake_getresgid,
-		    .getresuid     = fake_getresuid,
-		    .query_fsuid   = fake_query_fsuid,
-		    .query_fsgid   = fake_query_fsgid,
-		    .regain_setuid = fake_setuid,
-		    .fatal_exit    = fake_fatal_exit,
+		    .getpwnam_r    = FakeGetpwnamR,
+		    .prctl         = FakePrctl,
+		    .getgroups     = FakeGetgroups,
+		    .setgroups     = FakeSetgroups,
+		    .setresgid     = FakeSetresgid,
+		    .setresuid     = FakeSetresuid,
+		    .capset        = FakeCapset,
+		    .capget        = FakeCapget,
+		    .getresgid     = FakeGetresgid,
+		    .getresuid     = FakeGetresuid,
+		    .query_fsuid   = FakeQueryFsuid,
+		    .query_fsgid   = FakeQueryFsgid,
+		    .regain_setuid = FakeSetuid,
+		    .fatal_exit    = FakeFatalExit,
 		};
 	}
 
-	inline auto drop(FakePrivilegeContext &context) -> howdy::native::ComparePrivilegeResult {
-		return howdy::native::compare_privileges_internal::drop_compare_privileges(
-		    make_dependencies(context));
+	inline auto Drop(FakePrivilegeContext &context) -> howdy::native::ComparePrivilegeResult {
+		return howdy::native::compare_privileges_internal::DropComparePrivileges(
+		    MakeDependencies(context));
 	}
 
-	inline auto expected_privileged_events() -> std::vector<std::string> {
+	inline auto ExpectedPrivilegedEvents() -> std::vector<std::string> {
 		return {"getresuid",
 		        "getresgid",
 		        "lookup",
@@ -369,7 +369,7 @@ namespace howdy::test::compare_privileges {
 		        "root-regain probe"};
 	}
 
-	inline void set_non_root_identity(FakePrivilegeContext &context) {
+	inline void SetNonRootIdentity(FakePrivilegeContext &context) {
 		context.uids  = {1000, 1000, 1000};
 		context.gids  = {1000, 1000, 1000};
 		context.fsuid = 1000;
@@ -377,8 +377,8 @@ namespace howdy::test::compare_privileges {
 	}
 
 	inline void
-	set_capability(std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> &capabilities,
-	               NonzeroCapability                                             capability) {
+	SetCapability(std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> &capabilities,
+	              NonzeroCapability                                             capability) {
 		switch (capability) {
 			case NonzeroCapability::kEffective:
 				capabilities[0].effective = 1;
@@ -392,14 +392,14 @@ namespace howdy::test::compare_privileges {
 		}
 	}
 
-	inline void set_wake_alarm_inheritable(
+	inline void SetWakeAlarmInheritable(
 	    std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> &capabilities) {
 		constexpr auto capability_word            = static_cast<std::size_t>(CAP_WAKE_ALARM / 32);
 		constexpr auto capability_bit             = static_cast<unsigned int>(CAP_WAKE_ALARM % 32);
 		capabilities[capability_word].inheritable = static_cast<__u32>(1U << capability_bit);
 	}
 
-	inline auto expected_non_root_events() -> std::vector<std::string> {
+	inline auto ExpectedNonRootEvents() -> std::vector<std::string> {
 		return {"getresuid",
 		        "getresgid",
 		        "query fsuid",
@@ -411,12 +411,12 @@ namespace howdy::test::compare_privileges {
 		        "root-regain probe"};
 	}
 
-	inline auto verify_fatal_result(const FakePrivilegeContext                  &context,
-	                                const howdy::native::ComparePrivilegeResult &result,
-	                                const std::vector<std::string>              &expected_events,
-	                                const std::string                           &label) -> bool {
+	inline auto VerifyFatalResult(const FakePrivilegeContext                  &context,
+	                              const howdy::native::ComparePrivilegeResult &result,
+	                              const std::vector<std::string>              &expected_events,
+	                              const std::string                           &label) -> bool {
 		bool ok = true;
-		ok &= expect(!result.ok(), label + " never reports success when fatal callback returns");
+		ok &= expect(!result.Ok(), label + " never reports success when fatal callback returns");
 		ok &= expect(result.status == ComparePrivilegeStatus::kVerificationFailure,
 		             label + " returns verification failure after malformed fatal callback");
 		ok &= expect(context.fatal_calls == 1, label + " invokes fatal exactly once");
@@ -425,7 +425,7 @@ namespace howdy::test::compare_privileges {
 		ok &= expect(context.fatal_message ==
 		                 howdy::native::compare_privileges_internal::kFatalDiagnostic,
 		             label + " passes fixed diagnostic");
-		ok &= expect_events(context, expected_events, label + " performs no later operation");
+		ok &= ExpectEvents(context, expected_events, label + " performs no later operation");
 		return ok;
 	}
 

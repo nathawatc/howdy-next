@@ -14,7 +14,7 @@ namespace howdy::native::list_internal {
 		ListUserModelEntriesFn list_user_model_entries = nullptr;
 	};
 
-	auto list_main_with_dependencies(int argc, char **argv, const ListDependencies &dependencies)
+	auto ListMainWithDependencies(int argc, char **argv, const ListDependencies &dependencies)
 	    -> int;
 
 }  // namespace howdy::native::list_internal

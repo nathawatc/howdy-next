@@ -27,7 +27,7 @@ namespace howdy::native {
 
 		auto operator=(ScopedFileLock &&other) noexcept -> ScopedFileLock & {
 			if (this != &other) {
-				release();
+				Release();
 				fd       = other.fd;
 				path     = std::move(other.path);
 				other.fd = -1;
@@ -36,10 +36,10 @@ namespace howdy::native {
 		}
 
 		~ScopedFileLock() {
-			release();
+			Release();
 		}
 
-		void release() {
+		void Release() {
 			if (fd < 0) {
 				return;
 			}
@@ -50,11 +50,11 @@ namespace howdy::native {
 		}
 	};
 
-	inline auto lock_file_path(const std::filesystem::path &target_path) -> std::filesystem::path {
+	inline auto LockFilePath(const std::filesystem::path &target_path) -> std::filesystem::path {
 		return target_path.string() + ".lock";
 	}
 
-	inline auto acquire_file_lock(const std::filesystem::path &target_path)
+	inline auto AcquireFileLock(const std::filesystem::path &target_path)
 	    -> std::optional<ScopedFileLock> {
 		std::error_code ec;
 		std::filesystem::create_directories(target_path.parent_path(), ec);
@@ -62,7 +62,7 @@ namespace howdy::native {
 			return std::nullopt;
 		}
 
-		const auto path = lock_file_path(target_path);
+		const auto path = LockFilePath(target_path);
 		const int  fd =
 		    open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
 		if (fd < 0) {

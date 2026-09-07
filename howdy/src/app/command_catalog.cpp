@@ -30,9 +30,9 @@ namespace howdy::native {
 		            .argument_synopsis = "[LABEL]",
 		            .min_positionals   = 0,
 		            .max_positionals   = 1,
-		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
-		                                 global_option_bit(GlobalOptionId::kPlain) |
-		                                 global_option_bit(GlobalOptionId::kYes),
+		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
+		                                 GlobalOptionBit(GlobalOptionId::kPlain) |
+		                                 GlobalOptionBit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kClear,
@@ -44,8 +44,8 @@ namespace howdy::native {
 		            .argument_synopsis = "",
 		            .min_positionals   = 0,
 		            .max_positionals   = 0,
-		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
-		                                 global_option_bit(GlobalOptionId::kYes),
+		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
+		                                 GlobalOptionBit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kConfig,
@@ -90,8 +90,8 @@ namespace howdy::native {
 		            .argument_synopsis = "",
 		            .min_positionals   = 0,
 		            .max_positionals   = 0,
-		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
-		                                 global_option_bit(GlobalOptionId::kPlain),
+		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
+		                                 GlobalOptionBit(GlobalOptionId::kPlain),
 		        },
 		        {
 		            .id                = CommandId::kRemove,
@@ -103,8 +103,8 @@ namespace howdy::native {
 		            .argument_synopsis = "ID",
 		            .min_positionals   = 1,
 		            .max_positionals   = 1,
-		            .global_options    = global_option_bit(GlobalOptionId::kUser) |
-		                                 global_option_bit(GlobalOptionId::kYes),
+		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
+		                                 GlobalOptionBit(GlobalOptionId::kYes),
 		        },
 		        {
 		            .id                = CommandId::kSet,
@@ -138,7 +138,7 @@ namespace howdy::native {
 		            .argument_synopsis = "[--device DEVICE]",
 		            .min_positionals   = 0,
 		            .max_positionals   = 0,
-		            .global_options    = global_option_bit(GlobalOptionId::kUser),
+		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser),
 		            .options           = kTestCommandOptions,
 		        },
 		        {
@@ -197,15 +197,15 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto command_catalog() -> std::span<const CommandDescriptor> {
+	auto CommandCatalog() -> std::span<const CommandDescriptor> {
 		return kCommandCatalog;
 	}
 
-	auto global_option_catalog() -> std::span<const GlobalOptionDescriptor> {
+	auto GlobalOptionCatalog() -> std::span<const GlobalOptionDescriptor> {
 		return kGlobalOptionCatalog;
 	}
 
-	auto find_command(std::string_view name) -> const CommandDescriptor * {
+	auto FindCommand(std::string_view name) -> const CommandDescriptor * {
 		for (const auto &descriptor : kCommandCatalog) {
 			if (descriptor.name == name) {
 				return &descriptor;
@@ -214,12 +214,11 @@ namespace howdy::native {
 		return nullptr;
 	}
 
-	auto command_accepts_global_option(const CommandDescriptor &command, GlobalOptionId id)
-	    -> bool {
-		return (command.global_options & global_option_bit(id)) != 0;
+	auto CommandAcceptsGlobalOption(const CommandDescriptor &command, GlobalOptionId id) -> bool {
+		return (command.global_options & GlobalOptionBit(id)) != 0;
 	}
 
-	auto find_command_option(const CommandDescriptor &command, std::string_view spelling)
+	auto FindCommandOption(const CommandDescriptor &command, std::string_view spelling)
 	    -> const CommandOptionDescriptor * {
 		for (const auto &option : command.options) {
 			if ((!option.short_name.empty() && option.short_name == spelling) ||
@@ -230,7 +229,7 @@ namespace howdy::native {
 		return nullptr;
 	}
 
-	auto find_global_option(GlobalOptionId id) -> const GlobalOptionDescriptor * {
+	auto FindGlobalOption(GlobalOptionId id) -> const GlobalOptionDescriptor * {
 		for (const auto &descriptor : kGlobalOptionCatalog) {
 			if (descriptor.id == id) {
 				return &descriptor;
@@ -239,7 +238,7 @@ namespace howdy::native {
 		return nullptr;
 	}
 
-	auto find_global_option(std::string_view spelling) -> const GlobalOptionDescriptor * {
+	auto FindGlobalOption(std::string_view spelling) -> const GlobalOptionDescriptor * {
 		for (const auto &descriptor : kGlobalOptionCatalog) {
 			if ((!descriptor.short_name.empty() && descriptor.short_name == spelling) ||
 			    (!descriptor.long_name.empty() && descriptor.long_name == spelling)) {

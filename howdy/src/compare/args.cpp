@@ -6,7 +6,7 @@
 
 namespace howdy::native {
 
-	auto parse_compare_args(int argc, char **argv, const std::string &default_config_path)
+	auto ParseCompareArgs(int argc, char **argv, const std::string &default_config_path)
 	    -> CompareArgsParseResult {
 		CompareArgsParseResult result;
 		result.args.config_path = default_config_path;
@@ -45,7 +45,7 @@ namespace howdy::native {
 			result.exit_code = CompareExit::kAbort;
 			return result;
 		}
-		if (!is_valid_model_user_name(result.args.user)) {
+		if (!IsValidModelUserName(result.args.user)) {
 			result.status    = CompareArgsStatus::kError;
 			result.exit_code = CompareExit::kAbort;
 			result.message   = kInvalidUserNameMessage;

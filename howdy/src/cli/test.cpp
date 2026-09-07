@@ -60,20 +60,20 @@ namespace {
 
 		~PreviewCleanup() noexcept {
 			try {
-				renderer_cleanup.cleanup();
+				renderer_cleanup.Cleanup();
 			} catch (...) {  // NOLINT(bugprone-empty-catch)
 			}
 
 			try {
 				if (capture.has_value()) {
-					capture->release();
+					capture->Release();
 				}
 			} catch (...) {  // NOLINT(bugprone-empty-catch)
 			}
 		}
 	};
 
-	auto parse_test_args(int argc, char **argv) -> TestArgs {
+	auto ParseTestArgs(int argc, char **argv) -> TestArgs {
 		TestArgs args;
 		bool     options_ended   = false;
 		bool     device_provided = false;
@@ -112,43 +112,43 @@ namespace {
 		return args;
 	}
 
-	auto prepare_preview_frame(void *context, const cv::Mat &frame) -> cv::Mat {
+	auto PreparePreviewFrame(void *context, const cv::Mat &frame) -> cv::Mat {
 		(void)context;
-		return howdy::native::FaceModel::prepare_frame(frame);
+		return howdy::native::FaceModel::PrepareFrame(frame);
 	}
 
-	auto detect_preview_faces(void *context, const cv::Mat &frame)
+	auto DetectPreviewFaces(void *context, const cv::Mat &frame)
 	    -> howdy::native::FaceDetectionResult {
-		return static_cast<howdy::native::FaceModel *>(context)->detect(frame);
+		return static_cast<howdy::native::FaceModel *>(context)->Detect(frame);
 	}
 
-	auto encode_preview_face(void *context, const cv::Mat &frame,
-	                         const howdy::native::FaceDetection &face)
+	auto EncodePreviewFace(void *context, const cv::Mat &frame,
+	                       const howdy::native::FaceDetection &face)
 	    -> howdy::native::FaceEncodingResult {
-		return static_cast<howdy::native::FaceModel *>(context)->encode(frame, face);
+		return static_cast<howdy::native::FaceModel *>(context)->Encode(frame, face);
 	}
 
-	auto match_preview_face(void *context, const std::vector<std::vector<float>> &known,
-	                        const std::vector<float> &probe) -> howdy::native::FaceMatch {
-		return static_cast<howdy::native::FaceModel *>(context)->best_match(known, probe);
+	auto MatchPreviewFace(void *context, const std::vector<std::vector<float>> &known,
+	                      const std::vector<float> &probe) -> howdy::native::FaceMatch {
+		return static_cast<howdy::native::FaceModel *>(context)->BestMatch(known, probe);
 	}
 
-	auto drop_to_invoking_gui_user() -> bool {
+	auto DropToInvokingGuiUser() -> bool {
 		if (geteuid() != 0) {
 			return true;
 		}
 
-		const auto invoking_user = howdy::native::resolve_invoking_user();
+		const auto invoking_user = howdy::native::ResolveInvokingUser();
 		if (!invoking_user.has_value()) {
 			return false;
 		}
 
-		howdy::native::reset_invoking_user_gui_environment(*invoking_user);
+		howdy::native::ResetInvokingUserGuiEnvironment(*invoking_user);
 		return initgroups(invoking_user->name.c_str(), invoking_user->gid) == 0 &&
 		       setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
 	}
 
-	auto getenv_string_view(const char *name) -> std::string_view {
+	auto GetenvStringView(const char *name) -> std::string_view {
 		const char *value = std::getenv(name);
 		if (value == nullptr) {
 			return {};
@@ -156,24 +156,24 @@ namespace {
 		return value;
 	}
 
-	void prepare_invoking_gui_environment() {
+	void PrepareInvokingGuiEnvironment() {
 		if (geteuid() != 0) {
 			return;
 		}
 
-		if (const auto invoking_user = howdy::native::resolve_invoking_user()) {
-			howdy::native::prepare_invoking_user_gui_environment(*invoking_user);
+		if (const auto invoking_user = howdy::native::ResolveInvokingUser()) {
+			howdy::native::PrepareInvokingUserGuiEnvironment(*invoking_user);
 		}
 	}
 
-	auto has_graphical_display_environment() -> bool {
-		return test_cli_internal::has_graphical_display_environment(
-		    getenv_string_view("DISPLAY"),
-		    getenv_string_view(howdy::native::kWaylandDisplayEnvironmentVariable),
-		    getenv_string_view(howdy::native::kXdgRuntimeDirEnvironmentVariable));
+	auto HasGraphicalDisplayEnvironment() -> bool {
+		return test_cli_internal::HasGraphicalDisplayEnvironment(
+		    GetenvStringView("DISPLAY"),
+		    GetenvStringView(howdy::native::kWaylandDisplayEnvironmentVariable),
+		    GetenvStringView(howdy::native::kXdgRuntimeDirEnvironmentVariable));
 	}
 
-	void print_missing_graphical_environment_diagnostic() {
+	void PrintMissingGraphicalEnvironmentDiagnostic() {
 		std::cerr << "Cannot open the interactive test preview because no graphical display "
 		             "environment is available.\n";
 		std::cerr << "Howdy automatically detects a standard Wayland session for the invoking "
@@ -191,14 +191,14 @@ namespace {
 		std::cerr << "  sudo howdy snapshot\n";
 	}
 
-	auto test_cli_load_runtime_config_dependency(void *context)
+	auto TestCliLoadRuntimeConfigDependency(void *context)
 	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
-		return howdy::native::load_runtime_config();
+		return howdy::native::LoadRuntimeConfig();
 	}
 
-	auto face_model_ready_dependency(void *context, const howdy::native::RuntimeConfig &config,
-	                                 const std::string &user)
+	auto FaceModelReadyDependency(void *context, const howdy::native::RuntimeConfig &config,
+	                              const std::string &user)
 	    -> test_cli_internal::TestPreflightOperationResult {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr) {
@@ -208,16 +208,16 @@ namespace {
 		}
 
 		auto &face_model = production_context->face_model.emplace(config.face);
-		if (!face_model.ok()) {
+		if (!face_model.Ok()) {
 			return test_cli_internal::TestPreflightOperationResult{
-			    .error_message = face_model.error_message(),
+			    .error_message = face_model.ErrorMessage(),
 			};
 		}
 
 		production_context->loaded_models = howdy::native::UserModelLoadResult{};
 		if (!user.empty()) {
 			production_context->loaded_models =
-			    howdy::native::load_user_models(user, howdy::native::FaceModel::kBackendName);
+			    howdy::native::LoadUserModels(user, howdy::native::FaceModel::kBackendName);
 			if (production_context->loaded_models.status ==
 			    howdy::native::UserModelStatus::kIncompatibleBackend) {
 				std::cout << "Warning: Stored face models use an incompatible backend; matching "
@@ -243,19 +243,19 @@ namespace {
 			}
 		}
 
-		test_cli_internal::replace_test_preview_renderer(
+		test_cli_internal::ReplaceTestPreviewRenderer(
 		    production_context->renderer, config.video,
 		    production_context->loaded_models.stored.models);
 		return test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
-	auto has_graphical_display_dependency(void *context) -> bool {
+	auto HasGraphicalDisplayDependency(void *context) -> bool {
 		(void)context;
-		return has_graphical_display_environment();
+		return HasGraphicalDisplayEnvironment();
 	}
 
-	auto open_camera_dependency(void *context, const howdy::native::RuntimeConfig &config,
-	                            const std::string &device_path)
+	auto OpenCameraDependency(void *context, const howdy::native::RuntimeConfig &config,
+	                          const std::string &device_path)
 	    -> test_cli_internal::TestPreflightOperationResult {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr) {
@@ -264,81 +264,81 @@ namespace {
 			};
 		}
 
-		auto settings        = howdy::native::load_capture_settings(config.video);
+		auto settings        = howdy::native::LoadCaptureSettings(config.video);
 		settings.device_path = device_path;
 		auto &capture        = production_context->capture.emplace(settings);
-		if (!capture.open()) {
+		if (!capture.Open()) {
 			return test_cli_internal::TestPreflightOperationResult{
-			    .error_message = capture.error_message(),
+			    .error_message = capture.ErrorMessage(),
 			};
 		}
 		return test_cli_internal::TestPreflightOperationResult{.ok = true};
 	}
 
-	auto read_camera_dependency(void *context) -> bool {
+	auto ReadCameraDependency(void *context) -> bool {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return false;
 		}
 		cv::Mat frame;
-		return production_context->capture->read(frame, &production_context->prefetched_gray_frame);
+		return production_context->capture->Read(frame, &production_context->prefetched_gray_frame);
 	}
 
-	auto read_preview_gray_frame_dependency(void *context, cv::Mat &gray_frame) -> bool {
+	auto ReadPreviewGrayFrameDependency(void *context, cv::Mat &gray_frame) -> bool {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return false;
 		}
 		cv::Mat frame;
-		return production_context->capture->read(frame, &gray_frame);
+		return production_context->capture->Read(frame, &gray_frame);
 	}
 
-	void restore_preview_exposure_dependency(void *context) {
+	void RestorePreviewExposureDependency(void *context) {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return;
 		}
-		(void)production_context->capture->set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-		(void)production_context->capture->set(cv::CAP_PROP_EXPOSURE,
+		(void)production_context->capture->Set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
+		(void)production_context->capture->Set(cv::CAP_PROP_EXPOSURE,
 		                                       static_cast<double>(production_context->exposure));
 	}
 
-	auto switch_gui_user_dependency(void *context) -> bool {
+	auto SwitchGuiUserDependency(void *context) -> bool {
 		(void)context;
-		return drop_to_invoking_gui_user();
+		return DropToInvokingGuiUser();
 	}
 
-	void initialize_gui_dependency(void *context) {
+	void InitializeGuiDependency(void *context) {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context != nullptr && production_context->renderer.has_value()) {
-			production_context->renderer->initialize();
+			production_context->renderer->Initialize();
 		}
 	}
 
-	auto present_preview_frame_dependency(void                                    *context,
-	                                      const howdy::native::PreviewFrameResult &frame_result,
-	                                      const test_cli_internal::TestPreviewFrameStats &stats)
+	auto PresentPreviewFrameDependency(void                                           *context,
+	                                   const howdy::native::PreviewFrameResult        &frame_result,
+	                                   const test_cli_internal::TestPreviewFrameStats &stats)
 	    -> bool {
-		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->present(frame_result,
+		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->Present(frame_result,
 		                                                                               stats);
 	}
 
-	auto preview_slow_mode_dependency(void *context) -> bool {
-		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->slow_mode();
+	auto PreviewSlowModeDependency(void *context) -> bool {
+		return static_cast<test_cli_internal::TestPreviewRenderer *>(context)->SlowMode();
 	}
 
-	auto preview_now_dependency(void *context) -> std::chrono::steady_clock::time_point {
+	auto PreviewNowDependency(void *context) -> std::chrono::steady_clock::time_point {
 		(void)context;
 		return std::chrono::steady_clock::now();
 	}
 
-	void preview_sleep_dependency(void *context, std::chrono::milliseconds duration) {
+	void PreviewSleepDependency(void *context, std::chrono::milliseconds duration) {
 		(void)context;
 		std::this_thread::sleep_for(duration);
 	}
 
-	auto run_preview_dependency(void *context, const howdy::native::RuntimeConfig &config,
-	                            const std::string &user, const std::string &device_path)
+	auto RunPreviewDependency(void *context, const howdy::native::RuntimeConfig &config,
+	                          const std::string &user, const std::string &device_path)
 	    -> test_cli_internal::TestPreviewResult {
 		auto *production_context = static_cast<TestProductionContext *>(context);
 		if (production_context == nullptr) {
@@ -349,18 +349,18 @@ namespace {
 		}
 		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
 
-		prepare_invoking_gui_environment();
+		PrepareInvokingGuiEnvironment();
 
-		auto preflight_result = test_cli_internal::run_preview_preflight(
+		auto preflight_result = test_cli_internal::RunPreviewPreflight(
 		    config, user,
 		    test_cli_internal::TestPreviewPreflightDependencies{
 		        .context               = production_context,
-		        .face_model_ready      = face_model_ready_dependency,
-		        .has_graphical_display = has_graphical_display_dependency,
-		        .open_camera           = open_camera_dependency,
-		        .read_camera           = read_camera_dependency,
-		        .switch_gui_user       = switch_gui_user_dependency,
-		        .initialize_gui        = initialize_gui_dependency,
+		        .face_model_ready      = FaceModelReadyDependency,
+		        .has_graphical_display = HasGraphicalDisplayDependency,
+		        .open_camera           = OpenCameraDependency,
+		        .read_camera           = ReadCameraDependency,
+		        .switch_gui_user       = SwitchGuiUserDependency,
+		        .initialize_gui        = InitializeGuiDependency,
 		    },
 		    device_path);
 		if (preflight_result.status != test_cli_internal::TestPreviewStatus::kOk) {
@@ -381,10 +381,10 @@ namespace {
 		    config.video,
 		    {
 		        .context       = &face_model,
-		        .prepare_frame = prepare_preview_frame,
-		        .detect_faces  = detect_preview_faces,
-		        .encode_face   = encode_preview_face,
-		        .match_face    = match_preview_face,
+		        .prepare_frame = PreparePreviewFrame,
+		        .detect_faces  = DetectPreviewFaces,
+		        .encode_face   = EncodePreviewFace,
+		        .match_face    = MatchPreviewFace,
 		    },
 		    loaded_models.stored.encodings, loaded_models.stored.models.size(),
 		    loaded_models.status == howdy::native::UserModelStatus::kOk);
@@ -393,30 +393,30 @@ namespace {
 		    config.video, preview_engine,
 		    {
 		        .capture_context  = production_context,
-		        .read_gray_frame  = read_preview_gray_frame_dependency,
-		        .restore_exposure = restore_preview_exposure_dependency,
+		        .read_gray_frame  = ReadPreviewGrayFrameDependency,
+		        .restore_exposure = RestorePreviewExposureDependency,
 		        .renderer_context = &*production_context->renderer,
-		        .present          = present_preview_frame_dependency,
-		        .slow_mode        = preview_slow_mode_dependency,
+		        .present          = PresentPreviewFrameDependency,
+		        .slow_mode        = PreviewSlowModeDependency,
 		        .clock_context    = nullptr,
-		        .now              = preview_now_dependency,
+		        .now              = PreviewNowDependency,
 		        .sleep_context    = nullptr,
-		        .sleep            = preview_sleep_dependency,
+		        .sleep            = PreviewSleepDependency,
 		    });
-		return test_cli_internal::run_preview_session_with_retained_frame(
+		return test_cli_internal::RunPreviewSessionWithRetainedFrame(
 		    preview_session, production_context->prefetched_gray_frame);
 	}
 
 }  // namespace
 
-void howdy::native::test_cli_internal::run_with_preview_cleanup(
+void howdy::native::test_cli_internal::RunWithPreviewCleanup(
     std::optional<TestPreviewRenderer> &renderer, void *context, PreviewCleanupBodyFn body) {
 	std::optional<howdy::native::VideoCapture> capture;
 	PreviewCleanup                             cleanup(renderer, capture);
 	body(context);
 }
 
-auto howdy::native::test_cli_internal::run_preview_preflight(
+auto howdy::native::test_cli_internal::RunPreviewPreflight(
     const howdy::native::RuntimeConfig &config, const std::string &user,
     const TestPreviewPreflightDependencies &dependencies, const std::string &device_path)
     -> TestPreviewResult {
@@ -437,7 +437,7 @@ auto howdy::native::test_cli_internal::run_preview_preflight(
 		};
 	}
 
-	auto settings = howdy::native::load_capture_settings(config.video);
+	auto settings = howdy::native::LoadCaptureSettings(config.video);
 	if (!device_path.empty()) {
 		settings.device_path = device_path;
 	}
@@ -472,7 +472,7 @@ auto howdy::native::test_cli_internal::run_preview_preflight(
 	return TestPreviewResult{.status = TestPreviewStatus::kOk};
 }
 
-auto howdy::native::test_cli_internal::has_graphical_display_environment(
+auto howdy::native::test_cli_internal::HasGraphicalDisplayEnvironment(
     std::string_view display, std::string_view wayland_display, std::string_view runtime_dir)
     -> bool {
 	if (!display.empty()) {
@@ -481,13 +481,13 @@ auto howdy::native::test_cli_internal::has_graphical_display_environment(
 	return !wayland_display.empty() && !runtime_dir.empty();
 }
 
-auto howdy::native::test_cli_internal::test_main_with_dependencies(
+auto howdy::native::test_cli_internal::TestMainWithDependencies(
     int argc, char **argv, const TestDependencies &dependencies) -> int {
 	if (dependencies.load_runtime_config == nullptr || dependencies.run_preview == nullptr) {
 		return kExitCameraError;
 	}
 
-	const TestArgs args = parse_test_args(argc, argv);
+	const TestArgs args = ParseTestArgs(argc, argv);
 	if (args.missing_device_path) {
 		std::cerr << "Error: --device requires a non-empty value\n";
 		return kExitCameraError;
@@ -514,7 +514,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 			std::cerr << preview_result.error_message << "\n";
 			return kExitCameraError;
 		case TestPreviewStatus::kMissingGraphicalEnvironment:
-			print_missing_graphical_environment_diagnostic();
+			PrintMissingGraphicalEnvironmentDiagnostic();
 			return kExitCameraError;
 		case TestPreviewStatus::kCameraOpenError:
 			if (preview_result.device_path == howdy::native::kNoCaptureDevice) {
@@ -537,13 +537,13 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 	}
 }
 
-auto test_main(int argc, char **argv) -> int {
+auto TestMain(int argc, char **argv) -> int {
 	TestProductionContext production_context;
-	return howdy::native::test_cli_internal::test_main_with_dependencies(
+	return howdy::native::test_cli_internal::TestMainWithDependencies(
 	    argc, argv,
 	    howdy::native::test_cli_internal::TestDependencies{
 	        .context             = &production_context,
-	        .load_runtime_config = test_cli_load_runtime_config_dependency,
-	        .run_preview         = run_preview_dependency,
+	        .load_runtime_config = TestCliLoadRuntimeConfigDependency,
+	        .run_preview         = RunPreviewDependency,
 	    });
 }

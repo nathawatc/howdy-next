@@ -76,19 +76,19 @@ namespace howdy::native {
 
 		CompareCaptureSession(const VideoConfig &config, CompareCaptureDependencies dependencies);
 
-		auto open() -> CompareCaptureOpenResult;
-		auto next_frame() -> CompareCaptureFrameResult;
-		void reset_timeout_clock();
+		auto Open() -> CompareCaptureOpenResult;
+		auto NextFrame() -> CompareCaptureFrameResult;
+		void ResetTimeoutClock();
 
-		void record_black_frame();
-		void record_dark_frame(float darkness);
-		void record_ready_frame(float darkness);
-		void restore_exposure();
+		void RecordBlackFrame();
+		void RecordDarkFrame(float darkness);
+		void RecordReadyFrame(float darkness);
+		void RestoreExposure();
 
-		[[nodiscard]] auto stats() const -> const CompareCaptureStats &;
+		[[nodiscard]] auto Stats() const -> const CompareCaptureStats &;
 
 	private:
-		[[nodiscard]] auto dependencies_valid() const -> bool;
+		[[nodiscard]] auto DependenciesValid() const -> bool;
 
 		VideoConfig                config_;
 		VideoCapture               capture_;

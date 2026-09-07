@@ -31,22 +31,22 @@ namespace howdy::native::config_utils_internal {
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	acquire_config_lock(ConfigLockGuard &guard, const std::filesystem::path &config_path) -> bool;
+	AcquireConfigLock(ConfigLockGuard &guard, const std::filesystem::path &config_path) -> bool;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	expected_content_matches(const std::filesystem::path &config_path, const std::string &expected,
-	                         std::string *error_message) -> bool;
+	ExpectedContentMatches(const std::filesystem::path &config_path, const std::string &expected,
+	                       std::string *error_message) -> bool;
 
 	enum class ConfigInstallResult : std::uint8_t {
-		ok,
-		stage_failed,
-		not_committed,
-		committed_not_durable,
+		kOk,
+		kStageFailed,
+		kNotCommitted,
+		kCommittedNotDurable,
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	install_config_content(const std::filesystem::path &config_path, const std::string &content,
-	                       const struct stat &current_stat, SyncParentDirectoryFn sync_parent)
+	InstallConfigContent(const std::filesystem::path &config_path, const std::string &content,
+	                     const struct stat &current_stat, SyncParentDirectoryFn sync_parent)
 	    -> ConfigInstallResult;
 
 	struct ConfigLineReplacement {
@@ -56,19 +56,19 @@ namespace howdy::native::config_utils_internal {
 	};
 
 	enum class ConfigLineReplaceResult : std::uint8_t {
-		not_found,
-		replaced,
-		duplicate,
+		kNotFound,
+		kReplaced,
+		kDuplicate,
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	split_lines_preserve_newlines(const std::string &content) -> std::vector<std::string>;
+	SplitLinesPreserveNewlines(const std::string &content) -> std::vector<std::string>;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	join_lines(const std::vector<std::string> &lines) -> std::string;
+	JoinLines(const std::vector<std::string> &lines) -> std::string;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	replace_line_value(std::vector<std::string> &lines, ConfigLineReplacement replacement)
+	ReplaceLineValue(std::vector<std::string> &lines, ConfigLineReplacement replacement)
 	    -> ConfigLineReplaceResult;
 
 }  // namespace howdy::native::config_utils_internal

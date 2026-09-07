@@ -88,14 +88,14 @@ namespace howdy::native::config_internal {
 	public:
 		explicit ConfigEditSession(ConfigEditDependencies dependencies);
 
-		[[nodiscard]] auto run(const ConfigEditRequest &request) const -> ConfigEditResult;
+		[[nodiscard]] auto Run(const ConfigEditRequest &request) const -> ConfigEditResult;
 
 	private:
 		ConfigEditDependencies dependencies_;
 	};
 
-	[[nodiscard]] auto
-	config_edit_dependencies_available(const ConfigEditDependencies &dependencies) -> bool;
-	[[nodiscard]] auto default_config_edit_dependencies() -> ConfigEditDependencies;
+	[[nodiscard]] auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies)
+	    -> bool;
+	[[nodiscard]] auto DefaultConfigEditDependencies() -> ConfigEditDependencies;
 
 }  // namespace howdy::native::config_internal
