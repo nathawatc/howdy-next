@@ -1,3 +1,5 @@
+#include "vision/face_encoding.hpp"
+
 #include "vision/face_encoding/internal.hpp"
 
 #include <cmath>

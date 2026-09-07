@@ -1,12 +1,14 @@
 #include "compare/engine.hpp"
 
 #include "compare/logic.hpp"
+#include "config/runtime_config.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <cmath>
 #include <string>
 #include <utility>
 
+#include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {

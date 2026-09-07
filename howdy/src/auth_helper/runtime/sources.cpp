@@ -1,6 +1,7 @@
 #include "auth_helper/runtime/internal.hpp"
 #include "internal.hpp"
 #include "storage/user_model_readiness.hpp"
+#include "storage/user_model_status.hpp"
 #include "support/fd_io.hpp"
 #include "support/user_names.hpp"
 

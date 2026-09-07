@@ -7,6 +7,7 @@
 #include "compare/args.hpp"
 #include "paths.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/compare_launch.hpp"
 
 #include <algorithm>
 #include <array>

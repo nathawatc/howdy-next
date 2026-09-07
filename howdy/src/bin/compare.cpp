@@ -7,6 +7,7 @@
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/compare_exit.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 #include "vision/face_model.hpp"
 
@@ -18,6 +19,8 @@
 #include <optional>
 #include <string>
 #include <utility>
+
+#include <opencv2/core.hpp>
 
 namespace {
 

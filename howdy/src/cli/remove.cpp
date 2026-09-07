@@ -1,6 +1,7 @@
 #include "cli/remove.hpp"
 
 #include "cli/remove/internal.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 
 #include <charconv>
@@ -8,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace {
 

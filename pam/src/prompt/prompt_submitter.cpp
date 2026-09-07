@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include <memory>
 #include <stdexcept>
-#include <unistd.h>
 
 #include <libevdev/libevdev-uinput.h>
 #include <libevdev/libevdev.h>

@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <iostream>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace howdy::native::howdy_completion_internal {

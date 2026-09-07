@@ -2,6 +2,7 @@
 #include "cli/internal.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <optional>

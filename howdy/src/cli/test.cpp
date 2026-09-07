@@ -4,6 +4,7 @@
 #include "cli/test/preview_renderer.hpp"
 #include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 #include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
@@ -22,6 +23,8 @@
 #include <thread>
 #include <unistd.h>
 #include <vector>
+
+#include <opencv2/core.hpp>
 
 namespace {
 

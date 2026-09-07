@@ -14,7 +14,6 @@
 #include <string>
 #include <system_error>
 #include <unistd.h>
-#include <utility>
 #include <vector>
 
 #include <sys/file.h>

@@ -1,6 +1,7 @@
 #include "storage/user_model_codec.hpp"
 
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_status.hpp"
 #include "user_model_codec/internal.hpp"
 
 #include <algorithm>

@@ -1,6 +1,7 @@
 #include "cli/clear.hpp"
 
 #include "cli/clear/internal.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 
 #include <iostream>

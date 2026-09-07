@@ -1,6 +1,7 @@
 #include "cli/add/enrollment_capture.hpp"
 #include "cli/add/internal.hpp"
 #include "config/runtime_config.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 #include "support/user_names.hpp"
 #include "vision/face_model.hpp"

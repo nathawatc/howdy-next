@@ -24,7 +24,6 @@
 
 #include <sys/file.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 
 namespace howdy::native::auth_helper {
 	namespace {

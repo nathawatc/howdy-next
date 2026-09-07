@@ -13,10 +13,8 @@
 #include <iostream>
 #include <optional>
 #include <string>
-#include <unistd.h>
 
 #include <sys/file.h>
-#include <sys/types.h>
 
 namespace howdy::native::auth_helper {
 	namespace internal {

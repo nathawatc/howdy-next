@@ -1,5 +1,6 @@
 #include "internal.hpp"
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_status.hpp"
 #include "support/user_names.hpp"
 
 #include <algorithm>

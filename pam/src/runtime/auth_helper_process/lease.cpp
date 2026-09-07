@@ -17,6 +17,7 @@
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/uio.h>
 
 namespace {
 

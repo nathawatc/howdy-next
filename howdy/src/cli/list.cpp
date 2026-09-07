@@ -1,6 +1,7 @@
 #include "cli/list.hpp"
 
 #include "cli/list/internal.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 
 #include <array>

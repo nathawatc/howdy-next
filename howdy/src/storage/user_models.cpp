@@ -2,6 +2,7 @@
 
 #include "storage/user_model_codec.hpp"
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_model_store.hpp"
 #include "support/file_security.hpp"
 #include "support/user_names.hpp"

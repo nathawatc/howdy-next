@@ -1,8 +1,11 @@
 #include "compare/capture_session.hpp"
 
+#include "config/runtime_config.hpp"
+
 #include <chrono>
 #include <utility>
 
+#include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
 
 namespace {

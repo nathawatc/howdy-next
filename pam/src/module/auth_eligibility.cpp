@@ -1,6 +1,8 @@
 #include "module/auth_eligibility.hpp"
 
+#include "config/runtime_config.hpp"
 #include "runtime/session_probe.hpp"
+#include "storage/user_model_status.hpp"
 
 #include <string>
 #include <utility>

@@ -1,10 +1,14 @@
 #include "vision/preview_engine.hpp"
 
+#include "config/runtime_config.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <utility>
+
+#include <opencv2/core.hpp>
 
 namespace howdy::native {
 

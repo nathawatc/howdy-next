@@ -1,11 +1,14 @@
 #include "module/auth_flow.hpp"
 
+#include "config/runtime_config.hpp"
+#include "module/auth_eligibility.hpp"
 #include "module/pam_options.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
 #include "prompt/pam_conversation.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/compare_launch.hpp"
 #include "runtime/runtime_session.hpp"
 
 #include <chrono>

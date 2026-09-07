@@ -1,7 +1,12 @@
 #include "vision/frame_processing.hpp"
 
+#include "config/runtime_config.hpp"
+
 #include <algorithm>
+#include <cstddef>
 #include <vector>
+
+#include <opencv2/core.hpp>
 
 namespace howdy::native {
 

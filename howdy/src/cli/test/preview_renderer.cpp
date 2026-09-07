@@ -1,10 +1,14 @@
 #include "cli/test/preview_renderer.hpp"
 
+#include "config/runtime_config.hpp"
+
 #include <algorithm>
+#include <cstddef>
 #include <exception>
 #include <string>
 #include <utility>
 
+#include <opencv2/core.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 

@@ -14,6 +14,7 @@
 #include <grp.h>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <unistd.h>
 #include <vector>
 

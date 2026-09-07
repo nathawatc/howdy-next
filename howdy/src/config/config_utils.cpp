@@ -4,14 +4,11 @@
 #include "config/config_schema.hpp"
 #include "config/test_hooks.hpp"
 #include "config_utils/internal.hpp"
-#include "support/fd_io.hpp"
 
 #include <algorithm>
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
-#include <unistd.h>
-#include <vector>
 
 #include <sys/stat.h>
 

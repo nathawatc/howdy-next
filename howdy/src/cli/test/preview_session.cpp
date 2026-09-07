@@ -1,8 +1,12 @@
 #include "cli/test/preview_session.hpp"
 
+#include "config/runtime_config.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <utility>
+
+#include <opencv2/core.hpp>
 
 namespace howdy::native::test_cli_internal {
 	namespace {

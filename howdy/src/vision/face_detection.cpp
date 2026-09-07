@@ -1,10 +1,13 @@
 #include "vision/face_detection.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <optional>
 #include <string>
 #include <utility>
+
+#include <opencv2/core.hpp>
 
 namespace howdy::native {
 

@@ -1,14 +1,18 @@
 #include "cli/snapshot/internal.hpp"
+#include "config/runtime_config.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_security.hpp"
 #include "vision/frame_validation.hpp"
 #include "vision/video_capture.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <system_error>
 #include <vector>
 
+#include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <sys/stat.h>

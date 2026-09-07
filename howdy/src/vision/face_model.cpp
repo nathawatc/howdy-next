@@ -1,5 +1,6 @@
 #include "vision/face_model.hpp"
 
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "model_assets/model_file.hpp"
 #include "vision/face_encoding/internal.hpp"
@@ -12,6 +13,7 @@
 #include <string>
 #include <utility>
 
+#include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace howdy::native {

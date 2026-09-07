@@ -7,6 +7,7 @@
 #include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
 
 #include <cerrno>

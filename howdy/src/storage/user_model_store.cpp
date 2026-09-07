@@ -3,6 +3,7 @@
 #include "config/runtime_paths.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
 #include "support/atomic_files.hpp"
 #include "support/fd_io.hpp"
@@ -14,6 +15,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
+#include <system_error>
 #include <utility>
 
 #include <sys/stat.h>
