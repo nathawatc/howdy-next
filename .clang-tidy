@@ -4,7 +4,6 @@
 #
 # - Compiler-owned diagnostics:
 #   - clang-diagnostic-*
-#   - bugprone-narrowing-conversions
 #   - readability-misleading-indentation
 #
 # - Repository-wide low-signal style checks:
@@ -28,7 +27,6 @@ Checks: >-
   cppcoreguidelines-pro-type-cstyle-cast,
   cppcoreguidelines-prefer-member-initializer,
   -clang-diagnostic-*,
-  -bugprone-narrowing-conversions,
   -readability-misleading-indentation,
   -readability-magic-numbers,
   -readability-identifier-length
@@ -48,7 +46,6 @@ WarningsAsErrors: >-
   cppcoreguidelines-pro-type-cstyle-cast,
   cppcoreguidelines-prefer-member-initializer,
   -clang-diagnostic-*,
-  -bugprone-narrowing-conversions,
   -readability-misleading-indentation,
   -readability-magic-numbers,
   -readability-identifier-length
