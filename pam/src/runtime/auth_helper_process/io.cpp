@@ -28,7 +28,7 @@ namespace {
 
 	constexpr auto kHelperWaitPollInterval = std::chrono::milliseconds(10);
 
-	auto make_wait_exit_status(CompareExit exit_code) -> int {
+	auto make_auth_helper_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
 
@@ -140,7 +140,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			if (wait_result < 0 && errno == EINTR) {
 				continue;
 			}
-			return make_wait_exit_status(CompareExit::kAbort);
+			return make_auth_helper_wait_exit_status(CompareExit::kAbort);
 		}
 	}
 
@@ -151,7 +151,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			return status;
 		}
 		if (initial_wait_result < 0 && errno == ECHILD) {
-			return make_wait_exit_status(CompareExit::kAbort);
+			return make_auth_helper_wait_exit_status(CompareExit::kAbort);
 		}
 
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
@@ -169,7 +169,7 @@ namespace howdy::pam::auth_helper_process::internal {
 				if (errno == EINTR) {
 					continue;
 				}
-				return make_wait_exit_status(CompareExit::kAbort);
+				return make_auth_helper_wait_exit_status(CompareExit::kAbort);
 			}
 			usleep(10000);
 		}
@@ -208,9 +208,10 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
-	auto read_auth_helper_output_until(int output_fd, std::string *output,
-	                                   const Operations &operations, HelperDeadline deadline)
-	    -> HelperReadResult {
+	auto
+	read_auth_helper_output_until(int output_fd, std::string *output,
+	                              const howdy::pam::auth_helper_process::Operations &operations,
+	                              HelperDeadline deadline) -> HelperReadResult {
 		if (output == nullptr) {
 			return HelperReadResult::kReadError;
 		}

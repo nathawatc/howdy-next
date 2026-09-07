@@ -193,8 +193,9 @@ auto expect_native_terminal_aliases() -> bool {
 }
 
 namespace {
-	auto test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
-	               struct pam_response **response, void *appdata_ptr) -> int {
+	auto native_prompt_terminal_test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+	                                      struct pam_response **response, void *appdata_ptr)
+	    -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -205,7 +206,7 @@ namespace {
 auto expect_invalid_pam_tty_is_unavailable() -> bool {
 	int             appdata = 42;
 	struct pam_conv original_conv{
-	    .conv        = test_conv,
+	    .conv        = native_prompt_terminal_test_conv,
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;

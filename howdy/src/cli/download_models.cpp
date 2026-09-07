@@ -31,12 +31,12 @@
 
 namespace {
 
-	constexpr int  kExitOk                 = 0;
-	constexpr int  kExitAbort              = EXIT_FAILURE;
-	constexpr long kConnectTimeoutSeconds  = 15;
-	constexpr long kTransferTimeoutSeconds = 300;
-	constexpr long kLowSpeedBytesPerSecond = 1024;
-	constexpr long kLowSpeedTimeoutSeconds = 30;
+	constexpr int  kDownloadModelsExitOk    = 0;
+	constexpr int  kDownloadModelsExitAbort = EXIT_FAILURE;
+	constexpr long kConnectTimeoutSeconds   = 15;
+	constexpr long kTransferTimeoutSeconds  = 300;
+	constexpr long kLowSpeedBytesPerSecond  = 1024;
+	constexpr long kLowSpeedTimeoutSeconds  = 30;
 
 	using howdy::native::ScopedFd;
 	using howdy::native::download_models_internal::CurlSetoptOperations;
@@ -408,12 +408,12 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
     int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
 	if (argc != 1) {
 		std::cout << "Invalid arguments for download-models\n";
-		return kExitAbort;
+		return kDownloadModelsExitAbort;
 	}
 	(void)argv;
 	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr ||
 	    dependencies.sha256_file == nullptr || dependencies.fstat_file == nullptr) {
-		return kExitAbort;
+		return kDownloadModelsExitAbort;
 	}
 
 	const auto models_dir          = howdy::native::resolve_models_dir();
@@ -422,12 +422,12 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 	if (!models_dir_security.ok) {
 		std::cout << "Failed to create models directory: " << models_dir_security.error_message
 		          << "\n";
-		return kExitAbort;
+		return kDownloadModelsExitAbort;
 	}
 
 	if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
 		std::cout << "Failed to initialize download backend\n";
-		return kExitAbort;
+		return kDownloadModelsExitAbort;
 	}
 	for (const auto &model : dependencies.models) {
 		const auto destination = models_dir / model.filename;
@@ -436,7 +436,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			curl_global_cleanup();
 			std::cout << readiness.error_message << "\n";
-			return kExitAbort;
+			return kDownloadModelsExitAbort;
 		}
 
 		bool replace_existing = readiness.status == howdy::native::OpenCvModelStatus::kInvalid;
@@ -444,7 +444,7 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 			const auto action = inspect_existing_model(destination, model, dependencies);
 			if (action == ExistingModelAction::abort) {
 				curl_global_cleanup();
-				return kExitAbort;
+				return kDownloadModelsExitAbort;
 			}
 			replace_existing = action == ExistingModelAction::download;
 			if (action == ExistingModelAction::skip) {
@@ -457,13 +457,13 @@ auto howdy::native::download_models_internal::download_models_main_with_dependen
 		}
 		if (!download_model(model, destination, owner_uid, dependencies)) {
 			curl_global_cleanup();
-			return kExitAbort;
+			return kDownloadModelsExitAbort;
 		}
 	}
 	curl_global_cleanup();
 
 	std::cout << "OpenCV face models ready in: " << models_dir.string() << "\n";
-	return kExitOk;
+	return kDownloadModelsExitOk;
 }
 
 auto download_models_main(int argc, char **argv) -> int {

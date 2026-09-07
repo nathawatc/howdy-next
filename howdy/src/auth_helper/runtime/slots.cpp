@@ -32,8 +32,8 @@ namespace howdy::native::auth_helper {
 		using internal::RuntimeSources;
 		using internal::StagedIdentity;
 
-		auto log_errno_failure(std::string_view operation, const std::filesystem::path &path,
-		                       int error_number) -> bool {
+		auto log_slots_errno_failure(std::string_view operation, const std::filesystem::path &path,
+		                             int error_number) -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
 			          << "': " << std::strerror(error_number) << "\n";
 			return false;
@@ -391,7 +391,7 @@ namespace howdy::native::auth_helper {
 				if (state == ModelState::kAbsent &&
 				    linkat(slot.dir_fd.get(), auth_helper_protocol::kPreparedModelBackingFileName,
 				           models->get(), model_name.c_str(), 0) != 0) {
-					return log_errno_failure("link visible model", visible_path, errno);
+					return log_slots_errno_failure("link visible model", visible_path, errno);
 				}
 			} else {
 				if (state == ModelState::kPresent &&
@@ -501,7 +501,7 @@ namespace howdy::native::auth_helper {
 			}
 			UniqueFd fd(raw_fd);
 			if (fd.get() < 0) {
-				log_errno_failure("open runtime lock", display_path, errno);
+				log_slots_errno_failure("open runtime lock", display_path, errno);
 				return std::nullopt;
 			}
 			if (created && (!set_owner(fd.get(), identity) ||
@@ -589,12 +589,12 @@ namespace howdy::native::auth_helper {
 			const auto policy  = staged_runtime_policy(StagedRuntimeRole::kRuntimeRoot);
 			const bool created = mkdir(path.c_str(), policy.mode) == 0;
 			if (!created && errno != EEXIST) {
-				return log_errno_failure("create runtime directory", path, errno);
+				return log_slots_errno_failure("create runtime directory", path, errno);
 			}
 			runtime_internal::UniqueFd fd(
 			    open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (fd.get() < 0) {
-				return log_errno_failure("open runtime directory", path, errno);
+				return log_slots_errno_failure("open runtime directory", path, errno);
 			}
 			if (created && (fchown(fd.get(), owner_uid, owner_gid) != 0 ||
 			                fchmod(fd.get(), policy.mode) != 0)) {

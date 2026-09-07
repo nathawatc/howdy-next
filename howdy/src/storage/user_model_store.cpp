@@ -33,7 +33,8 @@ namespace howdy::native {
 		constexpr auto kUserModelFileReadFailedMessage = "Failed to read user model file: ";
 		constexpr auto kModelFileLockFailedMessage     = "Failed to lock model file";
 
-		auto failure(UserModelStatus status, std::string message) -> UserModelListResult {
+		auto store_list_failure(UserModelStatus status, std::string message)
+		    -> UserModelListResult {
 			return UserModelListResult{
 			    .status        = status,
 			    .error_message = std::move(message),
@@ -484,14 +485,15 @@ namespace howdy::native {
 		struct stat opened_file{};
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            "Failed to inspect opened user model file: " + path.string()),
+			    store_list_failure(UserModelStatus::kParseError,
+			                       "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
 		if (!opened_model_file_is_secure_for_read(fd, path, opened_file)) {
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kInsecurePath,
-			            "Opened user model file failed security validation: " + path.string()),
+			    store_list_failure(UserModelStatus::kInsecurePath,
+			                       "Opened user model file failed security validation: " +
+			                           path.string()),
 			};
 		}
 		if (opened_file.st_size == 0 && treat_empty_as_no_model) {
@@ -501,13 +503,13 @@ namespace howdy::native {
 		if (opened_file.st_size < 0 ||
 		    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
 			return user_model_codec::Document(
-			    failure(UserModelStatus::kOversized,
-			            std::string(kUserModelFileTooLargeMessage) + path.string()));
+			    store_list_failure(UserModelStatus::kOversized,
+			                       std::string(kUserModelFileTooLargeMessage) + path.string()));
 		}
 		if (lseek(fd, 0, SEEK_SET) < 0) {
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            std::string(kUserModelFileReadFailedMessage) + path.string()),
+			    store_list_failure(UserModelStatus::kParseError,
+			                       std::string(kUserModelFileReadFailedMessage) + path.string()),
 			};
 		}
 
@@ -515,14 +517,14 @@ namespace howdy::native {
 		    {.fd = fd, .max_bytes = user_model_limits::kMaxUserModelFileBytes + 1});
 		if (content.read_error) {
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            std::string(kUserModelFileReadFailedMessage) + path.string()),
+			    store_list_failure(UserModelStatus::kParseError,
+			                       std::string(kUserModelFileReadFailedMessage) + path.string()),
 			};
 		}
 		if (content.hit_limit) {
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kOversized,
-			            std::string(kUserModelFileTooLargeMessage) + path.string()),
+			    store_list_failure(UserModelStatus::kOversized,
+			                       std::string(kUserModelFileTooLargeMessage) + path.string()),
 			};
 		}
 
@@ -541,8 +543,8 @@ namespace howdy::native {
 				    UserModelListResult{.status = UserModelStatus::kNoModel});
 			}
 			return user_model_codec::Document{
-			    failure(UserModelStatus::kParseError,
-			            "Failed to open user model file: " + path.string()),
+			    store_list_failure(UserModelStatus::kParseError,
+			                       "Failed to open user model file: " + path.string()),
 			};
 		}
 		return load_document_from_fd(input.get(), path, expectations, false);
@@ -555,7 +557,7 @@ namespace howdy::native {
 		const auto path_result = resolve(user, false, owner_uid);
 		if (path_result.status != UserModelStatus::kOk) {
 			return user_model_codec::Document(
-			    failure(path_result.status, path_result.error_message));
+			    store_list_failure(path_result.status, path_result.error_message));
 		}
 		return load_document_from_path(path_result.path, expectations);
 	}
@@ -587,7 +589,7 @@ namespace howdy::native {
 		if (path_result.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
-			        failure(path_result.status, path_result.error_message)),
+			        store_list_failure(path_result.status, path_result.error_message)),
 			};
 		}
 		if (user_model_store_test_hooks::current().before_lock) {
@@ -597,7 +599,7 @@ namespace howdy::native {
 		if (!locked_file.has_value()) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
-			        failure(UserModelStatus::kLockFailed, kModelFileLockFailedMessage)),
+			        store_list_failure(UserModelStatus::kLockFailed, kModelFileLockFailedMessage)),
 			};
 		}
 		if (user_model_store_test_hooks::current().after_lock_before_revalidate) {
@@ -608,13 +610,13 @@ namespace howdy::native {
 		if (secured_path.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
-			        failure(secured_path.status, secured_path.error_message)),
+			        store_list_failure(secured_path.status, secured_path.error_message)),
 			};
 		}
 		if (!path_identifies_fd(path_result.path, locked_file->lock.fd)) {
 			return UserModelStoreMutationResult{
-			    .document = user_model_codec::Document(
-			        failure(UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
+			    .document = user_model_codec::Document(store_list_failure(
+			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
 		auto document =

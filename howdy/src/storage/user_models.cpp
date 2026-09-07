@@ -29,7 +29,8 @@ namespace howdy::native {
 			};
 		}
 
-		auto failure(UserModelStatus status, std::string message) -> UserModelListResult {
+		auto user_models_list_failure(UserModelStatus status, std::string message)
+		    -> UserModelListResult {
 			return UserModelListResult{
 			    .status        = status,
 			    .error_message = std::move(message),
@@ -146,7 +147,7 @@ namespace howdy::native {
 		                                                     default_secure_owner_uid());
 		const auto &entries  = document.result;
 		if (entries.status != UserModelStatus::kOk) {
-			return failure(entries.status, entries.error_message);
+			return user_models_list_failure(entries.status, entries.error_message);
 		}
 		return entries;
 	}

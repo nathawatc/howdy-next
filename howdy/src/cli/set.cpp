@@ -12,10 +12,11 @@
 
 namespace {
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int kSetExitOk    = 0;
+	constexpr int kSetExitAbort = 1;
 
-	auto resolve_config_path_dependency([[maybe_unused]] void *context) -> std::filesystem::path {
+	auto set_cli_resolve_config_path_dependency([[maybe_unused]] void *context)
+	    -> std::filesystem::path {
 		return howdy::native::resolve_config_path();
 	}
 
@@ -31,7 +32,7 @@ namespace {
 		std::string value;
 	};
 
-	auto parse_args(int argc, char **argv) -> std::optional<SetArgs> {
+	auto parse_set_args(int argc, char **argv) -> std::optional<SetArgs> {
 		SetArgs     args;
 		std::size_t positional_count = 0;
 		bool        options_ended    = false;
@@ -65,16 +66,16 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 		std::cout << "Please specify a setting and value.\n";
 		std::cout << "For example:\n";
 		std::cout << "\n\thowdy set sface_threshold 0.363\n\n";
-		return kExitAbort;
+		return kSetExitAbort;
 	}
-	const auto args = parse_args(argc, argv);
+	const auto args = parse_set_args(argc, argv);
 	if (!args.has_value()) {
 		std::cout << "Invalid arguments for set\n";
-		return kExitAbort;
+		return kSetExitAbort;
 	}
 	if (dependencies.resolve_config_path == nullptr ||
 	    dependencies.update_config_value == nullptr) {
-		return kExitAbort;
+		return kSetExitAbort;
 	}
 
 	const auto &config_path = dependencies.resolve_config_path(dependencies.context);
@@ -82,25 +83,25 @@ auto howdy::native::set_internal::set_main_with_dependencies(int argc, char **ar
 	const auto &value       = args->value;
 	if (!howdy::native::is_safe_ini_scalar_value(value)) {
 		std::cout << "Config values must be single-line scalars and cannot start with [\n";
-		return kExitAbort;
+		return kSetExitAbort;
 	}
 	std::string error_message;
 	if (!dependencies.update_config_value(dependencies.context, config_path, key, value,
 	                                      &error_message, true)) {
 		std::cout << (error_message.empty() ? "Failed to update config option" : error_message)
 		          << "\n";
-		return kExitAbort;
+		return kSetExitAbort;
 	}
 
 	std::cout << "Config option updated\n";
-	return kExitOk;
+	return kSetExitOk;
 }
 
 auto set_main(int argc, char **argv) -> int {
 	return howdy::native::set_internal::set_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::set_internal::SetDependencies{
-	        .resolve_config_path = resolve_config_path_dependency,
+	        .resolve_config_path = set_cli_resolve_config_path_dependency,
 	        .update_config_value = update_config_value_dependency,
 	    });
 }

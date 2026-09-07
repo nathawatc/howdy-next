@@ -27,7 +27,7 @@ namespace howdy::test::config_cli {
 
 	namespace {
 
-		constexpr std::string_view kOriginalContent = "[core]\ndisabled = false\n";
+		constexpr std::string_view kIntegrationOriginalContent = "[core]\ndisabled = false\n";
 
 		class ScopedEnvironmentVariable {
 		public:
@@ -84,7 +84,7 @@ namespace howdy::test::config_cli {
 			const fs::path  config_path = temp_root / "config.ini";
 			const fs::path  editor_path = temp_root / "fake-editor";
 			std::error_code error;
-			ok &= expect(write_file(config_path, std::string{kOriginalContent}),
+			ok &= expect(write_file(config_path, std::string{kIntegrationOriginalContent}),
 			             "integration writes config baseline");
 			ok &= expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
 			ok &= expect(write_file(editor_path, "#!/bin/sh\nprintf '[core\\n' > \"$1\"\n"),

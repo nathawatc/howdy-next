@@ -58,7 +58,8 @@ namespace {
 		return filepath;
 	}
 
-	auto load_runtime_config_dependency(void *context) -> howdy::native::RuntimeConfigLoadResult {
+	auto snapshot_cli_load_runtime_config_dependency(void *context)
+	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
 		return howdy::native::load_runtime_config();
 	}
@@ -129,7 +130,7 @@ auto snapshot_main(int argc, char **argv) -> int {
 	return howdy::native::snapshot_internal::snapshot_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::snapshot_internal::SnapshotDependencies{
-	        .load_runtime_config = load_runtime_config_dependency,
+	        .load_runtime_config = snapshot_cli_load_runtime_config_dependency,
 	        .capture_frames      = capture_frames_dependency,
 	        .write_snapshot      = write_snapshot_dependency,
 	    });

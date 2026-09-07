@@ -20,8 +20,10 @@ namespace {
 		return pam_set_item(pamh, item_type, item);
 	}
 
-	auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*messages*/,
-	                          struct pam_response **response, void * /*appdata_ptr*/) -> int {
+	auto observed_prompt_fail_closed_dispatch(int /*num_msg*/,
+	                                          const struct pam_message ** /*messages*/,
+	                                          struct pam_response **response,
+	                                          void * /*appdata_ptr*/) -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -179,7 +181,7 @@ namespace howdy::pam {
 		}
 
 		static const struct pam_conv fail_closed_conv{
-		    .conv        = fail_closed_dispatch,
+		    .conv        = observed_prompt_fail_closed_dispatch,
 		    .appdata_ptr = nullptr,
 		};
 		if (pamh_ != nullptr && operations_.set_item != nullptr &&

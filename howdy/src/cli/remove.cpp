@@ -11,8 +11,8 @@
 
 namespace {
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int kRemoveExitOk    = 0;
+	constexpr int kRemoveExitAbort = 1;
 
 	struct RemoveArgs {
 		std::string user;
@@ -21,7 +21,7 @@ namespace {
 		bool        yes         = false;
 	};
 
-	auto parse_args(int argc, char **argv) -> std::optional<RemoveArgs> {
+	auto parse_remove_args(int argc, char **argv) -> std::optional<RemoveArgs> {
 		RemoveArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -50,7 +50,8 @@ namespace {
 		return args;
 	}
 
-	auto list_user_model_entries_dependency([[maybe_unused]] void *context, const std::string &user)
+	auto remove_cli_user_model_entries_dependency([[maybe_unused]] void *context,
+	                                              const std::string     &user)
 	    -> howdy::native::UserModelListResult {
 		return howdy::native::list_user_model_entries(user, {});
 	}
@@ -68,12 +69,12 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
     int argc, char **argv, const RemoveDependencies &dependencies) -> int {
 	if (dependencies.list_user_model_entries == nullptr ||
 	    dependencies.remove_user_model_entry_if_matches == nullptr) {
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 
-	const auto args = parse_args(argc, argv);
+	const auto args = parse_remove_args(argc, argv);
 	if (!args.has_value()) {
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 	if (!args->id_provided) {
 		std::cout << "Please specify the model ID to remove.\n";
@@ -81,23 +82,23 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 		std::cout << "\n\thowdy remove 0\n\n";
 		std::cout << "You can find the IDs by running:\n";
 		std::cout << "\n\thowdy list\n\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 
 	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << models.error_message << "\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 
 	int id = -1;
@@ -127,7 +128,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 
 	if (!found) {
 		std::cout << "No model with ID " << args->id << " exists for " << args->user << "\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 
 	if (!args->yes) {
@@ -137,7 +138,7 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {
 			std::cout << "\nNo confirmation received; aborting.\n";
-			return kExitAbort;
+			return kRemoveExitAbort;
 		}
 		std::cout << "\n";
 	}
@@ -146,25 +147,25 @@ auto howdy::native::remove_internal::remove_main_with_dependencies(
 	    dependencies.remove_user_model_entry_if_matches(dependencies.context, args->user, expected);
 	if (remove_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << remove_result.error_message << "\n";
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 	if (remove_result.removed_last) {
 		std::cout << "Removed final face model; face verification disabled for this user\n";
-		return kExitOk;
+		return kRemoveExitOk;
 	}
 
 	std::cout << "Removed model " << remove_result.entry.id << "\n";
-	return kExitOk;
+	return kRemoveExitOk;
 }
 
 auto remove_main(int argc, char **argv) -> int {
 	if (argc < 2) {
-		return kExitAbort;
+		return kRemoveExitAbort;
 	}
 	return howdy::native::remove_internal::remove_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::remove_internal::RemoveDependencies{
-	        .list_user_model_entries            = list_user_model_entries_dependency,
+	        .list_user_model_entries            = remove_cli_user_model_entries_dependency,
 	        .remove_user_model_entry_if_matches = remove_user_model_entry_if_matches_dependency,
 	    });
 }

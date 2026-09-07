@@ -93,8 +93,8 @@ namespace {
 		       expect(false, message + ": child exceeded timeout and required SIGKILL");
 	}
 
-	auto test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
-	               struct pam_response **response, void *appdata_ptr) -> int {
+	auto native_prompt_test_conv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+	                             struct pam_response **response, void *appdata_ptr) -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -108,7 +108,7 @@ namespace {
 		struct pam_conv    last_pam_conversation{};
 	};
 
-	void injected_post_message(void *context) {
+	void native_prompt_injected_post_message(void *context) {
 		const auto &operations = *static_cast<LifecycleOperationContext *>(context);
 		if (operations.throw_mode == 1) {
 			throw std::runtime_error("simulated dispatch failure");
@@ -132,13 +132,14 @@ namespace {
 	auto create_lifecycle_conversation(NativePromptConversationTestAccess::Descriptors descriptors,
 	                                   LifecycleOperationContext *operations = nullptr)
 	    -> std::unique_ptr<NativePromptConversation> {
-		return create_conversation(
-		    descriptors, operations == nullptr ? NativePromptConversationTestAccess::Operations{}
-		                                       : NativePromptConversationTestAccess::Operations{
-		                                             .context      = operations,
-		                                             .post_message = injected_post_message,
-		                                             .set_pam_item = injected_set_pam_item,
-		                                         });
+		return create_conversation(descriptors,
+		                           operations == nullptr
+		                               ? NativePromptConversationTestAccess::Operations{}
+		                               : NativePromptConversationTestAccess::Operations{
+		                                     .context      = operations,
+		                                     .post_message = native_prompt_injected_post_message,
+		                                     .set_pam_item = injected_set_pam_item,
+		                                 });
 	}
 }  // namespace
 
@@ -190,7 +191,7 @@ auto expect_original_conversation_restored() -> bool {
 
 	int             appdata = 42;
 	struct pam_conv original_conv{
-	    .conv        = test_conv,
+	    .conv        = native_prompt_test_conv,
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;

@@ -10,8 +10,8 @@
 
 namespace {
 
-	constexpr int  kExitOk                   = 0;
-	constexpr int  kExitAbort                = 1;
+	constexpr int  kClearExitOk              = 0;
+	constexpr int  kClearExitAbort           = 1;
 	constexpr auto kNoFaceModelsFoundMessage = "No face models found.";
 
 	struct ClearArgs {
@@ -19,7 +19,7 @@ namespace {
 		bool        yes = false;
 	};
 
-	auto parse_args(int argc, char **argv) -> std::optional<ClearArgs> {
+	auto parse_clear_args(int argc, char **argv) -> std::optional<ClearArgs> {
 		ClearArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -62,30 +62,30 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
     int argc, char **argv, const ClearDependencies &dependencies) -> int {
 	if (dependencies.inspect_user_model_file == nullptr ||
 	    dependencies.clear_user_model_entries_if_unchanged == nullptr) {
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 
-	const auto args = parse_args(argc, argv);
+	const auto args = parse_clear_args(argc, argv);
 	if (!args.has_value()) {
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 
 	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, args->user);
 	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	if (inspection.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	if (inspection.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << inspection.error_message << "\n";
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	if (!inspection.snapshot.has_value()) {
 		std::cout << howdy::native::kUserModelFileInspectionFailedMessage << '\n';
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 
 	if (!args->yes) {
@@ -95,7 +95,7 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 		std::getline(std::cin, answer);
 		if (answer != "y" && answer != "Y") {
 			std::cout << "\nNo confirmation received; aborting.\n";
-			return kExitAbort;
+			return kClearExitAbort;
 		}
 	}
 
@@ -103,23 +103,23 @@ auto howdy::native::clear_internal::clear_main_with_dependencies(
 	    dependencies.context, args->user, *inspection.snapshot);
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	if (clear_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << clear_result.error_message << "\n";
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	std::cout << "\nModels cleared\n";
-	return kExitOk;
+	return kClearExitOk;
 }
 
 auto clear_main(int argc, char **argv) -> int {
 	if (argc < 2) {
-		return kExitAbort;
+		return kClearExitAbort;
 	}
 	return howdy::native::clear_internal::clear_main_with_dependencies(
 	    argc, argv,

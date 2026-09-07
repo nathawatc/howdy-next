@@ -14,8 +14,8 @@
 
 namespace {
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int kDisableExitOk    = 0;
+	constexpr int kDisableExitAbort = 1;
 
 	auto resolve_config_path_dependency([[maybe_unused]] void *context) -> std::filesystem::path {
 		return howdy::native::resolve_config_path();
@@ -67,12 +67,12 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
     int argc, char **argv, const DisableDependencies &dependencies) -> int {
 	if (argc < 2) {
 		std::cout << "Specify 0 or false to enable, or 1 or true to disable Howdy\n";
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 	const auto argument = parse_argument(argc, argv);
 	if (!argument.has_value()) {
 		std::cout << "Invalid arguments for disable\n";
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 
 	const std::string &argument_value = *argument;
@@ -86,12 +86,12 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		disabled  = false;
 	} else {
 		std::cout << "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n";
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 	if (dependencies.resolve_config_path == nullptr ||
 	    dependencies.load_runtime_config == nullptr ||
 	    dependencies.update_config_value == nullptr) {
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 
 	const auto config_path   = dependencies.resolve_config_path(dependencies.context);
@@ -99,12 +99,12 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 
 	if (disabled == config_result.config->core.disabled) {
 		std::cout << (disabled ? "Howdy is already disabled\n" : "Howdy is already enabled\n");
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 
 	const auto &disabled_option = howdy::native::config_schema::runtime_config_option(
@@ -116,11 +116,11 @@ auto howdy::native::disable_internal::disable_main_with_dependencies(
 		std::cout << (error_message.empty() ? "Failed to update \"disabled\" config option"
 		                                    : error_message)
 		          << "\n";
-		return kExitAbort;
+		return kDisableExitAbort;
 	}
 
 	std::cout << (disabled ? "Howdy is now disabled\n" : "Howdy is now enabled\n");
-	return kExitOk;
+	return kDisableExitOk;
 }
 
 auto disable_main(int argc, char **argv) -> int {

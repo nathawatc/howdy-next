@@ -25,7 +25,7 @@
 
 namespace {
 
-	constexpr int kExitOk          = 0;
+	constexpr int kTestExitOk      = 0;
 	constexpr int kExitCameraError = 1;
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
@@ -70,7 +70,7 @@ namespace {
 		}
 	};
 
-	auto parse_args(int argc, char **argv) -> TestArgs {
+	auto parse_test_args(int argc, char **argv) -> TestArgs {
 		TestArgs args;
 		bool     options_ended   = false;
 		bool     device_provided = false;
@@ -188,7 +188,8 @@ namespace {
 		std::cerr << "  sudo howdy snapshot\n";
 	}
 
-	auto load_runtime_config_dependency(void *context) -> howdy::native::RuntimeConfigLoadResult {
+	auto test_cli_load_runtime_config_dependency(void *context)
+	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
 		return howdy::native::load_runtime_config();
 	}
@@ -483,7 +484,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 		return kExitCameraError;
 	}
 
-	const TestArgs args = parse_args(argc, argv);
+	const TestArgs args = parse_test_args(argc, argv);
 	if (args.missing_device_path) {
 		std::cerr << "Error: --device requires a non-empty value\n";
 		return kExitCameraError;
@@ -505,7 +506,7 @@ auto howdy::native::test_cli_internal::test_main_with_dependencies(
 	    dependencies.run_preview(dependencies.context, config, args.user, args.device_path);
 	switch (preview_result.status) {
 		case TestPreviewStatus::kOk:
-			return kExitOk;
+			return kTestExitOk;
 		case TestPreviewStatus::kFaceModelError:
 			std::cerr << preview_result.error_message << "\n";
 			return kExitCameraError;
@@ -539,7 +540,7 @@ auto test_main(int argc, char **argv) -> int {
 	    argc, argv,
 	    howdy::native::test_cli_internal::TestDependencies{
 	        .context             = &production_context,
-	        .load_runtime_config = load_runtime_config_dependency,
+	        .load_runtime_config = test_cli_load_runtime_config_dependency,
 	        .run_preview         = run_preview_dependency,
 	    });
 }

@@ -1,10 +1,7 @@
 # Build trees
 /build/
-/Build/
-/build-*/
 
 # Maintainer-local CMake/IDE state
-/CMakeLists.txt.user
 /CMakeUserPresets.json
 
 # Generated translation template

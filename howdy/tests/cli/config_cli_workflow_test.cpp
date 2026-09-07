@@ -26,10 +26,10 @@ namespace howdy::test::config_cli {
 
 	namespace {
 
-		constexpr std::string_view kConfigPath      = "/test/howdy/config.ini";
-		constexpr std::string_view kTempPath        = "/tmp/howdy-config-test";
-		constexpr std::string_view kOriginalContent = "[core]\ndisabled = false\n";
-		constexpr std::string_view kEditedContent   = "[core]\ndisabled = true\n";
+		constexpr std::string_view kConfigPath              = "/test/howdy/config.ini";
+		constexpr std::string_view kTempPath                = "/tmp/howdy-config-test";
+		constexpr std::string_view kWorkflowOriginalContent = "[core]\ndisabled = false\n";
+		constexpr std::string_view kEditedContent           = "[core]\ndisabled = true\n";
 
 		struct TestContext {
 			std::array<int, 12>                        calls{};
@@ -42,7 +42,7 @@ namespace howdy::test::config_cli {
 			std::filesystem::path                config_path               = kConfigPath;
 			howdy::native::ConfigPathCheckResult security                  = {.ok = true};
 			std::optional<TempConfigCopy>        temp_copy                 = TempConfigCopy{
-			    .path = kTempPath, .original_content = std::string{kOriginalContent}};
+			    .path = kTempPath, .original_content = std::string{kWorkflowOriginalContent}};
 			int                                editor_status = 0;
 			bool                               read_result   = true;
 			std::string                        edited_content{kEditedContent};
@@ -261,7 +261,7 @@ namespace howdy::test::config_cli {
 			                  context.installer_content == kEditedContent &&
 			                  context.installer_lock && !context.installer_validate_runtime &&
 			                  context.installer_expected_nonnull &&
-			                  context.installer_expected_content == kOriginalContent,
+			                  context.installer_expected_content == kWorkflowOriginalContent,
 			              message);
 		}
 

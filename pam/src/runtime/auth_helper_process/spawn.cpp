@@ -21,8 +21,8 @@
 
 namespace {
 
-	using howdy::pam::auth_helper_process::Operations;
-	using howdy::pam::auth_helper_process::SpawnRequest;
+	using AuthHelperOperations   = howdy::pam::auth_helper_process::Operations;
+	using AuthHelperSpawnRequest = howdy::pam::auth_helper_process::SpawnRequest;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 
 	auto production_pipe2(void *context, int *pipe_fds, int flags) -> int {
@@ -69,7 +69,7 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto production_spawn(const SpawnRequest &request) -> int {
+	auto production_spawn(const AuthHelperSpawnRequest &request) -> int {
 		(void)request.context;
 		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
 		                   request.envp);
@@ -86,7 +86,7 @@ namespace {
 		return howdy::native::read_fd_to_string_bounded(request);
 	}
 
-	void write_helper_spawn_error_log(const Operations &operations, const char *operation,
+	void write_helper_spawn_error_log(const AuthHelperOperations &operations, const char *operation,
 	                                  int error_code) {
 		syslog(LOG_ERR, "%s failed for auth helper: %s (%d)", operation, strerror(error_code),
 		       error_code);
@@ -98,8 +98,8 @@ namespace {
 		}
 	}
 
-	auto normalize_pipe_fds(const Operations &operations, std::array<int, 2> &pipe, int minimum_fd)
-	    -> bool {
+	auto normalize_pipe_fds(const AuthHelperOperations &operations, std::array<int, 2> &pipe,
+	                        int minimum_fd) -> bool {
 		for (int &pipe_fd : pipe) {
 			if (pipe_fd >= minimum_fd) {
 				continue;
@@ -118,14 +118,15 @@ namespace {
 		return true;
 	}
 
-	void destroy_spawn_actions(const Operations &operations, posix_spawn_file_actions_t *actions) {
+	void destroy_spawn_actions(const AuthHelperOperations &operations,
+	                           posix_spawn_file_actions_t *actions) {
 		const int result = operations.actions_destroy(operations.context, actions);
 		if (result != 0) {
 			write_helper_spawn_error_log(operations, "posix_spawn_file_actions_destroy", result);
 		}
 	}
 
-	auto fail_spawn_setup(const Operations &operations, PreparedHelperSpawn *spawn,
+	auto fail_spawn_setup(const AuthHelperOperations &operations, PreparedHelperSpawn *spawn,
 	                      const char *operation, int error_code) -> bool {
 		write_helper_spawn_error_log(operations, operation, error_code);
 		destroy_spawn_actions(operations, &spawn->actions);
@@ -144,7 +145,7 @@ namespace {
 
 namespace howdy::pam::auth_helper_process::internal {
 
-	auto production_operations() -> Operations {
+	auto production_operations() -> AuthHelperOperations {
 		return {
 		    .pipe2                = production_pipe2,
 		    .socketpair           = production_socketpair,
@@ -160,7 +161,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		};
 	}
 
-	void close_owned_fd(const Operations &operations, int &fd) {
+	void close_owned_fd(const AuthHelperOperations &operations, int &fd) {
 		if (fd < 0) {
 			return;
 		}
@@ -168,7 +169,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		fd = -1;
 	}
 
-	auto setup_helper_spawn(const Operations &operations, PreparedHelperSpawn *spawn) -> bool {
+	auto setup_helper_spawn(const AuthHelperOperations &operations, PreparedHelperSpawn *spawn)
+	    -> bool {
 		if (operations.pipe2(operations.context, spawn->output_pipe.data(), O_CLOEXEC) != 0) {
 			syslog(LOG_ERR, "Failed to create auth helper pipe: %s (%d)", strerror(errno), errno);
 			return false;
@@ -258,7 +260,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		return true;
 	}
 
-	auto spawn_prepare_helper(std::string_view username, const Operations &operations,
+	auto spawn_prepare_helper(std::string_view username, const AuthHelperOperations &operations,
 	                          PreparedHelperSpawn *spawn, pid_t *child_pid) -> bool {
 		std::string           username_string(username);
 		std::array<char *, 4> args   = {const_cast<char *>(kAuthHelperPath),

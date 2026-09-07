@@ -22,7 +22,8 @@ namespace {
 		std::optional<howdy::native::FaceModel> face_model;
 	};
 
-	auto load_runtime_config_dependency(void *context) -> howdy::native::RuntimeConfigLoadResult {
+	auto add_cli_load_runtime_config_dependency(void *context)
+	    -> howdy::native::RuntimeConfigLoadResult {
 		(void)context;
 		return howdy::native::load_runtime_config();
 	}
@@ -175,7 +176,7 @@ auto add_main(int argc, char **argv) -> int {
 	    argc, argv,
 	    howdy::native::add_internal::AddDependencies{
 	        .context              = &context,
-	        .load_runtime_config  = load_runtime_config_dependency,
+	        .load_runtime_config  = add_cli_load_runtime_config_dependency,
 	        .preflight_enrollment = preflight_enrollment_dependency,
 	        .capture_enrollment   = capture_enrollment_dependency,
 	        .append_user_model    = append_user_model_entry_dependency,

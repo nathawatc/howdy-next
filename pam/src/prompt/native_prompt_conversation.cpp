@@ -50,8 +50,9 @@ namespace {
 		return pam_set_item(pamh, item_type, item);
 	}
 
-	auto fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
-	                          struct pam_response **response, void * /*appdata_ptr*/) -> int {
+	auto native_prompt_fail_closed_dispatch(int /*num_msg*/, const struct pam_message ** /*msgm*/,
+	                                        struct pam_response **response, void * /*appdata_ptr*/)
+	    -> int {
 		if (response != nullptr) {
 			*response = nullptr;
 		}
@@ -259,7 +260,7 @@ auto NativePromptConversation::restore_original() noexcept
 	}
 
 	syslog(LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
-	static const struct pam_conv fail_closed_conv = {.conv        = fail_closed_dispatch,
+	static const struct pam_conv fail_closed_conv = {.conv = native_prompt_fail_closed_dispatch,
 	                                                 .appdata_ptr = nullptr};
 	const int                    fail_closed_result =
 	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &fail_closed_conv);

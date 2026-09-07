@@ -117,7 +117,7 @@
 	{
 		"label": "Tidy: Diff Debug",
 		"command": "git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py",
-		"args": ["-p1", "-path", "build-debug", "-quiet", "-hide-progress"],
+		"args": ["-p1", "-path", "build/debug", "-quiet", "-hide-progress"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -130,7 +130,7 @@
 	{
 		"label": "Tidy: Diff Release",
 		"command": "git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py",
-		"args": ["-p1", "-path", "build", "-quiet", "-hide-progress"],
+		"args": ["-p1", "-path", "build/release", "-quiet", "-hide-progress"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -143,7 +143,7 @@
 	{
 		"label": "Tidy: Full Debug",
 		"command": "run-clang-tidy",
-		"args": ["-p", "build-debug", "-quiet", "-hide-progress"],
+		"args": ["-p", "build/debug", "-quiet", "-hide-progress"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -156,7 +156,7 @@
 	{
 		"label": "Tidy: Full Release",
 		"command": "run-clang-tidy",
-		"args": ["-p", "build", "-quiet", "-hide-progress"],
+		"args": ["-p", "build/release", "-quiet", "-hide-progress"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -173,7 +173,7 @@
 			"-S",
 			".",
 			"-B",
-			"build-e2e",
+			"build/e2e",
 			"-DCMAKE_BUILD_TYPE=Release",
 			"-DCMAKE_INSTALL_PREFIX=/opt/howdy-installed-pam-e2e-local",
 			"-DHOWDY_WARNINGS_AS_ERRORS=ON",
@@ -190,7 +190,7 @@
 	},
 	{
 		"label": "CMake: Build Privileged E2E",
-		"command": "cmake --build build-e2e --target howdy-installed-e2e-artifacts --parallel \"$(nproc)\"",
+		"command": "cmake --build build/e2e --target howdy-installed-e2e-artifacts --parallel \"$(nproc)\"",
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -202,7 +202,7 @@
 	},
 	{
 		"label": "CMake: Test Privileged E2E",
-		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --test-dir build-e2e --output-on-failure -L privileged",
+		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --test-dir build/e2e --output-on-failure -L privileged",
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,

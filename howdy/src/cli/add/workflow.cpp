@@ -13,8 +13,8 @@
 
 namespace {
 
-	constexpr auto kExitOk    = 0;
-	constexpr auto kExitAbort = 1;
+	constexpr auto kAddExitOk    = 0;
+	constexpr auto kAddExitAbort = 1;
 
 	struct AddArgs {
 		std::string user;
@@ -24,7 +24,7 @@ namespace {
 		bool        yes            = false;
 	};
 
-	auto parse_args(int argc, char **argv) -> std::optional<AddArgs> {
+	auto parse_add_args(int argc, char **argv) -> std::optional<AddArgs> {
 		AddArgs args;
 		if (argc < 2) {
 			std::cerr << "Usage: howdy-add <user> [label] [--plain] [-y]\n";
@@ -93,23 +93,23 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	if (dependencies.load_runtime_config == nullptr ||
 	    dependencies.preflight_enrollment == nullptr ||
 	    dependencies.capture_enrollment == nullptr || dependencies.append_user_model == nullptr) {
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 
-	const auto args = parse_args(argc, argv);
+	const auto args = parse_add_args(argc, argv);
 	if (!args.has_value()) {
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 	if (args->label_provided && !howdy::native::is_valid_model_label(args->label)) {
 		std::cerr << "Invalid model label\n";
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 
 	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 	const auto &config = *config_result.config;
 
@@ -121,14 +121,14 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 		case AddPreflightStatus::kFaceModelError:
 		case AddPreflightStatus::kExistingModelError:
 			std::cerr << preflight_result.error_message << "\n";
-			return kExitAbort;
+			return kAddExitAbort;
 		case AddPreflightStatus::kExistingModelIncompatible:
 			std::cerr << "Existing face models use incompatible face-recognition metadata.\n";
 			std::cerr << "Please run `howdy clear` and enroll again with `howdy add`.\n";
-			return kExitAbort;
+			return kAddExitAbort;
 		default:
 			std::cerr << "Internal error: unknown add preflight status\n";
-			return kExitAbort;
+			return kAddExitAbort;
 	}
 
 	std::string label = args->label;
@@ -142,7 +142,7 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	}
 	if (!howdy::native::is_valid_model_label(label)) {
 		std::cerr << "Invalid model label\n";
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 
 	auto enrollment_result = dependencies.capture_enrollment(dependencies.context, args->user,
@@ -153,19 +153,19 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 		case AddEnrollmentStatus::kFaceModelError:
 		case AddEnrollmentStatus::kCaptureOpenError:
 			std::cerr << enrollment_result.error_message << "\n";
-			return kExitAbort;
+			return kAddExitAbort;
 		case AddEnrollmentStatus::kCaptureFailure:
 			print_capture_failure(enrollment_result.capture_result, config.video.dark_threshold);
-			return kExitAbort;
+			return kAddExitAbort;
 		case AddEnrollmentStatus::kMultipleFaces:
 			std::cerr << "Multiple faces detected, aborting\n";
-			return kExitAbort;
+			return kAddExitAbort;
 		case AddEnrollmentStatus::kEncodingError:
 			std::cerr << enrollment_result.error_message << "\n";
-			return kExitAbort;
+			return kAddExitAbort;
 		default:
 			std::cerr << "Internal error: unknown add enrollment status\n";
-			return kExitAbort;
+			return kAddExitAbort;
 	}
 
 	const auto append_result =
@@ -179,9 +179,9 @@ auto howdy::native::add_internal::add_main_with_dependencies(int argc, char **ar
 	                                   });
 	if (append_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cerr << append_result.error_message << "\n";
-		return kExitAbort;
+		return kAddExitAbort;
 	}
 
 	std::cout << "\nScan complete\nAdded a new model to " << args->user << "\n";
-	return kExitOk;
+	return kAddExitOk;
 }

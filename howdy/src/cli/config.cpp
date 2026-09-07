@@ -11,8 +11,8 @@ namespace {
 
 	namespace fs = std::filesystem;
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int kConfigExitOk    = 0;
+	constexpr int kConfigExitAbort = 1;
 
 	void print_editor_ready(void *context, const std::string &editor) {
 		(void)context;
@@ -37,11 +37,11 @@ auto howdy::native::config_internal::config_main_with_dependencies(
     int argc, char **argv, const ConfigDependencies &dependencies) -> int {
 	if (argc != 1) {
 		std::cout << "Invalid arguments for config\n";
-		return kExitAbort;
+		return kConfigExitAbort;
 	}
 	(void)argv;
 	if (!config_edit_dependencies_available(dependencies)) {
-		return kExitAbort;
+		return kConfigExitAbort;
 	}
 
 	const ConfigEditSession session(dependencies);
@@ -49,41 +49,41 @@ auto howdy::native::config_internal::config_main_with_dependencies(
 
 	switch (result.status) {
 		case ConfigEditStatus::kDependenciesUnavailable:
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kOk:
 			std::cout << "Config updated\n";
-			return kExitOk;
+			return kConfigExitOk;
 		case ConfigEditStatus::kNoChanges:
 			std::cout << "No config changes made\n";
-			return kExitOk;
+			return kConfigExitOk;
 		case ConfigEditStatus::kEditorUnavailable:
 			std::cout << "Error: No suitable text editor found.\n";
 			std::cout << "Set EDITOR to an absolute executable path, or install one of: micro, "
 			             "nano, vi.\n";
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kSecurityCheckFailed:
 			std::cout << result.error << "\n";
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kTempCreateFailed:
 			std::cout << "Failed to prepare a temporary config copy\n";
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kEditorLaunchFailed:
 			std::cout << "Failed to launch editor\n";
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kEditorFailed:
 			std::cout << "Editor exited unsuccessfully; config not updated\n";
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kReadFailed:
 			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';
-			return kExitAbort;
+			return kConfigExitAbort;
 		case ConfigEditStatus::kInvalidEditedConfig:
 		case ConfigEditStatus::kConfigChanged:
 		case ConfigEditStatus::kInstallFailed:
 			print_config_install_error(result);
-			return kExitAbort;
+			return kConfigExitAbort;
 	}
 
-	return kExitAbort;
+	return kConfigExitAbort;
 }
 
 auto config_main(int argc, char **argv) -> int {

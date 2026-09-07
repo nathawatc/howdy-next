@@ -83,20 +83,21 @@ namespace {
 		return tcsetattr(fd, TCSANOW, termios);
 	}
 
-	void injected_post_message(void * /*context*/) {}
+	void native_prompt_input_injected_post_message(void * /*context*/) {}
 
 	auto create_input_conversation(NativePromptConversationTestAccess::Descriptors descriptors,
 	                               InputOperationContext *operations = nullptr)
 	    -> std::unique_ptr<NativePromptConversation> {
 		auto conversation = create_conversation(
-		    descriptors, operations == nullptr ? NativePromptConversationTestAccess::Operations{}
-		                                       : NativePromptConversationTestAccess::Operations{
-		                                             .context          = operations,
-		                                             .poll_prompt      = injected_poll,
-		                                             .read_prompt      = injected_read,
-		                                             .restore_terminal = injected_restore,
-		                                             .post_message     = injected_post_message,
-		                                         });
+		    descriptors, operations == nullptr
+		                     ? NativePromptConversationTestAccess::Operations{}
+		                     : NativePromptConversationTestAccess::Operations{
+		                           .context          = operations,
+		                           .poll_prompt      = injected_poll,
+		                           .read_prompt      = injected_read,
+		                           .restore_terminal = injected_restore,
+		                           .post_message     = native_prompt_input_injected_post_message,
+		                       });
 		if (operations != nullptr) {
 			operations->conversation = conversation.get();
 		}

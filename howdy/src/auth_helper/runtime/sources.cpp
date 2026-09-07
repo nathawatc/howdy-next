@@ -24,8 +24,9 @@ namespace howdy::native::auth_helper {
 	namespace {
 		constexpr std::size_t kCopyBufferSize = std::size_t{64} * 1024;
 
-		auto log_errno_failure(std::string_view operation, const std::filesystem::path &path,
-		                       int error_number) -> bool {
+		auto log_sources_errno_failure(std::string_view             operation,
+		                               const std::filesystem::path &path, int error_number)
+		    -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
 			          << "': " << std::strerror(error_number) << "\n";
 			return false;
@@ -113,7 +114,7 @@ namespace howdy::native::auth_helper {
 		                      uid_t owner_uid) -> std::optional<SourceFile> {
 			UniqueFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
 			if (fd.get() < 0) {
-				log_errno_failure("open " + label, path, errno);
+				log_sources_errno_failure("open " + label, path, errno);
 				return std::nullopt;
 			}
 			if (!internal::secure_source_file_stat(fd.get(), label, owner_uid)) {

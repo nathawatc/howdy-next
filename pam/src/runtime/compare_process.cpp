@@ -23,8 +23,8 @@
 #include <sys/wait.h>
 
 namespace {
-	using howdy::pam::compare_process::Operations;
-	using howdy::pam::compare_process::SpawnRequest;
+	using CompareOperations   = howdy::pam::compare_process::Operations;
+	using CompareSpawnRequest = howdy::pam::compare_process::SpawnRequest;
 
 	constexpr auto kCompareWaitPollInterval = std::chrono::milliseconds(10);
 	// Lets compare process perform SIGTERM cleanup without extending scan deadline.
@@ -32,7 +32,7 @@ namespace {
 
 	using howdy::native::CompareExit;
 
-	auto make_wait_exit_status(CompareExit exit_code) -> int {
+	auto make_compare_wait_exit_status(CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
 	}
 
@@ -49,7 +49,7 @@ namespace {
 				continue;
 			}
 			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
-			*status = make_wait_exit_status(CompareExit::kAbort);
+			*status = make_compare_wait_exit_status(CompareExit::kAbort);
 			return true;
 		}
 	}
@@ -104,8 +104,8 @@ namespace {
 		if (wait_for_compare_until(child_pid, Clock::now() + kCompareTerminationGrace, nullptr,
 		                           nullptr, &ignored_cancellation)
 		        .has_value()) {
-			return cancelled ? make_wait_exit_status(CompareExit::kAbort)
-			                 : make_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
+			                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
@@ -116,8 +116,8 @@ namespace {
 			status             = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
-				return cancelled ? make_wait_exit_status(CompareExit::kAbort)
-				                 : make_wait_exit_status(CompareExit::kTimeoutReached);
+				return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
+				                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
 			}
 			if (result < 0 && errno == EINTR) {
 				continue;
@@ -126,8 +126,8 @@ namespace {
 				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
 				       strerror(errno), errno);
 			}
-			return cancelled ? make_wait_exit_status(CompareExit::kAbort)
-			                 : make_wait_exit_status(CompareExit::kTimeoutReached);
+			return cancelled ? make_compare_wait_exit_status(CompareExit::kAbort)
+			                 : make_compare_wait_exit_status(CompareExit::kTimeoutReached);
 		}
 	}
 
@@ -150,13 +150,13 @@ namespace {
 		return posix_spawn_file_actions_destroy(actions);
 	}
 
-	auto call_posix_spawn(const SpawnRequest &request) -> int {
+	auto call_posix_spawn(const CompareSpawnRequest &request) -> int {
 		(void)request.context;
 		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
 		                   request.envp);
 	}
 
-	constexpr Operations kPosixSpawnOperations = {
+	constexpr CompareOperations kPosixSpawnOperations = {
 	    .context                   = nullptr,
 	    .file_actions_init         = call_posix_spawn_file_actions_init,
 	    .file_actions_addclosefrom = call_posix_spawn_file_actions_addclosefrom,
@@ -165,7 +165,7 @@ namespace {
 	};
 
 	auto spawn_compare_process(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
-	                           const Operations &operations) -> int {
+	                           const CompareOperations &operations) -> int {
 		const std::string config_path(request.config_path);
 		const std::string username(request.username);
 
@@ -217,12 +217,12 @@ namespace {
 
 namespace howdy::pam::compare_process {
 
-	auto production_operations() -> Operations {
+	auto production_operations() -> CompareOperations {
 		return kPosixSpawnOperations;
 	}
 
-	auto spawn(const CompareLaunchRequest &request, pid_t *child_pid, const Operations &operations)
-	    -> int {
+	auto spawn(const CompareLaunchRequest &request, pid_t *child_pid,
+	           const CompareOperations &operations) -> int {
 		return spawn_compare_process(request, child_pid, operations);
 	}
 

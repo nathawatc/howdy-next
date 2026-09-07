@@ -13,15 +13,15 @@
 
 namespace {
 
-	constexpr int kExitOk    = 0;
-	constexpr int kExitAbort = 1;
+	constexpr int kListExitOk    = 0;
+	constexpr int kListExitAbort = 1;
 
 	struct ListArgs {
 		std::string user;
 		bool        plain = false;
 	};
 
-	auto parse_args(int argc, char **argv) -> std::optional<ListArgs> {
+	auto parse_list_args(int argc, char **argv) -> std::optional<ListArgs> {
 		ListArgs args;
 		if (argc < 2) {
 			return std::nullopt;
@@ -43,7 +43,8 @@ namespace {
 		return args;
 	}
 
-	auto list_user_model_entries_dependency([[maybe_unused]] void *context, const std::string &user)
+	auto list_cli_user_model_entries_dependency([[maybe_unused]] void *context,
+	                                            const std::string     &user)
 	    -> howdy::native::UserModelListResult {
 		return howdy::native::list_user_model_entries(user, {});
 	}
@@ -71,31 +72,31 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
                                                                const ListDependencies &dependencies)
     -> int {
 	if (dependencies.list_user_model_entries == nullptr) {
-		return kExitAbort;
+		return kListExitAbort;
 	}
 
-	const auto args = parse_args(argc, argv);
+	const auto args = parse_list_args(argc, argv);
 	if (!args.has_value()) {
-		return kExitAbort;
+		return kListExitAbort;
 	}
 	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout
 		    << "No face models found. Use the add command to add a face model for this user.\n";
-		return kExitAbort;
+		return kListExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
 		if (!args->plain) {
 			std::cout
 			    << "No face models found. Use the add command to add a face model for this user.\n";
 		}
-		return kExitAbort;
+		return kListExitAbort;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
 		if (!args->plain) {
 			std::cout << models.error_message << "\n";
 		}
-		return kExitAbort;
+		return kListExitAbort;
 	}
 	for (const auto &model : models.entries) {
 		std::cout << model.id;
@@ -121,16 +122,16 @@ auto howdy::native::list_internal::list_main_with_dependencies(int argc, char **
 	}
 
 	std::cout << "\n";
-	return kExitOk;
+	return kListExitOk;
 }
 
 auto list_main(int argc, char **argv) -> int {
 	if (argc < 2) {
-		return kExitAbort;
+		return kListExitAbort;
 	}
 	return howdy::native::list_internal::list_main_with_dependencies(
 	    argc, argv,
 	    howdy::native::list_internal::ListDependencies{
-	        .list_user_model_entries = list_user_model_entries_dependency,
+	        .list_user_model_entries = list_cli_user_model_entries_dependency,
 	    });
 }

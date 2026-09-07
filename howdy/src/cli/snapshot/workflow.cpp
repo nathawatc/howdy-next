@@ -15,8 +15,8 @@
 
 namespace {
 
-	constexpr int    kExitOk                = 0;
-	constexpr int    kExitAbort             = 1;
+	constexpr int    kSnapshotExitOk        = 0;
+	constexpr int    kSnapshotExitAbort     = 1;
 	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
 
@@ -202,20 +202,20 @@ auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
     int argc, char **argv, const SnapshotDependencies &dependencies) -> int {
 	if (argc != 1) {
 		std::cerr << "Invalid arguments for snapshot\n";
-		return kExitAbort;
+		return kSnapshotExitAbort;
 	}
 	(void)argv;
 
 	if (dependencies.load_runtime_config == nullptr || dependencies.capture_frames == nullptr ||
 	    dependencies.write_snapshot == nullptr) {
-		return kExitAbort;
+		return kSnapshotExitAbort;
 	}
 
 	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 	    !config_result.config.has_value()) {
 		std::cerr << config_result.error_message << "\n";
-		return kExitAbort;
+		return kSnapshotExitAbort;
 	}
 	const auto &config = *config_result.config;
 
@@ -225,28 +225,28 @@ auto howdy::native::snapshot_internal::snapshot_main_with_dependencies(
 			break;
 		case SnapshotCaptureStatus::kOpenError:
 			std::cerr << capture_result.error_message << "\n";
-			return kExitAbort;
+			return kSnapshotExitAbort;
 		case SnapshotCaptureStatus::kReadError:
 			std::cerr << howdy::native::kCameraReadFailureMessage << '\n';
-			return kExitAbort;
+			return kSnapshotExitAbort;
 		default:
 			std::cerr << "Internal error: unknown snapshot capture status\n";
-			return kExitAbort;
+			return kSnapshotExitAbort;
 	}
 
 	if (capture_result.frames.size() != kSnapshotFrameCount) {
 		std::cerr << "Internal error: snapshot capture returned unexpected frame count\n";
-		return kExitAbort;
+		return kSnapshotExitAbort;
 	}
 
 	const auto write_result =
 	    dependencies.write_snapshot(dependencies.context, capture_result.frames, config);
 	if (!write_result.ok || write_result.path.empty()) {
 		std::cerr << "Failed to write snapshot\n";
-		return kExitAbort;
+		return kSnapshotExitAbort;
 	}
 
 	std::cout << "Snapshot saved to\n";
 	std::cout << write_result.path.string() << "\n";
-	return kExitOk;
+	return kSnapshotExitOk;
 }
