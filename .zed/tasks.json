@@ -169,16 +169,7 @@
 	{
 		"label": "CMake: Configure Privileged E2E",
 		"command": "cmake",
-		"args": [
-			"-S",
-			".",
-			"-B",
-			"build/e2e",
-			"-DCMAKE_BUILD_TYPE=Release",
-			"-DCMAKE_INSTALL_PREFIX=/opt/howdy-installed-pam-e2e-local",
-			"-DHOWDY_WARNINGS_AS_ERRORS=ON",
-			"-DHOWDY_ENABLE_PRIVILEGED_TESTS=ON",
-		],
+		"args": ["--preset", "e2e"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -190,7 +181,8 @@
 	},
 	{
 		"label": "CMake: Build Privileged E2E",
-		"command": "cmake --build build/e2e --target howdy-installed-e2e-artifacts --parallel \"$(nproc)\"",
+		"command": "cmake",
+		"args": ["--build", "--preset", "e2e", "--parallel", "$(nproc)"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -202,7 +194,7 @@
 	},
 	{
 		"label": "CMake: Test Privileged E2E",
-		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --test-dir build/e2e --output-on-failure -L privileged",
+		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --preset e2e",
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -211,5 +203,5 @@
 		"show_summary": true,
 		"show_command": true,
 		"save": "all",
-	},
+	}
 ]

@@ -1,61 +1,71 @@
-add_executable(howdy_clear_cli_test tests/cli/clear_cli_test.cpp)
-howdy_configure_native_test_target(howdy_clear_cli_test)
+howdy_add_native_test(
+	howdy_clear_cli_test
+	native-clear-cli
+	tests/cli/clear_cli_test.cpp
+)
 target_link_libraries(howdy_clear_cli_test PRIVATE howdy_cli)
-add_test(NAME native-clear-cli COMMAND howdy_clear_cli_test)
 
-add_executable(
+howdy_add_native_test(
 	howdy_config_cli_test
+	native-config-cli
 	tests/cli/config_cli_test.cpp
 	tests/cli/config_cli_workflow_test.cpp
 	tests/cli/config_cli_integration_test.cpp
 )
-howdy_configure_native_test_target(howdy_config_cli_test)
 target_link_options(howdy_config_cli_test PRIVATE -Wl,--wrap=initgroups)
 target_link_libraries(howdy_config_cli_test PRIVATE howdy_cli)
-add_test(NAME native-config-cli COMMAND howdy_config_cli_test)
 
-add_executable(howdy_disable_cli_test tests/cli/disable_cli_test.cpp)
-howdy_configure_native_test_target(howdy_disable_cli_test)
+howdy_add_native_test(
+	howdy_disable_cli_test
+	native-disable-cli
+	tests/cli/disable_cli_test.cpp
+)
 target_link_libraries(howdy_disable_cli_test PRIVATE howdy_cli)
-add_test(NAME native-disable-cli COMMAND howdy_disable_cli_test)
 
-add_executable(howdy_set_cli_test tests/cli/set_cli_test.cpp)
-howdy_configure_native_test_target(howdy_set_cli_test)
+howdy_add_native_test(
+	howdy_set_cli_test
+	native-set-cli
+	tests/cli/set_cli_test.cpp
+)
 target_link_libraries(howdy_set_cli_test PRIVATE howdy_cli)
-add_test(NAME native-set-cli COMMAND howdy_set_cli_test)
 
-add_executable(howdy_list_cli_test tests/cli/list_cli_test.cpp)
-howdy_configure_native_test_target(howdy_list_cli_test)
+howdy_add_native_test(
+	howdy_list_cli_test
+	native-list-cli
+	tests/cli/list_cli_test.cpp
+)
 target_link_libraries(howdy_list_cli_test PRIVATE howdy_cli)
-add_test(NAME native-list-cli COMMAND howdy_list_cli_test)
 
-add_executable(
+howdy_add_native_test(
 	howdy_add_cli_test
+	native-add-cli
 	tests/cli/add_cli_test.cpp
 	tests/cli/add_cli_preflight_test.cpp
 	tests/cli/add_cli_capture_test.cpp
 	tests/cli/add_cli_arguments_test.cpp
 )
-howdy_configure_native_test_target(howdy_add_cli_test)
 target_link_libraries(howdy_add_cli_test PRIVATE howdy_cli)
-add_test(NAME native-add-cli COMMAND howdy_add_cli_test)
 
-add_executable(howdy_remove_cli_test tests/cli/remove_cli_test.cpp)
-howdy_configure_native_test_target(howdy_remove_cli_test)
+howdy_add_native_test(
+	howdy_remove_cli_test
+	native-remove-cli
+	tests/cli/remove_cli_test.cpp
+)
 target_link_libraries(howdy_remove_cli_test PRIVATE howdy_cli)
-add_test(NAME native-remove-cli COMMAND howdy_remove_cli_test)
 
-add_executable(howdy_test_cli_test tests/cli/test_cli_test.cpp)
-howdy_configure_native_test_target(howdy_test_cli_test)
+howdy_add_native_test(
+	howdy_test_cli_test
+	native-test-cli
+	tests/cli/test_cli_test.cpp
+)
 target_link_libraries(howdy_test_cli_test PRIVATE howdy_cli)
-add_test(NAME native-test-cli COMMAND howdy_test_cli_test)
 
-add_executable(
+howdy_add_native_test(
 	howdy_test_preview_session_test
+	native-test-preview-session
 	tests/cli/test_preview_session_test.cpp
 	tests/cli/test_preview_renderer_test.cpp
 )
-howdy_configure_native_test_target(howdy_test_preview_session_test)
 target_link_libraries(
 	howdy_test_preview_session_test
 	PRIVATE
@@ -64,24 +74,26 @@ target_link_libraries(
 		howdy_preview_engine
 		howdy_opencv
 )
-add_test(
-	NAME native-test-preview-session COMMAND howdy_test_preview_session_test
+
+howdy_add_native_test(
+	howdy_snapshot_cli_test
+	native-snapshot-cli
+	tests/cli/snapshot_cli_test.cpp
 )
-
-add_executable(howdy_snapshot_cli_test tests/cli/snapshot_cli_test.cpp)
-howdy_configure_native_test_target(howdy_snapshot_cli_test)
 target_link_libraries(howdy_snapshot_cli_test PRIVATE howdy_cli howdy_opencv)
-add_test(NAME native-snapshot-cli COMMAND howdy_snapshot_cli_test)
 
-add_executable(howdy_snapshot_writer_test tests/cli/snapshot_writer_test.cpp)
-howdy_configure_native_test_target(howdy_snapshot_writer_test)
+howdy_add_native_test(
+	howdy_snapshot_writer_test
+	native-snapshot-writer
+	tests/cli/snapshot_writer_test.cpp
+)
 target_link_libraries(
 	howdy_snapshot_writer_test PRIVATE howdy_cli howdy_opencv
 )
-add_test(NAME native-snapshot-writer COMMAND howdy_snapshot_writer_test)
 
-add_executable(
+howdy_add_native_test(
 	howdy_download_models_test
+	native-download-models
 	tests/cli/download_models_test.cpp
 	tests/cli/download_models_entrypoint_test.cpp
 	tests/cli/download_models_integrity_test.cpp
@@ -90,7 +102,5 @@ add_executable(
 	tests/cli/download_models_test_support.cpp
 	tests/support/atomic_files_test.cpp
 )
-howdy_configure_native_test_target(howdy_download_models_test)
 target_link_libraries(howdy_download_models_test PRIVATE howdy_cli
                        Threads::Threads)
-add_test(NAME native-download-models COMMAND howdy_download_models_test)

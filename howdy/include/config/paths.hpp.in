@@ -1,8 +1,8 @@
 #pragma once
 
-inline constexpr auto kConfiguredConfigPath = "@installed_config_path@";
-inline constexpr auto kConfiguredModelsDir = "@models_dir@";
-inline constexpr auto kConfiguredUserModelsDir = "@user_models_dir@";
-inline constexpr auto kConfiguredLogPath = "@log_path@";
-inline constexpr auto kCompareProcessPath = "@compare_process_path@";
-inline constexpr auto kAuthHelperPath = "@auth_helper_path@";
+inline constexpr auto kConfiguredConfigPath = "@HOWDY_CONFIG_PATH@";
+inline constexpr auto kConfiguredModelsDir = "@HOWDY_MODELS_DIR@";
+inline constexpr auto kConfiguredUserModelsDir = "@HOWDY_USER_MODELS_DIR@";
+inline constexpr auto kConfiguredLogPath = "@HOWDY_LOG_PATH@";
+inline constexpr auto kCompareProcessPath = "@HOWDY_COMPARE_PROCESS_PATH@";
+inline constexpr auto kAuthHelperPath = "@HOWDY_AUTH_HELPER_PATH@";

@@ -21,6 +21,17 @@
 			"cacheVariables": {
 				"CMAKE_BUILD_TYPE": "Debug"
 			}
+		},
+		{
+			"name": "e2e",
+			"displayName": "Privileged E2E",
+			"binaryDir": "${sourceDir}/build/e2e",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release",
+				"CMAKE_INSTALL_PREFIX": "/opt/howdy-installed-pam-e2e-local",
+				"HOWDY_WARNINGS_AS_ERRORS": "ON",
+				"HOWDY_ENABLE_PRIVILEGED_TESTS": "ON"
+			}
 		}
 	],
 	"buildPresets": [
@@ -31,6 +42,13 @@
 		{
 			"name": "debug",
 			"configurePreset": "debug"
+		},
+		{
+			"name": "e2e",
+			"configurePreset": "e2e",
+			"targets": [
+				"howdy-installed-e2e-artifacts"
+			]
 		}
 	],
 	"testPresets": [
@@ -52,6 +70,21 @@
 			},
 			"execution": {
 				"jobs": 0
+			}
+		},
+		{
+			"name": "e2e",
+			"configurePreset": "e2e",
+			"filter": {
+				"include": {
+					"label": "privileged"
+				}
+			},
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"jobs": 1
 			}
 		}
 	],

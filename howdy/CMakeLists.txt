@@ -300,6 +300,12 @@ install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 include(cmake/docs.cmake)
 
 if(BUILD_TESTING)
+	function(howdy_add_native_test target test_name)
+		add_executable(${target} ${ARGN})
+		howdy_configure_native_test_target(${target})
+		add_test(NAME ${test_name} COMMAND ${target})
+	endfunction()
+
 	include(cmake/tests/app.cmake)
 	include(cmake/tests/auth_helper.cmake)
 	include(cmake/tests/compare.cmake)

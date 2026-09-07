@@ -41,6 +41,8 @@ if(NOT actual_exports STREQUAL expected_exports)
 	string(JOIN "\n  " actual_text ${actual_exports})
 	string(JOIN "\n  " expected_text ${expected_exports})
 	message(FATAL_ERROR
-		"Unexpected PAM module exports.\nExpected:\n  ${expected_text}\nActual:\n  ${actual_text}"
+		"Unexpected PAM module exports.\n"
+		"Expected:\n  ${expected_text}\n"
+		"Actual:\n  ${actual_text}"
 	)
 endif()

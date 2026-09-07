@@ -1,30 +1,29 @@
-add_executable(
+howdy_add_native_test(
 	howdy_config_utils_test
+	native-config-utils
 	tests/config/config_utils_test.cpp
 	tests/config/config_read_update_test.cpp
 	tests/config/config_atomic_write_test.cpp
 	tests/config/config_atomic_replace_test.cpp
 	tests/config/config_path_security_test.cpp
 )
-howdy_configure_native_test_target(howdy_config_utils_test)
 target_link_libraries(howdy_config_utils_test PRIVATE howdy_config)
-add_test(NAME native-config-utils COMMAND howdy_config_utils_test)
 
-add_executable(
-	howdy_config_schema_test tests/config/config_schema_test.cpp
+howdy_add_native_test(
+	howdy_config_schema_test
+	native-config-schema
+	tests/config/config_schema_test.cpp
 )
-howdy_configure_native_test_target(howdy_config_schema_test)
 target_link_libraries(howdy_config_schema_test PRIVATE howdy_config_schema)
-add_test(NAME native-config-schema COMMAND howdy_config_schema_test)
 
-add_executable(
-	howdy_config_template_test tests/config/config_template_test.cpp
+howdy_add_native_test(
+	howdy_config_template_test
+	native-config-template
+	tests/config/config_template_test.cpp
 )
-howdy_configure_native_test_target(howdy_config_template_test)
 target_link_libraries(
 	howdy_config_template_test PRIVATE howdy_config_template howdy_config
 )
-add_test(NAME native-config-template COMMAND howdy_config_template_test)
 
 add_executable(
 	howdy_config_generator_test tests/config/config_generator_test.cpp
@@ -72,10 +71,11 @@ set_tests_properties(
 		TIMEOUT 60
 )
 
-add_executable(
-	howdy_config_validation_test tests/config/config_validation_test.cpp
+howdy_add_native_test(
+	howdy_config_validation_test
+	native-config-validation
+	tests/config/config_validation_test.cpp
 )
-howdy_configure_native_test_target(howdy_config_validation_test)
 target_compile_definitions(
 	howdy_config_validation_test
 	PRIVATE "HOWDY_PACKAGED_CONFIG_PATH=\"${HOWDY_PACKAGED_CONFIG_PATH}\""
@@ -85,48 +85,51 @@ target_link_libraries(
 	howdy_config_validation_test
 	PRIVATE howdy_config
 )
-add_test(NAME native-config-validation COMMAND howdy_config_validation_test)
 
-add_executable(howdy_runtime_paths_test tests/config/runtime_paths_test.cpp)
-howdy_configure_native_test_target(howdy_runtime_paths_test)
+howdy_add_native_test(
+	howdy_runtime_paths_test
+	native-runtime-paths
+	tests/config/runtime_paths_test.cpp
+)
 target_link_libraries(
 	howdy_runtime_paths_test
 	PRIVATE howdy_runtime_paths
 )
-add_test(NAME native-runtime-paths COMMAND howdy_runtime_paths_test)
 
-add_executable(
-	howdy_runtime_config_load_test tests/config/runtime_config_load_test.cpp
+howdy_add_native_test(
+	howdy_runtime_config_load_test
+	native-runtime-config-load
+	tests/config/runtime_config_load_test.cpp
 )
-howdy_configure_native_test_target(howdy_runtime_config_load_test)
 target_link_libraries(
 	howdy_runtime_config_load_test
 	PRIVATE howdy_runtime_paths
-)
-add_test(
-	NAME native-runtime-config-load COMMAND howdy_runtime_config_load_test
 )
 set_tests_properties(
 	native-runtime-config-load
 	PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
 )
 
-add_executable(howdy_runtime_config_test tests/config/runtime_config_test.cpp)
-howdy_configure_native_test_target(howdy_runtime_config_test)
+howdy_add_native_test(
+	howdy_runtime_config_test
+	native-runtime-config
+	tests/config/runtime_config_test.cpp
+)
 target_link_libraries(
 	howdy_runtime_config_test
 	PRIVATE howdy_config
 )
-add_test(NAME native-runtime-config COMMAND howdy_runtime_config_test)
 set_tests_properties(
 	native-runtime-config
 	PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
 )
 
-add_executable(howdy_config_reader_test tests/config/config_reader_test.cpp)
-howdy_configure_native_test_target(howdy_config_reader_test)
+howdy_add_native_test(
+	howdy_config_reader_test
+	native-config-reader
+	tests/config/config_reader_test.cpp
+)
 target_link_libraries(
 	howdy_config_reader_test
 	PRIVATE howdy_config
 )
-add_test(NAME native-config-reader COMMAND howdy_config_reader_test)

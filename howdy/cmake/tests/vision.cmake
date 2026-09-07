@@ -1,54 +1,64 @@
-add_executable(howdy_face_matching_test tests/vision/face_matching_test.cpp)
-howdy_configure_native_test_target(howdy_face_matching_test)
-add_test(NAME native-face-matching COMMAND howdy_face_matching_test)
+howdy_add_native_test(
+	howdy_face_matching_test
+	native-face-matching
+	tests/vision/face_matching_test.cpp
+)
 
-add_executable(howdy_face_detection_test tests/vision/face_detection_test.cpp)
-howdy_configure_native_test_target(howdy_face_detection_test)
+howdy_add_native_test(
+	howdy_face_detection_test
+	native-face-detection
+	tests/vision/face_detection_test.cpp
+)
 target_link_libraries(howdy_face_detection_test PRIVATE howdy_vision_core)
-add_test(NAME native-face-detection COMMAND howdy_face_detection_test)
 
-add_executable(howdy_face_encoding_test tests/vision/face_encoding_test.cpp)
-howdy_configure_native_test_target(howdy_face_encoding_test)
+howdy_add_native_test(
+	howdy_face_encoding_test
+	native-face-encoding
+	tests/vision/face_encoding_test.cpp
+)
 target_link_libraries(howdy_face_encoding_test PRIVATE howdy_vision_core)
-add_test(NAME native-face-encoding COMMAND howdy_face_encoding_test)
 
-add_executable(howdy_face_model_test tests/vision/face_model_test.cpp)
-howdy_configure_native_test_target(howdy_face_model_test)
+howdy_add_native_test(
+	howdy_face_model_test
+	native-face-model
+	tests/vision/face_model_test.cpp
+)
 target_link_libraries(
 	howdy_face_model_test
 	PRIVATE
 		howdy_face_model
 		howdy_runtime_paths
 )
-add_test(NAME native-face-model COMMAND howdy_face_model_test)
 
-add_executable(
-	howdy_capture_device_path_test tests/vision/capture_device_path_test.cpp
-)
-howdy_configure_native_test_target(howdy_capture_device_path_test)
-add_test(
-	NAME native-capture-device-path COMMAND howdy_capture_device_path_test
+howdy_add_native_test(
+	howdy_capture_device_path_test
+	native-capture-device-path
+	tests/vision/capture_device_path_test.cpp
 )
 
-add_executable(howdy_video_capture_test tests/vision/video_capture_test.cpp)
-howdy_configure_native_test_target(howdy_video_capture_test)
+howdy_add_native_test(
+	howdy_video_capture_test
+	native-video-capture
+	tests/vision/video_capture_test.cpp
+)
 target_link_libraries(howdy_video_capture_test PRIVATE howdy_vision_core)
-add_test(NAME native-video-capture COMMAND howdy_video_capture_test)
 
-add_executable(
-	howdy_enrollment_capture_test tests/cli/enrollment_capture_test.cpp
+howdy_add_native_test(
+	howdy_enrollment_capture_test
+	native-enrollment-capture
+	tests/cli/enrollment_capture_test.cpp
 )
-howdy_configure_native_test_target(howdy_enrollment_capture_test)
 target_link_libraries(
 	howdy_enrollment_capture_test
 	PRIVATE howdy_frame_processing howdy_compare_logic howdy_opencv
 )
-add_test(NAME native-enrollment-capture COMMAND howdy_enrollment_capture_test)
 
-add_executable(howdy_preview_engine_test tests/vision/preview_engine_test.cpp)
-howdy_configure_native_test_target(howdy_preview_engine_test)
+howdy_add_native_test(
+	howdy_preview_engine_test
+	native-preview-engine
+	tests/vision/preview_engine_test.cpp
+)
 target_link_libraries(
 	howdy_preview_engine_test
 	PRIVATE howdy_preview_engine
 )
-add_test(NAME native-preview-engine COMMAND howdy_preview_engine_test)

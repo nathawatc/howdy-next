@@ -11,12 +11,11 @@ add_test(
 	COMMAND howdy_auth_helper prepare ../alice
 )
 howdy_expect_test_failure(native-auth-helper-prepare-guard)
-add_executable(
+howdy_add_native_test(
 	howdy_auth_helper_test
+	native-auth-helper
 	tests/auth_helper/auth_helper_test.cpp
 	tests/auth_helper/auth_helper_path_test.cpp
 	tests/auth_helper/auth_helper_staging_test.cpp
 )
-howdy_configure_native_test_target(howdy_auth_helper_test)
 target_link_libraries(howdy_auth_helper_test PRIVATE howdy_auth_helper_core)
-add_test(NAME native-auth-helper COMMAND howdy_auth_helper_test)

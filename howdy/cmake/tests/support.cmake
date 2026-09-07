@@ -1,17 +1,23 @@
-add_executable(howdy_file_security_test tests/support/file_security_test.cpp)
-howdy_configure_native_test_target(howdy_file_security_test)
-add_test(NAME native-file-security COMMAND howdy_file_security_test)
-
-add_executable(howdy_fd_io_test tests/support/fd_io_test.cpp)
-howdy_configure_native_test_target(howdy_fd_io_test)
-add_test(NAME native-fd-io COMMAND howdy_fd_io_test)
-
-add_executable(howdy_user_names_test tests/support/user_names_test.cpp)
-howdy_configure_native_test_target(howdy_user_names_test)
-add_test(NAME native-user-names COMMAND howdy_user_names_test)
-
-add_executable(
-	howdy_invoking_user_env_test tests/support/invoking_user_env_test.cpp
+howdy_add_native_test(
+	howdy_file_security_test
+	native-file-security
+	tests/support/file_security_test.cpp
 )
-howdy_configure_native_test_target(howdy_invoking_user_env_test)
-add_test(NAME native-invoking-user-env COMMAND howdy_invoking_user_env_test)
+
+howdy_add_native_test(
+	howdy_fd_io_test
+	native-fd-io
+	tests/support/fd_io_test.cpp
+)
+
+howdy_add_native_test(
+	howdy_user_names_test
+	native-user-names
+	tests/support/user_names_test.cpp
+)
+
+howdy_add_native_test(
+	howdy_invoking_user_env_test
+	native-invoking-user-env
+	tests/support/invoking_user_env_test.cpp
+)
