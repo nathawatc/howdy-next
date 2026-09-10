@@ -196,6 +196,17 @@ set(HOWDY_CONFIG_DIR "" CACHE PATH "Howdy configuration directory")
 set(HOWDY_MODELS_DIR "" CACHE PATH "OpenCV ONNX models directory")
 set(HOWDY_USER_MODELS_DIR "" CACHE PATH "User models directory")
 set(HOWDY_LOG_PATH "/var/log/howdy" CACHE PATH "Howdy log directory")
+option(
+	HOWDY_INSTALL_AUTH_HELPER_SETUID
+	"Install howdy-auth-helper with setuid permissions"
+	ON
+)
+set(
+	HOWDY_AUTH_HELPER_PATH
+	""
+	CACHE FILEPATH
+	"Path used by PAM to execute the privileged auth helper"
+)
 set(
 	HOWDY_LICENSES_INSTALL_DIR
 	"${CMAKE_INSTALL_DOCDIR}"
@@ -241,7 +252,9 @@ set(
 )
 set(HOWDY_HELPER_DIR "${CMAKE_INSTALL_FULL_LIBEXECDIR}/howdy")
 set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
-set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
+if(HOWDY_AUTH_HELPER_PATH STREQUAL "")
+	set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
+endif()
 
 if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 	set(howdy_licenses_install_path "${HOWDY_LICENSES_INSTALL_DIR}")
@@ -263,6 +276,7 @@ if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
 			"${HOWDY_USER_MODELS_DIR}"
 			"${HOWDY_LOG_PATH}"
 			"${HOWDY_HELPER_DIR}"
+			"${HOWDY_AUTH_HELPER_PATH}"
 			"${howdy_licenses_install_path}"
 	)
 		cmake_path(

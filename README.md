@@ -8,12 +8,14 @@ C++ rewrite of Howdy facial-recognition authentication on Linux
 > focuses on bug fixes, security fixes, and platform/dependency compatibility.
 > Low commit activity does not mean the project is abandoned.
 
-## Install from AUR
+## Packages
+
+### Arch Linux (AUR)
 
 > [!WARNING]
 >
 > Do not mix source installs with AUR package files.
-> Use AUR package to avoid mixed files under `/usr` and `/usr/local`.
+> Use AUR packages to avoid mixed files under `/usr` and `/usr/local`.
 
 Packages:
 
@@ -24,6 +26,15 @@ Example:
 
 ```sh
 paru -S howdy-next
+```
+
+### NixOS
+
+Use the included flake directly:
+
+```sh
+nix build
+nix develop
 ```
 
 ## Build from Source

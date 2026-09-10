@@ -244,14 +244,18 @@ target_link_libraries(howdy_auth_helper PRIVATE howdy_auth_helper_core)
 set_target_properties(
 	howdy_auth_helper PROPERTIES OUTPUT_NAME "howdy-auth-helper"
 )
-install(
-	TARGETS howdy_auth_helper
-	RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
-	PERMISSIONS
-		OWNER_READ OWNER_WRITE OWNER_EXECUTE SETUID
-		GROUP_READ GROUP_EXECUTE
-		WORLD_READ WORLD_EXECUTE
-)
+if(HOWDY_INSTALL_AUTH_HELPER_SETUID)
+	install(
+		TARGETS howdy_auth_helper
+		RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
+		PERMISSIONS
+			OWNER_READ OWNER_WRITE OWNER_EXECUTE SETUID
+			GROUP_READ GROUP_EXECUTE
+			WORLD_READ WORLD_EXECUTE
+	)
+else()
+	install(TARGETS howdy_auth_helper RUNTIME DESTINATION "${HOWDY_HELPER_DIR}")
+endif()
 
 add_library(
 	howdy_cli
