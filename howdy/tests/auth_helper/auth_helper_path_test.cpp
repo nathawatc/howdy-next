@@ -55,6 +55,7 @@ namespace {
 		std::error_code ec;
 		std::filesystem::create_directory(user_owned_dir, ec);
 		ok &= expect(!ec, "creates runtime root directory fixture");
+		ok &= expect(chmod(user_owned_dir.c_str(), 0711) == 0, "sets runtime root fixture mode");
 
 		const auto missing_dir = temp_root / "runtime-root-missing";
 		ok &= expect(!std::filesystem::exists(missing_dir),

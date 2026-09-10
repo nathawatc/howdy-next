@@ -468,13 +468,19 @@ namespace {
 			return true;
 		}
 		ReapContext state;
-		state.root = howdy::native::auth_helper_protocol::PreparedRuntimeRoot() /
-		             ("pam-test-" + std::to_string(getpid()));
+		state.root = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
+		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), 0,
+		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		std::error_code error;
 		std::filesystem::create_directories(state.root / "models", error);
 		const auto lock_path = std::filesystem::path(state.root.string() + ".lock");
-		state.lease_fd       = open(lock_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-		bool ok = expect(!error && state.lease_fd >= 0, "valid prepare creates runtime lease");
+		const int creator_fd = open(lock_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+		bool      ok = expect(!error && creator_fd >= 0, "valid prepare creates runtime lease");
+		if (creator_fd >= 0) {
+			(void)close(creator_fd);
+			state.lease_fd = open(lock_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+			ok &= expect(state.lease_fd >= 0, "valid prepare opens read-only runtime lease");
+		}
 		if (state.lease_fd >= 0) {
 			auto operations            = howdy::pam::auth_helper_process::ProductionOperations();
 			operations.context         = &state;
