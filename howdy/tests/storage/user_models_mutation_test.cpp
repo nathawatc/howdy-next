@@ -41,7 +41,7 @@ namespace howdy::test::user_models {
 				    ReplaceWithVictimSymlinkAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::BeginMutation("alice");
+			const auto result = howdy::native::UserModelStore::BeginMutation("alice", {temp_root});
 			ok &= expect(hook.calls == 1,
 			             "begin_mutation post-lock revalidation hook executes exactly once");
 			ok &= expect(hook.swapped,
@@ -80,7 +80,7 @@ namespace howdy::test::user_models {
 				    ReplaceWithVictimSymlinkAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::LockExisting("alice");
+			const auto result = howdy::native::UserModelStore::LockExisting("alice", {temp_root});
 			ok &= expect(hook.calls == 1,
 			             "lock_existing post-lock revalidation hook executes exactly once");
 			ok &= expect(hook.swapped,
@@ -119,7 +119,7 @@ namespace howdy::test::user_models {
 				    ReplaceWithRegularFileAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::BeginMutation("alice");
+			const auto result = howdy::native::UserModelStore::BeginMutation("alice", {temp_root});
 			ok &= expect(hook.calls == 1,
 			             "begin_mutation regular-file swap hook executes exactly once");
 			ok &= expect(hook.swapped,
@@ -151,7 +151,7 @@ namespace howdy::test::user_models {
 				    ReplaceWithRegularFileAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::LockExisting("alice");
+			const auto result = howdy::native::UserModelStore::LockExisting("alice", {temp_root});
 			ok &= expect(hook.calls == 1,
 			             "lock_existing regular-file swap hook executes exactly once");
 			ok &= expect(hook.swapped,
@@ -187,7 +187,7 @@ namespace howdy::test::user_models {
 				    RestoreOriginalAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::BeginMutation("alice");
+			const auto result = howdy::native::UserModelStore::BeginMutation("alice", {temp_root});
 			ok &= expect(hook.before_lock_calls == 1 && hook.after_lock_calls == 1,
 			             "begin_mutation ABA hooks execute exactly once");
 			ok &=
@@ -229,7 +229,7 @@ namespace howdy::test::user_models {
 				    RestoreOriginalAfterLock(&hook, path);
 			    },
 			});
-			const auto result = howdy::native::UserModelStore::LockExisting("alice");
+			const auto result = howdy::native::UserModelStore::LockExisting("alice", {temp_root});
 			ok &= expect(hook.before_lock_calls == 1 && hook.after_lock_calls == 1,
 			             "lock_existing ABA hooks execute exactly once");
 			ok &= expect(hook.installed_b && hook.restored_a,
@@ -251,14 +251,15 @@ namespace howdy::test::user_models {
 		             "write malformed existing file before mutations");
 		const auto malformed_before_mutation = read_file(model_path);
 		{
-			const auto result = howdy::native::AppendUserModelEntry("alice", first_entry);
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "append rejects malformed existing file");
 			ok &= expect(read_file(model_path) == malformed_before_mutation,
 			             "failed append leaves malformed existing file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0);
+			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "remove rejects malformed existing file");
 			ok &= expect(read_file(model_path) == malformed_before_mutation,
@@ -268,14 +269,15 @@ namespace howdy::test::user_models {
 		             "write invalid-shape existing file before mutations");
 		const auto invalid_shape_before_mutation = read_file(model_path);
 		{
-			const auto result = howdy::native::AppendUserModelEntry("alice", first_entry);
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "append rejects invalid-shape existing file");
 			ok &= expect(read_file(model_path) == invalid_shape_before_mutation,
 			             "failed append leaves invalid-shape existing file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0);
+			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "remove rejects invalid-shape existing file");
 			ok &= expect(read_file(model_path) == invalid_shape_before_mutation,
@@ -288,14 +290,15 @@ namespace howdy::test::user_models {
 		             "write deeply nested unknown field before mutations");
 		const auto deeply_nested_before_mutation = read_file(model_path);
 		{
-			const auto result = howdy::native::AppendUserModelEntry("alice", first_entry);
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
 			             "append rejects deeply nested unknown field");
 			ok &= expect(read_file(model_path) == deeply_nested_before_mutation,
 			             "deep nesting append failure leaves model file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0);
+			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOversized,
 			             "remove rejects deeply nested unknown field");
 			ok &= expect(read_file(model_path) == deeply_nested_before_mutation,
@@ -303,7 +306,8 @@ namespace howdy::test::user_models {
 		}
 		fs::remove(model_path, ec);
 		ec.clear();
-		const auto first_append = howdy::native::AppendUserModelEntry("alice", first_entry);
+		const auto first_append =
+		    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 		ok &= expect(first_append.status == howdy::native::UserModelStatus::kOk,
 		             "append creates first model entry");
 		ok &= expect(first_append.entry.id == 0, "append allocates first model ID");
@@ -318,7 +322,8 @@ namespace howdy::test::user_models {
 			    .model     = "sface.onnx",
 			    .encodings = {{0.3F, 0.4F}},
 			};
-			const auto result = howdy::native::AppendUserModelEntry("alice", oversized_entry);
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", oversized_entry, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
 			             "append rejects serialized model larger than read limit");
 			ok &= expect(read_file(model_path) == before_oversized_append,
@@ -346,7 +351,7 @@ namespace howdy::test::user_models {
 		};
 		{
 			const auto result =
-			    howdy::native::AppendUserModelEntry("alice", invalid_encoding_entry);
+			    howdy::native::AppendUserModelEntry("alice", invalid_encoding_entry, {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "append rejects invalid new-entry encodings before writing");
 			std::ifstream     persisted(model_path);
@@ -355,13 +360,14 @@ namespace howdy::test::user_models {
 			ok &= expect(!persisted_text.contains("invalid"),
 			             "append does not write invalid new-entry encodings");
 		}
-		const auto second_append = howdy::native::AppendUserModelEntry("alice", second_entry);
+		const auto second_append =
+		    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
 		ok &= expect(second_append.status == howdy::native::UserModelStatus::kOk,
 		             "append adds second model entry");
 		ok &= expect(second_append.entry.id == 1, "append allocates next model ID");
 		{
 			const auto result = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx");
+			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
 			ok &= expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing loads appended entries");
 			ok &= expect(result.entries.size() == 2, "append preserves existing entries");

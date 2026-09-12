@@ -44,8 +44,9 @@ namespace howdy::native {
 		    -> std::optional<bool>;
 
 		friend class UserModelStore;
-		friend auto ClearUserModelEntriesIfUnchanged(const std::string           &user,
-		                                             const UserModelFileSnapshot &expected_snapshot)
+		friend auto ClearUserModelEntriesIfUnchanged(
+		    const std::string &user, const UserModelFileSnapshot &expected_snapshot,
+		    const file_security_internal::ValidationRoot &validation_root)
 		    -> UserModelMutationResult;
 	};
 
@@ -64,9 +65,13 @@ namespace howdy::native {
 	public:
 		UserModelStore() = default;
 
-		[[nodiscard]] static auto BeginMutation(const std::string &user)
+		[[nodiscard]] static auto
+		BeginMutation(const std::string                            &user,
+		              const file_security_internal::ValidationRoot &validation_root = {})
 		    -> UserModelStoreMutationResult;
-		[[nodiscard]] static auto LockExisting(const std::string &user)
+		[[nodiscard]] static auto
+		LockExisting(const std::string                            &user,
+		             const file_security_internal::ValidationRoot &validation_root = {})
 		    -> UserModelStoreTransactionResult;
 
 	private:
@@ -83,13 +88,19 @@ namespace howdy::native {
 			std::filesystem::path path;
 		};
 
-		[[nodiscard]] static auto Resolve(const std::string &user, bool create_directory,
-		                                  std::optional<uid_t> owner_uid) -> UserModelPathResult;
-		[[nodiscard]] static auto LoadDocument(const std::string           &user,
-		                                       const UserModelExpectations &expectations,
-		                                       std::optional<uid_t>         owner_uid)
+		[[nodiscard]] static auto
+		Resolve(const std::string &user, bool create_directory, std::optional<uid_t> owner_uid,
+		        const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelPathResult;
+		[[nodiscard]] static auto
+		LoadDocument(const std::string &user, const UserModelExpectations &expectations,
+		             std::optional<uid_t>                          owner_uid,
+		             const file_security_internal::ValidationRoot &validation_root)
 		    -> user_model_codec::Document;
-		[[nodiscard]] static auto Inspect(const std::string &user) -> UserModelInspectResult;
+		[[nodiscard]] static auto
+		Inspect(const std::string                            &user,
+		        const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelInspectResult;
 		[[nodiscard]] static auto LoadDocumentFromPath(const std::filesystem::path &path,
 		                                               const UserModelExpectations &expectations)
 		    -> user_model_codec::Document;
@@ -100,13 +111,18 @@ namespace howdy::native {
 		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
 		                                                   std::string *message) -> UserModelStatus;
 
-		friend auto ListUserModelEntries(const std::string        &user,
-		                                 const std::string        &expected_backend,
-		                                 std::optional<FaceMetric> expected_metric,
-		                                 const std::string &expected_model) -> UserModelListResult;
-		friend auto InspectUserModelFile(const std::string &user) -> UserModelInspectResult;
+		friend auto ListUserModelEntries(
+		    const std::string &user, const std::string &expected_backend,
+		    std::optional<FaceMetric> expected_metric, const std::string &expected_model,
+		    const file_security_internal::ValidationRoot &validation_root) -> UserModelListResult;
+		friend auto
+		InspectUserModelFile(const std::string                            &user,
+		                     const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelInspectResult;
 		friend auto LoadUserModels(const std::string &user, const std::string &expected_backend,
-		                           std::optional<uid_t> owner_uid) -> UserModelLoadResult;
+		                           std::optional<uid_t>                          owner_uid,
+		                           const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelLoadResult;
 	};
 
 }  // namespace howdy::native

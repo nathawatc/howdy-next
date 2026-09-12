@@ -38,7 +38,9 @@ namespace howdy::native {
 	}
 
 	auto CheckUserModelReadiness(const std::filesystem::path &models_dir, const std::string &user,
-	                             std::optional<uid_t> owner_uid) -> UserModelReadinessResult {
+	                             std::optional<uid_t>                          owner_uid,
+	                             const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelReadinessResult {
 		const auto model_path = ResolveUserModelPath(models_dir, user);
 		if (!model_path) {
 			return ReadinessFailure(UserModelStatus::kInvalidUser, kInvalidUserNameMessage);
@@ -71,8 +73,8 @@ namespace howdy::native {
 			}
 		}
 
-		const auto directory_security =
-		    CheckSecureRootOwnedDirectoryTree(models_dir, kUserModelsDirectoryLabel, owner_uid);
+		const auto directory_security = CheckSecureRootOwnedDirectoryTree(
+		    models_dir, kUserModelsDirectoryLabel, owner_uid, validation_root);
 		if (!directory_security.ok) {
 			if (directory_security.error_code == ENOENT) {
 				return ReadinessFailure(UserModelStatus::kNoModelDirectory, {}, *model_path);
@@ -87,7 +89,7 @@ namespace howdy::native {
 
 		const auto file_security = CheckSecureRootOwnedFileWithDirectory(
 		    *model_path, {.directory = kUserModelsDirectoryLabel, .file = kUserModelFileLabel},
-		    owner_uid);
+		    owner_uid, validation_root);
 		if (!file_security.ok) {
 			if (file_security.error_code == ENOENT) {
 				return ReadinessFailure(UserModelStatus::kNoModel, {}, *model_path);

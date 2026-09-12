@@ -387,11 +387,13 @@ namespace howdy::native {
 	}
 
 	auto UserModelStore::Resolve(const std::string &user, bool create_directory,
-	                             std::optional<uid_t> owner_uid)
+	                             std::optional<uid_t>                          owner_uid,
+	                             const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelStore::UserModelPathResult {
 		const auto models_dir = ResolveUserModelsDir();
 		if (!create_directory) {
-			const auto readiness = CheckUserModelReadiness(models_dir, user, owner_uid);
+			const auto readiness =
+			    CheckUserModelReadiness(models_dir, user, owner_uid, validation_root);
 			return UserModelPathResult{
 			    .status        = readiness.status,
 			    .error_message = readiness.error_message,
@@ -426,8 +428,8 @@ namespace howdy::native {
 			}
 		}
 
-		const auto directory_security =
-		    CheckSecureRootOwnedDirectoryTree(models_dir, kUserModelsDirectoryLabel, owner_uid);
+		const auto directory_security = CheckSecureRootOwnedDirectoryTree(
+		    models_dir, kUserModelsDirectoryLabel, owner_uid, validation_root);
 		if (!directory_security.ok) {
 			return UserModelPathResult{
 			    .status        = UserModelStatus::kInsecurePath,
@@ -447,7 +449,7 @@ namespace howdy::native {
 		if (model_exists) {
 			const auto file_security = CheckSecureRootOwnedFileWithDirectory(
 			    *model_path, {.directory = kUserModelsDirectoryLabel, .file = kUserModelFileLabel},
-			    owner_uid);
+			    owner_uid, validation_root);
 			if (!file_security.ok) {
 				return UserModelPathResult{
 				    .status        = UserModelStatus::kInsecurePath,
@@ -549,11 +551,12 @@ namespace howdy::native {
 		return LoadDocumentFromFd(input.Get(), path, expectations, false);
 	}
 
-	auto UserModelStore::LoadDocument(const std::string           &user,
-	                                  const UserModelExpectations &expectations,
-	                                  std::optional<uid_t>         owner_uid)
+	auto UserModelStore::LoadDocument(const std::string                            &user,
+	                                  const UserModelExpectations                  &expectations,
+	                                  std::optional<uid_t>                          owner_uid,
+	                                  const file_security_internal::ValidationRoot &validation_root)
 	    -> user_model_codec::Document {
-		const auto path_result = Resolve(user, false, owner_uid);
+		const auto path_result = Resolve(user, false, owner_uid, validation_root);
 		if (path_result.status != UserModelStatus::kOk) {
 			return user_model_codec::Document(
 			    StoreListFailure(path_result.status, path_result.error_message));
@@ -561,8 +564,10 @@ namespace howdy::native {
 		return LoadDocumentFromPath(path_result.path, expectations);
 	}
 
-	auto UserModelStore::Inspect(const std::string &user) -> UserModelInspectResult {
-		const auto path_result = Resolve(user, false, DefaultSecureOwnerUid());
+	auto UserModelStore::Inspect(const std::string                            &user,
+	                             const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelInspectResult {
+		const auto path_result = Resolve(user, false, DefaultSecureOwnerUid(), validation_root);
 		if (path_result.status != UserModelStatus::kOk) {
 			return InspectFailure(path_result.status, path_result.error_message);
 		}
@@ -583,8 +588,11 @@ namespace howdy::native {
 		};
 	}
 
-	auto UserModelStore::BeginMutation(const std::string &user) -> UserModelStoreMutationResult {
-		const auto path_result = Resolve(user, true, DefaultSecureOwnerUid());
+	auto
+	UserModelStore::BeginMutation(const std::string                            &user,
+	                              const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelStoreMutationResult {
+		const auto path_result = Resolve(user, true, DefaultSecureOwnerUid(), validation_root);
 		if (path_result.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
@@ -605,7 +613,7 @@ namespace howdy::native {
 			user_model_store_test_hooks::Current().after_lock_before_revalidate(path_result.path);
 		}
 
-		const auto secured_path = Resolve(user, true, DefaultSecureOwnerUid());
+		const auto secured_path = Resolve(user, true, DefaultSecureOwnerUid(), validation_root);
 		if (secured_path.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
@@ -630,8 +638,10 @@ namespace howdy::native {
 		};
 	}
 
-	auto UserModelStore::LockExisting(const std::string &user) -> UserModelStoreTransactionResult {
-		const auto path_result = Resolve(user, false, DefaultSecureOwnerUid());
+	auto UserModelStore::LockExisting(const std::string                            &user,
+	                                  const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelStoreTransactionResult {
+		const auto path_result = Resolve(user, false, DefaultSecureOwnerUid(), validation_root);
 		if (path_result.status != UserModelStatus::kOk) {
 			return UserModelStoreTransactionResult{
 			    .status        = path_result.status,
@@ -660,7 +670,7 @@ namespace howdy::native {
 			user_model_store_test_hooks::Current().after_lock_before_revalidate(path_result.path);
 		}
 
-		const auto secured_path = Resolve(user, false, DefaultSecureOwnerUid());
+		const auto secured_path = Resolve(user, false, DefaultSecureOwnerUid(), validation_root);
 		if (secured_path.status != UserModelStatus::kOk) {
 			return UserModelStoreTransactionResult{
 			    .status        = secured_path.status,

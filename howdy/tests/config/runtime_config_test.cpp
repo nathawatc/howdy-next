@@ -68,7 +68,7 @@ namespace {
 			};
 		}
 
-		return howdy::native::LoadRuntimeConfig(path, std::nullopt);
+		return howdy::native::LoadRuntimeConfig(path, std::nullopt, {root});
 	}
 
 }  // namespace

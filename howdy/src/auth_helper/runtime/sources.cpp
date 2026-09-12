@@ -147,11 +147,12 @@ namespace howdy::native::auth_helper {
 
 		auto SelectSourceModelPath(const std::filesystem::path &source_user_models_dir,
 		                           const std::string &user, std::optional<uid_t> owner_uid,
-		                           std::optional<std::filesystem::path> &source_model_path)
+		                           std::optional<std::filesystem::path>         &source_model_path,
+		                           const file_security_internal::ValidationRoot &validation_root)
 		    -> bool {
 			source_model_path.reset();
-			const auto readiness =
-			    howdy::native::CheckUserModelReadiness(source_user_models_dir, user, owner_uid);
+			const auto readiness = howdy::native::CheckUserModelReadiness(
+			    source_user_models_dir, user, owner_uid, validation_root);
 			switch (readiness.status) {
 				case howdy::native::UserModelStatus::kOk:
 					source_model_path = readiness.path;

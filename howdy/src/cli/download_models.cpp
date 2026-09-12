@@ -200,17 +200,37 @@ namespace {
 		                                          howdy::native::kModelsDirectoryLabel, owner_uid);
 	}
 
-	auto CreateSecureModelsDirectory(const std::filesystem::path &models_dir,
-	                                 const std::optional<uid_t>   owner_uid)
+	auto ValidateModelsBoundary(
+	    const std::filesystem::path &models_dir, const std::optional<uid_t> owner_uid,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
 	    -> howdy::native::SecurePathCheckResult {
 		if (!models_dir.is_absolute()) {
 			return ModelsDirectoryFailure("open", models_dir, EINVAL);
 		}
 
+		if (validation_root.path.empty()) {
+			return {.ok = true};
+		}
+		if (!howdy::native::file_security_internal::RelativeTarget(validation_root, models_dir)) {
+			return ModelsDirectoryFailure("validate boundary", models_dir, EINVAL);
+		}
+		return howdy::native::CheckSecureRootOwnedDirectoryTree(
+		    validation_root.path, howdy::native::kModelsDirectoryLabel, owner_uid, validation_root);
+	}
+
+	auto CreateSecureModelsDirectory(
+	    const std::filesystem::path &models_dir, const std::optional<uid_t> owner_uid,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
+	    -> howdy::native::SecurePathCheckResult {
 		constexpr int directory_open_flags  = O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW;
 		const auto    normalized_models_dir = models_dir.lexically_normal();
-		const auto    root                  = normalized_models_dir.root_path();
-		ScopedFd      current(open(root.c_str(), directory_open_flags));
+		const auto    root =
+		    validation_root.path.empty() ? normalized_models_dir.root_path() : validation_root.path;
+		auto boundary_security = ValidateModelsBoundary(models_dir, owner_uid, validation_root);
+		if (!boundary_security.ok) {
+			return boundary_security;
+		}
+		ScopedFd current(open(root.c_str(), directory_open_flags));
 		if (current.Get() < 0) {
 			return ModelsDirectoryFailure("open", root, errno);
 		}
@@ -222,7 +242,7 @@ namespace {
 			return security;
 		}
 
-		for (const auto &component : normalized_models_dir.relative_path()) {
+		for (const auto &component : normalized_models_dir.lexically_relative(root)) {
 			if (component == std::filesystem::path(".")) {
 				continue;
 			}
@@ -233,7 +253,8 @@ namespace {
 				const int open_error = errno;
 				if (open_error != ENOENT) {
 					const auto security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-					    component_path, howdy::native::kModelsDirectoryLabel, owner_uid);
+					    component_path, howdy::native::kModelsDirectoryLabel, owner_uid,
+					    validation_root);
 					return security.ok ? ModelsDirectoryFailure("open", component_path, open_error)
 					                   : security;
 				}
@@ -256,15 +277,17 @@ namespace {
 		}
 
 		return howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    normalized_models_dir, howdy::native::kModelsDirectoryLabel, owner_uid);
+		    normalized_models_dir, howdy::native::kModelsDirectoryLabel, owner_uid,
+		    validation_root);
 	}
 
-	auto PrepareStagedDownload(const std::filesystem::path &destination,
-	                           const std::optional<uid_t>   owner_uid)
+	auto PrepareStagedDownload(
+	    const std::filesystem::path &destination, const std::optional<uid_t> owner_uid,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
 	    -> std::optional<StagedDownloadFile> {
 		const auto parent       = destination.parent_path();
 		const auto dir_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    parent, howdy::native::kModelsDirectoryLabel, owner_uid);
+		    parent, howdy::native::kModelsDirectoryLabel, owner_uid, validation_root);
 		if (!dir_security.ok) {
 			return std::nullopt;
 		}
@@ -351,7 +374,7 @@ namespace {
 	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
 	    -> bool {
 		std::cout << "Downloading " << model.filename << "\n";
-		auto staged = PrepareStagedDownload(destination, owner_uid);
+		auto staged = PrepareStagedDownload(destination, owner_uid, dependencies.validation_root);
 		if (!staged.has_value()) {
 			std::cout << "Failed to prepare destination for model: " << destination.string()
 			          << "\n";
@@ -415,9 +438,10 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 		return kDownloadModelsExitAbort;
 	}
 
-	const auto models_dir          = howdy::native::ResolveModelsDir();
-	const auto owner_uid           = dependencies.model_file_owner_uid();
-	const auto models_dir_security = CreateSecureModelsDirectory(models_dir, owner_uid);
+	const auto models_dir = howdy::native::ResolveModelsDir();
+	const auto owner_uid  = dependencies.model_file_owner_uid();
+	const auto models_dir_security =
+	    CreateSecureModelsDirectory(models_dir, owner_uid, dependencies.validation_root);
 	if (!models_dir_security.ok) {
 		std::cout << "Failed to create models directory: " << models_dir_security.error_message
 		          << "\n";
@@ -430,8 +454,8 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 	}
 	for (const auto &model : dependencies.models) {
 		const auto destination = models_dir / model.filename;
-		const auto readiness =
-		    howdy::native::CheckOpencvModelReadinessWithLabel(destination, "Model file", owner_uid);
+		const auto readiness   = howdy::native::CheckOpencvModelReadinessWithLabel(
+		    destination, "Model file", owner_uid, dependencies.validation_root);
 		if (readiness.status == howdy::native::OpenCvModelStatus::kInsecure) {
 			curl_global_cleanup();
 			std::cout << readiness.error_message << "\n";

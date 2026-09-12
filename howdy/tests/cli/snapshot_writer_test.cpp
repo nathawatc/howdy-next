@@ -210,14 +210,14 @@ namespace {
 		return cv::imencode(std::string(extension), image, *encoded);
 	}
 
-	auto FakeDependencies(WriterCallbackContext &context)
+	auto FakeDependencies(WriterCallbackContext &context, const fs::path &root)
 	    -> snapshot_internal::SnapshotWriterDependencies {
-		return {.context = &context, .encode_image = FakeEncode};
+		return {.context = &context, .encode_image = FakeEncode, .validation_root = {root}};
 	}
 
-	auto RealDependencies(WriterCallbackContext &context)
+	auto RealDependencies(WriterCallbackContext &context, const fs::path &root)
 	    -> snapshot_internal::SnapshotWriterDependencies {
-		return {.context = &context, .encode_image = RealEncode};
+		return {.context = &context, .encode_image = RealEncode, .validation_root = {root}};
 	}
 
 	auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {
@@ -231,8 +231,8 @@ namespace {
 		const auto            log_root  = temp_root / "log";
 		const auto            output    = log_root / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
-		const bool result = snapshot_internal::WriteSnapshotAtPath(frames, TextLines(), output,
-		                                                           FakeDependencies(context));
+		const bool            result = snapshot_internal::WriteSnapshotAtPath(
+		    frames, TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(!result, name + " returns false");
 		ok &= expect(context.encode_calls == 0, name + " skips encoder");
 		ok &= expect(!fs::exists(log_root), name + " creates no log root");
@@ -285,7 +285,7 @@ namespace {
 		context.throw_std_exception = standard_exception;
 		context.throw_cv_exception  = opencv_exception;
 		const bool result           = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(!result, name + " returns false");
 		ok &= expect(read_file(output) == original, name + " preserves destination content");
 		ok &= ExpectMode(output, 0640, name + " preserves destination mode");
@@ -300,7 +300,7 @@ namespace {
 		WriterCallbackContext context;
 		context.create_encoded_output = false;
 		const bool result             = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(!result, "empty encoder output returns false");
 		ok &= expect(!fs::exists(output), "empty encoder output creates no destination");
 		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
@@ -314,7 +314,7 @@ namespace {
 		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(result, "encoded-byte-install returns true");
 		ok &= expect(read_file(output) == std::string("\x01\x02\x03", 3),
 		             "encoded-byte-install installs exact encoded bytes");
@@ -337,7 +337,8 @@ namespace {
 		WriterCallbackContext                 context;
 		howdy::native::AtomicFileCommitResult commit_result;
 		const bool                            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context), &commit_result);
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root),
+		    &commit_result);
 		ok &= expect(!result, "existing destination returns false");
 		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
 		             "existing destination reports collision");
@@ -368,7 +369,7 @@ namespace {
 		WriterCallbackContext                 context;
 		howdy::native::AtomicFileCommitResult commit_result;
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
-		    TinyFrames(), TextLines(), base, FakeDependencies(context), &commit_result);
+		    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root), &commit_result);
 		const auto expected = base.parent_path() / "20260816T100012-3.jpg";
 		ok &= expect(installed == expected, "unique path selects next available suffix");
 		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kCommitted,
@@ -404,7 +405,8 @@ namespace {
 		{
 			StreamRedirect redirect(std::cerr, error.rdbuf());
 			installed = snapshot_internal::WriteSnapshotWithUniquePath(
-			    TinyFrames(), TextLines(), base, FakeDependencies(context), &commit_result);
+			    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root),
+			    &commit_result);
 		}
 		ok &= expect(installed.empty(), "collision exhaustion returns no path");
 		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
@@ -464,7 +466,9 @@ namespace {
 		                                 : std::array<uchar, 3>{'B', 'B', 'B'},
 		};
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
-		    .context = &context, .encode_image = ConcurrentEncode};
+		    .context         = &context,
+		    .encode_image    = ConcurrentEncode,
+		    .validation_root = {base.parent_path().parent_path().parent_path()}};
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
 		    TinyFrames(), TextLines(), base, dependencies);
 		close(ready_pipe[1]);
@@ -553,7 +557,7 @@ namespace {
 		ok &= expect(!ec, "directory target created");
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(!result, "directory target returns false");
 		ok &= expect(context.encode_calls == 0, "directory target skips encoder");
 		ok &= expect(fs::is_directory(output), "directory target remains directory");
@@ -572,9 +576,10 @@ namespace {
 		std::ostringstream    error;
 		{
 			StreamRedirect redirect(std::cerr, error.rdbuf());
-			ok &= expect(!snapshot_internal::WriteSnapshotAtPath(TinyFrames(), TextLines(), output,
-			                                                     FakeDependencies(context)),
-			             "blocked parent returns false");
+			ok &=
+			    expect(!snapshot_internal::WriteSnapshotAtPath(
+			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
+			           "blocked parent returns false");
 		}
 		ok &= expect(context.encode_calls == 0, "blocked parent skips encoder");
 		ok &= expect(read_file(blocker) == "blocking content", "blocked parent preserves blocker");
@@ -593,7 +598,7 @@ namespace {
 		const auto            output    = temp_root / "log" / "snapshots" / test_case.filename;
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, RealDependencies(context));
+		    TinyFrames(), TextLines(), output, RealDependencies(context, temp_root));
 		ok &= expect(result, test_case.name + " returns true");
 		ok &=
 		    expect(!cv::imread(output.string()).empty(), test_case.name + " decodes successfully");
@@ -610,7 +615,7 @@ namespace {
 		const auto            output    = log_root / "snapshots" / "snapshot";
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(!result, "extensionless output returns false");
 		ok &= expect(context.encode_calls == 0, "extensionless output skips encoder");
 		ok &= expect(!fs::exists(log_root),
@@ -635,9 +640,10 @@ namespace {
 		std::ostringstream    error;
 		{
 			StreamRedirect redirect(std::cerr, error.rdbuf());
-			ok &= expect(!snapshot_internal::WriteSnapshotAtPath(TinyFrames(), TextLines(), output,
-			                                                     FakeDependencies(context)),
-			             "insecure log root returns false");
+			ok &=
+			    expect(!snapshot_internal::WriteSnapshotAtPath(
+			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
+			           "insecure log root returns false");
 		}
 		ok &= expect(context.encode_calls == 0, "insecure log root skips encoder");
 		ok &= expect(!fs::exists(output), "insecure log root creates no output");
@@ -654,7 +660,7 @@ namespace {
 		const auto            output        = snapshots_dir / "test.jpg";
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    TinyFrames(), TextLines(), output, FakeDependencies(context));
+		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(result, "directory creation returns true");
 		ok &= expect(context.encode_calls == 1, "directory creation calls encoder once");
 		ok &= ExpectMode(log_root, kSnapshotDirectoryMode, "created log root mode is 0750");
@@ -672,7 +678,7 @@ namespace {
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    {cv::Mat(8, 4, CV_8UC3, cv::Scalar(10, 20, 30)),
 		     cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60))},
-		    TextLines(), output, FakeDependencies(context));
+		    TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= expect(result, "mixed-width frames return true");
 		ok &= expect(context.encode_calls == 1, "mixed-width frames call encoder once");
 		return CleanupTempRoot(temp_root, ok);
@@ -683,7 +689,7 @@ namespace {
 		const auto            temp_root = MakeTempRoot("committed-sync-failure", ok);
 		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
-		auto                  dependencies = FakeDependencies(context);
+		auto                  dependencies = FakeDependencies(context, temp_root);
 		dependencies.sync_parent           = FailParentSync;
 		howdy::native::AtomicFileCommitResult commit_result;
 		const bool                            result = snapshot_internal::WriteSnapshotAtPath(

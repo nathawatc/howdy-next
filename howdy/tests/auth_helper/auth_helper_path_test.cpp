@@ -153,8 +153,9 @@ namespace {
 		const auto              missing_dir = temp_root / "missing-source-models";
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(SelectSourceModelPath(missing_dir, "alice", std::nullopt, selected_path),
-		             "missing source models directory is treated as no staged model");
+		ok &= expect(
+		    SelectSourceModelPath(missing_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "missing source models directory is treated as no staged model");
 		ok &=
 		    expect(!selected_path.has_value(), "missing source models directory selects no model");
 
@@ -165,20 +166,23 @@ namespace {
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!SelectSourceModelPath(models_dir, "../alice", std::nullopt, selected_path),
+		ok &= expect(!SelectSourceModelPath(models_dir, "../alice", std::nullopt, selected_path,
+		                                    {temp_root}),
 		             "invalid source model user fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "invalid source model user clears stale selected path");
 
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "missing source model file preserves prepare behavior");
+		ok &= expect(
+		    SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "missing source model file preserves prepare behavior");
 		ok &= expect(!selected_path.has_value(), "missing source model file selects no model");
 
 		ok &= expect(write_file(model_path, "not-json"), "writes secure source model");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "secures source model file");
-		ok &= expect(SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "secure source model is accepted without parsing");
+		ok &= expect(
+		    SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "secure source model is accepted without parsing");
 		ok &= expect(selected_path == model_path, "secure source model path is selected");
 
 		const auto relative_models_dir = fs::relative(models_dir, fs::current_path(), ec);
@@ -224,7 +228,8 @@ namespace {
 		ec.clear();
 		if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
 			selected_path = temp_root / "unexpected.dat";
-			ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
+			ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path,
+			                                    {temp_root}),
 			             "symlinked source model file fails closed");
 			ok &= expect(!selected_path.has_value(),
 			             "symlinked source model file clears stale selected path");
@@ -243,9 +248,9 @@ namespace {
 		             "secures real source models directory");
 		if (symlink(real_models_dir.c_str(), symlink_models_dir.c_str()) == 0) {
 			selected_path = temp_root / "unexpected.dat";
-			ok &= expect(
-			    !SelectSourceModelPath(symlink_models_dir, "alice", std::nullopt, selected_path),
-			    "symlinked source models directory fails closed");
+			ok &= expect(!SelectSourceModelPath(symlink_models_dir, "alice", std::nullopt,
+			                                    selected_path, {temp_root}),
+			             "symlinked source models directory fails closed");
 			ok &= expect(!selected_path.has_value(),
 			             "symlinked source models directory clears stale selected path");
 			fs::remove(symlink_models_dir, ec);
@@ -259,27 +264,31 @@ namespace {
 		ok &=
 		    expect(chmod(model_path.c_str(), 0664) == 0, "makes source model file group-writable");
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "group-writable source model file fails closed");
+		ok &= expect(
+		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "group-writable source model file fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "group-writable source model file clears stale selected path");
 		ok &=
 		    expect(chmod(model_path.c_str(), 0666) == 0, "makes source model file world-writable");
-		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "world-writable source model file fails closed");
+		ok &= expect(
+		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "world-writable source model file fails closed");
 		ok &= expect(chmod(model_path.c_str(), 0644) == 0, "restores source model file mode");
 
 		ok &= expect(chmod(models_dir.c_str(), 0775) == 0,
 		             "makes source models directory group-writable");
 		selected_path = temp_root / "unexpected.dat";
-		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "group-writable source models directory fails closed");
+		ok &= expect(
+		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "group-writable source models directory fails closed");
 		ok &= expect(!selected_path.has_value(),
 		             "group-writable source models directory clears stale selected path");
 		ok &= expect(chmod(models_dir.c_str(), 0777) == 0,
 		             "makes source models directory world-writable");
-		ok &= expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path),
-		             "world-writable source models directory fails closed");
+		ok &= expect(
+		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
+		    "world-writable source models directory fails closed");
 		ok &= expect(chmod(models_dir.c_str(), 0755) == 0, "restores source models directory mode");
 
 		return ok;

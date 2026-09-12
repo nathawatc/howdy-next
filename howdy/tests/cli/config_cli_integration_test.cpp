@@ -1,5 +1,5 @@
-#include "cli/config.hpp"
 #include "cli/config/edit_session.hpp"
+#include "cli/config/internal.hpp"
 #include "cli/config_cli_test_support.hpp"
 #include "config/config_limits.hpp"
 #include "config/test_hooks.hpp"
@@ -67,7 +67,7 @@ namespace howdy::test::config_cli {
 			return output.substr(path_start, path_end - path_start);
 		}
 
-		auto PublicEntrypointPreservesInvalidEdit() -> bool {
+		auto BoundaryAwareEntrypointPreservesInvalidEdit() -> bool {
 			namespace fs = std::filesystem;
 
 			const std::string temp_template =
@@ -102,7 +102,11 @@ namespace howdy::test::config_cli {
 			int                   exit_code = 0;
 			{
 				ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
-				exit_code = ConfigMain(1, argv.data());
+				howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
+				exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
+				    1, argv.data(),
+				    howdy::native::config_internal::DefaultConfigEditDependencies(
+				        &validation_root));
 			}
 
 			constexpr std::string_view recovery_prefix =
@@ -127,10 +131,14 @@ namespace howdy::test::config_cli {
 		auto ProductionConfigReadsAreBounded() -> bool {
 			namespace fs = std::filesystem;
 
-			bool       ok = true;
-			const auto dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies();
-			const fs::path    source_path = fs::current_path() / "howdy-config-cli-size-test.ini";
+			bool       ok        = true;
+			const auto temp_root = fs::current_path() / "howdy-config-cli-size-test";
+			fs::create_directory(temp_root);
+			ok &= expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
+			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
+			const auto                                            dependencies =
+			    howdy::native::config_internal::DefaultConfigEditDependencies(&validation_root);
+			const fs::path    source_path = temp_root / "config.ini";
 			const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
 			std::error_code   error;
@@ -158,7 +166,7 @@ namespace howdy::test::config_cli {
 			ok &= expect(
 			    !dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt),
 			    "oversized source config is rejected before temp copy");
-			fs::remove(source_path, error);
+			fs::remove_all(temp_root, error);
 			return ok;
 		}
 
@@ -179,8 +187,9 @@ namespace howdy::test::config_cli {
 			const fs::path    config_path = temp_root / "config.ini";
 			const fs::path    backup_path = temp_root / "config-backup.ini";
 			const std::string original    = "[core]\ndisabled = false\n";
-			const auto        dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies();
+			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
+			const auto                                            dependencies =
+			    howdy::native::config_internal::DefaultConfigEditDependencies(&validation_root);
 			std::error_code error;
 
 			auto write_secure_config = [&]() -> bool {
@@ -231,7 +240,7 @@ namespace howdy::test::config_cli {
 
 	auto RunConfigCliIntegrationTests() -> bool {
 		bool ok = true;
-		ok &= PublicEntrypointPreservesInvalidEdit();
+		ok &= BoundaryAwareEntrypointPreservesInvalidEdit();
 		ok &= ProductionConfigReadsAreBounded();
 		ok &= ProductionEditReadsAreDescriptorBound();
 		return ok;

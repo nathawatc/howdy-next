@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storage/user_model_status.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -21,6 +22,8 @@ namespace howdy::native {
 	    -> bool;
 
 	auto CheckUserModelReadiness(const std::filesystem::path &models_dir, const std::string &user,
-	                             std::optional<uid_t> owner_uid) -> UserModelReadinessResult;
+	                             std::optional<uid_t>                          owner_uid,
+	                             const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelReadinessResult;
 
 }  // namespace howdy::native

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/config_schema.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "vision/face_metric.hpp"
 
 #include <cstdint>
@@ -78,7 +79,8 @@ namespace howdy::native {
 		int                          error_code = 0;
 	};
 
-	auto LoadRuntimeConfig(const std::filesystem::path &config_path, std::optional<uid_t> owner_uid)
+	auto LoadRuntimeConfig(const std::filesystem::path &config_path, std::optional<uid_t> owner_uid,
+	                       const file_security_internal::ValidationRoot &validation_root = {})
 	    -> RuntimeConfigLoadResult;
 #ifndef HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 	auto LoadRuntimeConfig(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult;

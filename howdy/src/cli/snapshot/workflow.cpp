@@ -58,11 +58,12 @@ namespace {
 }  // namespace
 
 auto howdy::native::snapshot_internal::EnsureSnapshotDirectory(
-    const std::filesystem::path &directory) -> bool {
+    const std::filesystem::path                  &directory,
+    const file_security_internal::ValidationRoot &validation_root) -> bool {
 	const auto log_root = directory.parent_path();
 	if (std::filesystem::exists(log_root)) {
-		const auto root_security =
-		    howdy::native::CheckSecureRootOwnedDirectoryTree(log_root, "Log directory");
+		const auto root_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
+		    log_root, "Log directory", DefaultSecureOwnerUid(), validation_root);
 		if (!root_security.ok) {
 			std::cerr << root_security.error_message << "\n";
 			return false;
@@ -81,15 +82,15 @@ auto howdy::native::snapshot_internal::EnsureSnapshotDirectory(
 		return false;
 	}
 
-	const auto root_security =
-	    howdy::native::CheckSecureRootOwnedDirectoryTree(log_root, "Log directory");
+	const auto root_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
+	    log_root, "Log directory", DefaultSecureOwnerUid(), validation_root);
 	if (!root_security.ok) {
 		std::cerr << root_security.error_message << "\n";
 		return false;
 	}
 
-	const auto directory_security =
-	    howdy::native::CheckSecureRootOwnedDirectoryTree(directory, "Snapshot directory");
+	const auto directory_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
+	    directory, "Snapshot directory", DefaultSecureOwnerUid(), validation_root);
 	if (!directory_security.ok) {
 		std::cerr << directory_security.error_message << "\n";
 		return false;
@@ -115,7 +116,7 @@ auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
 		return false;
 	}
 
-	if (!EnsureSnapshotDirectory(path.parent_path())) {
+	if (!EnsureSnapshotDirectory(path.parent_path(), dependencies.validation_root)) {
 		return false;
 	}
 

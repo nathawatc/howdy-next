@@ -257,7 +257,7 @@ namespace {
 		       expect(output == "\nModels cleared\n", "successful clear preserves output");
 	}
 
-	auto PublicClearRemovesUnparseableModelFiles() -> bool {
+	auto BoundaryAwareClearRemovesUnparseableModelFiles() -> bool {
 		namespace fs = std::filesystem;
 
 		const char                      *existing_models_dir = std::getenv("HOWDY_USER_MODELS_DIR");
@@ -283,7 +283,7 @@ namespace {
 		ok &= expect(!ec, "create integration models dir");
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
-		auto run_public_clear = [&]() -> int {
+		auto run_boundary_aware_clear = [&]() -> int {
 			std::array<std::string, 3> arguments{"howdy-clear", "alice", "-y"};
 			std::array<char *, 3>      argv{arguments[0].data(), arguments[1].data(),
 			                                arguments[2].data()};
@@ -291,11 +291,13 @@ namespace {
 			std::ostringstream         output_stream;
 			StreamRedirect             redirect(std::cin, input_stream.rdbuf(), std::cout,
 			                                    output_stream.rdbuf());
-			return ClearMain(static_cast<int>(argv.size()), argv.data());
+			return howdy::native::clear_internal::ClearMainWithValidationRoot(
+			    static_cast<int>(argv.size()), argv.data(), {temp_root});
 		};
 
 		ok &= expect(write_file(model_path, "not-json"), "write malformed model JSON");
-		ok &= expect(run_public_clear() == 0, "public clear removes malformed JSON");
+		ok &=
+		    expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes malformed JSON");
 		ok &= expect(!fs::exists(model_path), "malformed JSON model deleted");
 
 		std::string oversized_json =
@@ -303,11 +305,13 @@ namespace {
 		oversized_json.append((1024 * 1024) + 1, 'x');
 		oversized_json += "\"}]";
 		ok &= expect(write_file(model_path, oversized_json), "write oversized model JSON");
-		ok &= expect(run_public_clear() == 0, "public clear removes oversized JSON");
+		ok &=
+		    expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes oversized JSON");
 		ok &= expect(!fs::exists(model_path), "oversized JSON model deleted");
 
 		ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong-shape model JSON");
-		ok &= expect(run_public_clear() == 0, "public clear removes wrong-shape JSON");
+		ok &= expect(run_boundary_aware_clear() == 0,
+		             "boundary-aware clear removes wrong-shape JSON");
 		ok &= expect(!fs::exists(model_path), "wrong-shape JSON model deleted");
 
 		fs::remove_all(temp_root, ec);
@@ -332,6 +336,6 @@ auto main() -> int {
 	ok &= YesFlagBypassesConfirmation();
 	ok &= ClearOutcomesPreserveMessages();
 	ok &= SuccessfulClearPreservesOutput();
-	ok &= PublicClearRemovesUnparseableModelFiles();
+	ok &= BoundaryAwareClearRemovesUnparseableModelFiles();
 	return ok ? 0 : 1;
 }

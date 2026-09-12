@@ -67,13 +67,15 @@ namespace howdy::test {
 		std::string       install_error;
 		const auto        before_oversized_replace = ReadConfigTestFile(replace_path);
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
-		                 replace_path, context.config_over_limit, &install_error, false, false),
+		                 replace_path, context.config_over_limit, &install_error, false, false,
+		                 nullptr, howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects oversized content");
 		ok &= expect(install_error == "Updated config exceeds maximum size" &&
 		                 ReadConfigTestFile(replace_path) == before_oversized_replace,
 		             "oversized replacement leaves existing config unchanged");
 		ok &= expect(howdy::native::ReplaceConfigContentAtomically(
-		                 replace_path, replacement_content, &install_error, true, true),
+		                 replace_path, replacement_content, &install_error, true, true, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically installs valid content with lock");
 		ok &= expect(ReadConfigTestFile(replace_path) == replacement_content,
 		             "replace_config_content_atomically writes expected content");
@@ -89,7 +91,7 @@ namespace howdy::test {
 		                                          "dark_threshold = 60\n";
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, uncertain_replacement, &install_error, true, true, nullptr,
-		                 FailParentSync),
+		                 FailParentSync, {context.temp_root}),
 		             "replace_config_content_atomically reports parent-sync failure");
 		ok &=
 		    expect(install_error ==
@@ -101,23 +103,26 @@ namespace howdy::test {
 		ok &= expect(CountStagedConfigs(context.temp_root) == 0,
 		             "replace config parent-sync failure leaves no staged file");
 		ok &= expect(howdy::native::ReplaceConfigContentAtomically(
-		                 replace_path, replacement_content, &install_error, true, true),
+		                 replace_path, replacement_content, &install_error, true, true, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace config recovers after parent-sync failure test");
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, uncertain_replacement, &install_error, false, false, nullptr,
-		                 nullptr),
+		                 nullptr, {context.temp_root}),
 		             "replace config reports null parent-sync callback as nondurable");
 		ok &= expect(install_error.contains("could not be synced") &&
 		                 ReadConfigTestFile(replace_path) == uncertain_replacement,
 		             "null parent-sync callback leaves committed content visible");
 		ok &= expect(howdy::native::ReplaceConfigContentAtomically(
-		                 replace_path, replacement_content, &install_error, false, false),
+		                 replace_path, replacement_content, &install_error, false, false, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace config recovers after null parent-sync callback");
 
 		const auto before_invalid_replace = ReadConfigTestFile(replace_path);
 		const auto staged_before          = CountStagedConfigs(context.temp_root);
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
-		                 replace_path, "[video]\ntimeout = 0\n", &install_error, true, true),
+		                 replace_path, "[video]\ntimeout = 0\n", &install_error, true, true,
+		                 nullptr, howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects invalid content with lock");
 		ok &= expect(ReadConfigTestFile(replace_path) == before_invalid_replace,
 		             "invalid replacement leaves old config unchanged");
@@ -129,8 +134,9 @@ namespace howdy::test {
 		                                     "\n"
 		                                     "[video]\n"
 		                                     "timeout = 0\n";
-		ok &= expect(howdy::native::ReplaceConfigContentAtomically(replace_path, recovery_content,
-		                                                           &install_error, true, false),
+		ok &= expect(howdy::native::ReplaceConfigContentAtomically(
+		                 replace_path, recovery_content, &install_error, true, false, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically releases lock and can bypass validation");
 		ok &= expect(ReadConfigTestFile(replace_path) == recovery_content,
 		             "runtime-validation bypass installs content");
@@ -141,7 +147,8 @@ namespace howdy::test {
 		ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore changed config mode");
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, replacement_content, &install_error, true, false,
-		                 &stale_expected_content),
+		                 &stale_expected_content, howdy::native::SyncParentDirectory,
+		                 {context.temp_root}),
 		             "replace_config_content_atomically rejects stale expected content");
 		ok &= expect(ReadConfigTestFile(replace_path) == valid_content,
 		             "stale expected content leaves current config unchanged");
@@ -150,7 +157,8 @@ namespace howdy::test {
 		             "write oversized stale current config");
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, replacement_content, &install_error, true, false,
-		                 &context.config_over_limit),
+		                 &context.config_over_limit, howdy::native::SyncParentDirectory,
+		                 {context.temp_root}),
 		             "stale comparison rejects oversized current config");
 		ok &= expect(install_error == "Failed to read config file",
 		             "oversized stale comparison reports config read failure");
@@ -161,8 +169,9 @@ namespace howdy::test {
 
 		ok &= expect(chmod(replace_path.c_str(), 0666) == 0, "make replace config world-writable");
 		ok &= expect(
-		    !howdy::native::ReplaceConfigContentAtomically(replace_path, valid_content,
-		                                                   &install_error, true, true),
+		    !howdy::native::ReplaceConfigContentAtomically(
+		        replace_path, valid_content, &install_error, true, true, nullptr,
+		        howdy::native::SyncParentDirectory, {context.temp_root}),
 		    "replace_config_content_atomically rejects insecure config permissions with lock");
 		ok &= expect(chmod(replace_path.c_str(), 0600) == 0, "restore replace config permissions");
 
@@ -195,7 +204,8 @@ namespace howdy::test {
 		ok &= expect(chmod(replace_insecure_dir.c_str(), 0777) == 0,
 		             "make replace config dir world-writable");
 		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
-		                 replace_insecure_path, replacement_content, &install_error, false, true),
+		                 replace_insecure_path, replacement_content, &install_error, false, true,
+		                 nullptr, howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects insecure parent directory");
 		ok &= expect(chmod(replace_insecure_dir.c_str(), 0755) == 0,
 		             "restore replace config dir mode");
@@ -203,8 +213,9 @@ namespace howdy::test {
 		const auto non_regular_path = context.temp_root / "non-regular.ini";
 		ok &=
 		    expect(fs::create_directory(non_regular_path, ec), "create non-regular config target");
-		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(non_regular_path, valid_content,
-		                                                            &install_error, false, true),
+		ok &= expect(!howdy::native::ReplaceConfigContentAtomically(
+		                 non_regular_path, valid_content, &install_error, false, true, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}),
 		             "replace_config_content_atomically rejects non-regular config target");
 		return ok;
 	}

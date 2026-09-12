@@ -59,18 +59,18 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto CheckOpencvModelReadinessWithLabel(const std::filesystem::path &path,
-	                                        const std::string_view       label,
-	                                        const std::optional<uid_t>  &owner_uid)
-	    -> OpenCvModelReadiness {
+	auto CheckOpencvModelReadinessWithLabel(
+	    const std::filesystem::path &path, const std::string_view label,
+	    const std::optional<uid_t>                   &owner_uid,
+	    const file_security_internal::ValidationRoot &validation_root) -> OpenCvModelReadiness {
 		const auto parent = path.parent_path();
 		if (parent.empty()) {
 			return {.status = OpenCvModelStatus::kInsecure,
 			        .error_message =
 			            std::string(label) + " must have a parent directory: " + path.string()};
 		}
-		const auto directory_security =
-		    CheckSecureRootOwnedDirectoryTree(parent, kModelsDirectoryLabel, owner_uid);
+		const auto directory_security = CheckSecureRootOwnedDirectoryTree(
+		    parent, kModelsDirectoryLabel, owner_uid, validation_root);
 		if (!directory_security.ok) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = directory_security.error_message};

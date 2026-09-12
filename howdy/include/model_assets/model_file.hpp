@@ -1,5 +1,7 @@
 #pragma once
 
+#include "support/file_security/validation_root.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -23,9 +25,9 @@ namespace howdy::native {
 		std::string       error_message;
 	};
 
-	[[nodiscard]] auto CheckOpencvModelReadinessWithLabel(const std::filesystem::path &path,
-	                                                      std::string_view             label,
-	                                                      const std::optional<uid_t>  &owner_uid)
-	    -> OpenCvModelReadiness;
+	[[nodiscard]] auto CheckOpencvModelReadinessWithLabel(
+	    const std::filesystem::path &path, std::string_view label,
+	    const std::optional<uid_t>                   &owner_uid,
+	    const file_security_internal::ValidationRoot &validation_root = {}) -> OpenCvModelReadiness;
 
 }  // namespace howdy::native

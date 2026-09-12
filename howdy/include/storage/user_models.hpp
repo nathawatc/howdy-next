@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storage/user_model_status.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "vision/face_metric.hpp"
 
 #include <cstdint>
@@ -88,20 +89,33 @@ namespace howdy::native {
 	auto LoadUserModels(const std::string &user, const std::string &expected_backend)
 	    -> UserModelLoadResult;
 	auto LoadUserModels(const std::string &user, const std::string &expected_backend,
-	                    std::optional<uid_t> owner_uid) -> UserModelLoadResult;
+	                    std::optional<uid_t>                          owner_uid,
+	                    const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelLoadResult;
 	auto ListUserModelEntries(const std::string &user, const std::string &expected_backend,
-	                          std::optional<FaceMetric> expected_metric = {},
-	                          const std::string        &expected_model = {}) -> UserModelListResult;
-	auto InspectUserModelFile(const std::string &user) -> UserModelInspectResult;
-	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &entry)
+	                          std::optional<FaceMetric>                     expected_metric = {},
+	                          const std::string                            &expected_model  = {},
+	                          const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelListResult;
+	auto InspectUserModelFile(const std::string                            &user,
+	                          const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelInspectResult;
+	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &entry,
+	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelMutationResult;
-	auto RemoveUserModelEntry(const std::string &user, int id) -> UserModelMutationResult;
-	auto RemoveUserModelEntryIfMatches(const std::string               &user,
-	                                   const UserModelEntryExpectation &expected)
+	auto RemoveUserModelEntry(const std::string &user, int id,
+	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelMutationResult;
-	auto ClearUserModelEntries(const std::string &user) -> UserModelMutationResult;
-	auto ClearUserModelEntriesIfUnchanged(const std::string           &user,
-	                                      const UserModelFileSnapshot &expected_snapshot)
+	auto RemoveUserModelEntryIfMatches(
+	    const std::string &user, const UserModelEntryExpectation &expected,
+	    const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelMutationResult;
+	auto ClearUserModelEntries(const std::string                            &user,
+	                           const file_security_internal::ValidationRoot &validation_root = {})
+	    -> UserModelMutationResult;
+	auto ClearUserModelEntriesIfUnchanged(
+	    const std::string &user, const UserModelFileSnapshot &expected_snapshot,
+	    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelMutationResult;
 
 }  // namespace howdy::native

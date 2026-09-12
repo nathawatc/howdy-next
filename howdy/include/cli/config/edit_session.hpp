@@ -96,6 +96,8 @@ namespace howdy::native::config_internal {
 
 	[[nodiscard]] auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies)
 	    -> bool;
-	[[nodiscard]] auto DefaultConfigEditDependencies() -> ConfigEditDependencies;
+	[[nodiscard]] auto
+	DefaultConfigEditDependencies(file_security_internal::ValidationRoot *validation_root = nullptr)
+	    -> ConfigEditDependencies;
 
 }  // namespace howdy::native::config_internal

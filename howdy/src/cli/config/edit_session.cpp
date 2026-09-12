@@ -27,6 +27,12 @@ namespace howdy::native::config_internal {
 
 		namespace fs = std::filesystem;
 
+		auto ValidationRootFromContext(void *context) -> file_security_internal::ValidationRoot {
+			return context == nullptr
+			           ? file_security_internal::ValidationRoot{}
+			           : *static_cast<file_security_internal::ValidationRoot *>(context);
+		}
+
 		auto IsSafeEditorPath(const fs::path &path) -> bool {
 			return path.is_absolute() && fs::is_regular_file(path) &&
 			       access(path.c_str(), X_OK) == 0;
@@ -63,7 +69,9 @@ namespace howdy::native::config_internal {
 
 		auto CreateTempCopy(const fs::path                                   &source_path,
 		                    const std::optional<howdy::native::InvokingUser> &invoking_user,
-		                    std::string *source_content = nullptr) -> std::optional<fs::path> {
+		                    std::string                                      *source_content,
+		                    const file_security_internal::ValidationRoot     &validation_root)
+		    -> std::optional<fs::path> {
 			if (source_content != nullptr) {
 				source_content->clear();
 			}
@@ -76,7 +84,8 @@ namespace howdy::native::config_internal {
 			if (config_test_hooks::Current()) {
 				config_test_hooks::Current()();
 			}
-			const auto security = howdy::native::CheckSecureConfigFd(input_fd, source_path);
+			const auto security = howdy::native::CheckSecureConfigFd(
+			    input_fd, source_path, DefaultSecureOwnerUid(), validation_root);
 			if (!security.ok) {
 				close(input_fd);
 				return std::nullopt;
@@ -195,7 +204,9 @@ namespace howdy::native::config_internal {
 			return true;
 		}
 
-		auto FileContentMatches(const fs::path &path, const std::string &expected) -> bool {
+		auto FileContentMatches(const fs::path &path, const std::string &expected,
+		                        const file_security_internal::ValidationRoot &validation_root)
+		    -> bool {
 			const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
 			if (input_fd < 0) {
 				return false;
@@ -203,7 +214,8 @@ namespace howdy::native::config_internal {
 			if (config_test_hooks::Current()) {
 				config_test_hooks::Current()();
 			}
-			const auto security = howdy::native::CheckSecureConfigFd(input_fd, path);
+			const auto security = howdy::native::CheckSecureConfigFd(
+			    input_fd, path, DefaultSecureOwnerUid(), validation_root);
 			if (!security.ok) {
 				close(input_fd);
 				return false;
@@ -232,17 +244,17 @@ namespace howdy::native::config_internal {
 
 		auto CheckSecureConfigPathDependency(void *context, const fs::path &config_path)
 		    -> howdy::native::ConfigPathCheckResult {
-			(void)context;
-			return howdy::native::CheckSecureConfigPath(config_path);
+			return howdy::native::CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(),
+			                                            ValidationRootFromContext(context));
 		}
 
 		auto
 		CreateTempCopyDependency(void *context, const fs::path &source_path,
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
 		    -> std::optional<howdy::native::config_internal::TempConfigCopy> {
-			(void)context;
 			std::string original_content;
-			const auto  path = CreateTempCopy(source_path, invoking_user, &original_content);
+			const auto  path = CreateTempCopy(source_path, invoking_user, &original_content,
+			                                  ValidationRootFromContext(context));
 			if (!path) {
 				return std::nullopt;
 			}
@@ -272,8 +284,7 @@ namespace howdy::native::config_internal {
 
 		auto FileContentMatchesDependency(void *context, const fs::path &path,
 		                                  const std::string &expected) -> bool {
-			(void)context;
-			return FileContentMatches(path, expected);
+			return FileContentMatches(path, expected, ValidationRootFromContext(context));
 		}
 
 		auto ReplaceConfigContentAtomicallyDependency(void *context, const fs::path &config_path,
@@ -282,10 +293,9 @@ namespace howdy::native::config_internal {
 		                                              bool               validate_runtime,
 		                                              const std::string *expected_current_content)
 		    -> bool {
-			(void)context;
 			return howdy::native::ReplaceConfigContentAtomically(
 			    config_path, content, error_message, lock, validate_runtime,
-			    expected_current_content);
+			    expected_current_content, SyncParentDirectory, ValidationRootFromContext(context));
 		}
 
 		auto RemoveIfExistsDependency(void *context, const fs::path &path) -> void {
@@ -311,8 +321,10 @@ namespace howdy::native::config_internal {
 		       dependencies.remove_if_exists != nullptr;
 	}
 
-	auto DefaultConfigEditDependencies() -> ConfigEditDependencies {
+	auto DefaultConfigEditDependencies(file_security_internal::ValidationRoot *validation_root)
+	    -> ConfigEditDependencies {
 		return {
+		    .context                           = validation_root,
 		    .resolve_invoking_user             = ResolveInvokingUserDependency,
 		    .resolve_editor                    = ResolveEditorDependency,
 		    .resolve_config_path               = ResolveConfigPathDependency,

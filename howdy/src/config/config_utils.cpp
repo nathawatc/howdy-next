@@ -25,11 +25,11 @@ namespace howdy::native {
 
 	}  // namespace
 
-	auto ReplaceConfigContentAtomically(const std::filesystem::path &config_path,
-	                                    const std::string &content, std::string *error_message,
-	                                    bool lock, bool validate_runtime,
-	                                    const std::string    *expected_current_content,
-	                                    SyncParentDirectoryFn sync_parent) -> bool {
+	auto ReplaceConfigContentAtomically(
+	    const std::filesystem::path &config_path, const std::string &content,
+	    std::string *error_message, bool lock, bool validate_runtime,
+	    const std::string *expected_current_content, SyncParentDirectoryFn sync_parent,
+	    const file_security_internal::ValidationRoot &validation_root) -> bool {
 		using namespace config_utils_internal;
 
 		if (error_message != nullptr) {
@@ -39,7 +39,8 @@ namespace howdy::native {
 			return FailWith(error_message, kUpdatedConfigTooLargeMessage);
 		}
 
-		const auto initial_security = CheckSecureConfigPath(config_path);
+		const auto initial_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!initial_security.ok) {
 			return FailWith(error_message, initial_security.error_message);
 		}
@@ -53,7 +54,8 @@ namespace howdy::native {
 			return false;
 		}
 
-		const auto final_security = CheckSecureConfigPath(config_path);
+		const auto final_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!final_security.ok) {
 			return FailWith(error_message, final_security.error_message);
 		}
@@ -64,7 +66,8 @@ namespace howdy::native {
 		}
 
 		if (expected_current_content != nullptr) {
-			if (!ExpectedContentMatches(config_path, *expected_current_content, error_message)) {
+			if (!ExpectedContentMatches(config_path, *expected_current_content, error_message,
+			                            validation_root)) {
 				return false;
 			}
 		}
@@ -86,7 +89,8 @@ namespace howdy::native {
 
 	auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
 	                       std::string *error_message, const std::string &value, bool lock,
-	                       bool validate_runtime) -> bool {
+	                       bool                                          validate_runtime,
+	                       const file_security_internal::ValidationRoot &validation_root) -> bool {
 		using namespace config_utils_internal;
 
 		if (!IsSafeIniScalarValue(value)) {
@@ -94,7 +98,8 @@ namespace howdy::native {
 			                "Config values must be single-line scalars and cannot start with [");
 		}
 
-		const auto initial_security = CheckSecureConfigPath(config_path);
+		const auto initial_security =
+		    CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!initial_security.ok) {
 			return FailWith(error_message, initial_security.error_message);
 		}
@@ -112,7 +117,8 @@ namespace howdy::native {
 			config_test_hooks::Current()();
 		}
 
-		const auto security = CheckSecureConfigFd(fd.Get(), config_path);
+		const auto security =
+		    CheckSecureConfigFd(fd.Get(), config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!security.ok) {
 			return FailWith(error_message, security.error_message);
 		}
@@ -150,7 +156,7 @@ namespace howdy::native {
 		std::string install_error;
 		const bool  ok = ReplaceConfigContentAtomically(
 		    config_path, updated_content, error_message == nullptr ? nullptr : &install_error,
-		    false, false, &*current_content);
+		    false, false, &*current_content, SyncParentDirectory, validation_root);
 		if (!ok && error_message != nullptr) {
 			*error_message =
 			    install_error.empty() || install_error == kEditedConfigInstallFailedMessage

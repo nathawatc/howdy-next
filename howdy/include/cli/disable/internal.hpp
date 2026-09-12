@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/runtime_config.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <filesystem>
 #include <string>
@@ -25,6 +26,10 @@ namespace howdy::native::disable_internal {
 	};
 
 	auto DisableMainWithDependencies(int argc, char **argv, const DisableDependencies &dependencies)
+	    -> int;
+
+	auto DisableMainWithValidationRoot(int argc, char **argv,
+	                                   file_security_internal::ValidationRoot validation_root)
 	    -> int;
 
 }  // namespace howdy::native::disable_internal

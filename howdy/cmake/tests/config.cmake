@@ -105,10 +105,6 @@ target_link_libraries(
 	howdy_runtime_config_load_test
 	PRIVATE howdy_runtime_paths
 )
-set_tests_properties(
-	native-runtime-config-load
-	PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
-)
 
 howdy_add_native_test(
 	howdy_runtime_config_test
@@ -118,10 +114,6 @@ howdy_add_native_test(
 target_link_libraries(
 	howdy_runtime_config_test
 	PRIVATE howdy_config
-)
-set_tests_properties(
-	native-runtime-config
-	PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 howdy_add_native_test(

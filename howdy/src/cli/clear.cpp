@@ -45,16 +45,19 @@ namespace {
 		return args;
 	}
 
-	auto InspectUserModelFileDependency([[maybe_unused]] void *context, const std::string &user)
+	auto InspectUserModelFileDependency(void *context, const std::string &user)
 	    -> howdy::native::UserModelInspectResult {
-		return howdy::native::InspectUserModelFile(user);
+		return howdy::native::InspectUserModelFile(
+		    user, *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
 	auto ClearUserModelEntriesIfUnchangedDependency(
-	    [[maybe_unused]] void *context, const std::string &user,
+	    void *context, const std::string &user,
 	    const howdy::native::UserModelFileSnapshot &expected_snapshot)
 	    -> howdy::native::UserModelMutationResult {
-		return howdy::native::ClearUserModelEntriesIfUnchanged(user, expected_snapshot);
+		return howdy::native::ClearUserModelEntriesIfUnchanged(
+		    user, expected_snapshot,
+		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
 }  // namespace
@@ -119,14 +122,20 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **a
 	return kClearExitOk;
 }
 
-auto ClearMain(int argc, char **argv) -> int {
+auto howdy::native::clear_internal::ClearMainWithValidationRoot(
+    int argc, char **argv, file_security_internal::ValidationRoot validation_root) -> int {
 	if (argc < 2) {
 		return kClearExitAbort;
 	}
 	return howdy::native::clear_internal::ClearMainWithDependencies(
 	    argc, argv,
 	    {
+	        .context                               = &validation_root,
 	        .inspect_user_model_file               = InspectUserModelFileDependency,
 	        .clear_user_model_entries_if_unchanged = ClearUserModelEntriesIfUnchangedDependency,
 	    });
+}
+
+auto ClearMain(int argc, char **argv) -> int {
+	return howdy::native::clear_internal::ClearMainWithValidationRoot(argc, argv, {});
 }

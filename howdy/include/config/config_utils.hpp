@@ -38,8 +38,11 @@ namespace howdy::native {
 		       "helper; do not make /etc/howdy or config.ini world-readable";
 	}
 
-	inline auto CheckSecureConfigFd(int fd, const std::filesystem::path &config_path,
-	                                const std::optional<uid_t> owner_uid) -> ConfigPathCheckResult {
+	inline auto
+	CheckSecureConfigFd(int fd, const std::filesystem::path &config_path,
+	                    const std::optional<uid_t>                    owner_uid,
+	                    const file_security_internal::ValidationRoot &validation_root = {})
+	    -> ConfigPathCheckResult {
 		const auto parent = config_path.parent_path();
 		if (parent.empty()) {
 			return ConfigPathCheckResult{
@@ -51,8 +54,8 @@ namespace howdy::native {
 		}
 
 		const auto file_security = CheckSecureRootOwnedFdWithDirectory(
-		    fd, config_path, {.directory = "Config directory", .file = kConfigFileLabel},
-		    owner_uid);
+		    fd, config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid,
+		    validation_root);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
 			    .ok = false,
@@ -73,8 +76,10 @@ namespace howdy::native {
 	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
 	    -> ConfigPathCheckResult;
 
-	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path,
-	                                  const std::optional<uid_t>   owner_uid)
+	inline auto
+	CheckSecureConfigPath(const std::filesystem::path                  &config_path,
+	                      const std::optional<uid_t>                    owner_uid,
+	                      const file_security_internal::ValidationRoot &validation_root = {})
 	    -> ConfigPathCheckResult {
 		const auto parent = config_path.parent_path();
 		if (parent.empty()) {
@@ -87,7 +92,8 @@ namespace howdy::native {
 		}
 
 		const auto file_security = CheckSecureRootOwnedFileWithDirectory(
-		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid);
+		    config_path, {.directory = "Config directory", .file = kConfigFileLabel}, owner_uid,
+		    validation_root);
 		if (!file_security.ok) {
 			return ConfigPathCheckResult{
 			    .ok = false,
@@ -122,23 +128,25 @@ namespace howdy::native {
 	}
 
 	auto IsSafeIniScalarValue(std::string_view value) -> bool;
-	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock = false)
+	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock = false,
+	                     const file_security_internal::ValidationRoot &validation_root = {})
 	    -> std::vector<std::string>;
 	auto AtomicWriteLines(const std::filesystem::path    &config_path,
 	                      const std::vector<std::string> &lines,
 	                      SyncParentDirectoryFn           sync_parent = SyncParentDirectory)
 	    -> AtomicFileCommitResult;
 	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool;
-	auto ReplaceConfigContentAtomically(const std::filesystem::path &config_path,
-	                                    const std::string           &content,
-	                                    std::string *error_message = nullptr, bool lock = true,
-	                                    bool                  validate_runtime         = true,
-	                                    const std::string    *expected_current_content = nullptr,
-	                                    SyncParentDirectoryFn sync_parent = SyncParentDirectory)
-	    -> bool;
+	auto ReplaceConfigContentAtomically(
+	    const std::filesystem::path &config_path, const std::string &content,
+	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,
+	    const std::string                            *expected_current_content = nullptr,
+	    SyncParentDirectoryFn                         sync_parent     = SyncParentDirectory,
+	    const file_security_internal::ValidationRoot &validation_root = {}) -> bool;
 	auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
 	                       std::string *error_message, const std::string &value, bool lock = false,
-	                       bool validate_runtime = true) -> bool;
+	                       bool                                          validate_runtime = true,
+	                       const file_security_internal::ValidationRoot &validation_root  = {})
+	    -> bool;
 
 	inline auto UpdateConfigValue(const std::filesystem::path &config_path, const std::string &key,
 	                              const std::string &value, bool lock = false) -> bool {

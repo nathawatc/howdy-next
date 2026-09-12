@@ -93,7 +93,9 @@ namespace howdy::native::config_utils_internal {
 	}
 
 	auto ExpectedContentMatches(const std::filesystem::path &config_path,
-	                            const std::string &expected, std::string *error_message) -> bool {
+	                            const std::string &expected, std::string *error_message,
+	                            const file_security_internal::ValidationRoot &validation_root)
+	    -> bool {
 		ScopedFd input_fd(
 		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (input_fd.Get() < 0) {
@@ -102,7 +104,8 @@ namespace howdy::native::config_utils_internal {
 		if (config_test_hooks::Current()) {
 			config_test_hooks::Current()();
 		}
-		const auto security = CheckSecureConfigFd(input_fd.Get(), config_path);
+		const auto security = CheckSecureConfigFd(input_fd.Get(), config_path,
+		                                          DefaultSecureOwnerUid(), validation_root);
 		if (!security.ok) {
 			return FailWith(error_message, security.error_message);
 		}
@@ -156,7 +159,8 @@ namespace howdy::native::config_utils_internal {
 
 namespace howdy::native {
 
-	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock)
+	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock,
+	                     const file_security_internal::ValidationRoot &validation_root)
 	    -> std::vector<std::string> {
 		std::vector<std::string> lines;
 
@@ -173,7 +177,8 @@ namespace howdy::native {
 			config_test_hooks::Current()();
 		}
 
-		const auto security = CheckSecureConfigFd(fd.Get(), config_path);
+		const auto security =
+		    CheckSecureConfigFd(fd.Get(), config_path, DefaultSecureOwnerUid(), validation_root);
 		if (!security.ok) {
 			return lines;
 		}

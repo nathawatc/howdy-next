@@ -16,6 +16,82 @@ namespace {
 	using howdy::test::expect;
 	using howdy::test::write_file;
 
+	auto BoundaryChecks(const std::filesystem::path &fixture) -> bool {
+		namespace fs = std::filesystem;
+		using howdy::native::CheckSecureRootOwnedDirectoryTree;
+		using howdy::native::file_security_internal::ValidationRoot;
+		const auto outside = fixture / "world-writable";
+		const auto root    = outside / "boundary";
+		const auto child   = root / "child";
+		const auto nested  = child / "nested";
+		fs::create_directories(nested);
+		fs::create_directory(outside / "boundary-sibling");
+		bool ok =
+		    expect(chmod(outside.c_str(), 01777) == 0, "world-writable sticky external ancestor");
+		ok &= expect(chmod(root.c_str(), 0700) == 0 && chmod(child.c_str(), 0700) == 0 &&
+		                 chmod(nested.c_str(), 0700) == 0,
+		             "secure controlled boundary tree");
+		const ValidationRoot boundary{root};
+		const auto check = [&](const fs::path &target) -> howdy::native::SecurePathCheckResult {
+			return CheckSecureRootOwnedDirectoryTree(target, "Boundary directory", geteuid(),
+			                                         boundary);
+		};
+		ok &= expect(check(root).ok, "boundary equal to target is checked and accepted");
+		ok &= expect(check(child).ok, "secure child ignores external writable ancestor");
+		ok &= expect(check(nested).ok, "secure nested child is accepted");
+		ok &= expect(check(root / "." / "child" / "nested" / "").ok,
+		             "dot and trailing separator preserve containment");
+		ok &= expect(check(outside).error_message.contains("outside validation boundary"),
+		             "target outside boundary is rejected");
+		ok &= expect(check(outside / "boundary-sibling")
+		                 .error_message.contains("outside validation boundary"),
+		             "same-prefix sibling is rejected");
+		ok &= expect(check(root / ".." / "boundary-sibling")
+		                 .error_message.contains("outside validation boundary"),
+		             "parent escape is rejected");
+		ok &= expect(
+		    check(child / ".." / "child").error_message.contains("outside validation boundary"),
+		    "parent component is rejected even when it returns inside");
+		ok &= expect(!check("child").ok, "custom boundary rejects relative target");
+		ok &= expect(!CheckSecureRootOwnedDirectoryTree(child, "Boundary", std::nullopt,
+		                                                {root / ".." / "boundary"})
+		                  .ok,
+		             "boundary containing parent component is rejected");
+		ok &= expect(
+		    !CheckSecureRootOwnedDirectoryTree(child, "Boundary", std::nullopt, {"relative"}).ok,
+		    "relative boundary is rejected");
+		ok &= expect(!check(fs::path(root.string() + std::string(1, '\0') + "/child")).ok,
+		             "embedded NUL is rejected");
+		ok &= expect(chmod(root.c_str(), 0777) == 0, "make boundary insecure");
+		ok &= expect(!check(root).ok && !check(nested).ok,
+		             "insecure boundary is rejected including equality");
+		ok &= expect(chmod(root.c_str(), 0700) == 0, "restore boundary");
+		ok &= expect(chmod(child.c_str(), 0775) == 0, "make intermediate insecure");
+		ok &= expect(!check(nested).ok, "insecure intermediate is rejected");
+		ok &= expect(chmod(child.c_str(), 0700) == 0, "restore intermediate");
+		fs::create_directory_symlink(outside, root / "escape");
+		fs::create_directory_symlink(child, root / "inside-link");
+		fs::create_directory_symlink(root, outside / "root-link");
+		ok &= expect(!check(root / "escape" / "boundary-sibling").ok, "symlink escape is rejected");
+		ok &= expect(!check(root / "inside-link" / "nested").ok,
+		             "internal directory symlink is rejected");
+		for (const auto &suffix : {fs::path{}, fs::path{"."}}) {
+			const auto link =
+			    suffix.empty() ? outside / "root-link" : outside / "root-link" / suffix;
+			ok &= expect(
+			    !CheckSecureRootOwnedDirectoryTree(link, "Boundary", std::nullopt, {link}).ok,
+			    "symlink boundary is rejected including trailing dot");
+		}
+		const auto production = CheckSecureRootOwnedDirectoryTree(nested, "Boundary", std::nullopt);
+		const auto full_root =
+		    CheckSecureRootOwnedDirectoryTree(nested, "Boundary", std::nullopt, {"/"});
+		ok &= expect(!production.ok && !full_root.ok &&
+		                 production.error_message == full_root.error_message,
+		             "default wrapper still walks from filesystem root and rejects external "
+		             "writable ancestor");
+		return ok;
+	}
+
 	auto SecureFile(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
 		return howdy::native::CheckSecureRootOwnedFile(path, "Test file", std::nullopt);
 	}
@@ -31,20 +107,23 @@ namespace {
 	}
 
 	auto SecureDirTree(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
-		return howdy::native::CheckSecureRootOwnedDirectoryTree(path, "Test directory tree",
-		                                                        std::nullopt);
+		return howdy::native::CheckSecureRootOwnedDirectoryTree(
+		    path, "Test directory tree", std::nullopt,
+		    {std::filesystem::current_path() / "howdy-file-security-test"});
 	}
 
 	auto SecureFileWithDirectory(const std::filesystem::path &path)
 	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::CheckSecureRootOwnedFileWithDirectory(
-		    path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt);
+		    path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt,
+		    {std::filesystem::current_path() / "howdy-file-security-test"});
 	}
 
 	auto SecureFdWithDirectory(int fd, const std::filesystem::path &path)
 	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::CheckSecureRootOwnedFdWithDirectory(
-		    fd, path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt);
+		    fd, path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt,
+		    {std::filesystem::current_path() / "howdy-file-security-test"});
 	}
 
 }  // namespace
@@ -58,6 +137,8 @@ auto main() -> int {
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
 	ok &= expect(!ec, "create temp root");
+	ok &= expect(chmod(temp_root.c_str(), 0700) == 0, "secure fixture boundary");
+	ok &= BoundaryChecks(temp_root);
 
 	const auto safe_file = temp_root / "safe-file";
 	const auto safe_dir  = temp_root / "safe-dir";

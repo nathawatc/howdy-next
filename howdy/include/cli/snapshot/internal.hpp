@@ -2,6 +2,7 @@
 
 #include "config/runtime_config.hpp"
 #include "support/atomic_files.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -52,12 +53,15 @@ namespace howdy::native::snapshot_internal {
 	                                       const cv::Mat &image, std::vector<uchar> *encoded);
 
 	struct SnapshotWriterDependencies {
-		void                 *context      = nullptr;
-		SnapshotEncodeImageFn encode_image = nullptr;
-		SyncParentDirectoryFn sync_parent  = SyncParentDirectory;
+		void                                  *context      = nullptr;
+		SnapshotEncodeImageFn                  encode_image = nullptr;
+		SyncParentDirectoryFn                  sync_parent  = SyncParentDirectory;
+		file_security_internal::ValidationRoot validation_root;
 	};
 
-	auto EnsureSnapshotDirectory(const std::filesystem::path &directory) -> bool;
+	auto EnsureSnapshotDirectory(const std::filesystem::path                  &directory,
+	                             const file_security_internal::ValidationRoot &validation_root = {})
+	    -> bool;
 
 	auto WriteSnapshotAtPath(const std::vector<cv::Mat>       &frames,
 	                         const std::vector<std::string>   &text_lines,

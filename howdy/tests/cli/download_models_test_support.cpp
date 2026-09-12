@@ -156,8 +156,11 @@ namespace howdy::test::download_models {
 		    const_cast<char *>("howdy-download-models"),
 		    nullptr,
 		};
+		auto fixture_dependencies            = dependencies;
+		fixture_dependencies.validation_root = {std::filesystem::current_path() /
+		                                        "howdy-download-models-test"};
 		*exit_code = howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
-		    1, argv.data(), dependencies);
+		    1, argv.data(), fixture_dependencies);
 		return true;
 	}
 

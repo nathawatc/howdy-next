@@ -104,9 +104,13 @@ auto main() -> int {
 	setenv("HOWDY_CONFIG", insecure_config.c_str(), 1);
 	ok &= expect(howdy::native::ResolveConfigPath() == insecure_config,
 	             "absolute config override still resolves before trust check");
-	ok &= expect(!howdy::native::CheckSecureConfigPath(insecure_config, std::nullopt).ok,
-	             "insecure config path is rejected before runtime use");
+	ok &=
+	    expect(!howdy::native::CheckSecureConfigPath(insecure_config, std::nullopt, {temp_root}).ok,
+	           "insecure config path is rejected before runtime use");
 	ok &= expect(chmod(insecure_dir.c_str(), 0755) == 0, "restore insecure config dir mode");
+	ok &=
+	    expect(howdy::native::CheckSecureConfigPath(insecure_config, std::nullopt, {temp_root}).ok,
+	           "restored config fixture is secure inside boundary");
 
 	const auto insecure_models = temp_root / "insecure-models";
 	fs::create_directories(insecure_models, ec);
@@ -115,11 +119,16 @@ auto main() -> int {
 	setenv("HOWDY_MODELS_DIR", insecure_models.c_str(), 1);
 	ok &= expect(howdy::native::ResolveModelsDir() == insecure_models,
 	             "absolute models override still resolves before trust check");
-	ok &= expect(!howdy::native::CheckSecureRootOwnedDirectoryTree(
-	                  howdy::native::ResolveModelsDir(), "Models directory", std::nullopt)
-	                  .ok,
-	             "insecure model directory is rejected before model load");
+	ok &= expect(
+	    !howdy::native::CheckSecureRootOwnedDirectoryTree(
+	         howdy::native::ResolveModelsDir(), "Models directory", std::nullopt, {temp_root})
+	         .ok,
+	    "insecure model directory is rejected before model load");
 	ok &= expect(chmod(insecure_models.c_str(), 0755) == 0, "restore insecure models dir mode");
+	ok &= expect(howdy::native::CheckSecureRootOwnedDirectoryTree(
+	                 insecure_models, "Models directory", std::nullopt, {temp_root})
+	                 .ok,
+	             "restored model fixture is secure inside boundary");
 
 	ClearRuntimeEnv();
 

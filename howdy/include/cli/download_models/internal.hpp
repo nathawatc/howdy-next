@@ -2,6 +2,7 @@
 
 #include "model_assets/opencv_model_manifest.hpp"
 #include "support/atomic_files.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <cstddef>
 #include <optional>
@@ -49,6 +50,7 @@ namespace howdy::native::download_models_internal {
 		Sha256FileFn                           sha256_file = Sha256FileDescriptor;
 		FstatFn                                fstat_file  = ::fstat;
 		std::span<const OpenCvModelDescriptor> models      = OfficialOpencvModels();
+		file_security_internal::ValidationRoot validation_root;
 	};
 
 	auto DownloadModelsWriteCallback(void *contents, std::size_t size, std::size_t nmemb,

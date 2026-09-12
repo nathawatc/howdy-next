@@ -1,6 +1,7 @@
 #pragma once
 
 #include "storage/user_models.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <string>
 
@@ -21,5 +22,8 @@ namespace howdy::native::clear_internal {
 
 	auto ClearMainWithDependencies(int argc, char **argv, const ClearDependencies &dependencies)
 	    -> int;
+
+	auto ClearMainWithValidationRoot(int argc, char **argv,
+	                                 file_security_internal::ValidationRoot validation_root) -> int;
 
 }  // namespace howdy::native::clear_internal

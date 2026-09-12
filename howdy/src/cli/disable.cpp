@@ -21,19 +21,20 @@ namespace {
 		return howdy::native::ResolveConfigPath();
 	}
 
-	auto LoadRuntimeConfigDependency([[maybe_unused]] void       *context,
-	                                 const std::filesystem::path &config_path)
+	auto LoadRuntimeConfigDependency(void *context, const std::filesystem::path &config_path)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		return howdy::native::LoadRuntimeConfig(config_path);
+		return howdy::native::LoadRuntimeConfig(
+		    config_path, howdy::native::DefaultSecureOwnerUid(),
+		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
-	auto UpdateConfigValueDependency([[maybe_unused]] void       *context,
-	                                 const std::filesystem::path &config_path,
+	auto UpdateConfigValueDependency(void *context, const std::filesystem::path &config_path,
 	                                 const std::string &key, const std::string &value,
 	                                 std::string *error_message, bool lock, bool validate_runtime)
 	    -> bool {
-		return howdy::native::UpdateConfigValue(config_path, key, error_message, value, lock,
-		                                        validate_runtime);
+		return howdy::native::UpdateConfigValue(
+		    config_path, key, error_message, value, lock, validate_runtime,
+		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
 	auto ParseArgument(int argc, char **argv) -> std::optional<std::string> {
@@ -123,12 +124,18 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
 	return kDisableExitOk;
 }
 
-auto DisableMain(int argc, char **argv) -> int {
+auto howdy::native::disable_internal::DisableMainWithValidationRoot(
+    int argc, char **argv, file_security_internal::ValidationRoot validation_root) -> int {
 	return howdy::native::disable_internal::DisableMainWithDependencies(
 	    argc, argv,
 	    {
+	        .context             = &validation_root,
 	        .resolve_config_path = ResolveConfigPathDependency,
 	        .load_runtime_config = LoadRuntimeConfigDependency,
 	        .update_config_value = UpdateConfigValueDependency,
 	    });
+}
+
+auto DisableMain(int argc, char **argv) -> int {
+	return howdy::native::disable_internal::DisableMainWithValidationRoot(argc, argv, {});
 }

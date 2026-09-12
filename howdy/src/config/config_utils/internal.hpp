@@ -1,10 +1,10 @@
 #pragma once
 
-#include "config/config_utils.hpp"
+#include "support/atomic_files.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <cstdint>
 #include <filesystem>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,7 +35,8 @@ namespace howdy::native::config_utils_internal {
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ExpectedContentMatches(const std::filesystem::path &config_path, const std::string &expected,
-	                       std::string *error_message) -> bool;
+	                       std::string                                  *error_message,
+	                       const file_security_internal::ValidationRoot &validation_root) -> bool;
 
 	enum class ConfigInstallResult : std::uint8_t {
 		kOk,

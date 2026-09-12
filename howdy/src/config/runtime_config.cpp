@@ -185,8 +185,10 @@ namespace howdy::native {
 		return ReadFaceConfig(RuntimeValueSource{}, config_schema::kSfaceDefaultMetric);
 	}
 
-	auto LoadRuntimeConfig(const std::filesystem::path &config_path,
-	                       const std::optional<uid_t>   owner_uid) -> RuntimeConfigLoadResult {
+	auto LoadRuntimeConfig(const std::filesystem::path                  &config_path,
+	                       const std::optional<uid_t>                    owner_uid,
+	                       const file_security_internal::ValidationRoot &validation_root)
+	    -> RuntimeConfigLoadResult {
 		const int opened_fd =
 		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
 		if (opened_fd < 0) {
@@ -202,7 +204,8 @@ namespace howdy::native {
 			config_test_hooks::Current()();
 		}
 
-		const auto security = CheckSecureConfigFd(fd.Get(), config_path, owner_uid);
+		const auto security =
+		    CheckSecureConfigFd(fd.Get(), config_path, owner_uid, validation_root);
 		if (!security.ok) {
 			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
 			    config_path, security.error_message, security.error_code);

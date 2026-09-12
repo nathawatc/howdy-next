@@ -1,4 +1,3 @@
-#include "cli/disable.hpp"
 #include "cli/disable/internal.hpp"
 #include "test_support.hpp"
 
@@ -136,14 +135,16 @@ namespace {
 		return ok;
 	}
 
-	auto RunPublicDisable(const std::string &argument) -> int {
+	auto RunBoundaryAwareDisable(const std::string           &argument,
+	                             const std::filesystem::path &temp_root) -> int {
 		std::string           mutable_argument = argument;
 		std::array<char *, 3> argv{const_cast<char *>("howdy-disable"), mutable_argument.data(),
 		                           nullptr};
-		return DisableMain(2, argv.data());
+		return howdy::native::disable_internal::DisableMainWithValidationRoot(2, argv.data(),
+		                                                                      {temp_root});
 	}
 
-	auto PublicEntrypointIntegration() -> bool {
+	auto BoundaryAwareEntrypointIntegration() -> bool {
 		namespace fs = std::filesystem;
 
 		bool                             ok        = true;
@@ -164,18 +165,20 @@ namespace {
 		ok &= expect(write_file(config_path, "[core]\ndisabled = false\n"),
 		             "integration writes enabled config");
 		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "integration secures config file");
-		ok &= expect(RunPublicDisable("true") == 0, "public disable succeeds");
-		ok &=
-		    expect(read_file(config_path).contains("disabled = true\n"), "public disable persists");
-		ok &= expect(RunPublicDisable("false") == 0, "public enable succeeds");
-		ok &=
-		    expect(read_file(config_path).contains("disabled = false\n"), "public enable persists");
+		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 0,
+		             "boundary-aware disable succeeds");
+		ok &= expect(read_file(config_path).contains("disabled = true\n"),
+		             "boundary-aware disable persists");
+		ok &= expect(RunBoundaryAwareDisable("false", temp_root) == 0,
+		             "boundary-aware enable succeeds");
+		ok &= expect(read_file(config_path).contains("disabled = false\n"),
+		             "boundary-aware enable persists");
 
 		const std::string invalid_runtime_config = "[video]\ntimeout = 0\n";
 		ok &= expect(write_file(config_path, invalid_runtime_config),
 		             "integration writes invalid runtime config");
-		ok &=
-		    expect(RunPublicDisable("true") == 1, "public disable rejects invalid runtime config");
+		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 1,
+		             "boundary-aware disable rejects invalid runtime config");
 		ok &= expect(read_file(config_path) == invalid_runtime_config,
 		             "rejected invalid runtime config remains unchanged");
 
@@ -189,7 +192,8 @@ namespace {
 		             "integration makes config directory insecure");
 		ok &= expect(setenv("HOWDY_CONFIG", insecure_path.c_str(), 1) == 0,
 		             "integration selects insecure config");
-		ok &= expect(RunPublicDisable("true") == 1, "public disable rejects insecure directory");
+		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 1,
+		             "boundary-aware disable rejects insecure directory");
 		ok &= expect(read_file(insecure_path).contains("disabled = false\n"),
 		             "rejected insecure config remains unchanged");
 
@@ -348,7 +352,7 @@ auto main() -> int {
 		             "extra argument skips config mutation callbacks");
 	}
 
-	ok &= PublicEntrypointIntegration();
+	ok &= BoundaryAwareEntrypointIntegration();
 
 	return ok ? 0 : 1;
 }

@@ -137,28 +137,34 @@ namespace howdy::native {
 	}  // namespace
 
 	auto ListUserModelEntries(const std::string &user, const std::string &expected_backend,
-	                          std::optional<FaceMetric> expected_metric,
-	                          const std::string        &expected_model) -> UserModelListResult {
-		const auto  document = UserModelStore::LoadDocument(user,
-		                                                    {.backend      = expected_backend,
-		                                                     .metric       = expected_metric,
-		                                                     .model        = expected_model,
-		                                                     .strict_shape = true},
-		                                                    DefaultSecureOwnerUid());
-		const auto &entries  = document.result;
+	                          std::optional<FaceMetric>                     expected_metric,
+	                          const std::string                            &expected_model,
+	                          const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelListResult {
+		const auto document =
+		    UserModelStore::LoadDocument(user,
+		                                 {.backend      = expected_backend,
+		                                  .metric       = expected_metric,
+		                                  .model        = expected_model,
+		                                  .strict_shape = true},
+		                                 DefaultSecureOwnerUid(), validation_root);
+		const auto &entries = document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return UserModelsListFailure(entries.status, entries.error_message);
 		}
 		return entries;
 	}
 
-	auto InspectUserModelFile(const std::string &user) -> UserModelInspectResult {
-		return UserModelStore::Inspect(user);
+	auto InspectUserModelFile(const std::string                            &user,
+	                          const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelInspectResult {
+		return UserModelStore::Inspect(user, validation_root);
 	}
 
-	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &new_entry)
+	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &new_entry,
+	                          const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelMutationResult {
-		auto  mutation = UserModelStore::BeginMutation(user);
+		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
 		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk && entries.status != UserModelStatus::kNoModel) {
 			return MutationFailure(entries.status, entries.error_message);
@@ -232,8 +238,10 @@ namespace howdy::native {
 		return UserModelMutationResult{.status = UserModelStatus::kOk, .entry = std::move(entry)};
 	}
 
-	auto RemoveUserModelEntry(const std::string &user, int id) -> UserModelMutationResult {
-		auto  mutation = UserModelStore::BeginMutation(user);
+	auto RemoveUserModelEntry(const std::string &user, int id,
+	                          const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelMutationResult {
+		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
 		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return MutationFailure(entries.status, entries.error_message);
@@ -256,10 +264,10 @@ namespace howdy::native {
 		                               std::move(removed), found_index);
 	}
 
-	auto RemoveUserModelEntryIfMatches(const std::string               &user,
-	                                   const UserModelEntryExpectation &expected)
-	    -> UserModelMutationResult {
-		auto  mutation = UserModelStore::BeginMutation(user);
+	auto RemoveUserModelEntryIfMatches(
+	    const std::string &user, const UserModelEntryExpectation &expected,
+	    const file_security_internal::ValidationRoot &validation_root) -> UserModelMutationResult {
+		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
 		auto &entries  = mutation.document.result;
 		if (entries.status != UserModelStatus::kOk) {
 			return MutationFailure(entries.status, entries.error_message);
@@ -285,8 +293,10 @@ namespace howdy::native {
 		                               std::move(removed), found_index);
 	}
 
-	auto ClearUserModelEntries(const std::string &user) -> UserModelMutationResult {
-		auto transaction = UserModelStore::LockExisting(user);
+	auto ClearUserModelEntries(const std::string                            &user,
+	                           const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelMutationResult {
+		auto transaction = UserModelStore::LockExisting(user, validation_root);
 		if (transaction.status != UserModelStatus::kOk) {
 			return MutationFailure(transaction.status, transaction.error_message);
 		}
@@ -308,10 +318,10 @@ namespace howdy::native {
 		};
 	}
 
-	auto ClearUserModelEntriesIfUnchanged(const std::string           &user,
-	                                      const UserModelFileSnapshot &expected_snapshot)
-	    -> UserModelMutationResult {
-		auto transaction = UserModelStore::LockExisting(user);
+	auto ClearUserModelEntriesIfUnchanged(
+	    const std::string &user, const UserModelFileSnapshot &expected_snapshot,
+	    const file_security_internal::ValidationRoot &validation_root) -> UserModelMutationResult {
+		auto transaction = UserModelStore::LockExisting(user, validation_root);
 		if (transaction.status == UserModelStatus::kNoModel ||
 		    transaction.status == UserModelStatus::kNoModelDirectory) {
 			return ModelChangedFailure();
@@ -352,10 +362,12 @@ namespace howdy::native {
 	}
 
 	auto LoadUserModels(const std::string &user, const std::string &expected_backend,
-	                    std::optional<uid_t> owner_uid) -> UserModelLoadResult {
+	                    std::optional<uid_t>                          owner_uid,
+	                    const file_security_internal::ValidationRoot &validation_root)
+	    -> UserModelLoadResult {
 		const auto document = UserModelStore::LoadDocument(
 		    user, {.backend = expected_backend, .metric = {}, .model = {}, .strict_shape = false},
-		    owner_uid);
+		    owner_uid, validation_root);
 		const auto         &entries = document.result;
 		UserModelLoadResult result{
 		    .status        = RemapLoadStatus(entries.status),
