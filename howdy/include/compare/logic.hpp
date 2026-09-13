@@ -1,7 +1,7 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
-#include "vision/face_metric.hpp"
+#include "support/face_metric.hpp"
 
 #include <cstdint>
 #include <exception>

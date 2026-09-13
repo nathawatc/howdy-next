@@ -1,6 +1,6 @@
 #include "config/config_schema.hpp"
 #include "internal.hpp"
-#include "vision/face_metric.hpp"
+#include "support/face_metric.hpp"
 
 #include <algorithm>
 #include <cmath>

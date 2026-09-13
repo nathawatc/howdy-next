@@ -1,6 +1,6 @@
 #include "compare/logic.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
-#include "vision/face_metric.hpp"
 
 #include <bit>
 #include <cmath>

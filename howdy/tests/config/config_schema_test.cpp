@@ -1,6 +1,6 @@
 #include "config/config_schema.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
-#include "vision/face_metric.hpp"
 
 #include <array>
 #include <limits>

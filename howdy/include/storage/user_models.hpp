@@ -1,8 +1,8 @@
 #pragma once
 
 #include "storage/user_model_status.hpp"
+#include "support/face_metric.hpp"
 #include "support/file_security/validation_root.hpp"
-#include "vision/face_metric.hpp"
 
 #include <cstdint>
 #include <optional>

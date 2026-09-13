@@ -1,8 +1,8 @@
 #pragma once
 
 #include "config/config_schema.hpp"
+#include "support/face_metric.hpp"
 #include "support/file_security/validation_root.hpp"
-#include "vision/face_metric.hpp"
 
 #include <cstdint>
 #include <filesystem>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vision/face_metric.hpp"
+#include "support/face_metric.hpp"
 
 #include <array>
 #include <cstdint>
