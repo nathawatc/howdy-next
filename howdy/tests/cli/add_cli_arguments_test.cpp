@@ -1,12 +1,21 @@
+#include "cli/add.hpp"
 #include "cli/add_cli_test_support.hpp"
 #include "vision/face_model.hpp"
 
+#include <array>
 #include <iostream>
 #include <sstream>
 
 namespace howdy::test::add_cli {
 
 	namespace {
+
+		auto PublicMissingUserReturnsError() -> bool {
+			auto                  command = std::to_array("howdy-add");
+			std::array<char *, 1> argv{command.data()};
+			return expect(AddMain(1, argv.data()) == 1,
+			              "add entrypoint returns on invalid arguments");
+		}
 
 		auto SuccessfulEnrollmentAppendsExpectedModel() -> bool {
 			auto      context = MakeSuccessContext();
@@ -222,6 +231,7 @@ namespace howdy::test::add_cli {
 
 	auto RunAddCliArgumentTests() -> bool {
 		bool ok = true;
+		ok &= PublicMissingUserReturnsError();
 		ok &= ExplicitEmptyLabelStillPrompts();
 		ok &= PlainModeSkipsLabelPrompt();
 		ok &= YesFlagSkipsLabelPrompt();

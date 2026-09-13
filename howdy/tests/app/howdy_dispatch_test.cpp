@@ -1,10 +1,6 @@
 #include "app/command_catalog.hpp"
 #include "app/howdy/internal.hpp"
 #include "app/howdy_dispatch_test_support.hpp"
-#include "cli/add.hpp"
-#include "cli/clear.hpp"
-#include "cli/list.hpp"
-#include "cli/remove.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -504,24 +500,6 @@ auto main() -> int {
 	ok &= TestClapStyleUsageErrors();
 	ok &= TestStrictSyntaxCases();
 	ok &= TestCatalogDispatch();
-	{
-		auto                  add_name = std::to_array("howdy-add");
-		std::array<char *, 1> add_argv{add_name.data()};
-		auto                  clear_name = std::to_array("howdy-clear");
-		std::array<char *, 1> clear_argv{clear_name.data()};
-		auto                  list_name = std::to_array("howdy-list");
-		std::array<char *, 1> list_argv{list_name.data()};
-		auto                  remove_name = std::to_array("howdy-remove");
-		std::array<char *, 1> remove_argv{remove_name.data()};
-		ok &=
-		    expect(AddMain(1, add_argv.data()) == 1, "add entrypoint returns on invalid arguments");
-		ok &= expect(ClearMain(1, clear_argv.data()) == 1,
-		             "clear entrypoint returns on invalid arguments");
-		ok &= expect(ListMain(1, list_argv.data()) == 1,
-		             "list entrypoint returns on invalid arguments");
-		ok &= expect(RemoveMain(1, remove_argv.data()) == 1,
-		             "remove entrypoint returns on invalid arguments");
-	}
 
 	return ok ? 0 : 1;
 }

@@ -25,7 +25,7 @@ howdy_add_native_test(
 	tests/app/howdy_dispatch_test.cpp
 	tests/app/howdy_completion_test.cpp
 )
-target_link_libraries(howdy_dispatch_test PRIVATE howdy_cli)
+target_link_libraries(howdy_dispatch_test PRIVATE howdy_cli_core)
 
 howdy_add_native_test(
 	howdy_main_test

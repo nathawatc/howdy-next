@@ -7,6 +7,7 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 ## Ownership
 
 - `howdy.cpp`: top-level command dispatch, target-user/root policy, command execution
+- `howdy/production.cpp`: production user/privilege adapters and command entrypoint wiring
 - `howdy/cli.cpp`: argv parsing, validation, help, usage errors
 - `howdy/completion.cpp`: hidden completion protocol
 - `command_catalog.cpp`: command/global-option data and lookup façade

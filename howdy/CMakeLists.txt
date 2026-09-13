@@ -275,13 +275,25 @@ else()
 endif()
 
 add_library(
-	howdy_cli
+	howdy_cli_core
 	STATIC
 	src/app/howdy.cpp
 	src/app/howdy/cli.cpp
 	src/app/howdy/cli/internal.hpp
 	src/app/howdy/completion.cpp
 	src/app/howdy/completion/internal.hpp
+)
+howdy_configure_native_target(howdy_cli_core)
+target_link_libraries(
+	howdy_cli_core
+	PUBLIC howdy_command_catalog
+	PRIVATE howdy_config_schema
+)
+
+add_library(
+	howdy_cli
+	STATIC
+	src/app/howdy/production.cpp
 	src/cli/add.cpp
 	src/cli/add/workflow.cpp
 	src/cli/clear.cpp
@@ -300,9 +312,9 @@ howdy_configure_native_target(howdy_cli)
 target_link_libraries(
 	howdy_cli
 	PUBLIC
+		howdy_cli_core
 		howdy_config
 		howdy_runtime_config_loader
-		howdy_command_catalog
 		howdy_face_model
 		howdy_user_models
 		howdy_runtime_paths
