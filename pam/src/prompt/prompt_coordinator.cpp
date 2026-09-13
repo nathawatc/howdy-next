@@ -8,73 +8,21 @@
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_launch.hpp"
-#include "runtime/compare_process.hpp"
 
-#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <limits>
 #include <syslog.h>
-#include <unistd.h>
 
 #include <security/pam_appl.h>
-#include <security/pam_ext.h>
 
 #include <sys/wait.h>
 
 namespace {
 
 	constexpr auto kPromptCompletionGrace = std::chrono::milliseconds(100);
-
-	auto InputWorkaroundAccess() -> int {
-		return euidaccess("/dev/uinput", W_OK | R_OK);
-	}
-
-	auto InputPromptWorkaroundPreflight() -> bool {
-		if (InputWorkaroundAccess() != 0) {
-			const int access_errno = errno;
-			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
-			       access_errno);
-			return false;
-		}
-
-		return true;
-	}
-
-	auto InputPromptPreflightDependency(void *context) -> bool {
-		(void)context;
-		return InputPromptWorkaroundPreflight();
-	}
-
-	auto RequestAuthTokenDependency(void *context, pam_handle_t *pamh)
-	    -> std::tuple<int, const char *> {
-		(void)context;
-		const char *auth_tok_ptr = nullptr;
-		const int   auth_result  = pam_get_authtok(pamh, PAM_AUTHTOK, &auth_tok_ptr, nullptr);
-
-		return {auth_result, auth_tok_ptr};
-	}
-
-	auto CreatePromptSubmitterDependency(void *context)
-	    -> std::unique_ptr<howdy::pam::PromptSubmitter> {
-		(void)context;
-		return howdy::pam::CreateUinputPromptSubmitter();
-	}
-
-	auto CreateNativePromptDependency(void *context, pam_handle_t *pamh)
-	    -> std::unique_ptr<NativePrompt> {
-		(void)context;
-		return std::make_unique<NativePromptConversation>(pamh);
-	}
-
-	auto CreateSecretPromptConversationDependency(void *context, pam_handle_t *pamh,
-	                                              howdy::pam::SecretPromptObserver observer)
-	    -> std::unique_ptr<howdy::pam::SecretPromptConversation> {
-		(void)context;
-		return std::make_unique<howdy::pam::ObservedPromptConversation>(pamh, observer);
-	}
 
 }  // namespace
 
@@ -95,6 +43,7 @@ namespace howdy::pam {
 	auto PromptCoordinator::Valid() const -> bool {
 		return dependencies_.spawn_compare_process != nullptr &&
 		       dependencies_.wait_for_compare_process != nullptr &&
+		       dependencies_.cancel_and_reap_compare_process != nullptr &&
 		       dependencies_.input_prompt_preflight != nullptr &&
 		       dependencies_.create_prompt_submitter != nullptr &&
 		       dependencies_.create_native_prompt != nullptr &&
@@ -159,10 +108,10 @@ namespace howdy::pam {
 			    dependencies_.context, child_pid, compare_deadline, this, CancellationRequested);
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
-			compare_process::CancelAndReap(child_pid);
+			dependencies_.cancel_and_reap_compare_process(dependencies_.context, child_pid);
 		} catch (...) {
 			syslog(LOG_ERR, "Compare wait failed with non-standard exception");
-			compare_process::CancelAndReap(child_pid);
+			dependencies_.cancel_and_reap_compare_process(dependencies_.context, child_pid);
 		}
 		return status;
 	}
@@ -575,18 +524,6 @@ namespace howdy::pam {
 			result.pam_status = PAM_SYSTEM_ERR;
 		}
 		return result;
-	}
-
-	auto ProductionPromptCoordinatorDependencies() -> PromptCoordinatorDependencies {
-		return PromptCoordinatorDependencies{
-		    .spawn_compare_process             = compare_process::Spawn,
-		    .wait_for_compare_process          = compare_process::Wait,
-		    .input_prompt_preflight            = InputPromptPreflightDependency,
-		    .create_prompt_submitter           = CreatePromptSubmitterDependency,
-		    .create_native_prompt              = CreateNativePromptDependency,
-		    .create_secret_prompt_conversation = CreateSecretPromptConversationDependency,
-		    .request_auth_token                = RequestAuthTokenDependency,
-		};
 	}
 
 }  // namespace howdy::pam

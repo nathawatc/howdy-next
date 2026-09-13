@@ -27,6 +27,7 @@ namespace howdy::pam {
 	                                        std::chrono::steady_clock::time_point deadline,
 	                                        void                          *cancellation_context,
 	                                        CompareCancellationRequestedFn cancellation_requested);
+	using CancelAndReapCompareProcessFn = void (*)(void *context, pid_t child_pid) noexcept;
 
 	using InputPromptPreflightFn = bool (*)(void *context);
 
@@ -42,6 +43,7 @@ namespace howdy::pam {
 		void                            *context                           = nullptr;
 		SpawnCompareProcessFn            spawn_compare_process             = nullptr;
 		WaitForCompareProcessFn          wait_for_compare_process          = nullptr;
+		CancelAndReapCompareProcessFn    cancel_and_reap_compare_process   = nullptr;
 		InputPromptPreflightFn           input_prompt_preflight            = nullptr;
 		CreatePromptSubmitterFn          create_prompt_submitter           = nullptr;
 		CreateNativePromptFn             create_native_prompt              = nullptr;
@@ -161,7 +163,5 @@ namespace howdy::pam {
 		Workaround                                effective_workaround_ = Workaround::kOff;
 		bool                                      run_started_          = false;
 	};
-
-	auto ProductionPromptCoordinatorDependencies() -> PromptCoordinatorDependencies;
 
 }  // namespace howdy::pam

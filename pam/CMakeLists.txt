@@ -29,7 +29,8 @@ howdy_configure_pam_target(pam_runtime)
 target_compile_definitions(
 	pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
-target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE howdy_runtime_config_loader)
+target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE
+                      howdy_runtime_config_loader)
 
 add_library(
 	pam_conversation_response STATIC
@@ -39,6 +40,14 @@ howdy_configure_pam_target(pam_conversation_response)
 target_link_libraries(pam_conversation_response PUBLIC PAM::PAM)
 
 add_library(
+	pam_prompt_core STATIC
+	src/prompt/prompt_coordinator.cpp
+	src/prompt/workaround.cpp
+)
+howdy_configure_pam_target(pam_prompt_core)
+target_link_libraries(pam_prompt_core PUBLIC PAM::PAM Threads::Threads)
+
+add_library(
 	pam_prompt STATIC
 	src/prompt/prompt_submitter.cpp
 	src/prompt/pam_conversation.cpp
@@ -46,14 +55,12 @@ add_library(
 	src/prompt/native_prompt_conversation.cpp
 	src/prompt/native_prompt_input.cpp
 	src/prompt/observed_prompt_conversation.cpp
-	src/prompt/prompt_coordinator.cpp
-	src/prompt/workaround.cpp
 )
 howdy_configure_pam_target(pam_prompt)
 target_link_libraries(
 	pam_prompt
-	PUBLIC PAM::PAM Threads::Threads
-	PRIVATE PkgConfig::LIBEVDEV pam_conversation_response pam_runtime
+	PUBLIC PAM::PAM Threads::Threads pam_prompt_core
+	PRIVATE PkgConfig::LIBEVDEV pam_conversation_response
 )
 
 add_library(
@@ -91,7 +98,7 @@ howdy_configure_pam_target(pam_production_entrypoint)
 target_link_libraries(
 	pam_production_entrypoint
 	PUBLIC pam_entrypoint
-	PRIVATE pam_module
+	PRIVATE pam_module pam_prompt pam_runtime
 )
 
 add_library(

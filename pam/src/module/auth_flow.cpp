@@ -92,6 +92,7 @@ namespace {
 		return runtime.prepare_runtime != nullptr && runtime.load_runtime_config != nullptr &&
 		       runtime.effective_uid != nullptr && prompt.spawn_compare_process != nullptr &&
 		       prompt.wait_for_compare_process != nullptr &&
+		       prompt.cancel_and_reap_compare_process != nullptr &&
 		       prompt.input_prompt_preflight != nullptr &&
 		       prompt.create_prompt_submitter != nullptr &&
 		       prompt.create_native_prompt != nullptr &&
@@ -197,15 +198,6 @@ namespace howdy::pam::auth_flow {
 		}
 
 	}  // namespace
-
-	auto ProductionIdentifyDependencies() -> IdentifyDependencies {
-		return {
-		    .runtime_session    = ProductionRuntimeSessionDependencies(),
-		    .prompt_coordinator = ProductionPromptCoordinatorDependencies(),
-		    .eligibility =
-		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityDependencies(),
-		};
-	}
 
 	auto IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments,
 	                              bool ask_auth_tok, const IdentifyDependencies &dependencies)

@@ -3,7 +3,6 @@
 #include "app/howdy_dispatch_test_support.hpp"
 #include "test_support.hpp"
 
-#include <array>
 #include <iostream>
 #include <sstream>
 #include <string>

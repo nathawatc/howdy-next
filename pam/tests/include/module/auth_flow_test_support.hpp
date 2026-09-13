@@ -217,6 +217,11 @@ namespace howdy::test::auth_flow {
 		return 0;
 	}
 
+	inline void FlowCancelAndReapCompare(void *context, pid_t child_pid) noexcept {
+		(void)context;
+		(void)child_pid;
+	}
+
 	inline auto FlowInputPromptPreflight(void *context) -> bool {
 		(void)context;
 		return true;
@@ -265,6 +270,7 @@ namespace howdy::test::auth_flow {
 		            .context                           = &fixture->prompt,
 		            .spawn_compare_process             = FlowSpawnCompare,
 		            .wait_for_compare_process          = FlowWaitCompare,
+		            .cancel_and_reap_compare_process   = FlowCancelAndReapCompare,
 		            .input_prompt_preflight            = FlowInputPromptPreflight,
 		            .create_prompt_submitter           = FlowCreatePromptSubmitter,
 		            .create_native_prompt              = FlowCreateNativePrompt,

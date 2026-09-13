@@ -21,9 +21,6 @@ namespace howdy::pam::auth_flow {
 		howdy::pam::auth_eligibility::AuthenticationEligibilityDependencies eligibility;
 	};
 
-	__attribute__((visibility("hidden"))) auto ProductionIdentifyDependencies()
-	    -> IdentifyDependencies;
-
 	__attribute__((visibility("hidden"))) auto
 	IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments, bool ask_auth_tok,
 	                         const IdentifyDependencies &dependencies) -> int;

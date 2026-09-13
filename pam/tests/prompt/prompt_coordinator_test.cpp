@@ -155,148 +155,6 @@ namespace {
 		return PAM_SUCCESS;
 	}
 
-	auto TestWatchdogTimeoutReapsBlockedChild() -> bool {
-		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "watchdog timeout child spawned")) {
-			return false;
-		}
-
-		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 40ms);
-		return expect(status == TimeoutWaitStatus(),
-		              "watchdog timeout returns synthetic timeout status") &&
-		       expect(ChildReaped(child_pid), "watchdog timeout reaps blocked child");
-	}
-
-	auto TestWatchdogKillsSigtermIgnoringChild() -> bool {
-		const pid_t child_pid = SpawnSigtermIgnoringChild();
-		if (!expect(child_pid > 0, "SIGTERM-ignoring watchdog child spawned")) {
-			return false;
-		}
-
-		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 40ms);
-		return expect(status == TimeoutWaitStatus(),
-		              "SIGTERM-ignoring child returns synthetic timeout status") &&
-		       expect(ChildReaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
-	}
-
-	auto TestWatchdogPreservesNaturalExitStatus() -> bool {
-		const pid_t child_pid = SpawnChild(17, 10ms);
-		if (!expect(child_pid > 0, "natural watchdog child spawned")) {
-			return false;
-		}
-
-		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
-		       expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
-	}
-
-	auto TestWatchdogBlockedSigchldNaturalExit() -> bool {
-		ScopedSignalBlock blocked_sigchld(SIGCHLD);
-		if (!expect(blocked_sigchld.Valid(), "blocked SIGCHLD guard installs")) {
-			return false;
-		}
-
-		const pid_t child_pid = SpawnChild(17, 10ms);
-		if (!expect(child_pid > 0, "blocked SIGCHLD natural-exit child spawned")) {
-			return false;
-		}
-
-		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return expect(status == (17 << 8),
-		              "blocked SIGCHLD preserves natural compare exit status") &&
-		       expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
-	}
-
-	auto TestWatchdogBlockedSigchldTimeout() -> bool {
-		ScopedSignalBlock blocked_sigchld(SIGCHLD);
-		if (!expect(blocked_sigchld.Valid(), "blocked SIGCHLD timeout guard installs")) {
-			return false;
-		}
-
-		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "blocked SIGCHLD timeout child spawned")) {
-			return false;
-		}
-
-		const auto start   = std::chrono::steady_clock::now();
-		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
-		const auto elapsed = std::chrono::steady_clock::now() - start;
-		return expect(status == TimeoutWaitStatus(),
-		              "blocked SIGCHLD returns synthetic compare timeout status") &&
-		       expect(elapsed < 2s, "blocked SIGCHLD compare timeout remains bounded") &&
-		       expect(ChildReaped(child_pid), "blocked SIGCHLD reaps timed-out compare child");
-	}
-
-	auto TestWatchdogBlockedSigtermTimeout() -> bool {
-		ScopedSignalBlock blocked_sigterm(SIGTERM);
-		if (!expect(blocked_sigterm.Valid(), "blocked SIGTERM timeout guard installs")) {
-			return false;
-		}
-
-		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "blocked SIGTERM timeout child spawned")) {
-			return false;
-		}
-
-		const auto start   = std::chrono::steady_clock::now();
-		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
-		const auto elapsed = std::chrono::steady_clock::now() - start;
-		return expect(status == TimeoutWaitStatus(),
-		              "blocked SIGTERM returns synthetic compare timeout status") &&
-		       expect(elapsed >= 40ms, "blocked SIGTERM compare timeout honors deadline") &&
-		       expect(elapsed < 2s, "blocked SIGTERM compare timeout remains bounded") &&
-		       expect(ChildReaped(child_pid),
-		              "blocked SIGTERM falls back to SIGKILL and reaps compare child");
-	}
-
-	auto TestWatchdogTimeoutKeepsPasswordFallback() -> bool {
-		FakeContext context{
-		    .token_delay  = 100ms,
-		    .token_result = PAM_SUCCESS,
-		};
-		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "watchdog fallback child spawned")) {
-			return false;
-		}
-		context.next_child_pid        = child_pid;
-		auto deps                     = Dependencies(&context);
-		deps.wait_for_compare_process = WatchdogWaitForCompare;
-
-		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 40ms);
-		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
-		              "watchdog timeout keeps password fallback") &&
-		       expect(result.compare_status == TimeoutWaitStatus(),
-		              "password fallback preserves watchdog timeout status") &&
-		       expect(result.pam_status == PAM_SUCCESS,
-		              "password fallback preserves PAM success") &&
-		       expect(ChildReaped(child_pid), "password fallback reaps watchdog child");
-	}
-
-	auto TestPamSuccessReapsBeforeWatchdog() -> bool {
-		FakeContext context;
-		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "PAM-before-watchdog child spawned")) {
-			return false;
-		}
-		context.next_child_pid        = child_pid;
-		auto deps                     = Dependencies(&context);
-		deps.wait_for_compare_process = WatchdogWaitForCompare;
-
-		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 1s);
-		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
-		              "PAM success wins before watchdog") &&
-		       expect(context.terminate_calls == 1, "PAM success terminates compare child") &&
-		       expect(context.last_wait_status != TimeoutWaitStatus(),
-		              "PAM success does not use watchdog timeout status") &&
-		       expect(ChildReaped(child_pid), "PAM success reaps compare child");
-	}
-
 	auto TestInvalidHardTimeoutFailsClosed() -> bool {
 		bool ok = true;
 		for (const auto timeout : {std::chrono::milliseconds::zero(), -1ms}) {
@@ -858,20 +716,14 @@ namespace {
 		              "wait exception returns failed compare result") &&
 		       expect(result.compare_status == (static_cast<int>(CompareExit::kAbort) << 8),
 		              "wait exception maps to compare abort") &&
+		       expect(context.cleanup_calls == 1 && context.cleaned_pid == child_pid,
+		              "wait exception invokes injected cleanup once") &&
 		       expect(ChildReaped(child_pid), "wait exception emergency cleanup reaps child");
 	}
 }  // namespace
 
 auto main() -> int {
 	bool ok = true;
-	ok &= TestWatchdogTimeoutReapsBlockedChild();
-	ok &= TestWatchdogKillsSigtermIgnoringChild();
-	ok &= TestWatchdogPreservesNaturalExitStatus();
-	ok &= TestWatchdogBlockedSigchldNaturalExit();
-	ok &= TestWatchdogBlockedSigchldTimeout();
-	ok &= TestWatchdogBlockedSigtermTimeout();
-	ok &= TestWatchdogTimeoutKeepsPasswordFallback();
-	ok &= TestPamSuccessReapsBeforeWatchdog();
 	ok &= TestInvalidHardTimeoutFailsClosed();
 	ok &= TestCompareWinsWithoutPasswordPrompt();
 	ok &= TestPamWins();

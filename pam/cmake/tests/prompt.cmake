@@ -3,7 +3,7 @@ howdy_add_pam_test(
 	pam-prompt-workaround
 	tests/prompt/prompt_workaround_test.cpp
 )
-target_link_libraries(pam_prompt_workaround_test PRIVATE pam_prompt)
+target_link_libraries(pam_prompt_workaround_test PRIVATE pam_prompt_core)
 
 howdy_add_pam_test(
 	pam_internal_fd_test
@@ -49,8 +49,19 @@ howdy_add_pam_test(
 	tests/prompt/prompt_coordinator_test.cpp
 	tests/prompt/prompt_coordinator_modes_test.cpp
 	tests/prompt/prompt_coordinator_adapter_test.cpp
+	src/prompt/observed_prompt_conversation.cpp
 )
 target_link_libraries(
 	pam_prompt_coordinator_test
-	PRIVATE pam_prompt pam_runtime
+	PRIVATE pam_prompt_core pam_conversation_response
+)
+
+howdy_add_pam_test(
+	pam_prompt_coordinator_runtime_test
+	pam-prompt-coordinator-runtime
+	tests/prompt/prompt_coordinator_runtime_test.cpp
+)
+target_link_libraries(
+	pam_prompt_coordinator_runtime_test
+	PRIVATE pam_prompt_core pam_runtime
 )

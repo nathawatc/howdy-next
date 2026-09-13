@@ -564,6 +564,9 @@ namespace {
 		expect_invalid("missing compare wait callback", [](auto &dependencies) -> void {
 			dependencies.prompt_coordinator.wait_for_compare_process = nullptr;
 		});
+		expect_invalid("missing compare cleanup callback", [](auto &dependencies) -> void {
+			dependencies.prompt_coordinator.cancel_and_reap_compare_process = nullptr;
+		});
 		expect_invalid("missing input preflight callback", [](auto &dependencies) -> void {
 			dependencies.prompt_coordinator.input_prompt_preflight = nullptr;
 		});

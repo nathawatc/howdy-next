@@ -3,11 +3,9 @@
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
-#include "runtime/compare_process.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -64,6 +62,8 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<int>                                last_wait_status{0};
 		std::atomic<int>                                terminate_calls{0};
 		std::atomic<pid_t>                              terminated_pid{-1};
+		std::atomic<int>                                cleanup_calls{0};
+		std::atomic<pid_t>                              cleaned_pid{-1};
 		std::atomic<int>                                preflight_calls{0};
 		std::atomic<int>                                prompt_submitter_constructions{0};
 		std::atomic<int>                                prompt_submissions{0};
@@ -234,6 +234,7 @@ namespace howdy::test::prompt_coordinator {
 		int spawn     = 0;
 		int wait      = 0;
 		int terminate = 0;
+		int cleanup   = 0;
 		int preflight = 0;
 		int submitter = 0;
 		int auth      = 0;
@@ -279,6 +280,8 @@ namespace howdy::test::prompt_coordinator {
 		return true;
 	}
 
+	inline void CancelAndReapCompare(void *context, pid_t child_pid) noexcept;
+
 	inline auto WaitForCompare(void *context, pid_t child_pid,
 	                           [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
 	                           void                                      *cancellation_context,
@@ -293,7 +296,7 @@ namespace howdy::test::prompt_coordinator {
 		}
 		if (fake.request_native_prompt) {
 			if (!WaitForNativePromptCompletion(fake)) {
-				howdy::pam::compare_process::CancelAndReap(child_pid);
+				CancelAndReapCompare(context, child_pid);
 				return static_cast<int>(CompareExit::kAbort) << 8;
 			}
 		}
@@ -335,24 +338,14 @@ namespace howdy::test::prompt_coordinator {
 		}
 	}
 
-	inline auto WatchdogWaitForCompare(
-	    void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	    void                                      *cancellation_context,
-	    howdy::pam::CompareCancellationRequestedFn cancellation_requested) -> int {
+	inline void CancelAndReapCompare(void *context, pid_t child_pid) noexcept {
 		auto &fake = *static_cast<FakeContext *>(context);
-		++fake.wait_calls;
-		fake.waited_pid      = child_pid;
-		const auto remaining = std::max(deadline - std::chrono::steady_clock::now(),
-		                                std::chrono::steady_clock::duration::zero());
-		const int  status    = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + remaining, cancellation_context,
-		    cancellation_requested);
-		if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
-			++fake.terminate_calls;
-			fake.terminated_pid = child_pid;
-		}
+		++fake.cleanup_calls;
+		fake.cleaned_pid = child_pid;
+		(void)kill(child_pid, SIGTERM);
+		int status = 0;
+		(void)howdy::test::process::ReapTestChild(child_pid, &status);
 		fake.last_wait_status = status;
-		return status;
 	}
 
 	inline auto InputPreflight(void *context) -> bool {
@@ -533,6 +526,7 @@ namespace howdy::test::prompt_coordinator {
 		    .context                           = context,
 		    .spawn_compare_process             = SpawnCompareProcess,
 		    .wait_for_compare_process          = WaitForCompare,
+		    .cancel_and_reap_compare_process   = CancelAndReapCompare,
 		    .input_prompt_preflight            = InputPreflight,
 		    .create_prompt_submitter           = CreatePromptSubmitter,
 		    .create_native_prompt              = CreateNativePrompt,
@@ -570,6 +564,7 @@ namespace howdy::test::prompt_coordinator {
 		    .spawn     = context.spawn_calls.load(),
 		    .wait      = context.wait_calls.load(),
 		    .terminate = context.terminate_calls.load(),
+		    .cleanup   = context.cleanup_calls.load(),
 		    .preflight = context.preflight_calls.load(),
 		    .submitter = context.prompt_submitter_constructions.load(),
 		    .auth      = context.auth_token_calls.load(),
