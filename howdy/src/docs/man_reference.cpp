@@ -1,6 +1,6 @@
 #include "docs/man_reference.hpp"
 
-#include "vision/capture_device_path.hpp"
+#include "support/capture_device_path.hpp"
 
 #include <algorithm>
 #include <cstddef>

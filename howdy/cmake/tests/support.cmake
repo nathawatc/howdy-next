@@ -56,3 +56,9 @@ howdy_add_native_test(
 	native-invoking-user-env
 	tests/support/invoking_user_env_test.cpp
 )
+
+howdy_add_native_test(
+	howdy_capture_device_path_test
+	native-capture-device-path
+	tests/support/capture_device_path_test.cpp
+)

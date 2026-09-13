@@ -2,8 +2,8 @@
 
 #include "config/config_schema.hpp"
 #include "config/number_parsing.hpp"
+#include "support/capture_device_path.hpp"
 #include "support/face_metric.hpp"
-#include "vision/capture_device_path.hpp"
 
 #include <algorithm>
 #include <cctype>

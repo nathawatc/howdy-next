@@ -31,12 +31,6 @@ target_link_libraries(
 )
 
 howdy_add_native_test(
-	howdy_capture_device_path_test
-	native-capture-device-path
-	tests/vision/capture_device_path_test.cpp
-)
-
-howdy_add_native_test(
 	howdy_video_capture_test
 	native-video-capture
 	tests/vision/video_capture_test.cpp

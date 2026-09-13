@@ -1,5 +1,5 @@
+#include "support/capture_device_path.hpp"
 #include "test_support.hpp"
-#include "vision/capture_device_path.hpp"
 
 #include <filesystem>
 

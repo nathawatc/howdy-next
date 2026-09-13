@@ -3,8 +3,8 @@
 #include "config/config_validation.hpp"
 #include "config/config_values.hpp"
 #include "config/number_parsing.hpp"
+#include "support/capture_device_path.hpp"
 #include "test_support.hpp"
-#include "vision/capture_device_path.hpp"
 
 #include <clocale>
 #include <cstdlib>

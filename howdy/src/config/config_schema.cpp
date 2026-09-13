@@ -1,7 +1,7 @@
 #include "config/config_schema.hpp"
 
 #include "config_schema/internal.hpp"
-#include "vision/capture_device_path.hpp"
+#include "support/capture_device_path.hpp"
 
 #include <algorithm>
 #include <array>

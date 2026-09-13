@@ -1,7 +1,7 @@
 #include "vision/video_capture.hpp"
 
 #include "config/runtime_config.hpp"
-#include "vision/capture_device_path.hpp"
+#include "support/capture_device_path.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <filesystem>

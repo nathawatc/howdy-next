@@ -2,8 +2,8 @@
 #include "config/config_schema.hpp"
 #include "docs/man_reference.hpp"
 #include "module/pam_option_catalog.hpp"
+#include "support/capture_device_path.hpp"
 #include "test_support.hpp"
-#include "vision/capture_device_path.hpp"
 
 #include <array>
 #include <string>
