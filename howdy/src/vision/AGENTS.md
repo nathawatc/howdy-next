@@ -1,6 +1,6 @@
 # Vision Guidelines
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-13
 
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
@@ -22,6 +22,9 @@ engine; do not add a local workaround for that warning.
 - `CompareEngine` / `PreviewEngine`: orchestration on semantic inference adapters
 
 ## Rules
+
+Shared face metrics and capture-device policy belong under `include/support/`, not vision. Vision may
+consume them but must not own contracts needed independently by config, storage, compare, or CLI.
 
 Validate frames before transformation or inference. Do not expose raw YuNet rows outside
 face-model/detection internals. Distinguish zero detections from inference/invalid-output failures.

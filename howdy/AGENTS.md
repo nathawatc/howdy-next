@@ -1,6 +1,6 @@
 # Howdy Package Guidelines
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-13
 
 Read the [repository guidelines](../AGENTS.md) first.
 
@@ -26,6 +26,8 @@ targets.
 - Keep privileged helpers under `<libexecdir>/howdy`; this includes `howdy-compare` and setuid
   `howdy-auth-helper`.
 - Use typed `RuntimeConfig`, `VideoConfig`, and `FaceConfig` at runtime boundaries.
+- Shared face/capture policy belongs under `include/support/`, independent of vision. Config, storage,
+  compare, vision, and CLI consumers must not depend on vision merely to use those contracts.
 - Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` instead of
   duplicating bounded I/O, staged-file, or secure-path logic.
 - Use shared model readiness/integrity checks before inference or authentication.

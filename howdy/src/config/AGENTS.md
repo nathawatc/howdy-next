@@ -1,6 +1,6 @@
 # Config Guidelines
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-13
 
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
@@ -27,6 +27,9 @@ Config tests include these private contracts directly; do not expose INIReader t
   Generate packaged `config.ini`; do not hand-edit generated defaults.
 - Runtime consumers use typed config; do not add raw `ConfigReader` lookups outside config
   parsing/loading code.
+- Consumers that only need `RuntimeConfig` link to `howdy_runtime_config`, not
+  `howdy_runtime_config_loader`; secure loading, filesystem, UID, INI parsing, and validation remain
+  behind the loader and private config implementation.
 - Keep secure path checks, locks, revalidation, staged install, parent sync, and commit-state
   handling intact.
 - Preserve expected-current-content stale detection.

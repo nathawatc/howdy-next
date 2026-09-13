@@ -1,13 +1,13 @@
 # App Guidelines
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-13
 
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership
 
-- `howdy.cpp`: top-level command dispatch, target-user/root policy, command execution
-- `howdy/production.cpp`: production user/privilege adapters and command entrypoint wiring
+- `howdy.cpp`: pure top-level dispatch and target-user/root policy through injected dependencies
+- `howdy/production.cpp`: explicit production user/privilege adapters and concrete command binding
 - `howdy/cli.cpp`: argv parsing, validation, help, usage errors
 - `howdy/completion.cpp`: hidden completion protocol
 - `command_catalog.cpp`: command/global-option data and lookup façade
@@ -16,8 +16,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Rules
 
-- Add commands through the catalog and dispatcher dependency table; do not create standalone
-  executables.
+- `howdy_cli_core` must not depend on concrete command implementations; `howdy_cli` owns production
+  composition and command infrastructure.
+- Add commands through the catalog and explicit dispatcher dependency table; do not create standalone
+  executables, registries, DI containers, or abstract interface frameworks.
 - Keep catalog data and lookup APIs in `command_catalog.cpp`; validation belongs in
   `command_catalog/validation.cpp`.
 - `command_catalog/internal.hpp` is private cross-TU plumbing, not a public/test seam.
