@@ -1,11 +1,11 @@
 #include "config/runtime_config_loader.hpp"
 
-#include "config/config_reader.hpp"
 #include "config/config_schema.hpp"
 #include "config/config_utils.hpp"
-#include "config/config_validation.hpp"
-#include "config/config_values.hpp"
 #include "config/test_hooks.hpp"
+#include "config_reader/internal.hpp"
+#include "config_validation/internal.hpp"
+#include "runtime_config_loader/internal.hpp"
 #include "support/atomic_files.hpp"
 
 #include <cerrno>

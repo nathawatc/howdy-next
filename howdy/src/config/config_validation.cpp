@@ -1,7 +1,6 @@
-#include "config/config_validation.hpp"
-
 #include "config/config_schema.hpp"
-#include "config/number_parsing.hpp"
+#include "config_reader/internal.hpp"
+#include "config_validation/internal.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/face_metric.hpp"
 

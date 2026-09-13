@@ -1,7 +1,6 @@
-#include "config/config_reader.hpp"
-#include "config/config_validation.hpp"
-#include "config/config_values.hpp"
-#include "config/number_parsing.hpp"
+#include "../../src/config/config_reader/internal.hpp"
+#include "../../src/config/config_validation/internal.hpp"
+#include "../../src/config/runtime_config_loader/internal.hpp"
 #include "test_support.hpp"
 
 #include <array>

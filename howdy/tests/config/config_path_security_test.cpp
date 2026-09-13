@@ -1,6 +1,7 @@
+#include "../../src/config/config_reader/internal.hpp"
+#include "../../src/config/config_validation/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
-#include "config/config_validation.hpp"
 #include "support/file_lock.hpp"
 #include "test_support.hpp"
 

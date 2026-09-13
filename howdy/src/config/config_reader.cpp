@@ -1,6 +1,4 @@
-#include "config/config_reader.hpp"
-
-#include "config/number_parsing.hpp"
+#include "config_reader/internal.hpp"
 
 #include <utility>
 

@@ -19,17 +19,20 @@ add_library(
 	howdy_config
 	STATIC
 	src/config/config_reader.cpp
+	src/config/config_reader/internal.hpp
 	src/config/config_utils.cpp
 	src/config/config_utils/internal.hpp
 	src/config/config_utils/file_ops.cpp
 	src/config/config_utils/key_file.cpp
 	src/config/config_validation.cpp
+	src/config/config_validation/internal.hpp
 )
 howdy_configure_native_target(howdy_config)
 target_link_libraries(
 	howdy_config
 	PUBLIC
 		howdy_config_schema
+	PRIVATE
 		PkgConfig::INIREADER
 )
 
@@ -85,13 +88,14 @@ howdy_configure_native_target(howdy_runtime_paths)
 add_library(
 	howdy_runtime_config_loader STATIC
 	src/config/runtime_config_loader.cpp
+	src/config/runtime_config_loader/internal.hpp
 	src/config/runtime_config_loader/defaults.cpp
 )
 howdy_configure_native_target(howdy_runtime_config_loader)
 target_link_libraries(
 	howdy_runtime_config_loader
 	PUBLIC howdy_runtime_config
-	PRIVATE howdy_config howdy_runtime_paths
+	PRIVATE howdy_config howdy_runtime_paths PkgConfig::INIREADER
 )
 
 add_library(

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "config/config_reader.hpp"
-
 #include <optional>
 #include <string>
 
 namespace howdy::native {
+
+	class ConfigReader;
 
 	auto ValidateRuntimeConfig(const ConfigReader &config) -> std::optional<std::string>;
 

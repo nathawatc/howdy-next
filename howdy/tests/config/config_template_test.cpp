@@ -1,7 +1,7 @@
-#include "config/config_reader.hpp"
+#include "../../src/config/config_reader/internal.hpp"
+#include "../../src/config/config_validation/internal.hpp"
 #include "config/config_schema.hpp"
 #include "config/config_template.hpp"
-#include "config/config_validation.hpp"
 #include "test_support.hpp"
 
 #include <array>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/config_reader.hpp"
+#include "../config_reader/internal.hpp"
 #include "config/config_schema.hpp"
 
 #include <algorithm>

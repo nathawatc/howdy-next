@@ -16,7 +16,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
   content validation
 - `config_utils/key_file.cpp`: INI scalar/line parsing and comment-preserving replacement
 
-Private cross-TU contracts stay in each component's `internal.hpp`.
+Private cross-TU contracts stay in each component's `internal.hpp`. ConfigReader and strict float
+parsing live in `config_reader/internal.hpp`; semantic validation lives in
+`config_validation/internal.hpp`; typed parsing helpers live in `runtime_config_loader/internal.hpp`.
+Config tests include these private contracts directly; do not expose INIReader through public headers.
 
 ## Invariants
 
