@@ -1,6 +1,6 @@
 #include "module/auth_flow.hpp"
 
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "module/auth_eligibility.hpp"
 #include "module/pam_options.hpp"
 #include "module/status_mapping.hpp"

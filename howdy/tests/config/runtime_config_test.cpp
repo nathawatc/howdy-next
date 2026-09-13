@@ -1,5 +1,5 @@
 #include "config/config_schema.hpp"
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "test_support.hpp"
 
 #include <cmath>

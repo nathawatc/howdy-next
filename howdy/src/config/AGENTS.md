@@ -8,8 +8,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 - `config_schema.cpp`: canonical option table, lookup APIs, formatting, packaged fallbacks
 - `config_schema/validation.cpp`: schema consistency validation
-- `runtime_config.cpp`: typed runtime loading
-- `runtime_config/defaults.cpp`: runtime-only defaults
+- `runtime_config.cpp`: typed runtime values and schema-backed defaults
+- `runtime_config_loader.cpp`: secure typed runtime loading
+- `runtime_config_loader/defaults.cpp`: runtime-only path/owner loading adapters
 - `config_utils.cpp`: high-level secure config transaction orchestration
 - `config_utils/file_ops.cpp`: locks, secure file I/O, staging/install, expected-content checks,
   content validation

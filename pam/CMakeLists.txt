@@ -29,7 +29,7 @@ howdy_configure_pam_target(pam_runtime)
 target_compile_definitions(
 	pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
-target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE howdy_config)
+target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE howdy_runtime_config_loader)
 
 add_library(
 	pam_conversation_response STATIC

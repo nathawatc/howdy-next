@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 
 #include <cstdint>
 #include <filesystem>

@@ -11,11 +11,14 @@ add_library(howdy_config_template STATIC src/config/config_template.cpp)
 howdy_configure_native_target(howdy_config_template)
 target_link_libraries(howdy_config_template PUBLIC howdy_config_schema)
 
+add_library(howdy_runtime_config STATIC src/config/runtime_config.cpp)
+howdy_configure_native_target(howdy_runtime_config)
+target_link_libraries(howdy_runtime_config PUBLIC howdy_config_schema)
+
 add_library(
 	howdy_config
 	STATIC
 	src/config/config_reader.cpp
-	src/config/runtime_config.cpp
 	src/config/config_utils.cpp
 	src/config/config_utils/internal.hpp
 	src/config/config_utils/file_ops.cpp
@@ -76,14 +79,20 @@ add_custom_target(
 	DEPENDS "${HOWDY_PACKAGED_CONFIG_PATH}"
 )
 
-add_library(
-	howdy_runtime_paths
-	STATIC
-	src/config/runtime_paths.cpp
-	src/config/runtime_config/defaults.cpp
-)
+add_library(howdy_runtime_paths STATIC src/config/runtime_paths.cpp)
 howdy_configure_native_target(howdy_runtime_paths)
-target_link_libraries(howdy_runtime_paths PUBLIC howdy_config)
+
+add_library(
+	howdy_runtime_config_loader STATIC
+	src/config/runtime_config_loader.cpp
+	src/config/runtime_config_loader/defaults.cpp
+)
+howdy_configure_native_target(howdy_runtime_config_loader)
+target_link_libraries(
+	howdy_runtime_config_loader
+	PUBLIC howdy_runtime_config
+	PRIVATE howdy_config howdy_runtime_paths
+)
 
 add_library(
 	howdy_user_model_readiness STATIC
@@ -105,11 +114,11 @@ add_library(
 	src/vision/video_capture.cpp
 )
 howdy_configure_native_target(howdy_vision_core)
-target_link_libraries(howdy_vision_core PUBLIC howdy_opencv)
+target_link_libraries(howdy_vision_core PUBLIC howdy_opencv howdy_runtime_config)
 
 add_library(howdy_frame_processing STATIC src/vision/frame_processing.cpp)
 howdy_configure_native_target(howdy_frame_processing)
-target_link_libraries(howdy_frame_processing PUBLIC howdy_opencv)
+target_link_libraries(howdy_frame_processing PUBLIC howdy_opencv howdy_runtime_config)
 
 add_library(howdy_preview_engine STATIC src/vision/preview_engine.cpp)
 howdy_configure_native_target(howdy_preview_engine)
@@ -146,7 +155,7 @@ add_library(howdy_face_model STATIC src/vision/face_model.cpp)
 howdy_configure_native_target(howdy_face_model)
 target_link_libraries(
 	howdy_face_model
-	PUBLIC howdy_opencv howdy_config
+	PUBLIC howdy_opencv howdy_runtime_config
 	PRIVATE howdy_runtime_paths howdy_model_file howdy_vision_core
 )
 
@@ -171,7 +180,7 @@ target_link_libraries(howdy_compare_logic PUBLIC howdy_opencv)
 
 add_library(howdy_compare_engine STATIC src/compare/engine.cpp)
 howdy_configure_native_target(howdy_compare_engine)
-target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv)
+target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv howdy_runtime_config)
 
 add_library(
 	howdy_compare_capture_session STATIC
@@ -205,6 +214,7 @@ howdy_configure_native_target(howdy_compare)
 target_link_libraries(
 	howdy_compare
 	PRIVATE
+		howdy_runtime_config_loader
 		howdy_compare_args
 		howdy_compare_processing
 		howdy_compare_privileges
@@ -283,6 +293,8 @@ howdy_configure_native_target(howdy_cli)
 target_link_libraries(
 	howdy_cli
 	PUBLIC
+		howdy_config
+		howdy_runtime_config_loader
 		howdy_command_catalog
 		howdy_face_model
 		howdy_user_models

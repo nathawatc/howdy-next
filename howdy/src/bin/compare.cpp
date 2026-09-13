@@ -4,7 +4,7 @@
 #include "compare/logic.hpp"
 #include "compare/processing.hpp"
 #include "compare/sandbox.hpp"
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/compare_exit.hpp"
 #include "storage/user_model_status.hpp"

@@ -103,7 +103,7 @@ howdy_add_native_test(
 )
 target_link_libraries(
 	howdy_runtime_config_load_test
-	PRIVATE howdy_runtime_paths
+	PRIVATE howdy_runtime_config_loader howdy_runtime_paths
 )
 
 howdy_add_native_test(
@@ -113,7 +113,7 @@ howdy_add_native_test(
 )
 target_link_libraries(
 	howdy_runtime_config_test
-	PRIVATE howdy_config
+	PRIVATE howdy_runtime_config_loader
 )
 
 howdy_add_native_test(
@@ -125,3 +125,10 @@ target_link_libraries(
 	howdy_config_reader_test
 	PRIVATE howdy_config
 )
+
+howdy_add_native_test(
+	howdy_runtime_config_defaults_test
+	native-runtime-config-defaults
+	tests/config/runtime_config_defaults_test.cpp
+)
+target_link_libraries(howdy_runtime_config_defaults_test PRIVATE howdy_runtime_config)

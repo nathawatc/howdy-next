@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "support/file_security/validation_root.hpp"
 
 #include <filesystem>

@@ -3,7 +3,7 @@
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
 #include "cli/test/preview_session.hpp"
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 #include "support/capture_device_path.hpp"

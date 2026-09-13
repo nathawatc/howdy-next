@@ -1,7 +1,7 @@
 #pragma once
 
 #include "cli/add/enrollment_capture.hpp"
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "storage/user_models.hpp"
 
 #include <cstdint>

@@ -1,5 +1,5 @@
 #include "cli/snapshot/internal.hpp"
-#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_security.hpp"
 #include "vision/frame_validation.hpp"

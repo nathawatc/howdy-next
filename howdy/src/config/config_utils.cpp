@@ -9,10 +9,28 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 #include <sys/stat.h>
 
 namespace howdy::native {
+	namespace config_test_hooks {
+
+		auto Current() -> AfterOpenBeforeRead & {
+			static AfterOpenBeforeRead hook;
+			return hook;
+		}
+
+		ScopedHooks::ScopedHooks(AfterOpenBeforeRead hook)
+		    : previous_(std::move(Current())) {
+			Current() = std::move(hook);
+		}
+
+		ScopedHooks::~ScopedHooks() {
+			Current() = std::move(previous_);
+		}
+
+	}  // namespace config_test_hooks
 
 	namespace {
 
