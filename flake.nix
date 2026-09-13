@@ -12,6 +12,19 @@
 
       forAllSystems = function: nixpkgs.lib.genAttrs systems function;
 
+      cmakeProjectVersionMatches = builtins.filter (match: match != null) (
+        map
+          (line: builtins.match
+            "[[:space:]]*VERSION[[:space:]]+([0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*"
+            line)
+          (builtins.filter builtins.isString (builtins.split "\n" (builtins.readFile ./CMakeLists.txt)))
+      );
+      howdyVersion =
+        if builtins.length cmakeProjectVersionMatches == 1 then
+          builtins.head (builtins.head cmakeProjectVersionMatches)
+        else
+          throw "Cannot parse exactly one project VERSION major.minor.patch declaration from CMakeLists.txt";
+
       pkgsFor = system: import nixpkgs { inherit system; };
 
       opencv5For = system:
@@ -38,7 +51,7 @@
         in
         pkgs.stdenv.mkDerivation {
           pname = "howdy-next";
-          version = "3.4.0";
+          version = howdyVersion;
           src = ./.;
 
           strictDeps = true;
