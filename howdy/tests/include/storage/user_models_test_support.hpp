@@ -1,7 +1,7 @@
 #pragma once
 
 #include "storage/user_model_readiness.hpp"
-#include "storage/user_models.hpp"
+#include "storage/user_model_types.hpp"
 #include "test_support.hpp"
 
 #include <cstdio>

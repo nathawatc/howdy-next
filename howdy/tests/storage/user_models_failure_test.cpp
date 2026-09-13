@@ -1,5 +1,6 @@
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
+#include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
 
 #include <algorithm>

@@ -1,5 +1,3 @@
-#include "storage/user_model_store.hpp"
-
 #include "config/runtime_paths.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_readiness.hpp"
@@ -9,6 +7,7 @@
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
 #include "support/user_names.hpp"
+#include "user_model_store/internal.hpp"
 
 #include <cerrno>
 #include <cstdint>

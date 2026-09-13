@@ -2,7 +2,7 @@
 #include "cli/add/internal.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
-#include "storage/user_models.hpp"
+#include "storage/user_model_types.hpp"
 #include "support/user_names.hpp"
 #include "vision/face_model.hpp"
 

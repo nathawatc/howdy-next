@@ -1,3 +1,4 @@
+#include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
 #include "support/file_security.hpp"
 #include "support/user_names.hpp"

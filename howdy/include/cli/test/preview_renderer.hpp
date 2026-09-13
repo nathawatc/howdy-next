@@ -2,7 +2,7 @@
 
 #include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
-#include "storage/user_models.hpp"
+#include "storage/user_model_types.hpp"
 
 #include <optional>
 #include <string>

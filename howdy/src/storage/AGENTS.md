@@ -6,10 +6,12 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership
 
-- `user_model_codec.cpp`: document lifecycle, mutability, serialization, public codec façade
+- `include/storage/user_model_types.hpp`: user-model value and result contracts
+- `include/storage/user_models.hpp`: public list/mutation/load operation API
+- `user_model_codec.cpp`: private document lifecycle, mutability, and serialization
 - `user_model_codec/parsing.cpp`: JSON grammar, limits, duplicate-key checks, raw entry decoding
 - `user_model_store.cpp`: secure user-model transaction boundary
-- `user_models.cpp`: high-level list/mutation/load APIs
+- `user_models.cpp`: high-level list/mutation/load operations
 - `user_model_readiness.cpp`: readiness routing and canonical checks
 - `user_model_readiness/staged.cpp`: staged-runtime ACL/path/model validation
 

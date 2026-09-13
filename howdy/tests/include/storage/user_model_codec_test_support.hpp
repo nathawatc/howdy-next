@@ -1,6 +1,6 @@
 #pragma once
 
-#include "storage/user_model_codec.hpp"
+#include "../../../src/storage/user_model_codec/internal.hpp"
 #include "test_support.hpp"
 
 #include <cstddef>

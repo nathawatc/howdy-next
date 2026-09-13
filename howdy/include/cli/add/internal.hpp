@@ -2,7 +2,7 @@
 
 #include "cli/add/enrollment_capture.hpp"
 #include "config/runtime_config_loader.hpp"
-#include "storage/user_models.hpp"
+#include "storage/user_model_types.hpp"
 
 #include <cstdint>
 #include <string>

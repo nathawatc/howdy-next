@@ -1,6 +1,6 @@
 #pragma once
 
-#include "storage/user_model_codec.hpp"
+#include "../user_model_codec/internal.hpp"
 #include "storage/user_models.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"

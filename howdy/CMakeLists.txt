@@ -118,11 +118,13 @@ add_library(
 	src/vision/video_capture.cpp
 )
 howdy_configure_native_target(howdy_vision_core)
-target_link_libraries(howdy_vision_core PUBLIC howdy_opencv howdy_runtime_config)
+target_link_libraries(howdy_vision_core PUBLIC howdy_opencv
+                      howdy_runtime_config)
 
 add_library(howdy_frame_processing STATIC src/vision/frame_processing.cpp)
 howdy_configure_native_target(howdy_frame_processing)
-target_link_libraries(howdy_frame_processing PUBLIC howdy_opencv howdy_runtime_config)
+target_link_libraries(howdy_frame_processing PUBLIC howdy_opencv
+                      howdy_runtime_config)
 
 add_library(howdy_preview_engine STATIC src/vision/preview_engine.cpp)
 howdy_configure_native_target(howdy_preview_engine)
@@ -184,7 +186,8 @@ target_link_libraries(howdy_compare_logic PUBLIC howdy_opencv)
 
 add_library(howdy_compare_engine STATIC src/compare/engine.cpp)
 howdy_configure_native_target(howdy_compare_engine)
-target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv howdy_runtime_config)
+target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv
+                      howdy_runtime_config)
 
 add_library(
 	howdy_compare_capture_session STATIC
