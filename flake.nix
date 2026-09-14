@@ -110,6 +110,20 @@
             runHook postInstall
           '';
 
+          doInstallCheck = true;
+          installCheckPhase = ''
+            runHook preInstallCheck
+            test -x "$out/bin/howdy"
+            test -x "$out/libexec/howdy/howdy-compare"
+            test -x "$out/libexec/howdy/howdy-auth-helper"
+            test ! -u "$out/libexec/howdy/howdy-auth-helper"
+            test -s "$out/lib/security/pam_howdy.so"
+            test -s "$out/share/howdy/config.ini"
+            test ! -e "$out/etc"
+            test ! -e "$out/var"
+            runHook postInstallCheck
+          '';
+
           meta = {
             description = "C++ facial-recognition authentication for Linux";
             homepage = "https://codeberg.org/nathawat/howdy-next";
@@ -123,6 +137,24 @@
       packages = forAllSystems (system: {
         default = howdyNextFor system;
         howdy-next = howdyNextFor system;
+        ci-runtime =
+          let pkgs = pkgsFor system;
+          in pkgs.buildEnv {
+            name = "howdy-ci-runtime";
+            paths = [ pkgs.nodejs pkgs.jq ];
+          };
+        # Keep package build inputs, CI runtime tools, and nixpkgs available
+        # after image garbage collection without prebuilding Howdy itself.
+        ci-dependencies =
+          let
+            pkgs = pkgsFor system;
+            package = howdyNextFor system;
+            inputs = (package.nativeBuildInputs or [ ]) ++ (package.buildInputs or [ ]);
+          in
+          pkgs.writeText "howdy-ci-dependencies" (pkgs.lib.concatMapStringsSep "\n" toString (
+            [ nixpkgs.outPath self.packages.${system}.ci-runtime package.stdenv ]
+            ++ pkgs.lib.concatMap (input: [ input (pkgs.lib.getDev input) ]) inputs
+          ));
       });
 
       devShells = forAllSystems (system:

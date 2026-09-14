@@ -1,13 +1,14 @@
 # Repository Guidelines
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-14
 
 This file defines repository-wide rules. Read the nearest `AGENTS.md` before changing a subsystem;
 local files add detail but do not override these invariants.
 
 ## Repository Map
 
-- [`ci/AGENTS.md`](ci/AGENTS.md): CI image and workflow rules
+- [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md): Arch Linux CI image and workflow rules
+- [`ci/nix/AGENTS.md`](ci/nix/AGENTS.md): Nix CI image, Flake, and module checks
 - [`howdy/AGENTS.md`](howdy/AGENTS.md): native Howdy package
 - [`pam/AGENTS.md`](pam/AGENTS.md): PAM module
 

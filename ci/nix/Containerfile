@@ -1,0 +1,28 @@
+FROM docker.io/nixos/nix:2.35.2
+
+RUN printf '%s\n' \
+		'experimental-features = nix-command flakes' \
+		'allow-import-from-derivation = false' \
+	>> /etc/nix/nix.conf
+
+WORKDIR /prewarm
+COPY flake.nix flake.lock CMakeLists.txt ./
+COPY nix/ ./nix/
+# Build and collect in one layer: neither temporary build inputs nor a second
+# copy of the base image's Nix store should inflate the published image.
+RUN mkdir -p /etc/howdy-nix-ci /nix/var/nix/gcroots \
+	&& nix build --no-update-lock-file \
+		--out-link /nix/var/nix/gcroots/ci-dependencies \
+		path:/prewarm#packages.x86_64-linux.ci-dependencies \
+	&& nix build --offline --max-jobs 0 --no-update-lock-file \
+		--out-link /nix/var/nix/gcroots/ci-runtime \
+		path:/prewarm#packages.x86_64-linux.ci-runtime \
+	&& readlink /nix/var/nix/gcroots/ci-dependencies > /etc/howdy-nix-ci/dependencies \
+	&& rm -rf /prewarm \
+	&& nix-store --gc
+
+ENV PATH="/nix/var/nix/gcroots/ci-runtime/bin:${PATH}"
+WORKDIR /
+
+LABEL org.opencontainers.image.source="https://codeberg.org/nathawat/howdy-next" \
+		org.opencontainers.image.description="Howdy Next Nix CI build image"

@@ -1,0 +1,35 @@
+name: Nix package and module
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: codeberg-medium
+    container:
+      image: codeberg.org/nathawat/howdy-next/ci-nix:2.35.2-1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify prebuilt dependencies
+        run: bash ci/nix/check-prebuilt.sh
+
+      - name: Evaluate both Linux systems
+        run: |
+          nix flake check \
+            --offline \
+            --no-update-lock-file \
+            --no-build \
+            --all-systems
+
+      - name: Build and check package installation
+        run: |
+          nix build \
+            --offline \
+            --no-update-lock-file \
+            --no-link \
+            --max-jobs 1 \
+            --print-build-logs \
+            .#checks.x86_64-linux.package

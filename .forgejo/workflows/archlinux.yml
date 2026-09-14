@@ -1,0 +1,23 @@
+name: Arch Linux build and test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: codeberg-medium
+    container:
+      image: codeberg.org/nathawat/howdy-next/ci-archlinux:latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: cmake --preset release -DHOWDY_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build --preset release --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --preset release
