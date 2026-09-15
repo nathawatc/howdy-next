@@ -49,30 +49,6 @@ namespace {
 		int                                                   exposure = -1;
 	};
 
-	struct PreviewCleanup {
-		std::optional<howdy::native::VideoCapture>   &capture;
-		test_cli_internal::TestPreviewRendererCleanup renderer_cleanup;
-
-		PreviewCleanup(std::optional<test_cli_internal::TestPreviewRenderer> &renderer,
-		               std::optional<howdy::native::VideoCapture>            &preview_capture)
-		    : capture(preview_capture)
-		    , renderer_cleanup(renderer) {}
-
-		~PreviewCleanup() noexcept {
-			try {
-				renderer_cleanup.Cleanup();
-			} catch (...) {  // NOLINT(bugprone-empty-catch)
-			}
-
-			try {
-				if (capture.has_value()) {
-					capture->Release();
-				}
-			} catch (...) {  // NOLINT(bugprone-empty-catch)
-			}
-		}
-	};
-
 	auto ParseTestArgs(int argc, char **argv) -> TestArgs {
 		TestArgs args;
 		bool     options_ended   = false;
@@ -347,7 +323,8 @@ namespace {
 			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
-		PreviewCleanup cleanup{production_context->renderer, production_context->capture};
+		test_cli_internal::PreviewCleanup cleanup{production_context->renderer,
+		                                          production_context->capture};
 
 		PrepareInvokingGuiEnvironment();
 
@@ -408,13 +385,6 @@ namespace {
 	}
 
 }  // namespace
-
-void howdy::native::test_cli_internal::RunWithPreviewCleanup(
-    std::optional<TestPreviewRenderer> &renderer, void *context, PreviewCleanupBodyFn body) {
-	std::optional<howdy::native::VideoCapture> capture;
-	PreviewCleanup                             cleanup(renderer, capture);
-	body(context);
-}
 
 auto howdy::native::test_cli_internal::RunPreviewPreflight(
     const howdy::native::RuntimeConfig &config, const std::string &user,

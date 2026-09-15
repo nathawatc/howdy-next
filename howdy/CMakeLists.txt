@@ -146,6 +146,8 @@ target_link_libraries(
 		howdy_preview_engine
 		howdy_frame_processing
 		howdy_opencv
+	PRIVATE
+		howdy_vision_core
 )
 
 add_library(howdy_user_model_codec STATIC

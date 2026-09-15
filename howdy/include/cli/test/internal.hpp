@@ -42,10 +42,9 @@ namespace howdy::native::test_cli_internal {
 	using HasGraphicalDisplayFn = bool (*)(void *context);
 	using OpenCameraFn          = TestPreflightOperationResult (*)(
 	    void *context, const howdy::native::RuntimeConfig &config, const std::string &device_path);
-	using ReadCameraFn         = bool (*)(void *context);
-	using SwitchGuiUserFn      = bool (*)(void *context);
-	using InitializeGuiFn      = void (*)(void *context);
-	using PreviewCleanupBodyFn = void (*)(void *context);
+	using ReadCameraFn    = bool (*)(void *context);
+	using SwitchGuiUserFn = bool (*)(void *context);
+	using InitializeGuiFn = void (*)(void *context);
 
 	struct TestPreviewPreflightDependencies {
 		void                 *context               = nullptr;
@@ -75,8 +74,6 @@ namespace howdy::native::test_cli_internal {
 	auto RunPreviewPreflight(const howdy::native::RuntimeConfig &config, const std::string &user,
 	                         const TestPreviewPreflightDependencies &dependencies,
 	                         const std::string &device_path) -> TestPreviewResult;
-	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
-	                           PreviewCleanupBodyFn body);
 
 	auto HasGraphicalDisplayEnvironment(std::string_view display, std::string_view wayland_display,
 	                                    std::string_view runtime_dir) -> bool;

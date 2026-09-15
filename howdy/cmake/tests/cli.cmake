@@ -69,7 +69,6 @@ howdy_add_native_test(
 target_link_libraries(
 	howdy_test_preview_session_test
 	PRIVATE
-		howdy_cli
 		howdy_test_preview
 		howdy_preview_engine
 		howdy_opencv

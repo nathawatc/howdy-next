@@ -1,4 +1,3 @@
-#include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
 #include "test_support.hpp"
 

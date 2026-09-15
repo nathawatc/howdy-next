@@ -229,4 +229,30 @@ namespace howdy::native::test_cli_internal {
 		            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(0, 255, 0), 0, cv::LINE_AA);
 	}
 
+	PreviewCleanup::PreviewCleanup(std::optional<TestPreviewRenderer>         &renderer,
+	                               std::optional<howdy::native::VideoCapture> &preview_capture)
+	    : capture(preview_capture)
+	    , renderer_cleanup(renderer) {}
+
+	PreviewCleanup::~PreviewCleanup() noexcept {
+		try {
+			renderer_cleanup.Cleanup();
+		} catch (...) {  // NOLINT(bugprone-empty-catch)
+		}
+
+		try {
+			if (capture.has_value()) {
+				capture->Release();
+			}
+		} catch (...) {  // NOLINT(bugprone-empty-catch)
+		}
+	}
+
+	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
+	                           PreviewCleanupBodyFn body) {
+		std::optional<howdy::native::VideoCapture> capture;
+		PreviewCleanup                             cleanup(renderer, capture);
+		body(context);
+	}
+
 }  // namespace howdy::native::test_cli_internal

@@ -3,6 +3,7 @@
 #include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_model_types.hpp"
+#include "vision/video_capture.hpp"
 
 #include <optional>
 #include <string>
@@ -69,5 +70,19 @@ namespace howdy::native::test_cli_internal {
 	                                howdy::native::VideoConfig                    config,
 	                                std::vector<howdy::native::EncodingModelInfo> models,
 	                                TestPreviewRendererDependencies dependencies = {});
+
+	using PreviewCleanupBodyFn = void (*)(void *context);
+
+	struct PreviewCleanup {
+		std::optional<howdy::native::VideoCapture> &capture;
+		TestPreviewRendererCleanup                  renderer_cleanup;
+
+		PreviewCleanup(std::optional<TestPreviewRenderer>         &renderer,
+		               std::optional<howdy::native::VideoCapture> &preview_capture);
+		~PreviewCleanup() noexcept;
+	};
+
+	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
+	                           PreviewCleanupBodyFn body);
 
 }  // namespace howdy::native::test_cli_internal
