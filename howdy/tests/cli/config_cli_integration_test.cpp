@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <pwd.h>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -33,10 +34,14 @@ namespace howdy::test::config_cli {
 		public:
 			ScopedEnvironmentVariable(const char *name, const std::string &value)
 			    : name_(name) {
-				if (const char *current = std::getenv(name); current != nullptr) {
-					original_ = current;
-				}
+				SaveOriginal();
 				setenv(name_, value.c_str(), 1);
+			}
+
+			explicit ScopedEnvironmentVariable(const char *name)
+			    : name_(name) {
+				SaveOriginal();
+				unsetenv(name_);
 			}
 
 			ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
@@ -52,9 +57,68 @@ namespace howdy::test::config_cli {
 			}
 
 		private:
+			void SaveOriginal() {
+				if (const char *current = std::getenv(name_); current != nullptr) {
+					original_ = current;
+				}
+			}
+
 			const char                *name_;
 			std::optional<std::string> original_;
 		};
+
+		struct EditorPasswdFixture {
+			uid_t       uid;
+			gid_t       gid;
+			std::string name;
+		};
+
+		auto CopyEditorPasswdFixture(const passwd *pwd) -> std::optional<EditorPasswdFixture> {
+			if (pwd == nullptr || pwd->pw_name == nullptr || pwd->pw_name[0] == '\0') {
+				return std::nullopt;
+			}
+			return EditorPasswdFixture{
+			    .uid = pwd->pw_uid, .gid = pwd->pw_gid, .name = pwd->pw_name};
+		}
+
+		auto FindEditorPasswdFixture() -> std::optional<EditorPasswdFixture> {
+			if (const auto current = CopyEditorPasswdFixture(getpwuid(getuid()));
+			    current.has_value() && current->uid != 0) {
+				return current;
+			}
+
+			std::optional<EditorPasswdFixture> fixture;
+			setpwent();
+			while (const passwd *pwd = getpwent()) {
+				if (pwd->pw_uid == 0) {
+					continue;
+				}
+				fixture = CopyEditorPasswdFixture(pwd);
+				if (fixture.has_value()) {
+					break;
+				}
+			}
+			endpwent();
+			return fixture;
+		}
+
+		auto DirectRootIgnoresEnvironmentEditor() -> bool {
+			ScopedEnvironmentVariable editor_env("EDITOR", "/tmp/howdy-attacker-editor");
+			ScopedEnvironmentVariable sudo_user_env("SUDO_USER");
+			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID");
+			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID");
+			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
+			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
+
+			const auto dependencies =
+			    howdy::native::config_internal::DefaultConfigEditDependencies();
+			const auto identity = dependencies.resolve_invoking_identity(dependencies.context);
+			const auto editor   = dependencies.resolve_editor(dependencies.context, false);
+			return Expect(identity.status ==
+			                      howdy::native::InvokingIdentityStatus::kNoWrapperIdentity &&
+			                  !identity.user.has_value() && editor != "/tmp/howdy-attacker-editor",
+			              "direct-root config editing ignores environment editor");
+		}
 
 		auto PathReportedAfter(const std::string &output, const std::string &prefix)
 		    -> std::filesystem::path {
@@ -68,7 +132,12 @@ namespace howdy::test::config_cli {
 		}
 
 		auto BoundaryAwareEntrypointPreservesInvalidEdit() -> bool {
-			namespace fs = std::filesystem;
+			namespace fs              = std::filesystem;
+			const auto editor_fixture = FindEditorPasswdFixture();
+			if (!editor_fixture.has_value()) {
+				return Expect(false, "integration finds non-root editor fixture");
+			}
+			const auto &editor_identity = *editor_fixture;
 
 			const std::string temp_template =
 			    (fs::current_path() / "howdy-config-cli-integration-XXXXXX").string();
@@ -79,23 +148,48 @@ namespace howdy::test::config_cli {
 				return false;
 			}
 
-			bool            ok          = true;
-			const fs::path  temp_root   = created_path;
-			const fs::path  config_path = temp_root / "config.ini";
-			const fs::path  editor_path = temp_root / "fake-editor";
+			bool            ok              = true;
+			const fs::path  temp_root       = created_path;
+			const fs::path  config_path     = temp_root / "config.ini";
+			const fs::path  editor_path     = temp_root / "fake-editor";
+			const fs::path  credential_path = temp_root / "editor-credentials";
 			std::error_code error;
+			if (editor_identity.uid != getuid()) {
+				ok &= Expect(chmod(temp_root.c_str(), 0755) == 0,
+				             "integration exposes editor fixture directory");
+			}
 			ok &= Expect(WriteFile(config_path, std::string{kIntegrationOriginalContent}),
 			             "integration writes config baseline");
 			ok &= Expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
-			ok &= Expect(WriteFile(editor_path, "#!/bin/sh\nprintf '[core\\n' > \"$1\"\n"),
-			             "integration writes fake editor");
-			ok &= Expect(chmod(editor_path.c_str(), 0700) == 0,
+			ok &=
+			    Expect(WriteFile(editor_path,
+			                     "#!/bin/sh\nprintf '%s:%s:%s:%s\\n' \"$(id -u)\" \"$(id -ru)\" "
+			                     "\"$(id -g)\" \"$(id -rg)\" > \"$HOWDY_TEST_EDITOR_CREDENTIALS\"\n"
+			                     "printf '[core\\n' > \"$1\"\n"),
+			           "integration writes fake editor");
+			ok &= Expect(chmod(editor_path.c_str(), 0755) == 0,
 			             "integration makes fake editor executable");
+			ok &= Expect(WriteFile(credential_path, {}), "integration creates credential log");
+			ok &= Expect(chmod(credential_path.c_str(), 0600) == 0,
+			             "integration secures credential log");
+			if (editor_identity.uid != getuid()) {
+				ok &= Expect(
+				    chown(credential_path.c_str(), editor_identity.uid, editor_identity.gid) == 0,
+				    "integration assigns credential log to editor fixture");
+			}
 
 			ScopedEnvironmentVariable editor_env("EDITOR", editor_path.string());
 			ScopedEnvironmentVariable config_env("HOWDY_CONFIG", config_path.string());
-			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID", std::to_string(getuid()));
-			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID", std::to_string(getgid()));
+			const std::string         invoking_name = editor_identity.name;
+			const auto                invoking_uid  = editor_identity.uid;
+			const auto                invoking_gid  = editor_identity.gid;
+			ScopedEnvironmentVariable sudo_user_env("SUDO_USER", invoking_name);
+			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID", std::to_string(invoking_uid));
+			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID", std::to_string(invoking_gid));
+			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
+			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
+			ScopedEnvironmentVariable credential_env("HOWDY_TEST_EDITOR_CREDENTIALS",
+			                                         credential_path.string());
 
 			std::array<char *, 1> argv{const_cast<char *>("howdy-config")};
 			std::ostringstream    output;
@@ -123,6 +217,11 @@ namespace howdy::test::config_cli {
 			             "integration preserves invalid temp file");
 			ok &= Expect(ReadFile(reported_temp_path) == "[core\n",
 			             "integration keeps malformed content");
+			ok &= Expect(ReadFile(credential_path) == std::to_string(invoking_uid) + ":" +
+			                                              std::to_string(invoking_uid) + ":" +
+			                                              std::to_string(invoking_gid) + ":" +
+			                                              std::to_string(invoking_gid) + "\n",
+			             "editor runs with validated invoking credentials");
 			fs::remove(reported_temp_path, error);
 			fs::remove_all(temp_root, error);
 			return ok;
@@ -240,6 +339,7 @@ namespace howdy::test::config_cli {
 
 	auto RunConfigCliIntegrationTests() -> bool {
 		bool ok = true;
+		ok &= DirectRootIgnoresEnvironmentEditor();
 		ok &= BoundaryAwareEntrypointPreservesInvalidEdit();
 		ok &= ProductionConfigReadsAreBounded();
 		ok &= ProductionEditReadsAreDescriptorBound();

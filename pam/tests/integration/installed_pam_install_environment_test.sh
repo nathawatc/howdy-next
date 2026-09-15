@@ -18,13 +18,20 @@ chmod 0777 "$fixture"
 mkdir -m 0777 -- "$hostile_destdir" "$redirect_target"
 ln -s -- "$redirect_target" "$hostile_destdir/opt"
 
+# Exercise normal privileged E2E with hostile caller-controlled install settings.
+# The harness must clear both settings before its trusted isolated installation.
 DESTDIR=$hostile_destdir CMAKE_INSTALL_MODE=REL_SYMLINK bash "$harness" "$@"
 
-[ ! -e "$install_prefix" ] || {
-	echo "Isolated installation remains after environment regression" >&2
+[ ! -e "$install_prefix" ] && [ ! -L "$install_prefix" ] || {
+	echo "Trusted isolated installation remains after harness cleanup" >&2
 	exit 1
 }
-[ -L "$hostile_destdir/opt" ] || {
+[ -d "$hostile_destdir" ] || {
+	echo "Hostile DESTDIR fixture was removed" >&2
+	exit 1
+}
+[ -L "$hostile_destdir/opt" ] &&
+	[ "$(readlink -- "$hostile_destdir/opt")" = "$redirect_target" ] || {
 	echo "Hostile DESTDIR fixture symlink changed" >&2
 	exit 1
 }
@@ -37,4 +44,4 @@ DESTDIR=$hostile_destdir CMAKE_INSTALL_MODE=REL_SYMLINK bash "$harness" "$@"
 	exit 1
 }
 
-printf 'Install environment isolation: passed\n'
+printf 'Privileged install harness environment isolation: passed\n'

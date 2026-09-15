@@ -43,10 +43,35 @@ namespace {
 	auto ResolveModelUser(ParsedCommandLine &parsed, const HowdyDependencies &dependencies)
 	    -> bool {
 		if (!parsed.user.has_value()) {
-			if (dependencies.resolve_user == nullptr) {
+			if (dependencies.resolve_invoking_identity == nullptr) {
 				return false;
 			}
-			parsed.user = dependencies.resolve_user(dependencies.context);
+
+			const auto identity = dependencies.resolve_invoking_identity(dependencies.context);
+			switch (identity.status) {
+				case howdy::native::InvokingIdentityStatus::kNoWrapperIdentity:
+					std::cout << "Unable to determine the user; please use --user\n";
+					return false;
+				case howdy::native::InvokingIdentityStatus::kResolved:
+					if (!identity.user.has_value()) {
+						std::cout
+						    << "Unable to determine the user: invalid invoking identity; please "
+						       "use --user\n";
+						return false;
+					}
+					parsed.user = identity.user->name;
+					break;
+				case howdy::native::InvokingIdentityStatus::kInvalid:
+					std::cout
+					    << "Unable to determine the user: invalid privilege-wrapper identity; "
+					       "please use --user\n";
+					return false;
+				case howdy::native::InvokingIdentityStatus::kConflicting:
+					std::cout
+					    << "Unable to determine the user: conflicting privilege-wrapper identity; "
+					       "please use --user\n";
+					return false;
+			}
 		}
 		if (!parsed.user.has_value() || parsed.user->empty()) {
 			std::cout << "Unable to determine the user; please use --user\n";
@@ -151,13 +176,13 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 
 	const bool needs_user_argument =
 	    command_descriptor->user_target == howdy::native::UserTargetMode::kModelUser;
-	if (needs_user_argument && !ResolveModelUser(parsed, dependencies)) {
-		return 1;
-	}
 	if (dependencies.effective_uid == nullptr ||
 	    dependencies.effective_uid(dependencies.context) != 0) {
 		std::cout << "This command requires root privileges.\n";
 		std::cout << "Run it again with sudo.\n";
+		return 1;
+	}
+	if (needs_user_argument && !ResolveModelUser(parsed, dependencies)) {
 		return 1;
 	}
 	if (needs_user_argument) {

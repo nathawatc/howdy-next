@@ -19,10 +19,16 @@ namespace howdy::test::dispatch {
 
 		Context *active_context = nullptr;
 
-		auto ResolveUser(void *raw_context) -> std::string {
+		auto ResolveInvokingIdentity(void *raw_context) -> howdy::native::InvokingIdentityResult {
 			auto &context = *static_cast<Context *>(raw_context);
 			++context.resolve_user_calls;
-			return context.resolved_user;
+			if (context.identity_status != howdy::native::InvokingIdentityStatus::kResolved) {
+				return {.status = context.identity_status};
+			}
+			return {
+			    .status = howdy::native::InvokingIdentityStatus::kResolved,
+			    .user   = howdy::native::InvokingUser{.name = context.resolved_user},
+			};
 		}
 
 		auto EffectiveUid(void *raw_context) -> uid_t {
@@ -118,10 +124,10 @@ namespace howdy::test::dispatch {
 		const auto status = howdy::native::howdy_internal::HowdyMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(),
 		    HowdyDependencies{
-		        .context       = &context,
-		        .resolve_user  = ResolveUser,
-		        .effective_uid = EffectiveUid,
-		        .command_mains = command_mains,
+		        .context                   = &context,
+		        .resolve_invoking_identity = ResolveInvokingIdentity,
+		        .effective_uid             = EffectiveUid,
+		        .command_mains             = command_mains,
 		    });
 		active_context = nullptr;
 		std::cout.rdbuf(old_output);
@@ -324,6 +330,40 @@ namespace {
 		return ok;
 	}
 
+	auto TestInvokingIdentityFailures() -> bool {
+		bool ok = true;
+		for (const auto status : {howdy::native::InvokingIdentityStatus::kInvalid,
+		                          howdy::native::InvokingIdentityStatus::kConflicting}) {
+			Context context;
+			context.identity_status    = status;
+			context.resolved_user      = "bob";
+			const auto        result   = Run(context, {"howdy", "list"});
+			const char *const expected = status == howdy::native::InvokingIdentityStatus::kInvalid
+			                                 ? "Unable to determine the user: invalid "
+			                                   "privilege-wrapper identity; please use "
+			                                   "--user\n"
+			                                 : "Unable to determine the user: conflicting "
+			                                   "privilege-wrapper identity; please "
+			                                   "use --user\n";
+			ok &= Expect(result.status == 1 && result.output == expected,
+			             "invalid invoking identity fails automatic model-user resolution");
+			ok &= Expect(context.resolve_user_calls == 1 && context.effective_uid_calls == 1 &&
+			                 !context.command_id.has_value() && context.command_arguments.empty(),
+			             "invalid invoking identity never reaches command implementation");
+		}
+
+		Context context;
+		context.identity_status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity;
+		const auto result       = Run(context, {"howdy", "list"});
+		ok &= Expect(result.status == 1 &&
+		                 result.output == "Unable to determine the user; please use --user\n",
+		             "no wrapper identity keeps explicit-user requirement");
+		ok &= Expect(context.resolve_user_calls == 1 && context.effective_uid_calls == 1 &&
+		                 !context.command_id.has_value() && context.command_arguments.empty(),
+		             "no wrapper identity never targets a synthetic root user");
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -383,6 +423,7 @@ auto main() -> int {
 		ok &= Expect(context.command_arguments == std::vector<std::string>{"howdy-list", "alice"},
 		             "resolved default user injected into list arguments");
 	}
+	ok &= TestInvokingIdentityFailures();
 	{
 		Context    context;
 		const auto result = Run(context, {"howdy", "--user", "bob", "list"});
@@ -414,8 +455,9 @@ auto main() -> int {
 	}
 	{
 		Context context;
-		context.effective_uid = 1000;
-		const auto result     = Run(context, {"howdy", "add", "label; echo unsafe"});
+		context.effective_uid   = 1000;
+		context.identity_status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity;
+		const auto result       = Run(context, {"howdy", "add", "label; echo unsafe"});
 		ok &=
 		    Expect(result.status == 1 && result.output == "This command requires root privileges.\n"
 		                                                  "Run it again with sudo.\n",
@@ -423,6 +465,10 @@ auto main() -> int {
 		ok &= Expect(!result.output.contains("sudo howdy") &&
 		                 !result.output.contains("label; echo unsafe"),
 		             "non-root diagnostic does not reconstruct arbitrary argv");
+		ok &= Expect(context.effective_uid_calls == 1 && context.resolve_user_calls == 0,
+		             "non-root model command checks privileges before invoking identity");
+		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
+		             "non-root model command is not dispatched");
 	}
 	{
 		Context    context;

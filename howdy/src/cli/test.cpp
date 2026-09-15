@@ -114,14 +114,16 @@ namespace {
 			return true;
 		}
 
-		const auto invoking_user = howdy::native::ResolveInvokingUser();
-		if (!invoking_user.has_value()) {
+		const auto invoking_identity = howdy::native::ResolveInvokingIdentity();
+		if (invoking_identity.status != howdy::native::InvokingIdentityStatus::kResolved ||
+		    !invoking_identity.user.has_value()) {
 			return false;
 		}
 
-		howdy::native::ResetInvokingUserGuiEnvironment(*invoking_user);
-		return initgroups(invoking_user->name.c_str(), invoking_user->gid) == 0 &&
-		       setgid(invoking_user->gid) == 0 && setuid(invoking_user->uid) == 0;
+		const auto &invoking_user = *invoking_identity.user;
+		howdy::native::ResetInvokingUserGuiEnvironment(invoking_user);
+		return initgroups(invoking_user.name.c_str(), invoking_user.gid) == 0 &&
+		       setgid(invoking_user.gid) == 0 && setuid(invoking_user.uid) == 0;
 	}
 
 	auto GetenvStringView(const char *name) -> std::string_view {
@@ -137,8 +139,10 @@ namespace {
 			return;
 		}
 
-		if (const auto invoking_user = howdy::native::ResolveInvokingUser()) {
-			howdy::native::PrepareInvokingUserGuiEnvironment(*invoking_user);
+		const auto invoking_identity = howdy::native::ResolveInvokingIdentity();
+		if (invoking_identity.status == howdy::native::InvokingIdentityStatus::kResolved &&
+		    invoking_identity.user.has_value()) {
+			howdy::native::PrepareInvokingUserGuiEnvironment(*invoking_identity.user);
 		}
 	}
 

@@ -49,6 +49,12 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 	switch (result.status) {
 		case ConfigEditStatus::kDependenciesUnavailable:
 			return kConfigExitAbort;
+		case ConfigEditStatus::kInvokingIdentityInvalid:
+			std::cout << "Invalid privilege-wrapper identity; config edit aborted\n";
+			return kConfigExitAbort;
+		case ConfigEditStatus::kInvokingIdentityConflicting:
+			std::cout << "Conflicting privilege-wrapper identity; config edit aborted\n";
+			return kConfigExitAbort;
 		case ConfigEditStatus::kOk:
 			std::cout << "Config updated\n";
 			return kConfigExitOk;

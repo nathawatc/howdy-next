@@ -157,6 +157,10 @@ namespace howdy::native::config_internal {
 					    setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
 						_exit(126);
 					}
+					if (getuid() != invoking_user->uid || geteuid() != invoking_user->uid ||
+					    getgid() != invoking_user->gid || getegid() != invoking_user->gid) {
+						_exit(126);
+					}
 					ResetEditorEnvironment(*invoking_user);
 				}
 
@@ -226,10 +230,10 @@ namespace howdy::native::config_internal {
 			return current.has_value() && *current == expected;
 		}
 
-		auto ResolveInvokingUserDependency(void *context)
-		    -> std::optional<howdy::native::InvokingUser> {
+		auto ResolveInvokingIdentityDependency(void *context)
+		    -> howdy::native::InvokingIdentityResult {
 			(void)context;
-			return howdy::native::ResolveInvokingUser();
+			return howdy::native::ResolveInvokingIdentity();
 		}
 
 		auto ResolveEditorDependency(void *context, bool allow_env_editor) -> std::string {
@@ -309,7 +313,7 @@ namespace howdy::native::config_internal {
 	    : dependencies_(dependencies) {}
 
 	auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies) -> bool {
-		return dependencies.resolve_invoking_user != nullptr &&
+		return dependencies.resolve_invoking_identity != nullptr &&
 		       dependencies.resolve_editor != nullptr &&
 		       dependencies.resolve_config_path != nullptr &&
 		       dependencies.check_secure_config_path != nullptr &&
@@ -325,7 +329,7 @@ namespace howdy::native::config_internal {
 	    -> ConfigEditDependencies {
 		return {
 		    .context                           = validation_root,
-		    .resolve_invoking_user             = ResolveInvokingUserDependency,
+		    .resolve_invoking_identity         = ResolveInvokingIdentityDependency,
 		    .resolve_editor                    = ResolveEditorDependency,
 		    .resolve_config_path               = ResolveConfigPathDependency,
 		    .check_secure_config_path          = CheckSecureConfigPathDependency,
@@ -344,9 +348,31 @@ namespace howdy::native::config_internal {
 			return {.status = ConfigEditStatus::kDependenciesUnavailable};
 		}
 
-		const auto invoking_user = dependencies_.resolve_invoking_user(dependencies_.context);
-		const auto editor =
-		    dependencies_.resolve_editor(dependencies_.context, invoking_user.has_value());
+		const auto invoking_identity =
+		    dependencies_.resolve_invoking_identity(dependencies_.context);
+		if (invoking_identity.status == howdy::native::InvokingIdentityStatus::kInvalid) {
+			return {.status = ConfigEditStatus::kInvokingIdentityInvalid};
+		}
+		if (invoking_identity.status == howdy::native::InvokingIdentityStatus::kConflicting) {
+			return {.status = ConfigEditStatus::kInvokingIdentityConflicting};
+		}
+		if (invoking_identity.status != howdy::native::InvokingIdentityStatus::kNoWrapperIdentity &&
+		    invoking_identity.status != howdy::native::InvokingIdentityStatus::kResolved) {
+			return {.status = ConfigEditStatus::kInvokingIdentityInvalid};
+		}
+		if ((invoking_identity.status ==
+		         howdy::native::InvokingIdentityStatus::kNoWrapperIdentity &&
+		     invoking_identity.user.has_value()) ||
+		    (invoking_identity.status == howdy::native::InvokingIdentityStatus::kResolved &&
+		     !invoking_identity.user.has_value())) {
+			return {.status = ConfigEditStatus::kInvokingIdentityInvalid};
+		}
+
+		const auto invoking_user = invoking_identity.user;
+		const bool allow_env_editor =
+		    invoking_identity.status == howdy::native::InvokingIdentityStatus::kResolved &&
+		    invoking_user.has_value() && invoking_user->uid != 0;
+		const auto editor = dependencies_.resolve_editor(dependencies_.context, allow_env_editor);
 		if (editor.empty()) {
 			return {.status = ConfigEditStatus::kEditorUnavailable};
 		}

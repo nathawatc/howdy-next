@@ -17,6 +17,8 @@ namespace howdy::native::config_internal {
 
 	enum class ConfigEditStatus : std::uint8_t {
 		kDependenciesUnavailable,
+		kInvokingIdentityInvalid,
+		kInvokingIdentityConflicting,
 		kOk,
 		kNoChanges,
 		kEditorUnavailable,
@@ -44,10 +46,10 @@ namespace howdy::native::config_internal {
 		std::string           editor;
 	};
 
-	using ResolveInvokingUserFn   = std::optional<howdy::native::InvokingUser> (*)(void *context);
-	using ResolveEditorFn         = std::string (*)(void *context, bool allow_env_editor);
-	using ResolveConfigPathFn     = std::filesystem::path (*)(void *context);
-	using CheckSecureConfigPathFn = howdy::native::ConfigPathCheckResult (*)(
+	using ResolveInvokingIdentityFn = howdy::native::InvokingIdentityResult (*)(void *context);
+	using ResolveEditorFn           = std::string (*)(void *context, bool allow_env_editor);
+	using ResolveConfigPathFn       = std::filesystem::path (*)(void *context);
+	using CheckSecureConfigPathFn   = howdy::native::ConfigPathCheckResult (*)(
 	    void *context, const std::filesystem::path &config_path);
 	using CreateTempCopyFn = std::optional<TempConfigCopy> (*)(
 	    void *context, const std::filesystem::path &source_path,
@@ -71,7 +73,7 @@ namespace howdy::native::config_internal {
 
 	struct ConfigEditDependencies {
 		void                            *context                           = nullptr;
-		ResolveInvokingUserFn            resolve_invoking_user             = nullptr;
+		ResolveInvokingIdentityFn        resolve_invoking_identity         = nullptr;
 		ResolveEditorFn                  resolve_editor                    = nullptr;
 		ResolveConfigPathFn              resolve_config_path               = nullptr;
 		CheckSecureConfigPathFn          check_secure_config_path          = nullptr;

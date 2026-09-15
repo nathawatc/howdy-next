@@ -32,10 +32,12 @@ namespace howdy::test::config_cli {
 		constexpr std::string_view kEditedContent           = "[core]\ndisabled = true\n";
 
 		struct TestContext {
-			std::array<int, 12>                        calls{};
-			std::vector<int>                           order;
-			std::optional<howdy::native::InvokingUser> invoking_user =
-			    howdy::native::InvokingUser{.uid = 1000, .gid = 1000, .name = "alice"};
+			std::array<int, 12>                   calls{};
+			std::vector<int>                      order;
+			howdy::native::InvokingIdentityResult invoking_identity = {
+			    .status = howdy::native::InvokingIdentityStatus::kResolved,
+			    .user   = howdy::native::InvokingUser{.uid = 1000, .gid = 1000, .name = "alice"},
+			};
 			bool                                 allow_env_editor          = false;
 			bool                                 throw_from_resolve_editor = false;
 			std::string                          editor                    = "/usr/bin/nano";
@@ -72,10 +74,10 @@ namespace howdy::test::config_cli {
 			context.order.push_back(callback);
 		}
 
-		auto ResolveUser(void *raw) -> std::optional<howdy::native::InvokingUser> {
+		auto ResolveInvokingIdentity(void *raw) -> howdy::native::InvokingIdentityResult {
 			auto &context = *static_cast<TestContext *>(raw);
 			Record(context, 0);
-			return context.invoking_user;
+			return context.invoking_identity;
 		}
 
 		auto ResolveEditor(void *raw, bool allow_env_editor) -> std::string {
@@ -110,7 +112,7 @@ namespace howdy::test::config_cli {
 			auto &context = *static_cast<TestContext *>(raw);
 			Record(context, 4);
 			if (path != context.config_path ||
-			    user.has_value() != context.invoking_user.has_value()) {
+			    user.has_value() != context.invoking_identity.user.has_value()) {
 				return std::nullopt;
 			}
 			return context.temp_copy;
@@ -121,7 +123,7 @@ namespace howdy::test::config_cli {
 			auto &context = *static_cast<TestContext *>(raw);
 			Record(context, 5);
 			if (editor != context.editor || path != kTempPath ||
-			    user.has_value() != context.invoking_user.has_value()) {
+			    user.has_value() != context.invoking_identity.user.has_value()) {
 				return -1;
 			}
 			return context.editor_status;
@@ -187,7 +189,7 @@ namespace howdy::test::config_cli {
 		auto DependenciesFor(TestContext &context) -> ConfigDependencies {
 			return {
 			    .context                           = &context,
-			    .resolve_invoking_user             = ResolveUser,
+			    .resolve_invoking_identity         = ResolveInvokingIdentity,
 			    .resolve_editor                    = ResolveEditor,
 			    .resolve_config_path               = ResolvePath,
 			    .check_secure_config_path          = CheckSecurity,
@@ -204,7 +206,7 @@ namespace howdy::test::config_cli {
 		void RemoveDependency(ConfigDependencies &dependencies, std::size_t missing) {
 			switch (missing) {
 				case 0:
-					dependencies.resolve_invoking_user = nullptr;
+					dependencies.resolve_invoking_identity = nullptr;
 					break;
 				case 1:
 					dependencies.resolve_editor = nullptr;
@@ -287,6 +289,52 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
+		auto InvokingIdentityFailuresAbortEdit() -> bool {
+			bool ok = true;
+			for (const auto &[identity_status, expected_output] :
+			     std::array<std::pair<howdy::native::InvokingIdentityStatus, std::string>, 2>{
+			         std::pair{howdy::native::InvokingIdentityStatus::kInvalid,
+			                   "Invalid privilege-wrapper identity; config edit aborted\n"},
+			         std::pair{howdy::native::InvokingIdentityStatus::kConflicting,
+			                   "Conflicting privilege-wrapper identity; config edit aborted\n"}}) {
+				TestContext context;
+				context.invoking_identity = {.status = identity_status};
+				const auto result         = RunConfig(DependenciesFor(context));
+				ok &= Expect(result.exit_code == 1 && result.output == expected_output,
+				             "invalid invoking identity aborts config edit");
+				ok &= Expect(context.order == std::vector{0},
+				             "invalid invoking identity launches no editor workflow callback");
+				ok &= Expect(context.editor_ready_calls == 0,
+				             "invalid invoking identity skips editor-ready callback");
+			}
+			return ok;
+		}
+
+		auto EditorIdentityPolicy() -> bool {
+			bool ok = true;
+			for (const bool user_exists : {true, false}) {
+				TestContext context;
+				if (!user_exists) {
+					context.invoking_identity = {
+					    .status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity,
+					};
+				}
+				(void)RunConfig(DependenciesFor(context));
+				ok &= Expect(context.allow_env_editor == user_exists,
+				             "editor env permission follows invoking user");
+			}
+
+			TestContext root_context;
+			root_context.invoking_identity = {
+			    .status = howdy::native::InvokingIdentityStatus::kResolved,
+			    .user   = howdy::native::InvokingUser{.uid = 0, .gid = 0, .name = "root"},
+			};
+			(void)RunConfig(DependenciesFor(root_context));
+			ok &= Expect(!root_context.allow_env_editor,
+			             "root invoking identity cannot authorize environment editor");
+			return ok;
+		}
+
 	}  // namespace
 
 	auto RunConfigCliCallbackExceptionTest() -> bool {
@@ -351,6 +399,8 @@ namespace howdy::test::config_cli {
 			ok &= Expect(context.order.empty(), "null dependency invokes no callbacks");
 		}
 
+		ok &= InvokingIdentityFailuresAbortEdit();
+
 		{
 			TestContext context;
 			context.editor    = {};
@@ -363,15 +413,7 @@ namespace howdy::test::config_cli {
 			ok &= Expect(context.order == std::vector{0, 1}, "no editor stops before config path");
 		}
 
-		for (const bool user_exists : {true, false}) {
-			TestContext context;
-			if (!user_exists) {
-				context.invoking_user = std::nullopt;
-			}
-			RunConfig(DependenciesFor(context));
-			ok &= Expect(context.allow_env_editor == user_exists,
-			             "editor env permission follows invoking user");
-		}
+		ok &= EditorIdentityPolicy();
 
 		{
 			TestContext context;

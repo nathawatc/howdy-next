@@ -17,7 +17,9 @@ namespace howdy::test::dispatch {
 	    std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)>;
 
 	struct Context {
-		std::string                             resolved_user = "alice";
+		std::string                           resolved_user = "alice";
+		howdy::native::InvokingIdentityStatus identity_status =
+		    howdy::native::InvokingIdentityStatus::kResolved;
 		uid_t                                   effective_uid = 0;
 		std::vector<std::string>                command_arguments;
 		int                                     command_result = 0;

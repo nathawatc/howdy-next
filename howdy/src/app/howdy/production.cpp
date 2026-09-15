@@ -14,34 +14,15 @@
 #include "support/invoking_user.hpp"
 
 #include <array>
-#include <cstdlib>
-#include <pwd.h>
-#include <string>
 #include <unistd.h>
 
 namespace {
 
 	using howdy::native::howdy_internal::CommandMain;
 
-	auto ResolveUser(void *context) -> std::string {
+	auto ResolveInvokingIdentityDependency(void *context) -> howdy::native::InvokingIdentityResult {
 		(void)context;
-		for (const char *name : {"SUDO_USER", howdy::native::kDoasUserEnvironmentVariable}) {
-			if (const char *value = std::getenv(name); value != nullptr && value[0] != '\0') {
-				return value;
-			}
-		}
-
-		if (const auto pkexec_uid = howdy::native::ParseUidEnv(
-		        std::getenv(howdy::native::kPkexecUidEnvironmentVariable))) {
-			if (passwd *pwd = getpwuid(*pkexec_uid); pwd != nullptr) {
-				return {pwd->pw_name};
-			}
-		}
-
-		if (passwd *pwd = getpwuid(getuid()); pwd != nullptr) {
-			return pwd->pw_name;
-		}
-		return {};
+		return howdy::native::ResolveInvokingIdentity();
 	}
 
 	auto EffectiveUid(void *context) -> uid_t {
@@ -73,8 +54,8 @@ auto HowdyMain(int argc, char **argv) -> int {
 	return howdy::native::howdy_internal::HowdyMainWithDependencies(
 	    argc, argv,
 	    {
-	        .resolve_user  = ResolveUser,
-	        .effective_uid = EffectiveUid,
-	        .command_mains = ProductionCommandMains(),
+	        .resolve_invoking_identity = ResolveInvokingIdentityDependency,
+	        .effective_uid             = EffectiveUid,
+	        .command_mains             = ProductionCommandMains(),
 	    });
 }
