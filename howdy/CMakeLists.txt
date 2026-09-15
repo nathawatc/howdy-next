@@ -30,9 +30,8 @@ add_library(
 howdy_configure_native_target(howdy_config)
 target_link_libraries(
 	howdy_config
-	PUBLIC
-		howdy_config_schema
 	PRIVATE
+		howdy_config_schema
 		PkgConfig::INIREADER
 )
 
@@ -186,8 +185,15 @@ target_link_libraries(howdy_compare_logic PUBLIC howdy_opencv)
 
 add_library(howdy_compare_engine STATIC src/compare/engine.cpp)
 howdy_configure_native_target(howdy_compare_engine)
-target_link_libraries(howdy_compare_engine PUBLIC howdy_opencv
-                      howdy_runtime_config)
+target_link_libraries(
+	howdy_compare_engine
+	PUBLIC
+		howdy_opencv
+		howdy_runtime_config
+	PRIVATE
+		howdy_frame_processing
+		howdy_compare_logic
+)
 
 add_library(
 	howdy_compare_capture_session STATIC
@@ -231,7 +237,6 @@ target_link_libraries(
 		howdy_user_models
 		howdy_runtime_paths
 		howdy_compare_engine
-		howdy_frame_processing
 		howdy_compare_logic
 )
 set_target_properties(howdy_compare PROPERTIES OUTPUT_NAME "howdy-compare")
@@ -312,6 +317,9 @@ howdy_configure_native_target(howdy_cli)
 target_link_libraries(
 	howdy_cli
 	PUBLIC
+		PkgConfig::LIBCURL
+		howdy_opencv
+	PRIVATE
 		howdy_cli_core
 		howdy_config
 		howdy_runtime_config_loader
@@ -322,9 +330,7 @@ target_link_libraries(
 		howdy_preview_engine
 		howdy_frame_processing
 		howdy_compare_logic
-		PkgConfig::LIBCURL
 		PkgConfig::OPENSSL
-		howdy_opencv
 )
 
 add_executable(howdy src/bin/howdy_main.cpp)

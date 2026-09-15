@@ -52,8 +52,6 @@ target_link_libraries(
 	howdy_compare_engine_test
 	PRIVATE
 		howdy_compare_engine
-		howdy_frame_processing
-		howdy_compare_logic
 		howdy_opencv
 )
 

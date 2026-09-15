@@ -34,7 +34,7 @@ howdy_add_pam_test(
 	pam-conversation-response
 	tests/prompt/conversation_response_test.cpp
 )
-target_link_libraries(pam_conversation_response_test PRIVATE pam_prompt)
+target_link_libraries(pam_conversation_response_test PRIVATE pam_conversation_response)
 
 howdy_add_pam_test(
 	pam_conversation_test
