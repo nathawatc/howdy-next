@@ -69,11 +69,11 @@ namespace howdy::test::add_cli {
 		auto ExpectCaptureFailureStopsBeforeAppend(const AddCliTestContext &context, int result,
 		                                           const std::string &test_name) -> bool {
 			bool ok = true;
-			ok &= expect(result == 1, test_name + " returns 1");
+			ok &= Expect(result == 1, test_name + " returns 1");
 			ok &=
-			    expect(context.preflight_calls == 1, test_name + " calls preflight callback once");
-			ok &= expect(context.capture_calls == 1, test_name + " calls capture callback once");
-			ok &= expect(context.append_calls == 0, test_name + " skips append callback");
+			    Expect(context.preflight_calls == 1, test_name + " calls preflight callback once");
+			ok &= Expect(context.capture_calls == 1, test_name + " calls capture callback once");
+			ok &= Expect(context.append_calls == 0, test_name + " skips append callback");
 			return ok;
 		}
 
@@ -86,10 +86,10 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, test_name + " returns 1");
-			ok &= expect(context.preflight_calls == 1, test_name + " calls preflight callback");
-			ok &= expect(context.capture_calls == 1, test_name + " calls capture callback");
-			ok &= expect(context.append_calls == 0, test_name + " skips append");
+			ok &= Expect(result == 1, test_name + " returns 1");
+			ok &= Expect(context.preflight_calls == 1, test_name + " calls preflight callback");
+			ok &= Expect(context.capture_calls == 1, test_name + " calls capture callback");
+			ok &= Expect(context.append_calls == 0, test_name + " skips append");
 			return ok;
 		}
 
@@ -117,7 +117,7 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result, "unconfigured camera");
-			ok &= expect(error.str() == context.capture_result.error_message + "\n",
+			ok &= Expect(error.str() == context.capture_result.error_message + "\n",
 			             "unconfigured camera prints only concise error in add");
 			return ok;
 		}
@@ -133,7 +133,7 @@ namespace howdy::test::add_cli {
 			const auto error_output = error.str();
 			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
 			                                                      "black-frame capture failure");
-			ok &= expect(
+			ok &= Expect(
 			    error_output.contains("Camera returned only black frames; check the IR emitter"),
 			    "black-frame capture failure prints IR emitter diagnostic");
 			return ok;
@@ -150,9 +150,9 @@ namespace howdy::test::add_cli {
 			const auto error_output = error.str();
 			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
 			                                                      "only-too-dark capture failure");
-			ok &= expect(error_output.contains("All frames were too dark; check dark_threshold"),
+			ok &= Expect(error_output.contains("All frames were too dark; check dark_threshold"),
 			             "only-too-dark capture failure prints dark threshold diagnostic");
-			ok &= expect(error_output.contains("Average darkness: 40, Threshold: 32"),
+			ok &= Expect(error_output.contains("Average darkness: 40, Threshold: 32"),
 			             "only-too-dark capture failure prints average darkness and threshold");
 			return ok;
 		}
@@ -168,10 +168,10 @@ namespace howdy::test::add_cli {
 			const auto error_output = error.str();
 			bool       ok           = ExpectCaptureFailureStopsBeforeAppend(
 			    context, result, "no-sufficiently-bright capture failure");
-			ok &= expect(error_output.contains("No sufficiently bright frames captured, aborting"),
+			ok &= Expect(error_output.contains("No sufficiently bright frames captured, aborting"),
 			             "no-sufficiently-bright capture failure prints diagnostic");
 			ok &=
-			    expect(!error_output.contains("All frames were too dark; check dark_threshold"),
+			    Expect(!error_output.contains("All frames were too dark; check dark_threshold"),
 			           "no-sufficiently-bright capture failure does not print too-dark diagnostic");
 			return ok;
 		}
@@ -187,7 +187,7 @@ namespace howdy::test::add_cli {
 			const auto error_output = error.str();
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
 			                                                "no-usable-frames capture failure");
-			ok &= expect(error_output.contains("No usable frames captured, aborting"),
+			ok &= Expect(error_output.contains("No usable frames captured, aborting"),
 			             "no-usable-frames capture failure prints diagnostic");
 			return ok;
 		}
@@ -203,7 +203,7 @@ namespace howdy::test::add_cli {
 			const auto error_output = error.str();
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
 			                                                "no-face-detected capture failure");
-			ok &= expect(error_output.contains("No face detected, aborting"),
+			ok &= Expect(error_output.contains("No face detected, aborting"),
 			             "no-face-detected capture failure prints diagnostic");
 			return ok;
 		}
@@ -226,9 +226,9 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "encoding failure returns 1");
-			ok &= expect(context.append_calls == 0, "encoding failure skips append");
-			ok &= expect(error.str().contains(context.capture_result.error_message),
+			ok &= Expect(result == 1, "encoding failure returns 1");
+			ok &= Expect(context.append_calls == 0, "encoding failure skips append");
+			ok &= Expect(error.str().contains(context.capture_result.error_message),
 			             "encoding failure prints actionable diagnostic");
 			return ok;
 		}
@@ -245,11 +245,11 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "unknown enrollment status returns 1");
-			ok &= expect(context.preflight_calls == 1, "unknown enrollment status calls preflight");
-			ok &= expect(context.capture_calls == 1, "unknown enrollment status calls capture");
-			ok &= expect(context.append_calls == 0, "unknown enrollment status skips append");
-			ok &= expect(error.str().contains("Internal error: unknown add enrollment status"),
+			ok &= Expect(result == 1, "unknown enrollment status returns 1");
+			ok &= Expect(context.preflight_calls == 1, "unknown enrollment status calls preflight");
+			ok &= Expect(context.capture_calls == 1, "unknown enrollment status calls capture");
+			ok &= Expect(context.append_calls == 0, "unknown enrollment status skips append");
+			ok &= Expect(error.str().contains("Internal error: unknown add enrollment status"),
 			             "unknown enrollment status writes internal error");
 			return ok;
 		}

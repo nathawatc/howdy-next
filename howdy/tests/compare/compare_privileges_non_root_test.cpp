@@ -11,13 +11,13 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext context;
 			SetNonRootIdentity(context);
 			const auto result = Drop(context);
-			ok &= expect(result.Ok(), "matching non-root credentials succeed");
+			ok &= Expect(result.Ok(), "matching non-root credentials succeed");
 			ok &= ExpectEvents(context, ExpectedNonRootEvents(), "non-root sequence is exact");
-			ok &= expect(context.lookup_calls == 0, "non-root process does not resolve nobody");
-			ok &= expect(context.capset_header_valid && context.capset_data_zero,
+			ok &= Expect(context.lookup_calls == 0, "non-root process does not resolve nobody");
+			ok &= Expect(context.capset_header_valid && context.capset_data_zero,
 			             "non-root capset clears all capability sets");
-			ok &= expect(context.capget_header_valid, "non-root capget verifies capability sets");
-			ok &= expect(context.regain_uid == 0, "non-root root-regain probe requests UID zero");
+			ok &= Expect(context.capget_header_valid, "non-root capget verifies capability sets");
+			ok &= Expect(context.regain_uid == 0, "non-root root-regain probe requests UID zero");
 
 			for (const auto &[uids, gids, label] :
 			     std::vector<std::tuple<std::array<uid_t, 3>, std::array<gid_t, 3>, std::string>>{
@@ -46,10 +46,10 @@ namespace howdy::test::compare_privileges {
 				SetNonRootIdentity(group_context);
 				group_context.supplementary_groups = groups;
 				const auto group_result            = Drop(group_context);
-				ok &= expect(group_result.Ok(), label + " are preserved");
+				ok &= Expect(group_result.Ok(), label + " are preserved");
 				ok &= ExpectEvents(group_context, ExpectedNonRootEvents(),
 				                   label + " preserve non-root verification order");
-				ok &= expect(group_context.group_count == 1 &&
+				ok &= Expect(group_context.group_count == 1 &&
 				                 group_context.group_pointer == &group_pointer_sentinel,
 				             label + " do not invoke setgroups");
 			}
@@ -153,19 +153,19 @@ namespace howdy::test::compare_privileges {
 			const auto result = Drop(context);
 
 			bool ok = true;
-			ok &= expect(result.Ok(), "Waylock inheritable-only capability sanitizes successfully");
-			ok &= expect(context.fatal_calls == 0,
+			ok &= Expect(result.Ok(), "Waylock inheritable-only capability sanitizes successfully");
+			ok &= Expect(context.fatal_calls == 0,
 			             "Waylock inheritable-only capability does not invoke fatal callback");
-			ok &= expect(std::count(context.events.begin(), context.events.end(),
+			ok &= Expect(std::count(context.events.begin(), context.events.end(),
 			                        "clear ambient capabilities") == 1,
 			             "Waylock inheritable-only capability clears ambient capabilities");
-			ok &= expect(context.capset_calls == 1,
+			ok &= Expect(context.capset_calls == 1,
 			             "Waylock inheritable-only capability clears capability sets once");
-			ok &= expect(context.capset_header_valid && context.capset_data_zero,
+			ok &= Expect(context.capset_header_valid && context.capset_data_zero,
 			             "Waylock inheritable-only capability capset zeroes all sets");
-			ok &= expect(context.capget_calls == 2,
+			ok &= Expect(context.capget_calls == 2,
 			             "Waylock inheritable-only capability performs final capget verification");
-			ok &= expect(context.regain_uid == 0,
+			ok &= Expect(context.regain_uid == 0,
 			             "Waylock inheritable-only capability performs root-regain probe");
 			ok &= ExpectEvents(
 			    context, ExpectedNonRootEvents(),
@@ -232,7 +232,7 @@ namespace howdy::test::compare_privileges {
 				auto       expected = events;
 				expected.emplace_back("fatal");
 				ok &= VerifyFatalResult(context, result, expected, label);
-				ok &= expect(context.lookup_calls == 0, label + " does not resolve nobody");
+				ok &= Expect(context.lookup_calls == 0, label + " does not resolve nobody");
 			}
 			return ok;
 		}

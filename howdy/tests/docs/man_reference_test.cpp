@@ -25,7 +25,7 @@ namespace {
 	using howdy::native::config_schema::ValueType;
 	using howdy::pam::Workaround;
 	using howdy::pam::WorkaroundDescriptor;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto HasExactlyOneFinalNewline(std::string_view value) -> bool {
 		return !value.empty() && value.back() == '\n' &&
@@ -72,132 +72,132 @@ auto main() -> int {
 	bool ok = true;
 
 	const auto command_result = RenderCommandReference(howdy::native::CommandCatalog());
-	ok &= expect(command_result.Ok(), "production commands render");
-	ok &= expect(HasExactlyOneFinalNewline(command_result.output),
+	ok &= Expect(command_result.Ok(), "production commands render");
+	ok &= Expect(HasExactlyOneFinalNewline(command_result.output),
 	             "command reference has one final newline");
-	ok &= expect(command_result.output.contains(R"(\&\fBadd [LABEL]\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBadd [LABEL]\fR)"),
 	             "command reference renders optional positional syntax");
-	ok &= expect(command_result.output.contains("Add face model"),
+	ok &= Expect(command_result.output.contains("Add face model"),
 	             "command reference renders command summary");
-	ok &= expect(command_result.output.contains(R"(\&\fBdisable {0|1|true|false}\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBdisable {0|1|true|false}\fR)"),
 	             "command reference renders finite-value syntax");
-	ok &= expect(command_result.output.contains(R"(\&\fBremove ID\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBremove ID\fR)"),
 	             "command reference renders required positional syntax");
-	ok &= expect(command_result.output.contains(R"(\&\fBset KEY VALUE\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBset KEY VALUE\fR)"),
 	             "command reference renders multiple positional syntax");
-	ok &= expect(command_result.output.contains(R"(\&\fBtest [\-\-device DEVICE]\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBtest [\-\-device DEVICE]\fR)"),
 	             "command reference renders command-local option syntax");
-	ok &= expect(command_result.output.contains(R"(\&\fBclear\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBclear\fR)"),
 	             "command reference keeps no-argument command bare");
 	const auto misleading_phrase = std::string{"target user"} + " required";
-	ok &= expect(!command_result.output.contains(misleading_phrase),
+	ok &= Expect(!command_result.output.contains(misleading_phrase),
 	             "command reference does not imply explicit user input is required");
-	ok &= expect(!command_result.output.contains(R"(\&\fBremove USER)"),
+	ok &= Expect(!command_result.output.contains(R"(\&\fBremove USER)"),
 	             "command reference does not advertise injected model user");
-	ok &= expect(command_result.output.contains(R"(\&\fBversion\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBversion\fR)"),
 	             "command reference renders version command");
 
 	const auto option_result = RenderGlobalOptionReference(howdy::native::GlobalOptionCatalog());
-	ok &= expect(option_result.Ok(), "production global options render");
-	ok &= expect(HasExactlyOneFinalNewline(option_result.output),
+	ok &= Expect(option_result.Ok(), "production global options render");
+	ok &= Expect(HasExactlyOneFinalNewline(option_result.output),
 	             "option reference has one final newline");
-	ok &= expect(option_result.output.contains(R"(\-U, \-\-user USER)"),
+	ok &= Expect(option_result.output.contains(R"(\-U, \-\-user USER)"),
 	             "option reference renders short and long spelling");
-	ok &= expect(option_result.output.contains(R"(\-y)"),
+	ok &= Expect(option_result.output.contains(R"(\-y)"),
 	             "option reference renders short-only spelling");
-	ok &= expect(option_result.output.contains(R"(\-\-plain)"),
+	ok &= Expect(option_result.output.contains(R"(\-\-plain)"),
 	             "option reference renders long-only spelling");
 
 	const auto workaround_result =
 	    RenderWorkaroundReference(howdy::pam::WorkaroundCatalog(), howdy::pam::kDefaultWorkaround);
-	ok &= expect(workaround_result.Ok(), "production workaround values render");
-	ok &= expect(HasExactlyOneFinalNewline(workaround_result.output),
+	ok &= Expect(workaround_result.Ok(), "production workaround values render");
+	ok &= Expect(HasExactlyOneFinalNewline(workaround_result.output),
 	             "workaround reference has one final newline");
-	ok &= expect(workaround_result.output.contains("workaround=input"),
+	ok &= Expect(workaround_result.output.contains("workaround=input"),
 	             "workaround input value renders");
-	ok &= expect(workaround_result.output.contains("workaround=native"),
+	ok &= Expect(workaround_result.output.contains("workaround=native"),
 	             "workaround native value renders");
-	ok &= expect(workaround_result.output.contains(R"(workaround=native\-input)"),
+	ok &= Expect(workaround_result.output.contains(R"(workaround=native\-input)"),
 	             "workaround native-input value renders");
 	ok &=
-	    expect(workaround_result.output.contains("Workaround is off when workaround= is omitted."),
+	    Expect(workaround_result.output.contains("Workaround is off when workaround= is omitted."),
 	           "workaround default is documented");
-	ok &= expect(!workaround_result.output.contains("workaround=off"),
+	ok &= Expect(!workaround_result.output.contains("workaround=off"),
 	             "invalid off token is not advertised as mapped value");
 
 	const auto repeat_command_result = RenderCommandReference(howdy::native::CommandCatalog());
-	ok &= expect(command_result.output == repeat_command_result.output,
+	ok &= Expect(command_result.output == repeat_command_result.output,
 	             "command rendering is deterministic");
 
 	const auto production_schema_options = howdy::native::config_schema::RuntimeConfigOptions();
 	const auto config_result             = RenderConfigOptionReference(production_schema_options);
-	ok &= expect(config_result.Ok(), "production config options render");
-	ok &= expect(HasExactlyOneFinalNewline(config_result.output),
+	ok &= Expect(config_result.Ok(), "production config options render");
+	ok &= Expect(HasExactlyOneFinalNewline(config_result.output),
 	             "config reference has one final newline");
-	ok &= expect(config_result.output.contains(".SS [core]\n"),
+	ok &= Expect(config_result.output.contains(".SS [core]\n"),
 	             "config reference renders core section");
-	ok &= expect(config_result.output.contains(".SS [video]\n"),
+	ok &= Expect(config_result.output.contains(".SS [video]\n"),
 	             "config reference renders video section");
-	ok &= expect(config_result.output.contains(".SS [face]\n"),
+	ok &= Expect(config_result.output.contains(".SS [face]\n"),
 	             "config reference renders face section");
-	ok &= expect(config_result.output.contains(".SS [debug]\n"),
+	ok &= Expect(config_result.output.contains(".SS [debug]\n"),
 	             "config reference renders debug section");
 
 	const auto core_pos  = config_result.output.find(".SS [core]\n");
 	const auto video_pos = config_result.output.find(".SS [video]\n");
 	const auto face_pos  = config_result.output.find(".SS [face]\n");
 	const auto debug_pos = config_result.output.find(".SS [debug]\n");
-	ok &= expect(core_pos != std::string::npos && video_pos != std::string::npos &&
+	ok &= Expect(core_pos != std::string::npos && video_pos != std::string::npos &&
 	                 face_pos != std::string::npos && debug_pos != std::string::npos &&
 	                 core_pos < video_pos && video_pos < face_pos && face_pos < debug_pos,
 	             "sections appear in schema order");
 
 	for (const auto &opt : production_schema_options) {
 		const auto key_tag = "\\&\\fB" + std::string(opt.key) + "\\fR";
-		ok &= expect(config_result.output.contains(key_tag),
+		ok &= Expect(config_result.output.contains(key_tag),
 		             "config option key tag appears: " + std::string(opt.key));
-		ok &= expect(config_result.output.contains(EscapeForRoff(opt.description)),
+		ok &= Expect(config_result.output.contains(EscapeForRoff(opt.description)),
 		             "config option description appears: " + std::string(opt.key));
 	}
 
-	ok &= expect(!config_result.output.contains("Default:"),
+	ok &= Expect(!config_result.output.contains("Default:"),
 	             "config reference does not contain Default: field");
 
 	ok &=
-	    expect(config_result.output.contains("\n.br\n\\&Range: 1..300.\n"),
+	    Expect(config_result.output.contains("\n.br\n\\&Range: 1..300.\n"),
 	           "video timeout range renders on separate metadata line without default annotation");
-	ok &= expect(
+	ok &= Expect(
 	    config_result.output.contains("\n.br\n\\&Accepted: \\fBnone\\fR, /dev/video*, "
 	                                  "/dev/v4l/by\\-path/*, /dev/v4l/by\\-id/*.\n"),
 	    "video device_path renders accepted patterns with bold fallback token on separate line");
-	ok &= expect(config_result.output.contains("\n.br\n\\&Range: \\-1 or 16..8192.\n"),
+	ok &= Expect(config_result.output.contains("\n.br\n\\&Range: \\-1 or 16..8192.\n"),
 	             "video frame_width sentinel range renders on separate line");
-	ok &= expect(config_result.output.contains("\n.br\n\\&Choices: \\fBcosine\\fR, l2, l2norm.\n"),
+	ok &= Expect(config_result.output.contains("\n.br\n\\&Choices: \\fBcosine\\fR, l2, l2norm.\n"),
 	             "face sface_metric choices renders with bold fallback token on separate line");
-	ok &= expect(config_result.output.contains(
+	ok &= Expect(config_result.output.contains(
 	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2 and l2norm.\n"),
 	             "face sface_threshold metric-dependent range renders on separate line without "
 	             "default annotation");
-	ok &= expect(config_result.output.contains(
+	ok &= Expect(config_result.output.contains(
 	                 "\n.br\n\\&Values: true, \\fBfalse\\fR, 1, 0, yes, no, on, off.\n"),
 	             "boolean option with false default bolds false token");
-	ok &= expect(config_result.output.contains(
+	ok &= Expect(config_result.output.contains(
 	                 "\n.br\n\\&Values: \\fBtrue\\fR, false, 1, 0, yes, no, on, off.\n"),
 	             "boolean option with true default bolds true token");
 
 	for (const auto &spelling : howdy::native::config_schema::kAcceptedBooleanSpellings) {
-		ok &= expect(config_result.output.contains(spelling),
+		ok &= Expect(config_result.output.contains(spelling),
 		             "boolean option documentation includes accepted spelling: " +
 		                 std::string(spelling));
 	}
 	for (const auto &pattern : howdy::native::kAcceptedCaptureDevicePatterns) {
 		ok &=
-		    expect(config_result.output.contains(EscapeForRoff(pattern)),
+		    Expect(config_result.output.contains(EscapeForRoff(pattern)),
 		           "device_path documentation includes accepted pattern: " + std::string(pattern));
 	}
 
 	const auto repeat_config_result = RenderConfigOptionReference(production_schema_options);
-	ok &= expect(config_result.output == repeat_config_result.output,
+	ok &= Expect(config_result.output == repeat_config_result.output,
 	             "config option rendering is deterministic");
 
 	const std::array generic_commands{
@@ -212,8 +212,8 @@ auto main() -> int {
 	    },
 	};
 	const auto generic_result = RenderCommandReference(generic_commands);
-	ok &= expect(generic_result.Ok(), "generic command descriptor renders");
-	ok &= expect(generic_result.output.contains(R"(\&\fBsample [VALUE]\fR)"),
+	ok &= Expect(generic_result.Ok(), "generic command descriptor renders");
+	ok &= Expect(generic_result.output.contains(R"(\&\fBsample [VALUE]\fR)"),
 	             "renderer uses descriptor-provided argument synopsis");
 
 	const std::array escaped_commands{
@@ -228,10 +228,10 @@ auto main() -> int {
 	    },
 	};
 	const auto escaped_result = RenderCommandReference(escaped_commands);
-	ok &= expect(escaped_result.Ok(), "safe roff metadata renders");
-	ok &= expect(escaped_result.output.contains(R"(a\-b\\c)"),
+	ok &= Expect(escaped_result.Ok(), "safe roff metadata renders");
+	ok &= Expect(escaped_result.output.contains(R"(a\-b\\c)"),
 	             "roff escapes hyphens and backslashes");
-	ok &= expect(escaped_result.output.contains(R"([A\-B\\C])"),
+	ok &= Expect(escaped_result.output.contains(R"([A\-B\\C])"),
 	             "roff escapes synopsis hyphens and backslashes");
 
 	const std::array escaped_config_options = {
@@ -239,12 +239,12 @@ auto main() -> int {
 	                          howdy::native::config_schema::BoolDefault(true), "Desc a-b\\c."),
 	};
 	const auto escaped_config_res = RenderConfigOptionReference(escaped_config_options);
-	ok &= expect(escaped_config_res.Ok(), "escaped config options render");
-	ok &= expect(escaped_config_res.output.contains(".SS [sec\\-a]\n"),
+	ok &= Expect(escaped_config_res.Ok(), "escaped config options render");
+	ok &= Expect(escaped_config_res.output.contains(".SS [sec\\-a]\n"),
 	             "escaped config section escapes hyphens");
-	ok &= expect(escaped_config_res.output.contains(R"(\&\fBkey\-a\fR)"),
+	ok &= Expect(escaped_config_res.output.contains(R"(\&\fBkey\-a\fR)"),
 	             "escaped config key escapes hyphens");
-	ok &= expect(escaped_config_res.output.contains(R"(Desc a\-b\\c.)"),
+	ok &= Expect(escaped_config_res.output.contains(R"(Desc a\-b\\c.)"),
 	             "escaped config description escapes hyphens and backslashes");
 
 	const std::array control_command{
@@ -254,7 +254,7 @@ auto main() -> int {
 	                      .kind        = howdy::native::CommandKind::kEntrypoint,
 	                      .user_target = howdy::native::UserTargetMode::kNone},
 	};
-	ok &= expect(!RenderCommandReference(control_command).Ok(),
+	ok &= Expect(!RenderCommandReference(control_command).Ok(),
 	             "control characters in command text are rejected");
 	const std::array control_synopsis{
 	    CommandDescriptor{.id                = CommandId::kAdd,
@@ -266,7 +266,7 @@ auto main() -> int {
 	                      .argument_synopsis = "VALUE\n"},
 	};
 	const auto control_synopsis_result = RenderCommandReference(control_synopsis);
-	ok &= expect(!control_synopsis_result.Ok() &&
+	ok &= Expect(!control_synopsis_result.Ok() &&
 	                 control_synopsis_result.error.contains("argument synopsis"),
 	             "control characters in argument synopsis are rejected");
 	const std::array control_option{
@@ -277,7 +277,7 @@ auto main() -> int {
 	                           .summary       = "Summary\n"},
 	};
 	const auto control_option_result = RenderGlobalOptionReference(control_option);
-	ok &= expect(!control_option_result.Ok() &&
+	ok &= Expect(!control_option_result.Ok() &&
 	                 control_option_result.error.contains("control character"),
 	             "control characters in option text are rejected");
 
@@ -285,21 +285,21 @@ auto main() -> int {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core\n", "key", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Valid desc."),
 	};
-	ok &= expect(!RenderConfigOptionReference(control_config_section).Ok(),
+	ok &= Expect(!RenderConfigOptionReference(control_config_section).Ok(),
 	             "control characters in config section are rejected");
 
 	const std::array control_config_key = {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core", "key\n", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Valid desc."),
 	};
-	ok &= expect(!RenderConfigOptionReference(control_config_key).Ok(),
+	ok &= Expect(!RenderConfigOptionReference(control_config_key).Ok(),
 	             "control characters in config key are rejected");
 
 	const std::array control_config_desc = {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core", "key", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Desc\n"),
 	};
-	ok &= expect(!RenderConfigOptionReference(control_config_desc).Ok(),
+	ok &= Expect(!RenderConfigOptionReference(control_config_desc).Ok(),
 	             "control characters in config description are rejected");
 
 	const std::array non_contiguous_sections = {
@@ -310,28 +310,28 @@ auto main() -> int {
 	    SyntheticConfigOption(OptionId::kCoreAbortIfSsh, "sec1", "k3", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Desc 3."),
 	};
-	ok &= expect(!RenderConfigOptionReference(non_contiguous_sections).Ok(),
+	ok &= Expect(!RenderConfigOptionReference(non_contiguous_sections).Ok(),
 	             "non-contiguous config section reuse is rejected");
 
 	const std::array<Option, 0> empty_config_schema = {};
-	ok &= expect(!RenderConfigOptionReference(empty_config_schema).Ok(),
+	ok &= Expect(!RenderConfigOptionReference(empty_config_schema).Ok(),
 	             "empty config schema is rejected");
 
 	const std::array duplicate_workarounds{
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kInput, .summary = "One"},
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kNative, .summary = "Two"},
 	};
-	ok &= expect(!RenderWorkaroundReference(duplicate_workarounds, Workaround::kOff).Ok(),
+	ok &= Expect(!RenderWorkaroundReference(duplicate_workarounds, Workaround::kOff).Ok(),
 	             "duplicate workaround values are rejected");
 	const std::array empty_workaround_summary{
 	    WorkaroundDescriptor{.value = "value", .workaround = Workaround::kInput, .summary = ""},
 	};
-	ok &= expect(!RenderWorkaroundReference(empty_workaround_summary, Workaround::kOff).Ok(),
+	ok &= Expect(!RenderWorkaroundReference(empty_workaround_summary, Workaround::kOff).Ok(),
 	             "empty workaround summaries are rejected");
 	const std::array mapped_off{
 	    WorkaroundDescriptor{.value = "off", .workaround = Workaround::kOff, .summary = "Off"},
 	};
-	ok &= expect(!RenderWorkaroundReference(mapped_off, Workaround::kOff).Ok(),
+	ok &= Expect(!RenderWorkaroundReference(mapped_off, Workaround::kOff).Ok(),
 	             "off cannot become a mapped workaround value");
 
 	return ok ? 0 : 1;

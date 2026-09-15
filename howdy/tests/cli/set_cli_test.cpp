@@ -10,7 +10,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::set_internal::SetDependencies;
 
@@ -89,26 +89,26 @@ auto main() -> int {
 	     {std::vector<std::string>{"howdy-set"}, std::vector<std::string>{"howdy-set", "key"}}) {
 		TestContext context;
 		const auto  result = RunSet(arguments, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "missing arguments abort");
-		ok &= expect(result.output == usage, "missing arguments print usage");
-		ok &= expect(context.resolve_calls == 0, "missing arguments skip resolver");
-		ok &= expect(context.update_calls == 0, "missing arguments skip updater");
+		ok &= Expect(result.exit_code == 1, "missing arguments abort");
+		ok &= Expect(result.output == usage, "missing arguments print usage");
+		ok &= Expect(context.resolve_calls == 0, "missing arguments skip resolver");
+		ok &= Expect(context.update_calls == 0, "missing arguments skip updater");
 	}
 
 	for (const auto &value : {std::string("line\nbreak"), std::string("[section]")}) {
 		TestContext context;
 		const auto  result = RunSet({"howdy-set", "key", value}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "unsafe scalar aborts");
-		ok &= expect(result.output == unsafe_value_error, "unsafe scalar prints error");
-		ok &= expect(context.resolve_calls == 1, "unsafe scalar resolves path first");
-		ok &= expect(context.update_calls == 0, "unsafe scalar skips updater");
+		ok &= Expect(result.exit_code == 1, "unsafe scalar aborts");
+		ok &= Expect(result.output == unsafe_value_error, "unsafe scalar prints error");
+		ok &= Expect(context.resolve_calls == 1, "unsafe scalar resolves path first");
+		ok &= Expect(context.update_calls == 0, "unsafe scalar skips updater");
 	}
 
 	{
 		TestContext context;
 		const auto  result = RunSet({"howdy-set", "key", "--", "-value"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, "end-of-options value update succeeds");
-		ok &= expect(context.received_key == "key" && context.received_value == "-value",
+		ok &= Expect(result.exit_code == 0, "end-of-options value update succeeds");
+		ok &= Expect(context.received_key == "key" && context.received_value == "-value",
 		             "end-of-options preserves option-looking config value");
 	}
 
@@ -116,14 +116,14 @@ auto main() -> int {
 		TestContext context;
 		const auto  result =
 		    RunSet({"howdy-set", "sface_threshold", "0.363"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, "successful update succeeds");
-		ok &= expect(result.output == "Config option updated\n", "success output exact");
-		ok &= expect(context.resolve_calls == 1, "success calls resolver once");
-		ok &= expect(context.update_calls == 1, "success calls updater once");
-		ok &= expect(context.received_path == context.config_path, "updater receives path");
-		ok &= expect(context.received_key == "sface_threshold", "updater receives key");
-		ok &= expect(context.received_value == "0.363", "updater receives value");
-		ok &= expect(context.received_lock, "updater enables lock");
+		ok &= Expect(result.exit_code == 0, "successful update succeeds");
+		ok &= Expect(result.output == "Config option updated\n", "success output exact");
+		ok &= Expect(context.resolve_calls == 1, "success calls resolver once");
+		ok &= Expect(context.update_calls == 1, "success calls updater once");
+		ok &= Expect(context.received_path == context.config_path, "updater receives path");
+		ok &= Expect(context.received_key == "sface_threshold", "updater receives key");
+		ok &= Expect(context.received_value == "0.363", "updater receives value");
+		ok &= Expect(context.received_lock, "updater enables lock");
 	}
 
 	for (const auto &[error, expected_output] :
@@ -134,9 +134,9 @@ auto main() -> int {
 		    .update_error  = error,
 		};
 		const auto result = RunSet({"howdy-set", "key", "value"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "updater failure aborts");
-		ok &= expect(result.output == expected_output, "updater failure output exact");
-		ok &= expect(!result.output.contains("Config option updated"),
+		ok &= Expect(result.exit_code == 1, "updater failure aborts");
+		ok &= Expect(result.output == expected_output, "updater failure output exact");
+		ok &= Expect(!result.output.contains("Config option updated"),
 		             "failure omits success output");
 	}
 
@@ -144,8 +144,8 @@ auto main() -> int {
 		TestContext context;
 		const auto  result =
 		    RunSet({"howdy-set", "sface_threshold", "0.363", "ignored"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "extra argument is rejected");
-		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
+		ok &= Expect(result.exit_code == 1, "extra argument is rejected");
+		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
 		             "extra argument skips config mutation callbacks");
 	}
 
@@ -154,9 +154,9 @@ auto main() -> int {
 		auto        dependencies         = DependenciesFor(context);
 		dependencies.resolve_config_path = nullptr;
 		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
-		ok &= expect(result.exit_code == 1, "null resolver aborts");
-		ok &= expect(result.output.empty(), "null resolver prints nothing");
-		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
+		ok &= Expect(result.exit_code == 1, "null resolver aborts");
+		ok &= Expect(result.output.empty(), "null resolver prints nothing");
+		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
 		             "null resolver calls no dependencies");
 	}
 
@@ -165,9 +165,9 @@ auto main() -> int {
 		auto        dependencies         = DependenciesFor(context);
 		dependencies.update_config_value = nullptr;
 		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
-		ok &= expect(result.exit_code == 1, "null updater aborts");
-		ok &= expect(result.output.empty(), "null updater prints nothing");
-		ok &= expect(context.resolve_calls == 0 && context.update_calls == 0,
+		ok &= Expect(result.exit_code == 1, "null updater aborts");
+		ok &= Expect(result.output.empty(), "null updater prints nothing");
+		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
 		             "null updater calls no dependencies");
 	}
 

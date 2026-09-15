@@ -22,13 +22,13 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "invalid runtime config returns 1");
-			ok &= expect(context.load_calls == 1, "runtime config callback called");
-			ok &= expect(context.preflight_calls == 0,
+			ok &= Expect(result == 1, "invalid runtime config returns 1");
+			ok &= Expect(context.load_calls == 1, "runtime config callback called");
+			ok &= Expect(context.preflight_calls == 0,
 			             "invalid runtime config skips preflight callback");
 			ok &=
-			    expect(context.capture_calls == 0, "invalid runtime config skips capture callback");
-			ok &= expect(context.append_calls == 0, "invalid runtime config skips append callback");
+			    Expect(context.capture_calls == 0, "invalid runtime config skips capture callback");
+			ok &= Expect(context.append_calls == 0, "invalid runtime config skips append callback");
 			return ok;
 		}
 
@@ -52,15 +52,15 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
-			ok &= expect(result == 1, test_case.test_name + " returns 1");
-			ok &= expect(context.preflight_calls == 1, test_case.test_name + " calls preflight");
-			ok &= expect(context.preflight_saw_unread_input,
+			ok &= Expect(result == 1, test_case.test_name + " returns 1");
+			ok &= Expect(context.preflight_calls == 1, test_case.test_name + " calls preflight");
+			ok &= Expect(context.preflight_saw_unread_input,
 			             test_case.test_name + " runs preflight before prompt");
-			ok &= expect(context.capture_calls == 0, test_case.test_name + " skips capture");
-			ok &= expect(context.append_calls == 0, test_case.test_name + " skips append");
-			ok &= expect(input.tellg() == std::streampos(0),
+			ok &= Expect(context.capture_calls == 0, test_case.test_name + " skips capture");
+			ok &= Expect(context.append_calls == 0, test_case.test_name + " skips append");
+			ok &= Expect(input.tellg() == std::streampos(0),
 			             test_case.test_name + " leaves label input unread");
-			ok &= expect(!output.str().contains("Enter a label for this new model"),
+			ok &= Expect(!output.str().contains("Enter a label for this new model"),
 			             test_case.test_name + " does not prompt for label");
 			return ok;
 		}
@@ -103,15 +103,15 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "unknown preflight status returns 1");
-			ok &= expect(context.preflight_calls == 1, "unknown preflight status calls preflight");
-			ok &= expect(context.capture_calls == 0, "unknown preflight status skips capture");
-			ok &= expect(context.append_calls == 0, "unknown preflight status skips append");
-			ok &= expect(input.tellg() == std::streampos(0),
+			ok &= Expect(result == 1, "unknown preflight status returns 1");
+			ok &= Expect(context.preflight_calls == 1, "unknown preflight status calls preflight");
+			ok &= Expect(context.capture_calls == 0, "unknown preflight status skips capture");
+			ok &= Expect(context.append_calls == 0, "unknown preflight status skips append");
+			ok &= Expect(input.tellg() == std::streampos(0),
 			             "unknown preflight status leaves label input unread");
-			ok &= expect(!output.str().contains("Enter a label for this new model"),
+			ok &= Expect(!output.str().contains("Enter a label for this new model"),
 			             "unknown preflight status does not prompt for label");
-			ok &= expect(error.str().contains("Internal error: unknown add preflight status"),
+			ok &= Expect(error.str().contains("Internal error: unknown add preflight status"),
 			             "unknown preflight status writes internal error");
 			return ok;
 		}
@@ -130,14 +130,14 @@ namespace howdy::test::add_cli {
 			    {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "incomplete dependencies return 1");
-			ok &= expect(context.load_calls == 0,
+			ok &= Expect(result == 1, "incomplete dependencies return 1");
+			ok &= Expect(context.load_calls == 0,
 			             "incomplete dependencies skip available runtime config callback");
-			ok &= expect(context.preflight_calls == 0,
+			ok &= Expect(context.preflight_calls == 0,
 			             "incomplete dependencies skip preflight callback");
-			ok &= expect(context.capture_calls == 0,
+			ok &= Expect(context.capture_calls == 0,
 			             "incomplete dependencies skip available capture callback");
-			ok &= expect(context.append_calls == 0,
+			ok &= Expect(context.append_calls == 0,
 			             "incomplete dependencies skip available append callback");
 			return ok;
 		}

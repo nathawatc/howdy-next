@@ -7,7 +7,7 @@
 
 #include <sys/wait.h>
 
-using howdy::test::expect;
+using howdy::test::Expect;
 
 auto ExpectNativeTerminalEligibility() -> bool;
 auto ExpectNativeTerminalAliases() -> bool;
@@ -20,17 +20,17 @@ auto ExpectNativeTerminalEligibility() -> bool {
 	ScopedFd                second_slave;
 	std::array<ScopedFd, 2> pipes;
 	bool                    ok = true;
-	ok &= expect(OpenPtyPair(&first_master, &first_slave),
+	ok &= Expect(OpenPtyPair(&first_master, &first_slave),
 	             "native eligibility opens interactive terminal");
-	ok &= expect(OpenPtyPair(&second_master, &second_slave),
+	ok &= Expect(OpenPtyPair(&second_master, &second_slave),
 	             "native eligibility opens mismatched terminal");
-	ok &= expect(OpenPipe(&pipes), "native eligibility opens graphical stdio substitute");
+	ok &= Expect(OpenPipe(&pipes), "native eligibility opens graphical stdio substitute");
 	if (!ok) {
 		return false;
 	}
 
-	char *interactive_path = ptsname(first_master.get());
-	if (!expect(interactive_path != nullptr, "native eligibility resolves interactive terminal")) {
+	char *interactive_path = ptsname(first_master.Get());
+	if (!Expect(interactive_path != nullptr, "native eligibility resolves interactive terminal")) {
 		return false;
 	}
 	const pid_t terminal_child = fork();
@@ -48,21 +48,21 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		                                                                  .error  = terminal_fd});
 		const bool redirected_stdout = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
 		                                                                  .input  = terminal_fd,
-		                                                                  .output = pipes[1].get(),
+		                                                                  .output = pipes[1].Get(),
 		                                                                  .error  = terminal_fd});
 		const bool stdout_only       = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                                  .input  = pipes[0].get(),
+		                                                                  .input  = pipes[0].Get(),
 		                                                                  .output = terminal_fd,
-		                                                                  .error  = pipes[1].get()});
+		                                                                  .error  = pipes[1].Get()});
 		const bool stderr_only       = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                                  .input  = pipes[0].get(),
-		                                                                  .output = pipes[1].get(),
+		                                                                  .input  = pipes[0].Get(),
+		                                                                  .output = pipes[1].Get(),
 		                                                                  .error  = terminal_fd});
 		const bool unrelated_stdio   = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                                  .input  = pipes[0].get(),
-		                                                                  .output = pipes[1].get(),
-		                                                                  .error  = pipes[1].get()});
-		const bool regular_pam_tty   = NativePromptTerminalIsInteractive({.tty    = pipes[0].get(),
+		                                                                  .input  = pipes[0].Get(),
+		                                                                  .output = pipes[1].Get(),
+		                                                                  .error  = pipes[1].Get()});
+		const bool regular_pam_tty   = NativePromptTerminalIsInteractive({.tty    = pipes[0].Get(),
 		                                                                  .input  = terminal_fd,
 		                                                                  .output = terminal_fd,
 		                                                                  .error  = terminal_fd});
@@ -74,7 +74,7 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		                               (static_cast<unsigned>(regular_pam_tty) << 5U);
 		_exit(static_cast<int>(failures));
 	}
-	if (!expect(terminal_child > 0, "native eligibility spawns terminal child")) {
+	if (!Expect(terminal_child > 0, "native eligibility spawns terminal child")) {
 		return false;
 	}
 	int   terminal_status = 0;
@@ -82,40 +82,40 @@ auto ExpectNativeTerminalEligibility() -> bool {
 	do {
 		waited = waitpid(terminal_child, &terminal_status, 0);
 	} while (waited < 0 && errno == EINTR);
-	ok &= expect(waited == terminal_child, "native eligibility waits for terminal child, errno=" +
+	ok &= Expect(waited == terminal_child, "native eligibility waits for terminal child, errno=" +
 	                                           std::to_string(waited < 0 ? errno : 0));
 	if (waited == terminal_child) {
-		ok &= expect(WIFEXITED(terminal_status), "native eligibility child exits normally");
+		ok &= Expect(WIFEXITED(terminal_status), "native eligibility child exits normally");
 		if (WIFEXITED(terminal_status)) {
 			const auto failures = static_cast<unsigned>(WEXITSTATUS(terminal_status));
 			ok &=
-			    expect((failures & (1U << 0U)) == 0, "all matching descriptors retain native mode");
-			ok &= expect((failures & (1U << 1U)) == 0,
+			    Expect((failures & (1U << 0U)) == 0, "all matching descriptors retain native mode");
+			ok &= Expect((failures & (1U << 1U)) == 0,
 			             "redirected stdout with matching stdin/stderr retains native mode");
-			ok &= expect((failures & (1U << 2U)) == 0,
+			ok &= Expect((failures & (1U << 2U)) == 0,
 			             "matching stdout with redirected stdin/stderr retains native mode");
-			ok &= expect((failures & (1U << 3U)) == 0,
+			ok &= Expect((failures & (1U << 3U)) == 0,
 			             "matching stderr with redirected stdin/stdout retains native mode");
-			ok &= expect((failures & (1U << 4U)) == 0,
+			ok &= Expect((failures & (1U << 4U)) == 0,
 			             "unrelated standard descriptors reject native mode for fallback");
-			ok &= expect((failures & (1U << 5U)) == 0,
+			ok &= Expect((failures & (1U << 5U)) == 0,
 			             "regular-file PAM_TTY rejects native mode for fallback");
 		}
 	}
-	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
-	                                                 .input  = first_slave.get(),
-	                                                 .output = first_slave.get(),
-	                                                 .error  = first_slave.get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
+	                                                 .input  = first_slave.Get(),
+	                                                 .output = first_slave.Get(),
+	                                                 .error  = first_slave.Get()}),
 	             "foreground mismatch rejects native mode for fallback");
-	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
-	                                                 .input  = second_slave.get(),
-	                                                 .output = second_slave.get(),
-	                                                 .error  = second_slave.get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
+	                                                 .input  = second_slave.Get(),
+	                                                 .output = second_slave.Get(),
+	                                                 .error  = second_slave.Get()}),
 	             "different interactive descriptors reject native mode for fallback");
-	ok &= expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.get(),
-	                                                 .input  = pipes[0].get(),
-	                                                 .output = pipes[1].get(),
-	                                                 .error  = pipes[1].get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
+	                                                 .input  = pipes[0].Get(),
+	                                                 .output = pipes[1].Get(),
+	                                                 .error  = pipes[1].Get()}),
 	             "GDM-like unrelated stdio rejects native mode for fallback");
 	return ok;
 }
@@ -126,17 +126,17 @@ auto ExpectNativeTerminalAliases() -> bool {
 	ScopedFd second_master;
 	ScopedFd second_slave;
 	bool     ok = true;
-	ok &= expect(OpenPtyPair(&first_master, &first_slave), "native alias test opens first PTY");
-	ok &= expect(OpenPtyPair(&second_master, &second_slave), "native alias test opens second PTY");
+	ok &= Expect(OpenPtyPair(&first_master, &first_slave), "native alias test opens first PTY");
+	ok &= Expect(OpenPtyPair(&second_master, &second_slave), "native alias test opens second PTY");
 	if (!ok) {
 		return false;
 	}
 
-	char             *first_name  = ptsname(first_master.get());
+	char             *first_name  = ptsname(first_master.Get());
 	const std::string first_path  = first_name == nullptr ? "" : first_name;
-	char             *second_name = ptsname(second_master.get());
+	char             *second_name = ptsname(second_master.Get());
 	const std::string second_path = second_name == nullptr ? "" : second_name;
-	ok &= expect(first_name != nullptr && second_name != nullptr,
+	ok &= Expect(first_name != nullptr && second_name != nullptr,
 	             "native alias test resolves PTY paths");
 	if (!ok) {
 		return false;
@@ -144,7 +144,7 @@ auto ExpectNativeTerminalAliases() -> bool {
 
 	const pid_t child = fork();
 	if (child < 0) {
-		return expect(false, "native alias test spawns terminal child");
+		return Expect(false, "native alias test spawns terminal child");
 	}
 	if (child == 0) {
 		if (setsid() < 0) {
@@ -174,18 +174,18 @@ auto ExpectNativeTerminalAliases() -> bool {
 	do {
 		waited = waitpid(child, &status, 0);
 	} while (waited < 0 && errno == EINTR);
-	ok &= expect(waited == child, "native alias test verifies exact waitpid result");
+	ok &= Expect(waited == child, "native alias test verifies exact waitpid result");
 	if (waited != child) {
 		return ok;
 	}
-	ok &= expect(WIFEXITED(status), "native alias test child exits normally");
+	ok &= Expect(WIFEXITED(status), "native alias test child exits normally");
 	if (!WIFEXITED(status)) {
 		return ok;
 	}
 	const auto failures = static_cast<unsigned>(WEXITSTATUS(status));
-	ok &= expect((failures & (1U << 0U)) == 0, "/dev/pts target accepts /dev/tty stdio alias");
-	ok &= expect((failures & (1U << 1U)) == 0, "/dev/tty target accepts underlying PTY stdio");
-	ok &= expect((failures & (1U << 2U)) == 0, "different PTY in same process session is rejected");
+	ok &= Expect((failures & (1U << 0U)) == 0, "/dev/pts target accepts /dev/tty stdio alias");
+	ok &= Expect((failures & (1U << 1U)) == 0, "/dev/tty target accepts underlying PTY stdio");
+	ok &= Expect((failures & (1U << 2U)) == 0, "different PTY in same process session is rejected");
 	return ok;
 }
 
@@ -206,7 +206,7 @@ auto ExpectInvalidPamTtyIsUnavailable() -> bool {
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;
-	if (!expect(pam_start("howdy-native-tty-test", "test-user", &original_conv, &pamh) ==
+	if (!Expect(pam_start("howdy-native-tty-test", "test-user", &original_conv, &pamh) ==
 	                PAM_SUCCESS,
 	            "invalid PAM_TTY test starts PAM handle")) {
 		return false;
@@ -215,17 +215,17 @@ auto ExpectInvalidPamTtyIsUnavailable() -> bool {
 	bool ok = true;
 	{
 		NativePromptConversation conversation(pamh);
-		ok &= expect(!conversation.Available(), "missing PAM_TTY disables native prompt");
+		ok &= Expect(!conversation.Available(), "missing PAM_TTY disables native prompt");
 	}
 
 	std::string path_template = "/tmp/howdy-pam-tty-XXXXXX";
 	const int   regular_fd    = mkstemp(path_template.data());
-	ok &= expect(regular_fd >= 0, "regular PAM_TTY test creates temporary file");
+	ok &= Expect(regular_fd >= 0, "regular PAM_TTY test creates temporary file");
 	if (regular_fd >= 0) {
-		ok &= expect(pam_set_item(pamh, PAM_TTY, path_template.data()) == PAM_SUCCESS,
+		ok &= Expect(pam_set_item(pamh, PAM_TTY, path_template.data()) == PAM_SUCCESS,
 		             "regular PAM_TTY test sets PAM item");
 		NativePromptConversation conversation(pamh);
-		ok &= expect(!conversation.Available(), "regular-file PAM_TTY disables native prompt");
+		ok &= Expect(!conversation.Available(), "regular-file PAM_TTY disables native prompt");
 		close(regular_fd);
 		unlink(path_template.data());
 	}

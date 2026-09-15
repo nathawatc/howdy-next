@@ -11,7 +11,7 @@ namespace {
 	using howdy::pam::EntrypointDependencies;
 	using howdy::pam::PamModuleArguments;
 	using howdy::pam::RunPamAuthenticate;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct CallbackState {
 		int                result     = PAM_SUCCESS;
@@ -59,17 +59,17 @@ auto main() -> int {
 
 	const int result = RunPamAuthenticate(pamh, 73, static_cast<int>(argv.size()), argv.data(),
 	                                      DependenciesFor(state));
-	ok &= expect(result == PAM_AUTH_ERR, "ABI adapter propagates callback result");
-	ok &= expect(state.calls == 1, "ABI adapter invokes callback exactly once");
-	ok &= expect(state.context == &state, "ABI adapter forwards dependency context");
-	ok &= expect(state.pamh == pamh, "ABI adapter forwards PAM handle");
-	ok &= expect(state.arguments.flags == 73, "ABI adapter forwards flags");
-	ok &= expect(state.arguments.argc == 3, "ABI adapter forwards argc");
-	ok &= expect(state.arguments.argv == argv.data(), "ABI adapter forwards argv pointer");
-	ok &= expect(state.arguments.argv[0] == argv[0] && state.arguments.argv[1] == nullptr &&
+	ok &= Expect(result == PAM_AUTH_ERR, "ABI adapter propagates callback result");
+	ok &= Expect(state.calls == 1, "ABI adapter invokes callback exactly once");
+	ok &= Expect(state.context == &state, "ABI adapter forwards dependency context");
+	ok &= Expect(state.pamh == pamh, "ABI adapter forwards PAM handle");
+	ok &= Expect(state.arguments.flags == 73, "ABI adapter forwards flags");
+	ok &= Expect(state.arguments.argc == 3, "ABI adapter forwards argc");
+	ok &= Expect(state.arguments.argv == argv.data(), "ABI adapter forwards argv pointer");
+	ok &= Expect(state.arguments.argv[0] == argv[0] && state.arguments.argv[1] == nullptr &&
 	                 state.arguments.argv[2] == argv[2],
 	             "ABI adapter forwards argv entries");
-	ok &= expect(state.request_auth_token, "ABI adapter always requests auth token");
+	ok &= Expect(state.request_auth_token, "ABI adapter always requests auth token");
 
 	state                 = {};
 	state.result          = PAM_USER_UNKNOWN;
@@ -80,9 +80,9 @@ auto main() -> int {
 	} catch (...) {
 		escaped = true;
 	}
-	ok &= expect(exception_result == PAM_USER_UNKNOWN, "ABI adapter preserves callback status");
-	ok &= expect(state.calls == 1, "ABI adapter invokes second callback exactly once");
-	ok &= expect(!escaped, "ABI adapter does not throw for normal callback");
+	ok &= Expect(exception_result == PAM_USER_UNKNOWN, "ABI adapter preserves callback status");
+	ok &= Expect(state.calls == 1, "ABI adapter invokes second callback exactly once");
+	ok &= Expect(!escaped, "ABI adapter does not throw for normal callback");
 
 	state            = {};
 	state.throw_mode = 1;
@@ -93,9 +93,9 @@ auto main() -> int {
 	} catch (...) {
 		escaped = true;
 	}
-	ok &= expect(std_result == PAM_SYSTEM_ERR, "ABI adapter maps std exception to PAM_SYSTEM_ERR");
-	ok &= expect(state.calls == 1, "std exception callback runs once");
-	ok &= expect(!escaped, "std exception does not cross ABI adapter");
+	ok &= Expect(std_result == PAM_SYSTEM_ERR, "ABI adapter maps std exception to PAM_SYSTEM_ERR");
+	ok &= Expect(state.calls == 1, "std exception callback runs once");
+	ok &= Expect(!escaped, "std exception does not cross ABI adapter");
 
 	state              = {};
 	state.throw_mode   = 2;
@@ -106,25 +106,25 @@ auto main() -> int {
 	} catch (...) {
 		escaped = true;
 	}
-	ok &= expect(unknown_result == PAM_SYSTEM_ERR,
+	ok &= Expect(unknown_result == PAM_SYSTEM_ERR,
 	             "ABI adapter maps unknown exception to PAM_SYSTEM_ERR");
-	ok &= expect(state.calls == 1, "unknown exception callback runs once");
-	ok &= expect(!escaped, "unknown exception does not cross ABI adapter");
+	ok &= Expect(state.calls == 1, "unknown exception callback runs once");
+	ok &= Expect(!escaped, "unknown exception does not cross ABI adapter");
 
 	ok &=
-	    expect(RunPamAuthenticate(pamh, 0, 0, nullptr,
+	    Expect(RunPamAuthenticate(pamh, 0, 0, nullptr,
 	                              {.context = nullptr, .authenticate = nullptr}) == PAM_SYSTEM_ERR,
 	           "ABI adapter rejects null callback");
 
-	ok &= expect(pam_sm_open_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
+	ok &= Expect(pam_sm_open_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
 	             "open_session remains ignored");
 	ok &=
-	    expect(pam_sm_acct_mgmt(nullptr, 0, 0, nullptr) == PAM_IGNORE, "acct_mgmt remains ignored");
-	ok &= expect(pam_sm_close_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
+	    Expect(pam_sm_acct_mgmt(nullptr, 0, 0, nullptr) == PAM_IGNORE, "acct_mgmt remains ignored");
+	ok &= Expect(pam_sm_close_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
 	             "close_session remains ignored");
 	ok &=
-	    expect(pam_sm_chauthtok(nullptr, 0, 0, nullptr) == PAM_IGNORE, "chauthtok remains ignored");
-	ok &= expect(pam_sm_setcred(nullptr, 0, 0, nullptr) == PAM_IGNORE, "setcred remains ignored");
+	    Expect(pam_sm_chauthtok(nullptr, 0, 0, nullptr) == PAM_IGNORE, "chauthtok remains ignored");
+	ok &= Expect(pam_sm_setcred(nullptr, 0, 0, nullptr) == PAM_IGNORE, "setcred remains ignored");
 
 	return ok ? 0 : 1;
 }

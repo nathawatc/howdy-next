@@ -5,8 +5,8 @@
 
 namespace howdy::test::compare_engine {
 
-	using howdy::test::expect;
-	using howdy::test::expect_near;
+	using howdy::test::Expect;
+	using howdy::test::ExpectNear;
 
 	inline auto MakeVideoConfig(float dark_threshold = 25.0F, float max_height = 100.0F,
 	                            int rotate = 0, bool clahe_enabled = false)

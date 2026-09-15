@@ -24,7 +24,7 @@
 
 namespace howdy::test::download_models {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 	using howdy::test::ScopedFd;
 
 	namespace {
@@ -57,7 +57,7 @@ namespace howdy::test::download_models {
 			}
 
 			[[nodiscard]] auto Ok() const -> bool {
-				return listener_fd_.get() >= 0 && port_ != 0 && worker_.joinable();
+				return listener_fd_.Get() >= 0 && port_ != 0 && worker_.joinable();
 			}
 
 			[[nodiscard]] auto Port() const -> std::uint16_t {
@@ -87,15 +87,15 @@ namespace howdy::test::download_models {
 
 		private:
 			void Initialize() {
-				listener_fd_.reset(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
-				if (listener_fd_.get() < 0) {
+				listener_fd_.Reset(socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
+				if (listener_fd_.Get() < 0) {
 					return;
 				}
 
 				int reuse_address = 1;
-				if (setsockopt(listener_fd_.get(), SOL_SOCKET, SO_REUSEADDR, &reuse_address,
+				if (setsockopt(listener_fd_.Get(), SOL_SOCKET, SO_REUSEADDR, &reuse_address,
 				               sizeof(reuse_address)) != 0) {
-					listener_fd_.reset();
+					listener_fd_.Reset();
 					return;
 				}
 
@@ -103,17 +103,17 @@ namespace howdy::test::download_models {
 				address.sin_family      = AF_INET;
 				address.sin_port        = 0;
 				address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-				if (bind(listener_fd_.get(), reinterpret_cast<const sockaddr *>(&address),
+				if (bind(listener_fd_.Get(), reinterpret_cast<const sockaddr *>(&address),
 				         sizeof(address)) != 0 ||
-				    listen(listener_fd_.get(), 1) != 0) {
-					listener_fd_.reset();
+				    listen(listener_fd_.Get(), 1) != 0) {
+					listener_fd_.Reset();
 					return;
 				}
 
 				auto address_length = static_cast<socklen_t>(sizeof(address));
-				if (getsockname(listener_fd_.get(), reinterpret_cast<sockaddr *>(&address),
+				if (getsockname(listener_fd_.Get(), reinterpret_cast<sockaddr *>(&address),
 				                &address_length) != 0) {
-					listener_fd_.reset();
+					listener_fd_.Reset();
 					return;
 				}
 				port_ = ntohs(address.sin_port);
@@ -126,7 +126,7 @@ namespace howdy::test::download_models {
 			void Run() noexcept {
 				while (!stop_requested_.load()) {
 					pollfd descriptor{
-					    .fd      = listener_fd_.get(),
+					    .fd      = listener_fd_.Get(),
 					    .events  = POLLIN,
 					    .revents = 0,
 					};
@@ -147,8 +147,8 @@ namespace howdy::test::download_models {
 						break;
 					}
 
-					ScopedFd client_fd(accept(listener_fd_.get(), nullptr, nullptr));
-					if (client_fd.get() < 0) {
+					ScopedFd client_fd(accept(listener_fd_.Get(), nullptr, nullptr));
+					if (client_fd.Get() < 0) {
 						if (errno == EINTR) {
 							continue;
 						}
@@ -156,7 +156,7 @@ namespace howdy::test::download_models {
 					}
 					MarkConnectionObserved();
 					if (kind_ == ProbeKind::kProxy) {
-						ReadProxyRequest(client_fd.get());
+						ReadProxyRequest(client_fd.Get());
 					}
 					break;
 				}
@@ -373,12 +373,12 @@ namespace howdy::test::download_models {
 		                             std::string_view case_name, const char *proxy_variable,
 		                             const bool bypass_proxy) -> bool {
 			if (!ProxyEnvironmentGuard::Clear()) {
-				return expect(false, "clear proxy environment between cases");
+				return Expect(false, "clear proxy environment between cases");
 			}
 			LoopbackProbe proxy(ProbeKind::kProxy);
 			LoopbackProbe origin(ProbeKind::kOrigin);
 			if (!proxy.Ok() || !origin.Ok()) {
-				return expect(false, "create loopback proxy and origin listeners");
+				return Expect(false, "create loopback proxy and origin listeners");
 			}
 
 			const auto origin_url =
@@ -392,7 +392,7 @@ namespace howdy::test::download_models {
 				environment_ok &= ProxyEnvironmentGuard::Set(proxy_variable, proxy_url);
 			}
 			if (!environment_ok) {
-				return expect(false, "configure proxy environment");
+				return Expect(false, "configure proxy environment");
 			}
 
 			const auto       model      = LocalModel(origin_url);
@@ -400,27 +400,27 @@ namespace howdy::test::download_models {
 			const auto       models_dir = temp_root / std::string(case_name) / "models";
 			const auto       output     = temp_root / (std::string(case_name) + "-output.txt");
 			int              exit_code  = 0;
-			bool ok = expect(RunTestDownload({.models_dir = models_dir, .output = output},
+			bool ok = Expect(RunTestDownload({.models_dir = models_dir, .output = output},
 			                                 &exit_code, models, RealCurlDownloadFile),
 			                 "run real libcurl download");
-			ok &= expect(exit_code == EXIT_FAILURE, "incomplete local TLS transfer fails download");
+			ok &= Expect(exit_code == EXIT_FAILURE, "incomplete local TLS transfer fails download");
 
 			if (bypass_proxy) {
-				ok &= expect(origin.WaitForConnection(std::chrono::seconds(1)),
+				ok &= Expect(origin.WaitForConnection(std::chrono::seconds(1)),
 				             "NO_PROXY connects directly to local origin");
-				ok &= expect(!proxy.WaitForConnection(std::chrono::milliseconds(100)),
+				ok &= Expect(!proxy.WaitForConnection(std::chrono::milliseconds(100)),
 				             "NO_PROXY does not connect to proxy");
 			} else {
-				ok &= expect(proxy.WaitForRequest(std::chrono::seconds(1)),
+				ok &= Expect(proxy.WaitForRequest(std::chrono::seconds(1)),
 				             "configured proxy receives request");
 				const auto expected_connect =
 				    "CONNECT 127.0.0.1:" + std::to_string(origin.Port()) + " ";
-				ok &= expect(proxy.Request().starts_with(expected_connect),
+				ok &= Expect(proxy.Request().starts_with(expected_connect),
 				             "HTTPS download uses HTTP CONNECT through proxy");
-				ok &= expect(!origin.WaitForConnection(std::chrono::milliseconds(100)),
+				ok &= Expect(!origin.WaitForConnection(std::chrono::milliseconds(100)),
 				             "proxied download does not connect directly to origin");
 			}
-			ok &= expect(count_files_with_prefix(models_dir, ".howdy-download-") == 0,
+			ok &= Expect(CountFilesWithPrefix(models_dir, ".howdy-download-") == 0,
 			             "failed proxy transfer removes staged file");
 			return ok;
 		}
@@ -434,17 +434,17 @@ namespace howdy::test::download_models {
 		std::error_code ec;
 		fs::remove_all(temp_root, ec);
 		if (ec || !fs::create_directories(temp_root, ec) || ec) {
-			return expect(false, "create proxy test temp root");
+			return Expect(false, "create proxy test temp root");
 		}
 
 		ProxyEnvironmentGuard environment;
-		bool ok = expect(environment.InitiallyClear(), "clear inherited proxy environment");
+		bool ok = Expect(environment.InitiallyClear(), "clear inherited proxy environment");
 		ok &= RunProxyEnvironmentCase(temp_root, "https-proxy", "HTTPS_PROXY", false);
 		ok &= RunProxyEnvironmentCase(temp_root, "all-proxy", "ALL_PROXY", false);
 		ok &= RunProxyEnvironmentCase(temp_root, "no-proxy", nullptr, true);
 
 		fs::remove_all(temp_root, ec);
-		ok &= expect(!ec, "remove proxy test temp root");
+		ok &= Expect(!ec, "remove proxy test temp root");
 		return ok;
 	}
 

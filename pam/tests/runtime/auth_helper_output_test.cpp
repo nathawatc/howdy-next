@@ -20,7 +20,7 @@ auto RunAuthHelperFdTests() -> bool;
 auto RunAuthHelperOutputTests() -> bool;
 
 namespace {
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto FakePartialReadError(void                                              *context,
 	                          [[maybe_unused]] howdy::native::BoundedReadRequest request)
@@ -61,8 +61,8 @@ namespace {
 		if (pipe(raw_fds.data()) != 0) {
 			return false;
 		}
-		(*fds)[0].reset(raw_fds[0]);
-		(*fds)[1].reset(raw_fds[1]);
+		(*fds)[0].Reset(raw_fds[0]);
+		(*fds)[1].Reset(raw_fds[1]);
 		return true;
 	}
 
@@ -76,7 +76,7 @@ namespace {
 		path_buffer.push_back('\0');
 
 		ScopedFd fd(mkstemp(path_buffer.data()));
-		if (fd.get() < 0) {
+		if (fd.Get() < 0) {
 			return std::nullopt;
 		}
 		return TemporaryFile{.path = path_buffer.data(), .fd = std::move(fd)};
@@ -85,32 +85,32 @@ namespace {
 	auto ExpectFdReading() -> bool {
 		bool                    ok = true;
 		std::array<ScopedFd, 2> empty_pipe;
-		ok &= expect(OpenPipe(&empty_pipe), "creates empty input pipe");
-		empty_pipe[1].reset();
-		ok &= expect(ReadFdToString(empty_pipe[0].get()).empty(), "reads empty input");
-		ok &= expect(ReadFdToString(-1).empty(), "read failure returns collected empty output");
+		ok &= Expect(OpenPipe(&empty_pipe), "creates empty input pipe");
+		empty_pipe[1].Reset();
+		ok &= Expect(ReadFdToString(empty_pipe[0].Get()).empty(), "reads empty input");
+		ok &= Expect(ReadFdToString(-1).empty(), "read failure returns collected empty output");
 
 		std::array<ScopedFd, 2> small_pipe;
-		ok &= expect(OpenPipe(&small_pipe), "creates small input pipe");
+		ok &= Expect(OpenPipe(&small_pipe), "creates small input pipe");
 		const std::string small_output = "small helper output\n";
-		ok &= expect(WriteAll(small_pipe[1].get(), small_output), "writes small helper output");
-		small_pipe[1].reset();
-		ok &= expect(ReadFdToString(small_pipe[0].get()) == small_output,
+		ok &= Expect(WriteAll(small_pipe[1].Get(), small_output), "writes small helper output");
+		small_pipe[1].Reset();
+		ok &= Expect(ReadFdToString(small_pipe[0].Get()) == small_output,
 		             "reads complete small helper output");
 
 		auto bounded_file = CreateTempFile("output");
-		ok &= expect(bounded_file.has_value(), "creates bounded input file");
+		ok &= Expect(bounded_file.has_value(), "creates bounded input file");
 		if (!bounded_file.has_value()) {
 			return false;
 		}
 		unlink(bounded_file->path.c_str());
 		const std::string limit_output(16384, 'x');
-		ok &= expect(WriteAll(bounded_file->fd.get(), limit_output),
+		ok &= Expect(WriteAll(bounded_file->fd.Get(), limit_output),
 		             "writes oversized helper output");
-		ok &= expect(lseek(bounded_file->fd.get(), 0, SEEK_SET) == 0,
+		ok &= Expect(lseek(bounded_file->fd.Get(), 0, SEEK_SET) == 0,
 		             "rewinds oversized helper output");
-		const std::string bounded_output = ReadFdToString(bounded_file->fd.get());
-		ok &= expect(bounded_output == limit_output.substr(0, 9216),
+		const std::string bounded_output = ReadFdToString(bounded_file->fd.Get());
+		ok &= Expect(bounded_output == limit_output.substr(0, 9216),
 		             "stops reading after bounded output threshold");
 
 		return ok;
@@ -119,41 +119,41 @@ namespace {
 	auto ExpectAuthHelperOutputLimitTerminatesChild() -> bool {
 		bool                    ok = true;
 		std::array<ScopedFd, 2> output_pipe;
-		ok &= expect(OpenPipe(&output_pipe), "creates output-limit auth-helper pipe");
+		ok &= Expect(OpenPipe(&output_pipe), "creates output-limit auth-helper pipe");
 		if (!ok) {
 			return false;
 		}
 
 		const std::string limit_output(howdy::pam::auth_helper_process::OutputLimit(), 'h');
 		const pid_t       child_pid = fork();
-		ok &= expect(child_pid >= 0, "forks output-limit auth-helper child");
+		ok &= Expect(child_pid >= 0, "forks output-limit auth-helper child");
 		if (child_pid < 0) {
 			return false;
 		}
 		if (child_pid == 0) {
-			output_pipe[0].reset();
-			const bool wrote = WriteAll(output_pipe[1].get(), limit_output);
+			output_pipe[0].Reset();
+			const bool wrote = WriteAll(output_pipe[1].Get(), limit_output);
 			usleep(2000000);
 			_exit(wrote ? 0 : 1);
 		}
 
-		output_pipe[1].reset();
+		output_pipe[1].Reset();
 		std::string helper_output;
 		const auto  start = std::chrono::steady_clock::now();
 		const bool  helper_ok =
-		    ReadAuthHelperOutput(child_pid, output_pipe[0].get(), &helper_output);
+		    ReadAuthHelperOutput(child_pid, output_pipe[0].Get(), &helper_output);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 
-		ok &= expect(!helper_ok, "auth-helper output limit fails closed");
-		ok &= expect(helper_output.empty(), "auth-helper output-limit data is not exposed");
-		ok &= expect(elapsed < std::chrono::milliseconds(1500),
+		ok &= Expect(!helper_ok, "auth-helper output limit fails closed");
+		ok &= Expect(helper_output.empty(), "auth-helper output-limit data is not exposed");
+		ok &= Expect(elapsed < std::chrono::milliseconds(1500),
 		             "auth-helper output limit returns before sleeping helper exits");
 
 		int status              = 0;
 		errno                   = 0;
 		const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
 		const int   wait_errno  = errno;
-		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
 		             "output-limit auth-helper child is reaped");
 
 		return ok;
@@ -162,7 +162,7 @@ namespace {
 	auto ExpectAuthHelperOutputReadErrorTerminatesChild() -> bool {
 		bool        ok        = true;
 		const pid_t child_pid = fork();
-		ok &= expect(child_pid >= 0, "forks read-error auth-helper child");
+		ok &= Expect(child_pid >= 0, "forks read-error auth-helper child");
 		if (child_pid < 0) {
 			return false;
 		}
@@ -176,9 +176,9 @@ namespace {
 		const bool  helper_ok = ReadAuthHelperOutput(child_pid, -1, &helper_output);
 		const auto  elapsed   = std::chrono::steady_clock::now() - start;
 
-		ok &= expect(!helper_ok, "auth-helper read error fails closed");
-		ok &= expect(helper_output.empty(), "auth-helper read error collects empty output");
-		ok &= expect(elapsed < std::chrono::milliseconds(1500),
+		ok &= Expect(!helper_ok, "auth-helper read error fails closed");
+		ok &= Expect(helper_output.empty(), "auth-helper read error collects empty output");
+		ok &= Expect(elapsed < std::chrono::milliseconds(1500),
 		             "auth-helper read error returns before sleeping helper exits");
 
 		int   status      = 0;
@@ -188,7 +188,7 @@ namespace {
 			wait_result = waitpid(child_pid, &status, WNOHANG);
 		} while (wait_result < 0 && errno == EINTR);
 		const int wait_errno = errno;
-		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
 		             "read-error auth-helper child is reaped");
 
 		if (wait_result == 0) {
@@ -197,7 +197,7 @@ namespace {
 				errno       = 0;
 				wait_result = waitpid(child_pid, &status, 0);
 			} while (wait_result < 0 && errno == EINTR);
-			ok &= expect(wait_result == child_pid,
+			ok &= Expect(wait_result == child_pid,
 			             "read-error auth-helper child cleanup reaps child");
 		} else if (wait_result < 0 && wait_errno != ECHILD) {
 			kill(child_pid, SIGKILL);
@@ -213,7 +213,7 @@ namespace {
 	auto ExpectAuthHelperOutputPartialReadErrorDiscardsOutput() -> bool {
 		bool        ok        = true;
 		const pid_t child_pid = fork();
-		ok &= expect(child_pid >= 0, "forks partial-read-error auth-helper child");
+		ok &= Expect(child_pid >= 0, "forks partial-read-error auth-helper child");
 		if (child_pid < 0) {
 			return false;
 		}
@@ -226,8 +226,8 @@ namespace {
 		const bool  helper_ok =
 		    ReadAuthHelperOutput(child_pid, -1, &helper_output, FakePartialReadError);
 
-		ok &= expect(!helper_ok, "auth-helper partial read error fails closed");
-		ok &= expect(helper_output.empty(), "auth-helper partial read error discards output");
+		ok &= Expect(!helper_ok, "auth-helper partial read error fails closed");
+		ok &= Expect(helper_output.empty(), "auth-helper partial read error discards output");
 
 		int   status      = 0;
 		pid_t wait_result = 0;
@@ -236,7 +236,7 @@ namespace {
 			wait_result = waitpid(child_pid, &status, WNOHANG);
 		} while (wait_result < 0 && errno == EINTR);
 		const int wait_errno = errno;
-		ok &= expect(wait_result < 0 && wait_errno == ECHILD,
+		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
 		             "partial-read-error auth-helper child is reaped");
 		if (wait_result == 0) {
 			kill(child_pid, SIGKILL);
@@ -261,14 +261,14 @@ namespace {
 			return std::nullopt;
 		}
 		if (child_pid == 0) {
-			output_pipe[0].reset();
-			const bool wrote = WriteAll(output_pipe[1].get(), child_output);
-			output_pipe[1].reset();
+			output_pipe[0].Reset();
+			const bool wrote = WriteAll(output_pipe[1].Get(), child_output);
+			output_pipe[1].Reset();
 			_exit(wrote ? child_exit_status : EXIT_FAILURE);
 		}
 
-		output_pipe[1].reset();
-		return ReadAuthHelperOutput(child_pid, output_pipe[0].get(), read_output);
+		output_pipe[1].Reset();
+		return ReadAuthHelperOutput(child_pid, output_pipe[0].Get(), read_output);
 	}
 
 	auto ExpectAuthHelperOutputChildFailureDiscardsOutput() -> bool {
@@ -279,12 +279,12 @@ namespace {
 		    ReadCleanAuthHelperOutput(child_output, &actual_output, EXIT_FAILURE);
 
 		bool ok = true;
-		ok &= expect(read_result.has_value(), "failed auth-helper child exits cleanly");
+		ok &= Expect(read_result.has_value(), "failed auth-helper child exits cleanly");
 		if (!read_result.has_value()) {
 			return false;
 		}
-		ok &= expect(!*read_result, "failed auth-helper child output is rejected");
-		ok &= expect(actual_output.empty(), "failed auth-helper child output is discarded");
+		ok &= Expect(!*read_result, "failed auth-helper child output is rejected");
+		ok &= Expect(actual_output.empty(), "failed auth-helper child output is discarded");
 		return ok;
 	}
 
@@ -397,24 +397,24 @@ namespace {
 		for (const auto &test_case : cases) {
 			std::string actual_output;
 			const auto  read_result = ReadCleanAuthHelperOutput(test_case.output, &actual_output);
-			ok &= expect(read_result.has_value(), test_case.name + " helper exits cleanly");
+			ok &= Expect(read_result.has_value(), test_case.name + " helper exits cleanly");
 			if (!read_result.has_value()) {
 				continue;
 			}
 
-			ok &= expect(*read_result == test_case.expected_ok, test_case.name);
+			ok &= Expect(*read_result == test_case.expected_ok, test_case.name);
 			if (!test_case.expected_ok) {
-				ok &= expect(actual_output.empty(), test_case.name + " discards malformed output");
+				ok &= Expect(actual_output.empty(), test_case.name + " discards malformed output");
 			}
 			const auto parsed = howdy::pam::auth_helper_process::ParseOutput(test_case.output);
 			ok &=
-			    expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
+			    Expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {
-				ok &= expect(actual_output == test_case.output,
+				ok &= Expect(actual_output == test_case.output,
 				             test_case.name + " exposes unchanged helper output");
-				ok &= expect(parsed.config_path == test_case.config_path,
+				ok &= Expect(parsed.config_path == test_case.config_path,
 				             test_case.name + " config path parsed");
-				ok &= expect(parsed.user_models_dir == test_case.user_models_dir,
+				ok &= Expect(parsed.user_models_dir == test_case.user_models_dir,
 				             test_case.name + " user models directory parsed");
 			}
 		}

@@ -49,16 +49,16 @@ namespace howdy::test::prompt_coordinator {
 				return true;
 			}
 
-			master_fd_.reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
-			if (master_fd_.get() < 0 || grantpt(master_fd_.get()) != 0 ||
-			    unlockpt(master_fd_.get()) != 0) {
+			master_fd_.Reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
+			if (master_fd_.Get() < 0 || grantpt(master_fd_.Get()) != 0 ||
+			    unlockpt(master_fd_.Get()) != 0) {
 				return false;
 			}
-			char *slave_path = ptsname(master_fd_.get());
+			char *slave_path = ptsname(master_fd_.Get());
 			if (slave_path == nullptr || pam_set_item(pamh_, PAM_TTY, slave_path) != PAM_SUCCESS) {
 				return false;
 			}
-			context_->prompt_master_fd = master_fd_.get();
+			context_->prompt_master_fd = master_fd_.Get();
 			return true;
 		}
 

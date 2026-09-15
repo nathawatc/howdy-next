@@ -10,7 +10,7 @@ namespace {
 	auto TestExistingAuthTokenSkipsPromptWorkaround() -> bool {
 		FakeContext context;
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "existing-token child spawned")) {
+		if (!Expect(child_pid > 0, "existing-token child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -18,14 +18,14 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kNativeInput, true, true,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "existing auth token preserves compare result") &&
-		       expect(context.preflight_calls == 0, "existing auth token skips input preflight") &&
-		       expect(context.prompt_submitter_constructions == 0,
+		       Expect(context.preflight_calls == 0, "existing auth token skips input preflight") &&
+		       Expect(context.prompt_submitter_constructions == 0,
 		              "existing auth token skips prompt submitter construction") &&
-		       expect(context.auth_token_calls == 0,
+		       Expect(context.auth_token_calls == 0,
 		              "existing auth token skips duplicate password request") &&
-		       expect(ChildReaped(child_pid), "existing-token child is reaped");
+		       Expect(ChildReaped(child_pid), "existing-token child is reaped");
 	}
 
 	auto TestSecretObservationSetupFallback(int mode, const std::string &label) -> bool {
@@ -42,7 +42,7 @@ namespace {
 			context.throw_secret_prompt_unknown = true;
 		}
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -50,27 +50,27 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " falls back to standard prompt") &&
-		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
-		       expect(context.prompt_submitter_constructions == 1,
+		       Expect(context.preflight_calls == 1, label + " runs input preflight once") &&
+		       Expect(context.prompt_submitter_constructions == 1,
 		              label + " constructs prompt submitter once") &&
-		       expect(context.auth_token_calls == 0, label + " does not request token") &&
-		       expect(context.secret_restore_calls == 0,
+		       Expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       Expect(context.secret_restore_calls == 0,
 		              label + " has no conversation to restore") &&
-		       expect(ChildReaped(child_pid), label + " reaps child");
+		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
 	auto TestNativePromptSetupExceptionFallback(bool unknown, const std::string &label) -> bool {
 		FakeContext      context;
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(false), label + " starts PAM handle")) {
+		if (!Expect(fixture.Start(false), label + " starts PAM handle")) {
 			return false;
 		}
 		context.throw_native_prompt         = !unknown;
 		context.throw_native_prompt_unknown = unknown;
 		const pid_t child_pid               = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -78,11 +78,11 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " falls back after native setup exception") &&
-		       expect(context.preflight_calls == 0, label + " skips input fallback") &&
-		       expect(context.auth_token_calls == 0, label + " does not request token") &&
-		       expect(ChildReaped(child_pid), label + " reaps child");
+		       Expect(context.preflight_calls == 0, label + " skips input fallback") &&
+		       Expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
 	auto TestAuthTokenExceptionMapping(bool unknown, const std::string &label) -> bool {
@@ -91,7 +91,7 @@ namespace {
 		    .throw_auth_token_unknown = unknown,
 		};
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -99,12 +99,12 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              label + " returns PAM result") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		       Expect(result.pam_status == PAM_SYSTEM_ERR,
 		              label + " maps exception to system error") &&
-		       expect(context.auth_token_calls == 1, label + " requests token once") &&
-		       expect(ChildReaped(child_pid), label + " reaps canceled compare child");
+		       Expect(context.auth_token_calls == 1, label + " requests token once") &&
+		       Expect(ChildReaped(child_pid), label + " reaps canceled compare child");
 	}
 
 	auto TestSecretRestoreFailureMapping() -> bool {
@@ -112,7 +112,7 @@ namespace {
 		    .secret_restore_result = howdy::pam::ConversationRestoreResult::kFailClosedInstalled,
 		};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "secret restore failure child spawned")) {
+		if (!Expect(child_pid > 0, "secret restore failure child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -120,13 +120,13 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "secret restore failure returns PAM result") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		       Expect(result.pam_status == PAM_SYSTEM_ERR,
 		              "secret restore failure maps to system error") &&
-		       expect(context.secret_restore_calls == 1,
+		       Expect(context.secret_restore_calls == 1,
 		              "secret restore failure attempts restoration once") &&
-		       expect(ChildReaped(child_pid), "secret restore failure child is reaped");
+		       Expect(ChildReaped(child_pid), "secret restore failure child is reaped");
 	}
 
 	auto TestInputSuccessSubmitsPrompt() -> bool {
@@ -135,7 +135,7 @@ namespace {
 		    .release_token_on_submission = true,
 		};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "input success child spawned")) {
+		if (!Expect(child_pid > 0, "input success child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -144,18 +144,18 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
-		       expect(context.prompt_submitter_constructions == 1,
+		       Expect(context.prompt_submitter_constructions == 1,
 		              "input success creates one prompt submitter") &&
-		       expect(context.prompt_submissions == 1,
+		       Expect(context.prompt_submissions == 1,
 		              "input success submits prompt exactly once") &&
-		       expect(context.auth_token_thread == context.run_thread,
+		       Expect(context.auth_token_thread == context.run_thread,
 		              "input success requests password on run caller thread") &&
-		       expect(context.submission_thread == context.wait_thread &&
+		       Expect(context.submission_thread == context.wait_thread &&
 		                  context.submission_thread != context.run_thread,
 		              "input success submits prompt from compare worker") &&
-		       expect(ChildReaped(child_pid), "input success child is reaped");
+		       Expect(ChildReaped(child_pid), "input success child is reaped");
 	}
 
 	auto TestCompareFailurePasswordResult(int pam_result, const std::string &label) -> bool {
@@ -164,7 +164,7 @@ namespace {
 		    .token_result = pam_result,
 		};
 		const pid_t child_pid = SpawnChild(static_cast<int>(CompareExit::kTimeoutReached));
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -174,20 +174,20 @@ namespace {
 		const auto        result          = coordinator.Run(MakeCompareRequest());
 		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
 		const bool        reaped          = ChildReaped(child_pid);
-		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " returns password fallback") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              label + " spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              label + " waits for spawned child") &&
-		       expect(result.compare_status == expected_status,
+		       Expect(result.compare_status == expected_status,
 		              label + " preserves exact compare status") &&
-		       expect(result.pam_status == pam_result, label + " preserves PAM result") &&
-		       expect(context.auth_token_calls == 1, label + " requests token once") &&
-		       expect(context.prompt_submissions == 0,
+		       Expect(result.pam_status == pam_result, label + " preserves PAM result") &&
+		       Expect(context.auth_token_calls == 1, label + " requests token once") &&
+		       Expect(context.prompt_submissions == 0,
 		              label + " submits no prompt after compare failure") &&
-		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
-		       expect(reaped, label + " reaps child");
+		       Expect(context.terminate_calls == 0, label + " does not terminate child") &&
+		       Expect(reaped, label + " reaps child");
 	}
 
 	auto TestCompareSignalPasswordFallback() -> bool {
@@ -196,7 +196,7 @@ namespace {
 		    .token_result = PAM_SUCCESS,
 		};
 		const pid_t child_pid = SpawnSignaledChild(SIGTERM);
-		if (!expect(child_pid > 0, "signaled compare child spawned")) {
+		if (!Expect(child_pid > 0, "signaled compare child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -204,24 +204,24 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "signaled compare returns password fallback") &&
-		       expect(WIFSIGNALED(result.compare_status),
+		       Expect(WIFSIGNALED(result.compare_status),
 		              "signaled compare preserves signaled wait status") &&
-		       expect(WTERMSIG(result.compare_status) == SIGTERM,
+		       Expect(WTERMSIG(result.compare_status) == SIGTERM,
 		              "signaled compare preserves terminating signal") &&
-		       expect(result.pam_status == PAM_SUCCESS, "signaled compare preserves PAM result") &&
-		       expect(context.auth_token_calls == 1,
+		       Expect(result.pam_status == PAM_SUCCESS, "signaled compare preserves PAM result") &&
+		       Expect(context.auth_token_calls == 1,
 		              "signaled compare waits for password result") &&
-		       expect(context.terminate_calls == 0,
+		       Expect(context.terminate_calls == 0,
 		              "signaled compare does not terminate reaped child") &&
-		       expect(ChildReaped(child_pid), "signaled compare reaps child");
+		       Expect(ChildReaped(child_pid), "signaled compare reaps child");
 	}
 
 	auto TestInputPreflightFallback() -> bool {
 		FakeContext context{.preflight_result = false};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "preflight-fallback child spawned")) {
+		if (!Expect(child_pid > 0, "preflight-fallback child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -230,18 +230,18 @@ namespace {
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "preflight fallback returns compare result") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "preflight fallback spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "preflight fallback waits for spawned child") &&
-		       expect(context.preflight_calls == 1, "preflight fallback checks input once") &&
-		       expect(context.auth_token_calls == 0,
+		       Expect(context.preflight_calls == 1, "preflight fallback checks input once") &&
+		       Expect(context.auth_token_calls == 0,
 		              "off fallback preserves standard non-parallel password behavior") &&
-		       expect(context.terminate_calls == 0,
+		       Expect(context.terminate_calls == 0,
 		              "preflight fallback does not terminate compare child") &&
-		       expect(reaped, "preflight fallback reaps child");
+		       Expect(reaped, "preflight fallback reaps child");
 	}
 
 	auto TestPromptSubmitterConstructionFallback(bool return_null, const std::string &label)
@@ -251,7 +251,7 @@ namespace {
 		    .return_null_prompt_submitter       = return_null,
 		};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -259,28 +259,28 @@ namespace {
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result") &&
-		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
-		       expect(context.prompt_submitter_constructions == 1,
+		       Expect(context.preflight_calls == 1, label + " runs input preflight once") &&
+		       Expect(context.prompt_submitter_constructions == 1,
 		              label + " calls prompt submitter factory once") &&
-		       expect(context.prompt_submissions == 0, label + " submits no prompt") &&
-		       expect(context.auth_token_calls == 0,
+		       Expect(context.prompt_submissions == 0, label + " submits no prompt") &&
+		       Expect(context.auth_token_calls == 0,
 		              label + " falls back to standard PAM prompt") &&
-		       expect(ChildReaped(child_pid), label + " reaps child");
+		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
 	auto TestNativeSetupWithoutInputFallback(bool available_result, int install_result,
 	                                         const std::string &label) -> bool {
 		FakeContext      context;
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(false), label + " starts PAM handle")) {
+		if (!Expect(fixture.Start(false), label + " starts PAM handle")) {
 			return false;
 		}
 		context.native_available      = available_result;
 		context.native_install_result = install_result;
 		const pid_t child_pid         = SpawnChild(static_cast<int>(CompareExit::kTimeoutReached));
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -288,28 +288,28 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result without input fallback") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              label + " spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              label + " waits for spawned child") &&
-		       expect(context.preflight_calls == 0, label + " skips input preflight") &&
-		       expect(context.auth_token_calls == 0, label + " does not request token") &&
-		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
-		       expect(context.original_conversation_calls == 0,
+		       Expect(context.preflight_calls == 0, label + " skips input preflight") &&
+		       Expect(context.auth_token_calls == 0, label + " does not request token") &&
+		       Expect(context.terminate_calls == 0, label + " does not terminate child") &&
+		       Expect(context.original_conversation_calls == 0,
 		              label + " does not invoke original conversation") &&
-		       expect(ChildReaped(child_pid), label + " reaps child");
+		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
 	auto TestNativeInputSuccessUsesNativePath() -> bool {
 		FakeContext      context;
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(false), "native-input success starts PAM handle")) {
+		if (!Expect(fixture.Start(false), "native-input success starts PAM handle")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "native-input success child spawned")) {
+		if (!Expect(child_pid > 0, "native-input success child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -317,21 +317,21 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNativeInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native-input success uses native password task") &&
-		       expect(result.pam_status == PAM_SUCCESS,
+		       Expect(result.pam_status == PAM_SUCCESS,
 		              "native-input success preserves PAM success") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "native-input success spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "native-input success waits for spawned child") &&
-		       expect(context.preflight_calls == 0, "native-input success skips input preflight") &&
-		       expect(context.auth_token_calls == 1, "native-input success requests token once") &&
-		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
+		       Expect(context.preflight_calls == 0, "native-input success skips input preflight") &&
+		       Expect(context.auth_token_calls == 1, "native-input success requests token once") &&
+		       Expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "native-input success terminates blocked compare child once") &&
-		       expect(context.original_conversation_calls == 0,
+		       Expect(context.original_conversation_calls == 0,
 		              "native-input success does not invoke original conversation") &&
-		       expect(ChildReaped(child_pid), "native-input success reaps compare child");
+		       Expect(ChildReaped(child_pid), "native-input success reaps compare child");
 	}
 
 	auto TestNativeInputSetupFallback(bool available_result, int install_result,
@@ -341,13 +341,13 @@ namespace {
 		    .token_result = PAM_SUCCESS,
 		};
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(false), label + " starts PAM handle")) {
+		if (!Expect(fixture.Start(false), label + " starts PAM handle")) {
 			return false;
 		}
 		context.native_available      = available_result;
 		context.native_install_result = install_result;
 		const pid_t child_pid         = SpawnChild(static_cast<int>(CompareExit::kTimeoutReached));
-		if (!expect(child_pid > 0, label + " child spawned")) {
+		if (!Expect(child_pid > 0, label + " child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -355,18 +355,18 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNativeInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " falls back to input password task") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              label + " spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              label + " waits for spawned child") &&
-		       expect(context.preflight_calls == 1, label + " runs input preflight once") &&
-		       expect(context.auth_token_calls == 1, label + " requests token once") &&
-		       expect(context.terminate_calls == 0, label + " does not terminate child") &&
-		       expect(context.original_conversation_calls == 0,
+		       Expect(context.preflight_calls == 1, label + " runs input preflight once") &&
+		       Expect(context.auth_token_calls == 1, label + " requests token once") &&
+		       Expect(context.terminate_calls == 0, label + " does not terminate child") &&
+		       Expect(context.original_conversation_calls == 0,
 		              label + " does not invoke original conversation") &&
-		       expect(ChildReaped(child_pid), label + " reaps child");
+		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
 	auto TestNativeBlockedPromptCleanup() -> bool {
@@ -376,11 +376,11 @@ namespace {
 		};
 		context.run_thread = std::this_thread::get_id();
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(true), "blocked native prompt starts PAM PTY")) {
+		if (!Expect(fixture.Start(true), "blocked native prompt starts PAM PTY")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "blocked native prompt child spawned")) {
+		if (!Expect(child_pid > 0, "blocked native prompt child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -392,37 +392,37 @@ namespace {
 			result = coordinator.Run(MakeCompareRequest());
 		}
 
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "blocked native prompt returns compare result") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "blocked native prompt spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "blocked native prompt waits for spawned child") &&
-		       expect(result.compare_status == 0,
+		       Expect(result.compare_status == 0,
 		              "blocked native prompt preserves successful compare status") &&
-		       expect(result.pam_status == PAM_AUTHTOK_ERR,
+		       Expect(result.pam_status == PAM_AUTHTOK_ERR,
 		              "blocked native prompt preserves mapped cancellation status") &&
-		       expect(!context.native_terminal_restore_failed,
+		       Expect(!context.native_terminal_restore_failed,
 		              "blocked native prompt has no terminal restore failure") &&
-		       expect(context.native_prompt_seen,
+		       Expect(context.native_prompt_seen,
 		              "blocked native prompt reaches native conversation") &&
-		       expect(context.auth_token_calls == 1, "blocked native prompt requests token once") &&
-		       expect(context.terminate_calls == 0,
+		       Expect(context.auth_token_calls == 1, "blocked native prompt requests token once") &&
+		       Expect(context.terminate_calls == 0,
 		              "blocked native prompt does not terminate compare child") &&
-		       expect(context.original_conversation_calls == 0,
+		       Expect(context.original_conversation_calls == 0,
 		              "blocked native prompt bypasses original conversation") &&
-		       expect(context.native_abort_calls == 1,
+		       Expect(context.native_abort_calls == 1,
 		              "blocked native prompt requests one abort") &&
-		       expect(context.native_create_thread == context.run_thread &&
+		       Expect(context.native_create_thread == context.run_thread &&
 		                  context.native_install_thread == context.run_thread &&
 		                  context.auth_token_thread == context.run_thread &&
 		                  context.native_restore_thread == context.run_thread,
 		              "native PAM operations stay on run caller thread") &&
-		       expect(context.native_abort_thread == context.wait_thread &&
+		       Expect(context.native_abort_thread == context.wait_thread &&
 		                  context.native_abort_thread != context.run_thread,
 		              "native abort runs on compare worker") &&
-		       expect(context.native_restore_calls == 1, "blocked native prompt restores once") &&
-		       expect(ChildReaped(child_pid), "blocked native prompt reaps child");
+		       Expect(context.native_restore_calls == 1, "blocked native prompt restores once") &&
+		       Expect(ChildReaped(child_pid), "blocked native prompt reaps child");
 	}
 
 	auto TestNativePamWins() -> bool {
@@ -431,11 +431,11 @@ namespace {
 		    .complete_native_prompt = true,
 		};
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(true), "native PAM winner starts PAM PTY")) {
+		if (!Expect(fixture.Start(true), "native PAM winner starts PAM PTY")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "native PAM winner child spawned")) {
+		if (!Expect(child_pid > 0, "native PAM winner child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -446,37 +446,37 @@ namespace {
 			                              Dependencies(&context), std::chrono::seconds(5));
 			result = coordinator.Run(MakeCompareRequest());
 		}
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native PAM winner returns PAM result") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "native PAM winner spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "native PAM winner waits for spawned child") &&
-		       expect(result.pam_status == PAM_SUCCESS,
+		       Expect(result.pam_status == PAM_SUCCESS,
 		              "native PAM winner preserves PAM success") &&
-		       expect(context.native_prompt_installed,
+		       Expect(context.native_prompt_installed,
 		              "native PAM winner observes installed native conversation") &&
-		       expect(context.native_prompt_seen,
+		       Expect(context.native_prompt_seen,
 		              "native PAM winner observes native password prompt") &&
-		       expect(context.native_prompt_input_sent,
+		       Expect(context.native_prompt_input_sent,
 		              "native PAM winner sends password input after prompt observation") &&
-		       expect(context.native_prompt_completed,
+		       Expect(context.native_prompt_completed,
 		              "native PAM winner completes native conversation") &&
-		       expect(!context.native_terminal_restore_failed,
+		       Expect(!context.native_terminal_restore_failed,
 		              "native PAM winner records no terminal restore failure") &&
-		       expect(context.pam_completion_observed_by_waiter,
+		       Expect(context.pam_completion_observed_by_waiter,
 		              "native PAM winner synchronizes completion before compare wait") &&
-		       expect(context.auth_token_calls == 1,
+		       Expect(context.auth_token_calls == 1,
 		              "native PAM winner completes password task once") &&
-		       expect(context.preflight_calls == 0, "native PAM winner skips input preflight") &&
-		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
+		       Expect(context.preflight_calls == 0, "native PAM winner skips input preflight") &&
+		       Expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "native PAM winner terminates blocked compare child once") &&
-		       expect(ChildReaped(child_pid), "native PAM winner reaps compare child") &&
-		       expect(context.native_abort_calls == 0,
+		       Expect(ChildReaped(child_pid), "native PAM winner reaps compare child") &&
+		       Expect(context.native_abort_calls == 0,
 		              "native PAM winner needs no abort after password_call_returned") &&
-		       expect(context.native_restore_calls == 1,
+		       Expect(context.native_restore_calls == 1,
 		              "native PAM winner restores native prompt once") &&
-		       expect(context.original_conversation_calls == 0,
+		       Expect(context.original_conversation_calls == 0,
 		              "native PAM winner leaves no blocked native prompt task");
 	}
 
@@ -487,11 +487,11 @@ namespace {
 		    .native_terminal_restore_failure_on_abort = true,
 		};
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(true), "native terminal restore failure starts PAM PTY")) {
+		if (!Expect(fixture.Start(true), "native terminal restore failure starts PAM PTY")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "native terminal restore failure child spawned")) {
+		if (!Expect(child_pid > 0, "native terminal restore failure child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -499,20 +499,20 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native terminal restore failure overrides successful face result") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		       Expect(result.pam_status == PAM_SYSTEM_ERR,
 		              "native terminal restore failure returns PAM_SYSTEM_ERR") &&
-		       expect(context.native_terminal_restore_failed,
+		       Expect(context.native_terminal_restore_failed,
 		              "native terminal restore failure is explicitly reported after abort") &&
-		       expect(context.native_prompt_seen,
+		       Expect(context.native_prompt_seen,
 		              "native terminal restore failure reaches active native prompt") &&
-		       expect(
+		       Expect(
 		           context.native_abort_calls == 1,
 		           "native terminal restore failure aborts native prompt after compare success") &&
-		       expect(context.native_restore_calls == 1,
+		       Expect(context.native_restore_calls == 1,
 		              "native terminal restore failure restores PAM conversation once") &&
-		       expect(ChildReaped(child_pid), "native terminal restore failure reaps child");
+		       Expect(ChildReaped(child_pid), "native terminal restore failure reaps child");
 	}
 
 	auto
@@ -524,11 +524,11 @@ namespace {
 		    .native_restore_result  = restore_result,
 		};
 		NativePamFixture fixture(&context);
-		if (!expect(fixture.Start(true), message + ": starts PAM PTY")) {
+		if (!Expect(fixture.Start(true), message + ": starts PAM PTY")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, message + ": child spawned")) {
+		if (!Expect(child_pid > 0, message + ": child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -536,13 +536,13 @@ namespace {
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              message + ": restoration failure overrides normal winner") &&
-		       expect(result.pam_status == PAM_SYSTEM_ERR,
+		       Expect(result.pam_status == PAM_SYSTEM_ERR,
 		              message + ": restoration failure returns hard PAM error") &&
-		       expect(context.native_restore_calls == 1,
+		       Expect(context.native_restore_calls == 1,
 		              message + ": restoration attempted once") &&
-		       expect(ChildReaped(child_pid), message + ": child reaped");
+		       Expect(ChildReaped(child_pid), message + ": child reaped");
 	}
 }  // namespace
 

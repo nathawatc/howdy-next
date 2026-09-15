@@ -12,7 +12,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -118,9 +118,9 @@ namespace {
 		RemoveCliTestContext context;
 		auto [result, output] = RunRemove(context, {"howdy-remove"});
 		bool ok               = true;
-		ok &= expect(result == 1, "missing user returns 1");
-		ok &= expect(output.empty(), "missing user stays silent");
-		ok &= expect(context.list_calls == 0 && context.remove_calls == 0,
+		ok &= Expect(result == 1, "missing user returns 1");
+		ok &= Expect(output.empty(), "missing user stays silent");
+		ok &= Expect(context.list_calls == 0 && context.remove_calls == 0,
 		             "missing user skips callbacks");
 		return ok;
 	}
@@ -128,7 +128,7 @@ namespace {
 	auto PublicMissingUserReturnsError() -> bool {
 		auto                  command = std::to_array("howdy-remove");
 		std::array<char *, 1> argv{command.data()};
-		return expect(RemoveMain(1, argv.data()) == 1, "public missing user returns status 1");
+		return Expect(RemoveMain(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
 	auto MissingModelIdPrintsGuidance() -> bool {
@@ -137,9 +137,9 @@ namespace {
 		const std::string expected = "Please specify the model ID to remove.\n"
 		                             "For example:\n\n\thowdy remove 0\n\n"
 		                             "You can find the IDs by running:\n\n\thowdy list\n\n";
-		return expect(result == 1, "missing model ID returns 1") &&
-		       expect(output == expected, "missing model ID preserves guidance") &&
-		       expect(context.list_calls == 0 && context.remove_calls == 0,
+		return Expect(result == 1, "missing model ID returns 1") &&
+		       Expect(output == expected, "missing model ID preserves guidance") &&
+		       Expect(context.list_calls == 0 && context.remove_calls == 0,
 		              "missing model ID skips callbacks");
 	}
 
@@ -159,9 +159,9 @@ namespace {
 			auto context          = SuccessContext();
 			context.list_result   = {.status = status, .error_message = error};
 			auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"});
-			ok &= expect(result == 1, "list failure returns 1");
-			ok &= expect(output == expected, "list failure preserves message");
-			ok &= expect(context.list_calls == 1 && context.remove_calls == 0,
+			ok &= Expect(result == 1, "list failure returns 1");
+			ok &= Expect(output == expected, "list failure preserves message");
+			ok &= Expect(context.list_calls == 1 && context.remove_calls == 0,
 			             "list failure skips removal");
 		}
 		return ok;
@@ -172,10 +172,10 @@ namespace {
 		for (const std::string id : {"abc", "3x", "03", "4"}) {
 			auto context          = SuccessContext();
 			auto [result, output] = RunRemove(context, {"howdy-remove", "alice", id});
-			ok &= expect(result == 1, "invalid or missing ID returns 1");
-			ok &= expect(output == "No model with ID " + id + " exists for alice\n",
+			ok &= Expect(result == 1, "invalid or missing ID returns 1");
+			ok &= Expect(output == "No model with ID " + id + " exists for alice\n",
 			             "invalid or missing ID preserves message");
-			ok &= expect(context.remove_calls == 0, "invalid or missing ID skips removal");
+			ok &= Expect(context.remove_calls == 0, "invalid or missing ID skips removal");
 		}
 		return ok;
 	}
@@ -183,11 +183,11 @@ namespace {
 	auto RejectedConfirmationAborts() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"}, "n\n");
-		return expect(result == 1, "rejected confirmation returns 1") &&
-		       expect(output == "Model \"front door\" will be removed for alice.\n"
+		return Expect(result == 1, "rejected confirmation returns 1") &&
+		       Expect(output == "Model \"front door\" will be removed for alice.\n"
 		                        "Continue? [y/N]: \nNo confirmation received; aborting.\n",
 		              "rejected confirmation preserves prompt and abort message") &&
-		       expect(context.remove_calls == 0, "rejected confirmation skips removal");
+		       Expect(context.remove_calls == 0, "rejected confirmation skips removal");
 	}
 
 	auto AcceptedConfirmationPassesCompleteExpectation() -> bool {
@@ -195,17 +195,17 @@ namespace {
 		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3"}, "Y\n");
 		const auto &expected  = context.expected;
 		bool        ok        = true;
-		ok &= expect(result == 0, "accepted confirmation returns 0");
-		ok &= expect(context.list_calls == 1 && context.listed_user == "alice",
+		ok &= Expect(result == 0, "accepted confirmation returns 0");
+		ok &= Expect(context.list_calls == 1 && context.listed_user == "alice",
 		             "accepted confirmation lists requested user");
-		ok &= expect(context.remove_calls == 1 && context.removed_user == "alice",
+		ok &= Expect(context.remove_calls == 1 && context.removed_user == "alice",
 		             "accepted confirmation removes requested user model");
-		ok &= expect(expected.id == 3 && expected.time == 1234 && expected.label == "front door" &&
+		ok &= Expect(expected.id == 3 && expected.time == 1234 && expected.label == "front door" &&
 		                 expected.backend == "sface" &&
 		                 expected.metric == howdy::native::FaceMetric::kCosine &&
 		                 expected.model == "face_recognition_sface_2021dec.onnx",
 		             "accepted confirmation passes complete stale-entry expectation");
-		ok &= expect(output == "Model \"front door\" will be removed for alice.\n"
+		ok &= Expect(output == "Model \"front door\" will be removed for alice.\n"
 		                       "Continue? [y/N]: \nRemoved model 3\n",
 		             "accepted confirmation preserves full output");
 		return ok;
@@ -222,9 +222,9 @@ namespace {
 		                              });
 
 		bool ok = true;
-		ok &= expect(null_list_result == 1, "null list callback returns 1");
-		ok &= expect(null_list_output.empty(), "null list callback stays silent");
-		ok &= expect(context.list_calls == 0 && context.remove_calls == 0,
+		ok &= Expect(null_list_result == 1, "null list callback returns 1");
+		ok &= Expect(null_list_output.empty(), "null list callback stays silent");
+		ok &= Expect(context.list_calls == 0 && context.remove_calls == 0,
 		             "null list callback skips storage callbacks");
 
 		auto [null_remove_result, null_remove_output] = RunRemoveWithDependencies(
@@ -233,9 +233,9 @@ namespace {
 		                                        .list_user_model_entries            = ListCallback,
 		                                        .remove_user_model_entry_if_matches = nullptr,
 		                                    });
-		ok &= expect(null_remove_result == 1, "null remove callback returns 1");
-		ok &= expect(null_remove_output.empty(), "null remove callback stays silent");
-		ok &= expect(context.list_calls == 0 && context.remove_calls == 0,
+		ok &= Expect(null_remove_result == 1, "null remove callback returns 1");
+		ok &= Expect(null_remove_output.empty(), "null remove callback stays silent");
+		ok &= Expect(context.list_calls == 0 && context.remove_calls == 0,
 		             "null remove callback skips storage callbacks");
 		return ok;
 	}
@@ -243,9 +243,9 @@ namespace {
 	auto YesFlagBypassesConfirmation() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
-		return expect(result == 0, "-y returns 0") &&
-		       expect(output == "Removed model 3\n", "-y skips confirmation prompt") &&
-		       expect(context.remove_calls == 1, "-y removes once");
+		return Expect(result == 0, "-y returns 0") &&
+		       Expect(output == "Removed model 3\n", "-y skips confirmation prompt") &&
+		       Expect(context.remove_calls == 1, "-y removes once");
 	}
 
 	auto RemoveFailureForwardsError() -> bool {
@@ -255,17 +255,17 @@ namespace {
 		    .error_message = "model changed",
 		};
 		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
-		return expect(result == 1, "stale removal returns 1") &&
-		       expect(output == "model changed\n", "stale removal forwards exact error") &&
-		       expect(context.remove_calls == 1, "stale removal called once");
+		return Expect(result == 1, "stale removal returns 1") &&
+		       Expect(output == "model changed\n", "stale removal forwards exact error") &&
+		       Expect(context.remove_calls == 1, "stale removal called once");
 	}
 
 	auto LastModelSuccessPrintsDisabledMessage() -> bool {
 		auto context                       = SuccessContext();
 		context.remove_result.removed_last = true;
 		auto [result, output] = RunRemove(context, {"howdy-remove", "alice", "3", "-y"});
-		return expect(result == 0, "last-model removal returns 0") &&
-		       expect(output ==
+		return Expect(result == 0, "last-model removal returns 0") &&
+		       Expect(output ==
 		                  "Removed final face model; face verification disabled for this user\n",
 		              "last-model removal preserves disabled message");
 	}

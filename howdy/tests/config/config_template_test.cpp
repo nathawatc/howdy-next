@@ -19,8 +19,8 @@ namespace {
 	using howdy::native::config_schema::OptionId;
 	using howdy::native::config_schema::RuntimeDefault;
 	using howdy::native::config_schema::ValueType;
-	using howdy::test::expect;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::WriteFile;
 
 	class CommaDecimalNumpunct final : public std::numpunct<char> {
 	protected:
@@ -51,8 +51,8 @@ namespace {
 
 	auto RejectsRenderingError(const auto &options, std::string_view error_text) -> bool {
 		const auto result = Render(options);
-		return expect(!result.ok, "rendering constraint is rejected") &&
-		       expect(result.error.contains(error_text),
+		return Expect(!result.ok, "rendering constraint is rejected") &&
+		       Expect(result.error.contains(error_text),
 		              "renderer reports: " + std::string(error_text));
 	}
 
@@ -88,13 +88,13 @@ auto main() -> int {
 	                    "Device path used by synthetic mode."),
 	};
 	const auto primitive_result = Render(primitive_options);
-	ok &= expect(primitive_result.ok, "primitive schema renders");
+	ok &= Expect(primitive_result.ok, "primitive schema renders");
 	if (primitive_result.ok) {
 		const auto previous_locale =
 		    std::locale::global(std::locale(std::locale::classic(), new CommaDecimalNumpunct));
 		const auto locale_result = Render(primitive_options);
 		std::locale::global(previous_locale);
-		ok &= expect(locale_result.ok && locale_result.content.contains("ratio = 1.25\n"),
+		ok &= Expect(locale_result.ok && locale_result.content.contains("ratio = 1.25\n"),
 		             "floating-point rendering ignores comma decimal locale");
 
 		const std::string expected = "# See howdy.ini(5) for configuration options.\n\n"
@@ -105,63 +105,63 @@ auto main() -> int {
 		                             "ratio = 1.25\n"
 		                             "path = none\n";
 		ok &=
-		    expect(primitive_result.content == expected, "primitive output preserves schema order");
-		ok &= expect(CountOccurrences(primitive_result.content, "#") == 1,
+		    Expect(primitive_result.content == expected, "primitive output preserves schema order");
+		ok &= Expect(CountOccurrences(primitive_result.content, "#") == 1,
 		             "primitive output contains exactly one comment");
-		ok &= expect(CountOccurrences(primitive_result.content,
+		ok &= Expect(CountOccurrences(primitive_result.content,
 		                              "# See howdy.ini(5) for configuration options.") == 1,
 		             "primitive output has short header comment");
-		ok &= expect(!primitive_result.content.contains("# Enable synthetic mode."),
+		ok &= Expect(!primitive_result.content.contains("# Enable synthetic mode."),
 		             "primitive output does not contain description comments");
-		ok &= expect(!primitive_result.content.contains("# Number of samples to use."),
+		ok &= Expect(!primitive_result.content.contains("# Number of samples to use."),
 		             "primitive output does not contain description comments");
-		ok &= expect(CountOccurrences(primitive_result.content, "enabled = true") == 1,
+		ok &= Expect(CountOccurrences(primitive_result.content, "enabled = true") == 1,
 		             "boolean option is emitted once");
-		ok &= expect(CountOccurrences(primitive_result.content, "count = 320") == 1,
+		ok &= Expect(CountOccurrences(primitive_result.content, "count = 320") == 1,
 		             "integer option is emitted once");
-		ok &= expect(CountOccurrences(primitive_result.content, "ratio = 1.25") == 1,
+		ok &= Expect(CountOccurrences(primitive_result.content, "ratio = 1.25") == 1,
 		             "floating-point option is emitted once");
-		ok &= expect(CountOccurrences(primitive_result.content, "path = none") == 1,
+		ok &= Expect(CountOccurrences(primitive_result.content, "path = none") == 1,
 		             "string option is emitted once");
-		ok &= expect(primitive_result.content.ends_with('\n'), "rendered config ends with newline");
-		ok &= expect(!primitive_result.content.ends_with("\n\n"),
+		ok &= Expect(primitive_result.content.ends_with('\n'), "rendered config ends with newline");
+		ok &= Expect(!primitive_result.content.ends_with("\n\n"),
 		             "rendered config has exactly one final newline");
 	}
 
 	const auto production_options = howdy::native::config_schema::RuntimeConfigOptions();
 	const auto production_result =
 	    howdy::native::config_template::RenderDefaultConfig(production_options);
-	ok &= expect(production_result.ok, "production schema renders");
+	ok &= Expect(production_result.ok, "production schema renders");
 	if (production_result.ok) {
-		ok &= expect(production_result.content.starts_with(
+		ok &= Expect(production_result.content.starts_with(
 		                 "# See howdy.ini(5) for configuration options.\n\n"),
 		             "production config starts with short header comment");
-		ok &= expect(CountOccurrences(production_result.content, "#") == 1,
+		ok &= Expect(CountOccurrences(production_result.content, "#") == 1,
 		             "production config contains only the single header comment");
 		for (const auto &option : production_options) {
-			ok &= expect(!option.description.empty(), "production option has description");
-			ok &= expect(option.description != option.key, "description explains option");
+			ok &= Expect(!option.description.empty(), "production option has description");
+			ok &= Expect(option.description != option.key, "description explains option");
 			ok &=
-			    expect(!production_result.content.contains("# " + std::string(option.description)),
+			    Expect(!production_result.content.contains("# " + std::string(option.description)),
 			           "production config does not contain per-option description comment: " +
 			               std::string(option.key));
 			const auto canonical_fallback =
 			    howdy::native::config_schema::FormatFallbackValue(option);
-			ok &= expect(canonical_fallback.has_value() &&
+			ok &= Expect(canonical_fallback.has_value() &&
 			                 production_result.content.contains(std::string(option.key) + " = " +
 			                                                    *canonical_fallback + "\n"),
 			             "rendered config matches canonical schema fallback formatting for " +
 			                 std::string(option.key));
 		}
 		for (const auto *const fallback : {"0.8845", "0.3", "0.6942", "1.25", "320", "75"}) {
-			ok &= expect(production_result.content.contains(fallback),
+			ok &= Expect(production_result.content.contains(fallback),
 			             std::string("production fallback is rendered: ") + fallback);
 		}
-		ok &= expect(!production_result.content.contains(".000000"),
+		ok &= Expect(!production_result.content.contains(".000000"),
 		             "floating-point defaults do not use padded formatting");
 		const auto repeated =
 		    howdy::native::config_template::RenderDefaultConfig(production_options);
-		ok &= expect(repeated.ok && repeated.content == production_result.content,
+		ok &= Expect(repeated.ok && repeated.content == production_result.content,
 		             "production rendering is deterministic");
 
 		const auto temp_config_path =
@@ -169,12 +169,12 @@ auto main() -> int {
 		    ("howdy-rendered-config-test-" + std::to_string(getpid()) + ".ini");
 		std::error_code ec;
 		std::filesystem::remove(temp_config_path, ec);
-		ok &= expect(write_file(temp_config_path, production_result.content),
+		ok &= Expect(WriteFile(temp_config_path, production_result.content),
 		             "write generated production config to temp file");
 		const howdy::native::ConfigReader reader(temp_config_path.string());
-		ok &= expect(reader.Ok(), "rendered production config parses without INI syntax errors");
+		ok &= Expect(reader.Ok(), "rendered production config parses without INI syntax errors");
 		const auto validation_error = howdy::native::ValidateRuntimeConfig(reader);
-		ok &= expect(!validation_error.has_value(),
+		ok &= Expect(!validation_error.has_value(),
 		             "rendered production config passes full canonical runtime validation");
 		std::filesystem::remove(temp_config_path, ec);
 	}

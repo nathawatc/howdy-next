@@ -21,7 +21,7 @@ namespace howdy::test {
 
 	inline auto WriteConfigTestFile(const std::filesystem::path &path, const std::string &content)
 	    -> bool {
-		const bool ok = write_file(path, content);
+		const bool ok = WriteFile(path, content);
 		if (ok) {
 			if (chmod(path.c_str(), 0644) != 0) {
 				return false;
@@ -31,7 +31,7 @@ namespace howdy::test {
 	}
 
 	inline auto ReadConfigTestFile(const std::filesystem::path &path) -> std::string {
-		return read_file(path);
+		return ReadFile(path);
 	}
 
 	inline auto FailParentSync(const std::filesystem::path & /*path*/) -> bool {

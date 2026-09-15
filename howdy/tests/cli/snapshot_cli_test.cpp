@@ -13,7 +13,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	constexpr std::size_t kSnapshotFrameCount = 4;
 
@@ -147,11 +147,11 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "invalid runtime config returns 1");
-		ok &= expect(context.load_calls == 1, "invalid runtime config loads once");
-		ok &= expect(context.capture_calls == 0, "invalid runtime config skips capture");
-		ok &= expect(context.write_calls == 0, "invalid runtime config skips write");
-		ok &= expect(error.str().contains("invalid runtime config"),
+		ok &= Expect(result == 1, "invalid runtime config returns 1");
+		ok &= Expect(context.load_calls == 1, "invalid runtime config loads once");
+		ok &= Expect(context.capture_calls == 0, "invalid runtime config skips capture");
+		ok &= Expect(context.write_calls == 0, "invalid runtime config skips write");
+		ok &= Expect(error.str().contains("invalid runtime config"),
 		             "invalid runtime config writes config error");
 		return ok;
 	}
@@ -168,13 +168,13 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "camera open failure returns 1");
-		ok &= expect(context.load_calls == 1, "camera open failure loads once");
-		ok &= expect(context.capture_calls == 1, "camera open failure captures once");
-		ok &= expect(context.capture_config.video.device_path == "none",
+		ok &= Expect(result == 1, "camera open failure returns 1");
+		ok &= Expect(context.load_calls == 1, "camera open failure loads once");
+		ok &= Expect(context.capture_calls == 1, "camera open failure captures once");
+		ok &= Expect(context.capture_config.video.device_path == "none",
 		             "camera open failure uses default unconfigured device");
-		ok &= expect(context.write_calls == 0, "camera open failure skips write");
-		ok &= expect(error.str() == context.capture_result.error_message + "\n",
+		ok &= Expect(context.write_calls == 0, "camera open failure skips write");
+		ok &= Expect(error.str() == context.capture_result.error_message + "\n",
 		             "camera open failure writes only concise error");
 		return ok;
 	}
@@ -190,11 +190,11 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "camera read failure returns 1");
-		ok &= expect(context.load_calls == 1, "camera read failure loads once");
-		ok &= expect(context.capture_calls == 1, "camera read failure captures once");
-		ok &= expect(context.write_calls == 0, "camera read failure skips write");
-		ok &= expect(error.str().contains("Could not capture a camera frame"),
+		ok &= Expect(result == 1, "camera read failure returns 1");
+		ok &= Expect(context.load_calls == 1, "camera read failure loads once");
+		ok &= Expect(context.capture_calls == 1, "camera read failure captures once");
+		ok &= Expect(context.write_calls == 0, "camera read failure skips write");
+		ok &= Expect(error.str().contains("Could not capture a camera frame"),
 		             "camera read failure writes read error");
 		return ok;
 	}
@@ -214,11 +214,11 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, test_name + " returns 1");
-		ok &= expect(context.load_calls == 1, test_name + " loads once");
-		ok &= expect(context.capture_calls == 1, test_name + " captures once");
-		ok &= expect(context.write_calls == 0, test_name + " skips write");
-		ok &= expect(error.str().contains(
+		ok &= Expect(result == 1, test_name + " returns 1");
+		ok &= Expect(context.load_calls == 1, test_name + " loads once");
+		ok &= Expect(context.capture_calls == 1, test_name + " captures once");
+		ok &= Expect(context.write_calls == 0, test_name + " skips write");
+		ok &= Expect(error.str().contains(
 		                 "Internal error: snapshot capture returned unexpected frame count"),
 		             test_name + " writes frame count error");
 		return ok;
@@ -250,11 +250,11 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "unknown capture status returns 1");
-		ok &= expect(context.load_calls == 1, "unknown capture status loads once");
-		ok &= expect(context.capture_calls == 1, "unknown capture status captures once");
-		ok &= expect(context.write_calls == 0, "unknown capture status skips write");
-		ok &= expect(error.str().contains("Internal error: unknown snapshot capture status"),
+		ok &= Expect(result == 1, "unknown capture status returns 1");
+		ok &= Expect(context.load_calls == 1, "unknown capture status loads once");
+		ok &= Expect(context.capture_calls == 1, "unknown capture status captures once");
+		ok &= Expect(context.write_calls == 0, "unknown capture status skips write");
+		ok &= Expect(error.str().contains("Internal error: unknown snapshot capture status"),
 		             "unknown capture status writes internal error");
 		return ok;
 	}
@@ -270,11 +270,11 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "empty write path returns 1");
-		ok &= expect(context.load_calls == 1, "empty write path loads once");
-		ok &= expect(context.capture_calls == 1, "empty write path captures once");
-		ok &= expect(context.write_calls == 1, "empty write path calls writer once");
-		ok &= expect(error.str().contains("Failed to write snapshot"),
+		ok &= Expect(result == 1, "empty write path returns 1");
+		ok &= Expect(context.load_calls == 1, "empty write path loads once");
+		ok &= Expect(context.capture_calls == 1, "empty write path captures once");
+		ok &= Expect(context.write_calls == 1, "empty write path calls writer once");
+		ok &= Expect(error.str().contains("Failed to write snapshot"),
 		             "empty write path writes snapshot error");
 		return ok;
 	}
@@ -288,12 +288,12 @@ namespace {
 		const int result = RunSnapshot(context, {"howdy-snapshot"});
 
 		bool ok = true;
-		ok &= expect(result == 1, "write failure returns 1");
-		ok &= expect(context.load_calls == 1, "write failure loads once");
-		ok &= expect(context.capture_calls == 1, "write failure captures once");
-		ok &= expect(context.write_calls == 1, "write failure calls writer once");
-		ok &= expect(context.write_frame_count == 4, "write failure sends four frames to writer");
-		ok &= expect(error.str().contains("Failed to write snapshot"),
+		ok &= Expect(result == 1, "write failure returns 1");
+		ok &= Expect(context.load_calls == 1, "write failure loads once");
+		ok &= Expect(context.capture_calls == 1, "write failure captures once");
+		ok &= Expect(context.write_calls == 1, "write failure calls writer once");
+		ok &= Expect(context.write_frame_count == 4, "write failure sends four frames to writer");
+		ok &= Expect(error.str().contains("Failed to write snapshot"),
 		             "write failure writes snapshot error");
 		return ok;
 	}
@@ -307,10 +307,10 @@ namespace {
 
 			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
-			ok &= expect(result == 1, "missing load dependency returns 1");
-			ok &= expect(context.load_calls == 0, "missing load dependency skips load");
-			ok &= expect(context.capture_calls == 0, "missing load dependency skips capture");
-			ok &= expect(context.write_calls == 0, "missing load dependency skips write");
+			ok &= Expect(result == 1, "missing load dependency returns 1");
+			ok &= Expect(context.load_calls == 0, "missing load dependency skips load");
+			ok &= Expect(context.capture_calls == 0, "missing load dependency skips capture");
+			ok &= Expect(context.write_calls == 0, "missing load dependency skips write");
 		}
 		{
 			auto context                = MakeSuccessContext();
@@ -319,10 +319,10 @@ namespace {
 
 			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
-			ok &= expect(result == 1, "missing capture dependency returns 1");
-			ok &= expect(context.load_calls == 0, "missing capture dependency skips load");
-			ok &= expect(context.capture_calls == 0, "missing capture dependency skips capture");
-			ok &= expect(context.write_calls == 0, "missing capture dependency skips write");
+			ok &= Expect(result == 1, "missing capture dependency returns 1");
+			ok &= Expect(context.load_calls == 0, "missing capture dependency skips load");
+			ok &= Expect(context.capture_calls == 0, "missing capture dependency skips capture");
+			ok &= Expect(context.write_calls == 0, "missing capture dependency skips write");
 		}
 		{
 			auto context                = MakeSuccessContext();
@@ -331,10 +331,10 @@ namespace {
 
 			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
 
-			ok &= expect(result == 1, "missing write dependency returns 1");
-			ok &= expect(context.load_calls == 0, "missing write dependency skips load");
-			ok &= expect(context.capture_calls == 0, "missing write dependency skips capture");
-			ok &= expect(context.write_calls == 0, "missing write dependency skips write");
+			ok &= Expect(result == 1, "missing write dependency returns 1");
+			ok &= Expect(context.load_calls == 0, "missing write dependency skips load");
+			ok &= Expect(context.capture_calls == 0, "missing write dependency skips capture");
+			ok &= Expect(context.write_calls == 0, "missing write dependency skips write");
 		}
 		return ok;
 	}
@@ -348,20 +348,20 @@ namespace {
 
 		const auto output_text = output.str();
 		bool       ok          = true;
-		ok &= expect(result == 0, "successful snapshot returns 0");
-		ok &= expect(context.load_calls == 1, "successful snapshot loads once");
-		ok &= expect(context.capture_calls == 1, "successful snapshot captures once");
-		ok &= expect(context.write_calls == 1, "successful snapshot writes once");
-		ok &= expect(context.capture_config.video.dark_threshold == 41.0F,
+		ok &= Expect(result == 0, "successful snapshot returns 0");
+		ok &= Expect(context.load_calls == 1, "successful snapshot loads once");
+		ok &= Expect(context.capture_calls == 1, "successful snapshot captures once");
+		ok &= Expect(context.write_calls == 1, "successful snapshot writes once");
+		ok &= Expect(context.capture_config.video.dark_threshold == 41.0F,
 		             "capture receives runtime config");
-		ok &= expect(context.write_frame_count == 4, "writer receives four frames");
-		ok &= expect(context.write_config.video.dark_threshold == 41.0F,
+		ok &= Expect(context.write_frame_count == 4, "writer receives four frames");
+		ok &= Expect(context.write_config.video.dark_threshold == 41.0F,
 		             "writer receives video runtime config");
-		ok &= expect(context.write_config.face.sface_threshold == 0.42F,
+		ok &= Expect(context.write_config.face.sface_threshold == 0.42F,
 		             "writer receives face runtime config");
 		ok &=
-		    expect(output_text.contains("Snapshot saved to"), "successful snapshot prints heading");
-		ok &= expect(output_text.contains("/tmp/howdy-test/snapshots/test.jpg"),
+		    Expect(output_text.contains("Snapshot saved to"), "successful snapshot prints heading");
+		ok &= Expect(output_text.contains("/tmp/howdy-test/snapshots/test.jpg"),
 		             "successful snapshot prints fixed path");
 		return ok;
 	}

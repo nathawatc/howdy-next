@@ -15,7 +15,7 @@
 
 namespace howdy::test::auth_helper {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	enum class AclCheckStatus : std::uint8_t {
 		kMatch,
@@ -139,10 +139,10 @@ namespace howdy::test::auth_helper {
 	                             const std::string &label) -> bool {
 		const auto result = CheckPrivateAcl(path, uid, directory);
 		if (result.status == AclCheckStatus::kError) {
-			return expect(false, label + " ACL check " + std::string(result.operation) + ": " +
+			return Expect(false, label + " ACL check " + std::string(result.operation) + ": " +
 			                         std::strerror(result.error_number));
 		}
-		return expect(result.status == AclCheckStatus::kMatch, label + " ACL matches policy");
+		return Expect(result.status == AclCheckStatus::kMatch, label + " ACL matches policy");
 	}
 
 }  // namespace howdy::test::auth_helper

@@ -9,28 +9,28 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext context;
 			const auto           result = Drop(context);
 			bool                 ok     = true;
-			ok &= expect(result.Ok(), "privileged credential drop succeeds");
+			ok &= Expect(result.Ok(), "privileged credential drop succeeds");
 			ok &= ExpectEvents(context, ExpectedPrivilegedEvents(), "privileged sequence is exact");
-			ok &= expect(context.lookup_name == "nobody", "lookup resolves exactly nobody");
-			ok &= expect(context.group_count == 0 && context.group_pointer == nullptr,
+			ok &= Expect(context.lookup_name == "nobody", "lookup resolves exactly nobody");
+			ok &= Expect(context.group_count == 0 && context.group_pointer == nullptr,
 			             "setgroups receives zero and null pointer");
-			ok &= expect(context.set_gids == std::array<gid_t, 3>{context.target_gid,
+			ok &= Expect(context.set_gids == std::array<gid_t, 3>{context.target_gid,
 			                                                      context.target_gid,
 			                                                      context.target_gid},
 			             "setresgid receives resolved GID three times");
-			ok &= expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
+			ok &= Expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
 			                                                      context.target_uid,
 			                                                      context.target_uid},
 			             "setresuid receives resolved UID three times");
-			ok &= expect(context.capset_header_valid && context.capset_data_zero,
+			ok &= Expect(context.capset_header_valid && context.capset_data_zero,
 			             "capset uses ABI v3 and zero sets");
-			ok &= expect(context.capget_header_valid, "capget uses ABI v3");
-			ok &= expect(context.fsuid == context.target_uid, "post-drop fsuid equals nobody UID");
-			ok &= expect(context.fsgid == context.target_gid, "post-drop fsgid equals nobody GID");
-			ok &= expect(context.getgroups_calls == 1 && context.supplementary_groups.empty(),
+			ok &= Expect(context.capget_header_valid, "capget uses ABI v3");
+			ok &= Expect(context.fsuid == context.target_uid, "post-drop fsuid equals nobody UID");
+			ok &= Expect(context.fsgid == context.target_gid, "post-drop fsgid equals nobody GID");
+			ok &= Expect(context.getgroups_calls == 1 && context.supplementary_groups.empty(),
 			             "post-drop supplementary-group verification observes zero groups");
-			ok &= expect(context.regain_uid == 0, "root-regain probe requests UID zero");
-			ok &= expect(context.fatal_calls == 0, "successful drop does not terminate");
+			ok &= Expect(context.regain_uid == 0, "root-regain probe requests UID zero");
+			ok &= Expect(context.fatal_calls == 0, "successful drop does not terminate");
 
 			for (const auto &[uids, gids, label] :
 			     std::vector<std::tuple<std::array<uid_t, 3>, std::array<gid_t, 3>, std::string>>{
@@ -40,15 +40,15 @@ namespace howdy::test::compare_privileges {
 				privileged_context.uids      = uids;
 				privileged_context.gids      = gids;
 				const auto privileged_result = Drop(privileged_context);
-				ok &= expect(privileged_result.Ok(), label + " enter privileged drop path");
+				ok &= Expect(privileged_result.Ok(), label + " enter privileged drop path");
 				ok &= ExpectEvents(privileged_context, ExpectedPrivilegedEvents(),
 				                   label + " preserve privileged operation order");
-				ok &= expect(privileged_context.uids ==
+				ok &= Expect(privileged_context.uids ==
 				                 std::array<uid_t, 3>{privileged_context.target_uid,
 				                                      privileged_context.target_uid,
 				                                      privileged_context.target_uid},
 				             label + " end with nobody UID slots");
-				ok &= expect(privileged_context.gids ==
+				ok &= Expect(privileged_context.gids ==
 				                 std::array<gid_t, 3>{privileged_context.target_gid,
 				                                      privileged_context.target_gid,
 				                                      privileged_context.target_gid},
@@ -58,7 +58,7 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext safe_securebits_context;
 			safe_securebits_context.securebits = SECBIT_NOROOT;
 			const auto safe_securebits_result  = Drop(safe_securebits_context);
-			ok &= expect(safe_securebits_result.Ok(), "unrelated safe securebit remains allowed");
+			ok &= Expect(safe_securebits_result.Ok(), "unrelated safe securebit remains allowed");
 			return ok;
 		}
 
@@ -74,9 +74,9 @@ namespace howdy::test::compare_privileges {
 				     "clear ambient capabilities", "clear supplementary groups", "setresgid",
 				     "setresuid", "clear capability sets", "read capability sets", "fatal"},
 				    std::string("privileged residual ") + label + " capability");
-				ok &= expect(context.lookup_name == "nobody",
+				ok &= Expect(context.lookup_name == "nobody",
 				             std::string(label) + " residual capability uses nobody path");
-				ok &= expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
+				ok &= Expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
 				                                                      context.target_uid,
 				                                                      context.target_uid},
 				             std::string(label) + " residual capability occurs after setresuid");
@@ -91,7 +91,7 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.lookup_mode = mode;
 				const auto result   = Drop(context);
-				ok &= expect(result.status == ComparePrivilegeStatus::kLookupFailed,
+				ok &= Expect(result.status == ComparePrivilegeStatus::kLookupFailed,
 				             "account " + label + " fails closed");
 				ok &= ExpectEvents(context, {"getresuid", "getresgid", "lookup"},
 				                   "lookup failure stops all later operations");
@@ -100,12 +100,12 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext erange_context;
 			erange_context.lookup_mode = LookupMode::kErange;
 			const auto erange_result   = Drop(erange_context);
-			ok &= expect(erange_result.status == ComparePrivilegeStatus::kLookupFailed,
+			ok &= Expect(erange_result.status == ComparePrivilegeStatus::kLookupFailed,
 			             "repeated ERANGE fails closed");
-			ok &= expect(erange_context.largest_lookup_buffer == std::size_t{64} * 1024,
+			ok &= Expect(erange_context.largest_lookup_buffer == std::size_t{64} * 1024,
 			             "passwd lookup reaches 64 KiB cap");
-			ok &= expect(erange_context.lookup_calls == 7, "passwd retries are bounded");
-			ok &= expect(erange_context.events.size() ==
+			ok &= Expect(erange_context.lookup_calls == 7, "passwd retries are bounded");
+			ok &= Expect(erange_context.events.size() ==
 			                 static_cast<std::size_t>(erange_context.lookup_calls) + 2,
 			             "ERANGE performs identity inspection and lookup only");
 
@@ -116,7 +116,7 @@ namespace howdy::test::compare_privileges {
 				context.target_uid = root_uid ? 0 : context.target_uid;
 				context.target_gid = root_gid ? 0 : context.target_gid;
 				const auto result  = Drop(context);
-				ok &= expect(result.status == ComparePrivilegeStatus::kInvalidIdentity,
+				ok &= Expect(result.status == ComparePrivilegeStatus::kInvalidIdentity,
 				             "root " + label + " is rejected");
 				ok &= ExpectEvents(context, {"getresuid", "getresgid", "lookup"},
 				                   "invalid identity stops all later operations");
@@ -149,10 +149,10 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.failure   = test_case.failure;
 				const auto result = Drop(context);
-				ok &= expect(result.status == test_case.status,
+				ok &= Expect(result.status == test_case.status,
 				             test_case.label + " returns structured failure");
-				ok &= expect(!result.Ok(), test_case.label + " is not success");
-				ok &= expect(context.fatal_calls == 0,
+				ok &= Expect(!result.Ok(), test_case.label + " is not success");
+				ok &= Expect(context.fatal_calls == 0,
 				             test_case.label + " does not fatal before UID drop");
 				ok &= ExpectEvents(context, test_case.events,
 				                   test_case.label + " stops later operations");
@@ -164,7 +164,7 @@ namespace howdy::test::compare_privileges {
 				FakePrivilegeContext context;
 				context.securebits = securebits;
 				const auto result  = Drop(context);
-				ok &= expect(result.status == ComparePrivilegeStatus::kCapabilityFailure,
+				ok &= Expect(result.status == ComparePrivilegeStatus::kCapabilityFailure,
 				             std::string(label) + " is rejected");
 				ok &=
 				    ExpectEvents(context, {"getresuid", "getresgid", "lookup", "query securebits"},
@@ -267,7 +267,7 @@ namespace howdy::test::compare_privileges {
 				auto       expected    = through_identity_verification;
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
 				ok &= VerifyFatalResult(context, result, expected, label);
-				ok &= expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
+				ok &= Expect(context.set_uids == std::array<uid_t, 3>{context.target_uid,
 				                                                      context.target_uid,
 				                                                      context.target_uid},
 				             label + " occurs after setresuid completes");

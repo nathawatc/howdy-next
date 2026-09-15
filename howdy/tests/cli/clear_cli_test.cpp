@@ -14,8 +14,8 @@
 
 namespace {
 
-	using howdy::test::expect;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::WriteFile;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
@@ -118,16 +118,16 @@ namespace {
 	auto MissingUserReturnsWithoutCallbacks() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunClear(context, {"howdy-clear"});
-		return expect(result == 1, "missing user returns 1") &&
-		       expect(output.empty(), "missing user stays silent") &&
-		       expect(context.inspect_calls == 0 && context.clear_calls == 0,
+		return Expect(result == 1, "missing user returns 1") &&
+		       Expect(output.empty(), "missing user stays silent") &&
+		       Expect(context.inspect_calls == 0 && context.clear_calls == 0,
 		              "missing user skips callbacks");
 	}
 
 	auto PublicMissingUserReturnsError() -> bool {
 		auto                  command = std::to_array("howdy-clear");
 		std::array<char *, 1> argv{command.data()};
-		return expect(ClearMain(1, argv.data()) == 1, "public missing user returns status 1");
+		return Expect(ClearMain(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
 	auto IncompleteDependenciesAbortWithoutCallbacks() -> bool {
@@ -139,9 +139,9 @@ namespace {
 		                                  .clear_user_model_entries_if_unchanged = ClearCallback,
 		                              });
 		bool ok = true;
-		ok &= expect(null_inspect_result == 1, "null inspect callback returns 1");
-		ok &= expect(null_inspect_output.empty(), "null inspect callback stays silent");
-		ok &= expect(context.inspect_calls == 0 && context.clear_calls == 0,
+		ok &= Expect(null_inspect_result == 1, "null inspect callback returns 1");
+		ok &= Expect(null_inspect_output.empty(), "null inspect callback stays silent");
+		ok &= Expect(context.inspect_calls == 0 && context.clear_calls == 0,
 		             "null inspect callback skips callbacks");
 
 		auto [null_clear_result, null_clear_output] = RunClearWithDependencies(
@@ -150,9 +150,9 @@ namespace {
 		                                  .inspect_user_model_file               = InspectCallback,
 		                                  .clear_user_model_entries_if_unchanged = nullptr,
 		                              });
-		ok &= expect(null_clear_result == 1, "null clear callback returns 1");
-		ok &= expect(null_clear_output.empty(), "null clear callback stays silent");
-		ok &= expect(context.inspect_calls == 0 && context.clear_calls == 0,
+		ok &= Expect(null_clear_result == 1, "null clear callback returns 1");
+		ok &= Expect(null_clear_output.empty(), "null clear callback stays silent");
+		ok &= Expect(context.inspect_calls == 0 && context.clear_calls == 0,
 		             "null clear callback skips callbacks");
 		return ok;
 	}
@@ -181,9 +181,9 @@ namespace {
 			context.inspect_result = {
 			    .status = status, .error_message = error, .snapshot = snapshot};
 			auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
-			ok &= expect(result == 1, "inspection outcome returns 1");
-			ok &= expect(output == expected, "inspection outcome preserves message");
-			ok &= expect(context.inspect_calls == 1 && context.clear_calls == 0,
+			ok &= Expect(result == 1, "inspection outcome returns 1");
+			ok &= Expect(output == expected, "inspection outcome preserves message");
+			ok &= Expect(context.inspect_calls == 1 && context.clear_calls == 0,
 			             "inspection outcome inspects once and skips clear");
 		}
 		return ok;
@@ -192,12 +192,12 @@ namespace {
 	auto RejectedConfirmationAborts() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunClear(context, {"howdy-clear", "alice"}, "n\n");
-		return expect(result == 1, "rejected confirmation returns 1") &&
-		       expect(output == "This will remove all face models for alice\n"
+		return Expect(result == 1, "rejected confirmation returns 1") &&
+		       Expect(output == "This will remove all face models for alice\n"
 		                        "Continue? [y/N]: "
 		                        "\nNo confirmation received; aborting.\n",
 		              "rejected confirmation preserves output") &&
-		       expect(context.inspect_calls == 1 && context.clear_calls == 0,
+		       Expect(context.inspect_calls == 1 && context.clear_calls == 0,
 		              "rejected confirmation inspects once and skips clear");
 	}
 
@@ -206,16 +206,16 @@ namespace {
 		auto [result, output] = RunClear(context, {"howdy-clear", "alice"}, "Y\n");
 		const auto &snapshot  = context.received_snapshot;
 		bool        ok        = true;
-		ok &= expect(result == 0, "accepted confirmation returns 0");
-		ok &= expect(context.inspect_calls == 1 && context.inspected_user == "alice",
+		ok &= Expect(result == 0, "accepted confirmation returns 0");
+		ok &= Expect(context.inspect_calls == 1 && context.inspected_user == "alice",
 		             "accepted confirmation inspects requested user once");
-		ok &= expect(context.clear_calls == 1 && context.cleared_user == "alice",
+		ok &= Expect(context.clear_calls == 1 && context.cleared_user == "alice",
 		             "accepted confirmation clears requested user once");
-		ok &= expect(snapshot.dev == 11 && snapshot.inode == 22 && snapshot.size == 33 &&
+		ok &= Expect(snapshot.dev == 11 && snapshot.inode == 22 && snapshot.size == 33 &&
 		                 snapshot.mtime_seconds == 44 && snapshot.mtime_nanosecs == 55 &&
 		                 snapshot.ctime_seconds == 66 && snapshot.ctime_nanosecs == 77,
 		             "accepted confirmation passes complete snapshot unchanged");
-		ok &= expect(output == "This will remove all face models for alice\n"
+		ok &= Expect(output == "This will remove all face models for alice\n"
 		                       "Continue? [y/N]: \nModels cleared\n",
 		             "accepted confirmation preserves output");
 		return ok;
@@ -224,9 +224,9 @@ namespace {
 	auto YesFlagBypassesConfirmation() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
-		return expect(result == 0, "-y returns 0") &&
-		       expect(output == "\nModels cleared\n", "-y preserves output without prompt") &&
-		       expect(context.inspect_calls == 1 && context.clear_calls == 1,
+		return Expect(result == 0, "-y returns 0") &&
+		       Expect(output == "\nModels cleared\n", "-y preserves output without prompt") &&
+		       Expect(context.inspect_calls == 1 && context.clear_calls == 1,
 		              "-y inspects and clears once");
 	}
 
@@ -242,9 +242,9 @@ namespace {
 			auto context          = SuccessContext();
 			context.clear_result  = {.status = status, .error_message = error};
 			auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
-			ok &= expect(result == 1, "clear outcome returns 1");
-			ok &= expect(output == expected, "clear outcome preserves message");
-			ok &= expect(context.inspect_calls == 1 && context.clear_calls == 1,
+			ok &= Expect(result == 1, "clear outcome returns 1");
+			ok &= Expect(output == expected, "clear outcome preserves message");
+			ok &= Expect(context.inspect_calls == 1 && context.clear_calls == 1,
 			             "clear outcome invokes callbacks once");
 		}
 		return ok;
@@ -253,8 +253,8 @@ namespace {
 	auto SuccessfulClearPreservesOutput() -> bool {
 		auto context          = SuccessContext();
 		auto [result, output] = RunClear(context, {"howdy-clear", "alice", "-y"});
-		return expect(result == 0, "successful clear returns 0") &&
-		       expect(output == "\nModels cleared\n", "successful clear preserves output");
+		return Expect(result == 0, "successful clear returns 0") &&
+		       Expect(output == "\nModels cleared\n", "successful clear preserves output");
 	}
 
 	auto BoundaryAwareClearRemovesUnparseableModelFiles() -> bool {
@@ -269,7 +269,7 @@ namespace {
 		std::vector<char> temp_template(temp_template_path.begin(), temp_template_path.end());
 		temp_template.push_back('\0');
 		const char *temp_path = mkdtemp(temp_template.data());
-		if (!expect(temp_path != nullptr, "create unique integration temp dir")) {
+		if (!Expect(temp_path != nullptr, "create unique integration temp dir")) {
 			return false;
 		}
 
@@ -280,7 +280,7 @@ namespace {
 		std::error_code ec;
 
 		fs::create_directories(models_dir, ec);
-		ok &= expect(!ec, "create integration models dir");
+		ok &= Expect(!ec, "create integration models dir");
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
 		auto run_boundary_aware_clear = [&]() -> int {
@@ -295,24 +295,24 @@ namespace {
 			    static_cast<int>(argv.size()), argv.data(), {temp_root});
 		};
 
-		ok &= expect(write_file(model_path, "not-json"), "write malformed model JSON");
+		ok &= Expect(WriteFile(model_path, "not-json"), "write malformed model JSON");
 		ok &=
-		    expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes malformed JSON");
-		ok &= expect(!fs::exists(model_path), "malformed JSON model deleted");
+		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes malformed JSON");
+		ok &= Expect(!fs::exists(model_path), "malformed JSON model deleted");
 
 		std::string oversized_json =
 		    R"json([{"id":1,"label":"large","data":[[0.1]],"padding":")json";
 		oversized_json.append((1024 * 1024) + 1, 'x');
 		oversized_json += "\"}]";
-		ok &= expect(write_file(model_path, oversized_json), "write oversized model JSON");
+		ok &= Expect(WriteFile(model_path, oversized_json), "write oversized model JSON");
 		ok &=
-		    expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes oversized JSON");
-		ok &= expect(!fs::exists(model_path), "oversized JSON model deleted");
+		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes oversized JSON");
+		ok &= Expect(!fs::exists(model_path), "oversized JSON model deleted");
 
-		ok &= expect(write_file(model_path, R"({"id":1})"), "write wrong-shape model JSON");
-		ok &= expect(run_boundary_aware_clear() == 0,
+		ok &= Expect(WriteFile(model_path, R"({"id":1})"), "write wrong-shape model JSON");
+		ok &= Expect(run_boundary_aware_clear() == 0,
 		             "boundary-aware clear removes wrong-shape JSON");
-		ok &= expect(!fs::exists(model_path), "wrong-shape JSON model deleted");
+		ok &= Expect(!fs::exists(model_path), "wrong-shape JSON model deleted");
 
 		fs::remove_all(temp_root, ec);
 		if (saved_models_dir.has_value()) {

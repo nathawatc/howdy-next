@@ -8,8 +8,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
-
-struct yyjson_doc;
+#include <yyjson.h>
 
 namespace howdy::native::user_model_codec {
 

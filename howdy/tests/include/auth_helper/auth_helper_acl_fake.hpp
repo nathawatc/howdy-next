@@ -14,7 +14,7 @@
 
 namespace howdy::test::auth_helper {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct FakeAclContext {
 		std::map<int, acl_t> fake_acls;
@@ -108,9 +108,9 @@ namespace howdy::test::auth_helper {
 	inline auto ExpectFakeAclActivity(const FakeAclContext &state, const std::string &label)
 	    -> bool {
 		bool ok = true;
-		ok &= expect(!state.fake_acls.empty(), label + " stores production ACLs by descriptor");
-		ok &= expect(!state.set_descriptors.empty(), label + " receives production ACL");
-		ok &= expect(state.get_descriptors.size() == state.set_descriptors.size(),
+		ok &= Expect(!state.fake_acls.empty(), label + " stores production ACLs by descriptor");
+		ok &= Expect(!state.set_descriptors.empty(), label + " receives production ACL");
+		ok &= Expect(state.get_descriptors.size() == state.set_descriptors.size(),
 		             label + " verifies every stored ACL through fake readback");
 		return ok;
 	}
@@ -146,28 +146,28 @@ namespace howdy::test::auth_helper {
 			target_found |= FakeAclHasNamedUser(acl, target_uid);
 			owner_found |= FakeAclHasNamedUser(acl, owner_uid);
 		}
-		bool ok = expect(target_found, "production ACL contains requested named-user UID");
+		bool ok = Expect(target_found, "production ACL contains requested named-user UID");
 		if (target_uid != owner_uid) {
 			ok &=
-			    expect(!owner_found, "production ACL does not substitute owner UID for target UID");
+			    Expect(!owner_found, "production ACL does not substitute owner UID for target UID");
 		}
 		return ok;
 	}
 
 	inline auto ExpectFakeAclDescriptorIsolation(FakeAclContext &state) -> bool {
 		if (state.fake_acls.empty()) {
-			return expect(false, "fake ACL descriptor isolation has stored ACL");
+			return Expect(false, "fake ACL descriptor isolation has stored ACL");
 		}
 		const int original_fd = state.fake_acls.begin()->first;
 		errno                 = 0;
 		acl_t wrong_acl       = FakeAclGetFd(&state, -1);
-		bool  ok              = expect(wrong_acl == nullptr && errno == ENODATA,
+		bool  ok              = Expect(wrong_acl == nullptr && errno == ENODATA,
 		                               "fake ACL verification rejects different descriptor");
 		if (wrong_acl != nullptr) {
 			acl_free(wrong_acl);
 		}
 		acl_t original_acl = FakeAclGetFd(&state, original_fd);
-		ok &= expect(original_acl != nullptr && acl_valid(original_acl) == 0,
+		ok &= Expect(original_acl != nullptr && acl_valid(original_acl) == 0,
 		             "fake ACL verification accepts original descriptor");
 		if (original_acl != nullptr) {
 			acl_free(original_acl);
@@ -177,7 +177,7 @@ namespace howdy::test::auth_helper {
 
 	inline auto ResetFakeAclBackend(FakeAclContext &state) -> bool {
 		state.Clear();
-		return expect(state.fake_acls.empty() && state.set_descriptors.empty() &&
+		return Expect(state.fake_acls.empty() && state.set_descriptors.empty() &&
 		                  state.get_descriptors.empty(),
 		              "fake ACL reset frees all descriptor ACLs and clears state");
 	}

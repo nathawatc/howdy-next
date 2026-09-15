@@ -13,8 +13,8 @@
 
 namespace {
 
-	using howdy::test::expect;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::WriteFile;
 
 	struct TemporaryDirectory {
 		std::filesystem::path path;
@@ -57,7 +57,7 @@ namespace {
 	auto LoadConfig(const std::filesystem::path &root, const std::string &filename,
 	                std::string_view content) -> howdy::native::RuntimeConfigLoadResult {
 		const auto path = root / filename;
-		if (!write_file(path, content)) {
+		if (!WriteFile(path, content)) {
 			return {
 			    .ok            = false,
 			    .status        = howdy::native::RuntimeConfigLoadStatus::kPathError,
@@ -88,21 +88,21 @@ auto main() -> int {
 	const howdy::native::RuntimeConfig defaults;
 	const auto expect_bool_default = [&](bool actual, howdy::native::config_schema::OptionId id,
 	                                     const std::string &message) -> bool {
-		return expect(actual == howdy::native::config_schema::RuntimeDefaultBool(id), message);
+		return Expect(actual == howdy::native::config_schema::RuntimeDefaultBool(id), message);
 	};
 	const auto expect_int_default = [&](int actual, howdy::native::config_schema::OptionId id,
 	                                    const std::string &message) -> bool {
-		return expect(actual == howdy::native::config_schema::RuntimeDefaultInt(id), message);
+		return Expect(actual == howdy::native::config_schema::RuntimeDefaultInt(id), message);
 	};
 	const auto expect_float_default = [&](float actual, howdy::native::config_schema::OptionId id,
 	                                      const std::string &message) -> bool {
-		return expect(NearlyEqual(actual, howdy::native::config_schema::RuntimeDefaultFloat(id)),
+		return Expect(NearlyEqual(actual, howdy::native::config_schema::RuntimeDefaultFloat(id)),
 		              message);
 	};
 	const auto expect_string_default = [&](const std::string                     &actual,
 	                                       howdy::native::config_schema::OptionId id,
 	                                       const std::string                     &message) -> bool {
-		return expect(actual == howdy::native::config_schema::RuntimeDefaultString(id), message);
+		return Expect(actual == howdy::native::config_schema::RuntimeDefaultString(id), message);
 	};
 	const auto expect_video_defaults = [&](const howdy::native::VideoConfig &video,
 	                                       const std::string                &source) -> bool {
@@ -147,7 +147,7 @@ auto main() -> int {
 		matches &= expect_int_default(face.yunet_top_k, kFaceYunetTopK,
 		                              source + " yunet_top_k matches schema");
 		matches &=
-		    expect(face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
+		    Expect(face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
 		               howdy::native::FaceMetricSpelling(face.sface_metric) ==
 		                   howdy::native::config_schema::RuntimeDefaultString(kFaceSfaceMetric),
 		           source + " sface_metric matches schema");
@@ -174,15 +174,15 @@ auto main() -> int {
 	                          "debug end_report struct default matches schema");
 
 	const auto minimal = LoadConfig(root, "minimal.ini", "[core]\n");
-	ok &= expect(minimal.ok, "minimal config loads");
-	ok &= expect(minimal.config.has_value(), "minimal config has config");
+	ok &= Expect(minimal.ok, "minimal config loads");
+	ok &= Expect(minimal.config.has_value(), "minimal config has config");
 	if (minimal.config.has_value()) {
 		const auto &config = *minimal.config;
-		ok &= expect(config.core.detection_notice ==
+		ok &= Expect(config.core.detection_notice ==
 		                 howdy::native::config_schema::RuntimeDefaultBool(kCoreDetectionNotice),
 		             "core default loads from schema");
 		ok &= expect_video_defaults(config.video, "minimal config");
-		ok &= expect(
+		ok &= Expect(
 		    NearlyEqual(config.face.sface_threshold,
 		                howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
 		    "cosine threshold default loads from schema");
@@ -218,15 +218,15 @@ auto main() -> int {
 	                               "sface_threshold = 3.5\n"
 	                               "[debug]\n"
 	                               "end_report = true\n");
-	ok &= expect(custom.ok, "custom config loads");
-	ok &= expect(custom.config.has_value(), "custom config has config");
+	ok &= Expect(custom.ok, "custom config loads");
+	ok &= Expect(custom.config.has_value(), "custom config has config");
 	if (custom.config.has_value()) {
 		const auto &config = *custom.config;
-		ok &= expect(config.core.detection_notice && !config.core.no_confirmation &&
+		ok &= Expect(config.core.detection_notice && !config.core.no_confirmation &&
 		                 !config.core.abort_if_ssh && config.core.abort_if_lid_closed &&
 		                 !config.core.disabled,
 		             "custom core fields map to their schema options");
-		ok &= expect(
+		ok &= Expect(
 		    config.video.timeout == 12 && config.video.device_path == "none" &&
 		        !config.video.warn_no_device && NearlyEqual(config.video.max_height, 640.0F) &&
 		        config.video.frame_width == 1280 && config.video.frame_height == 720 &&
@@ -236,90 +236,90 @@ auto main() -> int {
 		        config.video.exposure == 20 && config.video.device_fps == 30 &&
 		        config.video.rotate == 2,
 		    "custom video fields map to their schema options");
-		ok &= expect(NearlyEqual(config.face.yunet_score_threshold, 0.8F) &&
+		ok &= Expect(NearlyEqual(config.face.yunet_score_threshold, 0.8F) &&
 		                 NearlyEqual(config.face.yunet_nms_threshold, 0.2F) &&
 		                 config.face.yunet_top_k == 1234 &&
 		                 config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
 		                 NearlyEqual(config.face.sface_threshold, 3.5F),
 		             "custom face fields map to their schema options");
-		ok &= expect(config.debug.end_report, "custom debug field maps to its schema option");
+		ok &= Expect(config.debug.end_report, "custom debug field maps to its schema option");
 	}
 
 	const auto boolean_mapping =
 	    LoadConfig(root, "boolean-mapping.ini",
 	               "[core]\nno_confirmation = true\nabort_if_ssh = false\n"
 	               "[video]\nwarn_no_device = true\nclahe_enabled = false\n");
-	ok &= expect(boolean_mapping.ok && boolean_mapping.config.has_value(),
+	ok &= Expect(boolean_mapping.ok && boolean_mapping.config.has_value(),
 	             "same-type boolean mapping config loads");
 	if (boolean_mapping.config.has_value()) {
 		const auto &config = *boolean_mapping.config;
-		ok &= expect(config.core.no_confirmation && !config.core.abort_if_ssh &&
+		ok &= Expect(config.core.no_confirmation && !config.core.abort_if_ssh &&
 		                 config.video.warn_no_device && !config.video.clahe_enabled,
 		             "same-type boolean fields map to distinct schema options");
 	}
 
 	const auto cosine =
 	    LoadConfig(root, "cosine.ini", "[face]\nsface_metric = COSINE\nsface_threshold = 0.5\n");
-	ok &= expect(cosine.ok, "cosine config loads");
-	ok &= expect(cosine.config.has_value(), "cosine config has config");
+	ok &= Expect(cosine.ok, "cosine config loads");
+	ok &= Expect(cosine.config.has_value(), "cosine config has config");
 	if (cosine.config.has_value()) {
 		const auto &config = *cosine.config;
-		ok &= expect(config.face.sface_metric == howdy::native::FaceMetric::kCosine,
+		ok &= Expect(config.face.sface_metric == howdy::native::FaceMetric::kCosine,
 		             "cosine metric normalizes");
 	}
 
 	const auto invalid_cosine = LoadConfig(
 	    root, "invalid-cosine.ini", "[face]\nsface_metric = cosine\nsface_threshold = 1.1\n");
-	ok &= expect(!invalid_cosine.ok && invalid_cosine.error_message.contains("sface_threshold"),
+	ok &= Expect(!invalid_cosine.ok && invalid_cosine.error_message.contains("sface_threshold"),
 	             "cosine threshold above one fails");
-	ok &= expect(!invalid_cosine.config.has_value(), "invalid cosine config has no config");
+	ok &= Expect(!invalid_cosine.config.has_value(), "invalid cosine config has no config");
 
 	const auto l2 = LoadConfig(root, "l2.ini", "[face]\nsface_metric = l2\nsface_threshold = 4\n");
-	ok &= expect(l2.ok, "l2 config loads");
-	ok &= expect(l2.config.has_value(), "l2 config has config");
+	ok &= Expect(l2.ok, "l2 config loads");
+	ok &= Expect(l2.config.has_value(), "l2 config has config");
 	if (l2.config.has_value()) {
 		const auto &config = *l2.config;
-		ok &= expect(config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
+		ok &= Expect(config.face.sface_metric == howdy::native::FaceMetric::kL2 &&
 		                 NearlyEqual(config.face.sface_threshold, 4.0F),
 		             "l2 threshold up to four loads");
 	}
 
 	const auto sentinel =
 	    LoadConfig(root, "sentinel.ini", "[video]\nframe_width = -1\nexposure = -1\n");
-	ok &= expect(sentinel.ok && sentinel.config.has_value(), "allowed video sentinels load");
+	ok &= Expect(sentinel.ok && sentinel.config.has_value(), "allowed video sentinels load");
 	if (sentinel.config.has_value()) {
 		const auto &config = *sentinel.config;
-		ok &= expect(config.video.frame_width == -1 && config.video.exposure == -1,
+		ok &= Expect(config.video.frame_width == -1 && config.video.exposure == -1,
 		             "allowed video sentinels map to correct fields");
 	}
 
 	const auto invalid_fps = LoadConfig(root, "invalid-fps.ini", "[video]\ndevice_fps = -1\n");
-	ok &= expect(!invalid_fps.ok && invalid_fps.error_message.contains("device_fps"),
+	ok &= Expect(!invalid_fps.ok && invalid_fps.error_message.contains("device_fps"),
 	             "negative device fps fails");
-	ok &= expect(!invalid_fps.config.has_value(), "invalid fps config has no config");
+	ok &= Expect(!invalid_fps.config.has_value(), "invalid fps config has no config");
 
 	const auto invalid_float =
 	    LoadConfig(root, "invalid-float.ini", "[video]\ndark_threshold = fast\n");
-	ok &= expect(!invalid_float.ok && invalid_float.error_message.contains("dark_threshold"),
+	ok &= Expect(!invalid_float.ok && invalid_float.error_message.contains("dark_threshold"),
 	             "invalid float text fails");
-	ok &= expect(!invalid_float.config.has_value(), "invalid float config has no config");
+	ok &= Expect(!invalid_float.config.has_value(), "invalid float config has no config");
 
 	const auto empty = LoadConfig(root, "empty.ini",
 	                              "[core]\ndisabled = \n"
 	                              "[video]\ntimeout = \ndark_threshold = \n"
 	                              "[face]\nsface_metric = \nsface_threshold = \n");
-	ok &= expect(empty.ok, "empty values load");
-	ok &= expect(empty.config.has_value(), "empty config has config");
+	ok &= Expect(empty.ok, "empty values load");
+	ok &= Expect(empty.config.has_value(), "empty config has config");
 	if (empty.config.has_value()) {
 		const auto &config = *empty.config;
-		ok &= expect(
+		ok &= Expect(
 		    !config.core.disabled &&
 		        config.video.timeout ==
 		            howdy::native::config_schema::RuntimeDefaultInt(kVideoTimeout) &&
 		        NearlyEqual(config.video.dark_threshold,
 		                    howdy::native::config_schema::RuntimeDefaultFloat(kVideoDarkThreshold)),
 		    "empty values preserve schema defaults");
-		ok &= expect(
+		ok &= Expect(
 		    config.face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
 		        NearlyEqual(config.face.sface_threshold,
 		                    howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),

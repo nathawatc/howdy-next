@@ -22,7 +22,7 @@
 
 namespace howdy::test::prompt_coordinator {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::CompareExit;
 	using howdy::pam::PromptCoordinator;

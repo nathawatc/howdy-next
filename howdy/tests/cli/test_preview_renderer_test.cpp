@@ -9,7 +9,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -27,7 +27,7 @@ namespace {
 		};
 
 		auto renderer = make_renderer();
-		return expect(!renderer.SlowMode(),
+		return Expect(!renderer.SlowMode(),
 		              "renderer remains valid after constructor inputs leave scope");
 	}
 
@@ -89,12 +89,12 @@ namespace {
 		renderer->Initialize();
 
 		bool ok = true;
-		ok &= expect(context.sequence ==
+		ok &= Expect(context.sequence ==
 		                 std::vector<std::string>{"clear_callback", "destroy_window", "initialize"},
 		             "repeat preview cleans old renderer before replacement initialization");
-		ok &= expect(context.clear_callback_calls == 1,
+		ok &= Expect(context.clear_callback_calls == 1,
 		             "repeat preview clears old renderer callback once");
-		ok &= expect(context.destroy_window_calls == 1,
+		ok &= Expect(context.destroy_window_calls == 1,
 		             "repeat preview destroys old renderer window once");
 		return ok;
 	}
@@ -125,13 +125,13 @@ namespace {
 		renderer->Initialize();
 
 		bool ok = true;
-		ok &= expect(error_message == "renderer callback cleanup failed",
+		ok &= Expect(error_message == "renderer callback cleanup failed",
 		             "replacement propagates incomplete renderer cleanup");
-		ok &= expect(context.initialize_calls == 1,
+		ok &= Expect(context.initialize_calls == 1,
 		             "failed cleanup preserves initialized renderer without rebinding");
-		ok &= expect(context.clear_callback_calls == 1,
+		ok &= Expect(context.clear_callback_calls == 1,
 		             "failed replacement attempts callback cleanup once");
-		ok &= expect(context.destroy_window_calls == 1,
+		ok &= Expect(context.destroy_window_calls == 1,
 		             "failed replacement attempts window cleanup once");
 		return ok;
 	}
@@ -165,11 +165,11 @@ namespace {
 		renderer->Initialize();
 
 		bool ok = true;
-		ok &= expect(blocked, "window cleanup failure blocks renderer replacement");
+		ok &= Expect(blocked, "window cleanup failure blocks renderer replacement");
 		ok &=
-		    expect(context.clear_callback_calls == 1, "successful callback cleanup is not retried");
-		ok &= expect(context.destroy_window_calls == 2, "failed window cleanup is retried once");
-		ok &= expect(context.initialize_calls == 2,
+		    Expect(context.clear_callback_calls == 1, "successful callback cleanup is not retried");
+		ok &= Expect(context.destroy_window_calls == 2, "failed window cleanup is retried once");
+		ok &= Expect(context.initialize_calls == 2,
 		             "replacement waits for window cleanup completion");
 		return ok;
 	}
@@ -203,10 +203,10 @@ namespace {
 		renderer->Initialize();
 
 		bool ok = true;
-		ok &= expect(blocked, "callback cleanup failure blocks renderer replacement");
-		ok &= expect(context.clear_callback_calls == 2, "failed callback cleanup is retried once");
-		ok &= expect(context.destroy_window_calls == 1, "successful window cleanup is not retried");
-		ok &= expect(context.initialize_calls == 2,
+		ok &= Expect(blocked, "callback cleanup failure blocks renderer replacement");
+		ok &= Expect(context.clear_callback_calls == 2, "failed callback cleanup is retried once");
+		ok &= Expect(context.destroy_window_calls == 1, "successful window cleanup is not retried");
+		ok &= Expect(context.initialize_calls == 2,
 		             "replacement waits for callback cleanup completion");
 		return ok;
 	}
@@ -225,10 +225,10 @@ namespace {
 		renderer.Initialize();
 		renderer.Shutdown();
 		bool ok = true;
-		ok &= expect(context.initialize_calls == 1, "renderer initializes once");
-		ok &= expect(context.clear_callback_calls == 1, "renderer clears callback once");
-		ok &= expect(context.destroy_window_calls == 1, "renderer destroys window once");
-		ok &= expect(context.sequence ==
+		ok &= Expect(context.initialize_calls == 1, "renderer initializes once");
+		ok &= Expect(context.clear_callback_calls == 1, "renderer clears callback once");
+		ok &= Expect(context.destroy_window_calls == 1, "renderer destroys window once");
+		ok &= Expect(context.sequence ==
 		                 std::vector<std::string>{"initialize", "clear_callback", "destroy_window"},
 		             "renderer clears callback before destroying window");
 		return ok;
@@ -251,13 +251,13 @@ namespace {
 			threw = true;
 		}
 		bool ok = true;
-		ok &= expect(threw, "renderer propagates initialization failure");
-		ok &= expect(context.initialize_calls == 1, "renderer attempts initialization once");
-		ok &= expect(context.clear_callback_calls == 1,
+		ok &= Expect(threw, "renderer propagates initialization failure");
+		ok &= Expect(context.initialize_calls == 1, "renderer attempts initialization once");
+		ok &= Expect(context.clear_callback_calls == 1,
 		             "failed renderer initialization clears callback once");
-		ok &= expect(context.destroy_window_calls == 1,
+		ok &= Expect(context.destroy_window_calls == 1,
 		             "failed renderer initialization destroys window once");
-		ok &= expect(context.sequence ==
+		ok &= Expect(context.sequence ==
 		                 std::vector<std::string>{"initialize", "clear_callback", "destroy_window"},
 		             "failed initialization runs full cleanup in order");
 		return ok;
@@ -288,10 +288,10 @@ namespace {
 		}
 
 		bool ok = true;
-		ok &= expect(threw, "renderer propagates callback cleanup failure");
-		ok &= expect(retry_threw, "renderer keeps retryable callback cleanup failure");
-		ok &= expect(context.clear_callback_calls == 2, "renderer retries failed callback cleanup");
-		ok &= expect(context.destroy_window_calls == 1,
+		ok &= Expect(threw, "renderer propagates callback cleanup failure");
+		ok &= Expect(retry_threw, "renderer keeps retryable callback cleanup failure");
+		ok &= Expect(context.clear_callback_calls == 2, "renderer retries failed callback cleanup");
+		ok &= Expect(context.destroy_window_calls == 1,
 		             "renderer destroys window after callback cleanup failure");
 		return ok;
 	}
@@ -316,11 +316,11 @@ namespace {
 		}
 
 		bool ok = true;
-		ok &= expect(error_message == "renderer initialization failed",
+		ok &= Expect(error_message == "renderer initialization failed",
 		             "cleanup failures do not mask initialization failure");
-		ok &= expect(context.clear_callback_calls == 1,
+		ok &= Expect(context.clear_callback_calls == 1,
 		             "partial initialization attempts callback cleanup once");
-		ok &= expect(context.destroy_window_calls == 1,
+		ok &= Expect(context.destroy_window_calls == 1,
 		             "partial initialization attempts window cleanup once");
 		return ok;
 	}
@@ -351,12 +351,12 @@ namespace {
 		}
 
 		bool ok = true;
-		ok &= expect(error_message == "renderer callback cleanup failed",
+		ok &= Expect(error_message == "renderer callback cleanup failed",
 		             "shutdown preserves first cleanup failure");
-		ok &= expect(retry_threw, "shutdown keeps retryable cleanup failures");
-		ok &= expect(context.clear_callback_calls == 2,
+		ok &= Expect(retry_threw, "shutdown keeps retryable cleanup failures");
+		ok &= Expect(context.clear_callback_calls == 2,
 		             "incomplete callback cleanup remains retryable");
-		ok &= expect(context.destroy_window_calls == 2,
+		ok &= Expect(context.destroy_window_calls == 2,
 		             "incomplete window cleanup remains retryable");
 		return ok;
 	}
@@ -384,11 +384,11 @@ namespace {
 		}
 
 		bool ok = true;
-		ok &= expect(error_message == "presenter failed",
+		ok &= Expect(error_message == "presenter failed",
 		             "renderer cleanup failures do not mask presenter failure");
-		ok &= expect(renderer_context.clear_callback_calls == 1,
+		ok &= Expect(renderer_context.clear_callback_calls == 1,
 		             "presenter failure attempts callback cleanup");
-		ok &= expect(renderer_context.destroy_window_calls == 1,
+		ok &= Expect(renderer_context.destroy_window_calls == 1,
 		             "presenter failure attempts window cleanup");
 		return ok;
 	}

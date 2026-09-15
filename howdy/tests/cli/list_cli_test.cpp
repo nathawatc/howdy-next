@@ -13,7 +13,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::ostream &stream, std::streambuf *new_output)
@@ -95,33 +95,33 @@ namespace {
 	auto InternalMissingUserReturnsWithoutCallback() -> bool {
 		ListCliTestContext context;
 		auto [result, output] = RunList(context, {"howdy-list"});
-		return expect(result == 1, "internal missing user returns 1") &&
-		       expect(output.empty(), "internal missing user stays silent") &&
-		       expect(context.list_calls == 0, "internal missing user skips callback");
+		return Expect(result == 1, "internal missing user returns 1") &&
+		       Expect(output.empty(), "internal missing user stays silent") &&
+		       Expect(context.list_calls == 0, "internal missing user skips callback");
 	}
 
 	auto PublicMissingUserReturnsError() -> bool {
 		auto                  command = std::to_array("howdy-list");
 		std::array<char *, 1> argv{command.data()};
-		return expect(ListMain(1, argv.data()) == 1, "public missing user returns status 1");
+		return Expect(ListMain(1, argv.data()) == 1, "public missing user returns status 1");
 	}
 
 	auto NullDependencyAbortsSilently() -> bool {
 		auto [result, output] =
 		    RunListWithDependencies({"howdy-list", "alice"}, {.list_user_model_entries = nullptr});
-		return expect(result == 1, "null dependency returns 1") &&
-		       expect(output.empty(), "null dependency stays silent");
+		return Expect(result == 1, "null dependency returns 1") &&
+		       Expect(output.empty(), "null dependency stays silent");
 	}
 
 	auto NoModelDirectoryPrintsGuidance() -> bool {
 		ListCliTestContext context;
 		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
 		auto [result, output] = RunList(context, {"howdy-list", "alice"});
-		return expect(result == 1, "no model directory returns 1") &&
-		       expect(output == "No face models found. Use the add command to add a face model for "
+		return Expect(result == 1, "no model directory returns 1") &&
+		       Expect(output == "No face models found. Use the add command to add a face model for "
 		                        "this user.\n",
 		              "no model directory prints safe guidance") &&
-		       expect(context.list_calls == 1 && context.listed_user == "alice",
+		       Expect(context.list_calls == 1 && context.listed_user == "alice",
 		              "no model directory lists alice once");
 	}
 
@@ -130,23 +130,23 @@ namespace {
 		context.list_result                 = {.status = howdy::native::UserModelStatus::kNoModel};
 		auto [normal_result, normal_output] = RunList(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = RunList(context, {"howdy-list", "alice", "--plain"});
-		return expect(normal_result == 1, "no model normal returns 1") &&
-		       expect(normal_output == "No face models found. Use the add command to add a face "
+		return Expect(normal_result == 1, "no model normal returns 1") &&
+		       Expect(normal_output == "No face models found. Use the add command to add a face "
 		                               "model for this user.\n",
 		              "no model normal prints safe guidance") &&
-		       expect(plain_result == 1, "no model plain returns 1") &&
-		       expect(plain_output.empty(), "no model plain stays silent");
+		       Expect(plain_result == 1, "no model plain returns 1") &&
+		       Expect(plain_output.empty(), "no model plain stays silent");
 	}
 
 	auto NoModelGuidanceDoesNotRenderUserAsShellCommand() -> bool {
 		ListCliTestContext context;
 		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
 		auto [result, output] = RunList(context, {"howdy-list", "$(id)"});
-		return expect(result == 1, "shell-like user no model directory returns 1") &&
-		       expect(output == "No face models found. Use the add command to add a face model for "
+		return Expect(result == 1, "shell-like user no model directory returns 1") &&
+		       Expect(output == "No face models found. Use the add command to add a face model for "
 		                        "this user.\n",
 		              "no model guidance does not render user into a shell command") &&
-		       expect(context.list_calls == 1 && context.listed_user == "$(id)",
+		       Expect(context.list_calls == 1 && context.listed_user == "$(id)",
 		              "shell-like user is passed only to model lookup");
 	}
 
@@ -158,10 +158,10 @@ namespace {
 		};
 		auto [normal_result, normal_output] = RunList(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = RunList(context, {"howdy-list", "alice", "--plain"});
-		return expect(normal_result == 1, "storage failure normal returns 1") &&
-		       expect(normal_output == "storage failed\n", "storage failure prints error") &&
-		       expect(plain_result == 1, "storage failure plain returns 1") &&
-		       expect(plain_output.empty(), "storage failure plain stays silent");
+		return Expect(normal_result == 1, "storage failure normal returns 1") &&
+		       Expect(normal_output == "storage failed\n", "storage failure prints error") &&
+		       Expect(plain_result == 1, "storage failure plain returns 1") &&
+		       Expect(plain_output.empty(), "storage failure plain stays silent");
 	}
 
 	auto SuccessfulOutputPreservesFormats() -> bool {
@@ -172,12 +172,12 @@ namespace {
 		};
 		auto [normal_result, normal_output] = RunList(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = RunList(context, {"howdy-list", "alice", "--plain"});
-		return expect(normal_result == 0, "normal success returns 0") &&
-		       expect(normal_output == "3   1970-01-01 00:00:00  front door\n"
+		return Expect(normal_result == 0, "normal success returns 0") &&
+		       Expect(normal_output == "3   1970-01-01 00:00:00  front door\n"
 		                               "12  1970-01-01 00:00:00  desk\n\n",
 		              "normal success preserves output") &&
-		       expect(plain_result == 0, "plain success returns 0") &&
-		       expect(plain_output == "3,1970-01-01 00:00:00,front door\n"
+		       Expect(plain_result == 0, "plain success returns 0") &&
+		       Expect(plain_output == "3,1970-01-01 00:00:00,front door\n"
 		                              "12,1970-01-01 00:00:00,desk\n\n",
 		              "plain success preserves CSV output");
 	}
@@ -192,11 +192,11 @@ namespace {
 		};
 		auto [normal_result, normal_output] = RunList(context, {"howdy-list", "alice"});
 		auto [plain_result, plain_output]   = RunList(context, {"howdy-list", "alice", "--plain"});
-		return expect(normal_result == 0, "out-of-range normal returns 0") &&
-		       expect(normal_output == "3   invalid-time  front door\n\n",
+		return Expect(normal_result == 0, "out-of-range normal returns 0") &&
+		       Expect(normal_output == "3   invalid-time  front door\n\n",
 		              "out-of-range normal uses fallback") &&
-		       expect(plain_result == 0, "out-of-range plain returns 0") &&
-		       expect(plain_output == "3,invalid-time,front door\n\n",
+		       Expect(plain_result == 0, "out-of-range plain returns 0") &&
+		       Expect(plain_output == "3,invalid-time,front door\n\n",
 		              "out-of-range plain uses fallback");
 	}
 
@@ -207,9 +207,9 @@ namespace {
 		    .entries = {{.id = 3, .time = 0, .label = "front door"}},
 		};
 		auto [result, output] = RunList(context, {"howdy-list", "alice", "ignored", "--plain"});
-		return expect(result == 1, "unknown list argument is rejected") &&
-		       expect(output.empty(), "unknown list argument has no output") &&
-		       expect(context.list_calls == 0, "unknown list argument skips listing");
+		return Expect(result == 1, "unknown list argument is rejected") &&
+		       Expect(output.empty(), "unknown list argument has no output") &&
+		       Expect(context.list_calls == 0, "unknown list argument skips listing");
 	}
 
 	auto PlainOutputEscapesCsvFields() -> bool {
@@ -221,8 +221,8 @@ namespace {
 		                {.id = 13, .time = 0, .label = "front,\"door"}},
 		};
 		auto [result, output] = RunList(context, {"howdy-list", "alice", "--plain"});
-		return expect(result == 0, "CSV-character labels list successfully") &&
-		       expect(output == "3,1970-01-01 00:00:00,\"front,door\"\n"
+		return Expect(result == 0, "CSV-character labels list successfully") &&
+		       Expect(output == "3,1970-01-01 00:00:00,\"front,door\"\n"
 		                        "12,1970-01-01 00:00:00,\"quote\"\"door\"\n"
 		                        "13,1970-01-01 00:00:00,\"front,\"\"door\"\n\n",
 		              "plain output escapes comma and quote fields as CSV");
@@ -232,8 +232,8 @@ namespace {
 		ListCliTestContext context;
 		context.list_result   = {.status = howdy::native::UserModelStatus::kOk};
 		auto [result, output] = RunList(context, {"howdy-list", "alice"});
-		return expect(result == 0, "zero entries returns 0") &&
-		       expect(output == "\n", "zero entries prints one newline");
+		return Expect(result == 0, "zero entries returns 0") &&
+		       Expect(output == "\n", "zero entries prints one newline");
 	}
 
 }  // namespace

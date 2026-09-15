@@ -21,9 +21,9 @@
 
 namespace howdy::test::config_cli {
 
-	using howdy::test::expect;
-	using howdy::test::read_file;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::ReadFile;
+	using howdy::test::WriteFile;
 
 	namespace {
 
@@ -75,7 +75,7 @@ namespace howdy::test::config_cli {
 			std::vector<char> writable_template(temp_template.begin(), temp_template.end());
 			writable_template.push_back('\0');
 			const char *created_path = mkdtemp(writable_template.data());
-			if (!expect(created_path != nullptr, "integration creates temp directory")) {
+			if (!Expect(created_path != nullptr, "integration creates temp directory")) {
 				return false;
 			}
 
@@ -84,12 +84,12 @@ namespace howdy::test::config_cli {
 			const fs::path  config_path = temp_root / "config.ini";
 			const fs::path  editor_path = temp_root / "fake-editor";
 			std::error_code error;
-			ok &= expect(write_file(config_path, std::string{kIntegrationOriginalContent}),
+			ok &= Expect(WriteFile(config_path, std::string{kIntegrationOriginalContent}),
 			             "integration writes config baseline");
-			ok &= expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
-			ok &= expect(write_file(editor_path, "#!/bin/sh\nprintf '[core\\n' > \"$1\"\n"),
+			ok &= Expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
+			ok &= Expect(WriteFile(editor_path, "#!/bin/sh\nprintf '[core\\n' > \"$1\"\n"),
 			             "integration writes fake editor");
-			ok &= expect(chmod(editor_path.c_str(), 0700) == 0,
+			ok &= Expect(chmod(editor_path.c_str(), 0700) == 0,
 			             "integration makes fake editor executable");
 
 			ScopedEnvironmentVariable editor_env("EDITOR", editor_path.string());
@@ -113,15 +113,15 @@ namespace howdy::test::config_cli {
 			    "Edited config is invalid and was not installed: ";
 			const auto reported_temp_path =
 			    PathReportedAfter(output.str(), std::string(recovery_prefix));
-			ok &= expect(exit_code == 1, "integration aborts invalid edit");
-			ok &= expect(output.str() == "Editing config.ini in fake-editor\n" +
+			ok &= Expect(exit_code == 1, "integration aborts invalid edit");
+			ok &= Expect(output.str() == "Editing config.ini in fake-editor\n" +
 			                                 std::string(recovery_prefix) +
 			                                 reported_temp_path.string() + "\n",
 			             "integration output exact");
-			ok &= expect(!reported_temp_path.empty(), "integration reports recovery path");
-			ok &= expect(fs::exists(reported_temp_path, error) && !error,
+			ok &= Expect(!reported_temp_path.empty(), "integration reports recovery path");
+			ok &= Expect(fs::exists(reported_temp_path, error) && !error,
 			             "integration preserves invalid temp file");
-			ok &= expect(read_file(reported_temp_path) == "[core\n",
+			ok &= Expect(ReadFile(reported_temp_path) == "[core\n",
 			             "integration keeps malformed content");
 			fs::remove(reported_temp_path, error);
 			fs::remove_all(temp_root, error);
@@ -134,7 +134,7 @@ namespace howdy::test::config_cli {
 			bool       ok        = true;
 			const auto temp_root = fs::current_path() / "howdy-config-cli-size-test";
 			fs::create_directory(temp_root);
-			ok &= expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
+			ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
 			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
 			const auto                                            dependencies =
 			    howdy::native::config_internal::DefaultConfigEditDependencies(&validation_root);
@@ -143,27 +143,27 @@ namespace howdy::test::config_cli {
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
 			std::error_code   error;
 
-			ok &= expect(write_file(source_path, at_limit), "write source config at size limit");
+			ok &= Expect(WriteFile(source_path, at_limit), "write source config at size limit");
 			const auto copy =
 			    dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt);
-			ok &= expect(copy.has_value() && copy->original_content == at_limit,
+			ok &= Expect(copy.has_value() && copy->original_content == at_limit,
 			             "source config exactly at size limit is copied");
 			if (copy.has_value()) {
 				std::string snapshot;
-				ok &= expect(dependencies.read_temp_config_snapshot(dependencies.context,
+				ok &= Expect(dependencies.read_temp_config_snapshot(dependencies.context,
 				                                                    copy->path, &snapshot) &&
 				                 snapshot == at_limit,
 				             "edited temp config exactly at size limit is read");
-				ok &= expect(write_file(copy->path, over_limit),
-				             "write oversized edited temp config");
-				ok &= expect(!dependencies.read_temp_config_snapshot(dependencies.context,
+				ok &=
+				    Expect(WriteFile(copy->path, over_limit), "write oversized edited temp config");
+				ok &= Expect(!dependencies.read_temp_config_snapshot(dependencies.context,
 				                                                     copy->path, &snapshot),
 				             "oversized edited temp config is rejected");
 				dependencies.remove_if_exists(dependencies.context, copy->path);
 			}
 
-			ok &= expect(write_file(source_path, over_limit), "write oversized source config");
-			ok &= expect(
+			ok &= Expect(WriteFile(source_path, over_limit), "write oversized source config");
+			ok &= Expect(
 			    !dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt),
 			    "oversized source config is rejected before temp copy");
 			fs::remove_all(temp_root, error);
@@ -178,7 +178,7 @@ namespace howdy::test::config_cli {
 			std::vector<char> writable(template_string.begin(), template_string.end());
 			writable.push_back('\0');
 			const char *created_path = mkdtemp(writable.data());
-			if (!expect(created_path != nullptr, "create edit identity temp directory")) {
+			if (!Expect(created_path != nullptr, "create edit identity temp directory")) {
 				return false;
 			}
 
@@ -193,14 +193,14 @@ namespace howdy::test::config_cli {
 			std::error_code error;
 
 			auto write_secure_config = [&]() -> bool {
-				return write_file(config_path, original) && chmod(config_path.c_str(), 0644) == 0;
+				return WriteFile(config_path, original) && chmod(config_path.c_str(), 0644) == 0;
 			};
 			auto replace_with_symlink = [&]() -> bool {
 				return rename(config_path.c_str(), backup_path.c_str()) == 0 &&
 				       symlink("/dev/null", config_path.c_str()) == 0;
 			};
 
-			ok &= expect(write_secure_config(), "write edit identity source config");
+			ok &= Expect(write_secure_config(), "write edit identity source config");
 			{
 				bool                                                replacement_ok = false;
 				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
@@ -209,8 +209,8 @@ namespace howdy::test::config_cli {
 
 				const auto copy =
 				    dependencies.create_temp_copy(dependencies.context, config_path, std::nullopt);
-				ok &= expect(replacement_ok, "create_temp_copy hook replaces source pathname");
-				ok &= expect(copy.has_value() && copy->original_content == original,
+				ok &= Expect(replacement_ok, "create_temp_copy hook replaces source pathname");
+				ok &= Expect(copy.has_value() && copy->original_content == original,
 				             "create_temp_copy consumes opened config descriptor");
 				if (copy.has_value()) {
 					dependencies.remove_if_exists(dependencies.context, copy->path);
@@ -219,7 +219,7 @@ namespace howdy::test::config_cli {
 			fs::remove(config_path, error);
 			fs::remove(backup_path, error);
 
-			ok &= expect(write_secure_config(), "restore edit identity source config");
+			ok &= Expect(write_secure_config(), "restore edit identity source config");
 			{
 				bool                                                replacement_ok = false;
 				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
@@ -228,7 +228,7 @@ namespace howdy::test::config_cli {
 
 				const bool matches =
 				    dependencies.file_content_matches(dependencies.context, config_path, original);
-				ok &= expect(replacement_ok && matches,
+				ok &= Expect(replacement_ok && matches,
 				             "file_content_matches consumes opened config descriptor");
 			}
 

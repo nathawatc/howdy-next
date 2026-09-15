@@ -16,9 +16,9 @@
 
 namespace {
 
-	using howdy::test::expect;
-	using howdy::test::read_file;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::ReadFile;
+	using howdy::test::WriteFile;
 
 	using howdy::native::RuntimeConfigLoadResult;
 	using howdy::native::RuntimeConfigLoadStatus;
@@ -118,7 +118,7 @@ namespace {
 	}
 
 	auto ExpectNoCalls(const TestContext &context, const std::string &message) -> bool {
-		return expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
+		return Expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
 		                  context.updater_calls == 0,
 		              message);
 	}
@@ -126,12 +126,12 @@ namespace {
 	auto ExpectUpdate(const TestContext &context, const std::string &value,
 	                  const std::string &message) -> bool {
 		bool ok = true;
-		ok &= expect(context.updater_calls == 1, message + " calls updater once");
-		ok &= expect(context.updater_path == context.resolved_path, message + " passes path");
-		ok &= expect(context.updater_key == "disabled", message + " passes key");
-		ok &= expect(context.updater_value == value, message + " passes value");
-		ok &= expect(context.received_lock, message + " enables lock");
-		ok &= expect(!context.received_validate_runtime, message + " disables runtime validation");
+		ok &= Expect(context.updater_calls == 1, message + " calls updater once");
+		ok &= Expect(context.updater_path == context.resolved_path, message + " passes path");
+		ok &= Expect(context.updater_key == "disabled", message + " passes key");
+		ok &= Expect(context.updater_value == value, message + " passes value");
+		ok &= Expect(context.received_lock, message + " enables lock");
+		ok &= Expect(!context.received_validate_runtime, message + " disables runtime validation");
 		return ok;
 	}
 
@@ -158,43 +158,43 @@ namespace {
 		fs::remove_all(temp_root, error);
 		error.clear();
 		fs::create_directories(temp_root, error);
-		ok &= expect(!error, "integration creates temp directory");
-		ok &= expect(chmod(temp_root.c_str(), 0755) == 0, "integration secures temp directory");
-		ok &= expect(setenv("HOWDY_CONFIG", config_path.c_str(), 1) == 0,
+		ok &= Expect(!error, "integration creates temp directory");
+		ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "integration secures temp directory");
+		ok &= Expect(setenv("HOWDY_CONFIG", config_path.c_str(), 1) == 0,
 		             "integration sets config path");
-		ok &= expect(write_file(config_path, "[core]\ndisabled = false\n"),
+		ok &= Expect(WriteFile(config_path, "[core]\ndisabled = false\n"),
 		             "integration writes enabled config");
-		ok &= expect(chmod(config_path.c_str(), 0644) == 0, "integration secures config file");
-		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 0,
+		ok &= Expect(chmod(config_path.c_str(), 0644) == 0, "integration secures config file");
+		ok &= Expect(RunBoundaryAwareDisable("true", temp_root) == 0,
 		             "boundary-aware disable succeeds");
-		ok &= expect(read_file(config_path).contains("disabled = true\n"),
+		ok &= Expect(ReadFile(config_path).contains("disabled = true\n"),
 		             "boundary-aware disable persists");
-		ok &= expect(RunBoundaryAwareDisable("false", temp_root) == 0,
+		ok &= Expect(RunBoundaryAwareDisable("false", temp_root) == 0,
 		             "boundary-aware enable succeeds");
-		ok &= expect(read_file(config_path).contains("disabled = false\n"),
+		ok &= Expect(ReadFile(config_path).contains("disabled = false\n"),
 		             "boundary-aware enable persists");
 
 		const std::string invalid_runtime_config = "[video]\ntimeout = 0\n";
-		ok &= expect(write_file(config_path, invalid_runtime_config),
+		ok &= Expect(WriteFile(config_path, invalid_runtime_config),
 		             "integration writes invalid runtime config");
-		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 1,
+		ok &= Expect(RunBoundaryAwareDisable("true", temp_root) == 1,
 		             "boundary-aware disable rejects invalid runtime config");
-		ok &= expect(read_file(config_path) == invalid_runtime_config,
+		ok &= Expect(ReadFile(config_path) == invalid_runtime_config,
 		             "rejected invalid runtime config remains unchanged");
 
 		const fs::path insecure_dir  = temp_root / "insecure-config-dir";
 		const fs::path insecure_path = insecure_dir / "config.ini";
 		fs::create_directories(insecure_dir, error);
-		ok &= expect(!error, "integration creates insecure directory");
-		ok &= expect(write_file(insecure_path, "[core]\ndisabled = false\n"),
+		ok &= Expect(!error, "integration creates insecure directory");
+		ok &= Expect(WriteFile(insecure_path, "[core]\ndisabled = false\n"),
 		             "integration writes insecure config");
-		ok &= expect(chmod(insecure_dir.c_str(), 0777) == 0,
+		ok &= Expect(chmod(insecure_dir.c_str(), 0777) == 0,
 		             "integration makes config directory insecure");
-		ok &= expect(setenv("HOWDY_CONFIG", insecure_path.c_str(), 1) == 0,
+		ok &= Expect(setenv("HOWDY_CONFIG", insecure_path.c_str(), 1) == 0,
 		             "integration selects insecure config");
-		ok &= expect(RunBoundaryAwareDisable("true", temp_root) == 1,
+		ok &= Expect(RunBoundaryAwareDisable("true", temp_root) == 1,
 		             "boundary-aware disable rejects insecure directory");
-		ok &= expect(read_file(insecure_path).contains("disabled = false\n"),
+		ok &= Expect(ReadFile(insecure_path).contains("disabled = false\n"),
 		             "rejected insecure config remains unchanged");
 
 		if (saved_config.has_value()) {
@@ -215,22 +215,22 @@ auto main() -> int {
 	{
 		TestContext context;
 		const auto  result = RunDisable({"howdy-disable"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "missing argument returns 1");
-		ok &= expect(result.stdout_output ==
+		ok &= Expect(result.exit_code == 1, "missing argument returns 1");
+		ok &= Expect(result.stdout_output ==
 		                 "Specify 0 or false to enable, or 1 or true to disable Howdy\n",
 		             "missing argument stdout exact");
-		ok &= expect(result.stderr_output.empty(), "missing argument stderr empty");
+		ok &= Expect(result.stderr_output.empty(), "missing argument stderr empty");
 		ok &= ExpectNoCalls(context, "missing argument skips dependencies");
 	}
 
 	{
 		TestContext context;
 		const auto  result = RunDisable({"howdy-disable", "invalid"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "invalid argument returns 1");
-		ok &= expect(result.stdout_output ==
+		ok &= Expect(result.exit_code == 1, "invalid argument returns 1");
+		ok &= Expect(result.stdout_output ==
 		                 "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n",
 		             "invalid argument stdout exact");
-		ok &= expect(result.stderr_output.empty(), "invalid argument stderr empty");
+		ok &= Expect(result.stderr_output.empty(), "invalid argument stderr empty");
 		ok &= ExpectNoCalls(context, "invalid argument skips dependencies");
 	}
 
@@ -238,7 +238,7 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = LoadedConfig(false);
 		const auto result   = RunDisable({"howdy-disable", "--", "true"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, "end-of-options disable value succeeds");
+		ok &= Expect(result.exit_code == 0, "end-of-options disable value succeeds");
 		ok &= ExpectUpdate(context, "true", "end-of-options disable value");
 	}
 
@@ -248,7 +248,7 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = LoadedConfig(initially_disabled);
 		const auto result   = RunDisable({"howdy-disable", argument}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, std::string(argument) + " alias succeeds");
+		ok &= Expect(result.exit_code == 0, std::string(argument) + " alias succeeds");
 		ok &= ExpectUpdate(context, value, std::string(argument) + " alias");
 	}
 
@@ -263,8 +263,8 @@ auto main() -> int {
 			dependencies.update_config_value = nullptr;
 		}
 		const auto result = RunDisable({"howdy-disable", "1"}, dependencies);
-		ok &= expect(result.exit_code == 1, "null dependency returns 1");
-		ok &= expect(result.stdout_output.empty() && result.stderr_output.empty(),
+		ok &= Expect(result.exit_code == 1, "null dependency returns 1");
+		ok &= Expect(result.stdout_output.empty() && result.stderr_output.empty(),
 		             "null dependency streams empty");
 		ok &= ExpectNoCalls(context, "null dependency skips callbacks");
 	}
@@ -277,14 +277,14 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = {.status = status, .error_message = error};
 		const auto result   = RunDisable({"howdy-disable", "1"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "load failure returns 1");
-		ok &= expect(result.stdout_output.empty(), "load failure stdout empty");
+		ok &= Expect(result.exit_code == 1, "load failure returns 1");
+		ok &= Expect(result.stdout_output.empty(), "load failure stdout empty");
 		ok &=
-		    expect(result.stderr_output == std::string(error) + "\n", "load failure stderr exact");
-		ok &= expect(context.resolver_calls == 1 && context.loader_calls == 1,
+		    Expect(result.stderr_output == std::string(error) + "\n", "load failure stderr exact");
+		ok &= Expect(context.resolver_calls == 1 && context.loader_calls == 1,
 		             "load failure resolves and loads once");
-		ok &= expect(context.loader_path == context.resolved_path, "loader receives resolved path");
-		ok &= expect(context.updater_calls == 0, "load failure skips updater");
+		ok &= Expect(context.loader_path == context.resolved_path, "loader receives resolved path");
+		ok &= Expect(context.updater_calls == 0, "load failure skips updater");
 	}
 
 	for (const auto &[argument, disabled, value] :
@@ -292,13 +292,13 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = LoadedConfig(disabled);
 		const auto result   = RunDisable({"howdy-disable", argument}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "unchanged state returns 1");
+		ok &= Expect(result.exit_code == 1, "unchanged state returns 1");
 		const auto *const expected_state = disabled ? "disabled" : "enabled";
 		ok &=
-		    expect(result.stdout_output == std::string("Howdy is already ") + expected_state + "\n",
+		    Expect(result.stdout_output == std::string("Howdy is already ") + expected_state + "\n",
 		           "unchanged state stdout exact");
-		ok &= expect(result.stderr_output.empty(), "unchanged state stderr empty");
-		ok &= expect(context.updater_calls == 0, "unchanged state skips updater");
+		ok &= Expect(result.stderr_output.empty(), "unchanged state stderr empty");
+		ok &= Expect(context.updater_calls == 0, "unchanged state skips updater");
 	}
 
 	for (const auto &[error, output] :
@@ -309,10 +309,10 @@ auto main() -> int {
 		context.updater_result = false;
 		context.updater_error  = error;
 		const auto result      = RunDisable({"howdy-disable", "true"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "updater failure returns 1");
-		ok &= expect(result.stdout_output == output, "updater failure stdout exact");
-		ok &= expect(result.stderr_output.empty(), "updater failure stderr empty");
-		ok &= expect(!result.stdout_output.contains("Howdy is now disabled"),
+		ok &= Expect(result.exit_code == 1, "updater failure returns 1");
+		ok &= Expect(result.stdout_output == output, "updater failure stdout exact");
+		ok &= Expect(result.stderr_output.empty(), "updater failure stderr empty");
+		ok &= Expect(!result.stdout_output.contains("Howdy is now disabled"),
 		             "updater failure omits success");
 		ok &= ExpectUpdate(context, "true", "updater failure");
 	}
@@ -321,11 +321,11 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = LoadedConfig(false);
 		const auto result   = RunDisable({"howdy-disable", "true"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, "disable success returns 0");
-		ok &= expect(result.stdout_output == "Howdy is now disabled\n",
+		ok &= Expect(result.exit_code == 0, "disable success returns 0");
+		ok &= Expect(result.stdout_output == "Howdy is now disabled\n",
 		             "disable success stdout exact");
-		ok &= expect(result.stderr_output.empty(), "disable success stderr empty");
-		ok &= expect(context.resolver_calls == 1 && context.loader_calls == 1 &&
+		ok &= Expect(result.stderr_output.empty(), "disable success stderr empty");
+		ok &= Expect(context.resolver_calls == 1 && context.loader_calls == 1 &&
 		                 context.updater_calls == 1,
 		             "disable success calls each dependency once");
 	}
@@ -334,10 +334,10 @@ auto main() -> int {
 		TestContext context;
 		context.load_result = LoadedConfig(true);
 		const auto result   = RunDisable({"howdy-disable", "false"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 0, "enable success returns 0");
+		ok &= Expect(result.exit_code == 0, "enable success returns 0");
 		ok &=
-		    expect(result.stdout_output == "Howdy is now enabled\n", "enable success stdout exact");
-		ok &= expect(result.stderr_output.empty(), "enable success stderr empty");
+		    Expect(result.stdout_output == "Howdy is now enabled\n", "enable success stdout exact");
+		ok &= Expect(result.stderr_output.empty(), "enable success stderr empty");
 		ok &= ExpectUpdate(context, "false", "enable success");
 	}
 
@@ -346,8 +346,8 @@ auto main() -> int {
 		context.load_result = LoadedConfig(false);
 		const auto result =
 		    RunDisable({"howdy-disable", "true", "ignored"}, DependenciesFor(context));
-		ok &= expect(result.exit_code == 1, "extra argument is rejected");
-		ok &= expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
+		ok &= Expect(result.exit_code == 1, "extra argument is rejected");
+		ok &= Expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
 		                 context.updater_calls == 0,
 		             "extra argument skips config mutation callbacks");
 	}

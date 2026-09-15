@@ -121,25 +121,25 @@ public:
 using ScopedFd = howdy::test::ScopedFd;
 
 inline auto OpenPtyPair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
-	master_fd->reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
-	if (master_fd->get() < 0) {
+	master_fd->Reset(posix_openpt(O_RDWR | O_NOCTTY | O_CLOEXEC));
+	if (master_fd->Get() < 0) {
 		return false;
 	}
 
-	if (grantpt(master_fd->get()) != 0 || unlockpt(master_fd->get()) != 0) {
-		master_fd->reset();
+	if (grantpt(master_fd->Get()) != 0 || unlockpt(master_fd->Get()) != 0) {
+		master_fd->Reset();
 		return false;
 	}
 
-	char *slave_name = ptsname(master_fd->get());
+	char *slave_name = ptsname(master_fd->Get());
 	if (slave_name == nullptr) {
-		master_fd->reset();
+		master_fd->Reset();
 		return false;
 	}
 
-	slave_fd->reset(open(slave_name, O_RDWR | O_NOCTTY | O_CLOEXEC));
-	if (slave_fd->get() < 0) {
-		master_fd->reset();
+	slave_fd->Reset(open(slave_name, O_RDWR | O_NOCTTY | O_CLOEXEC));
+	if (slave_fd->Get() < 0) {
+		master_fd->Reset();
 		return false;
 	}
 
@@ -151,8 +151,8 @@ inline auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 	if (pipe2(raw_fds.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
 		return false;
 	}
-	(*fds)[0].reset(raw_fds[0]);
-	(*fds)[1].reset(raw_fds[1]);
+	(*fds)[0].Reset(raw_fds[0]);
+	(*fds)[1].Reset(raw_fds[1]);
 	return true;
 }
 

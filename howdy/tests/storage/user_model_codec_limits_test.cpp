@@ -61,7 +61,7 @@ namespace howdy::test::user_model_codec {
 		                         R"("cosine")", R"("sface.onnx")", "[" + max_encoding + "]")}));
 		ok &= ExpectStatus(max_encoding_document.result.status, UserModelStatus::kOk,
 		                   "max encoding length returns kOk");
-		ok &= expect(max_encoding_document.result.entries.front().encodings.front().size() ==
+		ok &= Expect(max_encoding_document.result.entries.front().encodings.front().size() ==
 		                 kMaxEncodingLength,
 		             "max encoding length is preserved");
 
@@ -71,7 +71,7 @@ namespace howdy::test::user_model_codec {
 		                         R"("cosine")", R"("sface.onnx")", max_encodings)}));
 		ok &= ExpectStatus(max_encodings_document.result.status, UserModelStatus::kOk,
 		                   "max encodings per model returns kOk");
-		ok &= expect(max_encodings_document.result.entries.front().encodings.size() ==
+		ok &= Expect(max_encodings_document.result.entries.front().encodings.size() ==
 		                 kMaxEncodingsPerModel,
 		             "max encodings per model are preserved");
 
@@ -83,9 +83,9 @@ namespace howdy::test::user_model_codec {
 		const auto max_models_document = Decode(ModelList(max_models));
 		ok &= ExpectStatus(max_models_document.result.status, UserModelStatus::kOk,
 		                   "max stored models returns kOk");
-		ok &= expect(max_models_document.result.entries.size() == kMaxStoredModels,
+		ok &= Expect(max_models_document.result.entries.size() == kMaxStoredModels,
 		             "max stored models are preserved");
-		ok &= expect(std::cmp_equal(max_models_document.result.next_id, kMaxStoredModels),
+		ok &= Expect(std::cmp_equal(max_models_document.result.next_id, kMaxStoredModels),
 		             "max stored models reports next_id");
 
 		ok &= ExpectStatus(
@@ -121,7 +121,7 @@ namespace howdy::test::user_model_codec {
 		    "[[0.1]]", ",\"unknown\":" + NestedArray(kMaxJsonNestingDepth - 1))}));
 		ok &= ExpectStatus(over_limit.result.status, UserModelStatus::kOversized,
 		                   "one container beyond nesting limit returns kOversized");
-		ok &= expect(over_limit.result.error_message ==
+		ok &= Expect(over_limit.result.error_message ==
 		                 "User model JSON nesting exceeds safety limit",
 		             "nesting limit uses stable error message");
 		return ok;

@@ -13,7 +13,7 @@
 namespace {
 
 	using howdy::pam::ScopedMessageLocale;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	class ScopedEnvironment {
 	public:
@@ -102,14 +102,14 @@ namespace {
 		{
 			ScopedMessageLocale message_locale;
 			const locale_t      active_locale = uselocale(nullptr);
-			ok &= expect(LocaleCategoryName(active_locale, LC_MESSAGES) ==
+			ok &= Expect(LocaleCategoryName(active_locale, LC_MESSAGES) ==
 			                 LocaleCategoryName(expected_locale, LC_MESSAGES),
 			             "locale guard applies environment-selected LC_MESSAGES");
-			ok &= expect(LocaleCategoryName(active_locale, LC_CTYPE) ==
+			ok &= Expect(LocaleCategoryName(active_locale, LC_CTYPE) ==
 			                 LocaleCategoryName(expected_locale, LC_CTYPE),
 			             "locale guard applies environment-selected LC_CTYPE");
 		}
-		ok &= expect(uselocale(nullptr) == baseline_locale,
+		ok &= Expect(uselocale(nullptr) == baseline_locale,
 		             "locale guard restores locale after category activation");
 		(void)uselocale(previous_locale);
 		freelocale(expected_locale);
@@ -131,10 +131,10 @@ auto main() -> int {
 	{
 		ScopedMessageLocale message_locale;
 	}
-	ok &= expect(uselocale(nullptr) == host_locale, "normal scope restores host thread locale");
-	ok &= expect(CurrentGlobalLocale() == global_locale,
+	ok &= Expect(uselocale(nullptr) == host_locale, "normal scope restores host thread locale");
+	ok &= Expect(CurrentGlobalLocale() == global_locale,
 	             "normal scope leaves process-global locale unchanged");
-	ok &= expect(CurrentTextDomain() == text_domain,
+	ok &= Expect(CurrentTextDomain() == text_domain,
 	             "normal scope leaves host gettext domain unchanged");
 	ok &= ExpectEnvironmentSelectedCategories();
 
@@ -145,20 +145,20 @@ auto main() -> int {
 	} catch (const std::runtime_error &) {
 		threw = true;
 	}
-	ok &= expect(threw, "message locale scope permits exception propagation");
-	ok &= expect(uselocale(nullptr) == host_locale,
+	ok &= Expect(threw, "message locale scope permits exception propagation");
+	ok &= Expect(uselocale(nullptr) == host_locale,
 	             "scope restores host thread locale after exception");
 
 	{
 		ScopedEnvironment invalid_locale("LC_ALL");
 		invalid_locale.Set("howdy-invalid-locale");
 		ScopedMessageLocale message_locale;
-		ok &= expect(uselocale(nullptr) == host_locale,
+		ok &= Expect(uselocale(nullptr) == host_locale,
 		             "failed locale setup leaves existing thread locale usable");
 	}
-	ok &= expect(uselocale(nullptr) == host_locale,
+	ok &= Expect(uselocale(nullptr) == host_locale,
 	             "failed locale setup remains safe during destruction");
-	ok &= expect(CurrentGlobalLocale() == global_locale,
+	ok &= Expect(CurrentGlobalLocale() == global_locale,
 	             "failed locale setup leaves process-global locale unchanged");
 
 	return ok ? 0 : 1;

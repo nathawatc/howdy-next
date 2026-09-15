@@ -48,20 +48,20 @@ namespace {
 		howdy::pam::detail::SecureFreeConversationResponses(
 		    &responses, static_cast<int>(values.size()),
 		    {.context = &context, .erase = RecordErase, .release = RecordRelease});
-		bool        ok = howdy::test::expect(responses == nullptr, "cleanup nulls caller pointer");
+		bool        ok = howdy::test::Expect(responses == nullptr, "cleanup nulls caller pointer");
 		std::size_t strings = 0;
 		for (const char *value : values) {
 			if (value != nullptr) {
 				const auto erase_event   = context.events.at(strings * 2);
 				const auto release_event = context.events.at((strings * 2) + 1);
-				ok &= howdy::test::expect(
+				ok &= howdy::test::Expect(
 				    erase_event.erase && erase_event.length == std::strlen(value) &&
 				        !release_event.erase && release_event.pointer == erase_event.pointer,
 				    "response erased before release");
 				++strings;
 			}
 		}
-		return ok && howdy::test::expect(context.count == (strings * 2) + 1,
+		return ok && howdy::test::Expect(context.count == (strings * 2) + 1,
 		                                 "each response and array released once");
 	}
 }  // namespace

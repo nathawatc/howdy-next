@@ -12,9 +12,9 @@
 
 namespace howdy::test::download_models {
 
-	using howdy::test::count_files_with_prefix;
-	using howdy::test::read_file;
-	using howdy::test::write_file;
+	using howdy::test::CountFilesWithPrefix;
+	using howdy::test::ReadFile;
+	using howdy::test::WriteFile;
 
 	inline constexpr auto kTestModelContent = "small test model";
 	inline constexpr auto kTestModelSha256 =

@@ -10,7 +10,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
 
@@ -140,16 +140,16 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
 		             "presenter exit returns success");
-		ok &= expect(context.read_calls == 0, "prefetched frame skips camera read");
-		ok &= expect(context.present_calls == 1, "prefetched frame presents once");
-		ok &= expect(context.presented_stats.size() == 1,
+		ok &= Expect(context.read_calls == 0, "prefetched frame skips camera read");
+		ok &= Expect(context.present_calls == 1, "prefetched frame presents once");
+		ok &= Expect(context.presented_stats.size() == 1,
 		             "prefetched frame records one presentation stat");
-		ok &= expect(context.presented_stats.front().total_frames == 1,
+		ok &= Expect(context.presented_stats.front().total_frames == 1,
 		             "prefetched frame starts frame count at one");
-		ok &= expect(context.sleep_calls == 0, "presenter exit skips slow mode sleep");
-		ok &= expect(context.restore_calls == 1,
+		ok &= Expect(context.sleep_calls == 0, "presenter exit skips slow mode sleep");
+		ok &= Expect(context.restore_calls == 1,
 		             "first-frame presenter exit restores configured exposure");
 		return ok;
 	}
@@ -174,16 +174,16 @@ namespace {
 		    test_cli_internal::RunPreviewSessionWithRetainedFrame(second_session, preview_frame);
 
 		bool ok = true;
-		ok &= expect(first_result.status == test_cli_internal::TestPreviewStatus::kOk,
+		ok &= Expect(first_result.status == test_cli_internal::TestPreviewStatus::kOk,
 		             "first retained prefetched frame preview returns success");
-		ok &= expect(second_result.status == test_cli_internal::TestPreviewStatus::kOk,
+		ok &= Expect(second_result.status == test_cli_internal::TestPreviewStatus::kOk,
 		             "second retained prefetched frame preview returns success");
-		ok &= expect(first_context.present_calls == 1 && second_context.present_calls == 1,
+		ok &= Expect(first_context.present_calls == 1 && second_context.present_calls == 1,
 		             "both sessions present caller-owned prefetched frame");
-		ok &= expect(first_context.read_calls == 0 && second_context.read_calls == 0,
+		ok &= Expect(first_context.read_calls == 0 && second_context.read_calls == 0,
 		             "both sessions skip capture read for prefetched frame");
 		ok &=
-		    expect(!preview_frame.empty(), "both sessions preserve caller-owned prefetched frame");
+		    Expect(!preview_frame.empty(), "both sessions preserve caller-owned prefetched frame");
 		return ok;
 	}
 
@@ -199,9 +199,9 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
 		             "disabled exposure presenter exit returns success");
-		ok &= expect(context.restore_calls == 0, "disabled exposure skips restore");
+		ok &= Expect(context.restore_calls == 0, "disabled exposure skips restore");
 		return ok;
 	}
 
@@ -218,13 +218,13 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kCameraReadError,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kCameraReadError,
 		             "read failure after prefetch returns camera error");
-		ok &= expect(context.present_calls == 1, "read failure presents prefetched frame once");
-		ok &= expect(context.read_calls == 1, "read failure attempts one subsequent camera read");
-		ok &= expect(context.restore_calls_at_read == 1,
+		ok &= Expect(context.present_calls == 1, "read failure presents prefetched frame once");
+		ok &= Expect(context.read_calls == 1, "read failure attempts one subsequent camera read");
+		ok &= Expect(context.restore_calls_at_read == 1,
 		             "completed prefetched frame restores exposure once");
-		ok &= expect(context.restore_calls == 2,
+		ok &= Expect(context.restore_calls == 2,
 		             "camera-read failure restores exposure exactly once");
 		return ok;
 	}
@@ -244,14 +244,14 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kOk,
 		             "second presenter exit returns success");
-		ok &= expect(context.present_calls == 2, "slow mode presents two frames");
-		ok &= expect(context.read_calls == 1, "slow mode reads second frame once");
-		ok &= expect(context.sleep_calls == 1, "slow mode sleeps between frames");
-		ok &= expect(context.slept_for == std::chrono::milliseconds(500),
+		ok &= Expect(context.present_calls == 2, "slow mode presents two frames");
+		ok &= Expect(context.read_calls == 1, "slow mode reads second frame once");
+		ok &= Expect(context.sleep_calls == 1, "slow mode sleeps between frames");
+		ok &= Expect(context.slept_for == std::chrono::milliseconds(500),
 		             "slow mode fills 500ms frame interval");
-		ok &= expect(context.restore_calls == 2, "exposure restores at both frame boundaries");
+		ok &= Expect(context.restore_calls == 2, "exposure restores at both frame boundaries");
 		return ok;
 	}
 
@@ -268,13 +268,13 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
 		             "inference failure returns face model error");
-		ok &= expect(result.error_message.contains("Prepared frame"),
+		ok &= Expect(result.error_message.contains("Prepared frame"),
 		             "inference failure preserves engine error");
-		ok &= expect(context.present_calls == 0, "inference failure skips presenter");
+		ok &= Expect(context.present_calls == 0, "inference failure skips presenter");
 		ok &=
-		    expect(context.restore_calls == 1, "inference failure restores exposure exactly once");
+		    Expect(context.restore_calls == 1, "inference failure restores exposure exactly once");
 		return ok;
 	}
 
@@ -291,11 +291,11 @@ namespace {
 		const auto result = session.Run(GrayFrame());
 
 		bool ok = true;
-		ok &= expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
+		ok &= Expect(result.status == test_cli_internal::TestPreviewStatus::kFaceModelError,
 		             "missing session dependency returns face model error");
-		ok &= expect(result.error_message.contains("missing test preview session dependency"),
+		ok &= Expect(result.error_message.contains("missing test preview session dependency"),
 		             "missing session dependency writes internal error");
-		ok &= expect(context.present_calls == 0, "missing dependency skips preview work");
+		ok &= Expect(context.present_calls == 0, "missing dependency skips preview work");
 		return ok;
 	}
 

@@ -5,7 +5,7 @@
 
 auto main() -> int {
 	namespace fs = std::filesystem;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	bool                                ok = true;
 	std::error_code                     ec;
@@ -16,7 +16,7 @@ auto main() -> int {
 
 	fs::remove_all(context.temp_root, ec);
 	fs::create_directories(context.temp_root, ec);
-	ok &= expect(!ec, "create temp root");
+	ok &= Expect(!ec, "create temp root");
 
 	ok &= howdy::test::RunConfigReadUpdateTests(context);
 	ok &= howdy::test::RunConfigAtomicWriteTests(context);

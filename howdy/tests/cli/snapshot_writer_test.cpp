@@ -23,9 +23,9 @@
 
 namespace {
 
-	using howdy::test::expect;
-	using howdy::test::read_file;
-	using howdy::test::write_file;
+	using howdy::test::Expect;
+	using howdy::test::ReadFile;
+	using howdy::test::WriteFile;
 
 	constexpr mode_t kSnapshotDirectoryMode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP;
 	constexpr mode_t kSnapshotFileMode      = S_IRUSR | S_IWUSR;
@@ -96,10 +96,10 @@ namespace {
 		    fs::current_path() / ("howdy-snapshot-writer-" + name + "-" + std::to_string(getpid()));
 		std::error_code ec;
 		fs::remove_all(root, ec);
-		ok &= expect(!ec, "remove stale temp root for " + name);
+		ok &= Expect(!ec, "remove stale temp root for " + name);
 		fs::create_directories(root, ec);
-		ok &= expect(!ec, "create temp root for " + name);
-		ok &= expect(chmod(root.c_str(), kSnapshotDirectoryMode) == 0,
+		ok &= Expect(!ec, "create temp root for " + name);
+		ok &= Expect(chmod(root.c_str(), kSnapshotDirectoryMode) == 0,
 		             "secure temp root for " + name);
 		return root;
 	}
@@ -111,7 +111,7 @@ namespace {
 		}
 		std::error_code ec;
 		fs::remove_all(root, ec);
-		return expect(!ec, "remove temp root " + root.string());
+		return Expect(!ec, "remove temp root " + root.string());
 	}
 
 	auto PathMode(const fs::path &path) -> std::optional<mode_t> {
@@ -125,7 +125,7 @@ namespace {
 	auto ExpectMode(const fs::path &path, mode_t expected_mode, const std::string &message)
 	    -> bool {
 		const auto mode = PathMode(path);
-		return expect(mode.has_value() && *mode == expected_mode, message);
+		return Expect(mode.has_value() && *mode == expected_mode, message);
 	}
 
 	auto CountStagedFiles(const fs::path &directory) -> std::size_t {
@@ -233,9 +233,9 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    frames, TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(!result, name + " returns false");
-		ok &= expect(context.encode_calls == 0, name + " skips encoder");
-		ok &= expect(!fs::exists(log_root), name + " creates no log root");
+		ok &= Expect(!result, name + " returns false");
+		ok &= Expect(context.encode_calls == 0, name + " skips encoder");
+		ok &= Expect(!fs::exists(log_root), name + " creates no log root");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -264,9 +264,9 @@ namespace {
 		const auto temp_root = MakeTempRoot("missing-encoder", ok);
 		const auto log_root  = temp_root / "log";
 		const auto output    = log_root / "snapshots" / "test.jpg";
-		ok &= expect(!snapshot_internal::WriteSnapshotAtPath(TinyFrames(), TextLines(), output, {}),
+		ok &= Expect(!snapshot_internal::WriteSnapshotAtPath(TinyFrames(), TextLines(), output, {}),
 		             "missing encoder returns false");
-		ok &= expect(!fs::exists(log_root), "missing encoder creates no log root");
+		ok &= Expect(!fs::exists(log_root), "missing encoder creates no log root");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -278,18 +278,18 @@ namespace {
 		const auto      original  = std::string("original snapshot contents");
 		std::error_code ec;
 		fs::create_directories(output.parent_path(), ec);
-		ok &= expect(!ec && write_file(output, original), name + " creates destination");
-		ok &= expect(chmod(output.c_str(), 0640) == 0, name + " sets destination mode");
+		ok &= Expect(!ec && WriteFile(output, original), name + " creates destination");
+		ok &= Expect(chmod(output.c_str(), 0640) == 0, name + " sets destination mode");
 		WriterCallbackContext context;
 		context.encode_result       = standard_exception || opencv_exception;
 		context.throw_std_exception = standard_exception;
 		context.throw_cv_exception  = opencv_exception;
 		const bool result           = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(!result, name + " returns false");
-		ok &= expect(read_file(output) == original, name + " preserves destination content");
+		ok &= Expect(!result, name + " returns false");
+		ok &= Expect(ReadFile(output) == original, name + " preserves destination content");
 		ok &= ExpectMode(output, 0640, name + " preserves destination mode");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0, name + " removes staged file");
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0, name + " removes staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -301,9 +301,9 @@ namespace {
 		context.create_encoded_output = false;
 		const bool result             = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(!result, "empty encoder output returns false");
-		ok &= expect(!fs::exists(output), "empty encoder output creates no destination");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
+		ok &= Expect(!result, "empty encoder output returns false");
+		ok &= Expect(!fs::exists(output), "empty encoder output creates no destination");
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0,
 		             "empty encoder output removes staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -315,11 +315,11 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(result, "encoded-byte-install returns true");
-		ok &= expect(read_file(output) == std::string("\x01\x02\x03", 3),
+		ok &= Expect(result, "encoded-byte-install returns true");
+		ok &= Expect(ReadFile(output) == std::string("\x01\x02\x03", 3),
 		             "encoded-byte-install installs exact encoded bytes");
 		ok &= ExpectMode(output, kSnapshotFileMode, "encoded-byte-install output mode is 0600");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0,
 		             "encoded-byte-install leaves no staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -330,23 +330,23 @@ namespace {
 		const auto        output    = temp_root / "log" / "snapshots" / "test.jpg";
 		const std::string original  = "old snapshot";
 		std::error_code   ec;
-		ok &= expect(fs::create_directories(output.parent_path(), ec) && !ec,
+		ok &= Expect(fs::create_directories(output.parent_path(), ec) && !ec,
 		             "existing destination creates parent");
-		ok &= expect(write_file(output, original), "existing destination writes original");
-		ok &= expect(chmod(output.c_str(), 0640) == 0, "existing destination sets original mode");
+		ok &= Expect(WriteFile(output, original), "existing destination writes original");
+		ok &= Expect(chmod(output.c_str(), 0640) == 0, "existing destination sets original mode");
 		WriterCallbackContext                 context;
 		howdy::native::AtomicFileCommitResult commit_result;
 		const bool                            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root),
 		    &commit_result);
-		ok &= expect(!result, "existing destination returns false");
-		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
+		ok &= Expect(!result, "existing destination returns false");
+		ok &= Expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
 		             "existing destination reports collision");
-		ok &= expect(!howdy::native::AtomicFileMayHaveCommitted(commit_result),
+		ok &= Expect(!howdy::native::AtomicFileMayHaveCommitted(commit_result),
 		             "existing destination is not possibly committed");
-		ok &= expect(read_file(output) == original, "existing destination content is unchanged");
+		ok &= Expect(ReadFile(output) == original, "existing destination content is unchanged");
 		ok &= ExpectMode(output, 0640, "existing destination mode is unchanged");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0,
 		             "existing destination removes staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -356,7 +356,7 @@ namespace {
 		const auto      temp_root = MakeTempRoot("unique-path-collisions", ok);
 		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
 		std::error_code ec;
-		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		ok &= Expect(fs::create_directories(base.parent_path(), ec) && !ec,
 		             "unique path creates parent");
 		const std::array existing = {
 		    std::pair{base, std::string("base snapshot")},
@@ -364,25 +364,25 @@ namespace {
 		    std::pair{base.parent_path() / "20260816T100012-2.jpg", std::string("second snapshot")},
 		};
 		for (const auto &[path, contents] : existing) {
-			ok &= expect(write_file(path, contents), "unique path writes existing candidate");
+			ok &= Expect(WriteFile(path, contents), "unique path writes existing candidate");
 		}
 		WriterCallbackContext                 context;
 		howdy::native::AtomicFileCommitResult commit_result;
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
 		    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root), &commit_result);
 		const auto expected = base.parent_path() / "20260816T100012-3.jpg";
-		ok &= expect(installed == expected, "unique path selects next available suffix");
-		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kCommitted,
+		ok &= Expect(installed == expected, "unique path selects next available suffix");
+		ok &= Expect(commit_result == howdy::native::AtomicFileCommitResult::kCommitted,
 		             "unique path reports durable commit");
-		ok &= expect(context.encode_calls == 4, "unique path encodes each collision candidate");
-		ok &= expect(read_file(expected) == std::string("\x01\x02\x03", 3),
+		ok &= Expect(context.encode_calls == 4, "unique path encodes each collision candidate");
+		ok &= Expect(ReadFile(expected) == std::string("\x01\x02\x03", 3),
 		             "unique path installs new encoded bytes");
 		for (const auto &[path, contents] : existing) {
-			ok &= expect(read_file(path) == contents, "unique path preserves existing candidate");
+			ok &= Expect(ReadFile(path) == contents, "unique path preserves existing candidate");
 		}
 		ok &= ExpectMode(expected, kSnapshotFileMode, "unique path output mode is 0600");
 		ok &=
-		    expect(CountStagedFiles(base.parent_path()) == 0, "unique path leaves no staged file");
+		    Expect(CountStagedFiles(base.parent_path()) == 0, "unique path leaves no staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -391,11 +391,11 @@ namespace {
 		const auto      temp_root = MakeTempRoot("unique-path-exhaustion", ok);
 		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
 		std::error_code ec;
-		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		ok &= Expect(fs::create_directories(base.parent_path(), ec) && !ec,
 		             "collision exhaustion creates parent");
 		for (std::size_t index = 0; index < snapshot_internal::kMaxSnapshotNameAttempts; ++index) {
-			ok &= expect(
-			    write_file(CandidatePathForTest(base, index), "occupied-" + std::to_string(index)),
+			ok &= Expect(
+			    WriteFile(CandidatePathForTest(base, index), "occupied-" + std::to_string(index)),
 			    "collision exhaustion occupies candidate");
 		}
 		WriterCallbackContext                 context;
@@ -408,19 +408,19 @@ namespace {
 			    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root),
 			    &commit_result);
 		}
-		ok &= expect(installed.empty(), "collision exhaustion returns no path");
-		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
+		ok &= Expect(installed.empty(), "collision exhaustion returns no path");
+		ok &= Expect(commit_result == howdy::native::AtomicFileCommitResult::kDestinationExists,
 		             "collision exhaustion reports final collision");
-		ok &= expect(!howdy::native::AtomicFileMayHaveCommitted(commit_result),
+		ok &= Expect(!howdy::native::AtomicFileMayHaveCommitted(commit_result),
 		             "collision exhaustion is not possibly committed");
-		ok &= expect(error.str().contains("Could not allocate unique snapshot filename"),
+		ok &= Expect(error.str().contains("Could not allocate unique snapshot filename"),
 		             "collision exhaustion reports bounded failure");
 		for (std::size_t index = 0; index < snapshot_internal::kMaxSnapshotNameAttempts; ++index) {
-			ok &= expect(read_file(CandidatePathForTest(base, index)) ==
+			ok &= Expect(ReadFile(CandidatePathForTest(base, index)) ==
 			                 "occupied-" + std::to_string(index),
 			             "collision exhaustion preserves existing candidate");
 		}
-		ok &= expect(CountStagedFiles(base.parent_path()) == 0,
+		ok &= Expect(CountStagedFiles(base.parent_path()) == 0,
 		             "collision exhaustion leaves no staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -524,26 +524,26 @@ namespace {
 		const auto      temp_root = MakeTempRoot("concurrent-unique-path", ok);
 		const auto      base      = temp_root / "log" / "snapshots" / "20260816T100012.jpg";
 		std::error_code ec;
-		ok &= expect(fs::create_directories(base.parent_path(), ec) && !ec,
+		ok &= Expect(fs::create_directories(base.parent_path(), ec) && !ec,
 		             "concurrent install creates parent");
-		ok &= expect(write_file(base, "existing snapshot"), "concurrent install creates base");
+		ok &= Expect(WriteFile(base, "existing snapshot"), "concurrent install creates base");
 		ok &=
-		    expect(chmod(base.c_str(), kSnapshotFileMode) == 0, "concurrent install secures base");
+		    Expect(chmod(base.c_str(), kSnapshotFileMode) == 0, "concurrent install secures base");
 		if (!ok) {
 			return CleanupTempRoot(temp_root, false);
 		}
-		ok &= expect(RunConcurrentWriters(base), "concurrent install writers succeed");
+		ok &= Expect(RunConcurrentWriters(base), "concurrent install writers succeed");
 
 		const auto first           = CandidatePathForTest(base, 1);
 		const auto second          = CandidatePathForTest(base, 2);
-		const auto first_contents  = read_file(first);
-		const auto second_contents = read_file(second);
-		ok &= expect(read_file(base) == "existing snapshot",
+		const auto first_contents  = ReadFile(first);
+		const auto second_contents = ReadFile(second);
+		ok &= Expect(ReadFile(base) == "existing snapshot",
 		             "concurrent install preserves existing base");
-		ok &= expect((first_contents == "AAA" && second_contents == "BBB") ||
+		ok &= Expect((first_contents == "AAA" && second_contents == "BBB") ||
 		                 (first_contents == "BBB" && second_contents == "AAA"),
 		             "concurrent install preserves separate writer contents");
-		ok &= expect(CountStagedFiles(base.parent_path()) == 0,
+		ok &= Expect(CountStagedFiles(base.parent_path()) == 0,
 		             "concurrent install leaves no staged files");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -554,14 +554,14 @@ namespace {
 		const auto      output    = temp_root / "log" / "snapshots" / "test.jpg";
 		std::error_code ec;
 		fs::create_directories(output, ec);
-		ok &= expect(!ec, "directory target created");
+		ok &= Expect(!ec, "directory target created");
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(!result, "directory target returns false");
-		ok &= expect(context.encode_calls == 0, "directory target skips encoder");
-		ok &= expect(fs::is_directory(output), "directory target remains directory");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
+		ok &= Expect(!result, "directory target returns false");
+		ok &= Expect(context.encode_calls == 0, "directory target skips encoder");
+		ok &= Expect(fs::is_directory(output), "directory target remains directory");
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0,
 		             "directory target creates no stage");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -571,18 +571,18 @@ namespace {
 		const auto temp_root = MakeTempRoot("blocked-parent", ok);
 		const auto blocker   = temp_root / "log";
 		const auto output    = blocker / "snapshots" / "test.jpg";
-		ok &= expect(write_file(blocker, "blocking content"), "blocked parent creates blocker");
+		ok &= Expect(WriteFile(blocker, "blocking content"), "blocked parent creates blocker");
 		WriterCallbackContext context;
 		std::ostringstream    error;
 		{
 			StreamRedirect redirect(std::cerr, error.rdbuf());
 			ok &=
-			    expect(!snapshot_internal::WriteSnapshotAtPath(
+			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
 			           "blocked parent returns false");
 		}
-		ok &= expect(context.encode_calls == 0, "blocked parent skips encoder");
-		ok &= expect(read_file(blocker) == "blocking content", "blocked parent preserves blocker");
+		ok &= Expect(context.encode_calls == 0, "blocked parent skips encoder");
+		ok &= Expect(ReadFile(blocker) == "blocking content", "blocked parent preserves blocker");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -599,10 +599,10 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, RealDependencies(context, temp_root));
-		ok &= expect(result, test_case.name + " returns true");
+		ok &= Expect(result, test_case.name + " returns true");
 		ok &=
-		    expect(!cv::imread(output.string()).empty(), test_case.name + " decodes successfully");
-		ok &= expect(context.received_extension == test_case.extension,
+		    Expect(!cv::imread(output.string()).empty(), test_case.name + " decodes successfully");
+		ok &= Expect(context.received_extension == test_case.extension,
 		             test_case.name + " receives exact extension");
 		ok &= ExpectMode(output, kSnapshotFileMode, test_case.name + " output mode is 0600");
 		return CleanupTempRoot(temp_root, ok);
@@ -616,12 +616,12 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(!result, "extensionless output returns false");
-		ok &= expect(context.encode_calls == 0, "extensionless output skips encoder");
-		ok &= expect(!fs::exists(log_root),
+		ok &= Expect(!result, "extensionless output returns false");
+		ok &= Expect(context.encode_calls == 0, "extensionless output skips encoder");
+		ok &= Expect(!fs::exists(log_root),
 		             "extensionless output intentionally skips directory setup");
-		ok &= expect(!fs::exists(output), "extensionless output creates no destination");
-		ok &= expect(CountStagedFiles(output.parent_path()) == 0,
+		ok &= Expect(!fs::exists(output), "extensionless output creates no destination");
+		ok &= Expect(CountStagedFiles(output.parent_path()) == 0,
 		             "extensionless output creates no staged file");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -633,21 +633,21 @@ namespace {
 		const auto      output    = log_root / "snapshots" / "test.jpg";
 		std::error_code ec;
 		fs::create_directories(log_root, ec);
-		ok &= expect(!ec, "insecure log root created");
-		ok &= expect(chmod(log_root.c_str(), S_IRWXU | S_IRWXG) == 0,
+		ok &= Expect(!ec, "insecure log root created");
+		ok &= Expect(chmod(log_root.c_str(), S_IRWXU | S_IRWXG) == 0,
 		             "insecure log root made group-writable");
 		WriterCallbackContext context;
 		std::ostringstream    error;
 		{
 			StreamRedirect redirect(std::cerr, error.rdbuf());
 			ok &=
-			    expect(!snapshot_internal::WriteSnapshotAtPath(
+			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
 			           "insecure log root returns false");
 		}
-		ok &= expect(context.encode_calls == 0, "insecure log root skips encoder");
-		ok &= expect(!fs::exists(output), "insecure log root creates no output");
-		ok &= expect(error.str().contains("Log directory must not be group-writable"),
+		ok &= Expect(context.encode_calls == 0, "insecure log root skips encoder");
+		ok &= Expect(!fs::exists(output), "insecure log root creates no output");
+		ok &= Expect(error.str().contains("Log directory must not be group-writable"),
 		             "insecure log root reports security diagnostic");
 		return CleanupTempRoot(temp_root, ok);
 	}
@@ -661,12 +661,12 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(result, "directory creation returns true");
-		ok &= expect(context.encode_calls == 1, "directory creation calls encoder once");
+		ok &= Expect(result, "directory creation returns true");
+		ok &= Expect(context.encode_calls == 1, "directory creation calls encoder once");
 		ok &= ExpectMode(log_root, kSnapshotDirectoryMode, "created log root mode is 0750");
 		ok &= ExpectMode(snapshots_dir, kSnapshotDirectoryMode,
 		                 "created snapshot directory mode is 0750");
-		ok &= expect(fs::exists(output), "directory creation creates output");
+		ok &= Expect(fs::exists(output), "directory creation creates output");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -679,8 +679,8 @@ namespace {
 		    {cv::Mat(8, 4, CV_8UC3, cv::Scalar(10, 20, 30)),
 		     cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60))},
 		    TextLines(), output, FakeDependencies(context, temp_root));
-		ok &= expect(result, "mixed-width frames return true");
-		ok &= expect(context.encode_calls == 1, "mixed-width frames call encoder once");
+		ok &= Expect(result, "mixed-width frames return true");
+		ok &= Expect(context.encode_calls == 1, "mixed-width frames call encoder once");
 		return CleanupTempRoot(temp_root, ok);
 	}
 
@@ -694,10 +694,10 @@ namespace {
 		howdy::native::AtomicFileCommitResult commit_result;
 		const bool                            result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, dependencies, &commit_result);
-		ok &= expect(!result, "committed sync failure returns false");
-		ok &= expect(commit_result == howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
+		ok &= Expect(!result, "committed sync failure returns false");
+		ok &= Expect(commit_result == howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,
 		             "committed sync failure preserves exact commit state");
-		ok &= expect(fs::exists(output), "committed sync failure leaves snapshot visible");
+		ok &= Expect(fs::exists(output), "committed sync failure leaves snapshot visible");
 		return CleanupTempRoot(temp_root, ok);
 	}
 

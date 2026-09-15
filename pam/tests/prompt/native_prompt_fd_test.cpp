@@ -101,25 +101,25 @@ namespace {
 		if (!OpenPtyPair(&master_fd, &slave_fd)) {
 			return false;
 		}
-		const char *slave_name = ptsname(master_fd.get());
+		const char *slave_name = ptsname(master_fd.Get());
 		if (slave_name == nullptr || setsid() < 0) {
 			return false;
 		}
 		(void)signal(SIGHUP, SIG_IGN);
 		ScopedFd terminal_fd(open(slave_name, O_RDWR | O_CLOEXEC));
-		if (terminal_fd.get() < 0 || tcsetpgrp(terminal_fd.get(), getpgrp()) != 0) {
+		if (terminal_fd.Get() < 0 || tcsetpgrp(terminal_fd.Get(), getpgrp()) != 0) {
 			return false;
 		}
 
 		ScopedFd null_fd(open("/dev/null", O_RDWR | O_CLOEXEC));
-		if (null_fd.get() < 0) {
+		if (null_fd.Get() < 0) {
 			return false;
 		}
-		if (!RedirectStdioToNull(null_fd.get())) {
+		if (!RedirectStdioToNull(null_fd.Get())) {
 			return false;
 		}
 		if (scenario.terminal_stdio >= 0 &&
-		    dup2(terminal_fd.get(), scenario.terminal_stdio) != scenario.terminal_stdio) {
+		    dup2(terminal_fd.Get(), scenario.terminal_stdio) != scenario.terminal_stdio) {
 			return false;
 		}
 		struct stat terminal_before{};

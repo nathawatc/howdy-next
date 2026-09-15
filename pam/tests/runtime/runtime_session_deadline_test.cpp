@@ -115,7 +115,7 @@ namespace {
 	auto HelperChildReaped(pid_t child_pid, std::string_view name) -> bool {
 		errno                   = 0;
 		const pid_t wait_result = waitpid(child_pid, nullptr, WNOHANG);
-		return expect(wait_result == -1 && errno == ECHILD, std::string(name) + " reaps child");
+		return Expect(wait_result == -1 && errno == ECHILD, std::string(name) + " reaps child");
 	}
 
 	void TerminateAndReapTestChild(pid_t child_pid) {
@@ -150,24 +150,24 @@ namespace {
 		char ready = 0;
 		while (read(ready_fd, &ready, 1) < 0) {
 			if (errno != EINTR) {
-				return expect(false, std::string(name) + " reads readiness byte");
+				return Expect(false, std::string(name) + " reads readiness byte");
 			}
 		}
-		return expect(ready == 'R', std::string(name) + " receives readiness byte");
+		return Expect(ready == 'R', std::string(name) + " receives readiness byte");
 	}
 
 	auto RunDeadlineOutputCase(std::string_view name, std::string_view output, bool close_output,
 	                           bool exit_success, bool ignore_sigterm) -> bool {
 		std::array<int, 2> output_pipe{};
 		std::array<int, 2> ready_pipe{};
-		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
 		            std::string(name) + " creates output pipe")) {
 			return false;
 		}
 		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
 			(void)close(output_pipe[0]);
 			(void)close(output_pipe[1]);
-			return expect(false, std::string(name) + " creates readiness pipe");
+			return Expect(false, std::string(name) + " creates readiness pipe");
 		}
 
 		const pid_t child_pid = fork();
@@ -197,7 +197,7 @@ namespace {
 		}
 		(void)close(output_pipe[1]);
 		(void)close(ready_pipe[1]);
-		if (!expect(child_pid > 0, std::string(name) + " forks child") ||
+		if (!Expect(child_pid > 0, std::string(name) + " forks child") ||
 		    !WaitForReadyByte(ready_pipe[0], name)) {
 			(void)close(output_pipe[0]);
 			(void)close(ready_pipe[0]);
@@ -221,14 +221,14 @@ namespace {
 		(void)close(output_pipe[0]);
 
 		bool ok = true;
-		ok &= expect(result == exit_success, std::string(name) + " returns expected result");
+		ok &= Expect(result == exit_success, std::string(name) + " returns expected result");
 		if (exit_success) {
-			ok &= expect(helper_output == output, std::string(name) + " preserves exact output");
+			ok &= Expect(helper_output == output, std::string(name) + " preserves exact output");
 		} else {
-			ok &= expect(helper_output.empty(), std::string(name) + " discards failed output");
-			ok &= expect(elapsed >= timeout, std::string(name) + " honors deadline");
-			ok &= expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded");
-			ok &= expect(
+			ok &= Expect(helper_output.empty(), std::string(name) + " discards failed output");
+			ok &= Expect(elapsed >= timeout, std::string(name) + " honors deadline");
+			ok &= Expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded");
+			ok &= Expect(
 			    std::ranges::find(fake.log_messages, "Howdy auth helper prepare timed out") !=
 			        fake.log_messages.end(),
 			    std::string(name) + " logs prepare timeout");
@@ -246,7 +246,7 @@ namespace {
 	auto RunCombinedOutputFailureCase(std::string_view name, ChildOutcome outcome,
 	                                  std::string_view output) -> bool {
 		std::array<int, 2> output_pipe{};
-		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
 		            std::string(name) + " creates output pipe")) {
 			return false;
 		}
@@ -255,7 +255,7 @@ namespace {
 		if (child_pid < 0) {
 			(void)close(output_pipe[0]);
 			(void)close(output_pipe[1]);
-			return expect(false, std::string(name) + " forks child");
+			return Expect(false, std::string(name) + " forks child");
 		}
 		if (child_pid == 0) {
 			(void)close(output_pipe[0]);
@@ -289,9 +289,9 @@ namespace {
 		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
 		(void)close(output_pipe[0]);
 
-		return expect(!result, std::string(name) + " rejects combined child failure") &&
-		       expect(helper_output.empty(), std::string(name) + " clears caller-visible output") &&
-		       expect(fake.log_messages.empty(), std::string(name) + " does not time out") &&
+		return Expect(!result, std::string(name) + " rejects combined child failure") &&
+		       Expect(helper_output.empty(), std::string(name) + " clears caller-visible output") &&
+		       Expect(fake.log_messages.empty(), std::string(name) + " does not time out") &&
 		       HelperChildReaped(child_pid, name);
 	}
 
@@ -309,7 +309,7 @@ namespace {
 
 	auto TestPrepareRuntimeAuthFilesStalledChild() -> bool {
 		StalledSpawnContext context;
-		if (!expect(pipe(context.ready_pipe.data()) == 0,
+		if (!Expect(pipe(context.ready_pipe.data()) == 0,
 		            "prepare orchestration creates ready pipe")) {
 			return false;
 		}
@@ -322,11 +322,11 @@ namespace {
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		(void)close(context.ready_pipe[0]);
 		(void)close(context.ready_pipe[1]);
-		return expect(!result, "prepare orchestration rejects stalled child") &&
-		       expect(context.spawn_calls == 1, "prepare orchestration spawns once") &&
-		       expect(elapsed >= timeout, "prepare orchestration honors deadline") &&
-		       expect(elapsed < std::chrono::seconds(2), "prepare orchestration remains bounded") &&
-		       expect(
+		return Expect(!result, "prepare orchestration rejects stalled child") &&
+		       Expect(context.spawn_calls == 1, "prepare orchestration spawns once") &&
+		       Expect(elapsed >= timeout, "prepare orchestration honors deadline") &&
+		       Expect(elapsed < std::chrono::seconds(2), "prepare orchestration remains bounded") &&
+		       Expect(
 		           std::ranges::find(context.log_messages, "Howdy auth helper prepare timed out") !=
 		               context.log_messages.end(),
 		           "prepare orchestration logs timeout") &&
@@ -348,14 +348,14 @@ namespace {
 	auto TestAuthHelperOutputLimit() -> bool {
 		std::array<int, 2> output_pipe{};
 		std::array<int, 2> ready_pipe{};
-		if (!expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
+		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
 		            "output limit creates output pipe")) {
 			return false;
 		}
 		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
 			(void)close(output_pipe[0]);
 			(void)close(output_pipe[1]);
-			return expect(false, "output limit creates readiness pipe");
+			return Expect(false, "output limit creates readiness pipe");
 		}
 
 		const pid_t child_pid = fork();
@@ -374,7 +374,7 @@ namespace {
 		}
 		(void)close(output_pipe[1]);
 		(void)close(ready_pipe[1]);
-		if (!expect(child_pid > 0, "output limit forks child") ||
+		if (!Expect(child_pid > 0, "output limit forks child") ||
 		    !WaitForReadyByte(ready_pipe[0], "output limit")) {
 			(void)close(output_pipe[0]);
 			(void)close(ready_pipe[0]);
@@ -390,8 +390,8 @@ namespace {
 		    {.child_pid = child_pid, .output_fd = output_pipe[0]}, &output, operations,
 		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
 		(void)close(output_pipe[0]);
-		return expect(!result, "output limit is rejected") &&
-		       expect(output.empty(), "output limit data is discarded") &&
+		return Expect(!result, "output limit is rejected") &&
+		       Expect(output.empty(), "output limit data is discarded") &&
 		       HelperChildReaped(child_pid, "output limit");
 	}
 
@@ -400,7 +400,7 @@ namespace {
 		bool              ok           = true;
 		{
 			ScopedSignalBlock blocked_sigchld(SIGCHLD);
-			if (!expect(blocked_sigchld.Valid(), "blocked SIGCHLD auth-helper guard installs")) {
+			if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD auth-helper guard installs")) {
 				return false;
 			}
 			ok &= RunDeadlineOutputCase("blocked SIGCHLD auth-helper timeout", valid_output, true,
@@ -408,7 +408,7 @@ namespace {
 		}
 		{
 			ScopedSignalBlock blocked_sigterm(SIGTERM);
-			if (!expect(blocked_sigterm.Valid(), "blocked SIGTERM auth-helper guard installs")) {
+			if (!Expect(blocked_sigterm.Valid(), "blocked SIGTERM auth-helper guard installs")) {
 				return false;
 			}
 			ok &= RunDeadlineOutputCase("blocked SIGTERM auth-helper timeout", valid_output, true,

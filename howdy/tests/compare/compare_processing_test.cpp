@@ -7,7 +7,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::CompareCaptureOpenStatus;
 	using howdy::native::CompareExit;
@@ -83,12 +83,12 @@ namespace {
 
 		bool        ok              = true;
 		const auto *processing_exit = std::get_if<CompareExit>(&result);
-		ok &= expect(processing_exit != nullptr, "successful validation returns frame-loop result");
+		ok &= Expect(processing_exit != nullptr, "successful validation returns frame-loop result");
 		if (processing_exit != nullptr) {
-			ok &= expect(*processing_exit == CompareExit::kSuccess,
+			ok &= Expect(*processing_exit == CompareExit::kSuccess,
 			             "successful frame-loop result propagates");
 		}
-		ok &= expect(context.events == std::vector<std::string>{"open", "drop", "engine", "reset",
+		ok &= Expect(context.events == std::vector<std::string>{"open", "drop", "engine", "reset",
 		                                                        "first next_frame"},
 		             "successful privilege validation reaches every processing stage");
 		return ok;
@@ -101,14 +101,14 @@ namespace {
 
 		bool        ok             = true;
 		const auto *capture_result = std::get_if<howdy::native::CompareCaptureOpenResult>(&result);
-		ok &= expect(capture_result != nullptr, "open failure returns capture result");
+		ok &= Expect(capture_result != nullptr, "open failure returns capture result");
 		if (capture_result != nullptr) {
-			ok &= expect(capture_result->status == CompareCaptureOpenStatus::kOpenFailed,
+			ok &= Expect(capture_result->status == CompareCaptureOpenStatus::kOpenFailed,
 			             "open failure status is preserved");
 			ok &=
-			    expect(capture_result->error_message == "camera failed", "open error is preserved");
+			    Expect(capture_result->error_message == "camera failed", "open error is preserved");
 		}
-		ok &= expect(context.events == std::vector<std::string>{"open"},
+		ok &= Expect(context.events == std::vector<std::string>{"open"},
 		             "open failure skips all later stages");
 		return ok;
 	}
@@ -121,12 +121,12 @@ namespace {
 		bool        ok             = true;
 		const auto *capture_result = std::get_if<howdy::native::CompareCaptureOpenResult>(&result);
 		ok &=
-		    expect(capture_result != nullptr, "invalid camera dependencies return capture result");
+		    Expect(capture_result != nullptr, "invalid camera dependencies return capture result");
 		if (capture_result != nullptr) {
-			ok &= expect(capture_result->status == CompareCaptureOpenStatus::kInvalidDependencies,
+			ok &= Expect(capture_result->status == CompareCaptureOpenStatus::kInvalidDependencies,
 			             "invalid camera dependency status is preserved");
 		}
-		ok &= expect(context.events == std::vector<std::string>{"open"},
+		ok &= Expect(context.events == std::vector<std::string>{"open"},
 		             "invalid camera dependencies skip all later stages");
 		return ok;
 	}
@@ -138,14 +138,14 @@ namespace {
 
 		bool        ok               = true;
 		const auto *privilege_result = std::get_if<howdy::native::ComparePrivilegeResult>(&result);
-		ok &= expect(privilege_result != nullptr, "capability failure returns privilege result");
+		ok &= Expect(privilege_result != nullptr, "capability failure returns privilege result");
 		if (privilege_result != nullptr) {
-			ok &= expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
+			ok &= Expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
 			             "capability failure status is preserved");
-			ok &= expect(privilege_result->error_message == "non-root process has capabilities",
+			ok &= Expect(privilege_result->error_message == "non-root process has capabilities",
 			             "capability failure diagnostic data is preserved");
 		}
-		ok &= expect(context.events == std::vector<std::string>{"open", "drop"},
+		ok &= Expect(context.events == std::vector<std::string>{"open", "drop"},
 		             "capability-bearing non-root state skips engine and frame loop");
 		return ok;
 	}
@@ -171,16 +171,16 @@ namespace {
 			const auto  result       = Run(context);
 			const auto *privilege_result =
 			    std::get_if<howdy::native::ComparePrivilegeResult>(&result);
-			ok &= expect(privilege_result != nullptr,
+			ok &= Expect(privilege_result != nullptr,
 			             std::string(test_case.label) + " returns privilege result");
 			if (privilege_result != nullptr) {
 				ok &=
-				    expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
+				    Expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
 				           std::string(test_case.label) + " status is preserved");
-				ok &= expect(privilege_result->error_message == test_case.error,
+				ok &= Expect(privilege_result->error_message == test_case.error,
 				             std::string(test_case.label) + " diagnostic data is preserved");
 			}
-			ok &= expect(context.events == std::vector<std::string>{"open", "drop"},
+			ok &= Expect(context.events == std::vector<std::string>{"open", "drop"},
 			             std::string(test_case.label) +
 			                 " skips engine, timeout reset, and frame loop");
 		}
@@ -194,9 +194,9 @@ namespace {
 
 		bool        ok              = true;
 		const auto *processing_exit = std::get_if<CompareExit>(&result);
-		ok &= expect(processing_exit != nullptr, "frame-loop completion returns frame-loop result");
+		ok &= Expect(processing_exit != nullptr, "frame-loop completion returns frame-loop result");
 		if (processing_exit != nullptr) {
-			ok &= expect(*processing_exit == CompareExit::kTooDark,
+			ok &= Expect(*processing_exit == CompareExit::kTooDark,
 			             "frame-loop processing result propagates unchanged");
 		}
 		return ok;
@@ -229,9 +229,9 @@ namespace {
 
 			const auto result =
 			    howdy::native::compare_processing_internal::RunCompareProcessing(dependencies);
-			ok &= expect(std::holds_alternative<CompareProcessingInvalidDependencies>(result),
+			ok &= Expect(std::holds_alternative<CompareProcessingInvalidDependencies>(result),
 			             "missing callback returns invalid-dependencies stage result");
-			ok &= expect(context.events.empty(),
+			ok &= Expect(context.events.empty(),
 			             "all callbacks validate before orchestration starts");
 		}
 		return ok;

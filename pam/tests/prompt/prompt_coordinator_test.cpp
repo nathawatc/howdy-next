@@ -162,10 +162,10 @@ namespace {
 			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 			                              Dependencies(&context), timeout);
 			const auto        result = coordinator.Run(MakeCompareRequest());
-			ok &= expect(!coordinator.Valid(), "nonpositive hard timeout is invalid");
-			ok &= expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
+			ok &= Expect(!coordinator.Valid(), "nonpositive hard timeout is invalid");
+			ok &= Expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
 			             "nonpositive hard timeout fails closed");
-			ok &= expect(GetCallbackCounts(context) == CallbackCounts{},
+			ok &= Expect(GetCallbackCounts(context) == CallbackCounts{},
 			             "nonpositive hard timeout starts no callbacks");
 		}
 		return ok;
@@ -174,7 +174,7 @@ namespace {
 	auto TestCompareWinsWithoutPasswordPrompt() -> bool {
 		FakeContext context;
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "compare-winner child spawned")) {
+		if (!Expect(child_pid > 0, "compare-winner child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -183,25 +183,25 @@ namespace {
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "compare winner returns Howdy result") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "compare winner spawns child once") &&
-		       expect(result.compare_status == 0,
+		       Expect(result.compare_status == 0,
 		              "compare winner preserves exact successful wait status") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "compare winner waits once for child") &&
-		       expect(context.auth_token_calls == 0,
+		       Expect(context.auth_token_calls == 0,
 		              "compare winner does not request disabled password") &&
-		       expect(context.terminate_calls == 0, "compare winner does not terminate child") &&
-		       expect(reaped, "compare winner reaps child");
+		       Expect(context.terminate_calls == 0, "compare winner does not terminate child") &&
+		       Expect(reaped, "compare winner reaps child");
 	}
 
 	auto TestPamWins() -> bool {
 		FakeContext context;
 		context.run_thread    = std::this_thread::get_id();
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS, std::chrono::seconds(2));
-		if (!expect(child_pid > 0, "PAM-winner child spawned")) {
+		if (!Expect(child_pid > 0, "PAM-winner child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -210,23 +210,23 @@ namespace {
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM winner returns PAM result") &&
-		       expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
+		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
 		              "PAM winner spawns child once") &&
-		       expect(context.wait_calls == 1 && context.waited_pid == child_pid,
+		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "PAM winner waits for spawned child") &&
-		       expect(result.pam_status == PAM_SUCCESS, "PAM winner preserves PAM success") &&
-		       expect(context.preflight_calls == 1, "PAM winner runs input preflight once") &&
-		       expect(context.auth_token_calls == 1, "PAM winner requests token once") &&
-		       expect(context.auth_token_thread == context.run_thread,
+		       Expect(result.pam_status == PAM_SUCCESS, "PAM winner preserves PAM success") &&
+		       Expect(context.preflight_calls == 1, "PAM winner runs input preflight once") &&
+		       Expect(context.auth_token_calls == 1, "PAM winner requests token once") &&
+		       Expect(context.auth_token_thread == context.run_thread,
 		              "PAM winner requests token on run caller thread") &&
-		       expect(context.wait_thread != context.run_thread,
+		       Expect(context.wait_thread != context.run_thread,
 		              "PAM winner waits for compare on worker thread") &&
 
-		       expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
+		       Expect(context.terminate_calls == 1 && context.terminated_pid == child_pid,
 		              "PAM winner terminates compare child once") &&
-		       expect(reaped, "PAM winner reaps compare child");
+		       Expect(reaped, "PAM winner reaps compare child");
 	}
 
 	auto TestPasswordCallReturnedBeforePromptSubmissionSuppressesSubmission() -> bool {
@@ -238,10 +238,10 @@ namespace {
 		howdy::pam::PromptCoordinatorTestAccess::PublishPasswordCallReturned(coordinator);
 		howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
 
-		return expect(context.prompt_submissions == 0,
+		return Expect(context.prompt_submissions == 0,
 		              "password_call_returned suppresses claimed prompt submission before "
 		              "submission attempt") &&
-		       expect(!context.submission_finished,
+		       Expect(!context.submission_finished,
 		              "suppressed prompt submission never reaches prompt submitter");
 	}
 
@@ -251,7 +251,7 @@ namespace {
 		    .block_submission_after_start = true,
 		};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "submission-before-return child spawned")) {
+		if (!Expect(child_pid > 0, "submission-before-return child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
@@ -264,7 +264,7 @@ namespace {
 			result = coordinator.Run(MakeCompareRequest());
 		});
 
-		bool ok = expect(WaitForSubmissionReady(context, 1s),
+		bool ok = Expect(WaitForSubmissionReady(context, 1s),
 		                 "in-flight prompt submission begins before password returns");
 		{
 			std::scoped_lock lock(context.token_mutex);
@@ -273,29 +273,29 @@ namespace {
 		context.token_condition.notify_all();
 		{
 			std::unique_lock<std::mutex> lock(context.token_mutex);
-			ok &= expect(context.token_condition.wait_for(lock, 1s,
+			ok &= Expect(context.token_condition.wait_for(lock, 1s,
 			                                              [&context] -> bool {
 				                                              return context.token_returned.load();
 			                                              }),
 			             "password call completes during prompt submission");
 		}
-		ok &= expect(
+		ok &= Expect(
 		    howdy::pam::PromptCoordinatorTestAccess::WaitForPasswordCallReturned(coordinator, 1s),
 		    "password_call_returned does not wait for blocked prompt submitter");
-		ok &= expect(!context.submission_finished,
+		ok &= Expect(!context.submission_finished,
 		             "blocked prompt submission has started but not finished");
 		ReleaseSubmission(context);
 		run_thread.join();
 
 		return ok &&
-		       expect(context.submission_started_before_password_return,
+		       Expect(context.submission_started_before_password_return,
 		              "prompt_submission_started before password_call_returned") &&
-		       expect(context.prompt_submissions == 1,
+		       Expect(context.prompt_submissions == 1,
 		              "in-flight submission attempt occurs once") &&
-		       expect(context.submission_finished, "prompt submission finishes after release") &&
-		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		       Expect(context.submission_finished, "prompt submission finishes after release") &&
+		       Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "submission-before-return preserves compare winner") &&
-		       expect(ChildReaped(child_pid), "submission-before-return child is reaped");
+		       Expect(ChildReaped(child_pid), "submission-before-return child is reaped");
 	}
 
 	auto TestPromptGenerationRolloverRetriesCanceledClaim() -> bool {
@@ -315,9 +315,9 @@ namespace {
 			howdy::pam::PromptCoordinatorTestAccess::RequestShutdown(coordinator);
 		}
 		worker.join();
-		return expect(generation == 2, "later secret prompt receives new generation") &&
-		       expect(submission_completed, "canceled claim retries on later prompt generation") &&
-		       expect(context.prompt_submissions == 1,
+		return Expect(generation == 2, "later secret prompt receives new generation") &&
+		       Expect(submission_completed, "canceled claim retries on later prompt generation") &&
+		       Expect(context.prompt_submissions == 1,
 		              "generation rollover makes exactly one submission attempt");
 	}
 
@@ -332,8 +332,8 @@ namespace {
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::BeginPromptGeneration(coordinator);
 		howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
-		return expect(generation == 0, "password return rejects later prompt generation") &&
-		       expect(context.prompt_submissions == 0,
+		return Expect(generation == 0, "password return rejects later prompt generation") &&
+		       Expect(context.prompt_submissions == 0,
 		              "password return between generations suppresses prompt submission retry");
 	}
 
@@ -348,8 +348,8 @@ namespace {
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::BeginPromptGeneration(coordinator);
 		howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
-		return expect(generation == 0, "shutdown rejects later prompt generation") &&
-		       expect(context.prompt_submissions == 0,
+		return Expect(generation == 0, "shutdown rejects later prompt generation") &&
+		       Expect(context.prompt_submissions == 0,
 		              "shutdown between generations suppresses prompt submission retry");
 	}
 
@@ -362,15 +362,15 @@ namespace {
 		std::jthread worker([&coordinator] -> void {
 			howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
 		});
-		bool         ok = expect(WaitForSubmissionReady(context, 1s),
+		bool         ok = Expect(WaitForSubmissionReady(context, 1s),
 		                         "generation 1 prompt submission starts before close");
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
 		const auto generation =
 		    howdy::pam::PromptCoordinatorTestAccess::BeginPromptGeneration(coordinator);
 		ReleaseSubmission(context);
 		worker.join();
-		return ok && expect(generation == 2, "generation 2 begins after submission starts") &&
-		       expect(context.prompt_submissions == 1, "generation close after submission starts "
+		return ok && Expect(generation == 2, "generation 2 begins after submission starts") &&
+		       Expect(context.prompt_submissions == 1, "generation close after submission starts "
 		                                               "never makes second submission attempt");
 	}
 
@@ -384,7 +384,7 @@ namespace {
 		for (howdy::pam::SecretPromptGeneration expected = 2; expected < 5; ++expected) {
 			const auto generation =
 			    howdy::pam::PromptCoordinatorTestAccess::BeginPromptGeneration(coordinator);
-			if (!expect(generation == expected, "rollover generation advances monotonically")) {
+			if (!Expect(generation == expected, "rollover generation advances monotonically")) {
 				return false;
 			}
 			howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, generation);
@@ -399,9 +399,9 @@ namespace {
 			howdy::pam::PromptCoordinatorTestAccess::RequestShutdown(coordinator);
 		}
 		worker.join();
-		return expect(final_generation == 5, "final rollover generation becomes active") &&
-		       expect(submission_completed, "worker wakes after multiple generation rollovers") &&
-		       expect(context.prompt_submissions == 1,
+		return Expect(final_generation == 5, "final rollover generation becomes active") &&
+		       Expect(submission_completed, "worker wakes after multiple generation rollovers") &&
+		       Expect(context.prompt_submissions == 1,
 		              "multiple generation rollovers make exactly one submission attempt");
 	}
 
@@ -414,7 +414,7 @@ namespace {
 		    .appdata_ptr = &conversation_state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!expect(pam_start("howdy-thread-affinity-test", "alice", &conversation, &pamh) ==
+		if (!Expect(pam_start("howdy-thread-affinity-test", "alice", &conversation, &pamh) ==
 		                PAM_SUCCESS,
 		            "thread-affinity test starts PAM transaction")) {
 			return false;
@@ -423,7 +423,7 @@ namespace {
 		FakeContext context{.use_real_auth_token = true};
 		context.run_thread    = std::this_thread::get_id();
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "thread-affinity child spawned")) {
+		if (!Expect(child_pid > 0, "thread-affinity child spawned")) {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
@@ -433,19 +433,19 @@ namespace {
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		pam_end(pamh, result.pam_status);
 
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "thread-affinity password wins") &&
-		       expect(result.pam_status == PAM_SUCCESS,
+		       Expect(result.pam_status == PAM_SUCCESS,
 		              "thread-affinity real PAM token request succeeds") &&
-		       expect(conversation_state.calls == 1,
+		       Expect(conversation_state.calls == 1,
 		              "thread-affinity invokes application conversation once") &&
-		       expect(!conversation_state.wrong_thread,
+		       Expect(!conversation_state.wrong_thread,
 		              "application conversation stays on run caller thread") &&
-		       expect(!conversation_state.overlapping && !conversation_state.active,
+		       Expect(!conversation_state.overlapping && !conversation_state.active,
 		              "application conversation never overlaps or reenters") &&
-		       expect(context.wait_thread != context.run_thread,
+		       Expect(context.wait_thread != context.run_thread,
 		              "application conversation remains separate from compare worker") &&
-		       expect(ChildReaped(child_pid), "thread-affinity child is reaped");
+		       Expect(ChildReaped(child_pid), "thread-affinity child is reaped");
 	}
 
 	auto TestBestEffortPromptSubmissionFollowsProductionSecretPromptObservation() -> bool {
@@ -460,14 +460,14 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!expect(pam_start("howdy-observed-prompt-test", "alice", &conversation, &pamh) ==
+		if (!Expect(pam_start("howdy-observed-prompt-test", "alice", &conversation, &pamh) ==
 		                PAM_SUCCESS,
 		            "observed prompt test starts PAM transaction")) {
 			return false;
 		}
 
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "observed prompt child spawned")) {
+		if (!Expect(child_pid > 0, "observed prompt child spawned")) {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
@@ -485,13 +485,13 @@ namespace {
 		bool ok = true;
 		{
 			std::unique_lock<std::mutex> lock(context.token_mutex);
-			ok &= expect(context.token_condition.wait_for(lock, 1s,
+			ok &= Expect(context.token_condition.wait_for(lock, 1s,
 			                                              [&context] -> bool {
 				                                              return context.before_conversation;
 			                                              }),
 			             "password acquisition pauses before wrapper receives secret prompt");
 			ok &=
-			    expect(context.prompt_submissions == 0,
+			    Expect(context.prompt_submissions == 0,
 			           "face success makes no submission attempt before wrapper receives ECHO_OFF");
 			context.release_conversation = true;
 		}
@@ -500,15 +500,15 @@ namespace {
 		pam_end(pamh, result.pam_status);
 
 		return ok &&
-		       expect(state.original_called, "original secret conversation receives prompt") &&
-		       expect(
+		       Expect(state.original_called, "original secret conversation receives prompt") &&
+		       Expect(
 		           state.submission_count_seen == 1,
 		           "original callback may observe best-effort submission attempt already made") &&
-		       expect(context.prompt_submissions == 1,
+		       Expect(context.prompt_submissions == 1,
 		              "secret prompt permits exactly one submission attempt") &&
-		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		       Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "immediate face success remains Howdy result") &&
-		       expect(ChildReaped(child_pid), "observed prompt child reaped");
+		       Expect(ChildReaped(child_pid), "observed prompt child reaped");
 	}
 
 	auto TestPasswordCallReturnedBeforeEchoOffSubmitsNoPrompt() -> bool {
@@ -523,13 +523,13 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!expect(pam_start("howdy-no-secret-prompt-test", "alice", &original, &pamh) ==
+		if (!Expect(pam_start("howdy-no-secret-prompt-test", "alice", &original, &pamh) ==
 		                PAM_SUCCESS,
 		            "no-secret-prompt test starts PAM transaction")) {
 			return false;
 		}
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "no-secret-prompt child spawned")) {
+		if (!Expect(child_pid > 0, "no-secret-prompt child spawned")) {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
@@ -545,14 +545,14 @@ namespace {
 		bool ok = true;
 		{
 			std::unique_lock<std::mutex> lock(context.token_mutex);
-			ok &= expect(context.token_condition.wait_for(lock, 1s,
+			ok &= Expect(context.token_condition.wait_for(lock, 1s,
 			                                              [&context] -> bool {
 				                                              return context.before_conversation;
 			                                              }),
 			             "no-secret-prompt password request reaches pre-conversation barrier");
 		}
 		ok &=
-		    expect(howdy::pam::PromptCoordinatorTestAccess::WaitForCompareSuccess(coordinator, 1s),
+		    Expect(howdy::pam::PromptCoordinatorTestAccess::WaitForCompareSuccess(coordinator, 1s),
 		           "no-secret-prompt face success publishes before password_call_returned");
 		{
 			std::scoped_lock lock(context.token_mutex);
@@ -563,13 +563,13 @@ namespace {
 		pam_end(pamh, result.pam_status);
 
 		return ok &&
-		       expect(context.prompt_submissions == 0,
+		       Expect(context.prompt_submissions == 0,
 		              "password_call_returned before ECHO_OFF makes no submission attempt") &&
-		       expect(state.original_calls == 0,
+		       Expect(state.original_calls == 0,
 		              "password_call_returned before ECHO_OFF skips application conversation") &&
-		       expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		       Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "face success remains winner before prompt-free password_call_returned") &&
-		       expect(ChildReaped(child_pid), "no-secret-prompt child reaped");
+		       Expect(ChildReaped(child_pid), "no-secret-prompt child reaped");
 	}
 
 	auto TestPromptSubmissionFailureIsHandled() -> bool {
@@ -580,9 +580,9 @@ namespace {
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
 
-		return expect(context.prompt_submissions == 1,
+		return Expect(context.prompt_submissions == 1,
 		              "prompt submission failure attempts submission once") &&
-		       expect(
+		       Expect(
 		           howdy::pam::PromptCoordinatorTestAccess::PromptSubmissionFinished(coordinator),
 		           "prompt submission exception is contained and marks completion");
 	}
@@ -594,7 +594,7 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!expect(pam_start("howdy-observed-wrapper-test", "alice", &original, &pamh) ==
+		if (!Expect(pam_start("howdy-observed-wrapper-test", "alice", &original, &pamh) ==
 		                PAM_SUCCESS,
 		            "observed wrapper test starts PAM transaction")) {
 			return false;
@@ -607,11 +607,11 @@ namespace {
 		auto end = [](void *, howdy::pam::SecretPromptGeneration) -> void {};
 		howdy::pam::ObservedPromptConversation wrapper(
 		    pamh, {.context = &state, .begin = begin, .end = end});
-		bool        ok = expect(wrapper.Available(), "production observed wrapper is available") &&
-		                 expect(wrapper.Install() == PAM_SUCCESS,
+		bool        ok = Expect(wrapper.Available(), "production observed wrapper is available") &&
+		                 Expect(wrapper.Install() == PAM_SUCCESS,
 		                        "production observed wrapper installs on caller thread");
 		const void *item = nullptr;
-		ok &= expect(pam_get_item(pamh, PAM_CONV, &item) == PAM_SUCCESS && item != nullptr,
+		ok &= Expect(pam_get_item(pamh, PAM_CONV, &item) == PAM_SUCCESS && item != nullptr,
 		             "observed wrapper test reads installed conversation");
 		const auto *installed = static_cast<const struct pam_conv *>(item);
 		const std::array<struct pam_message, 2>   messages{{
@@ -621,14 +621,14 @@ namespace {
 		std::array<const struct pam_message *, 2> message_ptrs{
 		    {messages.data(), messages.data() + 1}};
 		auto *responses = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
+		ok &= Expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
 		                 PAM_SUCCESS,
 		             "observed wrapper delegates mixed prompt batch synchronously");
-		ok &= expect(state.observed_calls == 1,
+		ok &= Expect(state.observed_calls == 1,
 		             "observed wrapper publishes one secret observation per batch");
-		ok &= expect(state.original_calls == 1,
+		ok &= Expect(state.original_calls == 1,
 		             "observed wrapper invokes original conversation once");
-		ok &= expect(responses != nullptr && std::string_view(responses[0].resp) == "user" &&
+		ok &= Expect(responses != nullptr && std::string_view(responses[0].resp) == "user" &&
 		                 std::string_view(responses[1].resp) == "secret",
 		             "observed wrapper preserves original response ownership and contents");
 		if (responses != nullptr) {
@@ -639,18 +639,18 @@ namespace {
 
 		std::array<const struct pam_message *, 2> invalid_messages{{messages.data(), nullptr}};
 		responses = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(installed->conv(2, invalid_messages.data(), &responses,
+		ok &= Expect(installed->conv(2, invalid_messages.data(), &responses,
 		                             installed->appdata_ptr) == PAM_CONV_ERR,
 		             "observed wrapper rejects invalid message batch");
-		ok &= expect(responses == nullptr, "observed wrapper clears response before validation");
+		ok &= Expect(responses == nullptr, "observed wrapper clears response before validation");
 
 		state.throw_observer = true;
 		responses            = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
+		ok &= Expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
 		                 PAM_CONV_ERR,
 		             "observed wrapper catches observer exception before C ABI return");
-		ok &= expect(responses == nullptr, "observer exception leaves no response");
-		ok &= expect(wrapper.RestoreOriginal() ==
+		ok &= Expect(responses == nullptr, "observer exception leaves no response");
+		ok &= Expect(wrapper.RestoreOriginal() ==
 		                 howdy::pam::ConversationRestoreResult::kOriginalRestored,
 		             "observed wrapper restores original conversation explicitly");
 		pam_end(pamh, PAM_SUCCESS);
@@ -663,19 +663,19 @@ namespace {
 		    .token_waits_for_reap     = true,
 		};
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
-		if (!expect(child_pid > 0, "reap/cancel race child spawned")) {
+		if (!Expect(child_pid > 0, "reap/cancel race child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "password_call_returned wins while reaped wait is unpublished") &&
-		       expect(context.wait_calls == 1, "reap/cancel race has one wait owner") &&
-		       expect(context.terminate_calls == 0,
+		       Expect(context.wait_calls == 1, "reap/cancel race has one wait owner") &&
+		       Expect(context.terminate_calls == 0,
 		              "reap/cancel race never signals already-reaped PID") &&
-		       expect(ChildReaped(child_pid), "reap/cancel race reaps child exactly once");
+		       Expect(ChildReaped(child_pid), "reap/cancel race reaps child exactly once");
 	}
 
 	auto TestStalePromptGenerationCloseIsIgnored() -> bool {
@@ -696,29 +696,29 @@ namespace {
 			howdy::pam::PromptCoordinatorTestAccess::RequestShutdown(coordinator);
 		}
 		worker.join();
-		return expect(generation == 2, "stale generation test starts second generation") &&
-		       expect(submission_completed, "stale generation close preserves active generation") &&
-		       expect(context.prompt_submissions == 1,
+		return Expect(generation == 2, "stale generation test starts second generation") &&
+		       Expect(submission_completed, "stale generation close preserves active generation") &&
+		       Expect(context.prompt_submissions == 1,
 		              "stale generation close permits one prompt submission");
 	}
 
 	auto TestCompareWaitExceptionReapsChild() -> bool {
 		FakeContext context{.throw_compare_wait = true};
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "wait-exception child spawned")) {
+		if (!Expect(child_pid > 0, "wait-exception child spawned")) {
 			return false;
 		}
 		context.next_child_pid = child_pid;
 		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 		                              Dependencies(&context), std::chrono::seconds(5));
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "wait exception returns failed compare result") &&
-		       expect(result.compare_status == (static_cast<int>(CompareExit::kAbort) << 8),
+		       Expect(result.compare_status == (static_cast<int>(CompareExit::kAbort) << 8),
 		              "wait exception maps to compare abort") &&
-		       expect(context.cleanup_calls == 1 && context.cleaned_pid == child_pid,
+		       Expect(context.cleanup_calls == 1 && context.cleaned_pid == child_pid,
 		              "wait exception invokes injected cleanup once") &&
-		       expect(ChildReaped(child_pid), "wait exception emergency cleanup reaps child");
+		       Expect(ChildReaped(child_pid), "wait exception emergency cleanup reaps child");
 	}
 }  // namespace
 

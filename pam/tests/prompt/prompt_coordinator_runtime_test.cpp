@@ -15,7 +15,7 @@ namespace {
 	using namespace howdy::test::process;
 	using namespace howdy::test::prompt_coordinator;
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto WatchdogWaitForCompare(void *context, pid_t child_pid,
 	                            std::chrono::steady_clock::time_point      deadline,
@@ -40,99 +40,99 @@ namespace {
 
 	auto TestWatchdogTimeoutReapsBlockedChild() -> bool {
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "watchdog timeout child spawned")) {
+		if (!Expect(child_pid > 0, "watchdog timeout child spawned")) {
 			return false;
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 40ms);
-		return expect(status == TimeoutWaitStatus(),
+		return Expect(status == TimeoutWaitStatus(),
 		              "watchdog timeout returns synthetic timeout status") &&
-		       expect(ChildReaped(child_pid), "watchdog timeout reaps blocked child");
+		       Expect(ChildReaped(child_pid), "watchdog timeout reaps blocked child");
 	}
 
 	auto TestWatchdogKillsSigtermIgnoringChild() -> bool {
 		const pid_t child_pid = SpawnSigtermIgnoringChild();
-		if (!expect(child_pid > 0, "SIGTERM-ignoring watchdog child spawned")) {
+		if (!Expect(child_pid > 0, "SIGTERM-ignoring watchdog child spawned")) {
 			return false;
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 40ms);
-		return expect(status == TimeoutWaitStatus(),
+		return Expect(status == TimeoutWaitStatus(),
 		              "SIGTERM-ignoring child returns synthetic timeout status") &&
-		       expect(ChildReaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
+		       Expect(ChildReaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
 	}
 
 	auto TestWatchdogPreservesNaturalExitStatus() -> bool {
 		const pid_t child_pid = SpawnChild(17, 10ms);
-		if (!expect(child_pid > 0, "natural watchdog child spawned")) {
+		if (!Expect(child_pid > 0, "natural watchdog child spawned")) {
 			return false;
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
-		       expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
+		return Expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
+		       Expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
 	}
 
 	auto TestWatchdogBlockedSigchldNaturalExit() -> bool {
 		ScopedSignalBlock blocked_sigchld(SIGCHLD);
-		if (!expect(blocked_sigchld.Valid(), "blocked SIGCHLD guard installs")) {
+		if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD guard installs")) {
 			return false;
 		}
 
 		const pid_t child_pid = SpawnChild(17, 10ms);
-		if (!expect(child_pid > 0, "blocked SIGCHLD natural-exit child spawned")) {
+		if (!Expect(child_pid > 0, "blocked SIGCHLD natural-exit child spawned")) {
 			return false;
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return expect(status == (17 << 8),
+		return Expect(status == (17 << 8),
 		              "blocked SIGCHLD preserves natural compare exit status") &&
-		       expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
+		       Expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
 	}
 
 	auto TestWatchdogBlockedSigchldTimeout() -> bool {
 		ScopedSignalBlock blocked_sigchld(SIGCHLD);
-		if (!expect(blocked_sigchld.Valid(), "blocked SIGCHLD timeout guard installs")) {
+		if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD timeout guard installs")) {
 			return false;
 		}
 
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "blocked SIGCHLD timeout child spawned")) {
+		if (!Expect(child_pid > 0, "blocked SIGCHLD timeout child spawned")) {
 			return false;
 		}
 
 		const auto start   = std::chrono::steady_clock::now();
 		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
-		return expect(status == TimeoutWaitStatus(),
+		return Expect(status == TimeoutWaitStatus(),
 		              "blocked SIGCHLD returns synthetic compare timeout status") &&
-		       expect(elapsed < 2s, "blocked SIGCHLD compare timeout remains bounded") &&
-		       expect(ChildReaped(child_pid), "blocked SIGCHLD reaps timed-out compare child");
+		       Expect(elapsed < 2s, "blocked SIGCHLD compare timeout remains bounded") &&
+		       Expect(ChildReaped(child_pid), "blocked SIGCHLD reaps timed-out compare child");
 	}
 
 	auto TestWatchdogBlockedSigtermTimeout() -> bool {
 		ScopedSignalBlock blocked_sigterm(SIGTERM);
-		if (!expect(blocked_sigterm.Valid(), "blocked SIGTERM timeout guard installs")) {
+		if (!Expect(blocked_sigterm.Valid(), "blocked SIGTERM timeout guard installs")) {
 			return false;
 		}
 
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "blocked SIGTERM timeout child spawned")) {
+		if (!Expect(child_pid > 0, "blocked SIGTERM timeout child spawned")) {
 			return false;
 		}
 
 		const auto start   = std::chrono::steady_clock::now();
 		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
-		return expect(status == TimeoutWaitStatus(),
+		return Expect(status == TimeoutWaitStatus(),
 		              "blocked SIGTERM returns synthetic compare timeout status") &&
-		       expect(elapsed >= 40ms, "blocked SIGTERM compare timeout honors deadline") &&
-		       expect(elapsed < 2s, "blocked SIGTERM compare timeout remains bounded") &&
-		       expect(ChildReaped(child_pid),
+		       Expect(elapsed >= 40ms, "blocked SIGTERM compare timeout honors deadline") &&
+		       Expect(elapsed < 2s, "blocked SIGTERM compare timeout remains bounded") &&
+		       Expect(ChildReaped(child_pid),
 		              "blocked SIGTERM falls back to SIGKILL and reaps compare child");
 	}
 
@@ -142,7 +142,7 @@ namespace {
 		    .token_result = PAM_SUCCESS,
 		};
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "watchdog fallback child spawned")) {
+		if (!Expect(child_pid > 0, "watchdog fallback child spawned")) {
 			return false;
 		}
 		context.next_child_pid        = child_pid;
@@ -151,19 +151,19 @@ namespace {
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 40ms);
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
+		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "watchdog timeout keeps password fallback") &&
-		       expect(result.compare_status == TimeoutWaitStatus(),
+		       Expect(result.compare_status == TimeoutWaitStatus(),
 		              "password fallback preserves watchdog timeout status") &&
-		       expect(result.pam_status == PAM_SUCCESS,
+		       Expect(result.pam_status == PAM_SUCCESS,
 		              "password fallback preserves PAM success") &&
-		       expect(ChildReaped(child_pid), "password fallback reaps watchdog child");
+		       Expect(ChildReaped(child_pid), "password fallback reaps watchdog child");
 	}
 
 	auto TestPamSuccessReapsBeforeWatchdog() -> bool {
 		FakeContext context;
 		const pid_t child_pid = SpawnBlockedChild();
-		if (!expect(child_pid > 0, "PAM-before-watchdog child spawned")) {
+		if (!Expect(child_pid > 0, "PAM-before-watchdog child spawned")) {
 			return false;
 		}
 		context.next_child_pid        = child_pid;
@@ -172,12 +172,12 @@ namespace {
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 1s);
 		const auto        result = coordinator.Run(MakeCompareRequest());
-		return expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM success wins before watchdog") &&
-		       expect(context.terminate_calls == 1, "PAM success terminates compare child") &&
-		       expect(context.last_wait_status != TimeoutWaitStatus(),
+		       Expect(context.terminate_calls == 1, "PAM success terminates compare child") &&
+		       Expect(context.last_wait_status != TimeoutWaitStatus(),
 		              "PAM success does not use watchdog timeout status") &&
-		       expect(ChildReaped(child_pid), "PAM success reaps compare child");
+		       Expect(ChildReaped(child_pid), "PAM success reaps compare child");
 	}
 
 	auto TestProductionSpawnAdapter(const howdy::pam::CompareLaunchRequest &request,
@@ -189,24 +189,24 @@ namespace {
 		const int         result =
 		    howdy::pam::compare_process::Spawn(request, &child_pid, PosixSpawnOperations(&capture));
 
-		return expect(result == 0, label + " returns spawn success") &&
-		       expect(capture.init_calls == 1, label + " initializes file actions once") &&
-		       expect(capture.addclosefrom_calls == 1, label + " adds close-from action once") &&
-		       expect(capture.closefrom_fd == STDERR_FILENO + 1,
+		return Expect(result == 0, label + " returns spawn success") &&
+		       Expect(capture.init_calls == 1, label + " initializes file actions once") &&
+		       Expect(capture.addclosefrom_calls == 1, label + " adds close-from action once") &&
+		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
 		              label + " closes descriptors beginning at 3") &&
-		       expect(capture.spawn_calls == 1, label + " calls posix_spawn once") &&
-		       expect(capture.spawn_actions != nullptr,
+		       Expect(capture.spawn_calls == 1, label + " calls posix_spawn once") &&
+		       Expect(capture.spawn_actions != nullptr,
 		              label + " passes non-null file actions to spawn") &&
-		       expect(capture.spawn_actions == capture.initialized_actions &&
+		       Expect(capture.spawn_actions == capture.initialized_actions &&
 		                  capture.spawn_actions == capture.closefrom_actions,
 		              label + " passes initialized close-from actions to spawn") &&
-		       expect(capture.destroy_calls == 1, label + " destroys file actions once") &&
-		       expect(capture.destroyed_actions == capture.initialized_actions,
+		       Expect(capture.destroy_calls == 1, label + " destroys file actions once") &&
+		       Expect(capture.destroyed_actions == capture.initialized_actions,
 		              label + " destroys initialized file actions") &&
-		       expect(child_pid == capture.next_pid, label + " preserves spawned PID") &&
-		       expect(capture.path == kCompareProcessPath, label + " preserves executable path") &&
-		       expect(capture.argv == expected_argv, label + " preserves exact argv") &&
-		       expect(capture.environment == expected_environment,
+		       Expect(child_pid == capture.next_pid, label + " preserves spawned PID") &&
+		       Expect(capture.path == kCompareProcessPath, label + " preserves executable path") &&
+		       Expect(capture.argv == expected_argv, label + " preserves exact argv") &&
+		       Expect(capture.environment == expected_environment,
 		              label + " preserves exact environment");
 	}
 
@@ -246,14 +246,14 @@ namespace {
 		const int result    = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
 		                                                         PosixSpawnOperations(&capture));
 
-		return expect(result == ENOMEM, "file-actions init failure preserves error") &&
-		       expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
-		       expect(capture.addclosefrom_calls == 0,
+		return Expect(result == ENOMEM, "file-actions init failure preserves error") &&
+		       Expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
+		       Expect(capture.addclosefrom_calls == 0,
 		              "file-actions init failure does not add close-from action") &&
-		       expect(capture.spawn_calls == 0, "file-actions init failure does not spawn") &&
-		       expect(capture.destroy_calls == 0,
+		       Expect(capture.spawn_calls == 0, "file-actions init failure does not spawn") &&
+		       Expect(capture.destroy_calls == 0,
 		              "file-actions init failure does not destroy uninitialized actions") &&
-		       expect(child_pid == -1, "file-actions init failure leaves child PID unchanged");
+		       Expect(child_pid == -1, "file-actions init failure leaves child PID unchanged");
 	}
 
 	auto TestProductionClosefromFailure() -> bool {
@@ -263,18 +263,18 @@ namespace {
 		const int result = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
 		                                                      PosixSpawnOperations(&capture));
 
-		return expect(result == EINVAL, "close-from setup failure preserves error") &&
-		       expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
-		       expect(capture.addclosefrom_calls == 1,
+		return Expect(result == EINVAL, "close-from setup failure preserves error") &&
+		       Expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
+		       Expect(capture.addclosefrom_calls == 1,
 		              "close-from setup failure adds action once") &&
-		       expect(capture.closefrom_fd == STDERR_FILENO + 1,
+		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
 		              "close-from setup failure begins at descriptor 3") &&
-		       expect(capture.spawn_calls == 0, "close-from setup failure does not spawn") &&
-		       expect(capture.destroy_calls == 1,
+		       Expect(capture.spawn_calls == 0, "close-from setup failure does not spawn") &&
+		       Expect(capture.destroy_calls == 1,
 		              "close-from setup failure destroys initialized actions once") &&
-		       expect(capture.destroyed_actions == capture.initialized_actions,
+		       Expect(capture.destroyed_actions == capture.initialized_actions,
 		              "close-from setup failure destroys initialized file actions") &&
-		       expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
+		       Expect(child_pid == -1, "close-from setup failure leaves child PID unchanged");
 	}
 
 	auto TestProductionSpawnFailure() -> bool {
@@ -284,23 +284,23 @@ namespace {
 		const int result     = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
 		                                                          PosixSpawnOperations(&capture));
 
-		return expect(result == EACCES, "production spawn failure preserves error") &&
-		       expect(capture.init_calls == 1, "production spawn failure initializes once") &&
-		       expect(capture.addclosefrom_calls == 1,
+		return Expect(result == EACCES, "production spawn failure preserves error") &&
+		       Expect(capture.init_calls == 1, "production spawn failure initializes once") &&
+		       Expect(capture.addclosefrom_calls == 1,
 		              "production spawn failure adds close-from action once") &&
-		       expect(capture.spawn_calls == 1,
+		       Expect(capture.spawn_calls == 1,
 		              "production spawn failure calls posix_spawn once") &&
-		       expect(capture.spawn_actions != nullptr,
+		       Expect(capture.spawn_actions != nullptr,
 		              "production spawn failure passes non-null file actions") &&
-		       expect(capture.destroy_calls == 1,
+		       Expect(capture.destroy_calls == 1,
 		              "production spawn failure destroys file actions once") &&
-		       expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
-		       expect(capture.path == kCompareProcessPath,
+		       Expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
+		       Expect(capture.path == kCompareProcessPath,
 		              "production spawn failure preserves executable path") &&
-		       expect(capture.argv == std::vector<std::string>{kCompareProcessPath, "--config",
+		       Expect(capture.argv == std::vector<std::string>{kCompareProcessPath, "--config",
 		                                                       "/etc/howdy/config.ini", "alice"},
 		              "production spawn failure preserves exact argv") &&
-		       expect(capture.environment.empty(),
+		       Expect(capture.environment.empty(),
 		              "production spawn failure preserves empty direct environment");
 	}
 

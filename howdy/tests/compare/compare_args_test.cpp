@@ -6,7 +6,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto ArgvFrom(std::vector<std::string> &args) -> std::vector<char *> {
 		std::vector<char *> result;
@@ -27,10 +27,10 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kOk,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kOk,
 		             "simple user parse succeeds");
-		ok &= expect(result.args.user == "alice", "user parsed");
-		ok &= expect(result.args.config_path == "/tmp/config.ini", "default config path preserved");
+		ok &= Expect(result.args.user == "alice", "user parsed");
+		ok &= Expect(result.args.config_path == "/tmp/config.ini", "default config path preserved");
 	}
 
 	{
@@ -39,9 +39,9 @@ auto main() -> int {
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
 		ok &=
-		    expect(result.status == howdy::native::CompareArgsStatus::kOk, "config parse succeeds");
-		ok &= expect(result.args.user == "bob", "user parsed after config");
-		ok &= expect(result.args.config_path == "/x.ini", "custom config parsed");
+		    Expect(result.status == howdy::native::CompareArgsStatus::kOk, "config parse succeeds");
+		ok &= Expect(result.args.user == "bob", "user parsed after config");
+		ok &= Expect(result.args.config_path == "/x.ini", "custom config parsed");
 	}
 
 	{
@@ -49,10 +49,10 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "surplus user is error");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "surplus user aborts");
-		ok &= expect(result.message.contains("Unexpected argument: bob"),
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort, "surplus user aborts");
+		ok &= Expect(result.message.contains("Unexpected argument: bob"),
 		             "surplus user message populated");
 	}
 
@@ -61,11 +61,11 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kHelp,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kHelp,
 		             "help produces help status");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kSuccess,
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kSuccess,
 		             "help returns success");
-		ok &= expect(result.message.contains("Usage: howdy-compare"), "help text populated");
+		ok &= Expect(result.message.contains("Usage: howdy-compare"), "help text populated");
 	}
 
 	{
@@ -73,10 +73,10 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "unknown arg is error");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "unknown arg aborts");
-		ok &= expect(result.message.contains("Unknown argument: --bad"),
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort, "unknown arg aborts");
+		ok &= Expect(result.message.contains("Unknown argument: --bad"),
 		             "unknown arg message populated");
 	}
 
@@ -85,9 +85,9 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "missing user is error");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort, "missing user aborts");
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort, "missing user aborts");
 	}
 
 	{
@@ -95,9 +95,9 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "compare rejects path traversal username input");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort,
 		             "compare rejects malformed username input with abort");
 	}
 
@@ -106,9 +106,9 @@ auto main() -> int {
 		auto                     argv = ArgvFrom(args);
 		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
 		                                                    argv.data(), "/tmp/config.ini");
-		ok &= expect(result.status == howdy::native::CompareArgsStatus::kError,
+		ok &= Expect(result.status == howdy::native::CompareArgsStatus::kError,
 		             "compare rejects malformed dot-dot username input");
-		ok &= expect(result.exit_code == howdy::native::CompareExit::kAbort,
+		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort,
 		             "compare rejects malformed dot-dot username input with abort");
 	}
 

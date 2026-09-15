@@ -46,12 +46,12 @@ auto ExpectNativePromptInputEdges() -> bool;
 auto ExpectOversizedPromptFailsClosed() -> bool;
 auto ExpectRestoreFailureFailsClosed() -> bool;
 
-using howdy::test::expect;
+using howdy::test::Expect;
 
 namespace {
 	auto ExpectIsolated(bool (*scenario)(), const std::string &message) -> bool {
 		const pid_t child_pid = fork();
-		if (!expect(child_pid >= 0, message + ": child spawned")) {
+		if (!Expect(child_pid >= 0, message + ": child spawned")) {
 			return false;
 		}
 		if (child_pid == 0) {
@@ -62,11 +62,11 @@ namespace {
 		for (int attempt = 0; attempt < 500; ++attempt) {
 			const pid_t waited = waitpid(child_pid, &status, WNOHANG);
 			if (waited == child_pid) {
-				return expect(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS,
+				return Expect(WIFEXITED(status) && WEXITSTATUS(status) == EXIT_SUCCESS,
 				              message + ": child succeeds");
 			}
 			if (waited < 0 && errno != EINTR) {
-				return expect(false, message + ": waitpid failed, errno=" + std::to_string(errno));
+				return Expect(false, message + ": waitpid failed, errno=" + std::to_string(errno));
 			}
 			(void)poll(nullptr, 0, 10);
 		}
@@ -75,10 +75,10 @@ namespace {
 		for (int attempt = 0; attempt < 100; ++attempt) {
 			const pid_t waited = waitpid(child_pid, &status, WNOHANG);
 			if (waited == child_pid) {
-				return expect(false, message + ": child exceeded timeout and was terminated");
+				return Expect(false, message + ": child exceeded timeout and was terminated");
 			}
 			if (waited < 0 && errno != EINTR) {
-				return expect(
+				return Expect(
 				    false, message + ": termination wait failed, errno=" + std::to_string(errno));
 			}
 			(void)poll(nullptr, 0, 10);
@@ -89,8 +89,8 @@ namespace {
 		do {
 			waited = waitpid(child_pid, &status, 0);
 		} while (waited < 0 && errno == EINTR);
-		return expect(waited == child_pid, message + ": timed-out child reaped") &&
-		       expect(false, message + ": child exceeded timeout and required SIGKILL");
+		return Expect(waited == child_pid, message + ": timed-out child reaped") &&
+		       Expect(false, message + ": child exceeded timeout and required SIGKILL");
 	}
 
 	auto NativePromptTestConv(int /*num_msg*/, const struct pam_message ** /*msgm*/,
@@ -153,26 +153,26 @@ auto ExpectDispatchRejectsInvalidState() -> bool {
 	const struct pam_message *message_ptr = &message;
 	auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
 
-	ok &= expect(NativePromptConversationTestAccess::Dispatch(1, &message_ptr, &responses,
+	ok &= Expect(NativePromptConversationTestAccess::Dispatch(1, &message_ptr, &responses,
 	                                                          nullptr) == PAM_CONV_ERR,
 	             "dispatch rejects null appdata");
-	ok &= expect(responses == nullptr, "dispatch clears response on null appdata");
-	ok &= expect(NativePromptConversationTestAccess::Dispatch(1, &message_ptr, nullptr, nullptr) ==
+	ok &= Expect(responses == nullptr, "dispatch clears response on null appdata");
+	ok &= Expect(NativePromptConversationTestAccess::Dispatch(1, &message_ptr, nullptr, nullptr) ==
 	                 PAM_CONV_ERR,
 	             "dispatch rejects null response pointer");
 
 	auto conversation = CreateConversation({});
 	responses         = reinterpret_cast<struct pam_response *>(0x1);
-	ok &= expect(NativePromptConversationTestAccess::Dispatch(0, &message_ptr, &responses,
+	ok &= Expect(NativePromptConversationTestAccess::Dispatch(0, &message_ptr, &responses,
 	                                                          conversation.get()) == PAM_CONV_ERR,
 	             "dispatch rejects zero message count");
-	ok &= expect(responses == nullptr, "zero-message dispatch clears response");
+	ok &= Expect(responses == nullptr, "zero-message dispatch clears response");
 	const struct pam_message *null_message = nullptr;
 	responses                              = reinterpret_cast<struct pam_response *>(0x1);
-	ok &= expect(NativePromptConversationTestAccess::Dispatch(1, &null_message, &responses,
+	ok &= Expect(NativePromptConversationTestAccess::Dispatch(1, &null_message, &responses,
 	                                                          conversation.get()) == PAM_CONV_ERR,
 	             "dispatch rejects null message entry");
-	ok &= expect(responses == nullptr, "dispatch clears response for null message entry");
+	ok &= Expect(responses == nullptr, "dispatch clears response for null message entry");
 
 	return ok;
 }
@@ -183,8 +183,8 @@ auto ExpectOriginalConversationRestored() -> bool {
 	ScopedFd                master_fd;
 	ScopedFd                slave_fd;
 	std::array<ScopedFd, 2> abort_pipe;
-	ok &= expect(OpenPtyPair(&master_fd, &slave_fd), "restore test opens pseudo terminal");
-	ok &= expect(OpenPipe(&abort_pipe), "restore test creates abort pipe");
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "restore test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "restore test creates abort pipe");
 	if (!ok) {
 		return false;
 	}
@@ -197,29 +197,29 @@ auto ExpectOriginalConversationRestored() -> bool {
 	pam_handle_t *pamh = nullptr;
 	if (pam_start("howdy-native-test", "test-user", &original_conv, &pamh) != PAM_SUCCESS ||
 	    pamh == nullptr) {
-		return expect(false, "restore test starts PAM handle");
+		return Expect(false, "restore test starts PAM handle");
 	}
 
 	{
 		NativePromptConversation conversation(pamh);
 		NativePromptConversationTestAccess::ReplaceDescriptors(
-		    conversation, {.tty_fd         = slave_fd.release(),
-		                   .abort_read_fd  = abort_pipe[0].release(),
-		                   .abort_write_fd = abort_pipe[1].release()});
-		ok &= expect(conversation.Available(), "restore test native prompt is available");
-		ok &= expect(conversation.Install() == PAM_SUCCESS,
+		    conversation, {.tty_fd         = slave_fd.Release(),
+		                   .abort_read_fd  = abort_pipe[0].Release(),
+		                   .abort_write_fd = abort_pipe[1].Release()});
+		ok &= Expect(conversation.Available(), "restore test native prompt is available");
+		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
 		conversation.RestoreOriginal();
 	}
 
 	const void *restored_item = nullptr;
-	ok &= expect(pam_get_item(pamh, PAM_CONV, &restored_item) == PAM_SUCCESS,
+	ok &= Expect(pam_get_item(pamh, PAM_CONV, &restored_item) == PAM_SUCCESS,
 	             "restore test reads PAM conversation");
 	const auto *restored_conv = static_cast<const struct pam_conv *>(restored_item);
-	ok &= expect(restored_conv != nullptr, "restore test returns restored PAM conversation");
-	ok &= expect(restored_conv->conv == original_conv.conv,
+	ok &= Expect(restored_conv != nullptr, "restore test returns restored PAM conversation");
+	ok &= Expect(restored_conv->conv == original_conv.conv,
 	             "restore test restores original PAM conversation callback");
-	ok &= expect(restored_conv->appdata_ptr == original_conv.appdata_ptr,
+	ok &= Expect(restored_conv->appdata_ptr == original_conv.appdata_ptr,
 	             "restore test restores original PAM conversation appdata");
 	pam_end(pamh, PAM_SUCCESS);
 	return ok;
@@ -231,20 +231,20 @@ auto ExpectRestoreHandlesNullPam() -> bool {
 	ScopedFd                slave_fd;
 	std::array<ScopedFd, 2> abort_pipe;
 
-	ok &= expect(OpenPtyPair(&master_fd, &slave_fd), "null restore test opens pseudo terminal");
-	ok &= expect(OpenPipe(&abort_pipe), "null restore test creates abort pipe");
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "null restore test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "null restore test creates abort pipe");
 	if (!ok) {
 		return false;
 	}
 
-	auto conversation = CreateConversation({.tty_fd         = slave_fd.release(),
-	                                        .abort_read_fd  = abort_pipe[0].release(),
-	                                        .abort_write_fd = abort_pipe[1].release()});
+	auto conversation = CreateConversation({.tty_fd         = slave_fd.Release(),
+	                                        .abort_read_fd  = abort_pipe[0].Release(),
+	                                        .abort_write_fd = abort_pipe[1].Release()});
 	NativePromptConversationTestAccess::SetInstalled(*conversation, true);
 	const auto result = conversation->RestoreOriginal();
-	ok &= expect(!NativePromptConversationTestAccess::Installed(*conversation),
+	ok &= Expect(!NativePromptConversationTestAccess::Installed(*conversation),
 	             "null PAM restore clears installed state");
-	ok &= expect(result == howdy::pam::ConversationRestoreResult::kUnsafe,
+	ok &= Expect(result == howdy::pam::ConversationRestoreResult::kUnsafe,
 	             "null PAM restore reports unsafe detachment");
 	return ok;
 }
@@ -260,10 +260,10 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 	const struct pam_conv override =
 	    NativePromptConversationTestAccess::OverrideConversation(*conversation);
 	const auto result = conversation->RestoreOriginal();
-	bool       ok     = expect(result == expected, message + ": explicit restore result");
+	bool       ok     = Expect(result == expected, message + ": explicit restore result");
 	const int  calls_before_destruction = operations.pam_set_calls;
 	conversation.reset();
-	ok &= expect(operations.pam_set_calls == calls_before_destruction,
+	ok &= Expect(operations.pam_set_calls == calls_before_destruction,
 	             message + ": destructor performs no PAM operation");
 
 	if (expected == howdy::pam::ConversationRestoreResult::kUnsafe) {
@@ -271,19 +271,19 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 		const struct pam_message *message_ptr = &message_item;
 		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
 		ok &=
-		    expect(override.conv(1, &message_ptr, &response, override.appdata_ptr) == PAM_CONV_ERR,
+		    Expect(override.conv(1, &message_ptr, &response, override.appdata_ptr) == PAM_CONV_ERR,
 		           message + ": retained callback fails closed after object destruction");
-		ok &= expect(response == nullptr,
+		ok &= Expect(response == nullptr,
 		             message + ": retained callback clears response after destruction");
 	} else if (expected == howdy::pam::ConversationRestoreResult::kFailClosedInstalled) {
 		const struct pam_message  message_item{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 		const struct pam_message *message_ptr = &message_item;
 		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
-		ok &= expect(operations.last_pam_conversation.conv(
+		ok &= Expect(operations.last_pam_conversation.conv(
 		                 1, &message_ptr, &response,
 		                 operations.last_pam_conversation.appdata_ptr) == PAM_CONV_ERR,
 		             message + ": installed static callback fails closed after destruction");
-		ok &= expect(response == nullptr, message + ": installed static callback clears response");
+		ok &= Expect(response == nullptr, message + ": installed static callback clears response");
 	}
 	return ok;
 }
@@ -294,16 +294,16 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 	ScopedFd                slave_fd;
 	std::array<ScopedFd, 2> abort_pipe;
 
-	ok &= expect(OpenPtyPair(&master_fd, &slave_fd), message + ": opens pseudo terminal");
-	ok &= expect(OpenPipe(&abort_pipe), message + ": creates abort pipe");
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), message + ": opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), message + ": creates abort pipe");
 	if (!ok) {
 		return false;
 	}
 
 	LifecycleOperationContext operations{.throw_mode = throw_mode};
-	auto conversation = CreateLifecycleConversation({.tty_fd         = slave_fd.release(),
-	                                                 .abort_read_fd  = abort_pipe[0].release(),
-	                                                 .abort_write_fd = abort_pipe[1].release()},
+	auto conversation = CreateLifecycleConversation({.tty_fd         = slave_fd.Release(),
+	                                                 .abort_read_fd  = abort_pipe[0].Release(),
+	                                                 .abort_write_fd = abort_pipe[1].Release()},
 	                                                &operations);
 
 	const struct pam_message prompt = {
@@ -321,19 +321,19 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 
 	std::array<char, 64> prompt_buffer{};
 	const ssize_t        prompt_bytes = ReadWithTimeout(
-	    master_fd.get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+	    master_fd.Get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
 	    kPromptReadTimeoutMs);
-	ok &= expect(prompt_bytes > 0, message + ": prompt is written to tty");
+	ok &= Expect(prompt_bytes > 0, message + ": prompt is written to tty");
 
 	constexpr std::array<char, 7> password{'s', 'e', 'c', 'r', 'e', 't', '\n'};
-	ok &= expect(write(master_fd.get(), password.data(), password.size()) ==
+	ok &= Expect(write(master_fd.Get(), password.data(), password.size()) ==
 	                 static_cast<ssize_t>(password.size()),
 	             message + ": writes password response");
 
 	dispatch_thread.join();
 
-	ok &= expect(dispatch_result == PAM_CONV_ERR, message + ": dispatch fails closed");
-	ok &= expect(responses == nullptr, message + ": dispatch resets response");
+	ok &= Expect(dispatch_result == PAM_CONV_ERR, message + ": dispatch fails closed");
+	ok &= Expect(responses == nullptr, message + ": dispatch resets response");
 
 	if (responses != nullptr) {
 		std::free(responses);
@@ -350,8 +350,8 @@ auto ExpectDestroyedInstalledNativeWrapperFailsClosed() -> bool {
 	const struct pam_message *message_ptr = &message;
 	auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
 	const int result = installed.conv(1, &message_ptr, &response, installed.appdata_ptr);
-	return expect(result == PAM_CONV_ERR, "destroyed installed native wrapper fails closed") &&
-	       expect(response == nullptr, "destroyed installed native wrapper clears response");
+	return Expect(result == PAM_CONV_ERR, "destroyed installed native wrapper fails closed") &&
+	       Expect(response == nullptr, "destroyed installed native wrapper clears response");
 }
 
 auto main() -> int {

@@ -18,7 +18,7 @@ namespace howdy::test::user_model_codec {
 			    kBackend, std::nullopt, kModel);
 			ok &= ExpectStatus(document.result.status, UserModelStatus::kOk,
 			                   std::string(spelling) + " stored metric is accepted");
-			ok &= expect(!document.result.entries.empty() &&
+			ok &= Expect(!document.result.entries.empty() &&
 			                 document.result.entries.front().metric.has_value() &&
 			                 *document.result.entries.front().metric == expected,
 			             std::string(spelling) + " stored metric parses to typed policy");
@@ -35,7 +35,7 @@ namespace howdy::test::user_model_codec {
 		    kBackend, std::nullopt, kModel);
 		ok &= ExpectStatus(unknown.result.status, UserModelStatus::kParseError,
 		                   "unknown stored metric is rejected");
-		ok &= expect(unknown.result.error_message.contains("unknown face metric"),
+		ok &= Expect(unknown.result.error_message.contains("unknown face metric"),
 		             "unknown stored metric reports explicit error");
 
 		const auto legacy = howdy::native::user_model_codec::DecodeDocument(
@@ -43,7 +43,7 @@ namespace howdy::test::user_model_codec {
 		                         R"("L2NORM")", R"("sface.onnx")")}),
 		    kBackend, std::nullopt, kModel);
 		const auto serialized = howdy::native::user_model_codec::SerializeDocument(legacy);
-		ok &= expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
+		ok &= Expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
 		             "existing persisted metric spelling is preserved");
 
 		const auto missing = howdy::native::user_model_codec::DecodeDocument(
@@ -51,7 +51,7 @@ namespace howdy::test::user_model_codec {
 		    kBackend, FaceMetric::kCosine, kModel);
 		ok &= ExpectStatus(missing.result.status, UserModelStatus::kOk,
 		                   "missing persisted metric remains compatible");
-		ok &= expect(!missing.result.entries.empty() &&
+		ok &= Expect(!missing.result.entries.empty() &&
 		                 !missing.result.entries.front().metric.has_value(),
 		             "missing persisted metric remains absent");
 		return ok;
@@ -64,7 +64,7 @@ namespace howdy::test::user_model_codec {
 		ok &= ExpectStatus(Decode("[").result.status, UserModelStatus::kParseError,
 		                   "malformed JSON returns kParseError");
 		const auto malformed = Decode("[");
-		ok &= expect(malformed.result.error_message == "Failed to parse user model JSON",
+		ok &= Expect(malformed.result.error_message == "Failed to parse user model JSON",
 		             "parser failures use stable Howdy message");
 		ok &= ExpectStatus(Decode("{}").result.status, UserModelStatus::kInvalidShape,
 		                   "non-array root returns kInvalidShape");
@@ -121,9 +121,9 @@ namespace howdy::test::user_model_codec {
 		    false);
 		ok &= ExpectStatus(tolerant_duplicate.result.status, UserModelStatus::kOk,
 		                   "duplicate direct key is tolerated without strict shape");
-		ok &= expect(tolerant_duplicate.result.entries.size() == 1,
+		ok &= Expect(tolerant_duplicate.result.entries.size() == 1,
 		             "tolerant duplicate key preserves one entry");
-		ok &= expect(tolerant_duplicate.result.entries.size() == 1 &&
+		ok &= Expect(tolerant_duplicate.result.entries.size() == 1 &&
 		                 tolerant_duplicate.result.entries.front().id == 8,
 		             "tolerant duplicate key keeps the last ID");
 		const auto tolerant_known_fields = Decode(
@@ -133,10 +133,10 @@ namespace howdy::test::user_model_codec {
 		    false);
 		ok &= ExpectStatus(tolerant_known_fields.result.status, UserModelStatus::kOk,
 		                   "duplicate label and data are tolerated without strict shape");
-		ok &= expect(tolerant_known_fields.result.entries.size() == 1 &&
+		ok &= Expect(tolerant_known_fields.result.entries.size() == 1 &&
 		                 tolerant_known_fields.result.entries.front().label == "Backup camera",
 		             "tolerant duplicate label keeps the last value");
-		ok &= expect(tolerant_known_fields.result.entries.size() == 1 &&
+		ok &= Expect(tolerant_known_fields.result.entries.size() == 1 &&
 		                 tolerant_known_fields.result.entries.front().encodings ==
 		                     std::vector<std::vector<float>>{{4.0F, 5.0F}},
 		             "tolerant duplicate data keeps the last value");
@@ -187,7 +187,7 @@ namespace howdy::test::user_model_codec {
 		const auto tolerant_missing_data = Decode(missing_data, false);
 		ok &= ExpectStatus(tolerant_missing_data.result.status, UserModelStatus::kOk,
 		                   "missing data without strict shape returns kOk");
-		ok &= expect(tolerant_missing_data.result.entries.size() == 1 &&
+		ok &= Expect(tolerant_missing_data.result.entries.size() == 1 &&
 		                 tolerant_missing_data.result.entries.front().encodings.empty(),
 		             "missing data without strict shape preserves entry with zero encodings");
 
@@ -197,7 +197,7 @@ namespace howdy::test::user_model_codec {
 		const auto tolerant_non_array = Decode(non_array_encoding, false);
 		ok &= ExpectStatus(tolerant_non_array.result.status, UserModelStatus::kOk,
 		                   "non-array encoding without strict shape returns kOk");
-		ok &= expect(tolerant_non_array.result.entries.size() == 1 &&
+		ok &= Expect(tolerant_non_array.result.entries.size() == 1 &&
 		                 tolerant_non_array.result.entries.front().encodings.size() == 2,
 		             "non-array encoding without strict shape is skipped");
 		ok &= ExpectStatus(Decode(non_array_encoding, true).result.status,
@@ -209,7 +209,7 @@ namespace howdy::test::user_model_codec {
 		const auto tolerant_missing_id = Decode(legacy_missing_id, false);
 		ok &= ExpectStatus(tolerant_missing_id.result.status, UserModelStatus::kOk,
 		                   "missing ID without strict shape returns kOk");
-		ok &= expect(tolerant_missing_id.result.entries.front().id == -1,
+		ok &= Expect(tolerant_missing_id.result.entries.front().id == -1,
 		             "missing ID without strict shape preserves legacy sentinel");
 		return ok;
 	}
@@ -256,7 +256,7 @@ namespace howdy::test::user_model_codec {
 		const auto signed_time = Decode(ModelList({ModelJson("7", "-1")}));
 		ok &= ExpectStatus(signed_time.result.status, UserModelStatus::kOk,
 		                   "negative model timestamp returns kOk");
-		ok &= expect(!signed_time.result.entries.empty() &&
+		ok &= Expect(!signed_time.result.entries.empty() &&
 		                 signed_time.result.entries.front().time == -1,
 		             "negative model timestamp is preserved");
 
@@ -275,7 +275,7 @@ namespace howdy::test::user_model_codec {
 		const auto tolerant_label = Decode(ModelList({ModelJson("7", "1700000000", "7")}), false);
 		ok &= ExpectStatus(tolerant_label.result.status, UserModelStatus::kOk,
 		                   "tolerant non-string label returns kOk");
-		ok &= expect(!tolerant_label.result.entries.empty() &&
+		ok &= Expect(!tolerant_label.result.entries.empty() &&
 		                 tolerant_label.result.entries.front().label.empty(),
 		             "tolerant non-string label becomes empty");
 
@@ -315,7 +315,7 @@ namespace howdy::test::user_model_codec {
 		const auto tolerant_max_id = Decode(ModelList({ModelJson("2147483647")}), false);
 		ok &= ExpectStatus(tolerant_max_id.result.status, UserModelStatus::kOk,
 		                   "tolerant INT_MAX model ID returns kOk");
-		ok &= expect(tolerant_max_id.result.next_id == std::numeric_limits<int>::max(),
+		ok &= Expect(tolerant_max_id.result.next_id == std::numeric_limits<int>::max(),
 		             "tolerant INT_MAX model ID preserves allocation boundary");
 		return ok;
 	}

@@ -12,7 +12,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 	constexpr auto kYunetSecretPath = "/secret/models/yunet.onnx";
 	constexpr auto kSfaceSecretPath = "/secret/models/sface.onnx";
 	constexpr auto kRawError        = "raw backend failure";
@@ -173,23 +173,23 @@ namespace {
 	                       howdy::native::FaceModelErrorCategory expected_category,
 	                       const std::string                    &expected_message) -> bool {
 		bool ok = true;
-		ok &= expect(!model.Ok(), "model initialization fails");
-		ok &= expect(model.ErrorCategory() == expected_category,
+		ok &= Expect(!model.Ok(), "model initialization fails");
+		ok &= Expect(model.ErrorCategory() == expected_category,
 		             "initialization error category is retained");
 		ok &=
-		    expect(model.ErrorMessage() == expected_message, "initialization diagnostic is stable");
-		ok &= expect(Sanitized(model.ErrorMessage()), "initialization diagnostic is sanitized");
+		    Expect(model.ErrorMessage() == expected_message, "initialization diagnostic is stable");
+		ok &= Expect(Sanitized(model.ErrorMessage()), "initialization diagnostic is sanitized");
 		return ok;
 	}
 
 	auto ExpectDetectionFailure(howdy::native::FaceModel &model) -> bool {
 		const auto result = model.Detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
 		bool       ok     = true;
-		ok &= expect(result.status == howdy::native::FaceDetectionStatus::kInferenceError,
+		ok &= Expect(result.status == howdy::native::FaceDetectionStatus::kInferenceError,
 		             "OpenCV exception maps to inference error");
-		ok &= expect(result.error_message == "Face detection failed",
+		ok &= Expect(result.error_message == "Face detection failed",
 		             "detection diagnostic is stable");
-		ok &= expect(Sanitized(result.error_message), "detection diagnostic is sanitized");
+		ok &= Expect(Sanitized(result.error_message), "detection diagnostic is sanitized");
 		return ok;
 	}
 
@@ -197,18 +197,18 @@ namespace {
 		bool ok = true;
 		try {
 			const auto detection = model.Detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
-			ok &= expect(detection.status == howdy::native::FaceDetectionStatus::kInferenceError,
+			ok &= Expect(detection.status == howdy::native::FaceDetectionStatus::kInferenceError,
 			             "not-ready model detection returns inference error");
-			ok &= expect(detection.error_message == "Face model is not ready",
+			ok &= Expect(detection.error_message == "Face model is not ready",
 			             "not-ready model detection reports readiness failure");
 
 			const auto encoding = model.Encode(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)), {});
-			ok &= expect(encoding.status == howdy::native::FaceEncodingStatus::kInferenceError,
+			ok &= Expect(encoding.status == howdy::native::FaceEncodingStatus::kInferenceError,
 			             "not-ready model encoding returns inference error");
-			ok &= expect(encoding.error_message == "Face model is not ready",
+			ok &= Expect(encoding.error_message == "Face model is not ready",
 			             "not-ready model encoding reports readiness failure");
 		} catch (...) {
-			ok &= expect(false, "not-ready model inference does not throw");
+			ok &= Expect(false, "not-ready model inference does not throw");
 		}
 		return ok;
 	}
@@ -228,11 +228,11 @@ namespace {
 			threw = true;
 		}
 		bool ok = true;
-		ok &= expect(!threw, "SFace standard exception does not escape encoding");
+		ok &= Expect(!threw, "SFace standard exception does not escape encoding");
 		if (!threw) {
-			ok &= expect(result->status == howdy::native::FaceEncodingStatus::kInferenceError,
+			ok &= Expect(result->status == howdy::native::FaceEncodingStatus::kInferenceError,
 			             "SFace standard exception returns inference error");
-			ok &= expect(result->error_message ==
+			ok &= Expect(result->error_message ==
 			                 "Face encoding failed while processing camera frame",
 			             "SFace standard exception preserves encoding diagnostic");
 		}
@@ -243,7 +243,7 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-	ok &= expect(
+	ok &= Expect(
 	    howdy::native::FaceModel::kYunetModel == howdy::native::kYunetModelDescriptor.filename &&
 	        howdy::native::FaceModel::kSfaceModel == howdy::native::kSfaceModelDescriptor.filename,
 	    "FaceModel paths map to manifest filenames");
@@ -265,11 +265,11 @@ auto main() -> int {
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
 		const auto models_dir = howdy::native::ResolveModelsDir();
-		ok &= expect(model.Ok(), "default config model initializes");
-		ok &= expect(detector_path == (models_dir / howdy::native::FaceModel::kYunetModel).string(),
+		ok &= Expect(model.Ok(), "default config model initializes");
+		ok &= Expect(detector_path == (models_dir / howdy::native::FaceModel::kYunetModel).string(),
 		             "default config uses canonical YuNet path");
 		ok &=
-		    expect(recognizer_path == (models_dir / howdy::native::FaceModel::kSfaceModel).string(),
+		    Expect(recognizer_path == (models_dir / howdy::native::FaceModel::kSfaceModel).string(),
 		           "default config uses canonical SFace path");
 	}
 
@@ -299,13 +299,13 @@ auto main() -> int {
 		};
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
-		ok &= expect(model.Ok(), "engine override model initializes");
+		ok &= Expect(model.Ok(), "engine override model initializes");
 		const auto *engine = std::getenv(kDnnEngineEnv);
-		ok &= expect(engine != nullptr && std::string(engine) == "2",
+		ok &= Expect(engine != nullptr && std::string(engine) == "2",
 		             "New DNN graph engine overrides conflicting environment");
 		ok &=
-		    expect(readiness_engine == "1", "DNN engine remains unchanged during readiness checks");
-		ok &= expect(detector_engine == "2", "New DNN graph engine is forced before factory call");
+		    Expect(readiness_engine == "1", "DNN engine remains unchanged during readiness checks");
+		ok &= Expect(detector_engine == "2", "New DNN graph engine is forced before factory call");
 	}
 
 	{
@@ -348,7 +348,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "readiness standard exception fails model construction cleanly");
+		ok &= Expect(!threw, "readiness standard exception fails model construction cleanly");
 	}
 
 	{
@@ -367,7 +367,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "detector standard exception fails model construction cleanly");
+		ok &= Expect(!threw, "detector standard exception fails model construction cleanly");
 	}
 
 	{
@@ -385,7 +385,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "recognizer standard exception fails model construction cleanly");
+		ok &= Expect(!threw, "recognizer standard exception fails model construction cleanly");
 	}
 
 	ok &= ExpectEncodingStandardException();
@@ -434,7 +434,7 @@ auto main() -> int {
 		                                                        std::move(backend));
 		ok &= ExpectInitFailure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                        "Face model is not ready");
-		ok &= expect(!detector_created, "first readiness failure prevents detector creation");
+		ok &= Expect(!detector_created, "first readiness failure prevents detector creation");
 		ok &= ExpectNotReadyInference(model);
 	}
 
@@ -462,7 +462,7 @@ auto main() -> int {
 		                                                        std::move(backend));
 		ok &= ExpectInitFailure(model, howdy::native::FaceModelErrorCategory::kModelNotReady,
 		                        "Face model is not ready");
-		ok &= expect(!recognizer_created, "second readiness failure prevents recognizer creation");
+		ok &= Expect(!recognizer_created, "second readiness failure prevents recognizer creation");
 	}
 
 	{
@@ -477,7 +477,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "missing readiness callback fails model construction cleanly");
+		ok &= Expect(!threw, "missing readiness callback fails model construction cleanly");
 	}
 
 	{
@@ -493,7 +493,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "missing detector callback fails model construction cleanly");
+		ok &= Expect(!threw, "missing detector callback fails model construction cleanly");
 	}
 
 	{
@@ -509,7 +509,7 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "missing recognizer callback fails model construction cleanly");
+		ok &= Expect(!threw, "missing recognizer callback fails model construction cleanly");
 	}
 
 	{
@@ -524,9 +524,9 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "missing input-size callback does not throw");
+		ok &= Expect(!threw, "missing input-size callback does not throw");
 		if (!threw) {
-			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			ok &= Expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
 			             "missing input-size callback returns inference error");
 		}
 	}
@@ -543,9 +543,9 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "missing detection callback does not throw");
+		ok &= Expect(!threw, "missing detection callback does not throw");
 		if (!threw) {
-			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			ok &= Expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
 			             "missing detection callback returns inference error");
 		}
 	}
@@ -564,9 +564,9 @@ auto main() -> int {
 		} catch (...) {
 			threw = true;
 		}
-		ok &= expect(!threw, "backend standard exception does not escape detection");
+		ok &= Expect(!threw, "backend standard exception does not escape detection");
 		if (!threw) {
-			ok &= expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
+			ok &= Expect(result->status == howdy::native::FaceDetectionStatus::kInferenceError,
 			             "backend standard exception returns inference error");
 		}
 	}
@@ -580,23 +580,23 @@ auto main() -> int {
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
 		const auto result = model.Detect(cv::Mat{});
-		ok &= expect(result.status == howdy::native::FaceDetectionStatus::kInferenceError,
+		ok &= Expect(result.status == howdy::native::FaceDetectionStatus::kInferenceError,
 		             "empty detection input returns inference error");
-		ok &= expect(!detect_called, "empty detection input skips backend");
+		ok &= Expect(!detect_called, "empty detection input skips backend");
 
 		const auto invalid = model.Detect(cv::Mat(10, 10, CV_16UC3, cv::Scalar(1, 2, 3)));
-		ok &= expect(invalid.status == howdy::native::FaceDetectionStatus::kInferenceError,
+		ok &= Expect(invalid.status == howdy::native::FaceDetectionStatus::kInferenceError,
 		             "invalid detection input returns inference error");
-		ok &= expect(!detect_called, "invalid detection input skips backend");
+		ok &= Expect(!detect_called, "invalid detection input skips backend");
 	}
 
 	{
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        SuccessfulBackend());
 		const auto result = model.Encode(cv::Mat{}, {});
-		ok &= expect(result.status == howdy::native::FaceEncodingStatus::kInferenceError,
+		ok &= Expect(result.status == howdy::native::FaceEncodingStatus::kInferenceError,
 		             "empty encoding input returns inference error");
-		ok &= expect(result.error_message == "Face encoding failed: invalid input frame",
+		ok &= Expect(result.error_message == "Face encoding failed: invalid input frame",
 		             "empty encoding input reports validation failure");
 	}
 
@@ -607,7 +607,7 @@ auto main() -> int {
 		};
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
-		ok &= expect(model.Ok(), "setInputSize failure model initializes");
+		ok &= Expect(model.Ok(), "setInputSize failure model initializes");
 		ok &= ExpectDetectionFailure(model);
 	}
 
@@ -618,7 +618,7 @@ auto main() -> int {
 		};
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
-		ok &= expect(model.Ok(), "detector failure model initializes");
+		ok &= Expect(model.Ok(), "detector failure model initializes");
 		ok &= ExpectDetectionFailure(model);
 	}
 
@@ -639,15 +639,15 @@ auto main() -> int {
 		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
 		                                                        std::move(backend));
 		const auto result = model.Detect(cv::Mat(480, 640, CV_8UC3, cv::Scalar(1, 2, 3)));
-		ok &= expect(model.Ok(), "success backend initializes");
-		ok &= expect(model.ErrorCategory() == howdy::native::FaceModelErrorCategory::kNone,
+		ok &= Expect(model.Ok(), "success backend initializes");
+		ok &= Expect(model.ErrorCategory() == howdy::native::FaceModelErrorCategory::kNone,
 		             "successful initialization has no error category");
-		ok &= expect(input_size_set, "success path updates detector input size");
-		ok &= expect(detect_called, "success path invokes detector");
-		ok &= expect(result.Ok() && result.detections.size() == 1,
+		ok &= Expect(input_size_set, "success path updates detector input size");
+		ok &= Expect(detect_called, "success path invokes detector");
+		ok &= Expect(result.Ok() && result.detections.size() == 1,
 		             "success path preserves parsed detection");
 		if (result.detections.size() == 1) {
-			ok &= expect(result.detections.front().box == cv::Rect2f(1, 2, 3, 4),
+			ok &= Expect(result.detections.front().box == cv::Rect2f(1, 2, 3, 4),
 			             "success path preserves detection fields");
 		}
 	}

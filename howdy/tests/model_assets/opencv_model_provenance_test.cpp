@@ -16,7 +16,7 @@
 namespace {
 
 	using howdy::native::OpenCvModelDescriptor;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	constexpr std::string_view kOpenCvZooRawPrefix  = "https://github.com/opencv/opencv_zoo/raw/";
 	constexpr std::string_view kOpenCvZooTreePrefix = "https://github.com/opencv/opencv_zoo/tree/";
@@ -233,15 +233,15 @@ Source:
 		bool ok = true;
 
 		const auto matching = CheckModelProvenance(kMatchingFixtureNotice, kFixtureModel);
-		ok &= expect(matching.ok, "matching provenance fixture passes");
+		ok &= Expect(matching.ok, "matching provenance fixture passes");
 
 		const auto wrong_sha = CheckModelProvenance(kWrongShaFixtureNotice, kFixtureModel);
-		ok &= expect(!wrong_sha.ok && wrong_sha.error.contains("SHA-256"),
+		ok &= Expect(!wrong_sha.ok && wrong_sha.error.contains("SHA-256"),
 		             "wrong SHA fails within artifact section");
 
 		const auto wrong_revision =
 		    CheckModelProvenance(kWrongRevisionFixtureNotice, kFixtureModel);
-		ok &= expect(!wrong_revision.ok && wrong_revision.error.contains("revision"),
+		ok &= Expect(!wrong_revision.ok && wrong_revision.error.contains("revision"),
 		             "wrong revision fails within artifact section");
 
 		const auto malformed_model = OpenCvModelDescriptor{
@@ -253,7 +253,7 @@ Source:
 		    .size     = kFixtureModel.size,
 		};
 		const auto malformed = CheckModelProvenance(kMatchingFixtureNotice, malformed_model);
-		ok &= expect(!malformed.ok && malformed.error.contains("URL malformed"),
+		ok &= Expect(!malformed.ok && malformed.error.contains("URL malformed"),
 		             "malformed OpenCV Zoo URL is rejected");
 
 		return ok;
@@ -267,12 +267,12 @@ auto main() -> int {
 	const auto notice_path = std::filesystem::path(HOWDY_SOURCE_DIR) / "THIRD_PARTY_NOTICES.md";
 	const auto notice      = ReadTextFile(notice_path);
 	if (!notice.has_value()) {
-		return expect(false, "read third-party notice: " + notice_path.string()) ? 0 : 1;
+		return Expect(false, "read third-party notice: " + notice_path.string()) ? 0 : 1;
 	}
 
 	for (const auto &model : howdy::native::OfficialOpencvModels()) {
 		const auto result = CheckModelProvenance(*notice, model);
-		ok &= expect(result.ok, result.error);
+		ok &= Expect(result.ok, result.error);
 	}
 
 	return ok ? 0 : 1;

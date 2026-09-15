@@ -17,7 +17,7 @@ namespace {
 	using howdy::native::config_schema::RuntimeDefault;
 	using howdy::native::config_schema::SpecialRule;
 	using howdy::native::config_schema::ValueType;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto SyntheticOption(OptionId id, std::string_view section, std::string_view key,
 	                     ValueType type, RuntimeDefault fallback) -> Option {
@@ -48,15 +48,15 @@ namespace {
 	}
 
 	auto Accepts(std::span<const Option> options, std::string_view message) -> bool {
-		return expect(!howdy::native::config_schema::ValidateOptions(options).has_value(), message);
+		return Expect(!howdy::native::config_schema::ValidateOptions(options).has_value(), message);
 	}
 
 	auto Rejects(std::span<const Option> options, std::string_view error_text) -> bool {
 		const auto validation = howdy::native::config_schema::ValidateOptions(options);
 		if (!validation.has_value()) {
-			return expect(false, "invalid schema is rejected");
+			return Expect(false, "invalid schema is rejected");
 		}
-		return expect(validation->contains(error_text),
+		return Expect(validation->contains(error_text),
 		              "schema reports: " + std::string(error_text));
 	}
 
@@ -66,12 +66,12 @@ auto main() -> int {
 	bool ok = true;
 
 	const auto production_options = howdy::native::config_schema::RuntimeConfigOptions();
-	ok &= expect(!howdy::native::config_schema::ValidateOptions(production_options).has_value(),
+	ok &= Expect(!howdy::native::config_schema::ValidateOptions(production_options).has_value(),
 	             "production schema satisfies canonical invariants");
 
 	const auto &sface_threshold_opt =
 	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kFaceSfaceThreshold);
-	ok &= expect(sface_threshold_opt.range.maximum == howdy::native::FaceMetricThresholdMaximum(),
+	ok &= Expect(sface_threshold_opt.range.maximum == howdy::native::FaceMetricThresholdMaximum(),
 	             "production sface_threshold range maximum matches face_metric_threshold_maximum");
 
 	const std::array duplicate_ids = {
@@ -178,7 +178,7 @@ auto main() -> int {
 	    RangedOption(OptionId::kVideoTimeout, ValueType::kInteger,
 	                 howdy::native::config_schema::IntDefault(5), integer_range),
 	};
-	ok &= expect(!howdy::native::config_schema::ValidateOptions(integer_inside).has_value(),
+	ok &= Expect(!howdy::native::config_schema::ValidateOptions(integer_inside).has_value(),
 	             "integer fallback inside range is valid");
 
 	const auto integer_below = std::array{
@@ -203,7 +203,7 @@ auto main() -> int {
 	    RangedOption(OptionId::kVideoFrameWidth, ValueType::kInteger,
 	                 howdy::native::config_schema::IntDefault(-1), integer_sentinel_range),
 	};
-	ok &= expect(!howdy::native::config_schema::ValidateOptions(integer_sentinel).has_value(),
+	ok &= Expect(!howdy::native::config_schema::ValidateOptions(integer_sentinel).has_value(),
 	             "integer fallback allowed sentinel is valid");
 
 	const NumericRange floating_range{.minimum = 2.0F, .maximum = 4.0F};
@@ -216,7 +216,7 @@ auto main() -> int {
 		    RangedOption(OptionId::kFaceYunetScoreThreshold, ValueType::kFloatingPoint,
 		                 howdy::native::config_schema::FloatDefault(fallback), floating_range),
 		};
-		ok &= expect(!howdy::native::config_schema::ValidateOptions(options).has_value(), message);
+		ok &= Expect(!howdy::native::config_schema::ValidateOptions(options).has_value(), message);
 	}
 
 	for (const auto fallback : std::array{1.9F, 4.1F}) {
@@ -341,7 +341,7 @@ auto main() -> int {
 	           .invalid_rule = "synthetic rule",
 	           .description  = "Synthetic option."},
 	};
-	ok &= expect(!howdy::native::config_schema::ValidateOptions(free_form_device_path).has_value(),
+	ok &= Expect(!howdy::native::config_schema::ValidateOptions(free_form_device_path).has_value(),
 	             "device path fallback remains free-form");
 
 	const std::array incompatible_special_rule = {
@@ -369,35 +369,35 @@ auto main() -> int {
 	ok &= Rejects(unknown_special_rule, "unknown special rule");
 
 	for (const auto &spelling : howdy::native::config_schema::kAcceptedBooleanSpellings) {
-		ok &= expect(howdy::native::config_schema::IsAcceptedBooleanText(spelling),
+		ok &= Expect(howdy::native::config_schema::IsAcceptedBooleanText(spelling),
 		             "lowercase boolean spelling is accepted: " + std::string(spelling));
 		std::string upper(spelling);
 		for (char &ch : upper) {
 			ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
 		}
-		ok &= expect(howdy::native::config_schema::IsAcceptedBooleanText(upper),
+		ok &= Expect(howdy::native::config_schema::IsAcceptedBooleanText(upper),
 		             "uppercase boolean spelling is accepted: " + upper);
 	}
 	for (const auto *const invalid_bool :
 	     {"maybe", "2", "-1", "enable", "none", "", "true1", "00"}) {
-		ok &= expect(!howdy::native::config_schema::IsAcceptedBooleanText(invalid_bool),
+		ok &= Expect(!howdy::native::config_schema::IsAcceptedBooleanText(invalid_bool),
 		             "invalid boolean spelling is rejected: " + std::string(invalid_bool));
 	}
 
-	ok &= expect(howdy::native::config_schema::FormatIntegerValue(0) == "0",
+	ok &= Expect(howdy::native::config_schema::FormatIntegerValue(0) == "0",
 	             "format_integer_value formats zero");
-	ok &= expect(howdy::native::config_schema::FormatIntegerValue(-1) == "-1",
+	ok &= Expect(howdy::native::config_schema::FormatIntegerValue(-1) == "-1",
 	             "format_integer_value formats negative sentinel");
-	ok &= expect(howdy::native::config_schema::FormatIntegerValue(320) == "320",
+	ok &= Expect(howdy::native::config_schema::FormatIntegerValue(320) == "320",
 	             "format_integer_value formats positive integer");
 
-	ok &= expect(howdy::native::config_schema::FormatFloatingPointValue(0.0F) == "0",
+	ok &= Expect(howdy::native::config_schema::FormatFloatingPointValue(0.0F) == "0",
 	             "format_floating_point_value formats zero");
-	ok &= expect(howdy::native::config_schema::FormatFloatingPointValue(1.25F) == "1.25",
+	ok &= Expect(howdy::native::config_schema::FormatFloatingPointValue(1.25F) == "1.25",
 	             "format_floating_point_value formats 1.25");
-	ok &= expect(howdy::native::config_schema::FormatFloatingPointValue(0.6942F) == "0.6942",
+	ok &= Expect(howdy::native::config_schema::FormatFloatingPointValue(0.6942F) == "0.6942",
 	             "format_floating_point_value formats 0.6942");
-	ok &= expect(!howdy::native::config_schema::FormatFloatingPointValue(
+	ok &= Expect(!howdy::native::config_schema::FormatFloatingPointValue(
 	                  std::numeric_limits<float>::quiet_NaN())
 	                  .has_value(),
 	             "format_floating_point_value rejects NaN");
@@ -405,22 +405,22 @@ auto main() -> int {
 	const auto bool_opt =
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "core", "test", ValueType::kBoolean,
 	                    howdy::native::config_schema::BoolDefault(true));
-	ok &= expect(howdy::native::config_schema::FormatFallbackValue(bool_opt) == "true",
+	ok &= Expect(howdy::native::config_schema::FormatFallbackValue(bool_opt) == "true",
 	             "format_fallback_value formats boolean true");
 	const auto int_opt =
 	    SyntheticOption(OptionId::kVideoTimeout, "video", "test", ValueType::kInteger,
 	                    howdy::native::config_schema::IntDefault(4));
-	ok &= expect(howdy::native::config_schema::FormatFallbackValue(int_opt) == "4",
+	ok &= Expect(howdy::native::config_schema::FormatFallbackValue(int_opt) == "4",
 	             "format_fallback_value formats integer fallback");
 	const auto float_opt =
 	    SyntheticOption(OptionId::kFaceSfaceThreshold, "face", "test", ValueType::kFloatingPoint,
 	                    howdy::native::config_schema::FloatDefault(0.6942F));
-	ok &= expect(howdy::native::config_schema::FormatFallbackValue(float_opt) == "0.6942",
+	ok &= Expect(howdy::native::config_schema::FormatFallbackValue(float_opt) == "0.6942",
 	             "format_fallback_value formats float fallback");
 	const auto string_opt =
 	    SyntheticOption(OptionId::kVideoDevicePath, "video", "test", ValueType::kString,
 	                    howdy::native::config_schema::StringDefault("none"));
-	ok &= expect(howdy::native::config_schema::FormatFallbackValue(string_opt) == "none",
+	ok &= Expect(howdy::native::config_schema::FormatFallbackValue(string_opt) == "none",
 	             "format_fallback_value formats string fallback");
 
 	return ok ? 0 : 1;

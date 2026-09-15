@@ -22,7 +22,7 @@
 
 namespace howdy::test::compare_privileges {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::CompareExit;
 	using howdy::native::ComparePrivilegeStatus;
@@ -126,7 +126,7 @@ namespace howdy::test::compare_privileges {
 	inline auto ExpectEvents(const FakePrivilegeContext     &context,
 	                         const std::vector<std::string> &expected, const std::string &message)
 	    -> bool {
-		return expect(context.events == expected, message);
+		return Expect(context.events == expected, message);
 	}
 
 	inline auto FakeGetpwnamR(void *raw_context, const char *name, passwd *pwd,
@@ -416,13 +416,13 @@ namespace howdy::test::compare_privileges {
 	                              const std::vector<std::string>              &expected_events,
 	                              const std::string                           &label) -> bool {
 		bool ok = true;
-		ok &= expect(!result.Ok(), label + " never reports success when fatal callback returns");
-		ok &= expect(result.status == ComparePrivilegeStatus::kVerificationFailure,
+		ok &= Expect(!result.Ok(), label + " never reports success when fatal callback returns");
+		ok &= Expect(result.status == ComparePrivilegeStatus::kVerificationFailure,
 		             label + " returns verification failure after malformed fatal callback");
-		ok &= expect(context.fatal_calls == 1, label + " invokes fatal exactly once");
-		ok &= expect(context.fatal_exit_code == static_cast<int>(CompareExit::kAbort),
+		ok &= Expect(context.fatal_calls == 1, label + " invokes fatal exactly once");
+		ok &= Expect(context.fatal_exit_code == static_cast<int>(CompareExit::kAbort),
 		             label + " uses abort exit code");
-		ok &= expect(context.fatal_message ==
+		ok &= Expect(context.fatal_message ==
 		                 howdy::native::compare_privileges_internal::kFatalDiagnostic,
 		             label + " passes fixed diagnostic");
 		ok &= ExpectEvents(context, expected_events, label + " performs no later operation");

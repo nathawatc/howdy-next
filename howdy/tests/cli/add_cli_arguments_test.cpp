@@ -13,7 +13,7 @@ namespace howdy::test::add_cli {
 		auto PublicMissingUserReturnsError() -> bool {
 			auto                  command = std::to_array("howdy-add");
 			std::array<char *, 1> argv{command.data()};
-			return expect(AddMain(1, argv.data()) == 1,
+			return Expect(AddMain(1, argv.data()) == 1,
 			              "add entrypoint returns on invalid arguments");
 		}
 
@@ -22,35 +22,35 @@ namespace howdy::test::add_cli {
 			const int result  = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "successful add returns 0");
-			ok &= expect(context.load_calls == 1, "runtime config loaded once");
-			ok &= expect(context.preflight_calls == 1, "preflight callback called once");
-			ok &= expect(context.preflight_user == "alice", "preflight callback receives user");
-			ok &= expect(context.preflight_config.video.dark_threshold == 32.0F,
+			ok &= Expect(result == 0, "successful add returns 0");
+			ok &= Expect(context.load_calls == 1, "runtime config loaded once");
+			ok &= Expect(context.preflight_calls == 1, "preflight callback called once");
+			ok &= Expect(context.preflight_user == "alice", "preflight callback receives user");
+			ok &= Expect(context.preflight_config.video.dark_threshold == 32.0F,
 			             "preflight callback receives runtime config");
-			ok &= expect(context.capture_calls == 1, "capture callback called once");
-			ok &= expect(!context.capture_plain, "non-plain flag reaches capture callback");
-			ok &= expect(context.capture_user == "alice", "capture callback receives user");
-			ok &= expect(context.capture_config.video.dark_threshold == 32.0F,
+			ok &= Expect(context.capture_calls == 1, "capture callback called once");
+			ok &= Expect(!context.capture_plain, "non-plain flag reaches capture callback");
+			ok &= Expect(context.capture_user == "alice", "capture callback receives user");
+			ok &= Expect(context.capture_config.video.dark_threshold == 32.0F,
 			             "capture callback receives runtime config");
-			ok &= expect(context.capture_label == "front-door", "capture callback receives label");
-			ok &= expect(context.append_calls == 1, "append callback called once");
-			ok &= expect(context.appended_user == "alice", "append callback receives user");
-			ok &= expect(context.appended_entry.label == "front-door",
+			ok &= Expect(context.capture_label == "front-door", "capture callback receives label");
+			ok &= Expect(context.append_calls == 1, "append callback called once");
+			ok &= Expect(context.appended_user == "alice", "append callback receives user");
+			ok &= Expect(context.appended_entry.label == "front-door",
 			             "append callback receives label");
-			ok &= expect(context.appended_entry.backend == howdy::native::FaceModel::kBackendName,
+			ok &= Expect(context.appended_entry.backend == howdy::native::FaceModel::kBackendName,
 			             "append callback receives backend");
-			ok &= expect(context.appended_entry.metric == howdy::native::FaceMetric::kCosine,
+			ok &= Expect(context.appended_entry.metric == howdy::native::FaceMetric::kCosine,
 			             "append callback receives metric");
-			ok &= expect(context.appended_entry.model == howdy::native::FaceModel::kSfaceModel,
+			ok &= Expect(context.appended_entry.model == howdy::native::FaceModel::kSfaceModel,
 			             "append callback receives model");
-			ok &= expect(context.appended_entry.encodings.size() == 1,
+			ok &= Expect(context.appended_entry.encodings.size() == 1,
 			             "append callback receives one encoding vector");
-			ok &= expect(context.appended_entry.encodings.front().size() == 1,
+			ok &= Expect(context.appended_entry.encodings.front().size() == 1,
 			             "append callback receives one encoding value");
-			ok &= expect(context.appended_entry.encodings.front().front() == 0.125F,
+			ok &= Expect(context.appended_entry.encodings.front().front() == 0.125F,
 			             "append callback receives encoding");
-			ok &= expect((context.events ==
+			ok &= Expect((context.events ==
 			              std::vector<std::string>{"load", "preflight", "capture", "append"}),
 			             "successful add orders callbacks");
 			return ok;
@@ -66,18 +66,18 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "interactive successful add returns 0");
-			ok &= expect(context.preflight_calls == 1, "interactive add calls preflight");
-			ok &= expect(context.preflight_saw_unread_input,
+			ok &= Expect(result == 0, "interactive successful add returns 0");
+			ok &= Expect(context.preflight_calls == 1, "interactive add calls preflight");
+			ok &= Expect(context.preflight_saw_unread_input,
 			             "preflight runs before label input is consumed");
-			ok &= expect(context.capture_calls == 1, "interactive add calls capture");
-			ok &= expect(context.capture_label == "front-door", "capture receives entered label");
-			ok &= expect(context.append_calls == 1, "interactive add calls append");
-			ok &= expect(context.appended_entry.label == "front-door",
+			ok &= Expect(context.capture_calls == 1, "interactive add calls capture");
+			ok &= Expect(context.capture_label == "front-door", "capture receives entered label");
+			ok &= Expect(context.append_calls == 1, "interactive add calls append");
+			ok &= Expect(context.appended_entry.label == "front-door",
 			             "append receives entered label");
-			ok &= expect(output.str().contains("Enter a label for this new model [automatic]: "),
+			ok &= Expect(output.str().contains("Enter a label for this new model [automatic]: "),
 			             "interactive add prompts for label");
-			ok &= expect((context.events ==
+			ok &= Expect((context.events ==
 			              std::vector<std::string>{"load", "preflight", "capture", "append"}),
 			             "interactive add orders callbacks");
 			return ok;
@@ -93,12 +93,12 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", ""});
 
 			bool ok = true;
-			ok &= expect(result == 0, "explicit empty label add returns 0");
-			ok &= expect(output.str().contains("Enter a label for this new model [automatic]: "),
+			ok &= Expect(result == 0, "explicit empty label add returns 0");
+			ok &= Expect(output.str().contains("Enter a label for this new model [automatic]: "),
 			             "explicit empty label still prompts for a label");
-			ok &= expect(context.capture_label == "front-door",
+			ok &= Expect(context.capture_label == "front-door",
 			             "explicit empty label uses entered label for capture");
-			ok &= expect(context.appended_entry.label == "front-door",
+			ok &= Expect(context.appended_entry.label == "front-door",
 			             "explicit empty label uses entered label for append");
 			return ok;
 		}
@@ -113,14 +113,14 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "--plain"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "plain add returns 0");
-			ok &= expect(context.capture_plain, "plain flag reaches capture callback");
-			ok &= expect(context.capture_label.empty(), "plain mode leaves automatic label empty");
+			ok &= Expect(result == 0, "plain add returns 0");
+			ok &= Expect(context.capture_plain, "plain flag reaches capture callback");
+			ok &= Expect(context.capture_label.empty(), "plain mode leaves automatic label empty");
 			ok &=
-			    expect(context.appended_entry.label.empty(), "plain mode appends automatic label");
+			    Expect(context.appended_entry.label.empty(), "plain mode appends automatic label");
 			ok &=
-			    expect(input.tellg() == std::streampos(0), "plain mode leaves label input unread");
-			ok &= expect(!output.str().contains("Enter a label for this new model"),
+			    Expect(input.tellg() == std::streampos(0), "plain mode leaves label input unread");
+			ok &= Expect(!output.str().contains("Enter a label for this new model"),
 			             "plain mode skips label prompt");
 			return ok;
 		}
@@ -135,12 +135,12 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "-y"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "yes add returns 0");
-			ok &= expect(!context.capture_plain, "yes flag does not imply plain mode");
-			ok &= expect(context.capture_label.empty(), "yes mode leaves automatic label empty");
-			ok &= expect(context.appended_entry.label.empty(), "yes mode appends automatic label");
-			ok &= expect(input.tellg() == std::streampos(0), "yes mode leaves label input unread");
-			ok &= expect(!output.str().contains("Enter a label for this new model"),
+			ok &= Expect(result == 0, "yes add returns 0");
+			ok &= Expect(!context.capture_plain, "yes flag does not imply plain mode");
+			ok &= Expect(context.capture_label.empty(), "yes mode leaves automatic label empty");
+			ok &= Expect(context.appended_entry.label.empty(), "yes mode appends automatic label");
+			ok &= Expect(input.tellg() == std::streampos(0), "yes mode leaves label input unread");
+			ok &= Expect(!output.str().contains("Enter a label for this new model"),
 			             "yes mode skips label prompt");
 			return ok;
 		}
@@ -151,10 +151,10 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "--yes"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "unknown long yes argument returns 1");
-			ok &= expect(context.load_calls == 0, "unknown long yes argument skips config load");
-			ok &= expect(context.capture_calls == 0, "unknown long yes argument skips capture");
-			ok &= expect(context.append_calls == 0, "unknown long yes argument skips append");
+			ok &= Expect(result == 1, "unknown long yes argument returns 1");
+			ok &= Expect(context.load_calls == 0, "unknown long yes argument skips config load");
+			ok &= Expect(context.capture_calls == 0, "unknown long yes argument skips capture");
+			ok &= Expect(context.append_calls == 0, "unknown long yes argument skips append");
 			return ok;
 		}
 
@@ -164,10 +164,10 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front,\"door"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "CSV-character label add returns 0");
-			ok &= expect(context.capture_label == "front,\"door",
+			ok &= Expect(result == 0, "CSV-character label add returns 0");
+			ok &= Expect(context.capture_label == "front,\"door",
 			             "capture preserves comma and quote in label");
-			ok &= expect(context.appended_entry.label == "front,\"door",
+			ok &= Expect(context.appended_entry.label == "front,\"door",
 			             "append preserves comma and quote in label");
 			return ok;
 		}
@@ -178,11 +178,11 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "bad/name"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "invalid label returns 1");
-			ok &= expect(context.load_calls == 0, "invalid label skips config load");
-			ok &= expect(context.preflight_calls == 0, "invalid label skips preflight");
-			ok &= expect(context.capture_calls == 0, "invalid label skips camera capture");
-			ok &= expect(context.append_calls == 0, "invalid label skips storage mutation");
+			ok &= Expect(result == 1, "invalid label returns 1");
+			ok &= Expect(context.load_calls == 0, "invalid label skips config load");
+			ok &= Expect(context.preflight_calls == 0, "invalid label skips preflight");
+			ok &= Expect(context.capture_calls == 0, "invalid label skips camera capture");
+			ok &= Expect(context.append_calls == 0, "invalid label skips storage mutation");
 			return ok;
 		}
 
@@ -195,10 +195,10 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice"});
 
 			bool ok = true;
-			ok &= expect(result == 0, "long interactive label add returns 0");
-			ok &= expect(context.capture_label == "abcdefghijklmnopqrstuvwx",
+			ok &= Expect(result == 0, "long interactive label add returns 0");
+			ok &= Expect(context.capture_label == "abcdefghijklmnopqrstuvwx",
 			             "capture receives truncated interactive label");
-			ok &= expect(context.appended_entry.label == "abcdefghijklmnopqrstuvwx",
+			ok &= Expect(context.appended_entry.label == "abcdefghijklmnopqrstuvwx",
 			             "append receives truncated interactive label");
 			return ok;
 		}
@@ -213,10 +213,10 @@ namespace howdy::test::add_cli {
 			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
 
 			bool ok = true;
-			ok &= expect(result == 1, "append failure returns 1");
-			ok &= expect(context.preflight_calls == 1, "append failure calls preflight callback");
-			ok &= expect(context.capture_calls == 1, "append failure calls capture callback");
-			ok &= expect(context.append_calls == 1, "append failure calls append callback");
+			ok &= Expect(result == 1, "append failure returns 1");
+			ok &= Expect(context.preflight_calls == 1, "append failure calls preflight callback");
+			ok &= Expect(context.capture_calls == 1, "append failure calls capture callback");
+			ok &= Expect(context.append_calls == 1, "append failure calls append callback");
 			return ok;
 		}
 

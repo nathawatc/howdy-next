@@ -16,7 +16,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::CompareSandboxResource;
 	using howdy::native::CompareSandboxResult;
@@ -122,7 +122,7 @@ namespace {
 	auto ExpectLimit(const FakeSandboxContext &context, RlimitResource resource, rlim_t soft,
 	                 rlim_t hard, const std::string &message) -> bool {
 		const auto found = context.applied.find(resource);
-		return expect(found != context.applied.end() && found->second.rlim_cur == soft &&
+		return Expect(found != context.applied.end() && found->second.rlim_cur == soft &&
 		                  found->second.rlim_max == hard,
 		              message);
 	}
@@ -143,13 +143,13 @@ namespace {
 
 		const auto result = Apply(context);
 		bool       ok     = true;
-		ok &= expect(result.status == CompareSandboxStatus::kOk, "accept preferred limits");
+		ok &= Expect(result.status == CompareSandboxStatus::kOk, "accept preferred limits");
 		ok &= ExpectLimit(context, RLIMIT_CPU, 15, 20, "apply preferred CPU limit");
 		ok &= ExpectLimit(context, RLIMIT_NOFILE, 32, 32, "apply preferred open-file limit");
 		ok &= ExpectLimit(context, RLIMIT_CORE, 0, 0, "disable core dumps");
 		ok &= ExpectLimit(context, RLIMIT_AS, 5 * kGibibyte / 2, 5 * kGibibyte / 2,
 		                  "apply preferred address-space limit");
-		ok &= expect(context.events == ExpectedSuccessEvents(), "preserve syscall order");
+		ok &= Expect(context.events == ExpectedSuccessEvents(), "preserve syscall order");
 		return ok;
 	}
 
@@ -157,7 +157,7 @@ namespace {
 		FakeSandboxContext context;
 		const auto         result = Apply(context);
 		bool               ok     = true;
-		ok &= expect(result.status == CompareSandboxStatus::kOk, "accept unlimited inheritance");
+		ok &= Expect(result.status == CompareSandboxStatus::kOk, "accept unlimited inheritance");
 		ok &= ExpectLimit(context, RLIMIT_CPU, 15, 20, "finite CPU limit from infinity");
 		ok &= ExpectLimit(context, RLIMIT_NOFILE, 32, 32, "finite open-file limit from infinity");
 		ok &= ExpectLimit(context, RLIMIT_CORE, 0, 0, "finite core limit from infinity");
@@ -171,14 +171,14 @@ namespace {
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_CPU] = MakeLimit(17, 17);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable CPU hard limit");
 			ok &= ExpectLimit(context, RLIMIT_CPU, 15, 17, "clamp CPU hard limit");
 		}
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_NOFILE] = MakeLimit(24, 24);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable open-file hard limit");
 			ok &= ExpectLimit(context, RLIMIT_NOFILE, 24, 24, "clamp open-file hard limit");
 		}
@@ -186,7 +186,7 @@ namespace {
 			FakeSandboxContext context;
 			const rlim_t       inherited = 9 * kGibibyte / 4;
 			context.inherited[RLIMIT_AS] = MakeLimit(inherited, inherited);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable address-space hard limit");
 			ok &= ExpectLimit(context, RLIMIT_AS, inherited, inherited,
 			                  "clamp address-space hard limit");
@@ -199,14 +199,14 @@ namespace {
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_CPU] = MakeLimit(10, 100);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable CPU soft limit");
 			ok &= ExpectLimit(context, RLIMIT_CPU, 10, 20, "preserve CPU soft limit");
 		}
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_NOFILE] = MakeLimit(24, 100);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable open-file soft limit");
 			ok &= ExpectLimit(context, RLIMIT_NOFILE, 24, 32, "preserve open-file soft limit");
 		}
@@ -214,7 +214,7 @@ namespace {
 			FakeSandboxContext context;
 			const rlim_t       inherited = 9 * kGibibyte / 4;
 			context.inherited[RLIMIT_AS] = MakeLimit(inherited, 4 * kGibibyte);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable address-space soft limit");
 			ok &= ExpectLimit(context, RLIMIT_AS, inherited, 5 * kGibibyte / 2,
 			                  "preserve address-space soft limit");
@@ -227,14 +227,14 @@ namespace {
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_CPU] = MakeLimit(10, RLIM_INFINITY);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept finite CPU soft and infinite hard");
 			ok &= ExpectLimit(context, RLIMIT_CPU, 10, 20, "mixed CPU finite soft target");
 		}
 		{
 			FakeSandboxContext context;
 			context.inherited[RLIMIT_NOFILE] = MakeLimit(RLIM_INFINITY, 24);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept infinite open-file soft and finite hard");
 			ok &= ExpectLimit(context, RLIMIT_NOFILE, 24, 24,
 			                  "clamp open-file soft to inherited hard");
@@ -243,7 +243,7 @@ namespace {
 			FakeSandboxContext context;
 			const rlim_t       inherited = 9 * kGibibyte / 4;
 			context.inherited[RLIMIT_AS] = MakeLimit(RLIM_INFINITY, inherited);
-			ok &= expect(Apply(context).status == CompareSandboxStatus::kOk,
+			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept infinite address-space soft and finite hard");
 			ok &= ExpectLimit(context, RLIMIT_AS, inherited, inherited,
 			                  "clamp address-space soft to inherited hard");
@@ -299,15 +299,15 @@ namespace {
 			FakeSandboxContext context;
 			context.inherited[test_case.resource] = test_case.inherited;
 			const auto result                     = Apply(context);
-			ok &= expect(result.status == CompareSandboxStatus::kLimitBelowMinimum,
+			ok &= Expect(result.status == CompareSandboxStatus::kLimitBelowMinimum,
 			             std::string("reject below-minimum ") + ResourceName(test_case.resource));
-			ok &= expect(result.resource == ExpectedResource(test_case.resource),
+			ok &= Expect(result.resource == ExpectedResource(test_case.resource),
 			             std::string("report below-minimum ") + ResourceName(test_case.resource));
-			ok &= expect(!context.applied.contains(test_case.resource),
+			ok &= Expect(!context.applied.contains(test_case.resource),
 			             std::string("do not apply below-minimum ") +
 			                 ResourceName(test_case.resource));
 			ok &=
-			    expect(context.events == ExpectedPrefixThroughGet(test_case.resource),
+			    Expect(context.events == ExpectedPrefixThroughGet(test_case.resource),
 			           std::string("stop after below-minimum ") + ResourceName(test_case.resource));
 		}
 		return ok;
@@ -322,15 +322,15 @@ namespace {
 			context.failure          = FailureOperation::kGetrlimit;
 			context.failure_resource = resource;
 			const auto result        = Apply(context);
-			ok &= expect(result.status == CompareSandboxStatus::kLimitInspectionFailure,
+			ok &= Expect(result.status == CompareSandboxStatus::kLimitInspectionFailure,
 			             std::string("report inspection failure for ") + ResourceName(resource));
-			ok &= expect(
+			ok &= Expect(
 			    result.resource == ExpectedResource(resource) && result.error_number == EIO,
 			    std::string("include inspection resource and errno for ") + ResourceName(resource));
-			ok &= expect(!context.applied.contains(resource),
+			ok &= Expect(!context.applied.contains(resource),
 			             std::string("do not apply uninspected ") + ResourceName(resource));
 			ok &=
-			    expect(context.events == ExpectedPrefixThroughGet(resource),
+			    Expect(context.events == ExpectedPrefixThroughGet(resource),
 			           std::string("stop after inspection failure for ") + ResourceName(resource));
 		}
 		return ok;
@@ -345,17 +345,17 @@ namespace {
 			context.failure          = FailureOperation::kSetrlimit;
 			context.failure_resource = resource;
 			const auto result        = Apply(context);
-			ok &= expect(result.status == CompareSandboxStatus::kLimitApplicationFailure,
+			ok &= Expect(result.status == CompareSandboxStatus::kLimitApplicationFailure,
 			             std::string("report application failure for ") + ResourceName(resource));
-			ok &= expect(result.resource == ExpectedResource(resource) &&
+			ok &= Expect(result.resource == ExpectedResource(resource) &&
 			                 result.error_number == EPERM,
 			             std::string("include application resource and errno for ") +
 			                 ResourceName(resource));
-			ok &= expect(!context.applied.contains(resource),
+			ok &= Expect(!context.applied.contains(resource),
 			             std::string("do not record failed application for ") +
 			                 ResourceName(resource));
 			ok &=
-			    expect(context.events == ExpectedPrefixThroughSet(resource),
+			    Expect(context.events == ExpectedPrefixThroughSet(resource),
 			           std::string("stop after application failure for ") + ResourceName(resource));
 		}
 		return ok;
@@ -366,14 +366,14 @@ namespace {
 		context.failure   = FailureOperation::kPrctl;
 		const auto result = Apply(context);
 		bool       ok     = true;
-		ok &= expect(result.status == CompareSandboxStatus::kNoNewPrivilegesFailure,
+		ok &= Expect(result.status == CompareSandboxStatus::kNoNewPrivilegesFailure,
 		             "report no_new_privs failure");
-		ok &= expect(result.resource == CompareSandboxResource::kNone &&
+		ok &= Expect(result.resource == CompareSandboxResource::kNone &&
 		                 result.error_number == EACCES,
 		             "include no_new_privs errno");
-		ok &= expect(context.events == std::vector<std::string>{"prctl"},
+		ok &= Expect(context.events == std::vector<std::string>{"prctl"},
 		             "no limit calls after no_new_privs failure");
-		ok &= expect(context.applied.empty(), "no limits applied after no_new_privs failure");
+		ok &= Expect(context.applied.empty(), "no limits applied after no_new_privs failure");
 		return ok;
 	}
 
@@ -405,7 +405,7 @@ namespace {
 		for (const auto &test_case : cases) {
 			FakeSandboxContext context;
 			const auto         result = Apply(context, test_case.timeout);
-			ok &= expect(result.status == CompareSandboxStatus::kOk, test_case.name);
+			ok &= Expect(result.status == CompareSandboxStatus::kOk, test_case.name);
 			ok &= ExpectLimit(context, RLIMIT_CPU, test_case.expected_soft, test_case.expected_hard,
 			                  test_case.name);
 		}

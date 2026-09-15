@@ -9,7 +9,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	enum class DispatchBehavior : std::uint8_t {
 		kReturn,
@@ -66,19 +66,19 @@ auto main() -> int {
 
 	dispatch_behavior               = DispatchBehavior::kStdException;
 	const auto std_exception_result = Run();
-	ok &= expect(std_exception_result.status == 1 &&
+	ok &= Expect(std_exception_result.status == 1 &&
 	                 std_exception_result.error == "Error: dispatch exception\n",
 	             "std::exception returns stable diagnostic and exit code");
 
 	dispatch_behavior         = DispatchBehavior::kUnknownException;
 	const auto unknown_result = Run();
-	ok &= expect(unknown_result.status == 1 && unknown_result.error == "Error: unknown exception\n",
+	ok &= Expect(unknown_result.status == 1 && unknown_result.error == "Error: unknown exception\n",
 	             "unknown exception returns stable diagnostic and exit code");
 
 	dispatch_behavior        = DispatchBehavior::kReturn;
 	dispatch_result          = 23;
 	const auto normal_result = Run();
-	ok &= expect(normal_result.status == 23 && normal_result.error.empty(),
+	ok &= Expect(normal_result.status == 23 && normal_result.error.empty(),
 	             "normal dispatcher return code is preserved");
 
 	return ok ? 0 : 1;

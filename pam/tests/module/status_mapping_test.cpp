@@ -17,7 +17,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto MakeStatus(howdy::native::CompareExit exit_code) -> int {
 		return static_cast<int>(exit_code) << 8;
@@ -67,7 +67,7 @@ namespace {
 			const std::string message = std::string(test_case.name) + ": expected PAM status " +
 			                            std::to_string(test_case.pam_status) + ", got " +
 			                            std::to_string(actual);
-			ok &= expect(actual == test_case.pam_status, message);
+			ok &= Expect(actual == test_case.pam_status, message);
 		}
 		return ok;
 	}
@@ -93,109 +93,109 @@ auto main() -> int {
 	bindtextdomain(GETTEXT_PACKAGE, HOWDY_TEST_LOCALEDIR);
 	const std::string host_domain = textdomain(nullptr);
 
-	ok &= expect(std::string(howdy::pam::Translate("Missing Howdy translation")) ==
+	ok &= Expect(std::string(howdy::pam::Translate("Missing Howdy translation")) ==
 	                 "Missing Howdy translation",
 	             "missing Howdy translation returns source string");
-	ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+	ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
 	             "explicit Howdy translation ignores host default domain");
 
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kSuccess));
-		ok &= expect(decision.pam_result == PAM_SUCCESS, "success returns PAM_SUCCESS");
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.pam_result == PAM_SUCCESS, "success returns PAM_SUCCESS");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "success has no conversation");
-		ok &= expect(decision.log_message == "Face verification succeeded", "success log message");
+		ok &= Expect(decision.log_message == "Face verification succeeded", "success log message");
 	}
 
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kNoFaceModel));
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "no-model returns PAM_AUTH_ERR");
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "no-model returns PAM_AUTH_ERR");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "no-model has no conversation");
 		ok &=
-		    expect(decision.log_message == "Face verification unavailable: no enrolled face model",
+		    Expect(decision.log_message == "Face verification unavailable: no enrolled face model",
 		           "no-model log message");
 	}
 
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kTimeoutReached));
-		ok &= expect(decision.conversation_kind == ConversationKind::kError,
+		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "timeout returns error conversation");
-		ok &= expect(decision.conversation_message == "Face verification timed out",
+		ok &= Expect(decision.conversation_message == "Face verification timed out",
 		             "timeout message");
 	}
 
 	{
 		const auto decision = MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kAbort));
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "abort has no conversation");
-		ok &= expect(decision.log_message == "Face verification aborted", "abort log message");
+		ok &= Expect(decision.log_message == "Face verification aborted", "abort log message");
 	}
 
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kTooDark));
-		ok &= expect(decision.conversation_kind == ConversationKind::kError,
+		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "too-dark returns error conversation");
-		ok &= expect(decision.conversation_message == "Camera image is too dark for detection",
+		ok &= Expect(decision.conversation_message == "Camera image is too dark for detection",
 		             "too-dark message");
-		ok &= expect(decision.log_message == "Face verification failed: camera image too dark",
+		ok &= Expect(decision.log_message == "Face verification failed: camera image too dark",
 		             "too-dark log message");
 	}
 
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kInvalidDevice));
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "invalid-device fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "invalid-device fails closed");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "invalid-device has no conversation");
-		ok &= expect(decision.log_message ==
+		ok &= Expect(decision.log_message ==
 		                 "Face verification failed: cannot open configured camera",
 		             "invalid-device log message");
 	}
 
 	{
 		const auto decision = MapCompareWaitStatus(99 << 8);
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::kError,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "unknown exit returns error conversation");
-		ok &= expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
-		ok &= expect(decision.log_message == "Face verification failed: unknown error",
+		ok &= Expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
+		ok &= Expect(decision.log_message == "Face verification failed: unknown error",
 		             "unknown exit log");
 	}
 
 	{
 		const auto decision = MapCompareWaitStatus(SIGTERM);
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "signal exit fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "signal exit fails closed");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "signal exit has no conversation");
-		ok &= expect(decision.log_message.starts_with("Child killed by signal"), "signal exit log");
+		ok &= Expect(decision.log_message.starts_with("Child killed by signal"), "signal exit log");
 	}
 
 	{
 		const auto decision = MapCompareWaitStatus(W_STOPCODE(SIGSTOP));
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR, "stopped status fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::kNone,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "stopped status fails closed");
+		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "stopped status has no conversation");
-		ok &= expect(decision.log_message.empty(), "stopped status has no misleading log");
+		ok &= Expect(decision.log_message.empty(), "stopped status has no misleading log");
 	}
 
 	{
 		const auto decision = MapCompareWaitStatus(127 << 8);
-		ok &= expect(decision.pam_result == PAM_AUTH_ERR,
+		ok &= Expect(decision.pam_result == PAM_AUTH_ERR,
 		             "helper execution-style failure fails closed");
-		ok &= expect(decision.conversation_kind == ConversationKind::kError,
+		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "helper execution-style failure reports controlled error");
 	}
 
-	ok &= expect(BuildConfirmationMessage("alice") == "Face matched user alice",
+	ok &= Expect(BuildConfirmationMessage("alice") == "Face matched user alice",
 	             "confirmation message is formatted");
-	ok &= expect(BuildUnknownErrorMessage(42) == "Unknown error: 42",
+	ok &= Expect(BuildUnknownErrorMessage(42) == "Unknown error: 42",
 	             "unknown error message is formatted");
-	ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+	ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
 	             "Howdy message mapping preserves host default domain");
 
 	setenv("LANGUAGE", "th", 1);
@@ -210,12 +210,12 @@ auto main() -> int {
 	if (selected_thai_locale != nullptr) {
 		const auto translated =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kTimeoutReached));
-		ok &= expect(translated.conversation_message == "การยืนยันใบหน้าหมดเวลา",
+		ok &= Expect(translated.conversation_message == "การยืนยันใบหน้าหมดเวลา",
 		             "Howdy message resolves from explicit Howdy domain");
-		ok &= expect(std::string(howdy::pam::Translate("Missing Howdy translation")) ==
+		ok &= Expect(std::string(howdy::pam::Translate("Missing Howdy translation")) ==
 		                 "Missing Howdy translation",
 		             "missing catalog entry returns source string under translated locale");
-		ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+		ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
 		             "translated Howdy message ignores host default domain");
 	} else {
 		std::cerr << "SKIP: Thai locale is not generated; translated catalog assertion not run\n";

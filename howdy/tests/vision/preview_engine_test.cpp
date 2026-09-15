@@ -12,7 +12,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct Context {
 		howdy::native::FaceDetectionResult                 detection_result;
@@ -135,13 +135,13 @@ namespace {
 		const auto invalid = engine.ProcessGrayFrame(cv::Mat(4, 4, CV_8UC3));
 		const auto black   = engine.ProcessGrayFrame(cv::Mat::zeros(8, 8, CV_8UC1));
 		bool       ok      = true;
-		ok &= expect(empty.status == howdy::native::PreviewFrameStatus::kInvalidFrame,
+		ok &= Expect(empty.status == howdy::native::PreviewFrameStatus::kInvalidFrame,
 		             "empty frame is invalid");
-		ok &= expect(invalid.status == howdy::native::PreviewFrameStatus::kInvalidFrame,
+		ok &= Expect(invalid.status == howdy::native::PreviewFrameStatus::kInvalidFrame,
 		             "non-gray frame is invalid");
-		ok &= expect(black.status == howdy::native::PreviewFrameStatus::kBlackFrame,
+		ok &= Expect(black.status == howdy::native::PreviewFrameStatus::kBlackFrame,
 		             "zero frame is black");
-		ok &= expect(context.prepare_calls == 0 && context.detect_calls == 0,
+		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0,
 		             "invalid and black frames skip inference");
 		return ok;
 	}
@@ -152,18 +152,18 @@ namespace {
 		cv::Mat frame(8, 8, CV_8UC1, cv::Scalar(40));
 		frame.rowRange(0, 4).setTo(0);
 		const auto result = engine.ProcessGrayFrame(std::move(frame));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kTooDark,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kTooDark,
 		              "non-black dark frame is too dark") &&
-		       expect(context.detect_calls == 0, "too-dark frame skips detector");
+		       Expect(context.detect_calls == 0, "too-dark frame skips detector");
 	}
 
 	auto NoFaceIsSuccessfulDetection() -> bool {
 		auto       context = MakeContext();
 		auto       engine  = MakeEngine(context);
 		const auto result  = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kNoFace,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kNoFace,
 		              "zero detections report no face") &&
-		       expect(context.detect_calls == 1 && context.encode_calls == 0,
+		       Expect(context.detect_calls == 1 && context.encode_calls == 0,
 		              "no face stops before encoder");
 	}
 
@@ -174,17 +174,17 @@ namespace {
 		auto engine                         = MakeEngine(context);
 		auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		bool ok     = true;
-		ok &= expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
+		ok &= Expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		             "rejected match reports unmatched face");
-		ok &= expect(result.faces.size() == 1 && result.faces[0].matching_attempted &&
+		ok &= Expect(result.faces.size() == 1 && result.faces[0].matching_attempted &&
 		                 result.faces[0].match.score == 0.812F,
 		             "unmatched face preserves score");
 
 		context.match_result = {.index = 0, .score = 0.923F, .accepted = true};
 		result               = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		ok &= expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
+		ok &= Expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
 		             "accepted match reports matched face");
-		ok &= expect(result.faces[0].match.index == 0 && result.faces[0].match.score == 0.923F,
+		ok &= Expect(result.faces[0].match.index == 0 && result.faces[0].match.score == 0.923F,
 		             "matched face preserves model index and score for label rendering");
 		return ok;
 	}
@@ -201,13 +201,13 @@ namespace {
 		    config, dependencies, {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
 		    1, true);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		              "normal inference completes") &&
-		       expect(result.inference_time == std::chrono::milliseconds(37),
+		       Expect(result.inference_time == std::chrono::milliseconds(37),
 		              "normal inference reports deterministic inference time") &&
-		       expect(context.next_now == 2,
+		       Expect(context.next_now == 2,
 		              "normal inference reads clock at inference boundaries") &&
-		       expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
+		       Expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
 		                  context.encode_calls == 1 && context.match_calls == 1,
 		              "inference timing covers full inference path");
 	}
@@ -220,10 +220,10 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "detector failure remains explicit") &&
-		       expect(result.error_message == "detector failed", "detector diagnostic preserved") &&
-		       expect(context.encode_calls == 0 && context.match_calls == 0,
+		       Expect(result.error_message == "detector failed", "detector diagnostic preserved") &&
+		       Expect(context.encode_calls == 0 && context.match_calls == 0,
 		              "detector failure skips encoder and matcher");
 	}
 
@@ -235,11 +235,11 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "empty detector failure remains explicit") &&
-		       expect(result.error_message == "Face detection failed",
+		       Expect(result.error_message == "Face detection failed",
 		              "empty detector failure gets stable diagnostic") &&
-		       expect(context.encode_calls == 0 && context.match_calls == 0,
+		       Expect(context.encode_calls == 0 && context.match_calls == 0,
 		              "empty detector failure skips encoder and matcher");
 	}
 
@@ -248,10 +248,10 @@ namespace {
 		context.invalid_prepared = true;
 		auto       engine        = MakeEngine(context);
 		const auto result        = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kDetectionFailed,
 		              "invalid prepared frame reports detection failure") &&
-		       expect(!result.error_message.empty(), "invalid prepared frame gets diagnostic") &&
-		       expect(context.detect_calls == 0 && context.encode_calls == 0 &&
+		       Expect(!result.error_message.empty(), "invalid prepared frame gets diagnostic") &&
+		       Expect(context.detect_calls == 0 && context.encode_calls == 0 &&
 		                  context.match_calls == 0,
 		              "invalid prepared frame skips detector, encoder, and matcher");
 	}
@@ -265,14 +265,14 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "encoder failure remains explicit") &&
-		       expect(result.error_message == "encoder failed", "encoder diagnostic preserved") &&
-		       expect(result.faces.size() == 1 &&
+		       Expect(result.error_message == "encoder failed", "encoder diagnostic preserved") &&
+		       Expect(result.faces.size() == 1 &&
 		                  result.faces[0].status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed,
 		              "encoder failure remains attached to face") &&
-		       expect(context.match_calls == 0, "encoder failure skips matcher");
+		       Expect(context.match_calls == 0, "encoder failure skips matcher");
 	}
 
 	auto FirstFaceEncodingFailurePreservesSecondMatch() -> bool {
@@ -288,11 +288,11 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
 		              "second face match determines frame status") &&
-		       expect(context.encode_calls == 2, "encoding continues after first face failure") &&
-		       expect(context.match_calls == 1, "matcher runs for successfully encoded face") &&
-		       expect(result.faces.size() == 2 &&
+		       Expect(context.encode_calls == 2, "encoding continues after first face failure") &&
+		       Expect(context.match_calls == 1, "matcher runs for successfully encoded face") &&
+		       Expect(result.faces.size() == 2 &&
 		                  result.faces[0].status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed &&
 		                  result.faces[1].status == howdy::native::PreviewFaceStatus::kMatched &&
@@ -315,13 +315,13 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "all encoding failures remain explicit") &&
-		       expect(result.error_message == "first encoder failed",
+		       Expect(result.error_message == "first encoder failed",
 		              "all encoding failures preserve first diagnostic") &&
-		       expect(context.encode_calls == 2, "all detected faces attempt encoding") &&
-		       expect(context.match_calls == 0, "all encoding failures skip matching") &&
-		       expect(result.faces.size() == 2 &&
+		       Expect(context.encode_calls == 2, "all detected faces attempt encoding") &&
+		       Expect(context.match_calls == 0, "all encoding failures skip matching") &&
+		       Expect(result.faces.size() == 2 &&
 		                  result.faces[0].status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed &&
 		                  result.faces[1].status ==
@@ -339,11 +339,11 @@ namespace {
 		};
 		auto       engine = MakeEngine(context);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kEncodingFailed,
 		              "malformed claimed-success encoding fails") &&
-		       expect(result.error_message == "Face encoding returned invalid embedding",
+		       Expect(result.error_message == "Face encoding returned invalid embedding",
 		              "malformed encoding gets diagnostic") &&
-		       expect(context.match_calls == 0, "malformed encoding skips matcher");
+		       Expect(context.match_calls == 0, "malformed encoding skips matcher");
 	}
 
 	auto MatchingDisabledReportsDetectedFaces() -> bool {
@@ -358,11 +358,11 @@ namespace {
 		                                    },
 		                                    {}, 0, false);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-		return expect(result.status == howdy::native::PreviewFrameStatus::kFacesDetected,
+		return Expect(result.status == howdy::native::PreviewFrameStatus::kFacesDetected,
 		              "matching-disabled face gets detected-only status") &&
-		       expect(result.faces.size() == 1 && !result.faces[0].matching_attempted,
+		       Expect(result.faces.size() == 1 && !result.faces[0].matching_attempted,
 		              "detected-only face records no matching attempt") &&
-		       expect(context.encode_calls == 0 && context.match_calls == 0,
+		       Expect(context.encode_calls == 0 && context.match_calls == 0,
 		              "matching-disabled face skips encoder and matcher");
 	}
 
@@ -374,11 +374,11 @@ namespace {
 			context.match_result                = match;
 			auto       engine                   = MakeEngine(context);
 			const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-			return expect(result.status == howdy::native::PreviewFrameStatus::kInvalidMatchResult,
+			return Expect(result.status == howdy::native::PreviewFrameStatus::kInvalidMatchResult,
 			              subject + " returns invalid match result") &&
-			       expect(result.error_message == "Face matcher returned invalid match result",
+			       Expect(result.error_message == "Face matcher returned invalid match result",
 			              subject + " returns stable diagnostic") &&
-			       expect(result.faces.empty(), subject + " exposes no UI-facing model index");
+			       Expect(result.faces.empty(), subject + " exposes no UI-facing model index");
 		};
 
 		bool ok = true;
@@ -404,12 +404,12 @@ namespace {
 			auto                         config = TestVideoConfig();
 			howdy::native::PreviewEngine engine(config, dependencies, {}, 0, true);
 			const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
-			return expect(result.status == howdy::native::PreviewFrameStatus::kInvalidDependencies,
+			return Expect(result.status == howdy::native::PreviewFrameStatus::kInvalidDependencies,
 			              subject + " returns invalid dependencies") &&
-			       expect(result.error_message ==
+			       Expect(result.error_message ==
 			                  "Internal error: missing preview inference dependency",
 			              subject + " returns stable diagnostic") &&
-			       expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
+			       Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 			                  context.encode_calls == 0 && context.match_calls == 0,
 			              subject + " invokes no callback");
 		};

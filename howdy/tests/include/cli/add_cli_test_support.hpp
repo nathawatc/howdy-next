@@ -10,7 +10,7 @@
 
 namespace howdy::test::add_cli {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct StreamRedirect {
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,

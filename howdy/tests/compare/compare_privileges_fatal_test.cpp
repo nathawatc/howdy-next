@@ -13,7 +13,7 @@ auto RunComparePrivilegesFatalTests() -> bool;
 namespace {
 
 	using howdy::native::CompareExit;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 	using howdy::test::compare_privileges::FakePrivilegeContext;
 	using howdy::test::compare_privileges::MakeDependencies;
 	using howdy::test::compare_privileges::SetNonRootIdentity;
@@ -41,14 +41,14 @@ namespace {
 	auto TestProductionNonRootIdentityFatalUsesExit() -> bool {
 		std::array<int, 2> pipe_fds{};
 		if (pipe(pipe_fds.data()) != 0) {
-			return expect(false, "fatal regression pipe creation succeeds");
+			return Expect(false, "fatal regression pipe creation succeeds");
 		}
 
 		const pid_t child = fork();
 		if (child < 0) {
 			close(pipe_fds[0]);
 			close(pipe_fds[1]);
-			return expect(false, "fatal regression fork succeeds");
+			return Expect(false, "fatal regression fork succeeds");
 		}
 		if (child == 0) {
 			close(pipe_fds[0]);
@@ -88,10 +88,10 @@ namespace {
 		close(pipe_fds[0]);
 
 		bool ok = true;
-		ok &= expect(WIFEXITED(status), "fatal child exits normally through _exit");
-		ok &= expect(WEXITSTATUS(status) == static_cast<int>(CompareExit::kAbort),
+		ok &= Expect(WIFEXITED(status), "fatal child exits normally through _exit");
+		ok &= Expect(WEXITSTATUS(status) == static_cast<int>(CompareExit::kAbort),
 		             "fatal child exits with CompareExit::kAbort");
-		ok &= expect(marker_count == 0, "fatal _exit skips destructor and atexit handlers");
+		ok &= Expect(marker_count == 0, "fatal _exit skips destructor and atexit handlers");
 		return ok;
 	}
 

@@ -8,7 +8,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	struct FrameRead {
 		bool    ok = true;
@@ -164,10 +164,10 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 1);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "black frame is not accepted");
-		ok &= expect(result.valid_frames == 0, "black frame does not increment accepted progress");
-		ok &= expect(result.dark_tries == 0, "black frame is not counted as dark accepted try");
-		ok &= expect(result.black_frames == 1, "black frame is counted separately");
+		ok &= Expect(result.faces.empty(), "black frame is not accepted");
+		ok &= Expect(result.valid_frames == 0, "black frame does not increment accepted progress");
+		ok &= Expect(result.dark_tries == 0, "black frame is not counted as dark accepted try");
+		ok &= Expect(result.black_frames == 1, "black frame is counted separately");
 		return ok;
 	}
 
@@ -179,10 +179,10 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "black-only capture has no accepted sample to store");
-		ok &= expect(face_model.prepare_calls == 0, "black frame does not reach frame preparation");
-		ok &= expect(face_model.detect_calls == 0, "black frame does not reach face detection");
-		ok &= expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
+		ok &= Expect(result.faces.empty(), "black-only capture has no accepted sample to store");
+		ok &= Expect(face_model.prepare_calls == 0, "black frame does not reach frame preparation");
+		ok &= Expect(face_model.detect_calls == 0, "black frame does not reach face detection");
+		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kOnlyBlackFrames,
 		             "black-only capture reports only-black failure");
 		return ok;
@@ -196,11 +196,11 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 3);
 
 		bool ok = true;
-		ok &= expect(result.faces.size() == 1, "valid frame after black frames is accepted");
-		ok &= expect(result.valid_frames == 1, "only valid frame increments accepted progress");
-		ok &= expect(result.black_frames == 2, "leading black frames stay skipped");
-		ok &= expect(face_model.prepare_calls == 1, "only valid frame reaches preparation");
-		ok &= expect(face_model.detect_calls == 1, "only valid frame reaches detection");
+		ok &= Expect(result.faces.size() == 1, "valid frame after black frames is accepted");
+		ok &= Expect(result.valid_frames == 1, "only valid frame increments accepted progress");
+		ok &= Expect(result.black_frames == 2, "leading black frames stay skipped");
+		ok &= Expect(face_model.prepare_calls == 1, "only valid frame reaches preparation");
+		ok &= Expect(face_model.detect_calls == 1, "only valid frame reaches detection");
 		return ok;
 	}
 
@@ -212,12 +212,12 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "too-dark frames are not accepted");
-		ok &= expect(result.valid_frames == 2, "too-dark frames increment valid frame count");
-		ok &= expect(result.dark_tries == 2, "too-dark frames increment dark try count");
-		ok &= expect(face_model.prepare_calls == 0, "too-dark frames do not reach preparation");
-		ok &= expect(face_model.detect_calls == 0, "too-dark frames do not reach detection");
-		ok &= expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
+		ok &= Expect(result.faces.empty(), "too-dark frames are not accepted");
+		ok &= Expect(result.valid_frames == 2, "too-dark frames increment valid frame count");
+		ok &= Expect(result.dark_tries == 2, "too-dark frames increment dark try count");
+		ok &= Expect(face_model.prepare_calls == 0, "too-dark frames do not reach preparation");
+		ok &= Expect(face_model.detect_calls == 0, "too-dark frames do not reach detection");
+		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames,
 		             "too-dark-only capture keeps too-dark failure classification");
 		return ok;
@@ -232,16 +232,16 @@ namespace {
 		const auto classification = howdy::native::ClassifyEnrollmentCaptureFailure(result);
 
 		bool ok = true;
-		ok &= expect(result.black_frames == 1, "mixed capture counts black frame");
-		ok &= expect(result.valid_frames == 1, "mixed capture counts too-dark valid frame");
-		ok &= expect(result.dark_tries == 1, "mixed capture counts too-dark try");
-		ok &= expect(face_model.detect_calls == 0,
+		ok &= Expect(result.black_frames == 1, "mixed capture counts black frame");
+		ok &= Expect(result.valid_frames == 1, "mixed capture counts too-dark valid frame");
+		ok &= Expect(result.dark_tries == 1, "mixed capture counts too-dark try");
+		ok &= Expect(face_model.detect_calls == 0,
 		             "mixed black and too-dark frames do not reach detection");
-		ok &= expect(classification != howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames,
+		ok &= Expect(classification != howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames,
 		             "mixed black and too-dark frames do not report all-too-dark diagnostic");
-		ok &= expect(classification != howdy::native::EnrollmentCaptureFailure::kNoFaceDetected,
+		ok &= Expect(classification != howdy::native::EnrollmentCaptureFailure::kNoFaceDetected,
 		             "mixed black and too-dark frames do not report no-face diagnostic");
-		ok &= expect(classification ==
+		ok &= Expect(classification ==
 		                 howdy::native::EnrollmentCaptureFailure::kNoSufficientlyBrightFrames,
 		             "mixed black and too-dark frames report no sufficiently bright frames");
 		return ok;
@@ -256,11 +256,11 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.faces.size() == 1, "later processable frame with face is accepted");
+		ok &= Expect(result.faces.size() == 1, "later processable frame with face is accepted");
 		ok &=
-		    expect(result.valid_frames == 2, "processable no-face frame counts and loop continues");
-		ok &= expect(face_model.prepare_calls == 2, "both processable frames reach preparation");
-		ok &= expect(face_model.detect_calls == 2, "both processable frames reach detection");
+		    Expect(result.valid_frames == 2, "processable no-face frame counts and loop continues");
+		ok &= Expect(face_model.prepare_calls == 2, "both processable frames reach preparation");
+		ok &= Expect(face_model.detect_calls == 2, "both processable frames reach detection");
 		return ok;
 	}
 
@@ -273,12 +273,12 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "processable frames without faces leave faces empty");
-		ok &= expect(face_model.prepare_calls == 2, "processable no-face frames reach preparation");
-		ok &= expect(face_model.detect_calls == 2, "processable no-face frames reach detection");
-		ok &= expect(result.valid_frames > result.dark_tries,
+		ok &= Expect(result.faces.empty(), "processable frames without faces leave faces empty");
+		ok &= Expect(face_model.prepare_calls == 2, "processable no-face frames reach preparation");
+		ok &= Expect(face_model.detect_calls == 2, "processable no-face frames reach detection");
+		ok &= Expect(result.valid_frames > result.dark_tries,
 		             "processable no-face frames pass darkness gate");
-		ok &= expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
+		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kNoFaceDetected,
 		             "processable no-face frames report no-face failure");
 		return ok;
@@ -292,11 +292,11 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 3);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "repeated black frames follow no-face failure path");
-		ok &= expect(result.valid_frames == 0,
+		ok &= Expect(result.faces.empty(), "repeated black frames follow no-face failure path");
+		ok &= Expect(result.valid_frames == 0,
 		             "repeated black frames never become accepted progress");
-		ok &= expect(result.black_frames == 3, "all repeated black frames are skipped");
-		ok &= expect(capture.read_calls == 3, "capture loop consumes configured frame budget");
+		ok &= Expect(result.black_frames == 3, "all repeated black frames are skipped");
+		ok &= Expect(capture.read_calls == 3, "capture loop consumes configured frame budget");
 		return ok;
 	}
 
@@ -308,15 +308,15 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(true), 1);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), "empty successful read has no accepted sample to store");
-		ok &= expect(result.empty_frames == 1, "empty successful read is counted separately");
-		ok &= expect(result.read_failures == 0, "empty successful read is not a read failure");
-		ok &= expect(result.black_frames == 0, "empty successful read is not classified as black");
-		ok &= expect(result.valid_frames == 0, "empty successful read does not increment progress");
-		ok &= expect(face_model.prepare_calls == 0,
+		ok &= Expect(result.faces.empty(), "empty successful read has no accepted sample to store");
+		ok &= Expect(result.empty_frames == 1, "empty successful read is counted separately");
+		ok &= Expect(result.read_failures == 0, "empty successful read is not a read failure");
+		ok &= Expect(result.black_frames == 0, "empty successful read is not classified as black");
+		ok &= Expect(result.valid_frames == 0, "empty successful read does not increment progress");
+		ok &= Expect(face_model.prepare_calls == 0,
 		             "empty successful read does not reach preparation");
 		ok &=
-		    expect(face_model.detect_calls == 0, "empty successful read does not reach detection");
+		    Expect(face_model.detect_calls == 0, "empty successful read does not reach detection");
 		return ok;
 	}
 
@@ -329,12 +329,12 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 1);
 
 		bool ok = true;
-		ok &= expect(result.faces.empty(), label + " has no accepted sample to store");
-		ok &= expect(result.empty_frames == 1, label + " is counted as empty frame");
-		ok &= expect(result.black_frames == 0, label + " is not classified as black");
-		ok &= expect(result.valid_frames == 0, label + " does not increment valid frames");
-		ok &= expect(face_model.prepare_calls == 0, label + " does not reach preparation");
-		ok &= expect(face_model.detect_calls == 0, label + " does not reach detection");
+		ok &= Expect(result.faces.empty(), label + " has no accepted sample to store");
+		ok &= Expect(result.empty_frames == 1, label + " is counted as empty frame");
+		ok &= Expect(result.black_frames == 0, label + " is not classified as black");
+		ok &= Expect(result.valid_frames == 0, label + " does not increment valid frames");
+		ok &= Expect(face_model.prepare_calls == 0, label + " does not reach preparation");
+		ok &= Expect(face_model.detect_calls == 0, label + " does not reach detection");
 		return ok;
 	}
 
@@ -361,10 +361,10 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 1);
 
 		bool ok = true;
-		ok &= expect(accepted.empty_frames == 0, "8192x1 gray frame is not rejected");
-		ok &= expect(accepted.valid_frames == 1, "8192x1 gray frame remains valid");
-		ok &= expect(face_model.prepare_calls == 1, "8192x1 gray frame reaches preparation");
-		ok &= expect(face_model.detect_calls == 1, "8192x1 gray frame reaches detection");
+		ok &= Expect(accepted.empty_frames == 0, "8192x1 gray frame is not rejected");
+		ok &= Expect(accepted.valid_frames == 1, "8192x1 gray frame remains valid");
+		ok &= Expect(face_model.prepare_calls == 1, "8192x1 gray frame reaches preparation");
+		ok &= Expect(face_model.detect_calls == 1, "8192x1 gray frame reaches detection");
 
 		ok &= InvalidGrayFrameCountsAsEmptyWithoutModelWork(
 		    FrameRead{.ok    = true,
@@ -389,11 +389,11 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 4);
 
 		bool ok = true;
-		ok &= expect(result.read_failures == 1, "camera read failure is counted separately");
-		ok &= expect(result.empty_frames == 1, "empty successful read is counted separately");
-		ok &= expect(result.black_frames == 1, "read failure and empty read are not black frames");
-		ok &= expect(result.valid_frames == 1, "valid frame after read failure is still accepted");
-		ok &= expect(result.faces.size() == 1, "read failure does not block later valid frame");
+		ok &= Expect(result.read_failures == 1, "camera read failure is counted separately");
+		ok &= Expect(result.empty_frames == 1, "empty successful read is counted separately");
+		ok &= Expect(result.black_frames == 1, "read failure and empty read are not black frames");
+		ok &= Expect(result.valid_frames == 1, "valid frame after read failure is still accepted");
+		ok &= Expect(result.faces.size() == 1, "read failure does not block later valid frame");
 		return ok;
 	}
 
@@ -405,9 +405,9 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.read_failures == 2, "all read failures stay read failures");
-		ok &= expect(result.black_frames == 0, "read failures do not count as black frames");
-		ok &= expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
+		ok &= Expect(result.read_failures == 2, "all read failures stay read failures");
+		ok &= Expect(result.black_frames == 0, "read failures do not count as black frames");
+		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kNoUsableFrames,
 		             "all read failures use no-usable-frame failure classification");
 		return ok;
@@ -421,9 +421,9 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.empty_frames == 2, "all empty successful reads stay empty reads");
-		ok &= expect(result.black_frames == 0, "empty reads do not count as black frames");
-		ok &= expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
+		ok &= Expect(result.empty_frames == 2, "all empty successful reads stay empty reads");
+		ok &= Expect(result.black_frames == 0, "empty reads do not count as black frames");
+		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kNoUsableFrames,
 		             "all empty reads use no-usable-frame failure classification");
 		return ok;
@@ -438,13 +438,13 @@ namespace {
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
-		ok &= expect(result.detector_status == howdy::native::FaceDetectionStatus::kInvalidOutput,
+		ok &= Expect(result.detector_status == howdy::native::FaceDetectionStatus::kInvalidOutput,
 		             "detector failure status is retained");
-		ok &= expect(!result.detector_error_message.empty(),
+		ok &= Expect(!result.detector_error_message.empty(),
 		             "detector failure diagnostic is retained");
-		ok &= expect(result.faces.empty(), "failed detection produces no enrollment faces");
-		ok &= expect(capture.read_calls == 1, "capture stops before consuming a later frame");
-		ok &= expect(face_model.detect_calls == 1, "detector is not called after failure");
+		ok &= Expect(result.faces.empty(), "failed detection produces no enrollment faces");
+		ok &= Expect(capture.read_calls == 1, "capture stops before consuming a later frame");
+		ok &= Expect(face_model.detect_calls == 1, "detector is not called after failure");
 		return ok;
 	}
 

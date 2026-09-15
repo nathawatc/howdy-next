@@ -13,10 +13,10 @@
 
 namespace {
 
-	using howdy::test::count_files_with_prefix;
-	using howdy::test::expect;
-	using howdy::test::read_file;
-	using howdy::test::write_file;
+	using howdy::test::CountFilesWithPrefix;
+	using howdy::test::Expect;
+	using howdy::test::ReadFile;
+	using howdy::test::WriteFile;
 	namespace fs = std::filesystem;
 
 	auto RunGenerator(const fs::path &generator_path, std::vector<std::string> arguments,
@@ -76,60 +76,59 @@ auto main(int argc, char **argv) -> int {
 	std::error_code error;
 	fs::remove_all(root, error);
 	fs::create_directories(root, error);
-	ok &= expect(!error, "create generator test directory");
+	ok &= Expect(!error, "create generator test directory");
 	if (error) {
 		return 1;
 	}
 
-	ok &= expect(RunGenerator(generator_path, {}, false) == 2,
+	ok &= Expect(RunGenerator(generator_path, {}, false) == 2,
 	             "missing generator arguments return usage status");
-	ok &= expect(RunGenerator(generator_path, {"--output"}, false) == 2,
+	ok &= Expect(RunGenerator(generator_path, {"--output"}, false) == 2,
 	             "incomplete output argument returns usage status");
 
 	const auto output = root / "generated" / "config.ini";
 	error.clear();
 	fs::create_directories(output.parent_path(), error);
-	ok &= expect(!error, "create generator output directory");
+	ok &= Expect(!error, "create generator output directory");
 	const auto unrelated_temporary = fs::path(output.string() + ".tmp");
-	ok &= expect(write_file(unrelated_temporary, "must remain untouched\n"),
+	ok &= Expect(WriteFile(unrelated_temporary, "must remain untouched\n"),
 	             "create unrelated output.tmp file");
-	ok &= expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= Expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
 	             "generator writes new output");
-	const auto generated_content = read_file(output);
-	ok &= expect(!generated_content.empty(), "successful generation creates non-empty output");
-	ok &= expect(read_file(unrelated_temporary) == "must remain untouched\n",
+	const auto generated_content = ReadFile(output);
+	ok &= Expect(!generated_content.empty(), "successful generation creates non-empty output");
+	ok &= Expect(ReadFile(unrelated_temporary) == "must remain untouched\n",
 	             "generator preserves unrelated output.tmp file");
 
-	ok &= expect(write_file(output, "old config\n"), "create existing output");
-	ok &= expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= Expect(WriteFile(output, "old config\n"), "create existing output");
+	ok &= Expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
 	             "generator replaces existing output");
-	ok &= expect(read_file(output) == generated_content,
+	ok &= Expect(ReadFile(output) == generated_content,
 	             "replacement output is deterministic generated content");
 
 	const auto failed_output = root / "failed" / "config.ini";
 	fs::create_directories(failed_output.parent_path(), error);
-	ok &= expect(!error && write_file(failed_output, "preserve this config\n"),
+	ok &= Expect(!error && WriteFile(failed_output, "preserve this config\n"),
 	             "create output for failed-write test");
-	const auto staged_before =
-	    count_files_with_prefix(failed_output.parent_path(), ".howdy-atomic-");
-	const int failed_write_status =
+	const auto staged_before = CountFilesWithPrefix(failed_output.parent_path(), ".howdy-atomic-");
+	const int  failed_write_status =
 	    RunGenerator(generator_path, {"--output", failed_output.string()}, true);
-	ok &= expect(failed_write_status != 0, "failed atomic write returns nonzero");
-	ok &= expect(read_file(failed_output) == "preserve this config\n",
+	ok &= Expect(failed_write_status != 0, "failed atomic write returns nonzero");
+	ok &= Expect(ReadFile(failed_output) == "preserve this config\n",
 	             "failed atomic write preserves existing output");
-	ok &= expect(count_files_with_prefix(failed_output.parent_path(), ".howdy-atomic-") ==
-	                 staged_before,
-	             "failed atomic write cleans staged files");
+	ok &=
+	    Expect(CountFilesWithPrefix(failed_output.parent_path(), ".howdy-atomic-") == staged_before,
+	           "failed atomic write cleans staged files");
 
 	const auto blocked_parent = root / "blocked-parent";
-	ok &= expect(write_file(blocked_parent, "not a directory\n"), "create invalid output parent");
-	ok &= expect(RunGenerator(generator_path,
+	ok &= Expect(WriteFile(blocked_parent, "not a directory\n"), "create invalid output parent");
+	ok &= Expect(RunGenerator(generator_path,
 	                          {"--output", (blocked_parent / "config.ini").string()}, false) != 0,
 	             "invalid output directory returns nonzero");
-	ok &= expect(read_file(blocked_parent) == "not a directory\n",
+	ok &= Expect(ReadFile(blocked_parent) == "not a directory\n",
 	             "invalid output directory remains unchanged");
 
 	fs::remove_all(root, error);
-	ok &= expect(!error, "remove generator test directory");
+	ok &= Expect(!error, "remove generator test directory");
 	return ok ? 0 : 1;
 }

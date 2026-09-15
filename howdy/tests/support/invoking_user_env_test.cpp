@@ -15,7 +15,7 @@
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	auto ExpectSocketNode(const std::filesystem::path &path, std::string_view description) -> bool {
 		if (mknod(path.c_str(), S_IFSOCK | 0600, 0) == 0) {
@@ -23,7 +23,7 @@ namespace {
 		}
 
 		const int error = errno;
-		return expect(false, std::string(description) + ": errno " + std::to_string(error) + " (" +
+		return Expect(false, std::string(description) + ": errno " + std::to_string(error) + " (" +
 		                         std::strerror(error) + ")");
 	}
 
@@ -42,31 +42,31 @@ auto main() -> int {
 
 	howdy::native::ResetInvokingUserGuiEnvironment(user);
 
-	ok &= expect(std::getenv("XDG_RUNTIME_DIR") == nullptr,
+	ok &= Expect(std::getenv("XDG_RUNTIME_DIR") == nullptr,
 	             "stale XDG_RUNTIME_DIR is cleared when runtime dir is unavailable");
-	ok &= expect(std::getenv("DBUS_SESSION_BUS_ADDRESS") == nullptr,
+	ok &= Expect(std::getenv("DBUS_SESSION_BUS_ADDRESS") == nullptr,
 	             "stale DBUS session bus address is cleared when bus is unavailable");
-	ok &= expect(std::getenv("WAYLAND_SOCKET") == nullptr,
+	ok &= Expect(std::getenv("WAYLAND_SOCKET") == nullptr,
 	             "stale Wayland socket is cleared during GUI environment preparation");
 
 	auto  runtime_template = std::to_array("/tmp/howdy-wayland-runtime-XXXXXX");
 	char *runtime_path     = mkdtemp(runtime_template.data());
-	ok &= expect(runtime_path != nullptr, "Wayland discovery test creates runtime directory");
+	ok &= Expect(runtime_path != nullptr, "Wayland discovery test creates runtime directory");
 	if (runtime_path != nullptr) {
 		const std::filesystem::path runtime_dir(runtime_path);
-		ok &= expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
+		ok &= Expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
 		             "runtime directory without Wayland socket has no display");
 
 		std::ofstream(runtime_dir / "wayland-0.lock") << "lock";
 		ok &= ExpectSocketNode(runtime_dir / "wayland-1",
 		                       "Wayland discovery test creates first socket");
 		const auto single_display = howdy::native::FindWaylandDisplay(runtime_dir);
-		ok &= expect(single_display.has_value() && *single_display == "wayland-1",
+		ok &= Expect(single_display.has_value() && *single_display == "wayland-1",
 		             "single Wayland socket is detected");
 
 		ok &= ExpectSocketNode(runtime_dir / "wayland-2",
 		                       "Wayland discovery test creates second socket");
-		ok &= expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
+		ok &= Expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
 		             "multiple Wayland sockets are treated as ambiguous");
 
 		std::filesystem::remove_all(runtime_dir);

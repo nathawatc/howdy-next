@@ -79,7 +79,7 @@ namespace {
 
 	using howdy::pam::ConversationMessage;
 	using howdy::pam::PamConversation;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	enum class ResponseMode : std::uint8_t {
 		kNone,
@@ -145,29 +145,29 @@ namespace {
 		PamGetItemState       get_item_state{.handle = &pam_handle};
 		pam_get_item_state = &get_item_state;
 
-		ok &= expect(PamConversation::Acquire(nullptr, &conversation) == PAM_SYSTEM_ERR,
+		ok &= Expect(PamConversation::Acquire(nullptr, &conversation) == PAM_SYSTEM_ERR,
 		             "null PAM handle fails acquisition");
-		ok &= expect(PamConversation::Acquire(&pam_handle, nullptr) == PAM_SYSTEM_ERR,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, nullptr) == PAM_SYSTEM_ERR,
 		             "null output fails acquisition");
 
 		get_item_state.result = PAM_SYSTEM_ERR;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
 		             "pam_get_item failure propagates status");
-		ok &= expect(get_item_state.calls == 1 && get_item_state.item_type == PAM_CONV,
+		ok &= Expect(get_item_state.calls == 1 && get_item_state.item_type == PAM_CONV,
 		             "acquisition requests PAM_CONV");
 
 		get_item_state.result = PAM_SUCCESS;
 		get_item_state.item   = nullptr;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
 		             "null PAM conversation item fails acquisition");
 
 		const struct pam_conv unavailable{.conv = nullptr, .appdata_ptr = &state};
 		get_item_state.item = &unavailable;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SYSTEM_ERR,
 		             "null PAM conversation callback fails acquisition");
 
 		get_item_state.item = &original;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
 		             "acquires valid PAM conversation");
 		return ok;
 	}
@@ -183,7 +183,7 @@ namespace {
 		conversation_cleanup_state = &cleanup;
 
 		PamConversation conversation;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
 		             "throw test acquires PAM conversation");
 		const ConversationMessage message{.style = PAM_PROMPT_ECHO_OFF, .text = "throwing prompt"};
 		bool                      exception_escaped = false;
@@ -193,15 +193,15 @@ namespace {
 		} catch (...) {
 			exception_escaped = true;
 		}
-		ok &= expect(!exception_escaped, "callback exception does not escape send");
-		ok &= expect(send_result == PAM_CONV_ERR, "throwing callback returns PAM_CONV_ERR");
-		ok &= expect(state.response_was_allocated,
+		ok &= Expect(!exception_escaped, "callback exception does not escape send");
+		ok &= Expect(send_result == PAM_CONV_ERR, "throwing callback returns PAM_CONV_ERR");
+		ok &= Expect(state.response_was_allocated,
 		             "throwing callback allocates response before cleanup");
-		ok &= expect(cleanup.calls == 1, "throwing callback invokes cleanup once");
-		ok &= expect(cleanup.count == 1, "throwing callback cleanup receives one response");
-		ok &= expect(cleanup.responses == state.allocated_responses,
+		ok &= Expect(cleanup.calls == 1, "throwing callback invokes cleanup once");
+		ok &= Expect(cleanup.count == 1, "throwing callback cleanup receives one response");
+		ok &= Expect(cleanup.responses == state.allocated_responses,
 		             "cleanup receives allocated response");
-		ok &= expect(cleanup.secret == "adapter-secret",
+		ok &= Expect(cleanup.secret == "adapter-secret",
 		             "cleanup receives allocated response secret");
 		conversation_cleanup_state = nullptr;
 		return ok;
@@ -216,39 +216,39 @@ namespace {
 		pam_get_item_state = &get_item_state;
 
 		PamConversation conversation;
-		ok &= expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
+		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
 		             "acquires PAM conversation");
 
 		state.response_mode = ResponseMode::kNone;
 		state.result        = PAM_SUCCESS;
 		const ConversationMessage info_message{.style = PAM_TEXT_INFO,
 		                                       .text  = "exact adapter text"};
-		ok &= expect(conversation.Send(info_message) == PAM_SUCCESS,
+		ok &= Expect(conversation.Send(info_message) == PAM_SUCCESS,
 		             "accepts callback without response");
-		ok &= expect(state.calls == 1 && state.message_count == 1 &&
+		ok &= Expect(state.calls == 1 && state.message_count == 1 &&
 		                 state.message_style == PAM_TEXT_INFO &&
 		                 state.message_text == "exact adapter text",
 		             "forwards one exact typed message");
-		ok &= expect(state.observed_appdata_ptr == &state, "preserves original appdata pointer");
+		ok &= Expect(state.observed_appdata_ptr == &state, "preserves original appdata pointer");
 
 		state.response_mode          = ResponseMode::kOne;
 		state.response_was_allocated = false;
 		state.result                 = PAM_SUCCESS;
 		const ConversationMessage secret_message{.style = PAM_PROMPT_ECHO_OFF,
 		                                         .text  = "secret prompt"};
-		ok &= expect(conversation.Send(secret_message) == PAM_SUCCESS,
+		ok &= Expect(conversation.Send(secret_message) == PAM_SUCCESS,
 		             "accepts callback with one response");
-		ok &= expect(state.response_was_allocated, "callback returned one response");
-		ok &= expect(state.message_style == PAM_PROMPT_ECHO_OFF &&
+		ok &= Expect(state.response_was_allocated, "callback returned one response");
+		ok &= Expect(state.message_style == PAM_PROMPT_ECHO_OFF &&
 		                 state.message_text == "secret prompt",
 		             "forwards prompt style and text");
 
 		state.response_was_allocated = false;
 		state.result                 = PAM_CONV_ERR;
 		const ConversationMessage error_message{.style = PAM_ERROR_MSG, .text = "failed callback"};
-		ok &= expect(conversation.Send(error_message) == PAM_CONV_ERR,
+		ok &= Expect(conversation.Send(error_message) == PAM_CONV_ERR,
 		             "propagates callback failure status");
-		ok &= expect(state.response_was_allocated, "cleans response returned on callback failure");
+		ok &= Expect(state.response_was_allocated, "cleans response returned on callback failure");
 		return ok;
 	}
 

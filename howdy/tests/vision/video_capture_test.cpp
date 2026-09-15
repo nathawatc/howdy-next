@@ -36,7 +36,7 @@ namespace howdy::native {
 
 namespace {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using ReadContext = howdy::native::VideoCaptureTestAccess::ReadContext;
 
@@ -59,11 +59,11 @@ namespace {
 		const bool result = capture.Read(raw, &gray);
 
 		bool ok = true;
-		ok &= expect(!result, label + " is rejected");
-		ok &= expect(capture.Error() == howdy::native::CaptureError::kReadFailed,
+		ok &= Expect(!result, label + " is rejected");
+		ok &= Expect(capture.Error() == howdy::native::CaptureError::kReadFailed,
 		             label + " sets read-failed error");
-		ok &= expect(context->calls == 1, label + " reads one test frame");
-		ok &= expect(GrayIsSentinel(gray), label + " leaves gray output unchanged");
+		ok &= Expect(context->calls == 1, label + " reads one test frame");
+		ok &= Expect(GrayIsSentinel(gray), label + " leaves gray output unchanged");
 		return ok;
 	}
 
@@ -96,12 +96,12 @@ namespace {
 		    howdy::native::VideoCapture(howdy::native::CaptureSettings{.device_path = "none"});
 		const bool result = capture.Open();
 		bool       ok     = true;
-		ok &= expect(capture.Settings().device_path == "none",
+		ok &= Expect(capture.Settings().device_path == "none",
 		             "unconfigured camera keeps none sentinel");
-		ok &= expect(!result, "unconfigured camera is rejected");
-		ok &= expect(capture.Error() == howdy::native::CaptureError::kMissingDevice,
+		ok &= Expect(!result, "unconfigured camera is rejected");
+		ok &= Expect(capture.Error() == howdy::native::CaptureError::kMissingDevice,
 		             "unconfigured camera sets missing-device error");
-		ok &= expect(capture.ErrorMessage() == "Camera is not configured; set video.device_path",
+		ok &= Expect(capture.ErrorMessage() == "Camera is not configured; set video.device_path",
 		             "unconfigured camera error is concise and names config setting");
 		return ok;
 	}
@@ -115,11 +115,11 @@ namespace {
 			auto capture     = howdy::native::VideoCaptureTestAccess::Create(
 			    howdy::native::CaptureSettings{.device_path = "none"}, std::move(context));
 
-			ok &= expect(!context_lifetime.expired(), "injected reader owns its context");
+			ok &= Expect(!context_lifetime.expired(), "injected reader owns its context");
 			cv::Mat frame;
-			ok &= expect(capture.Read(frame), "owned reader remains usable");
+			ok &= Expect(capture.Read(frame), "owned reader remains usable");
 		}
-		ok &= expect(context_lifetime.expired(), "injected reader is released with capture");
+		ok &= Expect(context_lifetime.expired(), "injected reader is released with capture");
 		return ok;
 	}
 

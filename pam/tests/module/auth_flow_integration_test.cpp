@@ -22,7 +22,7 @@ namespace {
 	using namespace howdy::test::process;
 
 	using howdy::pam::RunAuthenticationEntrypoint;
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	class ScopedEnv {
 	public:
@@ -61,36 +61,36 @@ namespace {
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
 		ok &=
-		    expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "notice test starts PAM handle");
+		    Expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "notice test starts PAM handle");
 		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
 
 		state.result = PAM_CONV_ERR;
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "detection notice conversation failure does not abort authentication");
-		ok &= expect(state.calls == 1 && state.last_msg_type == PAM_TEXT_INFO,
+		ok &= Expect(state.calls == 1 && state.last_msg_type == PAM_TEXT_INFO,
 		             "enabled detection notice sends text message");
 
 		fixture.runtime.detection_notice = false;
 		state.result                     = PAM_SUCCESS;
 		state.calls                      = 0;
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "disabled detection notice leaves authentication successful");
-		ok &= expect(state.calls == 0, "disabled detection notice sends no message");
+		ok &= Expect(state.calls == 0, "disabled detection notice sends no message");
 
 		const struct pam_conv unavailable{
 		    .conv        = nullptr,
 		    .appdata_ptr = nullptr,
 		};
-		ok &= expect(pam_set_item(pam_handle.Get(), PAM_CONV, &unavailable) == PAM_SUCCESS,
+		ok &= Expect(pam_set_item(pam_handle.Get(), PAM_CONV, &unavailable) == PAM_SUCCESS,
 		             "installs unavailable PAM conversation");
 		ok &=
-		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                       {.context      = &dependencies,
 		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
 		           "unavailable PAM conversation fails closed");
@@ -107,7 +107,7 @@ namespace {
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
-		ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+		ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 		             "runtime failure test starts PAM handle");
 		if (pam_handle.Get() == nullptr) {
 			return false;
@@ -117,11 +117,11 @@ namespace {
 		fixture.runtime.initial_error_code  = EACCES;
 		fixture.runtime.effective_uid       = 1000;
 		ok &=
-		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                       {.context      = &dependencies,
 		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
 		           "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
-		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
+		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "runtime staging attempts preparation after inaccessible config");
 
 		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kParseError;
@@ -129,11 +129,11 @@ namespace {
 		fixture.runtime.effective_uid       = 0;
 		fixture.runtime.load_calls          = 0;
 		ok &=
-		    expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                       {.context      = &dependencies,
 		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
 		           "runtime configuration failure maps to PAM_SYSTEM_ERR");
-		ok &= expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
+		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "non-staging runtime failure skips preparation");
 
 		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
@@ -142,11 +142,11 @@ namespace {
 		fixture.runtime.prepare_result      = true;
 		fixture.runtime.staged_load_status  = howdy::native::RuntimeConfigLoadStatus::kOk;
 		fixture.runtime.load_calls          = 0;
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "successful staged runtime continues authentication");
-		ok &= expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2,
+		ok &= Expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2,
 		             "successful staged runtime reloads config without generation cleanup");
 		return ok;
 	}
@@ -163,7 +163,7 @@ namespace {
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
 		ok &=
-		    expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "locale test starts PAM handle");
+		    Expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "locale test starts PAM handle");
 		if (pam_handle.Get() == nullptr) {
 			return false;
 		}
@@ -188,21 +188,21 @@ namespace {
 
 		const auto expect_host_state = [&](const char *scenario) -> void {
 			if (locale_available) {
-				ok &= expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
+				ok &= Expect(std::string(std::setlocale(LC_ALL, nullptr)) == host_locale,
 				             std::string(scenario) + ": authentication restores host locale");
 			}
-			ok &= expect(std::string(textdomain(nullptr)) == host_domain,
+			ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
 			             std::string(scenario) + ": authentication restores host gettext domain");
 		};
 
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "successful authentication enters locale test flow");
 		expect_host_state("successful authentication");
 
 		fixture.runtime.disabled = true;
-		ok &= expect(RunAuthenticationEntrypoint(
+		ok &= Expect(RunAuthenticationEntrypoint(
 		                 pam_handle.Get(), {}, true,
 		                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 		                 PAM_AUTHINFO_UNAVAIL,
@@ -214,7 +214,7 @@ namespace {
 		    .status        = howdy::native::UserModelStatus::kInsecurePath,
 		    .error_message = "locale test model failure",
 		};
-		ok &= expect(RunAuthenticationEntrypoint(
+		ok &= Expect(RunAuthenticationEntrypoint(
 		                 pam_handle.Get(), {}, true,
 		                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 		                 PAM_AUTHINFO_UNAVAIL,
@@ -241,7 +241,7 @@ namespace {
 		};
 		ScopedPamHandle pam_handle;
 		bool            ok = true;
-		ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+		ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 		             "eligibility integration starts PAM handle");
 		if (pam_handle.Get() == nullptr) {
 			return false;
@@ -255,7 +255,7 @@ namespace {
 		};
 		const auto expect_count = [&](const std::string &scenario, const char *probe, int actual,
 		                              int expected) -> void {
-			ok &= expect(actual == expected, scenario + ": expected " + probe + " calls " +
+			ok &= Expect(actual == expected, scenario + ": expected " + probe + " calls " +
 			                                     std::to_string(expected) + ", got " +
 			                                     std::to_string(actual));
 		};
@@ -266,11 +266,11 @@ namespace {
 			const int result = RunAuthenticationEntrypoint(
 			    pam_handle.Get(), {}, true,
 			    {.context = &dependencies, .authenticate = IdentifyForTest});
-			ok &= expect(result == PAM_AUTHINFO_UNAVAIL,
+			ok &= Expect(result == PAM_AUTHINFO_UNAVAIL,
 			             name + ": ineligible result maps to PAM_AUTHINFO_UNAVAIL");
-			ok &= expect(fixture.prompt.spawn_calls == prompt_before,
+			ok &= Expect(fixture.prompt.spawn_calls == prompt_before,
 			             name + ": compare process is not spawned");
-			ok &= expect(fixture.runtime.load_calls == 1,
+			ok &= Expect(fixture.runtime.load_calls == 1,
 			             name + ": runtime configuration loads before eligibility");
 		};
 
@@ -345,11 +345,11 @@ namespace {
 		fixture.eligibility.readiness          = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_lid_diagnostic = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "eligible authentication continues after non-fatal lid diagnostic");
-		ok &= expect(fixture.prompt.spawn_calls == prompt_before_lid_diagnostic + 1,
+		ok &= Expect(fixture.prompt.spawn_calls == prompt_before_lid_diagnostic + 1,
 		             "non-fatal lid diagnostic does not suppress compare process");
 		expect_count("eligible with lid diagnostic", "SSH", fixture.eligibility.ssh_calls, 1);
 		expect_count("eligible with lid diagnostic", "lid", fixture.eligibility.lid_calls, 1);
@@ -359,11 +359,11 @@ namespace {
 		fixture.eligibility.readiness    = {.status = howdy::native::UserModelStatus::kOk};
 		const int prompt_before_eligible = fixture.prompt.spawn_calls;
 		reset_probe_calls();
-		ok &= expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
 		                                         {.context      = &dependencies,
 		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
 		             "eligible authentication enters prompt coordination");
-		ok &= expect(fixture.prompt.spawn_calls == prompt_before_eligible + 1,
+		ok &= Expect(fixture.prompt.spawn_calls == prompt_before_eligible + 1,
 		             "eligible authentication spawns compare process");
 		expect_count("eligible", "SSH", fixture.eligibility.ssh_calls, 1);
 		expect_count("eligible", "lid", fixture.eligibility.lid_calls, 1);
@@ -409,7 +409,7 @@ namespace {
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+			ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             std::string(name) + ": starts PAM handle");
 			if (pam_handle.Get() == nullptr) {
 				return;
@@ -421,7 +421,7 @@ namespace {
 			} else {
 				child_pid = SpawnExitingChild(child_exit);
 			}
-			ok &= expect(child_pid > 0, std::string(name) + ": spawns compare child");
+			ok &= Expect(child_pid > 0, std::string(name) + ": spawns compare child");
 			if (child_pid <= 0) {
 				return;
 			}
@@ -434,7 +434,7 @@ namespace {
 			const int result = RunAuthenticationEntrypoint(
 			    pam_handle.Get(), input_arguments, true,
 			    {.context = &dependencies, .authenticate = IdentifyForTest});
-			ok &= expect(result == expected_result,
+			ok &= Expect(result == expected_result,
 			             std::string(name) + ": maps prompt result (got " + std::to_string(result) +
 			                 ", auth calls " +
 			                 std::to_string(prompt_context.auth_token_calls.load()) +
@@ -442,7 +442,7 @@ namespace {
 			                 std::to_string(prompt_context.terminate_calls.load()) + ")");
 			const bool child_handled = blocked_child ? prompt_context.terminate_calls == 1
 			                                         : prompt_context.child_reaped_by_wait;
-			ok &= expect(prompt_context.wait_calls == 1 && child_handled,
+			ok &= Expect(prompt_context.wait_calls == 1 && child_handled,
 			             std::string(name) + ": compare child is handled");
 			if (!child_handled) {
 				(void)kill(child_pid, SIGKILL);
@@ -485,10 +485,10 @@ namespace {
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+			ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             "compare spawn failure starts PAM handle");
 			if (pam_handle.Get() != nullptr) {
-				ok &= expect(RunAuthenticationEntrypoint(
+				ok &= Expect(RunAuthenticationEntrypoint(
 				                 pam_handle.Get(), input_arguments, true,
 				                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 				                 PAM_SYSTEM_ERR,
@@ -510,10 +510,10 @@ namespace {
 			    .appdata_ptr = &state,
 			};
 			ScopedPamHandle pam_handle;
-			ok &= expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+			ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             "invalid coordinator timeout starts PAM handle");
 			if (pam_handle.Get() != nullptr) {
-				ok &= expect(RunAuthenticationEntrypoint(
+				ok &= Expect(RunAuthenticationEntrypoint(
 				                 pam_handle.Get(), input_arguments, true,
 				                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
 				                 PAM_SYSTEM_ERR,
@@ -536,9 +536,9 @@ namespace {
 			const int result =
 			    howdy::pam::auth_flow::IdentifyWithDependencies(nullptr, {}, true, dependencies);
 			const std::string name(scenario);
-			ok &= expect(result == PAM_SYSTEM_ERR,
+			ok &= Expect(result == PAM_SYSTEM_ERR,
 			             name + ": invalid dependency contract maps to PAM_SYSTEM_ERR");
-			ok &= expect(fixture.runtime.load_calls == runtime_calls &&
+			ok &= Expect(fixture.runtime.load_calls == runtime_calls &&
 			                 fixture.prompt.spawn_calls == prompt_calls &&
 			                 fixture.eligibility.ssh_calls == 0 &&
 			                 fixture.eligibility.lid_calls == 0 &&

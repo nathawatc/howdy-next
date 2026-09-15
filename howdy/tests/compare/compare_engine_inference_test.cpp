@@ -12,8 +12,8 @@
 
 namespace {
 
-	using howdy::test::expect;
-	using howdy::test::compare_engine::expect_near;
+	using howdy::test::Expect;
+	using howdy::test::compare_engine::ExpectNear;
 	using howdy::test::compare_engine::MakeVideoConfig;
 	int callback_calls_without_context = 0;
 
@@ -149,9 +149,9 @@ auto RunCompareEngineInferenceTests() -> bool {
 		dependencies.prepare_face_frame   = nullptr;
 		howdy::native::CompareEngine engine(MakeVideoConfig(), dependencies, known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "null inference callback is rejected");
-		ok &= expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
+		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "invalid callback bundle invokes no callbacks");
 	}
@@ -160,9 +160,9 @@ auto RunCompareEngineInferenceTests() -> bool {
 		FakeInferenceContext         context;
 		howdy::native::CompareEngine engine(MakeVideoConfig());
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "one-argument engine has no inference dependencies");
-		ok &= expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
+		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "missing inference dependencies invoke no callbacks");
 	}
@@ -174,11 +174,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		callback_calls_without_context    = 0;
 		howdy::native::CompareEngine engine(MakeVideoConfig(), dependencies, known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "null inference context is rejected");
-		ok &= expect(callback_calls_without_context == 0,
+		ok &= Expect(callback_calls_without_context == 0,
 		             "null inference context invokes no callbacks");
-		ok &= expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
+		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "null inference context leaves fake callback counts unchanged");
 	}
@@ -196,11 +196,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "default empty encoding fails closed");
-		ok &= expect(result.error_message == "Face encoding returned no data",
+		ok &= Expect(result.error_message == "Face encoding returned no data",
 		             "default empty encoding preserves fallback diagnostic");
-		ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+		ok &= Expect(context.encode_calls == 1 && context.match_calls == 0,
 		             "default empty encoding stops before matching");
 	}
 
@@ -232,11 +232,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 			howdy::native::CompareEngine engine(MakeVideoConfig(),
 			                                    MakeInferenceDependencies(context), known);
 			const auto                   result = engine.ProcessFaceFrame(working_frame);
-			ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+			ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 			             "malformed claimed-success encoding fails closed");
-			ok &= expect(!result.error_message.empty(),
+			ok &= Expect(!result.error_message.empty(),
 			             "malformed claimed-success encoding returns diagnostic");
-			ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+			ok &= Expect(context.encode_calls == 1 && context.match_calls == 0,
 			             "malformed claimed-success encoding stops before matching");
 		}
 	}
@@ -260,9 +260,9 @@ auto RunCompareEngineInferenceTests() -> bool {
 		                                    caller_known);
 		caller_known.clear();
 		const auto result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "caller mutation does not invalidate engine-owned encodings");
-		ok &= expect(context.received_known.size() == 1 &&
+		ok &= Expect(context.received_known.size() == 1 &&
 		                 context.received_known[0] ==
 		                     std::vector<std::vector<float>>({{5.0F, 6.0F}, {7.0F, 8.0F}}),
 		             "matcher receives independent copy of original encodings");
@@ -273,11 +273,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kInvalidPreparedFrame,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidPreparedFrame,
 		             "empty prepared frame is rejected");
-		ok &= expect(result.error_message == "Prepared frame for face detection is empty",
+		ok &= Expect(result.error_message == "Prepared frame for face detection is empty",
 		             "empty prepared frame error is stable");
-		ok &= expect(context.prepare_calls == 1 && context.detect_calls == 0 &&
+		ok &= Expect(context.prepare_calls == 1 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "invalid prepared frame stops inference callbacks");
 	}
@@ -294,11 +294,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kDetectionFailed,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kDetectionFailed,
 		             "detection failure is classified");
-		ok &= expect(result.error_message == "YuNet inference failed: synthetic failure",
+		ok &= Expect(result.error_message == "YuNet inference failed: synthetic failure",
 		             "detection failure error is preserved");
-		ok &= expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
+		ok &= Expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "detection failure stops encoding and matching");
 	}
@@ -316,11 +316,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "encoding failure aborts inference instead of returning no match");
-		ok &= expect(result.error_message == context.encoding_error_message,
+		ok &= Expect(result.error_message == context.encoding_error_message,
 		             "encoding failure error is preserved");
-		ok &= expect(context.encode_calls == 1 && context.match_calls == 0,
+		ok &= Expect(context.encode_calls == 1 && context.match_calls == 0,
 		             "encoding failure stops before matching");
 	}
 
@@ -349,10 +349,10 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "failed first encoding does not hide matching second face");
-		ok &= expect(result.winning_index == 1, "second face match index is returned");
-		ok &= expect(context.encode_calls == 2 && context.match_calls == 1,
+		ok &= Expect(result.winning_index == 1, "second face match index is returned");
+		ok &= Expect(context.encode_calls == 2 && context.match_calls == 1,
 		             "failed first encoding advances to second face and matches once");
 	}
 
@@ -379,11 +379,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "all failed encodings return encoding failure");
-		ok &= expect(result.error_message == "First face encoding failed",
+		ok &= Expect(result.error_message == "First face encoding failed",
 		             "all failed encodings preserve first actionable error");
-		ok &= expect(context.encode_calls == 2 && context.match_calls == 0,
+		ok &= Expect(context.encode_calls == 2 && context.match_calls == 0,
 		             "all failed encodings skip matching");
 	}
 
@@ -395,9 +395,9 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
 		             "zero detections return no match");
-		ok &= expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
+		ok &= Expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
 		             "zero detections skip encoding and matching");
 	}
@@ -426,15 +426,15 @@ auto RunCompareEngineInferenceTests() -> bool {
 			                                    MakeInferenceDependencies(context), known);
 			const auto                   result = engine.ProcessFaceFrame(working_frame);
 			ok &=
-			    expect(result.status == howdy::native::CompareInferenceStatus::kInvalidMatchResult,
+			    Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidMatchResult,
 			           "invalid accepted matcher result fails closed");
-			ok &= expect(result.error_message == "Face matcher returned invalid match result",
+			ok &= Expect(result.error_message == "Face matcher returned invalid match result",
 			             "invalid accepted matcher result returns stable diagnostic");
-			ok &= expect(result.winning_index == -1,
+			ok &= Expect(result.winning_index == -1,
 			             "invalid accepted matcher result exposes no winner");
-			ok &= expect(result.winning_score == 0.0F,
+			ok &= Expect(result.winning_score == 0.0F,
 			             "invalid accepted matcher result exposes no winning score");
-			ok &= expect(context.encode_calls == 1 && context.match_calls == 1,
+			ok &= Expect(context.encode_calls == 1 && context.match_calls == 1,
 			             "invalid accepted matcher result stops before later face");
 		}
 	}
@@ -459,18 +459,18 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "accepted second detection returns match");
-		ok &= expect(result.winning_index == 1, "second accepted match index is returned");
-		ok &= expect_near(result.winning_score, 0.9, 0.0001,
-		                  "second accepted match score is returned");
-		ok &= expect(context.encode_calls == 2 && context.match_calls == 2,
+		ok &= Expect(result.winning_index == 1, "second accepted match index is returned");
+		ok &= ExpectNear(result.winning_score, 0.9, 0.0001,
+		                 "second accepted match score is returned");
+		ok &= Expect(context.encode_calls == 2 && context.match_calls == 2,
 		             "rejected detection advances to second detection");
-		ok &= expect(context.encoded_faces.size() == 2 &&
+		ok &= Expect(context.encoded_faces.size() == 2 &&
 		                 SameDetection(context.encoded_faces[0], first_detection) &&
 		                 SameDetection(context.encoded_faces[1], second_detection),
 		             "detections are encoded in original order");
-		ok &= expect(context.received_probes.size() == 2 &&
+		ok &= Expect(context.received_probes.size() == 2 &&
 		                 context.received_probes[1] == MakeEncoding(0.3F),
 		             "second encoding is passed to second match");
 	}
@@ -493,12 +493,12 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "first accepted detection returns match");
-		ok &= expect(result.winning_index == 0, "first accepted match index is returned");
-		ok &= expect_near(result.winning_score, 0.8, 0.0001,
-		                  "first accepted match score is returned");
-		ok &= expect(context.encode_calls == 1 && context.match_calls == 1,
+		ok &= Expect(result.winning_index == 0, "first accepted match index is returned");
+		ok &=
+		    ExpectNear(result.winning_score, 0.8, 0.0001, "first accepted match score is returned");
+		ok &= Expect(context.encode_calls == 1 && context.match_calls == 1,
 		             "first accepted detection short-circuits inference");
 	}
 
@@ -524,13 +524,13 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceDependencies(context),
 		                                    known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
-		ok &= expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
+		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
 		             "all rejected detections return no match");
-		ok &= expect(result.winning_index == -1,
+		ok &= Expect(result.winning_index == -1,
 		             "rejected matcher results retain negative index behavior");
-		ok &= expect(context.encode_calls == 2 && context.match_calls == 2,
+		ok &= Expect(context.encode_calls == 2 && context.match_calls == 2,
 		             "all rejected detections are evaluated");
-		ok &= expect(result.error_message.empty(), "all rejected detections return no error");
+		ok &= Expect(result.error_message.empty(), "all rejected detections return no error");
 	}
 
 	return ok;

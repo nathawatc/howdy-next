@@ -10,7 +10,7 @@
 
 namespace howdy::test::user_model_codec {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	constexpr auto kBackend = "opencv_dnn_sface";
 	constexpr auto kMetric  = howdy::native::FaceMetric::kCosine;
@@ -19,7 +19,7 @@ namespace howdy::test::user_model_codec {
 	inline auto ExpectStatus(howdy::native::UserModelStatus actual,
 	                         howdy::native::UserModelStatus expected, const std::string &message)
 	    -> bool {
-		return expect(actual == expected, message);
+		return Expect(actual == expected, message);
 	}
 
 	inline auto ModelJson(std::string_view id = "7", std::string_view time = "1700000000",

@@ -17,7 +17,7 @@
 
 namespace howdy::test::config_cli {
 
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	using howdy::native::config_internal::ConfigDependencies;
 	using howdy::native::config_internal::ConfigEditSession;
@@ -251,13 +251,13 @@ namespace howdy::test::config_cli {
 		}
 
 		auto ExpectRemovedOnce(const TestContext &context, const std::string &message) -> bool {
-			return expect(context.removed_paths == std::vector<std::filesystem::path>{kTempPath},
+			return Expect(context.removed_paths == std::vector<std::filesystem::path>{kTempPath},
 			              message);
 		}
 
 		auto ExpectInstallerArguments(const TestContext &context, const std::string &message)
 		    -> bool {
-			return expect(context.installer_path == kConfigPath &&
+			return Expect(context.installer_path == kConfigPath &&
 			                  context.installer_content == kEditedContent &&
 			                  context.installer_lock && !context.installer_validate_runtime &&
 			                  context.installer_expected_nonnull &&
@@ -278,11 +278,11 @@ namespace howdy::test::config_cli {
 			} catch (const std::runtime_error &) {
 				exception_observed = true;
 			}
-			ok &= expect(exception_observed, "editor callback exception escapes test runner");
-			ok &= expect(std::cout.rdbuf() == original_stdout,
+			ok &= Expect(exception_observed, "editor callback exception escapes test runner");
+			ok &= Expect(std::cout.rdbuf() == original_stdout,
 			             "stdout buffer restores after callback exception");
 			std::cout << "stdout-restored-marker";
-			ok &= expect(restored_output.str() == "stdout-restored-marker",
+			ok &= Expect(restored_output.str() == "stdout-restored-marker",
 			             "stdout marker reaches restored buffer");
 			return ok;
 		}
@@ -300,14 +300,14 @@ namespace howdy::test::config_cli {
 			TestContext             context;
 			const ConfigEditSession session(DependenciesFor(context));
 			const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
-			ok &= expect(result.status == ConfigEditStatus::kOk,
+			ok &= Expect(result.status == ConfigEditStatus::kOk,
 			             "temporary dependencies session succeeds");
-			ok &= expect(result.error.empty() && result.temp_path == kTempPath &&
+			ok &= Expect(result.error.empty() && result.temp_path == kTempPath &&
 			                 result.editor == context.editor,
 			             "temporary dependencies result matches success path");
-			ok &= expect(context.order == std::vector{0, 1, 2, 3, 4, 11, 5, 6, 7, 8, 9, 10},
+			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 11, 5, 6, 7, 8, 9, 10},
 			             "temporary dependencies invokes callbacks once in order");
-			ok &= expect(context.editor_ready_calls == 1 &&
+			ok &= Expect(context.editor_ready_calls == 1 &&
 			                 context.editor_ready_editor == context.editor,
 			             "temporary dependencies invokes ready callback");
 			ok &= ExpectRemovedOnce(context, "temporary dependencies removes temp once");
@@ -319,9 +319,9 @@ namespace howdy::test::config_cli {
 			TestContext             context;
 			const ConfigEditSession session(ConfigDependencies{});
 			const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
-			ok &= expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
+			ok &= Expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
 			             "empty dependencies session reports unavailable dependencies");
-			ok &= expect(context.order.empty(), "empty dependencies session invokes no callbacks");
+			ok &= Expect(context.order.empty(), "empty dependencies session invokes no callbacks");
 		}
 
 		for (std::size_t missing = 0; missing < 11; ++missing) {
@@ -331,13 +331,13 @@ namespace howdy::test::config_cli {
 
 			const ConfigEditSession session(dependencies);
 			const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
-			ok &= expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
+			ok &= Expect(result.status == ConfigEditStatus::kDependenciesUnavailable,
 			             "incomplete dependencies session reports unavailable dependencies");
-			ok &= expect(result.error.empty() && result.temp_path.empty() && result.editor.empty(),
+			ok &= Expect(result.error.empty() && result.temp_path.empty() && result.editor.empty(),
 			             "incomplete dependencies result has no side effects");
-			ok &= expect(context.order.empty(),
+			ok &= Expect(context.order.empty(),
 			             "incomplete dependencies session invokes no callbacks");
-			ok &= expect(context.editor_ready_calls == 0,
+			ok &= Expect(context.editor_ready_calls == 0,
 			             "incomplete dependencies session skips ready callback");
 		}
 
@@ -346,21 +346,21 @@ namespace howdy::test::config_cli {
 			auto        dependencies = DependenciesFor(context);
 			RemoveDependency(dependencies, missing);
 			const auto result = RunConfig(dependencies);
-			ok &= expect(result.exit_code == 1 && result.output.empty(),
+			ok &= Expect(result.exit_code == 1 && result.output.empty(),
 			             "null dependency aborts silently");
-			ok &= expect(context.order.empty(), "null dependency invokes no callbacks");
+			ok &= Expect(context.order.empty(), "null dependency invokes no callbacks");
 		}
 
 		{
 			TestContext context;
 			context.editor    = {};
 			const auto result = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 &&
+			ok &= Expect(result.exit_code == 1 &&
 			                 result.output == "Error: No suitable text editor found.\n"
 			                                  "Set EDITOR to an absolute executable path, or "
 			                                  "install one of: micro, nano, vi.\n",
 			             "no editor output exact");
-			ok &= expect(context.order == std::vector{0, 1}, "no editor stops before config path");
+			ok &= Expect(context.order == std::vector{0, 1}, "no editor stops before config path");
 		}
 
 		for (const bool user_exists : {true, false}) {
@@ -369,7 +369,7 @@ namespace howdy::test::config_cli {
 				context.invoking_user = std::nullopt;
 			}
 			RunConfig(DependenciesFor(context));
-			ok &= expect(context.allow_env_editor == user_exists,
+			ok &= Expect(context.allow_env_editor == user_exists,
 			             "editor env permission follows invoking user");
 		}
 
@@ -377,9 +377,9 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			context.security  = {.ok = false, .error_message = "Config path is insecure"};
 			const auto result = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 && result.output == "Config path is insecure\n",
+			ok &= Expect(result.exit_code == 1 && result.output == "Config path is insecure\n",
 			             "unsafe path output exact");
-			ok &= expect(context.order == std::vector{0, 1, 2, 3},
+			ok &= Expect(context.order == std::vector{0, 1, 2, 3},
 			             "unsafe path stops before temp copy");
 		}
 
@@ -387,10 +387,10 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			context.temp_copy = std::nullopt;
 			const auto result = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 &&
+			ok &= Expect(result.exit_code == 1 &&
 			                 result.output == "Failed to prepare a temporary config copy\n",
 			             "temp-copy failure output exact");
-			ok &= expect(context.order == std::vector{0, 1, 2, 3, 4},
+			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4},
 			             "temp failure stops before editor");
 		}
 
@@ -399,11 +399,11 @@ namespace howdy::test::config_cli {
 			context.editor_status = -1;
 			const auto result     = RunConfig(DependenciesFor(context));
 			ok &=
-			    expect(result.exit_code == 1 &&
+			    Expect(result.exit_code == 1 &&
 			               result.output == "Editing config.ini in nano\nFailed to launch editor\n",
 			           "editor launch failure output exact");
 			ok &= ExpectRemovedOnce(context, "launch failure removes temp once");
-			ok &= expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 10},
+			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 10},
 			             "launch failure stops after cleanup");
 		}
 
@@ -411,24 +411,24 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			context.editor_status = status;
 			const auto result     = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 &&
+			ok &= Expect(result.exit_code == 1 &&
 			                 result.output == "Editing config.ini in nano\n"
 			                                  "Editor exited unsuccessfully; config not updated\n",
 			             "unsuccessful editor output exact");
 			ok &= ExpectRemovedOnce(context, "unsuccessful editor removes temp once");
-			ok &= expect(context.calls[6] == 0, "unsuccessful editor skips later callbacks");
+			ok &= Expect(context.calls[6] == 0, "unsuccessful editor skips later callbacks");
 		}
 
 		{
 			TestContext context;
 			context.read_result = false;
 			const auto result   = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 &&
+			ok &= Expect(result.exit_code == 1 &&
 			                 result.output ==
 			                     "Editing config.ini in nano\nFailed to install edited config\n",
 			             "snapshot failure output exact");
 			ok &= ExpectRemovedOnce(context, "snapshot failure removes temp once");
-			ok &= expect(context.calls[7] == 0 && context.calls[8] == 0 && context.calls[9] == 0,
+			ok &= Expect(context.calls[7] == 0 && context.calls[8] == 0 && context.calls[9] == 0,
 			             "snapshot failure skips later callbacks");
 		}
 
@@ -442,10 +442,10 @@ namespace howdy::test::config_cli {
 			context.validation_result = false;
 			context.validation_error  = error;
 			const auto result         = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 && result.output == expected,
+			ok &= Expect(result.exit_code == 1 && result.output == expected,
 			             "invalid edit output exact");
-			ok &= expect(context.removed_paths.empty(), "invalid edit preserves temp");
-			ok &= expect(context.calls[8] == 0 && context.calls[9] == 0,
+			ok &= Expect(context.removed_paths.empty(), "invalid edit preserves temp");
+			ok &= Expect(context.calls[8] == 0 && context.calls[9] == 0,
 			             "invalid edit skips install");
 		}
 
@@ -454,11 +454,11 @@ namespace howdy::test::config_cli {
 			context.content_matches = true;
 			const auto result       = RunConfig(DependenciesFor(context));
 			ok &=
-			    expect(result.exit_code == 0 &&
+			    Expect(result.exit_code == 0 &&
 			               result.output == "Editing config.ini in nano\nNo config changes made\n",
 			           "no-op output exact");
 			ok &= ExpectRemovedOnce(context, "no-op removes temp once");
-			ok &= expect(context.calls[9] == 0, "no-op skips installer");
+			ok &= Expect(context.calls[9] == 0, "no-op skips installer");
 		}
 
 		for (const auto &[error, expected] : std::array<std::pair<std::string, std::string>, 2>{
@@ -469,7 +469,7 @@ namespace howdy::test::config_cli {
 			context.installer_result = false;
 			context.installer_error  = error;
 			const auto result        = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 1 && result.output == expected,
+			ok &= Expect(result.exit_code == 1 && result.output == expected,
 			             "install failure output exact");
 			ok &= ExpectRemovedOnce(context, "install failure removes temp once");
 			ok &= ExpectInstallerArguments(context, "install failure arguments exact");
@@ -478,10 +478,10 @@ namespace howdy::test::config_cli {
 		{
 			TestContext context;
 			const auto  result = RunConfig(DependenciesFor(context));
-			ok &= expect(result.exit_code == 0 &&
+			ok &= Expect(result.exit_code == 0 &&
 			                 result.output == "Editing config.ini in nano\nConfig updated\n",
 			             "success output exact");
-			ok &= expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 			             "success invokes callbacks once in order");
 			ok &= ExpectRemovedOnce(context, "success removes temp once");
 			ok &= ExpectInstallerArguments(context, "success installer arguments exact");

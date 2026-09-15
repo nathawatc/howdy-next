@@ -18,7 +18,7 @@ auto main() -> int {
 	std::error_code ec;
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
-	ok &= expect(!ec, "creates auth-helper temp root");
+	ok &= Expect(!ec, "creates auth-helper temp root");
 	const auto acl_support_result = ProbeAclSupport(temp_root);
 	if (acl_support_result == AclSupport::kUnsupported) {
 		std::cerr << "SKIP: filesystem does not support usable POSIX named-user ACLs\n";

@@ -18,7 +18,7 @@
 #include <vector>
 
 namespace howdy::test::runtime_session {
-	using howdy::test::expect;
+	using howdy::test::Expect;
 
 	inline auto TestPreparedRuntimeRoot(std::string_view suffix = "helper")
 	    -> std::filesystem::path {
@@ -208,10 +208,10 @@ namespace howdy::test::runtime_session {
 	inline auto ExpectClosedExactlyOnce(const AuthHelperSpawnFake &fake,
 	                                    const std::vector<int> &expected_fds, std::string_view name)
 	    -> bool {
-		bool ok = expect(fake.parent_close_fds.size() == expected_fds.size(),
+		bool ok = Expect(fake.parent_close_fds.size() == expected_fds.size(),
 		                 std::string(name) + " closes expected parent descriptor count");
 		for (const int fd : expected_fds) {
-			ok &= expect(
+			ok &= Expect(
 			    std::count(fake.parent_close_fds.begin(), fake.parent_close_fds.end(), fd) == 1,
 			    std::string(name) + " closes parent fd " + std::to_string(fd) + " once");
 		}
@@ -221,20 +221,20 @@ namespace howdy::test::runtime_session {
 	inline auto ExpectOperationPrefix(const AuthHelperSpawnFake      &fake,
 	                                  const std::vector<std::string> &prefix, std::string_view name)
 	    -> bool {
-		return expect(fake.operations.size() >= prefix.size() &&
+		return Expect(fake.operations.size() >= prefix.size() &&
 		                  std::equal(prefix.begin(), prefix.end(), fake.operations.begin()),
 		              std::string(name) + " stops after expected operation prefix");
 	}
 
 	inline auto ExpectLog(const AuthHelperSpawnFake &fake, std::size_t index,
 	                      std::string_view operation, std::string_view name) -> bool {
-		bool ok = expect(fake.log_messages.size() > index, std::string(name) + " logs failure");
+		bool ok = Expect(fake.log_messages.size() > index, std::string(name) + " logs failure");
 		if (fake.log_messages.size() <= index) {
 			return false;
 		}
-		ok &= expect(fake.log_messages[index].contains(operation),
+		ok &= Expect(fake.log_messages[index].contains(operation),
 		             std::string(name) + " log names failed operation");
-		ok &= expect(fake.log_messages[index].contains(std::strerror(EIO)) &&
+		ok &= Expect(fake.log_messages[index].contains(std::strerror(EIO)) &&
 		                 fake.log_messages[index].contains(std::to_string(EIO)),
 		             std::string(name) + " log includes error text and number");
 		return ok;
