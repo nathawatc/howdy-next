@@ -11,6 +11,9 @@
   zlib,
 }:
 
+let
+  openblasSingleThreaded = openblas.override { singleThreaded = true; };
+in
 stdenv.mkDerivation {
   pname = "opencv5";
   version = "5.0.0";
@@ -33,13 +36,13 @@ stdenv.mkDerivation {
     gtk3
     libjpeg
     libpng
-    openblas
+    openblasSingleThreaded
     zlib
   ];
 
   env = {
-    OpenBLAS = openblas;
-    OpenBLAS_HOME = openblas.dev;
+    OpenBLAS = openblasSingleThreaded;
+    OpenBLAS_HOME = openblasSingleThreaded.dev;
   };
 
   cmakeFlags = [
@@ -67,7 +70,7 @@ stdenv.mkDerivation {
     "-DWITH_OPENGL=OFF"
     "-DWITH_IPP=OFF"
     "-DWITH_LAPACK=ON"
-    "-DWITH_OPENMP=OFF"
+    "-DWITH_OPENMP=ON"
     "-DWITH_PROTOBUF=ON"
     "-DBUILD_PROTOBUF=ON"
     "-DWITH_JPEG=ON"
