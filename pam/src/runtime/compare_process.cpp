@@ -92,9 +92,13 @@ namespace {
 			return *status;
 		}
 
+		const int terminal_status = cancelled
+		                                ? MakeCompareWaitExitStatus(CompareExit::kAbort)
+		                                : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
+
 		int status = 0;
 		if (TryWaitForCompare(child_pid, &status)) {
-			return status;
+			return terminal_status;
 		}
 		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)", strerror(errno),
@@ -105,8 +109,7 @@ namespace {
 		if (WaitForCompareUntil(child_pid, Clock::now() + kCompareTerminationGrace, nullptr,
 		                        nullptr, &ignored_cancellation)
 		        .has_value()) {
-			return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
-			                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
+			return terminal_status;
 		}
 		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
 			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
@@ -117,8 +120,7 @@ namespace {
 			status             = 0;
 			const pid_t result = waitpid(child_pid, &status, 0);
 			if (result == child_pid) {
-				return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
-				                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
+				return terminal_status;
 			}
 			if (result < 0 && errno == EINTR) {
 				continue;
@@ -127,8 +129,7 @@ namespace {
 				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
 				       strerror(errno), errno);
 			}
-			return cancelled ? MakeCompareWaitExitStatus(CompareExit::kAbort)
-			                 : MakeCompareWaitExitStatus(CompareExit::kTimeoutReached);
+			return terminal_status;
 		}
 	}
 
