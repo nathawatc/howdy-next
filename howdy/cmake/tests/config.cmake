@@ -33,6 +33,15 @@ add_dependencies(howdy_config_generator_test howdy_config_generator)
 
 if(NOT CMAKE_CROSSCOMPILING)
 	add_test(
+		NAME native-test-timeout-defaults
+		COMMAND
+			"${CMAKE_COMMAND}"
+			"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+			"-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/timeout-defaults-test"
+			"-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+			-P "${PROJECT_SOURCE_DIR}/tests/cmake/timeout_defaults_test.cmake"
+	)
+	add_test(
 		NAME native-config-generator
 		COMMAND howdy_config_generator_test "$<TARGET_FILE:howdy_config_generator>"
 	)
@@ -43,8 +52,8 @@ if(NOT CMAKE_CROSSCOMPILING)
 			"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
 			"-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/config-cross-compilation-test"
 			"-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
-			"-DHOWDY_PAM_INCLUDE_DIR=${PAM_INCLUDE_DIR}"
-			"-DHOWDY_PAM_LIBRARY=${PAM_LIBRARY}"
+			"-DHOWDY_CONFIG_GENERATOR=$<TARGET_FILE:howdy_config_generator>"
+			"-DHOWDY_PACKAGED_CONFIG_SCRIPT=${HOWDY_PACKAGED_CONFIG_SCRIPT}"
 			-P "${PROJECT_SOURCE_DIR}/tests/cmake/config_generation_test.cmake"
 	)
 	set_tests_properties(

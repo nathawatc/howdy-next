@@ -35,10 +35,8 @@ add_test(
 add_test(
 	NAME native-howdy-privileged-install-paths
 	COMMAND
-		sh
-		"${howdy_integration_dir}/privileged_install_paths_test.sh"
-		"${PROJECT_SOURCE_DIR}"
-		"${PROJECT_BINARY_DIR}/privileged-install-path-cases"
+		"${CMAKE_COMMAND}"
+		-P "${PROJECT_SOURCE_DIR}/tests/cmake/privileged_install_paths_test.cmake"
 )
 if(NOT CMAKE_CROSSCOMPILING)
 	add_test(

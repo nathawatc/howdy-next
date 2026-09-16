@@ -8,18 +8,16 @@ project(
 	LANGUAGES CXX
 )
 
+include(cmake/howdy_cross_compilation.cmake)
+include(cmake/howdy_privileged_test_paths.cmake)
+include(cmake/howdy_test_timeouts.cmake)
+
 string(TIMESTAMP HOWDY_MAN_DATE "%Y-%m-%d" UTC)
 if(HOWDY_MAN_DATE STREQUAL "")
 	message(FATAL_ERROR "Cannot determine UTC documentation date")
 endif()
 
-if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
-	message(
-		FATAL_ERROR
-			"Cross-compiling Howdy requires CMAKE_CROSSCOMPILING_EMULATOR "
-			"to run the packaged-config generator"
-	)
-endif()
+howdy_require_crosscompiling_emulator()
 
 if(NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE STREQUAL "")
 	set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
@@ -110,17 +108,8 @@ if(HOWDY_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
 	endif()
 endif()
 
-if(
-	BUILD_TESTING
-	AND HOWDY_ENABLE_PRIVILEGED_TESTS
-	AND NOT CMAKE_INSTALL_PREFIX
-		MATCHES "^/opt/howdy-installed-pam-e2e-[A-Za-z0-9._-]+$"
-)
-	message(
-		FATAL_ERROR
-			"Privileged tests require an isolated CMAKE_INSTALL_PREFIX "
-			"matching /opt/howdy-installed-pam-e2e-*"
-	)
+if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
+	howdy_validate_privileged_test_prefix("${CMAKE_INSTALL_PREFIX}")
 endif()
 
 set(howdy_cxx_compiler "$<COMPILE_LANG_AND_ID:CXX,GNU,Clang>")
@@ -257,39 +246,21 @@ if(HOWDY_AUTH_HELPER_PATH STREQUAL "")
 endif()
 
 if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
-	set(howdy_licenses_install_path "${HOWDY_LICENSES_INSTALL_DIR}")
-	cmake_path(
-		ABSOLUTE_PATH howdy_licenses_install_path
-		BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}"
-		NORMALIZE
+	howdy_validate_privileged_test_paths(
+		CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}"
+		CMAKE_INSTALL_BINDIR "${CMAKE_INSTALL_FULL_BINDIR}"
+		CMAKE_INSTALL_DATADIR "${CMAKE_INSTALL_FULL_DATADIR}"
+		CMAKE_INSTALL_LOCALEDIR "${CMAKE_INSTALL_FULL_LOCALEDIR}"
+		CMAKE_INSTALL_MANDIR "${CMAKE_INSTALL_FULL_MANDIR}"
+		HOWDY_PAM_DIR "${HOWDY_PAM_DIR}"
+		HOWDY_CONFIG_DIR "${HOWDY_CONFIG_DIR}"
+		HOWDY_MODELS_DIR "${HOWDY_MODELS_DIR}"
+		HOWDY_USER_MODELS_DIR "${HOWDY_USER_MODELS_DIR}"
+		HOWDY_LOG_PATH "${HOWDY_LOG_PATH}"
+		HOWDY_HELPER_DIR "${HOWDY_HELPER_DIR}"
+		HOWDY_AUTH_HELPER_PATH "${HOWDY_AUTH_HELPER_PATH}"
+		HOWDY_LICENSES_INSTALL_DIR "${HOWDY_LICENSES_INSTALL_DIR}"
 	)
-	foreach(
-		isolated_path
-		IN ITEMS
-			"${CMAKE_INSTALL_FULL_BINDIR}"
-			"${CMAKE_INSTALL_FULL_DATADIR}"
-			"${CMAKE_INSTALL_FULL_LOCALEDIR}"
-			"${CMAKE_INSTALL_FULL_MANDIR}"
-			"${HOWDY_PAM_DIR}"
-			"${HOWDY_CONFIG_DIR}"
-			"${HOWDY_MODELS_DIR}"
-			"${HOWDY_USER_MODELS_DIR}"
-			"${HOWDY_LOG_PATH}"
-			"${HOWDY_HELPER_DIR}"
-			"${HOWDY_AUTH_HELPER_PATH}"
-			"${howdy_licenses_install_path}"
-	)
-		cmake_path(
-			IS_PREFIX CMAKE_INSTALL_PREFIX "${isolated_path}"
-			NORMALIZE path_is_isolated
-		)
-		if(NOT path_is_isolated)
-			message(
-				FATAL_ERROR
-				"Privileged-test path escapes isolated prefix: ${isolated_path}"
-			)
-		endif()
-	endforeach()
 endif()
 set(HOWDY_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${HOWDY_GENERATED_INCLUDE_DIR}")
@@ -405,13 +376,6 @@ endfunction()
 
 function(howdy_expect_test_failure test_name)
 	set_tests_properties(${test_name} PROPERTIES WILL_FAIL TRUE)
-endfunction()
-
-function(howdy_set_test_timeouts)
-	get_property(HOWDY_DIRECTORY_TESTS DIRECTORY PROPERTY TESTS)
-	if(HOWDY_DIRECTORY_TESTS)
-		set_tests_properties(${HOWDY_DIRECTORY_TESTS} PROPERTIES TIMEOUT 30)
-	endif()
 endfunction()
 
 add_library(
