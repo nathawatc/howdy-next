@@ -14,6 +14,7 @@
 #include <grp.h>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unistd.h>
 #include <vector>
@@ -33,38 +34,110 @@ namespace howdy::native::config_internal {
 			           : *static_cast<file_security_internal::ValidationRoot *>(context);
 		}
 
-		auto IsSafeEditorPath(const fs::path &path) -> bool {
-			return path.is_absolute() && fs::is_regular_file(path) &&
-			       access(path.c_str(), X_OK) == 0;
+		constexpr std::array<const char *, 3> kFallbackEditors = {"micro", "nano", "vi"};
+
+		enum class EditorLaunchReport : unsigned char {
+			kUnavailable = 1,
+			kLaunchFailed,
+		};
+
+		auto IsSupportedEditorPreference(std::string_view editor) -> bool {
+			return !editor.empty() && editor.find_first_of(" \t\n\r\v\f") == std::string_view::npos;
 		}
 
-		auto ResolveEditor(bool allow_env_editor) -> std::string {
-			if (allow_env_editor) {
-				if (const char *editor = std::getenv("EDITOR");
-				    editor != nullptr && editor[0] != '\0') {
-					const fs::path editor_path(editor);
-					if (IsSafeEditorPath(editor_path)) {
-						return editor_path.string();
-					}
-				}
+		auto SelectEditorPreference() -> std::string {
+			if (const char *editor = std::getenv("EDITOR");
+			    editor != nullptr && IsSupportedEditorPreference(editor)) {
+				return editor;
 			}
 
-			for (const char *candidate : {"/usr/bin/micro", "/usr/bin/nano", "/usr/bin/vi"}) {
-				if (access(candidate, X_OK) == 0) {
-					return candidate;
-				}
+			return kFallbackEditors.front();
+		}
+
+		auto IsEditorUnavailableError(int error) -> bool {
+			switch (error) {
+				case EACCES:
+				case EISDIR:
+				case ELOOP:
+				case ENAMETOOLONG:
+				case ENOENT:
+				case ENOEXEC:
+				case ENOTDIR:
+					return true;
+				default:
+					return false;
+			}
+		}
+
+		auto ExecEditorThroughPath(const std::string &editor, const fs::path &temp_path) -> int {
+			std::array<char *, 3> exec_argv = {
+			    const_cast<char *>(editor.c_str()),
+			    const_cast<char *>(temp_path.c_str()),
+			    nullptr,
+			};
+
+			// execvp may invoke /bin/sh for ENOEXEC. Search with execv so editor execution stays
+			// direct.
+			if (editor.contains('/')) {
+				execv(editor.c_str(), exec_argv.data());
+				return errno;
 			}
 
-			return {};
+			std::vector<char> default_path;
+			std::string_view  search_path;
+			if (const char *path = std::getenv("PATH"); path != nullptr) {
+				search_path = path;
+			} else {
+				const auto path_size = confstr(_CS_PATH, nullptr, 0);
+				if (path_size == 0) {
+					return ENOENT;
+				}
+				default_path.resize(path_size);
+				const auto written = confstr(_CS_PATH, default_path.data(), default_path.size());
+				if (written == 0 || written > default_path.size()) {
+					return ENOENT;
+				}
+				search_path = std::string_view(default_path.data(), written - 1);
+			}
+
+			int         last_error = ENOENT;
+			std::size_t start      = 0;
+			while (true) {
+				const auto end       = search_path.find(':', start);
+				const auto directory = search_path.substr(
+				    start, end == std::string_view::npos ? std::string_view::npos : end - start);
+
+				std::string candidate;
+				if (directory.empty()) {
+					candidate = editor;
+				} else {
+					candidate.reserve(directory.size() + 1 + editor.size());
+					candidate.append(directory);
+					candidate.push_back('/');
+					candidate.append(editor);
+				}
+
+				execv(candidate.c_str(), exec_argv.data());
+				const int error = errno;
+				if (!IsEditorUnavailableError(error)) {
+					return error;
+				}
+				if (error == EACCES) {
+					last_error = EACCES;
+				}
+
+				if (end == std::string_view::npos) {
+					break;
+				}
+				start = end + 1;
+			}
+
+			return last_error;
 		}
 
 		void RemoveIfExists(const fs::path &path) {
 			std::error_code ec;
 			fs::remove(path, ec);
-		}
-
-		void ResetEditorEnvironment(const howdy::native::InvokingUser &invoking_user) {
-			howdy::native::ResetInvokingUserEnvironment(invoking_user);
 		}
 
 		auto CreateTempCopy(const fs::path                                   &source_path,
@@ -144,40 +217,94 @@ namespace howdy::native::config_internal {
 			return temp_path;
 		}
 
-		auto RunEditor(const std::string &editor, const fs::path &temp_path,
+		[[noreturn]] auto ReportEditorLaunch(int report_fd, EditorLaunchReport report,
+		                                     int exit_code) -> void {
+			const auto report_byte = static_cast<unsigned char>(report);
+			ssize_t    written;
+			do {
+				written = write(report_fd, &report_byte, sizeof(report_byte));
+			} while (written < 0 && errno == EINTR);
+			(void)written;
+			_exit(exit_code);
+		}
+
+		auto TryEditor(const std::string &editor, const fs::path &temp_path, int report_fd)
+		    -> void {
+			if (!IsEditorUnavailableError(ExecEditorThroughPath(editor, temp_path))) {
+				ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
+			}
+		}
+
+		[[noreturn]] auto
+		RunEditorChild(const std::string &editor_preference, const fs::path &temp_path,
+		               const std::optional<howdy::native::InvokingUser> &invoking_user,
+		               int                                               report_fd) -> void {
+			if (invoking_user.has_value()) {
+				if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
+				    setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
+					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
+				}
+				if (getuid() != invoking_user->uid || geteuid() != invoking_user->uid ||
+				    getgid() != invoking_user->gid || getegid() != invoking_user->gid) {
+					ReportEditorLaunch(report_fd, EditorLaunchReport::kLaunchFailed, 126);
+				}
+				howdy::native::ResetInvokingUserEnvironment(*invoking_user);
+			}
+
+			TryEditor(editor_preference, temp_path, report_fd);
+			for (const char *fallback : kFallbackEditors) {
+				if (editor_preference != fallback) {
+					TryEditor(fallback, temp_path, report_fd);
+				}
+			}
+			ReportEditorLaunch(report_fd, EditorLaunchReport::kUnavailable, 127);
+		}
+
+		auto RunEditor(const std::string &editor_preference, const fs::path &temp_path,
 		               const std::optional<howdy::native::InvokingUser> &invoking_user) -> int {
+			std::array<int, 2> report_pipe{};
+			if (pipe2(report_pipe.data(), O_CLOEXEC) != 0) {
+				return -1;
+			}
+
 			const pid_t child_pid = fork();
 			if (child_pid < 0) {
+				close(report_pipe.at(0));
+				close(report_pipe.at(1));
 				return -1;
 			}
 
 			if (child_pid == 0) {
-				if (invoking_user.has_value()) {
-					if (initgroups(invoking_user->name.c_str(), invoking_user->gid) != 0 ||
-					    setgid(invoking_user->gid) != 0 || setuid(invoking_user->uid) != 0) {
-						_exit(126);
-					}
-					if (getuid() != invoking_user->uid || geteuid() != invoking_user->uid ||
-					    getgid() != invoking_user->gid || getegid() != invoking_user->gid) {
-						_exit(126);
-					}
-					ResetEditorEnvironment(*invoking_user);
-				}
-
-				std::array<char *, 3> exec_argv = {
-				    const_cast<char *>(editor.c_str()),
-				    const_cast<char *>(temp_path.c_str()),
-				    nullptr,
-				};
-				execv(editor.c_str(), exec_argv.data());
-				_exit(127);
+				close(report_pipe.at(0));
+				RunEditorChild(editor_preference, temp_path, invoking_user, report_pipe.at(1));
 			}
 
+			close(report_pipe.at(1));
 			int status = 0;
 			while (waitpid(child_pid, &status, 0) < 0) {
 				if (errno != EINTR) {
+					close(report_pipe.at(0));
 					return -1;
 				}
+			}
+
+			unsigned char report_byte = 0;
+			ssize_t       read_count;
+			do {
+				read_count = read(report_pipe.at(0), &report_byte, sizeof(report_byte));
+			} while (read_count < 0 && errno == EINTR);
+			close(report_pipe.at(0));
+			if (read_count < 0) {
+				return -1;
+			}
+			if (read_count == 1) {
+				switch (static_cast<EditorLaunchReport>(report_byte)) {
+					case EditorLaunchReport::kUnavailable:
+						return kEditorUnavailableRunResult;
+					case EditorLaunchReport::kLaunchFailed:
+						return -1;
+				}
+				return -1;
 			}
 			return status;
 		}
@@ -236,9 +363,9 @@ namespace howdy::native::config_internal {
 			return howdy::native::ResolveInvokingIdentity();
 		}
 
-		auto ResolveEditorDependency(void *context, bool allow_env_editor) -> std::string {
+		auto SelectEditorPreferenceDependency(void *context) -> std::string {
 			(void)context;
-			return ResolveEditor(allow_env_editor);
+			return SelectEditorPreference();
 		}
 
 		auto ResolveConfigPathDependency(void *context) -> fs::path {
@@ -266,12 +393,12 @@ namespace howdy::native::config_internal {
 			    .path = *path, .original_content = std::move(original_content)};
 		}
 
-		auto RunEditorDependency(void *context, const std::string &editor,
+		auto RunEditorDependency(void *context, const std::string &editor_preference,
 		                         const fs::path                                   &temp_path,
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
 		    -> int {
 			(void)context;
-			return RunEditor(editor, temp_path, invoking_user);
+			return RunEditor(editor_preference, temp_path, invoking_user);
 		}
 
 		auto ReadTempConfigSnapshotDependency(void *context, const fs::path &temp_path,
@@ -314,7 +441,7 @@ namespace howdy::native::config_internal {
 
 	auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies) -> bool {
 		return dependencies.resolve_invoking_identity != nullptr &&
-		       dependencies.resolve_editor != nullptr &&
+		       dependencies.select_editor_preference != nullptr &&
 		       dependencies.resolve_config_path != nullptr &&
 		       dependencies.check_secure_config_path != nullptr &&
 		       dependencies.create_temp_copy != nullptr && dependencies.run_editor != nullptr &&
@@ -330,7 +457,7 @@ namespace howdy::native::config_internal {
 		return {
 		    .context                           = validation_root,
 		    .resolve_invoking_identity         = ResolveInvokingIdentityDependency,
-		    .resolve_editor                    = ResolveEditorDependency,
+		    .select_editor_preference          = SelectEditorPreferenceDependency,
 		    .resolve_config_path               = ResolveConfigPathDependency,
 		    .check_secure_config_path          = CheckSecureConfigPathDependency,
 		    .create_temp_copy                  = CreateTempCopyDependency,
@@ -369,10 +496,7 @@ namespace howdy::native::config_internal {
 		}
 
 		const auto invoking_user = invoking_identity.user;
-		const bool allow_env_editor =
-		    invoking_identity.status == howdy::native::InvokingIdentityStatus::kResolved &&
-		    invoking_user.has_value() && invoking_user->uid != 0;
-		const auto editor = dependencies_.resolve_editor(dependencies_.context, allow_env_editor);
+		const auto editor        = dependencies_.select_editor_preference(dependencies_.context);
 		if (editor.empty()) {
 			return {.status = ConfigEditStatus::kEditorUnavailable};
 		}
@@ -408,11 +532,15 @@ namespace howdy::native::config_internal {
 		};
 
 		if (request.editor_ready != nullptr) {
-			request.editor_ready(request.context, editor);
+			request.editor_ready(request.context);
 		}
 
 		const int status =
 		    dependencies_.run_editor(dependencies_.context, editor, temp_copy->path, invoking_user);
+		if (status == kEditorUnavailableRunResult) {
+			cleanup();
+			return result_base(ConfigEditStatus::kEditorUnavailable);
+		}
 		if (status < 0) {
 			cleanup();
 			return result_base(ConfigEditStatus::kEditorLaunchFailed);

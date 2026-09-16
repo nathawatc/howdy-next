@@ -32,7 +32,10 @@ namespace howdy::native::config_internal {
 		kInstallFailed,
 	};
 
-	using EditorReadyFn = void (*)(void *context, const std::string &editor);
+	// RunEditorFn returns this sentinel when every editor candidate was unavailable.
+	inline constexpr int kEditorUnavailableRunResult = -2;
+
+	using EditorReadyFn = void (*)(void *context);
 
 	struct ConfigEditRequest {
 		void         *context      = nullptr;
@@ -47,7 +50,7 @@ namespace howdy::native::config_internal {
 	};
 
 	using ResolveInvokingIdentityFn = howdy::native::InvokingIdentityResult (*)(void *context);
-	using ResolveEditorFn           = std::string (*)(void *context, bool allow_env_editor);
+	using SelectEditorPreferenceFn  = std::string (*)(void *context);
 	using ResolveConfigPathFn       = std::filesystem::path (*)(void *context);
 	using CheckSecureConfigPathFn   = howdy::native::ConfigPathCheckResult (*)(
 	    void *context, const std::filesystem::path &config_path);
@@ -74,7 +77,7 @@ namespace howdy::native::config_internal {
 	struct ConfigEditDependencies {
 		void                            *context                           = nullptr;
 		ResolveInvokingIdentityFn        resolve_invoking_identity         = nullptr;
-		ResolveEditorFn                  resolve_editor                    = nullptr;
+		SelectEditorPreferenceFn         select_editor_preference          = nullptr;
 		ResolveConfigPathFn              resolve_config_path               = nullptr;
 		CheckSecureConfigPathFn          check_secure_config_path          = nullptr;
 		CreateTempCopyFn                 create_temp_copy                  = nullptr;

@@ -3,20 +3,17 @@
 #include "cli/config/internal.hpp"
 #include "config/config_utils.hpp"
 
-#include <filesystem>
 #include <iostream>
 #include <string>
 
 namespace {
 
-	namespace fs = std::filesystem;
-
 	constexpr int kConfigExitOk    = 0;
 	constexpr int kConfigExitAbort = 1;
 
-	void PrintEditorReady(void *context, const std::string &editor) {
+	void PrintEditorReady(void *context) {
 		(void)context;
-		std::cout << "Editing config.ini in " << fs::path(editor).filename().string() << "\n";
+		std::cout << "Editing config.ini\n";
 	}
 
 	void PrintConfigInstallError(const howdy::native::config_internal::ConfigEditResult &result) {
@@ -63,7 +60,7 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 			return kConfigExitOk;
 		case ConfigEditStatus::kEditorUnavailable:
 			std::cout << "Error: No suitable text editor found.\n";
-			std::cout << "Set EDITOR to an absolute executable path, or install one of: micro, "
+			std::cout << "Set EDITOR to an executable name or path, or install one of: micro, "
 			             "nano, vi.\n";
 			return kConfigExitAbort;
 		case ConfigEditStatus::kSecurityCheckFailed:

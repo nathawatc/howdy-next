@@ -32,36 +32,34 @@ namespace howdy::test::config_cli {
 		constexpr std::string_view kEditedContent           = "[core]\ndisabled = true\n";
 
 		struct TestContext {
-			std::array<int, 12>                   calls{};
-			std::vector<int>                      order;
+			std::vector<int>                     order;
+			std::vector<std::filesystem::path>   removed_paths;
+			std::string                          editor = "nano";
+			std::string                          edited_content{kEditedContent};
+			std::string                          validation_error;
+			std::string                          installer_error;
+			std::string                          installer_content;
+			std::string                          installer_expected_content;
+			std::filesystem::path                config_path = kConfigPath;
+			std::filesystem::path                installer_path;
+			howdy::native::ConfigPathCheckResult security  = {.ok = true};
+			std::optional<TempConfigCopy>        temp_copy = TempConfigCopy{
+			    .path = kTempPath, .original_content = std::string{kWorkflowOriginalContent}};
 			howdy::native::InvokingIdentityResult invoking_identity = {
 			    .status = howdy::native::InvokingIdentityStatus::kResolved,
 			    .user   = howdy::native::InvokingUser{.uid = 1000, .gid = 1000, .name = "alice"},
 			};
-			bool                                 allow_env_editor          = false;
-			bool                                 throw_from_resolve_editor = false;
-			std::string                          editor                    = "/usr/bin/nano";
-			std::filesystem::path                config_path               = kConfigPath;
-			howdy::native::ConfigPathCheckResult security                  = {.ok = true};
-			std::optional<TempConfigCopy>        temp_copy                 = TempConfigCopy{
-			    .path = kTempPath, .original_content = std::string{kWorkflowOriginalContent}};
-			int                                editor_status = 0;
-			bool                               read_result   = true;
-			std::string                        edited_content{kEditedContent};
-			bool                               validation_result = true;
-			std::string                        validation_error;
-			bool                               content_matches  = false;
-			bool                               installer_result = true;
-			std::string                        installer_error;
-			std::filesystem::path              installer_path;
-			std::string                        installer_content;
-			bool                               installer_lock             = false;
-			bool                               installer_validate_runtime = true;
-			bool                               installer_expected_nonnull = false;
-			std::string                        installer_expected_content;
-			std::vector<std::filesystem::path> removed_paths;
-			int                                editor_ready_calls = 0;
-			std::string                        editor_ready_editor;
+			int                 editor_status      = 0;
+			int                 editor_ready_calls = 0;
+			std::array<int, 12> calls{};
+			bool                throw_from_select_editor   = false;
+			bool                read_result                = true;
+			bool                validation_result          = true;
+			bool                content_matches            = false;
+			bool                installer_result           = true;
+			bool                installer_lock             = false;
+			bool                installer_validate_runtime = true;
+			bool                installer_expected_nonnull = false;
 		};
 
 		struct RunResult {
@@ -80,11 +78,10 @@ namespace howdy::test::config_cli {
 			return context.invoking_identity;
 		}
 
-		auto ResolveEditor(void *raw, bool allow_env_editor) -> std::string {
+		auto SelectEditorPreference(void *raw) -> std::string {
 			auto &context = *static_cast<TestContext *>(raw);
 			Record(context, 1);
-			context.allow_env_editor = allow_env_editor;
-			if (context.throw_from_resolve_editor) {
+			if (context.throw_from_select_editor) {
 				throw std::runtime_error("test editor exception");
 			}
 			return context.editor;
@@ -179,18 +176,17 @@ namespace howdy::test::config_cli {
 			context.removed_paths.push_back(path);
 		}
 
-		void EditorReady(void *raw, const std::string &editor) {
+		void EditorReady(void *raw) {
 			auto &context = *static_cast<TestContext *>(raw);
 			Record(context, 11);
 			++context.editor_ready_calls;
-			context.editor_ready_editor = editor;
 		}
 
 		auto DependenciesFor(TestContext &context) -> ConfigDependencies {
 			return {
 			    .context                           = &context,
 			    .resolve_invoking_identity         = ResolveInvokingIdentity,
-			    .resolve_editor                    = ResolveEditor,
+			    .select_editor_preference          = SelectEditorPreference,
 			    .resolve_config_path               = ResolvePath,
 			    .check_secure_config_path          = CheckSecurity,
 			    .create_temp_copy                  = CreateTemp,
@@ -209,7 +205,7 @@ namespace howdy::test::config_cli {
 					dependencies.resolve_invoking_identity = nullptr;
 					break;
 				case 1:
-					dependencies.resolve_editor = nullptr;
+					dependencies.select_editor_preference = nullptr;
 					break;
 				case 2:
 					dependencies.resolve_config_path = nullptr;
@@ -273,8 +269,8 @@ namespace howdy::test::config_cli {
 			ScopedStreamBuffer outer_stdout_guard(std::cout, restored_output.rdbuf());
 			auto              *original_stdout = std::cout.rdbuf();
 			TestContext        context;
-			context.throw_from_resolve_editor = true;
-			bool exception_observed           = false;
+			context.throw_from_select_editor = true;
+			bool exception_observed          = false;
 			try {
 				(void)RunConfig(DependenciesFor(context));
 			} catch (const std::runtime_error &) {
@@ -310,31 +306,6 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
-		auto EditorIdentityPolicy() -> bool {
-			bool ok = true;
-			for (const bool user_exists : {true, false}) {
-				TestContext context;
-				if (!user_exists) {
-					context.invoking_identity = {
-					    .status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity,
-					};
-				}
-				(void)RunConfig(DependenciesFor(context));
-				ok &= Expect(context.allow_env_editor == user_exists,
-				             "editor env permission follows invoking user");
-			}
-
-			TestContext root_context;
-			root_context.invoking_identity = {
-			    .status = howdy::native::InvokingIdentityStatus::kResolved,
-			    .user   = howdy::native::InvokingUser{.uid = 0, .gid = 0, .name = "root"},
-			};
-			(void)RunConfig(DependenciesFor(root_context));
-			ok &= Expect(!root_context.allow_env_editor,
-			             "root invoking identity cannot authorize environment editor");
-			return ok;
-		}
-
 	}  // namespace
 
 	auto RunConfigCliCallbackExceptionTest() -> bool {
@@ -355,8 +326,7 @@ namespace howdy::test::config_cli {
 			             "temporary dependencies result matches success path");
 			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 11, 5, 6, 7, 8, 9, 10},
 			             "temporary dependencies invokes callbacks once in order");
-			ok &= Expect(context.editor_ready_calls == 1 &&
-			                 context.editor_ready_editor == context.editor,
+			ok &= Expect(context.editor_ready_calls == 1,
 			             "temporary dependencies invokes ready callback");
 			ok &= ExpectRemovedOnce(context, "temporary dependencies removes temp once");
 			ok &= ExpectInstallerArguments(context,
@@ -407,13 +377,11 @@ namespace howdy::test::config_cli {
 			const auto result = RunConfig(DependenciesFor(context));
 			ok &= Expect(result.exit_code == 1 &&
 			                 result.output == "Error: No suitable text editor found.\n"
-			                                  "Set EDITOR to an absolute executable path, or "
+			                                  "Set EDITOR to an executable name or path, or "
 			                                  "install one of: micro, nano, vi.\n",
 			             "no editor output exact");
 			ok &= Expect(context.order == std::vector{0, 1}, "no editor stops before config path");
 		}
-
-		ok &= EditorIdentityPolicy();
 
 		{
 			TestContext context;
@@ -438,12 +406,21 @@ namespace howdy::test::config_cli {
 
 		{
 			TestContext context;
+			context.editor_status = howdy::native::config_internal::kEditorUnavailableRunResult;
+			const ConfigEditSession session(DependenciesFor(context));
+			const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
+			ok &= Expect(result.status == ConfigEditStatus::kEditorUnavailable,
+			             "editor unavailable launch report maps to unavailable status");
+			ok &= ExpectRemovedOnce(context, "editor unavailable removes temp once");
+		}
+
+		{
+			TestContext context;
 			context.editor_status = -1;
 			const auto result     = RunConfig(DependenciesFor(context));
-			ok &=
-			    Expect(result.exit_code == 1 &&
-			               result.output == "Editing config.ini in nano\nFailed to launch editor\n",
-			           "editor launch failure output exact");
+			ok &= Expect(result.exit_code == 1 &&
+			                 result.output == "Editing config.ini\nFailed to launch editor\n",
+			             "editor launch failure output exact");
 			ok &= ExpectRemovedOnce(context, "launch failure removes temp once");
 			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 10},
 			             "launch failure stops after cleanup");
@@ -454,7 +431,7 @@ namespace howdy::test::config_cli {
 			context.editor_status = status;
 			const auto result     = RunConfig(DependenciesFor(context));
 			ok &= Expect(result.exit_code == 1 &&
-			                 result.output == "Editing config.ini in nano\n"
+			                 result.output == "Editing config.ini\n"
 			                                  "Editor exited unsuccessfully; config not updated\n",
 			             "unsuccessful editor output exact");
 			ok &= ExpectRemovedOnce(context, "unsuccessful editor removes temp once");
@@ -465,10 +442,10 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			context.read_result = false;
 			const auto result   = RunConfig(DependenciesFor(context));
-			ok &= Expect(result.exit_code == 1 &&
-			                 result.output ==
-			                     "Editing config.ini in nano\nFailed to install edited config\n",
-			             "snapshot failure output exact");
+			ok &=
+			    Expect(result.exit_code == 1 &&
+			               result.output == "Editing config.ini\nFailed to install edited config\n",
+			           "snapshot failure output exact");
 			ok &= ExpectRemovedOnce(context, "snapshot failure removes temp once");
 			ok &= Expect(context.calls[7] == 0 && context.calls[8] == 0 && context.calls[9] == 0,
 			             "snapshot failure skips later callbacks");
@@ -476,10 +453,10 @@ namespace howdy::test::config_cli {
 
 		for (const auto &[error, expected] : std::array<std::pair<std::string, std::string>, 3>{
 		         std::pair{"Updated config is invalid",
-		                   "Editing config.ini in nano\nEdited config is invalid and was not "
+		                   "Editing config.ini\nEdited config is invalid and was not "
 		                   "installed: /tmp/howdy-config-test\n"},
-		         std::pair{"Invalid timeout", "Editing config.ini in nano\nInvalid timeout\n"},
-		         std::pair{"", "Editing config.ini in nano\nFailed to install edited config\n"}}) {
+		         std::pair{"Invalid timeout", "Editing config.ini\nInvalid timeout\n"},
+		         std::pair{"", "Editing config.ini\nFailed to install edited config\n"}}) {
 			TestContext context;
 			context.validation_result = false;
 			context.validation_error  = error;
@@ -495,18 +472,17 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			context.content_matches = true;
 			const auto result       = RunConfig(DependenciesFor(context));
-			ok &=
-			    Expect(result.exit_code == 0 &&
-			               result.output == "Editing config.ini in nano\nNo config changes made\n",
-			           "no-op output exact");
+			ok &= Expect(result.exit_code == 0 &&
+			                 result.output == "Editing config.ini\nNo config changes made\n",
+			             "no-op output exact");
 			ok &= ExpectRemovedOnce(context, "no-op removes temp once");
 			ok &= Expect(context.calls[9] == 0, "no-op skips installer");
 		}
 
 		for (const auto &[error, expected] : std::array<std::pair<std::string, std::string>, 2>{
 		         std::pair{"Config changed while editor was open",
-		                   "Editing config.ini in nano\nConfig changed while editor was open\n"},
-		         std::pair{"", "Editing config.ini in nano\nFailed to install edited config\n"}}) {
+		                   "Editing config.ini\nConfig changed while editor was open\n"},
+		         std::pair{"", "Editing config.ini\nFailed to install edited config\n"}}) {
 			TestContext context;
 			context.installer_result = false;
 			context.installer_error  = error;
@@ -521,7 +497,7 @@ namespace howdy::test::config_cli {
 			TestContext context;
 			const auto  result = RunConfig(DependenciesFor(context));
 			ok &= Expect(result.exit_code == 0 &&
-			                 result.output == "Editing config.ini in nano\nConfig updated\n",
+			                 result.output == "Editing config.ini\nConfig updated\n",
 			             "success output exact");
 			ok &= Expect(context.order == std::vector{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 			             "success invokes callbacks once in order");
