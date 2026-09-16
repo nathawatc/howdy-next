@@ -357,10 +357,29 @@ namespace {
 		const auto result       = Run(context, {"howdy", "list"});
 		ok &= Expect(result.status == 1 &&
 		                 result.output == "Unable to determine the user; please use --user\n",
-		             "no wrapper identity keeps explicit-user requirement");
+		             "direct root without explicit user is rejected");
 		ok &= Expect(context.resolve_user_calls == 1 && context.effective_uid_calls == 1 &&
 		                 !context.command_id.has_value() && context.command_arguments.empty(),
-		             "no wrapper identity never targets a synthetic root user");
+		             "direct root without explicit user does not dispatch");
+		return ok;
+	}
+
+	auto TestExplicitRootUser() -> bool {
+		bool ok = true;
+		for (const auto &user_option : {std::string{"--user"}, std::string{"-U"}}) {
+			Context context;
+			context.command_result = 23;
+			const auto result      = Run(context, {"howdy", user_option, "root", "list"});
+			ok &= Expect(result.status == 23 && result.output == "command output\n" &&
+			                 result.error == "command error\n",
+			             "explicit root target dispatches model command");
+			ok &= Expect(context.resolve_user_calls == 0,
+			             "explicit root target skips default user resolution");
+			ok &= Expect(context.command_id == CommandId::kList &&
+			                 context.command_arguments ==
+			                     std::vector<std::string>{"howdy-list", "root"},
+			             "explicit root target is injected into list arguments");
+		}
 		return ok;
 	}
 
@@ -424,6 +443,7 @@ auto main() -> int {
 		             "resolved default user injected into list arguments");
 	}
 	ok &= TestInvokingIdentityFailures();
+	ok &= TestExplicitRootUser();
 	{
 		Context    context;
 		const auto result = Run(context, {"howdy", "--user", "bob", "list"});

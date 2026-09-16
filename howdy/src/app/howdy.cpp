@@ -185,15 +185,6 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 	if (needs_user_argument && !ResolveModelUser(parsed, dependencies)) {
 		return 1;
 	}
-	if (needs_user_argument) {
-		if (!parsed.user.has_value()) {
-			return 1;
-		}
-		if (parsed.user.value() == "root") {
-			std::cout << "Running as root requires --user.\n";
-			return 1;
-		}
-	}
 
 	const auto selected_main =
 	    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
