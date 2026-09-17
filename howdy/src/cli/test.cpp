@@ -33,13 +33,6 @@ namespace {
 
 	namespace test_cli_internal = howdy::native::test_cli_internal;
 
-	struct TestArgs {
-		std::string user;
-		std::string device_path;
-		bool        missing_device_path = false;
-		bool        invalid_arguments   = false;
-	};
-
 	struct TestProductionContext {
 		std::optional<howdy::native::FaceModel>               face_model;
 		std::optional<howdy::native::VideoCapture>            capture;
@@ -48,45 +41,6 @@ namespace {
 		cv::Mat                                               prefetched_gray_frame;
 		int                                                   exposure = -1;
 	};
-
-	auto ParseTestArgs(int argc, char **argv) -> TestArgs {
-		TestArgs args;
-		bool     options_ended   = false;
-		bool     device_provided = false;
-
-		for (int index = 1; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
-			if (!options_ended && arg == "--") {
-				options_ended = true;
-				continue;
-			}
-			if (!options_ended && arg == "--device") {
-				if (device_provided) {
-					args.invalid_arguments = true;
-					continue;
-				}
-				if (index + 1 >= argc || std::string_view(argv[index + 1]).empty() ||
-				    std::string_view(argv[index + 1]).front() == '-') {
-					args.missing_device_path = true;
-					continue;
-				}
-				args.device_path = argv[++index];
-				device_provided  = true;
-				continue;
-			}
-			if (!options_ended && !arg.empty() && arg.front() == '-') {
-				args.invalid_arguments = true;
-				continue;
-			}
-			if (args.user.empty()) {
-				args.user = arg;
-			} else {
-				args.invalid_arguments = true;
-			}
-		}
-
-		return args;
-	}
 
 	auto PreparePreviewFrame(void *context, const cv::Mat &frame) -> cv::Mat {
 		(void)context;
@@ -456,18 +410,9 @@ auto howdy::native::test_cli_internal::HasGraphicalDisplayEnvironment(
 }
 
 auto howdy::native::test_cli_internal::TestMainWithDependencies(
-    int argc, char **argv, const TestDependencies &dependencies) -> int {
+    const howdy::native::CommandInvocation &invocation, const TestDependencies &dependencies)
+    -> int {
 	if (dependencies.load_runtime_config == nullptr || dependencies.run_preview == nullptr) {
-		return kExitCameraError;
-	}
-
-	const TestArgs args = ParseTestArgs(argc, argv);
-	if (args.missing_device_path) {
-		std::cerr << "Error: --device requires a non-empty value\n";
-		return kExitCameraError;
-	}
-	if (args.invalid_arguments) {
-		std::cerr << "Error: invalid test arguments\n";
 		return kExitCameraError;
 	}
 
@@ -479,8 +424,9 @@ auto howdy::native::test_cli_internal::TestMainWithDependencies(
 	}
 	const auto &config = *config_result.config;
 
-	const auto preview_result =
-	    dependencies.run_preview(dependencies.context, config, args.user, args.device_path);
+	const auto preview_result = dependencies.run_preview(dependencies.context, config,
+	                                                     invocation.resolved_user.value_or(""),
+	                                                     invocation.device.value_or(""));
 	switch (preview_result.status) {
 		case TestPreviewStatus::kOk:
 			return kTestExitOk;
@@ -511,13 +457,12 @@ auto howdy::native::test_cli_internal::TestMainWithDependencies(
 	}
 }
 
-auto TestMain(int argc, char **argv) -> int {
+auto TestMain(const howdy::native::CommandInvocation &invocation) -> int {
 	TestProductionContext production_context;
 	return howdy::native::test_cli_internal::TestMainWithDependencies(
-	    argc, argv,
-	    howdy::native::test_cli_internal::TestDependencies{
-	        .context             = &production_context,
-	        .load_runtime_config = TestCliLoadRuntimeConfigDependency,
-	        .run_preview         = RunPreviewDependency,
-	    });
+	    invocation, howdy::native::test_cli_internal::TestDependencies{
+	                    .context             = &production_context,
+	                    .load_runtime_config = TestCliLoadRuntimeConfigDependency,
+	                    .run_preview         = RunPreviewDependency,
+	                });
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_security/validation_root.hpp"
@@ -76,7 +77,7 @@ namespace howdy::native::snapshot_internal {
 	                                 AtomicFileCommitResult           *commit_result = nullptr)
 	    -> std::filesystem::path;
 
-	auto SnapshotMainWithDependencies(int argc, char **argv,
+	auto SnapshotMainWithDependencies(const CommandInvocation    &invocation,
 	                                  const SnapshotDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::snapshot_internal

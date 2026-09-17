@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
+
 #include <filesystem>
 #include <string>
 
@@ -17,6 +19,7 @@ namespace howdy::native::set_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto SetMainWithDependencies(int argc, char **argv, const SetDependencies &dependencies) -> int;
+	auto SetMainWithDependencies(const CommandInvocation &invocation,
+	                             const SetDependencies   &dependencies) -> int;
 
 }  // namespace howdy::native::set_internal

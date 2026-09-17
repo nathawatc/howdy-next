@@ -5,7 +5,6 @@
 #include "config/test_hooks.hpp"
 #include "test_support.hpp"
 
-#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -241,17 +240,15 @@ namespace howdy::test::config_cli {
 					return {1, {}};
 				}
 
-				std::array<char *, 1> argv{const_cast<char *>("howdy-config")};
-				std::ostringstream    output;
-				int                   exit_code = 0;
+				std::ostringstream output;
+				int                exit_code = 0;
 				{
 					ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
 					howdy::native::file_security_internal::ValidationRoot validation_root{
 					    temp_root};
 					exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
-					    1, argv.data(),
-					    howdy::native::config_internal::DefaultConfigEditDependencies(
-					        &validation_root));
+					    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
+					            &validation_root));
 				}
 				return {exit_code, output.str()};
 			};
@@ -420,16 +417,14 @@ namespace howdy::test::config_cli {
 			ScopedEnvironmentVariable credential_env("HOWDY_TEST_EDITOR_CREDENTIALS",
 			                                         credential_path.string());
 
-			std::array<char *, 1> argv{const_cast<char *>("howdy-config")};
-			std::ostringstream    output;
-			int                   exit_code = 0;
+			std::ostringstream output;
+			int                exit_code = 0;
 			{
 				ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
 				howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
 				exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
-				    1, argv.data(),
-				    howdy::native::config_internal::DefaultConfigEditDependencies(
-				        &validation_root));
+				    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
+				            &validation_root));
 			}
 
 			constexpr std::string_view recovery_prefix =

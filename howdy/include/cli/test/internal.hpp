@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "config/runtime_config_loader.hpp"
 
 #include <cstdint>
@@ -66,8 +67,8 @@ namespace howdy::native::test_cli_internal {
 		RunPreviewFn        run_preview         = nullptr;
 	};
 
-	auto TestMainWithDependencies(int argc, char **argv, const TestDependencies &dependencies)
-	    -> int;
+	auto TestMainWithDependencies(const CommandInvocation &invocation,
+	                              const TestDependencies  &dependencies) -> int;
 	auto MapPreviewFrameFailure(const howdy::native::PreviewFrameResult &result)
 	    -> TestPreviewResult;
 	auto RunPreviewPreflight(const howdy::native::RuntimeConfig &config, const std::string &user,

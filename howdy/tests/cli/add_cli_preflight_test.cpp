@@ -19,7 +19,8 @@ namespace howdy::test::add_cli {
 			auto context          = MakeSuccessContext();
 			context.config_result = InvalidConfigLoadResult();
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "invalid runtime config returns 1");
@@ -49,7 +50,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {.resolved_user = "alice"});
 
 			bool ok = true;
 			ok &= Expect(result == 1, test_case.test_name + " returns 1");
@@ -100,7 +101,7 @@ namespace howdy::test::add_cli {
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 			ErrorRedirect  error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {.resolved_user = "alice"});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "unknown preflight status returns 1");
@@ -127,7 +128,7 @@ namespace howdy::test::add_cli {
 			        .capture_enrollment   = CaptureEnrollmentCallback,
 			        .append_user_model    = AppendUserModelEntryCallback,
 			    },
-			    {"howdy-add", "alice", "front-door"});
+			    {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "incomplete dependencies return 1");

@@ -126,12 +126,11 @@ namespace {
 
 }  // namespace
 
-auto SnapshotMain(int argc, char **argv) -> int {
+auto SnapshotMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::snapshot_internal::SnapshotMainWithDependencies(
-	    argc, argv,
-	    howdy::native::snapshot_internal::SnapshotDependencies{
-	        .load_runtime_config = SnapshotCliLoadRuntimeConfigDependency,
-	        .capture_frames      = CaptureFramesDependency,
-	        .write_snapshot      = WriteSnapshotDependency,
-	    });
+	    invocation, howdy::native::snapshot_internal::SnapshotDependencies{
+	                    .load_runtime_config = SnapshotCliLoadRuntimeConfigDependency,
+	                    .capture_frames      = CaptureFramesDependency,
+	                    .write_snapshot      = WriteSnapshotDependency,
+	                });
 }

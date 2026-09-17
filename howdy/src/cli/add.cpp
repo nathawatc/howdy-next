@@ -171,15 +171,14 @@ namespace {
 
 }  // namespace
 
-auto AddMain(int argc, char **argv) -> int {
+auto AddMain(const howdy::native::CommandInvocation &invocation) -> int {
 	AddProductionContext context;
 	return howdy::native::add_internal::AddMainWithDependencies(
-	    argc, argv,
-	    howdy::native::add_internal::AddDependencies{
-	        .context              = &context,
-	        .load_runtime_config  = AddCliLoadRuntimeConfigDependency,
-	        .preflight_enrollment = PreflightEnrollmentDependency,
-	        .capture_enrollment   = CaptureEnrollmentDependency,
-	        .append_user_model    = AppendUserModelEntryDependency,
-	    });
+	    invocation, howdy::native::add_internal::AddDependencies{
+	                    .context              = &context,
+	                    .load_runtime_config  = AddCliLoadRuntimeConfigDependency,
+	                    .preflight_enrollment = PreflightEnrollmentDependency,
+	                    .capture_enrollment   = CaptureEnrollmentDependency,
+	                    .append_user_model    = AppendUserModelEntryDependency,
+	                });
 }

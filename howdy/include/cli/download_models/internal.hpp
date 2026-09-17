@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "model_assets/opencv_model_manifest.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_security/validation_root.hpp"
@@ -56,7 +57,7 @@ namespace howdy::native::download_models_internal {
 	auto DownloadModelsWriteCallback(void *contents, std::size_t size, std::size_t nmemb,
 	                                 void *userp) -> std::size_t;
 
-	auto DownloadModelsMainWithDependencies(int argc, char **argv,
+	auto DownloadModelsMainWithDependencies(const CommandInvocation          &invocation,
 	                                        const DownloadModelsDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::download_models_internal

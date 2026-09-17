@@ -5,7 +5,6 @@
 
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace howdy::test::add_cli {
@@ -150,18 +149,13 @@ namespace howdy::test::add_cli {
 	}
 
 	inline auto RunAddWithDependencies(howdy::native::add_internal::AddDependencies dependencies,
-	                                   std::vector<std::string> arguments) -> int {
-		std::vector<char *> argv;
-		argv.reserve(arguments.size());
-		for (auto &argument : arguments) {
-			argv.push_back(argument.data());
-		}
-		return howdy::native::add_internal::AddMainWithDependencies(static_cast<int>(argv.size()),
-		                                                            argv.data(), dependencies);
+	                                   const howdy::native::CommandInvocation &invocation) -> int {
+		return howdy::native::add_internal::AddMainWithDependencies(invocation, dependencies);
 	}
 
-	inline auto RunAdd(AddCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return RunAddWithDependencies(TestDependencies(context), std::move(arguments));
+	inline auto RunAdd(AddCliTestContext                      &context,
+	                   const howdy::native::CommandInvocation &invocation) -> int {
+		return RunAddWithDependencies(TestDependencies(context), invocation);
 	}
 
 	inline auto MakeSuccessContext() -> AddCliTestContext {

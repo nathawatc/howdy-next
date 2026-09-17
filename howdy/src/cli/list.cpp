@@ -7,7 +7,6 @@
 #include <array>
 #include <ctime>
 #include <iostream>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,33 +15,6 @@ namespace {
 
 	constexpr int kListExitOk    = 0;
 	constexpr int kListExitAbort = 1;
-
-	struct ListArgs {
-		std::string user;
-		bool        plain = false;
-	};
-
-	auto ParseListArgs(int argc, char **argv) -> std::optional<ListArgs> {
-		ListArgs args;
-		if (argc < 2) {
-			return std::nullopt;
-		}
-		args.user          = argv[1];
-		bool options_ended = false;
-		for (int index = 2; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
-			if (!options_ended && arg == "--") {
-				options_ended = true;
-				continue;
-			}
-			if (!options_ended && arg == "--plain") {
-				args.plain = true;
-				continue;
-			}
-			return std::nullopt;
-		}
-		return args;
-	}
 
 	auto ListCliUserModelEntriesDependency([[maybe_unused]] void *context, const std::string &user)
 	    -> howdy::native::UserModelListResult {
@@ -68,39 +40,39 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::list_internal::ListMainWithDependencies(int argc, char **argv,
-                                                            const ListDependencies &dependencies)
+auto howdy::native::list_internal::ListMainWithDependencies(
+    const howdy::native::CommandInvocation &invocation, const ListDependencies &dependencies)
     -> int {
 	if (dependencies.list_user_model_entries == nullptr) {
 		return kListExitAbort;
 	}
 
-	const auto args = ParseListArgs(argc, argv);
-	if (!args.has_value()) {
+	if (!invocation.resolved_user.has_value()) {
 		return kListExitAbort;
 	}
-	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
+	const auto &user   = *invocation.resolved_user;
+	const auto  models = dependencies.list_user_model_entries(dependencies.context, user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout
 		    << "No face models found. Use the add command to add a face model for this user.\n";
 		return kListExitAbort;
 	}
 	if (models.status == howdy::native::UserModelStatus::kNoModel) {
-		if (!args->plain) {
+		if (!invocation.plain) {
 			std::cout
 			    << "No face models found. Use the add command to add a face model for this user.\n";
 		}
 		return kListExitAbort;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
-		if (!args->plain) {
+		if (!invocation.plain) {
 			std::cout << models.error_message << "\n";
 		}
 		return kListExitAbort;
 	}
 	for (const auto &model : models.entries) {
 		std::cout << model.id;
-		if (args->plain) {
+		if (invocation.plain) {
 			std::cout << ",";
 		} else {
 			constexpr std::size_t id_column_width = 4;
@@ -118,21 +90,17 @@ auto howdy::native::list_internal::ListMainWithDependencies(int argc, char **arg
 			    std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &local_time) != 0;
 		}
 		std::cout << (valid_time ? buffer.data() : "invalid-time");
-		std::cout << (args->plain ? "," : "  ");
-		std::cout << (args->plain ? CsvField(model.label) : model.label) << "\n";
+		std::cout << (invocation.plain ? "," : "  ");
+		std::cout << (invocation.plain ? CsvField(model.label) : model.label) << "\n";
 	}
 
 	std::cout << "\n";
 	return kListExitOk;
 }
 
-auto ListMain(int argc, char **argv) -> int {
-	if (argc < 2) {
-		return kListExitAbort;
-	}
+auto ListMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::list_internal::ListMainWithDependencies(
-	    argc, argv,
-	    howdy::native::list_internal::ListDependencies{
-	        .list_user_model_entries = ListCliUserModelEntriesDependency,
-	    });
+	    invocation, howdy::native::list_internal::ListDependencies{
+	                    .list_user_model_entries = ListCliUserModelEntriesDependency,
+	                });
 }

@@ -1,3 +1,5 @@
 #pragma once
 
-auto ListMain(int argc, char **argv) -> int;
+#include "app/command_invocation.hpp"
+
+auto ListMain(const howdy::native::CommandInvocation &invocation) -> int;

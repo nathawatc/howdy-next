@@ -37,55 +37,53 @@ namespace howdy::test::dispatch {
 			return context.effective_uid;
 		}
 
-		auto CommandStub(CommandId command_id, int argc, char **argv) -> int {
-			active_context->command_id = command_id;
-			active_context->command_arguments.clear();
-			for (int index = 0; index < argc; ++index) {
-				active_context->command_arguments.emplace_back(argv[index]);
-			}
+		auto CommandStub(CommandId command_id, const howdy::native::CommandInvocation &invocation)
+		    -> int {
+			active_context->command_id         = command_id;
+			active_context->command_invocation = invocation;
 			std::cout << "command output\n";
 			std::cerr << "command error\n";
 			return active_context->command_result;
 		}
 
-		auto AddStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kAdd, argc, argv);
+		auto AddStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kAdd, invocation);
 		}
 
-		auto ClearStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kClear, argc, argv);
+		auto ClearStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kClear, invocation);
 		}
 
-		auto ConfigStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kConfig, argc, argv);
+		auto ConfigStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kConfig, invocation);
 		}
 
-		auto DisableStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kDisable, argc, argv);
+		auto DisableStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kDisable, invocation);
 		}
 
-		auto DownloadModelsStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kDownloadModels, argc, argv);
+		auto DownloadModelsStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kDownloadModels, invocation);
 		}
 
-		auto ListStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kList, argc, argv);
+		auto ListStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kList, invocation);
 		}
 
-		auto RemoveStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kRemove, argc, argv);
+		auto RemoveStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kRemove, invocation);
 		}
 
-		auto SetStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kSet, argc, argv);
+		auto SetStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kSet, invocation);
 		}
 
-		auto SnapshotStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kSnapshot, argc, argv);
+		auto SnapshotStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kSnapshot, invocation);
 		}
 
-		auto TestStub(int argc, char **argv) -> int {
-			return CommandStub(CommandId::kTest, argc, argv);
+		auto TestStub(const howdy::native::CommandInvocation &invocation) -> int {
+			return CommandStub(CommandId::kTest, invocation);
 		}
 
 		auto DefaultCommandMains() -> CommandMains {
@@ -163,7 +161,7 @@ namespace {
 		             "explicit user skips lookup for null command callback");
 		ok &= Expect(context.effective_uid_calls == 1,
 		             "null callback is checked after root validation");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
+		ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
 		             "null command callback is not invoked");
 		return ok;
 	}
@@ -348,7 +346,8 @@ namespace {
 			ok &= Expect(result.status == 1 && result.output == expected,
 			             "invalid invoking identity fails automatic model-user resolution");
 			ok &= Expect(context.resolve_user_calls == 1 && context.effective_uid_calls == 1 &&
-			                 !context.command_id.has_value() && context.command_arguments.empty(),
+			                 !context.command_id.has_value() &&
+			                 !context.command_invocation.has_value(),
 			             "invalid invoking identity never reaches command implementation");
 		}
 
@@ -359,7 +358,7 @@ namespace {
 		                 result.output == "Unable to determine the user; please use --user\n",
 		             "direct root without explicit user is rejected");
 		ok &= Expect(context.resolve_user_calls == 1 && context.effective_uid_calls == 1 &&
-		                 !context.command_id.has_value() && context.command_arguments.empty(),
+		                 !context.command_id.has_value() && !context.command_invocation.has_value(),
 		             "direct root without explicit user does not dispatch");
 		return ok;
 	}
@@ -376,10 +375,234 @@ namespace {
 			ok &= Expect(context.resolve_user_calls == 0,
 			             "explicit root target skips default user resolution");
 			ok &= Expect(context.command_id == CommandId::kList &&
-			                 context.command_arguments ==
-			                     std::vector<std::string>{"howdy-list", "root"},
+			                 context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"root"} &&
+			                 context.command_invocation->positionals.empty(),
 			             "explicit root target is injected into list arguments");
 		}
+		return ok;
+	}
+
+	auto TestInitialDispatch() -> bool {
+		bool ok = true;
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy"});
+			ok &= Expect(result.status == 0 &&
+			                 result.output.starts_with("Usage: howdy [OPTIONS] <COMMAND>"),
+			             "no command prints top-level help");
+		}
+		ok &= howdy::test::dispatch::RunHowdyCompletionTests();
+		ok &= TestMissingCallback();
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "unknown"});
+			ok &= Expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("unrecognized subcommand 'unknown'"),
+			             "unknown command rejected as usage error");
+		}
+		ok &= TestUnknownCommandPrecedence();
+		return ok;
+	}
+
+	auto TestOptionDispatch() -> bool {
+		bool ok = true;
+		{
+			Context context;
+			context.command_result = 23;
+			const auto result =
+			    Run(context, {"howdy", "-U", "bob", "--plain", "-y", "add", "front-door"});
+			ok &= Expect(result.status == 23, "command return code passed through");
+			ok &= Expect(context.resolve_user_calls == 0,
+			             "short user option skips default user resolution");
+			ok &= Expect(
+			    context.command_invocation->resolved_user == std::optional<std::string>{"bob"} &&
+			        context.command_invocation->positionals ==
+			            std::vector<std::string>{"front-door"} &&
+			        context.command_invocation->plain && context.command_invocation->assume_yes,
+			    "global options forwarded with user injection");
+			ok &= Expect(result.output == "command output\n" && result.error == "command error\n",
+			             "command output streams preserved");
+		}
+		{
+			Context context;
+			context.command_result = 23;
+			const auto result      = Run(context, {"howdy", "config"});
+			ok &= Expect(result.status == 23, "non-user command dispatched");
+			ok &= Expect(context.resolve_user_calls == 0,
+			             "non-user command skips target-user resolution");
+			ok &= Expect(context.command_invocation->resolved_user == std::nullopt &&
+			                 context.command_invocation->positionals.empty() &&
+			                 !context.command_invocation->plain &&
+			                 !context.command_invocation->assume_yes,
+			             "user injected only for model commands");
+		}
+		{
+			Context context;
+			context.command_result = 23;
+			const auto result      = Run(context, {"howdy", "list"});
+			ok &= Expect(result.status == 23, "default-user command return code passed through");
+			ok &= Expect(context.resolve_user_calls == 1,
+			             "default user resolved when user option is omitted");
+			ok &=
+			    Expect(context.command_id == CommandId::kList, "list dispatched with default user");
+			ok &= Expect(context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"alice"} &&
+			                 context.command_invocation->positionals.empty(),
+			             "resolved default user injected into list arguments");
+		}
+		{
+			Context context;
+			context.command_result = 23;
+			const auto result      = Run(context, {"howdy", "test", "--device", "/dev/video9"});
+			ok &= Expect(result.status == 23 && context.command_id == CommandId::kTest,
+			             "test command dispatches with device option");
+			ok &= Expect(context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"alice"} &&
+			                 context.command_invocation->device ==
+			                     std::optional<std::string>{"/dev/video9"} &&
+			                 context.command_invocation->positionals.empty(),
+			             "device option is normalized into typed invocation");
+		}
+		ok &= TestInvokingIdentityFailures();
+		ok &= TestExplicitRootUser();
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "--user", "bob", "list"});
+			ok &= Expect(result.status == 0, "long user option command dispatched");
+			ok &= Expect(context.resolve_user_calls == 0,
+			             "long user option skips default user resolution");
+			ok &=
+			    Expect(context.command_id == CommandId::kList, "long user option dispatches list");
+			ok &= Expect(context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"bob"} &&
+			                 context.command_invocation->positionals.empty(),
+			             "long user option injected into list arguments");
+		}
+		ok &= TestEmptyUserOptions();
+		return ok;
+	}
+
+	auto TestArgumentBoundaries() -> bool {
+		bool ok = true;
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "", "list"});
+			ok &= Expect(result.status == 2 && result.output.empty() &&
+			                 result.error.contains("unrecognized subcommand ''"),
+			             "empty command token is not command absence");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
+			                 !context.command_id.has_value(),
+			             "empty command does not reinterpret later token");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "add", "--", "-y"});
+			ok &= Expect(result.status == 0, "end-of-options literal label dispatches");
+			ok &= Expect(
+			    context.command_invocation->resolved_user == std::optional<std::string>{"alice"} &&
+			        context.command_invocation->positionals == std::vector<std::string>{"-y"} &&
+			        !context.command_invocation->plain && !context.command_invocation->assume_yes,
+			    "end-of-options marker is forwarded to preserve literal label");
+		}
+		{
+			Context context;
+			context.effective_uid   = 1000;
+			context.identity_status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity;
+			const auto result       = Run(context, {"howdy", "add", "label; echo unsafe"});
+			ok &= Expect(result.status == 1 && result.output ==
+			                                       "This command requires root privileges.\n"
+			                                       "Run it again with sudo.\n",
+			             "non-root diagnostic is fixed and shell-safe");
+			ok &= Expect(!result.output.contains("sudo howdy") &&
+			                 !result.output.contains("label; echo unsafe"),
+			             "non-root diagnostic does not include arbitrary command input");
+			ok &= Expect(context.effective_uid_calls == 1 && context.resolve_user_calls == 0,
+			             "non-root model command checks privileges before invoking identity");
+			ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
+			             "non-root model command is not dispatched");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "list", ""});
+			ok &= Expect(result.status != 0 && !context.command_id.has_value(),
+			             "surplus empty positional argument is rejected");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "invalid positional syntax skips user and privilege work");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "-U"});
+			ok &= Expect(result.status == 2, "trailing short user option rejected");
+			ok &= Expect(result.error.contains("-U <USER>") &&
+			                 result.error.contains("none was supplied"),
+			             "trailing short user option reports missing argument");
+			ok &= Expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
+			             "trailing short user option does not print help");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "trailing short user option skips user resolution and root check");
+			ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
+			             "trailing short user option does not dispatch command");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "--user"});
+			ok &= Expect(result.status == 2, "trailing long user option rejected");
+			ok &= Expect(result.error.contains("--user <USER>") &&
+			                 result.error.contains("none was supplied"),
+			             "trailing long user option reports missing argument");
+			ok &= Expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
+			             "trailing long user option does not print help");
+			ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			             "trailing long user option skips user resolution and root check");
+			ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
+			             "trailing long user option does not dispatch command");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "list", "-U"});
+			ok &= Expect(result.status == 2, "trailing short user option after command rejected");
+			ok &= Expect(result.error.contains("-U <USER>") &&
+			                 result.error.contains("none was supplied"),
+			             "trailing short user option after command reports missing argument");
+			ok &= Expect(
+			    context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			    "trailing short user option after command skips user resolution and root check");
+			ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
+			             "trailing short user option after command does not dispatch command");
+		}
+		{
+			Context    context;
+			const auto result = Run(context, {"howdy", "add", "--user"});
+			ok &= Expect(result.status == 2, "trailing long user option after command rejected");
+			ok &= Expect(result.error.contains("--user <USER>") &&
+			                 result.error.contains("none was supplied"),
+			             "trailing long user option after command reports missing argument");
+			ok &= Expect(
+			    context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
+			    "trailing long user option after command skips user resolution and root check");
+			ok &= Expect(!context.command_id.has_value() && !context.command_invocation.has_value(),
+			             "trailing long user option after command does not dispatch command");
+		}
+		{
+			Context context;
+			context.effective_uid = 1000;
+			const auto result     = Run(context, {"howdy", "list"});
+			ok &= Expect(result.status == 1 && result.output ==
+			                                       "This command requires root privileges.\n"
+			                                       "Run it again with sudo.\n",
+			             "root check runs before dispatch");
+			ok &=
+			    Expect(!context.command_invocation.has_value(), "non-root command not dispatched");
+		}
+		return ok;
+	}
+
+	auto TestSyntaxAndCatalog() -> bool {
+		bool ok = true;
+		ok &= TestClapStyleUsageErrors();
+		ok &= TestStrictSyntaxCases();
+		ok &= TestCatalogDispatch();
 		return ok;
 	}
 
@@ -387,184 +610,9 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy"});
-		ok &= Expect(result.status == 0 &&
-		                 result.output.starts_with("Usage: howdy [OPTIONS] <COMMAND>"),
-		             "no command prints top-level help");
-	}
-	ok &= howdy::test::dispatch::RunHowdyCompletionTests();
-	ok &= TestMissingCallback();
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "unknown"});
-		ok &= Expect(result.status == 2 && result.output.empty() &&
-		                 result.error.contains("unrecognized subcommand 'unknown'"),
-		             "unknown command rejected as usage error");
-	}
-	ok &= TestUnknownCommandPrecedence();
-	{
-		Context context;
-		context.command_result = 23;
-		const auto result =
-		    Run(context, {"howdy", "-U", "bob", "--plain", "-y", "add", "front-door"});
-		ok &= Expect(result.status == 23, "command return code passed through");
-		ok &= Expect(context.resolve_user_calls == 0,
-		             "short user option skips default user resolution");
-		ok &=
-		    Expect(context.command_arguments ==
-		               std::vector<std::string>{"howdy-add", "bob", "front-door", "--plain", "-y"},
-		           "global options forwarded with user injection");
-		ok &= Expect(result.output == "command output\n" && result.error == "command error\n",
-		             "command output streams preserved");
-	}
-	{
-		Context context;
-		context.command_result = 23;
-		context.resolved_user  = "root";
-		const auto result      = Run(context, {"howdy", "config"});
-		ok &= Expect(result.status == 23, "non-user command dispatched");
-		ok &= Expect(context.resolve_user_calls == 0,
-		             "non-user command skips target-user resolution");
-		ok &= Expect(context.command_arguments == std::vector<std::string>{"howdy-config"},
-		             "user injected only for model commands");
-	}
-	{
-		Context context;
-		context.command_result = 23;
-		const auto result      = Run(context, {"howdy", "list"});
-		ok &= Expect(result.status == 23, "default-user command return code passed through");
-		ok &= Expect(context.resolve_user_calls == 1,
-		             "default user resolved when user option is omitted");
-		ok &= Expect(context.command_id == CommandId::kList, "list dispatched with default user");
-		ok &= Expect(context.command_arguments == std::vector<std::string>{"howdy-list", "alice"},
-		             "resolved default user injected into list arguments");
-	}
-	ok &= TestInvokingIdentityFailures();
-	ok &= TestExplicitRootUser();
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "--user", "bob", "list"});
-		ok &= Expect(result.status == 0, "long user option command dispatched");
-		ok &= Expect(context.resolve_user_calls == 0,
-		             "long user option skips default user resolution");
-		ok &= Expect(context.command_id == CommandId::kList, "long user option dispatches list");
-		ok &= Expect(context.command_arguments == std::vector<std::string>{"howdy-list", "bob"},
-		             "long user option injected into list arguments");
-	}
-	ok &= TestEmptyUserOptions();
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "", "list"});
-		ok &= Expect(result.status == 2 && result.output.empty() &&
-		                 result.error.contains("unrecognized subcommand ''"),
-		             "empty command token is not command absence");
-		ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
-		                 !context.command_id.has_value(),
-		             "empty command does not reinterpret later token");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "add", "--", "-y"});
-		ok &= Expect(result.status == 0, "end-of-options literal label dispatches");
-		ok &= Expect(context.command_arguments ==
-		                 std::vector<std::string>{"howdy-add", "alice", "--", "-y"},
-		             "end-of-options marker is forwarded to preserve literal label");
-	}
-	{
-		Context context;
-		context.effective_uid   = 1000;
-		context.identity_status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity;
-		const auto result       = Run(context, {"howdy", "add", "label; echo unsafe"});
-		ok &=
-		    Expect(result.status == 1 && result.output == "This command requires root privileges.\n"
-		                                                  "Run it again with sudo.\n",
-		           "non-root diagnostic is fixed and shell-safe");
-		ok &= Expect(!result.output.contains("sudo howdy") &&
-		                 !result.output.contains("label; echo unsafe"),
-		             "non-root diagnostic does not reconstruct arbitrary argv");
-		ok &= Expect(context.effective_uid_calls == 1 && context.resolve_user_calls == 0,
-		             "non-root model command checks privileges before invoking identity");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-		             "non-root model command is not dispatched");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "list", ""});
-		ok &= Expect(result.status != 0 && !context.command_id.has_value(),
-		             "surplus empty positional argument is rejected");
-		ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-		             "invalid positional syntax skips user and privilege work");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "-U"});
-		ok &= Expect(result.status == 2, "trailing short user option rejected");
-		ok &=
-		    Expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
-		           "trailing short user option reports missing argument");
-		ok &= Expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
-		             "trailing short user option does not print help");
-		ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-		             "trailing short user option skips user resolution and root check");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-		             "trailing short user option does not dispatch command");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "--user"});
-		ok &= Expect(result.status == 2, "trailing long user option rejected");
-		ok &= Expect(result.error.contains("--user <USER>") &&
-		                 result.error.contains("none was supplied"),
-		             "trailing long user option reports missing argument");
-		ok &= Expect(result.error.contains("Usage: howdy [OPTIONS] <COMMAND>"),
-		             "trailing long user option does not print help");
-		ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-		             "trailing long user option skips user resolution and root check");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-		             "trailing long user option does not dispatch command");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "list", "-U"});
-		ok &= Expect(result.status == 2, "trailing short user option after command rejected");
-		ok &=
-		    Expect(result.error.contains("-U <USER>") && result.error.contains("none was supplied"),
-		           "trailing short user option after command reports missing argument");
-		ok &=
-		    Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-		           "trailing short user option after command skips user resolution and root check");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-		             "trailing short user option after command does not dispatch command");
-	}
-	{
-		Context    context;
-		const auto result = Run(context, {"howdy", "add", "--user"});
-		ok &= Expect(result.status == 2, "trailing long user option after command rejected");
-		ok &= Expect(result.error.contains("--user <USER>") &&
-		                 result.error.contains("none was supplied"),
-		             "trailing long user option after command reports missing argument");
-		ok &=
-		    Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-		           "trailing long user option after command skips user resolution and root check");
-		ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-		             "trailing long user option after command does not dispatch command");
-	}
-	{
-		Context context;
-		context.effective_uid = 1000;
-		const auto result     = Run(context, {"howdy", "list"});
-		ok &=
-		    Expect(result.status == 1 && result.output == "This command requires root privileges.\n"
-		                                                  "Run it again with sudo.\n",
-		           "root check runs before dispatch");
-		ok &= Expect(context.command_arguments.empty(), "non-root command not dispatched");
-	}
-	ok &= TestClapStyleUsageErrors();
-	ok &= TestStrictSyntaxCases();
-	ok &= TestCatalogDispatch();
-
+	ok &= TestInitialDispatch();
+	ok &= TestOptionDispatch();
+	ok &= TestArgumentBoundaries();
+	ok &= TestSyntaxAndCatalog();
 	return ok ? 0 : 1;
 }

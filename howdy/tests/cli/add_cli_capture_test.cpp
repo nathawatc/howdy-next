@@ -83,7 +83,8 @@ namespace howdy::test::add_cli {
 			auto context           = MakeSuccessContext();
 			context.capture_result = EnrollmentFailureResult(status);
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, test_name + " returns 1");
@@ -114,7 +115,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result, "unconfigured camera");
 			ok &= Expect(error.str() == context.capture_result.error_message + "\n",
@@ -128,7 +130,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			const auto error_output = error.str();
 			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
@@ -145,7 +148,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			const auto error_output = error.str();
 			bool       ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
@@ -163,7 +167,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			const auto error_output = error.str();
 			bool       ok           = ExpectCaptureFailureStopsBeforeAppend(
@@ -182,7 +187,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			const auto error_output = error.str();
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
@@ -198,7 +204,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			const auto error_output = error.str();
 			bool ok = ExpectCaptureFailureStopsBeforeAppend(context, result,
@@ -223,7 +230,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "encoding failure returns 1");
@@ -242,7 +250,8 @@ namespace howdy::test::add_cli {
 			std::ostringstream error;
 			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "unknown enrollment status returns 1");

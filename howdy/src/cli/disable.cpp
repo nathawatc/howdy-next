@@ -7,10 +7,7 @@
 #include "config/runtime_paths.hpp"
 
 #include <iostream>
-#include <optional>
 #include <string>
-#include <string_view>
-#include <utility>
 
 namespace {
 
@@ -37,46 +34,12 @@ namespace {
 		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
-	auto ParseArgument(int argc, char **argv) -> std::optional<std::string> {
-		if (argc < 2) {
-			return std::nullopt;
-		}
-		std::string argument;
-		bool        argument_provided = false;
-		bool        options_ended     = false;
-		for (int index = 1; index < argc; ++index) {
-			const std::string_view value(argv[index]);
-			if (!options_ended && value == "--") {
-				options_ended = true;
-				continue;
-			}
-			if (!options_ended && !value.empty() && value.front() == '-') {
-				return std::nullopt;
-			}
-			if (argument_provided) {
-				return std::nullopt;
-			}
-			argument          = value;
-			argument_provided = true;
-		}
-		return argument_provided ? std::optional<std::string>{std::move(argument)} : std::nullopt;
-	}
-
 }  // namespace
 
 auto howdy::native::disable_internal::DisableMainWithDependencies(
-    int argc, char **argv, const DisableDependencies &dependencies) -> int {
-	if (argc < 2) {
-		std::cout << "Specify 0 or false to enable, or 1 or true to disable Howdy\n";
-		return kDisableExitAbort;
-	}
-	const auto argument = ParseArgument(argc, argv);
-	if (!argument.has_value()) {
-		std::cout << "Invalid arguments for disable\n";
-		return kDisableExitAbort;
-	}
-
-	const std::string &argument_value = *argument;
+    const howdy::native::CommandInvocation &invocation, const DisableDependencies &dependencies)
+    -> int {
+	const std::string &argument_value = invocation.positionals.front();
 	std::string        out_value;
 	bool               disabled;
 	if (argument_value == "1" || argument_value == "true") {
@@ -125,17 +88,17 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
 }
 
 auto howdy::native::disable_internal::DisableMainWithValidationRoot(
-    int argc, char **argv, file_security_internal::ValidationRoot validation_root) -> int {
+    const howdy::native::CommandInvocation &invocation,
+    file_security_internal::ValidationRoot  validation_root) -> int {
 	return howdy::native::disable_internal::DisableMainWithDependencies(
-	    argc, argv,
-	    {
-	        .context             = &validation_root,
-	        .resolve_config_path = ResolveConfigPathDependency,
-	        .load_runtime_config = LoadRuntimeConfigDependency,
-	        .update_config_value = UpdateConfigValueDependency,
-	    });
+	    invocation, {
+	                    .context             = &validation_root,
+	                    .resolve_config_path = ResolveConfigPathDependency,
+	                    .load_runtime_config = LoadRuntimeConfigDependency,
+	                    .update_config_value = UpdateConfigValueDependency,
+	                });
 }
 
-auto DisableMain(int argc, char **argv) -> int {
-	return howdy::native::disable_internal::DisableMainWithValidationRoot(argc, argv, {});
+auto DisableMain(const howdy::native::CommandInvocation &invocation) -> int {
+	return howdy::native::disable_internal::DisableMainWithValidationRoot(invocation, {});
 }

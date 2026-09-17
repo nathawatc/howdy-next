@@ -1,3 +1,5 @@
 #pragma once
 
-auto DownloadModelsMain(int argc, char **argv) -> int;
+#include "app/command_invocation.hpp"
+
+auto DownloadModelsMain(const howdy::native::CommandInvocation &invocation) -> int;

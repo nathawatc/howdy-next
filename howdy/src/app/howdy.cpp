@@ -9,11 +9,12 @@
 #include <iostream>
 #include <optional>
 #include <string>
-#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
 
+	using howdy::native::CommandInvocation;
 	using howdy::native::howdy_cli_internal::CliSyntaxError;
 	using howdy::native::howdy_cli_internal::CliSyntaxErrorKind;
 	using howdy::native::howdy_cli_internal::ParsedCommandLine;
@@ -40,9 +41,9 @@ namespace {
 		    completion_arguments, parsed.global_option_seen);
 	}
 
-	auto ResolveModelUser(ParsedCommandLine &parsed, const HowdyDependencies &dependencies)
+	auto ResolveModelUser(CommandInvocation &invocation, const HowdyDependencies &dependencies)
 	    -> bool {
-		if (!parsed.user.has_value()) {
+		if (!invocation.resolved_user.has_value()) {
 			if (dependencies.resolve_invoking_identity == nullptr) {
 				return false;
 			}
@@ -59,7 +60,7 @@ namespace {
 						       "use --user\n";
 						return false;
 					}
-					parsed.user = identity.user->name;
+					invocation.resolved_user = identity.user->name;
 					break;
 				case howdy::native::InvokingIdentityStatus::kInvalid:
 					std::cout
@@ -73,48 +74,15 @@ namespace {
 					return false;
 			}
 		}
-		if (!parsed.user.has_value() || parsed.user->empty()) {
+		if (!invocation.resolved_user.has_value() || invocation.resolved_user->empty()) {
 			std::cout << "Unable to determine the user; please use --user\n";
 			return false;
 		}
-		if (!howdy::native::IsValidModelUserName(*parsed.user)) {
+		if (!howdy::native::IsValidModelUserName(*invocation.resolved_user)) {
 			std::cout << howdy::native::kInvalidUserNameMessage << "\n";
 			return false;
 		}
 		return true;
-	}
-
-	auto BuildCommandArgvStrings(const howdy::native::CommandDescriptor &command,
-	                             const ParsedCommandLine &parsed, std::string_view user)
-	    -> std::vector<std::string> {
-		std::vector<std::string> argv_strings;
-		argv_strings.push_back("howdy-" + std::string(command.name));
-		if (command.user_target == howdy::native::UserTargetMode::kModelUser) {
-			argv_strings.emplace_back(user);
-		}
-		for (const auto &argument : parsed.arguments) {
-			if (argument.options_enabled) {
-				argv_strings.push_back(argument.value);
-			}
-		}
-		if (parsed.plain) {
-			argv_strings.emplace_back("--plain");
-		}
-		if (parsed.yes) {
-			argv_strings.emplace_back("-y");
-		}
-		bool end_options_forwarded = false;
-		for (const auto &argument : parsed.arguments) {
-			if (argument.options_enabled) {
-				continue;
-			}
-			if (!end_options_forwarded) {
-				argv_strings.emplace_back("--");
-				end_options_forwarded = true;
-			}
-			argv_strings.push_back(argument.value);
-		}
-		return argv_strings;
 	}
 
 }  // namespace
@@ -162,11 +130,13 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 		howdy::native::howdy_cli_internal::PrintCommandHelp(*command_descriptor);
 		return 0;
 	}
-	if (const auto error =
-	        howdy::native::howdy_cli_internal::CommandSyntaxError(parsed, *command_descriptor);
-	    error.has_value()) {
-		return howdy::native::howdy_cli_internal::PrintCliSyntaxError(*error, command_descriptor);
+	auto invocation_result =
+	    howdy::native::howdy_cli_internal::ParseCommandInvocation(parsed, *command_descriptor);
+	if (!invocation_result.has_value()) {
+		return howdy::native::howdy_cli_internal::PrintCliSyntaxError(invocation_result.error(),
+		                                                              command_descriptor);
 	}
+	auto invocation = std::move(invocation_result.value());
 	if (command_descriptor->kind == howdy::native::CommandKind::kVersion) {
 		std::cout << howdy::native::FormatVersion(howdy::native::kProjectVersion,
 		                                          howdy::native::kBuildCommit)
@@ -182,7 +152,7 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 		std::cout << "Run it again with sudo.\n";
 		return 1;
 	}
-	if (needs_user_argument && !ResolveModelUser(parsed, dependencies)) {
+	if (needs_user_argument && !ResolveModelUser(invocation, dependencies)) {
 		return 1;
 	}
 
@@ -193,15 +163,5 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 		return 1;
 	}
 
-	auto argv_strings =
-	    BuildCommandArgvStrings(*command_descriptor, parsed, parsed.user.value_or(std::string{}));
-
-	std::vector<char *> command_argv;
-	command_argv.reserve(argv_strings.size() + 1);
-	for (auto &value : argv_strings) {
-		command_argv.push_back(value.data());
-	}
-	command_argv.push_back(nullptr);
-
-	return selected_main(static_cast<int>(argv_strings.size()), command_argv.data());
+	return selected_main(invocation);
 }

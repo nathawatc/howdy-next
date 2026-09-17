@@ -230,7 +230,8 @@ namespace howdy::test::dispatch {
 				           "completion query returns canonical catalog command list");
 				ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 				             "completion query skips user and root checks");
-				ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
+				ok &= Expect(!context.command_id.has_value() &&
+				                 !context.command_invocation.has_value(),
 				             "completion query does not dispatch a command");
 			}
 			{
@@ -277,9 +278,9 @@ namespace howdy::test::dispatch {
 					ok &=
 					    Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 					           "malformed completion query skips user and root checks");
-					ok &=
-					    Expect(!context.command_id.has_value() && context.command_arguments.empty(),
-					           "malformed completion query does not dispatch a command");
+					ok &= Expect(!context.command_id.has_value() &&
+					                 !context.command_invocation.has_value(),
+					             "malformed completion query does not dispatch a command");
 				}
 			}
 			{
@@ -323,7 +324,8 @@ namespace howdy::test::dispatch {
 				             "version output is formatted");
 				ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 				             "version skips user and root checks");
-				ok &= Expect(!context.command_id.has_value() && context.command_arguments.empty(),
+				ok &= Expect(!context.command_id.has_value() &&
+				                 !context.command_invocation.has_value(),
 				             "version does not dispatch a command");
 			}
 

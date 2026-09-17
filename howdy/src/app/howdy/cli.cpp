@@ -117,7 +117,7 @@ namespace howdy::native::howdy_cli_internal {
 					break;
 				case GlobalOptionId::kYes:
 					parsed.global_option_seen = true;
-					parsed.yes                = true;
+					parsed.assume_yes         = true;
 					break;
 				case GlobalOptionId::kPlain:
 					parsed.global_option_seen = true;
@@ -133,8 +133,7 @@ namespace howdy::native::howdy_cli_internal {
 			return std::nullopt;
 		}
 
-		auto GlobalOptionSyntaxError(const ParsedCommandLine &parsed,
-		                             const CommandDescriptor &command)
+		auto GlobalOptionError(const ParsedCommandLine &parsed, const CommandDescriptor &command)
 		    -> std::optional<CliSyntaxError> {
 			if (parsed.user.has_value() &&
 			    !CommandAcceptsGlobalOption(command, GlobalOptionId::kUser)) {
@@ -149,7 +148,7 @@ namespace howdy::native::howdy_cli_internal {
 				    .value = "--plain",
 				};
 			}
-			if (parsed.yes && !CommandAcceptsGlobalOption(command, GlobalOptionId::kYes)) {
+			if (parsed.assume_yes && !CommandAcceptsGlobalOption(command, GlobalOptionId::kYes)) {
 				return CliSyntaxError{
 				    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
 				    .value = "-y",
@@ -158,24 +157,24 @@ namespace howdy::native::howdy_cli_internal {
 			return std::nullopt;
 		}
 
-		auto PositionalArgumentSyntaxError(const ParsedArgument    &argument,
-		                                   const CommandDescriptor &command,
-		                                   std::size_t             &positional_count)
+		auto AppendPositional(CommandInvocation &invocation, const CommandDescriptor &command,
+		                      std::string_view value, std::size_t &positional_count)
 		    -> std::optional<CliSyntaxError> {
 			if (positional_count >= command.max_positionals) {
 				return CliSyntaxError{
 				    .kind  = CliSyntaxErrorKind::kUnexpectedArgument,
-				    .value = argument.value,
+				    .value = std::string(value),
 				};
 			}
+			invocation.positionals.emplace_back(value);
 			++positional_count;
 			return std::nullopt;
 		}
 
-		auto CommandOptionSyntaxError(const ParsedCommandLine       &parsed,
-		                              const CommandOptionDescriptor &option, std::size_t &index,
-		                              std::vector<const CommandOptionDescriptor *> &seen_options)
-		    -> std::optional<CliSyntaxError> {
+		auto ParseCommandOption(const ParsedCommandLine &parsed, const CommandDescriptor &command,
+		                        const CommandOptionDescriptor &option, std::size_t &index,
+		                        std::vector<const CommandOptionDescriptor *> &seen_options,
+		                        CommandInvocation &invocation) -> std::optional<CliSyntaxError> {
 			const auto &argument = parsed.arguments[index];
 			if (std::ranges::find(seen_options, &option) != seen_options.end()) {
 				return CliSyntaxError{
@@ -206,55 +205,10 @@ namespace howdy::native::howdy_cli_internal {
 				    .argument_name = std::string(option.argument_name),
 				};
 			}
+			if (command.id == CommandId::kTest && option.long_name == "--device") {
+				invocation.device = parsed.arguments[value_index].value;
+			}
 			index = value_index;
-			return std::nullopt;
-		}
-
-		auto CommandArgumentSyntaxError(const ParsedCommandLine &parsed,
-		                                const CommandDescriptor &command)
-		    -> std::optional<CliSyntaxError> {
-			std::size_t                                  positional_count = 0;
-			std::vector<const CommandOptionDescriptor *> seen_options;
-			for (std::size_t index = 0; index < parsed.arguments.size(); ++index) {
-				const auto &argument = parsed.arguments[index];
-				if (!argument.options_enabled) {
-					if (const auto error =
-					        PositionalArgumentSyntaxError(argument, command, positional_count);
-					    error.has_value()) {
-						return error;
-					}
-					continue;
-				}
-
-				const auto *option = FindCommandOption(command, argument.value);
-				if (option != nullptr) {
-					if (const auto error =
-					        CommandOptionSyntaxError(parsed, *option, index, seen_options);
-					    error.has_value()) {
-						return error;
-					}
-					continue;
-				}
-				if (!argument.value.empty() && argument.value.front() == '-') {
-					return CliSyntaxError{
-					    .kind                = CliSyntaxErrorKind::kUnexpectedArgument,
-					    .value               = argument.value,
-					    .suggest_double_dash = positional_count < command.max_positionals,
-					};
-				}
-				if (const auto error =
-				        PositionalArgumentSyntaxError(argument, command, positional_count);
-				    error.has_value()) {
-					return error;
-				}
-			}
-
-			if (positional_count < command.min_positionals) {
-				return CliSyntaxError{
-				    .kind             = CliSyntaxErrorKind::kMissingRequiredArguments,
-				    .positional_count = positional_count,
-				};
-			}
 			return std::nullopt;
 		}
 
@@ -362,12 +316,61 @@ namespace howdy::native::howdy_cli_internal {
 		return std::nullopt;
 	}
 
-	auto CommandSyntaxError(const ParsedCommandLine &parsed, const CommandDescriptor &command)
-	    -> std::optional<CliSyntaxError> {
-		if (const auto error = GlobalOptionSyntaxError(parsed, command); error.has_value()) {
-			return error;
+	auto ParseCommandInvocation(const ParsedCommandLine &parsed, const CommandDescriptor &command)
+	    -> std::expected<CommandInvocation, CliSyntaxError> {
+		if (const auto error = GlobalOptionError(parsed, command); error.has_value()) {
+			return std::unexpected(*error);
 		}
-		return CommandArgumentSyntaxError(parsed, command);
+
+		CommandInvocation invocation{
+		    .resolved_user =
+		        command.user_target == UserTargetMode::kModelUser ? parsed.user : std::nullopt,
+		    .plain      = parsed.plain,
+		    .assume_yes = parsed.assume_yes,
+		};
+		std::size_t                                  positional_count = 0;
+		std::vector<const CommandOptionDescriptor *> seen_options;
+		for (std::size_t index = 0; index < parsed.arguments.size(); ++index) {
+			const auto &argument = parsed.arguments[index];
+			if (!argument.options_enabled) {
+				if (const auto error =
+				        AppendPositional(invocation, command, argument.value, positional_count);
+				    error.has_value()) {
+					return std::unexpected(*error);
+				}
+				continue;
+			}
+
+			const auto *option = FindCommandOption(command, argument.value);
+			if (option != nullptr) {
+				if (const auto error = ParseCommandOption(parsed, command, *option, index,
+				                                          seen_options, invocation);
+				    error.has_value()) {
+					return std::unexpected(*error);
+				}
+				continue;
+			}
+			if (!argument.value.empty() && argument.value.front() == '-') {
+				return std::unexpected(CliSyntaxError{
+				    .kind                = CliSyntaxErrorKind::kUnexpectedArgument,
+				    .value               = argument.value,
+				    .suggest_double_dash = positional_count < command.max_positionals,
+				});
+			}
+			if (const auto error =
+			        AppendPositional(invocation, command, argument.value, positional_count);
+			    error.has_value()) {
+				return std::unexpected(*error);
+			}
+		}
+
+		if (positional_count < command.min_positionals) {
+			return std::unexpected(CliSyntaxError{
+			    .kind             = CliSyntaxErrorKind::kMissingRequiredArguments,
+			    .positional_count = positional_count,
+			});
+		}
+		return invocation;
 	}
 
 }  // namespace howdy::native::howdy_cli_internal

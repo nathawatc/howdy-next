@@ -1,3 +1,5 @@
 #pragma once
 
-auto DisableMain(int argc, char **argv) -> int;
+#include "app/command_invocation.hpp"
+
+auto DisableMain(const howdy::native::CommandInvocation &invocation) -> int;

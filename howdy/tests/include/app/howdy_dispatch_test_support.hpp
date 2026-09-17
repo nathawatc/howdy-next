@@ -20,12 +20,12 @@ namespace howdy::test::dispatch {
 		std::string                           resolved_user = "alice";
 		howdy::native::InvokingIdentityStatus identity_status =
 		    howdy::native::InvokingIdentityStatus::kResolved;
-		uid_t                                   effective_uid = 0;
-		std::vector<std::string>                command_arguments;
-		int                                     command_result = 0;
-		std::optional<howdy::native::CommandId> command_id;
-		int                                     resolve_user_calls  = 0;
-		int                                     effective_uid_calls = 0;
+		uid_t                                           effective_uid = 0;
+		std::optional<howdy::native::CommandInvocation> command_invocation;
+		int                                             command_result = 0;
+		std::optional<howdy::native::CommandId>         command_id;
+		int                                             resolve_user_calls  = 0;
+		int                                             effective_uid_calls = 0;
 	};
 
 	struct RunResult {

@@ -427,12 +427,9 @@ namespace {
 }  // namespace
 
 auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
-    int argc, char **argv, const DownloadModelsDependencies &dependencies) -> int {
-	if (argc != 1) {
-		std::cout << "Invalid arguments for download-models\n";
-		return kDownloadModelsExitAbort;
-	}
-	(void)argv;
+    const howdy::native::CommandInvocation &invocation,
+    const DownloadModelsDependencies       &dependencies) -> int {
+	(void)invocation;
 	if (dependencies.download_file == nullptr || dependencies.model_file_owner_uid == nullptr ||
 	    dependencies.sha256_file == nullptr || dependencies.fstat_file == nullptr) {
 		return kDownloadModelsExitAbort;
@@ -489,11 +486,10 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 	return kDownloadModelsExitOk;
 }
 
-auto DownloadModelsMain(int argc, char **argv) -> int {
+auto DownloadModelsMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
-	    argc, argv,
-	    howdy::native::download_models_internal::DownloadModelsDependencies{
-	        .download_file        = DownloadFile,
-	        .model_file_owner_uid = RootModelFileOwnerUid,
-	    });
+	    invocation, howdy::native::download_models_internal::DownloadModelsDependencies{
+	                    .download_file        = DownloadFile,
+	                    .model_file_owner_uid = RootModelFileOwnerUid,
+	                });
 }

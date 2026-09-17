@@ -6,7 +6,6 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -113,18 +112,14 @@ namespace {
 
 	auto
 	RunSnapshotWithDependencies(howdy::native::snapshot_internal::SnapshotDependencies dependencies,
-	                            std::vector<std::string> arguments) -> int {
-		std::vector<char *> argv;
-		argv.reserve(arguments.size());
-		for (auto &argument : arguments) {
-			argv.push_back(argument.data());
-		}
-		return howdy::native::snapshot_internal::SnapshotMainWithDependencies(
-		    static_cast<int>(argv.size()), argv.data(), dependencies);
+	                            const howdy::native::CommandInvocation &invocation) -> int {
+		return howdy::native::snapshot_internal::SnapshotMainWithDependencies(invocation,
+		                                                                      dependencies);
 	}
 
-	auto RunSnapshot(SnapshotCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return RunSnapshotWithDependencies(TestDependencies(context), std::move(arguments));
+	auto RunSnapshot(SnapshotCliTestContext                 &context,
+	                 const howdy::native::CommandInvocation &invocation) -> int {
+		return RunSnapshotWithDependencies(TestDependencies(context), invocation);
 	}
 
 	auto MakeSuccessContext() -> SnapshotCliTestContext {
@@ -144,7 +139,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "invalid runtime config returns 1");
@@ -165,7 +160,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "camera open failure returns 1");
@@ -187,7 +182,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "camera read failure returns 1");
@@ -211,7 +206,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, test_name + " returns 1");
@@ -247,7 +242,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "unknown capture status returns 1");
@@ -267,7 +262,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "empty write path returns 1");
@@ -285,7 +280,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "write failure returns 1");
@@ -305,7 +300,7 @@ namespace {
 			auto dependencies                = TestDependencies(context);
 			dependencies.load_runtime_config = nullptr;
 
-			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {});
 
 			ok &= Expect(result == 1, "missing load dependency returns 1");
 			ok &= Expect(context.load_calls == 0, "missing load dependency skips load");
@@ -317,7 +312,7 @@ namespace {
 			auto dependencies           = TestDependencies(context);
 			dependencies.capture_frames = nullptr;
 
-			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {});
 
 			ok &= Expect(result == 1, "missing capture dependency returns 1");
 			ok &= Expect(context.load_calls == 0, "missing capture dependency skips load");
@@ -329,7 +324,7 @@ namespace {
 			auto dependencies           = TestDependencies(context);
 			dependencies.write_snapshot = nullptr;
 
-			const int result = RunSnapshotWithDependencies(dependencies, {"howdy-snapshot"});
+			const int result = RunSnapshotWithDependencies(dependencies, {});
 
 			ok &= Expect(result == 1, "missing write dependency returns 1");
 			ok &= Expect(context.load_calls == 0, "missing write dependency skips load");
@@ -344,7 +339,7 @@ namespace {
 		std::ostringstream output;
 		StreamRedirect     output_redirect(std::cout, output.rdbuf());
 
-		const int result = RunSnapshot(context, {"howdy-snapshot"});
+		const int result = RunSnapshot(context, {});
 
 		const auto output_text = output.str();
 		bool       ok          = true;

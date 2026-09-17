@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "support/file_security/validation_root.hpp"
 
@@ -25,10 +26,10 @@ namespace howdy::native::disable_internal {
 		UpdateConfigValueFn update_config_value = nullptr;
 	};
 
-	auto DisableMainWithDependencies(int argc, char **argv, const DisableDependencies &dependencies)
-	    -> int;
+	auto DisableMainWithDependencies(const CommandInvocation   &invocation,
+	                                 const DisableDependencies &dependencies) -> int;
 
-	auto DisableMainWithValidationRoot(int argc, char **argv,
+	auto DisableMainWithValidationRoot(const CommandInvocation               &invocation,
 	                                   file_security_internal::ValidationRoot validation_root)
 	    -> int;
 

@@ -240,11 +240,10 @@ namespace howdy::test::config_cli {
 		}
 
 		auto RunConfig(const ConfigDependencies &dependencies) -> RunResult {
-			std::array<char *, 1> argv{const_cast<char *>("howdy-config")};
-			std::ostringstream    output;
-			ScopedStreamBuffer    stdout_guard(std::cout, output.rdbuf());
-			const int exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
-			    1, argv.data(), dependencies);
+			std::ostringstream output;
+			ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
+			const int          exit_code =
+			    howdy::native::config_internal::ConfigMainWithDependencies({}, dependencies);
 			return {.exit_code = exit_code, .output = output.str()};
 		}
 

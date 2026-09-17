@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "storage/user_model_types.hpp"
 
 #include <string>
@@ -19,7 +20,7 @@ namespace howdy::native::remove_internal {
 		RemoveUserModelEntryIfMatchesFn remove_user_model_entry_if_matches = nullptr;
 	};
 
-	auto RemoveMainWithDependencies(int argc, char **argv, const RemoveDependencies &dependencies)
-	    -> int;
+	auto RemoveMainWithDependencies(const CommandInvocation  &invocation,
+	                                const RemoveDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::remove_internal

@@ -1,7 +1,6 @@
 #include "cli/disable/internal.hpp"
 #include "test_support.hpp"
 
-#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -10,7 +9,6 @@
 #include <string>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #include <sys/stat.h>
 
@@ -93,21 +91,14 @@ namespace {
 		};
 	}
 
-	auto RunDisable(std::vector<std::string> arguments, const DisableDependencies &dependencies)
-	    -> RunResult {
-		std::vector<char *> argv;
-		argv.reserve(arguments.size() + 1);
-		for (auto &argument : arguments) {
-			argv.push_back(argument.data());
-		}
-		argv.push_back(nullptr);
-
+	auto RunDisable(const howdy::native::CommandInvocation &invocation,
+	                const DisableDependencies              &dependencies) -> RunResult {
 		std::ostringstream stdout_stream;
 		std::ostringstream stderr_stream;
 		auto              *old_stdout = std::cout.rdbuf(stdout_stream.rdbuf());
 		auto              *old_stderr = std::cerr.rdbuf(stderr_stream.rdbuf());
-		const int          exit_code = howdy::native::disable_internal::DisableMainWithDependencies(
-		    static_cast<int>(arguments.size()), argv.data(), dependencies);
+		const int          exit_code =
+		    howdy::native::disable_internal::DisableMainWithDependencies(invocation, dependencies);
 		std::cout.rdbuf(old_stdout);
 		std::cerr.rdbuf(old_stderr);
 		return {
@@ -137,11 +128,8 @@ namespace {
 
 	auto RunBoundaryAwareDisable(const std::string           &argument,
 	                             const std::filesystem::path &temp_root) -> int {
-		std::string           mutable_argument = argument;
-		std::array<char *, 3> argv{const_cast<char *>("howdy-disable"), mutable_argument.data(),
-		                           nullptr};
-		return howdy::native::disable_internal::DisableMainWithValidationRoot(2, argv.data(),
-		                                                                      {temp_root});
+		return howdy::native::disable_internal::DisableMainWithValidationRoot(
+		    {.positionals = {argument}}, {temp_root});
 	}
 
 	auto BoundaryAwareEntrypointIntegration() -> bool {
@@ -214,18 +202,7 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result = RunDisable({"howdy-disable"}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 1, "missing argument returns 1");
-		ok &= Expect(result.stdout_output ==
-		                 "Specify 0 or false to enable, or 1 or true to disable Howdy\n",
-		             "missing argument stdout exact");
-		ok &= Expect(result.stderr_output.empty(), "missing argument stderr empty");
-		ok &= ExpectNoCalls(context, "missing argument skips dependencies");
-	}
-
-	{
-		TestContext context;
-		const auto  result = RunDisable({"howdy-disable", "invalid"}, DependenciesFor(context));
+		const auto  result = RunDisable({.positionals = {"invalid"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "invalid argument returns 1");
 		ok &= Expect(result.stdout_output ==
 		                 "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n",
@@ -237,7 +214,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.load_result = LoadedConfig(false);
-		const auto result   = RunDisable({"howdy-disable", "--", "true"}, DependenciesFor(context));
+		const auto result   = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, "end-of-options disable value succeeds");
 		ok &= ExpectUpdate(context, "true", "end-of-options disable value");
 	}
@@ -247,7 +224,8 @@ auto main() -> int {
 	      std::tuple{"0", true, "false"}, std::tuple{"false", true, "false"}}) {
 		TestContext context;
 		context.load_result = LoadedConfig(initially_disabled);
-		const auto result   = RunDisable({"howdy-disable", argument}, DependenciesFor(context));
+		const auto result =
+		    RunDisable({.positionals = {std::string(argument)}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, std::string(argument) + " alias succeeds");
 		ok &= ExpectUpdate(context, value, std::string(argument) + " alias");
 	}
@@ -262,7 +240,7 @@ auto main() -> int {
 		} else {
 			dependencies.update_config_value = nullptr;
 		}
-		const auto result = RunDisable({"howdy-disable", "1"}, dependencies);
+		const auto result = RunDisable({.positionals = {"1"}}, dependencies);
 		ok &= Expect(result.exit_code == 1, "null dependency returns 1");
 		ok &= Expect(result.stdout_output.empty() && result.stderr_output.empty(),
 		             "null dependency streams empty");
@@ -276,7 +254,7 @@ auto main() -> int {
 	      std::pair{RuntimeConfigLoadStatus::kOk, "missing typed config"}}) {
 		TestContext context;
 		context.load_result = {.status = status, .error_message = error};
-		const auto result   = RunDisable({"howdy-disable", "1"}, DependenciesFor(context));
+		const auto result   = RunDisable({.positionals = {"1"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "load failure returns 1");
 		ok &= Expect(result.stdout_output.empty(), "load failure stdout empty");
 		ok &=
@@ -291,7 +269,8 @@ auto main() -> int {
 	     {std::tuple{"1", true, "true"}, std::tuple{"0", false, "false"}}) {
 		TestContext context;
 		context.load_result = LoadedConfig(disabled);
-		const auto result   = RunDisable({"howdy-disable", argument}, DependenciesFor(context));
+		const auto result =
+		    RunDisable({.positionals = {std::string(argument)}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "unchanged state returns 1");
 		const auto *const expected_state = disabled ? "disabled" : "enabled";
 		ok &=
@@ -308,7 +287,7 @@ auto main() -> int {
 		context.load_result    = LoadedConfig(false);
 		context.updater_result = false;
 		context.updater_error  = error;
-		const auto result      = RunDisable({"howdy-disable", "true"}, DependenciesFor(context));
+		const auto result      = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "updater failure returns 1");
 		ok &= Expect(result.stdout_output == output, "updater failure stdout exact");
 		ok &= Expect(result.stderr_output.empty(), "updater failure stderr empty");
@@ -320,7 +299,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.load_result = LoadedConfig(false);
-		const auto result   = RunDisable({"howdy-disable", "true"}, DependenciesFor(context));
+		const auto result   = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, "disable success returns 0");
 		ok &= Expect(result.stdout_output == "Howdy is now disabled\n",
 		             "disable success stdout exact");
@@ -333,23 +312,12 @@ auto main() -> int {
 	{
 		TestContext context;
 		context.load_result = LoadedConfig(true);
-		const auto result   = RunDisable({"howdy-disable", "false"}, DependenciesFor(context));
+		const auto result   = RunDisable({.positionals = {"false"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, "enable success returns 0");
 		ok &=
 		    Expect(result.stdout_output == "Howdy is now enabled\n", "enable success stdout exact");
 		ok &= Expect(result.stderr_output.empty(), "enable success stderr empty");
 		ok &= ExpectUpdate(context, "false", "enable success");
-	}
-
-	{
-		TestContext context;
-		context.load_result = LoadedConfig(false);
-		const auto result =
-		    RunDisable({"howdy-disable", "true", "ignored"}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 1, "extra argument is rejected");
-		ok &= Expect(context.resolver_calls == 0 && context.loader_calls == 0 &&
-		                 context.updater_calls == 0,
-		             "extra argument skips config mutation callbacks");
 	}
 
 	ok &= BoundaryAwareEntrypointIntegration();

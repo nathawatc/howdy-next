@@ -5,45 +5,13 @@
 #include "storage/user_models.hpp"
 
 #include <iostream>
-#include <optional>
 #include <string>
-#include <string_view>
 
 namespace {
 
 	constexpr int  kClearExitOk              = 0;
 	constexpr int  kClearExitAbort           = 1;
 	constexpr auto kNoFaceModelsFoundMessage = "No face models found.";
-
-	struct ClearArgs {
-		std::string user;
-		bool        yes = false;
-	};
-
-	auto ParseClearArgs(int argc, char **argv) -> std::optional<ClearArgs> {
-		ClearArgs args;
-		if (argc < 2) {
-			return std::nullopt;
-		}
-		args.user          = argv[1];
-		bool options_ended = false;
-		for (int index = 2; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
-			if (!options_ended && arg == "--") {
-				options_ended = true;
-				continue;
-			}
-			if (!options_ended && arg == "-y") {
-				args.yes = true;
-				continue;
-			}
-			if (!options_ended && !arg.empty() && arg.front() == '-') {
-				return std::nullopt;
-			}
-			return std::nullopt;
-		}
-		return args;
-	}
 
 	auto InspectUserModelFileDependency(void *context, const std::string &user)
 	    -> howdy::native::UserModelInspectResult {
@@ -62,20 +30,20 @@ namespace {
 
 }  // namespace
 
-auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **argv,
-                                                              const ClearDependencies &dependencies)
+auto howdy::native::clear_internal::ClearMainWithDependencies(
+    const howdy::native::CommandInvocation &invocation, const ClearDependencies &dependencies)
     -> int {
 	if (dependencies.inspect_user_model_file == nullptr ||
 	    dependencies.clear_user_model_entries_if_unchanged == nullptr) {
 		return kClearExitAbort;
 	}
 
-	const auto args = ParseClearArgs(argc, argv);
-	if (!args.has_value()) {
+	if (!invocation.resolved_user.has_value()) {
 		return kClearExitAbort;
 	}
+	const auto &user = *invocation.resolved_user;
 
-	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, args->user);
+	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, user);
 	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kClearExitAbort;
@@ -93,8 +61,8 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **a
 		return kClearExitAbort;
 	}
 
-	if (!args->yes) {
-		std::cout << "This will remove all face models for " << args->user << "\n";
+	if (!invocation.assume_yes) {
+		std::cout << "This will remove all face models for " << user << "\n";
 		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
@@ -105,7 +73,7 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **a
 	}
 
 	const auto clear_result = dependencies.clear_user_model_entries_if_unchanged(
-	    dependencies.context, args->user, *inspection.snapshot);
+	    dependencies.context, user, *inspection.snapshot);
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
 		return kClearExitAbort;
@@ -123,12 +91,10 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(int argc, char **a
 }
 
 auto howdy::native::clear_internal::ClearMainWithValidationRoot(
-    int argc, char **argv, file_security_internal::ValidationRoot validation_root) -> int {
-	if (argc < 2) {
-		return kClearExitAbort;
-	}
+    const howdy::native::CommandInvocation &invocation,
+    file_security_internal::ValidationRoot  validation_root) -> int {
 	return howdy::native::clear_internal::ClearMainWithDependencies(
-	    argc, argv,
+	    invocation,
 	    {
 	        .context                               = &validation_root,
 	        .inspect_user_model_file               = InspectUserModelFileDependency,
@@ -136,6 +102,6 @@ auto howdy::native::clear_internal::ClearMainWithValidationRoot(
 	    });
 }
 
-auto ClearMain(int argc, char **argv) -> int {
-	return howdy::native::clear_internal::ClearMainWithValidationRoot(argc, argv, {});
+auto ClearMain(const howdy::native::CommandInvocation &invocation) -> int {
+	return howdy::native::clear_internal::ClearMainWithValidationRoot(invocation, {});
 }

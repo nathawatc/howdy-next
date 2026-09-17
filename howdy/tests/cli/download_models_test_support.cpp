@@ -1,6 +1,5 @@
 #include "cli/download_models_test_support.hpp"
 
-#include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
@@ -152,15 +151,11 @@ namespace howdy::test::download_models {
 			return false;
 		}
 
-		std::array<char *, 2> argv = {
-		    const_cast<char *>("howdy-download-models"),
-		    nullptr,
-		};
 		auto fixture_dependencies            = dependencies;
 		fixture_dependencies.validation_root = {std::filesystem::current_path() /
 		                                        "howdy-download-models-test"};
 		*exit_code = howdy::native::download_models_internal::DownloadModelsMainWithDependencies(
-		    1, argv.data(), fixture_dependencies);
+		    {}, fixture_dependencies);
 		return true;
 	}
 

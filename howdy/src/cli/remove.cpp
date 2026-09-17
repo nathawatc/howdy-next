@@ -6,51 +6,13 @@
 
 #include <charconv>
 #include <iostream>
-#include <optional>
 #include <string>
-#include <string_view>
 #include <system_error>
 
 namespace {
 
 	constexpr int kRemoveExitOk    = 0;
 	constexpr int kRemoveExitAbort = 1;
-
-	struct RemoveArgs {
-		std::string user;
-		std::string id;
-		bool        id_provided = false;
-		bool        yes         = false;
-	};
-
-	auto ParseRemoveArgs(int argc, char **argv) -> std::optional<RemoveArgs> {
-		RemoveArgs args;
-		if (argc < 2) {
-			return std::nullopt;
-		}
-		args.user          = argv[1];
-		bool options_ended = false;
-		for (int index = 2; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
-			if (!options_ended && arg == "--") {
-				options_ended = true;
-				continue;
-			}
-			if (!options_ended && arg == "-y") {
-				args.yes = true;
-				continue;
-			}
-			if (!options_ended && !arg.empty() && arg.front() == '-') {
-				return std::nullopt;
-			}
-			if (args.id_provided) {
-				return std::nullopt;
-			}
-			args.id          = arg;
-			args.id_provided = true;
-		}
-		return args;
-	}
 
 	auto RemoveCliUserModelEntriesDependency([[maybe_unused]] void *context,
 	                                         const std::string     &user)
@@ -68,26 +30,20 @@ namespace {
 }  // namespace
 
 auto howdy::native::remove_internal::RemoveMainWithDependencies(
-    int argc, char **argv, const RemoveDependencies &dependencies) -> int {
+    const howdy::native::CommandInvocation &invocation, const RemoveDependencies &dependencies)
+    -> int {
 	if (dependencies.list_user_model_entries == nullptr ||
 	    dependencies.remove_user_model_entry_if_matches == nullptr) {
 		return kRemoveExitAbort;
 	}
 
-	const auto args = ParseRemoveArgs(argc, argv);
-	if (!args.has_value()) {
+	if (!invocation.resolved_user.has_value() || invocation.positionals.empty()) {
 		return kRemoveExitAbort;
 	}
-	if (!args->id_provided) {
-		std::cout << "Please specify the model ID to remove.\n";
-		std::cout << "For example:\n";
-		std::cout << "\n\thowdy remove 0\n\n";
-		std::cout << "You can find the IDs by running:\n";
-		std::cout << "\n\thowdy list\n\n";
-		return kRemoveExitAbort;
-	}
+	const auto &user    = *invocation.resolved_user;
+	const auto &id_text = invocation.positionals.front();
 
-	const auto models = dependencies.list_user_model_entries(dependencies.context, args->user);
+	const auto models = dependencies.list_user_model_entries(dependencies.context, user);
 	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
@@ -105,15 +61,15 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 
 	int id = -1;
 	const auto [end, parse_error] =
-	    std::from_chars(args->id.data(), args->id.data() + args->id.size(), id);
-	if (parse_error != std::errc() || end != args->id.data() + args->id.size()) {
+	    std::from_chars(id_text.data(), id_text.data() + id_text.size(), id);
+	if (parse_error != std::errc() || end != id_text.data() + id_text.size()) {
 		id = -1;
 	}
 	bool                                     found = false;
 	std::string                              found_label;
 	howdy::native::UserModelEntryExpectation expected;
 	for (const auto &model : models.entries) {
-		if (model.id == id && std::to_string(model.id) == args->id) {
+		if (model.id == id && std::to_string(model.id) == id_text) {
 			found       = true;
 			found_label = model.label;
 			expected    = howdy::native::UserModelEntryExpectation{
@@ -129,12 +85,12 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	}
 
 	if (!found) {
-		std::cout << "No model with ID " << args->id << " exists for " << args->user << "\n";
+		std::cout << "No model with ID " << id_text << " exists for " << user << "\n";
 		return kRemoveExitAbort;
 	}
 
-	if (!args->yes) {
-		std::cout << "Model \"" << found_label << "\" will be removed for " << args->user << ".\n";
+	if (!invocation.assume_yes) {
+		std::cout << "Model \"" << found_label << "\" will be removed for " << user << ".\n";
 		std::cout << "Continue? [y/N]: ";
 		std::string answer;
 		std::getline(std::cin, answer);
@@ -146,7 +102,7 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	}
 
 	const auto remove_result =
-	    dependencies.remove_user_model_entry_if_matches(dependencies.context, args->user, expected);
+	    dependencies.remove_user_model_entry_if_matches(dependencies.context, user, expected);
 	if (remove_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << remove_result.error_message << "\n";
 		return kRemoveExitAbort;
@@ -160,12 +116,9 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	return kRemoveExitOk;
 }
 
-auto RemoveMain(int argc, char **argv) -> int {
-	if (argc < 2) {
-		return kRemoveExitAbort;
-	}
+auto RemoveMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::remove_internal::RemoveMainWithDependencies(
-	    argc, argv,
+	    invocation,
 	    howdy::native::remove_internal::RemoveDependencies{
 	        .list_user_model_entries            = RemoveCliUserModelEntriesDependency,
 	        .remove_user_model_entry_if_matches = RemoveUserModelEntryIfMatchesDependency,

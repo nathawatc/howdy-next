@@ -6,7 +6,6 @@
 #include <sstream>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -58,19 +57,12 @@ namespace {
 		};
 	}
 
-	auto RunSet(std::vector<std::string> arguments, const SetDependencies &dependencies)
-	    -> RunResult {
-		std::vector<char *> argv;
-		argv.reserve(arguments.size() + 1);
-		for (auto &argument : arguments) {
-			argv.push_back(argument.data());
-		}
-		argv.push_back(nullptr);
-
+	auto RunSet(const howdy::native::CommandInvocation &invocation,
+	            const SetDependencies                  &dependencies) -> RunResult {
 		std::ostringstream output;
 		auto              *previous_buffer = std::cout.rdbuf(output.rdbuf());
-		const int          exit_code       = howdy::native::set_internal::SetMainWithDependencies(
-		    static_cast<int>(arguments.size()), argv.data(), dependencies);
+		const int          exit_code =
+		    howdy::native::set_internal::SetMainWithDependencies(invocation, dependencies);
 		std::cout.rdbuf(previous_buffer);
 		return {.exit_code = exit_code, .output = output.str()};
 	}
@@ -78,26 +70,13 @@ namespace {
 }  // namespace
 
 auto main() -> int {
-	constexpr auto usage = "Please specify a setting and value.\n"
-	                       "For example:\n"
-	                       "\n\thowdy set sface_threshold 0.363\n\n";
 	constexpr auto unsafe_value_error =
 	    "Config values must be single-line scalars and cannot start with [\n";
 	bool ok = true;
 
-	for (const auto &arguments :
-	     {std::vector<std::string>{"howdy-set"}, std::vector<std::string>{"howdy-set", "key"}}) {
-		TestContext context;
-		const auto  result = RunSet(arguments, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 1, "missing arguments abort");
-		ok &= Expect(result.output == usage, "missing arguments print usage");
-		ok &= Expect(context.resolve_calls == 0, "missing arguments skip resolver");
-		ok &= Expect(context.update_calls == 0, "missing arguments skip updater");
-	}
-
 	for (const auto &value : {std::string("line\nbreak"), std::string("[section]")}) {
 		TestContext context;
-		const auto  result = RunSet({"howdy-set", "key", value}, DependenciesFor(context));
+		const auto  result = RunSet({.positionals = {"key", value}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "unsafe scalar aborts");
 		ok &= Expect(result.output == unsafe_value_error, "unsafe scalar prints error");
 		ok &= Expect(context.resolve_calls == 1, "unsafe scalar resolves path first");
@@ -106,7 +85,7 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result = RunSet({"howdy-set", "key", "--", "-value"}, DependenciesFor(context));
+		const auto  result = RunSet({.positionals = {"key", "-value"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, "end-of-options value update succeeds");
 		ok &= Expect(context.received_key == "key" && context.received_value == "-value",
 		             "end-of-options preserves option-looking config value");
@@ -115,7 +94,7 @@ auto main() -> int {
 	{
 		TestContext context;
 		const auto  result =
-		    RunSet({"howdy-set", "sface_threshold", "0.363"}, DependenciesFor(context));
+		    RunSet({.positionals = {"sface_threshold", "0.363"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 0, "successful update succeeds");
 		ok &= Expect(result.output == "Config option updated\n", "success output exact");
 		ok &= Expect(context.resolve_calls == 1, "success calls resolver once");
@@ -133,7 +112,7 @@ auto main() -> int {
 		    .update_result = false,
 		    .update_error  = error,
 		};
-		const auto result = RunSet({"howdy-set", "key", "value"}, DependenciesFor(context));
+		const auto result = RunSet({.positionals = {"key", "value"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "updater failure aborts");
 		ok &= Expect(result.output == expected_output, "updater failure output exact");
 		ok &= Expect(!result.output.contains("Config option updated"),
@@ -142,18 +121,9 @@ auto main() -> int {
 
 	{
 		TestContext context;
-		const auto  result =
-		    RunSet({"howdy-set", "sface_threshold", "0.363", "ignored"}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 1, "extra argument is rejected");
-		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
-		             "extra argument skips config mutation callbacks");
-	}
-
-	{
-		TestContext context;
 		auto        dependencies         = DependenciesFor(context);
 		dependencies.resolve_config_path = nullptr;
-		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
+		const auto result                = RunSet({.positionals = {"key", "value"}}, dependencies);
 		ok &= Expect(result.exit_code == 1, "null resolver aborts");
 		ok &= Expect(result.output.empty(), "null resolver prints nothing");
 		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,
@@ -164,7 +134,7 @@ auto main() -> int {
 		TestContext context;
 		auto        dependencies         = DependenciesFor(context);
 		dependencies.update_config_value = nullptr;
-		const auto result                = RunSet({"howdy-set", "key", "value"}, dependencies);
+		const auto result                = RunSet({.positionals = {"key", "value"}}, dependencies);
 		ok &= Expect(result.exit_code == 1, "null updater aborts");
 		ok &= Expect(result.output.empty(), "null updater prints nothing");
 		ok &= Expect(context.resolve_calls == 0 && context.update_calls == 0,

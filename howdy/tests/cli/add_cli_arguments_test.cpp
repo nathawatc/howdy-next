@@ -1,8 +1,6 @@
-#include "cli/add.hpp"
 #include "cli/add_cli_test_support.hpp"
 #include "vision/face_model.hpp"
 
-#include <array>
 #include <iostream>
 #include <sstream>
 
@@ -10,16 +8,10 @@ namespace howdy::test::add_cli {
 
 	namespace {
 
-		auto PublicMissingUserReturnsError() -> bool {
-			auto                  command = std::to_array("howdy-add");
-			std::array<char *, 1> argv{command.data()};
-			return Expect(AddMain(1, argv.data()) == 1,
-			              "add entrypoint returns on invalid arguments");
-		}
-
 		auto SuccessfulEnrollmentAppendsExpectedModel() -> bool {
 			auto      context = MakeSuccessContext();
-			const int result  = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "successful add returns 0");
@@ -63,7 +55,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {.resolved_user = "alice"});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "interactive successful add returns 0");
@@ -90,7 +82,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", ""});
+			const int result = RunAdd(context, {.resolved_user = "alice", .positionals = {""}});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "explicit empty label add returns 0");
@@ -110,7 +102,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "--plain"});
+			const int result = RunAdd(context, {.resolved_user = "alice", .plain = true});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "plain add returns 0");
@@ -132,7 +124,7 @@ namespace howdy::test::add_cli {
 			context.input_stream = &input;
 			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "-y"});
+			const int result = RunAdd(context, {.resolved_user = "alice", .assume_yes = true});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "yes add returns 0");
@@ -145,23 +137,11 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
-		auto LongYesArgumentIsRejected() -> bool {
-			auto context = MakeSuccessContext();
-
-			const int result = RunAdd(context, {"howdy-add", "alice", "--yes"});
-
-			bool ok = true;
-			ok &= Expect(result == 1, "unknown long yes argument returns 1");
-			ok &= Expect(context.load_calls == 0, "unknown long yes argument skips config load");
-			ok &= Expect(context.capture_calls == 0, "unknown long yes argument skips capture");
-			ok &= Expect(context.append_calls == 0, "unknown long yes argument skips append");
-			return ok;
-		}
-
 		auto CommandLabelPreservesCsvCharacters() -> bool {
 			auto context = MakeSuccessContext();
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front,\"door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front,\"door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "CSV-character label add returns 0");
@@ -175,7 +155,8 @@ namespace howdy::test::add_cli {
 		auto InvalidLabelStopsBeforeCapture() -> bool {
 			auto context = MakeSuccessContext();
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "bad/name"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"bad/name"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "invalid label returns 1");
@@ -192,7 +173,7 @@ namespace howdy::test::add_cli {
 			std::ostringstream output;
 			StreamRedirect     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
-			const int result = RunAdd(context, {"howdy-add", "alice"});
+			const int result = RunAdd(context, {.resolved_user = "alice"});
 
 			bool ok = true;
 			ok &= Expect(result == 0, "long interactive label add returns 0");
@@ -210,7 +191,8 @@ namespace howdy::test::add_cli {
 			    .error_message = "append failed",
 			};
 
-			const int result = RunAdd(context, {"howdy-add", "alice", "front-door"});
+			const int result =
+			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
 
 			bool ok = true;
 			ok &= Expect(result == 1, "append failure returns 1");
@@ -231,11 +213,9 @@ namespace howdy::test::add_cli {
 
 	auto RunAddCliArgumentTests() -> bool {
 		bool ok = true;
-		ok &= PublicMissingUserReturnsError();
 		ok &= ExplicitEmptyLabelStillPrompts();
 		ok &= PlainModeSkipsLabelPrompt();
 		ok &= YesFlagSkipsLabelPrompt();
-		ok &= LongYesArgumentIsRejected();
 		ok &= CommandLabelPreservesCsvCharacters();
 		ok &= InvalidLabelStopsBeforeCapture();
 		ok &= InteractiveLabelTruncatesTo24Characters();

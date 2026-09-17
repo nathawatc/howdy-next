@@ -23,8 +23,8 @@ Other commands remain single-file components unless a real boundary appears.
 
 ## Behavior
 
-- Dispatcher owns top-level syntax and normalized global options; subcommands validate only their
-  normalized argv.
+- Dispatcher owns top-level syntax and normalized global options; subcommands receive typed command
+  invocations and retain command-specific semantic validation.
 - Use typed runtime config and shared storage/config/model helpers.
 - Config edits stay secure and atomic. Preserve stale-content detection and temporary-file cleanup
   semantics.

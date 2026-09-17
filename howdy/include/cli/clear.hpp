@@ -1,3 +1,5 @@
 #pragma once
 
-auto ClearMain(int argc, char **argv) -> int;
+#include "app/command_invocation.hpp"
+
+auto ClearMain(const howdy::native::CommandInvocation &invocation) -> int;

@@ -5,7 +5,6 @@
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace {
@@ -193,18 +192,13 @@ namespace {
 	}
 
 	auto RunTestWithDependencies(howdy::native::test_cli_internal::TestDependencies dependencies,
-	                             std::vector<std::string> arguments) -> int {
-		std::vector<char *> argv;
-		argv.reserve(arguments.size());
-		for (auto &argument : arguments) {
-			argv.push_back(argument.data());
-		}
-		return howdy::native::test_cli_internal::TestMainWithDependencies(
-		    static_cast<int>(argv.size()), argv.data(), dependencies);
+	                             const howdy::native::CommandInvocation &invocation) -> int {
+		return howdy::native::test_cli_internal::TestMainWithDependencies(invocation, dependencies);
 	}
 
-	auto RunTest(TestCliTestContext &context, std::vector<std::string> arguments) -> int {
-		return RunTestWithDependencies(TestDependencies(context), std::move(arguments));
+	auto RunTest(TestCliTestContext &context, const howdy::native::CommandInvocation &invocation)
+	    -> int {
+		return RunTestWithDependencies(TestDependencies(context), invocation);
 	}
 
 	auto MakeSuccessContext() -> TestCliTestContext {
@@ -219,7 +213,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "invalid runtime config returns 1");
@@ -238,7 +232,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test", "alice"});
+		const int result = RunTest(context, {.resolved_user = "alice"});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "face model failure returns 1");
@@ -319,7 +313,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -352,7 +346,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -377,7 +371,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 1, "camera read failure returns 1");
@@ -397,7 +391,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		const auto error_text = error.str();
 		bool       ok         = true;
@@ -420,7 +414,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test", "alice"});
+		const int result = RunTest(context, {.resolved_user = "alice"});
 
 		bool ok = true;
 		ok &= Expect(result == 0, "successful preview returns 0");
@@ -444,7 +438,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 0, "configured device default returns 0");
@@ -468,7 +462,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int  result     = RunTest(context, {"howdy-test"});
+		const int  result     = RunTest(context, {});
 		const auto error_text = error.str();
 
 		bool ok = true;
@@ -485,7 +479,7 @@ namespace {
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test", "--device", "/dev/video1"});
+		const int result = RunTest(context, {.device = "/dev/video1"});
 
 		bool ok = true;
 		ok &= Expect(result == 0, "device override returns 0");
@@ -498,51 +492,12 @@ namespace {
 		return ok;
 	}
 
-	auto MissingDeviceValueIsRejectedBeforeRuntimeWork() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
-
-		const int result = RunTest(context, {"howdy-test", "--device"});
-
-		bool ok = true;
-		ok &= Expect(result == 1, "missing device value returns 1");
-		ok &= Expect(error.str().contains("--device requires a non-empty value"),
-		             "missing device value writes diagnostic");
-		ok &= Expect(context.load_calls == 0, "missing device value skips config load");
-		ok &= Expect(context.preview_calls == 0, "missing device value skips preview");
-		return ok;
-	}
-
-	auto InvalidDeviceOptionsStopBeforeRuntimeWork() -> bool {
-		bool ok = true;
-		for (const auto &arguments : std::vector<std::vector<std::string>>{
-		         {"howdy-test", "--device", ""},
-		         {"howdy-test", "--device", "--unknown"},
-		         {"howdy-test", "--unknown"},
-		         {"howdy-test", "--device", "/dev/video0", "--device", "/dev/video1"},
-		     }) {
-			auto               context = MakeSuccessContext();
-			std::ostringstream error;
-			StreamRedirect     error_redirect(std::cerr, error.rdbuf());
-
-			const int result = RunTest(context, arguments);
-
-			ok &= Expect(result == 1, "invalid device option returns 1");
-			ok &= Expect(context.load_calls == 0 && context.preview_calls == 0,
-			             "invalid device option skips runtime work");
-			ok &= Expect(error.str().contains("device") || error.str().contains("invalid"),
-			             "invalid device option writes diagnostic");
-		}
-		return ok;
-	}
-
 	auto GuiInitializationRunsBeforeFirstCameraRead() -> bool {
 		auto               context = MakeSuccessContext();
 		std::ostringstream error;
 		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
 
-		const int result = RunTest(context, {"howdy-test"});
+		const int result = RunTest(context, {});
 
 		bool ok = true;
 		ok &= Expect(result == 0, "GUI/read sequence returns 0");
@@ -634,7 +589,7 @@ namespace {
 			auto dependencies                = TestDependencies(context);
 			dependencies.load_runtime_config = nullptr;
 
-			const int result = RunTestWithDependencies(dependencies, {"howdy-test"});
+			const int result = RunTestWithDependencies(dependencies, {});
 
 			ok &= Expect(result == 1, "missing load dependency returns 1");
 			ok &= Expect(context.load_calls == 0, "missing load dependency skips load");
@@ -645,15 +600,15 @@ namespace {
 			auto dependencies        = TestDependencies(context);
 			dependencies.run_preview = nullptr;
 
-			const int result = RunTestWithDependencies(dependencies, {"howdy-test"});
+			const int result = RunTestWithDependencies(dependencies, {});
 
 			ok &= Expect(result == 1, "missing preview dependency returns 1");
 			ok &= Expect(context.load_calls == 0, "missing preview dependency skips load");
 			ok &= Expect(context.preview_calls == 0, "missing preview dependency skips preview");
 		}
 		{
-			const int result = RunTestWithDependencies(
-			    howdy::native::test_cli_internal::TestDependencies{}, {"howdy-test"});
+			const int result =
+			    RunTestWithDependencies(howdy::native::test_cli_internal::TestDependencies{}, {});
 
 			ok &= Expect(result == 1, "empty dependencies return 1");
 		}
@@ -676,8 +631,7 @@ auto main() -> int {
 	ok &= ConfiguredDeviceDefaultIsUsedForCameraOpen();
 	ok &= UnconfiguredCameraErrorIsPrinted();
 	ok &= DeviceOverrideIsUsedForCameraOpen();
-	ok &= MissingDeviceValueIsRejectedBeforeRuntimeWork();
-	ok &= InvalidDeviceOptionsStopBeforeRuntimeWork();
+
 	ok &= GuiInitializationRunsBeforeFirstCameraRead();
 	ok &= GraphicalEnvironmentHelperChecksDisplayValues();
 	ok &= MissingPreflightDependencyCallbacksFailClosed();

@@ -30,12 +30,9 @@ namespace {
 }  // namespace
 
 auto howdy::native::config_internal::ConfigMainWithDependencies(
-    int argc, char **argv, const ConfigDependencies &dependencies) -> int {
-	if (argc != 1) {
-		std::cout << "Invalid arguments for config\n";
-		return kConfigExitAbort;
-	}
-	(void)argv;
+    const howdy::native::CommandInvocation &invocation, const ConfigDependencies &dependencies)
+    -> int {
+	(void)invocation;
 	if (!ConfigEditDependenciesAvailable(dependencies)) {
 		return kConfigExitAbort;
 	}
@@ -88,7 +85,7 @@ auto howdy::native::config_internal::ConfigMainWithDependencies(
 	return kConfigExitAbort;
 }
 
-auto ConfigMain(int argc, char **argv) -> int {
+auto ConfigMain(const howdy::native::CommandInvocation &invocation) -> int {
 	return howdy::native::config_internal::ConfigMainWithDependencies(
-	    argc, argv, howdy::native::config_internal::DefaultConfigEditDependencies());
+	    invocation, howdy::native::config_internal::DefaultConfigEditDependencies());
 }

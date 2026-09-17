@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "cli/add/enrollment_capture.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_types.hpp"
@@ -56,6 +57,7 @@ namespace howdy::native::add_internal {
 		AppendUserModelEntryFn append_user_model    = nullptr;
 	};
 
-	auto AddMainWithDependencies(int argc, char **argv, const AddDependencies &dependencies) -> int;
+	auto AddMainWithDependencies(const CommandInvocation &invocation,
+	                             const AddDependencies   &dependencies) -> int;
 
 }  // namespace howdy::native::add_internal

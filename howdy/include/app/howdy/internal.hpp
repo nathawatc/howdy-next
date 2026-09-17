@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_catalog.hpp"
+#include "app/command_invocation.hpp"
 #include "support/invoking_user.hpp"
 
 #include <array>
@@ -9,7 +10,7 @@
 
 namespace howdy::native::howdy_internal {
 
-	using CommandMain = int (*)(int argc, char **argv);
+	using CommandMain = int (*)(const CommandInvocation &invocation);
 
 	struct HowdyDependencies {
 		void *context                                                      = nullptr;

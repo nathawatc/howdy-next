@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/command_invocation.hpp"
 #include "storage/user_model_types.hpp"
 
 #include <string>
@@ -14,7 +15,7 @@ namespace howdy::native::list_internal {
 		ListUserModelEntriesFn list_user_model_entries = nullptr;
 	};
 
-	auto ListMainWithDependencies(int argc, char **argv, const ListDependencies &dependencies)
-	    -> int;
+	auto ListMainWithDependencies(const CommandInvocation &invocation,
+	                              const ListDependencies  &dependencies) -> int;
 
 }  // namespace howdy::native::list_internal

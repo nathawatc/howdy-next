@@ -1,9 +1,11 @@
 #pragma once
 
 #include "app/command_catalog.hpp"
+#include "app/command_invocation.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <vector>
@@ -36,7 +38,7 @@ namespace howdy::native::howdy_cli_internal {
 		std::optional<std::string>  command;
 		std::optional<std::string>  user;
 		std::string                 user_option_spelling;
-		bool                        yes                = false;
+		bool                        assume_yes         = false;
 		bool                        plain              = false;
 		bool                        global_option_seen = false;
 		bool                        help_requested     = false;
@@ -46,8 +48,8 @@ namespace howdy::native::howdy_cli_internal {
 
 	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError>;
-	auto CommandSyntaxError(const ParsedCommandLine &parsed, const CommandDescriptor &command)
-	    -> std::optional<CliSyntaxError>;
+	auto ParseCommandInvocation(const ParsedCommandLine &parsed, const CommandDescriptor &command)
+	    -> std::expected<CommandInvocation, CliSyntaxError>;
 	auto PrintCliSyntaxError(const CliSyntaxError &error, const CommandDescriptor *command) -> int;
 	void PrintHelp();
 	void PrintCommandHelp(const CommandDescriptor &command);
