@@ -1,6 +1,6 @@
 #pragma once
 
-#include "config/config_utils.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/invoking_user.hpp"
 
 #include <cstdint>
@@ -51,42 +51,16 @@ namespace howdy::native::config_internal {
 
 	using ResolveInvokingIdentityFn = howdy::native::InvokingIdentityResult (*)(void *context);
 	using SelectEditorPreferenceFn  = std::string (*)(void *context);
-	using ResolveConfigPathFn       = std::filesystem::path (*)(void *context);
-	using CheckSecureConfigPathFn   = howdy::native::ConfigPathCheckResult (*)(
-	    void *context, const std::filesystem::path &config_path);
-	using CreateTempCopyFn = std::optional<TempConfigCopy> (*)(
-	    void *context, const std::filesystem::path &source_path,
-	    const std::optional<howdy::native::InvokingUser> &invoking_user);
 	using RunEditorFn = int (*)(void *context, const std::string &editor,
 	                            const std::filesystem::path                      &temp_path,
 	                            const std::optional<howdy::native::InvokingUser> &invoking_user);
-	using ReadTempConfigSnapshotFn = bool (*)(void *context, const std::filesystem::path &temp_path,
-	                                          std::string *content);
-	using ValidateConfigContentFn  = bool (*)(void *context, const std::string &content,
-	                                          std::string *error_message);
-	using FileContentMatchesFn     = bool (*)(void *context, const std::filesystem::path &path,
-	                                          const std::string &expected);
-	using ReplaceConfigContentAtomicallyFn = bool (*)(void                        *context,
-	                                                  const std::filesystem::path &config_path,
-	                                                  const std::string           &content,
-	                                                  std::string *error_message, bool lock,
-	                                                  bool               validate_runtime,
-	                                                  const std::string *expected_current_content);
-	using RemoveIfExistsFn = void (*)(void *context, const std::filesystem::path &path);
 
 	struct ConfigEditDependencies {
-		void                            *context                           = nullptr;
-		ResolveInvokingIdentityFn        resolve_invoking_identity         = nullptr;
-		SelectEditorPreferenceFn         select_editor_preference          = nullptr;
-		ResolveConfigPathFn              resolve_config_path               = nullptr;
-		CheckSecureConfigPathFn          check_secure_config_path          = nullptr;
-		CreateTempCopyFn                 create_temp_copy                  = nullptr;
-		RunEditorFn                      run_editor                        = nullptr;
-		ReadTempConfigSnapshotFn         read_temp_config_snapshot         = nullptr;
-		ValidateConfigContentFn          validate_config_content           = nullptr;
-		FileContentMatchesFn             file_content_matches              = nullptr;
-		ReplaceConfigContentAtomicallyFn replace_config_content_atomically = nullptr;
-		RemoveIfExistsFn                 remove_if_exists                  = nullptr;
+		void                                  *context                   = nullptr;
+		ResolveInvokingIdentityFn              resolve_invoking_identity = nullptr;
+		SelectEditorPreferenceFn               select_editor_preference  = nullptr;
+		RunEditorFn                            run_editor                = nullptr;
+		file_security_internal::ValidationRoot validation_root{};
 	};
 
 	class ConfigEditSession {
@@ -99,10 +73,22 @@ namespace howdy::native::config_internal {
 		ConfigEditDependencies dependencies_;
 	};
 
-	[[nodiscard]] auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies)
-	    -> bool;
 	[[nodiscard]] auto
-	DefaultConfigEditDependencies(file_security_internal::ValidationRoot *validation_root = nullptr)
+	DefaultConfigEditDependencies(file_security_internal::ValidationRoot validation_root = {})
 	    -> ConfigEditDependencies;
+
+	auto SelectEditorPreference() -> std::string;
+
+	auto CreateTempConfigCopy(const std::filesystem::path                      &source_path,
+	                          const std::optional<howdy::native::InvokingUser> &invoking_user,
+	                          const file_security_internal::ValidationRoot &validation_root = {})
+	    -> std::optional<TempConfigCopy>;
+
+	auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path, std::string *content)
+	    -> bool;
+
+	auto FileContentMatches(const std::filesystem::path &path, const std::string &expected,
+	                        const file_security_internal::ValidationRoot &validation_root = {})
+	    -> bool;
 
 }  // namespace howdy::native::config_internal

@@ -30,12 +30,9 @@ namespace {
 }  // namespace
 
 auto howdy::native::config_internal::ConfigMainWithDependencies(
-    const howdy::native::CommandInvocation &invocation, const ConfigDependencies &dependencies)
+    const howdy::native::CommandInvocation &invocation, const ConfigEditDependencies &dependencies)
     -> int {
 	(void)invocation;
-	if (!ConfigEditDependenciesAvailable(dependencies)) {
-		return kConfigExitAbort;
-	}
 
 	const ConfigEditSession session(dependencies);
 	const auto result = session.Run(ConfigEditRequest{.editor_ready = PrintEditorReady});

@@ -30,51 +30,6 @@ namespace howdy::test::config_cli {
 
 		constexpr std::string_view kIntegrationOriginalContent = "[core]\ndisabled = false\n";
 
-		class ScopedEnvironmentVariable {
-		public:
-			ScopedEnvironmentVariable(const char *name, const std::string &value)
-			    : name_(name) {
-				SaveOriginal();
-				setenv(name_, value.c_str(), 1);
-			}
-
-			explicit ScopedEnvironmentVariable(const char *name)
-			    : name_(name) {
-				SaveOriginal();
-				unsetenv(name_);
-			}
-
-			ScopedEnvironmentVariable(const ScopedEnvironmentVariable &) = delete;
-			auto operator=(const ScopedEnvironmentVariable &)
-			    -> ScopedEnvironmentVariable & = delete;
-
-			~ScopedEnvironmentVariable() noexcept {
-				if (original_.has_value()) {
-					setenv(name_, original_->c_str(), 1);
-				} else {
-					unsetenv(name_);
-				}
-			}
-
-			void Set(const std::string &value) {
-				setenv(name_, value.c_str(), 1);
-			}
-
-			void Unset() {
-				unsetenv(name_);
-			}
-
-		private:
-			void SaveOriginal() {
-				if (const char *current = std::getenv(name_); current != nullptr) {
-					original_ = current;
-				}
-			}
-
-			const char                *name_;
-			std::optional<std::string> original_;
-		};
-
 		struct EditorPasswdFixture {
 			uid_t       uid;
 			gid_t       gid;
@@ -118,10 +73,8 @@ namespace howdy::test::config_cli {
 			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
 			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
 
-			const auto dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies();
-			const auto identity = dependencies.resolve_invoking_identity(dependencies.context);
-			const auto editor   = dependencies.select_editor_preference(dependencies.context);
+			const auto identity = howdy::native::ResolveInvokingIdentity();
+			const auto editor   = howdy::native::config_internal::SelectEditorPreference();
 			return Expect(identity.status ==
 			                      howdy::native::InvokingIdentityStatus::kNoWrapperIdentity &&
 			                  !identity.user.has_value() && editor == "nvim",
@@ -129,24 +82,22 @@ namespace howdy::test::config_cli {
 		}
 
 		auto EditorPreferenceSelection() -> bool {
-			const auto dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies();
 			bool ok = true;
 
 			{
 				ScopedEnvironmentVariable editor_env("EDITOR", "nvim");
-				ok &= Expect(dependencies.select_editor_preference(dependencies.context) == "nvim",
+				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() == "nvim",
 				             "bare EDITOR is accepted");
 			}
 			{
 				ScopedEnvironmentVariable editor_env("EDITOR", "/some/test/path/nvim");
-				ok &= Expect(dependencies.select_editor_preference(dependencies.context) ==
+				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() ==
 				                 "/some/test/path/nvim",
 				             "absolute EDITOR path is accepted");
 			}
 			{
 				ScopedEnvironmentVariable editor_env("EDITOR", "nvim -f");
-				ok &= Expect(dependencies.select_editor_preference(dependencies.context) == "micro",
+				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() == "micro",
 				             "command-line EDITOR is rejected");
 			}
 
@@ -248,7 +199,7 @@ namespace howdy::test::config_cli {
 					    temp_root};
 					exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
 					    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
-					            &validation_root));
+					            validation_root));
 				}
 				return {exit_code, output.str()};
 			};
@@ -423,8 +374,8 @@ namespace howdy::test::config_cli {
 				ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
 				howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
 				exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
-				    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
-				            &validation_root));
+				    {},
+				    howdy::native::config_internal::DefaultConfigEditDependencies(validation_root));
 			}
 
 			constexpr std::string_view recovery_prefix =
@@ -458,36 +409,34 @@ namespace howdy::test::config_cli {
 			fs::create_directory(temp_root);
 			ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
 			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
-			const auto                                            dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies(&validation_root);
 			const fs::path    source_path = temp_root / "config.ini";
 			const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
 			std::error_code   error;
 
 			ok &= Expect(WriteFile(source_path, at_limit), "write source config at size limit");
-			const auto copy =
-			    dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt);
+			const auto copy = howdy::native::config_internal::CreateTempConfigCopy(
+			    source_path, std::nullopt, validation_root);
 			ok &= Expect(copy.has_value() && copy->original_content == at_limit,
 			             "source config exactly at size limit is copied");
 			if (copy.has_value()) {
 				std::string snapshot;
-				ok &= Expect(dependencies.read_temp_config_snapshot(dependencies.context,
-				                                                    copy->path, &snapshot) &&
-				                 snapshot == at_limit,
-				             "edited temp config exactly at size limit is read");
+				ok &= Expect(
+				    howdy::native::config_internal::ReadTempConfigSnapshot(copy->path, &snapshot) &&
+				        snapshot == at_limit,
+				    "edited temp config exactly at size limit is read");
 				ok &=
 				    Expect(WriteFile(copy->path, over_limit), "write oversized edited temp config");
-				ok &= Expect(!dependencies.read_temp_config_snapshot(dependencies.context,
-				                                                     copy->path, &snapshot),
-				             "oversized edited temp config is rejected");
-				dependencies.remove_if_exists(dependencies.context, copy->path);
+				ok &= Expect(
+				    !howdy::native::config_internal::ReadTempConfigSnapshot(copy->path, &snapshot),
+				    "oversized edited temp config is rejected");
+				fs::remove(copy->path, error);
 			}
 
 			ok &= Expect(WriteFile(source_path, over_limit), "write oversized source config");
-			ok &= Expect(
-			    !dependencies.create_temp_copy(dependencies.context, source_path, std::nullopt),
-			    "oversized source config is rejected before temp copy");
+			ok &= Expect(!howdy::native::config_internal::CreateTempConfigCopy(
+			                 source_path, std::nullopt, validation_root),
+			             "oversized source config is rejected before temp copy");
 			fs::remove_all(temp_root, error);
 			return ok;
 		}
@@ -510,9 +459,7 @@ namespace howdy::test::config_cli {
 			const fs::path    backup_path = temp_root / "config-backup.ini";
 			const std::string original    = "[core]\ndisabled = false\n";
 			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
-			const auto                                            dependencies =
-			    howdy::native::config_internal::DefaultConfigEditDependencies(&validation_root);
-			std::error_code error;
+			std::error_code                                       error;
 
 			auto write_secure_config = [&]() -> bool {
 				return WriteFile(config_path, original) && chmod(config_path.c_str(), 0644) == 0;
@@ -529,13 +476,13 @@ namespace howdy::test::config_cli {
 					replacement_ok = replace_with_symlink();
 				});
 
-				const auto copy =
-				    dependencies.create_temp_copy(dependencies.context, config_path, std::nullopt);
+				const auto copy = howdy::native::config_internal::CreateTempConfigCopy(
+				    config_path, std::nullopt, validation_root);
 				ok &= Expect(replacement_ok, "create_temp_copy hook replaces source pathname");
 				ok &= Expect(copy.has_value() && copy->original_content == original,
 				             "create_temp_copy consumes opened config descriptor");
 				if (copy.has_value()) {
-					dependencies.remove_if_exists(dependencies.context, copy->path);
+					fs::remove(copy->path, error);
 				}
 			}
 			fs::remove(config_path, error);
@@ -548,8 +495,8 @@ namespace howdy::test::config_cli {
 					replacement_ok = replace_with_symlink();
 				});
 
-				const bool matches =
-				    dependencies.file_content_matches(dependencies.context, config_path, original);
+				const bool matches = howdy::native::config_internal::FileContentMatches(
+				    config_path, original, validation_root);
 				ok &= Expect(replacement_ok && matches,
 				             "file_content_matches consumes opened config descriptor");
 			}

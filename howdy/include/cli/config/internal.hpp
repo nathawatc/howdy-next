@@ -5,9 +5,7 @@
 
 namespace howdy::native::config_internal {
 
-	using ConfigDependencies = ConfigEditDependencies;
-
-	auto ConfigMainWithDependencies(const CommandInvocation  &invocation,
-	                                const ConfigDependencies &dependencies) -> int;
+	auto ConfigMainWithDependencies(const CommandInvocation      &invocation,
+	                                const ConfigEditDependencies &dependencies) -> int;
 
 }  // namespace howdy::native::config_internal

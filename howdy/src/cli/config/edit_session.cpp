@@ -17,6 +17,7 @@
 #include <string_view>
 #include <system_error>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <sys/stat.h>
@@ -28,12 +29,6 @@ namespace howdy::native::config_internal {
 
 		namespace fs = std::filesystem;
 
-		auto ValidationRootFromContext(void *context) -> file_security_internal::ValidationRoot {
-			return context == nullptr
-			           ? file_security_internal::ValidationRoot{}
-			           : *static_cast<file_security_internal::ValidationRoot *>(context);
-		}
-
 		constexpr std::array<const char *, 3> kFallbackEditors = {"micro", "nano", "vi"};
 
 		enum class EditorLaunchReport : unsigned char {
@@ -43,15 +38,6 @@ namespace howdy::native::config_internal {
 
 		auto IsSupportedEditorPreference(std::string_view editor) -> bool {
 			return !editor.empty() && editor.find_first_of(" \t\n\r\v\f") == std::string_view::npos;
-		}
-
-		auto SelectEditorPreference() -> std::string {
-			if (const char *editor = std::getenv("EDITOR");
-			    editor != nullptr && IsSupportedEditorPreference(editor)) {
-				return editor;
-			}
-
-			return kFallbackEditors.front();
 		}
 
 		auto IsEditorUnavailableError(int error) -> bool {
@@ -138,83 +124,6 @@ namespace howdy::native::config_internal {
 		void RemoveIfExists(const fs::path &path) {
 			std::error_code ec;
 			fs::remove(path, ec);
-		}
-
-		auto CreateTempCopy(const fs::path                                   &source_path,
-		                    const std::optional<howdy::native::InvokingUser> &invoking_user,
-		                    std::string                                      *source_content,
-		                    const file_security_internal::ValidationRoot     &validation_root)
-		    -> std::optional<fs::path> {
-			if (source_content != nullptr) {
-				source_content->clear();
-			}
-
-			const int input_fd =
-			    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-			if (input_fd < 0) {
-				return std::nullopt;
-			}
-			if (config_test_hooks::Current()) {
-				config_test_hooks::Current()();
-			}
-			const auto security = howdy::native::CheckSecureConfigFd(
-			    input_fd, source_path, DefaultSecureOwnerUid(), validation_root);
-			if (!security.ok) {
-				close(input_fd);
-				return std::nullopt;
-			}
-			auto content = howdy::native::ReadConfigFromFd(input_fd);
-			close(input_fd);
-			if (!content.has_value()) {
-				return std::nullopt;
-			}
-
-			fs::path          temp_dir      = fs::temp_directory_path();
-			std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
-			std::vector<char> writable(temp_template.begin(), temp_template.end());
-			writable.push_back('\0');
-
-			const int fd = mkostemp(writable.data(), O_CLOEXEC);
-			if (fd < 0) {
-				return std::nullopt;
-			}
-
-			fs::path temp_path(writable.data());
-			bool     ok = true;
-
-			if (fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
-				ok = false;
-			}
-
-			if (ok && invoking_user.has_value() &&
-			    fchown(fd, invoking_user->uid, invoking_user->gid) != 0) {
-				ok = false;
-			}
-
-			if (ok && !howdy::native::WriteAllToFd(fd, *content)) {
-				ok = false;
-			}
-
-			if (ok && !howdy::native::SyncFd(fd)) {
-				ok = false;
-			}
-
-			if (close(fd) != 0) {
-				ok = false;
-			}
-
-			if (!ok) {
-				RemoveIfExists(temp_path);
-				if (source_content != nullptr) {
-					source_content->clear();
-				}
-				return std::nullopt;
-			}
-			if (source_content != nullptr) {
-				*source_content = std::move(*content);
-			}
-
-			return temp_path;
 		}
 
 		[[noreturn]] auto ReportEditorLaunch(int report_fd, EditorLaunchReport report,
@@ -309,52 +218,10 @@ namespace howdy::native::config_internal {
 			return status;
 		}
 
-		auto ReadTempConfigSnapshot(const fs::path &temp_path, std::string *content) -> bool {
-			if (content == nullptr) {
-				return false;
-			}
-			const int input_fd = open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-			if (input_fd < 0) {
-				return false;
-			}
-
-			struct stat edited_stat{};
-			const bool  edited_ok =
-			    fstat(input_fd, &edited_stat) == 0 && S_ISREG(edited_stat.st_mode);
-			if (!edited_ok) {
-				close(input_fd);
-				return false;
-			}
-
-			auto snapshot = howdy::native::ReadConfigFromFd(input_fd);
-			close(input_fd);
-			if (!snapshot.has_value()) {
-				return false;
-			}
-			*content = std::move(*snapshot);
-			return true;
-		}
-
-		auto FileContentMatches(const fs::path &path, const std::string &expected,
-		                        const file_security_internal::ValidationRoot &validation_root)
-		    -> bool {
-			const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-			if (input_fd < 0) {
-				return false;
-			}
-			if (config_test_hooks::Current()) {
-				config_test_hooks::Current()();
-			}
-			const auto security = howdy::native::CheckSecureConfigFd(
-			    input_fd, path, DefaultSecureOwnerUid(), validation_root);
-			if (!security.ok) {
-				close(input_fd);
-				return false;
-			}
-
-			const auto current = howdy::native::ReadConfigFromFd(input_fd);
-			close(input_fd);
-			return current.has_value() && *current == expected;
+		auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies) -> bool {
+			return dependencies.resolve_invoking_identity != nullptr &&
+			       dependencies.select_editor_preference != nullptr &&
+			       dependencies.run_editor != nullptr;
 		}
 
 		auto ResolveInvokingIdentityDependency(void *context)
@@ -368,31 +235,6 @@ namespace howdy::native::config_internal {
 			return SelectEditorPreference();
 		}
 
-		auto ResolveConfigPathDependency(void *context) -> fs::path {
-			(void)context;
-			return howdy::native::ResolveConfigPath();
-		}
-
-		auto CheckSecureConfigPathDependency(void *context, const fs::path &config_path)
-		    -> howdy::native::ConfigPathCheckResult {
-			return howdy::native::CheckSecureConfigPath(config_path, DefaultSecureOwnerUid(),
-			                                            ValidationRootFromContext(context));
-		}
-
-		auto
-		CreateTempCopyDependency(void *context, const fs::path &source_path,
-		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
-		    -> std::optional<howdy::native::config_internal::TempConfigCopy> {
-			std::string original_content;
-			const auto  path = CreateTempCopy(source_path, invoking_user, &original_content,
-			                                  ValidationRootFromContext(context));
-			if (!path) {
-				return std::nullopt;
-			}
-			return howdy::native::config_internal::TempConfigCopy{
-			    .path = *path, .original_content = std::move(original_content)};
-		}
-
 		auto RunEditorDependency(void *context, const std::string &editor_preference,
 		                         const fs::path                                   &temp_path,
 		                         const std::optional<howdy::native::InvokingUser> &invoking_user)
@@ -401,72 +243,143 @@ namespace howdy::native::config_internal {
 			return RunEditor(editor_preference, temp_path, invoking_user);
 		}
 
-		auto ReadTempConfigSnapshotDependency(void *context, const fs::path &temp_path,
-		                                      std::string *content) -> bool {
-			(void)context;
-			return ReadTempConfigSnapshot(temp_path, content);
-		}
-
-		auto ValidateConfigContentDependency(void *context, const std::string &content,
-		                                     std::string *error_message) -> bool {
-			(void)context;
-			return howdy::native::ValidateConfigContent(content, error_message);
-		}
-
-		auto FileContentMatchesDependency(void *context, const fs::path &path,
-		                                  const std::string &expected) -> bool {
-			return FileContentMatches(path, expected, ValidationRootFromContext(context));
-		}
-
-		auto ReplaceConfigContentAtomicallyDependency(void *context, const fs::path &config_path,
-		                                              const std::string &content,
-		                                              std::string *error_message, bool lock,
-		                                              bool               validate_runtime,
-		                                              const std::string *expected_current_content)
-		    -> bool {
-			return howdy::native::ReplaceConfigContentAtomically(
-			    config_path, content, error_message, lock, validate_runtime,
-			    expected_current_content, SyncParentDirectory, ValidationRootFromContext(context));
-		}
-
-		auto RemoveIfExistsDependency(void *context, const fs::path &path) -> void {
-			(void)context;
-			RemoveIfExists(path);
-		}
-
 	}  // namespace
 
-	ConfigEditSession::ConfigEditSession(ConfigEditDependencies dependencies)
-	    : dependencies_(dependencies) {}
+	auto SelectEditorPreference() -> std::string {
+		if (const char *editor = std::getenv("EDITOR");
+		    editor != nullptr && IsSupportedEditorPreference(editor)) {
+			return editor;
+		}
 
-	auto ConfigEditDependenciesAvailable(const ConfigEditDependencies &dependencies) -> bool {
-		return dependencies.resolve_invoking_identity != nullptr &&
-		       dependencies.select_editor_preference != nullptr &&
-		       dependencies.resolve_config_path != nullptr &&
-		       dependencies.check_secure_config_path != nullptr &&
-		       dependencies.create_temp_copy != nullptr && dependencies.run_editor != nullptr &&
-		       dependencies.read_temp_config_snapshot != nullptr &&
-		       dependencies.validate_config_content != nullptr &&
-		       dependencies.file_content_matches != nullptr &&
-		       dependencies.replace_config_content_atomically != nullptr &&
-		       dependencies.remove_if_exists != nullptr;
+		return kFallbackEditors.front();
 	}
 
-	auto DefaultConfigEditDependencies(file_security_internal::ValidationRoot *validation_root)
+	auto CreateTempConfigCopy(const fs::path                                   &source_path,
+	                          const std::optional<howdy::native::InvokingUser> &invoking_user,
+	                          const file_security_internal::ValidationRoot     &validation_root)
+	    -> std::optional<TempConfigCopy> {
+		const int input_fd =
+		    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+		if (input_fd < 0) {
+			return std::nullopt;
+		}
+		if (config_test_hooks::Current()) {
+			config_test_hooks::Current()();
+		}
+		const auto security = howdy::native::CheckSecureConfigFd(
+		    input_fd, source_path, DefaultSecureOwnerUid(), validation_root);
+		if (!security.ok) {
+			close(input_fd);
+			return std::nullopt;
+		}
+		auto content = howdy::native::ReadConfigFromFd(input_fd);
+		close(input_fd);
+		if (!content.has_value()) {
+			return std::nullopt;
+		}
+
+		fs::path          temp_dir      = fs::temp_directory_path();
+		std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
+		std::vector<char> writable(temp_template.begin(), temp_template.end());
+		writable.push_back('\0');
+
+		const int fd = mkostemp(writable.data(), O_CLOEXEC);
+		if (fd < 0) {
+			return std::nullopt;
+		}
+
+		fs::path temp_path(writable.data());
+		bool     ok = true;
+
+		if (fchmod(fd, S_IRUSR | S_IWUSR) != 0) {
+			ok = false;
+		}
+
+		if (ok && invoking_user.has_value() &&
+		    fchown(fd, invoking_user->uid, invoking_user->gid) != 0) {
+			ok = false;
+		}
+
+		if (ok && !howdy::native::WriteAllToFd(fd, *content)) {
+			ok = false;
+		}
+
+		if (ok && !howdy::native::SyncFd(fd)) {
+			ok = false;
+		}
+
+		if (close(fd) != 0) {
+			ok = false;
+		}
+
+		if (!ok) {
+			RemoveIfExists(temp_path);
+			return std::nullopt;
+		}
+
+		return TempConfigCopy{
+		    .path             = std::move(temp_path),
+		    .original_content = std::move(*content),
+		};
+	}
+
+	auto ReadTempConfigSnapshot(const fs::path &temp_path, std::string *content) -> bool {
+		if (content == nullptr) {
+			return false;
+		}
+		const int input_fd = open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		if (input_fd < 0) {
+			return false;
+		}
+
+		struct stat edited_stat{};
+		const bool  edited_ok = fstat(input_fd, &edited_stat) == 0 && S_ISREG(edited_stat.st_mode);
+		if (!edited_ok) {
+			close(input_fd);
+			return false;
+		}
+
+		auto snapshot = howdy::native::ReadConfigFromFd(input_fd);
+		close(input_fd);
+		if (!snapshot.has_value()) {
+			return false;
+		}
+		*content = std::move(*snapshot);
+		return true;
+	}
+
+	auto FileContentMatches(const fs::path &path, const std::string &expected,
+	                        const file_security_internal::ValidationRoot &validation_root) -> bool {
+		const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+		if (input_fd < 0) {
+			return false;
+		}
+		if (config_test_hooks::Current()) {
+			config_test_hooks::Current()();
+		}
+		const auto security = howdy::native::CheckSecureConfigFd(
+		    input_fd, path, DefaultSecureOwnerUid(), validation_root);
+		if (!security.ok) {
+			close(input_fd);
+			return false;
+		}
+
+		const auto current = howdy::native::ReadConfigFromFd(input_fd);
+		close(input_fd);
+		return current.has_value() && *current == expected;
+	}
+
+	ConfigEditSession::ConfigEditSession(ConfigEditDependencies dependencies)
+	    : dependencies_(std::move(dependencies)) {}
+
+	auto DefaultConfigEditDependencies(file_security_internal::ValidationRoot validation_root)
 	    -> ConfigEditDependencies {
 		return {
-		    .context                           = validation_root,
-		    .resolve_invoking_identity         = ResolveInvokingIdentityDependency,
-		    .select_editor_preference          = SelectEditorPreferenceDependency,
-		    .resolve_config_path               = ResolveConfigPathDependency,
-		    .check_secure_config_path          = CheckSecureConfigPathDependency,
-		    .create_temp_copy                  = CreateTempCopyDependency,
-		    .run_editor                        = RunEditorDependency,
-		    .read_temp_config_snapshot         = ReadTempConfigSnapshotDependency,
-		    .validate_config_content           = ValidateConfigContentDependency,
-		    .file_content_matches              = FileContentMatchesDependency,
-		    .replace_config_content_atomically = ReplaceConfigContentAtomicallyDependency,
-		    .remove_if_exists                  = RemoveIfExistsDependency,
+		    .context                   = nullptr,
+		    .resolve_invoking_identity = ResolveInvokingIdentityDependency,
+		    .select_editor_preference  = SelectEditorPreferenceDependency,
+		    .run_editor                = RunEditorDependency,
+		    .validation_root           = std::move(validation_root),
 		};
 	}
 
@@ -501,9 +414,9 @@ namespace howdy::native::config_internal {
 			return {.status = ConfigEditStatus::kEditorUnavailable};
 		}
 
-		const auto config_path = dependencies_.resolve_config_path(dependencies_.context);
-		const auto config_security =
-		    dependencies_.check_secure_config_path(dependencies_.context, config_path);
+		const auto config_path     = howdy::native::ResolveConfigPath();
+		const auto config_security = howdy::native::CheckSecureConfigPath(
+		    config_path, DefaultSecureOwnerUid(), dependencies_.validation_root);
 		if (!config_security.ok) {
 			return {
 			    .status = ConfigEditStatus::kSecurityCheckFailed,
@@ -513,13 +426,13 @@ namespace howdy::native::config_internal {
 		}
 
 		const auto temp_copy =
-		    dependencies_.create_temp_copy(dependencies_.context, config_path, invoking_user);
+		    CreateTempConfigCopy(config_path, invoking_user, dependencies_.validation_root);
 		if (!temp_copy) {
 			return {.status = ConfigEditStatus::kTempCreateFailed, .editor = editor};
 		}
 
 		const auto cleanup = [&]() -> void {
-			dependencies_.remove_if_exists(dependencies_.context, temp_copy->path);
+			RemoveIfExists(temp_copy->path);
 		};
 		const auto result_base = [&](ConfigEditStatus status,
 		                             std::string      error = {}) -> ConfigEditResult {
@@ -552,28 +465,25 @@ namespace howdy::native::config_internal {
 		}
 
 		std::string edited_content;
-		if (!dependencies_.read_temp_config_snapshot(dependencies_.context, temp_copy->path,
-		                                             &edited_content)) {
+		if (!ReadTempConfigSnapshot(temp_copy->path, &edited_content)) {
 			cleanup();
 			return result_base(ConfigEditStatus::kReadFailed);
 		}
 
 		std::string validation_error;
-		if (!dependencies_.validate_config_content(dependencies_.context, edited_content,
-		                                           &validation_error)) {
+		if (!howdy::native::ValidateConfigContent(edited_content, &validation_error)) {
 			return result_base(ConfigEditStatus::kInvalidEditedConfig, std::move(validation_error));
 		}
 
-		if (dependencies_.file_content_matches(dependencies_.context, config_path,
-		                                       edited_content)) {
+		if (FileContentMatches(config_path, edited_content, dependencies_.validation_root)) {
 			cleanup();
 			return result_base(ConfigEditStatus::kNoChanges);
 		}
 
 		std::string install_error;
-		if (!dependencies_.replace_config_content_atomically(dependencies_.context, config_path,
-		                                                     edited_content, &install_error, true,
-		                                                     false, &temp_copy->original_content)) {
+		if (!howdy::native::ReplaceConfigContentAtomically(
+		        config_path, edited_content, &install_error, true, false,
+		        &temp_copy->original_content, SyncParentDirectory, dependencies_.validation_root)) {
 			cleanup();
 			const auto result_status =
 			    install_error == howdy::native::kStaleEditedConfigMessage ||
