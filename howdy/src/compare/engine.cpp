@@ -75,12 +75,11 @@ namespace howdy::native {
 
 	// Public API accepts a const reference; engine intentionally owns a config copy.
 	// NOLINTNEXTLINE(modernize-pass-by-value)
-	CompareEngine::CompareEngine(const VideoConfig              &config,
-	                             CompareInferenceDependencies    inference_dependencies,
+	CompareEngine::CompareEngine(const VideoConfig &config, FaceInferenceOperations inference,
 	                             std::vector<std::vector<float>> known_encodings)
 	    : config_(config)
 	    , clahe_(MakeClahe(config_))
-	    , inference_dependencies_(inference_dependencies)
+	    , inference_(inference)
 	    , known_encodings_(std::move(known_encodings)) {}
 
 	auto CompareEngine::ProcessGrayFrame(cv::Mat gray_frame, int frame_number)
@@ -145,18 +144,13 @@ namespace howdy::native {
 	}
 
 	auto CompareEngine::ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult {
-		if (inference_dependencies_.context == nullptr ||
-		    inference_dependencies_.prepare_face_frame == nullptr ||
-		    inference_dependencies_.detect_faces == nullptr ||
-		    inference_dependencies_.encode_face == nullptr ||
-		    inference_dependencies_.find_best_match == nullptr) {
+		if (!inference_.Complete()) {
 			return {
 			    .status = CompareInferenceStatus::kInvalidDependencies,
 			};
 		}
 
-		const auto prepared = inference_dependencies_.prepare_face_frame(
-		    inference_dependencies_.context, working_frame);
+		const auto prepared = inference_.prepare_frame(inference_.context, working_frame);
 		const auto prepared_validation = ValidateFrame(prepared, FrameChannelPolicy::kBgr);
 		if (prepared_validation != FrameValidationStatus::kValid) {
 			return {
@@ -166,8 +160,7 @@ namespace howdy::native {
 			};
 		}
 
-		const auto detection_result =
-		    inference_dependencies_.detect_faces(inference_dependencies_.context, prepared);
+		const auto detection_result = inference_.detect_faces(inference_.context, prepared);
 		if (!detection_result.Ok()) {
 			return {
 			    .status        = CompareInferenceStatus::kDetectionFailed,
@@ -178,8 +171,7 @@ namespace howdy::native {
 		std::string first_encoding_error;
 		bool        reached_matching = false;
 		for (const auto &face : detection_result.detections) {
-			const auto encoding_result = inference_dependencies_.encode_face(
-			    inference_dependencies_.context, prepared, face);
+			const auto encoding_result = inference_.encode_face(inference_.context, prepared, face);
 			if (!encoding_result.Ok()) {
 				if (first_encoding_error.empty()) {
 					first_encoding_error = encoding_result.error_message.empty()
@@ -189,8 +181,8 @@ namespace howdy::native {
 				continue;
 			}
 			reached_matching = true;
-			const auto match = inference_dependencies_.find_best_match(
-			    inference_dependencies_.context, known_encodings_, encoding_result.encoding);
+			const auto match = inference_.match_face(inference_.context, known_encodings_,
+			                                         encoding_result.encoding);
 			if (match.accepted) {
 				if (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
 				    !std::isfinite(match.score)) {

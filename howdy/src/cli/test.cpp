@@ -42,27 +42,6 @@ namespace {
 		int                                                   exposure = -1;
 	};
 
-	auto PreparePreviewFrame(void *context, const cv::Mat &frame) -> cv::Mat {
-		(void)context;
-		return howdy::native::FaceModel::PrepareFrame(frame);
-	}
-
-	auto DetectPreviewFaces(void *context, const cv::Mat &frame)
-	    -> howdy::native::FaceDetectionResult {
-		return static_cast<howdy::native::FaceModel *>(context)->Detect(frame);
-	}
-
-	auto EncodePreviewFace(void *context, const cv::Mat &frame,
-	                       const howdy::native::FaceDetection &face)
-	    -> howdy::native::FaceEncodingResult {
-		return static_cast<howdy::native::FaceModel *>(context)->Encode(frame, face);
-	}
-
-	auto MatchPreviewFace(void *context, const std::vector<std::vector<float>> &known,
-	                      const std::vector<float> &probe) -> howdy::native::FaceMatch {
-		return static_cast<howdy::native::FaceModel *>(context)->BestMatch(known, probe);
-	}
-
 	auto DropToInvokingGuiUser() -> bool {
 		if (geteuid() != 0) {
 			return true;
@@ -315,11 +294,7 @@ namespace {
 		howdy::native::PreviewEngine preview_engine(
 		    config.video,
 		    {
-		        .context       = &face_model,
-		        .prepare_frame = PreparePreviewFrame,
-		        .detect_faces  = DetectPreviewFaces,
-		        .encode_face   = EncodePreviewFace,
-		        .match_face    = MatchPreviewFace,
+		        .inference = howdy::native::FaceModelInferenceOperations(face_model),
 		    },
 		    loaded_models.stored.encodings, loaded_models.stored.models.size(),
 		    loaded_models.status == howdy::native::UserModelStatus::kOk);

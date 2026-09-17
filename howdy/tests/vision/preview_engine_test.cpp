@@ -106,7 +106,7 @@ namespace {
 		};
 	}
 
-	auto InferenceDependencies(Context &context) -> howdy::native::PreviewInferenceDependencies {
+	auto InferenceOperations(Context &context) -> howdy::native::FaceInferenceOperations {
 		return {
 		    .context       = &context,
 		    .prepare_frame = PrepareFrame,
@@ -116,11 +116,17 @@ namespace {
 		};
 	}
 
+	auto MakePreviewDependencies(Context &context) -> howdy::native::PreviewDependencies {
+		return {
+		    .inference = InferenceOperations(context),
+		};
+	}
+
 	auto MakeEngine(Context &context, float dark_threshold = 99.0F, bool matching_enabled = true)
 	    -> howdy::native::PreviewEngine {
 		auto config = TestVideoConfig(dark_threshold);
 		return howdy::native::PreviewEngine(
-		    config, InferenceDependencies(context),
+		    config, MakePreviewDependencies(context),
 		    {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)}, 1, matching_enabled);
 	}
 
@@ -194,7 +200,7 @@ namespace {
 		context.detection_result.detections = {Face()};
 		const auto start                    = std::chrono::steady_clock::time_point{};
 		context.now_results                 = {start, start + std::chrono::milliseconds(37)};
-		auto dependencies                   = InferenceDependencies(context);
+		auto dependencies                   = MakePreviewDependencies(context);
 		dependencies.now                    = Now;
 		auto                         config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(
@@ -352,9 +358,12 @@ namespace {
 		auto                         config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(config,
 		                                    {
-		                                        .context       = &context,
-		                                        .prepare_frame = PrepareFrame,
-		                                        .detect_faces  = DetectFaces,
+		                                        .inference =
+		                                            {
+		                                                .context       = &context,
+		                                                .prepare_frame = PrepareFrame,
+		                                                .detect_faces  = DetectFaces,
+		                                            },
 		                                    },
 		                                    {}, 0, false);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
@@ -399,7 +408,7 @@ namespace {
 		auto run_missing_dependency = [](auto               clear_dependency,
 		                                 const std::string &subject) -> auto {
 			auto context      = MakeContext();
-			auto dependencies = InferenceDependencies(context);
+			auto dependencies = MakePreviewDependencies(context);
 			clear_dependency(dependencies);
 			auto                         config = TestVideoConfig();
 			howdy::native::PreviewEngine engine(config, dependencies, {}, 0, true);
@@ -417,27 +426,27 @@ namespace {
 		bool ok = true;
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.context = nullptr;
+			    dependencies.inference.context = nullptr;
 		    },
 		    "null context");
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.prepare_frame = nullptr;
+			    dependencies.inference.prepare_frame = nullptr;
 		    },
 		    "null prepare callback");
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.detect_faces = nullptr;
+			    dependencies.inference.detect_faces = nullptr;
 		    },
 		    "null detect callback");
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.encode_face = nullptr;
+			    dependencies.inference.encode_face = nullptr;
 		    },
 		    "null encode callback");
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.match_face = nullptr;
+			    dependencies.inference.match_face = nullptr;
 		    },
 		    "null match callback");
 		ok &= run_missing_dependency(

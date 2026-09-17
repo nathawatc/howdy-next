@@ -239,6 +239,76 @@ namespace {
 		return ok;
 	}
 
+	class ValidFeatureRecognizer final : public cv::FaceRecognizerSF {
+	public:
+		// OpenCV FaceRecognizerSF::alignCrop requires two adjacent cv::InputArray parameters.
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+		void alignCrop([[maybe_unused]] cv::InputArray src_img,
+		               [[maybe_unused]] cv::InputArray face_box,
+		               cv::OutputArray                 aligned) const override {
+			const cv::Mat mat(112, 112, CV_8UC3, cv::Scalar(1, 1, 1));
+			mat.copyTo(aligned);
+		}
+
+		void feature([[maybe_unused]] cv::InputArray aligned_img,
+		             cv::OutputArray                 feature) override {
+			const cv::Mat mat(1, 128, CV_32FC1, cv::Scalar(1.0F));
+			mat.copyTo(feature);
+		}
+
+		[[nodiscard]] auto match([[maybe_unused]] cv::InputArray face_feature1,
+		                         [[maybe_unused]] cv::InputArray face_feature2,
+		                         [[maybe_unused]] int dis_type) const -> double override {
+			return 0.0;
+		}
+	};
+
+	auto TestFaceModelInferenceOperations() -> bool {
+		auto backend   = SuccessfulBackend();
+		backend.detect = [](const cv::Mat &, cv::Mat &faces) -> void {
+			faces = cv::Mat(1, 15, CV_32FC1);
+			for (int column = 0; column < faces.cols; ++column) {
+				faces.at<float>(0, column) = static_cast<float>(column + 1);
+			}
+		};
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
+			return cv::makePtr<ValidFeatureRecognizer>();
+		};
+
+		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
+		                                                        std::move(backend));
+		auto ops   = howdy::native::FaceModelInferenceOperations(model);
+		bool ok    = true;
+		ok &= Expect(ops.Complete(), "FaceModelInferenceOperations produces complete operations");
+		ok &= Expect(ops.DetectionReady(), "FaceModelInferenceOperations is detection ready");
+		ok &= Expect(ops.context == &model, "operations context points to model");
+
+		const cv::Mat gray(60, 60, CV_8UC1, cv::Scalar(100));
+		const auto    prepared = ops.prepare_frame(ops.context, gray);
+		ok &= Expect(prepared.channels() == 3, "operations prepare_frame produces BGR frame");
+
+		const auto detection = ops.detect_faces(ops.context, prepared);
+		ok &= Expect(detection.Ok() && detection.detections.size() == 1,
+		             "operations detect_faces invokes model");
+
+		if (!detection.Ok() || detection.detections.empty()) {
+			return false;
+		}
+
+		const auto encoding = ops.encode_face(ops.context, prepared, detection.detections[0]);
+		ok &= Expect(encoding.Ok() && !encoding.encoding.empty(),
+		             "operations encode_face invokes model");
+
+		if (!encoding.Ok() || encoding.encoding.empty()) {
+			return false;
+		}
+
+		const auto match = ops.match_face(ops.context, {encoding.encoding}, encoding.encoding);
+		ok &= Expect(match.accepted, "operations match_face matches identical encoding");
+
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -651,6 +721,8 @@ auto main() -> int {
 			             "success path preserves detection fields");
 		}
 	}
+
+	ok &= TestFaceModelInferenceOperations();
 
 	return ok ? 0 : 1;
 }

@@ -2,7 +2,7 @@
 
 #include "config/runtime_config.hpp"
 #include "vision/face_detection.hpp"
-#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
 #include "vision/face_matching.hpp"
 #include "vision/frame_processing.hpp"
 
@@ -17,27 +17,16 @@
 
 namespace howdy::native {
 
-	using PreparePreviewFrameFn = cv::Mat (*)(void *context, const cv::Mat &frame);
-	using DetectPreviewFacesFn  = FaceDetectionResult (*)(void *context, const cv::Mat &frame);
-	using EncodePreviewFaceFn   = FaceEncodingResult (*)(void *context, const cv::Mat &frame,
-	                                                     const FaceDetection &face);
-	using MatchPreviewFaceFn    = FaceMatch (*)(void                                  *context,
-	                                            const std::vector<std::vector<float>> &known,
-	                                            const std::vector<float>              &probe);
-	using PreviewNowFn          = std::chrono::steady_clock::time_point (*)(void *context);
+	using PreviewNowFn = std::chrono::steady_clock::time_point (*)(void *context);
 
 	inline auto PreviewSteadyClockNow(void *context) -> std::chrono::steady_clock::time_point {
 		(void)context;
 		return std::chrono::steady_clock::now();
 	}
 
-	struct PreviewInferenceDependencies {
-		void                 *context       = nullptr;
-		PreparePreviewFrameFn prepare_frame = nullptr;
-		DetectPreviewFacesFn  detect_faces  = nullptr;
-		EncodePreviewFaceFn   encode_face   = nullptr;
-		MatchPreviewFaceFn    match_face    = nullptr;
-		PreviewNowFn          now           = PreviewSteadyClockNow;
+	struct PreviewDependencies {
+		FaceInferenceOperations inference;
+		PreviewNowFn            now = PreviewSteadyClockNow;
 	};
 
 	enum class PreviewFrameStatus : std::uint8_t {
@@ -79,7 +68,7 @@ namespace howdy::native {
 
 	class PreviewEngine {
 	public:
-		PreviewEngine(VideoConfig config, PreviewInferenceDependencies dependencies,
+		PreviewEngine(VideoConfig config, PreviewDependencies dependencies,
 		              std::vector<std::vector<float>> known_encodings,
 		              std::size_t known_model_count, bool matching_enabled);
 
@@ -100,7 +89,7 @@ namespace howdy::native {
 
 		VideoConfig                     config_;
 		cv::Ptr<cv::CLAHE>              clahe_;
-		PreviewInferenceDependencies    dependencies_;
+		PreviewDependencies             dependencies_;
 		std::vector<std::vector<float>> known_encodings_;
 		std::size_t                     known_model_count_ = 0;
 		bool                            matching_enabled_  = false;

@@ -97,10 +97,13 @@ namespace {
 		return {
 		    config,
 		    {
-		        .context       = &context,
-		        .prepare_frame = PrepareFrame,
-		        .detect_faces  = DetectFaces,
-		        .now           = EngineNow,
+		        .inference =
+		            {
+		                .context       = &context,
+		                .prepare_frame = PrepareFrame,
+		                .detect_faces  = DetectFaces,
+		            },
+		        .now = EngineNow,
 		    },
 		    {},
 		    0,

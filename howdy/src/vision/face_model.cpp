@@ -309,4 +309,36 @@ namespace howdy::native {
 		ok_             = false;
 	}
 
+	namespace {
+		auto FaceModelPrepareFrameAdapter([[maybe_unused]] void *context, const cv::Mat &frame)
+		    -> cv::Mat {
+			return FaceModel::PrepareFrame(frame);
+		}
+
+		auto FaceModelDetectFacesAdapter(void *context, const cv::Mat &frame)
+		    -> FaceDetectionResult {
+			return static_cast<FaceModel *>(context)->Detect(frame);
+		}
+
+		auto FaceModelEncodeFaceAdapter(void *context, const cv::Mat &frame,
+		                                const FaceDetection &face) -> FaceEncodingResult {
+			return static_cast<FaceModel *>(context)->Encode(frame, face);
+		}
+
+		auto FaceModelMatchFaceAdapter(void *context, const std::vector<std::vector<float>> &known,
+		                               const std::vector<float> &probe) -> FaceMatch {
+			return static_cast<FaceModel *>(context)->BestMatch(known, probe);
+		}
+	}  // namespace
+
+	auto FaceModelInferenceOperations(FaceModel &model) -> FaceInferenceOperations {
+		return {
+		    .context       = &model,
+		    .prepare_frame = FaceModelPrepareFrameAdapter,
+		    .detect_faces  = FaceModelDetectFacesAdapter,
+		    .encode_face   = FaceModelEncodeFaceAdapter,
+		    .match_face    = FaceModelMatchFaceAdapter,
+		};
+	}
+
 }  // namespace howdy::native

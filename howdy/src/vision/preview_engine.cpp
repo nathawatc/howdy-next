@@ -12,7 +12,7 @@
 
 namespace howdy::native {
 
-	PreviewEngine::PreviewEngine(VideoConfig config, PreviewInferenceDependencies dependencies,
+	PreviewEngine::PreviewEngine(VideoConfig config, PreviewDependencies dependencies,
 	                             std::vector<std::vector<float>> known_encodings,
 	                             std::size_t known_model_count, bool matching_enabled)
 	    : config_(std::move(config))
@@ -23,10 +23,9 @@ namespace howdy::native {
 	    , matching_enabled_(matching_enabled) {}
 
 	auto PreviewEngine::DependenciesValid() const -> bool {
-		return dependencies_.context != nullptr && dependencies_.prepare_frame != nullptr &&
-		       dependencies_.detect_faces != nullptr && dependencies_.now != nullptr &&
-		       (!matching_enabled_ ||
-		        (dependencies_.encode_face != nullptr && dependencies_.match_face != nullptr));
+		return dependencies_.now != nullptr &&
+		       (matching_enabled_ ? dependencies_.inference.Complete()
+		                          : dependencies_.inference.DetectionReady());
 	}
 
 	auto PreviewEngine::EncodeFaces(const cv::Mat                    &prepared,
@@ -36,8 +35,8 @@ namespace howdy::native {
 		std::vector<EncodedFace> encodings;
 		encodings.reserve(detections.size());
 		for (std::size_t index = 0; index < detections.size(); ++index) {
-			auto encoding =
-			    dependencies_.encode_face(dependencies_.context, prepared, detections[index]);
+			auto encoding = dependencies_.inference.encode_face(dependencies_.inference.context,
+			                                                    prepared, detections[index]);
 			if (!encoding.Ok()) {
 				faces[index].status = PreviewFaceStatus::kEncodingFailed;
 				if (first_error.empty()) {
@@ -56,8 +55,8 @@ namespace howdy::native {
 	                               std::vector<PreviewFaceResult> &faces) -> std::optional<bool> {
 		bool matched = false;
 		for (const auto &encoded : encodings) {
-			auto match =
-			    dependencies_.match_face(dependencies_.context, known_encodings_, encoded.encoding);
+			auto match = dependencies_.inference.match_face(dependencies_.inference.context,
+			                                                known_encodings_, encoded.encoding);
 			if (match.accepted &&
 			    (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
 			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
@@ -105,13 +104,14 @@ namespace howdy::native {
 			};
 		}
 
-		const auto inference_start   = dependencies_.now(dependencies_.context);
+		const auto inference_start   = dependencies_.now(dependencies_.inference.context);
 		const auto inference_elapsed = [this, &inference_start]() -> std::chrono::milliseconds {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(
-			    dependencies_.now(dependencies_.context) - inference_start);
+			    dependencies_.now(dependencies_.inference.context) - inference_start);
 		};
 
-		auto prepared = dependencies_.prepare_frame(dependencies_.context, gray_frame);
+		auto prepared =
+		    dependencies_.inference.prepare_frame(dependencies_.inference.context, gray_frame);
 		if (ValidateFrame(prepared, FrameChannelPolicy::kBgr) != FrameValidationStatus::kValid) {
 			return {
 			    .status         = PreviewFrameStatus::kDetectionFailed,
@@ -122,7 +122,8 @@ namespace howdy::native {
 			};
 		}
 
-		auto detection_result = dependencies_.detect_faces(dependencies_.context, prepared);
+		auto detection_result =
+		    dependencies_.inference.detect_faces(dependencies_.inference.context, prepared);
 		if (!detection_result.Ok()) {
 			return {
 			    .status         = PreviewFrameStatus::kDetectionFailed,

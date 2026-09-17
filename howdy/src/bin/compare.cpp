@@ -68,27 +68,6 @@ namespace {
 		std::cerr << "\n";
 	}
 
-	auto PrepareFaceFrameDependency(void *context, const cv::Mat &frame) -> cv::Mat {
-		(void)context;
-		return howdy::native::FaceModel::PrepareFrame(frame);
-	}
-
-	auto DetectFacesDependency(void *context, const cv::Mat &frame)
-	    -> howdy::native::FaceDetectionResult {
-		return static_cast<howdy::native::FaceModel *>(context)->Detect(frame);
-	}
-
-	auto EncodeFaceDependency(void *context, const cv::Mat &frame,
-	                          const howdy::native::FaceDetection &face)
-	    -> howdy::native::FaceEncodingResult {
-		return static_cast<howdy::native::FaceModel *>(context)->Encode(frame, face);
-	}
-
-	auto FindBestMatchDependency(void *context, const std::vector<std::vector<float>> &known,
-	                             const std::vector<float> &probe) -> howdy::native::FaceMatch {
-		return static_cast<howdy::native::FaceModel *>(context)->BestMatch(known, probe);
-	}
-
 	struct CompareProductionContext {
 		howdy::native::CompareCaptureSession       &capture_session;
 		howdy::native::FaceModel                   &face_model;
@@ -111,15 +90,9 @@ namespace {
 
 	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		context.compare_engine.emplace(context.video_config,
-		                               howdy::native::CompareInferenceDependencies{
-		                                   .context            = &context.face_model,
-		                                   .prepare_face_frame = PrepareFaceFrameDependency,
-		                                   .detect_faces       = DetectFacesDependency,
-		                                   .encode_face        = EncodeFaceDependency,
-		                                   .find_best_match    = FindBestMatchDependency,
-		                               },
-		                               context.stored_encodings.encodings);
+		context.compare_engine.emplace(
+		    context.video_config, howdy::native::FaceModelInferenceOperations(context.face_model),
+		    context.stored_encodings.encodings);
 	}
 
 	void ResetTimeout(void *raw_context) {

@@ -4,6 +4,7 @@
 #include "model_assets/opencv_model_manifest.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
 #include "vision/face_matching.hpp"
 
 #include <cstdint>
@@ -63,5 +64,7 @@ namespace howdy::native {
 		cv::Ptr<cv::FaceRecognizerSF> recognizer_;
 		std::shared_ptr<Backend>      backend_;
 	};
+
+	[[nodiscard]] auto FaceModelInferenceOperations(FaceModel &model) -> FaceInferenceOperations;
 
 }  // namespace howdy::native
