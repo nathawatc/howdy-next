@@ -2,6 +2,7 @@
 #define HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP
 
 #include "prompt/conversation_restore.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <atomic>
@@ -60,9 +61,9 @@ private:
 	};
 
 	struct Descriptors {
-		int tty_fd         = -1;
-		int abort_read_fd  = -1;
-		int abort_write_fd = -1;
+		howdy::native::ScopedFd tty_fd;
+		howdy::native::ScopedFd abort_read_fd;
+		howdy::native::ScopedFd abort_write_fd;
 	};
 
 	enum class PromptIoResult : std::uint8_t {
@@ -90,17 +91,17 @@ private:
 	[[nodiscard]] auto RestorePromptTerminal(const struct termios &original_termios) const -> bool;
 	void               RetainUnsafeDispatchContext() noexcept;
 
-	pam_handle_t                    *pamh_ = nullptr;
-	struct pam_conv                  original_conv_{};
-	std::unique_ptr<DispatchContext> dispatch_context_;
-	struct pam_conv                  override_conv_{};
-	bool                             has_original_conv_ = false;
-	bool                             installed_         = false;
-	int                              tty_fd_            = -1;
-	std::array<int, 2>               abort_pipe_{{-1, -1}};
-	std::atomic<bool>                abort_requested_{false};
-	std::atomic<bool>                terminal_restore_failed_{false};
-	Operations                       operations_{};
+	pam_handle_t                          *pamh_ = nullptr;
+	struct pam_conv                        original_conv_{};
+	std::unique_ptr<DispatchContext>       dispatch_context_;
+	struct pam_conv                        override_conv_{};
+	bool                                   has_original_conv_ = false;
+	bool                                   installed_         = false;
+	howdy::native::ScopedFd                tty_fd_;
+	std::array<howdy::native::ScopedFd, 2> abort_pipe_;
+	std::atomic<bool>                      abort_requested_{false};
+	std::atomic<bool>                      terminal_restore_failed_{false};
+	Operations                             operations_{};
 };
 
 struct NativeTerminalDescriptors {

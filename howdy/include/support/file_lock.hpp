@@ -1,5 +1,7 @@
 #pragma once
 
+#include "support/scoped_fd.hpp"
+
 #include <cerrno>
 #include <fcntl.h>
 #include <filesystem>
@@ -12,7 +14,7 @@
 namespace howdy::native {
 
 	struct ScopedFileLock {
-		int                   fd = -1;
+		ScopedFd              fd;
 		std::filesystem::path path;
 
 		ScopedFileLock()                                           = default;
@@ -20,17 +22,14 @@ namespace howdy::native {
 		auto operator=(const ScopedFileLock &) -> ScopedFileLock & = delete;
 
 		ScopedFileLock(ScopedFileLock &&other) noexcept
-		    : fd(other.fd)
-		    , path(std::move(other.path)) {
-			other.fd = -1;
-		}
+		    : fd(std::move(other.fd))
+		    , path(std::move(other.path)) {}
 
 		auto operator=(ScopedFileLock &&other) noexcept -> ScopedFileLock & {
 			if (this != &other) {
 				Release();
-				fd       = other.fd;
-				path     = std::move(other.path);
-				other.fd = -1;
+				fd   = std::move(other.fd);
+				path = std::move(other.path);
 			}
 			return *this;
 		}
@@ -40,13 +39,12 @@ namespace howdy::native {
 		}
 
 		void Release() {
-			if (fd < 0) {
+			if (!fd.Valid()) {
 				return;
 			}
-			while (flock(fd, LOCK_UN) != 0 && errno == EINTR) {
+			while (flock(fd.Get(), LOCK_UN) != 0 && errno == EINTR) {
 			}
-			close(fd);
-			fd = -1;
+			fd.Reset();
 		}
 	};
 
@@ -63,21 +61,20 @@ namespace howdy::native {
 		}
 
 		const auto path = LockFilePath(target_path);
-		const int  fd =
-		    open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
-		if (fd < 0) {
+		ScopedFd   fd(
+		    open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR));
+		if (!fd.Valid()) {
 			return std::nullopt;
 		}
 
-		while (flock(fd, LOCK_EX) != 0) {
+		while (flock(fd.Get(), LOCK_EX) != 0) {
 			if (errno != EINTR) {
-				close(fd);
 				return std::nullopt;
 			}
 		}
 
 		ScopedFileLock lock;
-		lock.fd   = fd;
+		lock.fd   = std::move(fd);
 		lock.path = path;
 		return lock;
 	}

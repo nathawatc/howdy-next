@@ -339,27 +339,24 @@ namespace {
 	    const std::filesystem::path &destination, const howdy::native::OpenCvModelDescriptor &model,
 	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
 	    -> ExistingModelAction {
-		const int existing_fd = open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-		if (existing_fd < 0) {
+		const ScopedFd existing_fd(open(destination.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		if (!existing_fd.Valid()) {
 			std::cout << "Failed to open existing model: " << destination.string() << "\n";
 			return ExistingModelAction::kAbort;
 		}
 		struct stat existing_stat{};
-		if (dependencies.fstat_file(existing_fd, &existing_stat) != 0) {
+		if (dependencies.fstat_file(existing_fd.Get(), &existing_stat) != 0) {
 			const int error_number = errno;
-			close(existing_fd);
 			std::cout << "Failed to fstat existing model '" << destination.string()
 			          << "': " << std::strerror(error_number) << "\n";
 			return ExistingModelAction::kAbort;
 		}
 		if (existing_stat.st_size < 0 || std::cmp_not_equal(existing_stat.st_size, model.size)) {
-			close(existing_fd);
 			std::cout << "Size mismatch for " << destination.string() << ": expected " << model.size
 			          << ", actual " << existing_stat.st_size << "\n";
 			return ExistingModelAction::kDownload;
 		}
-		const auto actual_sha256 = dependencies.sha256_file(existing_fd);
-		close(existing_fd);
+		const auto actual_sha256 = dependencies.sha256_file(existing_fd.Get());
 		if (!actual_sha256.has_value()) {
 			std::cout << "Failed to calculate SHA-256 for " << model.filename << "\n";
 			return ExistingModelAction::kAbort;

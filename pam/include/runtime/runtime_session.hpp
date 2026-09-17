@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/runtime_config_loader.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -13,10 +14,10 @@
 namespace howdy::pam {
 
 	struct PreparedRuntimeFiles {
-		std::filesystem::path root_dir;
-		std::string           config_path;
-		std::string           user_models_dir;
-		int                   lease_fd = -1;
+		std::filesystem::path   root_dir;
+		std::string             config_path;
+		std::string             user_models_dir;
+		howdy::native::ScopedFd lease_fd;
 	};
 
 	using PrepareRuntimeFilesFn = bool (*)(void *context, std::string_view username,
@@ -109,7 +110,7 @@ namespace howdy::pam {
 		std::string              config_path_;
 		std::string              user_models_dir_;
 		RuntimeSessionOperations operations_;
-		int                      lease_fd_     = -1;
+		howdy::native::ScopedFd  lease_fd_;
 		bool                     load_started_ = false;
 	};
 

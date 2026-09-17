@@ -4,6 +4,7 @@
 
 #include "internal.hpp"
 #include "storage/staged_runtime_policy.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -76,15 +77,13 @@ namespace howdy::pam::auth_helper_process::internal {
 
 		int descriptor = -1;
 		std::memcpy(&descriptor, CMSG_DATA(control), sizeof(descriptor));
-		const int descriptor_flags = descriptor >= 0 ? fcntl(descriptor, F_GETFD) : -1;
-		if (descriptor < 0 || descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) {
-			if (descriptor >= 0) {
-				(void)close(descriptor);
-			}
+		howdy::native::ScopedFd received_fd(descriptor);
+		const int descriptor_flags = received_fd.Valid() ? fcntl(received_fd.Get(), F_GETFD) : -1;
+		if (!received_fd.Valid() || descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) {
 			return LeaseReceiveResult::kInvalid;
 		}
 
-		*lease_fd = descriptor;
+		*lease_fd = received_fd.Release();
 		return LeaseReceiveResult::kReceived;
 	}
 
@@ -148,20 +147,19 @@ namespace howdy::pam::auth_helper_process::internal {
 			return false;
 		}
 
-		const int parent_fd =
-		    open(root_dir.parent_path().c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-		if (parent_fd < 0) {
+		const howdy::native::ScopedFd parent_fd(
+		    open(root_dir.parent_path().c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+		if (!parent_fd.Valid()) {
 			return false;
 		}
 		const std::string lock_name = root_dir.filename().string() + ".lock";
 		struct stat       path_stat{};
 		const bool        identity_ok =
-		    fstatat(parent_fd, lock_name.c_str(), &path_stat, AT_SYMLINK_NOFOLLOW) == 0 &&
+		    fstatat(parent_fd.Get(), lock_name.c_str(), &path_stat, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(path_stat.st_mode) && path_stat.st_uid == owner_uid &&
 		    path_stat.st_nlink == *policy.exact_link_count &&
 		    (path_stat.st_mode & 07777) == policy.mode && path_stat.st_dev == lease_stat.st_dev &&
 		    path_stat.st_ino == lease_stat.st_ino;
-		(void)close(parent_fd);
 		return identity_ok && flock(lease_fd, LOCK_SH | LOCK_NB) == 0;
 	}
 

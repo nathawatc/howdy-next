@@ -14,6 +14,7 @@
 #include <string>
 #include <system_error>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <sys/file.h>
@@ -56,39 +57,31 @@ namespace howdy::native::config_utils_internal {
 	}  // namespace
 
 	ConfigLockGuard::~ConfigLockGuard() {
-		if (fd >= 0) {
-			UnlockFd(fd);
-			close(fd);
+		if (fd.Valid()) {
+			UnlockFd(fd.Get());
 		}
 	}
 
 	ConfigLockGuard::ConfigLockGuard(ConfigLockGuard &&other) noexcept
-	    : fd(other.fd) {
-		other.fd = -1;
-	}
+	    : fd(std::move(other.fd)) {}
 
 	auto ConfigLockGuard::operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard & {
 		if (this != &other) {
-			if (fd >= 0) {
-				UnlockFd(fd);
-				close(fd);
+			if (fd.Valid()) {
+				UnlockFd(fd.Get());
 			}
-			fd       = other.fd;
-			other.fd = -1;
+			fd = std::move(other.fd);
 		}
 		return *this;
 	}
 
 	auto AcquireConfigLock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
 	    -> bool {
-		guard.fd = OpenLockFile(config_path);
-		if (guard.fd >= 0 && LockFd(guard.fd)) {
+		guard.fd.Reset(OpenLockFile(config_path));
+		if (guard.fd.Valid() && LockFd(guard.fd.Get())) {
 			return true;
 		}
-		if (guard.fd >= 0) {
-			close(guard.fd);
-			guard.fd = -1;
-		}
+		guard.fd.Reset();
 		return false;
 	}
 

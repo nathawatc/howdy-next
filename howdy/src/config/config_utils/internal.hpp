@@ -2,6 +2,7 @@
 
 #include "support/atomic_files.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -20,7 +21,7 @@ namespace howdy::native::config_utils_internal {
 	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
 
 	struct __attribute__((visibility("hidden"))) ConfigLockGuard {
-		int fd = -1;
+		ScopedFd fd;
 
 		ConfigLockGuard() = default;
 		~ConfigLockGuard();

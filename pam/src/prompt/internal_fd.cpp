@@ -22,40 +22,6 @@ namespace {
 
 namespace howdy::pam::detail {
 
-	ScopedFd::ScopedFd(int fd) noexcept
-	    : fd_(fd) {}
-
-	ScopedFd::~ScopedFd() {
-		if (fd_ >= 0) {
-			(void)close(fd_);
-		}
-	}
-
-	ScopedFd::ScopedFd(ScopedFd &&other) noexcept
-	    : fd_(other.Release()) {}
-
-	auto ScopedFd::operator=(ScopedFd &&other) noexcept -> ScopedFd & {
-		if (this != &other) {
-			ScopedFd old(fd_);
-			fd_ = other.Release();
-		}
-		return *this;
-	}
-
-	auto ScopedFd::Get() const noexcept -> int {
-		return fd_;
-	}
-
-	auto ScopedFd::Valid() const noexcept -> bool {
-		return fd_ >= 0;
-	}
-
-	auto ScopedFd::Release() noexcept -> int {
-		const int fd = fd_;
-		fd_          = -1;
-		return fd;
-	}
-
 	auto InternalPipe::Valid() const noexcept -> bool {
 		return read.Get() > STDERR_FILENO && write.Get() > STDERR_FILENO &&
 		       read.Get() != write.Get();

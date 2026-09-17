@@ -43,12 +43,7 @@ namespace howdy::pam {
 	    , user_models_dir_(std::move(configured_user_models_dir))
 	    , operations_(operations) {}
 
-	RuntimeSession::~RuntimeSession() {
-		if (lease_fd_ >= 0) {
-			(void)close(lease_fd_);
-			lease_fd_ = -1;
-		}
-	}
+	RuntimeSession::~RuntimeSession() = default;
 
 	auto RuntimeSession::LoadForUser(std::string_view username) -> RuntimeSessionLoadResult {
 		if (load_started_) {
@@ -75,30 +70,23 @@ namespace howdy::pam {
 
 		PreparedRuntimeFiles prepared;
 		if (!operations_.PrepareRuntime(username, &prepared)) {
-			if (prepared.lease_fd >= 0) {
-				(void)close(prepared.lease_fd);
-			}
 			return RuntimeSessionLoadResult{
 			    .status        = RuntimeSessionLoadStatus::kPrepareFailed,
 			    .config_result = std::move(config_result),
 			};
 		}
 		if (prepared.config_path.empty() || prepared.user_models_dir.empty() ||
-		    prepared.root_dir.empty() || prepared.lease_fd < 0 ||
+		    prepared.root_dir.empty() || !prepared.lease_fd.Valid() ||
 		    !PreparedRuntimeFilesMatchContract(prepared)) {
-			if (prepared.lease_fd >= 0) {
-				(void)close(prepared.lease_fd);
-			}
 			return RuntimeSessionLoadResult{
 			    .status        = RuntimeSessionLoadStatus::kPrepareFailed,
 			    .config_result = std::move(config_result),
 			};
 		}
 
-		config_path_      = std::move(prepared.config_path);
-		user_models_dir_  = std::move(prepared.user_models_dir);
-		lease_fd_         = prepared.lease_fd;
-		prepared.lease_fd = -1;
+		config_path_     = std::move(prepared.config_path);
+		user_models_dir_ = std::move(prepared.user_models_dir);
+		lease_fd_        = std::move(prepared.lease_fd);
 
 		config_result = operations_.LoadRuntimeConfig(config_path_);
 		const bool config_ok =
@@ -120,7 +108,7 @@ namespace howdy::pam {
 	}
 
 	auto RuntimeSession::Staged() const -> bool {
-		return lease_fd_ >= 0;
+		return lease_fd_.Valid();
 	}
 
 	auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations {

@@ -26,7 +26,13 @@ namespace {
 	constexpr auto kConfiguredConfig = "/etc/howdy/config.ini";
 	constexpr auto kConfiguredModels = "/var/lib/howdy/models";
 
-	auto MakePreparedRuntime(std::string_view suffix) -> howdy::pam::PreparedRuntimeFiles {
+	struct PreparedRuntimePaths {
+		std::filesystem::path root_dir;
+		std::string           config_path;
+		std::string           user_models_dir;
+	};
+
+	auto MakePreparedRuntime(std::string_view suffix) -> PreparedRuntimePaths {
 		const auto root =
 		    suffix == "sibling"
 		        ? howdy::native::auth_helper_protocol::PreparedRuntimeRoot() /
@@ -52,7 +58,7 @@ namespace {
 		int                                                 effective_uid_calls = 0;
 		bool                                                prepare_succeeds    = true;
 		uid_t                                               effective_uid       = 0;
-		howdy::pam::PreparedRuntimeFiles prepared = MakePreparedRuntime("stage1");
+		PreparedRuntimePaths prepared = MakePreparedRuntime("stage1");
 	};
 
 	struct CallbackCounts {
@@ -103,8 +109,10 @@ namespace {
 			return false;
 		}
 		(void)close(lease_pipe[1]);
-		*prepared          = fake.prepared;
-		prepared->lease_fd = lease_pipe[0];
+		prepared->root_dir        = fake.prepared.root_dir;
+		prepared->config_path     = fake.prepared.config_path;
+		prepared->user_models_dir = fake.prepared.user_models_dir;
+		prepared->lease_fd        = howdy::native::ScopedFd(lease_pipe[0]);
 		fake.issued_lease_fds.push_back(lease_pipe[0]);
 		return true;
 	}
@@ -421,8 +429,8 @@ namespace {
 		using howdy::native::auth_helper_protocol::PreparedUserModelsDir;
 
 		struct TestCase {
-			std::string_view                 name;
-			howdy::pam::PreparedRuntimeFiles prepared;
+			std::string_view     name;
+			PreparedRuntimePaths prepared;
 		};
 
 		const auto valid   = MakePreparedRuntime("valid1");

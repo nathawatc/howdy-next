@@ -128,7 +128,7 @@ namespace howdy::test::auth_flow {
 		    .config_path = howdy::native::auth_helper_protocol::PreparedConfigPath(root).string(),
 		    .user_models_dir =
 		        howdy::native::auth_helper_protocol::PreparedUserModelsDir(root).string(),
-		    .lease_fd = lease_pipe[0],
+		    .lease_fd = howdy::native::ScopedFd(lease_pipe[0]),
 		};
 		return true;
 	}

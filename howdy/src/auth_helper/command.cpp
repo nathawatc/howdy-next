@@ -104,16 +104,15 @@ namespace howdy::native::auth_helper::command {
 
 		auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(
 		    user, {.uid = uid, .gid = entry->pw_gid});
-		if (!prepared.has_value() || prepared->lease_fd < 0) {
+		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
 			return 1;
 		}
 		if (!SendLease({.socket_fd = auth_helper_protocol::kLeaseSocketFd,
-		                .lease_fd  = prepared->lease_fd})) {
-			(void)close(prepared->lease_fd);
+		                .lease_fd  = prepared->lease_fd.Get()})) {
+			prepared->lease_fd.Reset();
 			return Fail("Failed to transfer runtime lease");
 		}
-		(void)close(prepared->lease_fd);
-		prepared->lease_fd = -1;
+		prepared->lease_fd.Reset();
 		PrintPreparedPaths(prepared->config_path, prepared->user_models_dir);
 		if (!std::cout.good()) {
 			return Fail("Failed to write prepared runtime paths");

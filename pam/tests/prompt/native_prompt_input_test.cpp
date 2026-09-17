@@ -89,15 +89,15 @@ namespace {
 	                             InputOperationContext *operations = nullptr)
 	    -> std::unique_ptr<NativePromptConversation> {
 		auto conversation = CreateConversation(
-		    descriptors, operations == nullptr
-		                     ? NativePromptConversationTestAccess::Operations{}
-		                     : NativePromptConversationTestAccess::Operations{
-		                           .context          = operations,
-		                           .poll_prompt      = InjectedPoll,
-		                           .read_prompt      = InjectedRead,
-		                           .restore_terminal = InjectedRestore,
-		                           .post_message     = NativePromptInputInjectedPostMessage,
-		                       });
+		    std::move(descriptors), operations == nullptr
+		                                ? NativePromptConversationTestAccess::Operations{}
+		                                : NativePromptConversationTestAccess::Operations{
+		                                      .context          = operations,
+		                                      .poll_prompt      = InjectedPoll,
+		                                      .read_prompt      = InjectedRead,
+		                                      .restore_terminal = InjectedRestore,
+		                                      .post_message = NativePromptInputInjectedPostMessage,
+		                                  });
 		if (operations != nullptr) {
 			operations->conversation = conversation.get();
 		}
@@ -178,9 +178,9 @@ auto ExpectCtrlCAbortsPromptAndRestoresTerminal() -> bool {
 	};
 
 	const int slave_raw_fd = slave_fd.Get();
-	auto      conversation = CreateConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()});
+	auto      conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
@@ -238,9 +238,9 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 
 	InputOperationContext operations{.restore_failure = true};
 	auto                  conversation = std::shared_ptr<NativePromptConversation>(
-	    CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                             .abort_read_fd  = abort_pipe[0].Release(),
-	                             .abort_write_fd = abort_pipe[1].Release()},
+	    CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                             .abort_write_fd = std::move(abort_pipe[1])},
 	                            &operations));
 	NativePromptConversationTestAccess::CloseAbortWriteFd(*conversation);
 
@@ -300,9 +300,9 @@ auto ExpectPtyHangupAbortsPrompt() -> bool {
 	};
 
 	auto conversation = std::shared_ptr<NativePromptConversation>(
-	    CreateConversation({.tty_fd         = slave_fd.Release(),
-	                        .abort_read_fd  = abort_pipe[0].Release(),
-	                        .abort_write_fd = abort_pipe[1].Release()}));
+	    CreateConversation({.tty_fd         = std::move(slave_fd),
+	                        .abort_read_fd  = std::move(abort_pipe[0]),
+	                        .abort_write_fd = std::move(abort_pipe[1])}));
 
 	auto         response       = std::make_shared<char *>(nullptr);
 	auto         result_promise = std::make_shared<std::promise<int>>();
@@ -351,9 +351,9 @@ auto ExpectPollEintrWithoutAbortDoesNotAbortPrompt() -> bool {
 	}
 
 	InputOperationContext operations{.poll_eintr_count = 1};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "poll EINTR retry test");
@@ -377,9 +377,9 @@ auto ExpectPollEintrWithAbortFailsClosed() -> bool {
 	};
 
 	InputOperationContext operations{.poll_eintr_count = 1, .abort_on_poll = true};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;
@@ -418,9 +418,9 @@ auto ExpectReadEintrRetriesAndAcceptsInput() -> bool {
 	}
 
 	InputOperationContext operations{.read_eintr_count = 1};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "read EINTR retry test");
@@ -444,9 +444,9 @@ auto ExpectReadEintrWithAbortFailsClosed() -> bool {
 	};
 
 	InputOperationContext operations{.read_eintr_count = 1, .abort_on_read = true};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;
@@ -489,9 +489,9 @@ auto ExpectReadZeroRetriesAndAcceptsInput() -> bool {
 	}
 
 	InputOperationContext operations{.read_zero_count = 1};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "read zero retry test");
@@ -511,9 +511,9 @@ auto ExpectRestoreEintrRetriesAndRestores() -> bool {
 	}
 
 	InputOperationContext operations{.restore_eintr_count = 1};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "restore EINTR retry test");
@@ -530,9 +530,9 @@ auto ExpectNativeMessageStyles() -> bool {
 		return false;
 	}
 
-	auto conversation = CreateConversation({.tty_fd         = slave_fd.Release(),
-	                                        .abort_read_fd  = abort_pipe[0].Release(),
-	                                        .abort_write_fd = abort_pipe[1].Release()});
+	auto conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
+	                                        .abort_read_fd  = std::move(abort_pipe[0]),
+	                                        .abort_write_fd = std::move(abort_pipe[1])});
 
 	const struct pam_message  echo_on_message{.msg_style = PAM_PROMPT_ECHO_ON, .msg = "Login: "};
 	const struct pam_message *echo_on_ptr      = &echo_on_message;
@@ -668,9 +668,9 @@ auto ExpectOversizedPromptFailsClosed() -> bool {
 	    .msg       = "Password: ",
 	};
 	const int slave_raw_fd = slave_fd.Get();
-	auto      conversation = CreateConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()});
+	auto      conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
@@ -721,9 +721,9 @@ auto ExpectRestoreFailureFailsClosed() -> bool {
 	    .msg       = "Password: ",
 	};
 	InputOperationContext operations{.restore_failure = true};
-	auto conversation = CreateInputConversation({.tty_fd         = slave_fd.Release(),
-	                                             .abort_read_fd  = abort_pipe[0].Release(),
-	                                             .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
+	                                             .abort_read_fd  = std::move(abort_pipe[0]),
+	                                             .abort_write_fd = std::move(abort_pipe[1])},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;

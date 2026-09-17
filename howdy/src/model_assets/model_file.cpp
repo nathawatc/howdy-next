@@ -1,6 +1,7 @@
 #include "model_assets/model_file.hpp"
 
 #include "support/file_security.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <algorithm>
 #include <array>
@@ -93,41 +94,36 @@ namespace howdy::native {
 			        .error_message = security.error_message};
 		}
 
-		const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-		if (fd < 0) {
+		const ScopedFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		if (!fd.Valid()) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to open " + std::string(label) + ": " + path.string() +
 			                         " (" + std::strerror(errno) + ")"};
 		}
 		struct stat opened_stat{};
-		if (fstat(fd, &opened_stat) != 0) {
+		if (fstat(fd.Get(), &opened_stat) != 0) {
 			const int error_number = errno;
-			close(fd);
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to fstat opened " + std::string(label) + " '" +
 			                         path.string() + "': " + std::strerror(error_number)};
 		}
 		if (opened_stat.st_dev != path_stat.st_dev || opened_stat.st_ino != path_stat.st_ino) {
-			close(fd);
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Model file changed while opening: " + path.string()};
 		}
 		if (const auto security = CheckSecurePathStat(opened_stat, SecurePathKind::kRegularFile,
 		                                              path, label, owner_uid);
 		    !security.ok) {
-			close(fd);
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = security.error_message};
 		}
 		if (opened_stat.st_size == 0) {
-			close(fd);
 			return {.status = OpenCvModelStatus::kInvalid,
 			        .error_message =
 			            "Model file is empty for " + std::string(label) + ": " + path.string()};
 		}
 
-		const auto placeholder = CheckPlaceholderPrefix(fd);
-		close(fd);
+		const auto placeholder = CheckPlaceholderPrefix(fd.Get());
 		if (placeholder.status == PlaceholderStatus::kReadError) {
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to pread " + std::string(label) + " '" +

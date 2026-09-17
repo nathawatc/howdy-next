@@ -250,20 +250,19 @@ namespace howdy::native {
 		    -> std::optional<ScopedFileLock> {
 			// Serializes cooperating UserModelStore writers only. Parent-directory write
 			// permission still allows uncooperative actors to rename or unlink entries.
-			const int fd =
-			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-			if (fd < 0) {
+			ScopedFd fd(
+			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+			if (!fd.Valid()) {
 				return std::nullopt;
 			}
-			while (flock(fd, LOCK_EX) != 0) {
+			while (flock(fd.Get(), LOCK_EX) != 0) {
 				if (errno != EINTR) {
-					close(fd);
 					return std::nullopt;
 				}
 			}
 
 			ScopedFileLock lock;
-			lock.fd   = fd;
+			lock.fd   = std::move(fd);
 			lock.path = path.parent_path();
 			return lock;
 		}
@@ -274,30 +273,28 @@ namespace howdy::native {
 			if (!namespace_lock.has_value()) {
 				return std::nullopt;
 			}
-			int  fd                 = open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-			bool created_empty_file = false;
-			if (fd < 0 && errno == ENOENT && create_if_missing) {
-				fd = open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-				          kUserModelFileMode);
-				created_empty_file = fd >= 0;
+			ScopedFd fd(open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW));
+			bool     created_empty_file = false;
+			if (!fd.Valid() && errno == ENOENT && create_if_missing) {
+				fd.Reset(open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+				              kUserModelFileMode));
+				created_empty_file = fd.Valid();
 			}
-			if (fd < 0) {
+			if (!fd.Valid()) {
 				return std::nullopt;
 			}
 			struct stat opened_file{};
-			if (fstat(fd, &opened_file) != 0 || !OpenedModelFileIsSecure(opened_file)) {
-				close(fd);
+			if (fstat(fd.Get(), &opened_file) != 0 || !OpenedModelFileIsSecure(opened_file)) {
 				return std::nullopt;
 			}
-			while (flock(fd, LOCK_EX) != 0) {
+			while (flock(fd.Get(), LOCK_EX) != 0) {
 				if (errno != EINTR) {
-					close(fd);
 					return std::nullopt;
 				}
 			}
 
 			ScopedFileLock lock;
-			lock.fd   = fd;
+			lock.fd   = std::move(fd);
 			lock.path = path;
 			return LockedUserModelFile{.namespace_lock     = std::move(*namespace_lock),
 			                           .lock               = std::move(lock),
@@ -338,10 +335,10 @@ namespace howdy::native {
 			return;
 		}
 		struct stat opened_file{};
-		if (fstat(lock_.fd, &opened_file) != 0 || opened_file.st_size != 0) {
+		if (fstat(lock_.fd.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
 			return;
 		}
-		(void)RemoveLockedFile(path_, lock_.fd);
+		(void)RemoveLockedFile(path_, lock_.fd.Get());
 	}
 
 	auto UserModelStoreTransaction::Path() const -> const std::filesystem::path & {
@@ -362,7 +359,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::PathMatchesLockedFile() const -> bool {
-		return PathIdentifiesFd(path_, lock_.fd);
+		return PathIdentifiesFd(path_, lock_.fd.Get());
 	}
 
 	auto UserModelStoreTransaction::WriteDocument(const user_model_codec::Document &document) const
@@ -370,7 +367,7 @@ namespace howdy::native {
 		if (!PathMatchesLockedFile()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		const auto result = WriteModelsAtomically(path_, document, lock_.fd);
+		const auto result = WriteModelsAtomically(path_, document, lock_.fd.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -378,7 +375,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::RemoveFile() const -> AtomicFileCommitResult {
-		const auto result = RemoveLockedFile(path_, lock_.fd);
+		const auto result = RemoveLockedFile(path_, lock_.fd.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -619,14 +616,14 @@ namespace howdy::native {
 			        StoreListFailure(secured_path.status, secured_path.error_message)),
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd)) {
+		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd.Get())) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(StoreListFailure(
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
 		auto document =
-		    LoadDocumentFromFd(locked_file->lock.fd, path_result.path,
+		    LoadDocumentFromFd(locked_file->lock.fd.Get(), path_result.path,
 		                       {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
 		                       locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
@@ -685,7 +682,7 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd)) {
+		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd.Get())) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kModelChanged,
 			    .error_message = std::string(kUserModelChangedMessage),

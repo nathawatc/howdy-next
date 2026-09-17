@@ -446,7 +446,7 @@ namespace howdy::native::auth_helper {
 			struct stat writable_stat{};
 			struct stat lease_stat{};
 			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kLock);
-			if (lease.Get() < 0 || fstat(slot.lock_fd.Get(), &writable_stat) != 0 ||
+			if (!lease.Valid() || fstat(slot.lock_fd.Get(), &writable_stat) != 0 ||
 			    fstat(lease.Get(), &lease_stat) != 0 || writable_stat.st_dev != lease_stat.st_dev ||
 			    writable_stat.st_ino != lease_stat.st_ino || !S_ISREG(lease_stat.st_mode) ||
 			    (lease_stat.st_mode & 07777) != policy.mode ||
@@ -459,7 +459,7 @@ namespace howdy::native::auth_helper {
 			                     .config_path = auth_helper_protocol::PreparedConfigPath(slot.path),
 			                     .user_models_dir =
 			                         auth_helper_protocol::PreparedUserModelsDir(slot.path),
-			                     .lease_fd = lease.Release()};
+			                     .lease_fd = std::move(lease)};
 		}
 	}  // namespace
 

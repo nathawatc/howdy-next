@@ -133,7 +133,7 @@ namespace {
 	auto CreateLifecycleConversation(NativePromptConversationTestAccess::Descriptors descriptors,
 	                                 LifecycleOperationContext *operations = nullptr)
 	    -> std::unique_ptr<NativePromptConversation> {
-		return CreateConversation(descriptors,
+		return CreateConversation(std::move(descriptors),
 		                          operations == nullptr
 		                              ? NativePromptConversationTestAccess::Operations{}
 		                              : NativePromptConversationTestAccess::Operations{
@@ -205,9 +205,9 @@ auto ExpectOriginalConversationRestored() -> bool {
 	{
 		NativePromptConversation conversation(pamh);
 		NativePromptConversationTestAccess::ReplaceDescriptors(
-		    conversation, {.tty_fd         = slave_fd.Release(),
-		                   .abort_read_fd  = abort_pipe[0].Release(),
-		                   .abort_write_fd = abort_pipe[1].Release()});
+		    conversation, {.tty_fd         = std::move(slave_fd),
+		                   .abort_read_fd  = std::move(abort_pipe[0]),
+		                   .abort_write_fd = std::move(abort_pipe[1])});
 		ok &= Expect(conversation.Available(), "restore test native prompt is available");
 		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
@@ -239,9 +239,9 @@ auto ExpectRestoreHandlesNullPam() -> bool {
 		return false;
 	}
 
-	auto conversation = CreateConversation({.tty_fd         = slave_fd.Release(),
-	                                        .abort_read_fd  = abort_pipe[0].Release(),
-	                                        .abort_write_fd = abort_pipe[1].Release()});
+	auto conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
+	                                        .abort_read_fd  = std::move(abort_pipe[0]),
+	                                        .abort_write_fd = std::move(abort_pipe[1])});
 	NativePromptConversationTestAccess::SetInstalled(*conversation, true);
 	const auto result = conversation->RestoreOriginal();
 	ok &= Expect(!NativePromptConversationTestAccess::Installed(*conversation),
@@ -303,9 +303,9 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 	}
 
 	LifecycleOperationContext operations{.throw_mode = throw_mode};
-	auto conversation = CreateLifecycleConversation({.tty_fd         = slave_fd.Release(),
-	                                                 .abort_read_fd  = abort_pipe[0].Release(),
-	                                                 .abort_write_fd = abort_pipe[1].Release()},
+	auto conversation = CreateLifecycleConversation({.tty_fd         = std::move(slave_fd),
+	                                                 .abort_read_fd  = std::move(abort_pipe[0]),
+	                                                 .abort_write_fd = std::move(abort_pipe[1])},
 	                                                &operations);
 
 	const struct pam_message prompt = {

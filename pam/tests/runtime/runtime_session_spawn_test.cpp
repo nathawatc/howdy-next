@@ -499,9 +499,7 @@ namespace {
 			ok &= Expect(state.log_messages.size() == 1 &&
 			                 state.log_messages[0].contains("posix_spawn_file_actions_destroy"),
 			             "valid prepare logs post-spawn destroy failure");
-			if (prepared.lease_fd >= 0) {
-				(void)close(prepared.lease_fd);
-			}
+			prepared.lease_fd.Reset();
 			(void)close(state.lease_fd);
 		}
 		std::filesystem::remove_all(state.root, error);

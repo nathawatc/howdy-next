@@ -1,6 +1,7 @@
 #pragma once
 
 #include "support/fd_io.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -21,59 +22,6 @@
 namespace howdy::native {
 
 	inline constexpr mode_t kDefaultAtomicFileMode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-
-	class ScopedFd {
-	public:
-		ScopedFd() = default;
-
-		explicit ScopedFd(int fd)
-		    : fd_(fd) {}
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-
-		ScopedFd(ScopedFd &&other) noexcept
-		    : fd_(other.Release()) {}
-
-		auto operator=(ScopedFd &&other) noexcept -> ScopedFd & {
-			if (this != &other) {
-				Reset(other.Release());
-			}
-			return *this;
-		}
-
-		~ScopedFd() {
-			Reset();
-		}
-
-		[[nodiscard]] auto Get() const -> int {
-			return fd_;
-		}
-
-		[[nodiscard]] auto Close() -> bool {
-			if (fd_ < 0) {
-				return true;
-			}
-			const int fd = Release();
-			return ::close(fd) == 0;
-		}
-
-		void Reset(int fd = -1) {
-			if (fd_ >= 0) {
-				::close(fd_);
-			}
-			fd_ = fd;
-		}
-
-		[[nodiscard]] auto Release() -> int {
-			const int fd = fd_;
-			fd_          = -1;
-			return fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
 
 	struct StagedFile {
 		ScopedFd              fd;

@@ -59,15 +59,15 @@ namespace {
 		return PAM_CONV_ERR;
 	}
 
-	auto OpenTtyFd(pam_handle_t *pamh) -> int {
+	auto OpenTtyFd(pam_handle_t *pamh) -> howdy::native::ScopedFd {
 		const void *tty_item = nullptr;
 		if (pam_get_item(pamh, PAM_TTY, &tty_item) != PAM_SUCCESS || tty_item == nullptr) {
-			return -1;
+			return {};
 		}
 
 		auto tty_path = std::string(static_cast<const char *>(tty_item));
 		if (tty_path.empty()) {
-			return -1;
+			return {};
 		}
 		if (tty_path.front() != '/') {
 			tty_path = "/dev/" + tty_path;
@@ -75,24 +75,17 @@ namespace {
 
 		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(
 		    howdy::pam::detail::ScopedFd(open(tty_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY)));
-		if (tty_fd.Get() < 0) {
-			return -1;
+		if (!tty_fd.Valid()) {
+			return {};
 		}
 
 		if (!NativePromptTerminalIsInteractive({.tty    = tty_fd.Get(),
 		                                        .input  = STDIN_FILENO,
 		                                        .output = STDOUT_FILENO,
 		                                        .error  = STDERR_FILENO})) {
-			return -1;
+			return {};
 		}
-		return tty_fd.Release();
-	}
-
-	void CloseFd(int &fd) {
-		if (fd >= 0) {
-			close(fd);
-			fd = -1;
-		}
+		return tty_fd;
 	}
 
 	auto WriteAll(int fd, const std::string &text) -> bool {
@@ -176,17 +169,17 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 	}
 
 	tty_fd_ = OpenTtyFd(pamh_);
-	if (tty_fd_ < 0) {
+	if (!tty_fd_.Valid()) {
 		return;
 	}
 
 	auto abort_pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK);
 	if (!abort_pipe.Valid()) {
-		CloseFd(tty_fd_);
+		tty_fd_.Reset();
 		return;
 	}
-	abort_pipe_[0] = abort_pipe.read.Release();
-	abort_pipe_[1] = abort_pipe.write.Release();
+	abort_pipe_[0] = std::move(abort_pipe.read);
+	abort_pipe_[1] = std::move(abort_pipe.write);
 }
 
 auto NativePromptConversation::ProductionOperations() -> Operations {
@@ -208,8 +201,8 @@ NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
     , dispatch_context_(std::make_unique<DispatchContext>())
     , override_conv_{.conv = Dispatch, .appdata_ptr = dispatch_context_.get()}
     , has_original_conv_(has_original_conv)
-    , tty_fd_(descriptors.tty_fd)
-    , abort_pipe_{{descriptors.abort_read_fd, descriptors.abort_write_fd}}
+    , tty_fd_(std::move(descriptors.tty_fd))
+    , abort_pipe_{std::move(descriptors.abort_read_fd), std::move(descriptors.abort_write_fd)}
     , operations_(operations) {
 	dispatch_context_->owner = this;
 }
@@ -218,9 +211,6 @@ NativePromptConversation::~NativePromptConversation() {
 	if (installed_ && dispatch_context_ != nullptr) {
 		RetainUnsafeDispatchContext();
 	}
-	CloseFd(tty_fd_);
-	CloseFd(abort_pipe_[0]);
-	CloseFd(abort_pipe_[1]);
 }
 
 void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
@@ -274,7 +264,8 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 }
 
 auto NativePromptConversation::Available() const -> bool {
-	return has_original_conv_ && tty_fd_ >= 0 && abort_pipe_[0] >= 0 && abort_pipe_[1] >= 0;
+	return has_original_conv_ && tty_fd_.Valid() && abort_pipe_[0].Valid() &&
+	       abort_pipe_[1].Valid();
 }
 
 auto NativePromptConversation::Install() -> int {
@@ -292,13 +283,13 @@ auto NativePromptConversation::Install() -> int {
 
 void NativePromptConversation::RequestAbort() {
 	abort_requested_.store(true);
-	if (abort_pipe_[1] < 0) {
+	if (!abort_pipe_[1].Valid()) {
 		return;
 	}
 
 	constexpr char signal = 'x';
 	while (true) {
-		const ssize_t result = write(abort_pipe_[1], &signal, 1);
+		const ssize_t result = write(abort_pipe_[1].Get(), &signal, 1);
 		if (result == 1) {
 			return;
 		}
@@ -399,22 +390,23 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 }
 
 auto NativePromptConversation::WriteMessageLine(const struct pam_message &message) const -> int {
-	if (tty_fd_ < 0) {
+	if (!tty_fd_.Valid()) {
 		return PAM_CONV_ERR;
 	}
 
 	const std::string text = message.msg == nullptr ? "" : message.msg;
-	if (!WriteAll(tty_fd_, text)) {
+	if (!WriteAll(tty_fd_.Get(), text)) {
 		return PAM_CONV_ERR;
 	}
 
-	WriteNewline(tty_fd_);
+	WriteNewline(tty_fd_.Get());
 	return PAM_SUCCESS;
 }
 
 auto NativePromptConversation::RestorePromptTerminal(const struct termios &original_termios) const
     -> bool {
-	while (operations_.restore_terminal(operations_.context, tty_fd_, &original_termios) != 0) {
+	while (operations_.restore_terminal(operations_.context, tty_fd_.Get(), &original_termios) !=
+	       0) {
 		if (errno != EINTR) {
 			return false;
 		}
@@ -428,7 +420,7 @@ auto NativePromptConversation::PollPrompt(std::array<struct pollfd, 2> &fds) con
 }
 
 auto NativePromptConversation::ReadPromptChar(char *ch) const -> ssize_t {
-	return operations_.read_prompt(operations_.context, tty_fd_, ch, 1);
+	return operations_.read_prompt(operations_.context, tty_fd_.Get(), ch, 1);
 }
 
 auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds)
@@ -439,7 +431,7 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 		                                                  : PromptIoResult::kAbort;
 	}
 	if (abort_requested_.load()) {
-		DrainAbortPipe(abort_pipe_[0]);
+		DrainAbortPipe(abort_pipe_[0].Get());
 		return PromptIoResult::kAbort;
 	}
 	constexpr short fd_failure_events = POLLHUP | POLLERR | POLLNVAL;
@@ -447,7 +439,7 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 		return PromptIoResult::kAbort;
 	}
 	if ((fds[1].revents & POLLIN) != 0) {
-		DrainAbortPipe(abort_pipe_[0]);
+		DrainAbortPipe(abort_pipe_[0].Get());
 		return PromptIoResult::kAbort;
 	}
 	return poll_result == 0 || (fds[0].revents & POLLIN) == 0 ? PromptIoResult::kRetry
@@ -465,8 +457,8 @@ auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
 
 auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResult {
 	std::array<struct pollfd, 2> fds{{
-	    {.fd = tty_fd_, .events = POLLIN, .revents = 0},
-	    {.fd = abort_pipe_[0], .events = POLLIN, .revents = 0},
+	    {.fd = tty_fd_.Get(), .events = POLLIN, .revents = 0},
+	    {.fd = abort_pipe_[0].Get(), .events = POLLIN, .revents = 0},
 	}};
 	while (true) {
 		const auto poll_result = PollPromptState(fds);
@@ -485,7 +477,7 @@ auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResul
 
 auto NativePromptConversation::PromptInput(const struct pam_message &message, char **response,
                                            bool hide_input) -> int {
-	if (response == nullptr || tty_fd_ < 0) {
+	if (response == nullptr || !tty_fd_.Valid()) {
 		return PAM_CONV_ERR;
 	}
 
@@ -494,7 +486,7 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 	}
 
 	struct termios original_termios{};
-	if (tcgetattr(tty_fd_, &original_termios) != 0) {
+	if (tcgetattr(tty_fd_.Get(), &original_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
 
@@ -508,7 +500,7 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 	}
 	prompt_termios.c_cc[VMIN]  = 1;
 	prompt_termios.c_cc[VTIME] = 0;
-	if (tcsetattr(tty_fd_, TCSANOW, &prompt_termios) != 0) {
+	if (tcsetattr(tty_fd_.Get(), TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
 	const auto abort_prompt = [this, &original_termios] -> int {
@@ -516,12 +508,12 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		if (!restored) {
 			terminal_restore_failed_.store(true);
 		}
-		WriteNewline(tty_fd_);
+		WriteNewline(tty_fd_.Get());
 		return PAM_CONV_ERR;
 	};
 
 	const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
-	if (!WriteAll(tty_fd_, prompt_text)) {
+	if (!WriteAll(tty_fd_.Get(), prompt_text)) {
 		return abort_prompt();
 	}
 
@@ -546,10 +538,10 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 
 	if (!RestorePromptTerminal(original_termios)) {
 		terminal_restore_failed_.store(true);
-		WriteNewline(tty_fd_);
+		WriteNewline(tty_fd_.Get());
 		return PAM_CONV_ERR;
 	}
-	WriteNewline(tty_fd_);
+	WriteNewline(tty_fd_.Get());
 	if (response_too_long) {
 		return PAM_CONV_ERR;
 	}

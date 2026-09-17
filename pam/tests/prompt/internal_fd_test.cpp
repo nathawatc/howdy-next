@@ -155,6 +155,42 @@ namespace {
 		       Expect(DescriptorIsClosed(released_fd), "released descriptor closes explicitly");
 	}
 
+	auto TestScopedFdResetAndClose() -> bool {
+		bool      ok             = true;
+		const int initial_fd     = OpenHighFd();
+		const int replacement_fd = OpenHighFd();
+		if (!Expect(initial_fd > STDERR_FILENO && replacement_fd > STDERR_FILENO,
+		            "opens descriptors for Reset and Close test")) {
+			if (initial_fd >= 0) {
+				(void)close(initial_fd);
+			}
+			if (replacement_fd >= 0) {
+				(void)close(replacement_fd);
+			}
+			return false;
+		}
+
+		ScopedFd fd(initial_fd);
+		fd.Reset(replacement_fd);
+		ok &= Expect(DescriptorIsClosed(initial_fd), "Reset closes previous descriptor");
+		ok &= Expect(fd.Valid() && fd.Get() == replacement_fd, "Reset sets new descriptor");
+		ok &= Expect(fd.Close(), "Close closes descriptor successfully");
+		ok &= Expect(DescriptorIsClosed(replacement_fd), "Close closes descriptor");
+		ok &= Expect(!fd.Valid() && fd.Get() == -1, "Close invalidates ScopedFd");
+
+		const int reset_fd = OpenHighFd();
+		if (!Expect(reset_fd > STDERR_FILENO, "opens descriptor for Reset default argument test")) {
+			return false;
+		}
+		fd.Reset(reset_fd);
+		ok &= Expect(fd.Valid() && fd.Get() == reset_fd, "Reset sets descriptor");
+		fd.Reset();
+		ok &= Expect(!fd.Valid() && fd.Get() == -1,
+		             "Reset with default argument invalidates ScopedFd");
+		ok &= Expect(DescriptorIsClosed(reset_fd), "Reset with default argument closes descriptor");
+		return ok;
+	}
+
 	auto TestInternalPipeValidity() -> bool {
 		bool      ok       = true;
 		const int read_fd  = OpenHighFd();
@@ -571,6 +607,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= TestScopedFdLifecycle();
+	ok &= TestScopedFdResetAndClose();
 	ok &= TestInternalPipeValidity();
 	ok &= RunIsolated(TestInternalPipeLowAndIdenticalEndpoints,
 	                  "low and identical InternalPipe endpoints");

@@ -40,9 +40,8 @@ namespace {
 	};
 
 	auto CloseLease(std::optional<PreparedPaths> &prepared) -> void {
-		if (prepared.has_value() && prepared->lease_fd >= 0) {
-			(void)close(prepared->lease_fd);
-			prepared->lease_fd = -1;
+		if (prepared.has_value()) {
+			prepared->lease_fd.Reset();
 		}
 	}
 
@@ -234,21 +233,21 @@ namespace {
 	auto
 	ExpectReadOnlyLease(const std::optional<howdy::native::auth_helper::PreparedPaths> &prepared)
 	    -> bool {
-		if (!prepared.has_value() || prepared->lease_fd < 0) {
+		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
 			return Expect(false, "first prepare returns lease");
 		}
 
 		bool ok = true;
-		ok &= Expect((fcntl(prepared->lease_fd, F_GETFD) & FD_CLOEXEC) != 0,
+		ok &= Expect((fcntl(prepared->lease_fd.Get(), F_GETFD) & FD_CLOEXEC) != 0,
 		             "returned lease is close-on-exec");
-		ok &= Expect((fcntl(prepared->lease_fd, F_GETFL) & O_ACCMODE) == O_RDONLY,
+		ok &= Expect((fcntl(prepared->lease_fd.Get(), F_GETFL) & O_ACCMODE) == O_RDONLY,
 		             "returned lease is read-only");
 		errno                     = 0;
-		const bool write_rejected = write(prepared->lease_fd, "x", 1) == -1 && errno == EBADF;
+		const bool write_rejected = write(prepared->lease_fd.Get(), "x", 1) == -1 && errno == EBADF;
 		ok &= Expect(write_rejected, "returned lease rejects writes");
 		errno = 0;
 		const bool truncate_rejected =
-		    ftruncate(prepared->lease_fd, 1) == -1 && (errno == EINVAL || errno == EBADF);
+		    ftruncate(prepared->lease_fd.Get(), 1) == -1 && (errno == EINVAL || errno == EBADF);
 		ok &= Expect(truncate_rejected, "returned lease rejects truncation");
 		return ok;
 	}

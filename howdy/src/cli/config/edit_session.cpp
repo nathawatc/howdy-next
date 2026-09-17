@@ -5,6 +5,7 @@
 #include "config/test_hooks.hpp"
 #include "support/fd_io.hpp"
 #include "support/invoking_user_env.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -258,22 +259,20 @@ namespace howdy::native::config_internal {
 	                          const std::optional<howdy::native::InvokingUser> &invoking_user,
 	                          const file_security_internal::ValidationRoot     &validation_root)
 	    -> std::optional<TempConfigCopy> {
-		const int input_fd =
-		    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-		if (input_fd < 0) {
+		const ScopedFd input_fd(
+		    open(source_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (!input_fd.Valid()) {
 			return std::nullopt;
 		}
 		if (config_test_hooks::Current()) {
 			config_test_hooks::Current()();
 		}
 		const auto security = howdy::native::CheckSecureConfigFd(
-		    input_fd, source_path, DefaultSecureOwnerUid(), validation_root);
+		    input_fd.Get(), source_path, DefaultSecureOwnerUid(), validation_root);
 		if (!security.ok) {
-			close(input_fd);
 			return std::nullopt;
 		}
-		auto content = howdy::native::ReadConfigFromFd(input_fd);
-		close(input_fd);
+		auto content = howdy::native::ReadConfigFromFd(input_fd.Get());
 		if (!content.has_value()) {
 			return std::nullopt;
 		}
@@ -327,20 +326,19 @@ namespace howdy::native::config_internal {
 		if (content == nullptr) {
 			return false;
 		}
-		const int input_fd = open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-		if (input_fd < 0) {
+		const ScopedFd input_fd(open(temp_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+		if (!input_fd.Valid()) {
 			return false;
 		}
 
 		struct stat edited_stat{};
-		const bool  edited_ok = fstat(input_fd, &edited_stat) == 0 && S_ISREG(edited_stat.st_mode);
+		const bool  edited_ok =
+		    fstat(input_fd.Get(), &edited_stat) == 0 && S_ISREG(edited_stat.st_mode);
 		if (!edited_ok) {
-			close(input_fd);
 			return false;
 		}
 
-		auto snapshot = howdy::native::ReadConfigFromFd(input_fd);
-		close(input_fd);
+		auto snapshot = howdy::native::ReadConfigFromFd(input_fd.Get());
 		if (!snapshot.has_value()) {
 			return false;
 		}
@@ -350,22 +348,20 @@ namespace howdy::native::config_internal {
 
 	auto FileContentMatches(const fs::path &path, const std::string &expected,
 	                        const file_security_internal::ValidationRoot &validation_root) -> bool {
-		const int input_fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-		if (input_fd < 0) {
+		const ScopedFd input_fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		if (!input_fd.Valid()) {
 			return false;
 		}
 		if (config_test_hooks::Current()) {
 			config_test_hooks::Current()();
 		}
 		const auto security = howdy::native::CheckSecureConfigFd(
-		    input_fd, path, DefaultSecureOwnerUid(), validation_root);
+		    input_fd.Get(), path, DefaultSecureOwnerUid(), validation_root);
 		if (!security.ok) {
-			close(input_fd);
 			return false;
 		}
 
-		const auto current = howdy::native::ReadConfigFromFd(input_fd);
-		close(input_fd);
+		const auto current = howdy::native::ReadConfigFromFd(input_fd.Get());
 		return current.has_value() && *current == expected;
 	}
 

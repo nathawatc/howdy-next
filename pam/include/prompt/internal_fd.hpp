@@ -1,25 +1,10 @@
 #pragma once
 
+#include "support/scoped_fd.hpp"
+
 namespace howdy::pam::detail {
 
-	class ScopedFd {
-	public:
-		ScopedFd() noexcept = default;
-		explicit ScopedFd(int fd) noexcept;
-		~ScopedFd();
-
-		ScopedFd(const ScopedFd &)                     = delete;
-		auto operator=(const ScopedFd &) -> ScopedFd & = delete;
-		ScopedFd(ScopedFd &&other) noexcept;
-		auto operator=(ScopedFd &&other) noexcept -> ScopedFd &;
-
-		[[nodiscard]] auto Get() const noexcept -> int;
-		[[nodiscard]] auto Valid() const noexcept -> bool;
-		auto               Release() noexcept -> int;
-
-	private:
-		int fd_ = -1;
-	};
+	using ScopedFd = howdy::native::ScopedFd;
 
 	struct InternalFdOperations {
 		void *context                                               = nullptr;

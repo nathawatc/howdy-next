@@ -12,10 +12,12 @@
 
 class NativePromptConversationTestAccess {
 public:
+	using ScopedFd = howdy::test::ScopedFd;
+
 	struct Descriptors {
-		int tty_fd         = -1;
-		int abort_read_fd  = -1;
-		int abort_write_fd = -1;
+		ScopedFd tty_fd;
+		ScopedFd abort_read_fd;
+		ScopedFd abort_write_fd;
 	};
 
 	struct Operations {
@@ -28,7 +30,7 @@ public:
 	};
 
 	static auto Create(Descriptors descriptors) -> std::unique_ptr<NativePromptConversation> {
-		return Create(descriptors, Operations{});
+		return Create(std::move(descriptors), Operations{});
 	}
 
 	static auto Create(Descriptors descriptors, Operations operations)
@@ -50,9 +52,9 @@ public:
 		};
 		return std::unique_ptr<NativePromptConversation>(
 		    new NativePromptConversation(nullptr, {}, true,
-		                                 {.tty_fd         = descriptors.tty_fd,
-		                                  .abort_read_fd  = descriptors.abort_read_fd,
-		                                  .abort_write_fd = descriptors.abort_write_fd},
+		                                 {.tty_fd         = std::move(descriptors.tty_fd),
+		                                  .abort_read_fd  = std::move(descriptors.abort_read_fd),
+		                                  .abort_write_fd = std::move(descriptors.abort_write_fd)},
 		                                 injected));
 	}
 
@@ -77,13 +79,13 @@ public:
 
 	static void ReplaceDescriptors(NativePromptConversation &conversation,
 	                               Descriptors               descriptors) {
-		conversation.tty_fd_     = descriptors.tty_fd;
-		conversation.abort_pipe_ = {descriptors.abort_read_fd, descriptors.abort_write_fd};
+		conversation.tty_fd_     = std::move(descriptors.tty_fd);
+		conversation.abort_pipe_ = {std::move(descriptors.abort_read_fd),
+		                            std::move(descriptors.abort_write_fd)};
 	}
 
 	static void CloseAbortWriteFd(NativePromptConversation &conversation) {
-		::close(conversation.abort_pipe_[1]);
-		conversation.abort_pipe_[1] = -1;
+		conversation.abort_pipe_[1].Reset();
 	}
 
 	static void SetInstalled(NativePromptConversation &conversation, bool installed) {
@@ -106,15 +108,15 @@ public:
 	}
 
 	[[nodiscard]] static auto TtyFd(const NativePromptConversation &conversation) -> int {
-		return conversation.tty_fd_;
+		return conversation.tty_fd_.Get();
 	}
 
 	[[nodiscard]] static auto AbortReadFd(const NativePromptConversation &conversation) -> int {
-		return conversation.abort_pipe_[0];
+		return conversation.abort_pipe_[0].Get();
 	}
 
 	[[nodiscard]] static auto AbortWriteFd(const NativePromptConversation &conversation) -> int {
-		return conversation.abort_pipe_[1];
+		return conversation.abort_pipe_[1].Get();
 	}
 };
 
@@ -191,5 +193,5 @@ inline auto ReadWithTimeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_
 inline auto CreateConversation(NativePromptConversationTestAccess::Descriptors descriptors,
                                NativePromptConversationTestAccess::Operations  operations = {})
     -> std::unique_ptr<NativePromptConversation> {
-	return NativePromptConversationTestAccess::Create(descriptors, operations);
+	return NativePromptConversationTestAccess::Create(std::move(descriptors), operations);
 }

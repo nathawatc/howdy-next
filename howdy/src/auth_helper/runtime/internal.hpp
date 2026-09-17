@@ -9,55 +9,13 @@
 #include <optional>
 #include <string>
 #include <unistd.h>
-#include <utility>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 
 namespace howdy::native::auth_helper::runtime_internal {
 
-	class __attribute__((visibility("hidden"))) UniqueFd {
-	public:
-		UniqueFd() = default;
-
-		explicit UniqueFd(int fd)
-		    : fd_(fd) {}
-
-		~UniqueFd() {
-			Reset();
-		}
-
-		UniqueFd(const UniqueFd &)                     = delete;
-		auto operator=(const UniqueFd &) -> UniqueFd & = delete;
-
-		UniqueFd(UniqueFd &&other) noexcept
-		    : fd_(std::exchange(other.fd_, -1)) {}
-
-		auto operator=(UniqueFd &&other) noexcept -> UniqueFd & {
-			if (this != &other) {
-				Reset(std::exchange(other.fd_, -1));
-			}
-			return *this;
-		}
-
-		[[nodiscard]] auto Get() const -> int {
-			return fd_;
-		}
-
-		[[nodiscard]] auto Release() -> int {
-			return std::exchange(fd_, -1);
-		}
-
-		void Reset(int fd = -1) {
-			if (fd_ >= 0) {
-				(void)close(fd_);
-			}
-			fd_ = fd;
-		}
-
-	private:
-		int fd_ = -1;
-	};
+	using UniqueFd = howdy::native::ScopedFd;
 
 	struct __attribute__((visibility("hidden"))) SourceFile {
 		UniqueFd    fd;

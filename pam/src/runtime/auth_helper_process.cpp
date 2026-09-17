@@ -273,7 +273,7 @@ namespace {
 			CloseOwnedFd(operations, lease_fd);
 			return false;
 		}
-		prepared->lease_fd = lease_fd;
+		prepared->lease_fd = howdy::native::ScopedFd(lease_fd);
 		return true;
 	}
 

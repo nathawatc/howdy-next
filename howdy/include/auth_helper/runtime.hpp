@@ -1,5 +1,7 @@
 #pragma once
 
+#include "support/scoped_fd.hpp"
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -13,7 +15,7 @@ namespace howdy::native::auth_helper {
 		std::filesystem::path runtime_dir;
 		std::filesystem::path config_path;
 		std::filesystem::path user_models_dir;
-		int                   lease_fd = -1;
+		ScopedFd              lease_fd;
 	};
 
 	struct RuntimeIdentity {
