@@ -13,36 +13,44 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <variant>
 
 namespace howdy::native::config_schema {
 	namespace {
 
-		inline constexpr NumericRange kTimeoutRange{.minimum = 1.0F, .maximum = 300.0F};
-		inline constexpr NumericRange kMaxHeightRange{.minimum = 32.0F, .maximum = 4096.0F};
-		inline constexpr NumericRange kRotateRange{.minimum = 0.0F, .maximum = 2.0F};
-		inline constexpr NumericRange kDarkThresholdRange{.minimum = 0.0F, .maximum = 99.9F};
-		inline constexpr NumericRange kClaheClipLimitRange{.minimum = 0.01F, .maximum = 100.0F};
-		inline constexpr NumericRange kClaheTileGridSizeRange{.minimum = 1.0F, .maximum = 64.0F};
-		inline constexpr NumericRange kYunetScoreThresholdRange{.minimum = 0.0F, .maximum = 1.0F};
-		inline constexpr NumericRange kYunetNmsThresholdRange{.minimum = 0.0F, .maximum = 1.0F};
-		inline constexpr NumericRange kYunetTopKRange{.minimum = 1.0F, .maximum = 10000.0F};
-		inline constexpr NumericRange kFrameSizeRange{
-		    .minimum           = 16.0F,
-		    .maximum           = 8192.0F,
-		    .has_allowed_value = true,
-		    .allowed_value     = -1.0F,
+		inline constexpr NumericRange kTimeoutRange = IntegerRange{.minimum = 1, .maximum = 300};
+		inline constexpr NumericRange kMaxHeightRange =
+		    FloatRange{.minimum = 32.0F, .maximum = 4096.0F};
+		inline constexpr NumericRange kRotateRange = IntegerRange{.minimum = 0, .maximum = 2};
+		inline constexpr NumericRange kDarkThresholdRange =
+		    FloatRange{.minimum = 0.0F, .maximum = 99.9F};
+		inline constexpr NumericRange kClaheClipLimitRange =
+		    FloatRange{.minimum = 0.01F, .maximum = 100.0F};
+		inline constexpr NumericRange kClaheTileGridSizeRange =
+		    IntegerRange{.minimum = 1, .maximum = 64};
+		inline constexpr NumericRange kYunetScoreThresholdRange =
+		    FloatRange{.minimum = 0.0F, .maximum = 1.0F};
+		inline constexpr NumericRange kYunetNmsThresholdRange =
+		    FloatRange{.minimum = 0.0F, .maximum = 1.0F};
+		inline constexpr NumericRange kYunetTopKRange =
+		    IntegerRange{.minimum = 1, .maximum = 10000};
+		inline constexpr NumericRange kFrameSizeRange = IntegerRange{
+		    .minimum       = 16,
+		    .maximum       = 8192,
+		    .allowed_value = -1,
 		};
-		inline constexpr NumericRange kDeviceFpsRange{.minimum = 0.0F, .maximum = 480.0F};
-		inline constexpr NumericRange kExposureRange{
-		    .minimum           = 0.0F,
-		    .maximum           = 10000.0F,
-		    .has_allowed_value = true,
-		    .allowed_value     = -1.0F,
+		inline constexpr NumericRange kDeviceFpsRange = IntegerRange{.minimum = 0, .maximum = 480};
+		inline constexpr NumericRange kExposureRange  = IntegerRange{
+		    .minimum       = 0,
+		    .maximum       = 10000,
+		    .allowed_value = -1,
 		};
-		inline constexpr NumericRange kSfaceThresholdRange{.minimum = 0.0F,
-		                                                   .maximum = FaceMetricThresholdMaximum()};
-		inline constexpr auto         kExpectedBooleanRule = "expected a boolean";
-		inline constexpr auto         kFrameSizeRule = "expected -1 or integer range 16..8192";
+		inline constexpr NumericRange kSfaceThresholdRange = FloatRange{
+		    .minimum = 0.0F,
+		    .maximum = FaceMetricThresholdMaximum(),
+		};
+		inline constexpr auto kExpectedBooleanRule = "expected a boolean";
+		inline constexpr auto kFrameSizeRule       = "expected -1 or integer range 16..8192";
 
 		inline constexpr auto                            kSfaceMetricChoices = kFaceMetricSpellings;
 		inline constexpr std::array<std::string_view, 1> kDevicePathChoices  = {kNoCaptureDevice};
@@ -310,50 +318,75 @@ namespace howdy::native::config_schema {
 		return std::string(buffer.data(), result.ptr);
 	}
 
-	auto FormatFallbackValue(const Option &option) -> std::optional<std::string> {
-		switch (option.type) {
-			case ValueType::kBoolean:
-				return option.fallback.boolean ? "true" : "false";
-			case ValueType::kInteger:
-				return FormatIntegerValue(option.fallback.integer);
-			case ValueType::kFloatingPoint:
-				return FormatFloatingPointValue(option.fallback.floating_point);
-			case ValueType::kString:
-				return std::string(option.fallback.string);
+	namespace {
+
+		auto FormatRuntimeDefault(const RuntimeDefault &value) -> std::optional<std::string> {
+			struct Visitor {
+				auto operator()(std::monostate unused) const -> std::optional<std::string> {
+					(void)unused;
+					return std::nullopt;
+				}
+
+				auto operator()(bool val) const -> std::optional<std::string> {
+					return val ? "true" : "false";
+				}
+
+				auto operator()(int val) const -> std::optional<std::string> {
+					return FormatIntegerValue(val);
+				}
+
+				auto operator()(float val) const -> std::optional<std::string> {
+					return FormatFloatingPointValue(val);
+				}
+
+				auto operator()(std::string_view val) const -> std::optional<std::string> {
+					return std::string(val);
+				}
+			};
+
+			return std::visit(Visitor{}, value);
 		}
-		return std::nullopt;
+
+	}  // namespace
+
+	auto FormatFallbackValue(const Option &option) -> std::optional<std::string> {
+		return FormatRuntimeDefault(option.fallback);
 	}
 
 	auto RuntimeDefaultBool(OptionId id) -> bool {
 		const auto &fallback = RuntimeConfigOption(id).fallback;
-		if (!fallback.has_boolean) {
+		const auto *val      = std::get_if<bool>(&fallback);
+		if (val == nullptr) {
 			std::abort();
 		}
-		return fallback.boolean;
+		return *val;
 	}
 
 	auto RuntimeDefaultInt(OptionId id) -> int {
 		const auto &fallback = RuntimeConfigOption(id).fallback;
-		if (!fallback.has_integer) {
+		const auto *val      = std::get_if<int>(&fallback);
+		if (val == nullptr) {
 			std::abort();
 		}
-		return fallback.integer;
+		return *val;
 	}
 
 	auto RuntimeDefaultFloat(OptionId id) -> float {
 		const auto &fallback = RuntimeConfigOption(id).fallback;
-		if (!fallback.has_floating_point) {
+		const auto *val      = std::get_if<float>(&fallback);
+		if (val == nullptr) {
 			std::abort();
 		}
-		return fallback.floating_point;
+		return *val;
 	}
 
 	auto RuntimeDefaultString(OptionId id) -> std::string_view {
 		const auto &fallback = RuntimeConfigOption(id).fallback;
-		if (!fallback.has_string) {
+		const auto *val      = std::get_if<std::string_view>(&fallback);
+		if (val == nullptr) {
 			std::abort();
 		}
-		return fallback.string;
+		return *val;
 	}
 
 }  // namespace howdy::native::config_schema

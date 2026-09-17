@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace howdy::native {
 
@@ -22,51 +23,54 @@ namespace howdy::native {
 	}
 
 	inline auto ReadRuntimeBool(const ConfigReader &reader, config_schema::OptionId id) -> bool {
-		const auto &option = RuntimeOption(id, config_schema::ValueType::kBoolean);
-		if (!option.fallback.has_boolean) {
+		const auto &option   = RuntimeOption(id, config_schema::ValueType::kBoolean);
+		const auto *fallback = std::get_if<bool>(&option.fallback);
+		if (fallback == nullptr) {
 			std::abort();
 		}
-		return reader.GetBool(std::string(option.section), std::string(option.key),
-		                      option.fallback.boolean);
+		return reader.GetBool(std::string(option.section), std::string(option.key), *fallback);
 	}
 
 	inline auto ReadRuntimeInt(const ConfigReader &reader, config_schema::OptionId id) -> int {
-		const auto &option = RuntimeOption(id, config_schema::ValueType::kInteger);
-		if (!option.fallback.has_integer) {
+		const auto &option   = RuntimeOption(id, config_schema::ValueType::kInteger);
+		const auto *fallback = std::get_if<int>(&option.fallback);
+		if (fallback == nullptr) {
 			std::abort();
 		}
-		const int value = reader.GetInt(std::string(option.section), std::string(option.key),
-		                                option.fallback.integer);
-		if (option.range.has_allowed_value &&
-		    value == static_cast<int>(option.range.allowed_value)) {
-			return value;
+		const int value =
+		    reader.GetInt(std::string(option.section), std::string(option.key), *fallback);
+		if (const auto *range = std::get_if<config_schema::IntegerRange>(&option.range)) {
+			if (range->allowed_value.has_value() && value == *range->allowed_value) {
+				return value;
+			}
+			return value >= range->minimum && value <= range->maximum ? value : *fallback;
 		}
-		return value >= static_cast<int>(option.range.minimum) &&
-		               value <= static_cast<int>(option.range.maximum)
-		           ? value
-		           : option.fallback.integer;
+		return value;
 	}
 
 	inline auto ReadRuntimeFloat(const ConfigReader &reader, config_schema::OptionId id) -> float {
-		const auto &option = RuntimeOption(id, config_schema::ValueType::kFloatingPoint);
-		if (!option.fallback.has_floating_point) {
+		const auto &option   = RuntimeOption(id, config_schema::ValueType::kFloatingPoint);
+		const auto *fallback = std::get_if<float>(&option.fallback);
+		if (fallback == nullptr) {
 			std::abort();
 		}
-		const float value = reader.GetFloat(std::string(option.section), std::string(option.key),
-		                                    option.fallback.floating_point);
-		return value >= option.range.minimum && value <= option.range.maximum
-		           ? value
-		           : option.fallback.floating_point;
+		const float value =
+		    reader.GetFloat(std::string(option.section), std::string(option.key), *fallback);
+		if (const auto *range = std::get_if<config_schema::FloatRange>(&option.range)) {
+			return value >= range->minimum && value <= range->maximum ? value : *fallback;
+		}
+		return value;
 	}
 
 	inline auto ReadRuntimeString(const ConfigReader &reader, config_schema::OptionId id)
 	    -> std::string {
-		const auto &option = RuntimeOption(id, config_schema::ValueType::kString);
-		if (!option.fallback.has_string) {
+		const auto &option   = RuntimeOption(id, config_schema::ValueType::kString);
+		const auto *fallback = std::get_if<std::string_view>(&option.fallback);
+		if (fallback == nullptr) {
 			std::abort();
 		}
 		auto value = reader.Get(std::string(option.section), std::string(option.key),
-		                        std::string(option.fallback.string));
+		                        std::string(*fallback));
 		if (option.choices.empty() ||
 		    option.special_rule == config_schema::SpecialRule::kDevicePath) {
 			return value;
@@ -77,33 +81,35 @@ namespace howdy::native {
 		});
 		return std::ranges::find(option.choices, value) != option.choices.end()
 		           ? value
-		           : std::string(option.fallback.string);
+		           : std::string(*fallback);
 	}
 
 	inline auto ReadSfaceMetric(const ConfigReader &reader) -> std::optional<FaceMetric> {
-		const auto &option = RuntimeOption(config_schema::OptionId::kFaceSfaceMetric,
-		                                   config_schema::ValueType::kString);
-		if (!option.fallback.has_string) {
+		const auto &option   = RuntimeOption(config_schema::OptionId::kFaceSfaceMetric,
+		                                     config_schema::ValueType::kString);
+		const auto *fallback = std::get_if<std::string_view>(&option.fallback);
+		if (fallback == nullptr) {
 			std::abort();
 		}
 		const auto value = reader.Get(std::string(option.section), std::string(option.key),
-		                              std::string(option.fallback.string));
-		return ParseFaceMetric(value.empty() ? option.fallback.string : value);
+		                              std::string(*fallback));
+		return ParseFaceMetric(value.empty() ? *fallback : value);
 	}
 
 	inline auto ReadSfaceThreshold(const ConfigReader &reader, FaceMetric metric) -> float {
-		const auto &option = RuntimeOption(config_schema::OptionId::kFaceSfaceThreshold,
-		                                   config_schema::ValueType::kFloatingPoint);
-		const auto *policy = GetFaceMetricPolicy(metric);
+		const auto &option   = RuntimeOption(config_schema::OptionId::kFaceSfaceThreshold,
+		                                     config_schema::ValueType::kFloatingPoint);
+		const auto *policy   = GetFaceMetricPolicy(metric);
+		const auto *fallback = std::get_if<float>(&option.fallback);
 		if (option.special_rule != config_schema::SpecialRule::kSfaceThreshold ||
-		    !option.fallback.has_floating_point || policy == nullptr) {
+		    fallback == nullptr || policy == nullptr) {
 			std::abort();
 		}
-		const float value = reader.GetFloat(std::string(option.section), std::string(option.key),
-		                                    option.fallback.floating_point);
-		return value >= option.range.minimum && value <= policy->threshold_maximum
-		           ? value
-		           : option.fallback.floating_point;
+		const float value =
+		    reader.GetFloat(std::string(option.section), std::string(option.key), *fallback);
+		const auto *range   = std::get_if<config_schema::FloatRange>(&option.range);
+		const float minimum = range != nullptr ? range->minimum : 0.0F;
+		return value >= minimum && value <= policy->threshold_maximum ? value : *fallback;
 	}
 
 }  // namespace howdy::native

@@ -5,15 +5,17 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <limits>
 #include <optional>
 #include <span>
 #include <string>
+#include <variant>
 
 namespace howdy::native::config_schema_internal {
 
 	namespace {
 
+		using config_schema::FloatRange;
+		using config_schema::IntegerRange;
 		using config_schema::NumericRange;
 		using config_schema::Option;
 		using config_schema::OptionId;
@@ -36,68 +38,30 @@ namespace howdy::native::config_schema_internal {
 		}
 
 		auto FallbackMatchesType(const Option &option) -> bool {
-			const auto &fallback   = option.fallback;
-			const auto  flag_count = static_cast<unsigned>(fallback.has_boolean) +
-			                         static_cast<unsigned>(fallback.has_integer) +
-			                         static_cast<unsigned>(fallback.has_floating_point) +
-			                         static_cast<unsigned>(fallback.has_string);
-			if (flag_count != 1U) {
-				return false;
-			}
-
 			switch (option.type) {
 				case ValueType::kBoolean:
-					return fallback.has_boolean;
+					return std::holds_alternative<bool>(option.fallback);
 				case ValueType::kInteger:
-					return fallback.has_integer;
+					return std::holds_alternative<int>(option.fallback);
 				case ValueType::kFloatingPoint:
-					return fallback.has_floating_point;
+					return std::holds_alternative<float>(option.fallback);
 				case ValueType::kString:
-					return fallback.has_string;
+					return std::holds_alternative<std::string_view>(option.fallback);
 			}
 			return false;
 		}
 
-		auto RangeHasMetadata(const NumericRange &range) -> bool {
-			return range.minimum != 0.0F || range.maximum != 0.0F || range.has_allowed_value;
-		}
-
-		auto IsRepresentableInteger(float value) -> bool {
-			if (!std::isfinite(value) || std::trunc(value) != value) {
-				return false;
+		auto ValidateIntegerFallback(const Option &option, const IntegerRange &range)
+		    -> std::optional<std::string> {
+			const auto *fallback = std::get_if<int>(&option.fallback);
+			if (fallback == nullptr) {
+				return "fallback type mismatch: " + OptionName(option);
 			}
-			const auto wide_value = static_cast<long double>(value);
-			return wide_value >= static_cast<long double>(std::numeric_limits<int>::min()) &&
-			       wide_value <= static_cast<long double>(std::numeric_limits<int>::max());
-		}
-
-		auto ValidateIntegerFallback(const Option &option) -> std::optional<std::string> {
-			if (!RangeHasMetadata(option.range)) {
+			if (range.allowed_value.has_value() && *fallback == *range.allowed_value) {
 				return std::nullopt;
 			}
-
-			const auto &range    = option.range;
-			const auto  fallback = option.fallback.integer;
-			if (range.has_allowed_value && fallback == static_cast<int>(range.allowed_value)) {
-				return std::nullopt;
-			}
-			if (fallback < static_cast<int>(range.minimum) ||
-			    fallback > static_cast<int>(range.maximum)) {
+			if (*fallback < range.minimum || *fallback > range.maximum) {
 				return "integer fallback is outside range: " + OptionName(option);
-			}
-			return std::nullopt;
-		}
-
-		auto ValidateFloatingPointFallback(const Option &option) -> std::optional<std::string> {
-			const auto fallback = option.fallback.floating_point;
-			if (!std::isfinite(fallback)) {
-				return "floating-point fallback is not finite: " + OptionName(option);
-			}
-			if (!RangeHasMetadata(option.range)) {
-				return std::nullopt;
-			}
-			if (fallback < option.range.minimum || fallback > option.range.maximum) {
-				return "floating-point fallback is outside range: " + OptionName(option);
 			}
 			return std::nullopt;
 		}
@@ -105,31 +69,42 @@ namespace howdy::native::config_schema_internal {
 		auto ValidateRange(const Option &option) -> std::optional<std::string> {
 			const auto name = OptionName(option);
 			if (option.type != ValueType::kInteger && option.type != ValueType::kFloatingPoint) {
-				if (RangeHasMetadata(option.range)) {
+				if (!std::holds_alternative<std::monostate>(option.range)) {
 					return "numeric range is incompatible with option type: " + name;
 				}
 				return std::nullopt;
 			}
 
-			const auto &range = option.range;
-			if (!std::isfinite(range.minimum) || !std::isfinite(range.maximum) ||
-			    range.minimum > range.maximum) {
-				return "invalid numeric range: " + name;
-			}
-			if (option.type == ValueType::kInteger && (!IsRepresentableInteger(range.minimum) ||
-			                                           !IsRepresentableInteger(range.maximum))) {
-				return "integer range is not representable: " + name;
+			if (option.type == ValueType::kInteger) {
+				if (std::holds_alternative<FloatRange>(option.range)) {
+					return "numeric range is incompatible with option type: " + name;
+				}
+				if (const auto *range = std::get_if<IntegerRange>(&option.range)) {
+					if (range->minimum > range->maximum) {
+						return "invalid numeric range: " + name;
+					}
+					return ValidateIntegerFallback(option, *range);
+				}
+				return std::nullopt;
 			}
 
-			if (range.has_allowed_value &&
-			    (option.type == ValueType::kInteger ? !IsRepresentableInteger(range.allowed_value)
-			                                        : !std::isfinite(range.allowed_value))) {
-				return "allowed value is not representable: " + name;
+			if (std::holds_alternative<IntegerRange>(option.range)) {
+				return "numeric range is incompatible with option type: " + name;
 			}
-			if (option.type == ValueType::kInteger) {
-				return ValidateIntegerFallback(option);
+			const auto *fallback = std::get_if<float>(&option.fallback);
+			if (fallback == nullptr || !std::isfinite(*fallback)) {
+				return "floating-point fallback is not finite: " + name;
 			}
-			return ValidateFloatingPointFallback(option);
+			if (const auto *range = std::get_if<FloatRange>(&option.range)) {
+				if (!std::isfinite(range->minimum) || !std::isfinite(range->maximum) ||
+				    range->minimum > range->maximum) {
+					return "invalid numeric range: " + name;
+				}
+				if (*fallback < range->minimum || *fallback > range->maximum) {
+					return "floating-point fallback is outside range: " + name;
+				}
+			}
+			return std::nullopt;
 		}
 
 		auto ValidateChoices(const Option &option) -> std::optional<std::string> {
@@ -149,8 +124,9 @@ namespace howdy::native::config_schema_internal {
 					return "duplicate choice: " + name;
 				}
 			}
-			if (option.special_rule != SpecialRule::kDevicePath &&
-			    std::ranges::find(option.choices, option.fallback.string) == option.choices.end()) {
+			const auto *fallback_str = std::get_if<std::string_view>(&option.fallback);
+			if (option.special_rule != SpecialRule::kDevicePath && fallback_str != nullptr &&
+			    std::ranges::find(option.choices, *fallback_str) == option.choices.end()) {
 				return "fallback is not one of choices: " + name;
 			}
 			return std::nullopt;
@@ -187,7 +163,11 @@ namespace howdy::native::config_schema_internal {
 			if (metric_option == nullptr) {
 				return std::nullopt;
 			}
-			const auto metric = ParseFaceMetric(metric_option->fallback.string);
+			const auto *metric_str = std::get_if<std::string_view>(&metric_option->fallback);
+			if (metric_str == nullptr) {
+				return std::nullopt;
+			}
+			const auto metric = ParseFaceMetric(*metric_str);
 			if (!metric.has_value()) {
 				return std::nullopt;
 			}
@@ -197,10 +177,12 @@ namespace howdy::native::config_schema_internal {
 			}
 
 			for (const auto &option : options) {
-				if (option.special_rule == SpecialRule::kSfaceThreshold &&
-				    option.fallback.floating_point > policy->threshold_maximum) {
-					return "sface threshold fallback exceeds " + std::string(policy->spelling) +
-					       " range: " + OptionName(option);
+				if (option.special_rule == SpecialRule::kSfaceThreshold) {
+					const auto *threshold = std::get_if<float>(&option.fallback);
+					if (threshold != nullptr && *threshold > policy->threshold_maximum) {
+						return "sface threshold fallback exceeds " + std::string(policy->spelling) +
+						       " range: " + OptionName(option);
+					}
 				}
 			}
 			return std::nullopt;

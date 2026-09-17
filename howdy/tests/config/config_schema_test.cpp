@@ -8,9 +8,12 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 namespace {
 
+	using howdy::native::config_schema::FloatRange;
+	using howdy::native::config_schema::IntegerRange;
 	using howdy::native::config_schema::NumericRange;
 	using howdy::native::config_schema::Option;
 	using howdy::native::config_schema::OptionId;
@@ -71,7 +74,9 @@ auto main() -> int {
 
 	const auto &sface_threshold_opt =
 	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kFaceSfaceThreshold);
-	ok &= Expect(sface_threshold_opt.range.maximum == howdy::native::FaceMetricThresholdMaximum(),
+	const auto *sface_range = std::get_if<FloatRange>(&sface_threshold_opt.range);
+	ok &= Expect(sface_range != nullptr &&
+	                 sface_range->maximum == howdy::native::FaceMetricThresholdMaximum(),
 	             "production sface_threshold range maximum matches face_metric_threshold_maximum");
 
 	const std::array duplicate_ids = {
@@ -104,13 +109,23 @@ auto main() -> int {
 	};
 	ok &= Rejects(mismatched_fallback, "fallback type mismatch");
 
+	const std::array missing_fallback = {
+	    Option{.id           = OptionId::kCoreDetectionNotice,
+	           .section      = "one",
+	           .key          = "value",
+	           .type         = ValueType::kBoolean,
+	           .invalid_rule = "synthetic rule",
+	           .description  = "Synthetic option."},
+	};
+	ok &= Rejects(missing_fallback, "fallback type mismatch");
+
 	const std::array invalid_id = {
 	    Option{.id           = static_cast<OptionId>(255),
 	           .section      = "video",
 	           .key          = "timeout",
 	           .type         = ValueType::kInteger,
 	           .fallback     = howdy::native::config_schema::IntDefault(5),
-	           .range        = {.minimum = 1.0F, .maximum = 10.0F},
+	           .range        = IntegerRange{.minimum = 1, .maximum = 10},
 	           .invalid_rule = "synthetic rule",
 	           .description  = "Synthetic option."},
 	};
@@ -134,7 +149,7 @@ auto main() -> int {
 	           .key          = "timeout",
 	           .type         = ValueType::kInteger,
 	           .fallback     = howdy::native::config_schema::IntDefault(5),
-	           .range        = {.minimum = 10.0F, .maximum = 5.0F},
+	           .range        = IntegerRange{.minimum = 10, .maximum = 5},
 	           .choices      = {},
 	           .special_rule = SpecialRule::kNone,
 	           .invalid_rule = "synthetic rule",
@@ -142,38 +157,65 @@ auto main() -> int {
 	};
 	ok &= Rejects(invalid_range, "invalid numeric range");
 
-	const std::array unrepresentable_integer_range = {
+	const std::array incompatible_float_range_on_int = {
 	    Option{.id           = OptionId::kVideoTimeout,
 	           .section      = "video",
 	           .key          = "timeout",
 	           .type         = ValueType::kInteger,
 	           .fallback     = howdy::native::config_schema::IntDefault(5),
-	           .range        = {.minimum = 1.5F, .maximum = 10.0F},
+	           .range        = FloatRange{.minimum = 1.0F, .maximum = 10.0F},
 	           .choices      = {},
 	           .special_rule = SpecialRule::kNone,
 	           .invalid_rule = "synthetic rule",
 	           .description  = "Synthetic option."},
 	};
-	ok &= Rejects(unrepresentable_integer_range, "integer range is not representable");
+	ok &=
+	    Rejects(incompatible_float_range_on_int, "numeric range is incompatible with option type");
 
-	const std::array invalid_allowed_value = {
-	    Option{.id           = OptionId::kVideoTimeout,
-	           .section      = "video",
-	           .key          = "timeout",
-	           .type         = ValueType::kInteger,
-	           .fallback     = howdy::native::config_schema::IntDefault(5),
-	           .range        = {.minimum           = 1.0F,
-	                            .maximum           = 10.0F,
-	                            .has_allowed_value = true,
-	                            .allowed_value     = 1.5F},
+	const std::array incompatible_int_range_on_float = {
+	    Option{.id           = OptionId::kFaceYunetScoreThreshold,
+	           .section      = "face",
+	           .key          = "score",
+	           .type         = ValueType::kFloatingPoint,
+	           .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
+	           .range        = IntegerRange{.minimum = 0, .maximum = 1},
 	           .choices      = {},
 	           .special_rule = SpecialRule::kNone,
 	           .invalid_rule = "synthetic rule",
 	           .description  = "Synthetic option."},
 	};
-	ok &= Rejects(invalid_allowed_value, "allowed value is not representable");
+	ok &=
+	    Rejects(incompatible_int_range_on_float, "numeric range is incompatible with option type");
 
-	const NumericRange integer_range{.minimum = 1.0F, .maximum = 10.0F};
+	const std::array incompatible_range_on_bool = {
+	    Option{.id           = OptionId::kCoreDetectionNotice,
+	           .section      = "core",
+	           .key          = "notice",
+	           .type         = ValueType::kBoolean,
+	           .fallback     = howdy::native::config_schema::BoolDefault(false),
+	           .range        = IntegerRange{.minimum = 0, .maximum = 1},
+	           .choices      = {},
+	           .special_rule = SpecialRule::kNone,
+	           .invalid_rule = "synthetic rule",
+	           .description  = "Synthetic option."},
+	};
+	ok &= Rejects(incompatible_range_on_bool, "numeric range is incompatible with option type");
+
+	const std::array invalid_float_range = {
+	    Option{.id           = OptionId::kFaceYunetScoreThreshold,
+	           .section      = "face",
+	           .key          = "score",
+	           .type         = ValueType::kFloatingPoint,
+	           .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
+	           .range        = FloatRange{.minimum = 1.0F, .maximum = 0.0F},
+	           .choices      = {},
+	           .special_rule = SpecialRule::kNone,
+	           .invalid_rule = "synthetic rule",
+	           .description  = "Synthetic option."},
+	};
+	ok &= Rejects(invalid_float_range, "invalid numeric range");
+
+	const NumericRange integer_range  = IntegerRange{.minimum = 1, .maximum = 10};
 	const auto         integer_inside = std::array{
 	    RangedOption(OptionId::kVideoTimeout, ValueType::kInteger,
 	                 howdy::native::config_schema::IntDefault(5), integer_range),
@@ -193,11 +235,10 @@ auto main() -> int {
 	};
 	ok &= Rejects(integer_above, "integer fallback is outside range");
 
-	const NumericRange integer_sentinel_range{
-	    .minimum           = 1.0F,
-	    .maximum           = 10.0F,
-	    .has_allowed_value = true,
-	    .allowed_value     = -1.0F,
+	const NumericRange integer_sentinel_range = IntegerRange{
+	    .minimum       = 1,
+	    .maximum       = 10,
+	    .allowed_value = -1,
 	};
 	const auto integer_sentinel = std::array{
 	    RangedOption(OptionId::kVideoFrameWidth, ValueType::kInteger,
@@ -206,7 +247,7 @@ auto main() -> int {
 	ok &= Expect(!howdy::native::config_schema::ValidateOptions(integer_sentinel).has_value(),
 	             "integer fallback allowed sentinel is valid");
 
-	const NumericRange floating_range{.minimum = 2.0F, .maximum = 4.0F};
+	const NumericRange floating_range = FloatRange{.minimum = 2.0F, .maximum = 4.0F};
 	for (const auto [fallback, message] : std::array{
 	         std::pair{3.0F, "floating fallback inside range is valid"},
 	         std::pair{2.0F, "floating fallback minimum is valid"},
@@ -256,16 +297,16 @@ auto main() -> int {
 		           .special_rule = SpecialRule::kNone,
 		           .invalid_rule = "synthetic rule",
 		           .description  = "Synthetic option."},
-		    Option{
-		        .id       = OptionId::kFaceSfaceThreshold,
-		        .section  = "face",
-		        .key      = "sface_threshold",
-		        .type     = ValueType::kFloatingPoint,
-		        .fallback = howdy::native::config_schema::FloatDefault(threshold),
-		        .range = {.minimum = 0.0F, .maximum = howdy::native::FaceMetricThresholdMaximum()},
-		        .special_rule = SpecialRule::kSfaceThreshold,
-		        .invalid_rule = "synthetic rule",
-		        .description  = "Synthetic option."},
+		    Option{.id       = OptionId::kFaceSfaceThreshold,
+		           .section  = "face",
+		           .key      = "sface_threshold",
+		           .type     = ValueType::kFloatingPoint,
+		           .fallback = howdy::native::config_schema::FloatDefault(threshold),
+		           .range    = FloatRange{.minimum = 0.0F,
+		                                  .maximum = howdy::native::FaceMetricThresholdMaximum()},
+		           .special_rule = SpecialRule::kSfaceThreshold,
+		           .invalid_rule = "synthetic rule",
+		           .description  = "Synthetic option."},
 		};
 	};
 	const auto valid_sface = sface_options(cosine_threshold_max);
@@ -422,6 +463,34 @@ auto main() -> int {
 	                    howdy::native::config_schema::StringDefault("none"));
 	ok &= Expect(howdy::native::config_schema::FormatFallbackValue(string_opt) == "none",
 	             "format_fallback_value formats string fallback");
+
+	const auto &notice_opt =
+	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kCoreDetectionNotice);
+	ok &= Expect(std::holds_alternative<bool>(notice_opt.fallback),
+	             "boolean schema option holds bool alternative");
+	ok &= Expect(std::holds_alternative<std::monostate>(notice_opt.range),
+	             "boolean schema option has monostate range");
+
+	const auto &timeout_opt =
+	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kVideoTimeout);
+	ok &= Expect(std::holds_alternative<int>(timeout_opt.fallback),
+	             "integer schema option holds int alternative");
+	ok &= Expect(std::holds_alternative<IntegerRange>(timeout_opt.range),
+	             "integer schema option has IntegerRange alternative");
+
+	const auto &max_height_opt =
+	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kVideoMaxHeight);
+	ok &= Expect(std::holds_alternative<float>(max_height_opt.fallback),
+	             "float schema option holds float alternative");
+	ok &= Expect(std::holds_alternative<FloatRange>(max_height_opt.range),
+	             "float schema option has FloatRange alternative");
+
+	const auto &device_path_opt =
+	    howdy::native::config_schema::RuntimeConfigOption(OptionId::kVideoDevicePath);
+	ok &= Expect(std::holds_alternative<std::string_view>(device_path_opt.fallback),
+	             "string schema option holds string_view alternative");
+	ok &= Expect(std::holds_alternative<std::monostate>(device_path_opt.range),
+	             "string schema option has monostate range");
 
 	return ok ? 0 : 1;
 }

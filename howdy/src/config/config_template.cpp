@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace howdy::native::config_template {
@@ -56,9 +57,10 @@ namespace howdy::native::config_template {
 		}
 
 		auto FormatFallback(const config_schema::Option &option) -> std::optional<std::string> {
-			if (option.type == config_schema::ValueType::kString &&
-			    !IsSafeIniScalar(option.fallback.string)) {
-				return std::nullopt;
+			if (const auto *str = std::get_if<std::string_view>(&option.fallback)) {
+				if (!IsSafeIniScalar(*str)) {
+					return std::nullopt;
+				}
 			}
 			return config_schema::FormatFallbackValue(option);
 		}

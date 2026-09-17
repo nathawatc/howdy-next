@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace howdy::docs {
@@ -200,19 +201,10 @@ namespace howdy::docs {
 			return std::nullopt;
 		}
 
-		auto FormatNumber(native::config_schema::ValueType type, float value) -> std::string {
-			if (type == native::config_schema::ValueType::kInteger) {
-				const auto formatted =
-				    native::config_schema::FormatIntegerValue(static_cast<int>(value));
-				return formatted ? *formatted : "";
-			}
-			const auto formatted = native::config_schema::FormatFloatingPointValue(value);
-			return formatted ? *formatted : "";
-		}
-
 		auto FormatBooleanValues(const native::config_schema::Option &option) -> std::string {
 			std::string       result           = "Values: ";
-			const auto *const default_spelling = option.fallback.boolean ? "true" : "false";
+			const auto       *val              = std::get_if<bool>(&option.fallback);
+			const auto *const default_spelling = (val != nullptr && *val) ? "true" : "false";
 			for (std::size_t index = 0;
 			     index < native::config_schema::kAcceptedBooleanSpellings.size(); ++index) {
 				if (index > 0) {
@@ -272,26 +264,43 @@ namespace howdy::docs {
 		}
 
 		auto FormatNumericRange(const native::config_schema::Option &option) -> std::string {
-			const auto &range = option.range;
-			if (range.minimum == 0.0F && range.maximum == 0.0F && !range.has_allowed_value) {
-				return "";
+			if (const auto *range =
+			        std::get_if<native::config_schema::IntegerRange>(&option.range)) {
+				std::string range_str = "Range: ";
+				if (range->allowed_value.has_value()) {
+					const auto allowed =
+					    native::config_schema::FormatIntegerValue(*range->allowed_value);
+					range_str += EscapeRoff(allowed ? *allowed : "");
+					range_str += " or ";
+				}
+				const auto min_str = native::config_schema::FormatIntegerValue(range->minimum);
+				const auto max_str = native::config_schema::FormatIntegerValue(range->maximum);
+				range_str += EscapeRoff(min_str ? *min_str : "");
+				range_str += "..";
+				range_str += EscapeRoff(max_str ? *max_str : "");
+				range_str += '.';
+				return range_str;
 			}
-			std::string range_str = "Range: ";
-			if (range.has_allowed_value) {
-				range_str += EscapeRoff(FormatNumber(option.type, range.allowed_value));
-				range_str += " or ";
+			if (const auto *range = std::get_if<native::config_schema::FloatRange>(&option.range)) {
+				std::string range_str = "Range: ";
+				const auto  min_str =
+				    native::config_schema::FormatFloatingPointValue(range->minimum);
+				const auto max_str =
+				    native::config_schema::FormatFloatingPointValue(range->maximum);
+				range_str += EscapeRoff(min_str ? *min_str : "");
+				range_str += "..";
+				range_str += EscapeRoff(max_str ? *max_str : "");
+				range_str += '.';
+				return range_str;
 			}
-			range_str += EscapeRoff(FormatNumber(option.type, range.minimum));
-			range_str += "..";
-			range_str += EscapeRoff(FormatNumber(option.type, range.maximum));
-			range_str += '.';
-			return range_str;
+			return "";
 		}
 
 		auto FormatSfaceThresholdRange(const native::config_schema::Option &option) -> std::string {
-			const auto min_str =
-			    native::config_schema::FormatFloatingPointValue(option.range.minimum);
-			const auto min_val = min_str ? *min_str : "0";
+			const auto *range     = std::get_if<native::config_schema::FloatRange>(&option.range);
+			const auto  min_float = range != nullptr ? range->minimum : 0.0F;
+			const auto  min_str   = native::config_schema::FormatFloatingPointValue(min_float);
+			const auto  min_val   = min_str ? *min_str : "0";
 
 			std::vector<std::pair<float, std::vector<std::string_view>>> groups;
 			for (const auto &policy : native::kFaceMetricPolicies) {
@@ -336,14 +345,16 @@ namespace howdy::docs {
 			if (option.type == native::config_schema::ValueType::kBoolean) {
 				return FormatBooleanValues(option);
 			}
+			const auto *str_fallback = std::get_if<std::string_view>(&option.fallback);
+			const auto  fallback_str = str_fallback != nullptr ? *str_fallback : "";
 			if (option.special_rule == native::config_schema::SpecialRule::kDevicePath) {
-				return FormatDevicePaths(option.fallback.string);
+				return FormatDevicePaths(fallback_str);
 			}
 			if (option.special_rule == native::config_schema::SpecialRule::kSfaceThreshold) {
 				return FormatSfaceThresholdRange(option);
 			}
 			if (!option.choices.empty()) {
-				return FormatChoices(option.choices, option.fallback.string);
+				return FormatChoices(option.choices, fallback_str);
 			}
 			return FormatNumericRange(option);
 		}

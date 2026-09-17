@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace howdy::native::config_schema {
 
@@ -57,23 +58,20 @@ namespace howdy::native::config_schema {
 		kCount,
 	};
 
-	struct NumericRange {
-		float minimum;
-		float maximum;
-		bool  has_allowed_value = false;
-		float allowed_value     = 0.0F;
+	struct IntegerRange {
+		int                minimum       = 0;
+		int                maximum       = 0;
+		std::optional<int> allowed_value = std::nullopt;
 	};
 
-	struct RuntimeDefault {
-		bool             has_boolean        = false;
-		bool             boolean            = false;
-		bool             has_integer        = false;
-		int              integer            = 0;
-		bool             has_floating_point = false;
-		float            floating_point     = 0.0F;
-		bool             has_string         = false;
-		std::string_view string;
+	struct FloatRange {
+		float minimum = 0.0F;
+		float maximum = 0.0F;
 	};
+
+	using NumericRange = std::variant<std::monostate, IntegerRange, FloatRange>;
+
+	using RuntimeDefault = std::variant<std::monostate, bool, int, float, std::string_view>;
 
 	struct Option {
 		OptionId                          id;
@@ -89,19 +87,19 @@ namespace howdy::native::config_schema {
 	};
 
 	constexpr auto BoolDefault(bool value) -> RuntimeDefault {
-		return {.has_boolean = true, .boolean = value};
+		return value;
 	}
 
 	constexpr auto IntDefault(int value) -> RuntimeDefault {
-		return {.has_integer = true, .integer = value};
+		return value;
 	}
 
 	constexpr auto FloatDefault(float value) -> RuntimeDefault {
-		return {.has_floating_point = true, .floating_point = value};
+		return value;
 	}
 
 	constexpr auto StringDefault(std::string_view value) -> RuntimeDefault {
-		return {.has_string = true, .string = value};
+		return value;
 	}
 
 	inline constexpr FaceMetric kSfaceDefaultMetric = FaceMetric::kCosine;

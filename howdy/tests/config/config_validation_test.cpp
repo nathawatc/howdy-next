@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 #ifndef HOWDY_PACKAGED_CONFIG_PATH
 #	error "HOWDY_PACKAGED_CONFIG_PATH must be defined by CMake"
@@ -56,18 +57,7 @@ namespace {
 	}
 
 	auto FallbackValue(const howdy::native::config_schema::Option &option) -> std::string {
-		using enum howdy::native::config_schema::ValueType;
-		switch (option.type) {
-			case kBoolean:
-				return option.fallback.boolean ? "true" : "false";
-			case kInteger:
-				return std::to_string(option.fallback.integer);
-			case kFloatingPoint:
-				return std::to_string(option.fallback.floating_point);
-			case kString:
-				return std::string(option.fallback.string);
-		}
-		return {};
+		return howdy::native::config_schema::FormatFallbackValue(option).value_or("");
 	}
 
 	auto PackagedConfigMatchesSchema(const howdy::native::ConfigReader &config) -> bool {
@@ -87,17 +77,24 @@ namespace {
 			bool matches = false;
 			switch (option.type) {
 				case kBoolean:
-					matches = config.GetBool(section, key, !option.fallback.boolean) ==
-					          option.fallback.boolean;
+					if (const auto *val = std::get_if<bool>(&option.fallback)) {
+						matches = config.GetBool(section, key, !*val) == *val;
+					}
 					break;
 				case kInteger:
-					matches = config.GetInt(section, key, 0) == option.fallback.integer;
+					if (const auto *val = std::get_if<int>(&option.fallback)) {
+						matches = config.GetInt(section, key, 0) == *val;
+					}
 					break;
 				case kFloatingPoint:
-					matches = config.GetFloat(section, key, 0.0F) == option.fallback.floating_point;
+					if (const auto *val = std::get_if<float>(&option.fallback)) {
+						matches = config.GetFloat(section, key, 0.0F) == *val;
+					}
 					break;
 				case kString:
-					matches = config.Get(section, key, {}) == option.fallback.string;
+					if (const auto *val = std::get_if<std::string_view>(&option.fallback)) {
+						matches = config.Get(section, key, {}) == *val;
+					}
 					break;
 			}
 			const auto shipped = config.Get(section, key, {});
