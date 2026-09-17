@@ -13,6 +13,12 @@ add_test(
 		"${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
 )
 
+if(HOWDY_INSTALL_AUTH_HELPER_SETUID)
+	set(howdy_auth_helper_install_mode 4755)
+else()
+	set(howdy_auth_helper_install_mode 755)
+endif()
+
 add_test(
 	NAME native-howdy-install-layout
 	COMMAND
@@ -31,6 +37,7 @@ add_test(
 		"${HOWDY_MODELS_DIR}"
 		"${HOWDY_USER_MODELS_DIR}"
 		"${HOWDY_LICENSES_INSTALL_DIR}"
+		"${howdy_auth_helper_install_mode}"
 )
 add_test(
 	NAME native-howdy-privileged-install-paths

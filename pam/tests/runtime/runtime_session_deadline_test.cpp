@@ -69,12 +69,11 @@ namespace {
 			(void)close(saved_stdin);
 			return duplicate_error;
 		}
-		const std::string     command    = "trap '' TERM; printf R >&0; exec /bin/sleep 60";
-		std::array<char *, 4> shell_args = {const_cast<char *>("/bin/sh"), const_cast<char *>("-c"),
-		                                    const_cast<char *>(command.c_str()), nullptr};
-		std::array<char *, 1> empty_env  = {nullptr};
-		const int spawn_result = posix_spawn(request.child_pid, "/bin/sh", request.actions, nullptr,
-		                                     shell_args.data(), empty_env.data());
+		std::array<char *, 3> helper_args = {const_cast<char *>("pam_runtime_session_test"),
+		                                     const_cast<char *>("--stalled-helper"), nullptr};
+		std::array<char *, 1> empty_env   = {nullptr};
+		const int spawn_result   = posix_spawn(request.child_pid, "/proc/self/exe", request.actions,
+		                                       nullptr, helper_args.data(), empty_env.data());
 		const int restore_result = dup2(saved_stdin, STDIN_FILENO);
 		const int restore_error  = errno;
 		(void)close(saved_stdin);

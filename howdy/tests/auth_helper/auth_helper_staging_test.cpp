@@ -714,9 +714,9 @@ auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
 	}
 	const uid_t target_uid = context.functional_target_uid;
 	for (const auto &[name, test] : {
-	         std::pair{"model", ExpectPresentAbsent},
-	         std::pair{"reuse", ExpectReuseAndInodeBound},
-	         std::pair{"limit", ExpectTwoSlotLimit},
+	         std::pair{"model", &ExpectPresentAbsent},
+	         std::pair{"reuse", &ExpectReuseAndInodeBound},
+	         std::pair{"limit", &ExpectTwoSlotLimit},
 	     }) {
 		auto fixture = MakeFixture(temp_root, name, target_uid);
 		ok &= Expect(fixture.has_value(), std::string("creates ") + name + " fixture");

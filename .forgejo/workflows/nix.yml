@@ -1,4 +1,4 @@
-name: Nix package and module
+name: Nix package build and test
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
             --no-build \
             --all-systems
 
-      - name: Build and check package installation
+      - name: Build, test, and check package installation
         run: |
           nix build \
             --offline \

@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/prompt_coordinator_test_groups.hpp"
@@ -414,8 +415,8 @@ namespace {
 		    .appdata_ptr = &conversation_state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!Expect(pam_start("howdy-thread-affinity-test", "alice", &conversation, &pamh) ==
-		                PAM_SUCCESS,
+		if (!Expect(howdy::test::PamStartForTest("howdy-thread-affinity-test", "alice",
+		                                         &conversation, &pamh) == PAM_SUCCESS,
 		            "thread-affinity test starts PAM transaction")) {
 			return false;
 		}
@@ -460,8 +461,8 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!Expect(pam_start("howdy-observed-prompt-test", "alice", &conversation, &pamh) ==
-		                PAM_SUCCESS,
+		if (!Expect(howdy::test::PamStartForTest("howdy-observed-prompt-test", "alice",
+		                                         &conversation, &pamh) == PAM_SUCCESS,
 		            "observed prompt test starts PAM transaction")) {
 			return false;
 		}
@@ -523,8 +524,8 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!Expect(pam_start("howdy-no-secret-prompt-test", "alice", &original, &pamh) ==
-		                PAM_SUCCESS,
+		if (!Expect(howdy::test::PamStartForTest("howdy-no-secret-prompt-test", "alice", &original,
+		                                         &pamh) == PAM_SUCCESS,
 		            "no-secret-prompt test starts PAM transaction")) {
 			return false;
 		}
@@ -594,8 +595,8 @@ namespace {
 		    .appdata_ptr = &state,
 		};
 		pam_handle_t *pamh = nullptr;
-		if (!Expect(pam_start("howdy-observed-wrapper-test", "alice", &original, &pamh) ==
-		                PAM_SUCCESS,
+		if (!Expect(howdy::test::PamStartForTest("howdy-observed-wrapper-test", "alice", &original,
+		                                         &pamh) == PAM_SUCCESS,
 		            "observed wrapper test starts PAM transaction")) {
 			return false;
 		}

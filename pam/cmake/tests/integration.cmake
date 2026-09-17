@@ -9,23 +9,6 @@ add_test(
 howdy_set_test_timeouts()
 
 if(HOWDY_ENABLE_PRIVILEGED_TESTS)
-	include(CheckCXXSourceCompiles)
-	cmake_push_check_state(RESET)
-	set(CMAKE_REQUIRED_LIBRARIES PAM::PAM)
-	check_cxx_source_compiles(
-		[=[
-			#include <security/pam_appl.h>
-			int main() {
-				pam_handle_t *handle = nullptr;
-				pam_conv conversation{};
-				return pam_start_confdir(
-					"howdy-e2e", "nobody", &conversation, "/tmp", &handle);
-			}
-		]=]
-		HOWDY_HAVE_PAM_START_CONFDIR
-	)
-	cmake_pop_check_state()
-
 	if(HOWDY_HAVE_PAM_START_CONFDIR)
 		add_executable(
 			pam_installed_e2e_driver

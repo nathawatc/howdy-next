@@ -1,6 +1,6 @@
 #pragma once
-
 #include "module/auth_flow.hpp"
+#include "pam_test_support.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 
 #include <array>
@@ -41,7 +41,8 @@ namespace howdy::test::auth_flow {
 		}
 
 		auto Start(const struct pam_conv *conversation, const char *username = "test-user") -> int {
-			return pam_start("howdy-auth-flow-test", username, conversation, &pamh_);
+			return howdy::test::PamStartForTest("howdy-auth-flow-test", username, conversation,
+			                                    &pamh_);
 		}
 
 		[[nodiscard]] auto Get() const -> pam_handle_t * {

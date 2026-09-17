@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cerrno>
+#include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -553,6 +554,15 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
+	if (argc == 2 && std::string_view(argv[1]) == "--stalled-helper") {
+		(void)signal(SIGTERM, SIG_IGN);
+		if (write(STDIN_FILENO, "R", 1) != 1) {
+			return EXIT_FAILURE;
+		}
+		for (;;) {
+			pause();
+		}
+	}
 	if (argc == 3 && std::string_view(argv[1]) == "--fd3-probe") {
 		return RunRuntimeSessionFd3Probe(argv[2]);
 	}

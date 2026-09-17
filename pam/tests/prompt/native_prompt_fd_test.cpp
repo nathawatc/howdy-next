@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_test_support.hpp"
 
@@ -129,7 +130,8 @@ namespace {
 
 		const struct pam_conv original{.conv = EligibilityConversation, .appdata_ptr = nullptr};
 		pam_handle_t         *pamh = nullptr;
-		if (pam_start("howdy-native-fd-test", "alice", &original, &pamh) != PAM_SUCCESS) {
+		if (howdy::test::PamStartForTest("howdy-native-fd-test", "alice", &original, &pamh) !=
+		    PAM_SUCCESS) {
 			return false;
 		}
 		if (pam_set_item(pamh, PAM_TTY, slave_name) != PAM_SUCCESS) {

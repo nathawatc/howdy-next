@@ -16,6 +16,7 @@ config_path=${11}
 models_dir=${12}
 user_models_dir=${13}
 licenses_dir=${14}
+expected_auth_helper_mode=${15}
 
 newline='
 '
@@ -238,7 +239,7 @@ EOF
 
 	require_directory "$config_dir_path"
 	require_exact_path_once "$stage" d "$config_dir_path"
-	require_mode "$auth_helper_path" 4755
+	require_mode "$auth_helper_path" "$expected_auth_helper_mode"
 	require_mode "$config_file_path" 640
 	require_mode "$config_dir_path" 750
 	require_mode "$user_models_path" 750

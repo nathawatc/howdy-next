@@ -43,9 +43,21 @@ howdy() {
 	return "$status"
 }
 
-source "$completion_file"
-
 current_user=$(id -un)
+if ! type complete >/dev/null 2>&1; then
+	complete() { :; }
+fi
+if ! type compgen >/dev/null 2>&1; then
+	compgen() {
+		if (( $# != 3 )) || [[ $1 != -u || $2 != -- ]]; then
+			return 2
+		fi
+		if [[ "$current_user" == "$3"* ]]; then
+			printf '%s\n' "$current_user"
+		fi
+	}
+fi
+source "$completion_file"
 
 assert_single_completion() {
 	local label=$1

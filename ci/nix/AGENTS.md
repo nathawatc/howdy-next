@@ -15,8 +15,7 @@ Covers `ci/nix/` and `.forgejo/workflows/nix.yml`.
 - Prebuild dependencies and CI runtime tools, but never prebuild Howdy itself.
 - Keep `check-prebuilt.sh` as the single fail-fast guard for stale or incomplete images.
 - Run workflow checks offline and without lock-file updates.
-- Evaluate both supported Linux systems, but build the Howdy package only on x86_64 CI.
-- Keep `BUILD_TESTING=OFF`; Arch Linux CI owns the full CTest suite.
+- Evaluate both supported Linux systems, but build and test the Howdy package only on x86_64 CI.
 - Keep image construction and garbage collection in one layer.
 
 ## Local CI

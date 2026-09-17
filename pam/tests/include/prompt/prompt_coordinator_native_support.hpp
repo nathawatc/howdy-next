@@ -1,5 +1,5 @@
 #pragma once
-
+#include "pam_test_support.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "test_support.hpp"
 
@@ -41,8 +41,8 @@ namespace howdy::test::prompt_coordinator {
 		}
 
 		auto Start(bool with_tty) -> bool {
-			if (pam_start("howdy-prompt-coordinator-test", "test-user", &original_conv_, &pamh_) !=
-			    PAM_SUCCESS) {
+			if (howdy::test::PamStartForTest("howdy-prompt-coordinator-test", "test-user",
+			                                 &original_conv_, &pamh_) != PAM_SUCCESS) {
 				return false;
 			}
 			if (!with_tty) {

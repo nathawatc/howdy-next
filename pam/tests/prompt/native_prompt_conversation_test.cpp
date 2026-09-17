@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/native_prompt_test_support.hpp"
 #include "test_support.hpp"
 
@@ -195,7 +196,8 @@ auto ExpectOriginalConversationRestored() -> bool {
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;
-	if (pam_start("howdy-native-test", "test-user", &original_conv, &pamh) != PAM_SUCCESS ||
+	if (howdy::test::PamStartForTest("howdy-native-test", "test-user", &original_conv, &pamh) !=
+	        PAM_SUCCESS ||
 	    pamh == nullptr) {
 		return Expect(false, "restore test starts PAM handle");
 	}

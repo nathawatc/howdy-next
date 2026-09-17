@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/native_prompt_test_support.hpp"
 #include "test_support.hpp"
 
@@ -206,8 +207,8 @@ auto ExpectInvalidPamTtyIsUnavailable() -> bool {
 	    .appdata_ptr = &appdata,
 	};
 	pam_handle_t *pamh = nullptr;
-	if (!Expect(pam_start("howdy-native-tty-test", "test-user", &original_conv, &pamh) ==
-	                PAM_SUCCESS,
+	if (!Expect(howdy::test::PamStartForTest("howdy-native-tty-test", "test-user", &original_conv,
+	                                         &pamh) == PAM_SUCCESS,
 	            "invalid PAM_TTY test starts PAM handle")) {
 		return false;
 	}

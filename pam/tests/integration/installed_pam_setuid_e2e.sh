@@ -13,7 +13,7 @@ assert_locked() {
 	[[ $status -eq 1 ]] || fail "$message: flock exited $status"
 }
 validate_install_prefix() {
-	local input=$1 normalized parent basename canonical_parent
+	local input=$1 expected_parent=${2:-/opt} normalized parent basename canonical_parent
 	validated_install_prefix=
 	[[ $input == /* ]] || return 1
 	normalized=$(realpath -m -- "$input") || return 1
@@ -23,7 +23,7 @@ validate_install_prefix() {
 	[[ $basename != */* && $basename != . && $basename != .. ]] || return 1
 	[[ $basename =~ ^howdy-installed-pam-e2e-[A-Za-z0-9._-]+$ ]] || return 1
 	canonical_parent=$(realpath -e -- "$parent") || return 1
-	[[ $canonical_parent == /opt ]] || return 1
+	[[ $canonical_parent == "$expected_parent" ]] || return 1
 	[[ ! -e $normalized && ! -L $normalized ]] || return 1
 	validated_install_prefix=$normalized
 }
@@ -61,21 +61,28 @@ validate_installed_path() {
 }
 run_path_validation_tests() {
 	local marker=/tmp/howdy-e2e-path-validation-$$
-	local valid_prefix=/opt/howdy-installed-pam-e2e-validation-$$
+	local validation_parent valid_prefix other_parent
+	validation_parent=$(mktemp -d)
+	trap 'rm -rf -- "$validation_parent"' EXIT
+	validation_parent=$(realpath -e -- "$validation_parent") || fail "cannot canonicalize validation parent"
+	other_parent="$validation_parent/other"
+	mkdir "$other_parent"
+	valid_prefix="$validation_parent/howdy-installed-pam-e2e-validation-$$"
 	[[ ! -e $marker ]] || fail "path-validation marker already exists"
-	validate_install_prefix "$valid_prefix" || fail "valid isolated prefix rejected"
+	validate_install_prefix "$valid_prefix" "$validation_parent" || fail "valid isolated prefix rejected"
 	for rejected in \
-		'/opt/howdy-installed-pam-e2e-x/../../etc' \
-		'/opt/howdy-installed-pam-e2e-x/subdir' \
-		'/tmp/howdy-installed-pam-e2e-x' \
-		'/opt/howdy-installed-pam-e2e-' \
-		'/opt//howdy-installed-pam-e2e-x' \
-		'/opt/howdy-installed-pam-e2e-x/.'; do
-		if validate_install_prefix "$rejected"; then
+		"$validation_parent/howdy-installed-pam-e2e-x/../../etc" \
+		"$validation_parent/howdy-installed-pam-e2e-x/subdir" \
+		"$other_parent/howdy-installed-pam-e2e-x" \
+		"$validation_parent/howdy-installed-pam-e2e-" \
+		"${validation_parent%/}//howdy-installed-pam-e2e-x" \
+		"$validation_parent/howdy-installed-pam-e2e-x/."; do
+		if validate_install_prefix "$rejected" "$validation_parent"; then
 			fail "unsafe prefix accepted: $rejected"
 		fi
 	done
-	validate_install_prefix "$valid_prefix" || fail "valid isolated prefix rejected after cases"
+	validate_install_prefix "$valid_prefix" "$validation_parent" ||
+		fail "valid isolated prefix rejected after cases"
 	for rejected in /etc/howdy /usr/libexec/howdy "$valid_prefix/../etc" "$valid_prefix"; do
 		if validate_install_subdir "$rejected"; then
 			fail "unsafe install path accepted: $rejected"
@@ -89,6 +96,8 @@ run_path_validation_tests() {
 		validate_install_subdir "$accepted" || fail "valid install path rejected: $accepted"
 	done
 	[[ ! -e $marker && ! -e $valid_prefix ]] || fail "path validation mutated filesystem"
+	rm -rf -- "$validation_parent"
+	trap - EXIT
 	printf 'Path validation: passed without filesystem mutation\n'
 }
 

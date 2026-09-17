@@ -119,9 +119,29 @@ install(
 )
 
 if(BUILD_TESTING)
+	include(CheckCXXSourceCompiles)
+	cmake_push_check_state(RESET)
+	set(CMAKE_REQUIRED_LIBRARIES PAM::PAM)
+	check_cxx_source_compiles(
+		[=[
+			#include <security/pam_appl.h>
+			int main() {
+				pam_handle_t *handle = nullptr;
+				pam_conv conversation{};
+				return pam_start_confdir(
+					"howdy-test", "nobody", &conversation, "/tmp", &handle);
+			}
+		]=]
+		HOWDY_HAVE_PAM_START_CONFDIR
+	)
+	cmake_pop_check_state()
+
 	function(howdy_add_pam_test target test_name)
 		add_executable(${target} ${ARGN})
 		howdy_configure_pam_test_target(${target})
+		if(HOWDY_HAVE_PAM_START_CONFDIR)
+			target_compile_definitions(${target} PRIVATE HOWDY_HAVE_PAM_START_CONFDIR)
+		endif()
 		add_test(NAME ${test_name} COMMAND ${target})
 	endfunction()
 

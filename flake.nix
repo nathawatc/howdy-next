@@ -27,18 +27,11 @@
 
       pkgsFor = system: import nixpkgs { inherit system; };
 
-      opencv5For = system:
-        let
-          pkgs = pkgsFor system;
-        in
-        pkgs.callPackage ./nix/opencv5.nix { };
+      opencv5For = pkgs: pkgs.callPackage ./nix/opencv5.nix { };
 
       # nixpkgs 26.05 ships yyjson.pc with duplicated absolute prefixes.
       # CMake's imported pkg-config target would otherwise use invalid paths.
-      yyjsonFor = system:
-        let
-          pkgs = pkgsFor system;
-        in
+      yyjsonFor = pkgs:
         pkgs.yyjson.overrideAttrs (old: {
           postInstall = (old.postInstall or "") + ''
             sed -i "s|$out/$out|$out|g" "$out/lib/pkgconfig/yyjson.pc"
@@ -69,28 +62,15 @@
             pkgs.inih
             pkgs.libevdev
             pkgs.openssl
-            (opencv5For system)
+            (opencv5For pkgs)
             pkgs.pam
-            (yyjsonFor system)
+            (yyjsonFor pkgs)
           ];
 
           cmakeFlags = [
-            "-GNinja"
-            "-DCMAKE_BUILD_TYPE=Release"
-            "-DCMAKE_INSTALL_PREFIX=${placeholder "out"}"
-            "-DCMAKE_INSTALL_LIBDIR=lib"
-            "-DCMAKE_INSTALL_BINDIR=bin"
-            "-DCMAKE_INSTALL_LIBEXECDIR=libexec"
-            "-DCMAKE_INSTALL_DATADIR=share"
-            "-DCMAKE_INSTALL_MANDIR=share/man"
-            "-DCMAKE_INSTALL_LOCALEDIR=share/locale"
-            "-DBUILD_TESTING=OFF"
-            "-DHOWDY_USE_CCACHE=OFF"
-            "-DHOWDY_PAM_DIR=${placeholder "out"}/lib/security"
-            "-DHOWDY_CONFIG_DIR=/etc/howdy"
+            "-DCMAKE_INSTALL_SYSCONFDIR=/etc"
             "-DHOWDY_MODELS_DIR=/var/lib/howdy/models"
             "-DHOWDY_USER_MODELS_DIR=/var/lib/howdy/user-models"
-            "-DHOWDY_LOG_PATH=/var/log/howdy"
             "-DHOWDY_AUTH_HELPER_PATH=/run/wrappers/bin/howdy-auth-helper"
             "-DHOWDY_INSTALL_AUTH_HELPER_SETUID=OFF"
             "-DHOWDY_LICENSES_INSTALL_DIR=share/licenses/howdy-next"
@@ -106,8 +86,18 @@
             cp -a "$howdyInstallRoot/$out/." "$out/"
             install -Dm0640 "$howdyInstallRoot/etc/howdy/config.ini" \
               "$out/share/howdy/config.ini"
-            rm -rf "$out/etc" "$out/var"
             runHook postInstall
+          '';
+
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            testDir="$PWD"
+            (
+              cd ..
+              ctest --preset release --test-dir "$testDir"
+            )
+            runHook postCheck
           '';
 
           doInstallCheck = true;
@@ -129,67 +119,49 @@
             homepage = "https://codeberg.org/nathawat/howdy-next";
             license = pkgs.lib.licenses.gpl3Plus;
             mainProgram = "howdy";
-            platforms = pkgs.lib.platforms.linux;
+            platforms = systems;
           };
         };
     in
     {
-      packages = forAllSystems (system: {
-        default = howdyNextFor system;
-        howdy-next = howdyNextFor system;
-        ci-runtime =
-          let pkgs = pkgsFor system;
-          in pkgs.buildEnv {
+      packages = forAllSystems (system:
+        let
+          pkgs = pkgsFor system;
+          package = howdyNextFor system;
+          ciRuntime = pkgs.buildEnv {
             name = "howdy-ci-runtime";
             paths = [ pkgs.nodejs pkgs.jq ];
           };
-        # Keep package build inputs, CI runtime tools, and nixpkgs available
-        # after image garbage collection without prebuilding Howdy itself.
-        ci-dependencies =
-          let
-            pkgs = pkgsFor system;
-            package = howdyNextFor system;
-            inputs = (package.nativeBuildInputs or [ ]) ++ (package.buildInputs or [ ]);
-          in
-          pkgs.writeText "howdy-ci-dependencies" (pkgs.lib.concatMapStringsSep "\n" toString (
-            [ nixpkgs.outPath self.packages.${system}.ci-runtime package.stdenv ]
-            ++ pkgs.lib.concatMap (input: [ input (pkgs.lib.getDev input) ]) inputs
-          ));
-      });
+          inputs = (package.nativeBuildInputs or [ ]) ++ (package.buildInputs or [ ]);
+        in
+        {
+          default = package;
+          howdy-next = package;
+          ci-runtime = ciRuntime;
+          # Keep package build inputs, CI runtime tools, and nixpkgs available
+          # after image garbage collection without prebuilding Howdy itself.
+          ci-dependencies =
+            pkgs.writeText "howdy-ci-dependencies" (pkgs.lib.concatMapStringsSep "\n" toString (
+              [ nixpkgs.outPath ciRuntime package.stdenv ]
+              ++ pkgs.lib.concatMap (input: [ input (pkgs.lib.getDev input) ]) inputs
+            ));
+        });
 
       devShells = forAllSystems (system:
         let
           pkgs = pkgsFor system;
+          package = howdyNextFor system;
         in
         {
           default = pkgs.mkShell {
             strictDeps = true;
 
+            inputsFrom = [ package ];
+
             packages = [
-              pkgs.stdenv.cc
-              pkgs.cmake
               pkgs.ccache
-              pkgs.ninja
-              pkgs.pkg-config
-              pkgs.gettext
               pkgs.git
             ];
-
-            buildInputs = [
-              pkgs.acl
-              pkgs.curl
-              pkgs.inih
-              pkgs.libevdev
-              pkgs.openssl
-              (opencv5For system)
-              pkgs.pam
-              (yyjsonFor system)
-            ];
-
-            shellHook = ''
-              export CCACHE_DIR="''${XDG_CACHE_HOME:-$HOME/.cache}/ccache"
-              export CMAKE_CXX_COMPILER_LAUNCHER=ccache
-            '';
           };
         });
 
@@ -204,7 +176,8 @@
             package = lib.mkOption {
               type = lib.types.package;
               default = self.packages.${pkgs.stdenv.hostPlatform.system}.howdy-next;
-              defaultText = lib.literalExpression "inputs.howdy-next.packages.\${system}.howdy-next";
+              defaultText = lib.literalExpression
+                "inputs.howdy-next.packages.\${pkgs.stdenv.hostPlatform.system}.howdy-next";
               description = "Howdy Next package to install.";
             };
           };

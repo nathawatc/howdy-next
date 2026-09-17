@@ -41,8 +41,6 @@ auto main() -> int {
 	                                               .functional_target_uid = functional_target_uid,
 	                                               .operations            = operations,
 	                                               .production_operations = production_operations,
-	                                               .fake_acl              = fake_acl,
-	                                               .use_fake_acl          = use_fake_acl,
 	                                           });
 
 	fs::remove_all(temp_root, ec);
