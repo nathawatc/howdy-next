@@ -16,7 +16,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kNativeInput, true, true,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "existing auth token preserves compare result") &&
@@ -48,7 +48,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " falls back to standard prompt") &&
@@ -76,7 +76,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " falls back after native setup exception") &&
@@ -97,7 +97,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              label + " returns PAM result") &&
@@ -118,7 +118,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "secret restore failure returns PAM result") &&
@@ -142,7 +142,7 @@ namespace {
 		context.run_thread     = std::this_thread::get_id();
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "input success preserves Howdy result") &&
@@ -170,7 +170,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result          = coordinator.Run(MakeCompareRequest());
 		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
 		const bool        reaped          = ChildReaped(child_pid);
@@ -202,7 +202,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "signaled compare returns password fallback") &&
@@ -227,7 +227,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -257,7 +257,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result") &&
@@ -286,7 +286,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns compare result without input fallback") &&
@@ -315,7 +315,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNativeInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native-input success uses native password task") &&
@@ -353,7 +353,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNativeInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " falls back to input password task") &&
@@ -388,7 +388,7 @@ namespace {
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-			                              Dependencies(&context), std::chrono::seconds(5));
+			                              Operations(&context), Timeout());
 			result = coordinator.Run(MakeCompareRequest());
 		}
 
@@ -443,7 +443,7 @@ namespace {
 		howdy::pam::PromptCoordinatorResult result;
 		{
 			PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-			                              Dependencies(&context), std::chrono::seconds(5));
+			                              Operations(&context), Timeout());
 			result = coordinator.Run(MakeCompareRequest());
 		}
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -497,7 +497,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "native terminal restore failure overrides successful face result") &&
@@ -534,7 +534,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(fixture.Pamh(), Workaround::kNative, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              message + ": restoration failure overrides normal winner") &&

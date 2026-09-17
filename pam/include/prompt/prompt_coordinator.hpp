@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <tuple>
 
 #include <security/pam_appl.h>
@@ -39,38 +40,141 @@ namespace howdy::pam {
 	    void *context, pam_handle_t *pamh, SecretPromptObserver observer);
 	using RequestAuthTokenFn = std::tuple<int, const char *> (*)(void *context, pam_handle_t *pamh);
 
-	struct PromptCoordinatorDependencies {
-		void                            *context                           = nullptr;
-		SpawnCompareProcessFn            spawn_compare_process             = nullptr;
-		WaitForCompareProcessFn          wait_for_compare_process          = nullptr;
-		CancelAndReapCompareProcessFn    cancel_and_reap_compare_process   = nullptr;
-		InputPromptPreflightFn           input_prompt_preflight            = nullptr;
-		CreatePromptSubmitterFn          create_prompt_submitter           = nullptr;
-		CreateNativePromptFn             create_native_prompt              = nullptr;
-		CreateSecretPromptConversationFn create_secret_prompt_conversation = nullptr;
-		RequestAuthTokenFn               request_auth_token                = nullptr;
+	class PromptCoordinatorOperations {
+	public:
+		static auto Create(void *context, SpawnCompareProcessFn spawn_compare_process,
+		                   WaitForCompareProcessFn          wait_for_compare_process,
+		                   CancelAndReapCompareProcessFn    cancel_and_reap_compare_process,
+		                   InputPromptPreflightFn           input_prompt_preflight,
+		                   CreatePromptSubmitterFn          create_prompt_submitter,
+		                   CreateNativePromptFn             create_native_prompt,
+		                   CreateSecretPromptConversationFn create_secret_prompt_conversation,
+		                   RequestAuthTokenFn               request_auth_token)
+		    -> std::optional<PromptCoordinatorOperations> {
+			if (spawn_compare_process == nullptr || wait_for_compare_process == nullptr ||
+			    cancel_and_reap_compare_process == nullptr || input_prompt_preflight == nullptr ||
+			    create_prompt_submitter == nullptr || create_native_prompt == nullptr ||
+			    create_secret_prompt_conversation == nullptr || request_auth_token == nullptr) {
+				return std::nullopt;
+			}
+			return PromptCoordinatorOperations(
+			    context, spawn_compare_process, wait_for_compare_process,
+			    cancel_and_reap_compare_process, input_prompt_preflight, create_prompt_submitter,
+			    create_native_prompt, create_secret_prompt_conversation, request_auth_token);
+		}
+
+		[[nodiscard]] auto SpawnCompareProcess(const CompareLaunchRequest &request,
+		                                       pid_t                      *child_pid) const -> int {
+			return spawn_compare_process_(context_, request, child_pid);
+		}
+
+		[[nodiscard]] auto
+		WaitForCompareProcess(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+		                      void                          *cancellation_context,
+		                      CompareCancellationRequestedFn cancellation_requested) const -> int {
+			return wait_for_compare_process_(context_, child_pid, deadline, cancellation_context,
+			                                 cancellation_requested);
+		}
+
+		void CancelAndReapCompareProcess(pid_t child_pid) const noexcept {
+			cancel_and_reap_compare_process_(context_, child_pid);
+		}
+
+		[[nodiscard]] auto InputPromptPreflight() const -> bool {
+			return input_prompt_preflight_(context_);
+		}
+
+		[[nodiscard]] auto CreatePromptSubmitter() const -> std::unique_ptr<PromptSubmitter> {
+			return create_prompt_submitter_(context_);
+		}
+
+		[[nodiscard]] auto CreateNativePrompt(pam_handle_t *pamh) const
+		    -> std::unique_ptr<NativePrompt> {
+			return create_native_prompt_(context_, pamh);
+		}
+
+		[[nodiscard]] auto CreateSecretPromptConversation(pam_handle_t        *pamh,
+		                                                  SecretPromptObserver observer) const
+		    -> std::unique_ptr<SecretPromptConversation> {
+			return create_secret_prompt_conversation_(context_, pamh, observer);
+		}
+
+		[[nodiscard]] auto RequestAuthToken(pam_handle_t *pamh) const
+		    -> std::tuple<int, const char *> {
+			return request_auth_token_(context_, pamh);
+		}
+
+	private:
+		PromptCoordinatorOperations(
+		    void *context, SpawnCompareProcessFn spawn_compare_process,
+		    WaitForCompareProcessFn          wait_for_compare_process,
+		    CancelAndReapCompareProcessFn    cancel_and_reap_compare_process,
+		    InputPromptPreflightFn           input_prompt_preflight,
+		    CreatePromptSubmitterFn          create_prompt_submitter,
+		    CreateNativePromptFn             create_native_prompt,
+		    CreateSecretPromptConversationFn create_secret_prompt_conversation,
+		    RequestAuthTokenFn               request_auth_token)
+		    : context_(context)
+		    , spawn_compare_process_(spawn_compare_process)
+		    , wait_for_compare_process_(wait_for_compare_process)
+		    , cancel_and_reap_compare_process_(cancel_and_reap_compare_process)
+		    , input_prompt_preflight_(input_prompt_preflight)
+		    , create_prompt_submitter_(create_prompt_submitter)
+		    , create_native_prompt_(create_native_prompt)
+		    , create_secret_prompt_conversation_(create_secret_prompt_conversation)
+		    , request_auth_token_(request_auth_token) {}
+
+		void                            *context_                           = nullptr;
+		SpawnCompareProcessFn            spawn_compare_process_             = nullptr;
+		WaitForCompareProcessFn          wait_for_compare_process_          = nullptr;
+		CancelAndReapCompareProcessFn    cancel_and_reap_compare_process_   = nullptr;
+		InputPromptPreflightFn           input_prompt_preflight_            = nullptr;
+		CreatePromptSubmitterFn          create_prompt_submitter_           = nullptr;
+		CreateNativePromptFn             create_native_prompt_              = nullptr;
+		CreateSecretPromptConversationFn create_secret_prompt_conversation_ = nullptr;
+		RequestAuthTokenFn               request_auth_token_                = nullptr;
+	};
+
+	class PromptCoordinatorTimeout {
+	public:
+		static auto Create(std::chrono::steady_clock::duration duration)
+		    -> std::optional<PromptCoordinatorTimeout> {
+			if (duration <= std::chrono::steady_clock::duration::zero()) {
+				return std::nullopt;
+			}
+			return PromptCoordinatorTimeout(duration);
+		}
+
+		[[nodiscard]] auto Duration() const noexcept -> std::chrono::steady_clock::duration {
+			return duration_;
+		}
+
+	private:
+		explicit PromptCoordinatorTimeout(std::chrono::steady_clock::duration duration)
+		    : duration_(duration) {}
+
+		std::chrono::steady_clock::duration duration_{};
 	};
 
 	enum class PromptCoordinatorDecision : std::uint8_t {
 		kHowdyResult,
 		kPamResult,
 		kPasswordFallback,
-		kInvalidDependencies,
 		kCompareSpawnFailed,
 		kAlreadyRun,
 	};
 
 	struct PromptCoordinatorResult {
-		PromptCoordinatorDecision decision       = PromptCoordinatorDecision::kInvalidDependencies;
+		PromptCoordinatorDecision decision       = PromptCoordinatorDecision::kPamResult;
 		int                       compare_status = 0;
-		int                       pam_status     = PAM_SUCCESS;
+		int                       pam_status     = PAM_SYSTEM_ERR;
 	};
 
 	class PromptCoordinator {
 	public:
 		PromptCoordinator(pam_handle_t *pamh, Workaround workaround, bool ask_auth_tok,
-		                  bool existing_auth_token, PromptCoordinatorDependencies dependencies,
-		                  std::chrono::steady_clock::duration hard_timeout);
+		                  bool existing_auth_token, PromptCoordinatorOperations operations,
+		                  PromptCoordinatorTimeout hard_timeout);
 
 		PromptCoordinator(const PromptCoordinator &)                     = delete;
 		auto operator=(const PromptCoordinator &) -> PromptCoordinator & = delete;
@@ -78,8 +182,6 @@ namespace howdy::pam {
 		auto operator=(PromptCoordinator &&) -> PromptCoordinator &      = delete;
 
 		~PromptCoordinator() = default;
-
-		[[nodiscard]] auto Valid() const -> bool;
 
 		auto Run(const CompareLaunchRequest &request) -> PromptCoordinatorResult;
 
@@ -153,7 +255,7 @@ namespace howdy::pam {
 		bool                                      ask_auth_tok_         = false;
 		bool                                      existing_auth_token_  = false;
 		std::chrono::steady_clock::duration       hard_timeout_{};
-		PromptCoordinatorDependencies             dependencies_;
+		PromptCoordinatorOperations               operations_;
 		std::mutex                                mutex_;
 		std::condition_variable                   condition_;
 		std::unique_ptr<NativePrompt>             native_prompt_;

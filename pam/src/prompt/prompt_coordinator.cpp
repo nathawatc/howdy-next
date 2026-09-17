@@ -30,27 +30,15 @@ namespace howdy::pam {
 
 	PromptCoordinator::PromptCoordinator(pam_handle_t *pamh, Workaround workaround,
 	                                     bool ask_auth_tok, bool existing_auth_token,
-	                                     PromptCoordinatorDependencies       dependencies,
-	                                     std::chrono::steady_clock::duration hard_timeout)
+	                                     PromptCoordinatorOperations operations,
+	                                     PromptCoordinatorTimeout    hard_timeout)
 	    : pamh_(pamh)
 	    , requested_workaround_(workaround)
 	    , ask_auth_tok_(ask_auth_tok)
 	    , existing_auth_token_(existing_auth_token)
-	    , hard_timeout_(hard_timeout)
-	    , dependencies_(dependencies)
+	    , hard_timeout_(hard_timeout.Duration())
+	    , operations_(operations)
 	    , effective_workaround_(workaround) {}
-
-	auto PromptCoordinator::Valid() const -> bool {
-		return dependencies_.spawn_compare_process != nullptr &&
-		       dependencies_.wait_for_compare_process != nullptr &&
-		       dependencies_.cancel_and_reap_compare_process != nullptr &&
-		       dependencies_.input_prompt_preflight != nullptr &&
-		       dependencies_.create_prompt_submitter != nullptr &&
-		       dependencies_.create_native_prompt != nullptr &&
-		       dependencies_.create_secret_prompt_conversation != nullptr &&
-		       dependencies_.request_auth_token != nullptr &&
-		       hard_timeout_ > std::chrono::steady_clock::duration::zero();
-	}
 
 	auto PromptCoordinator::CancellationRequested(void *context) -> bool {
 		auto            &coordinator = *static_cast<PromptCoordinator *>(context);
@@ -104,14 +92,14 @@ namespace howdy::pam {
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept -> int {
 		int status = static_cast<int>(howdy::native::CompareExit::kAbort) << 8;
 		try {
-			status = dependencies_.wait_for_compare_process(
-			    dependencies_.context, child_pid, compare_deadline, this, CancellationRequested);
+			status = operations_.WaitForCompareProcess(child_pid, compare_deadline, this,
+			                                           CancellationRequested);
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
-			dependencies_.cancel_and_reap_compare_process(dependencies_.context, child_pid);
+			operations_.CancelAndReapCompareProcess(child_pid);
 		} catch (...) {
 			syslog(LOG_ERR, "Compare wait failed with non-standard exception");
-			dependencies_.cancel_and_reap_compare_process(dependencies_.context, child_pid);
+			operations_.CancelAndReapCompareProcess(child_pid);
 		}
 		return status;
 	}
@@ -269,7 +257,7 @@ namespace howdy::pam {
 
 	void PromptCoordinator::ConfigureNativeWorkaround() {
 		try {
-			native_prompt_ = dependencies_.create_native_prompt(dependencies_.context, pamh_);
+			native_prompt_ = operations_.CreateNativePrompt(pamh_);
 		} catch (const std::exception &error) {
 			syslog(LOG_WARNING, "Native prompt conversation setup failed: %s", error.what());
 		} catch (...) {
@@ -310,7 +298,7 @@ namespace howdy::pam {
 			return;
 		}
 
-		if (!dependencies_.input_prompt_preflight(dependencies_.context)) {
+		if (!operations_.InputPromptPreflight()) {
 			syslog(LOG_WARNING, "Input prompt workaround preflight failed; falling back to "
 			                    "standard PAM prompt");
 			effective_workaround_ = Workaround::kOff;
@@ -318,7 +306,7 @@ namespace howdy::pam {
 		}
 
 		try {
-			prompt_submitter_ = dependencies_.create_prompt_submitter(dependencies_.context);
+			prompt_submitter_ = operations_.CreatePromptSubmitter();
 			if (prompt_submitter_ == nullptr) {
 				syslog(LOG_ERR,
 				       "Input prompt workaround setup failed: submission backend unavailable");
@@ -336,9 +324,8 @@ namespace howdy::pam {
 		}
 
 		try {
-			secret_prompt_conversation_ = dependencies_.create_secret_prompt_conversation(
-			    dependencies_.context, pamh_,
-			    {.context = this, .begin = SecretPromptBegin, .end = SecretPromptEnd});
+			secret_prompt_conversation_ = operations_.CreateSecretPromptConversation(
+			    pamh_, {.context = this, .begin = SecretPromptBegin, .end = SecretPromptEnd});
 			if (secret_prompt_conversation_ == nullptr ||
 			    !secret_prompt_conversation_->Available() ||
 			    secret_prompt_conversation_->Install() != PAM_SUCCESS) {
@@ -405,8 +392,7 @@ namespace howdy::pam {
 
 	auto PromptCoordinator::RequestPassword() noexcept -> int {
 		try {
-			const auto [result, password] =
-			    dependencies_.request_auth_token(dependencies_.context, pamh_);
+			const auto [result, password] = operations_.RequestAuthToken(pamh_);
 			(void)password;
 			return result;
 		} catch (const std::exception &error) {
@@ -456,14 +442,9 @@ namespace howdy::pam {
 		}
 		run_started_ = true;
 
-		if (!Valid()) {
-			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
-		}
-
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
 		pid_t      child_pid        = -1;
-		const int  spawn_result =
-		    dependencies_.spawn_compare_process(dependencies_.context, request, &child_pid);
+		const int  spawn_result     = operations_.SpawnCompareProcess(request, &child_pid);
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
@@ -483,11 +464,13 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Prompt workaround setup failed: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
+			return {.decision   = PromptCoordinatorDecision::kPamResult,
+			        .pam_status = PAM_SYSTEM_ERR};
 		} catch (...) {
 			syslog(LOG_ERR, "Prompt workaround setup failed with non-standard exception");
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
+			return {.decision   = PromptCoordinatorDecision::kPamResult,
+			        .pam_status = PAM_SYSTEM_ERR};
 		}
 
 		InitializeRunState(ask_pass);
@@ -499,7 +482,8 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Failed to start compare wait worker: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision = PromptCoordinatorDecision::kInvalidDependencies};
+			return {.decision   = PromptCoordinatorDecision::kPamResult,
+			        .pam_status = PAM_SYSTEM_ERR};
 		}
 		int pam_result = PAM_SUCCESS;
 		if (ask_pass) {

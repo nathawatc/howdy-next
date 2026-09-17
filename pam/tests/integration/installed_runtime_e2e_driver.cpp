@@ -25,7 +25,7 @@ auto main(int argc, char **argv) -> int {
 	}
 
 	howdy::pam::RuntimeSession session(argv[3], argv[4],
-	                                   howdy::pam::ProductionRuntimeSessionDependencies());
+	                                   howdy::pam::ProductionRuntimeSessionOperations());
 	const auto                 result = session.LoadForUser(argv[2]);
 	if (!result.Ok() || !session.Staged()) {
 		if (std::string_view(argv[1]) == "--try" &&

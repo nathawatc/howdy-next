@@ -4,6 +4,7 @@
 #include "runtime/session_probe.hpp"
 #include "storage/user_model_status.hpp"
 
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -12,13 +13,6 @@
 namespace howdy::pam::auth_eligibility {
 
 	namespace {
-
-		auto InvalidDependencies() -> AuthenticationEligibilityResult {
-			return {
-			    .status        = AuthenticationEligibility::kRuntimeError,
-			    .error_message = "Authentication eligibility dependencies are invalid",
-			};
-		}
 
 		auto ProductionReadLidState(void *context) -> howdy::pam::runtime::LidStateResult {
 			(void)context;
@@ -73,14 +67,15 @@ namespace howdy::pam::auth_eligibility {
 		return ModelCondition::kInvalidStorage;
 	}
 
-	auto ProductionAuthenticationEligibilityDependencies()
-	    -> AuthenticationEligibilityDependencies {
-		return {
-		    .context               = nullptr,
-		    .ssh_session_present   = howdy::pam::runtime::ProductionSshSessionPresent,
-		    .read_lid_state        = ProductionReadLidState,
-		    .check_model_readiness = ProductionCheckModelReadiness,
-		};
+	auto ProductionAuthenticationEligibilityOperations() -> AuthenticationEligibilityOperations {
+		auto operations = AuthenticationEligibilityOperations::Create(
+		    nullptr, howdy::pam::runtime::ProductionSshSessionPresent, ProductionReadLidState,
+		    ProductionCheckModelReadiness);
+		if (!operations.has_value()) {
+			throw std::logic_error(
+			    "Failed to create production authentication eligibility operations");
+		}
+		return *operations;
 	}
 
 	auto DecideAuthenticationEligibility(const howdy::native::RuntimeConfig &config,
@@ -114,24 +109,19 @@ namespace howdy::pam::auth_eligibility {
 		return {.status = AuthenticationEligibility::kRuntimeError};
 	}
 
-	auto
-	EvaluateAuthenticationEligibility(pam_handle_t                       *pamh,
-	                                  const howdy::native::RuntimeConfig &config,
-	                                  const char *username, const std::filesystem::path &models_dir,
-	                                  const AuthenticationEligibilityDependencies &dependencies)
+	auto EvaluateAuthenticationEligibility(pam_handle_t                              *pamh,
+	                                       const howdy::native::RuntimeConfig        &config,
+	                                       const char                                *username,
+	                                       const std::filesystem::path               &models_dir,
+	                                       const AuthenticationEligibilityOperations &operations)
 	    -> AuthenticationEligibilityResult {
-		if (dependencies.ssh_session_present == nullptr || dependencies.read_lid_state == nullptr ||
-		    dependencies.check_model_readiness == nullptr) {
-			return InvalidDependencies();
-		}
-
 		AuthenticationConditions conditions;
 		if (config.core.disabled) {
 			return DecideAuthenticationEligibility(config, conditions);
 		}
 
 		if (config.core.abort_if_ssh) {
-			conditions.ssh_session = dependencies.ssh_session_present(dependencies.context, pamh);
+			conditions.ssh_session = operations.SshSessionPresent(pamh);
 			if (conditions.ssh_session) {
 				return DecideAuthenticationEligibility(config, conditions);
 			}
@@ -139,7 +129,7 @@ namespace howdy::pam::auth_eligibility {
 
 		std::string lid_diagnostic;
 		if (config.core.abort_if_lid_closed) {
-			const auto lid_result = dependencies.read_lid_state(dependencies.context);
+			const auto lid_result = operations.ReadLidState();
 			if (lid_result.status == howdy::pam::runtime::LidProbeStatus::kError) {
 				// Existing behavior logs lid-probe failures and continues authentication.
 				lid_diagnostic = lid_result.error_message;
@@ -159,8 +149,7 @@ namespace howdy::pam::auth_eligibility {
 			return result;
 		}
 
-		const auto readiness =
-		    dependencies.check_model_readiness(dependencies.context, models_dir, username);
+		const auto readiness       = operations.CheckModelReadiness(models_dir, username);
 		conditions.model_condition = ClassifyModelReadiness(readiness);
 		auto result                = DecideAuthenticationEligibility(config, conditions);
 		result.diagnostic_message  = std::move(lid_diagnostic);

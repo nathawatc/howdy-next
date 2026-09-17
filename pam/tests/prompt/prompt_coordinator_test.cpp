@@ -159,16 +159,11 @@ namespace {
 	auto TestInvalidHardTimeoutFailsClosed() -> bool {
 		bool ok = true;
 		for (const auto timeout : {std::chrono::milliseconds::zero(), -1ms}) {
-			FakeContext       context;
-			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-			                              Dependencies(&context), timeout);
-			const auto        result = coordinator.Run(MakeCompareRequest());
-			ok &= Expect(!coordinator.Valid(), "nonpositive hard timeout is invalid");
-			ok &= Expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
-			             "nonpositive hard timeout fails closed");
-			ok &= Expect(GetCallbackCounts(context) == CallbackCounts{},
-			             "nonpositive hard timeout starts no callbacks");
+			ok &= Expect(!PromptCoordinatorTimeout::Create(timeout).has_value(),
+			             "nonpositive hard timeout is rejected");
 		}
+		ok &= Expect(PromptCoordinatorTimeout::Create(1ms).has_value(),
+		             "positive hard timeout is accepted");
 		return ok;
 	}
 
@@ -180,8 +175,8 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false, Operations(&context),
+		                              Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
@@ -208,7 +203,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		const bool        reaped = ChildReaped(child_pid);
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -233,7 +228,7 @@ namespace {
 	auto TestPasswordCallReturnedBeforePromptSubmissionSuppressesSubmission() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::PublishPasswordCallReturned(coordinator);
@@ -258,7 +253,7 @@ namespace {
 		context.next_child_pid = child_pid;
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		context.coordinator_for_submission = &coordinator;
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
@@ -302,7 +297,7 @@ namespace {
 	auto TestPromptGenerationRolloverRetriesCanceledClaim() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
@@ -325,7 +320,7 @@ namespace {
 	auto TestPasswordReturnBetweenGenerationsPreventsRetry() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
@@ -341,7 +336,7 @@ namespace {
 	auto TestShutdownBetweenGenerationsPreventsRetry() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
@@ -357,7 +352,7 @@ namespace {
 	auto TestGenerationCloseAfterSubmissionStartsDoesNotRetry() -> bool {
 		FakeContext       context{.block_submission_after_start = true};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		std::jthread worker([&coordinator] -> void {
@@ -378,7 +373,7 @@ namespace {
 	auto TestMultipleGenerationRolloversSubmitOnce() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
@@ -429,8 +424,8 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, Dependencies(&context),
-		                              std::chrono::seconds(5));
+		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, Operations(&context),
+		                              Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		pam_end(pamh, result.pam_status);
 
@@ -472,14 +467,14 @@ namespace {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
-		context.next_child_pid                 = child_pid;
-		auto deps                              = Dependencies(&context);
-		deps.create_secret_prompt_conversation = CreateProductionSecretPromptConversation;
+		context.next_child_pid = child_pid;
+		const auto ops =
+		    Operations(&context, WaitForCompare, CreateProductionSecretPromptConversation);
 
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
 			context.run_thread = std::this_thread::get_id();
-			PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, deps, 5s);
+			PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, ops, Timeout(5s));
 			result = coordinator.Run(MakeCompareRequest());
 		});
 
@@ -534,10 +529,10 @@ namespace {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
-		context.next_child_pid                 = child_pid;
-		auto deps                              = Dependencies(&context);
-		deps.create_secret_prompt_conversation = CreateProductionSecretPromptConversation;
-		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, deps, 5s);
+		context.next_child_pid = child_pid;
+		const auto ops =
+		    Operations(&context, WaitForCompare, CreateProductionSecretPromptConversation);
+		PromptCoordinator coordinator(pamh, Workaround::kInput, true, false, ops, Timeout(5s));
 		howdy::pam::PromptCoordinatorResult result;
 		std::thread                         run_thread([&] -> void {
 			result = coordinator.Run(MakeCompareRequest());
@@ -576,7 +571,7 @@ namespace {
 	auto TestPromptSubmissionFailureIsHandled() -> bool {
 		FakeContext       context{.fail_prompt_submission = true};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
 		howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
@@ -669,7 +664,7 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "password_call_returned wins while reaped wait is unpublished") &&
@@ -682,7 +677,7 @@ namespace {
 	auto TestStalePromptGenerationCloseIsIgnored() -> bool {
 		FakeContext       context;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), 5s);
+		                              Operations(&context), Timeout(5s));
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 0);
 		howdy::pam::PromptCoordinatorTestAccess::PrepareClaimedSubmission(
 		    coordinator, std::make_unique<FakePromptSubmitter>(&context));
@@ -710,8 +705,8 @@ namespace {
 			return false;
 		}
 		context.next_child_pid = child_pid;
-		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false, Operations(&context),
+		                              Timeout());
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "wait exception returns failed compare result") &&
@@ -721,10 +716,19 @@ namespace {
 		              "wait exception invokes injected cleanup once") &&
 		       Expect(ChildReaped(child_pid), "wait exception emergency cleanup reaps child");
 	}
+
+	auto TestDefaultResultFailsClosed() -> bool {
+		const howdy::pam::PromptCoordinatorResult result;
+		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
+		              "default result decision is kPamResult") &&
+		       Expect(result.pam_status == PAM_SYSTEM_ERR,
+		              "default result fails closed with PAM_SYSTEM_ERR");
+	}
 }  // namespace
 
 auto main() -> int {
 	bool ok = true;
+	ok &= TestDefaultResultFailsClosed();
 	ok &= TestInvalidHardTimeoutFailsClosed();
 	ok &= TestCompareWinsWithoutPasswordPrompt();
 	ok &= TestPamWins();

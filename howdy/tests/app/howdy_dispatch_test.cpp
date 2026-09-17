@@ -375,6 +375,7 @@ namespace {
 			ok &= Expect(context.resolve_user_calls == 0,
 			             "explicit root target skips default user resolution");
 			ok &= Expect(context.command_id == CommandId::kList &&
+			                 context.command_invocation.has_value() &&
 			                 context.command_invocation->resolved_user ==
 			                     std::optional<std::string>{"root"} &&
 			                 context.command_invocation->positionals.empty(),
@@ -415,12 +416,14 @@ namespace {
 			ok &= Expect(result.status == 23, "command return code passed through");
 			ok &= Expect(context.resolve_user_calls == 0,
 			             "short user option skips default user resolution");
-			ok &= Expect(
-			    context.command_invocation->resolved_user == std::optional<std::string>{"bob"} &&
-			        context.command_invocation->positionals ==
-			            std::vector<std::string>{"front-door"} &&
-			        context.command_invocation->plain && context.command_invocation->assume_yes,
-			    "global options forwarded with user injection");
+			ok &= Expect(context.command_invocation.has_value() &&
+			                 context.command_invocation->resolved_user ==
+			                     std::optional<std::string>{"bob"} &&
+			                 context.command_invocation->positionals ==
+			                     std::vector<std::string>{"front-door"} &&
+			                 context.command_invocation->plain &&
+			                 context.command_invocation->assume_yes,
+			             "global options forwarded with user injection");
 			ok &= Expect(result.output == "command output\n" && result.error == "command error\n",
 			             "command output streams preserved");
 		}
@@ -431,7 +434,8 @@ namespace {
 			ok &= Expect(result.status == 23, "non-user command dispatched");
 			ok &= Expect(context.resolve_user_calls == 0,
 			             "non-user command skips target-user resolution");
-			ok &= Expect(context.command_invocation->resolved_user == std::nullopt &&
+			ok &= Expect(context.command_invocation.has_value() &&
+			                 context.command_invocation->resolved_user == std::nullopt &&
 			                 context.command_invocation->positionals.empty() &&
 			                 !context.command_invocation->plain &&
 			                 !context.command_invocation->assume_yes,
@@ -446,7 +450,8 @@ namespace {
 			             "default user resolved when user option is omitted");
 			ok &=
 			    Expect(context.command_id == CommandId::kList, "list dispatched with default user");
-			ok &= Expect(context.command_invocation->resolved_user ==
+			ok &= Expect(context.command_invocation.has_value() &&
+			                 context.command_invocation->resolved_user ==
 			                     std::optional<std::string>{"alice"} &&
 			                 context.command_invocation->positionals.empty(),
 			             "resolved default user injected into list arguments");
@@ -457,7 +462,8 @@ namespace {
 			const auto result      = Run(context, {"howdy", "test", "--device", "/dev/video9"});
 			ok &= Expect(result.status == 23 && context.command_id == CommandId::kTest,
 			             "test command dispatches with device option");
-			ok &= Expect(context.command_invocation->resolved_user ==
+			ok &= Expect(context.command_invocation.has_value() &&
+			                 context.command_invocation->resolved_user ==
 			                     std::optional<std::string>{"alice"} &&
 			                 context.command_invocation->device ==
 			                     std::optional<std::string>{"/dev/video9"} &&
@@ -474,7 +480,8 @@ namespace {
 			             "long user option skips default user resolution");
 			ok &=
 			    Expect(context.command_id == CommandId::kList, "long user option dispatches list");
-			ok &= Expect(context.command_invocation->resolved_user ==
+			ok &= Expect(context.command_invocation.has_value() &&
+			                 context.command_invocation->resolved_user ==
 			                     std::optional<std::string>{"bob"} &&
 			                 context.command_invocation->positionals.empty(),
 			             "long user option injected into list arguments");
@@ -500,7 +507,9 @@ namespace {
 			const auto result = Run(context, {"howdy", "add", "--", "-y"});
 			ok &= Expect(result.status == 0, "end-of-options literal label dispatches");
 			ok &= Expect(
-			    context.command_invocation->resolved_user == std::optional<std::string>{"alice"} &&
+			    context.command_invocation.has_value() &&
+			        context.command_invocation->resolved_user ==
+			            std::optional<std::string>{"alice"} &&
 			        context.command_invocation->positionals == std::vector<std::string>{"-y"} &&
 			        !context.command_invocation->plain && !context.command_invocation->assume_yes,
 			    "end-of-options marker is forwarded to preserve literal label");

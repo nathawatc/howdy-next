@@ -76,30 +76,11 @@ namespace {
 			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
 				return howdy::pam::auth_flow::HowdyStatus(username, result.compare_status, config,
 				                                          conv_function);
-			case howdy::pam::PromptCoordinatorDecision::kInvalidDependencies:
 			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
 			case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
 				return PAM_SYSTEM_ERR;
 		}
 		return PAM_SYSTEM_ERR;
-	}
-
-	auto DependenciesValid(const howdy::pam::auth_flow::IdentifyDependencies &dependencies)
-	    -> bool {
-		const auto &runtime     = dependencies.runtime_session;
-		const auto &prompt      = dependencies.prompt_coordinator;
-		const auto &eligibility = dependencies.eligibility;
-		return runtime.prepare_runtime != nullptr && runtime.load_runtime_config != nullptr &&
-		       runtime.effective_uid != nullptr && prompt.spawn_compare_process != nullptr &&
-		       prompt.wait_for_compare_process != nullptr &&
-		       prompt.cancel_and_reap_compare_process != nullptr &&
-		       prompt.input_prompt_preflight != nullptr &&
-		       prompt.create_prompt_submitter != nullptr &&
-		       prompt.create_native_prompt != nullptr &&
-		       prompt.create_secret_prompt_conversation != nullptr &&
-		       prompt.request_auth_token != nullptr && eligibility.ssh_session_present != nullptr &&
-		       eligibility.read_lid_state != nullptr &&
-		       eligibility.check_model_readiness != nullptr;
 	}
 
 }  // namespace
@@ -206,10 +187,6 @@ namespace howdy::pam::auth_flow {
 
 		openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
-		if (!DependenciesValid(dependencies)) {
-			return PAM_SYSTEM_ERR;
-		}
-
 		const char *username = nullptr;
 		int         pam_res  = GetUsername(pamh, &username);
 		if (pam_res != PAM_SUCCESS) {
@@ -221,7 +198,6 @@ namespace howdy::pam::auth_flow {
 
 		const auto runtime_result = runtime_session.LoadForUser(username);
 		if (runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed ||
-		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies ||
 		    runtime_result.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded) {
 			return PAM_SYSTEM_ERR;
 		}
@@ -233,6 +209,12 @@ namespace howdy::pam::auth_flow {
 			return PAM_SYSTEM_ERR;
 		}
 		const auto &config = *runtime_result.config_result.config;
+
+		const auto coordinator_timeout = howdy::pam::PromptCoordinatorTimeout::Create(
+		    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
+		if (!coordinator_timeout.has_value()) {
+			return PAM_SYSTEM_ERR;
+		}
 
 		const auto eligibility_result =
 		    howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility(
@@ -260,12 +242,7 @@ namespace howdy::pam::auth_flow {
 
 		howdy::pam::PromptCoordinator coordinator(
 		    pamh, pam_options.workaround, ask_auth_tok, existing_auth_token,
-		    dependencies.prompt_coordinator,
-		    std::chrono::seconds(config.video.timeout) + kCompareStartupGrace);
-
-		if (!coordinator.Valid()) {
-			return PAM_SYSTEM_ERR;
-		}
+		    dependencies.prompt_coordinator, *coordinator_timeout);
 
 		const howdy::pam::CompareLaunchRequest compare_request = {
 		    .config_path     = runtime_session.ConfigPath(),

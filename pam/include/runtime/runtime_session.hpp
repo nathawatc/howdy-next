@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -26,23 +27,57 @@ namespace howdy::pam {
 
 	using EffectiveUidFn = uid_t (*)(void *context);
 
-	struct RuntimeSessionDependencies {
-		void                 *context             = nullptr;
-		PrepareRuntimeFilesFn prepare_runtime     = nullptr;
-		LoadRuntimeConfigFn   load_runtime_config = nullptr;
-		EffectiveUidFn        effective_uid       = nullptr;
+	class RuntimeSessionOperations {
+	public:
+		static auto Create(void *context, PrepareRuntimeFilesFn prepare_runtime,
+		                   LoadRuntimeConfigFn load_runtime_config, EffectiveUidFn effective_uid)
+		    -> std::optional<RuntimeSessionOperations> {
+			if (prepare_runtime == nullptr || load_runtime_config == nullptr ||
+			    effective_uid == nullptr) {
+				return std::nullopt;
+			}
+			return RuntimeSessionOperations(context, prepare_runtime, load_runtime_config,
+			                                effective_uid);
+		}
+
+		[[nodiscard]] auto PrepareRuntime(std::string_view      username,
+		                                  PreparedRuntimeFiles *prepared) const -> bool {
+			return prepare_runtime_(context_, username, prepared);
+		}
+
+		[[nodiscard]] auto LoadRuntimeConfig(const std::filesystem::path &config_path) const
+		    -> howdy::native::RuntimeConfigLoadResult {
+			return load_runtime_config_(context_, config_path);
+		}
+
+		[[nodiscard]] auto EffectiveUid() const -> uid_t {
+			return effective_uid_(context_);
+		}
+
+	private:
+		RuntimeSessionOperations(void *context, PrepareRuntimeFilesFn prepare_runtime,
+		                         LoadRuntimeConfigFn load_runtime_config,
+		                         EffectiveUidFn      effective_uid)
+		    : context_(context)
+		    , prepare_runtime_(prepare_runtime)
+		    , load_runtime_config_(load_runtime_config)
+		    , effective_uid_(effective_uid) {}
+
+		void                 *context_             = nullptr;
+		PrepareRuntimeFilesFn prepare_runtime_     = nullptr;
+		LoadRuntimeConfigFn   load_runtime_config_ = nullptr;
+		EffectiveUidFn        effective_uid_       = nullptr;
 	};
 
 	enum class RuntimeSessionLoadStatus : std::uint8_t {
 		kOk,
 		kPrepareFailed,
 		kConfigLoadFailed,
-		kInvalidDependencies,
 		kAlreadyLoaded,
 	};
 
 	struct RuntimeSessionLoadResult {
-		RuntimeSessionLoadStatus status = RuntimeSessionLoadStatus::kInvalidDependencies;
+		RuntimeSessionLoadStatus               status = RuntimeSessionLoadStatus::kConfigLoadFailed;
 		howdy::native::RuntimeConfigLoadResult config_result;
 
 		[[nodiscard]] auto Ok() const -> bool {
@@ -55,7 +90,7 @@ namespace howdy::pam {
 	class RuntimeSession {
 	public:
 		RuntimeSession(std::string configured_config_path, std::string configured_user_models_dir,
-		               RuntimeSessionDependencies dependencies);
+		               RuntimeSessionOperations operations);
 
 		RuntimeSession(const RuntimeSession &)                     = delete;
 		auto operator=(const RuntimeSession &) -> RuntimeSession & = delete;
@@ -71,13 +106,13 @@ namespace howdy::pam {
 		[[nodiscard]] auto Staged() const -> bool;
 
 	private:
-		std::string                config_path_;
-		std::string                user_models_dir_;
-		RuntimeSessionDependencies dependencies_;
-		int                        lease_fd_     = -1;
-		bool                       load_started_ = false;
+		std::string              config_path_;
+		std::string              user_models_dir_;
+		RuntimeSessionOperations operations_;
+		int                      lease_fd_     = -1;
+		bool                     load_started_ = false;
 	};
 
-	auto ProductionRuntimeSessionDependencies() -> RuntimeSessionDependencies;
+	auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations;
 
 }  // namespace howdy::pam

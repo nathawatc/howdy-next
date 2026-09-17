@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <utility>
@@ -13,7 +14,7 @@ namespace {
 	using howdy::native::UserModelStatus;
 	using howdy::pam::auth_eligibility::AuthenticationConditions;
 	using howdy::pam::auth_eligibility::AuthenticationEligibility;
-	using howdy::pam::auth_eligibility::AuthenticationEligibilityDependencies;
+	using howdy::pam::auth_eligibility::AuthenticationEligibilityOperations;
 	using howdy::pam::auth_eligibility::ClassifyModelReadiness;
 	using howdy::pam::auth_eligibility::DecideAuthenticationEligibility;
 	using howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility;
@@ -223,13 +224,12 @@ namespace {
 		return state->readiness;
 	}
 
-	auto Dependencies(CollectorState *state) -> AuthenticationEligibilityDependencies {
-		return {
-		    .context               = state,
-		    .ssh_session_present   = FakeSsh,
-		    .read_lid_state        = FakeLid,
-		    .check_model_readiness = FakeModel,
-		};
+	auto Operations(CollectorState *state) -> AuthenticationEligibilityOperations {
+		auto ops = AuthenticationEligibilityOperations::Create(state, FakeSsh, FakeLid, FakeModel);
+		if (!ops.has_value()) {
+			std::abort();
+		}
+		return *ops;
 	}
 
 	auto ExpectCollector() -> bool {
@@ -241,11 +241,19 @@ namespace {
 		config.core.disabled            = false;
 
 		CollectorState state;
-		const auto     deps = Dependencies(&state);
-		const auto     invalid_dependencies =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", {});
-		ok &= Expect(invalid_dependencies.status == AuthenticationEligibility::kRuntimeError,
-		             "invalid eligibility dependencies produce typed runtime failure");
+		const auto     ops = Operations(&state);
+		ok &= Expect(
+		    !AuthenticationEligibilityOperations::Create(nullptr, nullptr, FakeLid, FakeModel)
+		         .has_value(),
+		    "null ssh callback is rejected");
+		ok &= Expect(
+		    !AuthenticationEligibilityOperations::Create(nullptr, FakeSsh, nullptr, FakeModel)
+		         .has_value(),
+		    "null lid callback is rejected");
+		ok &=
+		    Expect(!AuthenticationEligibilityOperations::Create(nullptr, FakeSsh, FakeLid, nullptr)
+		                .has_value(),
+		           "null model callback is rejected");
 
 		const auto reset_probe_calls = [&]() -> void {
 			state.ssh_calls   = 0;
@@ -256,7 +264,7 @@ namespace {
 		config.core.disabled = true;
 		reset_probe_calls();
 		const auto disabled =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(disabled.status == AuthenticationEligibility::kDisabled,
 		             "disabled evaluation returns disabled");
 		ok &= Expect(state.ssh_calls == 0 && state.lid_calls == 0 && state.model_calls == 0,
@@ -268,7 +276,7 @@ namespace {
 		state.ssh                       = true;
 		reset_probe_calls();
 		const auto ssh =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(ssh.status == AuthenticationEligibility::kSshSession,
 		             "SSH rejection returns SSH-session eligibility");
 		ok &= Expect(state.ssh_calls == 1 && state.lid_calls == 0 && state.model_calls == 0,
@@ -278,7 +286,7 @@ namespace {
 		state.lid = {.status = LidProbeStatus::kOk, .state = LidState::kClosed};
 		reset_probe_calls();
 		const auto closed_lid =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(closed_lid.status == AuthenticationEligibility::kClosedLid,
 		             "closed-lid rejection returns closed-lid eligibility");
 		ok &= Expect(state.ssh_calls == 1 && state.lid_calls == 1 && state.model_calls == 0,
@@ -291,7 +299,7 @@ namespace {
 		};
 		reset_probe_calls();
 		const auto closed_lid_with_diagnostic =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(closed_lid_with_diagnostic.status == AuthenticationEligibility::kClosedLid,
 		             "closed state still rejects when lid probe has read diagnostic");
 		ok &= Expect(closed_lid_with_diagnostic.diagnostic_message ==
@@ -303,7 +311,7 @@ namespace {
 		state.readiness = {.status = UserModelStatus::kOk};
 		reset_probe_calls();
 		const auto eligible =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/staged/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/staged/models", ops);
 		ok &= Expect(eligible.status == AuthenticationEligibility::kEligible,
 		             "open lid evaluation reaches model readiness and becomes eligible");
 		ok &= Expect(state.ssh_calls == 1 && state.lid_calls == 1 && state.model_calls == 1 &&
@@ -314,7 +322,7 @@ namespace {
 		state.lid = {.status = LidProbeStatus::kOk, .state = LidState::kUnknown};
 		reset_probe_calls();
 		const auto unknown_lid =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(unknown_lid.status == AuthenticationEligibility::kEligible,
 		             "unknown lid state still reaches model readiness");
 		ok &= Expect(state.ssh_calls == 1 && state.lid_calls == 1 && state.model_calls == 1,
@@ -326,7 +334,7 @@ namespace {
 		state.readiness          = {.status = UserModelStatus::kOk};
 		reset_probe_calls();
 		const auto ssh_allowed =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(ssh_allowed.status == AuthenticationEligibility::kEligible,
 		             "SSH session is allowed when abort_if_ssh is disabled");
 		ok &= Expect(state.ssh_calls == 0 && state.lid_calls == 1 && state.model_calls == 1,
@@ -343,7 +351,7 @@ namespace {
 		state.readiness = {.status = UserModelStatus::kOk};
 		reset_probe_calls();
 		const auto lid_allowed =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(lid_allowed.status == AuthenticationEligibility::kEligible,
 		             "lid probe is skipped when abort_if_lid_closed is disabled");
 		ok &= Expect(state.ssh_calls == 1 && state.lid_calls == 0 && state.model_calls == 1 &&
@@ -361,7 +369,7 @@ namespace {
 		state.readiness = {.status = UserModelStatus::kOk};
 		reset_probe_calls();
 		const auto probes_disabled =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(probes_disabled.status == AuthenticationEligibility::kEligible,
 		             "both optional probes disabled still allow ready model");
 		ok &= Expect(state.ssh_calls == 0 && state.lid_calls == 0 && state.model_calls == 1,
@@ -377,7 +385,7 @@ namespace {
 		};
 		reset_probe_calls();
 		const auto invalid_storage =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(invalid_storage.status == AuthenticationEligibility::kInvalidModelStorage,
 		             "invalid model storage is terminal eligibility result");
 		ok &= Expect(invalid_storage.error_message == "insecure model storage" &&
@@ -393,7 +401,7 @@ namespace {
 		state.readiness = {.status = UserModelStatus::kOk};
 		reset_probe_calls();
 		const auto lid_error =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(lid_error.status == AuthenticationEligibility::kEligible,
 		             "lid probe failure continues to model readiness");
 		ok &= Expect(lid_error.error_message.empty() &&
@@ -407,7 +415,7 @@ namespace {
 		};
 		reset_probe_calls();
 		const auto simultaneous_errors =
-		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, "alice", "/models", ops);
 		ok &= Expect(simultaneous_errors.status == AuthenticationEligibility::kInvalidModelStorage,
 		             "terminal model failure wins eligibility decision");
 		ok &= Expect(simultaneous_errors.error_message == "terminal model failure" &&
@@ -417,7 +425,7 @@ namespace {
 		state.lid = {.status = LidProbeStatus::kOk, .state = LidState::kOpen};
 		reset_probe_calls();
 		const auto invalid_user =
-		    EvaluateAuthenticationEligibility(nullptr, config, nullptr, "/models", deps);
+		    EvaluateAuthenticationEligibility(nullptr, config, nullptr, "/models", ops);
 		ok &= Expect(invalid_user.status == AuthenticationEligibility::kInvalidUser,
 		             "null username becomes invalid-user eligibility");
 		ok &= Expect(state.model_calls == 0,

@@ -258,33 +258,23 @@ namespace howdy::test::auth_flow {
 
 	inline auto MakeEligibilityFlowDependencies(EligibilityFlowFixture *fixture)
 	    -> howdy::pam::auth_flow::IdentifyDependencies {
+		auto runtime_ops = howdy::pam::RuntimeSessionOperations::Create(
+		    &fixture->runtime, FlowPrepareRuntime, FlowLoadRuntimeConfig, FlowEffectiveUid);
+		auto prompt_ops = howdy::pam::PromptCoordinatorOperations::Create(
+		    &fixture->prompt, FlowSpawnCompare, FlowWaitCompare, FlowCancelAndReapCompare,
+		    FlowInputPromptPreflight, FlowCreatePromptSubmitter, FlowCreateNativePrompt,
+		    FlowCreateSecretPromptConversation, FlowRequestAuthToken);
+		auto eligibility_ops =
+		    howdy::pam::auth_eligibility::AuthenticationEligibilityOperations::Create(
+		        &fixture->eligibility, FlowSshSessionPresent, FlowReadLidState,
+		        FlowCheckModelReadiness);
+		if (!runtime_ops.has_value() || !prompt_ops.has_value() || !eligibility_ops.has_value()) {
+			std::abort();
+		}
 		return {
-		    .runtime_session =
-		        {
-		            .context             = &fixture->runtime,
-		            .prepare_runtime     = FlowPrepareRuntime,
-		            .load_runtime_config = FlowLoadRuntimeConfig,
-		            .effective_uid       = FlowEffectiveUid,
-		        },
-		    .prompt_coordinator =
-		        {
-		            .context                           = &fixture->prompt,
-		            .spawn_compare_process             = FlowSpawnCompare,
-		            .wait_for_compare_process          = FlowWaitCompare,
-		            .cancel_and_reap_compare_process   = FlowCancelAndReapCompare,
-		            .input_prompt_preflight            = FlowInputPromptPreflight,
-		            .create_prompt_submitter           = FlowCreatePromptSubmitter,
-		            .create_native_prompt              = FlowCreateNativePrompt,
-		            .create_secret_prompt_conversation = FlowCreateSecretPromptConversation,
-		            .request_auth_token                = FlowRequestAuthToken,
-		        },
-		    .eligibility =
-		        {
-		            .context               = &fixture->eligibility,
-		            .ssh_session_present   = FlowSshSessionPresent,
-		            .read_lid_state        = FlowReadLidState,
-		            .check_model_readiness = FlowCheckModelReadiness,
-		        },
+		    .runtime_session    = *std::move(runtime_ops),
+		    .prompt_coordinator = *std::move(prompt_ops),
+		    .eligibility        = *std::move(eligibility_ops),
 		};
 	}
 

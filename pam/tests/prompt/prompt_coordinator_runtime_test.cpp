@@ -145,11 +145,10 @@ namespace {
 		if (!Expect(child_pid > 0, "watchdog fallback child spawned")) {
 			return false;
 		}
-		context.next_child_pid        = child_pid;
-		auto deps                     = Dependencies(&context);
-		deps.wait_for_compare_process = WatchdogWaitForCompare;
+		context.next_child_pid = child_pid;
+		const auto ops         = Operations(&context, WatchdogWaitForCompare);
 
-		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 40ms);
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, ops, Timeout(40ms));
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              "watchdog timeout keeps password fallback") &&
@@ -166,11 +165,10 @@ namespace {
 		if (!Expect(child_pid > 0, "PAM-before-watchdog child spawned")) {
 			return false;
 		}
-		context.next_child_pid        = child_pid;
-		auto deps                     = Dependencies(&context);
-		deps.wait_for_compare_process = WatchdogWaitForCompare;
+		context.next_child_pid = child_pid;
+		const auto ops         = Operations(&context, WatchdogWaitForCompare);
 
-		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps, 1s);
+		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, ops, Timeout(1s));
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
 		              "PAM success wins before watchdog") &&

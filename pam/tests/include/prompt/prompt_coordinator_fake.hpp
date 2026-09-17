@@ -25,10 +25,13 @@ namespace howdy::test::prompt_coordinator {
 	using howdy::test::Expect;
 
 	using howdy::native::CompareExit;
+	using howdy::pam::CreateSecretPromptConversationFn;
 	using howdy::pam::PromptCoordinator;
 	using howdy::pam::PromptCoordinatorDecision;
-	using howdy::pam::PromptCoordinatorDependencies;
+	using howdy::pam::PromptCoordinatorOperations;
+	using howdy::pam::PromptCoordinatorTimeout;
 	using howdy::pam::PromptSubmitter;
+	using howdy::pam::WaitForCompareProcessFn;
 	using howdy::pam::Workaround;
 	using namespace std::chrono_literals;
 
@@ -521,18 +524,26 @@ namespace howdy::test::prompt_coordinator {
 		return {fake.token_result, nullptr};
 	}
 
-	inline auto Dependencies(FakeContext *context) -> PromptCoordinatorDependencies {
-		return PromptCoordinatorDependencies{
-		    .context                           = context,
-		    .spawn_compare_process             = SpawnCompareProcess,
-		    .wait_for_compare_process          = WaitForCompare,
-		    .cancel_and_reap_compare_process   = CancelAndReapCompare,
-		    .input_prompt_preflight            = InputPreflight,
-		    .create_prompt_submitter           = CreatePromptSubmitter,
-		    .create_native_prompt              = CreateNativePrompt,
-		    .create_secret_prompt_conversation = CreateSecretPromptConversation,
-		    .request_auth_token                = RequestAuthToken,
-		};
+	inline auto
+	Operations(FakeContext *context, WaitForCompareProcessFn wait_fn = WaitForCompare,
+	           CreateSecretPromptConversationFn secret_fn = CreateSecretPromptConversation)
+	    -> PromptCoordinatorOperations {
+		auto operations = PromptCoordinatorOperations::Create(
+		    context, SpawnCompareProcess, wait_fn, CancelAndReapCompare, InputPreflight,
+		    CreatePromptSubmitter, CreateNativePrompt, secret_fn, RequestAuthToken);
+		if (!operations.has_value()) {
+			std::abort();
+		}
+		return *operations;
+	}
+
+	inline auto Timeout(std::chrono::steady_clock::duration duration = 5s)
+	    -> PromptCoordinatorTimeout {
+		auto timeout = PromptCoordinatorTimeout::Create(duration);
+		if (!timeout.has_value()) {
+			std::abort();
+		}
+		return *timeout;
 	}
 
 	inline auto WaitForSubmissionReady(FakeContext                        &context,

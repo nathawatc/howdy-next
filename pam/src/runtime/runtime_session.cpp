@@ -4,6 +4,7 @@
 #include "runtime/auth_helper_process.hpp"
 
 #include <cerrno>
+#include <stdexcept>
 #include <unistd.h>
 #include <utility>
 
@@ -35,12 +36,12 @@ namespace {
 
 namespace howdy::pam {
 
-	RuntimeSession::RuntimeSession(std::string                configured_config_path,
-	                               std::string                configured_user_models_dir,
-	                               RuntimeSessionDependencies dependencies)
+	RuntimeSession::RuntimeSession(std::string              configured_config_path,
+	                               std::string              configured_user_models_dir,
+	                               RuntimeSessionOperations operations)
 	    : config_path_(std::move(configured_config_path))
 	    , user_models_dir_(std::move(configured_user_models_dir))
-	    , dependencies_(dependencies) {}
+	    , operations_(operations) {}
 
 	RuntimeSession::~RuntimeSession() {
 		if (lease_fd_ >= 0) {
@@ -57,17 +58,10 @@ namespace howdy::pam {
 		}
 		load_started_ = true;
 
-		if (dependencies_.prepare_runtime == nullptr ||
-		    dependencies_.load_runtime_config == nullptr ||
-		    dependencies_.effective_uid == nullptr) {
-			return {};
-		}
-
-		auto config_result = dependencies_.load_runtime_config(dependencies_.context, config_path_);
+		auto       config_result = operations_.LoadRuntimeConfig(config_path_);
 		const bool needs_staging =
 		    config_result.status == howdy::native::RuntimeConfigLoadStatus::kPathError &&
-		    config_result.error_code == EACCES &&
-		    dependencies_.effective_uid(dependencies_.context) != 0;
+		    config_result.error_code == EACCES && operations_.EffectiveUid() != 0;
 		if (!needs_staging) {
 			const bool config_ok =
 			    config_result.status == howdy::native::RuntimeConfigLoadStatus::kOk &&
@@ -80,7 +74,7 @@ namespace howdy::pam {
 		}
 
 		PreparedRuntimeFiles prepared;
-		if (!dependencies_.prepare_runtime(dependencies_.context, username, &prepared)) {
+		if (!operations_.PrepareRuntime(username, &prepared)) {
 			if (prepared.lease_fd >= 0) {
 				(void)close(prepared.lease_fd);
 			}
@@ -106,7 +100,7 @@ namespace howdy::pam {
 		lease_fd_         = prepared.lease_fd;
 		prepared.lease_fd = -1;
 
-		config_result = dependencies_.load_runtime_config(dependencies_.context, config_path_);
+		config_result = operations_.LoadRuntimeConfig(config_path_);
 		const bool config_ok =
 		    config_result.status == howdy::native::RuntimeConfigLoadStatus::kOk &&
 		    config_result.config.has_value();
@@ -129,12 +123,14 @@ namespace howdy::pam {
 		return lease_fd_ >= 0;
 	}
 
-	auto ProductionRuntimeSessionDependencies() -> RuntimeSessionDependencies {
-		return RuntimeSessionDependencies{
-		    .prepare_runtime     = PrepareRuntimeFilesDependency,
-		    .load_runtime_config = LoadRuntimeConfigDependency,
-		    .effective_uid       = EffectiveUidDependency,
-		};
+	auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations {
+		auto operations =
+		    RuntimeSessionOperations::Create(nullptr, PrepareRuntimeFilesDependency,
+		                                     LoadRuntimeConfigDependency, EffectiveUidDependency);
+		if (!operations.has_value()) {
+			throw std::logic_error("Failed to create production runtime session operations");
+		}
+		return *operations;
 	}
 
 }  // namespace howdy::pam

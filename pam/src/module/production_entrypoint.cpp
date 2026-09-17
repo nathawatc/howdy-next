@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <syslog.h>
 #include <tuple>
 #include <unistd.h>
@@ -60,25 +61,23 @@ namespace {
 		howdy::pam::compare_process::CancelAndReap(child_pid);
 	}
 
-	auto ProductionPromptCoordinatorDependencies() -> howdy::pam::PromptCoordinatorDependencies {
-		return {
-		    .spawn_compare_process             = howdy::pam::compare_process::Spawn,
-		    .wait_for_compare_process          = howdy::pam::compare_process::Wait,
-		    .cancel_and_reap_compare_process   = CancelAndReapCompareProcess,
-		    .input_prompt_preflight            = InputPromptPreflight,
-		    .create_prompt_submitter           = CreatePromptSubmitter,
-		    .create_native_prompt              = CreateNativePrompt,
-		    .create_secret_prompt_conversation = CreateSecretPromptConversation,
-		    .request_auth_token                = RequestAuthToken,
-		};
+	auto ProductionPromptCoordinatorOperations() -> howdy::pam::PromptCoordinatorOperations {
+		auto operations = howdy::pam::PromptCoordinatorOperations::Create(
+		    nullptr, howdy::pam::compare_process::Spawn, howdy::pam::compare_process::Wait,
+		    CancelAndReapCompareProcess, InputPromptPreflight, CreatePromptSubmitter,
+		    CreateNativePrompt, CreateSecretPromptConversation, RequestAuthToken);
+		if (!operations.has_value()) {
+			throw std::logic_error("Failed to create production prompt coordinator operations");
+		}
+		return *operations;
 	}
 
 	auto ProductionIdentifyDependencies() -> howdy::pam::auth_flow::IdentifyDependencies {
 		return {
-		    .runtime_session    = howdy::pam::ProductionRuntimeSessionDependencies(),
-		    .prompt_coordinator = ProductionPromptCoordinatorDependencies(),
+		    .runtime_session    = howdy::pam::ProductionRuntimeSessionOperations(),
+		    .prompt_coordinator = ProductionPromptCoordinatorOperations(),
 		    .eligibility =
-		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityDependencies(),
+		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityOperations(),
 		};
 	}
 

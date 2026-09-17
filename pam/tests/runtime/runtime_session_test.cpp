@@ -126,13 +126,13 @@ namespace {
 		return fake.effective_uid;
 	}
 
-	auto Dependencies(FakeContext *context) -> howdy::pam::RuntimeSessionDependencies {
-		return howdy::pam::RuntimeSessionDependencies{
-		    .context             = context,
-		    .prepare_runtime     = PrepareRuntime,
-		    .load_runtime_config = LoadRuntimeConfig,
-		    .effective_uid       = EffectiveUid,
-		};
+	auto Operations(FakeContext *context) -> howdy::pam::RuntimeSessionOperations {
+		auto operations = howdy::pam::RuntimeSessionOperations::Create(
+		    context, PrepareRuntime, LoadRuntimeConfig, EffectiveUid);
+		if (!operations.has_value()) {
+			std::abort();
+		}
+		return *operations;
 	}
 
 	auto IssuedLeaseHasState(const FakeContext &context, bool open) -> bool {
@@ -162,7 +162,7 @@ namespace {
 		bool        ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
 			ok &= Expect(result.Ok(), "direct success returns ok");
 			ok &=
@@ -182,7 +182,7 @@ namespace {
 		FakeContext context{.load_results = {ParseErrorResult(kConfiguredConfig)}};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
 			if (!Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			            "direct parse failure returns config-load failure") ||
@@ -200,7 +200,7 @@ namespace {
 		    .effective_uid = 0,
 		};
 		howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-		                                   Dependencies(&context));
+		                                   Operations(&context));
 		const auto                 result = session.LoadForUser("alice");
 		return Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 		              "root EACCES returns config-load failure") &&
@@ -214,7 +214,7 @@ namespace {
 		    .effective_uid = 1000,
 		};
 		howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-		                                   Dependencies(&context));
+		                                   Operations(&context));
 		const auto                 result = session.LoadForUser("alice");
 		return Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 		              "non-root non-EACCES returns config-load failure") &&
@@ -231,7 +231,7 @@ namespace {
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
 			ok &= Expect(result.Ok(), "staged config success returns ok");
 			ok &= Expect(context.load_paths ==
@@ -259,7 +259,7 @@ namespace {
 		};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
 			if (!Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed,
 			            "prepare failure returns prepare-failed") ||
@@ -282,7 +282,7 @@ namespace {
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
 			ok &= Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			             "staged parse failure returns config-load failure");
@@ -298,28 +298,11 @@ namespace {
 		bool ok = true;
 		for (int missing = 0; missing < 3; ++missing) {
 			FakeContext context;
-			auto        deps = Dependencies(&context);
-			switch (missing) {
-				case 0:
-					deps.prepare_runtime = nullptr;
-					break;
-				case 1:
-					deps.load_runtime_config = nullptr;
-					break;
-				case 2:
-					deps.effective_uid = nullptr;
-					break;
-				default:
-					break;
-			}
-
-			{
-				howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels, deps);
-				const auto                 result = session.LoadForUser("alice");
-				ok &= Expect(result.status ==
-				                 howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies,
-				             "missing dependency returns invalid-dependencies");
-			}
+			const auto  operations = howdy::pam::RuntimeSessionOperations::Create(
+			    &context, missing == 0 ? nullptr : PrepareRuntime,
+			    missing == 1 ? nullptr : LoadRuntimeConfig, missing == 2 ? nullptr : EffectiveUid);
+			ok &= Expect(!operations.has_value(),
+			             "missing dependency rejects RuntimeSessionOperations construction");
 			ok &= Expect(NoCallbacksRan(context), "missing dependency invokes no callbacks");
 		}
 		return ok;
@@ -333,7 +316,7 @@ namespace {
 		};
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			if (!Expect(session.LoadForUser("alice").Ok(),
 			            "duplicate-cleanup setup stages successfully")) {
 				return false;
@@ -347,7 +330,7 @@ namespace {
 		bool        ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 first = session.LoadForUser("alice");
 			ok &= Expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kOk,
 			             "direct one-shot first load succeeds");
@@ -377,7 +360,7 @@ namespace {
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 first = session.LoadForUser("alice");
 			ok &= Expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kOk,
 			             "staged one-shot first load succeeds");
@@ -414,7 +397,7 @@ namespace {
 		bool ok = true;
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Dependencies(&context));
+			                                   Operations(&context));
 			const auto                 first = session.LoadForUser("alice");
 			ok &= Expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kConfigLoadFailed,
 			             "failed staged one-shot reports config failure");
@@ -430,28 +413,6 @@ namespace {
 		}
 		ok &= Expect(IssuedLeaseHasState(context, false),
 		             "failed staged re-entry closes original lease at destruction");
-		return ok;
-	}
-
-	auto TestInvalidDependenciesAreOneShot() -> bool {
-		FakeContext context;
-		auto        deps     = Dependencies(&context);
-		deps.prepare_runtime = nullptr;
-		bool ok              = true;
-		{
-			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels, deps);
-			const auto                 first = session.LoadForUser("alice");
-			ok &= Expect(first.status == howdy::pam::RuntimeSessionLoadStatus::kInvalidDependencies,
-			             "invalid dependency first load fails validation");
-			ok &= Expect(NoCallbacksRan(context),
-			             "invalid dependency first load invokes no callbacks");
-
-			const auto second = session.LoadForUser("bob");
-			ok &= Expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
-			             "invalid dependency session rejects second load");
-			ok &=
-			    Expect(NoCallbacksRan(context), "invalid dependency re-entry invokes no callbacks");
-		}
 		return ok;
 	}
 
@@ -531,7 +492,7 @@ namespace {
 			};
 			{
 				howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-				                                   Dependencies(&context));
+				                                   Operations(&context));
 				const auto                 result = session.LoadForUser("alice");
 				const std::string          name(test_case.name);
 				ok &= Expect(result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed,
@@ -580,7 +541,6 @@ auto main(int argc, char **argv) -> int {
 	ok &= TestDirectSuccessIsOneShot();
 	ok &= TestStagedSuccessIsOneShot();
 	ok &= TestFailedStagedLoadIsOneShot();
-	ok &= TestInvalidDependenciesAreOneShot();
 	ok &= RunRuntimeSessionSpawnTests();
 	ok &= RunRuntimeSessionDeadlineTests();
 	ok &= TestInvalidPreparedRuntimeFiles();

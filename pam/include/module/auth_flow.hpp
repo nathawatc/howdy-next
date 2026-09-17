@@ -16,9 +16,9 @@ namespace howdy::pam::auth_flow {
 	using ConversationFn = std::function<int(const howdy::pam::ConversationMessage &)>;
 
 	struct IdentifyDependencies {
-		RuntimeSessionDependencies                                          runtime_session;
-		PromptCoordinatorDependencies                                       prompt_coordinator;
-		howdy::pam::auth_eligibility::AuthenticationEligibilityDependencies eligibility;
+		RuntimeSessionOperations                                          runtime_session;
+		PromptCoordinatorOperations                                       prompt_coordinator;
+		howdy::pam::auth_eligibility::AuthenticationEligibilityOperations eligibility;
 	};
 
 	__attribute__((visibility("hidden"))) auto

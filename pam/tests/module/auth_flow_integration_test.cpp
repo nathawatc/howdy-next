@@ -401,7 +401,7 @@ namespace {
 			auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
 			FakeContext prompt_context;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Operations(&prompt_context);
 
 			ConversationState state;
 			struct pam_conv   conversation{
@@ -478,7 +478,7 @@ namespace {
 			FakeContext prompt_context;
 			prompt_context.spawn_result = EIO;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Operations(&prompt_context);
 			ConversationState state;
 			struct pam_conv   conversation{
 			    .conv        = TestConversation,
@@ -503,7 +503,7 @@ namespace {
 			auto        dependencies         = MakeEligibilityFlowDependencies(&fixture);
 			FakeContext prompt_context;
 			dependencies.prompt_coordinator =
-			    howdy::test::prompt_coordinator::Dependencies(&prompt_context);
+			    howdy::test::prompt_coordinator::Operations(&prompt_context);
 			ConversationState state;
 			struct pam_conv   conversation{
 			    .conv        = TestConversation,
@@ -513,82 +513,23 @@ namespace {
 			ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
 			             "invalid coordinator timeout starts PAM handle");
 			if (pam_handle.Get() != nullptr) {
-				ok &= Expect(RunAuthenticationEntrypoint(
-				                 pam_handle.Get(), input_arguments, true,
-				                 {.context = &dependencies, .authenticate = IdentifyForTest}) ==
-				                 PAM_SYSTEM_ERR,
+				const int result = RunAuthenticationEntrypoint(
+				    pam_handle.Get(), input_arguments, true,
+				    {.context = &dependencies, .authenticate = IdentifyForTest});
+				ok &= Expect(result == PAM_SYSTEM_ERR,
 				             "invalid coordinator timeout maps to PAM_SYSTEM_ERR");
+				ok &= Expect(fixture.runtime.load_calls == 1,
+				             "invalid timeout loads runtime config once");
+				ok &= Expect(fixture.eligibility.ssh_calls == 0 &&
+				                 fixture.eligibility.lid_calls == 0 &&
+				                 fixture.eligibility.model_calls == 0,
+				             "invalid timeout stops before evaluating eligibility probes");
+				ok &= Expect(state.calls == 0,
+				             "invalid timeout stops before PAM conversation or detection notice");
+				ok &= Expect(prompt_context.spawn_calls == 0,
+				             "invalid timeout stops before spawning compare process");
 			}
 		}
-		return ok;
-	}
-
-	auto ExpectInvalidEligibilityDependenciesFailClosed() -> bool {
-		EligibilityFlowFixture fixture;
-		const auto             base = MakeEligibilityFlowDependencies(&fixture);
-		bool                   ok   = true;
-
-		const auto expect_invalid = [&](const char *scenario, auto invalidate) -> void {
-			auto dependencies = base;
-			invalidate(dependencies);
-			const int runtime_calls = fixture.runtime.load_calls;
-			const int prompt_calls  = fixture.prompt.spawn_calls;
-			const int result =
-			    howdy::pam::auth_flow::IdentifyWithDependencies(nullptr, {}, true, dependencies);
-			const std::string name(scenario);
-			ok &= Expect(result == PAM_SYSTEM_ERR,
-			             name + ": invalid dependency contract maps to PAM_SYSTEM_ERR");
-			ok &= Expect(fixture.runtime.load_calls == runtime_calls &&
-			                 fixture.prompt.spawn_calls == prompt_calls &&
-			                 fixture.eligibility.ssh_calls == 0 &&
-			                 fixture.eligibility.lid_calls == 0 &&
-			                 fixture.eligibility.model_calls == 0,
-			             name + ": validation stops before runtime, probes and prompt");
-		};
-
-		expect_invalid("missing SSH-session callback", [](auto &dependencies) -> void {
-			dependencies.eligibility.ssh_session_present = nullptr;
-		});
-		expect_invalid("missing lid-state callback", [](auto &dependencies) -> void {
-			dependencies.eligibility.read_lid_state = nullptr;
-		});
-		expect_invalid("missing model-readiness callback", [](auto &dependencies) -> void {
-			dependencies.eligibility.check_model_readiness = nullptr;
-		});
-		expect_invalid("missing runtime prepare callback", [](auto &dependencies) -> void {
-			dependencies.runtime_session.prepare_runtime = nullptr;
-		});
-		expect_invalid("missing runtime effective-UID callback", [](auto &dependencies) -> void {
-			dependencies.runtime_session.effective_uid = nullptr;
-		});
-		expect_invalid("missing compare wait callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.wait_for_compare_process = nullptr;
-		});
-		expect_invalid("missing compare cleanup callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.cancel_and_reap_compare_process = nullptr;
-		});
-		expect_invalid("missing input preflight callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.input_prompt_preflight = nullptr;
-		});
-		expect_invalid("missing prompt submitter callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.create_prompt_submitter = nullptr;
-		});
-		expect_invalid("missing native prompt callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.create_native_prompt = nullptr;
-		});
-		expect_invalid("missing secret conversation callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.create_secret_prompt_conversation = nullptr;
-		});
-		expect_invalid("missing auth-token callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.request_auth_token = nullptr;
-		});
-		expect_invalid("missing runtime config callback", [](auto &dependencies) -> void {
-			dependencies.runtime_session.load_runtime_config = nullptr;
-		});
-		expect_invalid("missing prompt spawn callback", [](auto &dependencies) -> void {
-			dependencies.prompt_coordinator.spawn_compare_process = nullptr;
-		});
-
 		return ok;
 	}
 
@@ -601,6 +542,5 @@ auto RunAuthFlowIntegrationTests() -> bool {
 	ok &= ExpectPromptResultMapping();
 	ok &= ExpectAuthenticationPreservesHostLocaleState();
 	ok &= ExpectAuthenticationEligibilityIntegration();
-	ok &= ExpectInvalidEligibilityDependenciesFailClosed();
 	return ok;
 }

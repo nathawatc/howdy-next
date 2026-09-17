@@ -18,8 +18,8 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false, Operations(&context),
+		                              Timeout());
 		const auto        result = coordinator.Run(request);
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              label + " returns Howdy result") &&
@@ -54,7 +54,7 @@ namespace {
 	auto TestSpawnFailure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 
 		const auto result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
@@ -68,7 +68,7 @@ namespace {
 		FakeContext context;
 		context.next_child_pid = -1;
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 
 		const auto result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
@@ -80,7 +80,7 @@ namespace {
 	auto TestOneShotAfterSpawnFailure() -> bool {
 		FakeContext       context{.spawn_result = EACCES};
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		                              Operations(&context), Timeout());
 
 		const auto first  = coordinator.Run(MakeCompareRequest());
 		const auto second = coordinator.Run(
@@ -95,44 +95,20 @@ namespace {
 
 	auto TestInvalidDependencies() -> bool {
 		bool ok = true;
-		for (int missing = 0; missing < 7; ++missing) {
+		for (int missing = 0; missing < 8; ++missing) {
 			FakeContext context;
-			auto        deps = Dependencies(&context);
-			switch (missing) {
-				case 0:
-					deps.spawn_compare_process = nullptr;
-					break;
-				case 1:
-					deps.wait_for_compare_process = nullptr;
-					break;
-				case 2:
-					deps.cancel_and_reap_compare_process = nullptr;
-					break;
-				case 3:
-					deps.input_prompt_preflight = nullptr;
-					break;
-				case 4:
-					deps.create_prompt_submitter = nullptr;
-					break;
-				case 5:
-					deps.create_native_prompt = nullptr;
-					break;
-				case 6:
-					deps.request_auth_token = nullptr;
-					break;
-				default:
-					break;
-			}
+			const auto  spawn     = missing == 0 ? nullptr : SpawnCompareProcess;
+			const auto  wait      = missing == 1 ? nullptr : WaitForCompare;
+			const auto  cancel    = missing == 2 ? nullptr : CancelAndReapCompare;
+			const auto  preflight = missing == 3 ? nullptr : InputPreflight;
+			const auto  submitter = missing == 4 ? nullptr : CreatePromptSubmitter;
+			const auto  native    = missing == 5 ? nullptr : CreateNativePrompt;
+			const auto  secret    = missing == 6 ? nullptr : CreateSecretPromptConversation;
+			const auto  token     = missing == 7 ? nullptr : RequestAuthToken;
 
-			PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false, deps,
-			                              std::chrono::seconds(5));
-			ok &= Expect(!coordinator.Valid(), "missing dependency is invalid");
-			const auto before = GetCallbackCounts(context);
-			const auto result = coordinator.Run(MakeCompareRequest());
-			ok &= Expect(result.decision == PromptCoordinatorDecision::kInvalidDependencies,
-			             "invalid coordinator returns invalid-dependencies result");
-			ok &= Expect(GetCallbackCounts(context) == before,
-			             "invalid coordinator invokes no callback");
+			const auto ops = PromptCoordinatorOperations::Create(
+			    &context, spawn, wait, cancel, preflight, submitter, native, secret, token);
+			ok &= Expect(!ops.has_value(), "missing callback is rejected by Create");
 		}
 		return ok;
 	}
@@ -145,8 +121,8 @@ namespace {
 		}
 		context.next_child_pid = child_pid;
 
-		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
-		                              Dependencies(&context), std::chrono::seconds(5));
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false, Operations(&context),
+		                              Timeout());
 		const auto        first = coordinator.Run(MakeCompareRequest());
 		if (!Expect(first.decision == PromptCoordinatorDecision::kHowdyResult,
 		            "one-shot first run succeeds")) {
