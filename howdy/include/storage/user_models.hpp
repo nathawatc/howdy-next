@@ -27,15 +27,9 @@ namespace howdy::native {
 	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &entry,
 	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelMutationResult;
-	auto RemoveUserModelEntry(const std::string &user, int id,
-	                          const file_security_internal::ValidationRoot &validation_root = {})
-	    -> UserModelMutationResult;
 	auto RemoveUserModelEntryIfMatches(
 	    const std::string &user, const UserModelEntryExpectation &expected,
 	    const file_security_internal::ValidationRoot &validation_root = {})
-	    -> UserModelMutationResult;
-	auto ClearUserModelEntries(const std::string                            &user,
-	                           const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelMutationResult;
 	auto ClearUserModelEntriesIfUnchanged(
 	    const std::string &user, const UserModelFileSnapshot &expected_snapshot,

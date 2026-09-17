@@ -45,14 +45,24 @@ namespace howdy::test::user_models {
 			}
 		}
 
+		auto RequireSnapshot(const std::filesystem::path &temp_root, const std::string &user)
+		    -> std::optional<howdy::native::UserModelFileSnapshot> {
+			const auto inspection = howdy::native::InspectUserModelFile(user, {temp_root});
+			if (inspection.status != howdy::native::UserModelStatus::kOk ||
+			    !inspection.snapshot.has_value()) {
+				return std::nullopt;
+			}
+			return inspection.snapshot;
+		}
+
 		auto ExpectChangedSnapshotComponents(const std::filesystem::path &model_path) -> bool {
-			const auto temp_root  = model_path.parent_path().parent_path();
-			const auto inspection = howdy::native::InspectUserModelFile("alice", {temp_root});
-			if (!inspection.snapshot.has_value()) {
+			const auto temp_root = model_path.parent_path().parent_path();
+			const auto snapshot  = RequireSnapshot(temp_root, "alice");
+			if (!snapshot.has_value()) {
 				return Expect(false, "capture snapshot for component mismatch tests");
 			}
 
-			const auto baseline = *inspection.snapshot;
+			const auto baseline = *snapshot;
 			std::array changed_snapshots{baseline, baseline, baseline, baseline,
 			                             baseline, baseline, baseline};
 			++changed_snapshots[0].dev;
@@ -72,6 +82,125 @@ namespace howdy::test::user_models {
 				ok &= Expect(std::filesystem::exists(model_path),
 				             "changed snapshot leaves model file in place");
 			}
+			return ok;
+		}
+
+		auto ExpectClearMutationFailures(const std::filesystem::path &model_path,
+		                                 const std::string           &backend) -> bool {
+			const auto temp_root = model_path.parent_path().parent_path();
+			bool       ok        = true;
+			{
+				const auto original_content = ReadFile(model_path);
+				const auto snapshot         = RequireSnapshot(temp_root, "alice");
+				if (!snapshot.has_value()) {
+					return Expect(false, "inspect model file before concurrent-read clear test");
+				}
+				std::latch                                                    clear_paused(1);
+				std::latch                                                    allow_clear(1);
+				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+				    .before_delete_commit = [&](const std::filesystem::path &) -> void {
+					    clear_paused.count_down();
+					    allow_clear.wait();
+				    },
+				});
+				howdy::native::UserModelMutationResult                        clear_result;
+				std::thread                                                   clearer([&] -> void {
+					clear_result = howdy::native::ClearUserModelEntriesIfUnchanged(
+					    "alice", *snapshot, {temp_root});
+				});
+				clear_paused.wait();
+				const auto during_clear = howdy::native::ListUserModelEntries(
+				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx",
+				    {temp_root});
+				allow_clear.count_down();
+				clearer.join();
+				const auto after_clear = howdy::native::ListUserModelEntries(
+				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx",
+				    {temp_root});
+				ok &= Expect(during_clear.status == howdy::native::UserModelStatus::kOk &&
+				                 !during_clear.entries.empty(),
+				             "reader during clear observes original model document");
+				ok &= Expect(clear_result.status == howdy::native::UserModelStatus::kOk,
+				             "concurrent-read clear succeeds");
+				ok &= Expect(after_clear.status == howdy::native::UserModelStatus::kNoModel,
+				             "reader after clear observes no model");
+				ok &= Expect(WriteFile(model_path, original_content),
+				             "restore model after concurrent-read clear test");
+			}
+			{
+				const auto original_content = ReadFile(model_path);
+				const auto snapshot         = RequireSnapshot(temp_root, "alice");
+				if (!snapshot.has_value()) {
+					return Expect(false, "inspect model file before unlink failure test");
+				}
+				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+				    .fail_delete_unlink = true,
+				});
+				const auto result = howdy::native::ClearUserModelEntriesIfUnchanged(
+				    "alice", *snapshot, {temp_root});
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kDeleteFailed,
+				             "clear reports injected unlink failure");
+				ok &= Expect(ReadFile(model_path) == original_content,
+				             "unlink failure leaves original model at canonical path");
+			}
+			{
+				const auto original_content = ReadFile(model_path);
+				const auto snapshot         = RequireSnapshot(temp_root, "alice");
+				if (!snapshot.has_value()) {
+					return Expect(false, "inspect model file before parent sync failure test");
+				}
+				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
+				    .fail_parent_sync = true,
+				});
+				const auto result = howdy::native::ClearUserModelEntriesIfUnchanged(
+				    "alice", *snapshot, {temp_root});
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
+				             "clear distinguishes committed parent-sync failure");
+				ok &= Expect(result.removed_last,
+				             "clear parent-sync failure reports committed removal state");
+				ok &= Expect(!std::filesystem::exists(model_path),
+				             "clear parent-sync failure leaves model removed from namespace");
+				ok &= Expect(WriteFile(model_path, original_content),
+				             "restore model after clear parent-sync failure test");
+			}
+			return ok;
+		}
+
+		auto ExpectUnwritableDirectoryFailures(const std::filesystem::path            &model_path,
+		                                       const howdy::native::NewUserModelEntry &second_entry)
+		    -> bool {
+			bool ok = true;
+			WhenSupported(
+			    geteuid() != 0,
+			    [&] -> void {
+				    const auto temp_root            = model_path.parent_path().parent_path();
+				    const auto models_dir           = model_path.parent_path();
+				    const auto before_failed_writes = ReadFile(model_path);
+				    const auto snapshot             = RequireSnapshot(temp_root, "alice");
+				    ok &= Expect(snapshot.has_value(),
+				                 "inspect model file before unwritable directory checks");
+				    ok &= Expect(chmod(models_dir.c_str(), 0555) == 0,
+				                 "make models directory unwritable for failed-write checks");
+				    const auto append_result =
+				        howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
+				    ok &=
+				        Expect(append_result.status == howdy::native::UserModelStatus::kWriteFailed,
+				               "append reports atomic write failure");
+				    ok &= Expect(ReadFile(model_path) == before_failed_writes,
+				                 "failed append write leaves model file unchanged");
+				    if (snapshot.has_value()) {
+					    const auto clear_result = howdy::native::ClearUserModelEntriesIfUnchanged(
+					        "alice", *snapshot, {temp_root});
+					    ok &= Expect(clear_result.status ==
+					                     howdy::native::UserModelStatus::kDeleteFailed,
+					                 "clear reports failure when parent directory is unwritable");
+					    ok &= Expect(ReadFile(model_path) == before_failed_writes,
+					                 "failed clear leaves model file unchanged");
+				    }
+				    ok &= Expect(chmod(models_dir.c_str(), 0755) == 0,
+				                 "restore models directory after failed-write checks");
+			    },
+			    "atomic write failure checks while running as root");
 			return ok;
 		}
 
@@ -98,6 +227,14 @@ namespace howdy::test::user_models {
 		    .metric    = howdy::native::FaceMetric::kCosine,
 		    .model     = "sface.onnx",
 		    .encodings = {{0.3F, 0.4F}},
+		};
+		const howdy::native::UserModelEntryExpectation first_entry_expectation{
+		    .id      = 0,
+		    .time    = 1,
+		    .label   = "first",
+		    .backend = backend,
+		    .metric  = howdy::native::FaceMetric::kCosine,
+		    .model   = "sface.onnx",
 		};
 		const auto expect_invalid_append = [&](const howdy::native::NewUserModelEntry &entry,
 		                                       howdy::native::UserModelStatus          status,
@@ -178,7 +315,8 @@ namespace howdy::test::user_models {
 			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 			    .fail_write = true,
 			});
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", first_entry_expectation, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
 			             "remove reports staged write failure");
 			ok &= Expect(ReadFile(model_path) == before_failed_remove,
@@ -189,7 +327,8 @@ namespace howdy::test::user_models {
 			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 			    .fail_parent_sync = true,
 			});
-			const auto result    = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", first_entry_expectation, {temp_root});
 			const auto remaining = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
@@ -206,10 +345,19 @@ namespace howdy::test::user_models {
 			ok &= Expect(WriteFile(model_path, R"([{"id":0,"label":"only","data":[[0.1]]}])"),
 			             "write one-entry model before last remove failure");
 			{
+				const howdy::native::UserModelEntryExpectation only_expected{
+				    .id      = 0,
+				    .time    = 0,
+				    .label   = "only",
+				    .backend = "",
+				    .metric  = std::nullopt,
+				    .model   = "",
+				};
 				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 				    .fail_parent_sync = true,
 				});
-				const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+				const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+				    "alice", only_expected, {temp_root});
 				ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
 				             "last remove distinguishes committed parent-sync failure");
 				ok &= Expect(result.removed_last && !fs::exists(model_path),
@@ -446,90 +594,22 @@ namespace howdy::test::user_models {
 			ok &= Expect(WriteFile(model_path, original_content),
 			             "restore model after rollback-failure test");
 		}
-		{
-			const auto original_content = ReadFile(model_path);
-			std::latch clear_paused(1);
-			std::latch allow_clear(1);
-			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
-			    .before_delete_commit = [&](const std::filesystem::path &) -> void {
-				    clear_paused.count_down();
-				    allow_clear.wait();
-			    },
-			});
-			howdy::native::UserModelMutationResult                        clear_result;
-			std::thread                                                   clearer([&] -> void {
-				clear_result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			});
-			clear_paused.wait();
-			const auto during_clear = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
-			allow_clear.count_down();
-			clearer.join();
-			const auto after_clear = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
-			ok &= Expect(during_clear.status == howdy::native::UserModelStatus::kOk &&
-			                 !during_clear.entries.empty(),
-			             "reader during clear observes original model document");
-			ok &= Expect(clear_result.status == howdy::native::UserModelStatus::kOk,
-			             "concurrent-read clear succeeds");
-			ok &= Expect(after_clear.status == howdy::native::UserModelStatus::kNoModel,
-			             "reader after clear observes no model");
-			ok &= Expect(WriteFile(model_path, original_content),
-			             "restore model after concurrent-read clear test");
-		}
-		{
-			const auto original_content = ReadFile(model_path);
-			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
-			    .fail_delete_unlink = true,
-			});
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kDeleteFailed,
-			             "clear reports injected unlink failure");
-			ok &= Expect(ReadFile(model_path) == original_content,
-			             "unlink failure leaves original model at canonical path");
-		}
-		{
-			const auto original_content = ReadFile(model_path);
-			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
-			    .fail_parent_sync = true,
-			});
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
-			             "clear distinguishes committed parent-sync failure");
-			ok &= Expect(result.removed_last,
-			             "clear parent-sync failure reports committed removal state");
-			ok &= Expect(!fs::exists(model_path),
-			             "clear parent-sync failure leaves model removed from namespace");
-			ok &= Expect(WriteFile(model_path, original_content),
-			             "restore model after clear parent-sync failure test");
-		}
-		WhenSupported(
-		    geteuid() != 0,
-		    [&] -> void {
-			    const auto before_failed_writes = ReadFile(model_path);
-			    ok &= Expect(chmod(models_dir.c_str(), 0555) == 0,
-			                 "make models directory unwritable for failed-write checks");
-			    const auto append_result =
-			        howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-			    ok &= Expect(append_result.status == howdy::native::UserModelStatus::kWriteFailed,
-			                 "append reports atomic write failure");
-			    ok &= Expect(ReadFile(model_path) == before_failed_writes,
-			                 "failed append write leaves model file unchanged");
-			    const auto clear_result =
-			        howdy::native::ClearUserModelEntries("alice", {temp_root});
-			    ok &= Expect(clear_result.status == howdy::native::UserModelStatus::kDeleteFailed,
-			                 "clear reports failure when parent directory is unwritable");
-			    ok &= Expect(ReadFile(model_path) == before_failed_writes,
-			                 "failed clear leaves model file unchanged");
-			    ok &= Expect(chmod(models_dir.c_str(), 0755) == 0,
-			                 "restore models directory after failed-write checks");
-		    },
-		    "atomic write failure checks while running as root");
+		ok &= ExpectClearMutationFailures(model_path, backend);
+		ok &= ExpectUnwritableDirectoryFailures(model_path, second_entry);
 
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 99, {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelNotFound,
-			             "remove reports missing model ID");
+			const howdy::native::UserModelEntryExpectation missing_expected{
+			    .id      = 99,
+			    .time    = 1,
+			    .label   = "missing",
+			    .backend = backend,
+			    .metric  = howdy::native::FaceMetric::kCosine,
+			    .model   = "sface.onnx",
+			};
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", missing_expected, {temp_root});
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+			             "verified remove reports model changed when expected entry is missing");
 		}
 		{
 			const auto listing = howdy::native::ListUserModelEntries(
@@ -583,7 +663,16 @@ namespace howdy::test::user_models {
 		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]],"future_field":{"revision":2}}])"),
 		    "restore entries before legacy remove");
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const howdy::native::UserModelEntryExpectation expected_0{
+			    .id      = 0,
+			    .time    = 1,
+			    .label   = "first",
+			    .backend = backend,
+			    .metric  = howdy::native::FaceMetric::kCosine,
+			    .model   = "sface.onnx",
+			};
+			const auto result =
+			    howdy::native::RemoveUserModelEntryIfMatches("alice", expected_0, {temp_root});
 			ok &=
 			    Expect(result.status == howdy::native::UserModelStatus::kOk && !result.removed_last,
 			           "remove deletes existing model ID");
@@ -599,7 +688,16 @@ namespace howdy::test::user_models {
 			             "remove preserves unknown fields in another entry");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 1, {temp_root});
+			const howdy::native::UserModelEntryExpectation expected_1{
+			    .id      = 1,
+			    .time    = 1,
+			    .label   = "second",
+			    .backend = backend,
+			    .metric  = howdy::native::FaceMetric::kCosine,
+			    .model   = "sface.onnx",
+			};
+			const auto result =
+			    howdy::native::RemoveUserModelEntryIfMatches("alice", expected_1, {temp_root});
 			ok &=
 			    Expect(result.status == howdy::native::UserModelStatus::kOk && result.removed_last,
 			           "remove deletes last model entry");
@@ -611,10 +709,15 @@ namespace howdy::test::user_models {
 		               howdy::native::UserModelStatus::kOk,
 		           "append recreates model before clear");
 		{
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
-			             "clear removes all model entries");
-			ok &= Expect(!fs::exists(model_path), "clear deletes model file");
+			const auto snapshot = RequireSnapshot(temp_root, "alice");
+			ok &= Expect(snapshot.has_value(), "inspect model file before clear");
+			if (snapshot.has_value()) {
+				const auto result = howdy::native::ClearUserModelEntriesIfUnchanged(
+				    "alice", *snapshot, {temp_root});
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
+				             "clear removes all model entries");
+				ok &= Expect(!fs::exists(model_path), "clear deletes model file");
+			}
 		}
 
 		const auto created_models_dir = temp_root / "created-store-models";

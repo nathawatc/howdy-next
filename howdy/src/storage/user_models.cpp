@@ -238,32 +238,6 @@ namespace howdy::native {
 		return UserModelMutationResult{.status = UserModelStatus::kOk, .entry = std::move(entry)};
 	}
 
-	auto RemoveUserModelEntry(const std::string &user, int id,
-	                          const file_security_internal::ValidationRoot &validation_root)
-	    -> UserModelMutationResult {
-		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
-		auto &entries  = mutation.document.result;
-		if (entries.status != UserModelStatus::kOk) {
-			return MutationFailure(entries.status, entries.error_message);
-		}
-		if (!mutation.transaction.has_value()) {
-			return InternalInvariantFailure();
-		}
-
-		const auto found =
-		    std::ranges::find_if(entries.entries, [id](const UserModelEntry &entry) -> bool {
-			    return entry.id == id;
-		    });
-		if (found == entries.entries.end()) {
-			return MutationFailure(UserModelStatus::kModelNotFound, "Model ID was not found");
-		}
-
-		UserModelEntry removed     = *found;
-		const auto     found_index = std::distance(entries.entries.begin(), found);
-		return RemoveEntryFromDocument(*mutation.transaction, &mutation.document,
-		                               std::move(removed), found_index);
-	}
-
 	auto RemoveUserModelEntryIfMatches(
 	    const std::string &user, const UserModelEntryExpectation &expected,
 	    const file_security_internal::ValidationRoot &validation_root) -> UserModelMutationResult {
@@ -291,31 +265,6 @@ namespace howdy::native {
 		const auto     found_index = std::distance(entries.entries.begin(), found);
 		return RemoveEntryFromDocument(*mutation.transaction, &mutation.document,
 		                               std::move(removed), found_index);
-	}
-
-	auto ClearUserModelEntries(const std::string                            &user,
-	                           const file_security_internal::ValidationRoot &validation_root)
-	    -> UserModelMutationResult {
-		auto transaction = UserModelStore::LockExisting(user, validation_root);
-		if (transaction.status != UserModelStatus::kOk) {
-			return MutationFailure(transaction.status, transaction.error_message);
-		}
-		if (!transaction.transaction.has_value()) {
-			return InternalInvariantFailure();
-		}
-		const auto commit_result = transaction.transaction->RemoveFile();
-		if (!AtomicFileCommitIsDurable(commit_result)) {
-			return CommitFailure(commit_result, UserModelStatus::kDeleteFailed,
-			                     kModelRemoveFailedMessage,
-			                     "Model file was removed, but its directory could not be synced; "
-			                     "verify state before "
-			                     "retrying",
-			                     {}, true);
-		}
-		return UserModelMutationResult{
-		    .status       = UserModelStatus::kOk,
-		    .removed_last = true,
-		};
 	}
 
 	auto ClearUserModelEntriesIfUnchanged(

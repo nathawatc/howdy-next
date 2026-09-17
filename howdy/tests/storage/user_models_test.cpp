@@ -495,33 +495,19 @@ namespace howdy::test::user_models {
 		fs::remove(model_path, ec);
 		ec.clear();
 		{
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kNoModel,
-			             "clear reports no model file without parsing");
-		}
-
-		ok &= Expect(WriteFile(model_path, "not-json"), "write malformed model before clear");
-		{
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
-			             "clear removes malformed JSON");
-			ok &= Expect(!fs::exists(model_path), "clear deletes malformed JSON model file");
-		}
-
-		ok &= Expect(WriteFile(model_path, oversized_json), "write oversized model before clear");
-		{
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
-			             "clear removes oversized JSON");
-			ok &= Expect(!fs::exists(model_path), "clear deletes oversized JSON model file");
-		}
-
-		ok &= Expect(WriteFile(model_path, R"({"id":1})"), "write wrong-shape model before clear");
-		{
-			const auto result = howdy::native::ClearUserModelEntries("alice", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
-			             "clear removes wrong-shape JSON");
-			ok &= Expect(!fs::exists(model_path), "clear deletes wrong-shape JSON model file");
+			const howdy::native::UserModelFileSnapshot stale_snapshot{
+			    .dev            = 1,
+			    .inode          = 2,
+			    .size           = 3,
+			    .mtime_seconds  = 4,
+			    .mtime_nanosecs = 5,
+			    .ctime_seconds  = 6,
+			    .ctime_nanosecs = 7,
+			};
+			const auto result = howdy::native::ClearUserModelEntriesIfUnchanged(
+			    "alice", stale_snapshot, {temp_root});
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
+			             "verified clear reports model changed when model file is missing");
 		}
 
 		ok &= Expect(WriteFile(model_path, "not-json"),

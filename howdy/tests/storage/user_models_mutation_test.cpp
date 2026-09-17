@@ -25,6 +25,14 @@ namespace howdy::test::user_models {
 		    .model     = "sface.onnx",
 		    .encodings = {{0.1F, 0.2F}},
 		};
+		const howdy::native::UserModelEntryExpectation first_entry_expectation{
+		    .id      = 0,
+		    .time    = 1,
+		    .label   = "first",
+		    .backend = backend,
+		    .metric  = howdy::native::FaceMetric::kCosine,
+		    .model   = "sface.onnx",
+		};
 		{
 			const std::string original_model =
 			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
@@ -260,7 +268,8 @@ namespace howdy::test::user_models {
 			             "failed append leaves malformed existing file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", first_entry_expectation, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kParseError,
 			             "remove rejects malformed existing file");
 			ok &= Expect(ReadFile(model_path) == malformed_before_mutation,
@@ -278,7 +287,8 @@ namespace howdy::test::user_models {
 			             "failed append leaves invalid-shape existing file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", first_entry_expectation, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "remove rejects invalid-shape existing file");
 			ok &= Expect(ReadFile(model_path) == invalid_shape_before_mutation,
@@ -299,7 +309,8 @@ namespace howdy::test::user_models {
 			             "deep nesting append failure leaves model file unchanged");
 		}
 		{
-			const auto result = howdy::native::RemoveUserModelEntry("alice", 0, {temp_root});
+			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
+			    "alice", first_entry_expectation, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOversized,
 			             "remove rejects deeply nested unknown field");
 			ok &= Expect(ReadFile(model_path) == deeply_nested_before_mutation,
