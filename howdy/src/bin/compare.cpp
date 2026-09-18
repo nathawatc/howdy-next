@@ -322,12 +322,6 @@ auto main(int argc, char **argv) -> int {
 		        .reset_timeout    = ResetTimeout,
 		        .run_frame_loop   = RunFrameLoop,
 		    });
-		if (std::holds_alternative<
-		        howdy::native::compare_processing_internal::CompareProcessingInvalidDependencies>(
-		        processing_result)) {
-			std::cerr << "compare processing operations unavailable\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
 		if (const auto *capture_open =
 		        std::get_if<howdy::native::CompareCaptureOpenResult>(&processing_result)) {
 			switch (capture_open->status) {

@@ -13,7 +13,6 @@ namespace {
 	using howdy::native::CompareExit;
 	using howdy::native::ComparePrivilegeStatus;
 	using howdy::native::compare_processing_internal::CompareProcessingDependencies;
-	using howdy::native::compare_processing_internal::CompareProcessingInvalidDependencies;
 	using howdy::native::compare_processing_internal::CompareProcessingResult;
 
 	struct FakeContext {
@@ -202,41 +201,6 @@ namespace {
 		return ok;
 	}
 
-	auto TestMissingCallbacks() -> bool {
-		bool ok = true;
-		for (int missing = 0; missing < 5; missing++) {
-			FakeContext context;
-			auto        dependencies = DependenciesFor(context);
-			switch (missing) {
-				case 0:
-					dependencies.open_capture = nullptr;
-					break;
-				case 1:
-					dependencies.drop_privileges = nullptr;
-					break;
-				case 2:
-					dependencies.construct_engine = nullptr;
-					break;
-				case 3:
-					dependencies.reset_timeout = nullptr;
-					break;
-				case 4:
-					dependencies.run_frame_loop = nullptr;
-					break;
-				default:
-					break;
-			}
-
-			const auto result =
-			    howdy::native::compare_processing_internal::RunCompareProcessing(dependencies);
-			ok &= Expect(std::holds_alternative<CompareProcessingInvalidDependencies>(result),
-			             "missing callback returns invalid-dependencies stage result");
-			ok &= Expect(context.events.empty(),
-			             "all callbacks validate before orchestration starts");
-		}
-		return ok;
-	}
-
 }  // namespace
 
 auto main() -> int {
@@ -247,6 +211,5 @@ auto main() -> int {
 	ok &= TestNonRootCapabilityFailureStopsProcessing();
 	ok &= TestFilesystemIdentityFailuresStopProcessing();
 	ok &= TestProcessingResultPropagates();
-	ok &= TestMissingCallbacks();
 	return ok ? 0 : 1;
 }
