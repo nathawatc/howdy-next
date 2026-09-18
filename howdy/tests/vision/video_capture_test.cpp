@@ -1,5 +1,5 @@
+#include "support/frame_limits.hpp"
 #include "test_support.hpp"
-#include "vision/frame_validation.hpp"
 #include "vision/video_capture.hpp"
 
 #include <array>

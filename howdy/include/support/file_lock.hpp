@@ -3,10 +3,7 @@
 #include "support/scoped_fd.hpp"
 
 #include <cerrno>
-#include <fcntl.h>
 #include <filesystem>
-#include <optional>
-#include <unistd.h>
 #include <utility>
 
 #include <sys/file.h>
@@ -50,33 +47,6 @@ namespace howdy::native {
 
 	inline auto LockFilePath(const std::filesystem::path &target_path) -> std::filesystem::path {
 		return target_path.string() + ".lock";
-	}
-
-	inline auto AcquireFileLock(const std::filesystem::path &target_path)
-	    -> std::optional<ScopedFileLock> {
-		std::error_code ec;
-		std::filesystem::create_directories(target_path.parent_path(), ec);
-		if (ec) {
-			return std::nullopt;
-		}
-
-		const auto path = LockFilePath(target_path);
-		ScopedFd   fd(
-		    open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR));
-		if (!fd.Valid()) {
-			return std::nullopt;
-		}
-
-		while (flock(fd.Get(), LOCK_EX) != 0) {
-			if (errno != EINTR) {
-				return std::nullopt;
-			}
-		}
-
-		ScopedFileLock lock;
-		lock.fd   = std::move(fd);
-		lock.path = path;
-		return lock;
 	}
 
 }  // namespace howdy::native

@@ -440,7 +440,8 @@ namespace howdy::native::auth_helper {
 		}
 
 		auto BuildPreparedPaths(runtime_internal::Slot &slot) -> std::optional<PreparedPaths> {
-			const auto lock_path = std::filesystem::path(slot.path.string() + ".lock");
+			const auto lock_path =
+			    auth_helper_protocol::PreparedRuntimeGenerationLockPath(slot.path);
 			runtime_internal::UniqueFd lease(
 			    open(lock_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
 			struct stat writable_stat{};

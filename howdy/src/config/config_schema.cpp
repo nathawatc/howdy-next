@@ -2,6 +2,7 @@
 
 #include "config_schema/internal.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/frame_limits.hpp"
 
 #include <algorithm>
 #include <array>
@@ -36,7 +37,7 @@ namespace howdy::native::config_schema {
 		    IntegerRange{.minimum = 1, .maximum = 10000};
 		inline constexpr NumericRange kFrameSizeRange = IntegerRange{
 		    .minimum       = 16,
-		    .maximum       = 8192,
+		    .maximum       = kMaxFrameDimension,
 		    .allowed_value = -1,
 		};
 		inline constexpr NumericRange kDeviceFpsRange = IntegerRange{.minimum = 0, .maximum = 480};

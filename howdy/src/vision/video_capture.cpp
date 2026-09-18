@@ -192,10 +192,6 @@ namespace howdy::native {
 		}
 	}
 
-	auto VideoCapture::IsOpen() const -> bool {
-		return capture_.isOpened();
-	}
-
 	auto VideoCapture::Get(int property) const -> double {
 		return capture_.isOpened() ? capture_.get(property) : 0.0;
 	}

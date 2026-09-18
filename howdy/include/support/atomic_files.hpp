@@ -78,16 +78,6 @@ namespace howdy::native {
 		return dir_fd.Close();
 	}
 
-	inline auto RemoveFileAndSync(const std::filesystem::path &path) -> AtomicFileCommitResult {
-		std::error_code ec;
-		const bool      removed = std::filesystem::remove(path, ec);
-		if (ec || !removed) {
-			return AtomicFileCommitResult::kNotCommitted;
-		}
-		return SyncParentDirectory(path) ? AtomicFileCommitResult::kCommitted
-		                                 : AtomicFileCommitResult::kCommittedSyncFailed;
-	}
-
 	inline void CleanupStagedFile(StagedFile &staged) {
 		staged.fd.Reset();
 		std::error_code ec;

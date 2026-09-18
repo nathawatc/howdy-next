@@ -104,8 +104,8 @@ namespace {
 		}
 	}
 
-	auto SameTerminalIdentity(int target_fd, const struct stat &target_stat, int descriptor_fd)
-	    -> bool {
+	auto SameTerminalIdentity([[maybe_unused]] int target_fd, const struct stat &target_stat,
+	                          int descriptor_fd) -> bool {
 		struct stat descriptor_stat{};
 		if (fstat(descriptor_fd, &descriptor_stat) != 0 || !S_ISCHR(descriptor_stat.st_mode)) {
 			return false;

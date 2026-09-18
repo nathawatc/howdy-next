@@ -1,12 +1,12 @@
 #pragma once
 
+#include "support/frame_limits.hpp"
+
 #include <cstdint>
 
 #include <opencv2/core.hpp>
 
 namespace howdy::native {
-
-	inline constexpr int kMaxFrameDimension = 8192;
 
 	enum class FrameValidationStatus : std::uint8_t {
 		kValid,

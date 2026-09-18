@@ -41,7 +41,6 @@ namespace howdy::native {
 		auto Read(cv::Mat &frame, cv::Mat *gray_frame = nullptr) -> bool;
 		void Release();
 
-		[[nodiscard]] auto IsOpen() const -> bool;
 		[[nodiscard]] auto Get(int property) const -> double;
 		auto               Set(int property, double value) -> bool;
 

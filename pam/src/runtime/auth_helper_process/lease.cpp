@@ -3,6 +3,7 @@
 #endif
 
 #include "internal.hpp"
+#include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
 #include "support/scoped_fd.hpp"
 
@@ -152,9 +153,12 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (!parent_fd.Valid()) {
 			return false;
 		}
-		const std::string lock_name = root_dir.filename().string() + ".lock";
-		struct stat       path_stat{};
-		const bool        identity_ok =
+		const auto lock_name =
+		    howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath(root_dir)
+		        .filename()
+		        .string();
+		struct stat path_stat{};
+		const bool  identity_ok =
 		    fstatat(parent_fd.Get(), lock_name.c_str(), &path_stat, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(path_stat.st_mode) && path_stat.st_uid == owner_uid &&
 		    path_stat.st_nlink == *policy.exact_link_count &&

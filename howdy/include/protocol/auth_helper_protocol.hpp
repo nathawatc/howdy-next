@@ -14,11 +14,8 @@ namespace howdy::native::auth_helper_protocol {
 	inline constexpr const char *kConfigPathKey    = "CONFIG_PATH";
 	inline constexpr const char *kUserModelsDirKey = "USER_MODELS_DIR";
 
-	inline constexpr const char      *kPreparedRuntimeRoot                    = "/run/howdy";
-	inline constexpr const char      *kPreparedRuntimeDirectoryPrefix         = "pam-";
-	inline constexpr std::string_view kPreparedRuntimeDirectorySuffixTemplate = "XXXXXX";
-	inline constexpr auto             kPreparedRuntimeDirectorySuffixLength =
-	    kPreparedRuntimeDirectorySuffixTemplate.size();
+	inline constexpr const char *kPreparedRuntimeRoot             = "/run/howdy";
+	inline constexpr const char *kPreparedRuntimeDirectoryPrefix  = "pam-";
 	inline constexpr const char *kPreparedConfigFileName          = "config.ini";
 	inline constexpr const char *kPreparedUserModelsDirectoryName = "models";
 	inline constexpr const char *kPreparedModelBackingFileName    = ".model_backing";
@@ -35,11 +32,6 @@ namespace howdy::native::auth_helper_protocol {
 
 	inline auto PreparedRuntimeDirectoryPrefix(uid_t uid) -> std::string {
 		return std::string(kPreparedRuntimeDirectoryPrefix) + std::to_string(uid) + "-";
-	}
-
-	inline auto PreparedRuntimeDirectoryTemplate(uid_t uid) -> std::string {
-		return PreparedRuntimeDirectoryPrefix(uid) +
-		       std::string(kPreparedRuntimeDirectorySuffixTemplate);
 	}
 
 	inline auto RuntimeGenerationSuffix(RuntimeGenerationSlot slot) -> std::string_view {

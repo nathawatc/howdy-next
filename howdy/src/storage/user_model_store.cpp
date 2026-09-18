@@ -135,6 +135,8 @@ namespace howdy::native {
 			}
 			return ExchangeResult::kSuccess;
 #else
+			(void)left;
+			(void)right;
 			errno = ENOSYS;
 			return ExchangeResult::kUnsupported;
 #endif
