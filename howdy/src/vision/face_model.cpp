@@ -45,7 +45,7 @@ namespace howdy::native {
 	FaceModel::FaceModel(const FaceConfig &config)
 	    : metric_(config.sface_metric)
 	    , threshold_(config.sface_threshold)
-	    , backend_(std::make_shared<Backend>()) {
+	    , backend_(std::make_unique<Backend>()) {
 		backend_->check_readiness = [](const std::filesystem::path &path) -> OpenCvModelReadiness {
 			return CheckOpencvModelReadinessWithLabel(path, "OpenCV face model file",
 			                                          static_cast<uid_t>(0));
@@ -71,10 +71,14 @@ namespace howdy::native {
 		}
 	}
 
+	FaceModel::~FaceModel()                                         = default;
+	FaceModel::FaceModel(FaceModel &&) noexcept                     = default;
+	auto FaceModel::operator=(FaceModel &&) noexcept -> FaceModel & = default;
+
 	FaceModel::FaceModel(const FaceConfig &config, Backend backend)
 	    : metric_(config.sface_metric)
 	    , threshold_(config.sface_threshold)
-	    , backend_(std::make_shared<Backend>(std::move(backend))) {
+	    , backend_(std::make_unique<Backend>(std::move(backend))) {
 		Initialize(config);
 	}
 
@@ -86,7 +90,7 @@ namespace howdy::native {
 		const auto nms_threshold   = config.yunet_nms_threshold;
 		const auto top_k           = config.yunet_top_k;
 
-		if (backend_ == nullptr || !backend_->check_readiness) {
+		if (!backend_->check_readiness) {
 			SetError(FaceModelErrorCategory::kModelNotReady, kFaceModelNotReadyMessage);
 			return;
 		}

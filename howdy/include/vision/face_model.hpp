@@ -32,6 +32,13 @@ namespace howdy::native {
 		static constexpr const char *kSfaceModel  = kSfaceModelDescriptor.filename.data();
 
 		explicit FaceModel(const FaceConfig &config);
+		~FaceModel();
+
+		FaceModel(const FaceModel &)                     = delete;
+		auto operator=(const FaceModel &) -> FaceModel & = delete;
+
+		FaceModel(FaceModel &&) noexcept;
+		auto operator=(FaceModel &&) noexcept -> FaceModel &;
 
 		[[nodiscard]] auto Ok() const -> bool;
 		[[nodiscard]] auto ErrorCategory() const -> FaceModelErrorCategory;
@@ -62,7 +69,7 @@ namespace howdy::native {
 		cv::Size                      input_size_{320, 320};
 		cv::Ptr<cv::FaceDetectorYN>   detector_;
 		cv::Ptr<cv::FaceRecognizerSF> recognizer_;
-		std::shared_ptr<Backend>      backend_;
+		std::unique_ptr<Backend>      backend_;
 	};
 
 	[[nodiscard]] auto FaceModelInferenceOperations(FaceModel &model) -> FaceInferenceOperations;
