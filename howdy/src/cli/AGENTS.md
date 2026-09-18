@@ -12,7 +12,7 @@ implementation belongs under `src/cli/<command>/`; shared/test-facing seams belo
 
 Current multi-file commands:
 
-- `add.cpp`: production adapters and `add_main()`; `add/workflow.cpp`: injected command policy
+- `add.cpp`: production adapters and `AddMain()`; `add/workflow.cpp`: injected command policy
 - `config.cpp`: command façade; `config/edit_session.cpp`: editor/install workflow
 - `snapshot.cpp`: production capture/encoding adapters; `snapshot/workflow.cpp`: validation and
   secure writer policy
@@ -32,7 +32,7 @@ Other commands remain single-file components unless a real boundary appears.
   cohesive workflow; missing injected callbacks fail closed before network/filesystem work.
 - Snapshot writer validates BGR frame batches and reports commit-sync uncertainty without
   destructive retry.
-- Enrollment diagnostics use `classify_enrollment_capture_failure()`.
+- Enrollment diagnostics use `ClassifyEnrollmentCaptureFailure()`.
 - Keep editor/environment behavior in production adapters, not injected test policy.
 
 ## Test Seams

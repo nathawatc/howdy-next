@@ -40,6 +40,12 @@ set_tests_properties(
 )
 
 howdy_add_native_test(
+	howdy_atomic_files_fallback_test
+	native-atomic-files-fallback
+	tests/support/atomic_files_fallback_test.cpp
+)
+
+howdy_add_native_test(
 	howdy_fd_io_test
 	native-fd-io
 	tests/support/fd_io_test.cpp

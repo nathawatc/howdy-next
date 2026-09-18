@@ -195,7 +195,7 @@ namespace howdy::native {
 				                              : AtomicFileCommitResult::kNotCommitted;
 			}
 #else
-			cleanup_staged_file(staged);
+			CleanupStagedFile(staged);
 			return AtomicFileCommitResult::kNotCommitted;
 #endif
 		}
