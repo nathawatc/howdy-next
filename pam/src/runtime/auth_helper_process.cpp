@@ -22,33 +22,24 @@
 
 #include <sys/wait.h>
 
-namespace {
+namespace howdy::pam::auth_helper_process::internal {
 
-	using AuthHelperOutput = howdy::pam::auth_helper_process::Output;
-	using howdy::pam::auth_helper_process::Operations;
-	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
-	using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;
-	using howdy::pam::auth_helper_process::internal::HelperDeadline;
-	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
-	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
-	using howdy::pam::auth_helper_process::internal::kAuthHelperTimeout;
-	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
-	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
-
-	auto SetRequiredHelperOutputValue(bool *seen, std::string *target, const std::string &value)
-	    -> bool {
-		if (*seen || value.empty()) {
-			return false;
+	namespace {
+		auto SetRequiredHelperOutputValue(bool *seen, std::string *target, const std::string &value)
+		    -> bool {
+			if (*seen || value.empty()) {
+				return false;
+			}
+			*seen   = true;
+			*target = value;
+			return true;
 		}
-		*seen   = true;
-		*target = value;
-		return true;
-	}
+	}  // namespace
 
-	auto ParseAuthHelperOutput(const std::string &output) -> AuthHelperOutput {
-		AuthHelperOutput result;
-		bool             saw_config_path     = false;
-		bool             saw_user_models_dir = false;
+	auto ParseAuthHelperOutput(const std::string &output) -> Output {
+		Output result;
+		bool   saw_config_path     = false;
+		bool   saw_user_models_dir = false;
 
 		std::size_t offset = 0;
 		while (offset < output.size()) {
@@ -93,6 +84,22 @@ namespace {
 		    config_path.parent_path(), config_path, user_models_dir, getuid());
 		return result;
 	}
+
+}  // namespace howdy::pam::auth_helper_process::internal
+
+namespace {
+
+	using AuthHelperOutput = howdy::pam::auth_helper_process::Output;
+	using howdy::pam::auth_helper_process::Operations;
+	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
+	using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;
+	using howdy::pam::auth_helper_process::internal::HelperDeadline;
+	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
+	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
+	using howdy::pam::auth_helper_process::internal::kAuthHelperTimeout;
+	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
+	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
+	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 
 	void CaptureAuthHelperLog(const Operations &operations, std::string_view message) {
 		if (operations.log_observer != nullptr) {
@@ -285,10 +292,6 @@ namespace howdy::pam::auth_helper_process {
 		return internal::ProductionOperations();
 	}
 
-	auto OutputLimit() -> std::size_t {
-		return internal::kAuthHelperOutputLimit;
-	}
-
 	auto ReceiveLeaseDescriptor(int socket_fd, int *lease_fd,
 	                            std::chrono::steady_clock::time_point deadline) -> bool {
 		return internal::ReceiveLeaseDescriptorUntil(socket_fd, lease_fd, deadline);
@@ -335,19 +338,11 @@ namespace howdy::pam::auth_helper_process {
 			return false;
 		}
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS ||
-		    !::ParseAuthHelperOutput(*output).valid) {
+		    !internal::ParseAuthHelperOutput(*output).valid) {
 			output->clear();
 			return false;
 		}
 		return true;
-	}
-
-	auto ParseOutput(const std::string &output) -> Output {
-		return ::ParseAuthHelperOutput(output);
-	}
-
-	auto WaitForHelper(pid_t child_pid) -> int {
-		return internal::WaitForHelperProcess(child_pid);
 	}
 
 	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared)

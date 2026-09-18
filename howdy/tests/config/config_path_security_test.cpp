@@ -10,7 +10,6 @@
 #include <string>
 #include <unistd.h>
 
-#include <sys/resource.h>
 #include <sys/stat.h>
 
 namespace howdy::test {
@@ -26,9 +25,6 @@ namespace howdy::test {
 		ec.clear();
 		fs::create_symlink("/tmp", lock_failure_path, ec);
 		ok &= Expect(!ec, "create config lock symlink for lock failure");
-		ok &= Expect(
-		    howdy::native::ReadConfigLines(context.config_path, true, {context.temp_root}).empty(),
-		    "read_config_lines fails closed when lock cannot be opened");
 		std::string lock_error;
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &lock_error,
 		                                               "false", true, false, {context.temp_root}) &&

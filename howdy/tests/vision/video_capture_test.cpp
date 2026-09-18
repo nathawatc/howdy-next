@@ -96,8 +96,6 @@ namespace {
 		    howdy::native::VideoCapture(howdy::native::CaptureSettings{.device_path = "none"});
 		const bool result = capture.Open();
 		bool       ok     = true;
-		ok &= Expect(capture.Settings().device_path == "none",
-		             "unconfigured camera keeps none sentinel");
 		ok &= Expect(!result, "unconfigured camera is rejected");
 		ok &= Expect(capture.Error() == howdy::native::CaptureError::kMissingDevice,
 		             "unconfigured camera sets missing-device error");

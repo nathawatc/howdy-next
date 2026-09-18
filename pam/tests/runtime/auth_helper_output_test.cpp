@@ -1,3 +1,4 @@
+#include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "support/fd_io.hpp"
@@ -45,7 +46,8 @@ namespace {
 
 	auto ReadFdToString(int fd) -> std::string {
 		return howdy::native::ReadFdToStringBounded(
-		           {.fd = fd, .max_bytes = howdy::pam::auth_helper_process::OutputLimit()})
+		           {.fd        = fd,
+		            .max_bytes = howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit})
 		    .output;
 	}
 
@@ -124,8 +126,9 @@ namespace {
 			return false;
 		}
 
-		const std::string limit_output(howdy::pam::auth_helper_process::OutputLimit(), 'h');
-		const pid_t       child_pid = fork();
+		const std::string limit_output(
+		    howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h');
+		const pid_t child_pid = fork();
 		ok &= Expect(child_pid >= 0, "forks output-limit auth-helper child");
 		if (child_pid < 0) {
 			return false;
@@ -406,7 +409,8 @@ namespace {
 			if (!test_case.expected_ok) {
 				ok &= Expect(actual_output.empty(), test_case.name + " discards malformed output");
 			}
-			const auto parsed = howdy::pam::auth_helper_process::ParseOutput(test_case.output);
+			const auto parsed =
+			    howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(test_case.output);
 			ok &=
 			    Expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {

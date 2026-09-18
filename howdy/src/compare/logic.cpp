@@ -2,22 +2,10 @@
 
 #include "vision/frame_processing.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <ostream>
 
 namespace howdy::native {
-
-	auto UpdateBestScore(float current, float score, FaceMetric metric) -> float {
-		const auto *policy = GetFaceMetricPolicy(metric);
-		if (policy == nullptr) {
-			return current;
-		}
-		if (std::isnan(current)) {
-			return score;
-		}
-		return policy->higher_score_is_better ? std::max(current, score) : std::min(current, score);
-	}
 
 	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision {

@@ -79,4 +79,8 @@ namespace howdy::pam::auth_helper_process::internal {
 	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
 	    -> bool;
 
+	// auth_helper_process.cpp
+	__attribute__((visibility("hidden"))) auto ParseAuthHelperOutput(const std::string &output)
+	    -> Output;
+
 }  // namespace howdy::pam::auth_helper_process::internal

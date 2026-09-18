@@ -1,7 +1,6 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
-#include "support/face_metric.hpp"
 
 #include <cstdint>
 #include <exception>
@@ -27,8 +26,6 @@ namespace howdy::native {
 		int height   = 0;
 		int rotation = 0;
 	};
-
-	auto UpdateBestScore(float current, float score, FaceMetric metric) -> float;
 
 	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
 	    -> BrightnessDecision;

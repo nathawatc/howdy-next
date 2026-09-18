@@ -93,7 +93,6 @@ namespace howdy::test {
 	};
 
 	auto RunConfigReadUpdateTests(ConfigUtilsTestContext &context) -> bool;
-	auto RunConfigAtomicWriteTests(ConfigUtilsTestContext &context) -> bool;
 	auto RunConfigAtomicReplaceTests(ConfigUtilsTestContext &context) -> bool;
 	auto RunConfigLockFailureTests(ConfigUtilsTestContext &context) -> bool;
 	auto RunConfigAtomicReplaceTailTests(ConfigUtilsTestContext &context) -> bool;

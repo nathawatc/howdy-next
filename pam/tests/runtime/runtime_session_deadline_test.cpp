@@ -1,3 +1,4 @@
+#include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "runtime/runtime_session_process_test_support.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
 #include "support/process_test_support.hpp"
@@ -365,9 +366,10 @@ namespace {
 				_exit(EXIT_FAILURE);
 			}
 			(void)close(ready_pipe[1]);
-			const std::string output(howdy::pam::auth_helper_process::OutputLimit(), 'h');
-			const bool        wrote = write(output_pipe[1], output.data(), output.size()) ==
-			                          static_cast<ssize_t>(output.size());
+			const std::string output(
+			    howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h');
+			const bool wrote = write(output_pipe[1], output.data(), output.size()) ==
+			                   static_cast<ssize_t>(output.size());
 			(void)close(output_pipe[1]);
 			_exit(wrote ? EXIT_SUCCESS : EXIT_FAILURE);
 		}

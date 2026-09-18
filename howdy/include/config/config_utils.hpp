@@ -11,7 +11,6 @@
 #include <optional>
 #include <string>
 #include <unistd.h>
-#include <vector>
 
 namespace howdy::native {
 	inline constexpr auto kConfigFileLabel                  = "Config file";
@@ -126,13 +125,6 @@ namespace howdy::native {
 		return result.output;
 	}
 
-	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock = false,
-	                     const file_security_internal::ValidationRoot &validation_root = {})
-	    -> std::vector<std::string>;
-	auto AtomicWriteLines(const std::filesystem::path    &config_path,
-	                      const std::vector<std::string> &lines,
-	                      SyncParentDirectoryFn           sync_parent = SyncParentDirectory)
-	    -> AtomicFileCommitResult;
 	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool;
 	auto ReplaceConfigContentAtomically(
 	    const std::filesystem::path &config_path, const std::string &content,

@@ -2,11 +2,9 @@
 #include "../../src/config/config_validation/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
-#include "config/test_hooks.hpp"
 #include "test_support.hpp"
 
 #include <clocale>
-#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -130,47 +128,10 @@ namespace howdy::test {
 		                 parentless_check.error_message.contains("must have a parent directory"),
 		             "check_secure_config_path rejects parentless config path");
 
-		const auto lines =
-		    howdy::native::ReadConfigLines(context.config_path, false, {context.temp_root});
-		ok &= Expect(lines.size() == 5, "read_config_lines returns expected line count");
-		ok &= Expect(!lines.empty() && lines[0] == "[core]\n",
-		             "read_config_lines preserves newlines");
-
-		{
-			bool       replacement_ok = false;
-			const auto backup_path    = context.temp_root / "backup-read-lines.ini";
-			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
-				replacement_ok = rename(context.config_path.c_str(), backup_path.c_str()) == 0 &&
-				                 symlink("/dev/null", context.config_path.c_str()) == 0;
-			});
-
-			const auto read_lines =
-			    howdy::native::ReadConfigLines(context.config_path, false, {context.temp_root});
-			ok &= Expect(replacement_ok, "read_config_lines pathname replacement succeeded");
-			ok &= Expect(read_lines.size() == 5 && read_lines[0] == "[core]\n",
-			             "read_config_lines reads from opened descriptor, not replaced pathname");
-			std::error_code ec;
-			fs::remove(context.config_path, ec);
-			fs::remove(backup_path, ec);
-			ok &= Expect(WriteConfigTestFile(context.config_path, "[core]\n"
-			                                                      "disabled = false\n"
-			                                                      "\n"
-			                                                      "[video]\n"
-			                                                      "dark_threshold = 60\n"),
-			             "restore baseline config after hook test");
-		}
-
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");
-		const auto limit_lines =
-		    howdy::native::ReadConfigLines(context.config_path, false, {context.temp_root});
-		ok &= Expect(limit_lines.size() == 1 && limit_lines.front() == context.config_at_limit,
-		             "read_config_lines accepts config exactly at size limit");
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_over_limit),
 		             "write oversized config");
-		ok &= Expect(
-		    howdy::native::ReadConfigLines(context.config_path, false, {context.temp_root}).empty(),
-		    "read_config_lines rejects oversized config");
 		std::string size_error;
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error,
 		                                               "true", false, false, {context.temp_root}),

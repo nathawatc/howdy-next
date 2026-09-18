@@ -19,7 +19,6 @@ auto main() -> int {
 	ok &= Expect(!ec, "create temp root");
 
 	ok &= howdy::test::RunConfigReadUpdateTests(context);
-	ok &= howdy::test::RunConfigAtomicWriteTests(context);
 	ok &= howdy::test::RunConfigAtomicReplaceTests(context);
 	ok &= howdy::test::RunConfigLockFailureTests(context);
 	ok &= howdy::test::RunConfigAtomicReplaceTailTests(context);

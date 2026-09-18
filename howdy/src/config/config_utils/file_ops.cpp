@@ -24,9 +24,8 @@ namespace howdy::native::config_utils_internal {
 
 	namespace {
 
-		constexpr mode_t kDefaultConfigMode              = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-		constexpr auto   kConfigValidationFailureMessage = "Failed to validate updated config";
-		constexpr auto   kConfigTempPrefix               = ".howdy-config-";
+		constexpr auto kConfigValidationFailureMessage = "Failed to validate updated config";
+		constexpr auto kConfigTempPrefix               = ".howdy-config-";
 
 		auto OpenLockFile(const std::filesystem::path &config_path) -> int {
 			return open(LockFilePath(config_path).c_str(),
@@ -151,54 +150,6 @@ namespace howdy::native::config_utils_internal {
 }  // namespace howdy::native::config_utils_internal
 
 namespace howdy::native {
-
-	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock,
-	                     const file_security_internal::ValidationRoot &validation_root)
-	    -> std::vector<std::string> {
-		std::vector<std::string> lines;
-
-		config_utils_internal::ConfigLockGuard config_lock;
-		if (lock && !config_utils_internal::AcquireConfigLock(config_lock, config_path)) {
-			return lines;
-		}
-
-		ScopedFd fd(open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-		if (fd.Get() < 0) {
-			return lines;
-		}
-		if (config_test_hooks::Current()) {
-			config_test_hooks::Current()();
-		}
-
-		const auto security =
-		    CheckSecureConfigFd(fd.Get(), config_path, DefaultSecureOwnerUid(), validation_root);
-		if (!security.ok) {
-			return lines;
-		}
-
-		const auto content = ReadConfigFromFd(fd.Get());
-		if (content.has_value()) {
-			lines = config_utils_internal::SplitLinesPreserveNewlines(*content);
-		}
-		return lines;
-	}
-
-	auto AtomicWriteLines(const std::filesystem::path    &config_path,
-	                      const std::vector<std::string> &lines, SyncParentDirectoryFn sync_parent)
-	    -> AtomicFileCommitResult {
-		using namespace config_utils_internal;
-
-		auto staged = PrepareStagedFile(config_path, kConfigTempPrefix, kDefaultConfigMode);
-		if (!staged.has_value()) {
-			return AtomicFileCommitResult::kNotCommitted;
-		}
-
-		if (!WriteAllToFd(staged->fd.Get(), config_utils_internal::JoinLines(lines))) {
-			CleanupStagedFile(*staged);
-			return AtomicFileCommitResult::kNotCommitted;
-		}
-		return InstallStagedFile(*staged, config_path, sync_parent);
-	}
 
 	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool {
 		using namespace config_utils_internal;

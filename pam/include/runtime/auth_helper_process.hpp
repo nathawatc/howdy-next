@@ -4,7 +4,6 @@
 #include "support/fd_io.hpp"
 
 #include <chrono>
-#include <cstddef>
 #include <filesystem>
 #include <spawn.h>
 #include <string>
@@ -55,7 +54,6 @@ namespace howdy::pam::auth_helper_process {
 	};
 
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	__attribute__((visibility("hidden"))) auto OutputLimit() -> std::size_t;
 	__attribute__((visibility("hidden"))) auto
 	ReceiveLeaseDescriptor(int socket_fd, int *lease_fd,
 	                       std::chrono::steady_clock::time_point deadline) -> bool;
@@ -72,8 +70,6 @@ namespace howdy::pam::auth_helper_process {
 	__attribute__((visibility("hidden"))) auto
 	ReadOutput(Process process, std::string *output, const Operations &operations,
 	           std::chrono::steady_clock::time_point deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto ParseOutput(const std::string &output) -> Output;
-	__attribute__((visibility("hidden"))) auto WaitForHelper(pid_t child_pid) -> int;
 
 	__attribute__((visibility("hidden"))) auto
 	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared) -> bool;

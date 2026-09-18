@@ -1,10 +1,6 @@
 #include "compare/logic.hpp"
-#include "support/face_metric.hpp"
 #include "test_support.hpp"
 
-#include <bit>
-#include <cmath>
-#include <cstdint>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -12,7 +8,6 @@
 
 namespace {
 
-	using howdy::native::FaceMetric;
 	using howdy::test::Expect;
 	using howdy::test::ExpectNear;
 
@@ -20,22 +15,6 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
-
-	ok &= Expect(howdy::native::UpdateBestScore(std::numeric_limits<float>::quiet_NaN(), 0.5F,
-	                                            FaceMetric::kCosine) == 0.5F,
-	             "nan best score initializes to first score");
-	ok &= Expect(howdy::native::UpdateBestScore(0.5F, 0.8F, FaceMetric::kCosine) == 0.8F,
-	             "cosine keeps max");
-	ok &= Expect(howdy::native::UpdateBestScore(0.8F, 0.5F, FaceMetric::kCosine) == 0.8F,
-	             "cosine ignores lower score");
-	ok &= Expect(howdy::native::UpdateBestScore(2.0F, 1.5F, FaceMetric::kL2) == 1.5F,
-	             "distance metric keeps min");
-	ok &= Expect(howdy::native::UpdateBestScore(1.5F, 2.0F, FaceMetric::kL2) == 1.5F,
-	             "distance metric ignores higher score");
-	const auto invalid_metric = std::bit_cast<FaceMetric>(std::uint8_t{255});
-	ok &= Expect(std::isnan(howdy::native::UpdateBestScore(std::numeric_limits<float>::quiet_NaN(),
-	                                                       0.5F, invalid_metric)),
-	             "invalid metric cannot initialize nan best score");
 
 	ok &= Expect(howdy::native::ClassifyBrightness(0.0, 10.0F, 50.0F) ==
 	                 howdy::native::BrightnessDecision::kBlackFrame,
@@ -122,8 +101,5 @@ auto main() -> int {
 		             "unknown exception context is logged");
 	}
 
-	if (!ok) {
-		return 1;
-	}
-	return 0;
+	return ok ? 0 : 1;
 }

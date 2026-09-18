@@ -1,5 +1,5 @@
+#include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "protocol/compare_exit.hpp"
-#include "runtime/auth_helper_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
@@ -134,7 +134,8 @@ namespace {
 		const pid_t helper_child_pid = SpawnExitingChild(9);
 		ok &= Expect(helper_child_pid > 0, "spawns helper child");
 		if (helper_child_pid > 0) {
-			const int status = howdy::pam::auth_helper_process::WaitForHelper(helper_child_pid);
+			const int status =
+			    howdy::pam::auth_helper_process::internal::WaitForHelperProcess(helper_child_pid);
 			ok &= Expect(WIFEXITED(status) && WEXITSTATUS(status) == 9,
 			             "helper wait preserves child exit status");
 		}
@@ -146,7 +147,7 @@ namespace {
 		ok &= Expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
 		             "compare wait failure returns abort status");
 		const int helper_failure =
-		    howdy::pam::auth_helper_process::WaitForHelper(nonexistent_child);
+		    howdy::pam::auth_helper_process::internal::WaitForHelperProcess(nonexistent_child);
 		ok &= Expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
 		             "helper wait failure returns abort status");
 

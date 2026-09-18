@@ -46,7 +46,6 @@ namespace howdy::native {
 
 		[[nodiscard]] auto Error() const -> CaptureError;
 		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
-		[[nodiscard]] auto Settings() const -> const CaptureSettings &;
 
 	private:
 		class FrameReader {

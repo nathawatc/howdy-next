@@ -208,10 +208,6 @@ namespace howdy::native {
 		return error_message_;
 	}
 
-	auto VideoCapture::Settings() const -> const CaptureSettings & {
-		return settings_;
-	}
-
 	void VideoCapture::SetError(CaptureError error, std::string message) {
 		error_         = error;
 		error_message_ = std::move(message);

@@ -7,7 +7,6 @@
 #include "vision/face_inference.hpp"
 #include "vision/face_matching.hpp"
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -17,13 +16,6 @@
 
 namespace howdy::native {
 	inline constexpr auto kFaceModelNotInitializedMessage = "Face model was not initialized";
-
-	enum class FaceModelErrorCategory : std::uint8_t {
-		kNone,
-		kModelNotReady,
-		kDetectorInitialization,
-		kRecognizerInitialization,
-	};
 
 	class FaceModel {
 	public:
@@ -41,7 +33,6 @@ namespace howdy::native {
 		auto operator=(FaceModel &&) noexcept -> FaceModel &;
 
 		[[nodiscard]] auto Ok() const -> bool;
-		[[nodiscard]] auto ErrorCategory() const -> FaceModelErrorCategory;
 		[[nodiscard]] auto ErrorMessage() const -> const std::string &;
 		[[nodiscard]] auto Metric() const -> FaceMetric;
 
@@ -59,10 +50,9 @@ namespace howdy::native {
 		FaceModel(const FaceConfig &config, Backend backend);
 		void Initialize(const FaceConfig &config);
 		void SetInputSizeFromFrame(const cv::Mat &frame);
-		void SetError(FaceModelErrorCategory category, std::string message);
+		void SetError(std::string message);
 
-		bool                          ok_             = false;
-		FaceModelErrorCategory        error_category_ = FaceModelErrorCategory::kNone;
+		bool                          ok_ = false;
 		std::string                   error_message_;
 		FaceMetric                    metric_ = FaceMetric::kCosine;
 		float                         threshold_;

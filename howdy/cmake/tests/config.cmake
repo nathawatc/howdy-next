@@ -3,7 +3,6 @@ howdy_add_native_test(
 	native-config-utils
 	tests/config/config_utils_test.cpp
 	tests/config/config_read_update_test.cpp
-	tests/config/config_atomic_write_test.cpp
 	tests/config/config_atomic_replace_test.cpp
 	tests/config/config_path_security_test.cpp
 )
