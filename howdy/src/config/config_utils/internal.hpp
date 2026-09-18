@@ -73,4 +73,7 @@ namespace howdy::native::config_utils_internal {
 	ReplaceLineValue(std::vector<std::string> &lines, ConfigLineReplacement replacement)
 	    -> ConfigLineReplaceResult;
 
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	IsSafeIniScalarValue(std::string_view value) -> bool;
+
 }  // namespace howdy::native::config_utils_internal

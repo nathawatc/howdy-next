@@ -70,17 +70,25 @@ namespace {
 }  // namespace
 
 auto main() -> int {
-	constexpr auto unsafe_value_error =
-	    "Config values must be single-line scalars and cannot start with [\n";
 	bool ok = true;
 
-	for (const auto &value : {std::string("line\nbreak"), std::string("[section]")}) {
-		TestContext context;
-		const auto  result = RunSet({.positionals = {"key", value}}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 1, "unsafe scalar aborts");
-		ok &= Expect(result.output == unsafe_value_error, "unsafe scalar prints error");
-		ok &= Expect(context.resolve_calls == 1, "unsafe scalar resolves path first");
-		ok &= Expect(context.update_calls == 0, "unsafe scalar skips updater");
+	{
+		TestContext context{
+		    .update_result = false,
+		    .update_error  = "Config values must be single-line scalars and cannot start with [",
+		};
+		const auto result =
+		    RunSet({.positionals = {"key", "line\nbreak"}}, DependenciesFor(context));
+		ok &= Expect(result.exit_code == 1, "updater scalar failure aborts");
+		ok &= Expect(result.output ==
+		                 "Config values must be single-line scalars and cannot start with [\n",
+		             "updater scalar failure prints diagnostic");
+		ok &= Expect(context.resolve_calls == 1, "updater scalar failure resolves path first");
+		ok &= Expect(context.update_calls == 1, "updater scalar failure invokes updater once");
+		ok &= Expect(context.received_key == "key" && context.received_value == "line\nbreak",
+		             "updater scalar failure passes key and value unchanged");
+		ok &= Expect(!result.output.contains("Config option updated"),
+		             "updater scalar failure omits success output");
 	}
 
 	{

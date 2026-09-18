@@ -192,18 +192,40 @@ namespace howdy::test {
 		const auto after_disabled = ReadConfigTestFile(context.config_path);
 		ok &= Expect(after_disabled.contains("disabled = true\n"), "disabled key updated");
 
-		ok &= Expect(howdy::native::IsSafeIniScalarValue("true"),
-		             "is_safe_ini_scalar_value accepts simple scalar");
-		ok &= Expect(howdy::native::IsSafeIniScalarValue(""),
-		             "is_safe_ini_scalar_value accepts empty scalar");
-		ok &= Expect(!howdy::native::IsSafeIniScalarValue(std::string(1, '\0')),
-		             "is_safe_ini_scalar_value rejects embedded NUL");
-		ok &= Expect(!howdy::native::IsSafeIniScalarValue("\r"),
-		             "is_safe_ini_scalar_value rejects carriage return");
-		ok &= Expect(!howdy::native::IsSafeIniScalarValue("true\n[video]\ntimeout = 0"),
-		             "is_safe_ini_scalar_value rejects newline injection");
-		ok &= Expect(!howdy::native::IsSafeIniScalarValue("[video]"),
-		             "is_safe_ini_scalar_value rejects section-like values");
+		constexpr auto expected_scalar_error =
+		    "Config values must be single-line scalars and cannot start with [";
+		const auto before_unsafe = ReadConfigTestFile(context.config_path);
+
+		for (const auto &unsafe_value :
+		     {std::string(1, '\0'), std::string("\r"), std::string("true\n[video]\ntimeout = 0"),
+		      std::string("[video]")}) {
+			std::string error;
+			ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &error,
+			                                               unsafe_value, false, false,
+			                                               {context.temp_root}),
+			             "update_config_value rejects unsafe scalar value");
+			ok &= Expect(error == expected_scalar_error,
+			             "update_config_value returns exact scalar diagnostic");
+			ok &= Expect(ReadConfigTestFile(context.config_path) == before_unsafe,
+			             "unsafe scalar update leaves config file unchanged");
+		}
+
+		std::string nonexistent_path_error;
+		ok &= Expect(!howdy::native::UpdateConfigValue(
+		                 context.temp_root / "nonexistent.ini", "disabled", &nonexistent_path_error,
+		                 "[section]", false, false, {context.temp_root}),
+		             "unsafe scalar fails before filesystem/path checks");
+		ok &= Expect(nonexistent_path_error == expected_scalar_error,
+		             "unsafe scalar on nonexistent path returns scalar diagnostic");
+
+		const auto empty_scalar_path = context.temp_root / "empty-scalar.ini";
+		ok &= Expect(WriteConfigTestFile(empty_scalar_path, "[video]\ndevice_path = none\n"),
+		             "write config for empty scalar update");
+		ok &= Expect(howdy::native::UpdateConfigValue(empty_scalar_path, "device_path", nullptr, "",
+		                                              false, false, {context.temp_root}),
+		             "update_config_value accepts empty scalar value");
+		ok &= Expect(ReadConfigTestFile(empty_scalar_path) == "[video]\ndevice_path = \n",
+		             "empty scalar value is written unchanged");
 
 		ok &=
 		    Expect(howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,

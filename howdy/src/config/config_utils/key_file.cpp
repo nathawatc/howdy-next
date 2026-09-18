@@ -1,4 +1,3 @@
-#include "config/config_utils.hpp"
 #include "internal.hpp"
 
 #include <algorithm>
@@ -8,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace howdy::native {
+namespace howdy::native::config_utils_internal {
 
 	auto IsSafeIniScalarValue(std::string_view value) -> bool {
 		if (!value.empty() && value.front() == '[') {
@@ -19,10 +18,6 @@ namespace howdy::native {
 			return ch != '\0' && ch != '\n' && ch != '\r';
 		});
 	}
-
-}  // namespace howdy::native
-
-namespace howdy::native::config_utils_internal {
 
 	namespace {
 

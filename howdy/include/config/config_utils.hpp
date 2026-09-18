@@ -10,7 +10,6 @@
 #include <limits>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <unistd.h>
 #include <vector>
 
@@ -127,7 +126,6 @@ namespace howdy::native {
 		return result.output;
 	}
 
-	auto IsSafeIniScalarValue(std::string_view value) -> bool;
 	auto ReadConfigLines(const std::filesystem::path &config_path, bool lock = false,
 	                     const file_security_internal::ValidationRoot &validation_root = {})
 	    -> std::vector<std::string>;
