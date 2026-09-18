@@ -72,9 +72,9 @@ namespace howdy::native {
 
 	class CompareCaptureSession {
 	public:
-		explicit CompareCaptureSession(const VideoConfig &config);
+		explicit CompareCaptureSession(VideoConfig config);
 
-		CompareCaptureSession(const VideoConfig &config, CompareCaptureDependencies dependencies);
+		CompareCaptureSession(VideoConfig config, CompareCaptureDependencies dependencies);
 
 		auto Open() -> CompareCaptureOpenResult;
 		auto NextFrame() -> CompareCaptureFrameResult;

@@ -46,8 +46,8 @@ namespace howdy::native {
 
 	class CompareEngine {
 	public:
-		explicit CompareEngine(const VideoConfig &config);
-		CompareEngine(const VideoConfig &config, FaceInferenceOperations inference,
+		explicit CompareEngine(VideoConfig config);
+		CompareEngine(VideoConfig config, FaceInferenceOperations inference,
 		              std::vector<std::vector<float>> known_encodings);
 
 		// frame_number is one-based and preserves current rotation cadence.

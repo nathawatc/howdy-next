@@ -42,9 +42,8 @@ namespace {
 
 namespace howdy::native {
 
-	CompareCaptureSession::CompareCaptureSession(
-	    const VideoConfig &config)  // NOLINT(modernize-pass-by-value)
-	    : config_(config)
+	CompareCaptureSession::CompareCaptureSession(VideoConfig config)
+	    : config_(std::move(config))
 	    , capture_(LoadCaptureSettings(config_)) {
 		dependencies_ = {
 		    .capture_context = &capture_,
@@ -58,10 +57,9 @@ namespace howdy::native {
 		};
 	}
 
-	CompareCaptureSession::CompareCaptureSession(
-	    const VideoConfig         &config,  // NOLINT(modernize-pass-by-value)
-	    CompareCaptureDependencies dependencies)
-	    : config_(config)
+	CompareCaptureSession::CompareCaptureSession(VideoConfig                config,
+	                                             CompareCaptureDependencies dependencies)
+	    : config_(std::move(config))
 	    , capture_(LoadCaptureSettings(config_))
 	    , dependencies_(dependencies) {}
 

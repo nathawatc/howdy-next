@@ -67,17 +67,13 @@ namespace {
 
 namespace howdy::native {
 
-	// Public API accepts a const reference; engine intentionally owns a config copy.
-	// NOLINTNEXTLINE(modernize-pass-by-value)
-	CompareEngine::CompareEngine(const VideoConfig &config)
-	    : config_(config)
+	CompareEngine::CompareEngine(VideoConfig config)
+	    : config_(std::move(config))
 	    , clahe_(MakeClahe(config_)) {}
 
-	// Public API accepts a const reference; engine intentionally owns a config copy.
-	// NOLINTNEXTLINE(modernize-pass-by-value)
-	CompareEngine::CompareEngine(const VideoConfig &config, FaceInferenceOperations inference,
+	CompareEngine::CompareEngine(VideoConfig config, FaceInferenceOperations inference,
 	                             std::vector<std::vector<float>> known_encodings)
-	    : config_(config)
+	    : config_(std::move(config))
 	    , clahe_(MakeClahe(config_))
 	    , inference_(inference)
 	    , known_encodings_(std::move(known_encodings)) {}
