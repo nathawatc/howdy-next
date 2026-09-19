@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <span>
 
 #include <security/pam_appl.h>
 
@@ -12,8 +13,7 @@ namespace howdy::pam::detail {
 
 	struct ConversationResponseOperations {
 		void *context                                                       = nullptr;
-		void (*erase)(ConversationResponseAllocation allocation,
-		              std::size_t                    length) noexcept       = nullptr;
+		void (*erase)(void *context, std::span<char> bytes) noexcept        = nullptr;
 		void (*release)(ConversationResponseAllocation allocation) noexcept = nullptr;
 	};
 

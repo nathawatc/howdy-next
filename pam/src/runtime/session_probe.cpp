@@ -1,5 +1,7 @@
 #include "runtime/session_probe.hpp"
 
+#include "runtime/environment.hpp"
+
 #include <array>
 #include <string_view>
 

@@ -1,3 +1,4 @@
+#include "app/command_invocation.hpp"
 #include "cli/set/internal.hpp"
 #include "test_support.hpp"
 
@@ -59,9 +60,9 @@ namespace {
 
 	auto RunSet(const howdy::native::CommandInvocation &invocation,
 	            const SetDependencies                  &dependencies) -> RunResult {
-		std::ostringstream output;
-		auto              *previous_buffer = std::cout.rdbuf(output.rdbuf());
-		const int          exit_code =
+		std::ostringstream const output;
+		auto                    *previous_buffer = std::cout.rdbuf(output.rdbuf());
+		const int                exit_code =
 		    howdy::native::set_internal::SetMainWithDependencies(invocation, dependencies);
 		std::cout.rdbuf(previous_buffer);
 		return {.exit_code = exit_code, .output = output.str()};

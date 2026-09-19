@@ -1,19 +1,40 @@
 #include "paths.hpp"
+#include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
+#include "prompt/workaround.hpp"
+#include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/compare_process_test_support.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <csignal>
 #include <string>
 #include <vector>
 
+#include <signal.h>
+#include <unistd.h>
+
 namespace {
-	using namespace howdy::test::process;
-	using namespace howdy::test::prompt_coordinator;
+	using howdy::test::process::SpawnChild;
+	using std::chrono_literals::operator""ms;
+	using std::chrono_literals::operator""s;
+	using howdy::pam::PromptCoordinator;
+	using howdy::pam::PromptCoordinatorDecision;
+	using howdy::pam::Workaround;
+	using howdy::test::process::ChildReaped;
+	using howdy::test::process::ScopedSignalBlock;
+	using howdy::test::process::SpawnBlockedChild;
+	using howdy::test::process::SpawnSigtermIgnoringChild;
+	using howdy::test::prompt_coordinator::FakeContext;
+	using howdy::test::prompt_coordinator::MakeCompareRequest;
+	using howdy::test::prompt_coordinator::PosixSpawnCapture;
+	using howdy::test::prompt_coordinator::Timeout;
+	using howdy::test::prompt_coordinator::TimeoutWaitStatus;
 
 	using howdy::test::Expect;
 
@@ -72,12 +93,13 @@ namespace {
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return Expect(status == (17 << 8), "watchdog preserves natural exit wait status") &&
+		return Expect(status == (howdy::native::EncodeWaitExitStatus(17)),
+		              "watchdog preserves natural exit wait status") &&
 		       Expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
 	}
 
 	auto TestWatchdogBlockedSigchldNaturalExit() -> bool {
-		ScopedSignalBlock blocked_sigchld(SIGCHLD);
+		ScopedSignalBlock const blocked_sigchld(SIGCHLD);
 		if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD guard installs")) {
 			return false;
 		}
@@ -89,13 +111,13 @@ namespace {
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return Expect(status == (17 << 8),
+		return Expect(status == (howdy::native::EncodeWaitExitStatus(17)),
 		              "blocked SIGCHLD preserves natural compare exit status") &&
 		       Expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
 	}
 
 	auto TestWatchdogBlockedSigchldTimeout() -> bool {
-		ScopedSignalBlock blocked_sigchld(SIGCHLD);
+		ScopedSignalBlock const blocked_sigchld(SIGCHLD);
 		if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD timeout guard installs")) {
 			return false;
 		}
@@ -115,7 +137,7 @@ namespace {
 	}
 
 	auto TestWatchdogBlockedSigtermTimeout() -> bool {
-		ScopedSignalBlock blocked_sigterm(SIGTERM);
+		ScopedSignalBlock const blocked_sigterm(SIGTERM);
 		if (!Expect(blocked_sigterm.Valid(), "blocked SIGTERM timeout guard installs")) {
 			return false;
 		}

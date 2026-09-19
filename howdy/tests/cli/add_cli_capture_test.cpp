@@ -1,7 +1,10 @@
+#include "cli/add/enrollment_capture.hpp"
+#include "cli/add/internal.hpp"
 #include "cli/add_cli_test_support.hpp"
 
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <utility>
 
 namespace howdy::test::add_cli {
@@ -112,8 +115,8 @@ namespace howdy::test::add_cli {
 			    howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError);
 			context.capture_result.error_message =
 			    "Camera is not configured; set video.device_path";
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -127,8 +130,8 @@ namespace howdy::test::add_cli {
 		auto BlackFrameCaptureFailureStopsBeforeAppend() -> bool {
 			auto context           = MakeSuccessContext();
 			context.capture_result = BlackFrameCaptureResult();
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -145,8 +148,8 @@ namespace howdy::test::add_cli {
 		auto OnlyTooDarkCaptureFailurePrintsDiagnostic() -> bool {
 			auto context           = MakeSuccessContext();
 			context.capture_result = OnlyTooDarkCaptureResult();
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -164,8 +167,8 @@ namespace howdy::test::add_cli {
 		auto NoSufficientlyBrightCaptureFailurePrintsDiagnostic() -> bool {
 			auto context           = MakeSuccessContext();
 			context.capture_result = NoSufficientlyBrightCaptureResult();
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -184,8 +187,8 @@ namespace howdy::test::add_cli {
 		auto NoUsableFramesCaptureFailurePrintsDiagnostic() -> bool {
 			auto context           = MakeSuccessContext();
 			context.capture_result = NoUsableFramesCaptureResult();
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -201,8 +204,8 @@ namespace howdy::test::add_cli {
 		auto NoFaceDetectedCaptureFailurePrintsDiagnostic() -> bool {
 			auto context           = MakeSuccessContext();
 			context.capture_result = NoFaceDetectedCaptureResult();
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -227,8 +230,8 @@ namespace howdy::test::add_cli {
 			    .status        = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
 			    .error_message = "SFace feature extraction failed: synthetic failure",
 			};
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});
@@ -247,8 +250,8 @@ namespace howdy::test::add_cli {
 			    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 			    .status = static_cast<howdy::native::add_internal::AddEnrollmentStatus>(99),
 			};
-			std::ostringstream error;
-			ErrorRedirect      error_redirect(std::cerr, error.rdbuf());
+			std::ostringstream const error;
+			ErrorRedirect const      error_redirect(std::cerr, error.rdbuf());
 
 			const int result =
 			    RunAdd(context, {.resolved_user = "alice", .positionals = {"front-door"}});

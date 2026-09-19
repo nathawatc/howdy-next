@@ -5,26 +5,6 @@
 #include <string>
 
 namespace howdy::native {
-	namespace {
-
-		auto DefaultCoreConfig() -> CoreConfig {
-			using enum config_schema::OptionId;
-			return {
-			    .detection_notice    = config_schema::RuntimeDefaultBool(kCoreDetectionNotice),
-			    .no_confirmation     = config_schema::RuntimeDefaultBool(kCoreNoConfirmation),
-			    .abort_if_ssh        = config_schema::RuntimeDefaultBool(kCoreAbortIfSsh),
-			    .abort_if_lid_closed = config_schema::RuntimeDefaultBool(kCoreAbortIfLidClosed),
-			    .disabled            = config_schema::RuntimeDefaultBool(kCoreDisabled),
-			};
-		}
-
-		auto DefaultDebugConfig() -> DebugConfig {
-			return {.end_report = config_schema::RuntimeDefaultBool(
-			            config_schema::OptionId::kDebugEndReport)};
-		}
-
-	}  // namespace
-
 	auto DefaultVideoConfig() -> VideoConfig {
 		using enum config_schema::OptionId;
 		return {
@@ -56,11 +36,5 @@ namespace howdy::native {
 		config.sface_threshold = config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold);
 		return config;
 	}
-
-	RuntimeConfig::RuntimeConfig()
-	    : core(DefaultCoreConfig())
-	    , video(DefaultVideoConfig())
-	    , face(DefaultFaceConfig())
-	    , debug(DefaultDebugConfig()) {}
 
 }  // namespace howdy::native

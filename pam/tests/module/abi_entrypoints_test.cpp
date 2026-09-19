@@ -1,7 +1,11 @@
 #include "module/entrypoint.hpp"
+#include "module/pam_options.hpp"
+#include "pam_test_support.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstddef>
+#include <span>
 #include <stdexcept>
 
 #include <security/pam_modules.h>
@@ -35,7 +39,7 @@ namespace {
 			throw std::runtime_error("simulated ABI adapter failure");
 		}
 		if (state.throw_mode == 2) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 		return state.result;
 	}
@@ -52,9 +56,8 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	int                         marker = 0;
-	std::array<const char *, 3> argv   = {"workaround=input", nullptr, "after"};
-	auto *const                 pamh   = reinterpret_cast<pam_handle_t *>(&marker);
+	std::array<const char *, 3> argv = {"workaround=input", nullptr, "after"};
+	auto *const                 pamh = howdy::test::OpaquePamHandleForTest();
 	CallbackState               state{.result = PAM_AUTH_ERR};
 
 	const int result = RunPamAuthenticate(pamh, 73, static_cast<int>(argv.size()), argv.data(),
@@ -66,9 +69,14 @@ auto main() -> int {
 	ok &= Expect(state.arguments.flags == 73, "ABI adapter forwards flags");
 	ok &= Expect(state.arguments.argc == 3, "ABI adapter forwards argc");
 	ok &= Expect(state.arguments.argv == argv.data(), "ABI adapter forwards argv pointer");
-	ok &= Expect(state.arguments.argv[0] == argv[0] && state.arguments.argv[1] == nullptr &&
-	                 state.arguments.argv[2] == argv[2],
-	             "ABI adapter forwards argv entries");
+	bool forwarded_entries_match = false;
+	if (state.arguments.argv != nullptr && state.arguments.argc == 3) {
+		const auto forwarded    = std::span(state.arguments.argv, std::size_t{3});
+		forwarded_entries_match = forwarded.front() == argv.front() &&
+		                          forwarded.subspan(1).front() == nullptr &&
+		                          forwarded.back() == argv.back();
+	}
+	ok &= Expect(forwarded_entries_match, "ABI adapter forwards argv entries");
 	ok &= Expect(state.request_auth_token, "ABI adapter always requests auth token");
 
 	state                 = {};

@@ -1,18 +1,32 @@
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
+#include "support/bit_flags.hpp"
+#include "support/face_metric.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstddef>
+#include <filesystem>
 #include <latch>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <vector>
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+
 namespace howdy::test::user_models {
-	using namespace howdy::test::user_models;
 
 	namespace {
 
@@ -65,13 +79,13 @@ namespace howdy::test::user_models {
 			const auto baseline = *snapshot;
 			std::array changed_snapshots{baseline, baseline, baseline, baseline,
 			                             baseline, baseline, baseline};
-			++changed_snapshots[0].dev;
-			++changed_snapshots[1].inode;
-			++changed_snapshots[2].size;
-			++changed_snapshots[3].mtime_seconds;
-			++changed_snapshots[4].mtime_nanosecs;
-			++changed_snapshots[5].ctime_seconds;
-			++changed_snapshots[6].ctime_nanosecs;
+			++changed_snapshots.at(0).dev;
+			++changed_snapshots.at(1).inode;
+			++changed_snapshots.at(2).size;
+			++changed_snapshots.at(3).mtime_seconds;
+			++changed_snapshots.at(4).mtime_nanosecs;
+			++changed_snapshots.at(5).ctime_seconds;
+			++changed_snapshots.at(6).ctime_nanosecs;
 
 			bool ok = true;
 			for (const auto &changed : changed_snapshots) {
@@ -540,7 +554,7 @@ namespace howdy::test::user_models {
 			});
 			const auto                                                    result =
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-			ok &= Expect(hook.calls == 1 && hook.swapped,
+			ok &= Expect(hook.calls == 1 && hook.swapped && !hook.rollback_failed,
 			             "post-check write hook replaces model after final identity check");
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
 			             "append fails when model changes after final write identity check");
@@ -573,7 +587,7 @@ namespace howdy::test::user_models {
 			});
 			const auto                                                    result =
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-			ok &= Expect(hook.calls == 1 && hook.swapped,
+			ok &= Expect(hook.calls == 1 && hook.swapped && !hook.rollback_failed,
 			             "rollback-failure hook replaces model after final identity check");
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kCommitStateUncertain,
 			             "append distinguishes failed post-commit recovery");
@@ -617,7 +631,7 @@ namespace howdy::test::user_models {
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified stale remove");
-			const auto expected = ExpectationFromEntry(listing.entries[0]);
+			const auto expected = ExpectationFromEntry(listing.entries.at(0));
 			ok &= Expect(
 			    WriteFile(
 			        model_path,
@@ -630,7 +644,7 @@ namespace howdy::test::user_models {
 			const auto after = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
 			ok &= Expect(after.status == howdy::native::UserModelStatus::kOk &&
-			                 after.entries.size() == 2 && after.entries[0].label == "changed",
+			                 after.entries.size() == 2 && after.entries.at(0).label == "changed",
 			             "stale verified remove leaves changed model entry");
 		}
 		ok &= Expect(
@@ -644,7 +658,7 @@ namespace howdy::test::user_models {
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified remove");
-			const auto expected = ExpectationFromEntry(listing.entries[0]);
+			const auto expected = ExpectationFromEntry(listing.entries.at(0));
 			const auto result =
 			    howdy::native::RemoveUserModelEntryIfMatches("alice", expected, {temp_root});
 			ok &=
@@ -654,7 +668,7 @@ namespace howdy::test::user_models {
 			             "verified remove returns actual removed entry");
 			const auto remaining =
 			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
-			ok &= Expect(remaining.entries.size() == 1 && remaining.entries[0].id == 1,
+			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "verified remove preserves other model entries");
 		}
 		ok &= Expect(
@@ -680,7 +694,7 @@ namespace howdy::test::user_models {
 			             "remove returns actual removed entry");
 			const auto remaining =
 			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
-			ok &= Expect(remaining.entries.size() == 1 && remaining.entries[0].id == 1,
+			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "remove preserves other model entries");
 			const auto persisted = ReadFile(model_path);
 			ok &= Expect(persisted.contains("\"future_field\"") &&
@@ -736,9 +750,9 @@ namespace howdy::test::user_models {
 			             "stat append-created models directory");
 			ok &= Expect(stat(created_model_path.c_str(), &file_stat) == 0,
 			             "stat append-created model file");
-			ok &= Expect((dir_stat.st_mode & 0777) == 0750,
+			ok &= Expect(howdy::native::MaskedBits(dir_stat.st_mode, 0777) == 0750,
 			             "append-created models directory uses 0750 mode");
-			ok &= Expect((file_stat.st_mode & 0777) == 0600,
+			ok &= Expect(howdy::native::MaskedBits(file_stat.st_mode, 0777) == 0600,
 			             "append-created model file uses 0600 mode");
 		}
 		{

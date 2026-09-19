@@ -1,10 +1,11 @@
 #pragma once
 
+#include "support/passwd_lookup.hpp"
+
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <optional>
-#include <pwd.h>
 #include <string>
 #include <string_view>
 
@@ -41,17 +42,17 @@ namespace howdy::native {
 
 		template <typename IdType>
 		inline auto ParseIdEnv(const char *value) -> std::optional<IdType> {
-			if (value == nullptr || value[0] == '\0') {
+			if (value == nullptr || *value == '\0') {
 				return std::nullopt;
 			}
 
 			IdType parsed = 0;
-			for (const char *cursor = value; *cursor != '\0'; ++cursor) {
-				if (*cursor < '0' || *cursor > '9') {
+			for (const char character : std::string_view(value)) {
+				if (character < '0' || character > '9') {
 					return std::nullopt;
 				}
 
-				const auto digit = static_cast<IdType>(*cursor - '0');
+				const auto digit = static_cast<IdType>(character - '0');
 				if (parsed >
 				    (std::numeric_limits<IdType>::max() - digit) / static_cast<IdType>(10)) {
 					return std::nullopt;
@@ -60,15 +61,6 @@ namespace howdy::native {
 			}
 
 			return parsed;
-		}
-
-		inline auto HasPasswdName(const passwd &pwd) -> bool {
-			return pwd.pw_name != nullptr && pwd.pw_name[0] != '\0';
-		}
-
-		inline auto PasswdNameMatches(const passwd &pwd, const char *expected_name) -> bool {
-			return expected_name != nullptr && expected_name[0] != '\0' && HasPasswdName(pwd) &&
-			       std::string_view(pwd.pw_name) == expected_name;
 		}
 
 	}  // namespace detail
@@ -81,13 +73,13 @@ namespace howdy::native {
 		return detail::ParseIdEnv<gid_t>(value);
 	}
 
-	inline auto InvokingUserFromPwd(const passwd &pwd) -> InvokingUser {
+	inline auto InvokingUserFromPasswd(const PasswdRecord &record) -> InvokingUser {
 		return InvokingUser{
-		    .uid   = pwd.pw_uid,
-		    .gid   = pwd.pw_gid,
-		    .name  = pwd.pw_name != nullptr ? pwd.pw_name : "",
-		    .home  = pwd.pw_dir != nullptr ? pwd.pw_dir : "",
-		    .shell = pwd.pw_shell != nullptr ? pwd.pw_shell : "",
+		    .uid   = record.uid,
+		    .gid   = record.gid,
+		    .name  = record.name,
+		    .home  = record.home,
+		    .shell = record.shell,
 		};
 	}
 
@@ -120,15 +112,14 @@ namespace howdy::native {
 				return {.status = InvokingIdentityStatus::kInvalid};
 			}
 
-			passwd *pwd = getpwnam(sudo_user);
-			if (pwd == nullptr || !detail::PasswdNameMatches(*pwd, sudo_user) ||
-			    pwd->pw_uid != *parsed_uid) {
+			const auto pwd = LookupPasswdByName(sudo_user);
+			if (!pwd.has_value() || pwd->name != sudo_user || pwd->uid != *parsed_uid) {
 				return {.status = InvokingIdentityStatus::kInvalid};
 			}
 
 			// SUDO_GID is the invoking process's group ID and may differ from the
 			// account's passwd primary group, for example after newgrp(1).
-			auto invoking_user = InvokingUserFromPwd(*pwd);
+			auto invoking_user = InvokingUserFromPasswd(*pwd);
 			invoking_user.gid  = *parsed_gid;
 			return {
 			    .status = InvokingIdentityStatus::kResolved,
@@ -137,17 +128,17 @@ namespace howdy::native {
 		}
 
 		if (doas_present) {
-			if (doas_user == nullptr || doas_user[0] == '\0') {
+			if (doas_user == nullptr || *doas_user == '\0') {
 				return {.status = InvokingIdentityStatus::kInvalid};
 			}
 
-			passwd *pwd = getpwnam(doas_user);
-			if (pwd == nullptr || !detail::PasswdNameMatches(*pwd, doas_user)) {
+			const auto pwd = LookupPasswdByName(doas_user);
+			if (!pwd.has_value() || pwd->name != doas_user) {
 				return {.status = InvokingIdentityStatus::kInvalid};
 			}
 			return {
 			    .status = InvokingIdentityStatus::kResolved,
-			    .user   = InvokingUserFromPwd(*pwd),
+			    .user   = InvokingUserFromPasswd(*pwd),
 			};
 		}
 
@@ -155,13 +146,13 @@ namespace howdy::native {
 		if (!parsed_uid.has_value()) {
 			return {.status = InvokingIdentityStatus::kInvalid};
 		}
-		passwd *pwd = getpwuid(*parsed_uid);
-		if (pwd == nullptr || !detail::HasPasswdName(*pwd)) {
+		const auto pwd = LookupPasswdByUid(*parsed_uid);
+		if (!pwd.has_value() || pwd->name.empty()) {
 			return {.status = InvokingIdentityStatus::kInvalid};
 		}
 		return {
 		    .status = InvokingIdentityStatus::kResolved,
-		    .user   = InvokingUserFromPwd(*pwd),
+		    .user   = InvokingUserFromPasswd(*pwd),
 		};
 	}
 

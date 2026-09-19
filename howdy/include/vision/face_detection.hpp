@@ -26,11 +26,12 @@ namespace howdy::native {
 		FaceDetectionStatus        status = FaceDetectionStatus::kOk;
 		std::vector<FaceDetection> detections;
 		std::string                error_message;
-
-		[[nodiscard]] auto Ok() const -> bool {
-			return status == FaceDetectionStatus::kOk;
-		}
 	};
+
+	[[nodiscard]] constexpr auto FaceDetectionSucceeded(const FaceDetectionResult &result) noexcept
+	    -> bool {
+		return result.status == FaceDetectionStatus::kOk;
+	}
 
 	[[nodiscard]] auto ParseYunetDetections(const cv::Mat &rows) -> FaceDetectionResult;
 

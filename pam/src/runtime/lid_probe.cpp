@@ -2,10 +2,13 @@
 
 #include <cerrno>
 #include <fstream>
-#include <glob.h>
+#include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
+
+#include <glob.h>
 
 namespace howdy::pam::runtime {
 
@@ -13,9 +16,8 @@ namespace howdy::pam::runtime {
 
 		constexpr std::string_view kLidStatePattern = "/proc/acpi/button/lid/*/state";
 
-		struct GlobResultGuard {
-			glob_t result{};
-
+		class GlobResultGuard {
+		public:
 			GlobResultGuard()                                            = default;
 			GlobResultGuard(const GlobResultGuard &)                     = delete;
 			auto operator=(const GlobResultGuard &) -> GlobResultGuard & = delete;
@@ -23,8 +25,19 @@ namespace howdy::pam::runtime {
 			auto operator=(GlobResultGuard &&) -> GlobResultGuard &      = delete;
 
 			~GlobResultGuard() noexcept {
-				globfree(&result);
+				globfree(&result_);
 			}
+
+			[[nodiscard]] auto Output() noexcept -> glob_t * {
+				return &result_;
+			}
+
+			[[nodiscard]] auto Paths() const noexcept -> std::span<char *const> {
+				return {result_.gl_pathv, result_.gl_pathc};
+			}
+
+		private:
+			glob_t result_{};
 		};
 
 		auto GlobErrorMessage(int return_value, int error_number) -> std::string {
@@ -60,7 +73,7 @@ namespace howdy::pam::runtime {
 		const std::string pattern_storage(pattern);
 		GlobResultGuard   glob_result;
 		errno                  = 0;
-		const int return_value = glob(pattern_storage.c_str(), 0, nullptr, &glob_result.result);
+		const int return_value = glob(pattern_storage.c_str(), 0, nullptr, glob_result.Output());
 		const int error_number = errno;
 		if (return_value != 0 && return_value != GLOB_NOMATCH) {
 			return {
@@ -77,8 +90,7 @@ namespace howdy::pam::runtime {
 		bool        saw_open   = false;
 		bool        saw_closed = false;
 		std::string read_error;
-		for (std::size_t index = 0; index < glob_result.result.gl_pathc; ++index) {
-			const char *path = glob_result.result.gl_pathv[index];
+		for (const char *path : glob_result.Paths()) {
 			if (path == nullptr) {
 				continue;
 			}

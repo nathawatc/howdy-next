@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace howdy::native::config_schema_internal {
@@ -115,14 +116,16 @@ namespace howdy::native::config_schema_internal {
 			if (option.type != ValueType::kString) {
 				return "choices are incompatible with option type: " + name;
 			}
-			for (std::size_t index = 0; index < option.choices.size(); ++index) {
-				if (option.choices[index].empty()) {
+			std::size_t choice_index = 0;
+			for (const auto choice : option.choices) {
+				if (choice.empty()) {
 					return "choice is empty: " + name;
 				}
-				if (std::ranges::find(option.choices.first(index), option.choices[index]) !=
-				    option.choices.first(index).end()) {
+				const auto previous_choices = option.choices.first(choice_index);
+				if (std::ranges::find(previous_choices, choice) != previous_choices.end()) {
 					return "duplicate choice: " + name;
 				}
+				++choice_index;
 			}
 			const auto *fallback_str = std::get_if<std::string_view>(&option.fallback);
 			if (option.special_rule != SpecialRule::kDevicePath && fallback_str != nullptr &&
@@ -188,10 +191,9 @@ namespace howdy::native::config_schema_internal {
 			return std::nullopt;
 		}
 
-		auto ValidateIdentity(std::span<const Option> options, std::size_t index)
+		auto ValidateIdentity(const Option &option, std::span<const Option> previous_options)
 		    -> std::optional<std::string> {
-			const auto &option = options[index];
-			const auto  name   = OptionName(option);
+			const auto name = OptionName(option);
 			if (static_cast<std::size_t>(option.id) >= static_cast<std::size_t>(OptionId::kCount)) {
 				return "option has invalid id: " + name;
 			}
@@ -201,7 +203,7 @@ namespace howdy::native::config_schema_internal {
 			if (option.key.empty()) {
 				return "invalid or empty key: " + name;
 			}
-			for (const auto &previous : options.first(index)) {
+			for (const auto &previous : previous_options) {
 				if (previous.id == option.id) {
 					return "duplicate option id: " + name;
 				}
@@ -218,10 +220,10 @@ namespace howdy::native::config_schema_internal {
 	}  // namespace
 
 	auto ValidateSchemaOptions(std::span<const Option> options) -> std::optional<std::string> {
-		for (std::size_t index = 0; index < options.size(); ++index) {
-			const auto &option = options[index];
-			const auto  name   = OptionName(option);
-			if (const auto error = ValidateIdentity(options, index)) {
+		std::size_t index = 0;
+		for (const auto &option : options) {
+			const auto name = OptionName(option);
+			if (const auto error = ValidateIdentity(option, options.first(index))) {
 				return error;
 			}
 			if (!IsKnownValueType(option.type)) {
@@ -239,6 +241,7 @@ namespace howdy::native::config_schema_internal {
 			if (const auto error = ValidateSpecialRule(option)) {
 				return error;
 			}
+			++index;
 		}
 		if (const auto error = ValidateSpecialFallbacks(options)) {
 			return error;

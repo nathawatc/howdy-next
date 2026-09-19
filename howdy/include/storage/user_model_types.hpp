@@ -12,7 +12,7 @@ namespace howdy::native {
 
 	struct UserModelEntry {
 		int                             id   = -1;
-		long long                       time = 0;
+		std::int64_t                    time = 0;
 		std::string                     label;
 		std::string                     backend;
 		std::optional<FaceMetric>       metric;
@@ -39,10 +39,10 @@ namespace howdy::native {
 		std::uint64_t  dev            = 0;
 		std::uint64_t  inode          = 0;
 		std::uintmax_t size           = 0;
-		long long      mtime_seconds  = 0;
-		long long      mtime_nanosecs = 0;
-		long long      ctime_seconds  = 0;
-		long long      ctime_nanosecs = 0;
+		std::int64_t   mtime_seconds  = 0;
+		std::int64_t   mtime_nanosecs = 0;
+		std::int64_t   ctime_seconds  = 0;
+		std::int64_t   ctime_nanosecs = 0;
 	};
 
 	struct UserModelInspectResult {
@@ -53,7 +53,7 @@ namespace howdy::native {
 
 	struct UserModelEntryExpectation {
 		int                       id   = -1;
-		long long                 time = 0;
+		std::int64_t              time = 0;
 		std::string               label;
 		std::string               backend;
 		std::optional<FaceMetric> metric;

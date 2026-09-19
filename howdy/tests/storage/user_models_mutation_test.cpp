@@ -1,11 +1,25 @@
 #include "../../src/storage/user_model_store/internal.hpp"
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
+#include "support/face_metric.hpp"
+
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
+#include <string>
+#include <system_error>
+
+#include <fcntl.h>
+
+#include <sys/stat.h>
 
 namespace howdy::test::user_models {
-	using namespace howdy::test::user_models;
 
 	auto TestUserModelMutationStart() -> bool {
 		namespace fs                 = std::filesystem;
@@ -55,7 +69,7 @@ namespace howdy::test::user_models {
 			             "begin_mutation post-lock revalidation hook executes exactly once");
 			ok &= Expect(hook.swapped,
 			             "begin_mutation post-lock hook atomically replaces model with symlink");
-			ok &= Expect(result.document.result.status ==
+			ok &= Expect(result.document.Result().status ==
 			                 howdy::native::UserModelStatus::kInsecurePath,
 			             "begin_mutation post-lock revalidation rejects symlink replacement");
 			ok &= Expect(!result.transaction.has_value(),
@@ -133,7 +147,7 @@ namespace howdy::test::user_models {
 			             "begin_mutation regular-file swap hook executes exactly once");
 			ok &= Expect(hook.swapped,
 			             "begin_mutation hook atomically replaces model with regular file");
-			ok &= Expect(result.document.result.status ==
+			ok &= Expect(result.document.Result().status ==
 			                 howdy::native::UserModelStatus::kModelChanged,
 			             "begin_mutation rejects post-lock regular-file inode replacement");
 			ok &= Expect(!result.transaction.has_value(),
@@ -200,9 +214,9 @@ namespace howdy::test::user_models {
 			ok &= Expect(hook.before_lock_calls == 1 && hook.after_lock_calls == 1,
 			             "begin_mutation ABA hooks execute exactly once");
 			ok &=
-			    Expect(hook.installed_b && hook.restored_a,
+			    Expect(hook.installed_b && hook.restored_a && !hook.rollback_failed,
 			           "begin_mutation ABA test installs B before lock and restores A after lock");
-			ok &= Expect(result.document.result.status ==
+			ok &= Expect(result.document.Result().status ==
 			                 howdy::native::UserModelStatus::kModelChanged,
 			             "begin_mutation rejects ABA inode replacement");
 			ok &= Expect(!result.transaction.has_value(),
@@ -241,7 +255,7 @@ namespace howdy::test::user_models {
 			const auto result = howdy::native::UserModelStore::LockExisting("alice", {temp_root});
 			ok &= Expect(hook.before_lock_calls == 1 && hook.after_lock_calls == 1,
 			             "lock_existing ABA hooks execute exactly once");
-			ok &= Expect(hook.installed_b && hook.restored_a,
+			ok &= Expect(hook.installed_b && hook.restored_a && !hook.rollback_failed,
 			             "lock_existing ABA test installs B before lock and restores A after lock");
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
 			             "lock_existing rejects ABA inode replacement");
@@ -383,7 +397,8 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing loads appended entries");
 			ok &= Expect(result.entries.size() == 2, "append preserves existing entries");
-			ok &= Expect(result.entries[0].label == "first" && result.entries[1].label == "second",
+			ok &= Expect(result.entries.at(0).label == "first" &&
+			                 result.entries.at(1).label == "second",
 			             "lifecycle listing preserves entry order");
 			ok &= Expect(result.next_id == 2, "lifecycle listing reports next model ID");
 			std::ifstream     persisted(model_path);

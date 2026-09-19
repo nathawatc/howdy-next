@@ -1,7 +1,9 @@
 #include "runtime/environment.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
+#include <string_view>
 
 namespace howdy::pam::runtime {
 
@@ -46,9 +48,7 @@ namespace howdy::pam::runtime {
 		}
 
 		std::array<char, name_buffer_capacity> name_buffer{};
-		for (std::size_t index = 0; index < name.size(); ++index) {
-			name_buffer[index] = name[index];
-		}
+		std::ranges::copy(name, name_buffer.begin());
 
 		if (dependencies.pam_environment != nullptr &&
 		    dependencies.pam_environment(dependencies.context, pamh, name_buffer.data()) !=

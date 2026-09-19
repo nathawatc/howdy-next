@@ -1,8 +1,10 @@
 #include "config/config_template.hpp"
 
+#include "config/config_schema.hpp"
+
 #include <algorithm>
-#include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -112,21 +114,21 @@ namespace howdy::native::config_template {
 
 		std::string      rendered = "# See howdy.ini(5) for configuration options.\n\n";
 		std::string_view current_section;
-		for (std::size_t index = 0; index < options.size(); ++index) {
-			const auto &option = options[index];
-			const auto  name   = OptionName(option);
+		bool             first_option = true;
+		for (const auto &option : options) {
+			const auto name = OptionName(option);
 
 			if (const auto error = ValidateRenderingConstraints(option)) {
 				return Failure(*error);
 			}
 
-			const bool starts_section = index == 0 || option.section != current_section;
+			const bool starts_section = first_option || option.section != current_section;
 			if (const auto error =
 			        SectionReuseError(seen_sections, current_section, option, starts_section)) {
 				return Failure(*error);
 			}
 			if (starts_section) {
-				if (index != 0) {
+				if (!first_option) {
 					rendered += '\n';
 				}
 				seen_sections.push_back(option.section);
@@ -145,6 +147,7 @@ namespace howdy::native::config_template {
 			rendered += " = ";
 			rendered += *value;
 			rendered += '\n';
+			first_option = false;
 		}
 
 		return {.ok = true, .content = std::move(rendered)};

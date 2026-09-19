@@ -1,4 +1,7 @@
 #include "cli/test/preview_renderer.hpp"
+#include "cli/test_preview_test_groups.hpp"
+#include "config/runtime_config.hpp"
+#include "storage/user_model_types.hpp"
 #include "test_support.hpp"
 
 #include <optional>
@@ -71,7 +74,7 @@ namespace {
 
 	auto RepeatedPreviewReplacementCleansInitializedRendererFirst() -> bool {
 		RendererLifecycleContext                                 context;
-		howdy::native::VideoConfig                               config{};
+		howdy::native::VideoConfig const                         config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = InitializeRenderer,
@@ -79,7 +82,7 @@ namespace {
 		    .destroy_window = DestroyRendererWindow,
 		};
 		std::optional<test_cli_internal::TestPreviewRenderer> renderer;
-		test_cli_internal::TestPreviewRendererCleanup         cleanup(renderer);
+		test_cli_internal::TestPreviewRendererCleanup const   cleanup(renderer);
 		renderer.emplace(config, std::vector<howdy::native::EncodingModelInfo>{}, dependencies);
 		renderer->Initialize();
 		context.sequence.clear();
@@ -103,7 +106,7 @@ namespace {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig                               config{};
+		howdy::native::VideoConfig const                         config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = InitializeRenderer,
@@ -111,7 +114,7 @@ namespace {
 		    .destroy_window = DestroyRendererWindow,
 		};
 		std::optional<test_cli_internal::TestPreviewRenderer> renderer;
-		test_cli_internal::TestPreviewRendererCleanup         cleanup(renderer);
+		test_cli_internal::TestPreviewRendererCleanup const   cleanup(renderer);
 		renderer.emplace(config, std::vector<howdy::native::EncodingModelInfo>{}, dependencies);
 		renderer->Initialize();
 
@@ -139,7 +142,7 @@ namespace {
 	auto CallbackSuccessWindowFailureRetriesOnlyWindow() -> bool {
 		RendererLifecycleContext context;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig                               config{};
+		howdy::native::VideoConfig const                         config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = InitializeRenderer,
@@ -147,7 +150,7 @@ namespace {
 		    .destroy_window = DestroyRendererWindow,
 		};
 		std::optional<test_cli_internal::TestPreviewRenderer> renderer;
-		test_cli_internal::TestPreviewRendererCleanup         cleanup(renderer);
+		test_cli_internal::TestPreviewRendererCleanup const   cleanup(renderer);
 		renderer.emplace(config, std::vector<howdy::native::EncodingModelInfo>{}, dependencies);
 		renderer->Initialize();
 
@@ -177,7 +180,7 @@ namespace {
 	auto CallbackFailureWindowSuccessRetriesOnlyCallback() -> bool {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
-		howdy::native::VideoConfig                               config{};
+		howdy::native::VideoConfig const                         config{};
 		const test_cli_internal::TestPreviewRendererDependencies dependencies{
 		    .context        = &context,
 		    .initialize     = InitializeRenderer,
@@ -185,7 +188,7 @@ namespace {
 		    .destroy_window = DestroyRendererWindow,
 		};
 		std::optional<test_cli_internal::TestPreviewRenderer> renderer;
-		test_cli_internal::TestPreviewRendererCleanup         cleanup(renderer);
+		test_cli_internal::TestPreviewRendererCleanup const   cleanup(renderer);
 		renderer.emplace(config, std::vector<howdy::native::EncodingModelInfo>{}, dependencies);
 		renderer->Initialize();
 
@@ -213,7 +216,7 @@ namespace {
 
 	auto RendererDefaultCleanupIsOrderedAndIdempotent() -> bool {
 		RendererLifecycleContext               context;
-		howdy::native::VideoConfig             config{};
+		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
 		                                                {.context        = &context,
 		                                                 .initialize     = InitializeRenderer,
@@ -237,7 +240,7 @@ namespace {
 	auto RendererFailedInitializeRollsBack() -> bool {
 		RendererLifecycleContext context;
 		context.fail_initialize = true;
-		howdy::native::VideoConfig             config{};
+		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
 		                                                {.context        = &context,
 		                                                 .initialize     = InitializeRenderer,
@@ -266,7 +269,7 @@ namespace {
 	auto RendererShutdownFinishesAfterCallbackError() -> bool {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
-		howdy::native::VideoConfig             config{};
+		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
 		                                                {.context        = &context,
 		                                                 .initialize     = InitializeRenderer,
@@ -301,7 +304,7 @@ namespace {
 		context.fail_initialize     = true;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig             config{};
+		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
 		                                                {.context        = &context,
 		                                                 .initialize     = InitializeRenderer,
@@ -329,7 +332,7 @@ namespace {
 		RendererLifecycleContext context;
 		context.fail_clear_callback = true;
 		context.fail_destroy_window = true;
-		howdy::native::VideoConfig             config{};
+		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
 		                                                {.context        = &context,
 		                                                 .initialize     = InitializeRenderer,
@@ -365,7 +368,7 @@ namespace {
 		RendererLifecycleContext renderer_context;
 		renderer_context.fail_clear_callback = true;
 		renderer_context.fail_destroy_window = true;
-		howdy::native::VideoConfig config{};
+		howdy::native::VideoConfig const config{};
 
 		std::string error_message;
 		try {
@@ -394,8 +397,6 @@ namespace {
 	}
 
 }  // namespace
-
-auto RunTestPreviewRendererTests() -> bool;
 
 auto RunTestPreviewRendererTests() -> bool {
 	bool ok = true;

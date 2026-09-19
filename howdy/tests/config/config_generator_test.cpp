@@ -2,11 +2,17 @@
 
 #include <cerrno>
 #include <csignal>
+#include <cstddef>
 #include <filesystem>
+#include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <vector>
+
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -65,10 +71,12 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc != 2) {
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	if (arguments.size() != 2) {
 		return 1;
 	}
-	const fs::path generator_path(argv[1]);
+	const fs::path generator_path(arguments.back());
 	bool           ok = true;
 
 	const auto root =

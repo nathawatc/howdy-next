@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 
 #include <filesystem>
+#include <system_error>
 
 auto main() -> int {
 	namespace fs = std::filesystem;

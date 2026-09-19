@@ -13,6 +13,8 @@ namespace howdy::pam::native_prompt_input {
 		SensitiveBuffer()                                            = default;
 		SensitiveBuffer(const SensitiveBuffer &)                     = delete;
 		auto operator=(const SensitiveBuffer &) -> SensitiveBuffer & = delete;
+		SensitiveBuffer(SensitiveBuffer &&)                          = delete;
+		auto operator=(SensitiveBuffer &&) -> SensitiveBuffer &      = delete;
 		~SensitiveBuffer();
 
 		[[nodiscard]] auto Empty() const -> bool;

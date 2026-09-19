@@ -1,48 +1,60 @@
 #include "cli/download_models.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/download_models/internal.hpp"
 #include "config/runtime_paths.hpp"
 #include "model_assets/model_file.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "support/atomic_files.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include <curl/curl.h>
+#include <curl/easy.h>
+#include <curl/system.h>
 #include <openssl/evp.h>
 
 namespace {
 
-	constexpr int  kDownloadModelsExitOk    = 0;
-	constexpr int  kDownloadModelsExitAbort = EXIT_FAILURE;
-	constexpr long kConnectTimeoutSeconds   = 15;
-	constexpr long kTransferTimeoutSeconds  = 300;
-	constexpr long kLowSpeedBytesPerSecond  = 1024;
-	constexpr long kLowSpeedTimeoutSeconds  = 30;
+	using howdy::native::download_models_internal::CurlLong;
+
+	constexpr int      kDownloadModelsExitOk    = 0;
+	constexpr int      kDownloadModelsExitAbort = EXIT_FAILURE;
+	constexpr CurlLong kConnectTimeoutSeconds   = 15;
+	constexpr CurlLong kTransferTimeoutSeconds  = 300;
+	constexpr CurlLong kLowSpeedBytesPerSecond  = 1024;
+	constexpr CurlLong kLowSpeedTimeoutSeconds  = 30;
 
 	using howdy::native::ScopedFd;
 	using howdy::native::download_models_internal::CurlSetoptOperations;
 	using howdy::native::download_models_internal::StagedDownloadFile;
 
-	auto CurlSetoptLong(void * /*context*/, CURL *curl, CURLoption option, const long value)
+	auto CurlSetoptLong(void * /*context*/, CURL *curl, CURLoption option, const CurlLong value)
 	    -> CURLcode {
 		return curl_easy_setopt(curl, option, value);
 	}
@@ -112,8 +124,8 @@ namespace {
 
 		std::ostringstream output;
 		output << std::hex << std::setfill('0');
-		for (unsigned int index = 0; index < digest_length; ++index) {
-			output << std::setw(2) << static_cast<unsigned int>(digest[index]);
+		for (const unsigned char byte : std::span(digest).first(digest_length)) {
+			output << std::setw(2) << static_cast<unsigned int>(byte);
 		}
 		return output.str();
 	}
@@ -184,7 +196,8 @@ namespace {
 		return {.ok            = false,
 		        .error_message = "Failed to " + std::string(operation) + " " +
 		                         std::string(howdy::native::kModelsDirectoryLabel) + ": " +
-		                         path.string() + " (" + std::strerror(error_number) + ")",
+		                         path.string() + " (" +
+		                         howdy::native::SystemErrorMessage(error_number) + ")",
 		        .error_code    = error_number};
 	}
 
@@ -322,7 +335,7 @@ namespace {
 		}
 		const CURLcode result = curl_easy_perform(curl);
 
-		long           status_code = 0;
+		CurlLong       status_code = 0;
 		const CURLcode info_result = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
 		curl_easy_cleanup(curl);
 		return result == CURLE_OK && info_result == CURLE_OK && status_code >= 200 &&
@@ -348,7 +361,7 @@ namespace {
 		if (dependencies.fstat_file(existing_fd.Get(), &existing_stat) != 0) {
 			const int error_number = errno;
 			std::cout << "Failed to fstat existing model '" << destination.string()
-			          << "': " << std::strerror(error_number) << "\n";
+			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return ExistingModelAction::kAbort;
 		}
 		if (existing_stat.st_size < 0 || std::cmp_not_equal(existing_stat.st_size, model.size)) {
@@ -389,7 +402,7 @@ namespace {
 			const auto staged_path  = staged->path;
 			howdy::native::CleanupStagedFile(*staged);
 			std::cout << "Failed to fstat staged model '" << staged_path.string()
-			          << "': " << std::strerror(error_number) << "\n";
+			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return false;
 		}
 		if (staged_stat.st_size < 0 || std::cmp_not_equal(staged_stat.st_size, model.size)) {

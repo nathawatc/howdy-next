@@ -8,15 +8,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <unistd.h>
 #include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <security/pam_appl.h>
 
@@ -29,7 +31,9 @@ namespace howdy::test::auth_flow {
 
 	class ScopedPamHandle {
 	public:
-		ScopedPamHandle() = default;
+		ScopedPamHandle(ScopedPamHandle &&)                     = delete;
+		auto operator=(ScopedPamHandle &&) -> ScopedPamHandle & = delete;
+		ScopedPamHandle()                                       = default;
 
 		ScopedPamHandle(const ScopedPamHandle &)                     = delete;
 		auto operator=(const ScopedPamHandle &) -> ScopedPamHandle & = delete;
@@ -122,13 +126,13 @@ namespace howdy::test::auth_flow {
 		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
 			return false;
 		}
-		(void)close(lease_pipe[1]);
+		(void)close(lease_pipe.at(1));
 		*prepared = {
 		    .root_dir    = root,
 		    .config_path = howdy::native::auth_helper_protocol::PreparedConfigPath(root).string(),
 		    .user_models_dir =
 		        howdy::native::auth_helper_protocol::PreparedUserModelsDir(root).string(),
-		    .lease_fd = howdy::native::ScopedFd(lease_pipe[0]),
+		    .lease_fd = howdy::native::ScopedFd(lease_pipe.at(0)),
 		};
 		return true;
 	}
@@ -289,14 +293,17 @@ namespace howdy::test::auth_flow {
 	inline auto TestConversation(int num_msg, const struct pam_message **messages,
 	                             struct pam_response **response, void *appdata_ptr) -> int {
 		auto *state = static_cast<ConversationState *>(appdata_ptr);
-		if (state == nullptr || num_msg != 1 || messages == nullptr || messages[0] == nullptr ||
-		    response == nullptr) {
+		if (state == nullptr || num_msg != 1 || messages == nullptr || response == nullptr) {
+			return PAM_CONV_ERR;
+		}
+		const auto *message = std::span(messages, std::size_t{1}).front();
+		if (message == nullptr) {
 			return PAM_CONV_ERR;
 		}
 
 		++state->calls;
-		state->last_msg_type = messages[0]->msg_style;
-		state->last_message  = messages[0]->msg == nullptr ? "" : messages[0]->msg;
+		state->last_msg_type = message->msg_style;
+		state->last_message  = message->msg == nullptr ? "" : message->msg;
 		*response            = nullptr;
 
 		if (state->response_mode != ResponseMode::kNone) {

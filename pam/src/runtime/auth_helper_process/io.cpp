@@ -4,20 +4,27 @@
 
 #include "internal.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/auth_helper_process.hpp"
+#include "support/bit_flags.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
+#include "support/process_status.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
-#include <csignal>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <poll.h>
 #include <string>
-#include <syslog.h>
+
+#include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/poll.h>
+#include <sys/syslog.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
@@ -29,7 +36,7 @@ namespace {
 	constexpr auto kHelperWaitPollInterval = std::chrono::milliseconds(10);
 
 	auto MakeAuthHelperWaitExitStatus(CompareExit exit_code) -> int {
-		return static_cast<int>(exit_code) << 8;
+		return howdy::native::EncodeWaitExitStatus(exit_code);
 	}
 
 	enum class HelperPollResult : std::uint8_t {
@@ -55,13 +62,15 @@ namespace {
 		if (poll_result == 0) {
 			return HelperPollResult::kTimedOut;
 		}
-		if ((descriptor.revents & (POLLNVAL | POLLERR)) != 0) {
-			const int read_error = (descriptor.revents & POLLNVAL) != 0 ? EBADF : EIO;
+		if (howdy::native::HasAnyBits(descriptor.revents, POLLNVAL, POLLERR)) {
+			const int read_error =
+			    howdy::native::HasAnyBits(descriptor.revents, POLLNVAL) ? EBADF : EIO;
 			howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(read_error);
 			return HelperPollResult::kError;
 		}
-		return (descriptor.revents & (POLLIN | POLLHUP)) == 0 ? HelperPollResult::kRetry
-		                                                      : HelperPollResult::kReady;
+		return !howdy::native::HasAnyBits(descriptor.revents, POLLIN, POLLHUP)
+		           ? HelperPollResult::kRetry
+		           : HelperPollResult::kReady;
 	}
 
 	auto ReadAuthHelperOutputFromFd(int output_fd, std::string &output, HelperDeadline deadline)
@@ -118,8 +127,8 @@ namespace {
 namespace howdy::pam::auth_helper_process::internal {
 
 	void LogAuthHelperReadError(int error_number) {
-		syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)", strerror(error_number),
-		       error_number);
+		syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)",
+		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 	}
 
 	auto DeadlinePollTimeout(HelperDeadline deadline) -> int {
@@ -154,9 +163,12 @@ namespace howdy::pam::auth_helper_process::internal {
 			return MakeAuthHelperWaitExitStatus(CompareExit::kAbort);
 		}
 
-		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)", strerror(errno),
-			       errno);
+		if (kill(child_pid, SIGTERM) != 0) {
+			const int error_number = errno;
+			if (error_number != ESRCH) {
+				syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			}
 		}
 
 		for (int attempts = 0; attempts < 50; ++attempts) {
@@ -174,9 +186,12 @@ namespace howdy::pam::auth_helper_process::internal {
 			usleep(10000);
 		}
 
-		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)", strerror(errno),
-			       errno);
+		if (kill(child_pid, SIGKILL) != 0) {
+			const int error_number = errno;
+			if (error_number != ESRCH) {
+				syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			}
 		}
 		return WaitForHelperProcess(child_pid);
 	}

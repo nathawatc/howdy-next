@@ -1,14 +1,19 @@
+#include "app/command_invocation.hpp"
 #include "cli/snapshot/internal.hpp"
+#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "test_support.hpp"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 
 namespace {
 
@@ -16,17 +21,24 @@ namespace {
 
 	constexpr std::size_t kSnapshotFrameCount = 4;
 
-	struct StreamRedirect {
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
+
 		StreamRedirect(std::ostream &stream, std::streambuf *new_buffer)
-		    : output(stream)
-		    , old_buffer(stream.rdbuf(new_buffer)) {}
+		    : output_(stream)
+		    , old_buffer_(stream.rdbuf(new_buffer)) {}
 
 		~StreamRedirect() {
-			output.rdbuf(old_buffer);
+			output_.rdbuf(old_buffer_);
 		}
 
-		std::ostream   &output;
-		std::streambuf *old_buffer;
+	private:
+		std::ostream   &output_;
+		std::streambuf *old_buffer_;
 	};
 
 	struct SnapshotCliTestContext {
@@ -136,8 +148,8 @@ namespace {
 	auto InvalidRuntimeConfigStopsBeforeCaptureAndWrite() -> bool {
 		auto context          = MakeSuccessContext();
 		context.config_result = InvalidConfigLoadResult();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -157,8 +169,8 @@ namespace {
 		    .status        = howdy::native::snapshot_internal::SnapshotCaptureStatus::kOpenError,
 		    .error_message = "Camera is not configured; set video.device_path",
 		};
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -179,8 +191,8 @@ namespace {
 		context.capture_result = howdy::native::snapshot_internal::SnapshotCaptureResult{
 		    .status = howdy::native::snapshot_internal::SnapshotCaptureStatus::kReadError,
 		};
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -201,10 +213,10 @@ namespace {
 		context.capture_result.frames.clear();
 		const auto frames = DummyFrames();
 		for (std::size_t index = 0; index < frame_count; ++index) {
-			context.capture_result.frames.push_back(frames[index % frames.size()]);
+			context.capture_result.frames.push_back(frames.at(index % frames.size()));
 		}
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -239,8 +251,8 @@ namespace {
 		context.capture_result.status =
 		    std::bit_cast<howdy::native::snapshot_internal::SnapshotCaptureStatus>(
 		        std::uint8_t{UINT8_MAX});
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -259,8 +271,8 @@ namespace {
 		context.write_result = howdy::native::snapshot_internal::SnapshotWriteResult{
 		    .ok = true,
 		};
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -277,8 +289,8 @@ namespace {
 	auto WriteFailureReturnsError() -> bool {
 		auto context         = MakeSuccessContext();
 		context.write_result = howdy::native::snapshot_internal::SnapshotWriteResult{};
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 
@@ -335,9 +347,9 @@ namespace {
 	}
 
 	auto SuccessPrintsGeneratedPath() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream output;
-		StreamRedirect     output_redirect(std::cout, output.rdbuf());
+		auto                     context = MakeSuccessContext();
+		std::ostringstream const output;
+		StreamRedirect const     output_redirect(std::cout, output.rdbuf());
 
 		const int result = RunSnapshot(context, {});
 

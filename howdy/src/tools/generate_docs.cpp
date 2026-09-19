@@ -1,12 +1,16 @@
 #include "app/command_catalog.hpp"
+#include "config/config_schema.hpp"
 #include "docs/man_reference.hpp"
 #include "module/pam_option_catalog.hpp"
 #include "support/atomic_files.hpp"
 
 #include <array>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <span>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -38,8 +42,11 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc != 3 || std::string_view(argv[1]) != "--output-dir" ||
-	    std::string_view(argv[2]).empty()) {
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	if (arguments.size() != 3 ||
+	    std::string_view(arguments.subspan(1, 1).front()) != "--output-dir" ||
+	    std::string_view(arguments.subspan(2, 1).front()).empty()) {
 		PrintUsage();
 		return 2;
 	}
@@ -69,22 +76,22 @@ auto main(int argc, char **argv) -> int {
 	    howdy::pam::WorkaroundCatalog(), howdy::pam::kDefaultWorkaround);
 	const auto config_reference = howdy::docs::RenderConfigOptionReference(
 	    howdy::native::config_schema::RuntimeConfigOptions());
-	if (!command_reference.Ok()) {
+	if (!howdy::docs::RenderSucceeded(command_reference)) {
 		std::cerr << "howdy_docs_generator: rendering howdy-commands.roff failed: "
 		          << command_reference.error << '\n';
 		return 1;
 	}
-	if (!option_reference.Ok()) {
+	if (!howdy::docs::RenderSucceeded(option_reference)) {
 		std::cerr << "howdy_docs_generator: rendering howdy-options.roff failed: "
 		          << option_reference.error << '\n';
 		return 1;
 	}
-	if (!workaround_reference.Ok()) {
+	if (!howdy::docs::RenderSucceeded(workaround_reference)) {
 		std::cerr << "howdy_docs_generator: rendering pam-workarounds.roff failed: "
 		          << workaround_reference.error << '\n';
 		return 1;
 	}
-	if (!config_reference.Ok()) {
+	if (!howdy::docs::RenderSucceeded(config_reference)) {
 		std::cerr << "howdy_docs_generator: rendering howdy-ini-options.roff failed: "
 		          << config_reference.error << '\n';
 		return 1;
@@ -96,7 +103,7 @@ auto main(int argc, char **argv) -> int {
 	    Fragment{.filename = "pam-workarounds.roff", .content = workaround_reference.output},
 	    Fragment{.filename = "howdy-ini-options.roff", .content = config_reference.output},
 	};
-	const fs::path output_dir(argv[2]);
+	const fs::path output_dir(arguments.subspan(2, 1).front());
 	for (const auto &fragment : fragments) {
 		const auto path = output_dir / fragment.filename;
 		if (const auto error = WriteFragment(path, fragment.content)) {

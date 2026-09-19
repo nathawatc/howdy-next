@@ -1,5 +1,10 @@
 #include "compare/compare_engine_test_support.hpp"
 #include "compare/engine.hpp"
+#include "test_support.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
 
 #include <cstddef>
 #include <limits>
@@ -8,14 +13,20 @@
 #include <utility>
 #include <vector>
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 namespace {
 
 	using howdy::test::Expect;
 	using howdy::test::compare_engine::ExpectNear;
 	using howdy::test::compare_engine::MakeVideoConfig;
-	int callback_calls_without_context = 0;
+
+	auto CallbackCallsWithoutContext() -> int & {
+		static int calls = 0;
+		return calls;
+	}
 
 	auto MakeEncoding(float value) -> std::vector<float> {
 		return std::vector<float>(howdy::native::kSfaceEmbeddingSize, value);
@@ -44,7 +55,7 @@ namespace {
 
 	auto PrepareFrame(void *opaque, [[maybe_unused]] const cv::Mat &frame) -> cv::Mat {
 		if (opaque == nullptr) {
-			callback_calls_without_context++;
+			CallbackCallsWithoutContext()++;
 			return {};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
@@ -55,7 +66,7 @@ namespace {
 	auto DetectFaces(void *opaque, [[maybe_unused]] const cv::Mat &frame)
 	    -> howdy::native::FaceDetectionResult {
 		if (opaque == nullptr) {
-			callback_calls_without_context++;
+			CallbackCallsWithoutContext()++;
 			return {};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
@@ -66,7 +77,7 @@ namespace {
 	auto EncodeFace(void *opaque, [[maybe_unused]] const cv::Mat &frame,
 	                const howdy::native::FaceDetection &face) -> howdy::native::FaceEncodingResult {
 		if (opaque == nullptr) {
-			callback_calls_without_context++;
+			CallbackCallsWithoutContext()++;
 			return {
 			    .status        = howdy::native::FaceEncodingStatus::kInferenceError,
 			    .error_message = "missing context",
@@ -79,7 +90,7 @@ namespace {
 			return *context.forced_encoding_result;
 		}
 		if (!context.encoding_results.empty()) {
-			return context.encoding_results[context.next_encoding++];
+			return context.encoding_results.at(context.next_encoding++);
 		}
 		if (!context.encoding_error_message.empty()) {
 			return {
@@ -89,7 +100,7 @@ namespace {
 		}
 		return {
 		    .status        = howdy::native::FaceEncodingStatus::kOk,
-		    .encoding      = context.encoded_results[context.next_encoding++],
+		    .encoding      = context.encoded_results.at(context.next_encoding++),
 		    .error_message = {},
 		};
 	}
@@ -97,14 +108,14 @@ namespace {
 	auto MatchFace(void *opaque, const std::vector<std::vector<float>> &known,
 	               const std::vector<float> &probe) -> howdy::native::FaceMatch {
 		if (opaque == nullptr) {
-			callback_calls_without_context++;
+			CallbackCallsWithoutContext()++;
 			return {};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
 		context.match_calls++;
 		context.received_known.push_back(known);
 		context.received_probes.push_back(probe);
-		return context.match_results[context.next_match++];
+		return context.match_results.at(context.next_match++);
 	}
 
 	auto MakeInferenceOperations(FakeInferenceContext &context)
@@ -157,7 +168,7 @@ auto RunCompareEngineInferenceTests() -> bool {
 	}
 
 	{
-		FakeInferenceContext         context;
+		FakeInferenceContext const   context;
 		howdy::native::CompareEngine engine(MakeVideoConfig());
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
@@ -171,12 +182,12 @@ auto RunCompareEngineInferenceTests() -> bool {
 		FakeInferenceContext context;
 		auto                 operations = MakeInferenceOperations(context);
 		operations.context              = nullptr;
-		callback_calls_without_context  = 0;
+		CallbackCallsWithoutContext()   = 0;
 		howdy::native::CompareEngine engine(MakeVideoConfig(), operations, known);
 		const auto                   result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "null inference context is rejected");
-		ok &= Expect(callback_calls_without_context == 0,
+		ok &= Expect(CallbackCallsWithoutContext() == 0,
 		             "null inference context invokes no callbacks");
 		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
 		                 context.encode_calls == 0 && context.match_calls == 0,
@@ -216,7 +227,7 @@ auto RunCompareEngineInferenceTests() -> bool {
 		    .encoding      = MakeEncoding(0.25F),
 		    .error_message = {},
 		};
-		non_finite.encoding[0] = std::numeric_limits<float>::quiet_NaN();
+		non_finite.encoding.at(0) = std::numeric_limits<float>::quiet_NaN();
 		malformed_results.push_back(std::move(non_finite));
 
 		for (const auto &malformed : malformed_results) {
@@ -263,7 +274,7 @@ auto RunCompareEngineInferenceTests() -> bool {
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "caller mutation does not invalidate engine-owned encodings");
 		ok &= Expect(context.received_known.size() == 1 &&
-		                 context.received_known[0] ==
+		                 context.received_known.at(0) ==
 		                     std::vector<std::vector<float>>({{5.0F, 6.0F}, {7.0F, 8.0F}}),
 		             "matcher receives independent copy of original encodings");
 	}
@@ -467,11 +478,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		ok &= Expect(context.encode_calls == 2 && context.match_calls == 2,
 		             "rejected detection advances to second detection");
 		ok &= Expect(context.encoded_faces.size() == 2 &&
-		                 SameDetection(context.encoded_faces[0], first_detection) &&
-		                 SameDetection(context.encoded_faces[1], second_detection),
+		                 SameDetection(context.encoded_faces.at(0), first_detection) &&
+		                 SameDetection(context.encoded_faces.at(1), second_detection),
 		             "detections are encoded in original order");
 		ok &= Expect(context.received_probes.size() == 2 &&
-		                 context.received_probes[1] == MakeEncoding(0.3F),
+		                 context.received_probes.at(1) == MakeEncoding(0.3F),
 		             "second encoding is passed to second match");
 	}
 

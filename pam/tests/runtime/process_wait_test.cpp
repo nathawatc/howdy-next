@@ -1,6 +1,9 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
+#include "module/auth_flow_test_groups.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_process.hpp"
+#include "support/eintr.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
@@ -10,16 +13,22 @@
 #include <cstdlib>
 #include <limits>
 #include <string>
+
+#include <fcntl.h>
+#include <signal.h>  // IWYU pragma: keep
+#include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/types.h>
 #include <sys/wait.h>
 
-auto RunProcessWaitTests() -> bool;
-
 namespace {
-	using namespace howdy::test::process;
 	using howdy::test::Expect;
 	using howdy::test::ScopedFd;
+	using howdy::test::process::ChildReaped;
+	using howdy::test::process::SpawnBlockedChild;
+	using howdy::test::process::SpawnExitingChild;
+	using howdy::test::process::SpawnSigtermIgnoringChild;
 
 	auto AlwaysCancelCompare(void *context) -> bool {
 		(void)context;
@@ -35,29 +44,28 @@ namespace {
 
 	auto SpawnTerminalBoundaryChild(int *release_fd) -> pid_t {
 		std::array<int, 2> release_pipe = {-1, -1};
-		if (pipe(release_pipe.data()) != 0) {
+		if (pipe2(release_pipe.data(), O_CLOEXEC) != 0) {
 			return -1;
 		}
 
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
-			(void)close(release_pipe[0]);
-			(void)close(release_pipe[1]);
+			(void)close(release_pipe.at(0));
+			(void)close(release_pipe.at(1));
 			return -1;
 		}
 		if (child_pid == 0) {
-			(void)close(release_pipe[1]);
-			char    release = '\0';
-			ssize_t read_result;
-			do {
-				read_result = read(release_pipe[0], &release, sizeof(release));
-			} while (read_result < 0 && errno == EINTR);
-			(void)close(release_pipe[0]);
+			(void)close(release_pipe.at(1));
+			char          release     = '\0';
+			const ssize_t read_result = howdy::native::RetryOnEintr([&] -> ssize_t {
+				return read(release_pipe.at(0), &release, sizeof(release));
+			});
+			(void)close(release_pipe.at(0));
 			_exit(read_result == 1 && release == '1' ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
 
-		(void)close(release_pipe[0]);
-		*release_fd = release_pipe[1];
+		(void)close(release_pipe.at(0));
+		*release_fd = release_pipe.at(1);
 		return child_pid;
 	}
 
@@ -73,12 +81,11 @@ namespace {
 	}
 
 	auto ReleaseTerminalBoundaryChild(void *context) -> bool {
-		auto      &boundary = *static_cast<TerminalBoundaryChild *>(context);
-		const char release  = '1';
-		ssize_t    write_result;
-		do {
-			write_result = write(boundary.release_fd, &release, sizeof(release));
-		} while (write_result < 0 && errno == EINTR);
+		auto         &boundary     = *static_cast<TerminalBoundaryChild *>(context);
+		const char    release      = '1';
+		const ssize_t write_result = howdy::native::RetryOnEintr([&] -> ssize_t {
+			return write(boundary.release_fd, &release, sizeof(release));
+		});
 		if (write_result != 1) {
 			return boundary.cancellation_requested;
 		}
@@ -111,7 +118,7 @@ namespace {
 		                                                             ReleaseTerminalBoundaryChild);
 		const auto expected_exit   = cancellation ? howdy::native::CompareExit::kAbort
 		                                          : howdy::native::CompareExit::kTimeoutReached;
-		const int  expected_status = static_cast<int>(expected_exit) << 8;
+		const int  expected_status = howdy::native::EncodeWaitExitStatus(expected_exit);
 		ok &= Expect(boundary.child_exit_observed,
 		             outcome + " boundary observes child exit before cleanup wait");
 		ok &= Expect(WIFEXITED(status) && status == expected_status,
@@ -164,6 +171,13 @@ namespace {
 
 		ok &= ExpectTerminalOutcomePreserved(false);
 		ok &= ExpectTerminalOutcomePreserved(true);
+
+		const pid_t cleanup_child = SpawnSigtermIgnoringChild();
+		ok &= Expect(cleanup_child > 0, "spawns compare child for noexcept cleanup");
+		if (cleanup_child > 0) {
+			howdy::pam::compare_process::CancelAndReap(cleanup_child);
+			ok &= Expect(ChildReaped(cleanup_child), "noexcept compare cleanup reaps child");
+		}
 
 		const pid_t timed_out_child = SpawnSigtermIgnoringChild();
 		ok &= Expect(timed_out_child > 0, "spawns SIGTERM-resistant compare child");

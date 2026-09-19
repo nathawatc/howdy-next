@@ -2,6 +2,8 @@
 
 #include <unistd.h>
 
+#include <sys/types.h>
+
 extern "C" auto real_initgroups(const char *user, gid_t group) -> int asm("__real_initgroups");
 extern "C" auto wrap_initgroups(const char *user, gid_t group) -> int asm("__wrap_initgroups");
 
@@ -14,7 +16,9 @@ extern "C" auto wrap_initgroups(const char *user, gid_t group) -> int {
 }
 
 auto main() -> int {
-	using namespace howdy::test::config_cli;
+	using howdy::test::config_cli::RunConfigCliCallbackExceptionTest;
+	using howdy::test::config_cli::RunConfigCliIntegrationTests;
+	using howdy::test::config_cli::RunConfigCliWorkflowTests;
 
 	bool ok = true;
 	ok &= RunConfigCliCallbackExceptionTest();

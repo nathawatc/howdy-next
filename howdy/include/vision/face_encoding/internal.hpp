@@ -3,14 +3,16 @@
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
 
+#include <functional>
+
 #include <opencv2/core.hpp>
 
 namespace howdy::native {
 
 	struct FaceAlignmentRequest {
-		const cv::Mat &frame;
-		const cv::Mat &face;
-		cv::Mat       &aligned;
+		std::reference_wrapper<const cv::Mat> frame;
+		std::reference_wrapper<const cv::Mat> face;
+		std::reference_wrapper<cv::Mat>       aligned;
 	};
 
 	using AlignFaceFn          = void (*)(void *context, const FaceAlignmentRequest &request);

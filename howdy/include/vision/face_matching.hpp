@@ -22,7 +22,7 @@ namespace howdy::native {
 		[[nodiscard]] inline auto VectorNorm(const std::vector<float> &values)
 		    -> std::optional<float> {
 			float squared_norm = 0.0F;
-			for (float value : values) {
+			for (float const value : values) {
 				if (!std::isfinite(value)) {
 					return std::nullopt;
 				}
@@ -41,12 +41,13 @@ namespace howdy::native {
 			if (candidate.size() != probe.size()) {
 				return std::nullopt;
 			}
-			float dot = 0.0F;
-			for (std::size_t element = 0; element < probe.size(); ++element) {
-				if (!std::isfinite(candidate[element])) {
+			float dot      = 0.0F;
+			auto  probe_it = probe.cbegin();
+			for (const float candidate_value : candidate) {
+				if (!std::isfinite(candidate_value)) {
 					return std::nullopt;
 				}
-				dot += candidate[element] * probe[element];
+				dot += candidate_value * *probe_it++;
 			}
 			const auto candidate_norm = VectorNorm(candidate);
 			if (!candidate_norm.has_value() || !std::isfinite(dot)) {
@@ -63,13 +64,15 @@ namespace howdy::native {
 			if (!probe_norm.has_value()) {
 				return {.score = -1.0F};
 			}
-			FaceMatch match{.score = -1.0F};
-			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto score = CosineScore(known[index], probe, *probe_norm);
+			FaceMatch   match{.score = -1.0F};
+			std::size_t index = 0;
+			for (const auto &candidate : known) {
+				const auto score = CosineScore(candidate, probe, *probe_norm);
 				if (score.has_value() && (match.index < 0 || *score > match.score)) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
 				}
+				++index;
 			}
 			match.accepted = match.index >= 0 && match.score >= threshold;
 			return match;
@@ -84,9 +87,10 @@ namespace howdy::native {
 			    })) {
 				return std::nullopt;
 			}
-			float sum = 0.0F;
-			for (std::size_t element = 0; element < probe.size(); ++element) {
-				const float delta = candidate[element] - probe[element];
+			float sum      = 0.0F;
+			auto  probe_it = probe.cbegin();
+			for (const float candidate_value : candidate) {
+				const float delta = candidate_value - *probe_it++;
 				sum += delta * delta;
 			}
 			return std::sqrt(sum);
@@ -101,12 +105,14 @@ namespace howdy::native {
 			    })) {
 				return match;
 			}
-			for (std::size_t index = 0; index < known.size(); ++index) {
-				const auto score = DistanceScore(known[index], probe);
+			std::size_t index = 0;
+			for (const auto &candidate : known) {
+				const auto score = DistanceScore(candidate, probe);
 				if (score.has_value() && *score < match.score) {
 					match.index = static_cast<int>(index);
 					match.score = *score;
 				}
+				++index;
 			}
 			match.accepted = match.index >= 0 && match.score <= threshold;
 			return match;

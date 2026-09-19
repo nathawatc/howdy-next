@@ -3,6 +3,8 @@
 #include "runtime/compare_launch.hpp"
 
 #include <chrono>
+#include <span>
+
 #include <spawn.h>
 
 #include <sys/types.h>
@@ -14,8 +16,8 @@ namespace howdy::pam::compare_process {
 		pid_t                            *child_pid = nullptr;
 		const char                       *path      = nullptr;
 		const posix_spawn_file_actions_t *actions   = nullptr;
-		char *const                      *argv      = nullptr;
-		char *const                      *envp      = nullptr;
+		std::span<char *const>            argv;
+		std::span<char *const>            envp;
 	};
 
 	struct Operations {

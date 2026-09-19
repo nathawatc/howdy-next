@@ -1,5 +1,7 @@
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
+#include "support/face_metric.hpp"
 #include "user_model_codec/internal.hpp"
 
 #include <algorithm>
@@ -12,46 +14,68 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
 #include <yyjson.h>
 
 namespace howdy::native::user_model_codec {
 
-	struct Document::Impl {
-		yyjson_doc     *immutable_doc = nullptr;
-		yyjson_mut_doc *mutable_doc   = nullptr;
+	class Document::Impl {
+	public:
+		Impl() = default;
+
+		Impl(const Impl &)                     = delete;
+		auto operator=(const Impl &) -> Impl & = delete;
+		Impl(Impl &&)                          = delete;
+		auto operator=(Impl &&) -> Impl &      = delete;
 
 		~Impl() {
-			yyjson_doc_free(immutable_doc);
-			yyjson_mut_doc_free(mutable_doc);
+			yyjson_doc_free(immutable_doc_);
+			yyjson_mut_doc_free(mutable_doc_);
 		}
 
 		auto EnsureMutable() -> bool {
-			if (mutable_doc != nullptr) {
+			if (mutable_doc_ != nullptr) {
 				return true;
 			}
-			if (immutable_doc != nullptr) {
-				mutable_doc = yyjson_doc_mut_copy(immutable_doc, nullptr);
-				if (mutable_doc == nullptr) {
+			if (immutable_doc_ != nullptr) {
+				mutable_doc_ = yyjson_doc_mut_copy(immutable_doc_, nullptr);
+				if (mutable_doc_ == nullptr) {
 					return false;
 				}
-				yyjson_doc_free(immutable_doc);
-				immutable_doc = nullptr;
+				yyjson_doc_free(immutable_doc_);
+				immutable_doc_ = nullptr;
 				return true;
 			}
 
-			mutable_doc = yyjson_mut_doc_new(nullptr);
-			if (mutable_doc == nullptr) {
+			mutable_doc_ = yyjson_mut_doc_new(nullptr);
+			if (mutable_doc_ == nullptr) {
 				return false;
 			}
-			auto *root = yyjson_mut_arr(mutable_doc);
+			auto *root = yyjson_mut_arr(mutable_doc_);
 			if (root == nullptr) {
-				yyjson_mut_doc_free(mutable_doc);
-				mutable_doc = nullptr;
+				yyjson_mut_doc_free(mutable_doc_);
+				mutable_doc_ = nullptr;
 				return false;
 			}
-			yyjson_mut_doc_set_root(mutable_doc, root);
+			yyjson_mut_doc_set_root(mutable_doc_, root);
 			return true;
 		}
+
+		void AdoptImmutable(yyjson_doc *immutable_doc) noexcept {
+			immutable_doc_ = immutable_doc;
+		}
+
+		[[nodiscard]] auto Immutable() const noexcept -> yyjson_doc * {
+			return immutable_doc_;
+		}
+
+		[[nodiscard]] auto Mutable() const noexcept -> yyjson_mut_doc * {
+			return mutable_doc_;
+		}
+
+	private:
+		yyjson_doc     *immutable_doc_ = nullptr;
+		yyjson_mut_doc *mutable_doc_   = nullptr;
 	};
 
 	namespace {
@@ -116,10 +140,10 @@ namespace howdy::native::user_model_codec {
 	Document::Document() = default;
 
 	Document::Document(UserModelListResult result_value)
-	    : result(std::move(result_value)) {}
+	    : result_(std::move(result_value)) {}
 
 	Document::Document(UserModelListResult result_value, std::unique_ptr<Impl> impl)
-	    : result(std::move(result_value))
+	    : result_(std::move(result_value))
 	    , impl_(std::move(impl)) {}
 
 	Document::~Document()                                        = default;
@@ -138,8 +162,8 @@ namespace howdy::native::user_model_codec {
 		std::unique_ptr<yyjson_doc, decltype(&yyjson_doc_free)> doc_owner(decoded.doc,
 		                                                                  yyjson_doc_free);
 		try {
-			auto impl           = std::make_unique<Document::Impl>();
-			impl->immutable_doc = doc_owner.release();
+			auto impl = std::make_unique<Document::Impl>();
+			impl->AdoptImmutable(doc_owner.release());
 			return {std::move(decoded.result), std::move(impl)};
 		} catch (const std::bad_alloc &) {
 			return Document{
@@ -158,11 +182,11 @@ namespace howdy::native::user_model_codec {
 		if (!document.impl_->EnsureMutable()) {
 			return false;
 		}
-		auto *root = yyjson_mut_doc_get_root(document.impl_->mutable_doc);
+		auto *root = yyjson_mut_doc_get_root(document.impl_->Mutable());
 		if (!yyjson_mut_is_arr(root)) {
 			return false;
 		}
-		auto *model = AddEntryValue(document.impl_->mutable_doc, entry);
+		auto *model = AddEntryValue(document.impl_->Mutable(), entry);
 		return model != nullptr && yyjson_mut_arr_append(root, model);
 	}
 
@@ -170,7 +194,7 @@ namespace howdy::native::user_model_codec {
 		if (document.impl_ == nullptr || !document.impl_->EnsureMutable()) {
 			return false;
 		}
-		auto *root = yyjson_mut_doc_get_root(document.impl_->mutable_doc);
+		auto *root = yyjson_mut_doc_get_root(document.impl_->Mutable());
 		return yyjson_mut_arr_remove(root, index) != nullptr;
 	}
 
@@ -178,11 +202,11 @@ namespace howdy::native::user_model_codec {
 		if (document.impl_ == nullptr) {
 			return true;
 		}
-		if (document.impl_->mutable_doc != nullptr) {
-			return yyjson_mut_arr_size(yyjson_mut_doc_get_root(document.impl_->mutable_doc)) == 0;
+		if (document.impl_->Mutable() != nullptr) {
+			return yyjson_mut_arr_size(yyjson_mut_doc_get_root(document.impl_->Mutable())) == 0;
 		}
-		if (document.impl_->immutable_doc != nullptr) {
-			return yyjson_arr_size(yyjson_doc_get_root(document.impl_->immutable_doc)) == 0;
+		if (document.impl_->Immutable() != nullptr) {
+			return yyjson_arr_size(yyjson_doc_get_root(document.impl_->Immutable())) == 0;
 		}
 		return true;
 	}
@@ -194,11 +218,11 @@ namespace howdy::native::user_model_codec {
 
 		size_t output_size = 0;
 		char  *output      = nullptr;
-		if (document.impl_->mutable_doc != nullptr) {
-			output = yyjson_mut_write_opts(document.impl_->mutable_doc, YYJSON_WRITE_NOFLAG,
-			                               nullptr, &output_size, nullptr);
-		} else if (document.impl_->immutable_doc != nullptr) {
-			output = yyjson_write_opts(document.impl_->immutable_doc, YYJSON_WRITE_NOFLAG, nullptr,
+		if (document.impl_->Mutable() != nullptr) {
+			output = yyjson_mut_write_opts(document.impl_->Mutable(), YYJSON_WRITE_NOFLAG, nullptr,
+			                               &output_size, nullptr);
+		} else if (document.impl_->Immutable() != nullptr) {
+			output = yyjson_write_opts(document.impl_->Immutable(), YYJSON_WRITE_NOFLAG, nullptr,
 			                           &output_size, nullptr);
 		}
 		if (output == nullptr) {

@@ -2,13 +2,17 @@
 #include "../../src/config/config_validation/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
+#include "support/file_security.hpp"
 #include "test_support.hpp"
 
 #include <clocale>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
+
+#include <stdlib.h>
 
 namespace howdy::test {
 	namespace {
@@ -105,7 +109,8 @@ namespace howdy::test {
 			RestoreEnvValue("LC_NUMERIC", previous_lc_numeric);
 			RestoreEnvValue("LANG", previous_lang);
 			if (previous_locale.has_value()) {
-				std::setlocale(LC_ALL, previous_locale->c_str());
+				ok &= Expect(std::setlocale(LC_ALL, previous_locale->c_str()) != nullptr,
+				             "restore original locale");
 			}
 			return ok;
 		}
@@ -113,7 +118,6 @@ namespace howdy::test {
 	}  // namespace
 
 	auto RunConfigReadUpdateTests(ConfigUtilsTestContext &context) -> bool {
-		namespace fs = std::filesystem;
 		using howdy::test::Expect;
 		bool ok = true;
 		ok &= Expect(WriteConfigTestFile(context.config_path, "[core]\n"
@@ -248,7 +252,7 @@ namespace howdy::test {
 		                                       "disabled backup = false\n"
 		                                       "disabled = true\n",
 		             "unrelated and similarly named options remain unchanged");
-		howdy::native::ConfigReader duplicate_name_reader(duplicate_name_path.string());
+		howdy::native::ConfigReader const duplicate_name_reader(duplicate_name_path.string());
 		ok &= Expect(duplicate_name_reader.Ok() &&
 		                 duplicate_name_reader.GetBool("core", "disabled", false),
 		             "updated file has effective core.disabled value");
@@ -259,7 +263,7 @@ namespace howdy::test {
 		                                             "disabled = false\n";
 		ok &= Expect(WriteConfigTestFile(duplicate_target_path, duplicate_target_content),
 		             "write duplicate target option");
-		howdy::native::ConfigReader duplicate_target_reader(duplicate_target_path.string());
+		howdy::native::ConfigReader const duplicate_target_reader(duplicate_target_path.string());
 		ok &= Expect(duplicate_target_reader.Ok() &&
 		                 !duplicate_target_reader.GetBool("core", "disabled", true),
 		             "duplicate target fixture has effective false value before update");
@@ -308,7 +312,7 @@ namespace howdy::test {
 		const auto after_disable_recovery = ReadConfigTestFile(context.config_path);
 		ok &= Expect(after_disable_recovery.contains("disabled = true\n"),
 		             "recovery write updates disabled key");
-		howdy::native::ConfigReader still_invalid(context.config_path.string());
+		howdy::native::ConfigReader const still_invalid(context.config_path.string());
 		ok &= Expect(still_invalid.Ok(), "recovery-write config still parses");
 		ok &= Expect(howdy::native::ValidateRuntimeConfig(still_invalid).has_value(),
 		             "recovery write does not mask unrelated invalid config values");

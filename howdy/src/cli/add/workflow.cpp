@@ -1,5 +1,7 @@
+#include "app/command_invocation.hpp"
 #include "cli/add/enrollment_capture.hpp"
 #include "cli/add/internal.hpp"
+#include "compare/logic.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"

@@ -20,15 +20,20 @@ namespace howdy::native::config_utils_internal {
 	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
 	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
 
-	struct __attribute__((visibility("hidden"))) ConfigLockGuard {
-		ScopedFd fd;
-
+	class __attribute__((visibility("hidden"))) ConfigLockGuard {
+	public:
 		ConfigLockGuard() = default;
 		~ConfigLockGuard();
 		ConfigLockGuard(const ConfigLockGuard &)                     = delete;
 		auto operator=(const ConfigLockGuard &) -> ConfigLockGuard & = delete;
 		ConfigLockGuard(ConfigLockGuard &&other) noexcept;
 		auto operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard &;
+
+	private:
+		ScopedFd fd_;
+
+		friend auto AcquireConfigLock(ConfigLockGuard             &guard,
+		                              const std::filesystem::path &config_path) -> bool;
 	};
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
@@ -52,9 +57,9 @@ namespace howdy::native::config_utils_internal {
 	    -> ConfigInstallResult;
 
 	struct ConfigLineReplacement {
-		std::string_view   section;
-		const std::string &key;
-		const std::string &value;
+		std::string_view section;
+		std::string_view key;
+		std::string_view value;
 	};
 
 	enum class ConfigLineReplaceResult : std::uint8_t {

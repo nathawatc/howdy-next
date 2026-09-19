@@ -2,8 +2,13 @@
 #include "vision/face_detection.hpp"
 
 #include <array>
+#include <cstddef>
 #include <limits>
 #include <string>
+
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 namespace {
 
@@ -39,23 +44,25 @@ auto main() -> int {
 	bool ok = true;
 
 	const auto empty = howdy::native::ParseYunetDetections(cv::Mat{});
-	ok &=
-	    Expect(empty.Ok() && empty.detections.empty(), "empty output succeeds without detections");
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(empty) && empty.detections.empty(),
+	             "empty output succeeds without detections");
 	const auto canonical_typed_empty = howdy::native::ParseYunetDetections(cv::Mat(0, 0, CV_32FC1));
-	ok &= Expect(canonical_typed_empty.Ok() && canonical_typed_empty.detections.empty(),
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(canonical_typed_empty) &&
+	                 canonical_typed_empty.detections.empty(),
 	             "canonical typed empty output succeeds without detections");
 	const auto zero_rows = howdy::native::ParseYunetDetections(cv::Mat(0, 15, CV_32FC1));
-	ok &= Expect(zero_rows.Ok() && zero_rows.detections.empty(),
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(zero_rows) && zero_rows.detections.empty(),
 	             "valid zero-row output succeeds without detections");
 
 	const auto one = howdy::native::ParseYunetDetections(ValidRows());
-	ok &= Expect(one.Ok() && one.detections.size() == 1, "valid row succeeds");
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(one) && one.detections.size() == 1,
+	             "valid row succeeds");
 	if (one.detections.size() == 1) {
 		const auto &face = one.detections.front();
 		ok &= Expect(face.box == cv::Rect2f(1.0F, 2.0F, 3.0F, 4.0F), "box maps exactly");
 		for (std::size_t index = 0; index < face.landmarks.size(); ++index) {
 			const auto value = static_cast<float>(5 + (index * 2));
-			ok &= Expect(face.landmarks[index] == cv::Point2f(value, value + 1.0F),
+			ok &= Expect(face.landmarks.at(index) == cv::Point2f(value, value + 1.0F),
 			             "landmark maps exactly");
 		}
 		ok &= Expect(face.confidence == 15.0F, "confidence maps exactly");
@@ -66,7 +73,8 @@ auto main() -> int {
 	fractional_row.at<float>(0, 2) = 1.9F;
 	fractional_row.at<float>(0, 3) = 1.2F;
 	const auto fractional          = howdy::native::ParseYunetDetections(fractional_row);
-	ok &= Expect(fractional.Ok() && fractional.detections.size() == 1,
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(fractional) &&
+	                 fractional.detections.size() == 1,
 	             "renderable fractional box succeeds");
 	if (fractional.detections.size() == 1) {
 		ok &= Expect(fractional.detections.front().box == cv::Rect2f(1.75F, 2.75F, 1.9F, 1.2F),
@@ -74,9 +82,11 @@ auto main() -> int {
 	}
 
 	const auto multiple = howdy::native::ParseYunetDetections(ValidRows(2));
-	ok &= Expect(multiple.Ok() && multiple.detections.size() == 2, "multiple rows succeed");
+	ok &= Expect(howdy::native::FaceDetectionSucceeded(multiple) && multiple.detections.size() == 2,
+	             "multiple rows succeed");
 	if (multiple.detections.size() == 2) {
-		ok &= Expect(multiple.detections[0].box.x == 1.0F && multiple.detections[1].box.x == 101.0F,
+		ok &= Expect(multiple.detections.at(0).box.x == 1.0F &&
+		                 multiple.detections.at(1).box.x == 101.0F,
 		             "row order is preserved");
 	}
 

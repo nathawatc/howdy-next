@@ -2,17 +2,25 @@
 
 #include "config/config_schema.hpp"
 #include "config/config_utils.hpp"
+#include "config/runtime_config.hpp"
 #include "config/test_hooks.hpp"
 #include "config_reader/internal.hpp"
 #include "config_validation/internal.hpp"
 #include "runtime_config_loader/internal.hpp"
-#include "support/atomic_files.hpp"
+#include "support/error_message.hpp"
+#include "support/face_metric.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cerrno>
-#include <cstring>
-#include <fcntl.h>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <utility>
+
+#include <fcntl.h>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 
@@ -116,7 +124,8 @@ namespace howdy::native {
 			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
 			    config_path,
 			    "Failed to inspect Config file: " + config_path.string() + " (" +
-			        std::strerror(open_error) + ")" + ConfigAccessErrorHint(open_error),
+			        howdy::native::SystemErrorMessage(open_error) + ")" +
+			        ConfigAccessErrorHint(open_error),
 			    open_error);
 		}
 		ScopedFd fd(opened_fd);

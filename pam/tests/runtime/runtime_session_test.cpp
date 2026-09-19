@@ -1,3 +1,5 @@
+#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/runtime_session.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
@@ -8,16 +10,16 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
-#include <paths.hpp>
-#include <spawn.h>
+#include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <vector>
 
-#include <sys/wait.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <sys/types.h>
 
 namespace {
 
@@ -65,9 +67,13 @@ namespace {
 		std::size_t load          = 0;
 		std::size_t prepare       = 0;
 		int         effective_uid = 0;
-
-		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
+
+	[[nodiscard]] auto SameCallbackCounts(const CallbackCounts &lhs, const CallbackCounts &rhs)
+	    -> bool {
+		return lhs.load == rhs.load && lhs.prepare == rhs.prepare &&
+		       lhs.effective_uid == rhs.effective_uid;
+	}
 
 	auto SuccessResult(const std::filesystem::path &path)
 	    -> howdy::native::RuntimeConfigLoadResult {
@@ -108,12 +114,12 @@ namespace {
 		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
 			return false;
 		}
-		(void)close(lease_pipe[1]);
+		(void)close(lease_pipe.at(1));
 		prepared->root_dir        = fake.prepared.root_dir;
 		prepared->config_path     = fake.prepared.config_path;
 		prepared->user_models_dir = fake.prepared.user_models_dir;
-		prepared->lease_fd        = howdy::native::ScopedFd(lease_pipe[0]);
-		fake.issued_lease_fds.push_back(lease_pipe[0]);
+		prepared->lease_fd        = howdy::native::ScopedFd(lease_pipe.at(0));
+		fake.issued_lease_fds.push_back(lease_pipe.at(0));
 		return true;
 	}
 
@@ -125,7 +131,7 @@ namespace {
 		if (result_index >= fake.load_results.size()) {
 			return ParseErrorResult(config_path);
 		}
-		return fake.load_results[result_index];
+		return fake.load_results.at(result_index);
 	}
 
 	auto EffectiveUid(void *context) -> uid_t {
@@ -172,7 +178,8 @@ namespace {
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
 			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
-			ok &= Expect(result.Ok(), "direct success returns ok");
+			ok &= Expect(howdy::pam::RuntimeSessionLoadSucceeded(result),
+			             "direct success returns ok");
 			ok &=
 			    Expect(context.load_paths == std::vector<std::filesystem::path>{kConfiguredConfig},
 			           "direct success loads configured path once");
@@ -241,7 +248,8 @@ namespace {
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
 			                                   Operations(&context));
 			const auto                 result = session.LoadForUser("alice");
-			ok &= Expect(result.Ok(), "staged config success returns ok");
+			ok &= Expect(howdy::pam::RuntimeSessionLoadSucceeded(result),
+			             "staged config success returns ok");
 			ok &= Expect(context.load_paths ==
 			                 std::vector<std::filesystem::path>{kConfiguredConfig,
 			                                                    staged_runtime.config_path},
@@ -325,7 +333,7 @@ namespace {
 		{
 			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
 			                                   Operations(&context));
-			if (!Expect(session.LoadForUser("alice").Ok(),
+			if (!Expect(howdy::pam::RuntimeSessionLoadSucceeded(session.LoadForUser("alice")),
 			            "duplicate-cleanup setup stages successfully")) {
 				return false;
 			}
@@ -347,8 +355,9 @@ namespace {
 			const auto second = session.LoadForUser("bob");
 			ok &= Expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "direct one-shot rejects second load");
-			ok &= Expect(!second.Ok(), "already-loaded direct result is not ok");
-			ok &= Expect(GetCallbackCounts(context) == counts_after_first,
+			ok &= Expect(!howdy::pam::RuntimeSessionLoadSucceeded(second),
+			             "already-loaded direct result is not ok");
+			ok &= Expect(SameCallbackCounts(GetCallbackCounts(context), counts_after_first),
 			             "direct re-entry invokes no callbacks");
 			ok &= Expect(session.ConfigPath() == kConfiguredConfig,
 			             "direct re-entry preserves configured config path");
@@ -381,7 +390,7 @@ namespace {
 			const auto second = session.LoadForUser("bob");
 			ok &= Expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "staged one-shot rejects second load");
-			ok &= Expect(GetCallbackCounts(context) == counts_after_first,
+			ok &= Expect(SameCallbackCounts(GetCallbackCounts(context), counts_after_first),
 			             "staged re-entry invokes no callbacks");
 			ok &= Expect(session.ConfigPath() == runtime.config_path,
 			             "staged re-entry preserves runtime-a config");
@@ -414,7 +423,7 @@ namespace {
 			const auto second = session.LoadForUser("bob");
 			ok &= Expect(second.status == howdy::pam::RuntimeSessionLoadStatus::kAlreadyLoaded,
 			             "failed staged one-shot rejects second load");
-			ok &= Expect(GetCallbackCounts(context) == counts_after_first,
+			ok &= Expect(SameCallbackCounts(GetCallbackCounts(context), counts_after_first),
 			             "failed staged re-entry invokes no callbacks");
 			ok &= Expect(IssuedLeaseHasState(context, true),
 			             "failed staged re-entry retains original lease");
@@ -523,7 +532,9 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc == 2 && std::string_view(argv[1]) == "--stalled-helper") {
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	if (arguments.size() == 2 && std::string_view(arguments.back()) == "--stalled-helper") {
 		(void)signal(SIGTERM, SIG_IGN);
 		if (write(STDIN_FILENO, "R", 1) != 1) {
 			return EXIT_FAILURE;
@@ -532,8 +543,8 @@ auto main(int argc, char **argv) -> int {
 			pause();
 		}
 	}
-	if (argc == 3 && std::string_view(argv[1]) == "--fd3-probe") {
-		return RunRuntimeSessionFd3Probe(argv[2]);
+	if (arguments.size() == 3 && std::string_view(arguments.subspan(1).front()) == "--fd3-probe") {
+		return RunRuntimeSessionFd3Probe(arguments.back());
 	}
 
 	bool ok = true;

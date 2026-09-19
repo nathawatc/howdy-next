@@ -1,9 +1,13 @@
+#include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cstdlib>
 #include <filesystem>
+#include <system_error>
+
+#include <sys/stat.h>
 
 namespace howdy::test::download_models {
 
@@ -22,9 +26,9 @@ namespace howdy::test::download_models {
 		fs::create_directories(matching_models_dir, ec);
 		ok &= Expect(!ec && WriteFile(matching_model, kTestModelContent),
 		             "create matching installed test model");
-		int matching_exit  = 0;
-		download_succeeds  = true;
-		downloaded_content = kTestModelContent;
+		int matching_exit                      = 0;
+		DependenciesState().download_succeeds  = true;
+		DependenciesState().downloaded_content = kTestModelContent;
 		ok &= Expect(RunTestDownload({.models_dir = matching_models_dir, .output = matching_output},
 		                             &matching_exit, test_models, SuccessfulFakeDownloadFile),
 		             "run matching installed model");
@@ -48,8 +52,8 @@ namespace howdy::test::download_models {
 		                 !existing_hash_failure_stdout.contains("Replacing invalid model"),
 		             "existing-model hash failure reports operation failure only");
 
-		failing_fstat_attempt           = 1;
-		int existing_fstat_failure_exit = 0;
+		DependenciesState().failing_fstat_attempt = 1;
+		int existing_fstat_failure_exit           = 0;
 		ok &= Expect(RunTestDownload({.models_dir = matching_models_dir, .output = matching_output},
 		                             &existing_fstat_failure_exit, test_models,
 		                             SuccessfulFakeDownloadFile,
@@ -114,8 +118,8 @@ namespace howdy::test::download_models {
 
 		ok &= Expect(WriteFile(replacement_model, "old destination"),
 		             "create replacement destination");
-		downloaded_content       = "small test modeL";
-		int staged_mismatch_exit = 0;
+		DependenciesState().downloaded_content = "small test modeL";
+		int staged_mismatch_exit               = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
 		                    &staged_mismatch_exit, test_models, SuccessfulFakeDownloadFile),
@@ -130,8 +134,8 @@ namespace howdy::test::download_models {
 
 		ok &= Expect(WriteFile(replacement_model, "old destination"),
 		             "restore destination for staged size mismatch");
-		downloaded_content   = "short";
-		int staged_size_exit = 0;
+		DependenciesState().downloaded_content = "short";
+		int staged_size_exit                   = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
 		                    &staged_size_exit, test_models, SuccessfulFakeDownloadFile),
@@ -147,9 +151,9 @@ namespace howdy::test::download_models {
 
 		ok &= Expect(WriteFile(replacement_model, "small test modeL"),
 		             "restore same-size invalid destination for staged fstat failure");
-		downloaded_content    = kTestModelContent;
-		failing_fstat_attempt = 2;
-		int staged_fstat_exit = 0;
+		DependenciesState().downloaded_content    = kTestModelContent;
+		DependenciesState().failing_fstat_attempt = 2;
+		int staged_fstat_exit                     = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
 		                    &staged_fstat_exit, test_models, SuccessfulFakeDownloadFile,
@@ -172,8 +176,8 @@ namespace howdy::test::download_models {
 
 		ok &= Expect(WriteFile(replacement_model, "old destination"),
 		             "restore destination for hash read failure");
-		int hash_read_failure_exit = 0;
-		downloaded_content         = kTestModelContent;
+		int hash_read_failure_exit             = 0;
+		DependenciesState().downloaded_content = kTestModelContent;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
 		                    &hash_read_failure_exit, test_models, SuccessfulFakeDownloadFile,
@@ -202,8 +206,8 @@ namespace howdy::test::download_models {
 		ok &= Expect(insecure_exit == EXIT_FAILURE && AttemptedDownloads() == 0,
 		             "insecure installed model aborts before download");
 
-		downloaded_content = kTestModelContent;
-		int installed_exit = 0;
+		DependenciesState().downloaded_content = kTestModelContent;
+		int installed_exit                     = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
 		                    &installed_exit, test_models, SuccessfulFakeDownloadFile),

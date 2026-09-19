@@ -8,19 +8,25 @@
 #include "paths.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_launch.hpp"
+#include "support/error_message.hpp"
+#include "support/process_status.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
-#include <csignal>
-#include <cstring>
 #include <optional>
-#include <spawn.h>
+#include <span>
 #include <string>
-#include <syslog.h>
 #include <thread>
 
+#include <signal.h>
+#include <spawn.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/syslog.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
@@ -34,7 +40,7 @@ namespace {
 	using howdy::native::CompareExit;
 
 	auto MakeCompareWaitExitStatus(CompareExit exit_code) -> int {
-		return static_cast<int>(exit_code) << 8;
+		return howdy::native::EncodeWaitExitStatus(exit_code);
 	}
 
 	auto TryWaitForCompare(pid_t child_pid, int *status) -> bool {
@@ -49,7 +55,9 @@ namespace {
 			if (errno == EINTR) {
 				continue;
 			}
-			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)", strerror(errno), errno);
+			const int error_number = errno;
+			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)",
+			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
 			return true;
 		}
@@ -100,9 +108,12 @@ namespace {
 		if (TryWaitForCompare(child_pid, &status)) {
 			return terminal_status;
 		}
-		if (kill(child_pid, SIGTERM) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)", strerror(errno),
-			       errno);
+		if (kill(child_pid, SIGTERM) != 0) {
+			const int error_number = errno;
+			if (error_number != ESRCH) {
+				syslog(LOG_WARNING, "Failed to terminate compare process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			}
 		}
 
 		bool ignored_cancellation = false;
@@ -111,9 +122,12 @@ namespace {
 		        .has_value()) {
 			return terminal_status;
 		}
-		if (kill(child_pid, SIGKILL) != 0 && errno != ESRCH) {
-			syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
-			       strerror(errno), errno);
+		if (kill(child_pid, SIGKILL) != 0) {
+			const int error_number = errno;
+			if (error_number != ESRCH) {
+				syslog(LOG_WARNING, "Failed to kill timed-out compare process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			}
 		}
 
 		while (true) {
@@ -126,8 +140,9 @@ namespace {
 				continue;
 			}
 			if (result < 0 && errno != ECHILD) {
+				const int error_number = errno;
 				syslog(LOG_ERR, "waitpid failed while reaping timed-out compare process: %s (%d)",
-				       strerror(errno), errno);
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			}
 			return terminal_status;
 		}
@@ -152,8 +167,8 @@ namespace {
 
 	auto CallPosixSpawn(const CompareSpawnRequest &request) -> int {
 		(void)request.context;
-		return posix_spawn(request.child_pid, request.path, request.actions, nullptr, request.argv,
-		                   request.envp);
+		return posix_spawn(request.child_pid, request.path, request.actions, nullptr,
+		                   request.argv.data(), request.envp.data());
 	}
 
 	constexpr CompareOperations kPosixSpawnOperations = {
@@ -166,29 +181,28 @@ namespace {
 
 	auto SpawnCompareProcess(const howdy::pam::CompareLaunchRequest &request, pid_t *child_pid,
 	                         const CompareOperations &operations) -> int {
-		const std::string config_path(request.config_path);
-		const std::string username(request.username);
+		std::string compare_path(kCompareProcessPath);
+		std::string config_option(howdy::native::kCompareConfigOption);
+		std::string config_path(request.config_path);
+		std::string username(request.username);
 
-		std::array<char *, 5> args = {
-		    const_cast<char *>(kCompareProcessPath),
-		    const_cast<char *>(howdy::native::kCompareConfigOption),
-		    const_cast<char *>(config_path.data()),
-		    const_cast<char *>(username.data()),
-		    nullptr,
-		};
+		std::array<char *, 5> args = {compare_path.data(), config_option.data(), config_path.data(),
+		                              username.data(), nullptr};
 
-		const std::string user_models_env =
+		std::string user_models_env =
 		    "HOWDY_USER_MODELS_DIR=" + std::string(request.user_models_dir);
 
 		std::array<char *, 2> runtime_env = {
-		    const_cast<char *>(user_models_env.data()),
+		    user_models_env.data(),
 		    nullptr,
 		};
 		std::array<char *, 1> empty_env = {
 		    nullptr,
 		};
 
-		char **compare_env = request.staged_runtime ? runtime_env.data() : empty_env.data();
+		const std::span<char *const> compare_env = request.staged_runtime
+		                                               ? std::span<char *const>(runtime_env)
+		                                               : std::span<char *const>(empty_env);
 
 		posix_spawn_file_actions_t file_actions;
 		const int init_result = operations.file_actions_init(operations.context, &file_actions);
@@ -207,7 +221,7 @@ namespace {
 		                                           .child_pid = child_pid,
 		                                           .path      = kCompareProcessPath,
 		                                           .actions   = &file_actions,
-		                                           .argv      = args.data(),
+		                                           .argv      = args,
 		                                           .envp      = compare_env});
 		(void)operations.file_actions_destroy(operations.context, &file_actions);
 		return spawn_result;
@@ -250,7 +264,15 @@ namespace howdy::pam::compare_process {
 	}
 
 	void CancelAndReap(pid_t child_pid) noexcept {
-		(void)WaitForCompareProcess(child_pid, std::chrono::steady_clock::now(), nullptr, nullptr);
+		try {
+			(void)WaitForCompareProcess(child_pid, std::chrono::steady_clock::now(), nullptr,
+			                            nullptr);
+		} catch (...) {
+			(void)kill(child_pid, SIGKILL);
+			int status = 0;
+			while (waitpid(child_pid, &status, 0) < 0 && errno == EINTR) {
+			}
+		}
 	}
 
 }  // namespace howdy::pam::compare_process

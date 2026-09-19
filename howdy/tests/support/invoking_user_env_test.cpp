@@ -1,3 +1,4 @@
+#include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
 #include "test_support.hpp"
 
@@ -9,13 +10,16 @@
 #include <fstream>
 #include <limits>
 #include <optional>
-#include <pwd.h>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
 
+#include <pwd.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -41,7 +45,7 @@ namespace {
 
 	auto CurrentPasswdFixture() -> std::optional<PasswdFixture> {
 		const passwd *pwd = getpwuid(getuid());
-		if (pwd == nullptr || pwd->pw_name == nullptr || pwd->pw_name[0] == '\0') {
+		if (pwd == nullptr || pwd->pw_name == nullptr || std::string_view(pwd->pw_name).empty()) {
 			return std::nullopt;
 		}
 		return PasswdFixture{
@@ -55,14 +59,17 @@ namespace {
 
 	class ScopedWrapperEnvironment {
 	public:
+		ScopedWrapperEnvironment(ScopedWrapperEnvironment &&)                     = delete;
+		auto operator=(ScopedWrapperEnvironment &&) -> ScopedWrapperEnvironment & = delete;
+
 		ScopedWrapperEnvironment()
 		    : original_{} {
 			for (std::size_t index = 0; index < kNames.size(); ++index) {
-				if (const char *value = std::getenv(kNames[index]); value != nullptr) {
-					original_[index]     = value;
-					had_original_[index] = true;
+				if (const char *value = std::getenv(kNames.at(index)); value != nullptr) {
+					original_.at(index)     = value;
+					had_original_.at(index) = true;
 				}
-				(void)unsetenv(kNames[index]);
+				(void)unsetenv(kNames.at(index));
 			}
 		}
 
@@ -71,10 +78,10 @@ namespace {
 
 		~ScopedWrapperEnvironment() noexcept {
 			for (std::size_t index = 0; index < kNames.size(); ++index) {
-				if (had_original_[index]) {
-					(void)setenv(kNames[index], original_[index].c_str(), 1);
+				if (had_original_.at(index)) {
+					(void)setenv(kNames.at(index), original_.at(index).c_str(), 1);
 				} else {
-					(void)unsetenv(kNames[index]);
+					(void)unsetenv(kNames.at(index));
 				}
 			}
 		}
@@ -116,9 +123,9 @@ namespace {
 			return Expect(false, "resolver obtains a passwd fixture");
 		}
 
-		ScopedWrapperEnvironment environment;
-		bool                     ok   = true;
-		const auto              &user = *fixture;
+		ScopedWrapperEnvironment const environment;
+		bool                           ok   = true;
+		const auto                    &user = *fixture;
 
 		ScopedWrapperEnvironment::Clear();
 		const auto no_wrapper = howdy::native::ResolveInvokingIdentity();
@@ -249,8 +256,8 @@ auto main() -> int {
 	ok &= Expect(std::getenv("WAYLAND_SOCKET") == nullptr,
 	             "stale Wayland socket is cleared during GUI environment preparation");
 
-	auto  runtime_template = std::to_array("/tmp/howdy-wayland-runtime-XXXXXX");
-	char *runtime_path     = mkdtemp(runtime_template.data());
+	auto        runtime_template = std::to_array("/tmp/howdy-wayland-runtime-XXXXXX");
+	char const *runtime_path     = mkdtemp(runtime_template.data());
 	ok &= Expect(runtime_path != nullptr, "Wayland discovery test creates runtime directory");
 	if (runtime_path != nullptr) {
 		const std::filesystem::path runtime_dir(runtime_path);

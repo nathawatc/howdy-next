@@ -1,6 +1,10 @@
 #include "module/pam_option_catalog.hpp"
 
+#include "prompt/workaround.hpp"
+
 #include <array>
+#include <span>
+#include <string_view>
 
 namespace howdy::pam {
 

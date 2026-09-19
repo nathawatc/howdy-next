@@ -1,31 +1,47 @@
+#include "config/runtime_config_loader.hpp"
+#include "module/auth_flow_test_groups.hpp"
 #include "module/auth_flow_test_support.hpp"
 #include "module/entrypoint.hpp"
+#include "module/pam_options.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
+#include "protocol/compare_exit.hpp"
+#include "runtime/lid_probe.hpp"
+#include "storage/user_model_status.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <clocale>
 #include <cstdlib>
-#include <libintl.h>
 #include <optional>
 #include <string>
-#include <unistd.h>
 
+#include <libintl.h>
+#include <signal.h>
+#include <stdlib.h>
+
+#include <sys/types.h>
 #include <sys/wait.h>
 
-auto RunAuthFlowIntegrationTests() -> bool;
-
 namespace {
-	using namespace howdy::test::auth_flow;
-	using namespace howdy::test::process;
+	using howdy::test::auth_flow::ConversationState;
+	using howdy::test::auth_flow::EligibilityFlowFixture;
+	using howdy::test::auth_flow::IdentifyForTest;
+	using howdy::test::auth_flow::ScopedPamHandle;
+	using howdy::test::auth_flow::TestConversation;
+	using howdy::test::process::SpawnBlockedChild;
+	using howdy::test::process::SpawnExitingChild;
 
 	using howdy::pam::RunAuthenticationEntrypoint;
 	using howdy::test::Expect;
 
 	class ScopedEnv {
 	public:
+		ScopedEnv(ScopedEnv &&)                     = delete;
+		auto operator=(ScopedEnv &&) -> ScopedEnv & = delete;
+
 		explicit ScopedEnv(const char *name)
 		    : name_(name) {
 			const char *value = getenv(name_.c_str());
@@ -54,7 +70,7 @@ namespace {
 		EligibilityFlowFixture fixture;
 		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
-		struct pam_conv        conversation{
+		struct pam_conv const  conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -101,7 +117,7 @@ namespace {
 		EligibilityFlowFixture fixture;
 		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
-		struct pam_conv        conversation{
+		struct pam_conv const  conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -155,8 +171,8 @@ namespace {
 		EligibilityFlowFixture fixture;
 		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 
-		ConversationState state;
-		struct pam_conv   conversation{
+		ConversationState     state;
+		struct pam_conv const conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -168,7 +184,7 @@ namespace {
 			return false;
 		}
 
-		ScopedEnv         lc_all("LC_ALL");
+		ScopedEnv const   lc_all("LC_ALL");
 		const char       *initial_locale_ptr = std::setlocale(LC_ALL, nullptr);
 		const std::string initial_locale = initial_locale_ptr == nullptr ? "" : initial_locale_ptr;
 		const char       *initial_domain_ptr = textdomain(nullptr);
@@ -181,7 +197,7 @@ namespace {
 		if (locale_available) {
 			setenv("LC_ALL", host_environment_locale, 1);
 		}
-		std::setlocale(LC_ALL, "C");
+		ok &= Expect(std::setlocale(LC_ALL, "C") != nullptr, "locale integration enters C locale");
 		textdomain("pam-host-test-domain");
 		const std::string host_locale = std::setlocale(LC_ALL, nullptr);
 		const std::string host_domain = textdomain(nullptr);
@@ -225,7 +241,8 @@ namespace {
 			textdomain(initial_domain.c_str());
 		}
 		if (!initial_locale.empty()) {
-			std::setlocale(LC_ALL, initial_locale.c_str());
+			ok &= Expect(std::setlocale(LC_ALL, initial_locale.c_str()) != nullptr,
+			             "locale integration restores initial locale");
 		}
 		return ok;
 	}
@@ -234,8 +251,8 @@ namespace {
 		EligibilityFlowFixture fixture;
 		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 
-		ConversationState state;
-		struct pam_conv   conversation{
+		ConversationState     state;
+		struct pam_conv const conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -403,8 +420,8 @@ namespace {
 			dependencies.prompt_coordinator =
 			    howdy::test::prompt_coordinator::Operations(&prompt_context);
 
-			ConversationState state;
-			struct pam_conv   conversation{
+			ConversationState     state;
+			struct pam_conv const conversation{
 			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};
@@ -479,8 +496,8 @@ namespace {
 			prompt_context.spawn_result = EIO;
 			dependencies.prompt_coordinator =
 			    howdy::test::prompt_coordinator::Operations(&prompt_context);
-			ConversationState state;
-			struct pam_conv   conversation{
+			ConversationState     state;
+			struct pam_conv const conversation{
 			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};
@@ -504,8 +521,8 @@ namespace {
 			FakeContext prompt_context;
 			dependencies.prompt_coordinator =
 			    howdy::test::prompt_coordinator::Operations(&prompt_context);
-			ConversationState state;
-			struct pam_conv   conversation{
+			ConversationState     state;
+			struct pam_conv const conversation{
 			    .conv        = TestConversation,
 			    .appdata_ptr = &state,
 			};

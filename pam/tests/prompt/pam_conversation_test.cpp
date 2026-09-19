@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/conversation_response.hpp"
 #include "prompt/pam_conversation.hpp"
 #include "test_support.hpp"
@@ -5,70 +6,81 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <span>
 #include <stdexcept>
 #include <string>
 
-#include <security/pam_appl.h>
+#include <string.h>
 
-struct pam_handle {
-	int marker = 0;
-};
+namespace {
 
-struct PamGetItemState {
-	pam_handle_t *handle    = nullptr;
-	int           result    = PAM_SUCCESS;
-	int           item_type = 0;
-	const void   *item      = nullptr;
-	int           calls     = 0;
-};
+	struct PamGetItemState {
+		pam_handle_t *handle    = nullptr;
+		int           result    = PAM_SUCCESS;
+		int           item_type = 0;
+		const void   *item      = nullptr;
+		int           calls     = 0;
+	};
 
-struct ConversationCleanupState {
-	int                  calls     = 0;
-	int                  count     = -1;
-	struct pam_response *responses = nullptr;
-	std::string          secret;
-};
+	struct ConversationCleanupState {
+		int                  calls     = 0;
+		int                  count     = -1;
+		struct pam_response *responses = nullptr;
+		std::string          secret;
+	};
 
-PamGetItemState          *pam_get_item_state         = nullptr;
-ConversationCleanupState *conversation_cleanup_state = nullptr;
+	auto PamGetItemStateSlot() -> PamGetItemState *& {
+		static PamGetItemState *state = nullptr;
+		return state;
+	}
+
+	auto ConversationCleanupStateSlot() -> ConversationCleanupState *& {
+		static ConversationCleanupState *state = nullptr;
+		return state;
+	}
+
+}  // namespace
 
 extern "C" auto pam_get_item(const pam_handle_t *pamh, int item_type, const void **item) -> int {
-	if (pam_get_item_state == nullptr || pamh != pam_get_item_state->handle) {
+	if (PamGetItemStateSlot() == nullptr || pamh != PamGetItemStateSlot()->handle) {
 		return PAM_SYSTEM_ERR;
 	}
-	++pam_get_item_state->calls;
-	pam_get_item_state->item_type = item_type;
+	++PamGetItemStateSlot()->calls;
+	PamGetItemStateSlot()->item_type = item_type;
 	if (item != nullptr) {
-		*item = pam_get_item_state->item;
+		*item = PamGetItemStateSlot()->item;
 	}
-	return pam_get_item_state->result;
+	return PamGetItemStateSlot()->result;
 }
 
 namespace howdy::pam {
 
 	void SecureFreeConversationResponses(struct pam_response **responses, int count) noexcept {
-		if (conversation_cleanup_state != nullptr) {
-			++conversation_cleanup_state->calls;
-			conversation_cleanup_state->count = count;
-			if (responses != nullptr && *responses != nullptr && count > 0 &&
-			    (*responses)[0].resp != nullptr) {
-				conversation_cleanup_state->responses = *responses;
-				conversation_cleanup_state->secret    = (*responses)[0].resp;
+		const bool has_responses  = responses != nullptr && *responses != nullptr;
+		const auto response_count = count > 0 ? static_cast<std::size_t>(count) : std::size_t{0};
+		const auto response_view  = has_responses ? std::span(*responses, response_count)
+		                                          : std::span<struct pam_response>{};
+		if (ConversationCleanupStateSlot() != nullptr) {
+			++ConversationCleanupStateSlot()->calls;
+			ConversationCleanupStateSlot()->count = count;
+			if (!response_view.empty() && response_view.front().resp != nullptr) {
+				ConversationCleanupStateSlot()->responses = response_view.data();
+				ConversationCleanupStateSlot()->secret    = response_view.front().resp;
 			}
 		}
 
-		if (responses == nullptr || *responses == nullptr) {
+		if (!has_responses) {
 			return;
 		}
 		auto *owned_responses = *responses;
 		*responses            = nullptr;
-		for (int index = 0; index < count; ++index) {
-			if (owned_responses[index].resp == nullptr) {
+		for (auto &owned_response : response_view) {
+			if (owned_response.resp == nullptr) {
 				continue;
 			}
-			explicit_bzero(owned_responses[index].resp, std::strlen(owned_responses[index].resp));
-			std::free(owned_responses[index].resp);
-			owned_responses[index].resp = nullptr;
+			explicit_bzero(owned_response.resp, std::strlen(owned_response.resp));
+			std::free(owned_response.resp);
+			owned_response.resp = nullptr;
 		}
 		std::free(owned_responses);
 	}
@@ -102,15 +114,18 @@ namespace {
 	auto TestConversation(int num_msg, const struct pam_message **messages,
 	                      struct pam_response **responses, void *appdata_ptr) -> int {
 		auto *state = static_cast<ConversationState *>(appdata_ptr);
-		if (state == nullptr || messages == nullptr || messages[0] == nullptr ||
-		    responses == nullptr || num_msg != 1) {
+		if (state == nullptr || messages == nullptr || responses == nullptr || num_msg != 1) {
+			return PAM_CONV_ERR;
+		}
+		const auto *message = std::span(messages, std::size_t{1}).front();
+		if (message == nullptr) {
 			return PAM_CONV_ERR;
 		}
 
 		++state->calls;
 		state->message_count        = num_msg;
-		state->message_style        = messages[0]->msg_style;
-		state->message_text         = messages[0]->msg == nullptr ? "" : messages[0]->msg;
+		state->message_style        = message->msg_style;
+		state->message_text         = message->msg == nullptr ? "" : message->msg;
 		state->observed_appdata_ptr = appdata_ptr;
 		*responses                  = nullptr;
 
@@ -143,7 +158,7 @@ namespace {
 		struct pam_handle     pam_handle;
 		const struct pam_conv original{.conv = TestConversation, .appdata_ptr = &state};
 		PamGetItemState       get_item_state{.handle = &pam_handle};
-		pam_get_item_state = &get_item_state;
+		PamGetItemStateSlot() = &get_item_state;
 
 		ok &= Expect(PamConversation::Acquire(nullptr, &conversation) == PAM_SYSTEM_ERR,
 		             "null PAM handle fails acquisition");
@@ -179,8 +194,8 @@ namespace {
 		struct pam_handle        pam_handle;
 		const struct pam_conv    original{.conv = TestConversation, .appdata_ptr = &state};
 		PamGetItemState          get_item_state{.handle = &pam_handle, .item = &original};
-		pam_get_item_state         = &get_item_state;
-		conversation_cleanup_state = &cleanup;
+		PamGetItemStateSlot()          = &get_item_state;
+		ConversationCleanupStateSlot() = &cleanup;
 
 		PamConversation conversation;
 		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
@@ -203,7 +218,7 @@ namespace {
 		             "cleanup receives allocated response");
 		ok &= Expect(cleanup.secret == "adapter-secret",
 		             "cleanup receives allocated response secret");
-		conversation_cleanup_state = nullptr;
+		ConversationCleanupStateSlot() = nullptr;
 		return ok;
 	}
 
@@ -213,7 +228,7 @@ namespace {
 		struct pam_handle     pam_handle;
 		const struct pam_conv original{.conv = TestConversation, .appdata_ptr = &state};
 		PamGetItemState       get_item_state{.handle = &pam_handle, .item = &original};
-		pam_get_item_state = &get_item_state;
+		PamGetItemStateSlot() = &get_item_state;
 
 		PamConversation conversation;
 		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,

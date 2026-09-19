@@ -1,9 +1,12 @@
 #include "prompt/native_prompt_conversation.hpp"
 
 #include "prompt/conversation_response.hpp"
+#include "prompt/conversation_restore.hpp"
 #include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_input.hpp"
+#include "support/bit_flags.hpp"
 #include "support/fd_io.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,20 +14,21 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <fcntl.h>
 #include <memory>
 #include <mutex>
-#include <poll.h>
+#include <span>
 #include <string>
-#include <syslog.h>
-#include <termios.h>
-#include <unistd.h>
+#include <utility>
 #include <vector>
 
-#include <security/pam_appl.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include <sys/ioctl.h>
+#include <sys/poll.h>
 #include <sys/stat.h>
+#include <sys/syslog.h>
 
 namespace {
 
@@ -174,12 +178,11 @@ NativePromptConversation::NativePromptConversation(pam_handle_t *pamh)
 	}
 
 	auto abort_pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK);
-	if (!abort_pipe.Valid()) {
+	if (!howdy::pam::detail::InternalPipeValid(abort_pipe)) {
 		tty_fd_.Reset();
 		return;
 	}
-	abort_pipe_[0] = std::move(abort_pipe.read);
-	abort_pipe_[1] = std::move(abort_pipe.write);
+	abort_pipe_ = std::move(abort_pipe);
 }
 
 auto NativePromptConversation::ProductionOperations() -> Operations {
@@ -202,7 +205,8 @@ NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
     , override_conv_{.conv = Dispatch, .appdata_ptr = dispatch_context_.get()}
     , has_original_conv_(has_original_conv)
     , tty_fd_(std::move(descriptors.tty_fd))
-    , abort_pipe_{std::move(descriptors.abort_read_fd), std::move(descriptors.abort_write_fd)}
+    , abort_pipe_{.read  = std::move(descriptors.abort_read_fd),
+                  .write = std::move(descriptors.abort_write_fd)}
     , operations_(operations) {
 	dispatch_context_->owner = this;
 }
@@ -219,7 +223,7 @@ void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
 	static std::mutex                                    quarantine_mutex;
 	static std::vector<std::unique_ptr<DispatchContext>> quarantine;
 	try {
-		std::scoped_lock lock(quarantine_mutex);
+		std::scoped_lock const lock(quarantine_mutex);
 		quarantine.push_back(std::move(dispatch_context_));
 	} catch (...) {
 		// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
@@ -264,8 +268,8 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 }
 
 auto NativePromptConversation::Available() const -> bool {
-	return has_original_conv_ && tty_fd_.Valid() && abort_pipe_[0].Valid() &&
-	       abort_pipe_[1].Valid();
+	return has_original_conv_ && tty_fd_.Valid() && abort_pipe_.read.Valid() &&
+	       abort_pipe_.write.Valid();
 }
 
 auto NativePromptConversation::Install() -> int {
@@ -283,13 +287,13 @@ auto NativePromptConversation::Install() -> int {
 
 void NativePromptConversation::RequestAbort() {
 	abort_requested_.store(true);
-	if (!abort_pipe_[1].Valid()) {
+	if (!abort_pipe_.write.Valid()) {
 		return;
 	}
 
 	constexpr char signal = 'x';
 	while (true) {
-		const ssize_t result = write(abort_pipe_[1].Get(), &signal, 1);
+		const ssize_t result = write(abort_pipe_.write.Get(), &signal, 1);
 		if (result == 1) {
 			return;
 		}
@@ -342,27 +346,31 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 	}
 
 	auto *pam_responses = static_cast<struct pam_response *>(
-	    calloc(static_cast<std::size_t>(num_msg), sizeof(struct pam_response)));
+	    std::calloc(static_cast<std::size_t>(num_msg), sizeof(struct pam_response)));
 	if (pam_responses == nullptr) {
 		return PAM_BUF_ERR;
 	}
 	*response = pam_responses;
 
-	for (int index = 0; index < num_msg; ++index) {
-		if (msgm[index] == nullptr) {
+	const auto messages    = std::span(msgm, static_cast<std::size_t>(num_msg));
+	auto       responses   = std::span(pam_responses, static_cast<std::size_t>(num_msg));
+	auto       response_it = responses.begin();
+	for (const auto *message_ptr : messages) {
+		if (message_ptr == nullptr) {
 			howdy::pam::SecureFreeConversationResponses(&pam_responses, num_msg);
 			*response = nullptr;
 			return PAM_CONV_ERR;
 		}
 
-		const struct pam_message &message = *msgm[index];
-		int                       result  = PAM_SUCCESS;
+		auto                     &current_response = *response_it++;
+		const struct pam_message &message          = *message_ptr;
+		int                       result           = PAM_SUCCESS;
 		switch (message.msg_style) {
 			case PAM_PROMPT_ECHO_OFF:
-				result = PromptInput(message, &pam_responses[index].resp, true);
+				result = PromptInput(message, &current_response.resp, true);
 				break;
 			case PAM_PROMPT_ECHO_ON:
-				result = PromptInput(message, &pam_responses[index].resp, false);
+				result = PromptInput(message, &current_response.resp, false);
 				break;
 			case PAM_TEXT_INFO:
 			case PAM_ERROR_MSG:
@@ -431,19 +439,23 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 		                                                  : PromptIoResult::kAbort;
 	}
 	if (abort_requested_.load()) {
-		DrainAbortPipe(abort_pipe_[0].Get());
+		DrainAbortPipe(abort_pipe_.read.Get());
 		return PromptIoResult::kAbort;
 	}
-	constexpr short fd_failure_events = POLLHUP | POLLERR | POLLNVAL;
-	if ((fds[0].revents & fd_failure_events) != 0 || (fds[1].revents & fd_failure_events) != 0) {
+	const auto    &tty_poll          = fds.front();
+	const auto    &abort_poll        = fds.back();
+	constexpr auto fd_failure_events = howdy::native::CombineBits(POLLHUP, POLLERR, POLLNVAL);
+	if (howdy::native::HasAnyBits(tty_poll.revents, fd_failure_events) ||
+	    howdy::native::HasAnyBits(abort_poll.revents, fd_failure_events)) {
 		return PromptIoResult::kAbort;
 	}
-	if ((fds[1].revents & POLLIN) != 0) {
-		DrainAbortPipe(abort_pipe_[0].Get());
+	if (howdy::native::HasAnyBits(abort_poll.revents, POLLIN)) {
+		DrainAbortPipe(abort_pipe_.read.Get());
 		return PromptIoResult::kAbort;
 	}
-	return poll_result == 0 || (fds[0].revents & POLLIN) == 0 ? PromptIoResult::kRetry
-	                                                          : PromptIoResult::kReady;
+	return poll_result == 0 || !howdy::native::HasAnyBits(tty_poll.revents, POLLIN)
+	           ? PromptIoResult::kRetry
+	           : PromptIoResult::kReady;
 }
 
 auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
@@ -458,7 +470,7 @@ auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
 auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResult {
 	std::array<struct pollfd, 2> fds{{
 	    {.fd = tty_fd_.Get(), .events = POLLIN, .revents = 0},
-	    {.fd = abort_pipe_[0].Get(), .events = POLLIN, .revents = 0},
+	    {.fd = abort_pipe_.read.Get(), .events = POLLIN, .revents = 0},
 	}};
 	while (true) {
 		const auto poll_result = PollPromptState(fds);
@@ -546,14 +558,15 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		return PAM_CONV_ERR;
 	}
 
-	auto *pam_response = static_cast<struct pam_response *>(calloc(1, sizeof(struct pam_response)));
+	auto *pam_response =
+	    static_cast<struct pam_response *>(std::calloc(1, sizeof(struct pam_response)));
 	if (pam_response == nullptr) {
 		return PAM_BUF_ERR;
 	}
 
-	pam_response->resp = static_cast<char *>(calloc(password.Size() + 1, sizeof(char)));
+	pam_response->resp = static_cast<char *>(std::calloc(password.Size() + 1, sizeof(char)));
 	if (pam_response->resp == nullptr) {
-		free(pam_response);
+		std::free(pam_response);
 		return PAM_BUF_ERR;
 	}
 

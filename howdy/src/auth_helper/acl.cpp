@@ -1,12 +1,20 @@
 #include "auth_helper/acl.hpp"
 
+#include "storage/staged_runtime_policy.hpp"
+#include "support/bit_flags.hpp"
+#include "support/error_message.hpp"
+
 #include <array>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
+
+#include <sys/acl.h>
+#include <sys/stat.h>
 
 #include <acl/libacl.h>
 
@@ -19,7 +27,7 @@ namespace howdy::native::auth_helper {
 		auto LogErrnoFailure(std::string_view operation, const std::filesystem::path &path,
 		                     int error_number) -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
-			          << "': " << std::strerror(error_number) << "\n";
+			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return false;
 		}
 
@@ -39,7 +47,7 @@ namespace howdy::native::auth_helper {
 
 		auto AclEntryHasPermissions(acl_entry_t entry, acl_tag_t tag, const void *qualifier,
 		                            acl_perm_t permissions) -> AclVerifyResult {
-			acl_tag_t entry_tag;
+			acl_tag_t entry_tag = 0;
 			if (acl_get_tag_type(entry, &entry_tag) != 0) {
 				return {.status       = AclVerifyStatus::kReadError,
 				        .error_number = errno,
@@ -62,7 +70,7 @@ namespace howdy::native::auth_helper {
 				}
 			}
 
-			acl_permset_t permission_set;
+			acl_permset_t permission_set = nullptr;
 			if (acl_get_permset(entry, &permission_set) != 0) {
 				return {.status       = AclVerifyStatus::kPermissionQueryError,
 				        .error_number = errno,
@@ -105,8 +113,9 @@ namespace howdy::native::auth_helper {
 		}
 
 		constexpr auto AclPermissions(StagedAclPermissions permissions) -> acl_perm_t {
-			return (permissions.read ? ACL_READ : 0) | (permissions.write ? ACL_WRITE : 0) |
-			       (permissions.execute ? ACL_EXECUTE : 0);
+			return CombineBitsAs<acl_perm_t>(permissions.read ? ACL_READ : 0,
+			                                 permissions.write ? ACL_WRITE : 0,
+			                                 permissions.execute ? ACL_EXECUTE : 0);
 		}
 
 		auto InspectAcl(int fd, const StagedAclPolicy &policy, uid_t uid,
@@ -128,8 +137,8 @@ namespace howdy::native::auth_helper {
 			    policy.has_named_target ? policy.group : policy.other, policy.mask, policy.other};
 			const std::size_t expected_count = policy.has_named_target ? 5 : 3;
 			std::size_t       entry_count    = 0;
-			acl_entry_t       entry;
-			int               entry_id = ACL_FIRST_ENTRY;
+			acl_entry_t       entry          = nullptr;
+			int               entry_id       = ACL_FIRST_ENTRY;
 			while (true) {
 				const int entry_result = acl_get_entry(acl, entry_id, &entry);
 				if (entry_result < 0) {
@@ -147,10 +156,10 @@ namespace howdy::native::auth_helper {
 					acl_free(acl);
 					return {.status = AclVerifyStatus::kMalformed};
 				}
-				const auto tag    = tags[entry_count];
+				const auto tag    = tags.at(entry_count);
 				const auto result = AclEntryHasPermissions(
 				    entry, tag, tag == ACL_USER ? static_cast<const void *>(&uid) : nullptr,
-				    AclPermissions(permissions[entry_count]));
+				    AclPermissions(permissions.at(entry_count)));
 				if (result.status != AclVerifyStatus::kOk) {
 					acl_free(acl);
 					return result;
@@ -174,8 +183,8 @@ namespace howdy::native::auth_helper {
 
 		auto AddAclEntry(acl_t &acl, const std::filesystem::path &path, acl_tag_t tag,
 		                 const void *qualifier, acl_perm_t entry_permissions) -> bool {
-			acl_entry_t   entry;
-			acl_permset_t permission_set;
+			acl_entry_t   entry          = nullptr;
+			acl_permset_t permission_set = nullptr;
 			if (acl_create_entry(&acl, &entry) != 0) {
 				return LogErrnoFailure("acl_create_entry for staged object", path, errno);
 			}

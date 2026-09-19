@@ -4,23 +4,28 @@
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
+#include "support/bit_flags.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <dirent.h>
-#include <fcntl.h>
 #include <filesystem>
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
+
+#include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/stat.h>
@@ -34,7 +39,7 @@ namespace howdy::native::auth_helper {
 		auto LogSlotsErrnoFailure(std::string_view operation, const std::filesystem::path &path,
 		                          int error_number) -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
-			          << "': " << std::strerror(error_number) << "\n";
+			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return false;
 		}
 
@@ -43,7 +48,7 @@ namespace howdy::native::auth_helper {
 			const auto policy = GetStagedRuntimePolicy(role);
 			return policy.exact_link_count.has_value() && S_ISREG(stat.st_mode) &&
 			       stat.st_uid == identity.owner_uid && stat.st_gid == identity.owner_gid &&
-			       (stat.st_mode & 07777) == policy.mode &&
+			       MaskedBits(stat.st_mode, 07777) == policy.mode &&
 			       stat.st_nlink == *policy.exact_link_count;
 		}
 
@@ -51,7 +56,8 @@ namespace howdy::native::auth_helper {
 		                       StagedRuntimeRole role) -> bool {
 			const auto policy = GetStagedRuntimePolicy(role);
 			return S_ISDIR(stat.st_mode) && stat.st_uid == identity.owner_uid &&
-			       stat.st_gid == identity.owner_gid && (stat.st_mode & 07777) == policy.mode;
+			       stat.st_gid == identity.owner_gid &&
+			       MaskedBits(stat.st_mode, 07777) == policy.mode;
 		}
 
 		auto SetOwner(int fd, StagedIdentity identity) -> bool {
@@ -218,7 +224,10 @@ namespace howdy::native::auth_helper {
 			bool found = false;
 			errno      = 0;
 			while (dirent *entry = readdir(directory)) {
-				const std::string_view name(entry->d_name);
+				const auto             name_bytes = std::span{entry->d_name};
+				const auto             name_end   = std::ranges::find(name_bytes, '\0');
+				const std::string_view name(
+				    name_bytes.data(), static_cast<std::size_t>(name_end - name_bytes.begin()));
 				if (name == "." || name == "..") {
 					continue;
 				}
@@ -250,10 +259,11 @@ namespace howdy::native::auth_helper {
 			constexpr std::array names = {auth_helper_protocol::kPreparedConfigFileName,
 			                              auth_helper_protocol::kPreparedUserModelsDirectoryName,
 			                              auth_helper_protocol::kPreparedModelBackingFileName};
-			for (std::size_t index = 0; index < names.size(); ++index) {
+			static_assert(names.size() == present.size());
+			for (auto &&[name, is_present] : std::views::zip(names, present)) {
 				struct stat stat{};
-				if (fstatat(slot_fd, names[index], &stat, AT_SYMLINK_NOFOLLOW) == 0) {
-					present[index] = true;
+				if (fstatat(slot_fd, name, &stat, AT_SYMLINK_NOFOLLOW) == 0) {
+					is_present = true;
 				} else if (errno != ENOENT) {
 					return SlotInitialization::kInvalid;
 				}
@@ -450,7 +460,7 @@ namespace howdy::native::auth_helper {
 			if (!lease.Valid() || fstat(slot.lock_fd.Get(), &writable_stat) != 0 ||
 			    fstat(lease.Get(), &lease_stat) != 0 || writable_stat.st_dev != lease_stat.st_dev ||
 			    writable_stat.st_ino != lease_stat.st_ino || !S_ISREG(lease_stat.st_mode) ||
-			    (lease_stat.st_mode & 07777) != policy.mode ||
+			    MaskedBits(lease_stat.st_mode, 07777) != policy.mode ||
 			    !policy.exact_link_count.has_value() ||
 			    lease_stat.st_nlink != *policy.exact_link_count ||
 			    flock(lease.Get(), LOCK_SH | LOCK_NB) != 0) {
@@ -478,7 +488,7 @@ namespace howdy::native::auth_helper {
 			struct stat stat{};
 			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
 			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
-			    stat.st_gid != owner_gid || (stat.st_mode & 07777) != policy.mode) {
+			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
 				return std::nullopt;
 			}
 			return fd;
@@ -523,10 +533,11 @@ namespace howdy::native::auth_helper {
 			                                    RuntimeGenerationSlot::kSlot1};
 			SlotSet              slots;
 			bool                 any_valid = false;
-			for (std::size_t index = 0; index < slots.size(); ++index) {
-				slots[index] = OpenSlot(root_fd, sources.runtime_root, generations[index], identity,
-				                        operations, true);
-				any_valid    = any_valid || slots[index].has_value();
+			static_assert(generations.size() == slots.size());
+			for (auto &&[slot, generation] : std::views::zip(slots, generations)) {
+				slot =
+				    OpenSlot(root_fd, sources.runtime_root, generation, identity, operations, true);
+				any_valid = any_valid || slot.has_value();
 			}
 			return any_valid ? std::optional<SlotSet>{std::move(slots)} : std::nullopt;
 		}
@@ -586,7 +597,7 @@ namespace howdy::native::auth_helper {
 			if (!created && errno != EEXIST) {
 				return LogSlotsErrnoFailure("create runtime directory", path, errno);
 			}
-			runtime_internal::UniqueFd fd(
+			runtime_internal::UniqueFd const fd(
 			    open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (fd.Get() < 0) {
 				return LogSlotsErrnoFailure("open runtime directory", path, errno);
@@ -597,7 +608,7 @@ namespace howdy::native::auth_helper {
 			}
 			struct stat stat{};
 			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
-			    stat.st_gid != owner_gid || (stat.st_mode & 07777) != policy.mode) {
+			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
 				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
 				return false;
 			}

@@ -1,5 +1,6 @@
 #include "module/auth_flow.hpp"
 
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "module/auth_eligibility.hpp"
 #include "module/pam_options.hpp"
@@ -13,18 +14,15 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <libintl.h>
 #include <paths.hpp>
 #include <string>
-#include <syslog.h>
-#include <unistd.h>
 
-#include <security/pam_appl.h>
-#include <security/pam_ext.h>
+#include <libintl.h>
+#include <stdlib.h>
+
 #include <security/pam_modules.h>
 
-#include <sys/types.h>
-#include <sys/wait.h>
+#include <sys/syslog.h>
 
 namespace {
 	// Covers exec, model loading, and camera setup before configured scan timeout begins.
@@ -39,7 +37,7 @@ namespace {
 
 	auto GetUsername(pam_handle_t *pamh, const char **username) -> int {
 		const int result = pam_get_user(pamh, username, nullptr);
-		if (result != PAM_SUCCESS || *username == nullptr || (*username)[0] == '\0') {
+		if (result != PAM_SUCCESS || *username == nullptr || std::string_view(*username).empty()) {
 			syslog(LOG_ERR, "Unable to determine the user.");
 			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
 		}
@@ -184,6 +182,10 @@ namespace howdy::pam::auth_flow {
 	                              bool ask_auth_tok, const IdentifyDependencies &dependencies)
 	    -> int {
 		(void)arguments.flags;
+
+		if (pamh == nullptr) {
+			return PAM_SYSTEM_ERR;
+		}
 
 		openlog("pam_howdy", 0, LOG_AUTHPRIV);
 

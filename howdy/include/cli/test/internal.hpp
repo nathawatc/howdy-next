@@ -11,7 +11,7 @@
 
 namespace howdy::native {
 	struct PreviewFrameResult;
-}
+}  // namespace howdy::native
 
 namespace howdy::native::test_cli_internal {
 	class TestPreviewRenderer;

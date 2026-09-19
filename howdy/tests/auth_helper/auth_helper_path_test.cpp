@@ -1,34 +1,37 @@
-#include "auth_helper/auth_helper_acl_fake.hpp"
-#include "auth_helper/auth_helper_acl_policy.hpp"
 #include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
-#include "auth_helper/auth_helper_test_io.hpp"
+#include "auth_helper/runtime.hpp"
 #include "auth_helper/runtime/internal.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
-#include <sys/types.h>
 
 namespace {
-	using namespace howdy::test::auth_helper;
+	using howdy::test::Expect;
 	using howdy::test::ScopedFd;
+	using howdy::test::WriteFile;
+	using howdy::test::auth_helper::AclSupport;
+	using howdy::test::auth_helper::ProbeAclSupport;
 
 	auto ExpectAclProbeClassification(const std::filesystem::path &temp_root) -> bool {
-		std::ostringstream output;
-		auto              *previous_cerr = std::cerr.rdbuf(output.rdbuf());
-		const auto         eopnotsupp    = ProbeAclSupport(temp_root, EOPNOTSUPP);
-		const auto         enotsupp      = ProbeAclSupport(temp_root, ENOTSUP);
-		const auto         eio           = ProbeAclSupport(temp_root, EIO);
+		std::ostringstream const output;
+		auto                    *previous_cerr = std::cerr.rdbuf(output.rdbuf());
+		const auto               eopnotsupp    = ProbeAclSupport(temp_root, EOPNOTSUPP);
+		const auto               enotsupp      = ProbeAclSupport(temp_root, ENOTSUP);
+		const auto               eio           = ProbeAclSupport(temp_root, EIO);
 		std::cerr.rdbuf(previous_cerr);
 		bool ok = true;
 		ok &= Expect(eopnotsupp == AclSupport::kUnsupported,
@@ -67,10 +70,10 @@ namespace {
 		ok &= Expect(S_ISDIR(missing_stat.st_mode), "created runtime root is a directory");
 		ok &= Expect(missing_stat.st_uid == geteuid() && missing_stat.st_gid == getegid(),
 		             "created runtime root has requested effective owner");
-		ok &= Expect((missing_stat.st_mode & (S_IWGRP | S_IWOTH)) == 0,
+		ok &= Expect(!howdy::native::HasAnyBits(missing_stat.st_mode, S_IWGRP, S_IWOTH),
 		             "created runtime root is not group or world writable");
-		ok &=
-		    Expect((missing_stat.st_mode & 0777) == 0711, "created runtime root has expected mode");
+		ok &= Expect(howdy::native::MaskedBits(missing_stat.st_mode, 0777) == 0711,
+		             "created runtime root has expected mode");
 
 		if (geteuid() == 0) {
 			ok &= Expect(ValidateRuntimeRoot(user_owned_dir, 0, 0),

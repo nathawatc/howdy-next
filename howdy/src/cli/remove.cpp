@@ -1,12 +1,15 @@
 #include "cli/remove.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/remove/internal.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 
 #include <charconv>
 #include <iostream>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace {
@@ -59,10 +62,10 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 		return kRemoveExitAbort;
 	}
 
-	int id = -1;
-	const auto [end, parse_error] =
-	    std::from_chars(id_text.data(), id_text.data() + id_text.size(), id);
-	if (parse_error != std::errc() || end != id_text.data() + id_text.size()) {
+	const std::string_view id_view = id_text;
+	int                    id      = -1;
+	const auto [end, parse_error]  = std::from_chars(id_view.begin(), id_view.end(), id);
+	if (parse_error != std::errc() || end != id_view.end()) {
 		id = -1;
 	}
 	bool                                     found = false;

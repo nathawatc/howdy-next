@@ -1,14 +1,26 @@
+#include "config/runtime_config.hpp"
+#include "module/auth_flow.hpp"
+#include "module/auth_flow_test_groups.hpp"
 #include "module/auth_flow_test_support.hpp"
+#include "prompt/pam_conversation.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "protocol/compare_exit.hpp"
+#include "support/process_status.hpp"
 #include "test_support.hpp"
 
 #include <csignal>
+#include <cstdlib>
+#include <string>
+
+#include <signal.h>
 
 #include <sys/wait.h>
 
 namespace {
-	using namespace howdy::test::auth_flow;
+	using howdy::test::auth_flow::ConversationState;
+	using howdy::test::auth_flow::EligibilityFlowFixture;
+	using howdy::test::auth_flow::ScopedPamHandle;
+	using howdy::test::auth_flow::TestConversation;
 
 	using howdy::test::Expect;
 
@@ -39,8 +51,8 @@ namespace {
 		                 direct_message == "successful message",
 		             "message helper invokes successful conversation");
 
-		ConversationState state;
-		struct pam_conv   conversation{
+		ConversationState     state;
+		struct pam_conv const conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -59,7 +71,7 @@ namespace {
 		EligibilityFlowFixture fixture;
 		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
-		struct pam_conv        conversation{
+		struct pam_conv const  conversation{
 		    .conv        = TestConversation,
 		    .appdata_ptr = &state,
 		};
@@ -105,7 +117,7 @@ namespace {
 		};
 
 		const auto make_status = [](howdy::native::CompareExit exit_code) -> int {
-			return static_cast<int>(exit_code) << 8;
+			return howdy::native::EncodeWaitExitStatus(exit_code);
 		};
 
 		ok &= Expect(HowdyError(make_status(howdy::native::CompareExit::kTimeoutReached),
@@ -160,13 +172,9 @@ namespace {
 
 }  // namespace
 
-auto RunAuthHelperFdTests() -> bool;
-auto RunProcessWaitTests() -> bool;
-auto RunAuthHelperOutputTests() -> bool;
-auto RunAuthFlowIntegrationTests() -> bool;
-
 auto main() -> int {
-	using namespace howdy::native::auth_helper_protocol;
+	using howdy::native::auth_helper_protocol::kConfigPathKey;
+	using howdy::native::auth_helper_protocol::kUserModelsDirKey;
 
 	bool ok = true;
 

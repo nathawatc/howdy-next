@@ -2,14 +2,18 @@
 
 #include "config/runtime_config.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/frame_limits.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <utility>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
 
 namespace howdy::native {
 

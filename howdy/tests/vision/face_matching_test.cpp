@@ -1,3 +1,4 @@
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 #include "vision/face_matching.hpp"
 

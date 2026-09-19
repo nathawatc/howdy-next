@@ -1,5 +1,7 @@
 #include "app/command_catalog.hpp"
 
+#include "support/bit_flags.hpp"
+
 #include <array>
 #include <cstddef>
 #include <span>
@@ -30,9 +32,10 @@ namespace howdy::native {
 		            .argument_synopsis = "[LABEL]",
 		            .min_positionals   = 0,
 		            .max_positionals   = 1,
-		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
-		                                 GlobalOptionBit(GlobalOptionId::kPlain) |
-		                                 GlobalOptionBit(GlobalOptionId::kYes),
+		            .global_options =
+		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
+		                                                GlobalOptionBit(GlobalOptionId::kPlain),
+		                                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kClear,
@@ -44,8 +47,9 @@ namespace howdy::native {
 		            .argument_synopsis = "",
 		            .min_positionals   = 0,
 		            .max_positionals   = 0,
-		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
-		                                 GlobalOptionBit(GlobalOptionId::kYes),
+		            .global_options =
+		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
+		                                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kConfig,
@@ -90,8 +94,9 @@ namespace howdy::native {
 		            .argument_synopsis = "",
 		            .min_positionals   = 0,
 		            .max_positionals   = 0,
-		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
-		                                 GlobalOptionBit(GlobalOptionId::kPlain),
+		            .global_options =
+		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
+		                                                GlobalOptionBit(GlobalOptionId::kPlain)),
 		        },
 		        {
 		            .id                = CommandId::kRemove,
@@ -103,8 +108,9 @@ namespace howdy::native {
 		            .argument_synopsis = "ID",
 		            .min_positionals   = 1,
 		            .max_positionals   = 1,
-		            .global_options    = GlobalOptionBit(GlobalOptionId::kUser) |
-		                                 GlobalOptionBit(GlobalOptionId::kYes),
+		            .global_options =
+		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
+		                                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kSet,
@@ -215,7 +221,7 @@ namespace howdy::native {
 	}
 
 	auto CommandAcceptsGlobalOption(const CommandDescriptor &command, GlobalOptionId id) -> bool {
-		return (command.global_options & GlobalOptionBit(id)) != 0;
+		return HasAnyBits(command.global_options, GlobalOptionBit(id));
 	}
 
 	auto FindCommandOption(const CommandDescriptor &command, std::string_view spelling)

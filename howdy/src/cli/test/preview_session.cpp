@@ -1,12 +1,14 @@
 #include "cli/test/preview_session.hpp"
 
+#include "cli/test/internal.hpp"
 #include "config/runtime_config.hpp"
+#include "vision/preview_engine.hpp"
 
 #include <algorithm>
 #include <chrono>
 #include <utility>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
 
 namespace howdy::native::test_cli_internal {
 	namespace {
@@ -15,6 +17,11 @@ namespace howdy::native::test_cli_internal {
 			ExposureRestoreGuard(const VideoConfig                    &config,
 			                     const TestPreviewSessionDependencies &dependencies)
 			    : dependencies_(config.exposure == -1 ? nullptr : &dependencies) {}
+
+			ExposureRestoreGuard(const ExposureRestoreGuard &)                     = delete;
+			auto operator=(const ExposureRestoreGuard &) -> ExposureRestoreGuard & = delete;
+			ExposureRestoreGuard(ExposureRestoreGuard &&)                          = delete;
+			auto operator=(ExposureRestoreGuard &&) -> ExposureRestoreGuard &      = delete;
 
 			~ExposureRestoreGuard() noexcept {
 				if (dependencies_ == nullptr) {
@@ -41,7 +48,7 @@ namespace howdy::native::test_cli_internal {
 	auto TestPreviewSession::DependenciesValid() const -> bool {
 		return dependencies_.capture_context != nullptr &&
 		       dependencies_.read_gray_frame != nullptr &&
-		       (config_.exposure == -1 || dependencies_.restore_exposure != nullptr) &&
+		       (config_.get().exposure == -1 || dependencies_.restore_exposure != nullptr) &&
 		       dependencies_.renderer_context != nullptr && dependencies_.present != nullptr &&
 		       dependencies_.slow_mode != nullptr && dependencies_.now != nullptr &&
 		       dependencies_.sleep != nullptr;
@@ -62,8 +69,8 @@ namespace howdy::native::test_cli_internal {
 		auto second_anchor  = dependencies_.now(dependencies_.clock_context);
 
 		while (true) {
-			ExposureRestoreGuard exposure_restore(config_, dependencies_);
-			const auto           frame_start = dependencies_.now(dependencies_.clock_context);
+			ExposureRestoreGuard const exposure_restore(config_.get(), dependencies_);
+			const auto                 frame_start = dependencies_.now(dependencies_.clock_context);
 			total_frames++;
 			sec_frames++;
 
@@ -83,7 +90,7 @@ namespace howdy::native::test_cli_internal {
 				return {.status = TestPreviewStatus::kCameraReadError};
 			}
 
-			auto frame_result  = preview_engine_.ProcessGrayFrame(std::move(gray_frame));
+			auto frame_result  = preview_engine_.get().ProcessGrayFrame(std::move(gray_frame));
 			auto frame_failure = MapPreviewFrameFailure(frame_result);
 			if (frame_failure.status != TestPreviewStatus::kOk) {
 				return frame_failure;

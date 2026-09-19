@@ -3,25 +3,33 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "config/test_hooks.hpp"
+#include "support/atomic_files.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
+#include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
-#include <grp.h>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
+#include <grp.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace howdy::native::config_internal {
@@ -57,11 +65,9 @@ namespace howdy::native::config_internal {
 		}
 
 		auto ExecEditorThroughPath(const std::string &editor, const fs::path &temp_path) -> int {
-			std::array<char *, 3> exec_argv = {
-			    const_cast<char *>(editor.c_str()),
-			    const_cast<char *>(temp_path.c_str()),
-			    nullptr,
-			};
+			std::string           editor_arg = editor;
+			std::string           path_arg   = temp_path.string();
+			std::array<char *, 3> exec_argv  = {editor_arg.data(), path_arg.data(), nullptr};
 
 			// execvp may invoke /bin/sh for ENOEXEC. Search with execv so editor execution stays
 			// direct.
@@ -129,11 +135,10 @@ namespace howdy::native::config_internal {
 
 		[[noreturn]] auto ReportEditorLaunch(int report_fd, EditorLaunchReport report,
 		                                     int exit_code) -> void {
-			const auto report_byte = static_cast<unsigned char>(report);
-			ssize_t    written;
-			do {
-				written = write(report_fd, &report_byte, sizeof(report_byte));
-			} while (written < 0 && errno == EINTR);
+			const auto    report_byte = static_cast<unsigned char>(report);
+			const ssize_t written     = howdy::native::RetryOnEintr([&] -> ssize_t {
+				return write(report_fd, &report_byte, sizeof(report_byte));
+			});
 			(void)written;
 			_exit(exit_code);
 		}
@@ -176,34 +181,35 @@ namespace howdy::native::config_internal {
 			if (pipe2(report_pipe.data(), O_CLOEXEC) != 0) {
 				return -1;
 			}
+			const int report_read_fd  = report_pipe.front();
+			const int report_write_fd = report_pipe.back();
 
 			const pid_t child_pid = fork();
 			if (child_pid < 0) {
-				close(report_pipe.at(0));
-				close(report_pipe.at(1));
+				close(report_read_fd);
+				close(report_write_fd);
 				return -1;
 			}
 
 			if (child_pid == 0) {
-				close(report_pipe.at(0));
-				RunEditorChild(editor_preference, temp_path, invoking_user, report_pipe.at(1));
+				close(report_read_fd);
+				RunEditorChild(editor_preference, temp_path, invoking_user, report_write_fd);
 			}
 
-			close(report_pipe.at(1));
+			close(report_write_fd);
 			int status = 0;
 			while (waitpid(child_pid, &status, 0) < 0) {
 				if (errno != EINTR) {
-					close(report_pipe.at(0));
+					close(report_read_fd);
 					return -1;
 				}
 			}
 
 			unsigned char report_byte = 0;
-			ssize_t       read_count;
-			do {
-				read_count = read(report_pipe.at(0), &report_byte, sizeof(report_byte));
-			} while (read_count < 0 && errno == EINTR);
-			close(report_pipe.at(0));
+			const ssize_t read_count  = howdy::native::RetryOnEintr([&] -> ssize_t {
+				return read(report_read_fd, &report_byte, sizeof(report_byte));
+			});
+			close(report_read_fd);
 			if (read_count < 0) {
 				return -1;
 			}
@@ -277,7 +283,7 @@ namespace howdy::native::config_internal {
 			return std::nullopt;
 		}
 
-		fs::path          temp_dir      = fs::temp_directory_path();
+		fs::path const    temp_dir      = fs::temp_directory_path();
 		std::string       temp_template = (temp_dir / "howdy-config-XXXXXX").string();
 		std::vector<char> writable(temp_template.begin(), temp_template.end());
 		writable.push_back('\0');

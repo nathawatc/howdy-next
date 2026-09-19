@@ -2,6 +2,7 @@
 
 #include "auth_helper/runtime.hpp"
 #include "protocol/auth_helper_protocol.hpp"
+#include "support/passwd_lookup.hpp"
 #include "support/user_names.hpp"
 
 #include <array>
@@ -9,13 +10,16 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
-#include <pwd.h>
+#include <span>
 #include <string>
+#include <string_view>
+
 #include <unistd.h>
 
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/uio.h>
+#include <sys/types.h>
+#include <sys/uio.h>  // IWYU pragma: keep
 
 namespace howdy::native::auth_helper::command {
 	namespace {
@@ -38,10 +42,9 @@ namespace howdy::native::auth_helper::command {
 			if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &size) != 0 || type != SOCK_SEQPACKET) {
 				return false;
 			}
-			sockaddr_storage address{};
+			sockaddr address{};
 			size = sizeof(address);
-			return getsockname(fd, reinterpret_cast<sockaddr *>(&address), &size) == 0 &&
-			       address.ss_family == AF_UNIX;
+			return getsockname(fd, &address, &size) == 0 && address.sa_family == AF_UNIX;
 		}
 
 		struct LeaseTransfer {
@@ -78,7 +81,8 @@ namespace howdy::native::auth_helper::command {
 
 	auto PrintPreparedPaths(const std::filesystem::path &config_path,
 	                        const std::filesystem::path &user_models_dir) -> void {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::kConfigPathKey;
+		using howdy::native::auth_helper_protocol::kUserModelsDirKey;
 		std::cout << kConfigPathKey << "=" << config_path.string() << "\n";
 		std::cout << kUserModelsDirKey << "=" << user_models_dir.string() << "\n";
 	}
@@ -90,12 +94,12 @@ namespace howdy::native::auth_helper::command {
 		if (!howdy::native::IsValidModelUserName(user)) {
 			return Fail(howdy::native::kInvalidUserNameMessage);
 		}
-		const uid_t   uid   = getuid();
-		const passwd *entry = getpwuid(uid);
-		if (entry == nullptr) {
+		const uid_t uid   = getuid();
+		const auto  entry = howdy::native::LookupPasswdByUid(uid);
+		if (!entry.has_value()) {
 			return Fail("Failed to resolve calling user");
 		}
-		if (entry->pw_name == nullptr || user != entry->pw_name) {
+		if (entry->name.empty() || user != entry->name) {
 			return Fail("howdy-auth-helper can only prepare auth files for the calling user");
 		}
 		if (!ValidLeaseSocket(auth_helper_protocol::kLeaseSocketFd)) {
@@ -103,7 +107,7 @@ namespace howdy::native::auth_helper::command {
 		}
 
 		auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(
-		    user, {.uid = uid, .gid = entry->pw_gid});
+		    user, {.uid = uid, .gid = entry->gid});
 		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
 			return 1;
 		}
@@ -121,14 +125,21 @@ namespace howdy::native::auth_helper::command {
 	}
 
 	auto Run(int argc, char **argv) -> int {
-		if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
-			Usage(argv[0]);
-			return 0;
+		const auto arguments =
+		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+		const char *program = arguments.empty() ? "howdy-auth-helper" : arguments.front();
+		if (arguments.size() == 2) {
+			const std::string_view option = arguments.subspan(1, 1).front();
+			if (option == "--help" || option == "-h") {
+				Usage(program);
+				return 0;
+			}
 		}
-		if (argc == 3 && std::string(argv[1]) == "prepare") {
-			return PrepareForUser(argv[2]);
+		if (arguments.size() == 3 &&
+		    std::string_view(arguments.subspan(1, 1).front()) == "prepare") {
+			return PrepareForUser(arguments.subspan(2, 1).front());
 		}
-		Usage(argv[0]);
+		Usage(program);
 		return 1;
 	}
 

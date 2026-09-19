@@ -24,13 +24,14 @@ namespace howdy::native {
 		FaceEncodingStatus status = FaceEncodingStatus::kInvalidOutput;
 		std::vector<float> encoding;
 		std::string        error_message = "Face encoding returned no data";
-
-		[[nodiscard]] auto Ok() const -> bool {
-			return status == FaceEncodingStatus::kOk && encoding.size() == kSfaceEmbeddingSize &&
-			       std::ranges::all_of(encoding, [](float value) -> bool {
-				       return std::isfinite(value);
-			       });
-		}
 	};
+
+	[[nodiscard]] inline auto FaceEncodingSucceeded(const FaceEncodingResult &result) -> bool {
+		return result.status == FaceEncodingStatus::kOk &&
+		       result.encoding.size() == kSfaceEmbeddingSize &&
+		       std::ranges::all_of(result.encoding, [](float value) -> bool {
+			       return std::isfinite(value);
+		       });
+	}
 
 }  // namespace howdy::native

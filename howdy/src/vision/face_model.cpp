@@ -3,7 +3,12 @@
 #include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
 #include "model_assets/model_file.hpp"
+#include "support/face_metric.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
 #include "vision/face_encoding/internal.hpp"
+#include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
 #include "vision/face_model/internal.hpp"
 #include "vision/frame_validation.hpp"
 
@@ -12,9 +17,18 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
-#include <opencv2/core.hpp>
+#include <stdlib.h>
+
+#include <opencv2/core/cvstd_wrapper.hpp>
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/objdetect/face.hpp>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 	namespace {
@@ -33,8 +47,8 @@ namespace howdy::native {
 		}
 
 		void AlignFace(void *context, const FaceAlignmentRequest &request) {
-			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(request.frame, request.face,
-			                                                        request.aligned);
+			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(
+			    request.frame.get(), request.face.get(), request.aligned.get());
 		}
 
 		void ExtractFeature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
@@ -202,7 +216,7 @@ namespace howdy::native {
 		}
 
 		try {
-			cv::Mat prepared = PrepareFrame(frame);
+			cv::Mat const prepared = PrepareFrame(frame);
 			if (cv::Size(prepared.cols, prepared.rows) != input_size_ &&
 			    !backend_->set_input_size) {
 				return {

@@ -1,5 +1,7 @@
 #include "runtime/message_locale.hpp"
 
+#include <locale.h>
+
 namespace howdy::pam {
 
 	ScopedMessageLocale::ScopedMessageLocale() noexcept

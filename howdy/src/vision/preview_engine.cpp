@@ -1,14 +1,23 @@
 #include "vision/preview_engine.hpp"
 
 #include "config/runtime_config.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
+#include "vision/frame_processing.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <optional>
+#include <ranges>
+#include <string>
 #include <utility>
+#include <vector>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
 
 namespace howdy::native {
 
@@ -24,8 +33,8 @@ namespace howdy::native {
 
 	auto PreviewEngine::DependenciesValid() const -> bool {
 		return dependencies_.now != nullptr &&
-		       (matching_enabled_ ? dependencies_.inference.Complete()
-		                          : dependencies_.inference.DetectionReady());
+		       (matching_enabled_ ? FaceInferenceComplete(dependencies_.inference)
+		                          : FaceInferenceDetectionReady(dependencies_.inference));
 	}
 
 	auto PreviewEngine::EncodeFaces(const cv::Mat                    &prepared,
@@ -34,19 +43,22 @@ namespace howdy::native {
 	                                std::string &first_error) const -> std::vector<EncodedFace> {
 		std::vector<EncodedFace> encodings;
 		encodings.reserve(detections.size());
-		for (std::size_t index = 0; index < detections.size(); ++index) {
+		std::size_t index = 0;
+		for (auto &&[detection, face] : std::views::zip(detections, faces)) {
 			auto encoding = dependencies_.inference.encode_face(dependencies_.inference.context,
-			                                                    prepared, detections[index]);
-			if (!encoding.Ok()) {
-				faces[index].status = PreviewFaceStatus::kEncodingFailed;
+			                                                    prepared, detection);
+			if (!FaceEncodingSucceeded(encoding)) {
+				face.status = PreviewFaceStatus::kEncodingFailed;
 				if (first_error.empty()) {
 					first_error = encoding.error_message.empty()
 					                  ? kInvalidFaceEncodingMessage
 					                  : std::move(encoding.error_message);
 				}
+				++index;
 				continue;
 			}
 			encodings.push_back({.face_index = index, .encoding = std::move(encoding.encoding)});
+			++index;
 		}
 		return encodings;
 	}
@@ -63,7 +75,7 @@ namespace howdy::native {
 				return std::nullopt;
 			}
 			matched |= match.accepted;
-			auto &face_result = faces[encoded.face_index];
+			auto &face_result = faces.at(encoded.face_index);
 			face_result.match = match;
 			face_result.status =
 			    match.accepted ? PreviewFaceStatus::kMatched : PreviewFaceStatus::kUnmatched;
@@ -124,7 +136,7 @@ namespace howdy::native {
 
 		auto detection_result =
 		    dependencies_.inference.detect_faces(dependencies_.inference.context, prepared);
-		if (!detection_result.Ok()) {
+		if (!FaceDetectionSucceeded(detection_result)) {
 			return {
 			    .status         = PreviewFrameStatus::kDetectionFailed,
 			    .brightness     = brightness,

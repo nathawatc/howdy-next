@@ -10,6 +10,9 @@ namespace howdy::test::config_cli {
 
 	class ScopedStreamBuffer {
 	public:
+		ScopedStreamBuffer(ScopedStreamBuffer &&)                     = delete;
+		auto operator=(ScopedStreamBuffer &&) -> ScopedStreamBuffer & = delete;
+
 		ScopedStreamBuffer(std::ostream &stream, std::streambuf *replacement)
 		    : stream_(stream)
 		    , original_(stream.rdbuf(replacement)) {}
@@ -28,6 +31,9 @@ namespace howdy::test::config_cli {
 
 	class ScopedEnvironmentVariable {
 	public:
+		ScopedEnvironmentVariable(ScopedEnvironmentVariable &&)                     = delete;
+		auto operator=(ScopedEnvironmentVariable &&) -> ScopedEnvironmentVariable & = delete;
+
 		ScopedEnvironmentVariable(const char *name, const std::string &value)
 		    : name_(name) {
 			SaveOriginal();

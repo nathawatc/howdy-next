@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -91,7 +92,7 @@ namespace howdy::native::config_utils_internal {
 			if (stripped_pos == std::string::npos) {
 				continue;
 			}
-			const std::string_view stripped(line.data() + stripped_pos, line.size() - stripped_pos);
+			const auto stripped = std::string_view(line).substr(stripped_pos);
 			if (stripped.front() == ';' || stripped.front() == '#') {
 				continue;
 			}

@@ -49,12 +49,23 @@ namespace howdy::native {
 	};
 
 	struct RuntimeConfig {
-		CoreConfig  core;
-		VideoConfig video;
-		FaceConfig  face;
-		DebugConfig debug;
-
-		RuntimeConfig();
+		CoreConfig core{
+		    .detection_notice =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreDetectionNotice),
+		    .no_confirmation =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreNoConfirmation),
+		    .abort_if_ssh =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreAbortIfSsh),
+		    .abort_if_lid_closed =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreAbortIfLidClosed),
+		    .disabled = config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreDisabled),
+		};
+		VideoConfig video = DefaultVideoConfig();
+		FaceConfig  face  = DefaultFaceConfig();
+		DebugConfig debug{
+		    .end_report =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kDebugEndReport),
+		};
 	};
 
 }  // namespace howdy::native

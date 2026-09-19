@@ -1,9 +1,12 @@
+#include "config/config_schema.hpp"
 #include "config/config_template.hpp"
 #include "support/atomic_files.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -29,7 +32,10 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc != 3 || std::string_view(argv[1]) != "--output" || std::string_view(argv[2]).empty()) {
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	if (arguments.size() != 3 || std::string_view(arguments.subspan(1, 1).front()) != "--output" ||
+	    std::string_view(arguments.subspan(2, 1).front()).empty()) {
 		PrintUsage();
 		return 2;
 	}
@@ -41,7 +47,7 @@ auto main(int argc, char **argv) -> int {
 		return 1;
 	}
 
-	const std::filesystem::path output_path(argv[2]);
+	const std::filesystem::path output_path(arguments.subspan(2, 1).front());
 	if (const auto error = WriteOutputAtomically(output_path, rendered.content)) {
 		std::cerr << "howdy_config_generator: " << *error << '\n';
 		return 1;

@@ -43,7 +43,7 @@ namespace howdy::native::compare_privileges_internal {
 		const gid_t target_gid = nobody.gid;
 
 		auto capability_result = PrepareCapabilityDrop(dependencies);
-		if (!capability_result.Ok()) {
+		if (!ComparePrivilegeSucceeded(capability_result)) {
 			return capability_result;
 		}
 		if (!TransitionIdentity(dependencies, target_uid, target_gid) ||

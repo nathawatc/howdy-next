@@ -95,19 +95,18 @@ namespace howdy::native::command_catalog_internal {
 		}
 
 		auto ValidateCommandDescriptor(
-		    std::span<const CommandDescriptor>                             commands,
-		    std::array<bool, static_cast<std::size_t>(CommandId::kCount)> &seen_ids,
-		    std::size_t index) -> std::optional<std::string> {
-			const auto &command = commands[index];
-			const auto  id      = static_cast<std::size_t>(command.id);
-			const auto  name    = CommandName(command);
+		    const CommandDescriptor &command, std::span<const CommandDescriptor> previous_commands,
+		    std::array<bool, static_cast<std::size_t>(CommandId::kCount)> &seen_ids)
+		    -> std::optional<std::string> {
+			const auto id   = static_cast<std::size_t>(command.id);
+			const auto name = CommandName(command);
 			if (id >= seen_ids.size()) {
 				return "command has invalid id: " + name;
 			}
-			if (seen_ids[id]) {
+			if (seen_ids.at(id)) {
 				return "duplicate command id: " + name;
 			}
-			seen_ids[id] = true;
+			seen_ids.at(id) = true;
 			if (command.name.empty()) {
 				return "command name is empty";
 			}
@@ -131,9 +130,8 @@ namespace howdy::native::command_catalog_internal {
 			if ((command.global_options & known_global_options) != command.global_options) {
 				return "command has unknown global option mask: " + name;
 			}
-			for (std::size_t option_index = 0; option_index < command.options.size();
-			     ++option_index) {
-				const auto &option = command.options[option_index];
+			std::size_t option_index = 0;
+			for (const auto &option : command.options) {
 				if (option.short_name.empty() && option.long_name.empty()) {
 					return "command option has no spelling: " + name;
 				}
@@ -146,6 +144,7 @@ namespace howdy::native::command_catalog_internal {
 				                        })) {
 					return "duplicate command option spelling: " + CommandOptionLabel(option);
 				}
+				++option_index;
 			}
 
 			if (command.kind == CommandKind::kVersion &&
@@ -161,29 +160,28 @@ namespace howdy::native::command_catalog_internal {
 			     command.global_options != 0 || !command.options.empty())) {
 				return "version command cannot accept arguments or options: " + name;
 			}
-			if (std::ranges::any_of(commands.first(index),
-			                        [&command](const auto &previous) -> bool {
-				                        return previous.name == command.name;
-			                        })) {
+			if (std::ranges::any_of(previous_commands, [&command](const auto &previous) -> bool {
+				    return previous.name == command.name;
+			    })) {
 				return "duplicate command name: " + name;
 			}
 			return std::nullopt;
 		}
 
 		auto ValidateGlobalOptionDescriptor(
-		    std::span<const GlobalOptionDescriptor>                             options,
-		    std::array<bool, static_cast<std::size_t>(GlobalOptionId::kCount)> &seen_ids,
-		    std::size_t index) -> std::optional<std::string> {
-			const auto &option = options[index];
-			const auto  id     = static_cast<std::size_t>(option.id);
-			const auto  label  = OptionLabel(option);
+		    const GlobalOptionDescriptor                                       &option,
+		    std::span<const GlobalOptionDescriptor>                             previous_options,
+		    std::array<bool, static_cast<std::size_t>(GlobalOptionId::kCount)> &seen_ids)
+		    -> std::optional<std::string> {
+			const auto id    = static_cast<std::size_t>(option.id);
+			const auto label = OptionLabel(option);
 			if (id >= seen_ids.size()) {
 				return "global option has invalid id: " + label;
 			}
-			if (seen_ids[id]) {
+			if (seen_ids.at(id)) {
 				return "duplicate global option id: " + label;
 			}
-			seen_ids[id] = true;
+			seen_ids.at(id) = true;
 			if (option.short_name.empty() && option.long_name.empty()) {
 				return "global option has no spelling";
 			}
@@ -210,7 +208,7 @@ namespace howdy::native::command_catalog_internal {
 			if (option.id != GlobalOptionId::kUser && !option.argument_name.empty()) {
 				return "global option argument is unsupported: " + label;
 			}
-			if (std::ranges::any_of(options.first(index), [&option](const auto &previous) -> bool {
+			if (std::ranges::any_of(previous_options, [&option](const auto &previous) -> bool {
 				    return OptionSpellingsCollide(option, previous);
 			    })) {
 				return "duplicate global option spelling: " + label;
@@ -226,14 +224,17 @@ namespace howdy::native::command_catalog_internal {
 			return "command catalog is empty";
 		}
 		std::array<bool, static_cast<std::size_t>(CommandId::kCount)> seen_ids{};
-		for (std::size_t index = 0; index < commands.size(); ++index) {
-			if (const auto error = ValidateCommandDescriptor(commands, seen_ids, index)) {
+		std::size_t                                                   index = 0;
+		for (const auto &command : commands) {
+			if (const auto error =
+			        ValidateCommandDescriptor(command, commands.first(index), seen_ids)) {
 				return error;
 			}
+			++index;
 		}
 		if (require_complete) {
 			for (std::size_t id = 0; id < seen_ids.size(); ++id) {
-				if (!seen_ids[id]) {
+				if (!seen_ids.at(id)) {
 					return MissingIdMessage("command", id);
 				}
 			}
@@ -247,14 +248,17 @@ namespace howdy::native::command_catalog_internal {
 			return "global-option catalog is empty";
 		}
 		std::array<bool, static_cast<std::size_t>(GlobalOptionId::kCount)> seen_ids{};
-		for (std::size_t index = 0; index < options.size(); ++index) {
-			if (const auto error = ValidateGlobalOptionDescriptor(options, seen_ids, index)) {
+		std::size_t                                                        index = 0;
+		for (const auto &option : options) {
+			if (const auto error =
+			        ValidateGlobalOptionDescriptor(option, options.first(index), seen_ids)) {
 				return error;
 			}
+			++index;
 		}
 		if (require_complete) {
 			for (std::size_t id = 0; id < seen_ids.size(); ++id) {
-				if (!seen_ids[id]) {
+				if (!seen_ids.at(id)) {
 					return MissingIdMessage("global option", id);
 				}
 			}

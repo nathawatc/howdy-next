@@ -1,15 +1,17 @@
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
-#include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
+#include "support/scoped_fd.hpp"
 #include "support/user_names.hpp"
 
 #include <cerrno>
-#include <fcntl.h>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/acl.h>
@@ -45,13 +47,13 @@ namespace howdy::native {
 
 		auto StatIsDirectory(const struct stat &stat, uid_t owner_uid, mode_t mode) -> bool {
 			return S_ISDIR(stat.st_mode) && stat.st_uid == owner_uid && stat.st_gid == 0 &&
-			       (stat.st_mode & 07777) == mode;
+			       MaskedBits(stat.st_mode, 07777) == mode;
 		}
 
 		auto StatIsRegular(const struct stat &stat, uid_t owner_uid, mode_t mode, nlink_t links)
 		    -> bool {
 			return S_ISREG(stat.st_mode) && stat.st_uid == owner_uid && stat.st_gid == 0 &&
-			       (stat.st_mode & 07777) == mode && stat.st_nlink == links;
+			       MaskedBits(stat.st_mode, 07777) == mode && stat.st_nlink == links;
 		}
 
 		auto AclMatches(int fd, const std::string &expected_text) -> bool {
@@ -70,9 +72,9 @@ namespace howdy::native {
 
 		auto AclPermissionsText(StagedAclPermissions permissions) -> std::string {
 			std::string text = "---";
-			text[0]          = permissions.read ? 'r' : '-';
-			text[1]          = permissions.write ? 'w' : '-';
-			text[2]          = permissions.execute ? 'x' : '-';
+			text.at(0)       = permissions.read ? 'r' : '-';
+			text.at(1)       = permissions.write ? 'w' : '-';
+			text.at(2)       = permissions.execute ? 'x' : '-';
 			return text;
 		}
 
@@ -252,10 +254,10 @@ namespace howdy::native {
 				return false;
 			}
 
-			ScopedFd    backing(openat(directories.generation.Get(),
-			                           auth_helper_protocol::kPreparedModelBackingFileName,
-			                           O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-			struct stat backing_stat{};
+			ScopedFd const backing(openat(directories.generation.Get(),
+			                              auth_helper_protocol::kPreparedModelBackingFileName,
+			                              O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			struct stat    backing_stat{};
 			return backing.Get() >= 0 && fstat(backing.Get(), &backing_stat) == 0 &&
 			       StatIsRegular(backing_stat, owner_uid,
 			                     GetStagedRuntimePolicy(StagedRuntimeRole::kPresentModel).mode,
@@ -288,8 +290,8 @@ namespace howdy::native {
 				return failure;
 			}
 
-			ScopedFd visible(openat(directories->models.Get(), parsed.model_name.c_str(),
-			                        O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			ScopedFd const visible(openat(directories->models.Get(), parsed.model_name.c_str(),
+			                              O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 			if (visible.Get() >= 0) {
 				return ValidatePresentStagedFile(visible.Get(), parsed, *directories, owner)
 				           ? StagedReadiness::kPresent
@@ -300,10 +302,10 @@ namespace howdy::native {
 				                                       : StagedReadiness::kInsecure;
 			}
 
-			ScopedFd    backing(openat(directories->generation.Get(),
-			                           auth_helper_protocol::kPreparedModelBackingFileName,
-			                           O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
-			struct stat backing_stat{};
+			ScopedFd const backing(openat(directories->generation.Get(),
+			                              auth_helper_protocol::kPreparedModelBackingFileName,
+			                              O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			struct stat    backing_stat{};
 			if (backing.Get() < 0 || fstat(backing.Get(), &backing_stat) != 0) {
 				return StagedReadiness::kInsecure;
 			}

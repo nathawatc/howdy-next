@@ -1,14 +1,50 @@
 #include "pam_test_support.hpp"
+#include "prompt/conversation_restore.hpp"
+#include "prompt/observed_prompt_conversation.hpp"
+#include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/prompt_coordinator_test_groups.hpp"
+#include "prompt/workaround.hpp"
+#include "protocol/compare_exit.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
+#include "test_support.hpp"
 
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <span>
+#include <stdexcept>
+#include <thread>
+
+#include <string.h>
+
+#include <security/pam_appl.h>
+
+#include <sys/types.h>
 
 namespace {
-	using namespace howdy::test::process;
-	using namespace howdy::test::prompt_coordinator;
+	using howdy::pam::PromptCoordinator;
+	using howdy::pam::PromptCoordinatorDecision;
+	using howdy::pam::PromptCoordinatorTimeout;
+	using howdy::pam::Workaround;
+	using howdy::test::Expect;
+	using howdy::test::process::ChildReaped;
+	using howdy::test::process::SpawnBlockedChild;
+	using howdy::test::process::SpawnChild;
+	using howdy::test::prompt_coordinator::CompareExit;
+	using howdy::test::prompt_coordinator::FakeContext;
+	using howdy::test::prompt_coordinator::FakePromptSubmitter;
+	using howdy::test::prompt_coordinator::MakeCompareRequest;
+	using howdy::test::prompt_coordinator::Timeout;
+	using howdy::test::prompt_coordinator::WaitForCompare;
+	using std::chrono_literals::operator""ms;
+	using std::chrono_literals::operator""s;
 
 	struct StrictConversationState {
 		std::thread::id   caller_thread;
@@ -45,11 +81,12 @@ namespace {
 		if (responses == nullptr) {
 			return PAM_BUF_ERR;
 		}
-		responses[0].resp = strdup("user");
-		responses[1].resp = strdup("secret");
-		if (responses[0].resp == nullptr || responses[1].resp == nullptr) {
-			std::free(responses[0].resp);
-			std::free(responses[1].resp);
+		auto response_view         = std::span(responses, std::size_t{2});
+		response_view.front().resp = strdup("user");
+		response_view.back().resp  = strdup("secret");
+		if (response_view.front().resp == nullptr || response_view.back().resp == nullptr) {
+			std::free(response_view.front().resp);
+			std::free(response_view.back().resp);
 			std::free(responses);
 			return PAM_BUF_ERR;
 		}
@@ -72,8 +109,11 @@ namespace {
 		}
 		auto *state = static_cast<PromptEntryState *>(appdata_ptr);
 		if (state == nullptr || state->context == nullptr || response == nullptr || num_msg != 1 ||
-		    messages == nullptr || messages[0] == nullptr ||
-		    messages[0]->msg_style != PAM_PROMPT_ECHO_OFF) {
+		    messages == nullptr) {
+			return PAM_CONV_ERR;
+		}
+		const auto *message = std::span(messages, std::size_t{1}).front();
+		if (message == nullptr || message->msg_style != PAM_PROMPT_ECHO_OFF) {
 			return PAM_CONV_ERR;
 		}
 		state->original_called = true;
@@ -91,8 +131,9 @@ namespace {
 		if (responses == nullptr) {
 			return PAM_BUF_ERR;
 		}
-		responses[0].resp = strdup("password");
-		if (responses[0].resp == nullptr) {
+		auto response_view         = std::span(responses, std::size_t{1});
+		response_view.front().resp = strdup("password");
+		if (response_view.front().resp == nullptr) {
 			std::free(responses);
 			return PAM_BUF_ERR;
 		}
@@ -131,25 +172,32 @@ namespace {
 			state->active = false;
 			return PAM_BUF_ERR;
 		}
-		for (int index = 0; index < num_msg; ++index) {
-			if (messages[index] == nullptr || (messages[index]->msg_style != PAM_PROMPT_ECHO_OFF &&
-			                                   messages[index]->msg_style != PAM_PROMPT_ECHO_ON)) {
-				for (int allocated = 0; allocated < index; ++allocated) {
-					std::free(responses[allocated].resp);
+		const auto  message_view    = std::span(messages, static_cast<std::size_t>(num_msg));
+		auto        response_view   = std::span(responses, static_cast<std::size_t>(num_msg));
+		auto        response_it     = response_view.begin();
+		std::size_t allocated_count = 0;
+		for (const auto *message : message_view) {
+			if (message == nullptr || (message->msg_style != PAM_PROMPT_ECHO_OFF &&
+			                           message->msg_style != PAM_PROMPT_ECHO_ON)) {
+				for (auto &allocated : response_view.first(allocated_count)) {
+					std::free(allocated.resp);
 				}
 				std::free(responses);
 				state->active = false;
 				return PAM_CONV_ERR;
 			}
-			responses[index].resp = strdup("password");
-			if (responses[index].resp == nullptr) {
-				for (int allocated = 0; allocated < index; ++allocated) {
-					std::free(responses[allocated].resp);
+			auto &current_response = *response_it;
+			current_response.resp  = strdup("password");
+			if (current_response.resp == nullptr) {
+				for (auto &allocated : response_view.first(allocated_count)) {
+					std::free(allocated.resp);
 				}
 				std::free(responses);
 				state->active = false;
 				return PAM_BUF_ERR;
 			}
+			++allocated_count;
+			++response_it;
 		}
 		*response     = responses;
 		state->active = false;
@@ -263,7 +311,7 @@ namespace {
 		bool ok = Expect(WaitForSubmissionReady(context, 1s),
 		                 "in-flight prompt submission begins before password returns");
 		{
-			std::scoped_lock lock(context.token_mutex);
+			std::scoped_lock const lock(context.token_mutex);
 			context.release_token = true;
 		}
 		context.token_condition.notify_all();
@@ -358,7 +406,7 @@ namespace {
 		std::jthread worker([&coordinator] -> void {
 			howdy::pam::PromptCoordinatorTestAccess::SubmitPromptForGenerations(coordinator);
 		});
-		bool         ok = Expect(WaitForSubmissionReady(context, 1s),
+		bool const   ok = Expect(WaitForSubmissionReady(context, 1s),
 		                         "generation 1 prompt submission starts before close");
 		howdy::pam::PromptCoordinatorTestAccess::ClosePromptGeneration(coordinator, 1);
 		const auto generation =
@@ -551,7 +599,7 @@ namespace {
 		    Expect(howdy::pam::PromptCoordinatorTestAccess::WaitForCompareSuccess(coordinator, 1s),
 		           "no-secret-prompt face success publishes before password_call_returned");
 		{
-			std::scoped_lock lock(context.token_mutex);
+			std::scoped_lock const lock(context.token_mutex);
 			context.release_conversation = true;
 		}
 		context.token_condition.notify_all();
@@ -615,8 +663,8 @@ namespace {
 		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
 		}};
 		std::array<const struct pam_message *, 2> message_ptrs{
-		    {messages.data(), messages.data() + 1}};
-		auto *responses = reinterpret_cast<struct pam_response *>(0x1);
+		    {&messages.front(), &messages.back()}};
+		auto *responses = howdy::test::PamResponseSentinelForTest();
 		ok &= Expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
 		                 PAM_SUCCESS,
 		             "observed wrapper delegates mixed prompt batch synchronously");
@@ -624,24 +672,27 @@ namespace {
 		             "observed wrapper publishes one secret observation per batch");
 		ok &= Expect(state.original_calls == 1,
 		             "observed wrapper invokes original conversation once");
-		ok &= Expect(responses != nullptr && std::string_view(responses[0].resp) == "user" &&
-		                 std::string_view(responses[1].resp) == "secret",
-		             "observed wrapper preserves original response ownership and contents");
+		bool response_contents_valid = false;
 		if (responses != nullptr) {
-			std::free(responses[0].resp);
-			std::free(responses[1].resp);
+			auto response_view      = std::span(responses, std::size_t{2});
+			response_contents_valid = std::string_view(response_view.front().resp) == "user" &&
+			                          std::string_view(response_view.back().resp) == "secret";
+			std::free(response_view.front().resp);
+			std::free(response_view.back().resp);
 			std::free(responses);
 		}
+		ok &= Expect(response_contents_valid,
+		             "observed wrapper preserves original response ownership and contents");
 
 		std::array<const struct pam_message *, 2> invalid_messages{{messages.data(), nullptr}};
-		responses = reinterpret_cast<struct pam_response *>(0x1);
+		responses = howdy::test::PamResponseSentinelForTest();
 		ok &= Expect(installed->conv(2, invalid_messages.data(), &responses,
 		                             installed->appdata_ptr) == PAM_CONV_ERR,
 		             "observed wrapper rejects invalid message batch");
 		ok &= Expect(responses == nullptr, "observed wrapper clears response before validation");
 
 		state.throw_observer = true;
-		responses            = reinterpret_cast<struct pam_response *>(0x1);
+		responses            = howdy::test::PamResponseSentinelForTest();
 		ok &= Expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
 		                 PAM_CONV_ERR,
 		             "observed wrapper catches observer exception before C ABI return");
@@ -710,7 +761,8 @@ namespace {
 		const auto        result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "wait exception returns failed compare result") &&
-		       Expect(result.compare_status == (static_cast<int>(CompareExit::kAbort) << 8),
+		       Expect(result.compare_status ==
+		                  (howdy::native::EncodeWaitExitStatus(CompareExit::kAbort)),
 		              "wait exception maps to compare abort") &&
 		       Expect(context.cleanup_calls == 1 && context.cleaned_pid == child_pid,
 		              "wait exception invokes injected cleanup once") &&

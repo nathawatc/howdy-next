@@ -1,6 +1,16 @@
+#include "compare/compare_privileges_test_groups.hpp"
 #include "compare/compare_privileges_test_support.hpp"
+#include "compare/privileges.hpp"
 
-auto RunComparePrivilegesPrivilegedTests() -> bool;
+#include <array>
+#include <cstddef>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include <sys/types.h>
+
+#include <linux/securebits.h>
 
 namespace howdy::test::compare_privileges {
 	namespace {
@@ -9,7 +19,8 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext context;
 			const auto           result = Drop(context);
 			bool                 ok     = true;
-			ok &= Expect(result.Ok(), "privileged credential drop succeeds");
+			ok &= Expect(howdy::native::ComparePrivilegeSucceeded(result),
+			             "privileged credential drop succeeds");
 			ok &= ExpectEvents(context, ExpectedPrivilegedEvents(), "privileged sequence is exact");
 			ok &= Expect(context.lookup_name == "nobody", "lookup resolves exactly nobody");
 			ok &= Expect(context.group_count == 0 && context.group_pointer == nullptr,
@@ -40,7 +51,8 @@ namespace howdy::test::compare_privileges {
 				privileged_context.uids      = uids;
 				privileged_context.gids      = gids;
 				const auto privileged_result = Drop(privileged_context);
-				ok &= Expect(privileged_result.Ok(), label + " enter privileged drop path");
+				ok &= Expect(howdy::native::ComparePrivilegeSucceeded(privileged_result),
+				             label + " enter privileged drop path");
 				ok &= ExpectEvents(privileged_context, ExpectedPrivilegedEvents(),
 				                   label + " preserve privileged operation order");
 				ok &= Expect(privileged_context.uids ==
@@ -58,7 +70,8 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext safe_securebits_context;
 			safe_securebits_context.securebits = SECBIT_NOROOT;
 			const auto safe_securebits_result  = Drop(safe_securebits_context);
-			ok &= Expect(safe_securebits_result.Ok(), "unrelated safe securebit remains allowed");
+			ok &= Expect(howdy::native::ComparePrivilegeSucceeded(safe_securebits_result),
+			             "unrelated safe securebit remains allowed");
 			return ok;
 		}
 
@@ -151,7 +164,8 @@ namespace howdy::test::compare_privileges {
 				const auto result = Drop(context);
 				ok &= Expect(result.status == test_case.status,
 				             test_case.label + " returns structured failure");
-				ok &= Expect(!result.Ok(), test_case.label + " is not success");
+				ok &= Expect(!howdy::native::ComparePrivilegeSucceeded(result),
+				             test_case.label + " is not success");
 				ok &= Expect(context.fatal_calls == 0,
 				             test_case.label + " does not fatal before UID drop");
 				ok &= ExpectEvents(context, test_case.events,
@@ -294,15 +308,17 @@ namespace howdy::test::compare_privileges {
 
 	}  // namespace
 
-	inline auto RunComparePrivilegesPrivilegedTestsImpl() -> bool {
-		bool ok = true;
-		ok &= TestPrivilegedSuccess();
-		ok &= TestPrivilegedResidualCapabilities();
-		ok &= TestLookupAndIdentityFailures();
-		ok &= TestPrivilegedPreMutationFailures();
-		ok &= TestPrivilegedFailurePaths();
-		return ok;
-	}
+	namespace {
+		inline auto RunComparePrivilegesPrivilegedTestsImpl() -> bool {
+			bool ok = true;
+			ok &= TestPrivilegedSuccess();
+			ok &= TestPrivilegedResidualCapabilities();
+			ok &= TestLookupAndIdentityFailures();
+			ok &= TestPrivilegedPreMutationFailures();
+			ok &= TestPrivilegedFailurePaths();
+			return ok;
+		}
+	}  // namespace
 
 }  // namespace howdy::test::compare_privileges
 

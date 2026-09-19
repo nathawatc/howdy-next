@@ -2,9 +2,11 @@
 
 #include "runtime/compare_process.hpp"
 
-#include <spawn.h>
+#include <ranges>
 #include <string>
 #include <vector>
+
+#include <spawn.h>
 
 namespace howdy::test::prompt_coordinator {
 
@@ -58,11 +60,17 @@ namespace howdy::test::prompt_coordinator {
 		++capture.spawn_calls;
 		capture.spawn_actions = request.actions;
 		capture.path          = request.path;
-		for (char *const *argument = request.argv; *argument != nullptr; ++argument) {
-			capture.argv.emplace_back(*argument);
+		for (const char *argument :
+		     request.argv | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			capture.argv.emplace_back(argument);
 		}
-		for (char *const *entry = request.envp; *entry != nullptr; ++entry) {
-			capture.environment.emplace_back(*entry);
+		for (const char *entry :
+		     request.envp | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			capture.environment.emplace_back(entry);
 		}
 
 		if (capture.spawn_result == 0) {

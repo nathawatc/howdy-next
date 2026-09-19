@@ -2,15 +2,21 @@
 #include "../../src/config/config_validation/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
+#include "support/bit_flags.hpp"
 #include "support/file_lock.hpp"
+#include "support/file_security.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
 #include <filesystem>
 #include <string>
+#include <system_error>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::test {
 	using howdy::native::LockFilePath;
@@ -55,7 +61,7 @@ namespace howdy::test {
 		ok &= Expect(install_failure_security.ok,
 		             "install-failure config passes secure path check before update");
 		FileSizeLimitGuard file_size_limit_guard;
-		const bool         have_file_size_limit = file_size_limit_guard.have_original;
+		const bool         have_file_size_limit = file_size_limit_guard.Available();
 		ok &= Expect(have_file_size_limit, "read file-size limit for install-failure test");
 		const bool set_file_size_limit = file_size_limit_guard.SetZero();
 		ok &= Expect(set_file_size_limit, "set file-size limit for install-failure test");
@@ -179,7 +185,8 @@ namespace howdy::test {
 		             "update_config_value succeeds on secure config");
 		struct stat protected_stat{};
 		ok &= Expect(stat(protected_path.c_str(), &protected_stat) == 0, "stat protected config");
-		ok &= Expect((protected_stat.st_mode & 0777) == 0600, "atomic write preserves config mode");
+		ok &= Expect(howdy::native::MaskedBits(protected_stat.st_mode, 0777) == 0600,
+		             "atomic write preserves config mode");
 
 		const auto hardlink_path = context.temp_root / "protected-hardlink.ini";
 		ok &= Expect(link(protected_path.c_str(), hardlink_path.c_str()) == 0,
@@ -188,7 +195,7 @@ namespace howdy::test {
 		                                               false, true, {context.temp_root}),
 		             "update_config_value rejects hard-linked config");
 
-		howdy::native::ConfigReader validated(context.config_path.string());
+		howdy::native::ConfigReader const validated(context.config_path.string());
 		ok &= Expect(validated.Ok(), "validated config still parses");
 		ok &= Expect(!howdy::native::ValidateRuntimeConfig(validated).has_value(),
 		             "validated config passes semantic validation");

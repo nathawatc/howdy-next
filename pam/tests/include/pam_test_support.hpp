@@ -1,16 +1,35 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <string>
+
 #include <unistd.h>
 
 #include <security/pam_appl.h>
 
+struct pam_handle {};
+
 namespace howdy::test {
+
+	inline auto OpaquePamHandleForTest() noexcept -> pam_handle_t * {
+		static pam_handle handle{};
+		return &handle;
+	}
+
+	inline auto PamResponseSentinelForTest() noexcept -> pam_response * {
+		static thread_local pam_response sentinel{};
+		return &sentinel;
+	}
 
 	class PamTestConfigDirectory {
 	public:
+		PamTestConfigDirectory(const PamTestConfigDirectory &)                     = delete;
+		auto operator=(const PamTestConfigDirectory &) -> PamTestConfigDirectory & = delete;
+		PamTestConfigDirectory(PamTestConfigDirectory &&)                          = delete;
+		auto operator=(PamTestConfigDirectory &&) -> PamTestConfigDirectory &      = delete;
+
 		PamTestConfigDirectory()
 		    : root_(std::filesystem::temp_directory_path() /
 		            ("howdy-pam-test-" + std::to_string(getpid()))) {

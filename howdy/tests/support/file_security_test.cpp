@@ -1,15 +1,19 @@
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <system_error>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -149,7 +153,7 @@ auto main() -> int {
 	ok &= Expect(SecureFile(safe_file).ok, "safe regular file is accepted");
 	ok &= Expect(SecureDir(safe_dir).ok, "safe directory is accepted");
 
-	int safe_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	int const safe_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 	ok &= Expect(safe_fd >= 0, "open safe file descriptor");
 	if (safe_fd >= 0) {
 		ok &= Expect(SecureFd(safe_fd, safe_file).ok, "safe descriptor is accepted");
@@ -166,7 +170,7 @@ auto main() -> int {
 
 	ok &= Expect(chmod(safe_file.c_str(), 0664) == 0, "make file group-writable");
 	ok &= Expect(!SecureFile(safe_file).ok, "group-writable file is rejected");
-	int group_writable_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	int const group_writable_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 	ok &= Expect(group_writable_fd >= 0, "open group-writable file descriptor");
 	if (group_writable_fd >= 0) {
 		ok &= Expect(!SecureFd(group_writable_fd, safe_file).ok,
@@ -187,7 +191,7 @@ auto main() -> int {
 	ok &= Expect(!SecureDir(safe_dir).ok, "world-writable directory is rejected");
 	ok &= Expect(chmod(safe_dir.c_str(), 0755) == 0, "restore dir mode after world writable");
 
-	int dir_fd = open(safe_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+	int const dir_fd = open(safe_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 	ok &= Expect(dir_fd >= 0, "open directory descriptor");
 	if (dir_fd >= 0) {
 		ok &= Expect(howdy::native::CheckSecureFd(dir_fd, howdy::native::SecurePathKind::kDirectory,
@@ -214,7 +218,7 @@ auto main() -> int {
 	ok &= Expect(link(safe_file.c_str(), hardlink_path.c_str()) == 0, "create hardlink");
 	ok &=
 	    Expect(!SecureFile(safe_file).ok, "hardlinked regular file is rejected by current policy");
-	int hardlink_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+	int const hardlink_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 	ok &= Expect(hardlink_fd >= 0, "open hardlinked file descriptor");
 	if (hardlink_fd >= 0) {
 		ok &= Expect(!SecureFd(hardlink_fd, safe_file).ok,

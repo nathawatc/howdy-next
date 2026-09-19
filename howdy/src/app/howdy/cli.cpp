@@ -1,11 +1,14 @@
 #include "app/command_catalog.hpp"
+#include "app/command_invocation.hpp"
 #include "cli/internal.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <expected>
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -93,12 +96,12 @@ namespace howdy::native::howdy_cli_internal {
 		}
 
 		auto ParseGlobalOption(const GlobalOptionDescriptor &option, std::string_view spelling,
-		                       int argc, char **argv, int &index, ParsedCommandLine &parsed)
-		    -> std::optional<CliSyntaxError> {
+		                       std::span<char *> arguments, std::size_t &index,
+		                       ParsedCommandLine &parsed) -> std::optional<CliSyntaxError> {
 			switch (option.id) {
 				case GlobalOptionId::kUser:
 					parsed.global_option_seen = true;
-					if (index + 1 >= argc) {
+					if (index + 1 >= arguments.size()) {
 						return CliSyntaxError{
 						    .kind          = CliSyntaxErrorKind::kMissingOptionValue,
 						    .value         = std::string(spelling),
@@ -106,7 +109,7 @@ namespace howdy::native::howdy_cli_internal {
 						};
 					}
 					parsed.user_option_spelling = spelling;
-					parsed.user                 = argv[++index];
+					parsed.user                 = arguments.subspan(++index, 1).front();
 					if (parsed.user->empty()) {
 						return CliSyntaxError{
 						    .kind          = CliSyntaxErrorKind::kEmptyOptionValue,
@@ -175,7 +178,7 @@ namespace howdy::native::howdy_cli_internal {
 		                        const CommandOptionDescriptor &option, std::size_t &index,
 		                        std::vector<const CommandOptionDescriptor *> &seen_options,
 		                        CommandInvocation &invocation) -> std::optional<CliSyntaxError> {
-			const auto &argument = parsed.arguments[index];
+			const auto &argument = parsed.arguments.at(index);
 			if (std::ranges::find(seen_options, &option) != seen_options.end()) {
 				return CliSyntaxError{
 				    .kind  = CliSyntaxErrorKind::kDuplicateOption,
@@ -189,16 +192,16 @@ namespace howdy::native::howdy_cli_internal {
 
 			const std::size_t value_index = index + 1;
 			if (value_index >= parsed.arguments.size() ||
-			    !parsed.arguments[value_index].options_enabled ||
-			    (!parsed.arguments[value_index].value.empty() &&
-			     parsed.arguments[value_index].value.front() == '-')) {
+			    !parsed.arguments.at(value_index).options_enabled ||
+			    (!parsed.arguments.at(value_index).value.empty() &&
+			     parsed.arguments.at(value_index).value.front() == '-')) {
 				return CliSyntaxError{
 				    .kind          = CliSyntaxErrorKind::kMissingOptionValue,
 				    .value         = argument.value,
 				    .argument_name = std::string(option.argument_name),
 				};
 			}
-			if (parsed.arguments[value_index].value.empty()) {
+			if (parsed.arguments.at(value_index).value.empty()) {
 				return CliSyntaxError{
 				    .kind          = CliSyntaxErrorKind::kEmptyOptionValue,
 				    .value         = argument.value,
@@ -206,7 +209,7 @@ namespace howdy::native::howdy_cli_internal {
 				};
 			}
 			if (command.id == CommandId::kTest && option.long_name == "--device") {
-				invocation.device = parsed.arguments[value_index].value;
+				invocation.device = parsed.arguments.at(value_index).value;
 			}
 			index = value_index;
 			return std::nullopt;
@@ -282,9 +285,11 @@ namespace howdy::native::howdy_cli_internal {
 
 	auto ParseCommandLine(int argc, char **argv, ParsedCommandLine &parsed)
 	    -> std::optional<CliSyntaxError> {
+		const auto arguments =
+		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
 		bool options_ended = false;
-		for (int index = 1; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
+		for (std::size_t index = 1; index < arguments.size(); ++index) {
+			const std::string_view arg(arguments.subspan(index, 1).front());
 			if (!options_ended && arg == "--") {
 				options_ended = true;
 				continue;
@@ -293,7 +298,7 @@ namespace howdy::native::howdy_cli_internal {
 				const auto *option = FindGlobalOption(arg);
 				if (option != nullptr && CanParseGlobalOption(parsed, *option)) {
 					if (const auto error =
-					        ParseGlobalOption(*option, arg, argc, argv, index, parsed);
+					        ParseGlobalOption(*option, arg, arguments, index, parsed);
 					    error.has_value()) {
 						return error;
 					}
@@ -331,7 +336,7 @@ namespace howdy::native::howdy_cli_internal {
 		std::size_t                                  positional_count = 0;
 		std::vector<const CommandOptionDescriptor *> seen_options;
 		for (std::size_t index = 0; index < parsed.arguments.size(); ++index) {
-			const auto &argument = parsed.arguments[index];
+			const auto &argument = parsed.arguments.at(index);
 			if (!argument.options_enabled) {
 				if (const auto error =
 				        AppendPositional(invocation, command, argument.value, positional_count);

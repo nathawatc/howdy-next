@@ -58,6 +58,12 @@ howdy_add_native_test(
 )
 
 howdy_add_native_test(
+	howdy_passwd_lookup_test
+	native-passwd-lookup
+	tests/support/passwd_lookup_test.cpp
+)
+
+howdy_add_native_test(
 	howdy_invoking_user_env_test
 	native-invoking-user-env
 	tests/support/invoking_user_env_test.cpp

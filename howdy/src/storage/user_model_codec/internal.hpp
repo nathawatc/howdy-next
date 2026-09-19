@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
 #include <yyjson.h>
 
 namespace howdy::native::user_model_codec {
@@ -24,10 +25,17 @@ namespace howdy::native::user_model_codec {
 		Document(const Document &)                     = delete;
 		auto operator=(const Document &) -> Document & = delete;
 
-		UserModelListResult result;
+		[[nodiscard]] auto Result() noexcept -> UserModelListResult & {
+			return result_;
+		}
+
+		[[nodiscard]] auto Result() const noexcept -> const UserModelListResult & {
+			return result_;
+		}
 
 	private:
-		struct Impl;
+		UserModelListResult result_;
+		class Impl;
 		std::unique_ptr<Impl> impl_;
 
 		Document(UserModelListResult result, std::unique_ptr<Impl> impl);

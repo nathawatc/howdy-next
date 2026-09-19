@@ -11,36 +11,50 @@ namespace howdy::test::add_cli {
 
 	using howdy::test::Expect;
 
-	struct StreamRedirect {
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
+
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
 		               std::ostream &output_stream, std::streambuf *new_output)
-		    : input(input_stream)
-		    , output(output_stream)
-		    , old_input(input_stream.rdbuf(new_input))
-		    , old_output(output_stream.rdbuf(new_output)) {}
+		    : input_(input_stream)
+		    , output_(output_stream)
+		    , old_input_(input_stream.rdbuf(new_input))
+		    , old_output_(output_stream.rdbuf(new_output)) {}
 
 		~StreamRedirect() {
-			input.rdbuf(old_input);
-			output.rdbuf(old_output);
+			input_.rdbuf(old_input_);
+			output_.rdbuf(old_output_);
 		}
 
-		std::istream   &input;
-		std::ostream   &output;
-		std::streambuf *old_input;
-		std::streambuf *old_output;
+	private:
+		std::istream   &input_;
+		std::ostream   &output_;
+		std::streambuf *old_input_;
+		std::streambuf *old_output_;
 	};
 
-	struct ErrorRedirect {
+	class ErrorRedirect {
+	public:
 		explicit ErrorRedirect(std::ostream &error_stream, std::streambuf *new_error)
-		    : error(error_stream)
-		    , old_error(error_stream.rdbuf(new_error)) {}
+		    : error_(error_stream)
+		    , old_error_(error_stream.rdbuf(new_error)) {}
+
+		ErrorRedirect(const ErrorRedirect &)                     = delete;
+		auto operator=(const ErrorRedirect &) -> ErrorRedirect & = delete;
+		ErrorRedirect(ErrorRedirect &&)                          = delete;
+		auto operator=(ErrorRedirect &&) -> ErrorRedirect &      = delete;
 
 		~ErrorRedirect() {
-			error.rdbuf(old_error);
+			error_.rdbuf(old_error_);
 		}
 
-		std::ostream   &error;
-		std::streambuf *old_error;
+	private:
+		std::ostream   &error_;
+		std::streambuf *old_error_;
 	};
 
 	struct AddCliTestContext {

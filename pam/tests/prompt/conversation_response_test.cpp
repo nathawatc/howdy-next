@@ -2,9 +2,14 @@
 #include "prompt/conversation_response/internal.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
+#include <span>
+
+#include <string.h>
 
 namespace {
 	struct Event {
@@ -18,27 +23,31 @@ namespace {
 		std::size_t           count = 0;
 	};
 
-	void RecordErase(howdy::pam::detail::ConversationResponseAllocation allocation,
-	                 std::size_t                                        length) noexcept {
-		auto &state                 = *static_cast<Context *>(allocation.context);
-		state.events[state.count++] = {
-		    .pointer = allocation.pointer, .length = length, .erase = true};
-		explicit_bzero(allocation.pointer, length);
+	void RecordErase(void *context, std::span<char> bytes) noexcept {
+		auto &state                    = *static_cast<Context *>(context);
+		state.events.at(state.count++) = {
+		    .pointer = bytes.data(), .length = bytes.size(), .erase = true};
+		explicit_bzero(bytes.data(), bytes.size());
 	}
 
 	void RecordRelease(howdy::pam::detail::ConversationResponseAllocation allocation) noexcept {
-		auto &state                 = *static_cast<Context *>(allocation.context);
-		state.events[state.count++] = {.pointer = allocation.pointer, .erase = false};
+		auto &state                    = *static_cast<Context *>(allocation.context);
+		state.events.at(state.count++) = {.pointer = allocation.pointer, .erase = false};
 		std::free(allocation.pointer);
 	}
 
 	auto MakeResponses(std::initializer_list<const char *> values) -> struct pam_response * {
 		auto *responses = static_cast<struct pam_response *>(
 		    std::calloc(values.size(), sizeof(struct pam_response)));
-		std::size_t index = 0;
-		for (const char *value : values) {
-			responses[index++].resp = value == nullptr ? nullptr : strdup(value);
+		if (responses == nullptr) {
+			return nullptr;
 		}
+		auto response_view = std::span(responses, values.size());
+		std::ranges::transform(
+		    values, response_view.begin(), [](const char *value) -> pam_response {
+			    return pam_response{.resp         = value == nullptr ? nullptr : strdup(value),
+			                        .resp_retcode = 0};
+		    });
 		return responses;
 	}
 

@@ -1,16 +1,18 @@
 #include "module/entrypoint.hpp"
 
+#include "module/pam_options.hpp"
 #include "runtime/message_locale.hpp"
 
 #include <exception>
-#include <syslog.h>
+
+#include <sys/syslog.h>
 
 namespace howdy::pam {
 
 	auto RunAuthenticationEntrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
 	                                 bool                          request_auth_token,
 	                                 const EntrypointDependencies &dependencies) noexcept -> int {
-		ScopedMessageLocale message_locale;
+		ScopedMessageLocale const message_locale;
 		try {
 			if (dependencies.authenticate == nullptr) {
 				return PAM_SYSTEM_ERR;

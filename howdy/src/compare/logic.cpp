@@ -1,9 +1,14 @@
 #include "compare/logic.hpp"
 
+#include "protocol/compare_exit.hpp"
 #include "vision/frame_processing.hpp"
 
 #include <cmath>
+#include <exception>
 #include <ostream>
+#include <string_view>
+
+#include <opencv2/core/exception.hpp>
 
 namespace howdy::native {
 

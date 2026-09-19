@@ -1,5 +1,6 @@
 #pragma once
 
+#include "compare/privileges.hpp"
 #include "compare/privileges/internal.hpp"
 #include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
@@ -9,10 +10,12 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <pwd.h>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <pwd.h>
 
 #include <sys/prctl.h>
 #include <sys/types.h>
@@ -31,7 +34,7 @@ namespace howdy::test::compare_privileges {
 	using howdy::native::compare_privileges_internal::GroupIdOutputs;
 	using howdy::native::compare_privileges_internal::UserIdOutputs;
 
-	inline gid_t group_pointer_sentinel = 0;
+	inline constexpr gid_t kGroupPointerSentinel = 0;
 
 	enum class LookupMode : std::uint8_t {
 		kSuccess,
@@ -109,7 +112,7 @@ namespace howdy::test::compare_privileges {
 		int         capset_calls          = 0;
 
 		std::size_t          group_count   = 1;
-		const gid_t         *group_pointer = &group_pointer_sentinel;
+		const gid_t         *group_pointer = &kGroupPointerSentinel;
 		std::array<gid_t, 3> set_gids{};
 		std::array<uid_t, 3> set_uids{};
 		uid_t                regain_uid = 1;
@@ -157,9 +160,10 @@ namespace howdy::test::compare_privileges {
 		return EIO;
 	}
 
-	inline auto FakePrctl(void *raw_context, int operation, unsigned long argument2,
-	                      unsigned long argument3, unsigned long argument4, unsigned long argument5)
-	    -> int {
+	inline auto FakePrctl(void *raw_context, int operation, howdy::native::PrctlArgument argument2,
+	                      howdy::native::PrctlArgument argument3,
+	                      howdy::native::PrctlArgument argument4,
+	                      howdy::native::PrctlArgument argument5) -> int {
 		auto &context = *static_cast<FakePrivilegeContext *>(raw_context);
 		if (operation == PR_GET_SECUREBITS) {
 			context.events.emplace_back("query securebits");
@@ -235,11 +239,12 @@ namespace howdy::test::compare_privileges {
 		context.capset_calls++;
 		context.capset_header_valid = header != nullptr && ValidCapabilityHeader(*header);
 		context.capset_data_zero    = data != nullptr;
-		for (std::size_t index = 0;
-		     data != nullptr && index < static_cast<std::size_t>(_LINUX_CAPABILITY_U32S_3);
-		     index++) {
-			context.capset_data_zero &= data[index].effective == 0 && data[index].permitted == 0 &&
-			                            data[index].inheritable == 0;
+		if (data != nullptr) {
+			for (const auto &word :
+			     std::span(data, static_cast<std::size_t>(_LINUX_CAPABILITY_U32S_3))) {
+				context.capset_data_zero &=
+				    word.effective == 0 && word.permitted == 0 && word.inheritable == 0;
+			}
 		}
 		if (context.failure == FailureOperation::kCapset) {
 			return -1;
@@ -275,10 +280,10 @@ namespace howdy::test::compare_privileges {
 			return -1;
 		}
 		*outputs.real      = context.gid_mismatch && context.getresgid_calls > 1
-		                         ? static_cast<gid_t>(context.gids[0] + 1)
-		                         : context.gids[0];
-		*outputs.effective = context.gids[1];
-		*outputs.saved     = context.gids[2];
+		                         ? static_cast<gid_t>(context.gids.at(0) + 1)
+		                         : context.gids.at(0);
+		*outputs.effective = context.gids.at(1);
+		*outputs.saved     = context.gids.at(2);
 		return 0;
 	}
 
@@ -291,10 +296,10 @@ namespace howdy::test::compare_privileges {
 			return -1;
 		}
 		*outputs.real      = context.uid_mismatch && context.getresuid_calls > 1
-		                         ? static_cast<uid_t>(context.uids[0] + 1)
-		                         : context.uids[0];
-		*outputs.effective = context.uids[1];
-		*outputs.saved     = context.uids[2];
+		                         ? static_cast<uid_t>(context.uids.at(0) + 1)
+		                         : context.uids.at(0);
+		*outputs.effective = context.uids.at(1);
+		*outputs.saved     = context.uids.at(2);
 		return 0;
 	}
 
@@ -322,7 +327,7 @@ namespace howdy::test::compare_privileges {
 		context.events.emplace_back("fatal");
 		context.fatal_calls++;
 		context.fatal_exit_code = request.exit_code;
-		context.fatal_message.assign(request.message, request.message_size);
+		context.fatal_message   = request.message;
 	}
 
 	inline auto MakeDependencies(FakePrivilegeContext &context) -> ComparePrivilegeDependencies {
@@ -381,22 +386,22 @@ namespace howdy::test::compare_privileges {
 	              NonzeroCapability                                             capability) {
 		switch (capability) {
 			case NonzeroCapability::kEffective:
-				capabilities[0].effective = 1;
+				capabilities.at(0).effective = 1;
 				break;
 			case NonzeroCapability::kPermitted:
-				capabilities[0].permitted = 1;
+				capabilities.at(0).permitted = 1;
 				break;
 			case NonzeroCapability::kInheritable:
-				capabilities[0].inheritable = 1;
+				capabilities.at(0).inheritable = 1;
 				break;
 		}
 	}
 
 	inline void SetWakeAlarmInheritable(
 	    std::array<__user_cap_data_struct, _LINUX_CAPABILITY_U32S_3> &capabilities) {
-		constexpr auto capability_word            = static_cast<std::size_t>(CAP_WAKE_ALARM / 32);
-		constexpr auto capability_bit             = static_cast<unsigned int>(CAP_WAKE_ALARM % 32);
-		capabilities[capability_word].inheritable = static_cast<__u32>(1U << capability_bit);
+		constexpr auto capability_word = static_cast<std::size_t>(CAP_WAKE_ALARM / 32);
+		constexpr auto capability_bit  = static_cast<unsigned int>(CAP_WAKE_ALARM % 32);
+		capabilities.at(capability_word).inheritable = static_cast<__u32>(1U << capability_bit);
 	}
 
 	inline auto ExpectedNonRootEvents() -> std::vector<std::string> {
@@ -416,7 +421,8 @@ namespace howdy::test::compare_privileges {
 	                              const std::vector<std::string>              &expected_events,
 	                              const std::string                           &label) -> bool {
 		bool ok = true;
-		ok &= Expect(!result.Ok(), label + " never reports success when fatal callback returns");
+		ok &= Expect(!howdy::native::ComparePrivilegeSucceeded(result),
+		             label + " never reports success when fatal callback returns");
 		ok &= Expect(result.status == ComparePrivilegeStatus::kVerificationFailure,
 		             label + " returns verification failure after malformed fatal callback");
 		ok &= Expect(context.fatal_calls == 1, label + " invokes fatal exactly once");

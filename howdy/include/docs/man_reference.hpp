@@ -12,11 +12,11 @@ namespace howdy::docs {
 	struct RenderResult {
 		std::string output;
 		std::string error;
-
-		[[nodiscard]] auto Ok() const -> bool {
-			return error.empty();
-		}
 	};
+
+	[[nodiscard]] inline auto RenderSucceeded(const RenderResult &result) noexcept -> bool {
+		return result.error.empty();
+	}
 
 	[[nodiscard]] auto RenderCommandReference(std::span<const native::CommandDescriptor> commands)
 	    -> RenderResult;

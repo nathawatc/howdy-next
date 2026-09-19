@@ -1,9 +1,13 @@
 #include "cli/snapshot/internal.hpp"
+#include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
+#include "support/frame_limits.hpp"
 #include "test_support.hpp"
-#include "vision/frame_validation.hpp"
 
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -11,14 +15,22 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <utility>
 #include <vector>
 
-#include <opencv2/core.hpp>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
@@ -33,17 +45,24 @@ namespace {
 	namespace fs                = std::filesystem;
 	namespace snapshot_internal = howdy::native::snapshot_internal;
 
-	struct StreamRedirect {
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
+
 		StreamRedirect(std::ostream &stream, std::streambuf *new_buffer)
-		    : output(stream)
-		    , old_buffer(stream.rdbuf(new_buffer)) {}
+		    : output_(stream)
+		    , old_buffer_(stream.rdbuf(new_buffer)) {}
 
 		~StreamRedirect() {
-			output.rdbuf(old_buffer);
+			output_.rdbuf(old_buffer_);
 		}
 
-		std::ostream   &output;
-		std::streambuf *old_buffer;
+	private:
+		std::ostream   &output_;
+		std::streambuf *old_buffer_;
 	};
 
 	struct WriterCallbackContext {
@@ -119,7 +138,7 @@ namespace {
 		if (stat(path.c_str(), &file_stat) != 0) {
 			return std::nullopt;
 		}
-		return file_stat.st_mode & 0777;
+		return static_cast<mode_t>(howdy::native::MaskedBits(file_stat.st_mode, 0777));
 	}
 
 	auto ExpectMode(const fs::path &path, mode_t expected_mode, const std::string &message)
@@ -240,9 +259,9 @@ namespace {
 	}
 
 	auto FrameValidationRegressions() -> bool {
-		bool ok     = true;
-		auto frames = TinyFrames();
-		frames[1]   = cv::Mat{};
+		bool ok      = true;
+		auto frames  = TinyFrames();
+		frames.at(1) = cv::Mat{};
 		ok &= ExpectInvalidBatchRejected("empty-member", frames);
 		ok &= ExpectInvalidBatchRejected("wrong-channel", {cv::Mat(8, 8, CV_8UC1, cv::Scalar(10))});
 		ok &= ExpectInvalidBatchRejected("wrong-pixel-depth",
@@ -335,8 +354,9 @@ namespace {
 		ok &= Expect(WriteFile(output, original), "existing destination writes original");
 		ok &= Expect(chmod(output.c_str(), 0640) == 0, "existing destination sets original mode");
 		WriterCallbackContext                 context;
-		howdy::native::AtomicFileCommitResult commit_result;
-		const bool                            result = snapshot_internal::WriteSnapshotAtPath(
+		howdy::native::AtomicFileCommitResult commit_result =
+		    howdy::native::AtomicFileCommitResult::kNotCommitted;
+		const bool result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root),
 		    &commit_result);
 		ok &= Expect(!result, "existing destination returns false");
@@ -367,7 +387,8 @@ namespace {
 			ok &= Expect(WriteFile(path, contents), "unique path writes existing candidate");
 		}
 		WriterCallbackContext                 context;
-		howdy::native::AtomicFileCommitResult commit_result;
+		howdy::native::AtomicFileCommitResult commit_result =
+		    howdy::native::AtomicFileCommitResult::kNotCommitted;
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
 		    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root), &commit_result);
 		const auto expected = base.parent_path() / "20260816T100012-3.jpg";
@@ -399,11 +420,12 @@ namespace {
 			    "collision exhaustion occupies candidate");
 		}
 		WriterCallbackContext                 context;
-		howdy::native::AtomicFileCommitResult commit_result;
-		std::ostringstream                    error;
-		std::filesystem::path                 installed;
+		howdy::native::AtomicFileCommitResult commit_result =
+		    howdy::native::AtomicFileCommitResult::kNotCommitted;
+		std::ostringstream const error;
+		std::filesystem::path    installed;
 		{
-			StreamRedirect redirect(std::cerr, error.rdbuf());
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
 			installed = snapshot_internal::WriteSnapshotWithUniquePath(
 			    TinyFrames(), TextLines(), base, FakeDependencies(context, temp_root),
 			    &commit_result);
@@ -438,17 +460,16 @@ namespace {
 	    -> bool {
 		if (terminate) {
 			for (std::size_t index = 0; index < child_count; ++index) {
-				kill(children[index], SIGKILL);
+				kill(children.at(index), SIGKILL);
 			}
 		}
 		bool ok = true;
 		for (std::size_t index = 0; index < child_count; ++index) {
-			int   status = 0;
-			pid_t result = -1;
-			do {
-				result = waitpid(children[index], &status, 0);
-			} while (result < 0 && errno == EINTR);
-			ok &= result == children[index] && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+			int         status = 0;
+			const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
+				return waitpid(children.at(index), &status, 0);
+			});
+			ok &= result == children.at(index) && WIFEXITED(status) && WEXITSTATUS(status) == 0;
 		}
 		return ok;
 	}
@@ -456,11 +477,11 @@ namespace {
 	auto RunConcurrentWriterChild(const fs::path &base, const std::array<int, 2> &ready_pipe,
 	                              const std::array<int, 2> &release_pipe, std::size_t index)
 	    -> void {
-		close(ready_pipe[0]);
-		close(release_pipe[1]);
+		close(ready_pipe.at(0));
+		close(release_pipe.at(1));
 		ConcurrentWriterContext context{
-		    .ready_fd       = ready_pipe[1],
-		    .release_fd     = release_pipe[0],
+		    .ready_fd       = ready_pipe.at(1),
+		    .release_fd     = release_pipe.at(0),
 		    .wait_once      = true,
 		    .encoded_output = index == 0 ? std::array<uchar, 3>{'A', 'A', 'A'}
 		                                 : std::array<uchar, 3>{'B', 'B', 'B'},
@@ -471,16 +492,16 @@ namespace {
 		    .validation_root = {base.parent_path().parent_path().parent_path()}};
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
 		    TinyFrames(), TextLines(), base, dependencies);
-		close(ready_pipe[1]);
-		close(release_pipe[0]);
+		close(ready_pipe.at(1));
+		close(release_pipe.at(0));
 		_exit(installed.empty() ? 1 : 0);
 	}
 
 	auto RunConcurrentWriters(const fs::path &base) -> bool {
 		std::array<int, 2> ready_pipe{{-1, -1}};
 		std::array<int, 2> release_pipe{{-1, -1}};
-		const bool         ready_created   = pipe(ready_pipe.data()) == 0;
-		const bool         release_created = ready_created && pipe(release_pipe.data()) == 0;
+		const bool         ready_created = pipe2(ready_pipe.data(), O_CLOEXEC) == 0;
+		const bool release_created = ready_created && pipe2(release_pipe.data(), O_CLOEXEC) == 0;
 		if (!ready_created || !release_created) {
 			ClosePipe(ready_pipe);
 			ClosePipe(release_pipe);
@@ -490,30 +511,32 @@ namespace {
 		std::array<pid_t, 2> children{{-1, -1}};
 		std::size_t          child_count = 0;
 		for (; child_count < children.size(); ++child_count) {
-			children[child_count] = fork();
-			if (children[child_count] < 0) {
+			children.at(child_count) = fork();
+			if (children.at(child_count) < 0) {
 				ClosePipe(ready_pipe);
 				ClosePipe(release_pipe);
 				return ReapChildren(children, child_count, true);
 			}
-			if (children[child_count] == 0) {
+			if (children.at(child_count) == 0) {
 				RunConcurrentWriterChild(base, ready_pipe, release_pipe, child_count);
 			}
 		}
 
-		close(ready_pipe[1]);
-		ready_pipe[1] = -1;
-		close(release_pipe[0]);
-		release_pipe[0]  = -1;
-		char       ready = 0;
-		const bool barriers_ready =
-		    ReadPipeByte(ready_pipe[0], &ready) && ReadPipeByte(ready_pipe[0], &ready);
-		close(ready_pipe[0]);
-		ready_pipe[0]       = -1;
-		const bool released = barriers_ready && WritePipeByte(release_pipe[1], 'g') &&
-		                      WritePipeByte(release_pipe[1], 'g');
-		close(release_pipe[1]);
-		release_pipe[1] = -1;
+		close(ready_pipe.at(1));
+		ready_pipe.at(1) = -1;
+		close(release_pipe.at(0));
+		release_pipe.at(0)             = -1;
+		char       ready               = 0;
+		const bool first_barrier_ready = ReadPipeByte(ready_pipe.at(0), &ready);
+		const bool second_barrier_ready =
+		    first_barrier_ready && ReadPipeByte(ready_pipe.at(0), &ready);
+		const bool barriers_ready = first_barrier_ready && second_barrier_ready;
+		close(ready_pipe.at(0));
+		ready_pipe.at(0)    = -1;
+		const bool released = barriers_ready && WritePipeByte(release_pipe.at(1), 'g') &&
+		                      WritePipeByte(release_pipe.at(1), 'g');
+		close(release_pipe.at(1));
+		release_pipe.at(1) = -1;
 		const bool children_succeeded =
 		    ReapChildren(children, children.size(), !barriers_ready || !released);
 		return barriers_ready && released && children_succeeded;
@@ -572,10 +595,10 @@ namespace {
 		const auto blocker   = temp_root / "log";
 		const auto output    = blocker / "snapshots" / "test.jpg";
 		ok &= Expect(WriteFile(blocker, "blocking content"), "blocked parent creates blocker");
-		WriterCallbackContext context;
-		std::ostringstream    error;
+		WriterCallbackContext    context;
+		std::ostringstream const error;
 		{
-			StreamRedirect redirect(std::cerr, error.rdbuf());
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
 			ok &=
 			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
@@ -636,10 +659,10 @@ namespace {
 		ok &= Expect(!ec, "insecure log root created");
 		ok &= Expect(chmod(log_root.c_str(), S_IRWXU | S_IRWXG) == 0,
 		             "insecure log root made group-writable");
-		WriterCallbackContext context;
-		std::ostringstream    error;
+		WriterCallbackContext    context;
+		std::ostringstream const error;
 		{
-			StreamRedirect redirect(std::cerr, error.rdbuf());
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
 			ok &=
 			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
@@ -691,8 +714,9 @@ namespace {
 		WriterCallbackContext context;
 		auto                  dependencies = FakeDependencies(context, temp_root);
 		dependencies.sync_parent           = FailParentSync;
-		howdy::native::AtomicFileCommitResult commit_result;
-		const bool                            result = snapshot_internal::WriteSnapshotAtPath(
+		howdy::native::AtomicFileCommitResult commit_result =
+		    howdy::native::AtomicFileCommitResult::kNotCommitted;
+		const bool result = snapshot_internal::WriteSnapshotAtPath(
 		    TinyFrames(), TextLines(), output, dependencies, &commit_result);
 		ok &= Expect(!result, "committed sync failure returns false");
 		ok &= Expect(commit_result == howdy::native::AtomicFileCommitResult::kCommittedSyncFailed,

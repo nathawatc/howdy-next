@@ -1,14 +1,17 @@
 #include "module/entrypoint.hpp"
+#include "module/pam_options.hpp"
+#include "pam_test_support.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <clocale>
 #include <cstdlib>
-#include <libintl.h>
 #include <stdexcept>
 #include <string>
 
-#include <security/pam_modules.h>
+#include <libintl.h>
+#include <locale.h>
+#include <stdlib.h>
 
 namespace {
 
@@ -33,6 +36,9 @@ namespace {
 
 	class ScopedEnvironment {
 	public:
+		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
+		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
+
 		explicit ScopedEnvironment(const char *name)
 		    : name_(name) {
 			const char *value = std::getenv(name_.c_str());
@@ -75,7 +81,7 @@ namespace {
 			throw std::runtime_error("simulated entrypoint failure");
 		}
 		if (call.throw_mode == 2) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 		return call.result;
 	}
@@ -112,11 +118,10 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	int                         marker   = 0;
 	std::array<const char *, 3> raw_argv = {"unrelated", nullptr, "workaround=input"};
 	AuthCall                    call{
 	    .expected_context            = nullptr,
-	    .expected_pamh               = reinterpret_cast<pam_handle_t *>(&marker),
+	    .expected_pamh               = howdy::test::OpaquePamHandleForTest(),
 	    .expected_args               = {.flags = 41,
 	                                    .argc  = static_cast<int>(raw_argv.size()),
 	                                    .argv  = raw_argv.data()},

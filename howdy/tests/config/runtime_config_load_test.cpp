@@ -11,8 +11,12 @@
 #include <iostream>
 #include <optional>
 #include <string>
-#include <unistd.h>
+#include <system_error>
+#include <utility>
 #include <vector>
+
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 
@@ -32,13 +36,27 @@ namespace {
 		return ok;
 	}
 
-	struct TemporaryDirectory {
-		std::filesystem::path path;
+	class TemporaryDirectory {
+	public:
+		explicit TemporaryDirectory(std::filesystem::path directory_path)
+		    : path_(std::move(directory_path)) {}
+
+		TemporaryDirectory(const TemporaryDirectory &)                     = delete;
+		auto operator=(const TemporaryDirectory &) -> TemporaryDirectory & = delete;
+		TemporaryDirectory(TemporaryDirectory &&)                          = delete;
+		auto operator=(TemporaryDirectory &&) -> TemporaryDirectory &      = delete;
 
 		~TemporaryDirectory() {
 			std::error_code ec;
-			std::filesystem::remove_all(path, ec);
+			std::filesystem::remove_all(path_, ec);
 		}
+
+		[[nodiscard]] auto Path() const -> const std::filesystem::path & {
+			return path_;
+		}
+
+	private:
+		std::filesystem::path path_;
 	};
 
 	auto CreateTempDirectory() -> std::optional<std::filesystem::path> {
@@ -48,7 +66,7 @@ namespace {
 		std::vector<char> path_buffer(template_string.begin(), template_string.end());
 		path_buffer.push_back('\0');
 
-		char *created = mkdtemp(path_buffer.data());
+		char const *created = mkdtemp(path_buffer.data());
 		if (created == nullptr) {
 			return std::nullopt;
 		}
@@ -68,8 +86,8 @@ auto main() -> int {
 		std::cerr << "FAIL: create unique temp root\n";
 		return 1;
 	}
-	const TemporaryDirectory temp_directory_guard{.path = *temp_directory};
-	const auto              &temp_root = temp_directory_guard.path;
+	const TemporaryDirectory temp_directory_guard(*temp_directory);
+	const auto              &temp_root = temp_directory_guard.Path();
 	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "secure temp root");
 
 	const auto valid_path = temp_root / "valid.ini";

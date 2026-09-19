@@ -58,6 +58,10 @@ namespace howdy::native::test_cli_internal {
 	class TestPreviewRendererCleanup {
 	public:
 		explicit TestPreviewRendererCleanup(std::optional<TestPreviewRenderer> &renderer);
+		TestPreviewRendererCleanup(const TestPreviewRendererCleanup &)                     = delete;
+		auto operator=(const TestPreviewRendererCleanup &) -> TestPreviewRendererCleanup & = delete;
+		TestPreviewRendererCleanup(TestPreviewRendererCleanup &&)                          = delete;
+		auto operator=(TestPreviewRendererCleanup &&) -> TestPreviewRendererCleanup &      = delete;
 		~TestPreviewRendererCleanup() noexcept;
 		void Cleanup();
 
@@ -73,13 +77,19 @@ namespace howdy::native::test_cli_internal {
 
 	using PreviewCleanupBodyFn = void (*)(void *context);
 
-	struct PreviewCleanup {
-		std::optional<howdy::native::VideoCapture> &capture;
-		TestPreviewRendererCleanup                  renderer_cleanup;
-
+	class PreviewCleanup {
+	public:
 		PreviewCleanup(std::optional<TestPreviewRenderer>         &renderer,
 		               std::optional<howdy::native::VideoCapture> &preview_capture);
+		PreviewCleanup(const PreviewCleanup &)                     = delete;
+		auto operator=(const PreviewCleanup &) -> PreviewCleanup & = delete;
+		PreviewCleanup(PreviewCleanup &&)                          = delete;
+		auto operator=(PreviewCleanup &&) -> PreviewCleanup &      = delete;
 		~PreviewCleanup() noexcept;
+
+	private:
+		std::optional<howdy::native::VideoCapture> &capture_;
+		TestPreviewRendererCleanup                  renderer_cleanup_;
 	};
 
 	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,

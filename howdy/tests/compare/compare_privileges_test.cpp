@@ -1,6 +1,4 @@
-auto RunComparePrivilegesNonRootTests() -> bool;
-auto RunComparePrivilegesPrivilegedTests() -> bool;
-auto RunComparePrivilegesFatalTests() -> bool;
+#include "compare/compare_privileges_test_groups.hpp"
 
 auto main() -> int {
 	bool ok = true;

@@ -1,9 +1,18 @@
 #include "compare/logic.hpp"
+#include "config/runtime_config.hpp"
+#include "support/frame_limits.hpp"
 #include "test_support.hpp"
 #include "vision/frame_processing.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <array>
+#include <cstddef>
+
+#include <opencv2/core.hpp>
+#include <opencv2/core/cvstd_wrapper.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 namespace {
 
@@ -15,7 +24,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	howdy::native::VideoConfig disabled_config{
+	howdy::native::VideoConfig const disabled_config{
 	    .timeout              = 1,
 	    .device_path          = "dummy",
 	    .warn_no_device       = false,
@@ -40,7 +49,7 @@ auto main() -> int {
 	ok &= Expect(cv::countNonZero(disabled_frame != disabled_before) == 0,
 	             "disabled CLAHE leaves frame unchanged");
 
-	howdy::native::VideoConfig enabled_config{
+	howdy::native::VideoConfig const enabled_config{
 	    .timeout              = 1,
 	    .device_path          = "dummy",
 	    .warn_no_device       = false,
@@ -178,7 +187,7 @@ auto main() -> int {
 	                                               black_brightness.darkness, 30.0F) ==
 	                 howdy::native::BrightnessDecision::kBlackFrame,
 	             "non-empty black frame is skipped");
-	ok &= Expect(black_brightness.bins_percent[0] == 100.0F,
+	ok &= Expect(black_brightness.bins_percent.at(0) == 100.0F,
 	             "black frame fills darkest histogram bin");
 
 	const cv::Mat normal_frame = cv::Mat_<unsigned char>(
@@ -188,7 +197,7 @@ auto main() -> int {
 	                 "normal frame darkness uses darkest histogram bin");
 	constexpr std::array<double, 8> expected_bins{25.0, 6.25, 12.5, 6.25, 12.5, 6.25, 12.5, 18.75};
 	for (std::size_t index = 0; index < expected_bins.size(); ++index) {
-		ok &= ExpectNear(normal_brightness.bins_percent[index], expected_bins[index], 0.0001,
+		ok &= ExpectNear(normal_brightness.bins_percent.at(index), expected_bins.at(index), 0.0001,
 		                 "normal frame histogram bin percentage is stable");
 	}
 	ok &= Expect(howdy::native::ClassifyBrightness(normal_brightness.hist_total,

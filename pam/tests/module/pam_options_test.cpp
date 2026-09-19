@@ -1,8 +1,10 @@
 #include "module/pam_option_catalog.hpp"
 #include "module/pam_options.hpp"
+#include "prompt/workaround.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -83,19 +85,20 @@ auto main() -> int {
 	constexpr std::array expected_values{"input", "native", "native-input"};
 	const auto           catalog = WorkaroundCatalog();
 	ok &= Expect(catalog.size() == expected_values.size(), "workaround catalog size is stable");
-	for (std::size_t index = 0; index < catalog.size(); ++index) {
-		const auto &descriptor = catalog[index];
-		ok &= Expect(index < expected_values.size() && descriptor.value == expected_values[index],
+	std::size_t catalog_index = 0;
+	for (const auto &descriptor : catalog) {
+		ok &= Expect(catalog_index < expected_values.size() &&
+		                 descriptor.value == expected_values.at(catalog_index),
 		             "workaround catalog order is stable");
 		ok &= Expect(!descriptor.summary.empty(), "workaround summary is non-empty");
 		const std::string argument     = "workaround=" + std::string(descriptor.value);
 		const char *const raw_argument = argument.c_str();
 		ok &= Expect(WorkaroundFor({.argc = 1, .argv = &raw_argument}) == descriptor.workaround,
 		             "parser accepts every catalog workaround value");
-		for (std::size_t previous = 0; previous < index; ++previous) {
-			ok &=
-			    Expect(catalog[previous].value != descriptor.value, "workaround values are unique");
+		for (const auto &previous : catalog.first(catalog_index)) {
+			ok &= Expect(previous.value != descriptor.value, "workaround values are unique");
 		}
+		++catalog_index;
 	}
 	ok &=
 	    Expect(WorkaroundFor({}) == howdy::pam::kDefaultWorkaround, "catalog default remains off");

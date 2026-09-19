@@ -2,6 +2,7 @@
 
 #include "storage/user_model_status.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/user_names.hpp"
 #include "user_model_readiness/internal.hpp"
 
@@ -10,6 +11,8 @@
 #include <optional>
 #include <string>
 #include <utility>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 

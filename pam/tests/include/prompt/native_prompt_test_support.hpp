@@ -1,12 +1,14 @@
 #pragma once
 
 #include "prompt/native_prompt_conversation.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
-#include <fcntl.h>
 #include <memory>
+
+#include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -36,7 +38,7 @@ public:
 	static auto Create(Descriptors descriptors, Operations operations)
 	    -> std::unique_ptr<NativePromptConversation> {
 		auto production = NativePromptConversation::ProductionOperations();
-		NativePromptConversation::Operations injected{
+		NativePromptConversation::Operations const injected{
 		    .context = operations.context,
 		    .poll_prompt =
 		        operations.poll_prompt != nullptr ? operations.poll_prompt : production.poll_prompt,
@@ -80,12 +82,12 @@ public:
 	static void ReplaceDescriptors(NativePromptConversation &conversation,
 	                               Descriptors               descriptors) {
 		conversation.tty_fd_     = std::move(descriptors.tty_fd);
-		conversation.abort_pipe_ = {std::move(descriptors.abort_read_fd),
-		                            std::move(descriptors.abort_write_fd)};
+		conversation.abort_pipe_ = {.read  = std::move(descriptors.abort_read_fd),
+		                            .write = std::move(descriptors.abort_write_fd)};
 	}
 
 	static void CloseAbortWriteFd(NativePromptConversation &conversation) {
-		conversation.abort_pipe_[1].Reset();
+		conversation.abort_pipe_.write.Reset();
 	}
 
 	static void SetInstalled(NativePromptConversation &conversation, bool installed) {
@@ -112,11 +114,11 @@ public:
 	}
 
 	[[nodiscard]] static auto AbortReadFd(const NativePromptConversation &conversation) -> int {
-		return conversation.abort_pipe_[0].Get();
+		return conversation.abort_pipe_.read.Get();
 	}
 
 	[[nodiscard]] static auto AbortWriteFd(const NativePromptConversation &conversation) -> int {
-		return conversation.abort_pipe_[1].Get();
+		return conversation.abort_pipe_.write.Get();
 	}
 };
 
@@ -133,7 +135,7 @@ inline auto OpenPtyPair(ScopedFd *master_fd, ScopedFd *slave_fd) -> bool {
 		return false;
 	}
 
-	char *slave_name = ptsname(master_fd->Get());
+	char const *slave_name = ptsname(master_fd->Get());
 	if (slave_name == nullptr) {
 		master_fd->Reset();
 		return false;
@@ -153,8 +155,8 @@ inline auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 	if (pipe2(raw_fds.data(), O_CLOEXEC | O_NONBLOCK) != 0) {
 		return false;
 	}
-	(*fds)[0].Reset(raw_fds[0]);
-	(*fds)[1].Reset(raw_fds[1]);
+	(*fds).at(0).Reset(raw_fds.at(0));
+	(*fds).at(1).Reset(raw_fds.at(1));
 	return true;
 }
 
@@ -176,7 +178,7 @@ inline auto ReadWithTimeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_
 		if (poll_result == 0) {
 			return 0;
 		}
-		if (poll_result < 0 || (poll_fd.revents & POLLIN) == 0) {
+		if (poll_result < 0 || !howdy::native::HasAnyBits(poll_fd.revents, POLLIN)) {
 			return -1;
 		}
 

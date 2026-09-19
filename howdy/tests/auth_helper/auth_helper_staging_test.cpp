@@ -1,25 +1,35 @@
+#include "auth_helper/acl.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "auth_helper/command.hpp"
+#include "auth_helper/runtime.hpp"
 #include "auth_helper/runtime/internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
+#include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
-#include <fcntl.h>
+#include <cstddef>
 #include <filesystem>
-#include <grp.h>
 #include <iostream>
 #include <optional>
-#include <pwd.h>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <tuple>
+#include <utility>
+
+#include <fcntl.h>
+#include <grp.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
@@ -78,11 +88,10 @@ namespace {
 		if (child < 0) {
 			return std::nullopt;
 		}
-		int   status = 0;
-		pid_t waited;
-		do {
-			waited = waitpid(child, &status, 0);
-		} while (waited < 0 && errno == EINTR);
+		int         status = 0;
+		const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
+			return waitpid(child, &status, 0);
+		});
 		if (waited != child || !WIFEXITED(status) || WEXITSTATUS(status) == 2) {
 			return std::nullopt;
 		}
@@ -134,7 +143,9 @@ namespace {
 	}
 
 	auto ExpectProtocolPaths() -> bool {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::ParseRuntimeGenerationName;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationName;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		bool ok = true;
 		for (const auto &[name, expected_uid, expected_slot, valid] : {
 		         std::tuple{"pam-0-gen000", uid_t{0}, RuntimeGenerationSlot::kSlot0, true},
@@ -160,8 +171,8 @@ namespace {
 		                 "pam-1000-gen001",
 		             "slot 1 name is exact");
 
-		std::ostringstream output;
-		auto              *previous = std::cout.rdbuf(output.rdbuf());
+		std::ostringstream const output;
+		auto                    *previous = std::cout.rdbuf(output.rdbuf());
 		howdy::native::auth_helper::command::PrintPreparedPaths(
 		    "/run/howdy/pam-1000-gen000/config.ini", "/run/howdy/pam-1000-gen000/models");
 		std::cout.rdbuf(previous);
@@ -213,7 +224,8 @@ namespace {
 	}
 
 	auto CountRuntimeGenerations(const std::filesystem::path &root) -> std::size_t {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::ParseRuntimeGenerationName;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		std::size_t count = 0;
 		for (const auto &entry : std::filesystem::directory_iterator(root)) {
 			uid_t                 uid = 0;
@@ -237,10 +249,14 @@ namespace {
 			return Expect(false, "first prepare returns lease");
 		}
 
-		bool ok = true;
-		ok &= Expect((fcntl(prepared->lease_fd.Get(), F_GETFD) & FD_CLOEXEC) != 0,
-		             "returned lease is close-on-exec");
-		ok &= Expect((fcntl(prepared->lease_fd.Get(), F_GETFL) & O_ACCMODE) == O_RDONLY,
+		bool      ok               = true;
+		const int descriptor_flags = fcntl(prepared->lease_fd.Get(), F_GETFD);
+		const int status_flags     = fcntl(prepared->lease_fd.Get(), F_GETFL);
+		ok &=
+		    Expect(descriptor_flags >= 0 && howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC),
+		           "returned lease is close-on-exec");
+		ok &= Expect(status_flags >= 0 &&
+		                 howdy::native::MaskedBits(status_flags, O_ACCMODE) == O_RDONLY,
 		             "returned lease is read-only");
 		errno                     = 0;
 		const bool write_rejected = write(prepared->lease_fd.Get(), "x", 1) == -1 && errno == EBADF;
@@ -255,7 +271,8 @@ namespace {
 	auto ExpectReuseAndInodeBound(const Fixture                                   &fixture,
 	                              const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath;
 		bool ok    = true;
 		auto first = Prepare(fixture, operations);
 		ok &= ExpectReadOnlyLease(first);
@@ -482,7 +499,10 @@ namespace {
 	auto ExpectPartialSlotFallback(const std::filesystem::path &temp_root, uid_t target_uid,
 	                               const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		bool ok      = true;
 		auto fixture = MakeFixture(temp_root, "partial-slot", target_uid);
 		auto slot0   = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
@@ -536,7 +556,9 @@ namespace {
 	auto ExpectMalformedSlotDiscovery(const std::filesystem::path &temp_root, uid_t target_uid,
 	                                  const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		bool ok = true;
 
 		auto symlink_fixture = MakeFixture(temp_root, "malformed-symlink", target_uid);
@@ -572,7 +594,7 @@ namespace {
 			ok &= Expect(
 			    fallback.has_value() && fallback->runtime_dir != lock_prepared->runtime_dir &&
 			        InodeOf(lock_path) == lock_inode && lstat(lock_path.c_str(), &lock_stat) == 0 &&
-			        (lock_stat.st_mode & 07777) == 0644,
+			        howdy::native::MaskedBits(lock_stat.st_mode, 07777) == 0644,
 			    "malformed lock remains while healthy slot serves");
 			CloseLease(fallback);
 		}
@@ -593,12 +615,13 @@ namespace {
 			auto        result = Prepare(*both_fixture, operations);
 			struct stat lock_stat{};
 			struct stat slot_stat{};
-			ok &= Expect(
-			    !result.has_value() && InodeOf(slot0_lock) == lock_inode &&
-			        InodeOf(slot1) == slot_inode && lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
-			        lstat(slot1.c_str(), &slot_stat) == 0 && (lock_stat.st_mode & 07777) == 0644 &&
-			        (slot_stat.st_mode & 07777) == 0700,
-			    "two malformed slots fail closed without repair");
+			ok &= Expect(!result.has_value() && InodeOf(slot0_lock) == lock_inode &&
+			                 InodeOf(slot1) == slot_inode &&
+			                 lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
+			                 lstat(slot1.c_str(), &slot_stat) == 0 &&
+			                 howdy::native::MaskedBits(lock_stat.st_mode, 07777) == 0644 &&
+			                 howdy::native::MaskedBits(slot_stat.st_mode, 07777) == 0700,
+			             "two malformed slots fail closed without repair");
 			const int  probe = open(slot0_lock.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
 			const bool clean = probe >= 0 && flock(probe, LOCK_EX | LOCK_NB) == 0;
 			ok &= Expect(clean, "failed slot discovery leaves no lock held");
@@ -615,7 +638,6 @@ namespace {
 	auto ExpectMalformedObjectsFail(const std::filesystem::path &temp_root, uid_t target_uid,
 	                                const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
-		using namespace howdy::native::auth_helper_protocol;
 		bool ok = true;
 
 		auto mode_fixture = MakeFixture(temp_root, "malformed-mode", target_uid);
@@ -631,7 +653,7 @@ namespace {
 			ok &= Expect(fallback.has_value() &&
 			                 fallback->runtime_dir != mode_prepared->runtime_dir &&
 			                 lstat(mode_prepared->config_path.c_str(), &damaged_stat) == 0 &&
-			                 (damaged_stat.st_mode & 07777) == 0600,
+			                 howdy::native::MaskedBits(damaged_stat.st_mode, 07777) == 0600,
 			             "malformed config remains untouched while other slot serves");
 			CloseLease(fallback);
 		}

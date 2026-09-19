@@ -1,6 +1,6 @@
 #pragma once
 
-#include <clocale>  // IWYU pragma: keep
+#include <locale.h>  // IWYU pragma: keep
 
 namespace howdy::pam {
 
@@ -11,6 +11,8 @@ namespace howdy::pam {
 
 		ScopedMessageLocale(const ScopedMessageLocale &)                     = delete;
 		auto operator=(const ScopedMessageLocale &) -> ScopedMessageLocale & = delete;
+		ScopedMessageLocale(ScopedMessageLocale &&)                          = delete;
+		auto operator=(ScopedMessageLocale &&) -> ScopedMessageLocale &      = delete;
 
 	private:
 		locale_t previous_locale_ = nullptr;

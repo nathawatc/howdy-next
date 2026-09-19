@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+
 #include <unistd.h>
 
 namespace howdy::native::auth_helper::internal {

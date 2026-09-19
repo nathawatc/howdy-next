@@ -2,25 +2,34 @@
 #include "compare/capture_session.hpp"
 #include "compare/engine.hpp"
 #include "compare/logic.hpp"
+#include "compare/privileges.hpp"
 #include "compare/processing.hpp"
 #include "compare/sandbox.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/compare_exit.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "support/error_message.hpp"
 #include "vision/face_model.hpp"
 
 #include <algorithm>
 #include <chrono>
-#include <cstring>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/exception.hpp>
+
+#include <sys/types.h>
 
 namespace {
 
@@ -63,24 +72,24 @@ namespace {
 				break;
 		}
 		if (result.error_number != 0) {
-			std::cerr << ": " << std::strerror(result.error_number);
+			std::cerr << ": " << howdy::native::SystemErrorMessage(result.error_number);
 		}
 		std::cerr << "\n";
 	}
 
 	struct CompareProductionContext {
-		howdy::native::CompareCaptureSession       &capture_session;
-		howdy::native::FaceModel                   &face_model;
-		const howdy::native::VideoConfig           &video_config;
-		const howdy::native::StoredEncodings       &stored_encodings;
-		std::chrono::steady_clock::time_point       start_time;
-		bool                                        end_report = false;
-		std::optional<howdy::native::CompareEngine> compare_engine;
+		std::reference_wrapper<howdy::native::CompareCaptureSession> capture_session;
+		std::reference_wrapper<howdy::native::FaceModel>             face_model;
+		std::reference_wrapper<const howdy::native::VideoConfig>     video_config;
+		std::reference_wrapper<const howdy::native::StoredEncodings> stored_encodings;
+		std::chrono::steady_clock::time_point                        start_time;
+		bool                                                         end_report = false;
+		std::optional<howdy::native::CompareEngine>                  compare_engine;
 	};
 
 	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		return context.capture_session.Open();
+		return context.capture_session.get().Open();
 	}
 
 	auto DropPrivileges([[maybe_unused]] void *raw_context)
@@ -91,13 +100,14 @@ namespace {
 	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
 		context.compare_engine.emplace(
-		    context.video_config, howdy::native::FaceModelInferenceOperations(context.face_model),
-		    context.stored_encodings.encodings);
+		    context.video_config.get(),
+		    howdy::native::FaceModelInferenceOperations(context.face_model.get()),
+		    context.stored_encodings.get().encodings);
 	}
 
 	void ResetTimeout(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		context.capture_session.ResetTimeoutClock();
+		context.capture_session.get().ResetTimeoutClock();
 	}
 
 	auto HandleCaptureResult(CompareProductionContext                       &context,
@@ -107,7 +117,7 @@ namespace {
 			case howdy::native::CompareCaptureFrameStatus::kFrameReady:
 				return std::nullopt;
 			case howdy::native::CompareCaptureFrameStatus::kTimeout: {
-				const auto &stats = context.capture_session.Stats();
+				const auto &stats = context.capture_session.get().Stats();
 				const auto  exit_code =
 				    howdy::native::TimeoutExit(stats.dark_frames, stats.valid_frames);
 				if (exit_code == CompareExit::kTooDark) {
@@ -115,7 +125,7 @@ namespace {
 					std::cerr << howdy::native::kAverageDarknessLabel
 					          << (stats.dark_running_total / std::max(stats.valid_frames, 1))
 					          << howdy::native::kThresholdLabel
-					          << context.video_config.dark_threshold << '\n';
+					          << context.video_config.get().dark_threshold << '\n';
 				}
 				return exit_code;
 			}
@@ -163,7 +173,7 @@ namespace {
 		if (!context.end_report) {
 			return;
 		}
-		const auto &stats    = context.capture_session.Stats();
+		const auto &stats    = context.capture_session.get().Stats();
 		const auto  total_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 		                           std::chrono::steady_clock::now() - context.start_time)
 		                           .count();
@@ -173,9 +183,9 @@ namespace {
 		std::cout << "Dark frames ignored: " << stats.dark_frames << "\n";
 		std::cout << "Winning score: " << result.winning_score << "\n";
 		if (result.winning_index >= 0 &&
-		    std::cmp_less(result.winning_index, context.stored_encodings.models.size())) {
-			const auto &winner =
-			    context.stored_encodings.models[static_cast<std::size_t>(result.winning_index)];
+		    std::cmp_less(result.winning_index, context.stored_encodings.get().models.size())) {
+			const auto &winner = context.stored_encodings.get().models.at(
+			    static_cast<std::size_t>(result.winning_index));
 			std::cout << "Winning model: " << winner.id << " (\"" << winner.label << "\")\n";
 		}
 	}
@@ -206,7 +216,7 @@ namespace {
 		if (!context.compare_engine.has_value()) {
 			return CompareExit::kAbort;
 		}
-		auto &capture_session = context.capture_session;
+		auto &capture_session = context.capture_session.get();
 		auto &compare_engine  = *context.compare_engine;
 
 		while (true) {
@@ -306,10 +316,10 @@ auto main(int argc, char **argv) -> int {
 		howdy::native::CompareCaptureSession capture_session(config.video);
 
 		CompareProductionContext processing_context{
-		    .capture_session  = capture_session,
-		    .face_model       = face_model,
-		    .video_config     = config.video,
-		    .stored_encodings = loaded_models.stored,
+		    .capture_session  = std::ref(capture_session),
+		    .face_model       = std::ref(face_model),
+		    .video_config     = std::cref(config.video),
+		    .stored_encodings = std::cref(loaded_models.stored),
 		    .start_time       = start_time,
 		    .end_report       = config.debug.end_report,
 		};
@@ -335,7 +345,7 @@ auto main(int argc, char **argv) -> int {
 		}
 		if (const auto *privilege_result =
 		        std::get_if<howdy::native::ComparePrivilegeResult>(&processing_result)) {
-			if (!privilege_result->Ok()) {
+			if (!howdy::native::ComparePrivilegeSucceeded(*privilege_result)) {
 				std::cerr << "Failed to drop compare privileges: "
 				          << privilege_result->error_message << "\n";
 			}

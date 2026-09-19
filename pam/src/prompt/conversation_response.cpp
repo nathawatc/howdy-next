@@ -4,11 +4,14 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <span>
+
+#include <string.h>
 
 namespace {
-	void EraseResponse(howdy::pam::detail::ConversationResponseAllocation allocation,
-	                   std::size_t                                        length) noexcept {
-		explicit_bzero(allocation.pointer, length);
+	void EraseResponse(void *context, std::span<char> bytes) noexcept {
+		(void)context;
+		explicit_bzero(bytes.data(), bytes.size());
 	}
 
 	void ReleaseResponse(howdy::pam::detail::ConversationResponseAllocation allocation) noexcept {
@@ -24,18 +27,17 @@ namespace howdy::pam::detail {
 		    operations.release == nullptr) {
 			return;
 		}
-		auto *owned_responses = *responses;
-		*responses            = nullptr;
-		for (int index = 0; index < count; ++index) {
-			char *secret = owned_responses[index].resp;
+		auto *owned_responses     = *responses;
+		*responses                = nullptr;
+		const auto response_count = count > 0 ? static_cast<std::size_t>(count) : 0U;
+		for (auto &owned_response : std::span(owned_responses, response_count)) {
+			char *secret = owned_response.resp;
 			if (secret == nullptr) {
 				continue;
 			}
-			const ConversationResponseAllocation allocation{.context = operations.context,
-			                                                .pointer = secret};
-			operations.erase(allocation, std::strlen(secret));
-			operations.release(allocation);
-			owned_responses[index].resp = nullptr;
+			operations.erase(operations.context, {secret, std::strlen(secret)});
+			operations.release({.context = operations.context, .pointer = secret});
+			owned_response.resp = nullptr;
 		}
 		operations.release({.context = operations.context, .pointer = owned_responses});
 	}

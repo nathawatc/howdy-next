@@ -1,6 +1,14 @@
+#include "compare/compare_privileges_test_groups.hpp"
 #include "compare/compare_privileges_test_support.hpp"
+#include "compare/privileges.hpp"
 
-auto RunComparePrivilegesNonRootTests() -> bool;
+#include <algorithm>
+#include <array>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include <sys/types.h>
 
 namespace howdy::test::compare_privileges {
 	namespace {
@@ -11,7 +19,8 @@ namespace howdy::test::compare_privileges {
 			FakePrivilegeContext context;
 			SetNonRootIdentity(context);
 			const auto result = Drop(context);
-			ok &= Expect(result.Ok(), "matching non-root credentials succeed");
+			ok &= Expect(howdy::native::ComparePrivilegeSucceeded(result),
+			             "matching non-root credentials succeed");
 			ok &= ExpectEvents(context, ExpectedNonRootEvents(), "non-root sequence is exact");
 			ok &= Expect(context.lookup_calls == 0, "non-root process does not resolve nobody");
 			ok &= Expect(context.capset_header_valid && context.capset_data_zero,
@@ -46,11 +55,12 @@ namespace howdy::test::compare_privileges {
 				SetNonRootIdentity(group_context);
 				group_context.supplementary_groups = groups;
 				const auto group_result            = Drop(group_context);
-				ok &= Expect(group_result.Ok(), label + " are preserved");
+				ok &= Expect(howdy::native::ComparePrivilegeSucceeded(group_result),
+				             label + " are preserved");
 				ok &= ExpectEvents(group_context, ExpectedNonRootEvents(),
 				                   label + " preserve non-root verification order");
 				ok &= Expect(group_context.group_count == 1 &&
-				                 group_context.group_pointer == &group_pointer_sentinel,
+				                 group_context.group_pointer == &kGroupPointerSentinel,
 				             label + " do not invoke setgroups");
 			}
 
@@ -153,11 +163,11 @@ namespace howdy::test::compare_privileges {
 			const auto result = Drop(context);
 
 			bool ok = true;
-			ok &= Expect(result.Ok(), "Waylock inheritable-only capability sanitizes successfully");
+			ok &= Expect(howdy::native::ComparePrivilegeSucceeded(result),
+			             "Waylock inheritable-only capability sanitizes successfully");
 			ok &= Expect(context.fatal_calls == 0,
 			             "Waylock inheritable-only capability does not invoke fatal callback");
-			ok &= Expect(std::count(context.events.begin(), context.events.end(),
-			                        "clear ambient capabilities") == 1,
+			ok &= Expect(std::ranges::count(context.events, "clear ambient capabilities") == 1,
 			             "Waylock inheritable-only capability clears ambient capabilities");
 			ok &= Expect(context.capset_calls == 1,
 			             "Waylock inheritable-only capability clears capability sets once");
@@ -239,14 +249,16 @@ namespace howdy::test::compare_privileges {
 
 	}  // namespace
 
-	inline auto RunComparePrivilegesNonRootTestsImpl() -> bool {
-		bool ok = true;
-		ok &= TestNonRoot();
-		ok &= TestWaylockInheritableCapability();
-		ok &= TestWaylockInheritableSanitizationFailures();
-		ok &= TestInitialCredentialInspectionFailures();
-		return ok;
-	}
+	namespace {
+		inline auto RunComparePrivilegesNonRootTestsImpl() -> bool {
+			bool ok = true;
+			ok &= TestNonRoot();
+			ok &= TestWaylockInheritableCapability();
+			ok &= TestWaylockInheritableSanitizationFailures();
+			ok &= TestInitialCredentialInspectionFailures();
+			return ok;
+		}
+	}  // namespace
 
 }  // namespace howdy::test::compare_privileges
 

@@ -15,9 +15,9 @@ namespace howdy::pam::detail {
 	struct InternalPipe {
 		ScopedFd read;
 		ScopedFd write;
-
-		[[nodiscard]] auto Valid() const noexcept -> bool;
 	};
+
+	[[nodiscard]] auto InternalPipeValid(const InternalPipe &pipe) noexcept -> bool;
 
 	[[nodiscard]] auto
 	NormalizeInternalFd(ScopedFd fd, const InternalFdOperations *operations = nullptr) noexcept

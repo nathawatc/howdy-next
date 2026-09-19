@@ -1,13 +1,22 @@
+#include "auth_helper/acl.hpp"
 #include "auth_helper/auth_helper_acl_fake.hpp"
 #include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
+#include "test_support.hpp"
 
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <system_error>
+
 #include <unistd.h>
 
-using namespace howdy::test::auth_helper;
+#include <sys/stat.h>
+
+using howdy::test::Expect;
+using howdy::test::auth_helper::AclSupport;
+using howdy::test::auth_helper::FakeAclContext;
+using howdy::test::auth_helper::ProbeAclSupport;
 
 auto main() -> int {
 	namespace fs = std::filesystem;

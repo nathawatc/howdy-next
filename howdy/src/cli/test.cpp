@@ -1,10 +1,13 @@
 #include "cli/test.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_renderer.hpp"
 #include "cli/test/preview_session.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/invoking_user.hpp"
@@ -15,16 +18,18 @@
 
 #include <chrono>
 #include <cstdlib>
-#include <grp.h>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unistd.h>
 #include <vector>
 
-#include <opencv2/core.hpp>
+#include <grp.h>
+#include <unistd.h>
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/videoio.hpp>
 
 namespace {
 
@@ -260,8 +265,8 @@ namespace {
 			    .error_message = howdy::native::kFaceModelNotInitializedMessage,
 			};
 		}
-		test_cli_internal::PreviewCleanup cleanup{production_context->renderer,
-		                                          production_context->capture};
+		test_cli_internal::PreviewCleanup const cleanup{production_context->renderer,
+		                                                production_context->capture};
 
 		PrepareInvokingGuiEnvironment();
 

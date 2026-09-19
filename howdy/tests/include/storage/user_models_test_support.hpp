@@ -5,10 +5,11 @@
 #include "test_support.hpp"
 
 #include <cstdio>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -55,14 +56,16 @@ namespace howdy::test::user_models {
 		int                   after_lock_calls  = 0;
 		bool                  installed_b       = false;
 		bool                  restored_a        = false;
+		bool                  rollback_failed   = false;
 	};
 
 	struct PreservingRegularFileSwap {
 		std::filesystem::path replacement_path;
 		std::filesystem::path displaced_path;
 		std::filesystem::path target_path;
-		int                   calls   = 0;
-		bool                  swapped = false;
+		int                   calls           = 0;
+		bool                  swapped         = false;
+		bool                  rollback_failed = false;
 	};
 
 	inline auto ReplaceWithVictimSymlinkAfterLock(PostLockSymlinkSwap         *swap,
@@ -98,7 +101,7 @@ namespace howdy::test::user_models {
 			return;
 		}
 		if (rename(swap->replacement_path.c_str(), path.c_str()) != 0) {
-			rename(swap->original_saved_path.c_str(), path.c_str());
+			swap->rollback_failed = rename(swap->original_saved_path.c_str(), path.c_str()) != 0;
 			return;
 		}
 		swap->installed_b = true;
@@ -111,7 +114,8 @@ namespace howdy::test::user_models {
 			return;
 		}
 		if (rename(swap->original_saved_path.c_str(), path.c_str()) != 0) {
-			rename(swap->locked_replacement_saved_path.c_str(), path.c_str());
+			swap->rollback_failed =
+			    rename(swap->locked_replacement_saved_path.c_str(), path.c_str()) != 0;
 			return;
 		}
 		swap->restored_a = true;
@@ -125,7 +129,7 @@ namespace howdy::test::user_models {
 			return;
 		}
 		if (rename(swap->replacement_path.c_str(), path.c_str()) != 0) {
-			rename(swap->displaced_path.c_str(), path.c_str());
+			swap->rollback_failed = rename(swap->displaced_path.c_str(), path.c_str()) != 0;
 			return;
 		}
 		swap->swapped = true;

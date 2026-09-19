@@ -1,6 +1,8 @@
 #include "cli/snapshot.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/snapshot/internal.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "support/atomic_files.hpp"
@@ -16,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 namespace {
@@ -26,9 +30,13 @@ namespace {
 		const auto now  = std::chrono::system_clock::now();
 		const auto time = std::chrono::system_clock::to_time_t(now);
 		std::tm    buffer{};
-		gmtime_r(&time, &buffer);
+		if (gmtime_r(&time, &buffer) == nullptr) {
+			return {};
+		}
 		std::array<char, 32> filename{};
-		std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg", &buffer);
+		if (std::strftime(filename.data(), filename.size(), "%Y%m%dT%H%M%S.jpg", &buffer) == 0) {
+			return {};
+		}
 		return howdy::native::ResolveLogPath() / "snapshots" / filename.data();
 	}
 
@@ -40,12 +48,16 @@ namespace {
 
 	auto GenerateSnapshot(const std::vector<cv::Mat>     &frames,
 	                      const std::vector<std::string> &text_lines) -> std::filesystem::path {
-		const auto base_path    = SnapshotPath();
+		const auto base_path = SnapshotPath();
+		if (base_path.empty()) {
+			return {};
+		}
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
 		    .context      = nullptr,
 		    .encode_image = EncodeImageDependency,
 		};
-		howdy::native::AtomicFileCommitResult commit_result;
+		howdy::native::AtomicFileCommitResult commit_result =
+		    howdy::native::AtomicFileCommitResult::kNotCommitted;
 		auto filepath = snapshot_internal::WriteSnapshotWithUniquePath(
 		    frames, text_lines, base_path, dependencies, &commit_result);
 		if (filepath.empty()) {
@@ -104,9 +116,13 @@ namespace {
 		const auto now  = std::chrono::system_clock::now();
 		const auto time = std::chrono::system_clock::to_time_t(now);
 		std::tm    buffer{};
-		gmtime_r(&time, &buffer);
+		if (gmtime_r(&time, &buffer) == nullptr) {
+			return {};
+		}
 		std::array<char, 64> timestr{};
-		std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer);
+		if (std::strftime(timestr.data(), timestr.size(), "%Y/%m/%d %H:%M:%S UTC", &buffer) == 0) {
+			return {};
+		}
 
 		const auto filepath = GenerateSnapshot(
 		    frames, {

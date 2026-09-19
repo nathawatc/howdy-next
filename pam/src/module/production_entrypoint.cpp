@@ -2,22 +2,27 @@
 
 #include "module/auth_eligibility.hpp"
 #include "module/auth_flow.hpp"
+#include "module/entrypoint.hpp"
+#include "module/pam_options.hpp"
 #include "prompt/native_prompt_conversation.hpp"
 #include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_submitter.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/runtime_session.hpp"
+#include "support/error_message.hpp"
 
 #include <cerrno>
-#include <cstring>
 #include <memory>
 #include <stdexcept>
-#include <syslog.h>
 #include <tuple>
+
 #include <unistd.h>
 
 #include <security/pam_ext.h>
+
+#include <sys/syslog.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -25,8 +30,8 @@ namespace {
 		(void)context;
 		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
 			const int access_errno = errno;
-			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)", strerror(access_errno),
-			       access_errno);
+			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)",
+			       howdy::native::SystemErrorMessage(access_errno).c_str(), access_errno);
 			return false;
 		}
 		return true;

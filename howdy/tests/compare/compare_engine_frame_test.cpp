@@ -1,9 +1,13 @@
 #include "compare/compare_engine_test_support.hpp"
 #include "compare/engine.hpp"
+#include "test_support.hpp"
 
 #include <string>
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 namespace {
 
@@ -99,7 +103,7 @@ auto RunCompareEngineFrameTests() -> bool {
 	}
 
 	{
-		cv::Mat                      source(4, 6, CV_8UC1, cv::Scalar(128));
+		cv::Mat const                source(4, 6, CV_8UC1, cv::Scalar(128));
 		howdy::native::CompareEngine engine(MakeVideoConfig(25.0F, 2.0F));
 		const auto                   result = engine.ProcessGrayFrame(source, 1);
 		ok &= Expect(result.status == CompareFrameStatus::kReady, "downscaled frame is ready");
@@ -108,7 +112,7 @@ auto RunCompareEngineFrameTests() -> bool {
 	}
 
 	{
-		cv::Mat                      source(2, 3, CV_8UC1, cv::Scalar(128));
+		cv::Mat const                source(2, 3, CV_8UC1, cv::Scalar(128));
 		howdy::native::CompareEngine engine(MakeVideoConfig(25.0F, 8.0F));
 		const auto                   result = engine.ProcessGrayFrame(source, 1);
 		ok &= Expect(result.status == CompareFrameStatus::kReady, "small frame is ready");

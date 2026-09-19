@@ -14,7 +14,11 @@
 #include "support/invoking_user.hpp"
 
 #include <array>
+#include <cstddef>
+
 #include <unistd.h>
+
+#include <sys/types.h>
 
 namespace {
 
@@ -34,17 +38,19 @@ namespace {
 	    -> std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)> {
 		std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)>
 		    command_mains{};
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kAdd)]     = AddMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kClear)]   = ClearMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kConfig)]  = ConfigMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDisable)] = DisableMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kDownloadModels)] =
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kAdd))    = AddMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kClear))  = ClearMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kConfig)) = ConfigMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kDisable)) =
+		    DisableMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kDownloadModels)) =
 		    DownloadModelsMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kList)]     = ListMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kRemove)]   = RemoveMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSet)]      = SetMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)] = SnapshotMain;
-		command_mains[static_cast<std::size_t>(howdy::native::CommandId::kTest)]     = TestMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kList))   = ListMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kRemove)) = RemoveMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kSet))    = SetMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)) =
+		    SnapshotMain;
+		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kTest)) = TestMain;
 		return command_mains;
 	}
 

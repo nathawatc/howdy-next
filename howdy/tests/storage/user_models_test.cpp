@@ -1,12 +1,29 @@
+#include "storage/user_model_readiness.hpp"
+#include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
+#include "support/face_metric.hpp"
 #include "support/file_security.hpp"
 #include "support/user_names.hpp"
 
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <system_error>
 #include <thread>
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+
 namespace howdy::test::user_models {
-	using namespace howdy::test::user_models;
 
 	auto TestUserModelLoading() -> bool {
 		namespace fs = std::filesystem;
@@ -135,12 +152,12 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.stored.encodings.size() == 3, "three valid encodings loaded");
 			ok &=
 			    Expect(result.stored.models.size() == 3, "model metadata count matches encodings");
-			ok &=
-			    Expect(result.stored.models[0].id == 7 && result.stored.models[0].label == "first",
-			           "first model metadata preserved");
-			ok &=
-			    Expect(result.stored.models[2].id == 8 && result.stored.models[2].label == "second",
-			           "second model metadata preserved");
+			ok &= Expect(result.stored.models.at(0).id == 7 &&
+			                 result.stored.models.at(0).label == "first",
+			             "first model metadata preserved");
+			ok &= Expect(result.stored.models.at(2).id == 8 &&
+			                 result.stored.models.at(2).label == "second",
+			             "second model metadata preserved");
 		}
 
 		ok &= Expect(
@@ -630,8 +647,8 @@ namespace howdy::test::user_models {
 			const auto listing = howdy::native::ListUserModelEntries(
 			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
-			                 listing.entries.size() == 2 && listing.entries[1].id == 11 &&
-			                 listing.entries[1].label == "Model #11",
+			                 listing.entries.size() == 2 && listing.entries.at(1).id == 11 &&
+			                 listing.entries.at(1).label == "Model #11",
 			             "stored default label matches actual created model ID");
 		}
 		return ok;

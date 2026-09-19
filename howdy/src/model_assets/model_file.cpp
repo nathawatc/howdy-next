@@ -1,19 +1,26 @@
 #include "model_assets/model_file.hpp"
 
+#include "support/eintr.hpp"
+#include "support/error_message.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <fcntl.h>
+#include <filesystem>
+#include <optional>
 #include <string>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::native {
 	namespace {
@@ -33,10 +40,9 @@ namespace howdy::native {
 		// SHA-256 integrity validation belongs to download-models, not FaceModel/PAM.
 		auto CheckPlaceholderPrefix(const int fd) -> PlaceholderCheckResult {
 			std::array<char, 128> buffer{};
-			ssize_t               bytes_read = -1;
-			do {
-				bytes_read = pread(fd, buffer.data(), buffer.size(), 0);
-			} while (bytes_read < 0 && errno == EINTR);
+			const ssize_t         bytes_read = RetryOnEintr([&] -> ssize_t {
+				return pread(fd, buffer.data(), buffer.size(), 0);
+			});
 			if (bytes_read < 0) {
 				const int error_number = errno;
 				return {.status = PlaceholderStatus::kReadError, .error_number = error_number};
@@ -79,13 +85,15 @@ namespace howdy::native {
 
 		struct stat path_stat{};
 		if (lstat(path.c_str(), &path_stat) != 0) {
-			if (errno == ENOENT) {
+			const int error_number = errno;
+			if (error_number == ENOENT) {
 				return {.status        = OpenCvModelStatus::kMissing,
 				        .error_message = std::string(label) + " is missing: " + path.string()};
 			}
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to inspect " + std::string(label) + ": " +
-			                         path.string() + " (" + std::strerror(errno) + ")"};
+			                         path.string() + " (" +
+			                         howdy::native::SystemErrorMessage(error_number) + ")"};
 		}
 		if (const auto security = CheckSecurePathStat(path_stat, SecurePathKind::kRegularFile, path,
 		                                              label, owner_uid);
@@ -96,16 +104,18 @@ namespace howdy::native {
 
 		const ScopedFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
 		if (!fd.Valid()) {
+			const int error_number = errno;
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to open " + std::string(label) + ": " + path.string() +
-			                         " (" + std::strerror(errno) + ")"};
+			                         " (" + howdy::native::SystemErrorMessage(error_number) + ")"};
 		}
 		struct stat opened_stat{};
 		if (fstat(fd.Get(), &opened_stat) != 0) {
 			const int error_number = errno;
 			return {.status        = OpenCvModelStatus::kInsecure,
 			        .error_message = "Failed to fstat opened " + std::string(label) + " '" +
-			                         path.string() + "': " + std::strerror(error_number)};
+			                         path.string() +
+			                         "': " + howdy::native::SystemErrorMessage(error_number)};
 		}
 		if (opened_stat.st_dev != path_stat.st_dev || opened_stat.st_ino != path_stat.st_ino) {
 			return {.status        = OpenCvModelStatus::kInsecure,
@@ -125,10 +135,10 @@ namespace howdy::native {
 
 		const auto placeholder = CheckPlaceholderPrefix(fd.Get());
 		if (placeholder.status == PlaceholderStatus::kReadError) {
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = "Failed to pread " + std::string(label) + " '" +
-			                         path.string() +
-			                         "': " + std::strerror(placeholder.error_number)};
+			return {.status = OpenCvModelStatus::kInsecure,
+			        .error_message =
+			            "Failed to pread " + std::string(label) + " '" + path.string() +
+			            "': " + howdy::native::SystemErrorMessage(placeholder.error_number)};
 		}
 		if (placeholder.status == PlaceholderStatus::kPlaceholder) {
 			return {.status        = OpenCvModelStatus::kInvalid,

@@ -2,21 +2,27 @@
 #include "internal.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
+#include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/user_names.hpp"
 
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -28,7 +34,7 @@ namespace howdy::native::auth_helper {
 		auto LogSourcesErrnoFailure(std::string_view operation, const std::filesystem::path &path,
 		                            int error_number) -> bool {
 			std::cerr << "Failed to " << operation << " '" << path
-			          << "': " << std::strerror(error_number) << "\n";
+			          << "': " << howdy::native::SystemErrorMessage(error_number) << "\n";
 			return false;
 		}
 
@@ -61,17 +67,15 @@ namespace howdy::native::auth_helper {
 			std::array<char, kCopyBufferSize> left{};
 			std::array<char, kCopyBufferSize> right{};
 			while (true) {
-				ssize_t left_size;
-				do {
-					left_size = read(left_fd, left.data(), left.size());
-				} while (left_size < 0 && errno == EINTR);
+				const ssize_t left_size = howdy::native::RetryOnEintr([&] -> ssize_t {
+					return read(left_fd, left.data(), left.size());
+				});
 				if (left_size < 0) {
 					return false;
 				}
-				ssize_t right_size;
-				do {
-					right_size = read(right_fd, right.data(), right.size());
-				} while (right_size < 0 && errno == EINTR);
+				const ssize_t right_size = howdy::native::RetryOnEintr([&] -> ssize_t {
+					return read(right_fd, right.data(), right.size());
+				});
 				if (right_size < 0 || left_size != right_size) {
 					return false;
 				}
@@ -92,10 +96,9 @@ namespace howdy::native::auth_helper {
 			}
 			std::array<char, kCopyBufferSize> buffer{};
 			while (true) {
-				ssize_t size;
-				do {
-					size = read(source.fd.Get(), buffer.data(), buffer.size());
-				} while (size < 0 && errno == EINTR);
+				const ssize_t size = howdy::native::RetryOnEintr([&] -> ssize_t {
+					return read(source.fd.Get(), buffer.data(), buffer.size());
+				});
 				if (size < 0) {
 					return false;
 				}
@@ -134,11 +137,13 @@ namespace howdy::native::auth_helper {
 		auto SecureSourceFileStat(int fd, const std::string &label, uid_t owner_uid) -> bool {
 			struct stat stat{};
 			if (fstat(fd, &stat) != 0) {
-				std::cerr << "Failed to inspect " << label << ": " << std::strerror(errno) << "\n";
+				const int error_number = errno;
+				std::cerr << "Failed to inspect " << label << ": "
+				          << howdy::native::SystemErrorMessage(error_number) << "\n";
 				return false;
 			}
 			if (!S_ISREG(stat.st_mode) || stat.st_uid != owner_uid ||
-			    (stat.st_mode & (S_IWGRP | S_IWOTH)) != 0 || stat.st_nlink != 1) {
+			    HasAnyBits(stat.st_mode, S_IWGRP, S_IWOTH) || stat.st_nlink != 1) {
 				std::cerr << label << " failed secure file validation\n";
 				return false;
 			}

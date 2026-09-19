@@ -3,6 +3,7 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <cctype>
 #include <limits>
 #include <span>
 #include <string>

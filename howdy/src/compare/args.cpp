@@ -1,7 +1,11 @@
 #include "compare/args.hpp"
 
+#include "protocol/compare_exit.hpp"
 #include "support/user_names.hpp"
 
+#include <cstddef>
+#include <span>
+#include <string>
 #include <string_view>
 
 namespace howdy::native {
@@ -10,18 +14,21 @@ namespace howdy::native {
 	    -> CompareArgsParseResult {
 		CompareArgsParseResult result;
 		result.args.config_path = default_config_path;
-		bool user_seen          = false;
+		bool       user_seen    = false;
+		const auto arguments =
+		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
 
-		for (int index = 1; index < argc; ++index) {
-			const std::string_view arg(argv[index]);
+		for (std::size_t index = 1; index < arguments.size(); ++index) {
+			const std::string_view arg(arguments.subspan(index, 1).front());
 			if (arg == "--help" || arg == "-h") {
 				result.status    = CompareArgsStatus::kHelp;
 				result.exit_code = CompareExit::kSuccess;
-				result.message   = "Usage: " + std::string(argv[0]) + " [--config PATH] <user>\n";
+				result.message =
+				    "Usage: " + std::string(arguments.front()) + " [--config PATH] <user>\n";
 				return result;
 			}
-			if (arg == kCompareConfigOption && index + 1 < argc) {
-				result.args.config_path = argv[++index];
+			if (arg == kCompareConfigOption && index + 1 < arguments.size()) {
+				result.args.config_path = arguments.subspan(++index, 1).front();
 				continue;
 			}
 			if (!arg.empty() && arg.front() == '-') {
@@ -36,7 +43,7 @@ namespace howdy::native {
 				result.message   = "Unexpected argument: " + std::string(arg) + "\n";
 				return result;
 			}
-			result.args.user = argv[index];
+			result.args.user = arguments.subspan(index, 1).front();
 			user_seen        = true;
 		}
 

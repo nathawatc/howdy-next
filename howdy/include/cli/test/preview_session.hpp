@@ -5,6 +5,7 @@
 #include "vision/preview_engine.hpp"
 
 #include <chrono>
+#include <functional>
 
 #include <opencv2/core.hpp>
 
@@ -50,9 +51,9 @@ namespace howdy::native::test_cli_internal {
 	private:
 		[[nodiscard]] auto DependenciesValid() const -> bool;
 
-		const howdy::native::VideoConfig &config_;
-		howdy::native::PreviewEngine     &preview_engine_;
-		TestPreviewSessionDependencies    dependencies_;
+		std::reference_wrapper<const howdy::native::VideoConfig> config_;
+		std::reference_wrapper<howdy::native::PreviewEngine>     preview_engine_;
+		TestPreviewSessionDependencies                           dependencies_;
 	};
 
 	auto RunPreviewSessionWithRetainedFrame(TestPreviewSession &session,

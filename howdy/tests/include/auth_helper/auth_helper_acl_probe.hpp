@@ -5,10 +5,11 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/types.h>
@@ -29,8 +30,8 @@ namespace howdy::test::auth_helper {
 
 	inline auto AddAclProbeEntry(acl_t &acl, acl_tag_t tag, const void *qualifier,
 	                             acl_perm_t permissions) -> bool {
-		acl_entry_t   entry;
-		acl_permset_t permission_set;
+		acl_entry_t   entry          = nullptr;
+		acl_permset_t permission_set = nullptr;
 		if (acl_create_entry(&acl, &entry) != 0 || acl_set_tag_type(entry, tag) != 0 ||
 		    (qualifier != nullptr && acl_set_qualifier(entry, qualifier) != 0) ||
 		    acl_get_permset(entry, &permission_set) != 0 || acl_clear_perms(permission_set) != 0) {

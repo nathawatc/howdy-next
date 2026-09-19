@@ -2,6 +2,8 @@
 #include "config/runtime_paths.hpp"
 #include "support/file_security.hpp"
 
+#include <filesystem>
+
 namespace howdy::native {
 
 	auto LoadRuntimeConfig(const std::filesystem::path &config_path) -> RuntimeConfigLoadResult {

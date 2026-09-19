@@ -1,8 +1,13 @@
 #include "cli/add_cli_test_support.hpp"
+#include "storage/user_model_status.hpp"
+#include "support/face_metric.hpp"
 #include "vision/face_model.hpp"
 
+#include <iosfwd>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <vector>
 
 namespace howdy::test::add_cli {
 
@@ -49,11 +54,11 @@ namespace howdy::test::add_cli {
 		}
 
 		auto SuccessfulInteractiveFlowPromptsAfterPreflight() -> bool {
-			auto               context = MakeSuccessContext();
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
+			auto                     context = MakeSuccessContext();
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice"});
 
@@ -76,11 +81,11 @@ namespace howdy::test::add_cli {
 		}
 
 		auto ExplicitEmptyLabelStillPrompts() -> bool {
-			auto               context = MakeSuccessContext();
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
+			auto                     context = MakeSuccessContext();
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice", .positionals = {""}});
 
@@ -96,11 +101,11 @@ namespace howdy::test::add_cli {
 		}
 
 		auto PlainModeSkipsLabelPrompt() -> bool {
-			auto               context = MakeSuccessContext();
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
+			auto                     context = MakeSuccessContext();
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice", .plain = true});
 
@@ -118,11 +123,11 @@ namespace howdy::test::add_cli {
 		}
 
 		auto YesFlagSkipsLabelPrompt() -> bool {
-			auto               context = MakeSuccessContext();
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
+			auto                     context = MakeSuccessContext();
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice", .assume_yes = true});
 
@@ -168,10 +173,10 @@ namespace howdy::test::add_cli {
 		}
 
 		auto InteractiveLabelTruncatesTo24Characters() -> bool {
-			auto               context = MakeSuccessContext();
-			std::istringstream input("abcdefghijklmnopqrstuvwxyz\n");
-			std::ostringstream output;
-			StreamRedirect     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			auto                     context = MakeSuccessContext();
+			std::istringstream const input("abcdefghijklmnopqrstuvwxyz\n");
+			std::ostringstream const output;
+			StreamRedirect const     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice"});
 

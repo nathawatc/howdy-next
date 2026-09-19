@@ -17,6 +17,9 @@
 
 namespace howdy::native::download_models_internal {
 
+	// curl_easy_setopt(3) requires long for this option family across the C vararg boundary.
+	using CurlLong = decltype(0L);
+
 	using StagedDownloadFile                       = StagedFile;
 	inline constexpr std::size_t kMaxDownloadBytes = std::size_t{100} * 1024 * 1024;
 
@@ -34,11 +37,12 @@ namespace howdy::native::download_models_internal {
 	struct CurlSetoptOperations {
 		void *context = nullptr;
 
-		CURLcode (*set_long)(void *context, CURL *curl, CURLoption option, long value) = nullptr;
+		CURLcode (*set_long)(void *context, CURL *curl, CURLoption option,
+		                     CurlLong value)      = nullptr;
 		CURLcode (*set_off_t)(void *context, CURL *curl, CURLoption option,
-		                      curl_off_t value)                                        = nullptr;
+		                      curl_off_t value)   = nullptr;
 		CURLcode (*set_string)(void *context, CURL *curl, CURLoption option,
-		                       const char *value)                                      = nullptr;
+		                       const char *value) = nullptr;
 	};
 
 	[[nodiscard]] auto Sha256FileDescriptor(int fd) -> std::optional<std::string>;

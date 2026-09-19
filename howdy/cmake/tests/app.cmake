@@ -31,11 +31,5 @@ howdy_add_native_test(
 	howdy_main_test
 	native-howdy-main
 	tests/app/howdy_main_test.cpp
-	src/bin/howdy_main.cpp
 )
-target_compile_definitions(
-	howdy_main_test
-	PRIVATE
-		HOWDY_MAIN_ENTRYPOINT=HowdyMainTestEntry
-		HOWDY_MAIN_DISPATCH=HowdyMainTestDispatch
-)
+target_link_libraries(howdy_main_test PRIVATE howdy_cli_core)

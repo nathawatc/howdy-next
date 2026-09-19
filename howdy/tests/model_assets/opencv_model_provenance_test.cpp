@@ -1,8 +1,10 @@
 #include "model_assets/opencv_model_manifest.hpp"
 #include "test_support.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <optional>
 #include <string>

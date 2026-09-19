@@ -1,12 +1,13 @@
 #include "prompt/native_prompt_input.hpp"
 
+#include <cstddef>
+
+#include <string.h>
+
 namespace howdy::pam::native_prompt_input {
 
 	SensitiveBuffer::~SensitiveBuffer() {
-		volatile char *cursor = data_.data();
-		for (std::size_t index = 0; index < data_.size(); ++index) {
-			cursor[index] = '\0';
-		}
+		explicit_bzero(data_.data(), data_.size());
 		length_ = 0;
 	}
 
@@ -19,12 +20,12 @@ namespace howdy::pam::native_prompt_input {
 	}
 
 	void SensitiveBuffer::PushBack(char value) {
-		data_[length_++] = value;
+		data_.at(length_++) = value;
 	}
 
 	void SensitiveBuffer::PopBack() {
 		if (length_ > 0) {
-			data_[--length_] = '\0';
+			data_.at(--length_) = '\0';
 		}
 	}
 

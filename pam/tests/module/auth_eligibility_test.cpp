@@ -1,4 +1,8 @@
+#include "config/runtime_config.hpp"
 #include "module/auth_eligibility.hpp"
+#include "runtime/lid_probe.hpp"
+#include "storage/user_model_readiness.hpp"
+#include "storage/user_model_status.hpp"
 #include "test_support.hpp"
 
 #include <array>

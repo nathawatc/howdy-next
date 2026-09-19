@@ -16,11 +16,12 @@ namespace howdy::native {
 	struct ComparePrivilegeResult {
 		ComparePrivilegeStatus status = ComparePrivilegeStatus::kVerificationFailure;
 		std::string            error_message;
-
-		[[nodiscard]] auto Ok() const noexcept -> bool {
-			return status == ComparePrivilegeStatus::kOk;
-		}
 	};
+
+	[[nodiscard]] constexpr auto
+	ComparePrivilegeSucceeded(const ComparePrivilegeResult &result) noexcept -> bool {
+		return result.status == ComparePrivilegeStatus::kOk;
+	}
 
 	[[nodiscard]] auto DropComparePrivileges() -> ComparePrivilegeResult;
 

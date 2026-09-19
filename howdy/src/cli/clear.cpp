@@ -1,8 +1,11 @@
 #include "cli/clear.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/clear/internal.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <iostream>
 #include <string>

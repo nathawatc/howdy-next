@@ -1,10 +1,13 @@
 #include "compare/logic.hpp"
+#include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+
+#include <opencv2/core/exception.hpp>
 
 namespace {
 

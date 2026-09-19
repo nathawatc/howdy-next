@@ -42,9 +42,10 @@ namespace howdy::native {
 
 	inline constexpr auto kFaceMetricSpellings = []() -> FaceMetricSpellingList {
 		FaceMetricSpellingList spellings{};
-		for (std::size_t index = 0; index < kFaceMetricPolicies.size(); ++index) {
-			spellings[index] = kFaceMetricPolicies[index].spelling;
-		}
+		std::ranges::transform(kFaceMetricPolicies, spellings.begin(),
+		                       [](const FaceMetricPolicy &policy) -> std::string_view {
+			                       return policy.spelling;
+		                       });
 		return spellings;
 	}();
 
@@ -76,14 +77,12 @@ namespace howdy::native {
 		if (value.size() != spelling.size()) {
 			return false;
 		}
-		for (std::size_t index = 0; index < value.size(); ++index) {
-			const auto left  = static_cast<unsigned char>(value[index]);
-			const auto right = static_cast<unsigned char>(spelling[index]);
-			if (std::tolower(left) != std::tolower(right)) {
-				return false;
-			}
-		}
-		return true;
+		return std::ranges::equal(
+		    value, spelling, [](const char value_character, const char spelling_character) -> bool {
+			    const auto left  = static_cast<unsigned char>(value_character);
+			    const auto right = static_cast<unsigned char>(spelling_character);
+			    return std::tolower(left) == std::tolower(right);
+		    });
 	}
 
 	[[nodiscard]] inline auto ParseFaceMetric(std::string_view value) -> std::optional<FaceMetric> {

@@ -1,14 +1,22 @@
+#include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::test::download_models {
 
@@ -48,8 +56,8 @@ namespace howdy::test::download_models {
 		auto OfficialManifestDownloadFile(
 		    const std::string                                           &url,
 		    howdy::native::download_models_internal::StagedDownloadFile &staged) -> bool {
-			++download_attempts;
-			downloaded_urls.push_back(url);
+			++DependenciesState().download_attempts;
+			DependenciesState().downloaded_urls.push_back(url);
 			for (const auto &artifact : kPinnedModelArtifacts) {
 				if (artifact.url == url) {
 					return ftruncate(staged.fd.Get(), static_cast<off_t>(artifact.size)) == 0;
@@ -88,30 +96,32 @@ namespace howdy::test::download_models {
 		             "run official manifest downloads");
 		std::error_code yunet_size_ec;
 		std::error_code sface_size_ec;
-		ok &= Expect(manifest_exit == 0 && downloaded_urls.size() == kPinnedModelArtifacts.size() &&
-		                 downloaded_urls[0] == kPinnedModelArtifacts[0].url &&
-		                 downloaded_urls[1] == kPinnedModelArtifacts[1].url &&
-		                 fs::file_size(manifest_models_dir / kPinnedModelArtifacts[0].filename,
-		                               yunet_size_ec) == kPinnedModelArtifacts[0].size &&
-		                 !yunet_size_ec &&
-		                 fs::file_size(manifest_models_dir / kPinnedModelArtifacts[1].filename,
-		                               sface_size_ec) == kPinnedModelArtifacts[1].size &&
-		                 !sface_size_ec,
-		             "each official download matches its independently pinned artifact");
+		ok &= Expect(
+		    manifest_exit == 0 &&
+		        DependenciesState().downloaded_urls.size() == kPinnedModelArtifacts.size() &&
+		        DependenciesState().downloaded_urls.at(0) == kPinnedModelArtifacts.at(0).url &&
+		        DependenciesState().downloaded_urls.at(1) == kPinnedModelArtifacts.at(1).url &&
+		        fs::file_size(manifest_models_dir / kPinnedModelArtifacts.at(0).filename,
+		                      yunet_size_ec) == kPinnedModelArtifacts.at(0).size &&
+		        !yunet_size_ec &&
+		        fs::file_size(manifest_models_dir / kPinnedModelArtifacts.at(1).filename,
+		                      sface_size_ec) == kPinnedModelArtifacts.at(1).size &&
+		        !sface_size_ec,
+		    "each official download matches its independently pinned artifact");
 
-		const auto &official_yunet = howdy::native::kOfficialOpenCvModels[0];
-		const auto &official_sface = howdy::native::kOfficialOpenCvModels[1];
-		ok &= Expect(official_yunet.type == kPinnedModelArtifacts[0].type &&
-		                 official_yunet.filename == kPinnedModelArtifacts[0].filename &&
-		                 official_yunet.url == kPinnedModelArtifacts[0].url &&
-		                 official_yunet.size == kPinnedModelArtifacts[0].size &&
-		                 official_yunet.sha256 == kPinnedModelArtifacts[0].sha256,
+		const auto &official_yunet = howdy::native::kOfficialOpenCvModels.at(0);
+		const auto &official_sface = howdy::native::kOfficialOpenCvModels.at(1);
+		ok &= Expect(official_yunet.type == kPinnedModelArtifacts.at(0).type &&
+		                 official_yunet.filename == kPinnedModelArtifacts.at(0).filename &&
+		                 official_yunet.url == kPinnedModelArtifacts.at(0).url &&
+		                 official_yunet.size == kPinnedModelArtifacts.at(0).size &&
+		                 official_yunet.sha256 == kPinnedModelArtifacts.at(0).sha256,
 		             "official YuNet descriptor matches independently pinned artifact");
-		ok &= Expect(official_sface.type == kPinnedModelArtifacts[1].type &&
-		                 official_sface.filename == kPinnedModelArtifacts[1].filename &&
-		                 official_sface.url == kPinnedModelArtifacts[1].url &&
-		                 official_sface.size == kPinnedModelArtifacts[1].size &&
-		                 official_sface.sha256 == kPinnedModelArtifacts[1].sha256,
+		ok &= Expect(official_sface.type == kPinnedModelArtifacts.at(1).type &&
+		                 official_sface.filename == kPinnedModelArtifacts.at(1).filename &&
+		                 official_sface.url == kPinnedModelArtifacts.at(1).url &&
+		                 official_sface.size == kPinnedModelArtifacts.at(1).size &&
+		                 official_sface.sha256 == kPinnedModelArtifacts.at(1).sha256,
 		             "official SFace descriptor matches independently pinned artifact");
 		ok &= Expect(official_yunet.filename != official_sface.filename &&
 		                 official_yunet.url != official_sface.url &&

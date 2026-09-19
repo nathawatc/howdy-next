@@ -1,17 +1,15 @@
 #pragma once
 
+#include "auth_helper/acl.hpp"
+
 #include <filesystem>
 
-namespace howdy::native::auth_helper {
-	struct AclOperations;
-}
-
 struct AuthHelperStagingContext {
-	bool                                             acl_functional;
-	bool                                             acl_supported;
-	uid_t                                            functional_target_uid;
-	const howdy::native::auth_helper::AclOperations &operations;
-	const howdy::native::auth_helper::AclOperations &production_operations;
+	bool                                      acl_functional = false;
+	bool                                      acl_supported  = false;
+	uid_t                                     functional_target_uid{};
+	howdy::native::auth_helper::AclOperations operations;
+	howdy::native::auth_helper::AclOperations production_operations;
 };
 
 auto RunAuthHelperPathTests(const std::filesystem::path &temp_root) -> bool;

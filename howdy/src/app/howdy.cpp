@@ -1,11 +1,14 @@
 #include "app/command_catalog.hpp"
+#include "app/command_invocation.hpp"
 #include "app/howdy/internal.hpp"
 #include "howdy/cli/internal.hpp"
 #include "howdy/completion/internal.hpp"
 #include "howdy/version_format.hpp"
+#include "support/invoking_user.hpp"
 #include "support/user_names.hpp"
 #include "version.hpp"
 
+#include <cstddef>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -157,7 +160,7 @@ auto howdy::native::howdy_internal::HowdyMainWithDependencies(int argc, char **a
 	}
 
 	const auto selected_main =
-	    dependencies.command_mains[static_cast<std::size_t>(command_descriptor->id)];
+	    dependencies.command_mains.at(static_cast<std::size_t>(command_descriptor->id));
 	if (selected_main == nullptr) {
 		std::cerr << "howdy: command entrypoint unavailable: " << command_name << '\n';
 		return 1;

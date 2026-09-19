@@ -1,5 +1,7 @@
 #include "cli/config.hpp"
 
+#include "app/command_invocation.hpp"
+#include "cli/config/edit_session.hpp"
 #include "cli/config/internal.hpp"
 #include "config/config_utils.hpp"
 

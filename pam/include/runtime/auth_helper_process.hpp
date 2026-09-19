@@ -5,9 +5,11 @@
 
 #include <chrono>
 #include <filesystem>
-#include <spawn.h>
+#include <span>
 #include <string>
 #include <string_view>
+
+#include <spawn.h>
 
 namespace howdy::pam::auth_helper_process {
 
@@ -16,8 +18,8 @@ namespace howdy::pam::auth_helper_process {
 		pid_t                            *child_pid = nullptr;
 		const char                       *path      = nullptr;
 		const posix_spawn_file_actions_t *actions   = nullptr;
-		char *const                      *argv      = nullptr;
-		char *const                      *envp      = nullptr;
+		std::span<char *const>            argv;
+		std::span<char *const>            envp;
 	};
 
 	using OutputReader = howdy::native::BoundedReadResult (*)(

@@ -3,12 +3,14 @@
 #include "support/scoped_fd.hpp"
 
 #include <cmath>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <string>
 #include <string_view>
+
 #include <unistd.h>
 
 namespace howdy::test {
@@ -21,6 +23,12 @@ namespace howdy::test {
 	}
 
 	using ScopedFd = howdy::native::ScopedFd;
+
+	struct NonStandardExceptionForTest {};
+
+	[[noreturn]] inline void ThrowNonStandardExceptionForTest() {
+		std::rethrow_exception(std::make_exception_ptr(NonStandardExceptionForTest{}));
+	}
 
 	template <typename Actual, typename Expected, typename Tolerance>
 	inline auto ExpectNear(Actual actual, Expected expected, Tolerance tolerance,

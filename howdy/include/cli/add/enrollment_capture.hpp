@@ -101,7 +101,7 @@ namespace howdy::native {
 
 			auto       prepared         = face_model.PrepareFrame(gray);
 			const auto detection_result = face_model.Detect(prepared);
-			if (!detection_result.Ok()) {
+			if (!FaceDetectionSucceeded(detection_result)) {
 				result.detector_status        = detection_result.status;
 				result.detector_error_message = detection_result.error_message;
 				break;

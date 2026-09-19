@@ -13,23 +13,34 @@
 
 namespace howdy::test::auth_helper {
 
-	struct FakeAclContext {
-		using FileIdentity = std::pair<dev_t, ino_t>;
+	class FakeAclContext {
+	public:
+		FakeAclContext()                                           = default;
+		FakeAclContext(const FakeAclContext &)                     = delete;
+		auto operator=(const FakeAclContext &) -> FakeAclContext & = delete;
+		FakeAclContext(FakeAclContext &&)                          = delete;
+		auto operator=(FakeAclContext &&) -> FakeAclContext &      = delete;
 
-		std::map<FileIdentity, acl_t> acls_by_identity;
+		using FileIdentity = std::pair<dev_t, ino_t>;
 
 		~FakeAclContext() {
 			Clear();
 		}
 
 		void Clear() {
-			for (const auto &entry : acls_by_identity) {
+			for (const auto &entry : acls_by_identity_) {
 				acl_free(entry.second);
 			}
-			acls_by_identity.clear();
+			acls_by_identity_.clear();
 		}
 
 		[[nodiscard]] auto Operations() -> howdy::native::auth_helper::AclOperations;
+
+	private:
+		std::map<FileIdentity, acl_t> acls_by_identity_;
+
+		friend auto FakeAclSetFd(void *context, int fd, acl_t acl) -> int;
+		friend auto FakeAclGetFd(void *context, int fd) -> acl_t;
 	};
 
 	inline auto FakeAclSetFd(void *context, int fd, acl_t acl) -> int {
@@ -43,12 +54,12 @@ namespace howdy::test::auth_helper {
 			return -1;
 		}
 		const FakeAclContext::FileIdentity identity{status.st_dev, status.st_ino};
-		if (const auto existing = state.acls_by_identity.find(identity);
-		    existing != state.acls_by_identity.end()) {
+		if (const auto existing = state.acls_by_identity_.find(identity);
+		    existing != state.acls_by_identity_.end()) {
 			acl_free(existing->second);
 			existing->second = duplicate;
 		} else {
-			state.acls_by_identity.emplace(identity, duplicate);
+			state.acls_by_identity_.emplace(identity, duplicate);
 		}
 		return 0;
 	}
@@ -60,8 +71,8 @@ namespace howdy::test::auth_helper {
 			return nullptr;
 		}
 		const FakeAclContext::FileIdentity identity{status.st_dev, status.st_ino};
-		const auto                         stored = state.acls_by_identity.find(identity);
-		if (stored == state.acls_by_identity.end()) {
+		const auto                         stored = state.acls_by_identity_.find(identity);
+		if (stored == state.acls_by_identity_.end()) {
 			errno = ENODATA;
 			return nullptr;
 		}

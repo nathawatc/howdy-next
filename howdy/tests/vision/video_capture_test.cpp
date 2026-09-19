@@ -7,6 +7,10 @@
 #include <string>
 #include <utility>
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+
 namespace howdy::native {
 
 	class VideoCaptureTestAccess {
@@ -14,16 +18,21 @@ namespace howdy::native {
 		class ReadContext final : public VideoCapture::FrameReader {
 		public:
 			explicit ReadContext(cv::Mat source_frame)
-			    : frame(std::move(source_frame)) {}
+			    : frame_(std::move(source_frame)) {}
 
 			auto Read(cv::Mat &output) -> bool override {
-				calls++;
-				output = frame.clone();
+				calls_++;
+				output = frame_.clone();
 				return true;
 			}
 
-			cv::Mat frame;
-			int     calls = 0;
+			[[nodiscard]] auto Calls() const -> int {
+				return calls_;
+			}
+
+		private:
+			cv::Mat frame_;
+			int     calls_ = 0;
 		};
 
 		static auto Create(CaptureSettings settings, std::shared_ptr<ReadContext> frame_reader)
@@ -62,7 +71,7 @@ namespace {
 		ok &= Expect(!result, label + " is rejected");
 		ok &= Expect(capture.Error() == howdy::native::CaptureError::kReadFailed,
 		             label + " sets read-failed error");
-		ok &= Expect(context->calls == 1, label + " reads one test frame");
+		ok &= Expect(context->Calls() == 1, label + " reads one test frame");
 		ok &= Expect(GrayIsSentinel(gray), label + " leaves gray output unchanged");
 		return ok;
 	}

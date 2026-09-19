@@ -1,10 +1,40 @@
+#include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/prompt_coordinator_test_groups.hpp"
+#include "prompt/workaround.hpp"
+#include "runtime/compare_launch.hpp"
 #include "support/process_test_support.hpp"
+#include "test_support.hpp"
+
+#include <cerrno>
+#include <cstdlib>
+#include <string>
+
+#include <unistd.h>
 
 namespace {
-	using namespace howdy::test::process;
-	using namespace howdy::test::prompt_coordinator;
+	using howdy::pam::PromptCoordinator;
+	using howdy::pam::PromptCoordinatorDecision;
+	using howdy::pam::PromptCoordinatorOperations;
+	using howdy::pam::Workaround;
+	using howdy::test::Expect;
+	using howdy::test::process::ChildReaped;
+	using howdy::test::process::SpawnChild;
+	using howdy::test::prompt_coordinator::CallbackCounts;
+	using howdy::test::prompt_coordinator::CancelAndReapCompare;
+	using howdy::test::prompt_coordinator::CreateNativePrompt;
+	using howdy::test::prompt_coordinator::CreatePromptSubmitter;
+	using howdy::test::prompt_coordinator::CreateSecretPromptConversation;
+	using howdy::test::prompt_coordinator::FakeContext;
+	using howdy::test::prompt_coordinator::GetCallbackCounts;
+	using howdy::test::prompt_coordinator::InputPreflight;
+	using howdy::test::prompt_coordinator::MakeCompareRequest;
+	using howdy::test::prompt_coordinator::Operations;
+	using howdy::test::prompt_coordinator::RequestAuthToken;
+	using howdy::test::prompt_coordinator::SameCallbackCounts;
+	using howdy::test::prompt_coordinator::SpawnCompareProcess;
+	using howdy::test::prompt_coordinator::Timeout;
+	using howdy::test::prompt_coordinator::WaitForCompare;
 
 	auto TestLaunchRequest(const howdy::pam::CompareLaunchRequest &request,
 	                       const std::string                      &expected_config_path,
@@ -59,7 +89,7 @@ namespace {
 		const auto result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "spawn failure returns compare-spawn-failed result") &&
-		       Expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
+		       Expect(SameCallbackCounts(GetCallbackCounts(context), CallbackCounts{.spawn = 1}),
 		              "spawn failure invokes no downstream callbacks") &&
 		       Expect(context.spawned_pid == -1, "spawn failure creates no child task");
 	}
@@ -73,7 +103,7 @@ namespace {
 		const auto result = coordinator.Run(MakeCompareRequest());
 		return Expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "invalid spawn PID returns compare-spawn-failed result") &&
-		       Expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
+		       Expect(SameCallbackCounts(GetCallbackCounts(context), CallbackCounts{.spawn = 1}),
 		              "invalid spawn PID invokes no downstream callbacks");
 	}
 
@@ -89,7 +119,7 @@ namespace {
 		              "spawn-failure one-shot first run reports spawn failure") &&
 		       Expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "spawn-failure one-shot second run is rejected") &&
-		       Expect(GetCallbackCounts(context) == CallbackCounts{.spawn = 1},
+		       Expect(SameCallbackCounts(GetCallbackCounts(context), CallbackCounts{.spawn = 1}),
 		              "spawn-failure one-shot invokes spawn only once");
 	}
 
@@ -136,7 +166,7 @@ namespace {
 		              "one-shot first run spawns child once") &&
 		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              "one-shot first run waits for spawned child") &&
-		       Expect(GetCallbackCounts(context) == before,
+		       Expect(SameCallbackCounts(GetCallbackCounts(context), before),
 		              "one-shot second run invokes no callback") &&
 		       Expect(ChildReaped(child_pid), "one-shot first run reaps child");
 	}

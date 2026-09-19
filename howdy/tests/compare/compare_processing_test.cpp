@@ -1,8 +1,13 @@
+#include "compare/capture_session.hpp"
+#include "compare/privileges.hpp"
 #include "compare/processing.hpp"
+#include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <string>
+#include <string_view>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -74,6 +79,40 @@ namespace {
 	auto Run(FakeContext &context) -> CompareProcessingResult {
 		return howdy::native::compare_processing_internal::RunCompareProcessing(
 		    DependenciesFor(context));
+	}
+
+	auto TestMissingDependenciesFailClosed() -> bool {
+		FakeContext context;
+		bool        ok = true;
+
+		const auto expect_abort = [&](CompareProcessingDependencies dependencies,
+		                              std::string_view              label) -> void {
+			context.events.clear();
+			const auto result =
+			    howdy::native::compare_processing_internal::RunCompareProcessing(dependencies);
+			const auto *processing_exit = std::get_if<CompareExit>(&result);
+			ok &= Expect(processing_exit != nullptr && *processing_exit == CompareExit::kAbort,
+			             std::string(label) + " fails closed");
+			ok &=
+			    Expect(context.events.empty(), std::string(label) + " invokes no processing stage");
+		};
+
+		auto dependencies         = DependenciesFor(context);
+		dependencies.open_capture = nullptr;
+		expect_abort(dependencies, "missing open capture");
+		dependencies                 = DependenciesFor(context);
+		dependencies.drop_privileges = nullptr;
+		expect_abort(dependencies, "missing privilege drop");
+		dependencies                  = DependenciesFor(context);
+		dependencies.construct_engine = nullptr;
+		expect_abort(dependencies, "missing engine construction");
+		dependencies               = DependenciesFor(context);
+		dependencies.reset_timeout = nullptr;
+		expect_abort(dependencies, "missing timeout reset");
+		dependencies                = DependenciesFor(context);
+		dependencies.run_frame_loop = nullptr;
+		expect_abort(dependencies, "missing frame loop");
+		return ok;
 	}
 
 	auto TestSuccessfulPrivilegeValidationReachesProcessing() -> bool {
@@ -205,6 +244,7 @@ namespace {
 
 auto main() -> int {
 	bool ok = true;
+	ok &= TestMissingDependenciesFailClosed();
 	ok &= TestSuccessfulPrivilegeValidationReachesProcessing();
 	ok &= TestOpenFailure();
 	ok &= TestInvalidCameraDependencies();

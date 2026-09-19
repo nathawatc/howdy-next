@@ -1,10 +1,16 @@
 #include "docs/man_reference.hpp"
 
+#include "app/command_catalog.hpp"
+#include "config/config_schema.hpp"
+#include "module/pam_option_catalog.hpp"
+#include "prompt/workaround.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/face_metric.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -176,8 +182,8 @@ namespace howdy::docs {
 			if (workarounds.empty()) {
 				return "workaround catalog is empty";
 			}
-			for (std::size_t index = 0; index < workarounds.size(); ++index) {
-				const auto &workaround = workarounds[index];
+			std::size_t index = 0;
+			for (const auto &workaround : workarounds) {
 				if (const auto error =
 				        ValidateText({.kind = "workaround value", .value = workaround.value})) {
 					return error;
@@ -189,14 +195,15 @@ namespace howdy::docs {
 				if (workaround.workaround == pam::Workaround::kOff) {
 					return "off must remain the default, not a mapped workaround value";
 				}
-				for (std::size_t previous = 0; previous < index; ++previous) {
-					if (workarounds[previous].value == workaround.value) {
+				for (const auto &previous : workarounds.first(index)) {
+					if (previous.value == workaround.value) {
 						return "duplicate workaround value: " + std::string(workaround.value);
 					}
-					if (workarounds[previous].workaround == workaround.workaround) {
+					if (previous.workaround == workaround.workaround) {
 						return "duplicate workaround mode: " + std::string(workaround.value);
 					}
 				}
+				++index;
 			}
 			return std::nullopt;
 		}
@@ -210,7 +217,7 @@ namespace howdy::docs {
 				if (index > 0) {
 					result += ", ";
 				}
-				const auto spelling = native::config_schema::kAcceptedBooleanSpellings[index];
+				const auto spelling = native::config_schema::kAcceptedBooleanSpellings.at(index);
 				if (spelling == default_spelling) {
 					result += "\\fB";
 					result += EscapeRoff(spelling);
@@ -225,12 +232,12 @@ namespace howdy::docs {
 
 		auto FormatChoices(std::span<const std::string_view> choices,
 		                   std::string_view                  default_choice) -> std::string {
-			std::string choices_str = "Choices: ";
-			for (std::size_t index = 0; index < choices.size(); ++index) {
-				if (index > 0) {
+			std::string choices_str  = "Choices: ";
+			bool        first_choice = true;
+			for (const auto choice : choices) {
+				if (!first_choice) {
 					choices_str += ", ";
 				}
-				const auto choice = choices[index];
 				if (choice == default_choice) {
 					choices_str += "\\fB";
 					choices_str += EscapeRoff(choice);
@@ -238,6 +245,7 @@ namespace howdy::docs {
 				} else {
 					choices_str += EscapeRoff(choice);
 				}
+				first_choice = false;
 			}
 			choices_str += '.';
 			return choices_str;
@@ -250,7 +258,7 @@ namespace howdy::docs {
 				if (index > 0) {
 					result += ", ";
 				}
-				const auto pattern = native::kAcceptedCaptureDevicePatterns[index];
+				const auto pattern = native::kAcceptedCaptureDevicePatterns.at(index);
 				if (pattern == default_path) {
 					result += "\\fB";
 					result += EscapeRoff(pattern);
@@ -320,12 +328,12 @@ namespace howdy::docs {
 					range_str += ", ";
 				}
 				const auto max_str =
-				    native::config_schema::FormatFloatingPointValue(groups[g_idx].first);
+				    native::config_schema::FormatFloatingPointValue(groups.at(g_idx).first);
 				range_str += EscapeRoff(min_val);
 				range_str += "..";
 				range_str += EscapeRoff(max_str.value_or(""));
 				range_str += " for ";
-				const auto &spellings = groups[g_idx].second;
+				const auto &spellings = groups.at(g_idx).second;
 				for (std::size_t s_idx = 0; s_idx < spellings.size(); ++s_idx) {
 					if (s_idx > 0) {
 						if (s_idx + 1 == spellings.size()) {
@@ -334,7 +342,7 @@ namespace howdy::docs {
 							range_str += ", ";
 						}
 					}
-					range_str += EscapeRoff(spellings[s_idx]);
+					range_str += EscapeRoff(spellings.at(s_idx));
 				}
 			}
 			range_str += '.';

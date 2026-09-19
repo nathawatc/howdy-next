@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+
 #include <unistd.h>
 
 namespace howdy::native {
@@ -94,7 +95,7 @@ namespace howdy::native {
 			}
 
 			const char *wayland_display = std::getenv(kWaylandDisplayEnvironmentVariable);
-			if (wayland_display == nullptr || wayland_display[0] == '\0') {
+			if (wayland_display == nullptr || *wayland_display == '\0') {
 				if (const auto display = FindWaylandDisplay(runtime_dir)) {
 					SetUserEnvVar(kWaylandDisplayEnvironmentVariable, *display);
 				}

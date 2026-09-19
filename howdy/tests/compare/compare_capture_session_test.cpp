@@ -1,4 +1,5 @@
 #include "compare/capture_session.hpp"
+#include "config/runtime_config.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
@@ -7,12 +8,18 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/videoio.hpp>
 
 namespace {
 
 	using howdy::test::Expect;
-	int set_property_calls_without_context = 0;
+
+	auto SetPropertyCallsWithoutContext() -> int & {
+		static int calls = 0;
+		return calls;
+	}
 
 	struct FakeCaptureContext {
 		bool        open_result = true;
@@ -90,7 +97,7 @@ namespace {
 	auto FakeSetPropertyWithoutContext([[maybe_unused]] void                          *context,
 	                                   [[maybe_unused]] howdy::native::CaptureProperty property)
 	    -> bool {
-		set_property_calls_without_context++;
+		SetPropertyCallsWithoutContext()++;
 		return true;
 	}
 
@@ -429,17 +436,17 @@ auto main() -> int {
 		                                                        "exposure"},
 		             "exposure restoration follows warm-up");
 		if (capture.property_calls.size() == 4) {
-			ok &= Expect(capture.property_calls[0].property == cv::CAP_PROP_AUTO_EXPOSURE &&
-			                 capture.property_calls[0].value == 1.0,
+			ok &= Expect(capture.property_calls.at(0).property == cv::CAP_PROP_AUTO_EXPOSURE &&
+			                 capture.property_calls.at(0).value == 1.0,
 			             "auto exposure is applied first");
-			ok &= Expect(capture.property_calls[1].property == cv::CAP_PROP_EXPOSURE &&
-			                 capture.property_calls[1].value == 37.0,
+			ok &= Expect(capture.property_calls.at(1).property == cv::CAP_PROP_EXPOSURE &&
+			                 capture.property_calls.at(1).value == 37.0,
 			             "explicit exposure is applied second");
-			ok &= Expect(capture.property_calls[2].property == cv::CAP_PROP_AUTO_EXPOSURE &&
-			                 capture.property_calls[2].value == 1.0,
+			ok &= Expect(capture.property_calls.at(2).property == cv::CAP_PROP_AUTO_EXPOSURE &&
+			                 capture.property_calls.at(2).value == 1.0,
 			             "auto exposure is restored first");
-			ok &= Expect(capture.property_calls[3].property == cv::CAP_PROP_EXPOSURE &&
-			                 capture.property_calls[3].value == 37.0,
+			ok &= Expect(capture.property_calls.at(3).property == cv::CAP_PROP_EXPOSURE &&
+			                 capture.property_calls.at(3).value == 37.0,
 			             "explicit exposure is restored second");
 		}
 	}
@@ -527,16 +534,16 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		auto               config          = MakeVideoConfig();
-		auto               dependencies    = MakeDependencies(capture, clock);
-		config.exposure                    = 37;
-		dependencies.capture_context       = nullptr;
-		dependencies.set_property          = FakeSetPropertyWithoutContext;
-		set_property_calls_without_context = 0;
+		auto               config        = MakeVideoConfig();
+		auto               dependencies  = MakeDependencies(capture, clock);
+		config.exposure                  = 37;
+		dependencies.capture_context     = nullptr;
+		dependencies.set_property        = FakeSetPropertyWithoutContext;
+		SetPropertyCallsWithoutContext() = 0;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
 		session.RestoreExposure();
-		ok &= Expect(set_property_calls_without_context == 0,
+		ok &= Expect(SetPropertyCallsWithoutContext() == 0,
 		             "invalid capture context does not invoke property setter");
 	}
 

@@ -4,11 +4,14 @@
 #include <array>
 #include <clocale>
 #include <cstdlib>
-#include <langinfo.h>
-#include <libintl.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
+
+#include <langinfo.h>
+#include <libintl.h>
+#include <locale.h>
+#include <stdlib.h>
 
 namespace {
 
@@ -17,6 +20,9 @@ namespace {
 
 	class ScopedEnvironment {
 	public:
+		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
+		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
+
 		explicit ScopedEnvironment(const char *name)
 		    : name_(name) {
 			const char *value = std::getenv(name_.c_str());

@@ -50,8 +50,13 @@ namespace howdy::native {
 	private:
 		class FrameReader {
 		public:
-			virtual ~FrameReader()                    = default;
-			virtual auto Read(cv::Mat &frame) -> bool = 0;
+			FrameReader()                                        = default;
+			FrameReader(const FrameReader &)                     = delete;
+			auto operator=(const FrameReader &) -> FrameReader & = delete;
+			FrameReader(FrameReader &&)                          = delete;
+			auto operator=(FrameReader &&) -> FrameReader &      = delete;
+			virtual ~FrameReader()                               = default;
+			virtual auto Read(cv::Mat &frame) -> bool            = 0;
 		};
 
 		VideoCapture(CaptureSettings settings, std::shared_ptr<FrameReader> frame_reader);

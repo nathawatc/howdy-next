@@ -1,18 +1,29 @@
+#include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <vector>
+
+#include <unistd.h>
+
+#include <sys/stat.h>
+
+#include <curl/curl.h>
+#include <curl/system.h>
 
 namespace howdy::test::download_models {
 
+	using howdy::native::download_models_internal::CurlLong;
 	using howdy::test::Expect;
 
 	namespace {
@@ -20,7 +31,7 @@ namespace howdy::test::download_models {
 		struct CurlSetoptCall {
 			CURLoption                 option;
 			CURLcode                   result;
-			std::optional<long>        long_value;
+			std::optional<CurlLong>    long_value;
 			std::optional<curl_off_t>  off_t_value;
 			std::optional<std::string> string_value;
 		};
@@ -36,7 +47,7 @@ namespace howdy::test::download_models {
 			           : CURLE_OK;
 		}
 
-		auto FakeSetoptLong(void *context, CURL * /*curl*/, CURLoption option, long value)
+		auto FakeSetoptLong(void *context, CURL * /*curl*/, CURLoption option, CurlLong value)
 		    -> CURLcode {
 			auto *recorder = static_cast<CurlSetoptRecorder *>(context);
 			if (recorder == nullptr) {
@@ -77,7 +88,7 @@ namespace howdy::test::download_models {
 			        .set_string = FakeSetoptString};
 		}
 
-		auto ConfiguredLong(const CurlSetoptRecorder &recorder, CURLoption option, long value)
+		auto ConfiguredLong(const CurlSetoptRecorder &recorder, CURLoption option, CurlLong value)
 		    -> bool {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
@@ -206,7 +217,7 @@ namespace howdy::test::download_models {
 		             "null download callback models directory starts absent");
 		int null_download_exit = 0;
 		{
-			EnvVarGuard models_env("HOWDY_MODELS_DIR", null_download_models_dir.string());
+			EnvVarGuard const models_env("HOWDY_MODELS_DIR", null_download_models_dir.string());
 			ResetDependencyAttempts();
 			ok &= Expect(CaptureDownloadModelsStdout(
 			                 null_download_output, &null_download_exit,
@@ -231,7 +242,7 @@ namespace howdy::test::download_models {
 		             "null owner callback models directory starts absent");
 		int null_owner_exit = 0;
 		{
-			EnvVarGuard models_env("HOWDY_MODELS_DIR", null_owner_models_dir.string());
+			EnvVarGuard const models_env("HOWDY_MODELS_DIR", null_owner_models_dir.string());
 			ResetDependencyAttempts();
 			ok &= Expect(CaptureDownloadModelsStdout(
 			                 null_owner_output, &null_owner_exit,

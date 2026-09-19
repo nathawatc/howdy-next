@@ -1,11 +1,19 @@
 #include "cli/test/internal.hpp"
 #include "cli/test/preview_session.hpp"
+#include "cli/test_preview_test_groups.hpp"
+#include "config/runtime_config.hpp"
 #include "test_support.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/preview_engine.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <stdexcept>
 #include <vector>
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
@@ -58,7 +66,7 @@ namespace {
 		if (session_context->next_frame >= session_context->frames.size()) {
 			return false;
 		}
-		gray_frame = session_context->frames[session_context->next_frame++].clone();
+		gray_frame = session_context->frames.at(session_context->next_frame++).clone();
 		return true;
 	}
 
@@ -303,8 +311,6 @@ namespace {
 	}
 
 }  // namespace
-
-auto RunTestPreviewRendererTests() -> bool;
 
 auto main() -> int {
 	bool ok = true;

@@ -1,9 +1,10 @@
 #include "prompt/internal_fd.hpp"
 
 #include <array>
+#include <utility>
+
 #include <fcntl.h>
 #include <unistd.h>
-#include <utility>
 
 namespace {
 	auto ProductionDuplicate(void * /*context*/, int fd, int minimum_fd) -> int {
@@ -22,9 +23,9 @@ namespace {
 
 namespace howdy::pam::detail {
 
-	auto InternalPipe::Valid() const noexcept -> bool {
-		return read.Get() > STDERR_FILENO && write.Get() > STDERR_FILENO &&
-		       read.Get() != write.Get();
+	auto InternalPipeValid(const InternalPipe &pipe) noexcept -> bool {
+		return pipe.read.Get() > STDERR_FILENO && pipe.write.Get() > STDERR_FILENO &&
+		       pipe.read.Get() != pipe.write.Get();
 	}
 
 	auto NormalizeInternalFd(ScopedFd fd, const InternalFdOperations *operations) noexcept
@@ -56,13 +57,13 @@ namespace howdy::pam::detail {
 			return {};
 		}
 
-		InternalPipe pipe{.read = ScopedFd(raw_fds[0]), .write = ScopedFd(raw_fds[1])};
+		InternalPipe pipe{.read = ScopedFd(raw_fds.front()), .write = ScopedFd(raw_fds.back())};
 		pipe.read = NormalizeInternalFd(std::move(pipe.read), operations);
 		if (!pipe.read.Valid()) {
 			return {};
 		}
 		pipe.write = NormalizeInternalFd(std::move(pipe.write), operations);
-		if (!pipe.Valid()) {
+		if (!InternalPipeValid(pipe)) {
 			return {};
 		}
 		return InternalPipe{.read = std::move(pipe.read), .write = std::move(pipe.write)};

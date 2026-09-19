@@ -1,10 +1,16 @@
 #include "vision/face_encoding.hpp"
 
+#include "vision/face_detection.hpp"
 #include "vision/face_encoding/internal.hpp"
 
 #include <cmath>
-#include <cstddef>
+#include <functional>
 #include <utility>
+#include <vector>
+
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 
 namespace howdy::native {
 
@@ -23,17 +29,19 @@ namespace howdy::native {
 		row.at<float>(0, 1) = face.box.y;
 		row.at<float>(0, 2) = face.box.width;
 		row.at<float>(0, 3) = face.box.height;
-		for (std::size_t index = 0; index < face.landmarks.size(); ++index) {
-			const int column             = 4 + static_cast<int>(index * 2);
-			row.at<float>(0, column)     = face.landmarks[index].x;
-			row.at<float>(0, column + 1) = face.landmarks[index].y;
+		int column          = 4;
+		for (const auto &landmark : face.landmarks) {
+			row.at<float>(0, column)     = landmark.x;
+			row.at<float>(0, column + 1) = landmark.y;
+			column += 2;
 		}
 		row.at<float>(0, 14) = face.confidence;
 
 		cv::Mat aligned;
 		try {
-			dependencies.align_face(dependencies.context,
-			                        {.frame = frame, .face = row, .aligned = aligned});
+			dependencies.align_face(
+			    dependencies.context,
+			    {.frame = std::cref(frame), .face = std::cref(row), .aligned = std::ref(aligned)});
 		} catch (const cv::Exception &) {
 			return {
 			    .status        = FaceEncodingStatus::kInferenceError,

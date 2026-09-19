@@ -1,3 +1,4 @@
+#include "runtime/environment.hpp"
 #include "runtime/session_probe.hpp"
 #include "test_support.hpp"
 

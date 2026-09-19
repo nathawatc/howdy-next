@@ -27,6 +27,9 @@ namespace howdy::test::prompt_coordinator {
 
 	class NativePamFixture {
 	public:
+		NativePamFixture(NativePamFixture &&)                     = delete;
+		auto operator=(NativePamFixture &&) -> NativePamFixture & = delete;
+
 		explicit NativePamFixture(FakeContext *context)
 		    : context_(context)
 		    , original_conv_{.conv = OriginalConversation, .appdata_ptr = context} {}
@@ -54,7 +57,7 @@ namespace howdy::test::prompt_coordinator {
 			    unlockpt(master_fd_.Get()) != 0) {
 				return false;
 			}
-			char *slave_path = ptsname(master_fd_.Get());
+			char const *slave_path = ptsname(master_fd_.Get());
 			if (slave_path == nullptr || pam_set_item(pamh_, PAM_TTY, slave_path) != PAM_SUCCESS) {
 				return false;
 			}

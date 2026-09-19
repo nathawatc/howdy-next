@@ -1,8 +1,11 @@
+#include "cli/config/edit_session.hpp"
 #include "cli/config/internal.hpp"
 #include "cli/config_cli_test_support.hpp"
+#include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -11,9 +14,12 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <utility>
 #include <vector>
+
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -55,9 +61,12 @@ namespace howdy::test::config_cli {
 			std::function<void(const fs::path &)>      on_editor;
 		};
 
-		struct TestDirectoryFixture {
-			fs::path temp_root;
-			fs::path config_path;
+		class TestDirectoryFixture {
+		public:
+			TestDirectoryFixture(const TestDirectoryFixture &)                     = delete;
+			auto operator=(const TestDirectoryFixture &) -> TestDirectoryFixture & = delete;
+			TestDirectoryFixture(TestDirectoryFixture &&)                          = delete;
+			auto operator=(TestDirectoryFixture &&) -> TestDirectoryFixture &      = delete;
 
 			TestDirectoryFixture() {
 				const auto temp_template = fs::temp_directory_path() / "howdy-workflow-test-XXXXXX";
@@ -68,17 +77,29 @@ namespace howdy::test::config_cli {
 				if (created == nullptr) {
 					throw std::runtime_error("failed to create test directory");
 				}
-				temp_root = fs::path(created);
-				chmod(temp_root.c_str(), 0700);
-				config_path = temp_root / "config.ini";
-				WriteFile(config_path, std::string(kWorkflowOriginalContent));
-				chmod(config_path.c_str(), 0644);
+				temp_root_ = fs::path(created);
+				chmod(temp_root_.c_str(), 0700);
+				config_path_ = temp_root_ / "config.ini";
+				WriteFile(config_path_, std::string(kWorkflowOriginalContent));
+				chmod(config_path_.c_str(), 0644);
 			}
 
 			~TestDirectoryFixture() {
 				std::error_code ec;
-				fs::remove_all(temp_root, ec);
+				fs::remove_all(temp_root_, ec);
 			}
+
+			[[nodiscard]] auto TempRoot() const -> const fs::path & {
+				return temp_root_;
+			}
+
+			[[nodiscard]] auto ConfigPath() const -> const fs::path & {
+				return config_path_;
+			}
+
+		private:
+			fs::path temp_root_;
+			fs::path config_path_;
 		};
 
 		struct RunResult {
@@ -136,25 +157,25 @@ namespace howdy::test::config_cli {
 
 		auto RunConfig(const ConfigEditDependencies &dependencies, const fs::path &config_path)
 		    -> RunResult {
-			ScopedEnvironmentVariable config_env("HOWDY_CONFIG", config_path.string());
-			std::ostringstream        output;
-			ScopedStreamBuffer        stdout_guard(std::cout, output.rdbuf());
-			const int                 exit_code =
+			ScopedEnvironmentVariable const config_env("HOWDY_CONFIG", config_path.string());
+			std::ostringstream const        output;
+			ScopedStreamBuffer const        stdout_guard(std::cout, output.rdbuf());
+			const int                       exit_code =
 			    howdy::native::config_internal::ConfigMainWithDependencies({}, dependencies);
 			return {.exit_code = exit_code, .output = output.str()};
 		}
 
 		auto StdoutRestoresAfterCallbackException() -> bool {
-			bool                 ok = true;
-			std::ostringstream   restored_output;
-			ScopedStreamBuffer   outer_stdout_guard(std::cout, restored_output.rdbuf());
-			auto                *original_stdout = std::cout.rdbuf();
-			TestDirectoryFixture fixture;
-			TestContext          context;
+			bool                       ok = true;
+			std::ostringstream const   restored_output;
+			ScopedStreamBuffer const   outer_stdout_guard(std::cout, restored_output.rdbuf());
+			auto                      *original_stdout = std::cout.rdbuf();
+			TestDirectoryFixture const fixture;
+			TestContext                context;
 			context.throw_from_select_editor = true;
 			bool exception_observed          = false;
 			try {
-				(void)RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				(void)RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 			} catch (const std::runtime_error &) {
 				exception_observed = true;
 			}
@@ -175,11 +196,11 @@ namespace howdy::test::config_cli {
 			                   "Invalid privilege-wrapper identity; config edit aborted\n"},
 			         std::pair{howdy::native::InvokingIdentityStatus::kConflicting,
 			                   "Conflicting privilege-wrapper identity; config edit aborted\n"}}) {
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.invoking_identity = {.status = identity_status};
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 && result.output == expected_output,
 				             "invalid invoking identity aborts config edit");
 				ok &= Expect(context.editor_calls == 0,
@@ -203,9 +224,9 @@ namespace howdy::test::config_cli {
 			}
 
 			for (std::size_t missing = 0; missing < 3; ++missing) {
-				TestDirectoryFixture fixture;
-				TestContext          context;
-				auto                 dependencies = DependenciesFor(context, fixture.temp_root);
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				auto dependencies = DependenciesFor(context, fixture.TempRoot());
 				switch (missing) {
 					case 0:
 						dependencies.resolve_invoking_identity = nullptr;
@@ -232,7 +253,7 @@ namespace howdy::test::config_cli {
 				ok &= Expect(context.editor_ready_calls == 0,
 				             "incomplete dependencies session skips ready callback");
 
-				const auto run_result = RunConfig(dependencies, fixture.config_path);
+				const auto run_result = RunConfig(dependencies, fixture.ConfigPath());
 				ok &= Expect(run_result.exit_code == 1 && run_result.output.empty(),
 				             "missing dependency aborts silently from ConfigMainWithDependencies");
 			}
@@ -242,11 +263,11 @@ namespace howdy::test::config_cli {
 		auto EditorSelectionAndSecurityWorkflow() -> bool {
 			bool ok = true;
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.editor = {};
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output == "Error: No suitable text editor found.\n"
 				                                  "Set EDITOR to an executable name or path, or "
@@ -256,11 +277,11 @@ namespace howdy::test::config_cli {
 			}
 
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
-				chmod(fixture.config_path.c_str(), 0777);
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				chmod(fixture.ConfigPath().c_str(), 0777);
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1, "unsafe path fails");
 				ok &= Expect(result.output.contains("must not be group or world-writable") ||
 				                 result.output.contains("Config file"),
@@ -273,11 +294,12 @@ namespace howdy::test::config_cli {
 		auto EditorExecutionFailures() -> bool {
 			bool ok = true;
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.editor_status = howdy::native::config_internal::kEditorUnavailableRunResult;
-				ScopedEnvironmentVariable config_env("HOWDY_CONFIG", fixture.config_path.string());
-				const ConfigEditSession   session(DependenciesFor(context, fixture.temp_root));
+				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
+				                                           fixture.ConfigPath().string());
+				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
 				const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
 				ok &= Expect(result.status == ConfigEditStatus::kEditorUnavailable,
 				             "editor unavailable launch report maps to unavailable status");
@@ -287,11 +309,11 @@ namespace howdy::test::config_cli {
 			}
 
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.editor_status = -1;
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output == "Editing config.ini\nFailed to launch editor\n",
 				             "editor launch failure output exact");
@@ -301,11 +323,11 @@ namespace howdy::test::config_cli {
 			}
 
 			for (const int status : {W_EXITCODE(2, 0), 15}) {
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.editor_status = status;
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output ==
 				                     "Editing config.ini\n"
@@ -317,11 +339,11 @@ namespace howdy::test::config_cli {
 			}
 
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.delete_temp_in_editor = true;
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 && result.output ==
 				                                          "Editing config.ini\nFailed to install "
 				                                          "edited config\n",
@@ -339,11 +361,11 @@ namespace howdy::test::config_cli {
 			         std::pair{"[video]\ntimeout = 0\n",
 			                   "Editing config.ini\nInvalid config value for timeout=\"0\": "
 			                   "expected integer range 1..300\n"}}) {
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.edited_content = error_input;
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1, "invalid edit exits with failure code");
 				if (error_input == "[core\n") {
 					ok &= Expect(result.output.starts_with(expected_suffix),
@@ -365,10 +387,11 @@ namespace howdy::test::config_cli {
 		auto SuccessfulAndUnchangedWorkflows() -> bool {
 			bool ok = true;
 			{
-				TestDirectoryFixture      fixture;
-				TestContext               context;
-				const ConfigEditSession   session(DependenciesFor(context, fixture.temp_root));
-				ScopedEnvironmentVariable config_env("HOWDY_CONFIG", fixture.config_path.string());
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				const ConfigEditSession    session(DependenciesFor(context, fixture.TempRoot()));
+				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
+				                                           fixture.ConfigPath().string());
 				const auto result = session.Run({.context = &context, .editor_ready = EditorReady});
 				ok &= Expect(result.status == ConfigEditStatus::kOk,
 				             "direct dependencies session succeeds");
@@ -378,23 +401,23 @@ namespace howdy::test::config_cli {
 				ok &= Expect(context.editor_calls == 1 && context.editor_ready_calls == 1,
 				             "editor callbacks invoked once");
 				ok &= Expect(!fs::exists(result.temp_path), "successful session removes temp file");
-				ok &= Expect(ReadFile(fixture.config_path) == kEditedContent,
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kEditedContent,
 				             "successful session updates config file");
 			}
 
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
+				TestDirectoryFixture const fixture;
+				TestContext                context;
 				context.edited_content = std::string(kWorkflowOriginalContent);
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 0 &&
 				                 result.output == "Editing config.ini\nNo config changes made\n",
 				             "no-op output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
 				                 !fs::exists(context.recorded_temp_path),
 				             "no-op removes temp once");
-				ok &= Expect(ReadFile(fixture.config_path) == kWorkflowOriginalContent,
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
 				             "no-op leaves config unchanged");
 			}
 
@@ -402,11 +425,11 @@ namespace howdy::test::config_cli {
 				TestDirectoryFixture fixture;
 				TestContext          context;
 				context.on_editor = [&](const fs::path &temp_path) -> void {
-					WriteFile(fixture.config_path, "[core]\ndisabled = true\n");
+					WriteFile(fixture.ConfigPath(), "[core]\ndisabled = true\n");
 					WriteFile(temp_path, "[core]\nother = 1\n");
 				};
 				const auto result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output == "Editing config.ini\n"
 				                                  "Config changed while editing; not installing "
@@ -418,17 +441,17 @@ namespace howdy::test::config_cli {
 			}
 
 			{
-				TestDirectoryFixture fixture;
-				TestContext          context;
-				const auto           result =
-				    RunConfig(DependenciesFor(context, fixture.temp_root), fixture.config_path);
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				const auto                 result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 0 &&
 				                 result.output == "Editing config.ini\nConfig updated\n",
 				             "success output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
 				                 !fs::exists(context.recorded_temp_path),
 				             "success removes temp once");
-				ok &= Expect(ReadFile(fixture.config_path) == kEditedContent,
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kEditedContent,
 				             "success updates config file");
 				ok &= Expect(context.editor_calls == 1, "editor invoked once");
 				ok &=

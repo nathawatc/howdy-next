@@ -1,13 +1,19 @@
 #include "app/command_catalog.hpp"
+#include "app/command_invocation.hpp"
 #include "app/howdy/internal.hpp"
 #include "app/howdy_dispatch_test_support.hpp"
+#include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
+#include <cstddef>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <sys/types.h>
 
 namespace howdy::test::dispatch {
 
@@ -17,7 +23,10 @@ namespace howdy::test::dispatch {
 		using howdy::native::howdy_internal::CommandMain;
 		using howdy::native::howdy_internal::HowdyDependencies;
 
-		Context *active_context = nullptr;
+		auto ActiveContext() -> Context *& {
+			static Context *context = nullptr;
+			return context;
+		}
 
 		auto ResolveInvokingIdentity(void *raw_context) -> howdy::native::InvokingIdentityResult {
 			auto &context = *static_cast<Context *>(raw_context);
@@ -39,11 +48,11 @@ namespace howdy::test::dispatch {
 
 		auto CommandStub(CommandId command_id, const howdy::native::CommandInvocation &invocation)
 		    -> int {
-			active_context->command_id         = command_id;
-			active_context->command_invocation = invocation;
+			ActiveContext()->command_id         = command_id;
+			ActiveContext()->command_invocation = invocation;
 			std::cout << "command output\n";
 			std::cerr << "command error\n";
-			return active_context->command_result;
+			return ActiveContext()->command_result;
 		}
 
 		auto AddStub(const howdy::native::CommandInvocation &invocation) -> int {
@@ -113,12 +122,12 @@ namespace howdy::test::dispatch {
 			argv.push_back(argument.data());
 		}
 
-		std::ostringstream output;
-		std::ostringstream error;
-		auto              *old_output                             = std::cout.rdbuf(output.rdbuf());
-		auto              *old_error                              = std::cerr.rdbuf(error.rdbuf());
-		active_context                                            = &context;
-		command_mains[static_cast<std::size_t>(CommandId::kList)] = list_callback;
+		std::ostringstream const output;
+		std::ostringstream const error;
+		auto                    *old_output = std::cout.rdbuf(output.rdbuf());
+		auto                    *old_error  = std::cerr.rdbuf(error.rdbuf());
+		ActiveContext()                     = &context;
+		command_mains.at(static_cast<std::size_t>(CommandId::kList)) = list_callback;
 		const auto status = howdy::native::howdy_internal::HowdyMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(),
 		    HowdyDependencies{
@@ -127,7 +136,7 @@ namespace howdy::test::dispatch {
 		        .effective_uid             = EffectiveUid,
 		        .command_mains             = command_mains,
 		    });
-		active_context = nullptr;
+		ActiveContext() = nullptr;
 		std::cout.rdbuf(old_output);
 		std::cerr.rdbuf(old_error);
 		return {

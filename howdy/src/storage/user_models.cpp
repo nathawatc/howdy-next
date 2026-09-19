@@ -2,16 +2,26 @@
 
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
+#include "support/atomic_files.hpp"
+#include "support/face_metric.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/user_names.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <ctime>
+#include <iterator>
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 
@@ -148,7 +158,7 @@ namespace howdy::native {
 		                                  .model        = expected_model,
 		                                  .strict_shape = true},
 		                                 DefaultSecureOwnerUid(), validation_root);
-		const auto &entries = document.result;
+		const auto &entries = document.Result();
 		if (entries.status != UserModelStatus::kOk) {
 			return UserModelsListFailure(entries.status, entries.error_message);
 		}
@@ -165,7 +175,7 @@ namespace howdy::native {
 	                          const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelMutationResult {
 		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
-		auto &entries  = mutation.document.result;
+		auto &entries  = mutation.document.Result();
 		if (entries.status != UserModelStatus::kOk && entries.status != UserModelStatus::kNoModel) {
 			return MutationFailure(entries.status, entries.error_message);
 		}
@@ -215,7 +225,7 @@ namespace howdy::native {
 
 		UserModelEntry entry{
 		    .id        = entries.next_id,
-		    .time      = static_cast<long long>(std::time(nullptr)),
+		    .time      = static_cast<std::int64_t>(std::time(nullptr)),
 		    .label     = new_entry.label.empty() ? ("Model #" + std::to_string(entries.next_id))
 		                                         : new_entry.label,
 		    .backend   = new_entry.backend,
@@ -242,7 +252,7 @@ namespace howdy::native {
 	    const std::string &user, const UserModelEntryExpectation &expected,
 	    const file_security_internal::ValidationRoot &validation_root) -> UserModelMutationResult {
 		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
-		auto &entries  = mutation.document.result;
+		auto &entries  = mutation.document.Result();
 		if (entries.status != UserModelStatus::kOk) {
 			return MutationFailure(entries.status, entries.error_message);
 		}
@@ -317,7 +327,7 @@ namespace howdy::native {
 		const auto document = UserModelStore::LoadDocument(
 		    user, {.backend = expected_backend, .metric = {}, .model = {}, .strict_shape = false},
 		    owner_uid, validation_root);
-		const auto         &entries = document.result;
+		const auto         &entries = document.Result();
 		UserModelLoadResult result{
 		    .status        = RemapLoadStatus(entries.status),
 		    .error_message = entries.error_message,

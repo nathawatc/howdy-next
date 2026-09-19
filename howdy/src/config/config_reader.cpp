@@ -1,6 +1,9 @@
 #include "config_reader/internal.hpp"
 
+#include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace howdy::native {
 

@@ -5,21 +5,25 @@
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
+#include "support/bit_flags.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
-#include <poll.h>
+#include <span>
 #include <string>
+
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/file.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/uio.h>
+#include <sys/types.h>
+#include <sys/uio.h>  // IWYU pragma: keep
 
 namespace {
 
@@ -33,10 +37,12 @@ namespace {
 			    control->cmsg_len < CMSG_LEN(0)) {
 				continue;
 			}
-			const std::size_t count = (control->cmsg_len - CMSG_LEN(0)) / sizeof(int);
-			for (std::size_t index = 0; index < count; ++index) {
+			const std::size_t count            = (control->cmsg_len - CMSG_LEN(0)) / sizeof(int);
+			const auto        descriptor_bytes = std::span(CMSG_DATA(control), count * sizeof(int));
+			for (std::size_t offset = 0; offset < descriptor_bytes.size(); offset += sizeof(int)) {
 				int descriptor = -1;
-				std::memcpy(&descriptor, CMSG_DATA(control) + (index * sizeof(int)), sizeof(int));
+				std::memcpy(&descriptor, descriptor_bytes.subspan(offset, sizeof(int)).data(),
+				            sizeof(int));
 				if (descriptor >= 0) {
 					(void)close(descriptor);
 				}
@@ -63,7 +69,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
 			return LeaseReceiveResult::kRetry;
 		}
-		if (received != 1 || marker != 'L' || (message.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) != 0) {
+		if (received != 1 || marker != 'L' ||
+		    howdy::native::HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC)) {
 			CloseControlDescriptors(&message);
 			return LeaseReceiveResult::kInvalid;
 		}
@@ -80,7 +87,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		std::memcpy(&descriptor, CMSG_DATA(control), sizeof(descriptor));
 		howdy::native::ScopedFd received_fd(descriptor);
 		const int descriptor_flags = received_fd.Valid() ? fcntl(received_fd.Get(), F_GETFD) : -1;
-		if (!received_fd.Valid() || descriptor_flags < 0 || (descriptor_flags & FD_CLOEXEC) == 0) {
+		if (!received_fd.Valid() || descriptor_flags < 0 ||
+		    !howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC)) {
 			return LeaseReceiveResult::kInvalid;
 		}
 
@@ -100,7 +108,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			if (result < 0 && errno == EINTR) {
 				continue;
 			}
-			if (result <= 0 || (descriptor.revents & (POLLERR | POLLNVAL)) != 0) {
+			if (result <= 0 || howdy::native::HasAnyBits(descriptor.revents, POLLERR, POLLNVAL)) {
 				return false;
 			}
 			const auto receive_result = ReceiveLeaseDescriptorOnce(socket_fd, lease_fd);
@@ -141,10 +149,11 @@ namespace howdy::pam::auth_helper_process::internal {
 		const auto policy =
 		    howdy::native::GetStagedRuntimePolicy(howdy::native::StagedRuntimeRole::kLock);
 		struct stat lease_stat{};
-		if (flags < 0 || (flags & O_ACCMODE) != O_RDONLY || !policy.exact_link_count.has_value() ||
-		    fstat(lease_fd, &lease_stat) != 0 || !S_ISREG(lease_stat.st_mode) ||
-		    lease_stat.st_uid != owner_uid || lease_stat.st_nlink != *policy.exact_link_count ||
-		    (lease_stat.st_mode & 07777) != policy.mode) {
+		if (flags < 0 || howdy::native::MaskedBits(flags, O_ACCMODE) != O_RDONLY ||
+		    !policy.exact_link_count.has_value() || fstat(lease_fd, &lease_stat) != 0 ||
+		    !S_ISREG(lease_stat.st_mode) || lease_stat.st_uid != owner_uid ||
+		    lease_stat.st_nlink != *policy.exact_link_count ||
+		    howdy::native::MaskedBits(lease_stat.st_mode, 07777) != policy.mode) {
 			return false;
 		}
 
@@ -162,8 +171,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		    fstatat(parent_fd.Get(), lock_name.c_str(), &path_stat, AT_SYMLINK_NOFOLLOW) == 0 &&
 		    S_ISREG(path_stat.st_mode) && path_stat.st_uid == owner_uid &&
 		    path_stat.st_nlink == *policy.exact_link_count &&
-		    (path_stat.st_mode & 07777) == policy.mode && path_stat.st_dev == lease_stat.st_dev &&
-		    path_stat.st_ino == lease_stat.st_ino;
+		    howdy::native::MaskedBits(path_stat.st_mode, 07777) == policy.mode &&
+		    path_stat.st_dev == lease_stat.st_dev && path_stat.st_ino == lease_stat.st_ino;
 		return identity_ok && flock(lease_fd, LOCK_SH | LOCK_NB) == 0;
 	}
 

@@ -1,5 +1,24 @@
 # Broad, strict clang-tidy policy.
 #
+# Linux/POSIX boundary policy:
+#
+# - Header ownership:
+#   - C/POSIX header ownership is enforced by misc-include-cleaner instead of deprecated-header
+#     replacement, which cannot distinguish standard C use from POSIX declarations.
+#   - Dependency implementation headers are never source-level include contracts: glibc/libstdc++
+#     bits/**, Linux UAPI asm-generic/**, and Linux-PAM security/_pam_*.h are reached through their
+#     public wrappers. Include Cleaner ignores those private providers so it cannot replace public
+#     API headers with implementation details, including linkage-sensitive PAM declarations.
+#
+# - System API boundaries:
+#   - Linux/PAM integration necessarily uses fixed system vararg APIs (open/fcntl/ioctl/syslog/
+#     prctl/syscall), process-environment APIs, and legacy POSIX interfaces such as
+#     glob/readdir/strsignal. Reentrant passwd lookup and owning system-error messages are used
+#     where replacements exist.
+#   - malloc/free-compatible ownership remains required by PAM and yyjson C ABI contracts. The
+#     corresponding blanket checks cannot model those lifecycle/ABI constraints without
+#     wrapper-only indirection or allocator mismatches rather than safer code.
+#
 # All selected general-purpose checks are enforced as errors except:
 #
 # - Compiler-owned diagnostics:
@@ -13,42 +32,32 @@
 InheritParentConfig: false
 
 Checks: >-
-  clang-analyzer-*,
-  bugprone-*,
-  modernize-*,
-  performance-*,
-  readability-*,
-  misc-throw-by-value-catch-by-reference,
-  misc-static-assert,
-  misc-uniqueptr-reset-release,
-  misc-header-include-cycle,
-  misc-definitions-in-headers,
-  cppcoreguidelines-pro-type-member-init,
-  cppcoreguidelines-pro-type-cstyle-cast,
-  cppcoreguidelines-prefer-member-initializer,
+  *,
   -clang-diagnostic-*,
+  -altera-*,
+  -fuchsia-*,
+  -llvmlibc-*,
   -readability-misleading-indentation,
   -readability-magic-numbers,
-  -readability-identifier-length
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-identifier-length,
+  -portability-avoid-pragma-once,
+  -llvm-header-guard,
+  -llvm-prefer-static-over-anonymous-namespace,
+  -modernize-deprecated-headers,
+  -hicpp-deprecated-headers,
+  -concurrency-mt-unsafe,
+  -cppcoreguidelines-pro-type-vararg,
+  -hicpp-vararg,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-no-malloc,
+  -hicpp-no-malloc
+
 
 WarningsAsErrors: >-
-  clang-analyzer-*,
-  bugprone-*,
-  modernize-*,
-  performance-*,
-  readability-*,
-  misc-throw-by-value-catch-by-reference,
-  misc-static-assert,
-  misc-uniqueptr-reset-release,
-  misc-header-include-cycle,
-  misc-definitions-in-headers,
-  cppcoreguidelines-pro-type-member-init,
-  cppcoreguidelines-pro-type-cstyle-cast,
-  cppcoreguidelines-prefer-member-initializer,
-  -clang-diagnostic-*,
-  -readability-misleading-indentation,
-  -readability-magic-numbers,
-  -readability-identifier-length
+  *,
+  -clang-diagnostic-*
+
 
 ExcludeHeaderFilterRegex: '(^|.*/)(build[^/]*/|_deps/)|^/usr/(local/)?include/'
 
@@ -63,6 +72,8 @@ FormatStyle: file
 # This configuration is the enforcement source of truth where the
 # upstream guide permits multiple forms.
 CheckOptions:
+  misc-include-cleaner.IgnoreHeaders: '(^|.*/)(bits/.*|asm-generic/.*|security/_pam_.*\.h)$'
+
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.ClassCase: CamelCase
   readability-identifier-naming.StructCase: CamelCase

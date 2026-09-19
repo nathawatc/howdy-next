@@ -1,6 +1,7 @@
 #include "../../src/config/config_reader/internal.hpp"
 #include "../../src/config/config_validation/internal.hpp"
 #include "../../src/config/runtime_config_loader/internal.hpp"
+#include "config/config_schema.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -41,7 +43,7 @@ namespace {
 		for (const auto &option : options) {
 			const auto index = static_cast<std::size_t>(std::to_underlying(option.id));
 			const auto name  = OptionName(option);
-			seen[index]      = true;
+			seen.at(index)   = true;
 
 			const auto &resolved = howdy::native::config_schema::RuntimeConfigOption(option.id);
 			ok &= Expect(&resolved == &option, "schema option id resolves same option: " + name);
@@ -51,7 +53,7 @@ namespace {
 		}
 
 		for (std::size_t index = 0; index < option_count; ++index) {
-			ok &= Expect(seen[index], "schema option id is covered: " + std::to_string(index));
+			ok &= Expect(seen.at(index), "schema option id is covered: " + std::to_string(index));
 		}
 		return ok;
 	}

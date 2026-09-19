@@ -7,7 +7,8 @@
 #include <string>
 #include <utility>
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 
 namespace howdy::native {
 
@@ -70,10 +71,11 @@ namespace howdy::native {
 			                             rows.at<float>(row, 2), rows.at<float>(row, 3)),
 			    .confidence = rows.at<float>(row, 14),
 			};
-			for (std::size_t index = 0; index < detection.landmarks.size(); ++index) {
-				const int column = 4 + static_cast<int>(index * 2);
-				detection.landmarks[index] =
+			int column = 4;
+			for (auto &landmark : detection.landmarks) {
+				landmark =
 				    cv::Point2f(rows.at<float>(row, column), rows.at<float>(row, column + 1));
+				column += 2;
 			}
 			return detection;
 		}

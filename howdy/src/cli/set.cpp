@@ -1,9 +1,11 @@
 #include "cli/set.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/set/internal.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -35,8 +37,8 @@ auto howdy::native::set_internal::SetMainWithDependencies(
 	}
 
 	const auto &config_path = dependencies.resolve_config_path(dependencies.context);
-	const auto &key         = invocation.positionals[0];
-	const auto &value       = invocation.positionals[1];
+	const auto &key         = invocation.positionals.at(0);
+	const auto &value       = invocation.positionals.at(1);
 	std::string error_message;
 	if (!dependencies.update_config_value(dependencies.context, config_path, key, value,
 	                                      &error_message, true)) {

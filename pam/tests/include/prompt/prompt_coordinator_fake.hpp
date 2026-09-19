@@ -3,6 +3,7 @@
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
@@ -160,7 +161,7 @@ namespace howdy::test::prompt_coordinator {
 			}
 			if (context_->release_token_on_submission) {
 				{
-					std::unique_lock<std::mutex> lock(context_->token_mutex);
+					std::unique_lock<std::mutex> const lock(context_->token_mutex);
 					context_->release_token = true;
 				}
 				context_->token_condition.notify_one();
@@ -241,9 +242,14 @@ namespace howdy::test::prompt_coordinator {
 		int preflight = 0;
 		int submitter = 0;
 		int auth      = 0;
-
-		auto operator==(const CallbackCounts &) const -> bool = default;
 	};
+
+	[[nodiscard]] inline auto SameCallbackCounts(const CallbackCounts &lhs,
+	                                             const CallbackCounts &rhs) -> bool {
+		return lhs.spawn == rhs.spawn && lhs.wait == rhs.wait && lhs.terminate == rhs.terminate &&
+		       lhs.cleanup == rhs.cleanup && lhs.preflight == rhs.preflight &&
+		       lhs.submitter == rhs.submitter && lhs.auth == rhs.auth;
+	}
 
 	inline auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
 	                                pid_t *child_pid) -> int {
@@ -300,7 +306,7 @@ namespace howdy::test::prompt_coordinator {
 		if (fake.request_native_prompt) {
 			if (!WaitForNativePromptCompletion(fake)) {
 				CancelAndReapCompare(context, child_pid);
-				return static_cast<int>(CompareExit::kAbort) << 8;
+				return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 			}
 		}
 		while (true) {
@@ -309,7 +315,7 @@ namespace howdy::test::prompt_coordinator {
 			if (result == child_pid) {
 				fake.last_wait_status = status;
 				{
-					std::scoped_lock lock(fake.reap_mutex);
+					std::scoped_lock const lock(fake.reap_mutex);
 					fake.child_reaped_by_wait = true;
 				}
 				fake.reap_condition.notify_one();
@@ -328,7 +334,7 @@ namespace howdy::test::prompt_coordinator {
 				fake.terminated_pid = child_pid;
 				(void)kill(child_pid, SIGTERM);
 				if (!howdy::test::process::ReapTestChild(child_pid, &status)) {
-					return static_cast<int>(CompareExit::kAbort) << 8;
+					return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 				}
 				fake.last_wait_status = status;
 				return status;
@@ -337,7 +343,7 @@ namespace howdy::test::prompt_coordinator {
 				std::this_thread::sleep_for(1ms);
 				continue;
 			}
-			return static_cast<int>(CompareExit::kAbort) << 8;
+			return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 		}
 	}
 
@@ -378,7 +384,7 @@ namespace howdy::test::prompt_coordinator {
 			throw std::runtime_error("Failed to create native prompt");
 		}
 		if (fake.throw_native_prompt_unknown) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 		return std::make_unique<FakeNativePrompt>(&fake);
 	}
@@ -393,7 +399,7 @@ namespace howdy::test::prompt_coordinator {
 			throw std::runtime_error("Failed to create secret prompt observer");
 		}
 		if (fake.throw_secret_prompt_unknown) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 		if (fake.return_null_secret_prompt) {
 			return nullptr;
@@ -464,7 +470,7 @@ namespace howdy::test::prompt_coordinator {
 			throw std::runtime_error("Failed to request auth token");
 		}
 		if (fake.throw_auth_token_unknown) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 		const auto generation =
 		    !fake.suppress_secret_prompt && !fake.use_real_auth_token &&
@@ -473,16 +479,30 @@ namespace howdy::test::prompt_coordinator {
 		        : 0;
 		fake.active_prompt_generation = generation;
 
-		struct GenerationScope {
-			howdy::pam::SecretPromptObserver   observer{};
-			howdy::pam::SecretPromptGeneration generation = 0;
+		class GenerationScope {
+		public:
+			GenerationScope(howdy::pam::SecretPromptObserver   observer,
+			                howdy::pam::SecretPromptGeneration generation)
+			    : observer_(observer)
+			    , generation_(generation) {}
+
+			GenerationScope(const GenerationScope &)                     = delete;
+			auto operator=(const GenerationScope &) -> GenerationScope & = delete;
+			GenerationScope(GenerationScope &&)                          = delete;
+			auto operator=(GenerationScope &&) -> GenerationScope &      = delete;
 
 			~GenerationScope() {
-				if (generation != 0) {
-					observer.end(observer.context, generation);
+				if (generation_ != 0) {
+					observer_.end(observer_.context, generation_);
 				}
 			}
-		} generation_scope{.observer = fake.secret_prompt_observer, .generation = generation};
+
+		private:
+			howdy::pam::SecretPromptObserver   observer_{};
+			howdy::pam::SecretPromptGeneration generation_ = 0;
+		};
+
+		const GenerationScope generation_scope{fake.secret_prompt_observer, generation};
 
 		if (fake.block_token_until_release) {
 			return RequestTokenUntilRelease(fake);
@@ -564,7 +584,7 @@ namespace howdy::test::prompt_coordinator {
 
 	inline void ReleaseSubmission(FakeContext &context) {
 		{
-			std::scoped_lock lock(context.submission_mutex);
+			std::scoped_lock const lock(context.submission_mutex);
 			context.release_submission = true;
 		}
 		context.submission_condition.notify_all();
@@ -596,6 +616,6 @@ namespace howdy::test::prompt_coordinator {
 	}
 
 	inline auto TimeoutWaitStatus() -> int {
-		return static_cast<int>(CompareExit::kTimeoutReached) << 8;
+		return howdy::native::EncodeWaitExitStatus(CompareExit::kTimeoutReached);
 	}
 }  // namespace howdy::test::prompt_coordinator

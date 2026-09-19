@@ -4,8 +4,10 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <span>
 #include <string>
 #include <string_view>
+
 #include <unistd.h>
 
 namespace howdy::native {
@@ -22,14 +24,10 @@ namespace howdy::native {
 		std::size_t max_bytes = 0;
 	};
 
-	inline auto WriteAllToFd(int fd, const char *data, std::size_t size) -> bool {
-		if (data == nullptr && size > 0) {
-			return false;
-		}
-		const char *cursor    = data;
-		std::size_t remaining = size;
-		while (remaining > 0) {
-			const auto bytes_written = write(fd, cursor, remaining);
+	inline auto WriteAllToFd(int fd, std::span<const std::byte> data) -> bool {
+		auto remaining = data;
+		while (!remaining.empty()) {
+			const auto bytes_written = write(fd, remaining.data(), remaining.size());
 			if (bytes_written < 0) {
 				if (errno == EINTR) {
 					continue;
@@ -39,10 +37,19 @@ namespace howdy::native {
 			if (bytes_written == 0) {
 				return false;
 			}
-			cursor += bytes_written;
-			remaining -= static_cast<std::size_t>(bytes_written);
+			remaining = remaining.subspan(static_cast<std::size_t>(bytes_written));
 		}
 		return true;
+	}
+
+	inline auto WriteAllToFd(int fd, const char *data, std::size_t size) -> bool {
+		if (size == 0) {
+			return true;
+		}
+		if (data == nullptr) {
+			return false;
+		}
+		return WriteAllToFd(fd, std::as_bytes(std::span<const char>(data, size)));
 	}
 
 	inline auto WriteAllToFd(int fd, std::string_view content) -> bool {

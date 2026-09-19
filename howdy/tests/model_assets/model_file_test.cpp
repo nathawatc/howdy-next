@@ -6,9 +6,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <cerrno>
@@ -31,7 +32,7 @@ namespace howdy::test::auth_helper {
 
 	inline auto AclEntryHasPermissions(acl_entry_t entry, acl_tag_t tag, const void *qualifier,
 	                                   int permissions) -> AclCheckResult {
-		acl_tag_t entry_tag;
+		acl_tag_t entry_tag = 0;
 		if (acl_get_tag_type(entry, &entry_tag) != 0) {
 			return {.status       = AclCheckStatus::kError,
 			        .error_number = errno,
@@ -53,7 +54,7 @@ namespace howdy::test::auth_helper {
 				return {.status = AclCheckStatus::kMismatch};
 			}
 		}
-		acl_permset_t permission_set;
+		acl_permset_t permission_set = nullptr;
 		if (acl_get_permset(entry, &permission_set) != 0) {
 			return {.status       = AclCheckStatus::kError,
 			        .error_number = errno,
@@ -77,9 +78,10 @@ namespace howdy::test::auth_helper {
 			        .error_number = errno,
 			        .operation    = "acl_get_perm"};
 		}
-		const bool matches = (read_result == 1) == ((permissions & ACL_READ) != 0) &&
-		                     (write_result == 1) == ((permissions & ACL_WRITE) != 0) &&
-		                     (execute_result == 1) == ((permissions & ACL_EXECUTE) != 0);
+		const bool matches =
+		    (read_result == 1) == howdy::native::HasAnyBits(permissions, ACL_READ) &&
+		    (write_result == 1) == howdy::native::HasAnyBits(permissions, ACL_WRITE) &&
+		    (execute_result == 1) == howdy::native::HasAnyBits(permissions, ACL_EXECUTE);
 		return {.status = matches ? AclCheckStatus::kMatch : AclCheckStatus::kMismatch};
 	}
 
@@ -93,8 +95,8 @@ namespace howdy::test::auth_helper {
 		}
 		const int   permissions = directory ? (ACL_READ | ACL_EXECUTE) : ACL_READ;
 		int         entry_count = 0;
-		acl_entry_t entry;
-		int         entry_id = ACL_FIRST_ENTRY;
+		acl_entry_t entry       = nullptr;
+		int         entry_id    = ACL_FIRST_ENTRY;
 		while (true) {
 			const int entry_result = acl_get_entry(acl, entry_id, &entry);
 			if (entry_result < 0) {
@@ -109,7 +111,7 @@ namespace howdy::test::auth_helper {
 			}
 			entry_id = ACL_NEXT_ENTRY;
 			++entry_count;
-			acl_tag_t tag;
+			acl_tag_t tag = 0;
 			if (acl_get_tag_type(entry, &tag) != 0) {
 				const int error_number = errno;
 				acl_free(acl);

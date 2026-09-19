@@ -4,6 +4,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+
 #include <unistd.h>
 
 namespace howdy::native {
@@ -20,7 +21,7 @@ namespace howdy::native {
 			}
 
 			if (const char *value = std::getenv(name)) {
-				if (value[0] != '\0') {
+				if (*value != '\0') {
 					std::filesystem::path path(value);
 					if (path.is_absolute()) {
 						return path;

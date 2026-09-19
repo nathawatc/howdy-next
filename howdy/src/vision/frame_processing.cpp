@@ -3,10 +3,12 @@
 #include "config/runtime_config.hpp"
 
 #include <algorithm>
-#include <cstddef>
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/cvstd_wrapper.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace howdy::native {
 
@@ -37,16 +39,17 @@ namespace howdy::native {
 		const std::vector<cv::Mat>      images{gray};
 		cv::calcHist(images, kChannels, cv::Mat(), hist, kHistSize, kHistRange);
 
-		stats.hist_total = cv::sum(hist)[0];
+		stats.hist_total = cv::sum(hist).val[0];
 		if (stats.hist_total != 0.0) {
 			stats.darkness = static_cast<float>(hist.at<float>(0) / stats.hist_total *
 			                                    static_cast<double>(kBrightnessPercentScale));
 		}
 
 		const auto bins_denominator = std::max(static_cast<float>(stats.hist_total), 1.0F);
-		for (std::size_t index = 0; index < stats.bins_percent.size(); ++index) {
-			stats.bins_percent[index] = hist.at<float>(static_cast<int>(index)) / bins_denominator *
-			                            kBrightnessPercentScale;
+		int        hist_index       = 0;
+		for (auto &bin_percent : stats.bins_percent) {
+			bin_percent = hist.at<float>(hist_index) / bins_denominator * kBrightnessPercentScale;
+			++hist_index;
 		}
 		return stats;
 	}

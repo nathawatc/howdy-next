@@ -7,20 +7,24 @@
 #include "auth_helper_process/internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/runtime_session.hpp"
+#include "support/bit_flags.hpp"
 
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <poll.h>
 #include <string>
 #include <string_view>
-#include <syslog.h>
+
+#include <stdlib.h>
 #include <unistd.h>
 
-#include <sys/wait.h>
+#include <sys/poll.h>
+#include <sys/syslog.h>
+#include <sys/types.h>
 
 namespace howdy::pam::auth_helper_process::internal {
 
@@ -96,7 +100,6 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::HelperDeadline;
 	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
 	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
-	using howdy::pam::auth_helper_process::internal::kAuthHelperTimeout;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
 	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
@@ -154,7 +157,8 @@ namespace {
 	}
 
 	auto PollDescriptorFailed(const pollfd &descriptor) -> bool {
-		return descriptor.fd >= 0 && (descriptor.revents & (POLLERR | POLLNVAL)) != 0;
+		return descriptor.fd >= 0 &&
+		       howdy::native::HasAnyBits(descriptor.revents, POLLERR, POLLNVAL);
 	}
 
 	auto CollectPrepareResponse(const Operations &operations, PreparedHelperSpawn *spawn,
@@ -166,12 +170,15 @@ namespace {
 
 		while (!output_eof || *lease_fd < 0) {
 			std::array<pollfd, 2> descriptors = {
-			    pollfd{
-			        .fd = output_eof ? -1 : spawn->output_pipe[0], .events = POLLIN, .revents = 0},
-			    pollfd{.fd      = *lease_fd >= 0 ? -1 : spawn->lease_socket[0],
+			    pollfd{.fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
+			           .events  = POLLIN,
+			           .revents = 0},
+			    pollfd{.fd      = *lease_fd >= 0 ? -1 : spawn->lease_socket.Parent(),
 			           .events  = POLLIN,
 			           .revents = 0},
 			};
+			auto     &output_descriptor = descriptors.front();
+			auto     &lease_descriptor  = descriptors.back();
 			const int poll_result =
 			    poll(descriptors.data(), descriptors.size(), DeadlinePollTimeout(deadline));
 			if (poll_result < 0 && errno == EINTR) {
@@ -182,19 +189,21 @@ namespace {
 				return false;
 			}
 
-			if (PollDescriptorFailed(descriptors[0]) || PollDescriptorFailed(descriptors[1])) {
+			if (PollDescriptorFailed(output_descriptor) || PollDescriptorFailed(lease_descriptor)) {
 				return false;
 			}
-			if (descriptors[0].fd >= 0 && (descriptors[0].revents & (POLLIN | POLLHUP)) != 0) {
-				const auto result = ReadPrepareOutputOnce(spawn->output_pipe[0], output);
+			if (output_descriptor.fd >= 0 &&
+			    howdy::native::HasAnyBits(output_descriptor.revents, POLLIN, POLLHUP)) {
+				const auto result = ReadPrepareOutputOnce(spawn->output_pipe.Parent(), output);
 				if (result == PrepareIoResult::kFailed) {
 					return false;
 				}
 				output_eof = result == PrepareIoResult::kComplete;
 			}
 
-			if (descriptors[1].fd >= 0 && (descriptors[1].revents & (POLLIN | POLLHUP)) != 0 &&
-			    ReceivePrepareLeaseOnce(spawn->lease_socket[0], lease_fd) ==
+			if (lease_descriptor.fd >= 0 &&
+			    howdy::native::HasAnyBits(lease_descriptor.revents, POLLIN, POLLHUP) &&
+			    ReceivePrepareLeaseOnce(spawn->lease_socket.Parent(), lease_fd) ==
 			        PrepareIoResult::kFailed) {
 				return false;
 			}
@@ -252,27 +261,27 @@ namespace {
 		int         lease_fd = -1;
 		const bool  collected =
 		    CollectPrepareResponse(operations, &spawn, deadline, &helper_output, &lease_fd);
-		CloseOwnedFd(operations, spawn.output_pipe[0]);
+		CloseOwnedFd(operations, spawn.output_pipe.Parent());
 		if (!collected) {
-			CloseOwnedFd(operations, spawn.lease_socket[0]);
+			CloseOwnedFd(operations, spawn.lease_socket.Parent());
 			CloseOwnedFd(operations, lease_fd);
 			(void)howdy::pam::auth_helper_process::internal::TerminateAndReapHelperProcess(
 			    child_pid);
 			return false;
 		}
 		if (!ValidatePrepareHelper(child_pid, deadline, helper_output, operations)) {
-			CloseOwnedFd(operations, spawn.lease_socket[0]);
+			CloseOwnedFd(operations, spawn.lease_socket.Parent());
 			CloseOwnedFd(operations, lease_fd);
 			return false;
 		}
 		if (!howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
-		        spawn.lease_socket[0])) {
+		        spawn.lease_socket.Parent())) {
 			syslog(LOG_ERR, "Howdy auth helper returned extra lease data");
-			CloseOwnedFd(operations, spawn.lease_socket[0]);
+			CloseOwnedFd(operations, spawn.lease_socket.Parent());
 			CloseOwnedFd(operations, lease_fd);
 			return false;
 		}
-		CloseOwnedFd(operations, spawn.lease_socket[0]);
+		CloseOwnedFd(operations, spawn.lease_socket.Parent());
 		if (!AssignPreparedPaths(helper_output, prepared) ||
 		    !howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 		        lease_fd, prepared->root_dir, 0)) {

@@ -6,9 +6,13 @@
 #include <cerrno>
 #include <cstring>
 #include <iostream>
+#include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+
+#include <stdlib.h>
+
+#include <sys/types.h>
 
 namespace {
 	auto WaitForRelease() -> bool {
@@ -18,17 +22,27 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc != 5 ||
-	    (std::string_view(argv[1]) != "--hold" && std::string_view(argv[1]) != "--try")) {
-		std::cerr << "Usage: " << argv[0] << " <--hold|--try> <user> <config> <models-directory>\n";
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	const char *program = arguments.empty() ? "installed_runtime_e2e_driver" : arguments.front();
+	if (arguments.size() != 5) {
+		std::cerr << "Usage: " << program << " <--hold|--try> <user> <config> <models-directory>\n";
 		return 2;
 	}
+	const std::string_view mode(arguments.subspan(1).front());
+	if (mode != "--hold" && mode != "--try") {
+		std::cerr << "Usage: " << program << " <--hold|--try> <user> <config> <models-directory>\n";
+		return 2;
+	}
+	const char *user       = arguments.subspan(2).front();
+	const char *config     = arguments.subspan(3).front();
+	const char *models_dir = arguments.back();
 
-	howdy::pam::RuntimeSession session(argv[3], argv[4],
+	howdy::pam::RuntimeSession session(config, models_dir,
 	                                   howdy::pam::ProductionRuntimeSessionOperations());
-	const auto                 result = session.LoadForUser(argv[2]);
-	if (!result.Ok() || !session.Staged()) {
-		if (std::string_view(argv[1]) == "--try" &&
+	const auto                 result = session.LoadForUser(user);
+	if (!howdy::pam::RuntimeSessionLoadSucceeded(result) || !session.Staged()) {
+		if (mode == "--try" &&
 		    result.status == howdy::pam::RuntimeSessionLoadStatus::kPrepareFailed) {
 			std::cerr << "Runtime staging failed\n";
 		} else {
@@ -44,7 +58,7 @@ auto main(int argc, char **argv) -> int {
 		return 1;
 	}
 	const auto models =
-	    howdy::native::LoadUserModels(argv[2], "opencv_dnn_sface", static_cast<uid_t>(0));
+	    howdy::native::LoadUserModels(user, "opencv_dnn_sface", static_cast<uid_t>(0));
 	if (models.status != howdy::native::UserModelStatus::kOk || models.stored.encodings.empty()) {
 		std::cerr << "Production user-model load failed: " << models.error_message << "\n";
 		return 1;
@@ -52,7 +66,7 @@ auto main(int argc, char **argv) -> int {
 
 	std::cout << std::filesystem::path(session.ConfigPath()).parent_path().string() << '\n'
 	          << std::flush;
-	if (std::string_view(argv[1]) == "--hold" && !WaitForRelease()) {
+	if (mode == "--hold" && !WaitForRelease()) {
 		std::cerr << "Failed to read exact release command\n";
 		return 1;
 	}

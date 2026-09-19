@@ -6,7 +6,12 @@
 namespace howdy::pam {
 	class PromptSubmitter {
 	public:
-		virtual ~PromptSubmitter() = default;
+		PromptSubmitter()                                            = default;
+		PromptSubmitter(const PromptSubmitter &)                     = delete;
+		auto operator=(const PromptSubmitter &) -> PromptSubmitter & = delete;
+		PromptSubmitter(PromptSubmitter &&)                          = delete;
+		auto operator=(PromptSubmitter &&) -> PromptSubmitter &      = delete;
+		virtual ~PromptSubmitter()                                   = default;
 
 		virtual void SubmitPrompt() = 0;
 	};

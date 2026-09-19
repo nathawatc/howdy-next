@@ -101,8 +101,8 @@ namespace howdy::native::howdy_completion_internal {
 			if (text.empty()) {
 				return false;
 			}
-			const auto result = std::from_chars(text.data(), text.data() + text.size(), position);
-			return result.ec == std::errc{} && result.ptr == text.data() + text.size();
+			const auto result = std::from_chars(text.begin(), text.end(), position);
+			return result.ec == std::errc{} && result.ptr == text.end();
 		}
 
 		void PrintConfigOptionValues(const config_schema::Option &option) {
@@ -179,18 +179,18 @@ namespace howdy::native::howdy_completion_internal {
 			return 0;
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-options") {
-			PrintCompletionCommandOptions(arguments[1]);
-			return FindCommand(arguments[1]) == nullptr ? 1 : 0;
+			PrintCompletionCommandOptions(arguments.at(1));
+			return FindCommand(arguments.at(1)) == nullptr ? 1 : 0;
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-max-positionals") {
-			PrintCompletionCommandMaxPositionals(arguments[1]);
-			return FindCommand(arguments[1]) == nullptr ? 1 : 0;
+			PrintCompletionCommandMaxPositionals(arguments.at(1));
+			return FindCommand(arguments.at(1)) == nullptr ? 1 : 0;
 		}
 		if (arguments.size() >= 3 && arguments.front() == "command-values") {
 			std::size_t position = 0;
-			if (ParseCompletionPosition(arguments[2], position) &&
+			if (ParseCompletionPosition(arguments.at(2), position) &&
 			    position == arguments.size() - 3 &&
-			    PrintCompletionCommandValues(arguments[1], position,
+			    PrintCompletionCommandValues(arguments.at(1), position,
 			                                 std::span<const std::string>(arguments).subspan(3))) {
 				return 0;
 			}

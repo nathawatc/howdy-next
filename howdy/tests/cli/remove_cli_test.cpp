@@ -1,5 +1,9 @@
 
+#include "app/command_invocation.hpp"
 #include "cli/remove/internal.hpp"
+#include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 
 #include <iostream>
@@ -13,23 +17,30 @@ namespace {
 
 	using howdy::test::Expect;
 
-	struct StreamRedirect {
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
+
 		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
 		               std::ostream &output_stream, std::streambuf *new_output)
-		    : input(input_stream)
-		    , output(output_stream)
-		    , old_input(input_stream.rdbuf(new_input))
-		    , old_output(output_stream.rdbuf(new_output)) {}
+		    : input_(input_stream)
+		    , output_(output_stream)
+		    , old_input_(input_stream.rdbuf(new_input))
+		    , old_output_(output_stream.rdbuf(new_output)) {}
 
 		~StreamRedirect() {
-			input.rdbuf(old_input);
-			output.rdbuf(old_output);
+			input_.rdbuf(old_input_);
+			output_.rdbuf(old_output_);
 		}
 
-		std::istream   &input;
-		std::ostream   &output;
-		std::streambuf *old_input;
-		std::streambuf *old_output;
+	private:
+		std::istream   &input_;
+		std::ostream   &output_;
+		std::streambuf *old_input_;
+		std::streambuf *old_output_;
 	};
 
 	struct RemoveCliTestContext {
@@ -88,10 +99,11 @@ namespace {
 	    const howdy::native::CommandInvocation                   &invocation,
 	    const howdy::native::remove_internal::RemoveDependencies &dependencies,
 	    const std::string &input = {}) -> std::pair<int, std::string> {
-		std::istringstream input_stream(input);
-		std::ostringstream output_stream;
-		StreamRedirect redirect(std::cin, input_stream.rdbuf(), std::cout, output_stream.rdbuf());
-		const int      result =
+		std::istringstream const input_stream(input);
+		std::ostringstream const output_stream;
+		StreamRedirect const     redirect(std::cin, input_stream.rdbuf(), std::cout,
+		                                  output_stream.rdbuf());
+		const int                result =
 		    howdy::native::remove_internal::RemoveMainWithDependencies(invocation, dependencies);
 		return {result, output_stream.str()};
 	}

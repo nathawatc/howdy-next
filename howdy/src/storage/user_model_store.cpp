@@ -3,22 +3,34 @@
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
+#include "storage/user_model_types.hpp"
 #include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
 #include "support/fd_io.hpp"
+#include "support/file_lock.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 #include "support/user_names.hpp"
+#include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
 
 #include <cerrno>
 #include <cstdint>
-#include <fcntl.h>
+#include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 
 #include <linux/fs.h>
 
@@ -52,7 +64,7 @@ namespace howdy::native {
 			const auto owner_uid = DefaultSecureOwnerUid();
 			return S_ISREG(opened_file.st_mode) &&
 			       (!owner_uid.has_value() || opened_file.st_uid == *owner_uid) &&
-			       (opened_file.st_mode & (S_IWGRP | S_IWOTH)) == 0 && opened_file.st_nlink == 1;
+			       !HasAnyBits(opened_file.st_mode, S_IWGRP, S_IWOTH) && opened_file.st_nlink == 1;
 		}
 
 		auto OpenedModelFileIsSecureForRead(int fd, const std::filesystem::path &path,
@@ -71,10 +83,10 @@ namespace howdy::native {
 			    .dev            = static_cast<std::uint64_t>(st.st_dev),
 			    .inode          = static_cast<std::uint64_t>(st.st_ino),
 			    .size           = static_cast<std::uintmax_t>(st.st_size),
-			    .mtime_seconds  = static_cast<long long>(st.st_mtim.tv_sec),
-			    .mtime_nanosecs = static_cast<long long>(st.st_mtim.tv_nsec),
-			    .ctime_seconds  = static_cast<long long>(st.st_ctim.tv_sec),
-			    .ctime_nanosecs = static_cast<long long>(st.st_ctim.tv_nsec),
+			    .mtime_seconds  = static_cast<std::int64_t>(st.st_mtim.tv_sec),
+			    .mtime_nanosecs = static_cast<std::int64_t>(st.st_mtim.tv_nsec),
+			    .ctime_seconds  = static_cast<std::int64_t>(st.st_ctim.tv_sec),
+			    .ctime_nanosecs = static_cast<std::int64_t>(st.st_ctim.tv_nsec),
 			};
 		}
 
@@ -263,10 +275,7 @@ namespace howdy::native {
 				}
 			}
 
-			ScopedFileLock lock;
-			lock.fd   = std::move(fd);
-			lock.path = path.parent_path();
-			return lock;
+			return ScopedFileLock(std::move(fd));
 		}
 
 		auto OpenAndLockModelFile(const std::filesystem::path &path, bool create_if_missing)
@@ -295,11 +304,8 @@ namespace howdy::native {
 				}
 			}
 
-			ScopedFileLock lock;
-			lock.fd   = std::move(fd);
-			lock.path = path;
 			return LockedUserModelFile{.namespace_lock     = std::move(*namespace_lock),
-			                           .lock               = std::move(lock),
+			                           .lock               = ScopedFileLock(std::move(fd)),
 			                           .created_empty_file = created_empty_file};
 		}
 
@@ -337,10 +343,10 @@ namespace howdy::native {
 			return;
 		}
 		struct stat opened_file{};
-		if (fstat(lock_.fd.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
+		if (fstat(lock_.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
 			return;
 		}
-		(void)RemoveLockedFile(path_, lock_.fd.Get());
+		(void)RemoveLockedFile(path_, lock_.Get());
 	}
 
 	auto UserModelStoreTransaction::Path() const -> const std::filesystem::path & {
@@ -361,7 +367,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::PathMatchesLockedFile() const -> bool {
-		return PathIdentifiesFd(path_, lock_.fd.Get());
+		return PathIdentifiesFd(path_, lock_.Get());
 	}
 
 	auto UserModelStoreTransaction::WriteDocument(const user_model_codec::Document &document) const
@@ -369,7 +375,7 @@ namespace howdy::native {
 		if (!PathMatchesLockedFile()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		const auto result = WriteModelsAtomically(path_, document, lock_.fd.Get());
+		const auto result = WriteModelsAtomically(path_, document, lock_.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -377,7 +383,7 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::RemoveFile() const -> AtomicFileCommitResult {
-		const auto result = RemoveLockedFile(path_, lock_.fd.Get());
+		const auto result = RemoveLockedFile(path_, lock_.Get());
 		if (AtomicFileMayHaveCommitted(result)) {
 			completed_ = true;
 		}
@@ -535,7 +541,7 @@ namespace howdy::native {
 	auto UserModelStore::LoadDocumentFromPath(const std::filesystem::path &path,
 	                                          const UserModelExpectations &expectations)
 	    -> user_model_codec::Document {
-		ScopedFd input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+		ScopedFd const input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (input.Get() < 0) {
 			if (errno == ENOENT) {
 				return user_model_codec::Document(
@@ -618,14 +624,14 @@ namespace howdy::native {
 			        StoreListFailure(secured_path.status, secured_path.error_message)),
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd.Get())) {
+		if (!PathIdentifiesFd(path_result.path, locked_file->lock.Get())) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(StoreListFailure(
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
 		auto document =
-		    LoadDocumentFromFd(locked_file->lock.fd.Get(), path_result.path,
+		    LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
 		                       {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
 		                       locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
@@ -684,7 +690,7 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, locked_file->lock.fd.Get())) {
+		if (!PathIdentifiesFd(path_result.path, locked_file->lock.Get())) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kModelChanged,
 			    .error_message = std::string(kUserModelChangedMessage),

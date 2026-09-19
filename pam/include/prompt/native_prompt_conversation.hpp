@@ -2,12 +2,14 @@
 #define HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP
 
 #include "prompt/conversation_restore.hpp"
+#include "prompt/internal_fd.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <array>
 #include <atomic>
 #include <cstddef>
 #include <memory>
+
 #include <poll.h>
 #include <termios.h>
 
@@ -19,7 +21,12 @@ class NativePromptConversationTestAccess;
 
 class NativePrompt {
 public:
-	virtual ~NativePrompt() = default;
+	NativePrompt()                                         = default;
+	NativePrompt(const NativePrompt &)                     = delete;
+	auto operator=(const NativePrompt &) -> NativePrompt & = delete;
+	NativePrompt(NativePrompt &&)                          = delete;
+	auto operator=(NativePrompt &&) -> NativePrompt &      = delete;
+	virtual ~NativePrompt()                                = default;
 
 	[[nodiscard]] virtual auto Available() const -> bool                             = 0;
 	virtual auto               Install() -> int                                      = 0;
@@ -35,6 +42,8 @@ public:
 
 	NativePromptConversation(const NativePromptConversation &)                     = delete;
 	auto operator=(const NativePromptConversation &) -> NativePromptConversation & = delete;
+	NativePromptConversation(NativePromptConversation &&)                          = delete;
+	auto operator=(NativePromptConversation &&) -> NativePromptConversation &      = delete;
 
 	[[nodiscard]] auto Available() const -> bool override;
 	auto               Install() -> int override;
@@ -91,17 +100,17 @@ private:
 	[[nodiscard]] auto RestorePromptTerminal(const struct termios &original_termios) const -> bool;
 	void               RetainUnsafeDispatchContext() noexcept;
 
-	pam_handle_t                          *pamh_ = nullptr;
-	struct pam_conv                        original_conv_{};
-	std::unique_ptr<DispatchContext>       dispatch_context_;
-	struct pam_conv                        override_conv_{};
-	bool                                   has_original_conv_ = false;
-	bool                                   installed_         = false;
-	howdy::native::ScopedFd                tty_fd_;
-	std::array<howdy::native::ScopedFd, 2> abort_pipe_;
-	std::atomic<bool>                      abort_requested_{false};
-	std::atomic<bool>                      terminal_restore_failed_{false};
-	Operations                             operations_{};
+	pam_handle_t                    *pamh_ = nullptr;
+	struct pam_conv                  original_conv_{};
+	std::unique_ptr<DispatchContext> dispatch_context_;
+	struct pam_conv                  override_conv_{};
+	bool                             has_original_conv_ = false;
+	bool                             installed_         = false;
+	howdy::native::ScopedFd          tty_fd_;
+	howdy::pam::detail::InternalPipe abort_pipe_;
+	std::atomic<bool>                abort_requested_{false};
+	std::atomic<bool>                terminal_restore_failed_{false};
+	Operations                       operations_{};
 };
 
 struct NativeTerminalDescriptors {

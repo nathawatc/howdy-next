@@ -1,6 +1,7 @@
 #include "compare/sandbox.hpp"
 
 #include "compare/sandbox/internal.hpp"
+#include "support/prctl_types.hpp"
 
 #include <algorithm>
 #include <array>
@@ -8,6 +9,8 @@
 
 #include <sys/prctl.h>
 #include <sys/resource.h>
+
+#include <linux/prctl.h>
 
 namespace {
 
@@ -107,8 +110,9 @@ namespace {
 		return setrlimit(resource, limit);
 	}
 
-	auto SystemPrctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
-	                 unsigned long argument3, unsigned long argument4, unsigned long argument5)
+	auto SystemPrctl([[maybe_unused]] void *context, int operation,
+	                 howdy::native::PrctlArgument argument2, howdy::native::PrctlArgument argument3,
+	                 howdy::native::PrctlArgument argument4, howdy::native::PrctlArgument argument5)
 	    -> int {
 		return prctl(operation, argument2, argument3, argument4, argument5);
 	}

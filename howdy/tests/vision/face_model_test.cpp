@@ -1,5 +1,11 @@
+#include "config/runtime_config.hpp"
 #include "config/runtime_paths.hpp"
+#include "model_assets/model_file.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
 #include "test_support.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
 #include "vision/face_model.hpp"
 #include "vision/face_model_test_access.hpp"
 
@@ -9,6 +15,15 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+
+#include <stdlib.h>
+
+#include <opencv2/core/cvstd_wrapper.hpp>
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/objdetect/face.hpp>
 
 namespace {
 
@@ -22,6 +37,9 @@ namespace {
 
 	class ScopedEnvironment final {
 	public:
+		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
+		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
+
 		explicit ScopedEnvironment(const char *name)
 		    : name_(name) {
 			if (const auto *value = std::getenv(name); value != nullptr) {
@@ -276,8 +294,10 @@ namespace {
 		                                                        std::move(backend));
 		auto ops   = howdy::native::FaceModelInferenceOperations(model);
 		bool ok    = true;
-		ok &= Expect(ops.Complete(), "FaceModelInferenceOperations produces complete operations");
-		ok &= Expect(ops.DetectionReady(), "FaceModelInferenceOperations is detection ready");
+		ok &= Expect(howdy::native::FaceInferenceComplete(ops),
+		             "FaceModelInferenceOperations produces complete operations");
+		ok &= Expect(howdy::native::FaceInferenceDetectionReady(ops),
+		             "FaceModelInferenceOperations is detection ready");
 		ok &= Expect(ops.context == &model, "operations context points to model");
 
 		const cv::Mat gray(60, 60, CV_8UC1, cv::Scalar(100));
@@ -285,18 +305,19 @@ namespace {
 		ok &= Expect(prepared.channels() == 3, "operations prepare_frame produces BGR frame");
 
 		const auto detection = ops.detect_faces(ops.context, prepared);
-		ok &= Expect(detection.Ok() && detection.detections.size() == 1,
+		ok &= Expect(howdy::native::FaceDetectionSucceeded(detection) &&
+		                 detection.detections.size() == 1,
 		             "operations detect_faces invokes model");
 
-		if (!detection.Ok() || detection.detections.empty()) {
+		if (!howdy::native::FaceDetectionSucceeded(detection) || detection.detections.empty()) {
 			return false;
 		}
 
-		const auto encoding = ops.encode_face(ops.context, prepared, detection.detections[0]);
-		ok &= Expect(encoding.Ok() && !encoding.encoding.empty(),
+		const auto encoding = ops.encode_face(ops.context, prepared, detection.detections.at(0));
+		ok &= Expect(howdy::native::FaceEncodingSucceeded(encoding) && !encoding.encoding.empty(),
 		             "operations encode_face invokes model");
 
-		if (!encoding.Ok() || encoding.encoding.empty()) {
+		if (!howdy::native::FaceEncodingSucceeded(encoding) || encoding.encoding.empty()) {
 			return false;
 		}
 
@@ -689,7 +710,7 @@ auto main() -> int {
 		ok &= Expect(model.Ok(), "success backend initializes");
 		ok &= Expect(input_size_set, "success path updates detector input size");
 		ok &= Expect(detect_called, "success path invokes detector");
-		ok &= Expect(result.Ok() && result.detections.size() == 1,
+		ok &= Expect(howdy::native::FaceDetectionSucceeded(result) && result.detections.size() == 1,
 		             "success path preserves parsed detection");
 		if (result.detections.size() == 1) {
 			ok &= Expect(result.detections.front().box == cv::Rect2f(1, 2, 3, 4),

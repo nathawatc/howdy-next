@@ -1,9 +1,15 @@
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
+#include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
+#include <system_error>
+
+#include <fcntl.h>
 
 #include <sys/stat.h>
 
@@ -22,16 +28,15 @@ namespace howdy::test {
 	}  // namespace
 
 	auto RunConfigAtomicReplaceTests(ConfigUtilsTestContext &context) -> bool {
-		namespace fs = std::filesystem;
 		using howdy::test::Expect;
-		bool              ok = true;
-		std::error_code   ec;
-		const std::string valid_content = "[core]\n"
-		                                  "disabled = false\n"
-		                                  "\n"
-		                                  "[video]\n"
-		                                  "dark_threshold = 50\n";
-		std::string       validation_error;
+		bool                  ok = true;
+		std::error_code const ec;
+		const std::string     valid_content = "[core]\n"
+		                                      "disabled = false\n"
+		                                      "\n"
+		                                      "[video]\n"
+		                                      "dark_threshold = 50\n";
+		std::string           validation_error;
 		ok &= Expect(
 		    !howdy::native::ValidateConfigContent(context.config_over_limit, &validation_error),
 		    "validate_config_content rejects oversized content");
@@ -81,7 +86,7 @@ namespace howdy::test {
 		             "replace_config_content_atomically writes expected content");
 		struct stat replace_stat{};
 		ok &= Expect(stat(replace_path.c_str(), &replace_stat) == 0, "stat replaced config");
-		ok &= Expect((replace_stat.st_mode & 0777) == 0600,
+		ok &= Expect(howdy::native::MaskedBits(replace_stat.st_mode, 0777) == 0600,
 		             "replace_config_content_atomically preserves config mode");
 
 		const std::string uncertain_replacement = "[core]\n"

@@ -1,24 +1,29 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
+#include "module/auth_flow_test_groups.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
-#include <sys/wait.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-auto RunAuthHelperFdTests() -> bool;
-auto RunAuthHelperOutputTests() -> bool;
+#include <sys/types.h>
+#include <sys/wait.h>
 
 namespace {
 	using howdy::test::Expect;
@@ -60,11 +65,11 @@ namespace {
 
 	auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 		std::array<int, 2> raw_fds{{-1, -1}};
-		if (pipe(raw_fds.data()) != 0) {
+		if (pipe2(raw_fds.data(), O_CLOEXEC) != 0) {
 			return false;
 		}
-		(*fds)[0].Reset(raw_fds[0]);
-		(*fds)[1].Reset(raw_fds[1]);
+		(*fds).at(0).Reset(raw_fds.at(0));
+		(*fds).at(1).Reset(raw_fds.at(1));
 		return true;
 	}
 
@@ -88,16 +93,16 @@ namespace {
 		bool                    ok = true;
 		std::array<ScopedFd, 2> empty_pipe;
 		ok &= Expect(OpenPipe(&empty_pipe), "creates empty input pipe");
-		empty_pipe[1].Reset();
-		ok &= Expect(ReadFdToString(empty_pipe[0].Get()).empty(), "reads empty input");
+		empty_pipe.at(1).Reset();
+		ok &= Expect(ReadFdToString(empty_pipe.at(0).Get()).empty(), "reads empty input");
 		ok &= Expect(ReadFdToString(-1).empty(), "read failure returns collected empty output");
 
 		std::array<ScopedFd, 2> small_pipe;
 		ok &= Expect(OpenPipe(&small_pipe), "creates small input pipe");
 		const std::string small_output = "small helper output\n";
-		ok &= Expect(WriteAll(small_pipe[1].Get(), small_output), "writes small helper output");
-		small_pipe[1].Reset();
-		ok &= Expect(ReadFdToString(small_pipe[0].Get()) == small_output,
+		ok &= Expect(WriteAll(small_pipe.at(1).Get(), small_output), "writes small helper output");
+		small_pipe.at(1).Reset();
+		ok &= Expect(ReadFdToString(small_pipe.at(0).Get()) == small_output,
 		             "reads complete small helper output");
 
 		auto bounded_file = CreateTempFile("output");
@@ -134,17 +139,17 @@ namespace {
 			return false;
 		}
 		if (child_pid == 0) {
-			output_pipe[0].Reset();
-			const bool wrote = WriteAll(output_pipe[1].Get(), limit_output);
+			output_pipe.at(0).Reset();
+			const bool wrote = WriteAll(output_pipe.at(1).Get(), limit_output);
 			usleep(2000000);
 			_exit(wrote ? 0 : 1);
 		}
 
-		output_pipe[1].Reset();
+		output_pipe.at(1).Reset();
 		std::string helper_output;
 		const auto  start = std::chrono::steady_clock::now();
 		const bool  helper_ok =
-		    ReadAuthHelperOutput(child_pid, output_pipe[0].Get(), &helper_output);
+		    ReadAuthHelperOutput(child_pid, output_pipe.at(0).Get(), &helper_output);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 
 		ok &= Expect(!helper_ok, "auth-helper output limit fails closed");
@@ -184,30 +189,29 @@ namespace {
 		ok &= Expect(elapsed < std::chrono::milliseconds(1500),
 		             "auth-helper read error returns before sleeping helper exits");
 
-		int   status      = 0;
-		pid_t wait_result = 0;
-		do {
-			errno       = 0;
-			wait_result = waitpid(child_pid, &status, WNOHANG);
-		} while (wait_result < 0 && errno == EINTR);
-		const int wait_errno = errno;
+		int       status      = 0;
+		pid_t     wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
+			errno = 0;
+			return waitpid(child_pid, &status, WNOHANG);
+		});
+		const int wait_errno  = errno;
 		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
 		             "read-error auth-helper child is reaped");
 
 		if (wait_result == 0) {
 			kill(child_pid, SIGKILL);
-			do {
-				errno       = 0;
-				wait_result = waitpid(child_pid, &status, 0);
-			} while (wait_result < 0 && errno == EINTR);
+			wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
+				errno = 0;
+				return waitpid(child_pid, &status, 0);
+			});
 			ok &= Expect(wait_result == child_pid,
 			             "read-error auth-helper child cleanup reaps child");
 		} else if (wait_result < 0 && wait_errno != ECHILD) {
 			kill(child_pid, SIGKILL);
-			do {
-				errno       = 0;
-				wait_result = waitpid(child_pid, &status, 0);
-			} while (wait_result < 0 && errno == EINTR);
+			(void)howdy::native::RetryOnEintr([&] -> pid_t {
+				errno = 0;
+				return waitpid(child_pid, &status, 0);
+			});
 		}
 
 		return ok;
@@ -232,21 +236,20 @@ namespace {
 		ok &= Expect(!helper_ok, "auth-helper partial read error fails closed");
 		ok &= Expect(helper_output.empty(), "auth-helper partial read error discards output");
 
-		int   status      = 0;
-		pid_t wait_result = 0;
-		do {
-			errno       = 0;
-			wait_result = waitpid(child_pid, &status, WNOHANG);
-		} while (wait_result < 0 && errno == EINTR);
-		const int wait_errno = errno;
+		int         status      = 0;
+		const pid_t wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
+			errno = 0;
+			return waitpid(child_pid, &status, WNOHANG);
+		});
+		const int   wait_errno  = errno;
 		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
 		             "partial-read-error auth-helper child is reaped");
 		if (wait_result == 0) {
 			kill(child_pid, SIGKILL);
-			do {
-				errno       = 0;
-				wait_result = waitpid(child_pid, &status, 0);
-			} while (wait_result < 0 && errno == EINTR);
+			(void)howdy::native::RetryOnEintr([&] -> pid_t {
+				errno = 0;
+				return waitpid(child_pid, &status, 0);
+			});
 		}
 
 		return ok;
@@ -264,14 +267,14 @@ namespace {
 			return std::nullopt;
 		}
 		if (child_pid == 0) {
-			output_pipe[0].Reset();
-			const bool wrote = WriteAll(output_pipe[1].Get(), child_output);
-			output_pipe[1].Reset();
+			output_pipe.at(0).Reset();
+			const bool wrote = WriteAll(output_pipe.at(1).Get(), child_output);
+			output_pipe.at(1).Reset();
 			_exit(wrote ? child_exit_status : EXIT_FAILURE);
 		}
 
-		output_pipe[1].Reset();
-		return ReadAuthHelperOutput(child_pid, output_pipe[0].Get(), read_output);
+		output_pipe.at(1).Reset();
+		return ReadAuthHelperOutput(child_pid, output_pipe.at(0).Get(), read_output);
 	}
 
 	auto ExpectAuthHelperOutputChildFailureDiscardsOutput() -> bool {
@@ -292,7 +295,14 @@ namespace {
 	}
 
 	auto ExpectAuthHelperOutputProtocolValidation() -> bool {
-		using namespace howdy::native::auth_helper_protocol;
+		using howdy::native::auth_helper_protocol::kPreparedConfigFileName;
+		using howdy::native::auth_helper_protocol::kPreparedUserModelsDirectoryName;
+		using howdy::native::auth_helper_protocol::PreparedConfigPath;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeDirectoryPrefix;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir;
+		using howdy::native::auth_helper_protocol::PreparedRuntimeRoot;
+		using howdy::native::auth_helper_protocol::PreparedUserModelsDir;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		namespace fs = std::filesystem;
 
 		struct ProtocolCase {

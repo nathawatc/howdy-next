@@ -27,11 +27,17 @@ namespace howdy::test::download_models {
 	    .size     = std::string_view(kTestModelContent).size(),
 	};
 
-	extern int                      download_attempts;
-	extern std::string              downloaded_content;
-	extern std::vector<std::string> downloaded_urls;
-	extern bool                     download_succeeds;
-	extern int                      failing_fstat_attempt;
+	struct DependencyState {
+		int                      download_attempts     = 0;
+		int                      owner_uid_attempts    = 0;
+		int                      fstat_attempts        = 0;
+		int                      failing_fstat_attempt = 0;
+		std::string              downloaded_content;
+		std::vector<std::string> downloaded_urls;
+		bool                     download_succeeds = false;
+	};
+
+	auto DependenciesState() -> DependencyState &;
 
 	void ResetDependencyAttempts();
 	auto AttemptedDownloads() -> int;
@@ -47,14 +53,18 @@ namespace howdy::test::download_models {
 	auto SelectivelyFailingFstat(int fd, struct stat *stat_buf) -> int;
 	auto TestModelFileOwnerUid() -> std::optional<uid_t>;
 
-	struct EnvVarGuard {
-		const char                *name;
-		std::optional<std::string> previous;
-
+	class EnvVarGuard {
+	public:
 		EnvVarGuard(const char *env_name, const std::string &value);
 		EnvVarGuard(const EnvVarGuard &)                     = delete;
 		auto operator=(const EnvVarGuard &) -> EnvVarGuard & = delete;
+		EnvVarGuard(EnvVarGuard &&)                          = delete;
+		auto operator=(EnvVarGuard &&) -> EnvVarGuard &      = delete;
 		~EnvVarGuard();
+
+	private:
+		const char                *name_;
+		std::optional<std::string> previous_;
 	};
 
 	struct DownloadPaths {

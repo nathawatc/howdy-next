@@ -80,13 +80,14 @@ namespace howdy::pam {
 	struct RuntimeSessionLoadResult {
 		RuntimeSessionLoadStatus               status = RuntimeSessionLoadStatus::kConfigLoadFailed;
 		howdy::native::RuntimeConfigLoadResult config_result;
-
-		[[nodiscard]] auto Ok() const -> bool {
-			return status == RuntimeSessionLoadStatus::kOk &&
-			       config_result.status == howdy::native::RuntimeConfigLoadStatus::kOk &&
-			       config_result.config.has_value();
-		}
 	};
+
+	[[nodiscard]] inline auto RuntimeSessionLoadSucceeded(const RuntimeSessionLoadResult &result)
+	    -> bool {
+		return result.status == RuntimeSessionLoadStatus::kOk &&
+		       result.config_result.status == howdy::native::RuntimeConfigLoadStatus::kOk &&
+		       result.config_result.config.has_value();
+	}
 
 	class RuntimeSession {
 	public:

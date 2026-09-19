@@ -1,7 +1,12 @@
 
+#include "app/command_invocation.hpp"
 #include "cli/list/internal.hpp"
+#include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "test_support.hpp"
 
+#include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <optional>
@@ -10,42 +15,59 @@
 #include <utility>
 #include <vector>
 
+#include <stdlib.h>
+#include <time.h>
+
 namespace {
 
 	using howdy::test::Expect;
 
-	struct StreamRedirect {
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
+
 		StreamRedirect(std::ostream &stream, std::streambuf *new_output)
-		    : output(stream)
-		    , old_output(stream.rdbuf(new_output)) {}
+		    : output_(stream)
+		    , old_output_(stream.rdbuf(new_output)) {}
 
 		~StreamRedirect() {
-			output.rdbuf(old_output);
+			output_.rdbuf(old_output_);
 		}
 
-		std::ostream   &output;
-		std::streambuf *old_output;
+	private:
+		std::ostream   &output_;
+		std::streambuf *old_output_;
 	};
 
-	struct TimezoneGuard {
+	class TimezoneGuard {
+	public:
+		TimezoneGuard(const TimezoneGuard &)                     = delete;
+		auto operator=(const TimezoneGuard &) -> TimezoneGuard & = delete;
+		TimezoneGuard(TimezoneGuard &&)                          = delete;
+		auto operator=(TimezoneGuard &&) -> TimezoneGuard &      = delete;
+
 		TimezoneGuard() {
 			if (const char *value = std::getenv("TZ"); value != nullptr) {
-				old_timezone = value;
+				old_timezone_ = value;
 			}
 			setenv("TZ", "UTC", 1);
 			tzset();
 		}
 
 		~TimezoneGuard() {
-			if (old_timezone.has_value()) {
-				setenv("TZ", old_timezone->c_str(), 1);
+			if (old_timezone_.has_value()) {
+				setenv("TZ", old_timezone_->c_str(), 1);
 			} else {
 				unsetenv("TZ");
 			}
 			tzset();
 		}
 
-		std::optional<std::string> old_timezone;
+	private:
+		std::optional<std::string> old_timezone_;
 	};
 
 	struct ListCliTestContext {
@@ -65,9 +87,9 @@ namespace {
 	auto RunListWithDependencies(const howdy::native::CommandInvocation               &invocation,
 	                             const howdy::native::list_internal::ListDependencies &dependencies)
 	    -> std::pair<int, std::string> {
-		std::ostringstream output_stream;
-		StreamRedirect     redirect(std::cout, output_stream.rdbuf());
-		const int          result =
+		std::ostringstream const output_stream;
+		StreamRedirect const     redirect(std::cout, output_stream.rdbuf());
+		const int                result =
 		    howdy::native::list_internal::ListMainWithDependencies(invocation, dependencies);
 		return {result, output_stream.str()};
 	}
@@ -169,7 +191,7 @@ namespace {
 		context.list_result = {
 		    .status  = howdy::native::UserModelStatus::kOk,
 		    .entries = {{.id    = 3,
-		                 .time  = std::numeric_limits<long long>::max(),
+		                 .time  = std::numeric_limits<std::int64_t>::max(),
 		                 .label = "front door"}},
 		};
 		auto [normal_result, normal_output] = RunList(context, {.resolved_user = "alice"});

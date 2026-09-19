@@ -102,10 +102,9 @@ namespace howdy::native::auth_helper_protocol {
 		if (uid_text.empty() || (uid_text.size() > 1 && uid_text.front() == '0')) {
 			return false;
 		}
-		std::uintmax_t value = 0;
-		const auto [end, error] =
-		    std::from_chars(uid_text.data(), uid_text.data() + uid_text.size(), value, 10);
-		if (error != std::errc{} || end != uid_text.data() + uid_text.size() ||
+		std::uintmax_t value    = 0;
+		const auto [end, error] = std::from_chars(uid_text.begin(), uid_text.end(), value, 10);
+		if (error != std::errc{} || end != uid_text.end() ||
 		    value > std::numeric_limits<uid_t>::max()) {
 			return false;
 		}

@@ -1,13 +1,23 @@
 #include "cli/download_models/internal.hpp"
+#include "cli/download_models_test_support.hpp"
+#include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
+#include "support/fd_io.hpp"
+#include "support/scoped_fd.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <csignal>
+#include <cstddef>
 #include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
+
+#include <fcntl.h>
+#include <signal.h>
 #include <unistd.h>
 
 #include <sys/resource.h>
@@ -19,8 +29,6 @@ namespace howdy::test::download_models {
 	using howdy::test::Expect;
 	using howdy::test::ReadFile;
 	using howdy::test::WriteFile;
-
-	auto RunAtomicFilesTests() -> bool;
 
 	namespace {
 
@@ -48,7 +56,7 @@ namespace howdy::test::download_models {
 		std::error_code ec;
 
 		howdy::native::StagedFile empty_path_install{
-		    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY)),
+		    .fd   = howdy::native::ScopedFd(open("/dev/null", O_WRONLY | O_CLOEXEC)),
 		    .path = {},
 		};
 		ok &= Expect(empty_path_install.fd.Get() >= 0, "open fd for empty-path staged install");
@@ -239,7 +247,7 @@ namespace howdy::test::download_models {
 		ok &= Expect(stat(atomic_new_path.c_str(), &atomic_new_stat) == 0,
 		             "stat atomic writer new file");
 		ok &= Expect(S_ISREG(atomic_new_stat.st_mode), "atomic writer new target is regular file");
-		ok &= Expect((atomic_new_stat.st_mode & 07777) == 0600,
+		ok &= Expect(howdy::native::MaskedBits(atomic_new_stat.st_mode, 07777) == 0600,
 		             "atomic writer applies requested new-file mode");
 		ok &= Expect(CountFilesWithPrefix(atomic_new_path.parent_path(), ".howdy-atomic-") == 0,
 		             "atomic writer removes staged file after new-file install");
@@ -257,7 +265,7 @@ namespace howdy::test::download_models {
 		struct stat atomic_existing_stat{};
 		ok &= Expect(stat(atomic_existing_path.c_str(), &atomic_existing_stat) == 0,
 		             "stat replaced atomic writer file");
-		ok &= Expect((atomic_existing_stat.st_mode & 07777) == 0640,
+		ok &= Expect(howdy::native::MaskedBits(atomic_existing_stat.st_mode, 07777) == 0640,
 		             "atomic writer preserves existing-file mode");
 		ok &=
 		    Expect(CountFilesWithPrefix(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
@@ -305,7 +313,7 @@ namespace howdy::test::download_models {
 			struct stat default_mode_stat{};
 			ok &= Expect(stat(default_mode_path.c_str(), &default_mode_stat) == 0,
 			             "stat default-mode policy target");
-			ok &= Expect((default_mode_stat.st_mode & 07777) == 0640,
+			ok &= Expect(howdy::native::MaskedBits(default_mode_stat.st_mode, 07777) == 0640,
 			             "default-mode policy applies requested mode to existing file");
 			ok &= Expect(
 			    CountFilesWithPrefix(default_mode_path.parent_path(), ".howdy-default-mode-") == 0,

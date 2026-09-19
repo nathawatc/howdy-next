@@ -22,7 +22,12 @@ namespace howdy::pam {
 
 	class SecretPromptConversation {
 	public:
-		virtual ~SecretPromptConversation() = default;
+		SecretPromptConversation()                                                     = default;
+		SecretPromptConversation(const SecretPromptConversation &)                     = delete;
+		auto operator=(const SecretPromptConversation &) -> SecretPromptConversation & = delete;
+		SecretPromptConversation(SecretPromptConversation &&)                          = delete;
+		auto operator=(SecretPromptConversation &&) -> SecretPromptConversation &      = delete;
+		virtual ~SecretPromptConversation()                                            = default;
 
 		[[nodiscard]] virtual auto Available() const -> bool                               = 0;
 		virtual auto               Install() -> int                                        = 0;
@@ -36,6 +41,8 @@ namespace howdy::pam {
 
 		ObservedPromptConversation(const ObservedPromptConversation &)                     = delete;
 		auto operator=(const ObservedPromptConversation &) -> ObservedPromptConversation & = delete;
+		ObservedPromptConversation(ObservedPromptConversation &&)                          = delete;
+		auto operator=(ObservedPromptConversation &&) -> ObservedPromptConversation &      = delete;
 
 		[[nodiscard]] auto Available() const -> bool override;
 		auto               Install() -> int override;

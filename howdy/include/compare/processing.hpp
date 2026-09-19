@@ -11,19 +11,19 @@ namespace howdy::native::compare_processing_internal {
 	using CompareProcessingResult =
 	    std::variant<CompareCaptureOpenResult, ComparePrivilegeResult, CompareExit>;
 
-	using OpenCaptureFn     = CompareCaptureOpenResult(void *context);
-	using DropPrivilegesFn  = ComparePrivilegeResult(void *context);
-	using ConstructEngineFn = void(void *context);
-	using ResetTimeoutFn    = void(void *context);
-	using RunFrameLoopFn    = CompareExit(void *context);
+	using OpenCaptureFn     = CompareCaptureOpenResult (*)(void *context);
+	using DropPrivilegesFn  = ComparePrivilegeResult (*)(void *context);
+	using ConstructEngineFn = void (*)(void *context);
+	using ResetTimeoutFn    = void (*)(void *context);
+	using RunFrameLoopFn    = CompareExit (*)(void *context);
 
 	struct CompareProcessingDependencies {
-		void              *context = nullptr;
-		OpenCaptureFn     &open_capture;
-		DropPrivilegesFn  &drop_privileges;
-		ConstructEngineFn &construct_engine;
-		ResetTimeoutFn    &reset_timeout;
-		RunFrameLoopFn    &run_frame_loop;
+		void             *context          = nullptr;
+		OpenCaptureFn     open_capture     = nullptr;
+		DropPrivilegesFn  drop_privileges  = nullptr;
+		ConstructEngineFn construct_engine = nullptr;
+		ResetTimeoutFn    reset_timeout    = nullptr;
+		RunFrameLoopFn    run_frame_loop   = nullptr;
 	};
 
 	[[nodiscard]] auto RunCompareProcessing(const CompareProcessingDependencies &dependencies)

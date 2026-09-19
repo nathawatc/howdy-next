@@ -1,11 +1,37 @@
+#include "prompt/conversation_restore.hpp"
+#include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/prompt_coordinator_native_support.hpp"
 #include "prompt/prompt_coordinator_test_groups.hpp"
+#include "prompt/workaround.hpp"
+#include "protocol/compare_exit.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
+#include "test_support.hpp"
+
+#include <chrono>
+#include <csignal>
+#include <cstdlib>
+#include <string>
+#include <thread>
+
+#include <stdlib.h>
+#include <unistd.h>
 
 namespace {
-	using namespace howdy::test::process;
-	using namespace howdy::test::prompt_coordinator;
+	using howdy::pam::PromptCoordinator;
+	using howdy::pam::PromptCoordinatorDecision;
+	using howdy::pam::Workaround;
+	using howdy::test::Expect;
+	using howdy::test::process::ChildReaped;
+	using howdy::test::process::SpawnBlockedChild;
+	using howdy::test::process::SpawnChild;
+	using howdy::test::process::SpawnSignaledChild;
+	using howdy::test::prompt_coordinator::CompareExit;
+	using howdy::test::prompt_coordinator::FakeContext;
+	using howdy::test::prompt_coordinator::MakeCompareRequest;
+	using howdy::test::prompt_coordinator::NativePamFixture;
+	using howdy::test::prompt_coordinator::Timeout;
 
 	auto TestExistingAuthTokenSkipsPromptWorkaround() -> bool {
 		FakeContext context;
@@ -171,9 +197,10 @@ namespace {
 
 		PromptCoordinator coordinator(nullptr, Workaround::kInput, true, false,
 		                              Operations(&context), Timeout());
-		const auto        result          = coordinator.Run(MakeCompareRequest());
-		const int         expected_status = static_cast<int>(CompareExit::kTimeoutReached) << 8;
-		const bool        reaped          = ChildReaped(child_pid);
+		const auto        result = coordinator.Run(MakeCompareRequest());
+		const int         expected_status =
+		    howdy::native::EncodeWaitExitStatus(CompareExit::kTimeoutReached);
+		const bool reaped = ChildReaped(child_pid);
 		return Expect(result.decision == PromptCoordinatorDecision::kPasswordFallback,
 		              label + " returns password fallback") &&
 		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,

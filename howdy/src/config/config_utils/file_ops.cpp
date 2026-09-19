@@ -5,20 +5,26 @@
 #include "config/test_hooks.hpp"
 #include "internal.hpp"
 #include "support/atomic_files.hpp"
+#include "support/bit_flags.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_lock.hpp"
+#include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 
 #include <cerrno>
-#include <fcntl.h>
 #include <filesystem>
 #include <string>
 #include <system_error>
-#include <unistd.h>
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::native::config_utils_internal {
 
@@ -56,31 +62,31 @@ namespace howdy::native::config_utils_internal {
 	}  // namespace
 
 	ConfigLockGuard::~ConfigLockGuard() {
-		if (fd.Valid()) {
-			UnlockFd(fd.Get());
+		if (fd_.Valid()) {
+			UnlockFd(fd_.Get());
 		}
 	}
 
 	ConfigLockGuard::ConfigLockGuard(ConfigLockGuard &&other) noexcept
-	    : fd(std::move(other.fd)) {}
+	    : fd_(std::move(other.fd_)) {}
 
 	auto ConfigLockGuard::operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard & {
 		if (this != &other) {
-			if (fd.Valid()) {
-				UnlockFd(fd.Get());
+			if (fd_.Valid()) {
+				UnlockFd(fd_.Get());
 			}
-			fd = std::move(other.fd);
+			fd_ = std::move(other.fd_);
 		}
 		return *this;
 	}
 
 	auto AcquireConfigLock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
 	    -> bool {
-		guard.fd.Reset(OpenLockFile(config_path));
-		if (guard.fd.Valid() && LockFd(guard.fd.Get())) {
+		guard.fd_.Reset(OpenLockFile(config_path));
+		if (guard.fd_.Valid() && LockFd(guard.fd_.Get())) {
 			return true;
 		}
-		guard.fd.Reset();
+		guard.fd_.Reset();
 		return false;
 	}
 
@@ -88,7 +94,7 @@ namespace howdy::native::config_utils_internal {
 	                            const std::string &expected, std::string *error_message,
 	                            const file_security_internal::ValidationRoot &validation_root)
 	    -> bool {
-		ScopedFd input_fd(
+		ScopedFd const input_fd(
 		    open(config_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
 		if (input_fd.Get() < 0) {
 			return FailWith(error_message, kConfigFileOpenFailureMessage);
@@ -125,8 +131,8 @@ namespace howdy::native::config_utils_internal {
 
 		const std::filesystem::path temp_path(writable.data());
 		bool ok = fchown(fd, current_stat.st_uid, current_stat.st_gid) == 0 &&
-		          fchmod(fd, current_stat.st_mode & 07777) == 0 && WriteAllToFd(fd, content) &&
-		          SyncFd(fd);
+		          fchmod(fd, MaskedBitsAs<mode_t>(current_stat.st_mode, 07777)) == 0 &&
+		          WriteAllToFd(fd, content) && SyncFd(fd);
 		if (close(fd) != 0) {
 			ok = false;
 		}
@@ -152,11 +158,9 @@ namespace howdy::native::config_utils_internal {
 namespace howdy::native {
 
 	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool {
-		using namespace config_utils_internal;
-
 		if (content.size() > kMaxConfigFileSize) {
 			if (error_message != nullptr) {
-				*error_message = kUpdatedConfigTooLargeMessage;
+				*error_message = config_utils_internal::kUpdatedConfigTooLargeMessage;
 			}
 			return false;
 		}
@@ -168,7 +172,7 @@ namespace howdy::native {
 		const int fd = mkostemp(writable.data(), O_CLOEXEC);
 		if (fd < 0) {
 			if (error_message != nullptr) {
-				*error_message = kConfigValidationFailureMessage;
+				*error_message = config_utils_internal::kConfigValidationFailureMessage;
 			}
 			return false;
 		}
@@ -183,13 +187,13 @@ namespace howdy::native {
 			std::error_code ec;
 			std::filesystem::remove(temp_path, ec);
 			if (error_message != nullptr) {
-				*error_message = kConfigValidationFailureMessage;
+				*error_message = config_utils_internal::kConfigValidationFailureMessage;
 			}
 			return false;
 		}
 
-		ConfigReader    config(temp_path.string());
-		std::error_code ec;
+		ConfigReader const config(temp_path.string());
+		std::error_code    ec;
 		std::filesystem::remove(temp_path, ec);
 
 		if (!config.Ok()) {

@@ -1,7 +1,11 @@
 #include "cli/add_cli_test_support.hpp"
 
 auto main() -> int {
-	using namespace howdy::test::add_cli;
+	using howdy::test::add_cli::RunAddCliArgumentTests;
+	using howdy::test::add_cli::RunAddCliCaptureTests;
+	using howdy::test::add_cli::RunAddCliDependencyValidationTests;
+	using howdy::test::add_cli::RunAddCliPreflightTests;
+	using howdy::test::add_cli::RunAddCliSuccessTests;
 
 	bool ok = true;
 	ok &= RunAddCliSuccessTests();

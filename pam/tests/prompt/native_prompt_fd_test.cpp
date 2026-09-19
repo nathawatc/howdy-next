@@ -1,24 +1,26 @@
 #include "pam_test_support.hpp"
 #include "prompt/internal_fd.hpp"
+#include "prompt/native_prompt_conversation.hpp"
+#include "prompt/native_prompt_test_groups.hpp"
 #include "prompt/native_prompt_test_support.hpp"
+#include "support/bit_flags.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <csignal>
+#include <cstddef>
+#include <span>
+
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <security/pam_appl.h>
 
 #include <sys/resource.h>
 #include <sys/stat.h>
-
-auto ClosedStdinPreservedWithTerminalStdout() -> bool;
-auto ClosedStdoutPreservedWithTerminalStdin() -> bool;
-auto ClosedStderrPreservedWithTerminalStdin() -> bool;
-auto ClosedStdinStdoutPreservedWithTerminalStderr() -> bool;
-auto ClosedAllStdioRemainClosed() -> bool;
-auto TtyNormalizationFailurePreservesClosedStdin() -> bool;
-auto AbortPipeCreationFailureIsTransactional() -> bool;
-auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool;
-auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool;
 
 namespace {
 	auto EligibilityConversation(int /*num_msg*/, const struct pam_message ** /*messages*/,
@@ -44,7 +46,7 @@ namespace {
 
 	auto CloseTestStdio(const std::array<bool, 3> &closed_stdio) -> bool {
 		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
-			if (closed_stdio[static_cast<std::size_t>(fd)] && close(fd) != 0) {
+			if (closed_stdio.at(static_cast<std::size_t>(fd)) && close(fd) != 0) {
 				return false;
 			}
 		}
@@ -66,7 +68,7 @@ namespace {
 	auto StandardDescriptorIdentities() -> std::array<DescriptorIdentity, 3> {
 		std::array<DescriptorIdentity, 3> identities{};
 		for (int fd = STDIN_FILENO; fd <= STDERR_FILENO; ++fd) {
-			auto &identity = identities[static_cast<std::size_t>(fd)];
+			auto &identity = identities.at(static_cast<std::size_t>(fd));
 			errno          = 0;
 			identity.flags = fcntl(fd, F_GETFD);
 			identity.error = identity.flags < 0 ? errno : 0;
@@ -78,18 +80,18 @@ namespace {
 	auto StandardDescriptorsMatch(const std::array<DescriptorIdentity, 3> &expected) -> bool {
 		const auto actual = StandardDescriptorIdentities();
 		for (std::size_t index = 0; index < expected.size(); ++index) {
-			if (actual[index].open != expected[index].open) {
+			if (actual.at(index).open != expected.at(index).open) {
 				return false;
 			}
-			if (!expected[index].open &&
-			    (expected[index].error != EBADF || actual[index].error != EBADF)) {
+			if (!expected.at(index).open &&
+			    (expected.at(index).error != EBADF || actual.at(index).error != EBADF)) {
 				return false;
 			}
-			if (actual[index].open &&
-			    (actual[index].flags != expected[index].flags ||
-			     actual[index].metadata.st_dev != expected[index].metadata.st_dev ||
-			     actual[index].metadata.st_ino != expected[index].metadata.st_ino ||
-			     actual[index].metadata.st_rdev != expected[index].metadata.st_rdev)) {
+			if (actual.at(index).open &&
+			    (actual.at(index).flags != expected.at(index).flags ||
+			     actual.at(index).metadata.st_dev != expected.at(index).metadata.st_dev ||
+			     actual.at(index).metadata.st_ino != expected.at(index).metadata.st_ino ||
+			     actual.at(index).metadata.st_rdev != expected.at(index).metadata.st_rdev)) {
 				return false;
 			}
 		}
@@ -107,12 +109,12 @@ namespace {
 			return false;
 		}
 		(void)signal(SIGHUP, SIG_IGN);
-		ScopedFd terminal_fd(open(slave_name, O_RDWR | O_CLOEXEC));
+		ScopedFd const terminal_fd(open(slave_name, O_RDWR | O_CLOEXEC));
 		if (terminal_fd.Get() < 0 || tcsetpgrp(terminal_fd.Get(), getpgrp()) != 0) {
 			return false;
 		}
 
-		ScopedFd null_fd(open("/dev/null", O_RDWR | O_CLOEXEC));
+		ScopedFd const null_fd(open("/dev/null", O_RDWR | O_CLOEXEC));
 		if (null_fd.Get() < 0) {
 			return false;
 		}
@@ -151,9 +153,9 @@ namespace {
 		}
 		const auto stdio_before = StandardDescriptorIdentities();
 
-		NativePromptConversation conversation(pamh);
-		const bool               available = conversation.Available();
-		const std::array         internal_fds{
+		NativePromptConversation const conversation(pamh);
+		const bool                     available = conversation.Available();
+		const std::array               internal_fds{
 		    NativePromptConversationTestAccess::TtyFd(conversation),
 		    NativePromptConversationTestAccess::AbortReadFd(conversation),
 		    NativePromptConversationTestAccess::AbortWriteFd(conversation),
@@ -171,11 +173,15 @@ namespace {
 		const bool internal_fds_valid =
 		    std::ranges::all_of(internal_fds,
 		                        [](const int fd) -> bool {
-			                        return fd > STDERR_FILENO &&
-			                               (fcntl(fd, F_GETFD) & FD_CLOEXEC) != 0;
+			                        if (fd <= STDERR_FILENO) {
+				                        return false;
+			                        }
+			                        const int descriptor_flags = fcntl(fd, F_GETFD);
+			                        return descriptor_flags >= 0 &&
+			                               howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC);
 		                        }) &&
-		    internal_fds[0] != internal_fds[1] && internal_fds[0] != internal_fds[2] &&
-		    internal_fds[1] != internal_fds[2];
+		    internal_fds.at(0) != internal_fds.at(1) && internal_fds.at(0) != internal_fds.at(2) &&
+		    internal_fds.at(1) != internal_fds.at(2);
 		return available == expect_available && stdio_preserved && terminal_preserved &&
 		       (!available || internal_fds_valid);
 	}
@@ -197,7 +203,7 @@ namespace {
 		}
 		const int duplicated = fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
 		if (failure.duplicate_calls <= failure.duplicated.size()) {
-			failure.duplicated[failure.duplicate_calls - 1] = duplicated;
+			failure.duplicated.at(failure.duplicate_calls - 1) = duplicated;
 		}
 		return duplicated;
 	}
@@ -210,14 +216,15 @@ namespace {
 		}
 		const int result = pipe2(pipe_fds, flags);
 		if (result == 0) {
-			failure.raw_pipe = {pipe_fds[0], pipe_fds[1]};
+			const auto descriptors = std::span(pipe_fds, std::size_t{2});
+			failure.raw_pipe       = {descriptors.front(), descriptors.back()};
 		}
 		return result;
 	}
 
 	auto RecordedDescriptorsAreClosed(const InternalFdFailureContext &failure) -> bool {
-		return std::ranges::all_of(std::array{failure.raw_pipe[0], failure.raw_pipe[1],
-		                                      failure.duplicated[0], failure.duplicated[1]},
+		return std::ranges::all_of(std::array{failure.raw_pipe.at(0), failure.raw_pipe.at(1),
+		                                      failure.duplicated.at(0), failure.duplicated.at(1)},
 		                           [](const int fd) -> bool {
 			                           return fd < 0 || DescriptorIsClosed(fd);
 		                           });
@@ -240,7 +247,7 @@ namespace {
 		    .create_pipe = InjectedInternalPipe,
 		};
 		auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK, &operations);
-		if (pipe.Valid() || !RecordedDescriptorsAreClosed(context)) {
+		if (howdy::pam::detail::InternalPipeValid(pipe) || !RecordedDescriptorsAreClosed(context)) {
 			return false;
 		}
 		if (!StandardDescriptorsMatch(stdio_before)) {

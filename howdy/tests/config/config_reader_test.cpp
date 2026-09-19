@@ -3,6 +3,7 @@
 #include "../../src/config/runtime_config_loader/internal.hpp"
 #include "config/config_schema.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 
 #include <clocale>
@@ -11,7 +12,10 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <vector>
+
+#include <stdlib.h>
 
 namespace {
 
@@ -60,7 +64,7 @@ auto main() -> int {
 	                                   "dark_threshold = 55.5\n"),
 	             "write valid ini");
 
-	howdy::native::ConfigReader valid(valid_path.string());
+	howdy::native::ConfigReader const valid(valid_path.string());
 	ok &= Expect(valid.Ok(), "valid config should parse");
 	ok &= Expect(!howdy::native::ValidateRuntimeConfig(valid).has_value(),
 	             "valid config passes semantic validation");
@@ -85,7 +89,7 @@ auto main() -> int {
 
 	const auto empty_path = temp_root / "empty.ini";
 	ok &= Expect(WriteFile(empty_path, ""), "write empty ini");
-	howdy::native::ConfigReader empty(empty_path.string());
+	howdy::native::ConfigReader const empty(empty_path.string());
 	ok &= Expect(empty.Ok(), "empty config should parse");
 	ok &= Expect(howdy::native::ReadRuntimeInt(empty, OptionId::kVideoTimeout) == 4,
 	             "timeout default is used");
@@ -136,7 +140,7 @@ auto main() -> int {
 	                                  "no_confirmation = false\n"
 	                                  "abort_if_ssh = invalid\n"),
 	             "write typed boolean config");
-	howdy::native::ConfigReader typed_bools(bool_path.string());
+	howdy::native::ConfigReader const typed_bools(bool_path.string());
 	ok &= Expect(howdy::native::ReadRuntimeBool(typed_bools, OptionId::kCoreDetectionNotice),
 	             "generic bool reader accepts true");
 	ok &= Expect(!howdy::native::ReadRuntimeBool(typed_bools, OptionId::kCoreNoConfirmation),
@@ -152,7 +156,7 @@ auto main() -> int {
 	                                              "exposure = -1\n"
 	                                              "device_fps = 480\n"),
 	             "write integer boundary config");
-	howdy::native::ConfigReader integer_boundaries(integer_boundary_path.string());
+	howdy::native::ConfigReader const integer_boundaries(integer_boundary_path.string());
 	ok &= Expect(howdy::native::ReadRuntimeInt(integer_boundaries, OptionId::kVideoTimeout) == 1,
 	             "generic int reader accepts minimum");
 	ok &= Expect(howdy::native::ReadRuntimeInt(integer_boundaries, OptionId::kVideoFrameHeight) ==
@@ -172,7 +176,7 @@ auto main() -> int {
 	                                            "dark_threshold = 0\n"
 	                                            "max_height = 4096\n"),
 	             "write float boundary config");
-	howdy::native::ConfigReader float_boundaries(float_boundary_path.string());
+	howdy::native::ConfigReader const float_boundaries(float_boundary_path.string());
 	ok &= Expect(
 	    Near(howdy::native::ReadRuntimeFloat(float_boundaries, OptionId::kVideoDarkThreshold),
 	         0.0F),
@@ -187,7 +191,7 @@ auto main() -> int {
 		const auto choice_path = temp_root / ("metric-" + std::string(choice) + ".ini");
 		ok &= Expect(WriteFile(choice_path, "[face]\nsface_metric = " + std::string(choice) + "\n"),
 		             "write schema metric choice");
-		howdy::native::ConfigReader choice_reader(choice_path.string());
+		howdy::native::ConfigReader const choice_reader(choice_path.string());
 		ok &= Expect(choice_reader.Ok(), "choice reader parses: " + std::string(choice));
 		ok &= Expect(howdy::native::ReadRuntimeString(choice_reader, OptionId::kFaceSfaceMetric) ==
 		                 choice,
@@ -200,14 +204,14 @@ auto main() -> int {
 	const auto normalized_metric_path = temp_root / "normalized-metric.ini";
 	ok &= Expect(WriteFile(normalized_metric_path, "[face]\nsface_metric = L2NORM\n"),
 	             "write normalized metric");
-	howdy::native::ConfigReader normalized_metric(normalized_metric_path.string());
+	howdy::native::ConfigReader const normalized_metric(normalized_metric_path.string());
 	ok &= Expect(howdy::native::ReadRuntimeString(normalized_metric, OptionId::kFaceSfaceMetric) ==
 	                 "l2norm",
 	             "generic string reader normalizes schema choice");
 	const auto invalid_metric_path = temp_root / "invalid-metric-reader.ini";
 	ok &= Expect(WriteFile(invalid_metric_path, "[face]\nsface_metric = invalid\n"),
 	             "write invalid metric");
-	howdy::native::ConfigReader invalid_metric(invalid_metric_path.string());
+	howdy::native::ConfigReader const invalid_metric(invalid_metric_path.string());
 	ok &= Expect(howdy::native::ReadRuntimeString(invalid_metric, OptionId::kFaceSfaceMetric) ==
 	                 howdy::native::config_schema::RuntimeDefaultString(OptionId::kFaceSfaceMetric),
 	             "generic string reader falls back for invalid choice");
@@ -216,7 +220,7 @@ auto main() -> int {
 	const auto free_form_path = temp_root / "free-form-string.ini";
 	ok &= Expect(WriteFile(free_form_path, "[video]\ndevice_path = /dev/video0\n"),
 	             "write free-form string");
-	howdy::native::ConfigReader free_form(free_form_path.string());
+	howdy::native::ConfigReader const free_form(free_form_path.string());
 	ok &= Expect(howdy::native::ReadRuntimeString(free_form, OptionId::kVideoDevicePath) ==
 	                 "/dev/video0",
 	             "generic string reader preserves special free-form path");
@@ -241,8 +245,8 @@ auto main() -> int {
 	             "write default float config");
 
 	auto expect_default_float_config = [&](const std::string &label) -> bool {
-		bool                        defaults_ok = true;
-		howdy::native::ConfigReader defaults(default_floats_path.string());
+		bool                              defaults_ok = true;
+		howdy::native::ConfigReader const defaults(default_floats_path.string());
 		defaults_ok &= Expect(defaults.Ok(), label + ": default float config parses");
 		defaults_ok &=
 		    Expect(Near(howdy::native::ParseConfigFloatStrict("1.25").value_or(0.0F), 1.25F),
@@ -288,7 +292,8 @@ auto main() -> int {
 	RestoreEnvValue("LC_NUMERIC", previous_lc_numeric);
 	RestoreEnvValue("LANG", previous_lang);
 	if (previous_locale.has_value()) {
-		std::setlocale(LC_ALL, previous_locale->c_str());
+		ok &= Expect(std::setlocale(LC_ALL, previous_locale->c_str()) != nullptr,
+		             "restore original locale");
 	}
 
 	const std::vector<std::string> invalid_float_values = {"1,25", "1.25abc", "nan",
@@ -299,7 +304,7 @@ auto main() -> int {
 		                                           "clahe_clip_limit = " +
 		                                               value + "\n"),
 		             "write invalid float config for " + value);
-		howdy::native::ConfigReader invalid_float(invalid_float_path.string());
+		howdy::native::ConfigReader const invalid_float(invalid_float_path.string());
 		ok &= Expect(invalid_float.Ok(), "invalid float config still parses for " + value);
 		const auto validation = howdy::native::ValidateRuntimeConfig(invalid_float);
 		ok &= Expect(validation.has_value(), "invalid float validation rejects " + value);
@@ -309,8 +314,8 @@ auto main() -> int {
 		    "invalid float getter falls back for " + value);
 	}
 
-	const auto                  missing_path = temp_root / "does-not-exist.ini";
-	howdy::native::ConfigReader missing(missing_path.string());
+	const auto                        missing_path = temp_root / "does-not-exist.ini";
+	howdy::native::ConfigReader const missing(missing_path.string());
 	ok &= Expect(!missing.Ok(), "missing config should fail parse");
 	ok &= Expect(missing.ParseError() != 0, "parse_error is non-zero for missing file");
 
@@ -333,7 +338,7 @@ auto main() -> int {
 	                                     "frame_height = 4\n"
 	                                     "device_fps = 9999\n"),
 	             "write invalid bounded config");
-	howdy::native::ConfigReader invalid(invalid_path.string());
+	howdy::native::ConfigReader const invalid(invalid_path.string());
 	ok &= Expect(invalid.Ok(), "invalid bounded config still parses");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(invalid).has_value(),
 	             "invalid bounded config fails semantic validation");
@@ -397,7 +402,7 @@ auto main() -> int {
 	                                       "[face]\n"
 	                                       "sface_threshold = bad\n"),
 	             "write malformed ini");
-	howdy::native::ConfigReader malformed(malformed_path.string());
+	howdy::native::ConfigReader const malformed(malformed_path.string());
 	ok &= Expect(malformed.Ok(), "malformed config should still parse");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(malformed).has_value(),
 	             "malformed numeric config fails semantic validation");
@@ -418,7 +423,7 @@ auto main() -> int {
 	                                        "yunet_score_threshold = +inf\n"
 	                                        "sface_threshold = -inf\n"),
 	             "write non-finite numeric config");
-	howdy::native::ConfigReader non_finite(non_finite_path.string());
+	howdy::native::ConfigReader const non_finite(non_finite_path.string());
 	ok &= Expect(non_finite.Ok(), "non-finite config should still parse");
 	ok &= Expect(howdy::native::ValidateRuntimeConfig(non_finite).has_value(),
 	             "non-finite numeric values fail semantic validation");
@@ -438,7 +443,7 @@ auto main() -> int {
 	ok &= Expect(WriteFile(negative_fps_path, "[video]\n"
 	                                          "device_fps = -1\n"),
 	             "write negative fps config");
-	howdy::native::ConfigReader negative_fps(negative_fps_path.string());
+	howdy::native::ConfigReader const negative_fps(negative_fps_path.string());
 	ok &= Expect(negative_fps.Ok(), "negative fps config should parse");
 	const auto negative_fps_validation = howdy::native::ValidateRuntimeConfig(negative_fps);
 	ok &= Expect(negative_fps_validation.has_value(), "negative fps fails semantic validation");

@@ -7,9 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <spawn.h>
+#include <span>
 #include <string>
 #include <string_view>
+
+#include <spawn.h>
 
 #include <sys/types.h>
 
@@ -20,9 +22,31 @@ namespace howdy::pam::auth_helper_process::internal {
 	constexpr std::size_t kAuthHelperOutputLimit = 9216;
 	constexpr auto        kAuthHelperTimeout     = std::chrono::seconds(10);
 
+	class __attribute__((visibility("hidden"))) ProcessChannel {
+	public:
+		[[nodiscard]] auto Data() noexcept -> int * {
+			return descriptors_.data();
+		}
+
+		[[nodiscard]] auto Descriptors() noexcept -> std::span<int> {
+			return descriptors_;
+		}
+
+		[[nodiscard]] auto Parent() noexcept -> int & {
+			return descriptors_.front();
+		}
+
+		[[nodiscard]] auto Child() noexcept -> int & {
+			return descriptors_.back();
+		}
+
+	private:
+		std::array<int, 2> descriptors_ = {-1, -1};
+	};
+
 	struct __attribute__((visibility("hidden"))) PreparedHelperSpawn {
-		std::array<int, 2>         output_pipe  = {-1, -1};
-		std::array<int, 2>         lease_socket = {-1, -1};
+		ProcessChannel             output_pipe;
+		ProcessChannel             lease_socket;
 		posix_spawn_file_actions_t actions{};
 	};
 

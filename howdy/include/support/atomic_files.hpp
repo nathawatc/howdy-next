@@ -1,21 +1,27 @@
 #pragma once
 
+#include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <cerrno>
 #include <cstdint>
-#include <fcntl.h>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 
 #include <linux/fs.h>
 
@@ -93,7 +99,7 @@ namespace howdy::native {
 		const auto parent = destination.parent_path().empty() ? std::filesystem::path(".")
 		                                                      : destination.parent_path();
 		if (parent_policy == StagedFileParentPolicy::kRequireExisting) {
-			ScopedFd parent_fd(
+			ScopedFd const parent_fd(
 			    open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (parent_fd.Get() < 0) {
 				return std::nullopt;
@@ -124,7 +130,7 @@ namespace howdy::native {
 		const std::filesystem::path temp_path(writable.data());
 		if (have_current_stat && metadata_policy == StagedFileMetadataPolicy::kPreserveExisting) {
 			if (fchown(fd.Get(), current_stat.st_uid, current_stat.st_gid) != 0 ||
-			    fchmod(fd.Get(), current_stat.st_mode & 07777) != 0) {
+			    fchmod(fd.Get(), MaskedBitsAs<mode_t>(current_stat.st_mode, 07777)) != 0) {
 				fd.Reset();
 				std::error_code ec;
 				std::filesystem::remove(temp_path, ec);
@@ -173,11 +179,10 @@ namespace howdy::native {
 			}
 		} else {
 #if defined(SYS_renameat2) && defined(RENAME_NOREPLACE)
-			long rename_result = -1;
-			do {
-				rename_result = syscall(SYS_renameat2, AT_FDCWD, staged.path.c_str(), AT_FDCWD,
-				                        destination.c_str(), RENAME_NOREPLACE);
-			} while (rename_result != 0 && errno == EINTR);
+			const auto rename_result = RetryOnEintr([&] -> decltype(syscall(0)) {
+				return syscall(SYS_renameat2, AT_FDCWD, staged.path.c_str(), AT_FDCWD,
+				               destination.c_str(), RENAME_NOREPLACE);
+			});
 			if (rename_result != 0) {
 				const int error_number = errno;
 				CleanupStagedFile(staged);

@@ -5,12 +5,21 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
+#include <cstdio>
 #include <filesystem>
 #include <optional>
 #include <string>
-#include <unistd.h>
+#include <system_error>
+#include <utility>
 #include <vector>
 
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace {
@@ -64,11 +73,11 @@ namespace {
 
 	auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 		std::array<int, 2> raw_fds{{-1, -1}};
-		if (pipe(raw_fds.data()) != 0) {
+		if (pipe2(raw_fds.data(), O_CLOEXEC) != 0) {
 			return false;
 		}
-		(*fds)[0].Reset(raw_fds[0]);
-		(*fds)[1].Reset(raw_fds[1]);
+		(*fds).at(0).Reset(raw_fds.at(0));
+		(*fds).at(1).Reset(raw_fds.at(1));
 		return true;
 	}
 
@@ -93,9 +102,9 @@ namespace {
 		const std::string       oversized_output(4096, 'x');
 		std::array<ScopedFd, 2> empty_pipe;
 		ok &= Expect(OpenPipe(&empty_pipe), "creates empty read pipe");
-		empty_pipe[1].Reset();
-		const auto empty_result =
-		    howdy::native::ReadFdToStringBounded({.fd = empty_pipe[0].Get(), .max_bytes = bound});
+		empty_pipe.at(1).Reset();
+		const auto empty_result = howdy::native::ReadFdToStringBounded(
+		    {.fd = empty_pipe.at(0).Get(), .max_bytes = bound});
 		ok &= Expect(empty_result.output.empty(), "reads empty input");
 		ok &= Expect(!empty_result.hit_limit, "empty input does not hit limit");
 		ok &= Expect(!empty_result.read_error, "empty input does not report read error");
@@ -110,11 +119,11 @@ namespace {
 		std::array<ScopedFd, 2> small_pipe;
 		ok &= Expect(OpenPipe(&small_pipe), "creates small read pipe");
 		const std::string small_output = "small helper output\n";
-		ok &= Expect(howdy::native::WriteAllToFd(small_pipe[1].Get(), small_output),
+		ok &= Expect(howdy::native::WriteAllToFd(small_pipe.at(1).Get(), small_output),
 		             "writes small helper output");
-		small_pipe[1].Reset();
-		const auto small_result =
-		    howdy::native::ReadFdToStringBounded({.fd = small_pipe[0].Get(), .max_bytes = bound});
+		small_pipe.at(1).Reset();
+		const auto small_result = howdy::native::ReadFdToStringBounded(
+		    {.fd = small_pipe.at(0).Get(), .max_bytes = bound});
 		ok &= Expect(small_result.output == small_output, "reads complete small helper output");
 		ok &= Expect(!small_result.hit_limit, "small helper output does not hit limit");
 		ok &= Expect(!small_result.read_error, "small helper output does not report read error");
@@ -170,16 +179,16 @@ namespace {
 			return false;
 		}
 		if (child_pid == 0) {
-			pipe_fds[0].Reset();
-			const bool wrote = howdy::native::WriteAllToFd(pipe_fds[1].Get(), exact_output);
+			pipe_fds.at(0).Reset();
+			const bool wrote = howdy::native::WriteAllToFd(pipe_fds.at(1).Get(), exact_output);
 			usleep(2000000);
 			_exit(wrote ? 0 : 1);
 		}
 
-		pipe_fds[1].Reset();
+		pipe_fds.at(1).Reset();
 		const auto start = std::chrono::steady_clock::now();
 		const auto result =
-		    howdy::native::ReadFdToStringBounded({.fd = pipe_fds[0].Get(), .max_bytes = bound});
+		    howdy::native::ReadFdToStringBounded({.fd = pipe_fds.at(0).Get(), .max_bytes = bound});
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 
 		ok &= Expect(result.output == exact_output, "reads exact-bound open pipe output");

@@ -1,5 +1,6 @@
 #include "compare/sandbox.hpp"
 #include "compare/sandbox/internal.hpp"
+#include "support/prctl_types.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -11,8 +12,9 @@
 #include <utility>
 #include <vector>
 
-#include <sys/prctl.h>
 #include <sys/resource.h>
+
+#include <linux/prctl.h>
 
 namespace {
 
@@ -92,9 +94,9 @@ namespace {
 		return 0;
 	}
 
-	auto FakePrctl(void *raw_context, int operation, unsigned long argument2,
-	               unsigned long argument3, unsigned long argument4, unsigned long argument5)
-	    -> int {
+	auto FakePrctl(void *raw_context, int operation, howdy::native::PrctlArgument argument2,
+	               howdy::native::PrctlArgument argument3, howdy::native::PrctlArgument argument4,
+	               howdy::native::PrctlArgument argument5) -> int {
 		auto &context = *static_cast<FakeSandboxContext *>(raw_context);
 		context.events.emplace_back("prctl");
 		if (operation != PR_SET_NO_NEW_PRIVS || argument2 != 1 || argument3 != 0 ||

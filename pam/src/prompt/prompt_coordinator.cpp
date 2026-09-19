@@ -4,21 +4,26 @@
 
 #include "prompt/prompt_coordinator.hpp"
 
+#include "prompt/conversation_restore.hpp"
+#include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_launch.hpp"
+#include "support/error_message.hpp"
+#include "support/process_status.hpp"
 
 #include <chrono>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <limits>
-#include <syslog.h>
+#include <mutex>
+#include <thread>
 
-#include <security/pam_appl.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-#include <sys/wait.h>
+#include <sys/syslog.h>
 
 namespace {
 
@@ -41,8 +46,8 @@ namespace howdy::pam {
 	    , effective_workaround_(workaround) {}
 
 	auto PromptCoordinator::CancellationRequested(void *context) -> bool {
-		auto            &coordinator = *static_cast<PromptCoordinator *>(context);
-		std::scoped_lock lock(coordinator.mutex_);
+		auto                  &coordinator = *static_cast<PromptCoordinator *>(context);
+		std::scoped_lock const lock(coordinator.mutex_);
 		return coordinator.state_.cancellation_requested;
 	}
 
@@ -50,7 +55,7 @@ namespace howdy::pam {
 		auto                  &coordinator = *static_cast<PromptCoordinator *>(context);
 		SecretPromptGeneration generation  = 0;
 		{
-			std::scoped_lock lock(coordinator.mutex_);
+			std::scoped_lock const lock(coordinator.mutex_);
 			if (coordinator.state_.password_call_entered &&
 			    !coordinator.state_.password_call_returned &&
 			    !coordinator.state_.shutdown_requested) {
@@ -74,7 +79,7 @@ namespace howdy::pam {
 	                                        SecretPromptGeneration generation) noexcept {
 		auto &coordinator = *static_cast<PromptCoordinator *>(context);
 		{
-			std::scoped_lock lock(coordinator.mutex_);
+			std::scoped_lock const lock(coordinator.mutex_);
 			if (generation == 0 || generation != coordinator.state_.secret_prompt_generation) {
 				return;
 			}
@@ -90,7 +95,7 @@ namespace howdy::pam {
 
 	auto PromptCoordinator::WaitForCompare(
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept -> int {
-		int status = static_cast<int>(howdy::native::CompareExit::kAbort) << 8;
+		int status = howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort);
 		try {
 			status = operations_.WaitForCompareProcess(child_pid, compare_deadline, this,
 			                                           CancellationRequested);
@@ -170,7 +175,7 @@ namespace howdy::pam {
 
 	auto PromptCoordinator::SubmitPromptAndRecordResult() noexcept -> PromptSubmissionResult {
 		{
-			std::scoped_lock lock(mutex_);
+			std::scoped_lock const lock(mutex_);
 			if (state_.first_completion != FirstCompletion::kCompare || !state_.compare_succeeded ||
 			    !state_.secret_prompt_active || state_.password_call_returned ||
 			    state_.submission != PromptSubmissionState::kClaimed ||
@@ -364,7 +369,7 @@ namespace howdy::pam {
 	}
 
 	void PromptCoordinator::InitializeRunState(bool ask_pass) {
-		std::scoped_lock lock(mutex_);
+		std::scoped_lock const lock(mutex_);
 		if (!ask_pass) {
 			return;
 		}
@@ -374,14 +379,14 @@ namespace howdy::pam {
 	}
 
 	void PromptCoordinator::PublishPasswordCallEntered() {
-		std::scoped_lock lock(mutex_);
+		std::scoped_lock const lock(mutex_);
 		state_.password_call_entered = true;
 	}
 
 	void PromptCoordinator::CleanupSpawnedChild(
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept {
 		{
-			std::scoped_lock lock(mutex_);
+			std::scoped_lock const lock(mutex_);
 			state_.cancellation_requested = true;
 			state_.shutdown_requested     = true;
 		}
@@ -405,7 +410,7 @@ namespace howdy::pam {
 
 	void PromptCoordinator::PublishPasswordCallReturned() {
 		{
-			std::scoped_lock lock(mutex_);
+			std::scoped_lock const lock(mutex_);
 			state_.password_call_returned = true;
 			state_.secret_prompt_active   = false;
 			if (state_.submission == PromptSubmissionState::kClaimed) {
@@ -421,7 +426,7 @@ namespace howdy::pam {
 	}
 
 	auto PromptCoordinator::BuildResult(bool ask_pass, int pam_result) -> PromptCoordinatorResult {
-		std::scoped_lock        lock(mutex_);
+		std::scoped_lock const  lock(mutex_);
 		PromptCoordinatorResult result{
 		    .compare_status = state_.compare_status,
 		    .pam_status     = pam_result,
@@ -448,8 +453,8 @@ namespace howdy::pam {
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
-				syslog(LOG_ERR, "Unable to start Howdy: %s (%d)", strerror(spawn_result),
-				       spawn_result);
+				syslog(LOG_ERR, "Unable to start Howdy: %s (%d)",
+				       howdy::native::SystemErrorMessage(spawn_result).c_str(), spawn_result);
 			} else {
 				syslog(LOG_ERR, "Unable to start Howdy: invalid child pid");
 			}

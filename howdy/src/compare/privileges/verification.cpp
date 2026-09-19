@@ -2,17 +2,19 @@
 #include "compare/privileges/internal.hpp"
 #include "internal.hpp"
 #include "protocol/compare_exit.hpp"
+#include "support/bit_flags.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstddef>
+
 #include <unistd.h>
 
-#include <sys/prctl.h>
 #include <sys/types.h>
 
 #include <linux/capability.h>
+#include <linux/prctl.h>
 #include <linux/securebits.h>
 
 namespace {
@@ -46,9 +48,8 @@ namespace howdy::native::compare_privileges_internal {
 	auto FatalVerificationFailure(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult {
 		constexpr auto diagnostic = kFatalDiagnostic;
-		dependencies.fatal_exit(dependencies.context, {.message      = diagnostic.data(),
-		                                               .message_size = diagnostic.size(),
-		                                               .exit_code    = static_cast<int>(
+		dependencies.fatal_exit(dependencies.context, {.message   = diagnostic,
+		                                               .exit_code = static_cast<int>(
 		                                                   howdy::native::CompareExit::kAbort)});
 		return {
 		    .status        = ComparePrivilegeStatus::kVerificationFailure,
@@ -58,11 +59,11 @@ namespace howdy::native::compare_privileges_internal {
 
 	[[noreturn]] void FatalComparePrivilegeFailure([[maybe_unused]] void *context,
 	                                               FatalExitRequest       request) {
-		while (request.message_size > 0) {
-			const ssize_t written = write(STDERR_FILENO, request.message, request.message_size);
+		while (!request.message.empty()) {
+			const ssize_t written =
+			    write(STDERR_FILENO, request.message.data(), request.message.size());
 			if (written > 0) {
-				request.message += written;
-				request.message_size -= static_cast<std::size_t>(written);
+				request.message.remove_prefix(static_cast<std::size_t>(written));
 				continue;
 			}
 			if (written < 0 && errno == EINTR) {
@@ -118,7 +119,7 @@ namespace howdy::native::compare_privileges_internal {
 			return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
 			        .error_message = "failed to query securebits"};
 		}
-		if ((securebits & (SECBIT_KEEP_CAPS | SECBIT_NO_SETUID_FIXUP)) != 0) {
+		if (HasAnyBits(securebits, SECBIT_KEEP_CAPS, SECBIT_NO_SETUID_FIXUP)) {
 			return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
 			        .error_message = "unsafe securebits configuration"};
 		}

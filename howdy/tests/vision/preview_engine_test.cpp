@@ -1,13 +1,22 @@
+#include "config/runtime_config.hpp"
 #include "test_support.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
 #include "vision/preview_engine.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
@@ -62,7 +71,7 @@ namespace {
 		auto &context = *static_cast<Context *>(raw_context);
 		context.encode_calls++;
 		if (!context.encoding_results.empty()) {
-			return context.encoding_results[context.next_encoding++];
+			return context.encoding_results.at(context.next_encoding++);
 		}
 		return context.encoding_result;
 	}
@@ -82,7 +91,7 @@ namespace {
 			throw std::logic_error("clock callback received null context");
 		}
 		auto &context = *static_cast<Context *>(raw_context);
-		return context.now_results[context.next_now++];
+		return context.now_results.at(context.next_now++);
 	}
 
 	auto ValidEncoding() -> howdy::native::FaceEncodingResult {
@@ -182,16 +191,17 @@ namespace {
 		bool ok     = true;
 		ok &= Expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
 		             "rejected match reports unmatched face");
-		ok &= Expect(result.faces.size() == 1 && result.faces[0].matching_attempted &&
-		                 result.faces[0].match.score == 0.812F,
+		ok &= Expect(result.faces.size() == 1 && result.faces.at(0).matching_attempted &&
+		                 result.faces.at(0).match.score == 0.812F,
 		             "unmatched face preserves score");
 
 		context.match_result = {.index = 0, .score = 0.923F, .accepted = true};
 		result               = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		ok &= Expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace,
 		             "accepted match reports matched face");
-		ok &= Expect(result.faces[0].match.index == 0 && result.faces[0].match.score == 0.923F,
-		             "matched face preserves model index and score for label rendering");
+		ok &=
+		    Expect(result.faces.at(0).match.index == 0 && result.faces.at(0).match.score == 0.923F,
+		           "matched face preserves model index and score for label rendering");
 		return ok;
 	}
 
@@ -275,7 +285,7 @@ namespace {
 		              "encoder failure remains explicit") &&
 		       Expect(result.error_message == "encoder failed", "encoder diagnostic preserved") &&
 		       Expect(result.faces.size() == 1 &&
-		                  result.faces[0].status ==
+		                  result.faces.at(0).status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed,
 		              "encoder failure remains attached to face") &&
 		       Expect(context.match_calls == 0, "encoder failure skips matcher");
@@ -299,10 +309,10 @@ namespace {
 		       Expect(context.encode_calls == 2, "encoding continues after first face failure") &&
 		       Expect(context.match_calls == 1, "matcher runs for successfully encoded face") &&
 		       Expect(result.faces.size() == 2 &&
-		                  result.faces[0].status ==
+		                  result.faces.at(0).status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed &&
-		                  result.faces[1].status == howdy::native::PreviewFaceStatus::kMatched &&
-		                  result.faces[1].match.accepted,
+		                  result.faces.at(1).status == howdy::native::PreviewFaceStatus::kMatched &&
+		                  result.faces.at(1).match.accepted,
 		              "failed first face and matched second face remain visible");
 	}
 
@@ -328,9 +338,9 @@ namespace {
 		       Expect(context.encode_calls == 2, "all detected faces attempt encoding") &&
 		       Expect(context.match_calls == 0, "all encoding failures skip matching") &&
 		       Expect(result.faces.size() == 2 &&
-		                  result.faces[0].status ==
+		                  result.faces.at(0).status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed &&
-		                  result.faces[1].status ==
+		                  result.faces.at(1).status ==
 		                      howdy::native::PreviewFaceStatus::kEncodingFailed,
 		              "all failed faces retain per-face state");
 	}
@@ -369,7 +379,7 @@ namespace {
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return Expect(result.status == howdy::native::PreviewFrameStatus::kFacesDetected,
 		              "matching-disabled face gets detected-only status") &&
-		       Expect(result.faces.size() == 1 && !result.faces[0].matching_attempted,
+		       Expect(result.faces.size() == 1 && !result.faces.at(0).matching_attempted,
 		              "detected-only face records no matching attempt") &&
 		       Expect(context.encode_calls == 0 && context.match_calls == 0,
 		              "matching-disabled face skips encoder and matcher");

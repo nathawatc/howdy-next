@@ -1,10 +1,15 @@
 #include "cli/add.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/add/enrollment_capture.hpp"
 #include "cli/add/internal.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
 #include "vision/face_model.hpp"
 #include "vision/video_capture.hpp"
 
@@ -153,7 +158,7 @@ namespace {
 
 		auto encoding_result =
 		    face_model.Encode(capture_result.frame, capture_result.faces.front());
-		if (!encoding_result.Ok()) {
+		if (!howdy::native::FaceEncodingSucceeded(encoding_result)) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status         = howdy::native::add_internal::AddEnrollmentStatus::kEncodingError,
 			    .error_message  = std::move(encoding_result.error_message),

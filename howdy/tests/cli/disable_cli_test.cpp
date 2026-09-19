@@ -1,4 +1,7 @@
+#include "app/command_invocation.hpp"
 #include "cli/disable/internal.hpp"
+#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -7,8 +10,11 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
+
+#include <stdlib.h>
 
 #include <sys/stat.h>
 
@@ -93,11 +99,11 @@ namespace {
 
 	auto RunDisable(const howdy::native::CommandInvocation &invocation,
 	                const DisableDependencies              &dependencies) -> RunResult {
-		std::ostringstream stdout_stream;
-		std::ostringstream stderr_stream;
-		auto              *old_stdout = std::cout.rdbuf(stdout_stream.rdbuf());
-		auto              *old_stderr = std::cerr.rdbuf(stderr_stream.rdbuf());
-		const int          exit_code =
+		std::ostringstream const stdout_stream;
+		std::ostringstream const stderr_stream;
+		auto                    *old_stdout = std::cout.rdbuf(stdout_stream.rdbuf());
+		auto                    *old_stderr = std::cerr.rdbuf(stderr_stream.rdbuf());
+		const int                exit_code =
 		    howdy::native::disable_internal::DisableMainWithDependencies(invocation, dependencies);
 		std::cout.rdbuf(old_stdout);
 		std::cerr.rdbuf(old_stderr);

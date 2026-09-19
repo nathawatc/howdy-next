@@ -1,18 +1,19 @@
 #include "module/status_mapping.hpp"
 
+#include "module/auth_eligibility.hpp"
 #include "module/translation.hpp"
 #include "protocol/compare_exit.hpp"
 
 #include <cstring>
 #include <string>
+#include <string_view>
 
-#include <security/pam_modules.h>
-
-#include <sys/wait.h>
+#include <stdlib.h>
+#include <string.h>
 
 namespace {
 	constexpr auto kChildKilledBySignalPrefix = "Child killed by signal ";
-}
+}  // namespace
 
 auto MapAuthenticationEligibility(
     const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) -> int {

@@ -1,31 +1,28 @@
+#include "prompt/native_prompt_conversation.hpp"
 #include "prompt/native_prompt_input.hpp"
+#include "prompt/native_prompt_test_groups.hpp"
 #include "prompt/native_prompt_test_support.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <future>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
+
+#include <termios.h>
+#include <unistd.h>
+
+#include <sys/poll.h>
 
 using howdy::test::Expect;
-
-auto ExpectCtrlCAbortsPromptAndRestoresTerminal() -> bool;
-auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool;
-auto ExpectPtyHangupAbortsPrompt() -> bool;
-auto ExpectPollEintrWithoutAbortDoesNotAbortPrompt() -> bool;
-auto ExpectPollEintrWithAbortFailsClosed() -> bool;
-auto ExpectReadEintrRetriesAndAcceptsInput() -> bool;
-auto ExpectReadEintrWithAbortFailsClosed() -> bool;
-auto ExpectReadZeroRetriesAndAcceptsInput() -> bool;
-auto ExpectRestoreEintrRetriesAndRestores() -> bool;
-auto ExpectNativeMessageStyles() -> bool;
-auto ExpectNativePromptInputEdges() -> bool;
-auto ExpectOversizedPromptFailsClosed() -> bool;
-auto ExpectRestoreFailureFailsClosed() -> bool;
 
 namespace {
 	struct InputOperationContext {
@@ -104,17 +101,16 @@ namespace {
 		return conversation;
 	}
 
-	auto WriteAll(int fd, const char *data, std::size_t size) -> bool {
-		std::size_t written = 0;
-		while (written < size) {
-			const ssize_t result = write(fd, data + written, size - written);
+	auto WriteAll(int fd, std::string_view data) -> bool {
+		while (!data.empty()) {
+			const ssize_t result = write(fd, data.data(), data.size());
 			if (result < 0 && errno == EINTR) {
 				continue;
 			}
 			if (result <= 0) {
 				return false;
 			}
-			written += static_cast<std::size_t>(result);
+			data.remove_prefix(static_cast<std::size_t>(result));
 		}
 		return true;
 	}
@@ -179,8 +175,8 @@ auto ExpectCtrlCAbortsPromptAndRestoresTerminal() -> bool {
 
 	const int slave_raw_fd = slave_fd.Get();
 	auto      conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])});
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
@@ -239,8 +235,8 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 	InputOperationContext operations{.restore_failure = true};
 	auto                  conversation = std::shared_ptr<NativePromptConversation>(
 	    CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                             .abort_write_fd = std::move(abort_pipe[1])},
+	                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                            &operations));
 	NativePromptConversationTestAccess::CloseAbortWriteFd(*conversation);
 
@@ -301,8 +297,8 @@ auto ExpectPtyHangupAbortsPrompt() -> bool {
 
 	auto conversation = std::shared_ptr<NativePromptConversation>(
 	    CreateConversation({.tty_fd         = std::move(slave_fd),
-	                        .abort_read_fd  = std::move(abort_pipe[0]),
-	                        .abort_write_fd = std::move(abort_pipe[1])}));
+	                        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                        .abort_write_fd = std::move(abort_pipe.at(1))}));
 
 	auto         response       = std::make_shared<char *>(nullptr);
 	auto         result_promise = std::make_shared<std::promise<int>>();
@@ -352,8 +348,8 @@ auto ExpectPollEintrWithoutAbortDoesNotAbortPrompt() -> bool {
 
 	InputOperationContext operations{.poll_eintr_count = 1};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "poll EINTR retry test");
@@ -378,8 +374,8 @@ auto ExpectPollEintrWithAbortFailsClosed() -> bool {
 
 	InputOperationContext operations{.poll_eintr_count = 1, .abort_on_poll = true};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;
@@ -419,8 +415,8 @@ auto ExpectReadEintrRetriesAndAcceptsInput() -> bool {
 
 	InputOperationContext operations{.read_eintr_count = 1};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "read EINTR retry test");
@@ -445,8 +441,8 @@ auto ExpectReadEintrWithAbortFailsClosed() -> bool {
 
 	InputOperationContext operations{.read_eintr_count = 1, .abort_on_read = true};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;
@@ -490,8 +486,8 @@ auto ExpectReadZeroRetriesAndAcceptsInput() -> bool {
 
 	InputOperationContext operations{.read_zero_count = 1};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "read zero retry test");
@@ -512,8 +508,8 @@ auto ExpectRestoreEintrRetriesAndRestores() -> bool {
 
 	InputOperationContext operations{.restore_eintr_count = 1};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "restore EINTR retry test");
@@ -531,8 +527,8 @@ auto ExpectNativeMessageStyles() -> bool {
 	}
 
 	auto conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
-	                                        .abort_read_fd  = std::move(abort_pipe[0]),
-	                                        .abort_write_fd = std::move(abort_pipe[1])});
+	                                        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                        .abort_write_fd = std::move(abort_pipe.at(1))});
 
 	const struct pam_message  echo_on_message{.msg_style = PAM_PROMPT_ECHO_ON, .msg = "Login: "};
 	const struct pam_message *echo_on_ptr      = &echo_on_message;
@@ -548,16 +544,18 @@ auto ExpectNativeMessageStyles() -> bool {
 	                             kPromptReadTimeoutMs) > 0,
 	             "message-style test writes echo-on prompt");
 	constexpr std::string_view visible_input = "visible\n";
-	ok &= Expect(WriteAll(master_fd.Get(), visible_input.data(), visible_input.size()),
+	ok &= Expect(WriteAll(master_fd.Get(), visible_input),
 	             "message-style test writes echo-on response");
 	echo_on_thread.join();
 	ok &= Expect(echo_on_result == PAM_SUCCESS, "PAM_PROMPT_ECHO_ON dispatch succeeds");
-	ok &= Expect(echo_on_response != nullptr && std::string(echo_on_response[0].resp) == "visible",
-	             "PAM_PROMPT_ECHO_ON returns visible input");
+	bool echo_on_response_valid = false;
 	if (echo_on_response != nullptr) {
-		std::free(echo_on_response[0].resp);
+		auto response_view     = std::span(echo_on_response, std::size_t{1});
+		echo_on_response_valid = std::string(response_view.front().resp) == "visible";
+		std::free(response_view.front().resp);
 		std::free(echo_on_response);
 	}
+	ok &= Expect(echo_on_response_valid, "PAM_PROMPT_ECHO_ON returns visible input");
 
 	for (const int style : {PAM_TEXT_INFO, PAM_ERROR_MSG}) {
 		const struct pam_message  message{.msg_style = style, .msg = "notice"};
@@ -566,8 +564,9 @@ auto ExpectNativeMessageStyles() -> bool {
 		const int result = NativePromptConversationTestAccess::Dispatch(1, &message_ptr, &responses,
 		                                                                conversation.get());
 		ok &= Expect(result == PAM_SUCCESS, "text and error message styles dispatch successfully");
-		ok &= Expect(responses != nullptr && responses[0].resp == nullptr,
-		             "text and error message styles return empty responses");
+		const bool empty_response =
+		    responses != nullptr && std::span(responses, std::size_t{1}).front().resp == nullptr;
+		ok &= Expect(empty_response, "text and error message styles return empty responses");
 		ok &= Expect(ReadWithTimeout(master_fd.Get(),
 		                             {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
 		                             kPromptReadTimeoutMs) > 0,
@@ -669,8 +668,8 @@ auto ExpectOversizedPromptFailsClosed() -> bool {
 	};
 	const int slave_raw_fd = slave_fd.Get();
 	auto      conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])});
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))});
 
 	int         prompt_result = PAM_SUCCESS;
 	char       *response      = nullptr;
@@ -686,7 +685,7 @@ auto ExpectOversizedPromptFailsClosed() -> bool {
 	ok &= Expect(prompt_bytes > 0, "oversized prompt test writes prompt to tty");
 
 	const std::string oversized_response = std::string(514, 'x') + "\n";
-	ok &= Expect(WriteAll(master_fd.Get(), oversized_response.data(), oversized_response.size()),
+	ok &= Expect(WriteAll(master_fd.Get(), oversized_response),
 	             "oversized prompt test writes over-limit response");
 	prompt_thread.join();
 
@@ -696,7 +695,7 @@ auto ExpectOversizedPromptFailsClosed() -> bool {
 	struct termios restored_termios{};
 	ok &= Expect(tcgetattr(slave_raw_fd, &restored_termios) == 0,
 	             "oversized prompt test can inspect restored terminal");
-	ok &= Expect((restored_termios.c_lflag & (ICANON | ECHO | ISIG)) == (ICANON | ECHO | ISIG),
+	ok &= Expect(howdy::native::HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
 	             "oversized prompt test restores terminal flags");
 	if (response != nullptr) {
 		std::free(response);
@@ -722,8 +721,8 @@ auto ExpectRestoreFailureFailsClosed() -> bool {
 	};
 	InputOperationContext operations{.restore_failure = true};
 	auto conversation = CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                                             .abort_read_fd  = std::move(abort_pipe[0]),
-	                                             .abort_write_fd = std::move(abort_pipe[1])},
+	                                             .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                             .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                            &operations);
 
 	int         prompt_result = PAM_SUCCESS;
@@ -739,7 +738,7 @@ auto ExpectRestoreFailureFailsClosed() -> bool {
 	    kPromptReadTimeoutMs);
 	ok &= Expect(prompt_bytes > 0, "restore failure test writes prompt to tty");
 	constexpr std::array<char, 7> password{'s', 'e', 'c', 'r', 'e', 't', '\n'};
-	ok &= Expect(WriteAll(master_fd.Get(), password.data(), password.size()),
+	ok &= Expect(WriteAll(master_fd.Get(), std::string_view(password.data(), password.size())),
 	             "restore failure test writes password response");
 	prompt_thread.join();
 

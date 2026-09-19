@@ -1,19 +1,48 @@
+#include "paths.hpp"
+#include "protocol/auth_helper_protocol.hpp"
+#include "runtime/auth_helper_process.hpp"
+#include "runtime/runtime_session.hpp"
 #include "runtime/runtime_session_process_test_support.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
+#include "support/bit_flags.hpp"
+#include "test_support.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cerrno>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
 #include <filesystem>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+#include <fcntl.h>
+#include <spawn.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/un.h>
+#include <sys/types.h>
+#include <sys/uio.h>  // IWYU pragma: keep
 #include <sys/wait.h>
 
 namespace {
-	using namespace howdy::test::runtime_session;
+	using howdy::test::Expect;
+	using howdy::test::runtime_session::AuthHelperSpawnFake;
+
+	void ThrowingAuthHelperSpawnLog(void *context, std::string_view message) {
+		(void)context;
+		(void)message;
+		throw std::runtime_error("injected log observer failure");
+	}
 
 	auto TestAuthHelperSpawnSetup() -> bool {
 		struct FailureCase {
@@ -91,6 +120,28 @@ namespace {
 		                "combined setup and destroy failure");
 		ok &= ExpectLog(setup_destroy_failure, 1, "posix_spawn_file_actions_destroy",
 		                "combined setup and destroy failure");
+
+		AuthHelperSpawnFake throwing_socket_log{.fail_operation = "socketpair"};
+		auto                throwing_socket_operations = SpawnOperations(&throwing_socket_log);
+		throwing_socket_operations.log_observer        = ThrowingAuthHelperSpawnLog;
+		howdy::pam::PreparedRuntimeFiles throwing_socket_ignored;
+		ok &= Expect(!howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
+		                 "alice", &throwing_socket_ignored, throwing_socket_operations),
+		             "throwing socketpair failure logger is contained");
+		ok &= ExpectClosedExactlyOnce(throwing_socket_log, {10, 11},
+		                              "throwing socketpair failure logger");
+
+		AuthHelperSpawnFake throwing_setup_log{.fail_operation = "dup_stdout"};
+		auto                throwing_setup_operations = SpawnOperations(&throwing_setup_log);
+		throwing_setup_operations.log_observer        = ThrowingAuthHelperSpawnLog;
+		howdy::pam::PreparedRuntimeFiles throwing_setup_ignored;
+		ok &= Expect(!howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
+		                 "alice", &throwing_setup_ignored, throwing_setup_operations),
+		             "throwing setup failure logger is contained");
+		ok &= Expect(throwing_setup_log.destroy_calls == 1,
+		             "throwing setup failure logger still destroys actions");
+		ok &= ExpectClosedExactlyOnce(throwing_setup_log, {10, 11, 12, 13},
+		                              "throwing setup failure logger");
 
 		AuthHelperSpawnFake              fake{.fail_operation = "spawn"};
 		howdy::pam::PreparedRuntimeFiles prepared;
@@ -182,12 +233,12 @@ namespace {
 			                 "alice", &prepared, SpawnOperations(&fake)),
 			             "fake descriptor collision reaches spawn");
 			ok &= Expect(fake.duplicate_fd_requests ==
-			                 std::vector<std::pair<int, int>>{{fds[0], 3}, {fds[1], 3}},
+			                 std::vector<std::pair<int, int>>{{fds.at(0), 3}, {fds.at(1), 3}},
 			             "fake collision normalizes both pipe descriptors");
 			ok &=
 			    Expect(fake.dup2_fds == std::vector<std::pair<int, int>>{{21, 1}, {21, 2}, {13, 3}},
 			           "fake collision uses normalized output fd and ordered lease fd");
-			ok &= ExpectClosedExactlyOnce(fake, {fds[0], fds[1], 20, 21, 12, 13},
+			ok &= ExpectClosedExactlyOnce(fake, {fds.at(0), fds.at(1), 20, 21, 12, 13},
 			                              "fake descriptor collision");
 		}
 		return ok;
@@ -198,11 +249,11 @@ namespace {
 	};
 
 	auto ExecProbeSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
-		const auto           &context     = *static_cast<const ExecProbeContext *>(request.context);
+		const auto           &context = *static_cast<const ExecProbeContext *>(request.context);
+		std::string           program("pam_runtime_session_test");
+		std::string           mode("--fd3-probe");
 		std::string           marker      = context.marker.string();
-		std::array<char *, 4> arguments   = {const_cast<char *>("pam_runtime_session_test"),
-		                                     const_cast<char *>("--fd3-probe"), marker.data(),
-		                                     nullptr};
+		std::array<char *, 4> arguments   = {program.data(), mode.data(), marker.data(), nullptr};
 		std::array<char *, 1> environment = {nullptr};
 		return posix_spawn(request.child_pid, "/proc/self/exe", request.actions, nullptr,
 		                   arguments.data(), environment.data());
@@ -269,19 +320,20 @@ namespace {
 		auto      path      = std::to_array("/tmp/howdy-lease-receive-XXXXXX");
 		const int source_fd = mkstemp(path.data());
 		if (source_fd < 0) {
-			(void)close(sockets[0]);
-			(void)close(sockets[1]);
+			(void)close(sockets.at(0));
+			(void)close(sockets.at(1));
 			return Expect(false, std::string(name) + " creates source descriptor");
 		}
 		(void)unlink(path.data());
-		std::vector<int> fds(descriptor_count, source_fd);
-		const bool sent = descriptor_count == 0 ? send(sockets[1], &marker, 1, MSG_NOSIGNAL) == 1
-		                                        : SendRightsMessage(sockets[1], {&marker, 1}, fds);
-		int        received_fd = -1;
-		const bool result      = sent && howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
-		                                     sockets[0], &received_fd,
-		                                     std::chrono::steady_clock::now() + std::chrono::seconds(1));
-		bool       ok = Expect(result == expected, std::string(name) + " has expected result");
+		std::vector<int> const fds(descriptor_count, source_fd);
+		const bool             sent = descriptor_count == 0
+		                                  ? send(sockets.at(1), &marker, 1, MSG_NOSIGNAL) == 1
+		                                  : SendRightsMessage(sockets.at(1), {&marker, 1}, fds);
+		int                    received_fd = -1;
+		const bool result = sent && howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
+		                                sockets.at(0), &received_fd,
+		                                std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		bool       ok     = Expect(result == expected, std::string(name) + " has expected result");
 		if (result) {
 			struct stat source_stat{};
 			struct stat received_stat{};
@@ -290,15 +342,17 @@ namespace {
 			                 source_stat.st_dev == received_stat.st_dev &&
 			                 source_stat.st_ino == received_stat.st_ino,
 			             std::string(name) + " receives exact descriptor");
-			ok &= Expect((fcntl(received_fd, F_GETFD) & FD_CLOEXEC) != 0,
+			const int descriptor_flags = fcntl(received_fd, F_GETFD);
+			ok &= Expect(descriptor_flags >= 0 &&
+			                 howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC),
 			             std::string(name) + " receives close-on-exec descriptor");
 		}
 		if (received_fd >= 0) {
 			(void)close(received_fd);
 		}
 		(void)close(source_fd);
-		(void)close(sockets[0]);
-		(void)close(sockets[1]);
+		(void)close(sockets.at(0));
+		(void)close(sockets.at(1));
 		return ok;
 	}
 
@@ -322,28 +376,28 @@ namespace {
 		int                received_fd = -1;
 		ok &= Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) == 0,
 		             "lease EOF creates socketpair");
-		(void)close(sockets[1]);
+		(void)close(sockets.at(1));
 		received_fd = -1;
 		ok &= Expect(!howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
-		                 sockets[0], &received_fd,
+		                 sockets.at(0), &received_fd,
 		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
 		             "lease EOF is rejected");
-		(void)close(sockets[0]);
+		(void)close(sockets.at(0));
 
 		ok &= Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) == 0,
 		             "lease timeout creates socketpair");
 		ok &= Expect(!howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
-		                 sockets[0], &received_fd,
+		                 sockets.at(0), &received_fd,
 		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
 		             "missing lease times out");
-		(void)close(sockets[0]);
-		(void)close(sockets[1]);
+		(void)close(sockets.at(0));
+		(void)close(sockets.at(1));
 		return ok;
 	}
 
 	auto TestLeaseValidation() -> bool {
-		auto  directory_template = std::to_array("/tmp/howdy-lease-validation-XXXXXX");
-		char *parent             = mkdtemp(directory_template.data());
+		auto        directory_template = std::to_array("/tmp/howdy-lease-validation-XXXXXX");
+		char const *parent             = mkdtemp(directory_template.data());
 		if (!Expect(parent != nullptr, "lease validation creates parent")) {
 			return false;
 		}
@@ -360,7 +414,7 @@ namespace {
 		const int lease_fd = open(lock_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 		ok &= Expect(lease_fd >= 0, "lease validation opens read-only descriptor");
 		if (lease_fd >= 0) {
-			ok &= Expect((fcntl(lease_fd, F_GETFL) & O_ACCMODE) == O_RDONLY,
+			ok &= Expect(howdy::native::MaskedBits(fcntl(lease_fd, F_GETFL), O_ACCMODE) == O_RDONLY,
 			             "lease descriptor is read-only");
 			errno = 0;
 			ok &= Expect(write(lease_fd, "x", 1) == -1 && errno == EBADF,
@@ -414,16 +468,18 @@ namespace {
 	};
 
 	auto RecordingPipe2(void *context, int *fds, int flags) -> int {
-		auto     &state   = *static_cast<ReapContext *>(context);
-		const int result  = pipe2(fds, flags);
-		state.output_pipe = {fds[0], fds[1]};
+		auto      &state       = *static_cast<ReapContext *>(context);
+		const int  result      = pipe2(fds, flags);
+		const auto descriptors = std::span(fds, std::size_t{2});
+		state.output_pipe      = {descriptors.front(), descriptors.back()};
 		return result;
 	}
 
 	auto RecordingSocketpair(void *context, int domain, int type, int protocol, int *fds) -> int {
-		auto     &state    = *static_cast<ReapContext *>(context);
-		const int result   = socketpair(domain, type, protocol, fds);
-		state.lease_socket = {fds[0], fds[1]};
+		auto      &state       = *static_cast<ReapContext *>(context);
+		const int  result      = socketpair(domain, type, protocol, fds);
+		const auto descriptors = std::span(fds, std::size_t{2});
+		state.lease_socket     = {descriptors.front(), descriptors.back()};
 		return result;
 	}
 
@@ -437,13 +493,14 @@ namespace {
 			const std::string output = "CONFIG_PATH=" + (state.root / "config.ini").string() +
 			                           "\nUSER_MODELS_DIR=" + (state.root / "models").string() +
 			                           "\n";
-			const bool output_ok     = write(state.output_pipe[1], output.data(), output.size()) ==
-			                           static_cast<ssize_t>(output.size());
-			const bool lease_ok = SendRightsMessage(state.lease_socket[1], "L", {state.lease_fd});
-			(void)close(state.output_pipe[0]);
-			(void)close(state.output_pipe[1]);
-			(void)close(state.lease_socket[0]);
-			(void)close(state.lease_socket[1]);
+			const bool output_ok = write(state.output_pipe.at(1), output.data(), output.size()) ==
+			                       static_cast<ssize_t>(output.size());
+			const bool lease_ok =
+			    SendRightsMessage(state.lease_socket.at(1), "L", {state.lease_fd});
+			(void)close(state.output_pipe.at(0));
+			(void)close(state.output_pipe.at(1));
+			(void)close(state.lease_socket.at(0));
+			(void)close(state.lease_socket.at(1));
 			(void)close(state.lease_fd);
 			_exit(output_ok && lease_ok ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
@@ -497,7 +554,7 @@ namespace {
 			ok &= Expect(state.destroy_calls == 1 && prepared.root_dir == state.root,
 			             "valid prepare preserves paths and destroys actions once");
 			ok &= Expect(state.log_messages.size() == 1 &&
-			                 state.log_messages[0].contains("posix_spawn_file_actions_destroy"),
+			                 state.log_messages.at(0).contains("posix_spawn_file_actions_destroy"),
 			             "valid prepare logs post-spawn destroy failure");
 			prepared.lease_fd.Reset();
 			(void)close(state.lease_fd);
@@ -514,10 +571,10 @@ namespace {
 			return errno;
 		}
 		if (pid == 0) {
-			(void)close(state.output_pipe[0]);
-			(void)close(state.lease_socket[0]);
-			(void)close(state.output_pipe[1]);
-			(void)close(state.lease_socket[1]);
+			(void)close(state.output_pipe.at(0));
+			(void)close(state.lease_socket.at(0));
+			(void)close(state.output_pipe.at(1));
+			(void)close(state.lease_socket.at(1));
 			_exit(EXIT_SUCCESS);
 		}
 		*request.child_pid = pid;
@@ -553,10 +610,9 @@ auto RunRuntimeSessionFd3Probe(const char *marker_path) -> int {
 		return EXIT_FAILURE;
 	}
 
-	sockaddr_un address{};
-	socklen_t   address_length = sizeof(address);
-	if (getsockname(3, reinterpret_cast<sockaddr *>(&address), &address_length) != 0 ||
-	    address.sun_family != AF_UNIX) {
+	sockaddr  address{};
+	socklen_t address_length = sizeof(address);
+	if (getsockname(3, &address, &address_length) != 0 || address.sa_family != AF_UNIX) {
 		return EXIT_FAILURE;
 	}
 

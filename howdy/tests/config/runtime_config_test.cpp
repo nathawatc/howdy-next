@@ -1,5 +1,7 @@
 #include "config/config_schema.hpp"
+#include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 
 #include <cmath>
@@ -9,28 +11,37 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
+
+#include <stdlib.h>
 
 namespace {
 
 	using howdy::test::Expect;
 	using howdy::test::WriteFile;
 
-	struct TemporaryDirectory {
-		std::filesystem::path path;
-
+	class TemporaryDirectory {
+	public:
 		explicit TemporaryDirectory(std::filesystem::path directory_path)
-		    : path(std::move(directory_path)) {}
+		    : path_(std::move(directory_path)) {}
 
 		~TemporaryDirectory() {
 			std::error_code ec;
-			std::filesystem::remove_all(path, ec);
+			std::filesystem::remove_all(path_, ec);
 		}
 
 		TemporaryDirectory(const TemporaryDirectory &)                     = delete;
 		auto operator=(const TemporaryDirectory &) -> TemporaryDirectory & = delete;
 		TemporaryDirectory(TemporaryDirectory &&)                          = delete;
 		auto operator=(TemporaryDirectory &&) -> TemporaryDirectory &      = delete;
+
+		[[nodiscard]] auto Path() const -> const std::filesystem::path & {
+			return path_;
+		}
+
+	private:
+		std::filesystem::path path_;
 	};
 
 	auto NearlyEqual(float lhs, float rhs) -> bool {
@@ -46,7 +57,7 @@ namespace {
 		}
 
 		std::string template_path = temp_root.string();
-		char       *created       = mkdtemp(template_path.data());
+		char const *created       = mkdtemp(template_path.data());
 		if (created == nullptr) {
 			return std::nullopt;
 		}
@@ -82,7 +93,7 @@ auto main() -> int {
 		return 1;
 	}
 	const TemporaryDirectory temp_directory_guard(*temp_directory);
-	const auto              &root = temp_directory_guard.path;
+	const auto              &root = temp_directory_guard.Path();
 
 	using enum howdy::native::config_schema::OptionId;
 	const howdy::native::RuntimeConfig defaults;

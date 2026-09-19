@@ -1,51 +1,30 @@
 #include "pam_test_support.hpp"
+#include "prompt/conversation_restore.hpp"
+#include "prompt/native_prompt_conversation.hpp"
+#include "prompt/native_prompt_test_groups.hpp"
 #include "prompt/native_prompt_test_support.hpp"
+#include "support/eintr.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
-#include <poll.h>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <security/pam_appl.h>
+
+#include <sys/poll.h>
+#include <sys/types.h>
 #include <sys/wait.h>
-
-auto ExpectCtrlCAbortsPromptAndRestoresTerminal() -> bool;
-auto ExpectDispatchRejectsInvalidState() -> bool;
-auto ExpectOriginalConversationRestored() -> bool;
-auto ExpectRestoreHandlesNullPam() -> bool;
-auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
-                         howdy::pam::ConversationRestoreResult expected, const std::string &message)
-    -> bool;
-auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> bool;
-auto ExpectDestroyedInstalledNativeWrapperFailsClosed() -> bool;
-auto ExpectNativeTerminalEligibility() -> bool;
-auto ExpectNativeTerminalAliases() -> bool;
-auto ClosedStdinPreservedWithTerminalStdout() -> bool;
-auto ClosedStdoutPreservedWithTerminalStdin() -> bool;
-auto ClosedStderrPreservedWithTerminalStdin() -> bool;
-auto ClosedStdinStdoutPreservedWithTerminalStderr() -> bool;
-auto ClosedAllStdioRemainClosed() -> bool;
-auto TtyNormalizationFailurePreservesClosedStdin() -> bool;
-auto AbortPipeCreationFailureIsTransactional() -> bool;
-auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool;
-auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool;
-auto ExpectInvalidPamTtyIsUnavailable() -> bool;
-auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool;
-auto ExpectPtyHangupAbortsPrompt() -> bool;
-auto ExpectPollEintrWithoutAbortDoesNotAbortPrompt() -> bool;
-auto ExpectPollEintrWithAbortFailsClosed() -> bool;
-auto ExpectReadEintrRetriesAndAcceptsInput() -> bool;
-auto ExpectReadEintrWithAbortFailsClosed() -> bool;
-auto ExpectReadZeroRetriesAndAcceptsInput() -> bool;
-auto ExpectRestoreEintrRetriesAndRestores() -> bool;
-auto ExpectNativeMessageStyles() -> bool;
-auto ExpectNativePromptInputEdges() -> bool;
-auto ExpectOversizedPromptFailsClosed() -> bool;
-auto ExpectRestoreFailureFailsClosed() -> bool;
 
 using howdy::test::Expect;
 
@@ -86,10 +65,9 @@ namespace {
 		}
 
 		(void)kill(child_pid, SIGKILL);
-		pid_t waited;
-		do {
-			waited = waitpid(child_pid, &status, 0);
-		} while (waited < 0 && errno == EINTR);
+		const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
+			return waitpid(child_pid, &status, 0);
+		});
 		return Expect(waited == child_pid, message + ": timed-out child reaped") &&
 		       Expect(false, message + ": child exceeded timeout and required SIGKILL");
 	}
@@ -115,7 +93,7 @@ namespace {
 			throw std::runtime_error("simulated dispatch failure");
 		}
 		if (operations.throw_mode == 2) {
-			throw 1;
+			howdy::test::ThrowNonStandardExceptionForTest();
 		}
 	}
 
@@ -126,7 +104,7 @@ namespace {
 			operations.last_pam_conversation = *static_cast<const struct pam_conv *>(item);
 		}
 		const auto index = static_cast<std::size_t>(operations.pam_set_calls++);
-		return index < operations.pam_set_results.size() ? operations.pam_set_results[index]
+		return index < operations.pam_set_results.size() ? operations.pam_set_results.at(index)
 		                                                 : PAM_SYSTEM_ERR;
 	}
 
@@ -152,7 +130,7 @@ auto ExpectDispatchRejectsInvalidState() -> bool {
 	    .msg       = "notice",
 	};
 	const struct pam_message *message_ptr = &message;
-	auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
+	auto                     *responses   = howdy::test::PamResponseSentinelForTest();
 
 	ok &= Expect(NativePromptConversationTestAccess::Dispatch(1, &message_ptr, &responses,
 	                                                          nullptr) == PAM_CONV_ERR,
@@ -163,13 +141,13 @@ auto ExpectDispatchRejectsInvalidState() -> bool {
 	             "dispatch rejects null response pointer");
 
 	auto conversation = CreateConversation({});
-	responses         = reinterpret_cast<struct pam_response *>(0x1);
+	responses         = howdy::test::PamResponseSentinelForTest();
 	ok &= Expect(NativePromptConversationTestAccess::Dispatch(0, &message_ptr, &responses,
 	                                                          conversation.get()) == PAM_CONV_ERR,
 	             "dispatch rejects zero message count");
 	ok &= Expect(responses == nullptr, "zero-message dispatch clears response");
 	const struct pam_message *null_message = nullptr;
-	responses                              = reinterpret_cast<struct pam_response *>(0x1);
+	responses                              = howdy::test::PamResponseSentinelForTest();
 	ok &= Expect(NativePromptConversationTestAccess::Dispatch(1, &null_message, &responses,
 	                                                          conversation.get()) == PAM_CONV_ERR,
 	             "dispatch rejects null message entry");
@@ -190,8 +168,8 @@ auto ExpectOriginalConversationRestored() -> bool {
 		return false;
 	}
 
-	int             appdata = 42;
-	struct pam_conv original_conv{
+	int                   appdata = 42;
+	struct pam_conv const original_conv{
 	    .conv        = NativePromptTestConv,
 	    .appdata_ptr = &appdata,
 	};
@@ -206,8 +184,8 @@ auto ExpectOriginalConversationRestored() -> bool {
 		NativePromptConversation conversation(pamh);
 		NativePromptConversationTestAccess::ReplaceDescriptors(
 		    conversation, {.tty_fd         = std::move(slave_fd),
-		                   .abort_read_fd  = std::move(abort_pipe[0]),
-		                   .abort_write_fd = std::move(abort_pipe[1])});
+		                   .abort_read_fd  = std::move(abort_pipe.at(0)),
+		                   .abort_write_fd = std::move(abort_pipe.at(1))});
 		ok &= Expect(conversation.Available(), "restore test native prompt is available");
 		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
@@ -240,8 +218,8 @@ auto ExpectRestoreHandlesNullPam() -> bool {
 	}
 
 	auto conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
-	                                        .abort_read_fd  = std::move(abort_pipe[0]),
-	                                        .abort_write_fd = std::move(abort_pipe[1])});
+	                                        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                        .abort_write_fd = std::move(abort_pipe.at(1))});
 	NativePromptConversationTestAccess::SetInstalled(*conversation, true);
 	const auto result = conversation->RestoreOriginal();
 	ok &= Expect(!NativePromptConversationTestAccess::Installed(*conversation),
@@ -257,7 +235,7 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 	LifecycleOperationContext operations{.pam_set_results = pam_set_results};
 	auto                      conversation = CreateLifecycleConversation({}, &operations);
 	NativePromptConversationTestAccess::SetPamHandle(*conversation,
-	                                                 reinterpret_cast<pam_handle_t *>(0x1));
+	                                                 howdy::test::OpaquePamHandleForTest());
 	NativePromptConversationTestAccess::SetInstalled(*conversation, true);
 	const struct pam_conv override =
 	    NativePromptConversationTestAccess::OverrideConversation(*conversation);
@@ -271,7 +249,7 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 	if (expected == howdy::pam::ConversationRestoreResult::kUnsafe) {
 		const struct pam_message  message_item{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 		const struct pam_message *message_ptr = &message_item;
-		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+		auto                     *response    = howdy::test::PamResponseSentinelForTest();
 		ok &=
 		    Expect(override.conv(1, &message_ptr, &response, override.appdata_ptr) == PAM_CONV_ERR,
 		           message + ": retained callback fails closed after object destruction");
@@ -280,7 +258,7 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 	} else if (expected == howdy::pam::ConversationRestoreResult::kFailClosedInstalled) {
 		const struct pam_message  message_item{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 		const struct pam_message *message_ptr = &message_item;
-		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+		auto                     *response    = howdy::test::PamResponseSentinelForTest();
 		ok &= Expect(operations.last_pam_conversation.conv(
 		                 1, &message_ptr, &response,
 		                 operations.last_pam_conversation.appdata_ptr) == PAM_CONV_ERR,
@@ -304,8 +282,8 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 
 	LifecycleOperationContext operations{.throw_mode = throw_mode};
 	auto conversation = CreateLifecycleConversation({.tty_fd         = std::move(slave_fd),
-	                                                 .abort_read_fd  = std::move(abort_pipe[0]),
-	                                                 .abort_write_fd = std::move(abort_pipe[1])},
+	                                                 .abort_read_fd  = std::move(abort_pipe.at(0)),
+	                                                 .abort_write_fd = std::move(abort_pipe.at(1))},
 	                                                &operations);
 
 	const struct pam_message prompt = {
@@ -313,7 +291,7 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 	    .msg       = "Password: ",
 	};
 	const struct pam_message *prompt_ptr      = &prompt;
-	auto                     *responses       = reinterpret_cast<struct pam_response *>(0x1);
+	auto                     *responses       = howdy::test::PamResponseSentinelForTest();
 	int                       dispatch_result = PAM_SUCCESS;
 
 	std::thread dispatch_thread([&] -> void {
@@ -350,7 +328,7 @@ auto ExpectDestroyedInstalledNativeWrapperFailsClosed() -> bool {
 	conversation.reset();
 	const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 	const struct pam_message *message_ptr = &message;
-	auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+	auto                     *response    = howdy::test::PamResponseSentinelForTest();
 	const int result = installed.conv(1, &message_ptr, &response, installed.appdata_ptr);
 	return Expect(result == PAM_CONV_ERR, "destroyed installed native wrapper fails closed") &&
 	       Expect(response == nullptr, "destroyed installed native wrapper clears response");

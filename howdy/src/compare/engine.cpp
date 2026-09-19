@@ -2,13 +2,21 @@
 
 #include "compare/logic.hpp"
 #include "config/runtime_config.hpp"
+#include "support/frame_limits.hpp"
+#include "vision/face_detection.hpp"
+#include "vision/face_encoding.hpp"
+#include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
+#include "vision/frame_processing.hpp"
 #include "vision/frame_validation.hpp"
 
 #include <cmath>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
@@ -140,7 +148,7 @@ namespace howdy::native {
 	}
 
 	auto CompareEngine::ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult {
-		if (!inference_.Complete()) {
+		if (!FaceInferenceComplete(inference_)) {
 			return {
 			    .status = CompareInferenceStatus::kInvalidDependencies,
 			};
@@ -157,7 +165,7 @@ namespace howdy::native {
 		}
 
 		const auto detection_result = inference_.detect_faces(inference_.context, prepared);
-		if (!detection_result.Ok()) {
+		if (!FaceDetectionSucceeded(detection_result)) {
 			return {
 			    .status        = CompareInferenceStatus::kDetectionFailed,
 			    .error_message = detection_result.error_message,
@@ -168,7 +176,7 @@ namespace howdy::native {
 		bool        reached_matching = false;
 		for (const auto &face : detection_result.detections) {
 			const auto encoding_result = inference_.encode_face(inference_.context, prepared, face);
-			if (!encoding_result.Ok()) {
+			if (!FaceEncodingSucceeded(encoding_result)) {
 				if (first_encoding_error.empty()) {
 					first_encoding_error = encoding_result.error_message.empty()
 					                           ? kInvalidFaceEncodingMessage

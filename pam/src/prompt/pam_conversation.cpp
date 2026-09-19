@@ -2,7 +2,7 @@
 
 #include "prompt/conversation_response.hpp"
 
-#include <syslog.h>
+#include <sys/syslog.h>
 
 namespace {
 
@@ -16,6 +16,8 @@ namespace {
 
 		ConversationResponseOwner(const ConversationResponseOwner &)                     = delete;
 		auto operator=(const ConversationResponseOwner &) -> ConversationResponseOwner & = delete;
+		ConversationResponseOwner(ConversationResponseOwner &&)                          = delete;
+		auto operator=(ConversationResponseOwner &&) -> ConversationResponseOwner &      = delete;
 
 		[[nodiscard]] auto Pointer() -> struct pam_response ** {
 			return &responses_;

@@ -1,34 +1,46 @@
 #include "cli/download_models_test_support.hpp"
 
+#include "cli/download_models/internal.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
+#include "support/fd_io.hpp"
+
 #include <cerrno>
 #include <cstdlib>
-#include <fcntl.h>
+#include <filesystem>
 #include <iostream>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+#include <fcntl.h>
+#include <stdlib.h>
 #include <unistd.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::test::download_models {
 
-	int                      download_attempts     = 0;
-	int                      owner_uid_attempts    = 0;
-	int                      fstat_attempts        = 0;
-	int                      failing_fstat_attempt = 0;
-	std::string              downloaded_content;
-	std::vector<std::string> downloaded_urls;
-	bool                     download_succeeds = false;
+	auto DependenciesState() -> DependencyState & {
+		static DependencyState state;
+		return state;
+	}
 
 	void ResetDependencyAttempts() {
-		download_attempts  = 0;
-		owner_uid_attempts = 0;
-		fstat_attempts     = 0;
-		downloaded_urls.clear();
+		auto &state              = DependenciesState();
+		state.download_attempts  = 0;
+		state.owner_uid_attempts = 0;
+		state.fstat_attempts     = 0;
+		state.downloaded_urls.clear();
 	}
 
 	auto AttemptedDownloads() -> int {
-		return download_attempts;
+		return DependenciesState().download_attempts;
 	}
 
 	auto AttemptedOwnerUidLookups() -> int {
-		return owner_uid_attempts;
+		return DependenciesState().owner_uid_attempts;
 	}
 
 	auto FakeDownloadFile(const std::string                                           &url,
@@ -36,7 +48,7 @@ namespace howdy::test::download_models {
 	    -> bool {
 		(void)url;
 		(void)staged;
-		++download_attempts;
+		++DependenciesState().download_attempts;
 		return false;
 	}
 
@@ -44,10 +56,11 @@ namespace howdy::test::download_models {
 	SuccessfulFakeDownloadFile(const std::string                                           &url,
 	                           howdy::native::download_models_internal::StagedDownloadFile &staged)
 	    -> bool {
-		++download_attempts;
-		downloaded_urls.push_back(url);
-		return download_succeeds &&
-		       howdy::native::WriteAllToFd(staged.fd.Get(), downloaded_content);
+		++DependenciesState().download_attempts;
+		auto &state = DependenciesState();
+		state.downloaded_urls.push_back(url);
+		return state.download_succeeds &&
+		       howdy::native::WriteAllToFd(staged.fd.Get(), state.downloaded_content);
 	}
 
 	auto FailingSha256File(int /*fd*/) -> std::optional<std::string> {
@@ -55,8 +68,9 @@ namespace howdy::test::download_models {
 	}
 
 	auto SelectivelyFailingFstat(const int fd, struct stat *stat_buf) -> int {
-		++fstat_attempts;
-		if (fstat_attempts == failing_fstat_attempt) {
+		auto &state = DependenciesState();
+		++state.fstat_attempts;
+		if (state.fstat_attempts == state.failing_fstat_attempt) {
 			errno = EIO;
 			return -1;
 		}
@@ -64,7 +78,7 @@ namespace howdy::test::download_models {
 	}
 
 	auto TestModelFileOwnerUid() -> std::optional<uid_t> {
-		++owner_uid_attempts;
+		++DependenciesState().owner_uid_attempts;
 		return std::nullopt;
 	}
 
@@ -81,63 +95,68 @@ namespace howdy::test::download_models {
 	}  // namespace
 
 	EnvVarGuard::EnvVarGuard(const char *env_name, const std::string &value)
-	    : name(env_name)
-	    , previous(GetEnvValue(env_name)) {
-		setenv(name, value.c_str(), 1);
+	    : name_(env_name)
+	    , previous_(GetEnvValue(env_name)) {
+		setenv(name_, value.c_str(), 1);
 	}
 
 	EnvVarGuard::~EnvVarGuard() {
-		if (previous.has_value()) {
-			setenv(name, previous->c_str(), 1);
+		if (previous_.has_value()) {
+			setenv(name_, previous_->c_str(), 1);
 			return;
 		}
-		unsetenv(name);
+		unsetenv(name_);
 	}
 
 	namespace {
 
-		struct StdoutRedirectGuard {
-			int  saved_stdout = -1;
-			bool active       = false;
+		class StdoutRedirectGuard {
+		public:
+			StdoutRedirectGuard(StdoutRedirectGuard &&)                     = delete;
+			auto operator=(StdoutRedirectGuard &&) -> StdoutRedirectGuard & = delete;
 
 			explicit StdoutRedirectGuard(const std::filesystem::path &path)
-			    : saved_stdout(dup(STDOUT_FILENO)) {
-				if (saved_stdout < 0) {
+			    : saved_stdout_(fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 0)) {
+				if (saved_stdout_ < 0) {
 					return;
 				}
 
 				const int output_fd =
-				    open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+				    open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, S_IRUSR | S_IWUSR);
 				if (output_fd < 0) {
-					close(saved_stdout);
-					saved_stdout = -1;
+					close(saved_stdout_);
+					saved_stdout_ = -1;
 					return;
 				}
 
 				if (dup2(output_fd, STDOUT_FILENO) < 0) {
 					close(output_fd);
-					close(saved_stdout);
-					saved_stdout = -1;
+					close(saved_stdout_);
+					saved_stdout_ = -1;
 					return;
 				}
 				close(output_fd);
-				active = true;
+				active_ = true;
 			}
 
 			StdoutRedirectGuard(const StdoutRedirectGuard &)                     = delete;
 			auto operator=(const StdoutRedirectGuard &) -> StdoutRedirectGuard & = delete;
 
 			~StdoutRedirectGuard() {
-				if (saved_stdout >= 0) {
+				if (saved_stdout_ >= 0) {
 					std::cout.flush();
-					dup2(saved_stdout, STDOUT_FILENO);
-					close(saved_stdout);
+					dup2(saved_stdout_, STDOUT_FILENO);
+					close(saved_stdout_);
 				}
 			}
 
 			[[nodiscard]] auto Ok() const -> bool {
-				return active;
+				return active_;
 			}
+
+		private:
+			int  saved_stdout_ = -1;
+			bool active_       = false;
 		};
 
 	}  // namespace
@@ -146,7 +165,7 @@ namespace howdy::test::download_models {
 	    const std::filesystem::path &path, int *exit_code,
 	    const howdy::native::download_models_internal::DownloadModelsDependencies &dependencies)
 	    -> bool {
-		StdoutRedirectGuard stdout_redirect(path);
+		StdoutRedirectGuard const stdout_redirect(path);
 		if (!stdout_redirect.Ok()) {
 			return false;
 		}
@@ -165,7 +184,7 @@ namespace howdy::test::download_models {
 	                const howdy::native::download_models_internal::DownloadFileFn download_file,
 	                const howdy::native::download_models_internal::Sha256FileFn   sha256_file,
 	                const howdy::native::download_models_internal::FstatFn fstat_file) -> bool {
-		EnvVarGuard models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
+		EnvVarGuard const models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
 		ResetDependencyAttempts();
 		return CaptureDownloadModelsStdout(
 		    paths.output, exit_code,
@@ -179,7 +198,7 @@ namespace howdy::test::download_models {
 	}
 
 	auto RunFirstDownloadAttempt(const DownloadPaths &paths, int *exit_code) -> bool {
-		EnvVarGuard models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
+		EnvVarGuard const models_env("HOWDY_MODELS_DIR", paths.models_dir.string());
 		ResetDependencyAttempts();
 		return CaptureDownloadModelsStdout(
 		    paths.output, exit_code,

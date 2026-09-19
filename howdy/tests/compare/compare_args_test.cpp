@@ -1,4 +1,5 @@
 #include "compare/args.hpp"
+#include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
 #include <string>

@@ -26,14 +26,18 @@ namespace howdy::native {
 		DetectFacesFn  detect_faces  = nullptr;
 		EncodeFaceFn   encode_face   = nullptr;
 		MatchFaceFn    match_face    = nullptr;
-
-		[[nodiscard]] auto DetectionReady() const -> bool {
-			return context != nullptr && prepare_frame != nullptr && detect_faces != nullptr;
-		}
-
-		[[nodiscard]] auto Complete() const -> bool {
-			return DetectionReady() && encode_face != nullptr && match_face != nullptr;
-		}
 	};
+
+	[[nodiscard]] constexpr auto
+	FaceInferenceDetectionReady(const FaceInferenceOperations &operations) noexcept -> bool {
+		return operations.context != nullptr && operations.prepare_frame != nullptr &&
+		       operations.detect_faces != nullptr;
+	}
+
+	[[nodiscard]] constexpr auto
+	FaceInferenceComplete(const FaceInferenceOperations &operations) noexcept -> bool {
+		return FaceInferenceDetectionReady(operations) && operations.encode_face != nullptr &&
+		       operations.match_face != nullptr;
+	}
 
 }  // namespace howdy::native

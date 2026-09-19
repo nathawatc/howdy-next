@@ -1,10 +1,16 @@
 #include "cli/add/enrollment_capture.hpp"
+#include "config/runtime_config.hpp"
+#include "support/frame_limits.hpp"
 #include "test_support.hpp"
+#include "vision/face_detection.hpp"
 
 #include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 
 namespace {
 
@@ -22,12 +28,12 @@ namespace {
 		    : reads_(std::move(reads)) {}
 
 		auto Read(cv::Mat &frame, cv::Mat *gray_frame) -> bool {
-			read_calls++;
+			read_calls_++;
 			if (next_read_ >= reads_.size()) {
 				return false;
 			}
 
-			const auto &read = reads_[next_read_++];
+			const auto &read = reads_.at(next_read_++);
 			if (!read.ok) {
 				frame.release();
 				if (gray_frame != nullptr) {
@@ -43,9 +49,12 @@ namespace {
 			return true;
 		}
 
-		int read_calls = 0;
+		[[nodiscard]] auto ReadCalls() const -> int {
+			return read_calls_;
+		}
 
 	private:
+		int                    read_calls_ = 0;
 		std::vector<FrameRead> reads_;
 		std::size_t            next_read_ = 0;
 	};
@@ -53,20 +62,20 @@ namespace {
 	class FakeFaceModel {
 	public:
 		auto PrepareFrame(const cv::Mat &frame) -> cv::Mat {
-			prepare_calls++;
-			return clone_frames ? frame.clone() : frame;
+			prepare_calls_++;
+			return clone_frames_ ? frame.clone() : frame;
 		}
 
 		auto Detect(const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
-			detect_calls++;
-			seen_frames.push_back(clone_frames ? frame.clone() : frame);
-			if (fail_detection) {
+			detect_calls_++;
+			seen_frames_.push_back(clone_frames_ ? frame.clone() : frame);
+			if (fail_detection_) {
 				return howdy::native::FaceDetectionResult{
 				    .status        = howdy::native::FaceDetectionStatus::kInvalidOutput,
 				    .error_message = "malformed detector output",
 				};
 			}
-			if (!return_face || detect_calls <= misses_before_face) {
+			if (!return_face_ || detect_calls_ <= misses_before_face_) {
 				return howdy::native::FaceDetectionResult{};
 			}
 			return howdy::native::FaceDetectionResult{
@@ -76,13 +85,42 @@ namespace {
 			};
 		}
 
-		bool                 return_face        = true;
-		bool                 fail_detection     = false;
-		bool                 clone_frames       = true;
-		int                  misses_before_face = 0;
-		int                  prepare_calls      = 0;
-		int                  detect_calls       = 0;
-		std::vector<cv::Mat> seen_frames;
+		void SetReturnFace(bool value) {
+			return_face_ = value;
+		}
+
+		void SetFailDetection(bool value) {
+			fail_detection_ = value;
+		}
+
+		void SetCloneFrames(bool value) {
+			clone_frames_ = value;
+		}
+
+		void SetMissesBeforeFace(int value) {
+			misses_before_face_ = value;
+		}
+
+		[[nodiscard]] auto PrepareCalls() const -> int {
+			return prepare_calls_;
+		}
+
+		[[nodiscard]] auto DetectCalls() const -> int {
+			return detect_calls_;
+		}
+
+		[[nodiscard]] auto SeenFrames() const -> const std::vector<cv::Mat> & {
+			return seen_frames_;
+		}
+
+	private:
+		bool                 return_face_        = true;
+		bool                 fail_detection_     = false;
+		bool                 clone_frames_       = true;
+		int                  misses_before_face_ = 0;
+		int                  prepare_calls_      = 0;
+		int                  detect_calls_       = 0;
+		std::vector<cv::Mat> seen_frames_;
 	};
 
 	auto TestConfig(bool clahe_enabled = false) -> howdy::native::VideoConfig {
@@ -113,7 +151,7 @@ namespace {
 	}
 
 	auto ValidRead() -> FrameRead {
-		cv::Mat gray(4, 4, CV_8UC1, cv::Scalar(128));
+		cv::Mat const gray(4, 4, CV_8UC1, cv::Scalar(128));
 		gray.row(0).setTo(cv::Scalar(0));
 		return FrameRead{
 		    .ok    = true,
@@ -123,7 +161,7 @@ namespace {
 	}
 
 	auto TooDarkRead() -> FrameRead {
-		cv::Mat gray(4, 4, CV_8UC1, cv::Scalar(128));
+		cv::Mat const gray(4, 4, CV_8UC1, cv::Scalar(128));
 		gray.rowRange(0, 2).setTo(cv::Scalar(0));
 		return FrameRead{
 		    .ok    = true,
@@ -180,8 +218,9 @@ namespace {
 
 		bool ok = true;
 		ok &= Expect(result.faces.empty(), "black-only capture has no accepted sample to store");
-		ok &= Expect(face_model.prepare_calls == 0, "black frame does not reach frame preparation");
-		ok &= Expect(face_model.detect_calls == 0, "black frame does not reach face detection");
+		ok &=
+		    Expect(face_model.PrepareCalls() == 0, "black frame does not reach frame preparation");
+		ok &= Expect(face_model.DetectCalls() == 0, "black frame does not reach face detection");
 		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kOnlyBlackFrames,
 		             "black-only capture reports only-black failure");
@@ -199,8 +238,8 @@ namespace {
 		ok &= Expect(result.faces.size() == 1, "valid frame after black frames is accepted");
 		ok &= Expect(result.valid_frames == 1, "only valid frame increments accepted progress");
 		ok &= Expect(result.black_frames == 2, "leading black frames stay skipped");
-		ok &= Expect(face_model.prepare_calls == 1, "only valid frame reaches preparation");
-		ok &= Expect(face_model.detect_calls == 1, "only valid frame reaches detection");
+		ok &= Expect(face_model.PrepareCalls() == 1, "only valid frame reaches preparation");
+		ok &= Expect(face_model.DetectCalls() == 1, "only valid frame reaches detection");
 		return ok;
 	}
 
@@ -215,8 +254,8 @@ namespace {
 		ok &= Expect(result.faces.empty(), "too-dark frames are not accepted");
 		ok &= Expect(result.valid_frames == 2, "too-dark frames increment valid frame count");
 		ok &= Expect(result.dark_tries == 2, "too-dark frames increment dark try count");
-		ok &= Expect(face_model.prepare_calls == 0, "too-dark frames do not reach preparation");
-		ok &= Expect(face_model.detect_calls == 0, "too-dark frames do not reach detection");
+		ok &= Expect(face_model.PrepareCalls() == 0, "too-dark frames do not reach preparation");
+		ok &= Expect(face_model.DetectCalls() == 0, "too-dark frames do not reach detection");
 		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
 		                 howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames,
 		             "too-dark-only capture keeps too-dark failure classification");
@@ -235,7 +274,7 @@ namespace {
 		ok &= Expect(result.black_frames == 1, "mixed capture counts black frame");
 		ok &= Expect(result.valid_frames == 1, "mixed capture counts too-dark valid frame");
 		ok &= Expect(result.dark_tries == 1, "mixed capture counts too-dark try");
-		ok &= Expect(face_model.detect_calls == 0,
+		ok &= Expect(face_model.DetectCalls() == 0,
 		             "mixed black and too-dark frames do not reach detection");
 		ok &= Expect(classification != howdy::native::EnrollmentCaptureFailure::kOnlyTooDarkFrames,
 		             "mixed black and too-dark frames do not report all-too-dark diagnostic");
@@ -250,7 +289,7 @@ namespace {
 	auto ProcessableFrameWithoutFaceContinuesToLaterFrames() -> bool {
 		FakeCapture   capture({ValidRead(), ValidRead()});
 		FakeFaceModel face_model;
-		face_model.misses_before_face = 1;
+		face_model.SetMissesBeforeFace(1);
 
 		const auto result =
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
@@ -259,23 +298,24 @@ namespace {
 		ok &= Expect(result.faces.size() == 1, "later processable frame with face is accepted");
 		ok &=
 		    Expect(result.valid_frames == 2, "processable no-face frame counts and loop continues");
-		ok &= Expect(face_model.prepare_calls == 2, "both processable frames reach preparation");
-		ok &= Expect(face_model.detect_calls == 2, "both processable frames reach detection");
+		ok &= Expect(face_model.PrepareCalls() == 2, "both processable frames reach preparation");
+		ok &= Expect(face_model.DetectCalls() == 2, "both processable frames reach detection");
 		return ok;
 	}
 
 	auto ProcessableFramesWithoutFacesReportNoFaceDetected() -> bool {
 		FakeCapture   capture({ValidRead(), ValidRead()});
 		FakeFaceModel face_model;
-		face_model.return_face = false;
+		face_model.SetReturnFace(false);
 
 		const auto result =
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
 
 		bool ok = true;
 		ok &= Expect(result.faces.empty(), "processable frames without faces leave faces empty");
-		ok &= Expect(face_model.prepare_calls == 2, "processable no-face frames reach preparation");
-		ok &= Expect(face_model.detect_calls == 2, "processable no-face frames reach detection");
+		ok &=
+		    Expect(face_model.PrepareCalls() == 2, "processable no-face frames reach preparation");
+		ok &= Expect(face_model.DetectCalls() == 2, "processable no-face frames reach detection");
 		ok &= Expect(result.valid_frames > result.dark_tries,
 		             "processable no-face frames pass darkness gate");
 		ok &= Expect(howdy::native::ClassifyEnrollmentCaptureFailure(result) ==
@@ -296,7 +336,7 @@ namespace {
 		ok &= Expect(result.valid_frames == 0,
 		             "repeated black frames never become accepted progress");
 		ok &= Expect(result.black_frames == 3, "all repeated black frames are skipped");
-		ok &= Expect(capture.read_calls == 3, "capture loop consumes configured frame budget");
+		ok &= Expect(capture.ReadCalls() == 3, "capture loop consumes configured frame budget");
 		return ok;
 	}
 
@@ -313,10 +353,10 @@ namespace {
 		ok &= Expect(result.read_failures == 0, "empty successful read is not a read failure");
 		ok &= Expect(result.black_frames == 0, "empty successful read is not classified as black");
 		ok &= Expect(result.valid_frames == 0, "empty successful read does not increment progress");
-		ok &= Expect(face_model.prepare_calls == 0,
+		ok &= Expect(face_model.PrepareCalls() == 0,
 		             "empty successful read does not reach preparation");
 		ok &=
-		    Expect(face_model.detect_calls == 0, "empty successful read does not reach detection");
+		    Expect(face_model.DetectCalls() == 0, "empty successful read does not reach detection");
 		return ok;
 	}
 
@@ -333,8 +373,8 @@ namespace {
 		ok &= Expect(result.empty_frames == 1, label + " is counted as empty frame");
 		ok &= Expect(result.black_frames == 0, label + " is not classified as black");
 		ok &= Expect(result.valid_frames == 0, label + " does not increment valid frames");
-		ok &= Expect(face_model.prepare_calls == 0, label + " does not reach preparation");
-		ok &= Expect(face_model.detect_calls == 0, label + " does not reach detection");
+		ok &= Expect(face_model.PrepareCalls() == 0, label + " does not reach preparation");
+		ok &= Expect(face_model.DetectCalls() == 0, label + " does not reach detection");
 		return ok;
 	}
 
@@ -355,7 +395,7 @@ namespace {
 		    .gray  = cv::Mat(howdy::native::kMaxFrameDimension, 1, CV_8UC1, cv::Scalar(128)),
 		}});
 		FakeFaceModel face_model;
-		face_model.clone_frames = false;
+		face_model.SetCloneFrames(false);
 
 		const auto accepted =
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 1);
@@ -363,8 +403,8 @@ namespace {
 		bool ok = true;
 		ok &= Expect(accepted.empty_frames == 0, "8192x1 gray frame is not rejected");
 		ok &= Expect(accepted.valid_frames == 1, "8192x1 gray frame remains valid");
-		ok &= Expect(face_model.prepare_calls == 1, "8192x1 gray frame reaches preparation");
-		ok &= Expect(face_model.detect_calls == 1, "8192x1 gray frame reaches detection");
+		ok &= Expect(face_model.PrepareCalls() == 1, "8192x1 gray frame reaches preparation");
+		ok &= Expect(face_model.DetectCalls() == 1, "8192x1 gray frame reaches detection");
 
 		ok &= InvalidGrayFrameCountsAsEmptyWithoutModelWork(
 		    FrameRead{.ok    = true,
@@ -432,7 +472,7 @@ namespace {
 	auto DetectorFailureStopsCaptureAndRemainsDistinct() -> bool {
 		FakeCapture   capture({ValidRead(), ValidRead()});
 		FakeFaceModel face_model;
-		face_model.fail_detection = true;
+		face_model.SetFailDetection(true);
 
 		const auto result =
 		    howdy::native::CaptureEnrollmentSample(capture, face_model, TestConfig(), 2);
@@ -443,8 +483,8 @@ namespace {
 		ok &= Expect(!result.detector_error_message.empty(),
 		             "detector failure diagnostic is retained");
 		ok &= Expect(result.faces.empty(), "failed detection produces no enrollment faces");
-		ok &= Expect(capture.read_calls == 1, "capture stops before consuming a later frame");
-		ok &= Expect(face_model.detect_calls == 1, "detector is not called after failure");
+		ok &= Expect(capture.ReadCalls() == 1, "capture stops before consuming a later frame");
+		ok &= Expect(face_model.DetectCalls() == 1, "detector is not called after failure");
 		return ok;
 	}
 

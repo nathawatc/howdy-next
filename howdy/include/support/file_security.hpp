@@ -1,14 +1,15 @@
 #pragma once
 
+#include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
 
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -106,7 +107,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
-			                     " (" + std::strerror(error_code) + ")",
+			                     " (" + howdy::native::SystemErrorMessage(error_code) + ")",
 			    .error_code    = error_code,
 			};
 		}
@@ -130,7 +131,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
-			                     " (" + std::strerror(error_code) + ")",
+			                     " (" + howdy::native::SystemErrorMessage(error_code) + ")",
 			    .error_code    = error_code,
 			};
 		}

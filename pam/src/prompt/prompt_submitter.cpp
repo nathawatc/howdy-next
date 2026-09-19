@@ -2,12 +2,14 @@
 
 #include "prompt/internal_fd.hpp"
 
-#include <fcntl.h>
 #include <memory>
 #include <stdexcept>
 
+#include <fcntl.h>
+
 #include <libevdev/libevdev-uinput.h>
 #include <libevdev/libevdev.h>
+#include <linux/input-event-codes.h>
 
 namespace {
 	class UinputPromptSubmitter final : public howdy::pam::PromptSubmitter {

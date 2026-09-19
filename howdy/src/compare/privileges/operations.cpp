@@ -1,16 +1,17 @@
 #include "compare/privileges.hpp"
 #include "compare/privileges/internal.hpp"
 #include "internal.hpp"
+#include "support/error_message.hpp"
+#include "support/prctl_types.hpp"
 
 #include <algorithm>
 #include <cerrno>
 #include <cstddef>
-#include <cstring>
+#include <vector>
+
 #include <grp.h>
 #include <pwd.h>
-#include <string>
 #include <unistd.h>
-#include <vector>
 
 #include <sys/fsuid.h>
 #include <sys/prctl.h>
@@ -32,8 +33,9 @@ namespace {
 		return getpwnam_r(name, pwd, buffer, buffer_size, result);
 	}
 
-	auto SystemPrctl([[maybe_unused]] void *context, int operation, unsigned long argument2,
-	                 unsigned long argument3, unsigned long argument4, unsigned long argument5)
+	auto SystemPrctl([[maybe_unused]] void *context, int operation,
+	                 howdy::native::PrctlArgument argument2, howdy::native::PrctlArgument argument3,
+	                 howdy::native::PrctlArgument argument4, howdy::native::PrctlArgument argument5)
 	    -> int {
 		return prctl(operation, argument2, argument3, argument4, argument5);
 	}
@@ -124,9 +126,10 @@ namespace howdy::native::compare_privileges_internal {
 				break;
 			}
 			if (lookup_error != ERANGE) {
-				return {.error = {.status        = ComparePrivilegeStatus::kLookupFailed,
-				                  .error_message = "nobody account lookup failed: " +
-				                                   std::string(std::strerror(lookup_error))}};
+				return {
+				    .error = {.status        = ComparePrivilegeStatus::kLookupFailed,
+				              .error_message = "nobody account lookup failed: " +
+				                               howdy::native::SystemErrorMessage(lookup_error)}};
 			}
 			if (buffer.size() >= kMaximumPasswdBufferSize) {
 				return {.error = {.status        = ComparePrivilegeStatus::kLookupFailed,

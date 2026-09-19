@@ -3,7 +3,22 @@
 #include <exception>
 #include <iostream>
 
-using namespace howdy::test::user_model_codec;
+using howdy::test::user_model_codec::ExpectAdditionalShapeEdges;
+using howdy::test::user_model_codec::ExpectBoundariesAndLimits;
+using howdy::test::user_model_codec::ExpectCompatibilityChecks;
+using howdy::test::user_model_codec::ExpectDocumentEdgeOperations;
+using howdy::test::user_model_codec::ExpectDuplicateKeyBehavior;
+using howdy::test::user_model_codec::ExpectEncodingValidation;
+using howdy::test::user_model_codec::ExpectImmutableToMutableConversion;
+using howdy::test::user_model_codec::ExpectJsonDepthLimit;
+using howdy::test::user_model_codec::ExpectMalformedScalarFields;
+using howdy::test::user_model_codec::ExpectMetricParsing;
+using howdy::test::user_model_codec::ExpectMultiModelBehavior;
+using howdy::test::user_model_codec::ExpectNewEntryRoundTrip;
+using howdy::test::user_model_codec::ExpectStrictParserBehavior;
+using howdy::test::user_model_codec::ExpectStrictShapeContract;
+using howdy::test::user_model_codec::ExpectUnknownFieldPreservation;
+using howdy::test::user_model_codec::ExpectValidStrictDocument;
 
 auto main() -> int {
 	try {

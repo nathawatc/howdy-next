@@ -1,6 +1,5 @@
 #pragma once
 
-#include <INIReader.h>
 #include <charconv>
 #include <cmath>
 #include <optional>
@@ -8,6 +7,8 @@
 #include <string_view>
 #include <system_error>
 #include <vector>
+
+#include <INIReader.h>
 
 namespace howdy::native {
 
@@ -41,18 +42,16 @@ namespace howdy::native {
 			return std::nullopt;
 		}
 
-		const char *first = value.data();
-		const char *last  = value.data() + value.size();
-		if (*first == '+') {
-			++first;
-			if (first == last) {
+		if (value.front() == '+') {
+			value.remove_prefix(1);
+			if (value.empty()) {
 				return std::nullopt;
 			}
 		}
 
 		float      parsed = 0.0F;
-		const auto result = std::from_chars(first, last, parsed);
-		if (result.ec != std::errc{} || result.ptr != last || !std::isfinite(parsed)) {
+		const auto result = std::from_chars(value.begin(), value.end(), parsed);
+		if (result.ec != std::errc{} || result.ptr != value.end() || !std::isfinite(parsed)) {
 			return std::nullopt;
 		}
 

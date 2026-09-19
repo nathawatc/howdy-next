@@ -1,11 +1,14 @@
 #include "app/command_catalog.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 namespace {
 
@@ -48,10 +51,10 @@ namespace {
 		ok &= Expect(!ValidateGlobalOptionCatalog(options, true).has_value(),
 		             "global option catalog invariants hold");
 		ok &= Expect(FindGlobalOption("") == nullptr, "empty option spelling is not searchable");
-		for (std::size_t index = 0; index < options.size(); ++index) {
-			const auto &option                 = options[index];
+		std::size_t option_index = 0;
+		for (const auto &option : options) {
 			const auto &[id, short_name, long_name, argument_name, completion,
-			             parses_after_command] = expected_options[index];
+			             parses_after_command] = expected_options.at(option_index);
 			ok &=
 			    Expect(option.id == id && option.short_name == short_name &&
 			               option.long_name == long_name && option.argument_name == argument_name &&
@@ -68,6 +71,7 @@ namespace {
 				ok &= Expect(FindGlobalOption(option.long_name) == &option,
 				             "long option lookup uses catalog entry");
 			}
+			++option_index;
 		}
 		const auto duplicate_ids = std::array{
 		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
@@ -397,14 +401,18 @@ auto main() -> int {
 	};
 	const std::array<howdy::native::GlobalOptionMask, static_cast<std::size_t>(CommandId::kCount)>
 	           expected_global_options{
-	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kPlain) |
-	                   GlobalOptionBit(GlobalOptionId::kYes),
-	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kYes),
+	               howdy::native::CombineBitsAs<howdy::native::GlobalOptionMask>(
+	                   GlobalOptionBit(GlobalOptionId::kUser), GlobalOptionBit(GlobalOptionId::kPlain),
+	                   GlobalOptionBit(GlobalOptionId::kYes)),
+	               howdy::native::CombineBitsAs<howdy::native::GlobalOptionMask>(
+	                   GlobalOptionBit(GlobalOptionId::kUser), GlobalOptionBit(GlobalOptionId::kYes)),
 	               0,
 	               0,
 	               0,
-	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kPlain),
-	               GlobalOptionBit(GlobalOptionId::kUser) | GlobalOptionBit(GlobalOptionId::kYes),
+	               howdy::native::CombineBitsAs<howdy::native::GlobalOptionMask>(
+	                   GlobalOptionBit(GlobalOptionId::kUser), GlobalOptionBit(GlobalOptionId::kPlain)),
+	               howdy::native::CombineBitsAs<howdy::native::GlobalOptionMask>(
+	                   GlobalOptionBit(GlobalOptionId::kUser), GlobalOptionBit(GlobalOptionId::kYes)),
 	               0,
 	               0,
 	               GlobalOptionBit(GlobalOptionId::kUser),
@@ -414,28 +422,29 @@ auto main() -> int {
 	ok &= Expect(commands.size() == expected_command_ids.size(), "command catalog size is stable");
 	ok &= Expect(commands.size() == static_cast<std::size_t>(CommandId::kCount),
 	             "every command ID has a catalog slot");
-	for (std::size_t index = 0; index < commands.size(); ++index) {
-		const auto &command = commands[index];
-		ok &=
-		    Expect(index < expected_command_ids.size() && command.id == expected_command_ids[index],
-		           "command catalog order is stable");
-		ok &= Expect(index < expected_command_kinds.size() &&
-		                 command.kind == expected_command_kinds[index],
+	std::size_t command_index = 0;
+	for (const auto &command : commands) {
+		ok &= Expect(command_index < expected_command_ids.size() &&
+		                 command.id == expected_command_ids.at(command_index),
+		             "command catalog order is stable");
+		ok &= Expect(command_index < expected_command_kinds.size() &&
+		                 command.kind == expected_command_kinds.at(command_index),
 		             "command kind is stable");
-		ok &= Expect(index < expected_completions.size() &&
-		                 command.completion == expected_completions[index],
+		ok &= Expect(command_index < expected_completions.size() &&
+		                 command.completion == expected_completions.at(command_index),
 		             "command completion metadata is stable");
-		ok &= Expect(index < expected_user_targets.size() &&
-		                 command.user_target == expected_user_targets[index],
+		ok &= Expect(command_index < expected_user_targets.size() &&
+		                 command.user_target == expected_user_targets.at(command_index),
 		             "command user-target behavior is stable");
-		ok &= Expect(index < expected_positionals.size() &&
+		ok &= Expect(command_index < expected_positionals.size() &&
 		                 std::pair{command.min_positionals, command.max_positionals} ==
-		                     expected_positionals[index],
+		                     expected_positionals.at(command_index),
 		             "command positional bounds are catalogued");
-		ok &= Expect(index < expected_global_options.size() &&
-		                 command.global_options == expected_global_options[index],
+		ok &= Expect(command_index < expected_global_options.size() &&
+		                 command.global_options == expected_global_options.at(command_index),
 		             "command global options are catalogued");
 		ok &= Expect(FindCommand(command.name) == &command, "command lookup uses catalog entry");
+		++command_index;
 	}
 	{
 		const auto *test_command = FindCommand("test");

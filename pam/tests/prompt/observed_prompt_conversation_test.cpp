@@ -1,15 +1,19 @@
+#include "pam_test_support.hpp"
+#include "prompt/conversation_restore.hpp"
 #include "prompt/observed_prompt_conversation.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
-#include <security/pam_appl.h>
+#include <string.h>
 
 namespace howdy::pam {
 	class ObservedPromptConversationTestAccess {
@@ -98,11 +102,12 @@ namespace {
 		if (responses == nullptr) {
 			return PAM_BUF_ERR;
 		}
+		auto response_view = std::span(responses, static_cast<std::size_t>(num_msg));
 		if (state->mode == ResponseMode::kPartial) {
-			responses[0].resp = strdup("partial-secret");
+			response_view.front().resp = strdup("partial-secret");
 		} else {
-			for (int index = 0; index < num_msg; ++index) {
-				responses[index].resp = strdup("secret");
+			for (auto &current_response : response_view) {
+				current_response.resp = strdup("secret");
 			}
 		}
 		*response = responses;
@@ -147,7 +152,7 @@ namespace {
 			state.last_set = *static_cast<const struct pam_conv *>(item);
 		}
 		const auto index = static_cast<std::size_t>(state.set_calls++);
-		return index < state.set_results.size() ? state.set_results[index] : PAM_SYSTEM_ERR;
+		return index < state.set_results.size() ? state.set_results.at(index) : PAM_SYSTEM_ERR;
 	}
 
 	auto MakeDispatchWrapper(OperationState *operations, DispatchState *dispatch,
@@ -158,19 +163,21 @@ namespace {
 		    .appdata_ptr = dispatch,
 		};
 		return ObservedPromptConversationTestAccess::Create(
-		    reinterpret_cast<pam_handle_t *>(0x1),
+		    howdy::test::OpaquePamHandleForTest(),
 		    {.context = observer, .begin = BeginPrompt, .end = EndPrompt},
 		    {.context = operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem});
 	}
 
 	auto MakeMessages(std::array<struct pam_message, 3>         *messages,
 	                  std::array<const struct pam_message *, 3> *message_ptrs) -> void {
-		*messages     = {{
+		*messages = {{
 		    {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
 		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
 		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password confirmation: "},
 		}};
-		*message_ptrs = {{messages->data(), messages->data() + 1, messages->data() + 2}};
+		std::ranges::transform(*messages, message_ptrs->begin(), [](const auto &message) -> auto {
+			return &message;
+		});
 	}
 
 	auto TestResponseCleanupContract() -> bool {
@@ -191,16 +198,18 @@ namespace {
 			ok &= Expect(conversation.conv(3, message_ptrs.data(), &responses,
 			                               conversation.appdata_ptr) == PAM_SUCCESS,
 			             "observed success preserves delegated response ownership");
-			ok &= Expect(responses != nullptr && std::string_view(responses[0].resp) == "secret",
-			             "observed success returns valid response");
-			ok &= Expect(observer.begin_calls == 1 && observer.end_calls == 1,
-			             "multiple ECHO_OFF messages form one closed prompt generation");
+			bool valid_response = false;
 			if (responses != nullptr) {
-				for (int index = 0; index < 3; ++index) {
-					std::free(responses[index].resp);
+				auto response_view = std::span(responses, std::size_t{3});
+				valid_response     = std::string_view(response_view.front().resp) == "secret";
+				for (auto &current_response : response_view) {
+					std::free(current_response.resp);
 				}
 				std::free(responses);
 			}
+			ok &= Expect(valid_response, "observed success returns valid response");
+			ok &= Expect(observer.begin_calls == 1 && observer.end_calls == 1,
+			             "multiple ECHO_OFF messages form one closed prompt generation");
 		}
 
 		{
@@ -211,7 +220,7 @@ namespace {
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
-			auto      *responses = reinterpret_cast<struct pam_response *>(0x1);
+			auto      *responses = howdy::test::PamResponseSentinelForTest();
 			const auto conversation =
 			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			ok &= Expect(conversation.conv(3, message_ptrs.data(), &responses,
@@ -229,7 +238,7 @@ namespace {
 			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "notice"};
 			const struct pam_message *message_ptr = &message;
-			auto                     *responses   = reinterpret_cast<struct pam_response *>(0x1);
+			auto                     *responses   = howdy::test::PamResponseSentinelForTest();
 			const auto                conversation =
 			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			ok &= Expect(conversation.conv(1, &message_ptr, &responses, conversation.appdata_ptr) ==
@@ -252,7 +261,7 @@ namespace {
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
-			auto      *responses = reinterpret_cast<struct pam_response *>(0x1);
+			auto      *responses = howdy::test::PamResponseSentinelForTest();
 			const auto conversation =
 			    ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 			const int result =
@@ -280,8 +289,8 @@ namespace {
 			ok &= Expect(conversation.conv(3, message_ptrs.data(), nullptr,
 			                               conversation.appdata_ptr) == PAM_CONV_ERR,
 			             "observed dispatcher rejects null output pointer");
-			message_ptrs[1] = nullptr;
-			auto *responses = reinterpret_cast<struct pam_response *>(0x1);
+			message_ptrs.at(1) = nullptr;
+			auto *responses    = howdy::test::PamResponseSentinelForTest();
 			ok &= Expect(conversation.conv(3, message_ptrs.data(), &responses,
 			                               conversation.appdata_ptr) == PAM_CONV_ERR,
 			             "observed dispatcher rejects invalid message batch");
@@ -294,7 +303,7 @@ namespace {
 	auto CallLate(const struct pam_conv &conversation) -> bool {
 		const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "late"};
 		const struct pam_message *message_ptr = &message;
-		auto                     *response    = reinterpret_cast<struct pam_response *>(0x1);
+		auto                     *response    = howdy::test::PamResponseSentinelForTest();
 		return conversation.conv(1, &message_ptr, &response, conversation.appdata_ptr) ==
 		           PAM_CONV_ERR &&
 		       response == nullptr;
@@ -320,20 +329,20 @@ namespace {
 		    "null PAM handle makes observed wrapper unavailable");
 		ok &= Expect(
 		    !make(
-		         reinterpret_cast<pam_handle_t *>(0x1),
+		         howdy::test::OpaquePamHandleForTest(),
 		         {.context = &observer, .begin = nullptr, .end = EndPrompt},
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
 		         ->Available(),
 		    "missing observer begin callback makes wrapper unavailable");
 		ok &= Expect(
 		    !make(
-		         reinterpret_cast<pam_handle_t *>(0x1),
+		         howdy::test::OpaquePamHandleForTest(),
 		         {.context = &observer, .begin = BeginPrompt, .end = nullptr},
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
 		         ->Available(),
 		    "missing observer end callback makes wrapper unavailable");
 		ok &=
-		    Expect(!make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		    Expect(!make(howdy::test::OpaquePamHandleForTest(), valid_observer,
 		                 {.context = &operations, .get_item = nullptr, .set_item = InjectedSetItem})
 		                ->Available(),
 		           "missing PAM get-item operation makes wrapper unavailable");
@@ -341,7 +350,7 @@ namespace {
 		operations.get_result = PAM_SYSTEM_ERR;
 		ok &= Expect(
 		    !make(
-		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         howdy::test::OpaquePamHandleForTest(), valid_observer,
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
 		         ->Available(),
 		    "PAM conversation lookup failure makes wrapper unavailable");
@@ -349,7 +358,7 @@ namespace {
 		operations.return_null_item = true;
 		ok &= Expect(
 		    !make(
-		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         howdy::test::OpaquePamHandleForTest(), valid_observer,
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
 		         ->Available(),
 		    "null PAM conversation item makes wrapper unavailable");
@@ -357,20 +366,20 @@ namespace {
 		operations.original         = {};
 		ok &= Expect(
 		    !make(
-		         reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		         howdy::test::OpaquePamHandleForTest(), valid_observer,
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem})
 		         ->Available(),
 		    "null original conversation callback makes wrapper unavailable");
 
 		operations.original = {.conv = DelegatedConversation, .appdata_ptr = nullptr};
 		auto no_set =
-		    make(reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		    make(howdy::test::OpaquePamHandleForTest(), valid_observer,
 		         {.context = &operations, .get_item = InjectedGetItem, .set_item = nullptr});
 		ok &= Expect(no_set->Available() && no_set->Install() == PAM_SYSTEM_ERR,
 		             "missing PAM set-item operation rejects install");
-		operations.set_results[0] = PAM_SYSTEM_ERR;
-		auto failed_set           = make(
-		    reinterpret_cast<pam_handle_t *>(0x1), valid_observer,
+		operations.set_results.at(0) = PAM_SYSTEM_ERR;
+		auto failed_set              = make(
+		    howdy::test::OpaquePamHandleForTest(), valid_observer,
 		    {.context = &operations, .get_item = InjectedGetItem, .set_item = InjectedSetItem});
 		ok &= Expect(failed_set->Available() && failed_set->Install() == PAM_SYSTEM_ERR,
 		             "PAM conversation install failure is returned");
@@ -382,7 +391,7 @@ namespace {
 		DispatchState  dispatch;
 		ObserverState  observer;
 		auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
-		bool           ok = Expect(wrapper->Install() == PAM_SUCCESS,
+		bool const     ok = Expect(wrapper->Install() == PAM_SUCCESS,
 		                           "installed observed wrapper prepares unsafe-destruction case");
 		const auto installed = ObservedPromptConversationTestAccess::OverrideConversation(*wrapper);
 		wrapper.reset();

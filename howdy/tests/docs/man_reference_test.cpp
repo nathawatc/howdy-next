@@ -2,6 +2,7 @@
 #include "config/config_schema.hpp"
 #include "docs/man_reference.hpp"
 #include "module/pam_option_catalog.hpp"
+#include "prompt/workaround.hpp"
 #include "support/capture_device_path.hpp"
 #include "test_support.hpp"
 
@@ -29,7 +30,7 @@ namespace {
 
 	auto HasExactlyOneFinalNewline(std::string_view value) -> bool {
 		return !value.empty() && value.back() == '\n' &&
-		       (value.size() == 1 || value[value.size() - 2] != '\n');
+		       (value.size() == 1 || value.at(value.size() - 2) != '\n');
 	}
 
 	auto EscapeForRoff(std::string_view value) -> std::string {
@@ -72,7 +73,7 @@ auto main() -> int {
 	bool ok = true;
 
 	const auto command_result = RenderCommandReference(howdy::native::CommandCatalog());
-	ok &= Expect(command_result.Ok(), "production commands render");
+	ok &= Expect(howdy::docs::RenderSucceeded(command_result), "production commands render");
 	ok &= Expect(HasExactlyOneFinalNewline(command_result.output),
 	             "command reference has one final newline");
 	ok &= Expect(command_result.output.contains(R"(\&\fBadd [LABEL]\fR)"),
@@ -98,7 +99,7 @@ auto main() -> int {
 	             "command reference renders version command");
 
 	const auto option_result = RenderGlobalOptionReference(howdy::native::GlobalOptionCatalog());
-	ok &= Expect(option_result.Ok(), "production global options render");
+	ok &= Expect(howdy::docs::RenderSucceeded(option_result), "production global options render");
 	ok &= Expect(HasExactlyOneFinalNewline(option_result.output),
 	             "option reference has one final newline");
 	ok &= Expect(option_result.output.contains(R"(\-U, \-\-user USER)"),
@@ -110,7 +111,8 @@ auto main() -> int {
 
 	const auto workaround_result =
 	    RenderWorkaroundReference(howdy::pam::WorkaroundCatalog(), howdy::pam::kDefaultWorkaround);
-	ok &= Expect(workaround_result.Ok(), "production workaround values render");
+	ok &= Expect(howdy::docs::RenderSucceeded(workaround_result),
+	             "production workaround values render");
 	ok &= Expect(HasExactlyOneFinalNewline(workaround_result.output),
 	             "workaround reference has one final newline");
 	ok &= Expect(workaround_result.output.contains("workaround=input"),
@@ -131,7 +133,7 @@ auto main() -> int {
 
 	const auto production_schema_options = howdy::native::config_schema::RuntimeConfigOptions();
 	const auto config_result             = RenderConfigOptionReference(production_schema_options);
-	ok &= Expect(config_result.Ok(), "production config options render");
+	ok &= Expect(howdy::docs::RenderSucceeded(config_result), "production config options render");
 	ok &= Expect(HasExactlyOneFinalNewline(config_result.output),
 	             "config reference has one final newline");
 	ok &= Expect(config_result.output.contains(".SS [core]\n"),
@@ -212,7 +214,8 @@ auto main() -> int {
 	    },
 	};
 	const auto generic_result = RenderCommandReference(generic_commands);
-	ok &= Expect(generic_result.Ok(), "generic command descriptor renders");
+	ok &=
+	    Expect(howdy::docs::RenderSucceeded(generic_result), "generic command descriptor renders");
 	ok &= Expect(generic_result.output.contains(R"(\&\fBsample [VALUE]\fR)"),
 	             "renderer uses descriptor-provided argument synopsis");
 
@@ -228,7 +231,7 @@ auto main() -> int {
 	    },
 	};
 	const auto escaped_result = RenderCommandReference(escaped_commands);
-	ok &= Expect(escaped_result.Ok(), "safe roff metadata renders");
+	ok &= Expect(howdy::docs::RenderSucceeded(escaped_result), "safe roff metadata renders");
 	ok &= Expect(escaped_result.output.contains(R"(a\-b\\c)"),
 	             "roff escapes hyphens and backslashes");
 	ok &= Expect(escaped_result.output.contains(R"([A\-B\\C])"),
@@ -239,7 +242,7 @@ auto main() -> int {
 	                          howdy::native::config_schema::BoolDefault(true), "Desc a-b\\c."),
 	};
 	const auto escaped_config_res = RenderConfigOptionReference(escaped_config_options);
-	ok &= Expect(escaped_config_res.Ok(), "escaped config options render");
+	ok &= Expect(howdy::docs::RenderSucceeded(escaped_config_res), "escaped config options render");
 	ok &= Expect(escaped_config_res.output.contains(".SS [sec\\-a]\n"),
 	             "escaped config section escapes hyphens");
 	ok &= Expect(escaped_config_res.output.contains(R"(\&\fBkey\-a\fR)"),
@@ -254,7 +257,7 @@ auto main() -> int {
 	                      .kind        = howdy::native::CommandKind::kEntrypoint,
 	                      .user_target = howdy::native::UserTargetMode::kNone},
 	};
-	ok &= Expect(!RenderCommandReference(control_command).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(RenderCommandReference(control_command)),
 	             "control characters in command text are rejected");
 	const std::array control_synopsis{
 	    CommandDescriptor{.id                = CommandId::kAdd,
@@ -266,7 +269,7 @@ auto main() -> int {
 	                      .argument_synopsis = "VALUE\n"},
 	};
 	const auto control_synopsis_result = RenderCommandReference(control_synopsis);
-	ok &= Expect(!control_synopsis_result.Ok() &&
+	ok &= Expect(!howdy::docs::RenderSucceeded(control_synopsis_result) &&
 	                 control_synopsis_result.error.contains("argument synopsis"),
 	             "control characters in argument synopsis are rejected");
 	const std::array control_option{
@@ -277,7 +280,7 @@ auto main() -> int {
 	                           .summary       = "Summary\n"},
 	};
 	const auto control_option_result = RenderGlobalOptionReference(control_option);
-	ok &= Expect(!control_option_result.Ok() &&
+	ok &= Expect(!howdy::docs::RenderSucceeded(control_option_result) &&
 	                 control_option_result.error.contains("control character"),
 	             "control characters in option text are rejected");
 
@@ -285,21 +288,21 @@ auto main() -> int {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core\n", "key", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Valid desc."),
 	};
-	ok &= Expect(!RenderConfigOptionReference(control_config_section).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(RenderConfigOptionReference(control_config_section)),
 	             "control characters in config section are rejected");
 
 	const std::array control_config_key = {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core", "key\n", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Valid desc."),
 	};
-	ok &= Expect(!RenderConfigOptionReference(control_config_key).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(RenderConfigOptionReference(control_config_key)),
 	             "control characters in config key are rejected");
 
 	const std::array control_config_desc = {
 	    SyntheticConfigOption(OptionId::kCoreDetectionNotice, "core", "key", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Desc\n"),
 	};
-	ok &= Expect(!RenderConfigOptionReference(control_config_desc).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(RenderConfigOptionReference(control_config_desc)),
 	             "control characters in config description are rejected");
 
 	const std::array non_contiguous_sections = {
@@ -310,29 +313,33 @@ auto main() -> int {
 	    SyntheticConfigOption(OptionId::kCoreAbortIfSsh, "sec1", "k3", ValueType::kBoolean,
 	                          howdy::native::config_schema::BoolDefault(true), "Desc 3."),
 	};
-	ok &= Expect(!RenderConfigOptionReference(non_contiguous_sections).Ok(),
-	             "non-contiguous config section reuse is rejected");
+	ok &=
+	    Expect(!howdy::docs::RenderSucceeded(RenderConfigOptionReference(non_contiguous_sections)),
+	           "non-contiguous config section reuse is rejected");
 
 	const std::array<Option, 0> empty_config_schema = {};
-	ok &= Expect(!RenderConfigOptionReference(empty_config_schema).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(RenderConfigOptionReference(empty_config_schema)),
 	             "empty config schema is rejected");
 
 	const std::array duplicate_workarounds{
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kInput, .summary = "One"},
 	    WorkaroundDescriptor{.value = "same", .workaround = Workaround::kNative, .summary = "Two"},
 	};
-	ok &= Expect(!RenderWorkaroundReference(duplicate_workarounds, Workaround::kOff).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(
+	                 RenderWorkaroundReference(duplicate_workarounds, Workaround::kOff)),
 	             "duplicate workaround values are rejected");
 	const std::array empty_workaround_summary{
 	    WorkaroundDescriptor{.value = "value", .workaround = Workaround::kInput, .summary = ""},
 	};
-	ok &= Expect(!RenderWorkaroundReference(empty_workaround_summary, Workaround::kOff).Ok(),
+	ok &= Expect(!howdy::docs::RenderSucceeded(
+	                 RenderWorkaroundReference(empty_workaround_summary, Workaround::kOff)),
 	             "empty workaround summaries are rejected");
 	const std::array mapped_off{
 	    WorkaroundDescriptor{.value = "off", .workaround = Workaround::kOff, .summary = "Off"},
 	};
-	ok &= Expect(!RenderWorkaroundReference(mapped_off, Workaround::kOff).Ok(),
-	             "off cannot become a mapped workaround value");
+	ok &= Expect(
+	    !howdy::docs::RenderSucceeded(RenderWorkaroundReference(mapped_off, Workaround::kOff)),
+	    "off cannot become a mapped workaround value");
 
 	return ok ? 0 : 1;
 }

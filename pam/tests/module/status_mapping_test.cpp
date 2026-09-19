@@ -1,6 +1,8 @@
+#include "module/auth_eligibility.hpp"
 #include "module/status_mapping.hpp"
 #include "module/translation.hpp"
 #include "protocol/compare_exit.hpp"
+#include "support/process_status.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -8,10 +10,11 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
-#include <libintl.h>
 #include <string>
 
-#include <security/pam_modules.h>
+#include <libintl.h>
+#include <signal.h>
+#include <stdlib.h>
 
 #include <sys/wait.h>
 
@@ -20,7 +23,7 @@ namespace {
 	using howdy::test::Expect;
 
 	auto MakeStatus(howdy::native::CompareExit exit_code) -> int {
-		return static_cast<int>(exit_code) << 8;
+		return howdy::native::EncodeWaitExitStatus(exit_code);
 	}
 
 	auto ExpectAuthenticationEligibilityMapping() -> bool {
@@ -88,7 +91,7 @@ auto main() -> int {
 	const bool        had_initial_language = initial_language_ptr != nullptr;
 	const std::string initial_language     = had_initial_language ? initial_language_ptr : "";
 
-	std::setlocale(LC_ALL, "C");
+	ok &= Expect(std::setlocale(LC_ALL, "C") != nullptr, "set C locale for status mapping test");
 	textdomain("pam-host-test-domain");
 	bindtextdomain(GETTEXT_PACKAGE, HOWDY_TEST_LOCALEDIR);
 	const std::string host_domain = textdomain(nullptr);
@@ -158,7 +161,7 @@ auto main() -> int {
 	}
 
 	{
-		const auto decision = MapCompareWaitStatus(99 << 8);
+		const auto decision = MapCompareWaitStatus(howdy::native::EncodeWaitExitStatus(99));
 		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "unknown exit returns error conversation");
@@ -184,7 +187,7 @@ auto main() -> int {
 	}
 
 	{
-		const auto decision = MapCompareWaitStatus(127 << 8);
+		const auto decision = MapCompareWaitStatus(howdy::native::EncodeWaitExitStatus(127));
 		ok &= Expect(decision.pam_result == PAM_AUTH_ERR,
 		             "helper execution-style failure fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
@@ -233,7 +236,8 @@ auto main() -> int {
 		textdomain(initial_domain.c_str());
 	}
 	if (!initial_locale.empty()) {
-		std::setlocale(LC_ALL, initial_locale.c_str());
+		ok &= Expect(std::setlocale(LC_ALL, initial_locale.c_str()) != nullptr,
+		             "restore initial locale");
 	}
 
 	if (!ok) {

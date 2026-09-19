@@ -1,11 +1,14 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_paths.hpp"
 #include "paths.hpp"
+#include "support/file_security.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>
 #include <optional>
-#include <unistd.h>
+#include <system_error>
+
+#include <stdlib.h>
 
 #include <sys/stat.h>
 

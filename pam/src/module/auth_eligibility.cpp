@@ -1,9 +1,12 @@
 #include "module/auth_eligibility.hpp"
 
 #include "config/runtime_config.hpp"
+#include "runtime/lid_probe.hpp"
 #include "runtime/session_probe.hpp"
+#include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
 
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <utility>

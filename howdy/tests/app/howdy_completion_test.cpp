@@ -7,6 +7,7 @@
 #include "version.hpp"
 
 #include <array>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -18,8 +19,6 @@ namespace howdy::test::dispatch {
 
 		using howdy::native::CommandCatalog;
 		using howdy::native::CommandId;
-		using howdy::native::GlobalOptionDescriptor;
-		using howdy::native::GlobalOptionId;
 		using howdy::native::howdy_internal::CommandMain;
 
 		auto ExpectedRuntimeConfigKeys() -> std::string {

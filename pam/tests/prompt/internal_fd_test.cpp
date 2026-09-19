@@ -5,13 +5,16 @@
 #include <array>
 #include <cerrno>
 #include <cstdlib>
-#include <fcntl.h>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include <sys/wait.h>
 
@@ -207,7 +210,8 @@ namespace {
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(read_fd), .write = ScopedFd(write_fd)};
-			ok &= Expect(pipe.Valid(), "distinct high InternalPipe endpoints are valid");
+			ok &= Expect(howdy::pam::detail::InternalPipeValid(pipe),
+			             "distinct high InternalPipe endpoints are valid");
 		}
 
 		const int invalid_write_fd = OpenHighFd();
@@ -216,7 +220,8 @@ namespace {
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(), .write = ScopedFd(invalid_write_fd)};
-			ok &= Expect(!pipe.Valid(), "invalid InternalPipe endpoint fails validation");
+			ok &= Expect(!howdy::pam::detail::InternalPipeValid(pipe),
+			             "invalid InternalPipe endpoint fails validation");
 		}
 		return ok && Expect(DescriptorIsClosed(invalid_write_fd),
 		                    "invalid InternalPipe endpoint is still owned and closed");
@@ -233,7 +238,7 @@ namespace {
 			}
 			{
 				InternalPipe pipe{.read = ScopedFd(low_fd), .write = ScopedFd(high_fd)};
-				if (pipe.Valid()) {
+				if (howdy::pam::detail::InternalPipeValid(pipe)) {
 					return false;
 				}
 			}
@@ -248,7 +253,7 @@ namespace {
 		}
 		{
 			InternalPipe pipe{.read = ScopedFd(identical_fd), .write = ScopedFd(identical_fd)};
-			if (pipe.Valid()) {
+			if (howdy::pam::detail::InternalPipeValid(pipe)) {
 				return false;
 			}
 		}
@@ -325,9 +330,9 @@ namespace {
 
 		std::array<int, 3> low_fds{};
 		for (int expected_fd = STDIN_FILENO; expected_fd <= STDERR_FILENO; ++expected_fd) {
-			low_fds[static_cast<std::size_t>(expected_fd)] =
+			low_fds.at(static_cast<std::size_t>(expected_fd)) =
 			    open("/dev/null", O_RDONLY | O_CLOEXEC);
-			if (low_fds[static_cast<std::size_t>(expected_fd)] != expected_fd) {
+			if (low_fds.at(static_cast<std::size_t>(expected_fd)) != expected_fd) {
 				return false;
 			}
 		}
@@ -403,7 +408,8 @@ namespace {
 	};
 
 	auto RecordPipeRawFds(PipeContext &state, int *pipe_fds) -> void {
-		state.raw_fds = {pipe_fds[0], pipe_fds[1]};
+		const auto descriptors = std::span(pipe_fds, std::size_t{2});
+		state.raw_fds          = {descriptors.front(), descriptors.back()};
 	}
 
 	auto CreateHighPipe(void *context, int *pipe_fds, int flags) -> int {
@@ -412,14 +418,15 @@ namespace {
 		if (pipe2(pipe_fds, flags) != 0) {
 			return -1;
 		}
-		for (int &pipe_fd : std::span(pipe_fds, 2)) {
+		auto descriptors = std::span(pipe_fds, std::size_t{2});
+		for (int &pipe_fd : descriptors) {
 			if (pipe_fd <= STDERR_FILENO) {
 				const int high_fd = fcntl(pipe_fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
 				if (high_fd < 0) {
-					(void)close(pipe_fds[0]);
-					(void)close(pipe_fds[1]);
-					pipe_fds[0] = -1;
-					pipe_fds[1] = -1;
+					(void)close(descriptors.front());
+					(void)close(descriptors.back());
+					descriptors.front() = -1;
+					descriptors.back()  = -1;
 					return -1;
 				}
 				(void)close(pipe_fd);
@@ -452,19 +459,21 @@ namespace {
 		(void)flags;
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
-		pipe_fds[0] = OpenHighFd();
-		pipe_fds[1] = -1;
+		auto descriptors    = std::span(pipe_fds, std::size_t{2});
+		descriptors.front() = OpenHighFd();
+		descriptors.back()  = -1;
 		RecordPipeRawFds(state, pipe_fds);
-		return pipe_fds[0] < 0 ? -1 : 0;
+		return descriptors.front() < 0 ? -1 : 0;
 	}
 
 	auto CreateIdenticalPipe(void *context, int *pipe_fds, int flags) -> int {
 		(void)flags;
 		auto &state = *static_cast<PipeContext *>(context);
 		++state.create_calls;
-		const int fd = OpenHighFd();
-		pipe_fds[0]  = fd;
-		pipe_fds[1]  = fd;
+		const int fd          = OpenHighFd();
+		auto      descriptors = std::span(pipe_fds, std::size_t{2});
+		descriptors.front()   = fd;
+		descriptors.back()    = fd;
 		RecordPipeRawFds(state, pipe_fds);
 		return fd < 0 ? -1 : 0;
 	}
@@ -479,14 +488,14 @@ namespace {
 		}
 		const int duplicate_fd = fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
 		if (state.duplicate_calls <= state.duplicate_fds.size()) {
-			state.duplicate_fds[state.duplicate_calls - 1] = duplicate_fd;
+			state.duplicate_fds.at(state.duplicate_calls - 1) = duplicate_fd;
 		}
 		return duplicate_fd;
 	}
 
 	auto RecordedPipeDescriptorsAreClosed(const PipeContext &state) -> bool {
-		return std::ranges::all_of(std::array{state.raw_fds[0], state.raw_fds[1],
-		                                      state.duplicate_fds[0], state.duplicate_fds[1]},
+		return std::ranges::all_of(std::array{state.raw_fds.at(0), state.raw_fds.at(1),
+		                                      state.duplicate_fds.at(0), state.duplicate_fds.at(1)},
 		                           [](const int fd) -> bool {
 			                           return DescriptorIsClosed(fd);
 		                           });
@@ -494,7 +503,7 @@ namespace {
 
 	auto TestProductionInternalPipe() -> bool {
 		auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC);
-		return pipe.Valid() && pipe.read.Get() > STDERR_FILENO &&
+		return howdy::pam::detail::InternalPipeValid(pipe) && pipe.read.Get() > STDERR_FILENO &&
 		       pipe.write.Get() > STDERR_FILENO && pipe.read.Get() != pipe.write.Get();
 	}
 
@@ -506,7 +515,8 @@ namespace {
 		                                                     .duplicate = DuplicatePipeFd};
 		auto                       missing_create =
 		    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &missing_create_operations);
-		ok &= Expect(!missing_create.Valid() && missing_context.create_calls == 0,
+		ok &= Expect(!howdy::pam::detail::InternalPipeValid(missing_create) &&
+		                 missing_context.create_calls == 0,
 		             "missing create_pipe callback fails closed");
 
 		PipeContext                failed_context;
@@ -515,7 +525,8 @@ namespace {
 		                                                    .create_pipe = CreateFailedPipe};
 		auto                       failed_create =
 		    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &failed_create_operations);
-		ok &= Expect(!failed_create.Valid() && failed_context.create_calls == 1,
+		ok &= Expect(!howdy::pam::detail::InternalPipeValid(failed_create) &&
+		                 failed_context.create_calls == 1,
 		             "create_pipe failure fails closed");
 		ok &= Expect(RecordedPipeDescriptorsAreClosed(failed_context),
 		             "create_pipe failure leaves no descriptors to close");
@@ -525,7 +536,8 @@ namespace {
 		    .context = &high_context, .duplicate = DuplicatePipeFd, .create_pipe = CreateHighPipe};
 		{
 			auto high_pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &high_operations);
-			ok &= Expect(high_pipe.Valid() && high_pipe.read.Get() > STDERR_FILENO &&
+			ok &= Expect(howdy::pam::detail::InternalPipeValid(high_pipe) &&
+			                 high_pipe.read.Get() > STDERR_FILENO &&
 			                 high_pipe.write.Get() > STDERR_FILENO &&
 			                 high_pipe.read.Get() != high_pipe.write.Get(),
 			             "high-descriptor internal pipe succeeds");
@@ -542,7 +554,8 @@ namespace {
 		{
 			auto invalid_pipe =
 			    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &invalid_operations);
-			ok &= Expect(!invalid_pipe.Valid(), "invalid final pipe endpoint fails closed");
+			ok &= Expect(!howdy::pam::detail::InternalPipeValid(invalid_pipe),
+			             "invalid final pipe endpoint fails closed");
 		}
 		ok &= Expect(RecordedPipeDescriptorsAreClosed(invalid_context),
 		             "invalid final pipe endpoint does not leak");
@@ -554,7 +567,8 @@ namespace {
 		{
 			auto identical_pipe =
 			    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &identical_operations);
-			ok &= Expect(!identical_pipe.Valid(), "identical final pipe endpoints fail closed");
+			ok &= Expect(!howdy::pam::detail::InternalPipeValid(identical_pipe),
+			             "identical final pipe endpoints fail closed");
 		}
 		return ok && Expect(RecordedPipeDescriptorsAreClosed(identical_context),
 		                    "identical final pipe endpoints do not leak");
@@ -571,7 +585,7 @@ namespace {
 		                                              .create_pipe = CreateRawPipe};
 		{
 			auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &success_operations);
-			if (!pipe.Valid() || pipe.read.Get() <= STDERR_FILENO ||
+			if (!howdy::pam::detail::InternalPipeValid(pipe) || pipe.read.Get() <= STDERR_FILENO ||
 			    pipe.write.Get() <= STDERR_FILENO || pipe.read.Get() == pipe.write.Get()) {
 				return false;
 			}
@@ -592,7 +606,8 @@ namespace {
 			                                              .create_pipe = CreateRawPipe};
 			{
 				auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC, &failure_operations);
-				if (pipe.Valid() || failure_context.duplicate_calls != failure_call) {
+				if (howdy::pam::detail::InternalPipeValid(pipe) ||
+				    failure_context.duplicate_calls != failure_call) {
 					return false;
 				}
 			}

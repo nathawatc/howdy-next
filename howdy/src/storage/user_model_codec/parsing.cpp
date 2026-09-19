@@ -1,10 +1,13 @@
 #include "internal.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
+#include "support/face_metric.hpp"
 #include "support/user_names.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <memory>
@@ -15,6 +18,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
 #include <yyjson.h>
 
 namespace howdy::native::user_model_codec_internal {
@@ -129,7 +133,7 @@ namespace howdy::native::user_model_codec_internal {
 			return static_cast<int>(raw);
 		}
 
-		auto ReadTimeField(yyjson_val *model) -> std::optional<long long> {
+		auto ReadTimeField(yyjson_val *model) -> std::optional<std::int64_t> {
 			auto *value = FindLastField(model, "time");
 			if (value == nullptr) {
 				return 0;
@@ -139,12 +143,12 @@ namespace howdy::native::user_model_codec_internal {
 			}
 			if (yyjson_is_uint(value)) {
 				const auto raw = yyjson_get_uint(value);
-				if (raw > static_cast<unsigned long long>(std::numeric_limits<long long>::max())) {
+				if (raw > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
 					return std::nullopt;
 				}
-				return static_cast<long long>(raw);
+				return static_cast<std::int64_t>(raw);
 			}
-			return static_cast<long long>(yyjson_get_sint(value));
+			return static_cast<std::int64_t>(yyjson_get_sint(value));
 		}
 
 		auto ReadStringField(yyjson_val *model, const char *key, bool strict_shape)
@@ -181,9 +185,14 @@ namespace howdy::native::user_model_codec_internal {
 
 			std::vector<float> encoding;
 			encoding.reserve(encoding_size);
-			size_t      index = 0;
-			size_t      count = 0;
+			size_t index = 0;
+			size_t count = 0;
+#if YYJSON_VERSION_HEX >= 0x000D00
+			yyjson_val const *value = nullptr;
+#else
+			// yyjson 0.12 read helpers require a mutable pointer even for read-only traversal.
 			yyjson_val *value = nullptr;
+#endif
 			yyjson_arr_foreach(encoding_json, index, count, value) {
 				if (!yyjson_is_num(value)) {
 					return EncodingParseResult{

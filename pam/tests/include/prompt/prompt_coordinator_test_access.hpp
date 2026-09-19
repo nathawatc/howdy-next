@@ -19,7 +19,7 @@ namespace howdy::pam {
 		}
 
 		[[nodiscard]] static auto PasswordCallReturned(PromptCoordinator &coordinator) -> bool {
-			std::scoped_lock lock(coordinator.mutex_);
+			std::scoped_lock const lock(coordinator.mutex_);
 			return coordinator.state_.password_call_returned;
 		}
 
@@ -34,7 +34,7 @@ namespace howdy::pam {
 
 		static void RequestShutdown(PromptCoordinator &coordinator) {
 			{
-				std::scoped_lock lock(coordinator.mutex_);
+				std::scoped_lock const lock(coordinator.mutex_);
 				coordinator.state_.shutdown_requested     = true;
 				coordinator.state_.cancellation_requested = true;
 				if (coordinator.state_.submission ==
@@ -49,7 +49,7 @@ namespace howdy::pam {
 
 		static void PrepareClaimedSubmission(PromptCoordinator               &coordinator,
 		                                     std::unique_ptr<PromptSubmitter> prompt_submitter) {
-			std::scoped_lock lock(coordinator.mutex_);
+			std::scoped_lock const lock(coordinator.mutex_);
 			coordinator.prompt_submitter_            = std::move(prompt_submitter);
 			coordinator.state_.first_completion      = PromptCoordinator::FirstCompletion::kCompare;
 			coordinator.state_.compare_succeeded     = true;
@@ -61,7 +61,7 @@ namespace howdy::pam {
 		}
 
 		static auto PromptSubmissionFinished(PromptCoordinator &coordinator) -> bool {
-			std::scoped_lock lock(coordinator.mutex_);
+			std::scoped_lock const lock(coordinator.mutex_);
 			return coordinator.state_.submission ==
 			       PromptCoordinator::PromptSubmissionState::kFinished;
 		}

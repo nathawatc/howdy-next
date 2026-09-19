@@ -1,21 +1,30 @@
+#include "app/command_invocation.hpp"
 #include "cli/snapshot/internal.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "support/atomic_files.hpp"
+#include "support/fd_io.hpp"
 #include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/frame_limits.hpp"
 #include "vision/frame_validation.hpp"
 #include "vision/video_capture.hpp"
 
 #include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <span>
 #include <string>
 #include <system_error>
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -136,18 +145,18 @@ auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
 		                   cv::BORDER_CONSTANT, cv::Scalar(44, 44, 44));
 		snap = padded;
 
-		for (std::size_t index = 0; index < text_lines.size(); ++index) {
-			const int padding_top = frame_height + 30 + (static_cast<int>(index) * 20);
-			cv::putText(snap, text_lines[index], cv::Point(30, padding_top),
-			            cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
+		int padding_top = frame_height + 30;
+		for (const auto &text_line : text_lines) {
+			cv::putText(snap, text_line, cv::Point(30, padding_top), cv::FONT_HERSHEY_SIMPLEX, 0.4,
+			            cv::Scalar(255, 255, 255), 0, cv::LINE_AA);
+			padding_top += 20;
 		}
 
 		std::vector<uchar> encoded_bytes;
 		if (!dependencies.encode_image(dependencies.context, extension, snap, &encoded_bytes) ||
 		    encoded_bytes.empty() ||
 		    !howdy::native::WriteAllToFd(staged->fd.Get(),
-		                                 reinterpret_cast<const char *>(encoded_bytes.data()),
-		                                 encoded_bytes.size())) {
+		                                 std::as_bytes(std::span(encoded_bytes)))) {
 			howdy::native::CleanupStagedFile(*staged);
 			return false;
 		}

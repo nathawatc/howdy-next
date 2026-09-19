@@ -1,11 +1,15 @@
 #include "cli/disable.hpp"
 
+#include "app/command_invocation.hpp"
 #include "cli/disable/internal.hpp"
 #include "config/config_schema.hpp"
 #include "config/config_utils.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
+#include "support/file_security.hpp"
+#include "support/file_security/validation_root.hpp"
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -41,7 +45,7 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
     -> int {
 	const std::string &argument_value = invocation.positionals.front();
 	std::string        out_value;
-	bool               disabled;
+	bool               disabled = false;
 	if (argument_value == "1" || argument_value == "true") {
 		out_value = "true";
 		disabled  = true;

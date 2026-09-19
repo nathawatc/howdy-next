@@ -8,14 +8,17 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <paths.hpp>
-#include <spawn.h>
+#include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
-#include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <fcntl.h>
+#include <spawn.h>
+#include <unistd.h>
 
 namespace howdy::test::runtime_session {
 	using howdy::test::Expect;
@@ -81,16 +84,18 @@ namespace howdy::test::runtime_session {
 	inline auto FakePipe2(void *context, int *fds, int flags) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.pipe_flags.push_back(flags);
-		fds[0] = fake.next_pipe_fds[0];
-		fds[1] = fake.next_pipe_fds[1];
+		auto descriptors    = std::span(fds, std::size_t{2});
+		descriptors.front() = fake.next_pipe_fds.front();
+		descriptors.back()  = fake.next_pipe_fds.back();
 		return FakeResult(fake, "pipe2");
 	}
 
 	inline auto FakeSocketpair(void *context, int domain, int type, int protocol, int *fds) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.socket_parameters.push_back({domain, type, protocol});
-		fds[0] = fake.next_socket_fds[0];
-		fds[1] = fake.next_socket_fds[1];
+		auto descriptors    = std::span(fds, std::size_t{2});
+		descriptors.front() = fake.next_socket_fds.front();
+		descriptors.back()  = fake.next_socket_fds.back();
 		return FakeResult(fake, "socketpair");
 	}
 
@@ -129,7 +134,7 @@ namespace howdy::test::runtime_session {
 		static constexpr std::array kNames = {"close_output_read", "close_output_write",
 		                                      "close_lease_parent", "close_lease_child"};
 		return FakeResult(fake,
-		                  kNames[std::min(fake.action_close_fds.size() - 1, kNames.size() - 1)]);
+		                  kNames.at(std::min(fake.action_close_fds.size() - 1, kNames.size() - 1)));
 	}
 
 	inline auto FakeActionsAddclosefrom(void *context, posix_spawn_file_actions_t *actions,
@@ -152,13 +157,17 @@ namespace howdy::test::runtime_session {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(request.context);
 		++fake.spawn_calls;
 		fake.spawn_path = request.path;
-		for (const auto *argument = request.argv; argument != nullptr && *argument != nullptr;
-		     ++argument) {
-			fake.spawn_argv.emplace_back(*argument);
+		for (const char *argument :
+		     request.argv | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			fake.spawn_argv.emplace_back(argument);
 		}
-		for (const auto *environment = request.envp;
-		     environment != nullptr && *environment != nullptr; ++environment) {
-			fake.spawn_env.emplace_back(*environment);
+		for (const char *environment :
+		     request.envp | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			fake.spawn_env.emplace_back(environment);
 		}
 		const int result = FakeResult(fake, "spawn");
 		if (result != 0) {
@@ -211,9 +220,8 @@ namespace howdy::test::runtime_session {
 		bool ok = Expect(fake.parent_close_fds.size() == expected_fds.size(),
 		                 std::string(name) + " closes expected parent descriptor count");
 		for (const int fd : expected_fds) {
-			ok &= Expect(
-			    std::count(fake.parent_close_fds.begin(), fake.parent_close_fds.end(), fd) == 1,
-			    std::string(name) + " closes parent fd " + std::to_string(fd) + " once");
+			ok &= Expect(std::ranges::count(fake.parent_close_fds, fd) == 1,
+			             std::string(name) + " closes parent fd " + std::to_string(fd) + " once");
 		}
 		return ok;
 	}
@@ -232,10 +240,10 @@ namespace howdy::test::runtime_session {
 		if (fake.log_messages.size() <= index) {
 			return false;
 		}
-		ok &= Expect(fake.log_messages[index].contains(operation),
+		ok &= Expect(fake.log_messages.at(index).contains(operation),
 		             std::string(name) + " log names failed operation");
-		ok &= Expect(fake.log_messages[index].contains(std::strerror(EIO)) &&
-		                 fake.log_messages[index].contains(std::to_string(EIO)),
+		ok &= Expect(fake.log_messages.at(index).contains(std::strerror(EIO)) &&
+		                 fake.log_messages.at(index).contains(std::to_string(EIO)),
 		             std::string(name) + " log includes error text and number");
 		return ok;
 	}

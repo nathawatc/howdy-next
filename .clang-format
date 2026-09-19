@@ -76,16 +76,18 @@ IncludeCategories:
     Priority: 2
   - Regex: '^"'
     Priority: 3
+  - Regex: '^<[^/]+\.h>$'
+    Priority: 5
   - Regex: "^<[^/]+>$"
     Priority: 4
   - Regex: "^<opencv2/"
-    Priority: 5
-  - Regex: "^<security/"
     Priority: 6
-  - Regex: "^<sys/"
+  - Regex: "^<security/"
     Priority: 7
-  - Regex: "^<.*>"
+  - Regex: "^<sys/"
     Priority: 8
+  - Regex: "^<.*>"
+    Priority: 9
 
 # Alignment
 AlignConsecutiveAssignments: Consecutive

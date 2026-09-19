@@ -2,6 +2,7 @@
 
 #include "config_schema/internal.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/face_metric.hpp"
 #include "support/frame_limits.hpp"
 
 #include <algorithm>
@@ -13,6 +14,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <variant>
 
@@ -299,7 +301,7 @@ namespace howdy::native::config_schema {
 
 	auto FormatIntegerValue(int value) -> std::optional<std::string> {
 		std::array<char, 32> buffer{};
-		const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, 10);
+		const auto           result = std::to_chars(buffer.begin(), buffer.end(), value, 10);
 		if (result.ec != std::errc{}) {
 			return std::nullopt;
 		}
@@ -311,8 +313,8 @@ namespace howdy::native::config_schema {
 			return std::nullopt;
 		}
 		std::array<char, 64> buffer{};
-		const auto result = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value,
-		                                  std::chars_format::general);
+		const auto           result =
+		    std::to_chars(buffer.begin(), buffer.end(), value, std::chars_format::general);
 		if (result.ec != std::errc{}) {
 			return std::nullopt;
 		}

@@ -1,22 +1,30 @@
 #pragma once
 
+#include "support/eintr.hpp"
+
 #include <array>
 #include <cerrno>
 #include <chrono>
-#include <csignal>
 #include <cstdlib>
 #include <iostream>
-#include <pthread.h>
 #include <thread>
-#include <unistd.h>
 #include <utility>
 
+#include <fcntl.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#include <sys/types.h>
 #include <sys/wait.h>
 
 namespace howdy::test::process {
 
 	class ScopedSignalBlock {
 	public:
+		ScopedSignalBlock(ScopedSignalBlock &&)                     = delete;
+		auto operator=(ScopedSignalBlock &&) -> ScopedSignalBlock & = delete;
+
 		explicit ScopedSignalBlock(int signal_number) noexcept {
 			sigset_t blocked{};
 			if (sigemptyset(&blocked) != 0 || sigaddset(&blocked, signal_number) != 0) {
@@ -44,10 +52,9 @@ namespace howdy::test::process {
 	};
 
 	inline auto ReapTestChild(pid_t child_pid, int *status) -> bool {
-		pid_t waited;
-		do {
-			waited = waitpid(child_pid, status, 0);
-		} while (waited < 0 && errno == EINTR);
+		const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
+			return waitpid(child_pid, status, 0);
+		});
 		if (waited == child_pid) {
 			return true;
 		}
@@ -71,7 +78,9 @@ namespace howdy::test::process {
 	inline auto SpawnSignaledChild(int signal_number) -> pid_t {
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
-			raise(signal_number);
+			if (raise(signal_number) != 0) {
+				_exit(EXIT_FAILURE);
+			}
 			_exit(EXIT_FAILURE);
 		}
 		return child_pid;
@@ -91,24 +100,23 @@ namespace howdy::test::process {
 
 	inline auto SpawnSigtermIgnoringChild() -> pid_t {
 		std::array<int, 2> ready_pipe = {-1, -1};
-		if (pipe(ready_pipe.data()) != 0) {
+		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
 			return -1;
 		}
 
 		const pid_t child_pid = fork();
 		if (child_pid == 0) {
-			close(ready_pipe[0]);
+			close(ready_pipe.at(0));
 			struct sigaction action = {};
 			action.sa_handler       = IgnoreSigterm;
 			sigemptyset(&action.sa_mask);
 			if (sigaction(SIGTERM, &action, nullptr) != 0) {
 				_exit(EXIT_FAILURE);
 			}
-			const char ready = '1';
-			ssize_t    write_result;
-			do {
-				write_result = write(ready_pipe[1], &ready, sizeof(ready));
-			} while (write_result < 0 && errno == EINTR);
+			const char    ready        = '1';
+			const ssize_t write_result = howdy::native::RetryOnEintr([&] -> ssize_t {
+				return write(ready_pipe.at(1), &ready, sizeof(ready));
+			});
 			if (std::cmp_not_equal(write_result, sizeof(ready))) {
 				_exit(EXIT_FAILURE);
 			}
@@ -117,11 +125,11 @@ namespace howdy::test::process {
 			}
 		}
 
-		close(ready_pipe[1]);
+		close(ready_pipe.at(1));
 		char ready = '\0';
-		while (read(ready_pipe[0], &ready, 1) < 0 && errno == EINTR) {
+		while (read(ready_pipe.at(0), &ready, 1) < 0 && errno == EINTR) {
 		}
-		close(ready_pipe[0]);
+		close(ready_pipe.at(0));
 		if (child_pid <= 0 || ready != '1') {
 			if (child_pid > 0) {
 				(void)kill(child_pid, SIGKILL);

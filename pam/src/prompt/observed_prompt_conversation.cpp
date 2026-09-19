@@ -1,13 +1,18 @@
 #include "prompt/observed_prompt_conversation.hpp"
 
 #include "prompt/conversation_response.hpp"
+#include "prompt/conversation_restore.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <exception>
 #include <memory>
 #include <mutex>
-#include <syslog.h>
+#include <span>
+#include <utility>
 #include <vector>
+
+#include <sys/syslog.h>
 
 namespace {
 	auto ProductionGetItem(void * /*context*/, pam_handle_t *pamh, int item_type, const void **item)
@@ -111,31 +116,45 @@ namespace howdy::pam {
 			}
 
 			bool secret_prompt_observed = false;
-			for (int index = 0; index < num_msg; ++index) {
-				if (messages[index] == nullptr) {
+			for (const auto *message : std::span(messages, static_cast<std::size_t>(num_msg))) {
+				if (message == nullptr) {
 					return PAM_CONV_ERR;
 				}
-				secret_prompt_observed |= messages[index]->msg_style == PAM_PROMPT_ECHO_OFF;
+				secret_prompt_observed |= message->msg_style == PAM_PROMPT_ECHO_OFF;
 			}
 			SecretPromptGeneration generation = 0;
 			if (secret_prompt_observed) {
 				generation = context->observer.begin(context->observer.context);
 			}
 
-			struct PromptGenerationScope {
-				SecretPromptObserver   observer{};
-				SecretPromptGeneration generation = 0;
+			class PromptGenerationScope {
+			public:
+				PromptGenerationScope(SecretPromptObserver   observer,
+				                      SecretPromptGeneration generation)
+				    : observer_(observer)
+				    , generation_(generation) {}
+
+				PromptGenerationScope(const PromptGenerationScope &)                     = delete;
+				auto operator=(const PromptGenerationScope &) -> PromptGenerationScope & = delete;
+				PromptGenerationScope(PromptGenerationScope &&)                          = delete;
+				auto operator=(PromptGenerationScope &&) -> PromptGenerationScope &      = delete;
 
 				~PromptGenerationScope() noexcept {
-					if (generation != 0) {
+					if (generation_ != 0) {
 						try {
-							observer.end(observer.context, generation);
+							observer_.end(observer_.context, generation_);
 						} catch (...) {
 							syslog(LOG_ERR, "Secret prompt generation cleanup failed");
 						}
 					}
 				}
-			} generation_scope{.observer = context->observer, .generation = generation};
+
+			private:
+				SecretPromptObserver   observer_{};
+				SecretPromptGeneration generation_ = 0;
+			};
+
+			const PromptGenerationScope generation_scope{context->observer, generation};
 
 			const int result =
 			    context->original.conv(num_msg, messages, response, context->original.appdata_ptr);
@@ -158,7 +177,7 @@ namespace howdy::pam {
 		static std::mutex                                    quarantine_mutex;
 		static std::vector<std::unique_ptr<DispatchContext>> quarantine;
 		try {
-			std::scoped_lock lock(quarantine_mutex);
+			std::scoped_lock const lock(quarantine_mutex);
 			quarantine.push_back(std::move(context_));
 		} catch (...) {
 			// Allocation failure cannot make stale PAM callback safe to free. Retain tiny

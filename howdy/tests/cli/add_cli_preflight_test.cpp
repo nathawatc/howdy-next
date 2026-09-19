@@ -1,7 +1,11 @@
+#include "cli/add/internal.hpp"
 #include "cli/add_cli_test_support.hpp"
+#include "config/runtime_config_loader.hpp"
 
+#include <iosfwd>
 #include <iostream>
 #include <sstream>
+#include <string>
 
 namespace howdy::test::add_cli {
 
@@ -45,10 +49,10 @@ namespace howdy::test::add_cli {
 			    .status        = test_case.status,
 			    .error_message = test_case.message,
 			};
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice"});
 
@@ -94,12 +98,12 @@ namespace howdy::test::add_cli {
 			    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
 			    .status = static_cast<howdy::native::add_internal::AddPreflightStatus>(99),
 			};
-			std::istringstream input("front-door\n");
-			std::ostringstream output;
-			std::ostringstream error;
+			std::istringstream       input("front-door\n");
+			std::ostringstream const output;
+			std::ostringstream const error;
 			context.input_stream = &input;
-			StreamRedirect redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
-			ErrorRedirect  error_redirect(std::cerr, error.rdbuf());
+			StreamRedirect const redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+			ErrorRedirect const  error_redirect(std::cerr, error.rdbuf());
 
 			const int result = RunAdd(context, {.resolved_user = "alice"});
 

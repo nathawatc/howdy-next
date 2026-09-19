@@ -1,10 +1,16 @@
 #include "test_support.hpp"
+#include "vision/face_encoding.hpp"
 #include "vision/face_encoding/internal.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
+
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 
 namespace {
 
@@ -31,7 +37,7 @@ namespace {
 		if (context.failure == FailureOperation::kAlign) {
 			ThrowCvError("alignCrop");
 		}
-		request.aligned = context.aligned;
+		request.aligned.get() = context.aligned;
 	}
 
 	void ExtractFeature(void *opaque, [[maybe_unused]] const cv::Mat &aligned, cv::Mat &feature) {
@@ -63,7 +69,7 @@ namespace {
 	auto ExpectEncodingFailure(const howdy::native::FaceEncodingResult &result,
 	                           const std::string                       &subject) -> bool {
 		bool ok = true;
-		ok &= Expect(!result.Ok(), subject + " is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result), subject + " is not successful");
 		ok &= Expect(result.encoding.empty(), subject + " exposes no encoding");
 		ok &= Expect(!result.error_message.empty(), subject + " returns actionable diagnostic");
 		return ok;
@@ -75,41 +81,48 @@ auto main() -> int {
 
 	{
 		const howdy::native::FaceEncodingResult result;
-		ok &= Expect(!result.Ok(), "default encoding result is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "default encoding result is not successful");
 		ok &= Expect(!result.error_message.empty(),
 		             "default encoding result has actionable diagnostic");
 	}
 
 	{
 		const auto result = ClaimedSuccess(0);
-		ok &= Expect(!result.Ok(), "claimed success with empty encoding is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with empty encoding is not successful");
 	}
 
 	{
 		const auto result = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize - 1);
-		ok &= Expect(!result.Ok(), "claimed success with short encoding is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with short encoding is not successful");
 	}
 
 	{
 		const auto result = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize + 1);
-		ok &= Expect(!result.Ok(), "claimed success with long encoding is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with long encoding is not successful");
 	}
 
 	{
-		auto result        = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
-		result.encoding[0] = std::numeric_limits<float>::quiet_NaN();
-		ok &= Expect(!result.Ok(), "claimed success with NaN encoding is not successful");
+		auto result           = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
+		result.encoding.at(0) = std::numeric_limits<float>::quiet_NaN();
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with NaN encoding is not successful");
 	}
 
 	{
-		auto result        = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
-		result.encoding[0] = std::numeric_limits<float>::infinity();
-		ok &= Expect(!result.Ok(), "claimed success with infinite encoding is not successful");
+		auto result           = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
+		result.encoding.at(0) = std::numeric_limits<float>::infinity();
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with infinite encoding is not successful");
 	}
 
 	{
 		const auto result = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
-		ok &= Expect(result.Ok(), "claimed success with valid encoding is successful");
+		ok &= Expect(howdy::native::FaceEncodingSucceeded(result),
+		             "claimed success with valid encoding is successful");
 	}
 
 	{
@@ -184,7 +197,8 @@ auto main() -> int {
 		const auto result = Encode(context);
 		ok &= Expect(result.status == howdy::native::FaceEncodingStatus::kInvalidOutput,
 		             "wrong-type feature returns invalid output");
-		ok &= Expect(!result.Ok(), "wrong-type feature is not successful");
+		ok &= Expect(!howdy::native::FaceEncodingSucceeded(result),
+		             "wrong-type feature is not successful");
 		ok &= Expect(result.error_message == "Face encoding returned invalid embedding",
 		             "wrong-type feature returns generic diagnostic");
 	}
@@ -197,7 +211,7 @@ auto main() -> int {
 		context.feature.at<float>(static_cast<int>(howdy::native::kSfaceEmbeddingSize - 1), 0) =
 		    0.75F;
 		const auto result = Encode(context);
-		ok &= Expect(result.Ok(), "column embedding succeeds");
+		ok &= Expect(howdy::native::FaceEncodingSucceeded(result), "column embedding succeeds");
 		ok &= Expect(result.encoding.size() == howdy::native::kSfaceEmbeddingSize &&
 		                 result.encoding.front() == 0.5F && result.encoding.back() == 0.75F,
 		             "column embedding flattens in element order");
@@ -220,7 +234,7 @@ auto main() -> int {
 			    static_cast<float>(index) / static_cast<float>(howdy::native::kSfaceEmbeddingSize);
 		}
 		const auto result = Encode(context);
-		ok &= Expect(result.Ok(), "valid feature succeeds");
+		ok &= Expect(howdy::native::FaceEncodingSucceeded(result), "valid feature succeeds");
 		ok &= Expect(result.encoding.size() == howdy::native::kSfaceEmbeddingSize,
 		             "valid feature preserves encoding size");
 		ok &= Expect(result.error_message.empty(), "valid feature has no failure diagnostic");

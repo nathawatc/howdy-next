@@ -1,4 +1,9 @@
+#include "../../src/storage/user_model_codec/internal.hpp"
 #include "storage/user_model_codec_test_support.hpp"
+#include "storage/user_model_status.hpp"
+#include "support/face_metric.hpp"
+
+#include <vector>
 
 namespace howdy::test::user_model_codec {
 
@@ -7,12 +12,12 @@ namespace howdy::test::user_model_codec {
 
 		bool       ok       = true;
 		const auto document = Decode(ModelList({ModelJson()}));
-		ok &= ExpectStatus(document.result.status, UserModelStatus::kOk,
+		ok &= ExpectStatus(document.Result().status, UserModelStatus::kOk,
 		                   "valid strict document returns kOk");
-		ok &= Expect(document.result.entries.size() == 1, "valid strict document has one entry");
-		ok &= Expect(document.result.next_id == 8, "valid strict document reports next_id");
-		if (!document.result.entries.empty()) {
-			const auto &entry = document.result.entries.front();
+		ok &= Expect(document.Result().entries.size() == 1, "valid strict document has one entry");
+		ok &= Expect(document.Result().next_id == 8, "valid strict document reports next_id");
+		if (!document.Result().entries.empty()) {
+			const auto &entry = document.Result().entries.front();
 			ok &= Expect(entry.id == 7, "valid strict document preserves id");
 			ok &= Expect(entry.time == 1700000000LL, "valid strict document preserves time");
 			ok &= Expect(entry.label == "Office camera", "valid strict document preserves label");
@@ -52,12 +57,12 @@ namespace howdy::test::user_model_codec {
 			return false;
 		}
 		const auto decoded = Decode(*content);
-		ok &= ExpectStatus(decoded.result.status, UserModelStatus::kOk,
+		ok &= ExpectStatus(decoded.Result().status, UserModelStatus::kOk,
 		                   "round trip document returns kOk");
-		ok &= Expect(decoded.result.entries.size() == 1, "round trip document has one entry");
-		ok &= Expect(decoded.result.next_id == 13, "round trip document reports next_id");
-		if (!decoded.result.entries.empty()) {
-			const auto &actual = decoded.result.entries.front();
+		ok &= Expect(decoded.Result().entries.size() == 1, "round trip document has one entry");
+		ok &= Expect(decoded.Result().next_id == 13, "round trip document reports next_id");
+		if (!decoded.Result().entries.empty()) {
+			const auto &actual = decoded.Result().entries.front();
 			ok &= Expect(actual.id == entry.id, "round trip preserves id");
 			ok &= Expect(actual.time == entry.time, "round trip preserves time");
 			ok &= Expect(actual.label == entry.label, "round trip preserves label");
@@ -84,7 +89,7 @@ namespace howdy::test::user_model_codec {
 		    .model     = kModel,
 		    .encodings = {{4.0F, 5.0F}},
 		};
-		bool ok = ExpectStatus(document.result.status, UserModelStatus::kOk,
+		bool ok = ExpectStatus(document.Result().status, UserModelStatus::kOk,
 		                       "immutable conversion fixture decodes");
 		ok &= Expect(howdy::native::user_model_codec::AppendEntry(document, appended),
 		             "immutable document converts and appends");
@@ -94,10 +99,10 @@ namespace howdy::test::user_model_codec {
 		ok &= Expect(serialized.has_value(), "converted document serializes");
 		if (serialized.has_value()) {
 			const auto round_trip = Decode(*serialized);
-			ok &= ExpectStatus(round_trip.result.status, UserModelStatus::kOk,
+			ok &= ExpectStatus(round_trip.Result().status, UserModelStatus::kOk,
 			                   "converted document round trip returns kOk");
-			ok &= Expect(round_trip.result.entries.size() == 1 &&
-			                 round_trip.result.entries.front().id == 1,
+			ok &= Expect(round_trip.Result().entries.size() == 1 &&
+			                 round_trip.Result().entries.front().id == 1,
 			             "converted document keeps mutation results");
 		}
 		return ok;
@@ -143,10 +148,10 @@ namespace howdy::test::user_model_codec {
 		             "empty optional metadata is omitted");
 		if (serialized.has_value()) {
 			const auto round_trip = Decode(*serialized);
-			ok &= ExpectStatus(round_trip.result.status, UserModelStatus::kOk,
+			ok &= ExpectStatus(round_trip.Result().status, UserModelStatus::kOk,
 			                   "empty encoding round trip returns kOk");
-			ok &= Expect(round_trip.result.entries.size() == 1 &&
-			                 round_trip.result.entries.front().encodings.empty(),
+			ok &= Expect(round_trip.Result().entries.size() == 1 &&
+			                 round_trip.Result().entries.front().encodings.empty(),
 			             "empty encoding round trip preserves empty data");
 		}
 		ok &= Expect(!howdy::native::user_model_codec::EraseEntry(document, 1),
@@ -170,36 +175,36 @@ namespace howdy::test::user_model_codec {
 		    ModelJson("7", "1700000007", R"("middle")", R"("opencv_dnn_sface")", R"("cosine")",
 		              R"("sface.onnx")", "[[7.0]]"),
 		}));
-		ok &= ExpectStatus(document.result.status, UserModelStatus::kOk,
+		ok &= ExpectStatus(document.Result().status, UserModelStatus::kOk,
 		                   "out-of-order non-contiguous model IDs return kOk");
-		ok &= Expect(document.result.entries.size() == 3,
+		ok &= Expect(document.Result().entries.size() == 3,
 		             "out-of-order non-contiguous model IDs preserve entry count");
-		ok &= Expect(document.result.next_id == 11,
+		ok &= Expect(document.Result().next_id == 11,
 		             "out-of-order non-contiguous model IDs report max id plus one");
-		if (document.result.entries.size() == 3) {
-			ok &= Expect(document.result.entries[0].id == 10 &&
-			                 document.result.entries[0].label == "highest" &&
-			                 document.result.entries[0].time == 1700000010LL &&
-			                 document.result.entries[0].encodings ==
+		if (document.Result().entries.size() == 3) {
+			ok &= Expect(document.Result().entries.at(0).id == 10 &&
+			                 document.Result().entries.at(0).label == "highest" &&
+			                 document.Result().entries.at(0).time == 1700000010LL &&
+			                 document.Result().entries.at(0).encodings ==
 			                     std::vector<std::vector<float>>{{10.0F}},
 			             "first out-of-order entry is preserved");
-			ok &= Expect(document.result.entries[1].id == 2 &&
-			                 document.result.entries[1].label == "lowest" &&
-			                 document.result.entries[1].time == 1700000002LL &&
-			                 document.result.entries[1].encodings ==
+			ok &= Expect(document.Result().entries.at(1).id == 2 &&
+			                 document.Result().entries.at(1).label == "lowest" &&
+			                 document.Result().entries.at(1).time == 1700000002LL &&
+			                 document.Result().entries.at(1).encodings ==
 			                     std::vector<std::vector<float>>{{2.0F, 2.5F}},
 			             "second out-of-order entry is preserved");
-			ok &= Expect(document.result.entries[2].id == 7 &&
-			                 document.result.entries[2].label == "middle" &&
-			                 document.result.entries[2].time == 1700000007LL &&
-			                 document.result.entries[2].encodings ==
+			ok &= Expect(document.Result().entries.at(2).id == 7 &&
+			                 document.Result().entries.at(2).label == "middle" &&
+			                 document.Result().entries.at(2).time == 1700000007LL &&
+			                 document.Result().entries.at(2).encodings ==
 			                     std::vector<std::vector<float>>{{7.0F}},
 			             "third out-of-order entry is preserved");
 		}
-		ok &= ExpectStatus(Decode(ModelList({ModelJson("3"), ModelJson("3")})).result.status,
+		ok &= ExpectStatus(Decode(ModelList({ModelJson("3"), ModelJson("3")})).Result().status,
 		                   UserModelStatus::kInvalidShape,
 		                   "duplicate strict IDs return kInvalidShape");
-		ok &= ExpectStatus(Decode(ModelList({ModelJson("2147483647")})).result.status,
+		ok &= ExpectStatus(Decode(ModelList({ModelJson("2147483647")})).Result().status,
 		                   UserModelStatus::kInvalidShape, "INT_MAX ID returns kInvalidShape");
 		return ok;
 	}
@@ -227,7 +232,7 @@ namespace howdy::test::user_model_codec {
 		    .model     = kModel,
 		    .encodings = {{0.5F, 0.6F}},
 		};
-		ok &= ExpectStatus(append_document.result.status, UserModelStatus::kOk,
+		ok &= ExpectStatus(append_document.Result().status, UserModelStatus::kOk,
 		                   "unknown-field append fixture decodes");
 		ok &= Expect(howdy::native::user_model_codec::AppendEntry(append_document, appended),
 		             "append mutates copied document");

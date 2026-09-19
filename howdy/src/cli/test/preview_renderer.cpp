@@ -1,14 +1,23 @@
 #include "cli/test/preview_renderer.hpp"
 
+#include "cli/test/preview_session.hpp"
 #include "config/runtime_config.hpp"
+#include "storage/user_model_types.hpp"
+#include "vision/preview_engine.hpp"
+#include "vision/video_capture.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <exception>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/operations.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -98,12 +107,12 @@ namespace howdy::native::test_cli_internal {
 		const int height = gray_frame.rows;
 		const int width  = gray_frame.cols;
 
-		for (std::size_t index = 0; index < frame_result.brightness.bins_percent.size(); ++index) {
-			const float     value_perc = frame_result.brightness.bins_percent[index];
-			const int       bin_offset = 10 * static_cast<int>(index);
+		int bin_offset = 0;
+		for (const float value_perc : frame_result.brightness.bins_percent) {
 			const cv::Point p1(20 + bin_offset, 10);
 			const cv::Point p2(10 + bin_offset, static_cast<int>((value_perc / 2.0F) + 10.0F));
 			cv::rectangle(overlay, p1, p2, cv::Scalar(0, 200, 0), cv::FILLED);
+			bin_offset += 10;
 		}
 
 		PrintText(overlay, 0, height,
@@ -148,7 +157,7 @@ namespace howdy::native::test_cli_internal {
 						face_text = "no match (" + cv::format("%.3f", face_match.score) + ")";
 					} else {
 						color             = cv::Scalar(0, 230, 0);
-						const auto &model = models_[static_cast<std::size_t>(face_match.index)];
+						const auto &model = models_.at(static_cast<std::size_t>(face_match.index));
 						face_text =
 						    model.label + " (score: " + cv::format("%.3f", face_match.score) + ")";
 					}
@@ -231,18 +240,18 @@ namespace howdy::native::test_cli_internal {
 
 	PreviewCleanup::PreviewCleanup(std::optional<TestPreviewRenderer>         &renderer,
 	                               std::optional<howdy::native::VideoCapture> &preview_capture)
-	    : capture(preview_capture)
-	    , renderer_cleanup(renderer) {}
+	    : capture_(preview_capture)
+	    , renderer_cleanup_(renderer) {}
 
 	PreviewCleanup::~PreviewCleanup() noexcept {
 		try {
-			renderer_cleanup.Cleanup();
+			renderer_cleanup_.Cleanup();
 		} catch (...) {  // NOLINT(bugprone-empty-catch)
 		}
 
 		try {
-			if (capture.has_value()) {
-				capture->Release();
+			if (capture_.has_value()) {
+				capture_->Release();
 			}
 		} catch (...) {  // NOLINT(bugprone-empty-catch)
 		}
@@ -251,7 +260,7 @@ namespace howdy::native::test_cli_internal {
 	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
 	                           PreviewCleanupBodyFn body) {
 		std::optional<howdy::native::VideoCapture> capture;
-		PreviewCleanup                             cleanup(renderer, capture);
+		PreviewCleanup const                       cleanup(renderer, capture);
 		body(context);
 	}
 

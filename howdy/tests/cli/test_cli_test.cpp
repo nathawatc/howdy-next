@@ -1,4 +1,7 @@
+#include "app/command_invocation.hpp"
 #include "cli/test/internal.hpp"
+#include "config/runtime_config.hpp"
+#include "config/runtime_config_loader.hpp"
 #include "test_support.hpp"
 #include "vision/preview_engine.hpp"
 
@@ -11,17 +14,24 @@ namespace {
 
 	using howdy::test::Expect;
 
-	struct StreamRedirect {
-		std::ostream   &output;
-		std::streambuf *old_buffer;
+	class StreamRedirect {
+	public:
+		StreamRedirect(const StreamRedirect &)                     = delete;
+		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
+		StreamRedirect(StreamRedirect &&)                          = delete;
+		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
 
 		StreamRedirect(std::ostream &stream, std::streambuf *new_buffer)
-		    : output(stream)
-		    , old_buffer(stream.rdbuf(new_buffer)) {}
+		    : output_(stream)
+		    , old_buffer_(stream.rdbuf(new_buffer)) {}
 
 		~StreamRedirect() {
-			output.rdbuf(old_buffer);
+			output_.rdbuf(old_buffer_);
 		}
+
+	private:
+		std::ostream   &output_;
+		std::streambuf *old_buffer_;
 	};
 
 	struct TestCliTestContext {
@@ -210,8 +220,8 @@ namespace {
 	auto InvalidRuntimeConfigStopsBeforePreview() -> bool {
 		auto context          = MakeSuccessContext();
 		context.config_result = InvalidConfigLoadResult();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -229,8 +239,8 @@ namespace {
 		auto context             = MakeSuccessContext();
 		context.face_model_ok    = false;
 		context.face_model_error = "face model failed";
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {.resolved_user = "alice"});
 
@@ -310,8 +320,8 @@ namespace {
 	auto MissingGraphicalEnvironmentPrintsDiagnostic() -> bool {
 		auto context              = MakeSuccessContext();
 		context.graphical_display = false;
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -343,8 +353,8 @@ namespace {
 		auto context              = MakeSuccessContext();
 		context.camera_open_ok    = false;
 		context.camera_open_error = "camera open failed";
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -368,8 +378,8 @@ namespace {
 	auto CameraReadFailurePrintsDiagnostic() -> bool {
 		auto context           = MakeSuccessContext();
 		context.camera_read_ok = false;
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -388,8 +398,8 @@ namespace {
 	auto GuiUserSwitchFailurePrintsDiagnostic() -> bool {
 		auto context        = MakeSuccessContext();
 		context.gui_user_ok = false;
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -410,9 +420,9 @@ namespace {
 	}
 
 	auto SuccessfulPreviewReturnsZero() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		auto                     context = MakeSuccessContext();
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {.resolved_user = "alice"});
 
@@ -434,9 +444,9 @@ namespace {
 	}
 
 	auto ConfiguredDeviceDefaultIsUsedForCameraOpen() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		auto                     context = MakeSuccessContext();
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 
@@ -459,8 +469,8 @@ namespace {
 		context.config_result.config->video.device_path = "none";
 		context.camera_open_ok                          = false;
 		context.camera_open_error = "Camera is not configured; set video.device_path";
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int  result     = RunTest(context, {});
 		const auto error_text = error.str();
@@ -475,9 +485,9 @@ namespace {
 	}
 
 	auto DeviceOverrideIsUsedForCameraOpen() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		auto                     context = MakeSuccessContext();
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {.device = "/dev/video1"});
 
@@ -493,9 +503,9 @@ namespace {
 	}
 
 	auto GuiInitializationRunsBeforeFirstCameraRead() -> bool {
-		auto               context = MakeSuccessContext();
-		std::ostringstream error;
-		StreamRedirect     error_redirect(std::cerr, error.rdbuf());
+		auto                     context = MakeSuccessContext();
+		std::ostringstream const error;
+		StreamRedirect const     error_redirect(std::cerr, error.rdbuf());
 
 		const int result = RunTest(context, {});
 

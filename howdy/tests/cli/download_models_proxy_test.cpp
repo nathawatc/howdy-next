@@ -1,8 +1,12 @@
+#include "cli/download_models/internal.hpp"
 #include "cli/download_models_test_support.hpp"
+#include "model_assets/opencv_model_manifest.hpp"
+#include "support/bit_flags.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
@@ -11,19 +15,27 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
-#include <poll.h>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <utility>
 
-#include <sys/socket.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-#include <arpa/inet.h>
+#include <sys/poll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <curl/curl.h>
+#include <curl/easy.h>
+#include <curl/system.h>
 #include <netinet/in.h>
 
 namespace howdy::test::download_models {
 
+	using howdy::native::download_models_internal::CurlLong;
 	using howdy::test::Expect;
 	using howdy::test::ScopedFd;
 
@@ -31,8 +43,18 @@ namespace howdy::test::download_models {
 
 		constexpr int         kPollTimeoutMilliseconds     = 50;
 		constexpr std::size_t kMaxProxyRequestBytes        = 8192;
-		constexpr long        kConnectTimeoutMilliseconds  = 1000L;
-		constexpr long        kTransferTimeoutMilliseconds = 2000L;
+		constexpr auto        kConnectTimeoutMilliseconds  = 1000L;
+		constexpr auto        kTransferTimeoutMilliseconds = 2000L;
+
+		[[nodiscard]] constexpr auto ToSocketAddress(const sockaddr_in &address) -> sockaddr {
+			static_assert(sizeof(sockaddr_in) == sizeof(sockaddr));
+			return std::bit_cast<sockaddr>(address);
+		}
+
+		[[nodiscard]] constexpr auto ToIpv4Address(const sockaddr &address) -> sockaddr_in {
+			static_assert(sizeof(sockaddr_in) == sizeof(sockaddr));
+			return std::bit_cast<sockaddr_in>(address);
+		}
 
 		enum class ProbeKind : std::uint8_t {
 			kProxy,
@@ -41,6 +63,9 @@ namespace howdy::test::download_models {
 
 		class LoopbackProbe {
 		public:
+			LoopbackProbe(LoopbackProbe &&)                     = delete;
+			auto operator=(LoopbackProbe &&) -> LoopbackProbe & = delete;
+
 			explicit LoopbackProbe(const ProbeKind kind)
 			    : kind_(kind) {
 				Initialize();
@@ -81,7 +106,7 @@ namespace howdy::test::download_models {
 			}
 
 			[[nodiscard]] auto Request() const -> std::string {
-				std::scoped_lock lock(state_mutex_);
+				std::scoped_lock const lock(state_mutex_);
 				return request_;
 			}
 
@@ -103,20 +128,20 @@ namespace howdy::test::download_models {
 				address.sin_family      = AF_INET;
 				address.sin_port        = 0;
 				address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-				if (bind(listener_fd_.Get(), reinterpret_cast<const sockaddr *>(&address),
-				         sizeof(address)) != 0 ||
+				auto socket_address     = ToSocketAddress(address);
+				if (bind(listener_fd_.Get(), &socket_address, sizeof(socket_address)) != 0 ||
 				    listen(listener_fd_.Get(), 1) != 0) {
 					listener_fd_.Reset();
 					return;
 				}
 
-				auto address_length = static_cast<socklen_t>(sizeof(address));
-				if (getsockname(listener_fd_.Get(), reinterpret_cast<sockaddr *>(&address),
-				                &address_length) != 0) {
+				auto address_length = static_cast<socklen_t>(sizeof(socket_address));
+				if (getsockname(listener_fd_.Get(), &socket_address, &address_length) != 0) {
 					listener_fd_.Reset();
 					return;
 				}
-				port_ = ntohs(address.sin_port);
+				address = ToIpv4Address(socket_address);
+				port_   = ntohs(address.sin_port);
 
 				worker_ = std::thread([this] -> void {
 					Run();
@@ -143,11 +168,11 @@ namespace howdy::test::download_models {
 					if (poll_result == 0) {
 						continue;
 					}
-					if ((descriptor.revents & POLLIN) == 0) {
+					if (!howdy::native::HasAnyBits(descriptor.revents, POLLIN)) {
 						break;
 					}
 
-					ScopedFd client_fd(accept(listener_fd_.Get(), nullptr, nullptr));
+					ScopedFd client_fd(accept4(listener_fd_.Get(), nullptr, nullptr, SOCK_CLOEXEC));
 					if (client_fd.Get() < 0) {
 						if (errno == EINTR) {
 							continue;
@@ -182,7 +207,7 @@ namespace howdy::test::download_models {
 					if (poll_result == 0) {
 						continue;
 					}
-					if ((descriptor.revents & POLLIN) == 0) {
+					if (!howdy::native::HasAnyBits(descriptor.revents, POLLIN)) {
 						return;
 					}
 
@@ -218,20 +243,20 @@ namespace howdy::test::download_models {
 			}
 
 			void MarkConnectionObserved() {
-				std::scoped_lock lock(state_mutex_);
+				std::scoped_lock const lock(state_mutex_);
 				connection_observed_ = true;
 				state_changed_.notify_all();
 			}
 
 			void MarkRequestObserved(std::string request) {
-				std::scoped_lock lock(state_mutex_);
+				std::scoped_lock const lock(state_mutex_);
 				request_          = std::move(request);
 				request_observed_ = true;
 				state_changed_.notify_all();
 			}
 
 			void MarkWorkerFinished() {
-				std::scoped_lock lock(state_mutex_);
+				std::scoped_lock const lock(state_mutex_);
 				worker_finished_ = true;
 				state_changed_.notify_all();
 			}
@@ -251,12 +276,15 @@ namespace howdy::test::download_models {
 
 		class ProxyEnvironmentGuard {
 		public:
+			ProxyEnvironmentGuard(ProxyEnvironmentGuard &&)                     = delete;
+			auto operator=(ProxyEnvironmentGuard &&) -> ProxyEnvironmentGuard & = delete;
+
 			ProxyEnvironmentGuard()
 			    : previous_{} {
 				for (std::size_t index = 0; index < kNames.size(); ++index) {
-					const char *value = std::getenv(kNames[index]);
+					const char *value = std::getenv(kNames.at(index));
 					if (value != nullptr) {
-						previous_[index] = value;
+						previous_.at(index) = value;
 					}
 				}
 				clear_ok_ = Clear();
@@ -267,11 +295,11 @@ namespace howdy::test::download_models {
 
 			~ProxyEnvironmentGuard() {
 				for (std::size_t index = 0; index < kNames.size(); ++index) {
-					const auto &previous = previous_[index];
+					const auto &previous = previous_.at(index);
 					if (previous.has_value()) {
-						(void)setenv(kNames[index], previous->c_str(), 1);
+						(void)setenv(kNames.at(index), previous->c_str(), 1);
 					} else {
-						(void)unsetenv(kNames[index]);
+						(void)unsetenv(kNames.at(index));
 					}
 				}
 			}
@@ -304,7 +332,7 @@ namespace howdy::test::download_models {
 			bool                                                  clear_ok_ = false;
 		};
 
-		auto TestSetoptLong(void * /*context*/, CURL *curl, CURLoption option, const long value)
+		auto TestSetoptLong(void * /*context*/, CURL *curl, CURLoption option, const CurlLong value)
 		    -> CURLcode {
 			return curl_easy_setopt(curl, option, value);
 		}
@@ -375,8 +403,8 @@ namespace howdy::test::download_models {
 			if (!ProxyEnvironmentGuard::Clear()) {
 				return Expect(false, "clear proxy environment between cases");
 			}
-			LoopbackProbe proxy(ProbeKind::kProxy);
-			LoopbackProbe origin(ProbeKind::kOrigin);
+			LoopbackProbe const proxy(ProbeKind::kProxy);
+			LoopbackProbe const origin(ProbeKind::kOrigin);
 			if (!proxy.Ok() || !origin.Ok()) {
 				return Expect(false, "create loopback proxy and origin listeners");
 			}
@@ -437,7 +465,7 @@ namespace howdy::test::download_models {
 			return Expect(false, "create proxy test temp root");
 		}
 
-		ProxyEnvironmentGuard environment;
+		ProxyEnvironmentGuard const environment;
 		bool ok = Expect(environment.InitiallyClear(), "clear inherited proxy environment");
 		ok &= RunProxyEnvironmentCase(temp_root, "https-proxy", "HTTPS_PROXY", false);
 		ok &= RunProxyEnvironmentCase(temp_root, "all-proxy", "ALL_PROXY", false);

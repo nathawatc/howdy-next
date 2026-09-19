@@ -1,10 +1,12 @@
 #pragma once
 
 #include "compare/privileges.hpp"
+#include "support/prctl_types.hpp"
 
 #include <cstddef>
-#include <pwd.h>
 #include <string_view>
+
+#include <pwd.h>
 
 #include <sys/types.h>
 
@@ -17,9 +19,9 @@ namespace howdy::native::compare_privileges_internal {
 
 	using GetpwnamRFn = int (*)(void *context, const char *name, passwd *pwd, char *buffer,
 	                            std::size_t buffer_size, passwd **result);
-	using PrctlFn     = int (*)(void *context, int operation, unsigned long argument2,
-	                            unsigned long argument3, unsigned long argument4,
-	                            unsigned long argument5);
+	using PrctlFn     = int (*)(void *context, int operation, PrctlArgument argument2,
+	                            PrctlArgument argument3, PrctlArgument argument4,
+	                            PrctlArgument argument5);
 	using GetgroupsFn = int (*)(void *context, int size, gid_t *groups);
 	using SetgroupsFn = int (*)(void *context, std::size_t count, const gid_t *groups);
 	using SetresgidFn = int (*)(void *context, gid_t real, gid_t effective, gid_t saved);
@@ -48,9 +50,8 @@ namespace howdy::native::compare_privileges_internal {
 	using SetuidFn     = int (*)(void *context, uid_t uid);
 
 	struct FatalExitRequest {
-		const char *message      = nullptr;
-		std::size_t message_size = 0;
-		int         exit_code    = 0;
+		std::string_view message;
+		int              exit_code = 0;
 	};
 
 	using FatalExitFn = void (*)(void *context, FatalExitRequest request);

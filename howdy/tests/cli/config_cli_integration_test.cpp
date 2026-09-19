@@ -3,6 +3,8 @@
 #include "cli/config_cli_test_support.hpp"
 #include "config/config_limits.hpp"
 #include "config/test_hooks.hpp"
+#include "support/file_security/validation_root.hpp"
+#include "support/invoking_user.hpp"
 #include "test_support.hpp"
 
 #include <cstdio>
@@ -10,15 +12,19 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <pwd.h>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <unistd.h>
+#include <system_error>
 #include <utility>
 #include <vector>
 
+#include <pwd.h>
+#include <stdlib.h>
+#include <unistd.h>
+
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace howdy::test::config_cli {
 
@@ -37,7 +43,8 @@ namespace howdy::test::config_cli {
 		};
 
 		auto CopyEditorPasswdFixture(const passwd *pwd) -> std::optional<EditorPasswdFixture> {
-			if (pwd == nullptr || pwd->pw_name == nullptr || pwd->pw_name[0] == '\0') {
+			if (pwd == nullptr || pwd->pw_name == nullptr ||
+			    std::string_view(pwd->pw_name).empty()) {
 				return std::nullopt;
 			}
 			return EditorPasswdFixture{
@@ -66,12 +73,12 @@ namespace howdy::test::config_cli {
 		}
 
 		auto DirectRootHonorsEnvironmentEditor() -> bool {
-			ScopedEnvironmentVariable editor_env("EDITOR", "nvim");
-			ScopedEnvironmentVariable sudo_user_env("SUDO_USER");
-			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID");
-			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID");
-			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
-			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
+			ScopedEnvironmentVariable const editor_env("EDITOR", "nvim");
+			ScopedEnvironmentVariable const sudo_user_env("SUDO_USER");
+			ScopedEnvironmentVariable const sudo_uid_env("SUDO_UID");
+			ScopedEnvironmentVariable const sudo_gid_env("SUDO_GID");
+			ScopedEnvironmentVariable const doas_user_env("DOAS_USER");
+			ScopedEnvironmentVariable const pkexec_uid_env("PKEXEC_UID");
 
 			const auto identity = howdy::native::ResolveInvokingIdentity();
 			const auto editor   = howdy::native::config_internal::SelectEditorPreference();
@@ -85,18 +92,18 @@ namespace howdy::test::config_cli {
 			bool ok = true;
 
 			{
-				ScopedEnvironmentVariable editor_env("EDITOR", "nvim");
+				ScopedEnvironmentVariable const editor_env("EDITOR", "nvim");
 				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() == "nvim",
 				             "bare EDITOR is accepted");
 			}
 			{
-				ScopedEnvironmentVariable editor_env("EDITOR", "/some/test/path/nvim");
+				ScopedEnvironmentVariable const editor_env("EDITOR", "/some/test/path/nvim");
 				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() ==
 				                 "/some/test/path/nvim",
 				             "absolute EDITOR path is accepted");
 			}
 			{
-				ScopedEnvironmentVariable editor_env("EDITOR", "nvim -f");
+				ScopedEnvironmentVariable const editor_env("EDITOR", "nvim -f");
 				ok &= Expect(howdy::native::config_internal::SelectEditorPreference() == "micro",
 				             "command-line EDITOR is rejected");
 			}
@@ -171,15 +178,16 @@ namespace howdy::test::config_cli {
 			                 chmod(malformed_path.c_str(), 0755) == 0,
 			             "fallback integration writes malformed editor");
 
-			const std::string         path_value = editor_bin.string();
-			ScopedEnvironmentVariable editor_env("EDITOR");
-			ScopedEnvironmentVariable path_env("PATH", path_value);
-			ScopedEnvironmentVariable config_env("HOWDY_CONFIG", config_path.string());
-			ScopedEnvironmentVariable selected_env("HOWDY_TEST_SELECTED_EDITOR",
-			                                       selected_path.string());
-			ScopedEnvironmentVariable marker_env("HOWDY_TEST_SHELL_MARKER", shell_marker.string());
-			const std::string         invoking_name = editor_identity.name;
-			ScopedEnvironmentVariable sudo_user_env("SUDO_USER", invoking_name);
+			const std::string               path_value = editor_bin.string();
+			ScopedEnvironmentVariable       editor_env("EDITOR");
+			ScopedEnvironmentVariable const path_env("PATH", path_value);
+			ScopedEnvironmentVariable const config_env("HOWDY_CONFIG", config_path.string());
+			ScopedEnvironmentVariable const selected_env("HOWDY_TEST_SELECTED_EDITOR",
+			                                             selected_path.string());
+			ScopedEnvironmentVariable const marker_env("HOWDY_TEST_SHELL_MARKER",
+			                                           shell_marker.string());
+			const std::string               invoking_name = editor_identity.name;
+			ScopedEnvironmentVariable       sudo_user_env("SUDO_USER", invoking_name);
 			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID", std::to_string(editor_identity.uid));
 			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID", std::to_string(editor_identity.gid));
 			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
@@ -191,11 +199,11 @@ namespace howdy::test::config_cli {
 					return {1, {}};
 				}
 
-				std::ostringstream output;
-				int                exit_code = 0;
+				std::ostringstream const output;
+				int                      exit_code = 0;
 				{
-					ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
-					howdy::native::file_security_internal::ValidationRoot validation_root{
+					ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
+					howdy::native::file_security_internal::ValidationRoot const validation_root{
 					    temp_root};
 					exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
 					    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
@@ -350,29 +358,30 @@ namespace howdy::test::config_cli {
 				    "integration assigns credential log to editor fixture");
 			}
 
-			ScopedEnvironmentVariable editor_env("EDITOR", "fake-editor");
-			const char               *inherited_path = std::getenv("PATH");
-			const std::string         editor_path_value =
+			ScopedEnvironmentVariable const editor_env("EDITOR", "fake-editor");
+			const char                     *inherited_path = std::getenv("PATH");
+			const std::string               editor_path_value =
 			    editor_bin.string() +
 			    (inherited_path == nullptr ? "" : ":" + std::string(inherited_path));
-			ScopedEnvironmentVariable path_env("PATH", editor_path_value);
-			ScopedEnvironmentVariable config_env("HOWDY_CONFIG", config_path.string());
-			const std::string         invoking_name = editor_identity.name;
-			const auto                invoking_uid  = editor_identity.uid;
-			const auto                invoking_gid  = editor_identity.gid;
-			ScopedEnvironmentVariable sudo_user_env("SUDO_USER", invoking_name);
-			ScopedEnvironmentVariable sudo_uid_env("SUDO_UID", std::to_string(invoking_uid));
-			ScopedEnvironmentVariable sudo_gid_env("SUDO_GID", std::to_string(invoking_gid));
-			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
-			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
-			ScopedEnvironmentVariable credential_env("HOWDY_TEST_EDITOR_CREDENTIALS",
-			                                         credential_path.string());
+			ScopedEnvironmentVariable const path_env("PATH", editor_path_value);
+			ScopedEnvironmentVariable const config_env("HOWDY_CONFIG", config_path.string());
+			const std::string               invoking_name = editor_identity.name;
+			const auto                      invoking_uid  = editor_identity.uid;
+			const auto                      invoking_gid  = editor_identity.gid;
+			ScopedEnvironmentVariable const sudo_user_env("SUDO_USER", invoking_name);
+			ScopedEnvironmentVariable const sudo_uid_env("SUDO_UID", std::to_string(invoking_uid));
+			ScopedEnvironmentVariable const sudo_gid_env("SUDO_GID", std::to_string(invoking_gid));
+			ScopedEnvironmentVariable const doas_user_env("DOAS_USER");
+			ScopedEnvironmentVariable const pkexec_uid_env("PKEXEC_UID");
+			ScopedEnvironmentVariable const credential_env("HOWDY_TEST_EDITOR_CREDENTIALS",
+			                                               credential_path.string());
 
-			std::ostringstream output;
-			int                exit_code = 0;
+			std::ostringstream const output;
+			int                      exit_code = 0;
 			{
-				ScopedStreamBuffer stdout_guard(std::cout, output.rdbuf());
-				howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
+				ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
+				howdy::native::file_security_internal::ValidationRoot const validation_root{
+				    temp_root};
 				exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
 				    {},
 				    howdy::native::config_internal::DefaultConfigEditDependencies(validation_root));
@@ -408,7 +417,7 @@ namespace howdy::test::config_cli {
 			const auto temp_root = fs::current_path() / "howdy-config-cli-size-test";
 			fs::create_directory(temp_root);
 			ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
-			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
+			howdy::native::file_security_internal::ValidationRoot const validation_root{temp_root};
 			const fs::path    source_path = temp_root / "config.ini";
 			const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
@@ -458,8 +467,8 @@ namespace howdy::test::config_cli {
 			const fs::path    config_path = temp_root / "config.ini";
 			const fs::path    backup_path = temp_root / "config-backup.ini";
 			const std::string original    = "[core]\ndisabled = false\n";
-			howdy::native::file_security_internal::ValidationRoot validation_root{temp_root};
-			std::error_code                                       error;
+			howdy::native::file_security_internal::ValidationRoot const validation_root{temp_root};
+			std::error_code                                             error;
 
 			auto write_secure_config = [&]() -> bool {
 				return WriteFile(config_path, original) && chmod(config_path.c_str(), 0644) == 0;

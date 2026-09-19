@@ -41,7 +41,7 @@ namespace howdy::test::user_model_codec {
 			if (index > 0) {
 				output += ',';
 			}
-			output += models[index];
+			output += models.at(index);
 		}
 		output += ']';
 		return output;
