@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-**Updated:** 2026-09-14
+**Updated:** 2026-09-19
 
 This file defines repository-wide rules. Read the nearest `AGENTS.md` before changing a subsystem;
 local files add detail but do not override these invariants.
@@ -54,6 +54,12 @@ For formatting:
 ```sh
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
 ```
+
+Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting
+verifier. With this repository's `SeparateDefinitionBlocks: Always` and `UseTab: ForIndentation`
+settings, LLVM 22 can emit no-op replacements and report false formatting violations even when
+`clang-format -i` produces no byte changes. Verify formatting by running `clang-format -i` and
+checking `git diff`, or by comparing formatter stdout with the source file.
 
 CI does not run `clang-tidy`. For changed code, use `clang-tidy-diff.py` against the configured
 build tree.
