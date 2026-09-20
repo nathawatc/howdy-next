@@ -2,14 +2,19 @@ install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 find_program(GETTEXT_XGETTEXT_EXECUTABLE NAMES xgettext)
 find_program(GETTEXT_MSGMERGE_EXECUTABLE NAMES msgmerge)
 find_program(GETTEXT_MSGFMT_EXECUTABLE NAMES msgfmt)
+find_program(GETTEXT_MSGCMP_EXECUTABLE NAMES msgcmp)
+find_program(GETTEXT_MSGATTRIB_EXECUTABLE NAMES msgattrib)
 if(
 	NOT GETTEXT_XGETTEXT_EXECUTABLE
 	OR NOT GETTEXT_MSGMERGE_EXECUTABLE
 	OR NOT GETTEXT_MSGFMT_EXECUTABLE
+	OR NOT GETTEXT_MSGCMP_EXECUTABLE
+	OR NOT GETTEXT_MSGATTRIB_EXECUTABLE
 )
 	message(
 		FATAL_ERROR
-		"Translation support requires xgettext, msgmerge, and msgfmt from gettext"
+		"Translation support requires xgettext, msgmerge, msgfmt, "
+		"msgcmp, and msgattrib from gettext"
 	)
 endif()
 
@@ -98,3 +103,21 @@ endforeach()
 add_custom_target(howdy-update-po DEPENDS howdy-pot ${HOWDY_MSGMERGE_COMMANDS})
 
 add_custom_target(howdy-gmo ALL DEPENDS ${HOWDY_TRANSLATION_OUTPUTS})
+
+if(BUILD_TESTING)
+	add_test(
+		NAME pam-translation-catalogs
+		COMMAND
+			"${CMAKE_COMMAND}"
+			"-DPAM_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/.."
+			"-DPOTFILES=${CMAKE_CURRENT_SOURCE_DIR}/POTFILES"
+			"-DLINGUAS=${CMAKE_CURRENT_SOURCE_DIR}/LINGUAS"
+			"-DPO_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+			"-DXGETTEXT=${GETTEXT_XGETTEXT_EXECUTABLE}"
+			"-DMSGCMP=${GETTEXT_MSGCMP_EXECUTABLE}"
+			"-DMSGATTRIB=${GETTEXT_MSGATTRIB_EXECUTABLE}"
+			"-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/validation"
+			-P
+			"${CMAKE_CURRENT_SOURCE_DIR}/../cmake/tests/check_translations.cmake"
+	)
+endif()
