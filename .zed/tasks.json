@@ -115,9 +115,9 @@
 		"save": "all",
 	},
 	{
-		"label": "Tidy: Diff Debug",
-		"command": "git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py",
-		"args": ["-p1", "-path", "build/debug", "-quiet", "-hide-progress"],
+		"label": "Tidy: Incremental Debug",
+		"command": "cmake",
+		"args": ["-DBUILD_DIR=build/debug", "-P", "cmake/tidy_incremental.cmake"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -128,9 +128,9 @@
 		"save": "all",
 	},
 	{
-		"label": "Tidy: Diff Release",
-		"command": "git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py",
-		"args": ["-p1", "-path", "build/release", "-quiet", "-hide-progress"],
+		"label": "Tidy: Incremental Release",
+		"command": "cmake",
+		"args": ["-DBUILD_DIR=build/release", "-P", "cmake/tidy_incremental.cmake"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
@@ -203,5 +203,5 @@
 		"show_summary": true,
 		"show_command": true,
 		"save": "all",
-	}
+	},
 ]

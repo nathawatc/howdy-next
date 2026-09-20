@@ -102,7 +102,7 @@ find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name
 Static analysis before submit:
 
 ```sh
-git diff -U0 HEAD -- howdy pam | /usr/share/clang/clang-tidy-diff.py -p1 -path build -quiet -hide-progress
+cmake -DBUILD_DIR=build/debug -P "cmake/tidy_incremental.cmake"
 ```
 
 ## Pull Requests
