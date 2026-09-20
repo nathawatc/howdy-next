@@ -37,6 +37,8 @@ nix build
 nix develop
 ```
 
+See the [wiki](https://codeberg.org/nathawat/howdy-next/wiki/NixOS) for installation, setup, and PAM configuration.
+
 ## Build from Source
 
 Dependencies:
