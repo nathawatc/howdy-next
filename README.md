@@ -1,6 +1,6 @@
 # Howdy Next
 
-C++ rewrite of Howdy facial-recognition authentication on Linux
+Modern C++ reimplementation of Howdy facial authentication on Linux
 
 > [!NOTE]
 >
