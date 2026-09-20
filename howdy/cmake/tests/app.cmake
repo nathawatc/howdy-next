@@ -33,3 +33,10 @@ howdy_add_native_test(
 	tests/app/howdy_main_test.cpp
 )
 target_link_libraries(howdy_main_test PRIVATE howdy_cli_core)
+
+howdy_add_native_test(
+	howdy_production_bindings_test
+	native-howdy-production-bindings
+	tests/app/howdy_production_bindings_test.cpp
+)
+target_link_libraries(howdy_production_bindings_test PRIVATE howdy_cli)

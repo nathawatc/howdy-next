@@ -13,7 +13,6 @@
 #include "cli/test.hpp"
 #include "support/invoking_user.hpp"
 
-#include <array>
 #include <cstddef>
 
 #include <unistd.h>
@@ -21,8 +20,6 @@
 #include <sys/types.h>
 
 namespace {
-
-	using howdy::native::howdy_internal::CommandMain;
 
 	auto ResolveInvokingIdentityDependency(void *context) -> howdy::native::InvokingIdentityResult {
 		(void)context;
@@ -34,27 +31,22 @@ namespace {
 		return geteuid();
 	}
 
-	auto ProductionCommandMains()
-	    -> std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)> {
-		std::array<CommandMain, static_cast<std::size_t>(howdy::native::CommandId::kCount)>
-		    command_mains{};
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kAdd))    = AddMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kClear))  = ClearMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kConfig)) = ConfigMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kDisable)) =
-		    DisableMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kDownloadModels)) =
-		    DownloadModelsMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kList))   = ListMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kRemove)) = RemoveMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kSet))    = SetMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kSnapshot)) =
-		    SnapshotMain;
-		command_mains.at(static_cast<std::size_t>(howdy::native::CommandId::kTest)) = TestMain;
-		return command_mains;
-	}
-
 }  // namespace
+
+auto howdy::native::howdy_internal::ProductionCommandMains() -> CommandMains {
+	CommandMains command_mains{};
+	command_mains.at(static_cast<std::size_t>(CommandId::kAdd))            = AddMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kClear))          = ClearMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kConfig))         = ConfigMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kDisable))        = DisableMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kDownloadModels)) = DownloadModelsMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kList))           = ListMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kRemove))         = RemoveMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kSet))            = SetMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kSnapshot))       = SnapshotMain;
+	command_mains.at(static_cast<std::size_t>(CommandId::kTest))           = TestMain;
+	return command_mains;
+}
 
 auto HowdyMain(int argc, char **argv) -> int {
 	return howdy::native::howdy_internal::HowdyMainWithDependencies(
@@ -62,6 +54,6 @@ auto HowdyMain(int argc, char **argv) -> int {
 	    {
 	        .resolve_invoking_identity = ResolveInvokingIdentityDependency,
 	        .effective_uid             = EffectiveUid,
-	        .command_mains             = ProductionCommandMains(),
+	        .command_mains             = howdy::native::howdy_internal::ProductionCommandMains(),
 	    });
 }
