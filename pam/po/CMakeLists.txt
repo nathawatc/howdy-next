@@ -74,7 +74,7 @@ add_custom_target(
 		"${GETTEXT_XGETTEXT_EXECUTABLE}"
 		"--directory=${CMAKE_CURRENT_SOURCE_DIR}/.."
 		"--files-from=${CMAKE_CURRENT_SOURCE_DIR}/POTFILES"
-		--keyword=translate:1
+		--keyword=Translate:1
 		"--output=${HOWDY_POT_FILE}"
 	DEPENDS
 		"${CMAKE_CURRENT_SOURCE_DIR}/POTFILES"

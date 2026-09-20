@@ -1,5 +1,6 @@
 #pragma once
 
+#include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator_test_access.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
@@ -37,80 +38,78 @@ namespace howdy::test::prompt_coordinator {
 	using namespace std::chrono_literals;
 
 	struct FakeContext {
-		std::thread::id                                 run_thread;
-		std::thread::id                                 wait_thread;
-		std::thread::id                                 auth_token_thread;
-		std::thread::id                                 submission_thread;
-		std::thread::id                                 native_create_thread;
-		std::thread::id                                 native_install_thread;
-		std::thread::id                                 native_restore_thread;
-		std::thread::id                                 native_abort_thread;
-		std::chrono::milliseconds                       token_delay{0};
-		PromptCoordinator                              *coordinator_for_submission = nullptr;
-		howdy::pam::SecretPromptObserver                secret_prompt_observer{};
-		std::string                                     spawned_config_path;
-		std::string                                     spawned_username;
-		std::string                                     spawned_user_models_dir;
-		std::mutex                                      reap_mutex;
-		std::mutex                                      token_mutex;
-		std::mutex                                      submission_mutex;
-		std::mutex                                      native_prompt_mutex;
-		std::condition_variable                         reap_condition;
-		std::condition_variable                         token_condition;
-		std::condition_variable                         submission_condition;
-		std::condition_variable                         native_prompt_condition;
-		std::atomic<int>                                spawn_calls{0};
-		std::atomic<pid_t>                              spawned_pid{-1};
-		std::atomic<int>                                wait_calls{0};
-		std::atomic<pid_t>                              waited_pid{-1};
-		std::atomic<int>                                last_wait_status{0};
-		std::atomic<int>                                terminate_calls{0};
-		std::atomic<pid_t>                              terminated_pid{-1};
-		std::atomic<int>                                cleanup_calls{0};
-		std::atomic<pid_t>                              cleaned_pid{-1};
-		std::atomic<int>                                preflight_calls{0};
-		std::atomic<int>                                prompt_submitter_constructions{0};
-		std::atomic<int>                                prompt_submissions{0};
-		std::atomic<int>                                auth_token_calls{0};
-		int                                             token_result          = PAM_SUCCESS;
-		int                                             native_install_result = PAM_SUCCESS;
-		std::atomic<int>                                native_abort_calls{0};
-		std::atomic<int>                                native_restore_calls{0};
-		std::atomic<int>                                secret_restore_calls{0};
-		int                                             prompt_master_fd = -1;
-		std::atomic<int>                                original_conversation_calls{0};
-		int                                             spawn_result   = 0;
-		pid_t                                           next_child_pid = -1;
-		std::atomic<bool>                               auth_token_active{false};
-		bool                                            block_token_until_release          = false;
-		bool                                            use_real_auth_token                = false;
-		bool                                            block_before_conversation          = false;
-		bool                                            complete_without_conversation      = false;
-		bool                                            hold_reaped_until_cancel           = false;
-		bool                                            token_waits_for_reap               = false;
-		bool                                            throw_compare_wait                 = false;
-		bool                                            child_reaped_by_wait               = false;
-		bool                                            before_conversation                = false;
-		bool                                            release_conversation               = false;
-		bool                                            release_token                      = false;
-		bool                                            preflight_result                   = true;
-		bool                                            fail_prompt_submitter_construction = false;
-		bool                                            return_null_prompt_submitter       = false;
-		bool                                            throw_native_prompt                = false;
-		bool                                            throw_native_prompt_unknown        = false;
-		bool                                            throw_secret_prompt                = false;
-		bool                                            throw_secret_prompt_unknown        = false;
-		bool                                            return_null_secret_prompt          = false;
-		bool                                            secret_prompt_available            = true;
-		int                                             secret_prompt_install_result = PAM_SUCCESS;
-		bool                                            throw_auth_token             = false;
-		bool                                            throw_auth_token_unknown     = false;
-		bool                                            fail_prompt_submission       = false;
-		bool                                            release_token_on_submission  = false;
-		bool                                            block_submission_after_start = false;
-		std::atomic<bool>                               token_returned{false};
-		std::atomic<howdy::pam::SecretPromptGeneration> active_prompt_generation{0};
-		std::atomic<bool>                               submission_ready{false};
+		std::thread::id                       run_thread;
+		std::thread::id                       wait_thread;
+		std::thread::id                       auth_token_thread;
+		std::thread::id                       submission_thread;
+		std::thread::id                       native_create_thread;
+		std::thread::id                       native_install_thread;
+		std::thread::id                       native_restore_thread;
+		std::thread::id                       native_abort_thread;
+		std::chrono::milliseconds             token_delay{0};
+		PromptCoordinator                    *coordinator_for_submission = nullptr;
+		howdy::pam::SecretPromptObserver      secret_prompt_observer{};
+		std::string                           spawned_config_path;
+		std::string                           spawned_username;
+		std::string                           spawned_user_models_dir;
+		std::mutex                            reap_mutex;
+		std::mutex                            token_mutex;
+		std::mutex                            submission_mutex;
+		std::mutex                            native_prompt_mutex;
+		std::condition_variable               reap_condition;
+		std::condition_variable               token_condition;
+		std::condition_variable               submission_condition;
+		std::condition_variable               native_prompt_condition;
+		std::atomic<int>                      spawn_calls{0};
+		std::atomic<pid_t>                    spawned_pid{-1};
+		std::atomic<int>                      wait_calls{0};
+		std::atomic<pid_t>                    waited_pid{-1};
+		std::atomic<int>                      last_wait_status{0};
+		std::atomic<int>                      terminate_calls{0};
+		std::atomic<pid_t>                    terminated_pid{-1};
+		std::atomic<int>                      cleanup_calls{0};
+		std::atomic<pid_t>                    cleaned_pid{-1};
+		std::atomic<int>                      preflight_calls{0};
+		std::atomic<int>                      prompt_submitter_constructions{0};
+		std::atomic<int>                      prompt_submissions{0};
+		std::atomic<int>                      auth_token_calls{0};
+		int                                   token_result          = PAM_SUCCESS;
+		int                                   native_install_result = PAM_SUCCESS;
+		std::atomic<int>                      native_abort_calls{0};
+		std::atomic<int>                      native_restore_calls{0};
+		std::atomic<int>                      secret_restore_calls{0};
+		std::atomic<int>                      original_conversation_calls{0};
+		int                                   spawn_result   = 0;
+		pid_t                                 next_child_pid = -1;
+		std::atomic<bool>                     auth_token_active{false};
+		bool                                  block_token_until_release          = false;
+		bool                                  use_real_auth_token                = false;
+		bool                                  block_before_conversation          = false;
+		bool                                  complete_without_conversation      = false;
+		bool                                  hold_reaped_until_cancel           = false;
+		bool                                  token_waits_for_reap               = false;
+		bool                                  throw_compare_wait                 = false;
+		bool                                  child_reaped_by_wait               = false;
+		bool                                  before_conversation                = false;
+		bool                                  release_conversation               = false;
+		bool                                  release_token                      = false;
+		bool                                  preflight_result                   = true;
+		bool                                  fail_prompt_submitter_construction = false;
+		bool                                  return_null_prompt_submitter       = false;
+		bool                                  throw_native_prompt                = false;
+		bool                                  throw_native_prompt_unknown        = false;
+		bool                                  throw_secret_prompt                = false;
+		bool                                  throw_secret_prompt_unknown        = false;
+		bool                                  return_null_secret_prompt          = false;
+		bool                                  secret_prompt_available            = true;
+		int                                   secret_prompt_install_result       = PAM_SUCCESS;
+		bool                                  throw_auth_token                   = false;
+		bool                                  throw_auth_token_unknown           = false;
+		bool                                  fail_prompt_submission             = false;
+		bool                                  release_token_on_submission        = false;
+		bool                                  block_submission_after_start       = false;
+		std::atomic<bool>                     token_returned{false};
+		std::atomic<bool>                     submission_ready{false};
 		std::atomic<bool>                     submission_started_before_password_return{false};
 		std::atomic<bool>                     submission_finished{false};
 		bool                                  release_submission                       = false;
@@ -477,7 +476,6 @@ namespace howdy::test::prompt_coordinator {
 		            fake.secret_prompt_observer.begin != nullptr
 		        ? fake.secret_prompt_observer.begin(fake.secret_prompt_observer.context)
 		        : 0;
-		fake.active_prompt_generation = generation;
 
 		class GenerationScope {
 		public:

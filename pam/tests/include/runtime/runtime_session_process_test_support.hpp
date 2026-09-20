@@ -61,13 +61,11 @@ namespace howdy::test::runtime_session {
 		std::vector<std::string>         spawn_argv;
 		std::vector<std::string>         spawn_env;
 		std::vector<std::string>         log_messages;
-		std::string                      spawn_path;
 		std::array<int, 2>               next_pipe_fds     = {10, 11};
 		std::array<int, 2>               next_socket_fds   = {12, 13};
 		int                              next_duplicate_fd = 20;
 		int                              spawn_calls       = 0;
 		int                              destroy_calls     = 0;
-		int                              inherited_fd      = -1;
 		bool                             destroy_fails     = false;
 		pid_t                            spawned_pid       = -1;
 	};
@@ -156,7 +154,6 @@ namespace howdy::test::runtime_session {
 	inline auto FakeSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(request.context);
 		++fake.spawn_calls;
-		fake.spawn_path = request.path;
 		for (const char *argument :
 		     request.argv | std::views::take_while([](const char *value) -> bool {
 			     return value != nullptr;

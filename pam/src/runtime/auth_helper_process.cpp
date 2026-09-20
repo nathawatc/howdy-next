@@ -93,7 +93,6 @@ namespace howdy::pam::auth_helper_process::internal {
 
 namespace {
 
-	using AuthHelperOutput = howdy::pam::auth_helper_process::Output;
 	using howdy::pam::auth_helper_process::Operations;
 	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
 	using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;

@@ -61,7 +61,6 @@ namespace {
 		std::string                  face_user;
 		std::string                  opened_device_path;
 		howdy::native::RuntimeConfig preview_config;
-		howdy::native::RuntimeConfig open_config;
 	};
 
 	auto ExpectSequence(const std::vector<std::string> &actual,
@@ -131,13 +130,13 @@ namespace {
 		return context->graphical_display;
 	}
 
-	auto OpenCameraCallback(void *raw_context, const howdy::native::RuntimeConfig &config,
-	                        const std::string &device_path)
+	auto OpenCameraCallback(void                                                *raw_context,
+	                        [[maybe_unused]] const howdy::native::RuntimeConfig &config,
+	                        const std::string                                   &device_path)
 	    -> howdy::native::test_cli_internal::TestPreflightOperationResult {
 		auto *context = static_cast<TestCliTestContext *>(raw_context);
 		++context->open_calls;
 		context->sequence.emplace_back("open");
-		context->open_config        = config;
 		context->opened_device_path = device_path;
 		if (!context->camera_open_ok) {
 			return howdy::native::test_cli_internal::TestPreflightOperationResult{

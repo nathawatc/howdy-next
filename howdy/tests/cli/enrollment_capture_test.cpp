@@ -66,9 +66,8 @@ namespace {
 			return clone_frames_ ? frame.clone() : frame;
 		}
 
-		auto Detect(const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
+		auto Detect([[maybe_unused]] const cv::Mat &frame) -> howdy::native::FaceDetectionResult {
 			detect_calls_++;
-			seen_frames_.push_back(clone_frames_ ? frame.clone() : frame);
 			if (fail_detection_) {
 				return howdy::native::FaceDetectionResult{
 				    .status        = howdy::native::FaceDetectionStatus::kInvalidOutput,
@@ -109,18 +108,13 @@ namespace {
 			return detect_calls_;
 		}
 
-		[[nodiscard]] auto SeenFrames() const -> const std::vector<cv::Mat> & {
-			return seen_frames_;
-		}
-
 	private:
-		bool                 return_face_        = true;
-		bool                 fail_detection_     = false;
-		bool                 clone_frames_       = true;
-		int                  misses_before_face_ = 0;
-		int                  prepare_calls_      = 0;
-		int                  detect_calls_       = 0;
-		std::vector<cv::Mat> seen_frames_;
+		bool return_face_        = true;
+		bool fail_detection_     = false;
+		bool clone_frames_       = true;
+		int  misses_before_face_ = 0;
+		int  prepare_calls_      = 0;
+		int  detect_calls_       = 0;
 	};
 
 	auto TestConfig(bool clahe_enabled = false) -> howdy::native::VideoConfig {

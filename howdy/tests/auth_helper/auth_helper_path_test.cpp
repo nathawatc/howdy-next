@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 	using howdy::test::Expect;

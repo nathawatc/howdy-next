@@ -211,8 +211,7 @@ namespace howdy::native {
 				           : AtomicFileCommitResult::kNotCommitted;
 			}
 			if (!PathIdentifiesFd(staged->path, locked_fd)) {
-				if (!hooks.fail_write_rollback &&
-				    ExchangePaths(staged->path, path, true) == ExchangeResult::kSuccess) {
+				if (ExchangePaths(staged->path, path, true) == ExchangeResult::kSuccess) {
 					CleanupStagedFile(*staged);
 					return AtomicFileCommitResult::kNotCommitted;
 				}

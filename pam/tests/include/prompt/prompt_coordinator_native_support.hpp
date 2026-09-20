@@ -31,8 +31,7 @@ namespace howdy::test::prompt_coordinator {
 		auto operator=(NativePamFixture &&) -> NativePamFixture & = delete;
 
 		explicit NativePamFixture(FakeContext *context)
-		    : context_(context)
-		    , original_conv_{.conv = OriginalConversation, .appdata_ptr = context} {}
+		    : original_conv_{.conv = OriginalConversation, .appdata_ptr = context} {}
 
 		NativePamFixture(const NativePamFixture &)                     = delete;
 		auto operator=(const NativePamFixture &) -> NativePamFixture & = delete;
@@ -58,29 +57,14 @@ namespace howdy::test::prompt_coordinator {
 				return false;
 			}
 			char const *slave_path = ptsname(master_fd_.Get());
-			if (slave_path == nullptr || pam_set_item(pamh_, PAM_TTY, slave_path) != PAM_SUCCESS) {
-				return false;
-			}
-			context_->prompt_master_fd = master_fd_.Get();
-			return true;
+			return slave_path != nullptr && pam_set_item(pamh_, PAM_TTY, slave_path) == PAM_SUCCESS;
 		}
 
 		[[nodiscard]] auto Pamh() const -> pam_handle_t * {
 			return pamh_;
 		}
 
-		[[nodiscard]] auto OriginalConversationRestored() const -> bool {
-			const void *item = nullptr;
-			if (pam_get_item(pamh_, PAM_CONV, &item) != PAM_SUCCESS || item == nullptr) {
-				return false;
-			}
-			const auto *conversation = static_cast<const struct pam_conv *>(item);
-			return conversation->conv == original_conv_.conv &&
-			       conversation->appdata_ptr == original_conv_.appdata_ptr;
-		}
-
 	private:
-		FakeContext    *context_ = nullptr;
 		struct pam_conv original_conv_{};
 		pam_handle_t   *pamh_ = nullptr;
 		ScopedFd        master_fd_;

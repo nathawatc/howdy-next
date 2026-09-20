@@ -1,13 +1,11 @@
 #pragma once
 
 #include "support/bit_flags.hpp"
-#include "test_support.hpp"
 
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
-#include <string>
 #include <string_view>
 
 #include <sys/types.h>
@@ -15,8 +13,6 @@
 #include <acl/libacl.h>
 
 namespace howdy::test::auth_helper {
-
-	using howdy::test::Expect;
 
 	enum class AclCheckStatus : std::uint8_t {
 		kMatch,
@@ -135,16 +131,6 @@ namespace howdy::test::auth_helper {
 		}
 		acl_free(acl);
 		return {.status = entry_count == 5 ? AclCheckStatus::kMatch : AclCheckStatus::kMismatch};
-	}
-
-	inline auto ExpectPrivateAcl(const std::filesystem::path &path, uid_t uid, bool directory,
-	                             const std::string &label) -> bool {
-		const auto result = CheckPrivateAcl(path, uid, directory);
-		if (result.status == AclCheckStatus::kError) {
-			return Expect(false, label + " ACL check " + std::string(result.operation) + ": " +
-			                         std::strerror(result.error_number));
-		}
-		return Expect(result.status == AclCheckStatus::kMatch, label + " ACL matches policy");
 	}
 
 }  // namespace howdy::test::auth_helper
