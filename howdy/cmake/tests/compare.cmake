@@ -3,17 +3,24 @@ add_test(NAME native-compare-unknown-arg COMMAND howdy_compare --unknown)
 howdy_expect_test_failure(native-compare-unknown-arg)
 add_test(NAME native-compare-missing-user COMMAND howdy_compare)
 howdy_expect_test_failure(native-compare-missing-user)
-add_test(NAME native-compare-no-model COMMAND howdy_compare coverage-user)
-set(
-	compare_test_models_empty
-	"${CMAKE_CURRENT_BINARY_DIR}/compare-test-models-empty"
-)
-set_tests_properties(
+howdy_add_native_test(
+	howdy_compare_entrypoint_test
 	native-compare-no-model
-	PROPERTIES
-		WILL_FAIL TRUE
-		ENVIRONMENT "HOWDY_USER_MODELS_DIR=${compare_test_models_empty}"
+	tests/compare/compare_entrypoint_test.cpp
 )
+set(
+	compare_no_model_root
+	"${CMAKE_CURRENT_BINARY_DIR}/compare-no-model-test"
+)
+target_compile_definitions(
+	howdy_compare_entrypoint_test
+	PRIVATE
+		"HOWDY_PACKAGED_CONFIG_PATH=\"${HOWDY_PACKAGED_CONFIG_PATH}\""
+		"HOWDY_COMPARE_NO_MODEL_ROOT=\"${compare_no_model_root}\""
+)
+target_link_libraries(howdy_compare_entrypoint_test PRIVATE
+                      howdy_compare_entrypoint)
+add_dependencies(howdy_compare_entrypoint_test howdy_packaged_config)
 
 howdy_add_native_test(
 	howdy_compare_args_test

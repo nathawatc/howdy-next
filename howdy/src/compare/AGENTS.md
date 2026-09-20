@@ -10,8 +10,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `engine.*`: preprocessing, validation, detection/embedding adapters, match selection
 - `sandbox.*`: sandbox policy
 - `processing.*`: shared processing helpers
-- `src/bin/compare.cpp`: composition, arguments, config/model load, output/report policy, exit
-  mapping
+- `entrypoint.cpp`: composition, arguments, config/model load, output/report policy, exit mapping
+- `src/bin/compare.cpp`: thin production wrapper that pins compare trust roots to UID 0
 
 Privilege dropping is one security-sensitive subsystem:
 

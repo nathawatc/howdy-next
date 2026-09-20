@@ -219,10 +219,10 @@ add_library(howdy_compare_processing STATIC src/compare/processing.cpp)
 howdy_configure_native_target(howdy_compare_processing)
 target_link_libraries(howdy_compare_processing PUBLIC howdy_opencv)
 
-add_executable(howdy_compare src/bin/compare.cpp)
-howdy_configure_native_target(howdy_compare)
+add_library(howdy_compare_entrypoint STATIC src/compare/entrypoint.cpp)
+howdy_configure_native_target(howdy_compare_entrypoint)
 target_link_libraries(
-	howdy_compare
+	howdy_compare_entrypoint
 	PRIVATE
 		howdy_runtime_config_loader
 		howdy_compare_args
@@ -236,6 +236,10 @@ target_link_libraries(
 		howdy_compare_engine
 		howdy_compare_logic
 )
+
+add_executable(howdy_compare src/bin/compare.cpp)
+howdy_configure_native_target(howdy_compare)
+target_link_libraries(howdy_compare PRIVATE howdy_compare_entrypoint)
 set_target_properties(howdy_compare PROPERTIES OUTPUT_NAME "howdy-compare")
 install(
 	TARGETS howdy_compare
