@@ -1,10 +1,17 @@
+#include "compare/args.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "module/auth_flow_test_groups.hpp"
 #include "module/auth_flow_test_support.hpp"
 #include "module/entrypoint.hpp"
 #include "module/pam_options.hpp"
+#include "module/production_entrypoint.hpp"
+#include "paths.hpp"
+#include "prompt/conversation_restore.hpp"
+#include "prompt/native_prompt_conversation.hpp"
+#include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/compare_process.hpp"
 #include "runtime/lid_probe.hpp"
 #include "storage/user_model_status.hpp"
 #include "support/process_test_support.hpp"
@@ -21,6 +28,9 @@
 #include <libintl.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <unistd.h>
+
+#include <security/pam_ext.h>
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -31,6 +41,7 @@ namespace {
 	using howdy::test::auth_flow::IdentifyForTest;
 	using howdy::test::auth_flow::ScopedPamHandle;
 	using howdy::test::auth_flow::TestConversation;
+	using howdy::test::process::ChildReaped;
 	using howdy::test::process::SpawnBlockedChild;
 	using howdy::test::process::SpawnExitingChild;
 
@@ -389,6 +400,182 @@ namespace {
 		return ok;
 	}
 
+	struct ProductionPromptSpawnState {
+		int   calls         = 0;
+		int   child_exit    = EXIT_SUCCESS;
+		pid_t child_pid     = -1;
+		bool  request_valid = false;
+	};
+
+	auto SpawnProductionCompare(const howdy::pam::compare_process::SpawnRequest &request) -> int {
+		auto *state = static_cast<ProductionPromptSpawnState *>(request.context);
+		if (state == nullptr || request.child_pid == nullptr || request.argv.size() != 5 ||
+		    request.envp.size() != 1) {
+			return EINVAL;
+		}
+		++state->calls;
+		auto        arguments     = request.argv;
+		const char *program       = arguments.front();
+		arguments                 = arguments.subspan(1);
+		const char *config_option = arguments.front();
+		arguments                 = arguments.subspan(1);
+		const char *config_path   = arguments.front();
+		arguments                 = arguments.subspan(1);
+		const char *username      = arguments.front();
+		arguments                 = arguments.subspan(1);
+		const char *terminator    = arguments.front();
+		state->request_valid =
+		    request.path != nullptr && std::string_view(request.path) == kCompareProcessPath &&
+		    request.actions != nullptr && program != nullptr &&
+		    std::string_view(program) == kCompareProcessPath && config_option != nullptr &&
+		    std::string_view(config_option) == howdy::native::kCompareConfigOption &&
+		    config_path != nullptr && username != nullptr && terminator == nullptr &&
+		    request.envp.front() == nullptr;
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			return errno;
+		}
+		if (child_pid == 0) {
+			_exit(state->child_exit);
+		}
+		state->child_pid   = child_pid;
+		*request.child_pid = child_pid;
+		return 0;
+	}
+
+	auto BeginObservedPrompt(void *context) -> howdy::pam::SecretPromptGeneration {
+		(void)context;
+		return 1;
+	}
+
+	void EndObservedPrompt(void *context, howdy::pam::SecretPromptGeneration generation) {
+		(void)context;
+		(void)generation;
+	}
+
+	auto ExpectProductionPromptComposition() -> bool {
+		ProductionPromptSpawnState spawn_state;
+		auto compare_operations    = howdy::pam::compare_process::ProductionOperations();
+		compare_operations.context = &spawn_state;
+		compare_operations.spawn   = SpawnProductionCompare;
+		auto production_prompt =
+		    howdy::pam::ProductionPromptCoordinatorOperations(compare_operations);
+
+		EligibilityFlowFixture fixture;
+		fixture.runtime.detection_notice = false;
+		auto dependencies                = MakeEligibilityFlowDependencies(&fixture);
+		dependencies.prompt_coordinator  = production_prompt;
+
+		ConversationState     state;
+		struct pam_conv const conversation{
+		    .conv        = TestConversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok = true;
+		ok &= Expect(pam_handle.Start(&conversation) == PAM_SUCCESS,
+		             "production prompt composition starts PAM handle");
+		if (pam_handle.Get() == nullptr) {
+			return false;
+		}
+
+		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, false,
+		                                         {.context      = &dependencies,
+		                                          .authenticate = IdentifyForTest}) == PAM_SUCCESS,
+		             "enabled authentication runs through production prompt composition");
+		ok &= Expect(spawn_state.calls == 1 && spawn_state.request_valid,
+		             "production compare adapter builds the expected launch request");
+		ok &= Expect(spawn_state.child_pid > 0 && ChildReaped(spawn_state.child_pid),
+		             "production compare wait adapter reaps the compare child");
+
+		const pid_t wait_child = SpawnExitingChild(7);
+		ok &= Expect(wait_child > 0, "production wait adapter test spawns child");
+		if (wait_child > 0) {
+			const int wait_status = production_prompt.WaitForCompareProcess(
+			    wait_child, std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr,
+			    nullptr);
+			ok &= Expect(WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == 7,
+			             "production wait adapter preserves child exit status");
+			ok &= Expect(ChildReaped(wait_child), "production wait adapter reaps direct child");
+		}
+
+		const pid_t blocked_child = SpawnBlockedChild();
+		ok &= Expect(blocked_child > 0, "production cancel adapter test spawns child");
+		if (blocked_child > 0) {
+			production_prompt.CancelAndReapCompareProcess(blocked_child);
+			ok &= Expect(ChildReaped(blocked_child),
+			             "production cancel adapter terminates and reaps compare child");
+		}
+
+		const void *original_conv_item = nullptr;
+		ok &= Expect(pam_get_item(pam_handle.Get(), PAM_CONV, &original_conv_item) == PAM_SUCCESS &&
+		                 original_conv_item != nullptr,
+		             "production conversation test reads original PAM conversation");
+		const auto original_conv = original_conv_item == nullptr
+		                               ? pam_conv{}
+		                               : *static_cast<const pam_conv *>(original_conv_item);
+
+		auto observed = production_prompt.CreateSecretPromptConversation(
+		    pam_handle.Get(),
+		    {.context = nullptr, .begin = BeginObservedPrompt, .end = EndObservedPrompt});
+		ok &= Expect(dynamic_cast<howdy::pam::ObservedPromptConversation *>(observed.get()) !=
+		                     nullptr &&
+		                 observed->Available(),
+		             "production secret-prompt adapter creates observed conversation");
+		if (observed != nullptr && observed->Available()) {
+			ok &= Expect(observed->Install() == PAM_SUCCESS,
+			             "production observed conversation installs");
+			ok &= Expect(observed->RestoreOriginal() ==
+			                 howdy::pam::ConversationRestoreResult::kOriginalRestored,
+			             "production observed conversation restores original callback");
+			const void *restored_conv_item = nullptr;
+			ok &= Expect(pam_get_item(pam_handle.Get(), PAM_CONV, &restored_conv_item) ==
+			                     PAM_SUCCESS &&
+			                 restored_conv_item != nullptr,
+			             "restored PAM conversation remains available");
+			if (restored_conv_item != nullptr) {
+				const auto restored_conv = *static_cast<const pam_conv *>(restored_conv_item);
+				ok &= Expect(restored_conv.conv == original_conv.conv &&
+				                 restored_conv.appdata_ptr == original_conv.appdata_ptr,
+				             "production observed conversation restores original identity");
+			}
+		}
+
+		auto native_prompt = production_prompt.CreateNativePrompt(pam_handle.Get());
+		ok &= Expect(dynamic_cast<NativePromptConversation *>(native_prompt.get()) != nullptr,
+		             "production native-prompt adapter creates native conversation");
+
+		ConversationState control_state;
+		control_state.response_mode = howdy::test::auth_flow::ResponseMode::kSecret;
+		struct pam_conv const control_conversation{
+		    .conv        = TestConversation,
+		    .appdata_ptr = &control_state,
+		};
+		ScopedPamHandle control_handle;
+		ok &= Expect(control_handle.Start(&control_conversation) == PAM_SUCCESS,
+		             "production auth-token control starts PAM handle");
+		if (control_handle.Get() != nullptr) {
+			const char *control_token = nullptr;
+			const int   control_result =
+			    pam_get_authtok(control_handle.Get(), PAM_AUTHTOK, &control_token, nullptr);
+			state.response_mode = howdy::test::auth_flow::ResponseMode::kSecret;
+			const auto [production_result, production_token] =
+			    production_prompt.RequestAuthToken(pam_handle.Get());
+			ok &= Expect(production_result == control_result &&
+			                 (production_token != nullptr) == (control_token != nullptr),
+			             "production auth-token adapter matches pam_get_authtok semantics");
+			ok &= Expect(state.last_msg_type == control_state.last_msg_type &&
+			                 state.last_msg_type == PAM_PROMPT_ECHO_OFF,
+			             "production auth-token adapter uses PAM secret prompt conversation");
+		}
+
+		const auto entrypoint_dependencies = howdy::pam::ProductionEntrypointDependencies();
+		ok &= Expect(entrypoint_dependencies.context == nullptr &&
+		                 entrypoint_dependencies.authenticate == howdy::pam::ProductionAuthenticate,
+		             "production entrypoint binds production authentication callback");
+		return ok;
+	}
+
 	auto ExpectPromptResultMapping() -> bool {
 		using howdy::native::CompareExit;
 		using howdy::pam::PamModuleArguments;
@@ -557,6 +744,7 @@ auto RunAuthFlowIntegrationTests() -> bool {
 	ok &= ExpectAuthenticationNoticeAndConversationGuards();
 	ok &= ExpectRuntimeLoadFailurePaths();
 	ok &= ExpectPromptResultMapping();
+	ok &= ExpectProductionPromptComposition();
 	ok &= ExpectAuthenticationPreservesHostLocaleState();
 	ok &= ExpectAuthenticationEligibilityIntegration();
 	return ok;

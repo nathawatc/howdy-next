@@ -54,7 +54,7 @@ target_compile_definitions(
 )
 target_link_libraries(
 	pam_auth_flow_helpers_test
-	PRIVATE pam_entrypoint pam_module
+	PRIVATE pam_entrypoint pam_module pam_production_entrypoint
 )
 
 add_test(

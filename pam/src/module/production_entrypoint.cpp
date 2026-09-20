@@ -8,6 +8,7 @@
 #include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator.hpp"
 #include "prompt/prompt_submitter.hpp"
+#include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/runtime_session.hpp"
 #include "support/error_message.hpp"
@@ -22,7 +23,6 @@
 #include <security/pam_ext.h>
 
 #include <sys/syslog.h>
-#include <sys/types.h>
 
 namespace {
 
@@ -61,14 +61,46 @@ namespace {
 		return std::make_unique<howdy::pam::ObservedPromptConversation>(pamh, observer);
 	}
 
+	auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
+	                         pid_t *child_pid) -> int {
+		auto *operations = static_cast<howdy::pam::compare_process::Operations *>(context);
+		if (operations == nullptr) {
+			return EINVAL;
+		}
+		return howdy::pam::compare_process::Spawn(request, child_pid, *operations);
+	}
+
 	void CancelAndReapCompareProcess(void *context, pid_t child_pid) noexcept {
 		(void)context;
 		howdy::pam::compare_process::CancelAndReap(child_pid);
 	}
 
-	auto ProductionPromptCoordinatorOperations() -> howdy::pam::PromptCoordinatorOperations {
-		auto operations = howdy::pam::PromptCoordinatorOperations::Create(
-		    nullptr, howdy::pam::compare_process::Spawn, howdy::pam::compare_process::Wait,
+	auto ProductionIdentifyDependencies() -> howdy::pam::auth_flow::IdentifyDependencies {
+		static auto compare_operations = howdy::pam::compare_process::ProductionOperations();
+		return {
+		    .runtime_session = howdy::pam::ProductionRuntimeSessionOperations(),
+		    .prompt_coordinator =
+		        howdy::pam::ProductionPromptCoordinatorOperations(compare_operations),
+		    .eligibility =
+		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityOperations(),
+		};
+	}
+
+}  // namespace
+
+namespace howdy::pam {
+
+	auto ProductionAuthenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                            bool request_auth_token) -> int {
+		(void)context;
+		return auth_flow::IdentifyWithDependencies(pamh, arguments, request_auth_token,
+		                                           ProductionIdentifyDependencies());
+	}
+
+	auto ProductionPromptCoordinatorOperations(compare_process::Operations &compare_operations)
+	    -> PromptCoordinatorOperations {
+		auto operations = PromptCoordinatorOperations::Create(
+		    &compare_operations, SpawnCompareProcess, compare_process::Wait,
 		    CancelAndReapCompareProcess, InputPromptPreflight, CreatePromptSubmitter,
 		    CreateNativePrompt, CreateSecretPromptConversation, RequestAuthToken);
 		if (!operations.has_value()) {
@@ -76,27 +108,6 @@ namespace {
 		}
 		return *operations;
 	}
-
-	auto ProductionIdentifyDependencies() -> howdy::pam::auth_flow::IdentifyDependencies {
-		return {
-		    .runtime_session    = howdy::pam::ProductionRuntimeSessionOperations(),
-		    .prompt_coordinator = ProductionPromptCoordinatorOperations(),
-		    .eligibility =
-		        howdy::pam::auth_eligibility::ProductionAuthenticationEligibilityOperations(),
-		};
-	}
-
-	auto ProductionAuthenticate(void *context, pam_handle_t *pamh,
-	                            howdy::pam::PamModuleArguments arguments, bool request_auth_token)
-	    -> int {
-		(void)context;
-		return howdy::pam::auth_flow::IdentifyWithDependencies(pamh, arguments, request_auth_token,
-		                                                       ProductionIdentifyDependencies());
-	}
-
-}  // namespace
-
-namespace howdy::pam {
 
 	auto ProductionEntrypointDependencies() noexcept -> EntrypointDependencies {
 		return {
