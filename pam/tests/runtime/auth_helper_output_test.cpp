@@ -2,15 +2,11 @@
 #include "module/auth_flow_test_groups.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
-#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "test_support.hpp"
 
 #include <array>
-#include <cerrno>
-#include <chrono>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -18,36 +14,13 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/types.h>
-#include <sys/wait.h>
 
 namespace {
 	using howdy::test::Expect;
-
-	auto FakePartialReadError(void                                              *context,
-	                          [[maybe_unused]] howdy::native::BoundedReadRequest request)
-	    -> howdy::native::BoundedReadResult {
-		(void)context;
-		howdy::native::BoundedReadResult result;
-		result.output       = "CONFIG_PATH=/tmp/partial\n";
-		result.read_error   = true;
-		result.error_number = EIO;
-		return result;
-	}
-
-	auto ReadAuthHelperOutput(pid_t child_pid, int output_fd, std::string *output,
-	                          howdy::pam::auth_helper_process::OutputReader reader = nullptr)
-	    -> bool {
-		auto operations         = howdy::pam::auth_helper_process::ProductionOperations();
-		operations.read_bounded = reader;
-		return howdy::pam::auth_helper_process::ReadOutput(
-		    {.child_pid = child_pid, .output_fd = output_fd}, output, operations,
-		    std::chrono::steady_clock::now() + std::chrono::seconds(10));
-	}
 
 	auto ReadFdToString(int fd) -> std::string {
 		return howdy::native::ReadFdToStringBounded(
@@ -120,177 +93,6 @@ namespace {
 		ok &= Expect(bounded_output == limit_output.substr(0, 9216),
 		             "stops reading after bounded output threshold");
 
-		return ok;
-	}
-
-	auto ExpectAuthHelperOutputLimitTerminatesChild() -> bool {
-		bool                    ok = true;
-		std::array<ScopedFd, 2> output_pipe;
-		ok &= Expect(OpenPipe(&output_pipe), "creates output-limit auth-helper pipe");
-		if (!ok) {
-			return false;
-		}
-
-		const std::string limit_output(
-		    howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h');
-		const pid_t child_pid = fork();
-		ok &= Expect(child_pid >= 0, "forks output-limit auth-helper child");
-		if (child_pid < 0) {
-			return false;
-		}
-		if (child_pid == 0) {
-			output_pipe.at(0).Reset();
-			const bool wrote = WriteAll(output_pipe.at(1).Get(), limit_output);
-			usleep(2000000);
-			_exit(wrote ? 0 : 1);
-		}
-
-		output_pipe.at(1).Reset();
-		std::string helper_output;
-		const auto  start = std::chrono::steady_clock::now();
-		const bool  helper_ok =
-		    ReadAuthHelperOutput(child_pid, output_pipe.at(0).Get(), &helper_output);
-		const auto elapsed = std::chrono::steady_clock::now() - start;
-
-		ok &= Expect(!helper_ok, "auth-helper output limit fails closed");
-		ok &= Expect(helper_output.empty(), "auth-helper output-limit data is not exposed");
-		ok &= Expect(elapsed < std::chrono::milliseconds(1500),
-		             "auth-helper output limit returns before sleeping helper exits");
-
-		int status              = 0;
-		errno                   = 0;
-		const pid_t wait_result = waitpid(child_pid, &status, WNOHANG);
-		const int   wait_errno  = errno;
-		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
-		             "output-limit auth-helper child is reaped");
-
-		return ok;
-	}
-
-	auto ExpectAuthHelperOutputReadErrorTerminatesChild() -> bool {
-		bool        ok        = true;
-		const pid_t child_pid = fork();
-		ok &= Expect(child_pid >= 0, "forks read-error auth-helper child");
-		if (child_pid < 0) {
-			return false;
-		}
-		if (child_pid == 0) {
-			usleep(2000000);
-			_exit(0);
-		}
-
-		std::string helper_output;
-		const auto  start     = std::chrono::steady_clock::now();
-		const bool  helper_ok = ReadAuthHelperOutput(child_pid, -1, &helper_output);
-		const auto  elapsed   = std::chrono::steady_clock::now() - start;
-
-		ok &= Expect(!helper_ok, "auth-helper read error fails closed");
-		ok &= Expect(helper_output.empty(), "auth-helper read error collects empty output");
-		ok &= Expect(elapsed < std::chrono::milliseconds(1500),
-		             "auth-helper read error returns before sleeping helper exits");
-
-		int       status      = 0;
-		pid_t     wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
-			errno = 0;
-			return waitpid(child_pid, &status, WNOHANG);
-		});
-		const int wait_errno  = errno;
-		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
-		             "read-error auth-helper child is reaped");
-
-		if (wait_result == 0) {
-			kill(child_pid, SIGKILL);
-			wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
-				errno = 0;
-				return waitpid(child_pid, &status, 0);
-			});
-			ok &= Expect(wait_result == child_pid,
-			             "read-error auth-helper child cleanup reaps child");
-		} else if (wait_result < 0 && wait_errno != ECHILD) {
-			kill(child_pid, SIGKILL);
-			(void)howdy::native::RetryOnEintr([&] -> pid_t {
-				errno = 0;
-				return waitpid(child_pid, &status, 0);
-			});
-		}
-
-		return ok;
-	}
-
-	auto ExpectAuthHelperOutputPartialReadErrorDiscardsOutput() -> bool {
-		bool        ok        = true;
-		const pid_t child_pid = fork();
-		ok &= Expect(child_pid >= 0, "forks partial-read-error auth-helper child");
-		if (child_pid < 0) {
-			return false;
-		}
-		if (child_pid == 0) {
-			usleep(2000000);
-			_exit(0);
-		}
-
-		std::string helper_output = "previous output";
-		const bool  helper_ok =
-		    ReadAuthHelperOutput(child_pid, -1, &helper_output, FakePartialReadError);
-
-		ok &= Expect(!helper_ok, "auth-helper partial read error fails closed");
-		ok &= Expect(helper_output.empty(), "auth-helper partial read error discards output");
-
-		int         status      = 0;
-		const pid_t wait_result = howdy::native::RetryOnEintr([&] -> pid_t {
-			errno = 0;
-			return waitpid(child_pid, &status, WNOHANG);
-		});
-		const int   wait_errno  = errno;
-		ok &= Expect(wait_result < 0 && wait_errno == ECHILD,
-		             "partial-read-error auth-helper child is reaped");
-		if (wait_result == 0) {
-			kill(child_pid, SIGKILL);
-			(void)howdy::native::RetryOnEintr([&] -> pid_t {
-				errno = 0;
-				return waitpid(child_pid, &status, 0);
-			});
-		}
-
-		return ok;
-	}
-
-	auto ReadCleanAuthHelperOutput(const std::string &child_output, std::string *read_output,
-	                               int child_exit_status = EXIT_SUCCESS) -> std::optional<bool> {
-		std::array<ScopedFd, 2> output_pipe;
-		if (!OpenPipe(&output_pipe)) {
-			return std::nullopt;
-		}
-
-		const pid_t child_pid = fork();
-		if (child_pid < 0) {
-			return std::nullopt;
-		}
-		if (child_pid == 0) {
-			output_pipe.at(0).Reset();
-			const bool wrote = WriteAll(output_pipe.at(1).Get(), child_output);
-			output_pipe.at(1).Reset();
-			_exit(wrote ? child_exit_status : EXIT_FAILURE);
-		}
-
-		output_pipe.at(1).Reset();
-		return ReadAuthHelperOutput(child_pid, output_pipe.at(0).Get(), read_output);
-	}
-
-	auto ExpectAuthHelperOutputChildFailureDiscardsOutput() -> bool {
-		const std::string child_output  = "CONFIG_PATH=/run/howdy/config.ini\n"
-		                                  "USER_MODELS_DIR=/run/howdy/models\n";
-		std::string       actual_output = "previous output";
-		const auto        read_result =
-		    ReadCleanAuthHelperOutput(child_output, &actual_output, EXIT_FAILURE);
-
-		bool ok = true;
-		ok &= Expect(read_result.has_value(), "failed auth-helper child exits cleanly");
-		if (!read_result.has_value()) {
-			return false;
-		}
-		ok &= Expect(!*read_result, "failed auth-helper child output is rejected");
-		ok &= Expect(actual_output.empty(), "failed auth-helper child output is discarded");
 		return ok;
 	}
 
@@ -408,24 +210,11 @@ namespace {
 
 		bool ok = true;
 		for (const auto &test_case : cases) {
-			std::string actual_output;
-			const auto  read_result = ReadCleanAuthHelperOutput(test_case.output, &actual_output);
-			ok &= Expect(read_result.has_value(), test_case.name + " helper exits cleanly");
-			if (!read_result.has_value()) {
-				continue;
-			}
-
-			ok &= Expect(*read_result == test_case.expected_ok, test_case.name);
-			if (!test_case.expected_ok) {
-				ok &= Expect(actual_output.empty(), test_case.name + " discards malformed output");
-			}
 			const auto parsed =
 			    howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(test_case.output);
 			ok &=
 			    Expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {
-				ok &= Expect(actual_output == test_case.output,
-				             test_case.name + " exposes unchanged helper output");
 				ok &= Expect(parsed.config_path == test_case.config_path,
 				             test_case.name + " config path parsed");
 				ok &= Expect(parsed.user_models_dir == test_case.user_models_dir,
@@ -443,11 +232,5 @@ auto RunAuthHelperFdTests() -> bool {
 }
 
 auto RunAuthHelperOutputTests() -> bool {
-	bool ok = true;
-	ok &= ExpectAuthHelperOutputLimitTerminatesChild();
-	ok &= ExpectAuthHelperOutputReadErrorTerminatesChild();
-	ok &= ExpectAuthHelperOutputPartialReadErrorDiscardsOutput();
-	ok &= ExpectAuthHelperOutputChildFailureDiscardsOutput();
-	ok &= ExpectAuthHelperOutputProtocolValidation();
-	return ok;
+	return ExpectAuthHelperOutputProtocolValidation();
 }

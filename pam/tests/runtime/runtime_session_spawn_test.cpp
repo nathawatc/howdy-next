@@ -12,10 +12,12 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <iterator>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -334,10 +336,11 @@ namespace {
 		                                  ? send(sockets.at(1), &marker, 1, MSG_NOSIGNAL) == 1
 		                                  : SendRightsMessage(sockets.at(1), {&marker, 1}, fds);
 		int                    received_fd = -1;
-		const bool result = sent && howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
-		                                sockets.at(0), &received_fd,
-		                                std::chrono::steady_clock::now() + std::chrono::seconds(1));
-		bool       ok     = Expect(result == expected, std::string(name) + " has expected result");
+		const bool             result =
+		    sent && howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
+		                sockets.at(0), &received_fd,
+		                std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		bool ok = Expect(result == expected, std::string(name) + " has expected result");
 		if (result) {
 			struct stat source_stat{};
 			struct stat received_stat{};
@@ -377,7 +380,7 @@ namespace {
 				ok &= Expect(
 				    SendRightsMessage(sender.Get(), payload, std::vector<int>(count, source.Get())),
 				    "EOF rights sends ancillary data");
-				const auto count_fds = [] {
+				const auto count_fds = [] -> std::ptrdiff_t {
 					return std::distance(std::filesystem::directory_iterator("/proc/self/fd"),
 					                     std::filesystem::directory_iterator{});
 				};
@@ -413,7 +416,7 @@ namespace {
 		             "lease EOF creates socketpair");
 		(void)close(sockets.at(1));
 		received_fd = -1;
-		ok &= Expect(!howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
+		ok &= Expect(!howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
 		                 sockets.at(0), &received_fd,
 		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
 		             "lease EOF is rejected");
@@ -421,7 +424,7 @@ namespace {
 
 		ok &= Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) == 0,
 		             "lease timeout creates socketpair");
-		ok &= Expect(!howdy::pam::auth_helper_process::ReceiveLeaseDescriptor(
+		ok &= Expect(!howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
 		                 sockets.at(0), &received_fd,
 		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
 		             "missing lease times out");
@@ -441,7 +444,7 @@ namespace {
 		const int creator_fd = open(lock_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 		bool      ok         = Expect(creator_fd >= 0, "lease validation creates lock file");
 		if (creator_fd >= 0) {
-			ok &= Expect(!howdy::pam::auth_helper_process::ValidateLeaseDescriptor(
+			ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 			                 creator_fd, generation, geteuid()),
 			             "lease validation rejects writable descriptor");
 			(void)close(creator_fd);
@@ -457,7 +460,7 @@ namespace {
 			errno = 0;
 			ok &= Expect(ftruncate(lease_fd, 1) == -1 && (errno == EINVAL || errno == EBADF),
 			             "read-only lease rejects truncate");
-			ok &= Expect(howdy::pam::auth_helper_process::ValidateLeaseDescriptor(
+			ok &= Expect(howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 			                 lease_fd, generation, geteuid()),
 			             "lease validation accepts exact unlocked sibling and takes shared lock");
 			const int independent_fd = open(lock_path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
@@ -480,7 +483,7 @@ namespace {
 			const int wrong_fd = open(wrong_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 			ok &= Expect(wrong_fd >= 0, "lease validation creates wrong-inode descriptor");
 			if (wrong_fd >= 0) {
-				ok &= Expect(!howdy::pam::auth_helper_process::ValidateLeaseDescriptor(
+				ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 				                 wrong_fd, generation, geteuid()),
 				             "lease validation rejects wrong inode");
 				(void)close(wrong_fd);

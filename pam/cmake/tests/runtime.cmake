@@ -39,3 +39,4 @@ target_compile_definitions(
 		HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
 )
 target_link_libraries(pam_runtime_session_test PRIVATE pam_runtime)
+target_link_options(pam_runtime_session_test PRIVATE "LINKER:--wrap=read")

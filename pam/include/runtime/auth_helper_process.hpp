@@ -1,10 +1,8 @@
 #pragma once
 
 #include "runtime/runtime_session.hpp"
-#include "support/fd_io.hpp"
 
 #include <chrono>
-#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -22,8 +20,6 @@ namespace howdy::pam::auth_helper_process {
 		std::span<char *const>            envp;
 	};
 
-	using OutputReader = howdy::native::BoundedReadResult (*)(
-	    void *context, howdy::native::BoundedReadRequest request);
 	using LogObserver = void (*)(void *context, std::string_view message);
 
 	struct Operations {
@@ -40,8 +36,7 @@ namespace howdy::pam::auth_helper_process {
 		int (*actions_destroy)(void *, posix_spawn_file_actions_t *)                   = nullptr;
 		int (*spawn)(const SpawnRequest &)                                             = nullptr;
 		int (*close)(void *, int fd)                                                   = nullptr;
-		OutputReader read_bounded                                                      = nullptr;
-		LogObserver  log_observer                                                      = nullptr;
+		LogObserver log_observer                                                       = nullptr;
 	};
 
 	struct Output {
@@ -50,18 +45,7 @@ namespace howdy::pam::auth_helper_process {
 		bool        valid = false;
 	};
 
-	struct Process {
-		pid_t child_pid = -1;
-		int   output_fd = -1;
-	};
-
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	__attribute__((visibility("hidden"))) auto
-	ReceiveLeaseDescriptor(int socket_fd, int *lease_fd,
-	                       std::chrono::steady_clock::time_point deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto
-	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
-	    -> bool;
 	__attribute__((visibility("hidden"))) auto
 	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
 	                        const Operations &operations) -> bool;
@@ -69,9 +53,6 @@ namespace howdy::pam::auth_helper_process {
 	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
 	                        const Operations                     &operations,
 	                        std::chrono::steady_clock::time_point deadline) -> bool;
-	__attribute__((visibility("hidden"))) auto
-	ReadOutput(Process process, std::string *output, const Operations &operations,
-	           std::chrono::steady_clock::time_point deadline) -> bool;
 
 	__attribute__((visibility("hidden"))) auto
 	PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared) -> bool;

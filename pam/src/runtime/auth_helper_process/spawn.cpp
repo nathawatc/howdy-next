@@ -6,7 +6,6 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "support/error_message.hpp"
-#include "support/fd_io.hpp"
 
 #include <array>
 #include <cerrno>
@@ -82,12 +81,6 @@ namespace {
 	auto ProductionClose(void *context, int fd) -> int {
 		(void)context;
 		return close(fd);
-	}
-
-	auto ProductionReadBounded(void *context, howdy::native::BoundedReadRequest request)
-	    -> howdy::native::BoundedReadResult {
-		(void)context;
-		return howdy::native::ReadFdToStringBounded(request);
 	}
 
 	void WriteHelperSpawnErrorLog(const AuthHelperOperations &operations, const char *operation,
@@ -190,7 +183,6 @@ namespace howdy::pam::auth_helper_process::internal {
 		    .actions_destroy      = ProductionActionsDestroy,
 		    .spawn                = ProductionSpawn,
 		    .close                = ProductionClose,
-		    .read_bounded         = ProductionReadBounded,
 		};
 	}
 

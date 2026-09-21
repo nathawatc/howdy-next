@@ -72,13 +72,6 @@ namespace howdy::pam::auth_helper_process::internal {
 		kWaitError,
 	};
 
-	enum class HelperReadResult : std::uint8_t {
-		kComplete,
-		kTimedOut,
-		kReadError,
-		kOutputLimit,
-	};
-
 	enum class LeaseReceiveResult : std::uint8_t {
 		kReceived,
 		kRetry,
@@ -107,9 +100,6 @@ namespace howdy::pam::auth_helper_process::internal {
 	__attribute__((visibility("hidden"))) auto
 	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status) noexcept
 	    -> HelperWaitResult;
-	__attribute__((visibility("hidden"))) auto
-	ReadAuthHelperOutputUntil(int output_fd, std::string *output, const Operations &operations,
-	                          HelperDeadline deadline) -> HelperReadResult;
 	__attribute__((visibility("hidden"))) void LogAuthHelperReadError(int error_number);
 
 	// lease.cpp

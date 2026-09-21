@@ -298,16 +298,6 @@ namespace howdy::pam::auth_helper_process {
 		return internal::ProductionOperations();
 	}
 
-	auto ReceiveLeaseDescriptor(int socket_fd, int *lease_fd,
-	                            std::chrono::steady_clock::time_point deadline) -> bool {
-		return internal::ReceiveLeaseDescriptorUntil(socket_fd, lease_fd, deadline);
-	}
-
-	auto ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir,
-	                             uid_t owner_uid) -> bool {
-		return internal::ValidateLeaseDescriptor(lease_fd, root_dir, owner_uid);
-	}
-
 	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
 	                             const Operations &operations) -> bool {
 		return PrepareRuntimeAuthFiles(username, prepared, operations,
@@ -321,40 +311,9 @@ namespace howdy::pam::auth_helper_process {
 		return ::PrepareRuntimeAuthFilesUntil(username, prepared, operations, deadline);
 	}
 
-	auto ReadOutput(Process process, std::string *output, const Operations &operations,
-	                std::chrono::steady_clock::time_point deadline) -> bool {
-		const auto read_result =
-		    internal::ReadAuthHelperOutputUntil(process.output_fd, output, operations, deadline);
-		if (read_result != internal::HelperReadResult::kComplete) {
-			if (read_result == internal::HelperReadResult::kTimedOut) {
-				LogPrepareTimeout(operations);
-			}
-			(void)internal::TerminateAndReapHelperProcess(process.child_pid);
-			return false;
-		}
-
-		int        status = 0;
-		const auto wait_result =
-		    internal::WaitForHelperProcessUntil(process.child_pid, deadline, &status);
-		if (wait_result != internal::HelperWaitResult::kExited) {
-			output->clear();
-			if (wait_result == internal::HelperWaitResult::kTimedOut) {
-				LogPrepareTimeout(operations);
-			}
-			return false;
-		}
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS ||
-		    !internal::ParseAuthHelperOutput(*output).valid) {
-			output->clear();
-			return false;
-		}
-		return true;
-	}
-
 	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared)
 	    -> bool {
-		auto operations         = ProductionOperations();
-		operations.read_bounded = nullptr;
+		auto operations = ProductionOperations();
 		return ::PrepareRuntimeAuthFilesUntil(username, prepared, operations,
 		                                      std::chrono::steady_clock::now() +
 		                                          internal::kAuthHelperTimeout);

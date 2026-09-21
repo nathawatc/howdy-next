@@ -3,6 +3,7 @@
 #include "runtime/runtime_session.hpp"
 #include "runtime/runtime_session_process_test_support.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
+#include "support/fd_io.hpp"
 #include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
@@ -13,6 +14,8 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -23,55 +26,18 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/uio.h>  // IWYU pragma: keep
 #include <sys/wait.h>
 
 namespace {
 	using howdy::test::Expect;
 	using howdy::test::process::ScopedSignalBlock;
-	using howdy::test::runtime_session::AuthHelperSpawnFake;
-	using howdy::test::runtime_session::FakeAuthHelperSpawnLog;
 	using howdy::test::runtime_session::TestPreparedRuntimeOutput;
-
-	auto IntegrationDuplicateFd(void *context, int fd, int minimum_fd) -> int {
-		(void)context;
-		return fcntl(fd, F_DUPFD_CLOEXEC, minimum_fd);
-	}
-
-	auto IntegrationActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
-		(void)context;
-		return posix_spawn_file_actions_init(actions);
-	}
-
-	auto IntegrationActionsAdddup2(void *context, posix_spawn_file_actions_t *actions,
-	                               int source_fd, int target_fd) -> int {
-		(void)context;
-		return posix_spawn_file_actions_adddup2(actions, source_fd, target_fd);
-	}
-
-	auto IntegrationActionsAddclose(void *context, posix_spawn_file_actions_t *actions, int fd)
-	    -> int {
-		(void)context;
-		return posix_spawn_file_actions_addclose(actions, fd);
-	}
-
-	auto IntegrationActionsDestroy(void *context, posix_spawn_file_actions_t *actions) -> int {
-		(void)context;
-		return posix_spawn_file_actions_destroy(actions);
-	}
-
-	auto IntegrationClose(void *context, int fd) -> int {
-		(void)context;
-		return close(fd);
-	}
 
 	auto WaitForReadyByte(int ready_fd, std::string_view name) -> bool;
 	void TerminateAndReapTestChild(pid_t child_pid);
-
-	auto RealPipe2(void *context, int *pipe_fds, int flags) -> int {
-		(void)context;
-		return pipe2(pipe_fds, flags);
-	}
 
 	struct StalledSpawnContext {
 		std::array<int, 2>       ready_pipe = {-1, -1};
@@ -124,18 +90,10 @@ namespace {
 
 	auto StalledSpawnOperations(StalledSpawnContext *context)
 	    -> howdy::pam::auth_helper_process::Operations {
-		auto operations             = howdy::pam::auth_helper_process::ProductionOperations();
-		operations.context          = context;
-		operations.pipe2            = RealPipe2;
-		operations.duplicate_fd     = IntegrationDuplicateFd;
-		operations.actions_init     = IntegrationActionsInit;
-		operations.actions_adddup2  = IntegrationActionsAdddup2;
-		operations.actions_addclose = IntegrationActionsAddclose;
-		operations.actions_destroy  = IntegrationActionsDestroy;
-		operations.spawn            = StalledSpawn;
-		operations.close            = IntegrationClose;
-		operations.read_bounded     = nullptr;
-		operations.log_observer     = StalledSpawnLog;
+		auto operations         = howdy::pam::auth_helper_process::ProductionOperations();
+		operations.context      = context;
+		operations.spawn        = StalledSpawn;
+		operations.log_observer = StalledSpawnLog;
 		return operations;
 	}
 
@@ -183,156 +141,157 @@ namespace {
 		return Expect(ready == 'R', std::string(name) + " receives readiness byte");
 	}
 
-	auto RunDeadlineOutputCase(std::string_view name, std::string_view output, bool close_output,
-	                           bool exit_success, bool ignore_sigterm) -> bool {
-		std::array<int, 2> output_pipe{};
-		std::array<int, 2> ready_pipe{};
-		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
-		            std::string(name) + " creates output pipe")) {
-			return false;
-		}
-		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
-			(void)close(output_pipe.at(0));
-			(void)close(output_pipe.at(1));
-			return Expect(false, std::string(name) + " creates readiness pipe");
-		}
-
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			(void)close(output_pipe.at(0));
-			(void)close(ready_pipe.at(0));
-			if (ignore_sigterm) {
-				(void)signal(SIGTERM, SIG_IGN);
-			}
-			if (!output.empty() && write(output_pipe.at(1), output.data(), output.size()) !=
-			                           static_cast<ssize_t>(output.size())) {
-				_exit(EXIT_FAILURE);
-			}
-			if (close_output) {
-				(void)close(output_pipe.at(1));
-			}
-			if (write(ready_pipe.at(1), "R", 1) != 1) {
-				_exit(EXIT_FAILURE);
-			}
-			(void)close(ready_pipe.at(1));
-			if (exit_success) {
-				_exit(EXIT_SUCCESS);
-			}
-			for (;;) {
-				pause();
-			}
-		}
-		(void)close(output_pipe.at(1));
-		(void)close(ready_pipe.at(1));
-		if (!Expect(child_pid > 0, std::string(name) + " forks child") ||
-		    !WaitForReadyByte(ready_pipe.at(0), name)) {
-			(void)close(output_pipe.at(0));
-			(void)close(ready_pipe.at(0));
-			TerminateAndReapTestChild(child_pid);
-			return false;
-		}
-		(void)close(ready_pipe.at(0));
-
-		AuthHelperSpawnFake fake;
-		auto                operations = howdy::pam::auth_helper_process::ProductionOperations();
-		operations.context             = &fake;
-		operations.read_bounded        = nullptr;
-		operations.log_observer        = FakeAuthHelperSpawnLog;
-		std::string helper_output      = "stale";
-		const auto  start              = std::chrono::steady_clock::now();
-		const auto  timeout            = std::chrono::milliseconds(150);
-		const bool  result             = howdy::pam::auth_helper_process::ReadOutput(
-		    {.child_pid = child_pid, .output_fd = output_pipe.at(0)}, &helper_output, operations,
-		    start + timeout);
-		const auto elapsed = std::chrono::steady_clock::now() - start;
-		(void)close(output_pipe.at(0));
-
-		bool ok = true;
-		ok &= Expect(result == exit_success, std::string(name) + " returns expected result");
-		if (exit_success) {
-			ok &= Expect(helper_output == output, std::string(name) + " preserves exact output");
-		} else {
-			ok &= Expect(helper_output.empty(), std::string(name) + " discards failed output");
-			ok &= Expect(elapsed >= timeout, std::string(name) + " honors deadline");
-			ok &= Expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded");
-			ok &= Expect(
-			    std::ranges::find(fake.log_messages, "Howdy auth helper prepare timed out") !=
-			        fake.log_messages.end(),
-			    std::string(name) + " logs prepare timeout");
-		}
-		ok &= HelperChildReaped(child_pid, name);
-		return ok;
-	}
-
 	enum class ChildOutcome : std::uint8_t {
 		kSuccess,
 		kNonzero,
 		kSignal,
+		kStall
 	};
 
-	auto RunCombinedOutputFailureCase(std::string_view name, ChildOutcome outcome,
-	                                  std::string_view output) -> bool {
-		std::array<int, 2> output_pipe{};
-		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
-		            std::string(name) + " creates output pipe")) {
-			return false;
-		}
+	struct PrepareCase {
+		std::array<int, 2>       output_pipe  = {-1, -1};
+		std::array<int, 2>       lease_socket = {-1, -1};
+		std::string              output;
+		ChildOutcome             outcome        = ChildOutcome::kSuccess;
+		bool                     close_output   = true;
+		bool                     ignore_sigterm = false;
+		pid_t                    child_pid      = -1;
+		std::vector<std::string> log_messages;
+	};
 
-		const pid_t child_pid = fork();
-		if (child_pid < 0) {
-			(void)close(output_pipe.at(0));
-			(void)close(output_pipe.at(1));
-			return Expect(false, std::string(name) + " forks child");
+	struct ReadFailure {
+		int fd                 = -1;
+		int reads_before_error = -1;
+		int successful_reads   = 0;
+	};
+
+	auto InjectedReadFailure() -> ReadFailure & {
+		static ReadFailure failure;
+		return failure;
+	}
+
+	auto CasePipe(void *context, int *fds, int flags) -> int {
+		const int result = pipe2(fds, flags);
+		if (result == 0) {
+			auto      &state         = *static_cast<PrepareCase *>(context);
+			const auto pair          = std::span(fds, std::size_t{2});
+			state.output_pipe        = {pair.front(), pair.back()};
+			InjectedReadFailure().fd = pair.front();
 		}
-		if (child_pid == 0) {
-			(void)close(output_pipe.at(0));
-			if (write(output_pipe.at(1), output.data(), output.size()) !=
-			    static_cast<ssize_t>(output.size())) {
+		return result;
+	}
+
+	auto CaseSocket(void *context, int domain, int type, int protocol, int *fds) -> int {
+		const int result = socketpair(domain, type, protocol, fds);
+		if (result == 0) {
+			const auto pair                                   = std::span(fds, std::size_t{2});
+			static_cast<PrepareCase *>(context)->lease_socket = {pair.front(), pair.back()};
+		}
+		return result;
+	}
+
+	auto CaseSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
+		auto       &state = *static_cast<PrepareCase *>(request.context);
+		const pid_t pid   = fork();
+		if (pid < 0) {
+			return errno;
+		}
+		if (pid == 0) {
+			(void)alarm(5);
+			(void)close(state.output_pipe.at(0));
+			(void)close(state.lease_socket.at(0));
+			if (state.ignore_sigterm) {
+				(void)signal(SIGTERM, SIG_IGN);
+			}
+			char  marker = 'L';
+			iovec data{.iov_base = &marker, .iov_len = 1};
+			alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int))> control{};
+			msghdr                                                     message{};
+			message.msg_iov        = &data;
+			message.msg_iovlen     = 1;
+			message.msg_control    = control.data();
+			message.msg_controllen = control.size();
+			auto *header           = CMSG_FIRSTHDR(&message);
+			header->cmsg_level     = SOL_SOCKET;
+			header->cmsg_type      = SCM_RIGHTS;
+			header->cmsg_len       = CMSG_LEN(sizeof(int));
+			const int descriptor   = open("/dev/null", O_RDONLY | O_CLOEXEC);
+			std::memcpy(CMSG_DATA(header), &descriptor, sizeof(descriptor));
+			if (sendmsg(state.lease_socket.at(1), &message, MSG_NOSIGNAL) != 1 ||
+			    !howdy::native::WriteAllToFd(state.output_pipe.at(1), state.output)) {
 				_exit(EXIT_FAILURE);
 			}
-			(void)close(output_pipe.at(1));
-			switch (outcome) {
+			if (state.close_output) {
+				(void)close(state.output_pipe.at(1));
+			}
+			(void)close(state.lease_socket.at(1));
+			switch (state.outcome) {
 				case ChildOutcome::kSuccess:
 					_exit(EXIT_SUCCESS);
 				case ChildOutcome::kNonzero:
 					_exit(EXIT_FAILURE);
 				case ChildOutcome::kSignal:
 					(void)signal(SIGTERM, SIG_DFL);
-					if (raise(SIGTERM) != 0) {
-						_exit(EXIT_FAILURE);
-					}
+					(void)raise(SIGTERM);
 					_exit(EXIT_FAILURE);
+				case ChildOutcome::kStall:
+					for (;;) {
+						pause();
+					}
 			}
-			_exit(EXIT_FAILURE);
 		}
-
-		(void)close(output_pipe.at(1));
-		AuthHelperSpawnFake fake;
-		auto                operations = howdy::pam::auth_helper_process::ProductionOperations();
-		operations.context             = &fake;
-		operations.read_bounded        = nullptr;
-		operations.log_observer        = FakeAuthHelperSpawnLog;
-		std::string helper_output      = "stale";
-		const bool  result             = howdy::pam::auth_helper_process::ReadOutput(
-		    {.child_pid = child_pid, .output_fd = output_pipe.at(0)}, &helper_output, operations,
-		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
-		(void)close(output_pipe.at(0));
-
-		return Expect(!result, std::string(name) + " rejects combined child failure") &&
-		       Expect(helper_output.empty(), std::string(name) + " clears caller-visible output") &&
-		       Expect(fake.log_messages.empty(), std::string(name) + " does not time out") &&
-		       HelperChildReaped(child_pid, name);
+		state.child_pid    = pid;
+		*request.child_pid = pid;
+		return 0;
 	}
 
-	auto TestAuthHelperCombinedFailures() -> bool {
-		const std::string valid_output = TestPreparedRuntimeOutput("comb01");
-		bool              ok           = true;
-		ok &= RunCombinedOutputFailureCase("valid output and nonzero helper",
-		                                   ChildOutcome::kNonzero, valid_output);
-		ok &= RunCombinedOutputFailureCase("malformed output and successful helper",
-		                                   ChildOutcome::kSuccess, "MALFORMED_OUTPUT\n");
-		ok &= RunCombinedOutputFailureCase("valid output and signaled helper",
-		                                   ChildOutcome::kSignal, valid_output);
+	auto RunPrepareCase(std::string_view name, PrepareCase state, bool timeout,
+	                    bool reaches_lease_validation = false, int reads_before_error = -1)
+	    -> bool {
+		InjectedReadFailure()   = {.reads_before_error = reads_before_error};
+		auto operations         = howdy::pam::auth_helper_process::ProductionOperations();
+		operations.context      = &state;
+		operations.pipe2        = CasePipe;
+		operations.socketpair   = CaseSocket;
+		operations.spawn        = CaseSpawn;
+		operations.log_observer = [](void *context, std::string_view message) -> void {
+			static_cast<PrepareCase *>(context)->log_messages.emplace_back(message);
+		};
+		howdy::pam::PreparedRuntimeFiles prepared;
+		const auto                       start = std::chrono::steady_clock::now();
+		const auto                       duration =
+		    timeout ? std::chrono::milliseconds(150) : std::chrono::milliseconds(1000);
+		const bool result = howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
+		    "alice", &prepared, operations, start + duration);
+		const auto elapsed          = std::chrono::steady_clock::now() - start;
+		const int  successful_reads = InjectedReadFailure().successful_reads;
+		InjectedReadFailure()       = {};
+		// The transport lease is intentionally not a runtime lock. A normal response
+		// must reach final descriptor validation; no test bypasses that validation.
+		bool ok =
+		    Expect(!result && !prepared.lease_fd.Valid(), std::string(name) + " fails closed");
+		ok &= Expect(prepared.config_path.empty() != reaches_lease_validation,
+		             std::string(name) + " reaches expected validation stage");
+		if (reaches_lease_validation) {
+			const auto parsed =
+			    howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(state.output);
+			ok &= Expect(prepared.config_path == parsed.config_path &&
+			                 prepared.user_models_dir == parsed.user_models_dir,
+			             std::string(name) + " preserves parsed paths");
+		}
+		const bool logged_timeout =
+		    std::ranges::find(state.log_messages, "Howdy auth helper prepare timed out") !=
+		    state.log_messages.end();
+		ok &= Expect(logged_timeout == timeout, std::string(name) + " logs only actual timeout");
+		ok &= Expect(elapsed < std::chrono::seconds(2), std::string(name) + " remains bounded");
+		if (timeout) {
+			ok &= Expect(elapsed >= duration, std::string(name) + " honors deadline");
+		}
+		if (reads_before_error > 0) {
+			ok &= Expect(successful_reads == reads_before_error,
+			             std::string(name) + " collects partial output before error");
+		}
+		ok &= HelperChildReaped(state.child_pid, name);
 		return ok;
 	}
 
@@ -362,98 +321,66 @@ namespace {
 		       HelperChildReaped(context.spawned_pid, "prepare orchestration");
 	}
 
-	auto TestAuthHelperAbsoluteDeadlines() -> bool {
-		const std::string valid_output = TestPreparedRuntimeOutput("dead01");
-		bool              ok           = true;
-		ok &= RunDeadlineOutputCase("normal helper", valid_output, true, true, false);
-		ok &= RunDeadlineOutputCase("silent open pipe", "", false, false, false);
-		ok &= RunDeadlineOutputCase("partial stalled output", "CONFIG_PATH=/partial", false, false,
-		                            false);
-		ok &= RunDeadlineOutputCase("closed pipe live child", valid_output, true, false, false);
-		ok &= RunDeadlineOutputCase("SIGTERM-ignoring helper", valid_output, true, false, true);
-		return ok;
-	}
-
-	auto TestAuthHelperOutputLimit() -> bool {
-		std::array<int, 2> output_pipe{};
-		std::array<int, 2> ready_pipe{};
-		if (!Expect(pipe2(output_pipe.data(), O_CLOEXEC) == 0,
-		            "output limit creates output pipe")) {
-			return false;
-		}
-		if (pipe2(ready_pipe.data(), O_CLOEXEC) != 0) {
-			(void)close(output_pipe.at(0));
-			(void)close(output_pipe.at(1));
-			return Expect(false, "output limit creates readiness pipe");
-		}
-
-		const pid_t child_pid = fork();
-		if (child_pid == 0) {
-			(void)close(output_pipe.at(0));
-			(void)close(ready_pipe.at(0));
-			if (write(ready_pipe.at(1), "R", 1) != 1) {
-				_exit(EXIT_FAILURE);
-			}
-			(void)close(ready_pipe.at(1));
-			const std::string output(
-			    howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h');
-			const bool wrote = write(output_pipe.at(1), output.data(), output.size()) ==
-			                   static_cast<ssize_t>(output.size());
-			(void)close(output_pipe.at(1));
-			_exit(wrote ? EXIT_SUCCESS : EXIT_FAILURE);
-		}
-		(void)close(output_pipe.at(1));
-		(void)close(ready_pipe.at(1));
-		if (!Expect(child_pid > 0, "output limit forks child") ||
-		    !WaitForReadyByte(ready_pipe.at(0), "output limit")) {
-			(void)close(output_pipe.at(0));
-			(void)close(ready_pipe.at(0));
-			TerminateAndReapTestChild(child_pid);
-			return false;
-		}
-		(void)close(ready_pipe.at(0));
-
-		std::string output      = "stale";
-		auto        operations  = howdy::pam::auth_helper_process::ProductionOperations();
-		operations.read_bounded = nullptr;
-		const bool result       = howdy::pam::auth_helper_process::ReadOutput(
-		    {.child_pid = child_pid, .output_fd = output_pipe.at(0)}, &output, operations,
-		    std::chrono::steady_clock::now() + std::chrono::seconds(1));
-		(void)close(output_pipe.at(0));
-		return Expect(!result, "output limit is rejected") &&
-		       Expect(output.empty(), "output limit data is discarded") &&
-		       HelperChildReaped(child_pid, "output limit");
-	}
-
-	auto TestAuthHelperBlockedSignalTimeout() -> bool {
-		const std::string valid_output = TestPreparedRuntimeOutput("mask01");
-		bool              ok           = true;
-		{
-			ScopedSignalBlock blocked_sigchld(SIGCHLD);
-			if (!Expect(blocked_sigchld.Valid(), "blocked SIGCHLD auth-helper guard installs")) {
-				return false;
-			}
-			ok &= RunDeadlineOutputCase("blocked SIGCHLD auth-helper timeout", valid_output, true,
-			                            false, false);
-		}
-		{
-			ScopedSignalBlock blocked_sigterm(SIGTERM);
-			if (!Expect(blocked_sigterm.Valid(), "blocked SIGTERM auth-helper guard installs")) {
-				return false;
-			}
-			ok &= RunDeadlineOutputCase("blocked SIGTERM auth-helper timeout", valid_output, true,
-			                            false, false);
-		}
-		return ok;
-	}
 }  // namespace
 
+extern "C" auto RealRead(int fd, void *buffer, std::size_t count) -> ssize_t __asm__("__real_read");
+extern "C" auto TestRead(int fd, void *buffer, std::size_t count) -> ssize_t __asm__("__wrap_read");
+
+extern "C" auto TestRead(int fd, void *buffer, std::size_t count) -> ssize_t {
+	auto &failure = InjectedReadFailure();
+	if (fd == failure.fd && failure.reads_before_error >= 0) {
+		if (failure.successful_reads >= failure.reads_before_error) {
+			errno = EIO;
+			return -1;
+		}
+		const auto result = RealRead(fd, buffer, count);
+		if (result > 0) {
+			++failure.successful_reads;
+		}
+		return result;
+	}
+	return RealRead(fd, buffer, count);
+}
+
 auto RunRuntimeSessionDeadlineTests() -> bool {
-	bool ok = true;
-	ok &= TestAuthHelperAbsoluteDeadlines();
-	ok &= TestAuthHelperCombinedFailures();
-	ok &= TestPrepareRuntimeAuthFilesStalledChild();
-	ok &= TestAuthHelperOutputLimit();
-	ok &= TestAuthHelperBlockedSignalTimeout();
+	const auto output = TestPreparedRuntimeOutput("dead01");
+	bool       ok     = TestPrepareRuntimeAuthFilesStalledChild();
+	ok &= RunPrepareCase("normal response", {.output = output}, false, true);
+	ok &= RunPrepareCase("empty output", {}, false);
+	ok &= RunPrepareCase("silent open pipe",
+	                     {.outcome = ChildOutcome::kStall, .close_output = false}, true);
+	ok &= RunPrepareCase(
+	    "partial stalled output",
+	    {.output = "CONFIG_PATH=/partial", .outcome = ChildOutcome::kStall, .close_output = false},
+	    true);
+	ok &= RunPrepareCase("closed pipe live child",
+	                     {.output = output, .outcome = ChildOutcome::kStall}, true);
+	ok &= RunPrepareCase(
+	    "SIGTERM-ignoring child",
+	    {.output = output, .outcome = ChildOutcome::kStall, .ignore_sigterm = true}, true);
+	ok &= RunPrepareCase("nonzero child", {.output = output, .outcome = ChildOutcome::kNonzero},
+	                     false);
+	ok &= RunPrepareCase("signaled child", {.output = output, .outcome = ChildOutcome::kSignal},
+	                     false);
+	for (const auto &invalid : {std::string("MALFORMED_OUTPUT\n"), output + "UNKNOWN=value\n",
+	                            output + "CONFIG_PATH=/duplicate\n"}) {
+		ok &= RunPrepareCase("malformed response", {.output = invalid}, false);
+	}
+	ok &=
+	    RunPrepareCase("output limit",
+	                   {.output = std::string(
+	                        howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h'),
+	                    .outcome = ChildOutcome::kStall},
+	                   false);
+	ok &= RunPrepareCase("read error", {.output = output, .outcome = ChildOutcome::kStall}, false,
+	                     false, 0);
+	ok &= RunPrepareCase("partial read error", {.output = output, .outcome = ChildOutcome::kStall},
+	                     false, false, 1);
+	for (const int signal_number : {SIGCHLD, SIGTERM}) {
+		ScopedSignalBlock blocked(signal_number);
+		ok &= Expect(blocked.Valid(), "blocks helper signal");
+		ok &= RunPrepareCase("blocked signal timeout",
+		                     {.output = output, .outcome = ChildOutcome::kStall}, true);
+	}
 	return ok;
 }
