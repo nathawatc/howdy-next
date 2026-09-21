@@ -40,6 +40,17 @@ if(NOT CMAKE_CROSSCOMPILING)
 			"-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
 			-P "${PROJECT_SOURCE_DIR}/tests/cmake/timeout_defaults_test.cmake"
 	)
+	if(NOT HOWDY_GIT_EXECUTABLE STREQUAL "")
+		add_test(
+			NAME native-tidy-incremental
+			COMMAND
+				"${CMAKE_COMMAND}"
+				"-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+				"-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/tidy-incremental-test"
+				"-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
+				-P "${PROJECT_SOURCE_DIR}/tests/cmake/tidy_incremental_test.cmake"
+		)
+	endif()
 	add_test(
 		NAME native-config-generator
 		COMMAND howdy_config_generator_test "$<TARGET_FILE:howdy_config_generator>"
