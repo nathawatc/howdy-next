@@ -19,3 +19,17 @@ howdy_add_native_test(
 	tests/auth_helper/auth_helper_staging_test.cpp
 )
 target_link_libraries(howdy_auth_helper_test PRIVATE howdy_auth_helper_core)
+
+howdy_add_native_test(
+	howdy_auth_helper_fdopendir_failure_test
+	native-auth-helper-fdopendir-failure
+	tests/auth_helper/auth_helper_fdopendir_failure_test.cpp
+)
+target_link_libraries(
+	howdy_auth_helper_fdopendir_failure_test
+	PRIVATE howdy_auth_helper_core
+)
+target_link_options(
+	howdy_auth_helper_fdopendir_failure_test
+	PRIVATE "LINKER:--wrap=fdopendir"
+)

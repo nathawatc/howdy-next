@@ -217,10 +217,11 @@ namespace howdy::native::auth_helper {
 			if (duplicate.Get() < 0) {
 				return false;
 			}
-			DIR *directory = fdopendir(duplicate.Release());
+			DIR *directory = fdopendir(duplicate.Get());
 			if (directory == nullptr) {
 				return false;
 			}
+			(void)duplicate.Release();
 			bool found = false;
 			errno      = 0;
 			while (dirent *entry = readdir(directory)) {
