@@ -77,7 +77,7 @@ cmake --preset release \
 Install with the configured prefix:
 
 ```sh
-sudo cmake --install build
+sudo cmake --install build/release
 ```
 
 `cmake --install --prefix` is intentionally unsupported because runtime paths
