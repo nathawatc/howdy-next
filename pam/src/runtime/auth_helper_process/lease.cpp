@@ -130,13 +130,13 @@ namespace howdy::pam::auth_helper_process::internal {
 		message.msg_control    = control_buffer.data();
 		message.msg_controllen = control_buffer.size();
 		const ssize_t received = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
-		if (received != 0) {
-			if (received > 0) {
-				CloseControlDescriptors(&message);
-			}
+		if (received < 0) {
 			return false;
 		}
-		return CMSG_FIRSTHDR(&message) == nullptr;
+		const bool clean = received == 0 && CMSG_FIRSTHDR(&message) == nullptr &&
+		                   !howdy::native::HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC);
+		CloseControlDescriptors(&message);
+		return clean;
 	}
 
 	auto ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir,

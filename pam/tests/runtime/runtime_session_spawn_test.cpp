@@ -1,3 +1,4 @@
+#include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "paths.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
@@ -295,8 +296,8 @@ namespace {
 
 	auto SendRightsMessage(int socket_fd, std::string_view marker, const std::vector<int> &fds)
 	    -> bool {
-		char              marker_byte = marker.front();
-		iovec             data{.iov_base = &marker_byte, .iov_len = sizeof(marker_byte)};
+		char              marker_byte = marker.empty() ? '\0' : marker.front();
+		iovec             data{.iov_base = &marker_byte, .iov_len = marker.empty() ? 0U : 1U};
 		std::vector<char> control(CMSG_SPACE(sizeof(int) * fds.size()));
 		msghdr            message{};
 		message.msg_iov        = &data;
@@ -310,7 +311,7 @@ namespace {
 		if (!fds.empty()) {
 			std::memcpy(CMSG_DATA(header), fds.data(), sizeof(int) * fds.size());
 		}
-		return sendmsg(socket_fd, &message, MSG_NOSIGNAL) == 1;
+		return sendmsg(socket_fd, &message, MSG_NOSIGNAL) == static_cast<ssize_t>(data.iov_len);
 	}
 
 	auto ReceiveCase(std::string_view name, char marker, std::size_t descriptor_count,
@@ -361,6 +362,37 @@ namespace {
 
 	auto TestLeaseReceiver() -> bool {
 		bool ok = true;
+		for (const std::string_view payload : {"", "L"}) {
+			for (const std::size_t count : {1U, 2U, 32U}) {
+				std::array<int, 2> sockets{};
+				if (!Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) ==
+				                0,
+				            "EOF rights creates socketpair")) {
+					return false;
+				}
+				const howdy::test::ScopedFd receiver(sockets.at(0));
+				howdy::test::ScopedFd       sender(sockets.at(1));
+				const howdy::test::ScopedFd source(open("/dev/null", O_RDONLY | O_CLOEXEC));
+				ok &= Expect(source.Get() >= 0, "EOF rights opens source");
+				ok &= Expect(
+				    SendRightsMessage(sender.Get(), payload, std::vector<int>(count, source.Get())),
+				    "EOF rights sends ancillary data");
+				const auto count_fds = [] {
+					return std::distance(std::filesystem::directory_iterator("/proc/self/fd"),
+					                     std::filesystem::directory_iterator{});
+				};
+				const auto before = count_fds();
+				ok &= Expect(!howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
+				                 receiver.Get()),
+				             "EOF rejects ancillary data");
+				ok &=
+				    Expect(count_fds() == before, "EOF rejection closes all received descriptors");
+				sender.Reset();
+				ok &= Expect(howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
+				                 receiver.Get()),
+				             "EOF accepts clean shutdown");
+			}
+		}
 		ok &= ReceiveCase("valid SCM_RIGHTS", 'L', 1, true);
 		ok &= ReceiveCase("wrong marker", 'X', 1, false);
 		ok &= ReceiveCase("missing descriptor", 'L', 0, false);
