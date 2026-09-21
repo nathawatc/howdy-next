@@ -75,8 +75,6 @@ namespace howdy::native::test_cli_internal {
 	                                std::vector<howdy::native::EncodingModelInfo> models,
 	                                TestPreviewRendererDependencies dependencies = {});
 
-	using PreviewCleanupBodyFn = void (*)(void *context);
-
 	class PreviewCleanup {
 	public:
 		PreviewCleanup(std::optional<TestPreviewRenderer>         &renderer,
@@ -91,8 +89,5 @@ namespace howdy::native::test_cli_internal {
 		std::optional<howdy::native::VideoCapture> &capture_;
 		TestPreviewRendererCleanup                  renderer_cleanup_;
 	};
-
-	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
-	                           PreviewCleanupBodyFn body);
 
 }  // namespace howdy::native::test_cli_internal

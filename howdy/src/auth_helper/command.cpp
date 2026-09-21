@@ -106,8 +106,7 @@ namespace howdy::native::auth_helper::command {
 			return Fail("howdy-auth-helper requires an inherited lease socket on descriptor 3");
 		}
 
-		auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(
-		    user, {.uid = uid, .gid = entry->gid});
+		auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(user, {.uid = uid});
 		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
 			return 1;
 		}

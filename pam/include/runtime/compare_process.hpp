@@ -40,8 +40,6 @@ namespace howdy::pam::compare_process {
 	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	Spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int;
-	__attribute__((visibility("hidden"))) auto
 	Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested) -> int;
 	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid) noexcept;

@@ -1,5 +1,4 @@
-#ifndef HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP
-#define HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP
+#pragma once
 
 #include "prompt/conversation_restore.hpp"
 #include "prompt/internal_fd.hpp"
@@ -122,5 +121,3 @@ struct NativeTerminalDescriptors {
 
 __attribute__((visibility("hidden"))) auto
 NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool;
-
-#endif  // HOWDY_PAM_NATIVE_PROMPT_CONVERSATION_HPP

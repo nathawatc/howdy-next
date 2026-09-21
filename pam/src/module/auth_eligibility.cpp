@@ -63,7 +63,6 @@ namespace howdy::pam::auth_eligibility {
 			case kDurabilityUncertain:
 			case kCommitStateUncertain:
 			case kDirectoryCreateFailed:
-			case kModelNotFound:
 			case kModelChanged:
 				return ModelCondition::kInvalidStorage;
 		}

@@ -41,6 +41,7 @@
 #include <sys/wait.h>
 
 namespace {
+	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
 	using howdy::test::Expect;
 	using howdy::test::runtime_session::AuthHelperSpawnFake;
 
@@ -317,7 +318,7 @@ namespace {
 	}
 
 	auto ReceiveCase(std::string_view name, char marker, std::size_t descriptor_count,
-	                 bool expected) -> bool {
+	                 LeaseReceiveResult expected) -> bool {
 		std::array<int, 2> sockets{};
 		if (!Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) == 0,
 		            std::string(name) + " creates socketpair")) {
@@ -336,12 +337,12 @@ namespace {
 		                                  ? send(sockets.at(1), &marker, 1, MSG_NOSIGNAL) == 1
 		                                  : SendRightsMessage(sockets.at(1), {&marker, 1}, fds);
 		int                    received_fd = -1;
-		const bool             result =
-		    sent && howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
-		                sockets.at(0), &received_fd,
-		                std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		const auto             result =
+		    sent ? howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
+		               sockets.at(0), &received_fd)
+		         : LeaseReceiveResult::kInvalid;
 		bool ok = Expect(result == expected, std::string(name) + " has expected result");
-		if (result) {
+		if (result == LeaseReceiveResult::kReceived) {
 			struct stat source_stat{};
 			struct stat received_stat{};
 			ok &= Expect(fstat(source_fd, &source_stat) == 0 &&
@@ -396,15 +397,15 @@ namespace {
 				             "EOF accepts clean shutdown");
 			}
 		}
-		ok &= ReceiveCase("valid SCM_RIGHTS", 'L', 1, true);
-		ok &= ReceiveCase("wrong marker", 'X', 1, false);
-		ok &= ReceiveCase("missing descriptor", 'L', 0, false);
-		ok &= ReceiveCase("multiple descriptors", 'L', 2, false);
+		ok &= ReceiveCase("valid SCM_RIGHTS", 'L', 1, LeaseReceiveResult::kReceived);
+		ok &= ReceiveCase("wrong marker", 'X', 1, LeaseReceiveResult::kInvalid);
+		ok &= ReceiveCase("missing descriptor", 'L', 0, LeaseReceiveResult::kInvalid);
+		ok &= ReceiveCase("multiple descriptors", 'L', 2, LeaseReceiveResult::kInvalid);
 
 		const int before_truncation = open("/dev/null", O_RDONLY | O_CLOEXEC);
 		ok &= Expect(before_truncation >= 0, "truncation leak probe opens baseline descriptor");
 		(void)close(before_truncation);
-		ok &= ReceiveCase("truncated descriptors", 'L', 32, false);
+		ok &= ReceiveCase("truncated descriptors", 'L', 32, LeaseReceiveResult::kInvalid);
 		const int after_truncation = open("/dev/null", O_RDONLY | O_CLOEXEC);
 		ok &= Expect(after_truncation == before_truncation,
 		             "truncated descriptor rejection leaks no received descriptors");
@@ -416,18 +417,17 @@ namespace {
 		             "lease EOF creates socketpair");
 		(void)close(sockets.at(1));
 		received_fd = -1;
-		ok &= Expect(!howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
-		                 sockets.at(0), &received_fd,
-		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
+		ok &= Expect(howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
+		                 sockets.at(0), &received_fd) == LeaseReceiveResult::kInvalid,
 		             "lease EOF is rejected");
 		(void)close(sockets.at(0));
 
 		ok &= Expect(socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) == 0,
-		             "lease timeout creates socketpair");
-		ok &= Expect(!howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorUntil(
-		                 sockets.at(0), &received_fd,
-		                 std::chrono::steady_clock::now() + std::chrono::milliseconds(50)),
-		             "missing lease times out");
+		             "missing lease creates socketpair");
+		received_fd = -1;
+		ok &= Expect(howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
+		                 sockets.at(0), &received_fd) == LeaseReceiveResult::kRetry,
+		             "missing lease requests retry");
 		(void)close(sockets.at(0));
 		(void)close(sockets.at(1));
 		return ok;

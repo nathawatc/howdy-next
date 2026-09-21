@@ -21,7 +21,6 @@ namespace howdy::native::auth_helper {
 
 	struct RuntimeIdentity {
 		uid_t uid = 0;
-		gid_t gid = 0;
 	};
 
 	auto RuntimeRoot() -> std::filesystem::path;

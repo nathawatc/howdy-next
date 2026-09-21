@@ -72,9 +72,6 @@ namespace howdy::native {
 		return CheckSecureConfigFd(fd, config_path, DefaultSecureOwnerUid());
 	}
 
-	inline auto CheckSecureConfigPath(const std::filesystem::path &config_path)
-	    -> ConfigPathCheckResult;
-
 	inline auto
 	CheckSecureConfigPath(const std::filesystem::path                  &config_path,
 	                      const std::optional<uid_t>                    owner_uid,

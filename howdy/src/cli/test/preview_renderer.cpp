@@ -257,11 +257,4 @@ namespace howdy::native::test_cli_internal {
 		}
 	}
 
-	void RunWithPreviewCleanup(std::optional<TestPreviewRenderer> &renderer, void *context,
-	                           PreviewCleanupBodyFn body) {
-		std::optional<howdy::native::VideoCapture> capture;
-		PreviewCleanup const                       cleanup(renderer, capture);
-		body(context);
-	}
-
 }  // namespace howdy::native::test_cli_internal

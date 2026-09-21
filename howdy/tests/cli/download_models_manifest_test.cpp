@@ -25,16 +25,14 @@ namespace howdy::test::download_models {
 	namespace {
 
 		struct PinnedModelArtifact {
-			howdy::native::OpenCvModelType type;
-			std::string_view               filename;
-			std::string_view               url;
-			std::string_view               sha256;
-			std::uintmax_t                 size;
+			std::string_view filename;
+			std::string_view url;
+			std::string_view sha256;
+			std::uintmax_t   size;
 		};
 
 		constexpr std::array kPinnedModelArtifacts = {
 		    PinnedModelArtifact{
-		        .type     = howdy::native::OpenCvModelType::kYunet,
 		        .filename = "face_detection_yunet_2026may.onnx",
 		        .url      = "https://github.com/opencv/opencv_zoo/raw/"
 		                    "26cc381e4d2594bb9f47a26eb8fd96c94a13660d/models/face_detection_yunet/"
@@ -43,7 +41,6 @@ namespace howdy::test::download_models {
 		        .size     = 229738,
 		    },
 		    PinnedModelArtifact{
-		        .type     = howdy::native::OpenCvModelType::kSface,
 		        .filename = "face_recognition_sface_2021dec_int8.onnx",
 		        .url      = "https://github.com/opencv/opencv_zoo/raw/"
 		                    "088c3571ec70df15100a5e4c26894d95951e92e9/models/face_recognition_sface/"
@@ -111,14 +108,12 @@ namespace howdy::test::download_models {
 
 		const auto &official_yunet = howdy::native::kOfficialOpenCvModels.at(0);
 		const auto &official_sface = howdy::native::kOfficialOpenCvModels.at(1);
-		ok &= Expect(official_yunet.type == kPinnedModelArtifacts.at(0).type &&
-		                 official_yunet.filename == kPinnedModelArtifacts.at(0).filename &&
+		ok &= Expect(official_yunet.filename == kPinnedModelArtifacts.at(0).filename &&
 		                 official_yunet.url == kPinnedModelArtifacts.at(0).url &&
 		                 official_yunet.size == kPinnedModelArtifacts.at(0).size &&
 		                 official_yunet.sha256 == kPinnedModelArtifacts.at(0).sha256,
 		             "official YuNet descriptor matches independently pinned artifact");
-		ok &= Expect(official_sface.type == kPinnedModelArtifacts.at(1).type &&
-		                 official_sface.filename == kPinnedModelArtifacts.at(1).filename &&
+		ok &= Expect(official_sface.filename == kPinnedModelArtifacts.at(1).filename &&
 		                 official_sface.url == kPinnedModelArtifacts.at(1).url &&
 		                 official_sface.size == kPinnedModelArtifacts.at(1).size &&
 		                 official_sface.sha256 == kPinnedModelArtifacts.at(1).sha256,

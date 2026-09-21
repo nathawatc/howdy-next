@@ -63,7 +63,7 @@ namespace howdy::native {
 
 	class UserModelStore {
 	public:
-		UserModelStore() = default;
+		UserModelStore() = delete;
 
 		[[nodiscard]] static auto
 		BeginMutation(const std::string                            &user,

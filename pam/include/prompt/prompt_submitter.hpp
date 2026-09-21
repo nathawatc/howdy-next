@@ -1,5 +1,4 @@
-#ifndef HOWDY_SRC_PAM_PROMPT_SUBMITTER_HH
-#define HOWDY_SRC_PAM_PROMPT_SUBMITTER_HH
+#pragma once
 
 #include <memory>
 
@@ -19,5 +18,3 @@ namespace howdy::pam {
 	auto CreateUinputPromptSubmitter() -> std::unique_ptr<PromptSubmitter>;
 
 }  // namespace howdy::pam
-
-#endif  // HOWDY_SRC_PAM_PROMPT_SUBMITTER_HH

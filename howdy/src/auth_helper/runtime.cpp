@@ -87,7 +87,6 @@ namespace howdy::native::auth_helper {
 
 	auto PrepareRuntimeAuthFiles(const std::string &user, RuntimeIdentity identity)
 	    -> std::optional<PreparedPaths> {
-		(void)identity.gid;
 		return internal::PrepareRuntimeAuthFiles(
 		    user, {.target_uid = identity.uid, .owner_uid = 0, .owner_gid = 0},
 		    {.runtime_root    = RuntimeRoot(),

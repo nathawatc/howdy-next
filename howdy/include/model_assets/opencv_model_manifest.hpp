@@ -7,13 +7,7 @@
 
 namespace howdy::native {
 
-	enum class OpenCvModelType : std::uint8_t {
-		kYunet,
-		kSface,
-	};
-
 	struct OpenCvModelDescriptor {
-		OpenCvModelType  type;
 		std::string_view filename;
 		std::string_view url;
 		std::string_view sha256;
@@ -21,7 +15,6 @@ namespace howdy::native {
 	};
 
 	inline constexpr OpenCvModelDescriptor kYunetModelDescriptor{
-	    .type     = OpenCvModelType::kYunet,
 	    .filename = "face_detection_yunet_2026may.onnx",
 	    .url = "https://github.com/opencv/opencv_zoo/raw/26cc381e4d2594bb9f47a26eb8fd96c94a13660d/"
 	           "models/face_detection_yunet/face_detection_yunet_2026may.onnx",
@@ -30,7 +23,6 @@ namespace howdy::native {
 	};
 
 	inline constexpr OpenCvModelDescriptor kSfaceModelDescriptor{
-	    .type     = OpenCvModelType::kSface,
 	    .filename = "face_recognition_sface_2021dec_int8.onnx",
 	    .url = "https://github.com/opencv/opencv_zoo/raw/088c3571ec70df15100a5e4c26894d95951e92e9/"
 	           "models/face_recognition_sface/face_recognition_sface_2021dec_int8.onnx",

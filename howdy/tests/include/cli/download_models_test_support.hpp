@@ -20,7 +20,6 @@ namespace howdy::test::download_models {
 	inline constexpr auto kTestModelSha256 =
 	    "eceb1d87ddd7b5c0e1b63bdac2d086824ffd12eaa157b741835014618a1e6c24";
 	inline constexpr howdy::native::OpenCvModelDescriptor kTestModel{
-	    .type     = howdy::native::OpenCvModelType::kYunet,
 	    .filename = "test-model.onnx",
 	    .url      = "https://example.invalid/test-model.onnx",
 	    .sha256   = kTestModelSha256,

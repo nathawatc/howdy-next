@@ -3,6 +3,7 @@
 #include "config/runtime_config.hpp"
 #include "storage/user_model_types.hpp"
 #include "test_support.hpp"
+#include "vision/video_capture.hpp"
 
 #include <optional>
 #include <stdexcept>
@@ -381,7 +382,9 @@ namespace {
 			                     .destroy_window = DestroyRendererWindow,
 			                 });
 			renderer->Initialize();
-			test_cli_internal::RunWithPreviewCleanup(renderer, nullptr, ThrowPresenterFailure);
+			std::optional<howdy::native::VideoCapture> preview_capture;
+			test_cli_internal::PreviewCleanup const    cleanup(renderer, preview_capture);
+			ThrowPresenterFailure(nullptr);
 		} catch (const std::runtime_error &error) {
 			error_message = error.what();
 		}

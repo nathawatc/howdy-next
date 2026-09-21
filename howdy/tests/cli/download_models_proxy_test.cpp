@@ -389,7 +389,6 @@ namespace howdy::test::download_models {
 
 		auto LocalModel(std::string_view url) -> howdy::native::OpenCvModelDescriptor {
 			return {
-			    .type     = kTestModel.type,
 			    .filename = kTestModel.filename,
 			    .url      = url,
 			    .sha256   = kTestModel.sha256,

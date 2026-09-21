@@ -39,7 +39,6 @@ namespace {
 	};
 
 	constexpr OpenCvModelDescriptor kFixtureModel{
-	    .type     = howdy::native::OpenCvModelType::kYunet,
 	    .filename = "fixture.onnx",
 	    .url      = "https://github.com/opencv/opencv_zoo/raw/"
 	                "0123456789abcdef0123456789abcdef01234567/"
@@ -247,7 +246,6 @@ Source:
 		             "wrong revision fails within artifact section");
 
 		const auto malformed_model = OpenCvModelDescriptor{
-		    .type     = kFixtureModel.type,
 		    .filename = kFixtureModel.filename,
 		    .url      = "https://github.com/opencv/opencv_zoo/raw/not-a-revision/"
 		                "models/fixture/fixture.onnx",

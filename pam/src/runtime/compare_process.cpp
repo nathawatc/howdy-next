@@ -251,11 +251,6 @@ namespace howdy::pam::compare_process {
 		                             cancellation_requested);
 	}
 
-	auto Spawn(void *context, const CompareLaunchRequest &request, pid_t *child_pid) -> int {
-		(void)context;
-		return Spawn(request, child_pid, ProductionOperations());
-	}
-
 	auto Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
 	    -> int {

@@ -103,8 +103,6 @@ namespace howdy::pam::auth_flow {
 		const auto decision = MapCompareWaitStatus(status);
 		if (decision.conversation_kind == ConversationKind::kError) {
 			SendConversationMessage(conv_function, PAM_ERROR_MSG, decision.conversation_message);
-		} else if (decision.conversation_kind == ConversationKind::kInfo) {
-			SendConversationMessage(conv_function, PAM_TEXT_INFO, decision.conversation_message);
 		}
 
 		if (CompareStatusIs(status, CompareExit::kNoFaceModel)) {

@@ -36,7 +36,6 @@ namespace howdy::native {
 		kDurabilityUncertain,
 		kCommitStateUncertain,
 		kDirectoryCreateFailed,
-		kModelNotFound,
 		kModelChanged,
 	};
 

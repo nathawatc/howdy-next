@@ -183,7 +183,6 @@ namespace {
 		    std::pair{UserModelStatus::kDurabilityUncertain, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kCommitStateUncertain, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kDirectoryCreateFailed, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kModelNotFound, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kModelChanged, ModelCondition::kInvalidStorage},
 		};
 

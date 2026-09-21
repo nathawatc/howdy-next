@@ -106,8 +106,6 @@ namespace howdy::pam::auth_helper_process::internal {
 	__attribute__((visibility("hidden"))) auto ReceiveLeaseDescriptorOnce(int  socket_fd,
 	                                                                      int *lease_fd)
 	    -> LeaseReceiveResult;
-	__attribute__((visibility("hidden"))) auto
-	ReceiveLeaseDescriptorUntil(int socket_fd, int *lease_fd, HelperDeadline deadline) -> bool;
 	__attribute__((visibility("hidden"))) auto LeaseSocketHasCleanEof(int socket_fd) -> bool;
 	__attribute__((visibility("hidden"))) auto
 	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)

@@ -19,7 +19,6 @@
 #include <unistd.h>
 
 #include <sys/file.h>
-#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,7 +26,6 @@
 
 namespace {
 
-	using howdy::pam::auth_helper_process::internal::HelperDeadline;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
 
 	void CloseControlDescriptors(msghdr *message) {
@@ -94,29 +92,6 @@ namespace howdy::pam::auth_helper_process::internal {
 
 		*lease_fd = received_fd.Release();
 		return LeaseReceiveResult::kReceived;
-	}
-
-	auto ReceiveLeaseDescriptorUntil(int socket_fd, int *lease_fd, HelperDeadline deadline)
-	    -> bool {
-		if (socket_fd < 0 || lease_fd == nullptr) {
-			return false;
-		}
-		*lease_fd = -1;
-		while (true) {
-			pollfd    descriptor{.fd = socket_fd, .events = POLLIN, .revents = 0};
-			const int result = poll(&descriptor, 1, DeadlinePollTimeout(deadline));
-			if (result < 0 && errno == EINTR) {
-				continue;
-			}
-			if (result <= 0 || howdy::native::HasAnyBits(descriptor.revents, POLLERR, POLLNVAL)) {
-				return false;
-			}
-			const auto receive_result = ReceiveLeaseDescriptorOnce(socket_fd, lease_fd);
-			if (receive_result == LeaseReceiveResult::kRetry) {
-				continue;
-			}
-			return receive_result == LeaseReceiveResult::kReceived;
-		}
 	}
 
 	auto LeaseSocketHasCleanEof(int socket_fd) -> bool {
