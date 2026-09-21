@@ -139,7 +139,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		return static_cast<int>(std::chrono::ceil<std::chrono::milliseconds>(remaining).count());
 	}
 
-	auto WaitForHelperProcess(pid_t child_pid) -> int {
+	auto WaitForHelperProcess(pid_t child_pid) noexcept -> int {
 		while (true) {
 			int         status      = 0;
 			const pid_t wait_result = waitpid(child_pid, &status, 0);
@@ -153,7 +153,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
-	auto TerminateAndReapHelperProcess(pid_t child_pid) -> int {
+	auto TerminateAndReapHelperProcess(pid_t child_pid) noexcept -> int {
 		int         status              = 0;
 		const pid_t initial_wait_result = waitpid(child_pid, &status, WNOHANG);
 		if (initial_wait_result == child_pid) {
@@ -166,8 +166,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (kill(child_pid, SIGTERM) != 0) {
 			const int error_number = errno;
 			if (error_number != ESRCH) {
-				syslog(LOG_WARNING, "Failed to terminate auth helper process: %s (%d)",
-				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+				syslog(LOG_WARNING, "Failed to terminate auth helper process (%d)", error_number);
 			}
 		}
 
@@ -189,14 +188,13 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (kill(child_pid, SIGKILL) != 0) {
 			const int error_number = errno;
 			if (error_number != ESRCH) {
-				syslog(LOG_WARNING, "Failed to kill auth helper process: %s (%d)",
-				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+				syslog(LOG_WARNING, "Failed to kill auth helper process (%d)", error_number);
 			}
 		}
 		return WaitForHelperProcess(child_pid);
 	}
 
-	auto WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status)
+	auto WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status) noexcept
 	    -> HelperWaitResult {
 		while (true) {
 			const pid_t wait_result = waitpid(child_pid, status, WNOHANG);

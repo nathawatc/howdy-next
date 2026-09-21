@@ -48,6 +48,22 @@ namespace howdy::pam::auth_helper_process::internal {
 		ProcessChannel             output_pipe;
 		ProcessChannel             lease_socket;
 		posix_spawn_file_actions_t actions{};
+		bool                       actions_initialized = false;
+		pid_t                      child_pid           = -1;
+	};
+
+	class __attribute__((visibility("hidden"))) PreparedHelperCleanup {
+	public:
+		PreparedHelperCleanup(const Operations &operations, PreparedHelperSpawn &spawn);
+		~PreparedHelperCleanup();
+		PreparedHelperCleanup(const PreparedHelperCleanup &)                     = delete;
+		auto operator=(const PreparedHelperCleanup &) -> PreparedHelperCleanup & = delete;
+		PreparedHelperCleanup(PreparedHelperCleanup &&)                          = delete;
+		auto operator=(PreparedHelperCleanup &&) -> PreparedHelperCleanup &      = delete;
+
+	private:
+		const Operations    &operations_;
+		PreparedHelperSpawn &spawn_;
 	};
 
 	enum class HelperWaitResult : std::uint8_t {
@@ -70,22 +86,26 @@ namespace howdy::pam::auth_helper_process::internal {
 	};
 
 	// spawn.cpp
+	__attribute__((visibility("hidden"))) void
+	DestroySpawnActions(const Operations &operations, PreparedHelperSpawn &spawn) noexcept;
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	__attribute__((visibility("hidden"))) void CloseOwnedFd(const Operations &operations, int &fd);
+	__attribute__((visibility("hidden"))) void CloseOwnedFd(const Operations &operations,
+	                                                        int              &fd) noexcept;
 	__attribute__((visibility("hidden"))) auto SetupHelperSpawn(const Operations    &operations,
 	                                                            PreparedHelperSpawn *spawn) -> bool;
 	__attribute__((visibility("hidden"))) auto SpawnPrepareHelper(std::string_view     username,
 	                                                              const Operations    &operations,
-	                                                              PreparedHelperSpawn *spawn,
-	                                                              pid_t *child_pid) -> bool;
+	                                                              PreparedHelperSpawn *spawn)
+	    -> bool;
 
 	// io.cpp
 	__attribute__((visibility("hidden"))) auto DeadlinePollTimeout(HelperDeadline deadline) -> int;
-	__attribute__((visibility("hidden"))) auto WaitForHelperProcess(pid_t child_pid) -> int;
-	__attribute__((visibility("hidden"))) auto TerminateAndReapHelperProcess(pid_t child_pid)
+	__attribute__((visibility("hidden"))) auto WaitForHelperProcess(pid_t child_pid) noexcept
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status)
+	TerminateAndReapHelperProcess(pid_t child_pid) noexcept -> int;
+	__attribute__((visibility("hidden"))) auto
+	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status) noexcept
 	    -> HelperWaitResult;
 	__attribute__((visibility("hidden"))) auto
 	ReadAuthHelperOutputUntil(int output_fd, std::string *output, const Operations &operations,

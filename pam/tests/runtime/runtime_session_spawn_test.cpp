@@ -11,6 +11,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -23,11 +24,13 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
 #include <unistd.h>
 
 #include <sys/file.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -457,6 +460,14 @@ namespace {
 		return ok;
 	}
 
+	enum class PrepareExceptionPoint : std::uint8_t {
+		kSetup,
+		kSpawn,
+		kCollect,
+		kCollectLease,
+		kWait
+	};
+
 	struct ReapContext {
 		std::array<int, 2>       output_pipe  = {-1, -1};
 		std::array<int, 2>       lease_socket = {-1, -1};
@@ -465,6 +476,9 @@ namespace {
 		int                      destroy_calls = 0;
 		pid_t                    child_pid     = -1;
 		std::vector<std::string> log_messages;
+		PrepareExceptionPoint    exception_point   = PrepareExceptionPoint::kSetup;
+		bool                     lease_received    = false;
+		bool                     reaped_before_log = false;
 	};
 
 	auto RecordingPipe2(void *context, int *fds, int flags) -> int {
@@ -600,6 +614,135 @@ namespace {
 		return ok;
 	}
 
+	auto ExceptionSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
+		auto &state = *static_cast<ReapContext *>(request.context);
+		if (state.lease_fd >= 0) {
+			if (flock(state.lease_fd, LOCK_SH) != 0 ||
+			    !SendRightsMessage(state.lease_socket.at(1), "L", {state.lease_fd})) {
+				return EIO;
+			}
+			(void)close(state.lease_fd);
+			state.lease_fd = -1;
+		}
+		const pid_t pid = fork();
+		if (pid < 0) {
+			return errno;
+		}
+		if (pid == 0) {
+			(void)alarm(5);
+			if (state.exception_point == PrepareExceptionPoint::kWait) {
+				for (const int fd : state.output_pipe) {
+					(void)close(fd);
+				}
+				for (const int fd : state.lease_socket) {
+					(void)close(fd);
+				}
+			}
+			for (;;) {
+				pause();
+			}
+		}
+		*request.child_pid = pid;
+		state.child_pid    = pid;
+		if (state.exception_point == PrepareExceptionPoint::kSpawn) {
+			throw std::runtime_error("injected exception after child creation");
+		}
+		return 0;
+	}
+
+	void ExceptionTimeoutLog(void *context, std::string_view message) {
+		(void)message;
+		auto  &state = *static_cast<ReapContext *>(context);
+		pollfd socket{.fd = state.lease_socket.at(0), .events = POLLIN, .revents = 0};
+		state.lease_received =
+		    poll(&socket, 1, 0) >= 0 && !howdy::native::HasAnyBits(socket.revents, POLLIN);
+		errno                   = 0;
+		state.reaped_before_log = waitpid(state.child_pid, nullptr, WNOHANG) < 0 && errno == ECHILD;
+		if (state.exception_point == PrepareExceptionPoint::kWait) {
+			// Waiting is reached only after the collector receives the lease.
+			state.lease_received = state.reaped_before_log;
+		}
+		throw std::runtime_error("injected timeout observer exception");
+	}
+
+	auto TestPrepareExceptionCleanup(PrepareExceptionPoint point) -> bool {
+		ReapContext state;
+		state.exception_point = point;
+		const bool with_lease =
+		    point == PrepareExceptionPoint::kCollectLease || point == PrepareExceptionPoint::kWait;
+		howdy::native::ScopedFd independent;
+		if (with_lease) {
+			auto path      = std::to_array("/tmp/howdy-exception-lease-XXXXXX");
+			state.lease_fd = mkstemp(path.data());
+			if (!Expect(state.lease_fd >= 0, "exception test creates lease")) {
+				return false;
+			}
+			independent.Reset(open(path.data(), O_RDWR | O_CLOEXEC));
+			(void)unlink(path.data());
+			if (!Expect(independent.Valid(), "exception test opens independent lease probe")) {
+				(void)close(state.lease_fd);
+				return false;
+			}
+		}
+		auto operations            = howdy::pam::auth_helper_process::ProductionOperations();
+		operations.context         = &state;
+		operations.pipe2           = RecordingPipe2;
+		operations.socketpair      = RecordingSocketpair;
+		operations.spawn           = ExceptionSpawn;
+		operations.log_observer    = ExceptionTimeoutLog;
+		operations.actions_destroy = [](void *context, posix_spawn_file_actions_t *actions) -> int {
+			++static_cast<ReapContext *>(context)->destroy_calls;
+			return posix_spawn_file_actions_destroy(actions);
+		};
+		if (point == PrepareExceptionPoint::kSetup) {
+			operations.actions_adddup2 = [](void *, posix_spawn_file_actions_t *, int, int) -> int {
+				throw std::runtime_error("injected setup exception");
+			};
+		}
+		bool                             caught = false;
+		howdy::pam::PreparedRuntimeFiles prepared;
+		try {
+			(void)howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
+			    "alice", &prepared, operations,
+			    std::chrono::steady_clock::now() + std::chrono::milliseconds(150));
+		} catch (const std::runtime_error &) {
+			caught = true;
+		}
+		bool ok = Expect(caught, "prepare propagates injected exception after cleanup");
+		ok &=
+		    Expect(state.destroy_calls == 1, "exception destroys initialized actions exactly once");
+		for (const int fd : {state.output_pipe.at(0), state.output_pipe.at(1),
+		                     state.lease_socket.at(0), state.lease_socket.at(1)}) {
+			errno = 0;
+			ok &= Expect(fcntl(fd, F_GETFD) < 0 && errno == EBADF,
+			             "exception closes channel descriptor");
+		}
+		if (state.child_pid > 0) {
+			errno                   = 0;
+			const pid_t wait_result = waitpid(state.child_pid, nullptr, WNOHANG);
+			const bool  reaped      = wait_result < 0 && errno == ECHILD;
+			ok &= Expect(reaped, "exception leaves no helper child to reap");
+			if (wait_result == 0) {
+				(void)kill(state.child_pid, SIGKILL);
+				while (waitpid(state.child_pid, nullptr, 0) < 0 && errno == EINTR) {
+				}
+			}
+		}
+		if (with_lease) {
+			ok &= Expect(state.lease_received, "collector received queued lease before exception");
+			ok &= Expect(flock(independent.Get(), LOCK_EX | LOCK_NB) == 0,
+			             "exception releases received shared lease");
+		}
+		if (point == PrepareExceptionPoint::kWait) {
+			ok &= Expect(state.reaped_before_log,
+			             "wait consumes child before throwing timeout logger");
+		}
+		if (state.lease_fd >= 0) {
+			(void)close(state.lease_fd);
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto RunRuntimeSessionFd3Probe(const char *marker_path) -> int {
@@ -632,5 +775,10 @@ auto RunRuntimeSessionSpawnTests() -> bool {
 	ok &= TestLeaseValidation();
 	ok &= TestValidPrepareIgnoresDestroyFailure();
 	ok &= TestPrepareFailureReapsChild();
+	for (const auto point : {PrepareExceptionPoint::kSetup, PrepareExceptionPoint::kSpawn,
+	                         PrepareExceptionPoint::kCollect, PrepareExceptionPoint::kCollectLease,
+	                         PrepareExceptionPoint::kWait}) {
+		ok &= TestPrepareExceptionCleanup(point);
+	}
 	return ok;
 }

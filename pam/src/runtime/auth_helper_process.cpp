@@ -8,6 +8,7 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/runtime_session.hpp"
 #include "support/bit_flags.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <cerrno>
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -101,6 +103,7 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
 	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
+	using howdy::pam::auth_helper_process::internal::PreparedHelperCleanup;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 
 	void CaptureAuthHelperLog(const Operations &operations, std::string_view message) {
@@ -142,10 +145,13 @@ namespace {
 		return PrepareIoResult::kFailed;
 	}
 
-	auto ReceivePrepareLeaseOnce(int socket_fd, int *lease_fd) -> PrepareIoResult {
+	auto ReceivePrepareLeaseOnce(int socket_fd, howdy::native::ScopedFd &lease_fd)
+	    -> PrepareIoResult {
+		int        received_fd = -1;
 		const auto result = howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
-		    socket_fd, lease_fd);
+		    socket_fd, &received_fd);
 		if (result == LeaseReceiveResult::kReceived) {
+			lease_fd.Reset(received_fd);
 			return PrepareIoResult::kComplete;
 		}
 		if (result == LeaseReceiveResult::kRetry) {
@@ -161,18 +167,17 @@ namespace {
 	}
 
 	auto CollectPrepareResponse(const Operations &operations, PreparedHelperSpawn *spawn,
-	                            HelperDeadline deadline, std::string *output, int *lease_fd)
-	    -> bool {
+	                            HelperDeadline deadline, std::string *output,
+	                            howdy::native::ScopedFd &lease_fd) -> bool {
 		output->clear();
-		*lease_fd       = -1;
 		bool output_eof = false;
 
-		while (!output_eof || *lease_fd < 0) {
+		while (!output_eof || !lease_fd.Valid()) {
 			std::array<pollfd, 2> descriptors = {
 			    pollfd{.fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
 			           .events  = POLLIN,
 			           .revents = 0},
-			    pollfd{.fd      = *lease_fd >= 0 ? -1 : spawn->lease_socket.Parent(),
+			    pollfd{.fd      = lease_fd.Valid() ? -1 : spawn->lease_socket.Parent(),
 			           .events  = POLLIN,
 			           .revents = 0},
 			};
@@ -210,11 +215,13 @@ namespace {
 		return true;
 	}
 
-	auto ValidatePrepareHelper(pid_t child_pid, HelperDeadline deadline, const std::string &output,
-	                           const Operations &operations) -> bool {
+	auto ValidatePrepareHelper(PreparedHelperSpawn &spawn, HelperDeadline deadline,
+	                           const std::string &output, const Operations &operations) -> bool {
 		int        status = 0;
 		const auto result = howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
-		    child_pid, deadline, &status);
+		    spawn.child_pid, deadline, &status);
+		// The nonthrowing wait consumes child ownership on every outcome, including timeout.
+		spawn.child_pid = -1;
 		if (result != HelperWaitResult::kExited) {
 			if (result == HelperWaitResult::kTimedOut) {
 				LogPrepareTimeout(operations);
@@ -247,48 +254,39 @@ namespace {
 	                                  howdy::pam::PreparedRuntimeFiles *prepared,
 	                                  const Operations &operations, HelperDeadline deadline)
 	    -> bool {
-		PreparedHelperSpawn spawn;
+		PreparedHelperSpawn         spawn;
+		const PreparedHelperCleanup cleanup(operations, spawn);
 		if (!howdy::pam::auth_helper_process::internal::SetupHelperSpawn(operations, &spawn)) {
 			return false;
 		}
-		pid_t child_pid = -1;
 		if (!howdy::pam::auth_helper_process::internal::SpawnPrepareHelper(username, operations,
-		                                                                   &spawn, &child_pid)) {
+		                                                                   &spawn)) {
 			return false;
 		}
-		std::string helper_output;
-		int         lease_fd = -1;
-		const bool  collected =
-		    CollectPrepareResponse(operations, &spawn, deadline, &helper_output, &lease_fd);
+		std::string             helper_output;
+		howdy::native::ScopedFd lease_fd;
+		const bool              collected =
+		    CollectPrepareResponse(operations, &spawn, deadline, &helper_output, lease_fd);
 		CloseOwnedFd(operations, spawn.output_pipe.Parent());
 		if (!collected) {
-			CloseOwnedFd(operations, spawn.lease_socket.Parent());
-			CloseOwnedFd(operations, lease_fd);
-			(void)howdy::pam::auth_helper_process::internal::TerminateAndReapHelperProcess(
-			    child_pid);
 			return false;
 		}
-		if (!ValidatePrepareHelper(child_pid, deadline, helper_output, operations)) {
-			CloseOwnedFd(operations, spawn.lease_socket.Parent());
-			CloseOwnedFd(operations, lease_fd);
+		if (!ValidatePrepareHelper(spawn, deadline, helper_output, operations)) {
 			return false;
 		}
 		if (!howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
 		        spawn.lease_socket.Parent())) {
 			syslog(LOG_ERR, "Howdy auth helper returned extra lease data");
-			CloseOwnedFd(operations, spawn.lease_socket.Parent());
-			CloseOwnedFd(operations, lease_fd);
 			return false;
 		}
 		CloseOwnedFd(operations, spawn.lease_socket.Parent());
 		if (!AssignPreparedPaths(helper_output, prepared) ||
 		    !howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
-		        lease_fd, prepared->root_dir, 0)) {
+		        lease_fd.Get(), prepared->root_dir, 0)) {
 			syslog(LOG_ERR, "Howdy auth helper lease validation failed");
-			CloseOwnedFd(operations, lease_fd);
 			return false;
 		}
-		prepared->lease_fd = howdy::native::ScopedFd(lease_fd);
+		prepared->lease_fd = std::move(lease_fd);
 		return true;
 	}
 
