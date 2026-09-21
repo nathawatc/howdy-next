@@ -1,5 +1,6 @@
 
 #include "runtime/runtime_session.hpp"
+#include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_models.hpp"
 
@@ -26,17 +27,31 @@ auto main(int argc, char **argv) -> int {
 	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
 	const char *program = arguments.empty() ? "installed_runtime_e2e_driver" : arguments.front();
 	if (arguments.size() != 5) {
-		std::cerr << "Usage: " << program << " <--hold|--try> <user> <config> <models-directory>\n";
+		std::cerr << "Usage: " << program << " <mode> <user> <config> <models-directory>\n";
 		return 2;
 	}
 	const std::string_view mode(arguments.subspan(1).front());
-	if (mode != "--hold" && mode != "--try") {
-		std::cerr << "Usage: " << program << " <--hold|--try> <user> <config> <models-directory>\n";
+	if (mode != "--hold" && mode != "--try" && mode != "--hold-absent" &&
+	    mode != "--inspect-absent" && mode != "--inspect-insecure") {
+		std::cerr
+		    << "Expected --hold, --try, --hold-absent, --inspect-absent, or --inspect-insecure\n";
 		return 2;
 	}
 	const char *user       = arguments.subspan(2).front();
 	const char *config     = arguments.subspan(3).front();
 	const char *models_dir = arguments.back();
+	if (mode == "--inspect-absent" || mode == "--inspect-insecure") {
+		const auto readiness = howdy::native::CheckUserModelReadiness(models_dir, user, 0);
+		const auto expected  = mode == "--inspect-absent"
+		                           ? howdy::native::UserModelStatus::kNoModel
+		                           : howdy::native::UserModelStatus::kInsecurePath;
+		if (readiness.status != expected) {
+			std::cerr << "Unexpected staged readiness: " << static_cast<int>(readiness.status)
+			          << '\n';
+			return 1;
+		}
+		return 0;
+	}
 
 	howdy::pam::RuntimeSession session(config, models_dir,
 	                                   howdy::pam::ProductionRuntimeSessionOperations());
@@ -59,14 +74,18 @@ auto main(int argc, char **argv) -> int {
 	}
 	const auto models =
 	    howdy::native::LoadUserModels(user, "opencv_dnn_sface", static_cast<uid_t>(0));
-	if (models.status != howdy::native::UserModelStatus::kOk || models.stored.encodings.empty()) {
+	const auto readiness = howdy::native::CheckUserModelReadiness(session.UserModelsDir(), user, 0);
+	const bool absent    = mode == "--hold-absent";
+	if (absent ? readiness.status != howdy::native::UserModelStatus::kNoModel
+	           : models.status != howdy::native::UserModelStatus::kOk ||
+	                 models.stored.encodings.empty()) {
 		std::cerr << "Production user-model load failed: " << models.error_message << "\n";
 		return 1;
 	}
 
 	std::cout << std::filesystem::path(session.ConfigPath()).parent_path().string() << '\n'
 	          << std::flush;
-	if (mode == "--hold" && !WaitForRelease()) {
+	if ((mode == "--hold" || absent) && !WaitForRelease()) {
 		std::cerr << "Failed to read exact release command\n";
 		return 1;
 	}

@@ -171,7 +171,7 @@ IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<<"$passwd_record"
 [[ $selected_uid =~ ^[0-9]+$ && $selected_uid -gt 0 ]] || skip "selected account must be non-root"
 [[ $selected_gid =~ ^[0-9]+$ ]] || skip "selected account has invalid primary GID"
 getent group "$selected_gid" >/dev/null || skip "selected account primary group does not exist"
-for command in setpriv findmnt flock mount umount realpath cmake stat getfacl; do
+for command in setpriv findmnt flock mount umount realpath cmake stat getfacl setfacl; do
 	command -v "$command" >/dev/null || skip "$command unavailable"
 done
 validate_opt_directory || fail "unsafe /opt directory"
@@ -488,16 +488,73 @@ c_write_fd=
 flock -n "$gen_b.lock" true || fail "released second lease remains locked"
 flock -n "$gen_c.lock" true || fail "released reused lease remains locked"
 
+# Keep the canonical inode for restoration while exercising present-to-absent refresh.
+mv -- "$source_model" "$source_model.absent"
+coproc HOLD_A {
+	exec setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups \
+		"$runtime_driver" --hold-absent "$selected_user" "$config" "$user_models_dir"
+}
+exec {a_read_fd}<&"${HOLD_A[0]}"
+exec {a_write_fd}>&"${HOLD_A[1]}"
+a_pid=$HOLD_A_PID
+read -r -t 10 gen_absent <&"$a_read_fd" || fail "absent runtime holder did not become ready"
+exec {a_read_fd}<&-
+[[ $gen_absent == "$expected_gen0" ]] || fail "absent refresh did not reuse first slot"
+backing=$gen_absent/.model_backing
+[[ ! -e $gen_absent/models/$selected_user.dat ]] || fail "absent slot retains visible model"
+[[ $(stat -c '%u:%g:%a:%h' "$backing") == 0:0:600:1 ]] || fail "absent sentinel metadata mismatch"
+assert_acl "$backing" $'user::rw-\ngroup::---\nother::---'
+as_user test ! -r "$backing" || fail "absent sentinel became readable"
+assert_locked "$gen_absent.lock" "absent session lost active lease"
+inspect_absent() {
+	as_user "$runtime_driver" "$1" "$selected_user" "$config" "$gen_absent/models" ||
+		fail "absent sentinel inspection failed: $1"
+}
+inspect_absent --inspect-absent
+chown "$selected_uid":0 "$backing"
+inspect_absent --inspect-insecure
+chown 0:0 "$backing"
+chgrp "$selected_gid" "$backing"
+if [[ $selected_gid -ne 0 ]]; then inspect_absent --inspect-insecure; fi
+chgrp 0 "$backing"
+chmod 0640 "$backing"
+inspect_absent --inspect-insecure
+chmod 0600 "$backing"
+# An extended ACL masked to zero still has mode 0600, but is not owner-only.
+setfacl -m "u:$selected_uid:r--,m::---" "$backing"
+inspect_absent --inspect-insecure
+setfacl -b "$backing"
+ln "$backing" "$gen_absent/extra-link"
+inspect_absent --inspect-insecure
+unlink "$gen_absent/extra-link"
+mv "$backing" "$backing.saved"
+ln -s .model_backing.saved "$backing"
+inspect_absent --inspect-insecure
+unlink "$backing"
+mv "$backing.saved" "$backing"
+inspect_absent --inspect-absent
+assert_locked "$gen_absent.lock" "sentinel checks released active lease"
+service_dir=$(mktemp -d -p "$install_prefix" 'pam service-ทดสอบ.XXXXXX')
+chmod 0755 "$service_dir"
+printf 'auth required %s workaround=off\n' "$module" >"$service_dir/howdy-e2e"
+chmod 0644 "$service_dir/howdy-e2e"
+sed -i 's/^disabled = true$/disabled = false/' "$config"
+as_user "$driver" howdy-e2e "$selected_user" "$service_dir"
+cat "$source_snapshot" >"$config"
+printf 'release\n' >&"$a_write_fd"
+exec {a_write_fd}>&-
+wait "$a_pid" || fail "absent runtime holder failed during release"
+a_pid=
+a_write_fd=
+flock -n "$gen_absent.lock" true || fail "released absent lease remains locked"
+mv -- "$source_model.absent" "$source_model"
+
 cat "$source_model_snapshot" >"$source_model"
 [[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
 	fail "restored source model metadata or inode changed"
 cmp -s "$source_model" "$source_model_snapshot" || fail "source model content was not restored"
 as_user test ! -r "$source_model" || fail "restored source model is readable by selected user"
 
-service_dir=$(mktemp -d -p "$install_prefix" 'pam service-ทดสอบ.XXXXXX')
-chmod 0755 "$service_dir"
-printf 'auth required %s workaround=off\n' "$module" >"$service_dir/howdy-e2e"
-chmod 0644 "$service_dir/howdy-e2e"
 as_user "$driver" howdy-e2e "$selected_user" "$service_dir"
 flock -n "$expected_gen0.lock" true || fail "PAM flow retained gen000 lease"
 flock -n "$expected_gen1.lock" true || fail "PAM flow retained gen001 lease"
@@ -513,6 +570,7 @@ printf 'Installed module: %s\nInstalled helper: %s\n' "$module" "$helper"
 printf 'Selected account: %s (UID %s)\n' "$selected_user" "$selected_uid"
 printf 'Runtime leases: stale two-slot exhaustion and released-slot refresh passed\n'
 printf 'Runtime files: three content generations, exact metadata/ACLs, links, load/access passed\n'
+printf 'Absent staging: target-user readiness, sentinel rejection, active lease, PAM result passed\n'
 printf 'Canonical source model: restored, unchanged, protected\n'
 printf 'Direct helper missing-fd rejection: passed\n'
 printf 'PAM-only result: PAM_AUTHINFO_UNAVAIL\nRuntime cleanup: passed\n'

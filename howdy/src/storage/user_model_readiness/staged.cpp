@@ -56,8 +56,7 @@ namespace howdy::native {
 			       MaskedBits(stat.st_mode, 07777) == mode && stat.st_nlink == links;
 		}
 
-		auto AclMatches(int fd, const std::string &expected_text) -> bool {
-			acl_t      actual   = acl_get_fd(fd);
+		auto AclMatches(acl_t actual, const std::string &expected_text) -> bool {
 			acl_t      expected = acl_from_text(expected_text.c_str());
 			const bool matches  = actual != nullptr && expected != nullptr &&
 			                      acl_valid(expected) == 0 && acl_cmp(actual, expected) == 0;
@@ -79,8 +78,9 @@ namespace howdy::native {
 		}
 
 		struct StagedAclSubject {
-			int   fd;
-			uid_t target_uid;
+			int   fd         = -1;
+			uid_t target_uid = 0;
+			bool  path_only  = false;
 		};
 
 		auto VerifyStagedAcl(StagedAclSubject subject, const StagedAclPolicy &policy) -> bool {
@@ -94,7 +94,14 @@ namespace howdy::native {
 				expected += ",m::" + AclPermissionsText(policy.mask);
 			}
 			expected += ",o::" + AclPermissionsText(policy.other);
-			return AclMatches(subject.fd, expected);
+			// O_PATH pins the inode without granting content access. acl_get_fd cannot
+			// use it; the procfs link addresses that same pinned inode for ACL metadata.
+			auto *const actual =
+			    subject.path_only
+			        ? acl_get_file(("/proc/self/fd/" + std::to_string(subject.fd)).c_str(),
+			                       ACL_TYPE_ACCESS)
+			        : acl_get_fd(subject.fd);
+			return AclMatches(actual, expected);
 		}
 
 		auto ParseStagedPath(const std::filesystem::path &path, StagedPath *parsed)
@@ -304,7 +311,7 @@ namespace howdy::native {
 
 			ScopedFd const backing(openat(directories->generation.Get(),
 			                              auth_helper_protocol::kPreparedModelBackingFileName,
-			                              O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
+			                              O_PATH | O_CLOEXEC | O_NOFOLLOW));
 			struct stat    backing_stat{};
 			if (backing.Get() < 0 || fstat(backing.Get(), &backing_stat) != 0) {
 				return StagedReadiness::kInsecure;
@@ -312,7 +319,9 @@ namespace howdy::native {
 			const auto policy = GetStagedRuntimePolicy(StagedRuntimeRole::kAbsentModel);
 			return StatIsRegular(backing_stat, owner, policy.mode,
 			                     policy.exact_link_count.value_or(0)) &&
-			               VerifyStagedAcl({.fd = backing.Get(), .target_uid = parsed.target_uid},
+			               VerifyStagedAcl({.fd         = backing.Get(),
+			                                .target_uid = parsed.target_uid,
+			                                .path_only  = true},
 			                               policy.acl)
 			           ? StagedReadiness::kAbsent
 			           : StagedReadiness::kInsecure;
