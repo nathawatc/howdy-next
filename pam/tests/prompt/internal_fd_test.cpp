@@ -632,5 +632,5 @@ auto main() -> int {
 	ok &= TestCreateInternalPipePaths();
 	ok &= RunIsolated(TestCreateInternalPipeLowAndNormalizationFailures,
 	                  "low and failing internal pipe creation");
-	return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+	return ok ? 0 : 1;
 }

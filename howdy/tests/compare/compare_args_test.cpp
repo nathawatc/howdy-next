@@ -113,8 +113,5 @@ auto main() -> int {
 		             "compare rejects malformed dot-dot username input with abort");
 	}
 
-	if (!ok) {
-		return 1;
-	}
-	return 0;
+	return ok ? 0 : 1;
 }

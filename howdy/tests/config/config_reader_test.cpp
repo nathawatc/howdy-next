@@ -465,8 +465,5 @@ auto main() -> int {
 	             "ConfigReader(path, content) parses dark_threshold value");
 
 	fs::remove_all(temp_root, ec);
-	if (!ok) {
-		return 1;
-	}
-	return 0;
+	return ok ? 0 : 1;
 }

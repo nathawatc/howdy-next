@@ -180,11 +180,11 @@ namespace howdy::native::howdy_completion_internal {
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-options") {
 			PrintCompletionCommandOptions(arguments.at(1));
-			return FindCommand(arguments.at(1)) == nullptr ? 1 : 0;
+			return FindCommand(arguments.at(1)) != nullptr ? 0 : 1;
 		}
 		if (arguments.size() == 2 && arguments.front() == "command-max-positionals") {
 			PrintCompletionCommandMaxPositionals(arguments.at(1));
-			return FindCommand(arguments.at(1)) == nullptr ? 1 : 0;
+			return FindCommand(arguments.at(1)) != nullptr ? 0 : 1;
 		}
 		if (arguments.size() >= 3 && arguments.front() == "command-values") {
 			std::size_t position = 0;

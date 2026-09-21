@@ -240,8 +240,5 @@ auto main() -> int {
 		             "restore initial locale");
 	}
 
-	if (!ok) {
-		return 1;
-	}
-	return 0;
+	return ok ? 0 : 1;
 }

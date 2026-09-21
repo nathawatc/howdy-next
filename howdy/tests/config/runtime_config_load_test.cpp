@@ -227,8 +227,5 @@ auto main() -> int {
 	    howdy::native::LoadRuntimeConfig(insecure_root_config, std::nullopt, {temp_root});
 	ok &= ExpectFailure(insecure_trust, RuntimeConfigLoadStatus::kPathError, "insecure trust root");
 
-	if (!ok) {
-		return 1;
-	}
-	return 0;
+	return ok ? 0 : 1;
 }

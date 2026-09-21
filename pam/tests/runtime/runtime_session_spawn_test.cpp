@@ -798,7 +798,7 @@ auto RunRuntimeSessionFd3Probe(const char *marker_path) -> int {
 	if (marker_fd < 0) {
 		return EXIT_FAILURE;
 	}
-	return close(marker_fd) == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+	return close(marker_fd) == 0 ? 0 : 1;
 }
 
 auto RunRuntimeSessionSpawnTests() -> bool {
