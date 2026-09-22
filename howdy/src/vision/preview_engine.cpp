@@ -22,18 +22,19 @@
 namespace howdy::native {
 
 	PreviewEngine::PreviewEngine(VideoConfig config, PreviewDependencies dependencies,
-	                             std::vector<std::vector<float>> known_encodings,
-	                             std::size_t known_model_count, bool matching_enabled)
+	                             PreparedFaceMatcher matcher, std::size_t known_model_count,
+	                             bool matching_enabled)
 	    : config_(std::move(config))
 	    , clahe_(MakeClahe(config_))
 	    , dependencies_(dependencies)
-	    , known_encodings_(std::move(known_encodings))
+	    , matcher_(std::move(matcher))
 	    , known_model_count_(known_model_count)
 	    , matching_enabled_(matching_enabled) {}
 
 	auto PreviewEngine::DependenciesValid() const -> bool {
 		return dependencies_.now != nullptr &&
-		       (matching_enabled_ ? FaceInferenceComplete(dependencies_.inference)
+		       (matching_enabled_ ? (FaceInferenceComplete(dependencies_.inference) &&
+		                             dependencies_.matching.match_face != nullptr)
 		                          : FaceInferenceDetectionReady(dependencies_.inference));
 	}
 
@@ -67,10 +68,10 @@ namespace howdy::native {
 	                               std::vector<PreviewFaceResult> &faces) -> std::optional<bool> {
 		bool matched = false;
 		for (const auto &encoded : encodings) {
-			auto match = dependencies_.inference.match_face(dependencies_.inference.context,
-			                                                known_encodings_, encoded.encoding);
+			auto match = dependencies_.matching.match_face(dependencies_.matching.context, matcher_,
+			                                               encoded.encoding);
 			if (match.accepted &&
-			    (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
+			    (match.index < 0 || !std::cmp_less(match.index, matcher_.Candidates().size()) ||
 			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
 				return std::nullopt;
 			}

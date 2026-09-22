@@ -26,6 +26,7 @@ namespace howdy::native {
 
 	struct PreviewDependencies {
 		FaceInferenceOperations inference;
+		FaceMatchingOperations  matching;
 		PreviewNowFn            now = PreviewSteadyClockNow;
 	};
 
@@ -69,8 +70,8 @@ namespace howdy::native {
 	class PreviewEngine {
 	public:
 		PreviewEngine(VideoConfig config, PreviewDependencies dependencies,
-		              std::vector<std::vector<float>> known_encodings,
-		              std::size_t known_model_count, bool matching_enabled);
+		              PreparedFaceMatcher matcher, std::size_t known_model_count,
+		              bool matching_enabled);
 
 		auto ProcessGrayFrame(cv::Mat gray_frame) -> PreviewFrameResult;
 
@@ -87,12 +88,12 @@ namespace howdy::native {
 		auto MatchFaces(const std::vector<EncodedFace> &encodings,
 		                std::vector<PreviewFaceResult> &faces) -> std::optional<bool>;
 
-		VideoConfig                     config_;
-		cv::Ptr<cv::CLAHE>              clahe_;
-		PreviewDependencies             dependencies_;
-		std::vector<std::vector<float>> known_encodings_;
-		std::size_t                     known_model_count_ = 0;
-		bool                            matching_enabled_  = false;
+		VideoConfig         config_;
+		cv::Ptr<cv::CLAHE>  clahe_;
+		PreviewDependencies dependencies_;
+		PreparedFaceMatcher matcher_;
+		std::size_t         known_model_count_ = 0;
+		bool                matching_enabled_  = false;
 	};
 
 }  // namespace howdy::native

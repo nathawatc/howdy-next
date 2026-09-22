@@ -2,11 +2,11 @@
 
 #include "config/runtime_config.hpp"
 #include "vision/face_inference.hpp"
+#include "vision/face_matching.hpp"
 #include "vision/frame_processing.hpp"
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include <opencv2/core.hpp>
 
@@ -48,7 +48,7 @@ namespace howdy::native {
 	public:
 		explicit CompareEngine(VideoConfig config);
 		CompareEngine(VideoConfig config, FaceInferenceOperations inference,
-		              std::vector<std::vector<float>> known_encodings);
+		              PreparedFaceMatcher matcher, FaceMatchingOperations matching = {});
 
 		// frame_number is one-based and preserves current rotation cadence.
 		auto ProcessGrayFrame(cv::Mat gray_frame, int frame_number) -> CompareFrameResult;
@@ -59,8 +59,9 @@ namespace howdy::native {
 		VideoConfig        config_;
 		cv::Ptr<cv::CLAHE> clahe_;
 
-		FaceInferenceOperations         inference_;
-		std::vector<std::vector<float>> known_encodings_;
+		FaceInferenceOperations inference_;
+		PreparedFaceMatcher     matcher_;
+		FaceMatchingOperations  matching_;
 	};
 
 }  // namespace howdy::native

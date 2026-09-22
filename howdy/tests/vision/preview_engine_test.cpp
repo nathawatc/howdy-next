@@ -1,4 +1,5 @@
 #include "config/runtime_config.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
@@ -9,6 +10,7 @@
 #include <chrono>
 #include <cstddef>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -76,8 +78,9 @@ namespace {
 		return context.encoding_result;
 	}
 
-	auto MatchFace(void *raw_context, [[maybe_unused]] const std::vector<std::vector<float>> &known,
-	               [[maybe_unused]] const std::vector<float> &probe) -> howdy::native::FaceMatch {
+	auto MatchFace(void                                                      *raw_context,
+	               [[maybe_unused]] const howdy::native::PreparedFaceMatcher &matcher,
+	               [[maybe_unused]] std::span<const float> probe) -> howdy::native::FaceMatch {
 		if (raw_context == nullptr) {
 			throw std::logic_error("match callback received null context");
 		}
@@ -121,13 +124,13 @@ namespace {
 		    .prepare_frame = PrepareFrame,
 		    .detect_faces  = DetectFaces,
 		    .encode_face   = EncodeFace,
-		    .match_face    = MatchFace,
 		};
 	}
 
 	auto MakePreviewDependencies(Context &context) -> howdy::native::PreviewDependencies {
 		return {
 		    .inference = InferenceOperations(context),
+		    .matching  = {.context = &context, .match_face = MatchFace},
 		};
 	}
 
@@ -136,7 +139,10 @@ namespace {
 		auto config = TestVideoConfig(dark_threshold);
 		return howdy::native::PreviewEngine(
 		    config, MakePreviewDependencies(context),
-		    {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)}, 1, matching_enabled);
+		    howdy::native::PreparedFaceMatcher(
+		        {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
+		        howdy::native::FaceMetric::kCosine, 0.5F),
+		    1, matching_enabled);
 	}
 
 	auto Face() -> howdy::native::FaceDetection {
@@ -214,7 +220,10 @@ namespace {
 		dependencies.now                    = Now;
 		auto                         config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(
-		    config, dependencies, {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
+		    config, dependencies,
+		    howdy::native::PreparedFaceMatcher(
+		        {std::vector<float>(howdy::native::kSfaceEmbeddingSize, 0.25F)},
+		        howdy::native::FaceMetric::kCosine, 0.5F),
 		    1, true);
 		const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 		return Expect(result.status == howdy::native::PreviewFrameStatus::kUnmatchedFace,
@@ -456,7 +465,7 @@ namespace {
 		    "null encode callback");
 		ok &= run_missing_dependency(
 		    [](auto &dependencies) -> auto {
-			    dependencies.inference.match_face = nullptr;
+			    dependencies.matching.match_face = nullptr;
 		    },
 		    "null match callback");
 		ok &= run_missing_dependency(
@@ -464,6 +473,31 @@ namespace {
 			    dependencies.now = nullptr;
 		    },
 		    "null clock callback");
+		return ok;
+	}
+
+	auto PreparedMatchingReusedAcrossFrames() -> bool {
+		bool ok = true;
+		for (const auto metric :
+		     {howdy::native::FaceMetric::kCosine, howdy::native::FaceMetric::kL2,
+		      howdy::native::FaceMetric::kL2Norm}) {
+			auto context                        = MakeContext();
+			context.detection_result.detections = {Face()};
+			howdy::native::PreviewEngine engine(
+			    TestVideoConfig(), {.inference = InferenceOperations(context)},
+			    howdy::native::PreparedFaceMatcher({context.encoding_result.encoding}, metric,
+			                                       0.5F),
+			    1, true);
+			for (int frame = 0; frame < 2; ++frame) {
+				const auto result =
+				    engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
+				ok &= Expect(result.status == howdy::native::PreviewFrameStatus::kMatchedFace &&
+				                 result.faces.at(0).match.index == 0,
+				             "preview reuses real prepared matcher across frames and metrics");
+			}
+			ok &= Expect(context.match_calls == 0,
+			             "preview matching is independent of inference callbacks");
+		}
 		return ok;
 	}
 
@@ -486,5 +520,6 @@ auto main() -> int {
 	ok &= MatchingDisabledReportsDetectedFaces();
 	ok &= InvalidAcceptedMatchResultsFailClosed();
 	ok &= InvalidDependencyMatrixFailsClosed();
+	ok &= PreparedMatchingReusedAcrossFrames();
 	return ok ? 0 : 1;
 }

@@ -2,9 +2,6 @@
 
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
-#include "vision/face_matching.hpp"
-
-#include <vector>
 
 #include <opencv2/core.hpp>
 
@@ -17,15 +14,11 @@ namespace howdy::native {
 	using EncodeFaceFn = FaceEncodingResult (*)(void *context, const cv::Mat &frame,
 	                                            const FaceDetection &face);
 
-	using MatchFaceFn = FaceMatch (*)(void *context, const std::vector<std::vector<float>> &known,
-	                                  const std::vector<float> &probe);
-
 	struct FaceInferenceOperations {
 		void          *context       = nullptr;
 		PrepareFrameFn prepare_frame = nullptr;
 		DetectFacesFn  detect_faces  = nullptr;
 		EncodeFaceFn   encode_face   = nullptr;
-		MatchFaceFn    match_face    = nullptr;
 	};
 
 	[[nodiscard]] constexpr auto
@@ -36,8 +29,7 @@ namespace howdy::native {
 
 	[[nodiscard]] constexpr auto
 	FaceInferenceComplete(const FaceInferenceOperations &operations) noexcept -> bool {
-		return FaceInferenceDetectionReady(operations) && operations.encode_face != nullptr &&
-		       operations.match_face != nullptr;
+		return FaceInferenceDetectionReady(operations) && operations.encode_face != nullptr;
 	}
 
 }  // namespace howdy::native

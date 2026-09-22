@@ -13,7 +13,6 @@
 #include <cmath>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
@@ -80,11 +79,12 @@ namespace howdy::native {
 	    , clahe_(MakeClahe(config_)) {}
 
 	CompareEngine::CompareEngine(VideoConfig config, FaceInferenceOperations inference,
-	                             std::vector<std::vector<float>> known_encodings)
+	                             PreparedFaceMatcher matcher, FaceMatchingOperations matching)
 	    : config_(std::move(config))
 	    , clahe_(MakeClahe(config_))
 	    , inference_(inference)
-	    , known_encodings_(std::move(known_encodings)) {}
+	    , matcher_(std::move(matcher))
+	    , matching_(matching) {}
 
 	auto CompareEngine::ProcessGrayFrame(cv::Mat gray_frame, int frame_number)
 	    -> CompareFrameResult {
@@ -148,7 +148,7 @@ namespace howdy::native {
 	}
 
 	auto CompareEngine::ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult {
-		if (!FaceInferenceComplete(inference_)) {
+		if (!FaceInferenceComplete(inference_) || matching_.match_face == nullptr) {
 			return {
 			    .status = CompareInferenceStatus::kInvalidDependencies,
 			};
@@ -185,10 +185,10 @@ namespace howdy::native {
 				continue;
 			}
 			reached_matching = true;
-			const auto match = inference_.match_face(inference_.context, known_encodings_,
-			                                         encoding_result.encoding);
+			const auto match =
+			    matching_.match_face(matching_.context, matcher_, encoding_result.encoding);
 			if (match.accepted) {
-				if (match.index < 0 || !std::cmp_less(match.index, known_encodings_.size()) ||
+				if (match.index < 0 || !std::cmp_less(match.index, matcher_.Candidates().size()) ||
 				    !std::isfinite(match.score)) {
 					return {
 					    .status        = CompareInferenceStatus::kInvalidMatchResult,

@@ -1,5 +1,6 @@
 #include "compare/compare_engine_test_support.hpp"
 #include "compare/engine.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -105,16 +107,17 @@ namespace {
 		};
 	}
 
-	auto MatchFace(void *opaque, const std::vector<std::vector<float>> &known,
-	               const std::vector<float> &probe) -> howdy::native::FaceMatch {
+	auto MatchFace(void *opaque, const howdy::native::PreparedFaceMatcher &matcher,
+	               std::span<const float> probe) -> howdy::native::FaceMatch {
 		if (opaque == nullptr) {
 			CallbackCallsWithoutContext()++;
 			return {};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
 		context.match_calls++;
-		context.received_known.push_back(known);
-		context.received_probes.push_back(probe);
+		context.received_known.emplace_back(matcher.Candidates().begin(),
+		                                    matcher.Candidates().end());
+		context.received_probes.emplace_back(probe.begin(), probe.end());
 		return context.match_results.at(context.next_match++);
 	}
 
@@ -125,7 +128,6 @@ namespace {
 		    .prepare_frame = PrepareFrame,
 		    .detect_faces  = DetectFaces,
 		    .encode_face   = EncodeFace,
-		    .match_face    = MatchFace,
 		};
 	}
 
@@ -158,8 +160,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		FakeInferenceContext context;
 		auto                 operations = MakeInferenceOperations(context);
 		operations.prepare_frame        = nullptr;
-		howdy::native::CompareEngine engine(MakeVideoConfig(), operations, known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), operations,
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "null inference callback is rejected");
 		ok &= Expect(context.prepare_calls == 0 && context.detect_calls == 0 &&
@@ -183,8 +188,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		auto                 operations = MakeInferenceOperations(context);
 		operations.context              = nullptr;
 		CallbackCallsWithoutContext()   = 0;
-		howdy::native::CompareEngine engine(MakeVideoConfig(), operations, known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), operations,
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidDependencies,
 		             "null inference context is rejected");
 		ok &= Expect(CallbackCallsWithoutContext() == 0,
@@ -204,9 +212,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		        },
 		    .forced_encoding_result = howdy::native::FaceEncodingResult{},
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "default empty encoding fails closed");
 		ok &= Expect(result.error_message == "Face encoding returned no data",
@@ -240,9 +250,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 			        },
 			    .forced_encoding_result = malformed,
 			};
-			howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-			                                    known);
-			const auto                   result = engine.ProcessFaceFrame(working_frame);
+			howdy::native::CompareEngine engine(
+			    MakeVideoConfig(), MakeInferenceOperations(context),
+			    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+			    {.context = &context, .match_face = MatchFace});
+			const auto result = engine.ProcessFaceFrame(working_frame);
 			ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 			             "malformed claimed-success encoding fails closed");
 			ok &= Expect(!result.error_message.empty(),
@@ -267,8 +279,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		    {5.0F, 6.0F},
 		    {7.0F, 8.0F},
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    caller_known);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(caller_known, howdy::native::FaceMetric::kCosine,
+		                                       0.5F),
+		    {.context = &context, .match_face = MatchFace});
 		caller_known.clear();
 		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
@@ -281,9 +296,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 
 	{
 		FakeInferenceContext         context;
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidPreparedFrame,
 		             "empty prepared frame is rejected");
 		ok &= Expect(result.error_message == "Prepared frame for face detection is empty",
@@ -302,9 +319,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		            .error_message = "YuNet inference failed: synthetic failure",
 		        },
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kDetectionFailed,
 		             "detection failure is classified");
 		ok &= Expect(result.error_message == "YuNet inference failed: synthetic failure",
@@ -324,9 +343,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		        },
 		    .encoding_error_message = "SFace feature extraction failed: synthetic failure",
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "encoding failure aborts inference instead of returning no match");
 		ok &= Expect(result.error_message == context.encoding_error_message,
@@ -357,9 +378,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		        },
 		    .match_results = {{.index = 1, .score = 0.9F, .accepted = true}},
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "failed first encoding does not hide matching second face");
 		ok &= Expect(result.winning_index == 1, "second face match index is returned");
@@ -387,9 +410,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		            },
 		        },
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kEncodingFailed,
 		             "all failed encodings return encoding failure");
 		ok &= Expect(result.error_message == "First face encoding failed",
@@ -403,9 +428,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		    .prepared_frame   = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
 		    .detection_result = {.status = howdy::native::FaceDetectionStatus::kOk},
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
 		             "zero detections return no match");
 		ok &= Expect(context.prepare_calls == 1 && context.detect_calls == 1 &&
@@ -433,9 +460,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 			    .encoded_results = {MakeEncoding(0.1F), MakeEncoding(0.3F)},
 			    .match_results   = {invalid_match},
 			};
-			howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-			                                    known);
-			const auto                   result = engine.ProcessFaceFrame(working_frame);
+			howdy::native::CompareEngine engine(
+			    MakeVideoConfig(), MakeInferenceOperations(context),
+			    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+			    {.context = &context, .match_face = MatchFace});
+			const auto result = engine.ProcessFaceFrame(working_frame);
 			ok &=
 			    Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidMatchResult,
 			           "invalid accepted matcher result fails closed");
@@ -467,9 +496,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		            {.index = 1, .score = 0.9F, .accepted = true},
 		        },
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "accepted second detection returns match");
 		ok &= Expect(result.winning_index == 1, "second accepted match index is returned");
@@ -501,9 +532,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		            {.index = 1, .score = 0.9F, .accepted = true},
 		        },
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch,
 		             "first accepted detection returns match");
 		ok &= Expect(result.winning_index == 0, "first accepted match index is returned");
@@ -532,9 +565,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		             .accepted = false},
 		        },
 		};
-		howdy::native::CompareEngine engine(MakeVideoConfig(), MakeInferenceOperations(context),
-		                                    known);
-		const auto                   result = engine.ProcessFaceFrame(working_frame);
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher(known, howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		const auto result = engine.ProcessFaceFrame(working_frame);
 		ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kNoMatch,
 		             "all rejected detections return no match");
 		ok &= Expect(result.winning_index == -1,
@@ -542,6 +577,27 @@ auto RunCompareEngineInferenceTests() -> bool {
 		ok &= Expect(context.encode_calls == 2 && context.match_calls == 2,
 		             "all rejected detections are evaluated");
 		ok &= Expect(result.error_message.empty(), "all rejected detections return no error");
+	}
+
+	for (const auto metric : {howdy::native::FaceMetric::kCosine, howdy::native::FaceMetric::kL2,
+	                          howdy::native::FaceMetric::kL2Norm}) {
+		FakeInferenceContext context{
+		    .prepared_frame   = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result = {.status     = howdy::native::FaceDetectionStatus::kOk,
+		                         .detections = {MakeDetection(1.0F)}},
+		    .encoded_results  = {MakeEncoding(0.25F), MakeEncoding(0.25F)},
+		};
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher({MakeEncoding(-0.25F), MakeEncoding(0.25F)}, metric,
+		                                       0.5F));
+		for (int frame = 0; frame < 2; ++frame) {
+			const auto result = engine.ProcessFaceFrame(working_frame);
+			ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch &&
+			                 result.winning_index == 1,
+			             "compare reuses real prepared matcher across frames and metrics");
+		}
+		ok &= Expect(context.match_calls == 0, "matching is independent of inference callbacks");
 	}
 
 	return ok;

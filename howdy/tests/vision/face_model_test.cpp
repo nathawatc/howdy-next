@@ -321,9 +321,6 @@ namespace {
 			return false;
 		}
 
-		const auto match = ops.match_face(ops.context, {encoding.encoding}, encoding.encoding);
-		ok &= Expect(match.accepted, "operations match_face matches identical encoding");
-
 		return ok;
 	}
 

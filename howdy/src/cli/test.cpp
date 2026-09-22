@@ -23,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <grp.h>
@@ -301,7 +302,10 @@ namespace {
 		    {
 		        .inference = howdy::native::FaceModelInferenceOperations(face_model),
 		    },
-		    loaded_models.stored.encodings, loaded_models.stored.models.size(),
+		    howdy::native::PreparedFaceMatcher(std::move(loaded_models.stored.encodings),
+		                                       config.face.sface_metric,
+		                                       config.face.sface_threshold),
+		    loaded_models.stored.models.size(),
 		    loaded_models.status == howdy::native::UserModelStatus::kOk);
 
 		test_cli_internal::TestPreviewSession preview_session(

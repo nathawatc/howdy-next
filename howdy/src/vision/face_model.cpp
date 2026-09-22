@@ -8,7 +8,6 @@
 #include "vision/face_encoding.hpp"
 #include "vision/face_encoding/internal.hpp"
 #include "vision/face_inference.hpp"
-#include "vision/face_matching.hpp"
 #include "vision/face_model/internal.hpp"
 #include "vision/frame_validation.hpp"
 
@@ -18,7 +17,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include <stdlib.h>
 
@@ -62,7 +60,6 @@ namespace howdy::native {
 
 	FaceModel::FaceModel(const FaceConfig &config)
 	    : metric_(config.sface_metric)
-	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_unique<Backend>()) {
 		backend_->check_readiness = [](const std::filesystem::path &path) -> OpenCvModelReadiness {
 			return CheckOpencvModelReadinessWithLabel(path, "OpenCV face model file",
@@ -95,7 +92,6 @@ namespace howdy::native {
 
 	FaceModel::FaceModel(const FaceConfig &config, Backend backend)
 	    : metric_(config.sface_metric)
-	    , threshold_(config.sface_threshold)
 	    , backend_(std::make_unique<Backend>(std::move(backend))) {
 		Initialize(config);
 	}
@@ -297,11 +293,6 @@ namespace howdy::native {
 		}
 	}
 
-	auto FaceModel::BestMatch(const std::vector<std::vector<float>> &known,
-	                          const std::vector<float>              &probe) const -> FaceMatch {
-		return FindBestFaceMatch(known, probe, metric_, threshold_);
-	}
-
 	void FaceModel::SetInputSizeFromFrame(const cv::Mat &frame) {
 		const cv::Size new_size(frame.cols, frame.rows);
 		if (new_size == input_size_) {
@@ -333,10 +324,6 @@ namespace howdy::native {
 			return static_cast<FaceModel *>(context)->Encode(frame, face);
 		}
 
-		auto FaceModelMatchFaceAdapter(void *context, const std::vector<std::vector<float>> &known,
-		                               const std::vector<float> &probe) -> FaceMatch {
-			return static_cast<FaceModel *>(context)->BestMatch(known, probe);
-		}
 	}  // namespace
 
 	auto FaceModelInferenceOperations(FaceModel &model) -> FaceInferenceOperations {
@@ -345,7 +332,6 @@ namespace howdy::native {
 		    .prepare_frame = FaceModelPrepareFrameAdapter,
 		    .detect_faces  = FaceModelDetectFacesAdapter,
 		    .encode_face   = FaceModelEncodeFaceAdapter,
-		    .match_face    = FaceModelMatchFaceAdapter,
 		};
 	}
 

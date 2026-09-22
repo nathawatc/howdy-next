@@ -5,11 +5,9 @@
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
 #include "vision/face_inference.hpp"
-#include "vision/face_matching.hpp"
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <opencv2/core.hpp>
 #include <opencv2/objdetect/face.hpp>
@@ -42,8 +40,6 @@ namespace howdy::native {
 		[[nodiscard]] static auto PrepareFrame(const cv::Mat &frame) -> cv::Mat;
 		auto                      Detect(const cv::Mat &frame) -> FaceDetectionResult;
 		auto Encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
-		[[nodiscard]] auto BestMatch(const std::vector<std::vector<float>> &known,
-		                             const std::vector<float> &probe) const -> FaceMatch;
 
 	private:
 		struct Backend;
@@ -58,7 +54,6 @@ namespace howdy::native {
 		bool                          ok_ = false;
 		std::string                   error_message_;
 		FaceMetric                    metric_ = FaceMetric::kCosine;
-		float                         threshold_;
 		cv::Size                      input_size_{320, 320};
 		cv::Ptr<cv::FaceDetectorYN>   detector_;
 		cv::Ptr<cv::FaceRecognizerSF> recognizer_;

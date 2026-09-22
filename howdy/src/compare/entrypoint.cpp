@@ -87,7 +87,7 @@ namespace {
 		std::optional<howdy::native::FaceModel>                      face_model;
 		std::reference_wrapper<const howdy::native::FaceConfig>      face_config;
 		std::reference_wrapper<const howdy::native::VideoConfig>     video_config;
-		std::reference_wrapper<const howdy::native::StoredEncodings> stored_encodings;
+		std::reference_wrapper<howdy::native::StoredEncodings>       stored_encodings;
 		std::chrono::steady_clock::time_point                        start_time;
 		bool                                                         end_report = false;
 		std::optional<howdy::native::CompareEngine>                  compare_engine;
@@ -121,7 +121,9 @@ namespace {
 		context.compare_engine.emplace(
 		    context.video_config.get(),
 		    howdy::native::FaceModelInferenceOperations(*context.face_model),
-		    context.stored_encodings.get().encodings);
+		    howdy::native::PreparedFaceMatcher(std::move(context.stored_encodings.get().encodings),
+		                                       context.face_config.get().sface_metric,
+		                                       context.face_config.get().sface_threshold));
 	}
 
 	void ResetTimeout(void *raw_context) {
@@ -306,7 +308,7 @@ auto howdy::native::RunCompareEntrypoint(
 			return static_cast<int>(CompareExit::kAbort);
 		}
 
-		const auto loaded_models = howdy::native::LoadUserModels(
+		auto loaded_models = howdy::native::LoadUserModels(
 		    args.user, howdy::native::FaceModel::kBackendName, trusted_owner_uid, validation_root);
 		if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
 			std::cerr << loaded_models.error_message << "\n";
@@ -345,7 +347,7 @@ auto howdy::native::RunCompareEntrypoint(
 		    .face_model       = std::nullopt,
 		    .face_config      = std::cref(config.face),
 		    .video_config     = std::cref(config.video),
-		    .stored_encodings = std::cref(loaded_models.stored),
+		    .stored_encodings = std::ref(loaded_models.stored),
 		    .start_time       = start_time,
 		    .end_report       = config.debug.end_report,
 		};
