@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <span>
@@ -80,23 +81,24 @@ namespace howdy::native {
 			return std::isfinite(score) ? std::optional<float>{score} : std::nullopt;
 		}
 
-		[[nodiscard]] inline auto CosineMatch(std::span<const std::vector<float>> known,
-		                                      std::span<const float> probe, float threshold,
-		                                      std::span<const std::optional<float>> prepared = {})
+		[[nodiscard]] inline auto
+		CosineMatch(std::span<const std::vector<float>> known, std::span<const float> probe,
+		            float threshold, std::span<const std::optional<float>> cosine_norms = {})
 		    -> FaceMatch {
 			const auto probe_norm = VectorNorm(probe);
-			if (!probe_norm.has_value() || (!prepared.empty() && prepared.size() != known.size())) {
+			if (!probe_norm.has_value() ||
+			    (!cosine_norms.empty() && cosine_norms.size() != known.size())) {
 				return {.score = -1.0F};
 			}
 			FaceMatch   match{.score = -1.0F};
-			std::size_t index       = 0;
-			auto        prepared_it = prepared.begin();
+			std::size_t index          = 0;
+			auto        cosine_norm_it = cosine_norms.begin();
 			for (const auto &candidate : known) {
 				std::optional<float> score;
-				if (prepared.empty()) {
+				if (cosine_norms.empty()) {
 					score = CosineScore(candidate, probe, *probe_norm);
 				} else {
-					const auto norm = *prepared_it++;
+					const auto norm = *cosine_norm_it++;
 					if (norm.has_value()) {
 						score = PreparedCosineScore(candidate, probe, *norm, *probe_norm);
 					}
@@ -131,22 +133,22 @@ namespace howdy::native {
 
 		[[nodiscard]] inline auto DistanceMatch(std::span<const std::vector<float>> known,
 		                                        std::span<const float> probe, float threshold,
-		                                        std::span<const std::optional<float>> prepared = {})
+		                                        std::span<const std::uint8_t> validated = {})
 		    -> FaceMatch {
 			FaceMatch match{.score = std::numeric_limits<float>::max()};
-			if ((!prepared.empty() && prepared.size() != known.size()) ||
+			if ((!validated.empty() && validated.size() != known.size()) ||
 			    !std::ranges::all_of(probe, [](float value) -> bool {
 				    return std::isfinite(value);
 			    })) {
 				return match;
 			}
-			std::size_t index       = 0;
-			auto        prepared_it = prepared.begin();
+			std::size_t index        = 0;
+			auto        validated_it = validated.begin();
 			for (const auto &candidate : known) {
 				std::optional<float> score;
-				if (prepared.empty()) {
+				if (validated.empty()) {
 					score = DistanceScore(candidate, probe);
-				} else if ((*prepared_it++).has_value()) {
+				} else if (*validated_it++ != 0U) {
 					score = DistanceScore(candidate, probe, true);
 				}
 				if (score.has_value() && *score < match.score) {
@@ -191,17 +193,18 @@ namespace howdy::native {
 		    : candidates_(std::move(candidates))
 		    , metric_(metric)
 		    , threshold_(threshold) {
-			prepared_.reserve(candidates_.size());
-			for (const auto &candidate : candidates_) {
-				if (metric_ == FaceMetric::kCosine) {
-					prepared_.push_back(face_matching_detail::VectorNorm(candidate));
-				} else {
-					prepared_.push_back(std::ranges::all_of(candidate,
-					                                        [](float value) -> bool {
-						                                        return std::isfinite(value);
-					                                        })
-					                        ? std::optional<float>{1.0F}
-					                        : std::nullopt);
+			if (metric_ == FaceMetric::kCosine) {
+				cosine_norms_.reserve(candidates_.size());
+				for (const auto &candidate : candidates_) {
+					cosine_norms_.push_back(face_matching_detail::VectorNorm(candidate));
+				}
+			} else {
+				candidate_validity_.reserve(candidates_.size());
+				for (const auto &candidate : candidates_) {
+					candidate_validity_.push_back(static_cast<std::uint8_t>(
+					    std::ranges::all_of(candidate, [](float value) -> bool {
+						    return std::isfinite(value);
+					    })));
 				}
 			}
 		}
@@ -221,14 +224,17 @@ namespace howdy::native {
 				                     : std::numeric_limits<float>::max()};
 			}
 			if (metric_ == FaceMetric::kCosine) {
-				return face_matching_detail::CosineMatch(candidates_, probe, threshold_, prepared_);
+				return face_matching_detail::CosineMatch(candidates_, probe, threshold_,
+				                                         cosine_norms_);
 			}
-			return face_matching_detail::DistanceMatch(candidates_, probe, threshold_, prepared_);
+			return face_matching_detail::DistanceMatch(candidates_, probe, threshold_,
+			                                           candidate_validity_);
 		}
 
 	private:
 		std::vector<std::vector<float>>   candidates_;
-		std::vector<std::optional<float>> prepared_;
+		std::vector<std::optional<float>> cosine_norms_;
+		std::vector<std::uint8_t>         candidate_validity_;
 		FaceMetric                        metric_    = FaceMetric::kCosine;
 		float                             threshold_ = 0.0F;
 	};
