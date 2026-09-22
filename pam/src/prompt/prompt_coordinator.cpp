@@ -5,14 +5,17 @@
 #include "prompt/prompt_coordinator.hpp"
 
 #include "prompt/conversation_restore.hpp"
+#include "prompt/internal_fd.hpp"
 #include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_launch.hpp"
+#include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/process_status.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <exception>
@@ -23,6 +26,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/eventfd.h>
 #include <sys/syslog.h>
 
 namespace {
@@ -44,6 +48,19 @@ namespace howdy::pam {
 	    , hard_timeout_(hard_timeout.Duration())
 	    , operations_(operations)
 	    , effective_workaround_(workaround) {}
+
+	void PromptCoordinator::SignalCancellation() noexcept {
+		const eventfd_t value = 1;
+		if (howdy::native::RetryOnEintr([&] -> int {
+			    return eventfd_write(cancellation_fd_.Get(), value);
+		    }) != 0 &&
+		    errno != EAGAIN) {
+			const int error_number = errno;
+			syslog(LOG_ERR, "Compare cancellation eventfd write failed: %s (%d)",
+			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			cancellation_signal_failed_ = true;
+		}
+	}
 
 	auto PromptCoordinator::CancellationRequested(void *context) -> bool {
 		auto                  &coordinator = *static_cast<PromptCoordinator *>(context);
@@ -97,8 +114,8 @@ namespace howdy::pam {
 	    pid_t child_pid, std::chrono::steady_clock::time_point compare_deadline) noexcept -> int {
 		int status = howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort);
 		try {
-			status = operations_.WaitForCompareProcess(child_pid, compare_deadline, this,
-			                                           CancellationRequested);
+			status = operations_.WaitForCompareProcess(
+			    child_pid, compare_deadline, this, CancellationRequested, cancellation_fd_.Get());
 		} catch (const std::exception &error) {
 			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
 			operations_.CancelAndReapCompareProcess(child_pid);
@@ -388,7 +405,8 @@ namespace howdy::pam {
 		{
 			std::scoped_lock const lock(mutex_);
 			state_.cancellation_requested = true;
-			state_.shutdown_requested     = true;
+			SignalCancellation();
+			state_.shutdown_requested = true;
 		}
 		condition_.notify_all();
 		CompareWorker(child_pid, compare_deadline);
@@ -420,6 +438,7 @@ namespace howdy::pam {
 			if (state_.first_completion == FirstCompletion::kNone) {
 				state_.first_completion       = FirstCompletion::kPassword;
 				state_.cancellation_requested = true;
+				SignalCancellation();
 			}
 		}
 		condition_.notify_all();
@@ -445,7 +464,16 @@ namespace howdy::pam {
 		if (run_started_) {
 			return {.decision = PromptCoordinatorDecision::kAlreadyRun};
 		}
-		run_started_ = true;
+		run_started_     = true;
+		cancellation_fd_ = detail::NormalizeInternalFd(
+		    howdy::native::ScopedFd(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)));
+		if (!cancellation_fd_.Valid()) {
+			const int error_number = errno;
+			syslog(LOG_ERR, "Compare cancellation eventfd setup failed: %s (%d)",
+			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			return {.decision   = PromptCoordinatorDecision::kPamResult,
+			        .pam_status = PAM_SYSTEM_ERR};
+		}
 
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
 		pid_t      child_pid        = -1;
@@ -501,13 +529,13 @@ namespace howdy::pam {
 		const bool terminal_restore_failed =
 		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
 		const auto restore_result = RestorePromptConversation();
-		if (terminal_restore_failed ||
+		if (cancellation_signal_failed_ || terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			pam_result = PAM_SYSTEM_ERR;
 		}
 
 		auto result = BuildResult(ask_pass, pam_result);
-		if (terminal_restore_failed ||
+		if (cancellation_signal_failed_ || terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
 			result.pam_status = PAM_SYSTEM_ERR;

@@ -44,8 +44,10 @@ See the [wiki](https://codeberg.org/nathawat/howdy-next/wiki/NixOS) for installa
 Dependencies:
 
 ```text
-glibc>=2.34, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
+linux>=5.3 glibc>=2.36, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=59, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
 ```
+
+The PAM compare requires `pidfd_open`, `eventfd`, and `ppoll`. Configure does not probe the kernel.
 
 Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.
 

@@ -212,8 +212,9 @@ namespace howdy::test::auth_flow {
 	inline auto FlowWaitCompare(void *context, pid_t child_pid,
 	                            std::chrono::steady_clock::time_point      deadline,
 	                            void                                      *cancellation_context,
-	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested)
-	    -> int {
+	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
+	                            int                                        cancellation_fd) -> int {
+		(void)cancellation_fd;
 		(void)context;
 		(void)child_pid;
 		(void)deadline;

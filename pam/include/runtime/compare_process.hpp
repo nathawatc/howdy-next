@@ -35,13 +35,16 @@ namespace howdy::pam::compare_process {
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
 	WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int;
+	// cancellation_fd is borrowed until return; signal it whenever cancellation becomes true.
+	// The callback preserves the initial cancellation/exit race and is not polled.
 	__attribute__((visibility("hidden"))) auto
 	WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested)
-	    -> int;
+	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
+	          int cancellation_fd = -1) -> int;
 	__attribute__((visibility("hidden"))) auto
 	Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested) -> int;
+	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
+	     int cancellation_fd) -> int;
 	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid) noexcept;
 
 }  // namespace howdy::pam::compare_process

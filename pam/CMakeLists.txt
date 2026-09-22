@@ -41,6 +41,7 @@ target_link_libraries(pam_conversation_response PUBLIC PAM::PAM)
 
 add_library(
 	pam_prompt_core STATIC
+	src/prompt/internal_fd.cpp
 	src/prompt/prompt_coordinator.cpp
 	src/prompt/workaround.cpp
 )
@@ -51,7 +52,6 @@ add_library(
 	pam_prompt STATIC
 	src/prompt/prompt_submitter.cpp
 	src/prompt/pam_conversation.cpp
-	src/prompt/internal_fd.cpp
 	src/prompt/native_prompt_conversation.cpp
 	src/prompt/native_prompt_input.cpp
 	src/prompt/observed_prompt_conversation.cpp

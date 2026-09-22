@@ -37,6 +37,9 @@ namespace howdy::pam {
 				std::scoped_lock const lock(coordinator.mutex_);
 				coordinator.state_.shutdown_requested     = true;
 				coordinator.state_.cancellation_requested = true;
+				if (coordinator.cancellation_fd_.Valid()) {
+					coordinator.SignalCancellation();
+				}
 				if (coordinator.state_.submission ==
 				    PromptCoordinator::PromptSubmissionState::kClaimed) {
 					coordinator.state_.submission =

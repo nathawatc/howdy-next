@@ -6,6 +6,7 @@
 #include "prompt/prompt_submitter.hpp"
 #include "prompt/workaround.hpp"
 #include "runtime/compare_launch.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <chrono>
 #include <condition_variable>
@@ -27,7 +28,8 @@ namespace howdy::pam {
 	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid,
 	                                        std::chrono::steady_clock::time_point deadline,
 	                                        void                          *cancellation_context,
-	                                        CompareCancellationRequestedFn cancellation_requested);
+	                                        CompareCancellationRequestedFn cancellation_requested,
+	                                        int                            cancellation_fd);
 	using CancelAndReapCompareProcessFn = void (*)(void *context, pid_t child_pid) noexcept;
 
 	using InputPromptPreflightFn = bool (*)(void *context);
@@ -71,9 +73,10 @@ namespace howdy::pam {
 		[[nodiscard]] auto
 		WaitForCompareProcess(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 		                      void                          *cancellation_context,
-		                      CompareCancellationRequestedFn cancellation_requested) const -> int {
+		                      CompareCancellationRequestedFn cancellation_requested,
+		                      int                            cancellation_fd = -1) const -> int {
 			return wait_for_compare_process_(context_, child_pid, deadline, cancellation_context,
-			                                 cancellation_requested);
+			                                 cancellation_requested, cancellation_fd);
 		}
 
 		void CancelAndReapCompareProcess(pid_t child_pid) const noexcept {
@@ -224,6 +227,7 @@ namespace howdy::pam {
 			bool                   shutdown_requested       = false;
 		};
 
+		void        SignalCancellation() noexcept;
 		static auto CancellationRequested(void *context) -> bool;
 		static auto SecretPromptBegin(void *context) noexcept -> SecretPromptGeneration;
 		static void SecretPromptEnd(void *context, SecretPromptGeneration generation) noexcept;
@@ -261,6 +265,8 @@ namespace howdy::pam {
 		std::unique_ptr<NativePrompt>             native_prompt_;
 		std::unique_ptr<SecretPromptConversation> secret_prompt_conversation_;
 		std::unique_ptr<PromptSubmitter>          prompt_submitter_;
+		howdy::native::ScopedFd                   cancellation_fd_;
+		bool                                      cancellation_signal_failed_ = false;
 		State                                     state_;
 		Workaround                                effective_workaround_ = Workaround::kOff;
 		bool                                      run_started_          = false;

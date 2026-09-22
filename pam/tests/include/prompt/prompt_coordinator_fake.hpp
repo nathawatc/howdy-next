@@ -293,8 +293,9 @@ namespace howdy::test::prompt_coordinator {
 	inline auto WaitForCompare(void *context, pid_t child_pid,
 	                           [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
 	                           void                                      *cancellation_context,
-	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested)
-	    -> int {
+	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested,
+	                           int                                        cancellation_fd) -> int {
+		(void)cancellation_fd;
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
 		fake.waited_pid  = child_pid;

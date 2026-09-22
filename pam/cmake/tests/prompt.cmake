@@ -66,3 +66,14 @@ target_link_libraries(
 	pam_prompt_coordinator_runtime_test
 	PRIVATE pam_prompt_core pam_runtime
 )
+
+target_link_options(
+	pam_prompt_coordinator_runtime_test
+	PRIVATE
+		"LINKER:--wrap=pidfd_open"
+		"LINKER:--wrap=eventfd"
+		"LINKER:--wrap=eventfd_write"
+		"LINKER:--wrap=ppoll"
+		"LINKER:--wrap=kill"
+		"LINKER:--wrap=waitpid"
+)
