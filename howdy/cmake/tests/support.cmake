@@ -50,7 +50,7 @@ howdy_add_native_test(
 	native-fd-io
 	tests/support/fd_io_test.cpp
 )
-target_link_options(howdy_fd_io_test PRIVATE "LINKER:--wrap=read" "LINKER:--wrap=fstat")
+target_link_options(howdy_fd_io_test PRIVATE "LINKER:--wrap=read")
 
 howdy_add_native_test(
 	howdy_user_names_test

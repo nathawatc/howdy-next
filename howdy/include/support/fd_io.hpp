@@ -4,14 +4,11 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include <unistd.h>
-
-#include <sys/stat.h>
 
 namespace howdy::native {
 
@@ -23,8 +20,9 @@ namespace howdy::native {
 	};
 
 	struct BoundedReadRequest {
-		int         fd        = -1;
-		std::size_t max_bytes = 0;
+		int         fd            = -1;
+		std::size_t max_bytes     = 0;
+		std::size_t reserve_bytes = 0;
 	};
 
 	inline auto WriteAllToFd(int fd, std::span<const std::byte> data) -> bool {
@@ -78,12 +76,9 @@ namespace howdy::native {
 			return result;
 		}
 
-		// Size is only an allocation hint: read until EOF or the bound, even if the file grows.
-		struct stat info{};
-		if (request.fd >= 0 && fstat(request.fd, &info) == 0 && S_ISREG(info.st_mode) &&
-		    info.st_size > 0) {
-			result.output.reserve(static_cast<std::size_t>(std::min<std::uintmax_t>(
-			    static_cast<std::uintmax_t>(info.st_size), request.max_bytes)));
+		// Capacity is only an allocation hint: always read until EOF or the bound.
+		if (request.reserve_bytes > 0) {
+			result.output.reserve(std::min(request.reserve_bytes, request.max_bytes));
 		}
 
 		std::array<char, 16384> buffer{};

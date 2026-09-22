@@ -517,8 +517,10 @@ namespace howdy::native {
 			};
 		}
 
-		const auto content = ReadFdToStringBounded(
-		    {.fd = fd, .max_bytes = user_model_limits::kMaxUserModelFileBytes + 1});
+		const auto content =
+		    ReadFdToStringBounded({.fd            = fd,
+		                           .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
+		                           .reserve_bytes = static_cast<std::size_t>(opened_file.st_size)});
 		if (content.read_error) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,

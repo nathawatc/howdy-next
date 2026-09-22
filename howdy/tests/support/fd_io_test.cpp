@@ -22,7 +22,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -33,8 +32,6 @@ namespace {
 	struct ReadScript {
 		std::string content;
 		std::size_t offset       = 0;
-		off_t       size_hint    = 0;
-		bool        stat_fails   = false;
 		int         next_error   = 0;
 		std::size_t error_offset = 0;
 		std::size_t calls        = 0;
@@ -49,24 +46,7 @@ namespace {
 // GNU ld requires these exact symbol names for syscall interposition.
 // NOLINTBEGIN(*reserved-identifier,cert-dcl*,readability-identifier-naming)
 extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t;
-extern "C" auto __wrap_fstat(int fd, struct stat *info) -> int;
-
 extern "C" auto __real_read(int fd, void *buffer, size_t count) -> ssize_t;
-extern "C" auto __real_fstat(int fd, struct stat *info) -> int;
-
-extern "C" auto __wrap_fstat(int fd, struct stat *info) -> int {
-	if (fd != kScriptedFd) {
-		return __real_fstat(fd, info);
-	}
-	if (Script().stat_fails) {
-		errno = EIO;
-		return -1;
-	}
-	*info         = {};
-	info->st_mode = S_IFREG;
-	info->st_size = Script().size_hint;
-	return 0;
-}
 
 extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t {
 	if (fd != kScriptedFd) {
@@ -266,25 +246,18 @@ namespace {
 
 	auto ExpectReadHintsAndInterruptions() -> bool {
 		bool ok = true;
-		for (const off_t hint : {0, 1, 40000, 90000}) {
-			Script() = {.content      = std::string(40000, 'g'),
-			            .size_hint    = hint,
-			            .next_error   = EINTR,
-			            .error_offset = 16384};
-			const auto result =
-			    howdy::native::ReadFdToStringBounded({.fd = kScriptedFd, .max_bytes = 50000});
+		for (const std::size_t hint :
+		     {std::size_t{0}, std::size_t{1}, std::size_t{40000}, std::size_t{90000}}) {
+			Script() = {
+			    .content = std::string(40000, 'g'), .next_error = EINTR, .error_offset = 16384};
+			const auto result = howdy::native::ReadFdToStringBounded(
+			    {.fd = kScriptedFd, .max_bytes = 50000, .reserve_bytes = hint});
 			ok &=
 			    Expect(result.output == Script().content && !result.hit_limit && !result.read_error,
-			           "size hint never truncates growing files or fabricates bytes after EOF; "
+			           "reserve hint never truncates growing files or fabricates bytes after EOF; "
 			           "EINTR retries");
 			ok &= Expect(Script().calls == 5, "16 KiB chunks plus interrupt and EOF reads");
 		}
-		Script() = {.content = "read despite failed hint", .stat_fails = true};
-		const auto failed_hint =
-		    howdy::native::ReadFdToStringBounded({.fd = kScriptedFd, .max_bytes = 100});
-		ok &= Expect(failed_hint.output == Script().content && !failed_hint.read_error &&
-		                 failed_hint.error_number == 0,
-		             "fstat failure does not fail a successful read");
 		Script()        = {.content = "unread", .next_error = EIO};
 		const auto zero = howdy::native::ReadFdToStringBounded({.fd = kScriptedFd, .max_bytes = 0});
 		ok &= Expect(zero.output.empty() && !zero.hit_limit && !zero.read_error &&
@@ -301,7 +274,7 @@ namespace {
 		                 partial.error_number == EIO && !partial.hit_limit,
 		             "read errors preserve bytes already collected");
 
-		Script() = {.content = std::string(40000, 'b'), .size_hint = 1};
+		Script() = {.content = std::string(40000, 'b')};
 		const auto bounded =
 		    howdy::native::ReadFdToStringBounded({.fd = kScriptedFd, .max_bytes = 32768});
 		ok &= Expect(bounded.output == Script().content.substr(0, 32768) && bounded.hit_limit &&
