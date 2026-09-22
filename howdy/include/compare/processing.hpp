@@ -11,6 +11,7 @@ namespace howdy::native::compare_processing_internal {
 	using CompareProcessingResult =
 	    std::variant<CompareCaptureOpenResult, ComparePrivilegeResult, CompareExit>;
 
+	using InitializeModelFn = bool (*)(void *context);
 	using OpenCaptureFn     = CompareCaptureOpenResult (*)(void *context);
 	using DropPrivilegesFn  = ComparePrivilegeResult (*)(void *context);
 	using ConstructEngineFn = void (*)(void *context);
@@ -19,6 +20,7 @@ namespace howdy::native::compare_processing_internal {
 
 	struct CompareProcessingDependencies {
 		void             *context          = nullptr;
+		InitializeModelFn initialize_model = nullptr;
 		OpenCaptureFn     open_capture     = nullptr;
 		DropPrivilegesFn  drop_privileges  = nullptr;
 		ConstructEngineFn construct_engine = nullptr;

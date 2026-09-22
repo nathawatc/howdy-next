@@ -84,13 +84,24 @@ namespace {
 
 	struct CompareProductionContext {
 		std::reference_wrapper<howdy::native::CompareCaptureSession> capture_session;
-		std::reference_wrapper<howdy::native::FaceModel>             face_model;
+		std::optional<howdy::native::FaceModel>                      face_model;
+		std::reference_wrapper<const howdy::native::FaceConfig>      face_config;
 		std::reference_wrapper<const howdy::native::VideoConfig>     video_config;
 		std::reference_wrapper<const howdy::native::StoredEncodings> stored_encodings;
 		std::chrono::steady_clock::time_point                        start_time;
 		bool                                                         end_report = false;
 		std::optional<howdy::native::CompareEngine>                  compare_engine;
 	};
+
+	auto InitializeModel(void *raw_context) -> bool {
+		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		auto &model   = context.face_model.emplace(context.face_config.get());
+		if (!model.Ok()) {
+			std::cerr << model.ErrorMessage() << "\n";
+			return false;
+		}
+		return true;
+	}
 
 	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
@@ -104,9 +115,12 @@ namespace {
 
 	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		if (!context.face_model.has_value()) {
+			return;
+		}
 		context.compare_engine.emplace(
 		    context.video_config.get(),
-		    howdy::native::FaceModelInferenceOperations(context.face_model.get()),
+		    howdy::native::FaceModelInferenceOperations(*context.face_model),
 		    context.stored_encodings.get().encodings);
 	}
 
@@ -314,22 +328,22 @@ auto howdy::native::RunCompareEntrypoint(
 			return static_cast<int>(CompareExit::kNoFaceModel);
 		}
 
+		if (!howdy::native::ConfigureFaceModelEnvironment()) {
+			std::cerr << "OpenCV New DNN graph engine could not be configured\n";
+			return static_cast<int>(CompareExit::kAbort);
+		}
+
 		if (const auto physical_cores = howdy::native::AvailablePhysicalCoreCount();
 		    physical_cores.has_value()) {
 			cv::setNumThreads(*physical_cores);
-		}
-
-		howdy::native::FaceModel face_model(config.face);
-		if (!face_model.Ok()) {
-			std::cerr << face_model.ErrorMessage() << "\n";
-			return static_cast<int>(CompareExit::kAbort);
 		}
 
 		howdy::native::CompareCaptureSession capture_session(config.video);
 
 		CompareProductionContext processing_context{
 		    .capture_session  = std::ref(capture_session),
-		    .face_model       = std::ref(face_model),
+		    .face_model       = std::nullopt,
+		    .face_config      = std::cref(config.face),
 		    .video_config     = std::cref(config.video),
 		    .stored_encodings = std::cref(loaded_models.stored),
 		    .start_time       = start_time,
@@ -338,6 +352,7 @@ auto howdy::native::RunCompareEntrypoint(
 		const auto processing_result =
 		    howdy::native::compare_processing_internal::RunCompareProcessing({
 		        .context          = &processing_context,
+		        .initialize_model = InitializeModel,
 		        .open_capture     = OpenCapture,
 		        .drop_privileges  = DropPrivileges,
 		        .construct_engine = ConstructEngine,

@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -39,13 +40,6 @@ namespace howdy::native {
 		constexpr auto kFaceEncodingProcessingFailureMessage =
 		    "Face encoding failed while processing camera frame";
 
-		// Temporary OpenCV 5 workaround: force New DNN graph engine and forbid
-		// Classic-engine fallback, which cannot load Howdy's supported ONNX models.
-		// Remove after upstream makes New engine selection/failure behavior suitable.
-		auto ForceOpencvNewDnnEngine() -> bool {
-			return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
-		}
-
 		void AlignFace(void *context, const FaceAlignmentRequest &request) {
 			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(
 			    request.frame.get(), request.face.get(), request.aligned.get());
@@ -55,6 +49,16 @@ namespace howdy::native {
 			static_cast<cv::FaceRecognizerSF *>(context)->feature(aligned, feature);
 		}
 	}  // namespace
+
+	auto ConfigureFaceModelEnvironment() -> bool {
+		// Avoid environment mutation when compare has configured it before its worker starts.
+		const auto *engine = getenv("OPENCV_FORCE_DNN_ENGINE");
+		if (engine != nullptr && std::string_view(engine) == "2") {
+			return true;
+		}
+		// Temporary OpenCV 5 workaround: forbid Classic-engine fallback for our ONNX models.
+		return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
+	}
 
 	FaceModel::FaceModel(const FaceConfig &config)
 	    : metric_(config.sface_metric)
@@ -123,7 +127,7 @@ namespace howdy::native {
 			}
 		}
 
-		if (!ForceOpencvNewDnnEngine()) {
+		if (!ConfigureFaceModelEnvironment()) {
 			SetError("OpenCV New DNN graph engine could not be configured");
 			return;
 		}

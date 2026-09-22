@@ -5,8 +5,12 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <chrono>
+#include <semaphore>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -26,11 +30,40 @@ namespace {
 		CompareExit              processing_exit  = CompareExit::kSuccess;
 		std::string              privilege_error  = "non-root process has capabilities";
 		std::vector<std::string> events;
+		std::binary_semaphore    model_started{0};
+		std::binary_semaphore    camera_opened{0};
+		std::thread::id          main_thread        = std::this_thread::get_id();
+		bool                     model_ready        = true;
+		bool                     model_throws       = false;
+		bool                     camera_throws      = false;
+		bool                     model_finished     = false;
+		bool                     model_on_worker    = false;
+		bool                     camera_on_main     = false;
+		bool                     startup_overlapped = false;
+		bool                     joined_before_drop = false;
 	};
+
+	auto InitializeModel(void *raw_context) -> bool {
+		auto &context           = *static_cast<FakeContext *>(raw_context);
+		context.model_on_worker = std::this_thread::get_id() != context.main_thread;
+		context.model_started.release();
+		context.camera_opened.acquire();
+		context.model_finished = true;
+		if (context.model_throws) {
+			throw std::runtime_error("model failed");
+		}
+		return context.model_ready;
+	}
 
 	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("open");
+		context.camera_on_main     = std::this_thread::get_id() == context.main_thread;
+		context.startup_overlapped = context.model_started.try_acquire_for(std::chrono::seconds(2));
+		context.camera_opened.release();
+		if (context.camera_throws) {
+			throw std::runtime_error("camera threw");
+		}
 		return {
 		    .status = context.open_status,
 		    .error_message =
@@ -41,6 +74,7 @@ namespace {
 	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("drop");
+		context.joined_before_drop = context.model_finished;
 		return {
 		    .status        = context.privilege_status,
 		    .error_message = context.privilege_status == ComparePrivilegeStatus::kOk
@@ -68,6 +102,7 @@ namespace {
 	auto DependenciesFor(FakeContext &context) -> CompareProcessingDependencies {
 		return {
 		    .context          = &context,
+		    .initialize_model = InitializeModel,
 		    .open_capture     = OpenCapture,
 		    .drop_privileges  = DropPrivileges,
 		    .construct_engine = ConstructEngine,
@@ -97,7 +132,10 @@ namespace {
 			    Expect(context.events.empty(), std::string(label) + " invokes no processing stage");
 		};
 
-		auto dependencies         = DependenciesFor(context);
+		auto dependencies             = DependenciesFor(context);
+		dependencies.initialize_model = nullptr;
+		expect_abort(dependencies, "missing model initialization");
+		dependencies              = DependenciesFor(context);
 		dependencies.open_capture = nullptr;
 		expect_abort(dependencies, "missing open capture");
 		dependencies                 = DependenciesFor(context);
@@ -129,6 +167,10 @@ namespace {
 		ok &= Expect(context.events == std::vector<std::string>{"open", "drop", "engine", "reset",
 		                                                        "first next_frame"},
 		             "successful privilege validation reaches every processing stage");
+		ok &=
+		    Expect(context.startup_overlapped && context.model_on_worker && context.camera_on_main,
+		           "model initialization overlaps camera setup on the main thread");
+		ok &= Expect(context.joined_before_drop, "model worker finishes before privilege drop");
 		return ok;
 	}
 
@@ -148,6 +190,7 @@ namespace {
 		}
 		ok &= Expect(context.events == std::vector<std::string>{"open"},
 		             "open failure skips all later stages");
+		ok &= Expect(context.model_finished, "camera failure joins the model worker before return");
 		return ok;
 	}
 
@@ -240,6 +283,45 @@ namespace {
 		return ok;
 	}
 
+	auto TestModelFailure() -> bool {
+		bool ok = true;
+		for (const bool camera_fails : {false, true}) {
+			FakeContext context;
+			context.model_ready = false;
+			context.open_status = camera_fails ? CompareCaptureOpenStatus::kOpenFailed
+			                                   : CompareCaptureOpenStatus::kOk;
+			const auto  result  = Run(context);
+			const auto *exit    = std::get_if<CompareExit>(&result);
+			ok &= Expect(exit != nullptr && *exit == CompareExit::kAbort,
+			             "model failure aborts and takes precedence over camera failure");
+			ok &=
+			    Expect(context.model_finished && context.events == std::vector<std::string>{"open"},
+			           "model failure joins worker and skips privilege drop and processing");
+		}
+		return ok;
+	}
+
+	auto TestStartupExceptions() -> bool {
+		bool ok = true;
+		for (const bool model_throws : {false, true}) {
+			FakeContext context;
+			context.model_throws  = model_throws;
+			context.camera_throws = true;
+			bool caught           = false;
+			try {
+				(void)Run(context);
+			} catch (const std::runtime_error &error) {
+				caught = std::string_view(error.what()) ==
+				         (model_throws ? "model failed" : "camera threw");
+			}
+			ok &= Expect(caught, "startup exceptions propagate with model failure precedence");
+			ok &=
+			    Expect(context.model_finished && context.events == std::vector<std::string>{"open"},
+			           "startup exception joins worker and skips privilege drop and processing");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -247,6 +329,8 @@ auto main() -> int {
 	ok &= TestMissingDependenciesFailClosed();
 	ok &= TestSuccessfulPrivilegeValidationReachesProcessing();
 	ok &= TestOpenFailure();
+	ok &= TestModelFailure();
+	ok &= TestStartupExceptions();
 	ok &= TestInvalidCameraDependencies();
 	ok &= TestNonRootCapabilityFailureStopsProcessing();
 	ok &= TestFilesystemIdentityFailuresStopProcessing();

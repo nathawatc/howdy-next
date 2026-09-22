@@ -327,6 +327,51 @@ namespace {
 		return ok;
 	}
 
+	auto TestDnnEngineEnvironment() -> bool {
+		bool ok = true;
+		for (const bool preconfigure : {false, true}) {
+			const ScopedEnvironment environment(kDnnEngineEnv);
+			setenv(kDnnEngineEnv, "1", 1);
+			if (preconfigure) {
+				ok &= Expect(howdy::native::ConfigureFaceModelEnvironment(),
+				             "DNN engine can be configured before parallel initialization");
+			}
+
+			std::string readiness_engine;
+			std::string detector_engine;
+			auto        backend = SuccessfulBackend();
+			backend.check_readiness =
+			    [&readiness_engine](
+			        const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
+				if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
+					readiness_engine = value;
+				}
+				return howdy::native::OpenCvModelReadiness{
+				    .status = howdy::native::OpenCvModelStatus::kOk,
+				};
+			};
+			backend.create_detector = [&detector_engine](const std::string &, const cv::Size &,
+			                                             float, float,
+			                                             int) -> cv::Ptr<FakeDetector> {
+				if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
+					detector_engine = value;
+				}
+				return cv::makePtr<FakeDetector>();
+			};
+			auto model = howdy::native::FaceModelTestAccess::Create(
+			    howdy::native::DefaultFaceConfig(), std::move(backend));
+			ok &= Expect(model.Ok(), "engine override model initializes");
+			const auto *engine = std::getenv(kDnnEngineEnv);
+			ok &= Expect(engine != nullptr && std::string(engine) == "2",
+			             "New DNN graph engine overrides conflicting environment");
+			ok &= Expect(readiness_engine == (preconfigure ? "2" : "1"),
+			             "readiness checks preserve the preconfigured DNN engine");
+			ok &= Expect(detector_engine == "2",
+			             "New DNN graph engine is forced before factory call");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -361,40 +406,7 @@ auto main() -> int {
 		           "default config uses canonical SFace path");
 	}
 
-	{
-		const ScopedEnvironment environment(kDnnEngineEnv);
-		setenv(kDnnEngineEnv, "1", 1);
-
-		std::string readiness_engine;
-		std::string detector_engine;
-		auto        backend = SuccessfulBackend();
-		backend.check_readiness =
-		    [&readiness_engine](
-		        const std::filesystem::path &) -> howdy::native::OpenCvModelReadiness {
-			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
-				readiness_engine = value;
-			}
-			return howdy::native::OpenCvModelReadiness{
-			    .status = howdy::native::OpenCvModelStatus::kOk,
-			};
-		};
-		backend.create_detector = [&detector_engine](const std::string &, const cv::Size &, float,
-		                                             float, int) -> cv::Ptr<FakeDetector> {
-			if (const auto *value = std::getenv(kDnnEngineEnv); value != nullptr) {
-				detector_engine = value;
-			}
-			return cv::makePtr<FakeDetector>();
-		};
-		auto model = howdy::native::FaceModelTestAccess::Create(howdy::native::DefaultFaceConfig(),
-		                                                        std::move(backend));
-		ok &= Expect(model.Ok(), "engine override model initializes");
-		const auto *engine = std::getenv(kDnnEngineEnv);
-		ok &= Expect(engine != nullptr && std::string(engine) == "2",
-		             "New DNN graph engine overrides conflicting environment");
-		ok &=
-		    Expect(readiness_engine == "1", "DNN engine remains unchanged during readiness checks");
-		ok &= Expect(detector_engine == "2", "New DNN graph engine is forced before factory call");
-	}
+	ok &= TestDnnEngineEnvironment();
 
 	{
 		auto backend            = SuccessfulBackend();

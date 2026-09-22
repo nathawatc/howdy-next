@@ -15,6 +15,9 @@
 #include <opencv2/objdetect/face.hpp>
 
 namespace howdy::native {
+	// Call before starting parallel model and camera initialization.
+	[[nodiscard]] auto ConfigureFaceModelEnvironment() -> bool;
+
 	inline constexpr auto kFaceModelNotInitializedMessage = "Face model was not initialized";
 
 	class FaceModel {
