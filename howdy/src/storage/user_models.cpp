@@ -324,10 +324,10 @@ namespace howdy::native {
 	                    std::optional<uid_t>                          owner_uid,
 	                    const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelLoadResult {
-		const auto document = UserModelStore::LoadDocument(
+		auto document = UserModelStore::LoadDocument(
 		    user, {.backend = expected_backend, .metric = {}, .model = {}, .strict_shape = false},
 		    owner_uid, validation_root);
-		const auto         &entries = document.Result();
+		auto               &entries = document.Result();
 		UserModelLoadResult result{
 		    .status        = RemapLoadStatus(entries.status),
 		    .error_message = entries.error_message,
@@ -335,9 +335,15 @@ namespace howdy::native {
 		if (entries.status != UserModelStatus::kOk) {
 			return result;
 		}
+		std::size_t encoding_count = 0;
 		for (const auto &entry : entries.entries) {
-			for (const auto &encoding : entry.encodings) {
-				result.stored.encodings.push_back(encoding);
+			encoding_count += entry.encodings.size();
+		}
+		result.stored.encodings.reserve(encoding_count);
+		result.stored.models.reserve(encoding_count);
+		for (auto &entry : entries.entries) {
+			for (auto &encoding : entry.encodings) {
+				result.stored.encodings.push_back(std::move(encoding));
 				result.stored.models.push_back(EncodingModelInfo{
 				    .id    = entry.id,
 				    .label = entry.label,

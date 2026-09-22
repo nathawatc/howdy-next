@@ -4,11 +4,14 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include <unistd.h>
+
+#include <sys/stat.h>
 
 namespace howdy::native {
 
@@ -75,7 +78,15 @@ namespace howdy::native {
 			return result;
 		}
 
-		std::array<char, 1024> buffer{};
+		// Size is only an allocation hint: read until EOF or the bound, even if the file grows.
+		struct stat info{};
+		if (request.fd >= 0 && fstat(request.fd, &info) == 0 && S_ISREG(info.st_mode) &&
+		    info.st_size > 0) {
+			result.output.reserve(static_cast<std::size_t>(std::min<std::uintmax_t>(
+			    static_cast<std::uintmax_t>(info.st_size), request.max_bytes)));
+		}
+
+		std::array<char, 16384> buffer{};
 		while (result.output.size() < request.max_bytes) {
 			const std::size_t remaining     = request.max_bytes - result.output.size();
 			const std::size_t bytes_to_read = std::min(remaining, buffer.size());

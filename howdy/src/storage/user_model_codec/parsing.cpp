@@ -335,6 +335,7 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 
+			entry.encodings.reserve(yyjson_arr_size(data));
 			size_t      index         = 0;
 			size_t      count         = 0;
 			yyjson_val *encoding_json = nullptr;
