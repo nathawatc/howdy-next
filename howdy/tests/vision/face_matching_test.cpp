@@ -6,6 +6,7 @@
 #include <array>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -292,6 +293,21 @@ auto main() -> int {
 		const auto match          = CheckMatch({{1.0F}}, {1.0F}, invalid_metric, 0.0F);
 		ok &= Expect(match.index == -1 && match.score == 0.0F && !match.accepted,
 		             "invalid typed metric does not fall through to distance matching");
+	}
+
+	{
+		const std::vector<std::vector<float>>     candidates{{1.0F, 0.0F}, {0.0F, 1.0F}};
+		const std::array<float, 2>                probe{1.0F, 0.0F};
+		const std::array<std::optional<float>, 1> short_prepared{1.0F};
+		const auto cosine = howdy::native::face_matching_detail::CosineMatch(candidates, probe,
+		                                                                     0.0F, short_prepared);
+		ok &= Expect(cosine.index == -1 && cosine.score == -1.0F && !cosine.accepted,
+		             "cosine rejects mismatched prepared state");
+		const auto distance = howdy::native::face_matching_detail::DistanceMatch(
+		    candidates, probe, 1.0F, short_prepared);
+		ok &= Expect(distance.index == -1 && distance.score == std::numeric_limits<float>::max() &&
+		                 !distance.accepted,
+		             "distance rejects mismatched prepared state");
 	}
 
 	{

@@ -85,7 +85,7 @@ namespace howdy::native {
 		                                      std::span<const std::optional<float>> prepared = {})
 		    -> FaceMatch {
 			const auto probe_norm = VectorNorm(probe);
-			if (!probe_norm.has_value()) {
+			if (!probe_norm.has_value() || (!prepared.empty() && prepared.size() != known.size())) {
 				return {.score = -1.0F};
 			}
 			FaceMatch   match{.score = -1.0F};
@@ -134,7 +134,8 @@ namespace howdy::native {
 		                                        std::span<const std::optional<float>> prepared = {})
 		    -> FaceMatch {
 			FaceMatch match{.score = std::numeric_limits<float>::max()};
-			if (!std::ranges::all_of(probe, [](float value) -> bool {
+			if ((!prepared.empty() && prepared.size() != known.size()) ||
+			    !std::ranges::all_of(probe, [](float value) -> bool {
 				    return std::isfinite(value);
 			    })) {
 				return match;
