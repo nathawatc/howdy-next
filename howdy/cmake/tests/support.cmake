@@ -74,3 +74,9 @@ howdy_add_native_test(
 	native-capture-device-path
 	tests/support/capture_device_path_test.cpp
 )
+
+howdy_add_native_test(
+	howdy_cpu_topology_test
+	native-cpu-topology
+	tests/support/cpu_topology_test.cpp
+)

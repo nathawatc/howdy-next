@@ -14,6 +14,7 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "support/cpu_topology.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "vision/face_model.hpp"
@@ -31,6 +32,7 @@
 #include <variant>
 
 #include <opencv2/core/exception.hpp>
+#include <opencv2/core/utility.hpp>
 
 #include <sys/types.h>
 
@@ -310,6 +312,11 @@ auto howdy::native::RunCompareEntrypoint(
 		}
 		if (loaded_models.status != howdy::native::UserModelStatus::kOk) {
 			return static_cast<int>(CompareExit::kNoFaceModel);
+		}
+
+		if (const auto physical_cores = howdy::native::AvailablePhysicalCoreCount();
+		    physical_cores.has_value()) {
+			cv::setNumThreads(*physical_cores);
 		}
 
 		howdy::native::FaceModel face_model(config.face);
