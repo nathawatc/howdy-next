@@ -18,6 +18,7 @@ namespace howdy::native {
 
 	auto MakeClahe(const VideoConfig &config) -> cv::Ptr<cv::CLAHE>;
 	void ApplyClaheIfEnabled(cv::Mat &gray, const VideoConfig &config, cv::Ptr<cv::CLAHE> &clahe);
+	auto RotateFrame(const cv::Mat &frame, const VideoConfig &config, int frame_number) -> cv::Mat;
 	auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats;
 
 }  // namespace howdy::native

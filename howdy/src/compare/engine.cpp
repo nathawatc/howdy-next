@@ -16,41 +16,12 @@
 #include <string>
 #include <utility>
 
-#include <opencv2/core.hpp>
 #include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
-
-	struct RotationState {
-		int rotation     = 0;
-		int frame_number = 0;
-	};
-
-	auto ApplyRotation(const cv::Mat &frame, RotationState state) -> cv::Mat {
-		if (state.rotation == 1) {
-			if (state.frame_number % 3 == 1) {
-				cv::Mat rotated;
-				cv::rotate(frame, rotated, cv::ROTATE_90_COUNTERCLOCKWISE);
-				return rotated;
-			}
-			if (state.frame_number % 3 == 2) {
-				cv::Mat rotated;
-				cv::rotate(frame, rotated, cv::ROTATE_90_CLOCKWISE);
-				return rotated;
-			}
-		} else if (state.rotation == 2) {
-			cv::Mat rotated;
-			cv::rotate(frame, rotated,
-			           state.frame_number % 2 == 0 ? cv::ROTATE_90_COUNTERCLOCKWISE
-			                                       : cv::ROTATE_90_CLOCKWISE);
-			return rotated;
-		}
-
-		return frame;
-	}
 
 	auto FrameValidationMessage(const std::string &subject, const cv::Mat &frame,
 	                            howdy::native::FrameValidationStatus status) -> std::string {
@@ -131,8 +102,7 @@ namespace howdy::native {
 				break;
 		}
 
-		working_frame = ApplyRotation(working_frame,
-		                              {.rotation = config_.rotate, .frame_number = frame_number});
+		working_frame = RotateFrame(working_frame, config_, frame_number);
 
 		const auto working_validation = ValidateFrame(working_frame, FrameChannelPolicy::kGray);
 		if (working_validation != FrameValidationStatus::kValid) {

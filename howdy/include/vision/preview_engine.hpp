@@ -94,6 +94,7 @@ namespace howdy::native {
 		PreparedFaceMatcher matcher_;
 		std::size_t         known_model_count_ = 0;
 		bool                matching_enabled_  = false;
+		int                 frame_number_      = 0;
 	};
 
 }  // namespace howdy::native

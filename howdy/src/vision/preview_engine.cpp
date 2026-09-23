@@ -101,6 +101,7 @@ namespace howdy::native {
 		}
 
 		ApplyClaheIfEnabled(gray_frame, config_, clahe_);
+		gray_frame            = RotateFrame(gray_frame, config_, ++frame_number_);
 		const auto brightness = MeasureBrightness(gray_frame);
 		if (brightness.hist_total == 0.0 || brightness.darkness == kBrightnessPercentScale) {
 			return {

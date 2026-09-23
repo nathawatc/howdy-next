@@ -205,6 +205,13 @@ auto RunCompareEngineFrameTests() -> bool {
 	const cv::Mat source = cv::Mat_<uchar>({2, 3}, {32, 64, 96, 128, 160, 192});
 
 	{
+		howdy::native::CompareEngine engine(MakeVideoConfig(100.0F, 100.0F, 0));
+		const auto                   result = engine.ProcessGrayFrame(source.clone(), 1);
+		ok &= Expect(result.status == CompareFrameStatus::kReady, "rotate 0 frame is ready");
+		ok &= ExpectMatrixEqual(result.working_frame, source, "rotate 0 frame remains unchanged");
+	}
+
+	{
 		cv::Mat expected;
 		cv::rotate(source, expected, cv::ROTATE_90_COUNTERCLOCKWISE);
 		howdy::native::CompareEngine engine(MakeVideoConfig(100.0F, 100.0F, 1));

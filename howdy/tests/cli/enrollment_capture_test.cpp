@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 
@@ -63,6 +64,7 @@ namespace {
 	public:
 		auto PrepareFrame(const cv::Mat &frame) -> cv::Mat {
 			prepare_calls_++;
+			prepared_frames_.push_back(frame.clone());
 			return clone_frames_ ? frame.clone() : frame;
 		}
 
@@ -108,13 +110,18 @@ namespace {
 			return detect_calls_;
 		}
 
+		[[nodiscard]] auto PreparedFrames() const -> const std::vector<cv::Mat> & {
+			return prepared_frames_;
+		}
+
 	private:
-		bool return_face_        = true;
-		bool fail_detection_     = false;
-		bool clone_frames_       = true;
-		int  misses_before_face_ = 0;
-		int  prepare_calls_      = 0;
-		int  detect_calls_       = 0;
+		bool                 return_face_        = true;
+		bool                 fail_detection_     = false;
+		bool                 clone_frames_       = true;
+		int                  misses_before_face_ = 0;
+		int                  prepare_calls_      = 0;
+		int                  detect_calls_       = 0;
+		std::vector<cv::Mat> prepared_frames_;
 	};
 
 	auto TestConfig(bool clahe_enabled = false) -> howdy::native::VideoConfig {
@@ -482,6 +489,62 @@ namespace {
 		return ok;
 	}
 
+	auto EnrollmentRotatesEachFrame() -> bool {
+		const cv::Mat source = cv::Mat_<unsigned char>({2, 3}, {32, 64, 96, 128, 160, 192});
+		cv::Mat       clockwise;
+		cv::Mat       counterclockwise;
+		cv::rotate(source, clockwise, cv::ROTATE_90_CLOCKWISE);
+		cv::rotate(source, counterclockwise, cv::ROTATE_90_COUNTERCLOCKWISE);
+		const std::vector<std::vector<cv::Mat>> expected{
+		    {source, source, source},
+		    {counterclockwise, clockwise, source},
+		    {clockwise, counterclockwise, clockwise},
+		};
+
+		bool ok = true;
+		for (int mode = 0; mode <= 2; ++mode) {
+			FakeCapture   capture({{.gray = source}, {.gray = source}, {.gray = source}});
+			FakeFaceModel face_model;
+			face_model.SetReturnFace(false);
+			auto config           = TestConfig();
+			config.rotate         = mode;
+			config.dark_threshold = 100.0F;
+			const auto result =
+			    howdy::native::CaptureEnrollmentSample(capture, face_model, config, 3);
+			const auto &frames = face_model.PreparedFrames();
+			ok &=
+			    Expect(result.valid_frames == 3 && frames.size() == 3,
+			           "enrollment processes three frames in rotate mode " + std::to_string(mode));
+			if (frames.size() != 3) {
+				continue;
+			}
+			for (std::size_t index = 0; index < frames.size(); ++index) {
+				const auto &frame = frames.at(index);
+				const auto &want  = expected.at(static_cast<std::size_t>(mode)).at(index);
+				ok &= Expect(frame.size() == want.size() && cv::countNonZero(frame != want) == 0,
+				             "enrollment rotate mode " + std::to_string(mode) + " frame " +
+				                 std::to_string(index + 1));
+			}
+		}
+
+		FakeCapture   capture({FailedRead(), {.gray = source}});
+		FakeFaceModel face_model;
+		face_model.SetReturnFace(false);
+		auto config           = TestConfig();
+		config.rotate         = 1;
+		config.dark_threshold = 100.0F;
+		const auto result = howdy::native::CaptureEnrollmentSample(capture, face_model, config, 2);
+		ok &= Expect(result.read_failures == 1 && face_model.PreparedFrames().size() == 1,
+		             "failed enrollment read counts toward rotation cadence");
+		if (face_model.PreparedFrames().size() == 1) {
+			const auto &frame = face_model.PreparedFrames().front();
+			ok &= Expect(frame.size() == clockwise.size() &&
+			                 cv::countNonZero(frame != clockwise) == 0,
+			             "enrollment rotate mode 1 frame 2 rotates clockwise after read failure");
+		}
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -502,5 +565,6 @@ auto main() -> int {
 	ok &= AllReadFailuresDoNotReportBlackFrameFailure();
 	ok &= AllEmptySuccessfulReadsDoNotReportBlackFrameFailure();
 	ok &= DetectorFailureStopsCaptureAndRemainsDistinct();
+	ok &= EnrollmentRotatesEachFrame();
 	return ok ? 0 : 1;
 }

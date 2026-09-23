@@ -9,8 +9,10 @@
 #include <chrono>
 #include <cstddef>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
+#include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
@@ -24,6 +26,7 @@ namespace {
 
 	struct SessionContext {
 		std::vector<cv::Mat>                                  frames;
+		std::vector<cv::Mat>                                  presented_frames;
 		std::vector<test_cli_internal::TestPreviewFrameStats> presented_stats;
 		std::size_t                                           next_frame            = 0;
 		int                                                   read_calls            = 0;
@@ -76,10 +79,10 @@ namespace {
 
 	auto PresentFrame(void *context, const howdy::native::PreviewFrameResult &frame_result,
 	                  const test_cli_internal::TestPreviewFrameStats &stats) -> bool {
-		(void)frame_result;
 		auto *session_context = static_cast<SessionContext *>(context);
 		session_context->present_calls++;
 		session_context->presented_stats.push_back(stats);
+		session_context->presented_frames.push_back(frame_result.gray_frame.clone());
 		if (session_context->throw_present) {
 			throw std::runtime_error("presenter failed");
 		}
@@ -137,6 +140,49 @@ namespace {
 
 	auto GrayFrame() -> cv::Mat {
 		return cv::Mat(8, 8, CV_8UC1, cv::Scalar(128)).clone();
+	}
+
+	auto PreviewRotatesPresentedFrames() -> bool {
+		const cv::Mat source = cv::Mat_<unsigned char>({2, 3}, {32, 64, 96, 128, 160, 192});
+		cv::Mat       clockwise;
+		cv::Mat       counterclockwise;
+		cv::rotate(source, clockwise, cv::ROTATE_90_CLOCKWISE);
+		cv::rotate(source, counterclockwise, cv::ROTATE_90_COUNTERCLOCKWISE);
+		const std::vector<std::vector<cv::Mat>> expected{
+		    {source, source, source},
+		    {counterclockwise, clockwise, source},
+		    {clockwise, counterclockwise, clockwise},
+		};
+
+		bool ok = true;
+		for (int mode = 0; mode <= 2; ++mode) {
+			SessionContext context;
+			context.frames     = {source, source};
+			context.stop_after = 3;
+			howdy::native::VideoConfig config{};
+			config.exposure                              = -1;
+			config.dark_threshold                        = 100.0F;
+			config.rotate                                = mode;
+			auto                                  engine = MakeEngine(context, config);
+			test_cli_internal::TestPreviewSession session(config, engine,
+			                                              MakeDependencies(context));
+			const auto                            result = session.Run(source);
+			ok &=
+			    Expect(result.status == test_cli_internal::TestPreviewStatus::kOk &&
+			               context.presented_frames.size() == 3,
+			           "test preview presents three frames in rotate mode " + std::to_string(mode));
+			if (context.presented_frames.size() != 3) {
+				continue;
+			}
+			for (std::size_t index = 0; index < context.presented_frames.size(); ++index) {
+				const auto &frame = context.presented_frames.at(index);
+				const auto &want  = expected.at(static_cast<std::size_t>(mode)).at(index);
+				ok &= Expect(frame.size() == want.size() && cv::countNonZero(frame != want) == 0,
+				             "test preview rotate mode " + std::to_string(mode) + " frame " +
+				                 std::to_string(index + 1));
+			}
+		}
+		return ok;
 	}
 
 	auto FirstFrameQuitRestoresConfiguredExposure() -> bool {
@@ -315,6 +361,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= FirstFrameQuitRestoresConfiguredExposure();
+	ok &= PreviewRotatesPresentedFrames();
 	ok &= RetainedProductionFrameSupportsTwoPreviewRuns();
 	ok &= RunTestPreviewRendererTests();
 	ok &= DisabledExposureSkipsRestore();

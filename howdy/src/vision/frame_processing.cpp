@@ -26,6 +26,29 @@ namespace howdy::native {
 		}
 	}
 
+	auto RotateFrame(const cv::Mat &frame, const VideoConfig &config, int frame_number) -> cv::Mat {
+		if (config.rotate == 1) {
+			if (frame_number % 3 == 1) {
+				cv::Mat rotated;
+				cv::rotate(frame, rotated, cv::ROTATE_90_COUNTERCLOCKWISE);
+				return rotated;
+			}
+			if (frame_number % 3 == 2) {
+				cv::Mat rotated;
+				cv::rotate(frame, rotated, cv::ROTATE_90_CLOCKWISE);
+				return rotated;
+			}
+		} else if (config.rotate == 2) {
+			cv::Mat rotated;
+			cv::rotate(frame, rotated,
+			           frame_number % 2 == 0 ? cv::ROTATE_90_COUNTERCLOCKWISE
+			                                 : cv::ROTATE_90_CLOCKWISE);
+			return rotated;
+		}
+
+		return frame;
+	}
+
 	auto MeasureBrightness(const cv::Mat &gray) -> BrightnessStats {
 		BrightnessStats stats;
 		if (gray.empty()) {

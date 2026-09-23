@@ -77,6 +77,7 @@ namespace howdy::native {
 			}
 
 			ApplyClaheIfEnabled(gray, video_config, clahe);
+			gray = RotateFrame(gray, video_config, frame_count + 1);
 
 			const auto brightness = MeasureBrightness(gray);
 			if (brightness.hist_total == 0.0 || brightness.darkness >= kBrightnessPercentScale) {
