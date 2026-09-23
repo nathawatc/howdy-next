@@ -7,11 +7,16 @@
 #include "vision/face_inference.hpp"
 #include "vision/face_matching.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <functional>
 #include <limits>
 #include <optional>
+#include <semaphore>
 #include <span>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -47,6 +52,9 @@ namespace {
 		std::vector<howdy::native::FaceMatch>            match_results;
 		std::string                                      encoding_error_message;
 		std::optional<howdy::native::FaceEncodingResult> forced_encoding_result;
+		std::atomic<bool>                               *warm_active         = nullptr;
+		std::binary_semaphore                           *encoding_started    = nullptr;
+		bool                                             encoded_during_warm = false;
 
 		std::vector<howdy::native::FaceDetection>    encoded_faces;
 		std::vector<std::vector<std::vector<float>>> received_known;
@@ -86,6 +94,12 @@ namespace {
 			};
 		}
 		auto &context = *static_cast<FakeInferenceContext *>(opaque);
+		if (context.warm_active != nullptr) {
+			context.encoded_during_warm |= context.warm_active->load();
+		}
+		if (context.encoding_started != nullptr && context.encode_calls == 0) {
+			context.encoding_started->release();
+		}
 		context.encode_calls++;
 		context.encoded_faces.push_back(face);
 		if (context.forced_encoding_result.has_value()) {
@@ -145,10 +159,86 @@ namespace {
 		       actual.confidence == expected.confidence;
 	}
 
+	auto TestAsyncWarmFence() -> bool {
+		std::atomic<bool>     warm_active{true};
+		std::binary_semaphore warm_started{0};
+		std::binary_semaphore allow_warm_finish{0};
+		std::binary_semaphore join_started{0};
+		std::binary_semaphore encoding_started{0};
+		std::jthread          warm_worker([&]() -> void {
+			warm_started.release();
+			allow_warm_finish.acquire();
+			warm_active = false;
+		});
+		warm_started.acquire();
+
+		FakeInferenceContext context{
+		    .prepared_frame   = cv::Mat(8, 8, CV_8UC3, cv::Scalar(128, 128, 128)),
+		    .detection_result = {.status = howdy::native::FaceDetectionStatus::kOk},
+		    .encoded_results  = {MakeEncoding(0.1F), MakeEncoding(0.2F), MakeEncoding(0.3F)},
+		    .match_results    = {{.accepted = false}, {.accepted = false}, {.accepted = false}},
+		    .warm_active      = &warm_active,
+		    .encoding_started = &encoding_started,
+		};
+		howdy::native::CompareEngine engine(
+		    MakeVideoConfig(40.0F), MakeInferenceOperations(context),
+		    howdy::native::PreparedFaceMatcher({MakeEncoding(0.5F)},
+		                                       howdy::native::FaceMetric::kCosine, 0.5F),
+		    {.context = &context, .match_face = MatchFace});
+		int                   fence_calls         = 0;
+		std::function<void()> before_first_encode = [&]() -> void {
+			++fence_calls;
+			join_started.release();
+			warm_worker.join();
+		};
+
+		bool          ok    = true;
+		const auto    black = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(0)), 1);
+		const cv::Mat dark(8, 8, CV_8UC1, cv::Scalar(64));
+		dark.rowRange(0, 4).setTo(cv::Scalar(0));
+		const auto dark_result = engine.ProcessGrayFrame(dark, 2);
+		const auto bright  = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(128)), 3);
+		const auto no_face = engine.ProcessFaceFrame(bright.working_frame, &before_first_encode);
+		ok &= Expect(black.status == howdy::native::CompareFrameStatus::kBlackFrame &&
+		                 dark_result.status == howdy::native::CompareFrameStatus::kTooDark &&
+		                 bright.status == howdy::native::CompareFrameStatus::kReady &&
+		                 no_face.status == howdy::native::CompareInferenceStatus::kNoMatch &&
+		                 context.prepare_calls == 1 && context.detect_calls == 1 &&
+		                 context.encode_calls == 0 && warm_active && before_first_encode &&
+		                 fence_calls == 0,
+		             "black, dark, preprocessing, and YuNet/no-face work skip SFace wait");
+
+		context.detection_result.detections = {MakeDetection(1.0F), MakeDetection(20.0F)};
+		bool         reached_join           = false;
+		bool         encoded_early          = false;
+		std::jthread release_worker([&]() -> void {
+			reached_join = join_started.try_acquire_for(std::chrono::seconds(2));
+			if (reached_join) {
+				encoded_early = encoding_started.try_acquire_for(std::chrono::milliseconds(30));
+			}
+			allow_warm_finish.release();
+		});
+		const auto   first_faces =
+		    engine.ProcessFaceFrame(bright.working_frame, &before_first_encode);
+		release_worker.join();
+		ok &= Expect(reached_join && !encoded_early &&
+		                 first_faces.status == howdy::native::CompareInferenceStatus::kNoMatch &&
+		                 context.encode_calls == 2 && !context.encoded_during_warm &&
+		                 fence_calls == 1 && !before_first_encode,
+		             "first real Encode waits for warm-up; second detection skips fence");
+
+		context.detection_result.detections = {MakeDetection(30.0F)};
+		const auto later = engine.ProcessFaceFrame(bright.working_frame, &before_first_encode);
+		ok &= Expect(later.status == howdy::native::CompareInferenceStatus::kNoMatch &&
+		                 context.encode_calls == 3 && fence_calls == 1,
+		             "later frame encodes without another warm-up synchronization");
+		return ok;
+	}
+
 }  // namespace
 
 auto RunCompareEngineInferenceTests() -> bool {
-	bool ok = true;
+	bool ok = TestAsyncWarmFence();
 
 	const std::vector<std::vector<float>> known = {
 	    {1.0F, 2.0F},

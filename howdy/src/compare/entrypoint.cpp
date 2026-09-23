@@ -3,6 +3,7 @@
 #include "compare/args.hpp"
 #include "compare/capture_session.hpp"
 #include "compare/engine.hpp"
+#include "compare/entrypoint/internal.hpp"
 #include "compare/logic.hpp"
 #include "compare/privileges.hpp"
 #include "compare/processing.hpp"
@@ -131,6 +132,14 @@ namespace {
 		context.capture_session.get().ResetTimeoutClock();
 	}
 
+	auto WarmModel(void *raw_context) -> bool {
+		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		if (!context.face_model.has_value()) {
+			return false;
+		}
+		return howdy::native::compare_entrypoint_internal::WarmModel(*context.face_model);
+	}
+
 	auto HandleCaptureResult(CompareProductionContext                       &context,
 	                         const howdy::native::CompareCaptureFrameResult &result)
 	    -> std::optional<CompareExit> {
@@ -232,7 +241,8 @@ namespace {
 		return CompareExit::kAbort;
 	}
 
-	auto RunFrameLoop(void *raw_context) -> CompareExit {
+	auto RunFrameLoop(void *raw_context, std::function<void()> &before_first_encode)
+	    -> CompareExit {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
 		if (!context.compare_engine.has_value()) {
 			return CompareExit::kAbort;
@@ -261,7 +271,7 @@ namespace {
 			}
 
 			const auto inference_result =
-			    compare_engine.ProcessFaceFrame(frame_result.working_frame);
+			    compare_engine.ProcessFaceFrame(frame_result.working_frame, &before_first_encode);
 
 			if (const auto exit = HandleInferenceResult(context, inference_result);
 			    exit.has_value()) {
@@ -273,6 +283,10 @@ namespace {
 	}
 
 }  // namespace
+
+auto howdy::native::compare_entrypoint_internal::WarmModel(FaceModel &model) -> bool {
+	return model.WarmUpRecognizer();
+}
 
 auto howdy::native::RunCompareEntrypoint(
     int argc, char **argv, const uid_t trusted_owner_uid,
@@ -359,6 +373,7 @@ auto howdy::native::RunCompareEntrypoint(
 		        .drop_privileges  = DropPrivileges,
 		        .construct_engine = ConstructEngine,
 		        .reset_timeout    = ResetTimeout,
+		        .warm_model       = WarmModel,
 		        .run_frame_loop   = RunFrameLoop,
 		    });
 		if (const auto *capture_open =

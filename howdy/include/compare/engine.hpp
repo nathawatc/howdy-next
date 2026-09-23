@@ -6,6 +6,7 @@
 #include "vision/frame_processing.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 #include <opencv2/core.hpp>
@@ -53,7 +54,9 @@ namespace howdy::native {
 		// frame_number is one-based and preserves current rotation cadence.
 		auto ProcessGrayFrame(cv::Mat gray_frame, int frame_number) -> CompareFrameResult;
 
-		auto ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult;
+		auto ProcessFaceFrame(const cv::Mat         &working_frame,
+		                      std::function<void()> *before_first_encode = nullptr)
+		    -> CompareInferenceResult;
 
 	private:
 		VideoConfig        config_;

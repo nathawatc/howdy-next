@@ -19,7 +19,7 @@ target_compile_definitions(
 		"HOWDY_COMPARE_NO_MODEL_ROOT=\"${compare_no_model_root}\""
 )
 target_link_libraries(howdy_compare_entrypoint_test PRIVATE
-                      howdy_compare_entrypoint)
+                      howdy_compare_entrypoint howdy_opencv)
 add_dependencies(howdy_compare_entrypoint_test howdy_packaged_config)
 
 howdy_add_native_test(

@@ -5,6 +5,7 @@
 #include "protocol/compare_exit.hpp"
 
 #include <exception>
+#include <functional>
 #include <thread>
 
 namespace howdy::native::compare_processing_internal {
@@ -13,7 +14,8 @@ namespace howdy::native::compare_processing_internal {
 	    -> CompareProcessingResult {
 		if (dependencies.initialize_model == nullptr || dependencies.open_capture == nullptr ||
 		    dependencies.drop_privileges == nullptr || dependencies.construct_engine == nullptr ||
-		    dependencies.reset_timeout == nullptr || dependencies.run_frame_loop == nullptr) {
+		    dependencies.reset_timeout == nullptr || dependencies.warm_model == nullptr ||
+		    dependencies.run_frame_loop == nullptr) {
 			return CompareExit::kAbort;
 		}
 
@@ -56,7 +58,25 @@ namespace howdy::native::compare_processing_internal {
 
 		dependencies.construct_engine(dependencies.context);
 		dependencies.reset_timeout(dependencies.context);
-		return dependencies.run_frame_loop(dependencies.context);
+
+		std::jthread warm_worker;
+		try {
+			warm_worker = std::jthread([&]() -> void {
+				try {
+					(void)dependencies.warm_model(dependencies.context);
+				} catch (...) {  // NOLINT(bugprone-empty-catch)
+					// Warm-up is optional. Real inference determines authentication outcome.
+				}
+			});
+		} catch (const std::exception &) {  // NOLINT(bugprone-empty-catch)
+			// Thread creation failure skips only the optional warm-up.
+		}
+		std::function<void()> before_first_encode = [&warm_worker]() -> void {
+			if (warm_worker.joinable()) {
+				warm_worker.join();
+			}
+		};
+		return dependencies.run_frame_loop(dependencies.context, before_first_encode);
 	}
 
 }  // namespace howdy::native::compare_processing_internal

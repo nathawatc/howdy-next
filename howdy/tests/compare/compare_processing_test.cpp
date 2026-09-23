@@ -5,7 +5,9 @@
 #include "test_support.hpp"
 
 #include <array>
+#include <atomic>
 #include <chrono>
+#include <functional>
 #include <semaphore>
 #include <stdexcept>
 #include <string>
@@ -25,22 +27,52 @@ namespace {
 	using howdy::native::compare_processing_internal::CompareProcessingResult;
 
 	struct FakeContext {
-		CompareCaptureOpenStatus open_status      = CompareCaptureOpenStatus::kOk;
+		CompareCaptureOpenStatus                 open_status = CompareCaptureOpenStatus::kOk;
+		howdy::native::CompareCaptureFrameStatus first_status =
+		    howdy::native::CompareCaptureFrameStatus::kFrameReady;
 		ComparePrivilegeStatus   privilege_status = ComparePrivilegeStatus::kOk;
 		CompareExit              processing_exit  = CompareExit::kSuccess;
 		std::string              privilege_error  = "non-root process has capabilities";
 		std::vector<std::string> events;
 		std::binary_semaphore    model_started{0};
 		std::binary_semaphore    camera_opened{0};
-		std::thread::id          main_thread        = std::this_thread::get_id();
-		bool                     model_ready        = true;
-		bool                     model_throws       = false;
-		bool                     camera_throws      = false;
-		bool                     model_finished     = false;
-		bool                     model_on_worker    = false;
-		bool                     camera_on_main     = false;
-		bool                     startup_overlapped = false;
-		bool                     joined_before_drop = false;
+		std::binary_semaphore    privilege_dropped{0};
+		std::binary_semaphore    timeout_reset{0};
+		std::binary_semaphore    warm_started{0};
+		std::binary_semaphore    allow_warm_finish{0};
+		std::binary_semaphore    first_read_seen{0};
+		std::binary_semaphore    inference_started{0};
+		std::binary_semaphore    before_encode_entered{0};
+		std::binary_semaphore    encode_started{0};
+		std::binary_semaphore    loop_returned{0};
+		std::thread::id          main_thread               = std::this_thread::get_id();
+		bool                     model_ready               = true;
+		bool                     model_throws              = false;
+		bool                     camera_throws             = false;
+		bool                     model_finished            = false;
+		bool                     model_on_worker           = false;
+		bool                     camera_on_main            = false;
+		bool                     startup_overlapped        = false;
+		bool                     joined_before_drop        = false;
+		bool                     warm_on_worker            = false;
+		bool                     warm_after_drop_and_reset = false;
+		bool                     read_on_main              = false;
+		bool                     warm_seen_during_read     = false;
+		std::atomic<bool>        warm_finished{false};
+		bool                     joined_before_encode   = false;
+		bool                     block_warm             = false;
+		bool                     warm_throws            = false;
+		bool                     warm_ready             = true;
+		bool                     read_throws            = false;
+		bool                     loop_throws            = false;
+		bool                     simulate_encode        = true;
+		int                      warm_calls             = 0;
+		int                      encode_calls           = 0;
+		int                      read_calls             = 0;
+		int                      frame_processing_calls = 0;
+		int                      processed_frame_number = 0;
+		howdy::native::CompareCaptureFrameStatus processed_status =
+		    howdy::native::CompareCaptureFrameStatus::kInvalidDependencies;
 	};
 
 	auto InitializeModel(void *raw_context) -> bool {
@@ -75,6 +107,7 @@ namespace {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("drop");
 		context.joined_before_drop = context.model_finished;
+		context.privilege_dropped.release();
 		return {
 		    .status        = context.privilege_status,
 		    .error_message = context.privilege_status == ComparePrivilegeStatus::kOk
@@ -91,11 +124,60 @@ namespace {
 	void ResetTimeout(void *raw_context) {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("reset");
+		context.timeout_reset.release();
 	}
 
-	auto RunFrameLoop(void *raw_context) -> CompareExit {
+	auto WarmModel(void *raw_context) -> bool {
+		auto &context          = *static_cast<FakeContext *>(raw_context);
+		context.warm_on_worker = std::this_thread::get_id() != context.main_thread;
+		context.warm_after_drop_and_reset =
+		    context.privilege_dropped.try_acquire() && context.timeout_reset.try_acquire();
+		++context.warm_calls;
+		context.warm_started.release();
+		if (context.block_warm &&
+		    !context.allow_warm_finish.try_acquire_for(std::chrono::seconds(2))) {
+			throw std::runtime_error("warm wait timed out");
+		}
+		context.warm_finished = true;
+		if (context.warm_throws) {
+			throw std::runtime_error("warm failed");
+		}
+		return context.warm_ready;
+	}
+
+	auto RunFrameLoop(void *raw_context, std::function<void()> &before_first_encode)
+	    -> CompareExit {
 		auto &context = *static_cast<FakeContext *>(raw_context);
 		context.events.emplace_back("first next_frame");
+		context.read_on_main = std::this_thread::get_id() == context.main_thread;
+		context.warm_seen_during_read =
+		    context.warm_started.try_acquire_for(std::chrono::seconds(2));
+		++context.read_calls;
+		context.first_read_seen.release();
+		if (context.read_throws) {
+			throw std::runtime_error("first read threw");
+		}
+		const howdy::native::CompareCaptureFrameResult capture_result{
+		    .status       = context.first_status,
+		    .frame_number = 1,
+		};
+		context.events.emplace_back("first inference");
+		context.inference_started.release();
+		++context.frame_processing_calls;
+		context.processed_frame_number = capture_result.frame_number;
+		context.processed_status       = capture_result.status;
+		if (capture_result.status == howdy::native::CompareCaptureFrameStatus::kFrameReady &&
+		    context.simulate_encode) {
+			context.before_encode_entered.release();
+			before_first_encode();
+			context.joined_before_encode = context.warm_finished;
+			++context.encode_calls;
+			context.encode_started.release();
+		}
+		if (context.loop_throws) {
+			throw std::runtime_error("frame loop threw");
+		}
+		context.loop_returned.release();
 		return context.processing_exit;
 	}
 
@@ -107,6 +189,7 @@ namespace {
 		    .drop_privileges  = DropPrivileges,
 		    .construct_engine = ConstructEngine,
 		    .reset_timeout    = ResetTimeout,
+		    .warm_model       = WarmModel,
 		    .run_frame_loop   = RunFrameLoop,
 		};
 	}
@@ -147,6 +230,9 @@ namespace {
 		dependencies               = DependenciesFor(context);
 		dependencies.reset_timeout = nullptr;
 		expect_abort(dependencies, "missing timeout reset");
+		dependencies            = DependenciesFor(context);
+		dependencies.warm_model = nullptr;
+		expect_abort(dependencies, "missing warm model");
 		dependencies                = DependenciesFor(context);
 		dependencies.run_frame_loop = nullptr;
 		expect_abort(dependencies, "missing frame loop");
@@ -165,12 +251,20 @@ namespace {
 			             "successful frame-loop result propagates");
 		}
 		ok &= Expect(context.events == std::vector<std::string>{"open", "drop", "engine", "reset",
-		                                                        "first next_frame"},
+		                                                        "first next_frame",
+		                                                        "first inference"},
 		             "successful privilege validation reaches every processing stage");
 		ok &=
 		    Expect(context.startup_overlapped && context.model_on_worker && context.camera_on_main,
 		           "model initialization overlaps camera setup on the main thread");
 		ok &= Expect(context.joined_before_drop, "model worker finishes before privilege drop");
+		ok &= Expect(context.warm_on_worker && context.read_on_main &&
+		                 context.warm_seen_during_read && context.joined_before_encode &&
+		                 context.warm_after_drop_and_reset,
+		             "SFace warm-up starts after drop and joins before first encode");
+		ok &= Expect(context.warm_calls == 1 && context.read_calls == 1 &&
+		                 context.frame_processing_calls == 1 && context.processed_frame_number == 1,
+		             "first frame is read and processed exactly once with frame number one");
 		return ok;
 	}
 
@@ -283,6 +377,142 @@ namespace {
 		return ok;
 	}
 
+	auto TestImmediateReadContinuesWhileWarmBlocked() -> bool {
+		FakeContext context;
+		context.block_warm                           = true;
+		bool         read_seen                       = false;
+		bool         loop_started_while_warm_blocked = false;
+		std::jthread release_worker([&]() -> void {
+			read_seen = context.first_read_seen.try_acquire_for(std::chrono::seconds(2));
+			if (read_seen) {
+				loop_started_while_warm_blocked =
+				    context.inference_started.try_acquire_for(std::chrono::seconds(2)) &&
+				    !context.warm_finished;
+			}
+			context.allow_warm_finish.release();
+		});
+		const auto   result = Run(context);
+		release_worker.join();
+		bool ok = true;
+		ok &= Expect(read_seen && loop_started_while_warm_blocked,
+		             "immediate first read enters frame loop while SFace warm-up is blocked");
+		ok &= Expect(std::get_if<CompareExit>(&result) != nullptr && context.joined_before_encode &&
+		                 context.warm_finished,
+		             "first encode waits for blocked SFace warm-up");
+		return ok;
+	}
+
+	auto TestFirstEncodeWaitsForWarmUp() -> bool {
+		FakeContext context;
+		context.block_warm          = true;
+		bool         reached_encode = false;
+		bool         encoded_early  = false;
+		std::jthread release_worker([&]() -> void {
+			reached_encode = context.before_encode_entered.try_acquire_for(std::chrono::seconds(2));
+			if (reached_encode) {
+				encoded_early =
+				    context.encode_started.try_acquire_for(std::chrono::milliseconds(30));
+			}
+			context.allow_warm_finish.release();
+		});
+		const auto   result = Run(context);
+		release_worker.join();
+		return Expect(reached_encode && !encoded_early && context.joined_before_encode &&
+		                  context.encode_calls == 1 && std::get_if<CompareExit>(&result) != nullptr,
+		              "first encode waits; real encode begins only after warm-up ends");
+	}
+
+	auto TestNoFaceSkipsWarmWait() -> bool {
+		FakeContext context;
+		context.block_warm                            = true;
+		context.simulate_encode                       = false;
+		bool         loop_returned_while_warm_blocked = false;
+		std::jthread release_worker([&]() -> void {
+			loop_returned_while_warm_blocked =
+			    context.loop_returned.try_acquire_for(std::chrono::seconds(2)) &&
+			    !context.warm_finished;
+			context.allow_warm_finish.release();
+		});
+		const auto   result = Run(context);
+		release_worker.join();
+		return Expect(loop_returned_while_warm_blocked && context.encode_calls == 0 &&
+		                  context.warm_finished && std::get_if<CompareExit>(&result) != nullptr,
+		              "no-face loop skips warm wait; cleanup joins worker");
+	}
+
+	auto TestOptionalWarmFailureAndFirstReadExits() -> bool {
+		bool ok = true;
+		for (const bool throws : {false, true}) {
+			FakeContext context;
+			context.warm_ready  = false;
+			context.warm_throws = throws;
+			const auto result   = Run(context);
+			ok &= Expect(std::get_if<CompareExit>(&result) != nullptr &&
+			                 context.joined_before_encode && context.frame_processing_calls == 1,
+			             "optional warm failure still processes first frame");
+		}
+		for (const auto status : {howdy::native::CompareCaptureFrameStatus::kReadFailed,
+		                          howdy::native::CompareCaptureFrameStatus::kTimeout,
+		                          howdy::native::CompareCaptureFrameStatus::kNotOpen,
+		                          howdy::native::CompareCaptureFrameStatus::kInvalidDependencies}) {
+			FakeContext context;
+			context.first_status                          = status;
+			context.block_warm                            = true;
+			bool         loop_returned_while_warm_blocked = false;
+			std::jthread release_worker([&]() -> void {
+				loop_returned_while_warm_blocked =
+				    context.loop_returned.try_acquire_for(std::chrono::seconds(2)) &&
+				    !context.warm_finished;
+				context.allow_warm_finish.release();
+			});
+			const auto   result = Run(context);
+			release_worker.join();
+			ok &= Expect(std::get_if<CompareExit>(&result) != nullptr && context.warm_finished &&
+			                 loop_returned_while_warm_blocked && context.encode_calls == 0 &&
+			                 context.processed_status == status &&
+			                 context.processed_frame_number == 1 && context.read_calls == 1,
+			             "failed first capture does not wait; cleanup joins warm worker");
+		}
+		{
+			FakeContext context;
+			context.read_throws = true;
+			context.block_warm  = true;
+			std::jthread release_worker([&]() -> void {
+				(void)context.first_read_seen.try_acquire_for(std::chrono::seconds(2));
+				context.allow_warm_finish.release();
+			});
+			bool         caught = false;
+			try {
+				(void)Run(context);
+			} catch (const std::runtime_error &error) {
+				caught = std::string_view(error.what()) == "first read threw";
+			}
+			release_worker.join();
+			ok &= Expect(caught && context.warm_finished,
+			             "throwing first read joins warm worker before exception propagates");
+		}
+		{
+			FakeContext context;
+			context.loop_throws     = true;
+			context.simulate_encode = false;
+			context.block_warm      = true;
+			std::jthread release_worker([&]() -> void {
+				(void)context.inference_started.try_acquire_for(std::chrono::seconds(2));
+				context.allow_warm_finish.release();
+			});
+			bool         caught = false;
+			try {
+				(void)Run(context);
+			} catch (const std::runtime_error &error) {
+				caught = std::string_view(error.what()) == "frame loop threw";
+			}
+			release_worker.join();
+			ok &= Expect(caught && context.warm_finished,
+			             "throwing frame loop joins warm worker before exception propagates");
+		}
+		return ok;
+	}
+
 	auto TestModelFailure() -> bool {
 		bool ok = true;
 		for (const bool camera_fails : {false, true}) {
@@ -335,5 +565,9 @@ auto main() -> int {
 	ok &= TestNonRootCapabilityFailureStopsProcessing();
 	ok &= TestFilesystemIdentityFailuresStopProcessing();
 	ok &= TestProcessingResultPropagates();
+	ok &= TestImmediateReadContinuesWhileWarmBlocked();
+	ok &= TestFirstEncodeWaitsForWarmUp();
+	ok &= TestNoFaceSkipsWarmWait();
+	ok &= TestOptionalWarmFailureAndFirstReadExits();
 	return ok ? 0 : 1;
 }

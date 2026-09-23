@@ -4,6 +4,7 @@
 #include "compare/privileges.hpp"
 #include "protocol/compare_exit.hpp"
 
+#include <functional>
 #include <variant>
 
 namespace howdy::native::compare_processing_internal {
@@ -16,7 +17,9 @@ namespace howdy::native::compare_processing_internal {
 	using DropPrivilegesFn  = ComparePrivilegeResult (*)(void *context);
 	using ConstructEngineFn = void (*)(void *context);
 	using ResetTimeoutFn    = void (*)(void *context);
-	using RunFrameLoopFn    = CompareExit (*)(void *context);
+	using WarmModelFn       = bool (*)(void *context);
+	using RunFrameLoopFn    = CompareExit (*)(void                  *context,
+	                                          std::function<void()> &before_first_encode);
 
 	struct CompareProcessingDependencies {
 		void             *context          = nullptr;
@@ -25,6 +28,7 @@ namespace howdy::native::compare_processing_internal {
 		DropPrivilegesFn  drop_privileges  = nullptr;
 		ConstructEngineFn construct_engine = nullptr;
 		ResetTimeoutFn    reset_timeout    = nullptr;
+		WarmModelFn       warm_model       = nullptr;
 		RunFrameLoopFn    run_frame_loop   = nullptr;
 	};
 

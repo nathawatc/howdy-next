@@ -9,8 +9,11 @@
 #include "vision/face_model.hpp"
 #include "vision/face_model_test_access.hpp"
 
+#include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -277,6 +280,140 @@ namespace {
 			return 0.0;
 		}
 	};
+
+	enum class WarmFailure : std::uint8_t {
+		kNone,
+		kEmptyAlignment,
+		kEmptyFeature,
+		kInvalidFeature,
+		kCvException,
+		kStdException
+	};
+
+	struct WarmObservations {
+		int         alignments = 0;
+		int         features   = 0;
+		cv::Size    input_size;
+		int         input_type = -1;
+		cv::Mat     face_row;
+		WarmFailure failure = WarmFailure::kNone;
+	};
+
+	class ObservedWarmRecognizer final : public cv::FaceRecognizerSF {
+	public:
+		explicit ObservedWarmRecognizer(WarmObservations &observations)
+		    : observations_(&observations) {}
+
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+		void alignCrop(cv::InputArray src_img, cv::InputArray face_box,
+		               cv::OutputArray aligned) const override {
+			++observations_->alignments;
+			observations_->input_size = src_img.getMat().size();
+			observations_->input_type = src_img.getMat().type();
+			observations_->face_row   = face_box.getMat().clone();
+			if (observations_->alignments == 1) {
+				if (observations_->failure == WarmFailure::kEmptyAlignment) {
+					return;
+				}
+				if (observations_->failure == WarmFailure::kCvException) {
+					ThrowCvError();
+				}
+				if (observations_->failure == WarmFailure::kStdException) {
+					ThrowStdError();
+				}
+			}
+			src_img.getMat().copyTo(aligned);
+		}
+
+		void feature([[maybe_unused]] cv::InputArray aligned_img,
+		             cv::OutputArray                 feature) override {
+			++observations_->features;
+			if (observations_->features == 1 &&
+			    observations_->failure == WarmFailure::kEmptyFeature) {
+				return;
+			}
+			const int width = observations_->features == 1 &&
+			                          observations_->failure == WarmFailure::kInvalidFeature
+			                      ? 127
+			                      : 128;
+			cv::Mat(1, width, CV_32FC1, cv::Scalar(1.0F)).copyTo(feature);
+		}
+
+		[[nodiscard]] auto match([[maybe_unused]] cv::InputArray face_feature1,
+		                         [[maybe_unused]] cv::InputArray face_feature2,
+		                         [[maybe_unused]] int dis_type) const -> double override {
+			return 0.0;
+		}
+
+	private:
+		WarmObservations *observations_;
+	};
+
+	auto TestRecognizerWarmUp() -> bool {
+		bool ok = true;
+		for (const auto failure : {WarmFailure::kNone, WarmFailure::kEmptyAlignment,
+		                           WarmFailure::kEmptyFeature, WarmFailure::kInvalidFeature,
+		                           WarmFailure::kCvException, WarmFailure::kStdException}) {
+			WarmObservations observations{.failure = failure};
+			int              detect_calls     = 0;
+			int              input_size_calls = 0;
+			auto             backend          = SuccessfulBackend();
+			backend.create_recognizer =
+			    [&observations](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
+				return {std::make_shared<ObservedWarmRecognizer>(observations)};
+			};
+			backend.detect = [&detect_calls](const cv::Mat &, cv::Mat &) -> void {
+				++detect_calls;
+			};
+			backend.set_input_size = [&input_size_calls](const cv::Size &) -> void {
+				++input_size_calls;
+			};
+			auto model = howdy::native::FaceModelTestAccess::Create(
+			    howdy::native::DefaultFaceConfig(), std::move(backend));
+			const auto initial_error = model.ErrorMessage();
+			ok &= Expect(model.Ok() && observations.alignments == 0 && observations.features == 0,
+			             "model construction does not warm SFace");
+			const bool succeeded = model.WarmUpRecognizer();
+			ok &= Expect(succeeded == (failure == WarmFailure::kNone),
+			             "warm-up reports synthetic inference outcome");
+			const int alignments = observations.alignments;
+			const int features   = observations.features;
+			ok &= Expect(!model.WarmUpRecognizer() && observations.alignments == alignments &&
+			                 observations.features == features,
+			             "second warm-up attempt performs no work after success or failure");
+			ok &=
+			    Expect(observations.alignments == 1 &&
+			               observations.features == (failure == WarmFailure::kEmptyAlignment ||
+			                                                 failure == WarmFailure::kCvException ||
+			                                                 failure == WarmFailure::kStdException
+			                                             ? 0
+			                                             : 1),
+			           "warm-up invokes alignment and feature once when reached");
+			ok &= Expect(observations.input_size == cv::Size(112, 112) &&
+			                 observations.input_type == CV_8UC3,
+			             "warm-up uses fixed 112 by 112 BGR input");
+			ok &= Expect(observations.face_row.rows == 1 && observations.face_row.cols == 15 &&
+			                 observations.face_row.type() == CV_32FC1,
+			             "warm-up uses normal SFace face-row encoding path");
+			if (observations.face_row.rows == 1 && observations.face_row.cols == 15) {
+				constexpr std::array landmarks = {38.2946F, 51.6963F, 73.5318F, 51.5014F, 56.0252F,
+				                                  71.7366F, 41.5493F, 92.3655F, 70.7299F, 92.2041F};
+				for (int index = 0; index < 10; ++index) {
+					ok &= Expect(observations.face_row.at<float>(0, 4 + index) ==
+					                 landmarks.at(static_cast<std::size_t>(index)),
+					             "warm-up passes canonical landmark through Encode");
+				}
+			}
+			ok &= Expect(detect_calls == 0 && input_size_calls == 0,
+			             "warm-up does not use YuNet or change detector input size");
+			ok &= Expect(model.Ok() && model.ErrorMessage() == initial_error,
+			             "optional warm-up failure does not invalidate model");
+			const auto real = model.Encode(cv::Mat(112, 112, CV_8UC3, cv::Scalar(2, 3, 4)), {});
+			ok &= Expect(howdy::native::FaceEncodingSucceeded(real),
+			             "real Encode remains authoritative after warm-up outcome");
+		}
+		return ok;
+	}
 
 	auto TestFaceModelInferenceOperations() -> bool {
 		auto backend   = SuccessfulBackend();
@@ -728,6 +865,7 @@ auto main() -> int {
 	}
 
 	ok &= TestFaceModelInferenceOperations();
+	ok &= TestRecognizerWarmUp();
 
 	return ok ? 0 : 1;
 }

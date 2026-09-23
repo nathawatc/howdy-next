@@ -40,6 +40,7 @@ namespace howdy::native {
 		[[nodiscard]] static auto PrepareFrame(const cv::Mat &frame) -> cv::Mat;
 		auto                      Detect(const cv::Mat &frame) -> FaceDetectionResult;
 		auto Encode(const cv::Mat &frame, const FaceDetection &face) -> FaceEncodingResult;
+		[[nodiscard]] auto WarmUpRecognizer() -> bool;
 
 	private:
 		struct Backend;
@@ -51,7 +52,8 @@ namespace howdy::native {
 		void SetInputSizeFromFrame(const cv::Mat &frame);
 		void SetError(std::string message);
 
-		bool                          ok_ = false;
+		bool                          ok_                           = false;
+		bool                          recognizer_warm_up_attempted_ = false;
 		std::string                   error_message_;
 		FaceMetric                    metric_ = FaceMetric::kCosine;
 		cv::Size                      input_size_{320, 320};

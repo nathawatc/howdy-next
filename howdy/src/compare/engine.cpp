@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -150,7 +151,9 @@ namespace howdy::native {
 		};
 	}
 
-	auto CompareEngine::ProcessFaceFrame(const cv::Mat &working_frame) -> CompareInferenceResult {
+	auto CompareEngine::ProcessFaceFrame(const cv::Mat         &working_frame,
+	                                     std::function<void()> *before_first_encode)
+	    -> CompareInferenceResult {
 		if (!FaceInferenceComplete(inference_) || matching_.match_face == nullptr) {
 			return {
 			    .status = CompareInferenceStatus::kInvalidDependencies,
@@ -178,6 +181,10 @@ namespace howdy::native {
 		std::string first_encoding_error;
 		bool        reached_matching = false;
 		for (const auto &face : detection_result.detections) {
+			if (before_first_encode != nullptr && *before_first_encode) {
+				(*before_first_encode)();
+				*before_first_encode = {};
+			}
 			const auto encoding_result = inference_.encode_face(inference_.context, prepared, face);
 			if (!FaceEncodingSucceeded(encoding_result)) {
 				if (first_encoding_error.empty()) {

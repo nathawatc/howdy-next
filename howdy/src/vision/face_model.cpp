@@ -22,6 +22,7 @@
 
 #include <opencv2/core/cvstd_wrapper.hpp>
 #include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
@@ -290,6 +291,30 @@ namespace howdy::native {
 			    .status        = FaceEncodingStatus::kInferenceError,
 			    .error_message = kFaceEncodingProcessingFailureMessage,
 			};
+		}
+	}
+
+	auto FaceModel::WarmUpRecognizer() -> bool {
+		if (!ok_ || recognizer_warm_up_attempted_) {
+			return false;
+		}
+		recognizer_warm_up_attempted_ = true;
+		try {
+			const cv::Mat       frame(112, 112, CV_8UC3, cv::Scalar(127, 127, 127));
+			const FaceDetection face{
+			    .box        = {0.0F, 0.0F, 112.0F, 112.0F},
+			    .landmarks  = {{
+			        {38.2946F, 51.6963F},
+			        {73.5318F, 51.5014F},
+			        {56.0252F, 71.7366F},
+			        {41.5493F, 92.3655F},
+			        {70.7299F, 92.2041F},
+			    }},
+			    .confidence = 1.0F,
+			};
+			return FaceEncodingSucceeded(Encode(frame, face));
+		} catch (...) {
+			return false;
 		}
 	}
 
