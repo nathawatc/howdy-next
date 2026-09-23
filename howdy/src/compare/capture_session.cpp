@@ -68,9 +68,9 @@ namespace howdy::native {
 
 	auto CompareCaptureSession::DependenciesValid() const -> bool {
 		return dependencies_.capture_context != nullptr && dependencies_.open_capture != nullptr &&
-		       dependencies_.warm_up_capture != nullptr &&
 		       dependencies_.read_gray_frame != nullptr && dependencies_.error_message != nullptr &&
-		       (config_.exposure == -1 || dependencies_.set_property != nullptr) &&
+		       (config_.exposure == -1 || (dependencies_.set_property != nullptr &&
+		                                   dependencies_.warm_up_capture != nullptr)) &&
 		       dependencies_.now != nullptr;
 	}
 
@@ -91,13 +91,15 @@ namespace howdy::native {
 
 		is_open_ = true;
 		stats_   = {};
-		RestoreExposure();
-		if (!dependencies_.warm_up_capture(dependencies_.capture_context)) {
-			is_open_ = false;
-			return {
-			    .status        = CompareCaptureOpenStatus::kOpenFailed,
-			    .error_message = dependencies_.error_message(dependencies_.capture_context),
-			};
+		if (config_.exposure != -1) {
+			RestoreExposure();
+			if (!dependencies_.warm_up_capture(dependencies_.capture_context)) {
+				is_open_ = false;
+				return {
+				    .status        = CompareCaptureOpenStatus::kOpenFailed,
+				    .error_message = dependencies_.error_message(dependencies_.capture_context),
+				};
+			}
 		}
 		loop_start_ = dependencies_.now(dependencies_.clock_context);
 		return {

@@ -46,7 +46,8 @@ namespace {
 
 	struct FakeClockContext {
 		std::chrono::steady_clock::time_point now{};  // NOLINT(readability-redundant-member-init)
-		int                                   calls = 0;
+		int                                   calls  = 0;
+		std::vector<std::string>             *events = nullptr;
 	};
 
 	auto FakeOpen(void *context) -> bool {
@@ -104,6 +105,9 @@ namespace {
 	auto FakeNow(void *context) -> std::chrono::steady_clock::time_point {
 		auto &clock = *static_cast<FakeClockContext *>(context);
 		clock.calls++;
+		if (clock.events != nullptr) {
+			clock.events->emplace_back("clock");
+		}
 		return clock.now;
 	}
 
@@ -189,13 +193,15 @@ auto main() -> int {
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
 		capture.warm_up_result = false;
-		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
-		                                             MakeDependencies(capture, clock));
+		auto config            = MakeVideoConfig();
+		config.exposure        = 37;
+		howdy::native::CompareCaptureSession session(config, MakeDependencies(capture, clock));
 
 		const auto result = session.Open();
 		ok &= Expect(capture.open_calls == 1, "warm-up failure opens capture first");
-		ok &= Expect(capture.events == std::vector<std::string>{"open", "warm-up"},
-		             "warm-up failure occurs after capture open");
+		ok &= Expect(capture.events ==
+		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
+		             "warm-up failure occurs after exposure restoration");
 		ok &= Expect(result.status == CompareCaptureOpenStatus::kOpenFailed,
 		             "warm-up failure has open-failed status");
 		ok &= Expect(result.error_message == "synthetic capture failure",
@@ -227,18 +233,59 @@ auto main() -> int {
 	{
 		FakeCaptureContext capture;
 		FakeClockContext   clock;
-		capture.next_gray_frame   = cv::Mat_<unsigned char>({2, 3}, {2, 7, 1, 8, 2, 8});
-		auto dependencies         = MakeDependencies(capture, clock);
-		dependencies.set_property = nullptr;
+		capture.next_gray_frame = cv::Mat_<unsigned char>({1, 1}, {42});
+		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
+		                                             MakeDependencies(capture, clock));
+
+		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
+		             "reopen session opens initially");
+		ok &= Expect(session.NextFrame().status == CompareCaptureFrameStatus::kFrameReady,
+		             "reopen session reads initial frame");
+		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
+		             "reopen session opens again");
+		ok &= Expect(session.Stats().frames == 0, "reopen resets frame count");
+		ok &= Expect(session.NextFrame().frame_number == 1, "reopen starts frame numbering at one");
+		ok &=
+		    Expect(capture.open_calls == 2 && capture.read_calls == 2 && capture.warm_up_calls == 0,
+		           "reopen reads without extra warm-ups");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		capture.next_gray_frame      = cv::Mat_<unsigned char>({2, 3}, {2, 7, 1, 8, 2, 8});
+		auto dependencies            = MakeDependencies(capture, clock);
+		dependencies.set_property    = nullptr;
+		dependencies.warm_up_capture = nullptr;
+		clock.events                 = &capture.events;
 		howdy::native::CompareCaptureSession session(MakeVideoConfig(), dependencies);
 
 		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
-		             "disabled exposure does not require property setter");
+		             "disabled exposure does not require property setter or warm-up");
+		ok &= Expect(capture.events == std::vector<std::string>{"open", "clock"},
+		             "disabled exposure starts clock after open without warm-up");
 		const auto result = session.NextFrame();
 		ok &= Expect(result.status == CompareCaptureFrameStatus::kFrameReady,
-		             "disabled exposure reads without property setter");
+		             "disabled exposure reads without property setter or warm-up");
+		ok &= Expect(capture.events == std::vector<std::string>{"open", "clock", "clock", "read"},
+		             "disabled exposure reads after timeout clock starts");
 		ok &= Expect(capture.open_calls == 1, "missing optional setter still opens capture");
 		ok &= Expect(capture.read_calls == 1, "missing optional setter still reads capture");
+	}
+
+	{
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		auto               config       = MakeVideoConfig();
+		auto               dependencies = MakeDependencies(capture, clock);
+		config.exposure                 = 37;
+		dependencies.warm_up_capture    = nullptr;
+		howdy::native::CompareCaptureSession session(config, dependencies);
+
+		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kInvalidDependencies,
+		             "configured exposure requires warm-up callback");
+		ok &= Expect(capture.open_calls == 0 && clock.calls == 0,
+		             "missing required warm-up prevents open and timeout clock");
 	}
 
 	{
@@ -417,13 +464,14 @@ auto main() -> int {
 		FakeClockContext   clock;
 		auto               config = MakeVideoConfig();
 		config.exposure           = 37;
+		clock.events              = &capture.events;
 		howdy::native::CompareCaptureSession session(config, MakeDependencies(capture, clock));
 
 		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "configured-exposure session opens");
-		ok &= Expect(capture.events ==
-		                 std::vector<std::string>{"open", "auto-exposure", "exposure", "warm-up"},
-		             "configured exposure is applied before warm-up");
+		ok &= Expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
+		                                                        "warm-up", "clock"},
+		             "configured exposure precedes warm-up and timeout clock");
 		ok &= Expect(capture.warm_up_calls == 1, "configured exposure warms up once");
 		ok &= Expect(capture.property_calls.size() == 2,
 		             "configured exposure makes two initial property calls");
@@ -432,7 +480,7 @@ auto main() -> int {
 		ok &= Expect(capture.property_calls.size() == 4,
 		             "configured exposure restoration makes two more property calls");
 		ok &= Expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
-		                                                        "warm-up", "auto-exposure",
+		                                                        "warm-up", "clock", "auto-exposure",
 		                                                        "exposure"},
 		             "exposure restoration follows warm-up");
 		if (capture.property_calls.size() == 4) {
@@ -548,15 +596,17 @@ auto main() -> int {
 	}
 
 	{
-		FakeCaptureContext                   capture;
-		FakeClockContext                     clock;
+		FakeCaptureContext capture;
+		FakeClockContext   clock;
+		capture.warm_up_result = false;
 		howdy::native::CompareCaptureSession session(MakeVideoConfig(),
 		                                             MakeDependencies(capture, clock));
 
 		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "disabled exposure session opens");
-		ok &= Expect(capture.events == std::vector<std::string>{"open", "warm-up"},
-		             "disabled exposure leaves camera properties untouched");
+		ok &= Expect(capture.events == std::vector<std::string>{"open"},
+		             "disabled exposure skips failing warm-up and camera properties");
+		ok &= Expect(capture.warm_up_calls == 0, "disabled exposure never warms up");
 		session.RestoreExposure();
 		ok &= Expect(capture.property_calls.empty(), "disabled exposure makes no property calls");
 	}
