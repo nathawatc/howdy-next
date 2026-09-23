@@ -10,12 +10,15 @@
 #include "vision/frame_processing.hpp"
 #include "vision/frame_validation.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <utility>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
 namespace {
@@ -97,9 +100,20 @@ namespace howdy::native {
 			};
 		}
 
-		ApplyClaheIfEnabled(gray_frame, config_, clahe_);
+		const double scaling_factor = CompareResizeScale(
+		    {.width = gray_frame.cols, .height = gray_frame.rows, .rotation = config_.rotate},
+		    config_.max_height);
+		const cv::Mat source_frame  = std::move(gray_frame);
+		cv::Mat       working_frame = source_frame;
+		if (scaling_factor < 1.0) {
+			const cv::Size resized_size(
+			    std::max(1, cvRound(static_cast<double>(source_frame.cols) * scaling_factor)),
+			    std::max(1, cvRound(static_cast<double>(source_frame.rows) * scaling_factor)));
+			cv::resize(source_frame, working_frame, resized_size, 0.0, 0.0, cv::INTER_AREA);
+		}
+		ApplyClaheIfEnabled(working_frame, config_, clahe_);
 
-		const auto brightness = MeasureBrightness(gray_frame);
+		const auto brightness = MeasureBrightness(working_frame);
 		switch (ClassifyBrightness(brightness.hist_total, brightness.darkness,
 		                           config_.dark_threshold)) {
 			case BrightnessDecision::kBlackFrame:
@@ -114,17 +128,6 @@ namespace howdy::native {
 				};
 			case BrightnessDecision::kProcessFrame:
 				break;
-		}
-
-		cv::Mat working_frame = gray_frame;
-
-		const double scaling_factor = CompareResizeScale(
-		    {.width = gray_frame.cols, .height = gray_frame.rows, .rotation = config_.rotate},
-		    config_.max_height);
-
-		if (scaling_factor < 1.0) {
-			cv::resize(gray_frame, working_frame, cv::Size(), scaling_factor, scaling_factor,
-			           cv::INTER_AREA);
 		}
 
 		working_frame = ApplyRotation(working_frame,

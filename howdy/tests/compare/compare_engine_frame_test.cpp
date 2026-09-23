@@ -1,6 +1,7 @@
 #include "compare/compare_engine_test_support.hpp"
 #include "compare/engine.hpp"
 #include "test_support.hpp"
+#include "vision/frame_processing.hpp"
 
 #include <string>
 
@@ -8,6 +9,7 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgproc.hpp>
 
 namespace {
 
@@ -29,6 +31,17 @@ namespace {
 		return frame;
 	}
 
+	auto MakePreprocessingFrame() -> cv::Mat {
+		cv::Mat frame(12, 16, CV_8UC1);
+		for (int row = 0; row < frame.rows; ++row) {
+			for (int column = 0; column < frame.cols; ++column) {
+				frame.at<unsigned char>(row, column) = static_cast<unsigned char>(
+				    ((row * 31) + (column * 17) + ((row * column) * 7)) % 256);
+			}
+		}
+		return frame;
+	}
+
 }  // namespace
 
 auto RunCompareEngineFrameTests() -> bool {
@@ -46,7 +59,7 @@ auto RunCompareEngineFrameTests() -> bool {
 	}
 
 	{
-		howdy::native::CompareEngine engine(MakeVideoConfig());
+		howdy::native::CompareEngine engine(MakeVideoConfig(25.0F, 100.0F, 0, true));
 		const auto                   result =
 		    engine.ProcessGrayFrame(cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)), 1);
 		ok &= Expect(result.status == CompareFrameStatus::kInvalidInput,
@@ -70,12 +83,23 @@ auto RunCompareEngineFrameTests() -> bool {
 		howdy::native::CompareEngine engine(MakeVideoConfig());
 		const auto result = engine.ProcessGrayFrame(cv::Mat(4, 4, CV_8UC1, cv::Scalar(0)), 1);
 		ok &= Expect(result.status == CompareFrameStatus::kBlackFrame,
-		             "black frame is classified before preprocessing");
+		             "black frame is classified before inference");
 		ok &= Expect(result.brightness.hist_total > 0.0,
 		             "black frame retains non-zero histogram total");
 		ok &= ExpectNear(result.brightness.darkness, 100.0, 0.0001,
 		                 "black frame retains full darkness");
 		ok &= Expect(result.working_frame.empty(), "black frame returns no working frame");
+	}
+
+	{
+		const auto                   config = MakeVideoConfig(25.0F, 8.0F);
+		howdy::native::CompareEngine engine(config);
+		const auto result = engine.ProcessGrayFrame(cv::Mat(16, 16, CV_8UC1, cv::Scalar(0)), 1);
+		ok &= Expect(result.status == CompareFrameStatus::kBlackFrame,
+		             "resized black frame remains black with CLAHE disabled");
+		ok &= ExpectNear(result.brightness.hist_total, 64.0, 0.0001,
+		                 "black-frame histogram covers resized image");
+		ok &= Expect(result.working_frame.empty(), "resized black frame returns no working frame");
 	}
 
 	{
@@ -109,6 +133,64 @@ auto RunCompareEngineFrameTests() -> bool {
 		ok &= Expect(result.status == CompareFrameStatus::kReady, "downscaled frame is ready");
 		ok &= Expect(result.working_frame.rows == 2 && result.working_frame.cols == 3,
 		             "downscale uses compare resize scale");
+	}
+
+	{
+		const cv::Mat                source(8192, 1, CV_8UC1, cv::Scalar(255));
+		howdy::native::CompareEngine engine(MakeVideoConfig(25.0F, 32.0F));
+		const auto                   result = engine.ProcessGrayFrame(source, 1);
+		ok &= Expect(result.status == CompareFrameStatus::kReady,
+		             "narrow valid frame survives compare downscale");
+		ok &= Expect(result.working_frame.rows == 32 && result.working_frame.cols == 1,
+		             "compare resize clamps rounded dimensions to one pixel");
+	}
+
+	{
+		const cv::Mat source(8, 8, CV_8UC1, cv::Scalar(64));
+		source.rowRange(0, 4).setTo(cv::Scalar(0));
+		howdy::native::CompareEngine engine(MakeVideoConfig(40.0F, 4.0F));
+		const auto                   result = engine.ProcessGrayFrame(source, 1);
+		ok &= Expect(result.status == CompareFrameStatus::kTooDark,
+		             "dark frame remains too dark after resize");
+		ok &= ExpectNear(result.brightness.hist_total, 16.0, 0.0001,
+		                 "too-dark histogram covers resized image");
+		ok &= ExpectNear(result.brightness.darkness, 50.0, 0.0001,
+		                 "too-dark classification measures resized pixels");
+		ok &=
+		    Expect(result.working_frame.empty(), "resized too-dark frame returns no working frame");
+	}
+
+	{
+		const auto                   source = MakePreprocessingFrame();
+		const auto                   config = MakeVideoConfig(100.0F, 6.0F, 1, true);
+		howdy::native::CompareEngine engine(config);
+		const auto                   result = engine.ProcessGrayFrame(source.clone(), 1);
+
+		cv::Mat expected;
+		cv::resize(source, expected, cv::Size(), 0.5, 0.5, cv::INTER_AREA);
+		auto clahe =
+		    cv::createCLAHE(config.clahe_clip_limit,
+		                    cv::Size(config.clahe_tile_grid_size, config.clahe_tile_grid_size));
+		clahe->apply(expected, expected);
+		cv::rotate(expected, expected, cv::ROTATE_90_COUNTERCLOCKWISE);
+
+		const auto expected_brightness = howdy::native::MeasureBrightness(expected);
+		ok &= Expect(result.status == CompareFrameStatus::kReady,
+		             "resize-before-CLAHE frame is processable");
+		ok &= ExpectMatrixEqual(result.working_frame, expected,
+		                        "compare resizes before CLAHE and preserves rotation order");
+		ok &= ExpectNear(result.brightness.hist_total, 48.0, 0.0001,
+		                 "brightness histogram covers resized frame after CLAHE");
+		ok &= ExpectNear(result.brightness.darkness, expected_brightness.darkness, 0.0001,
+		                 "brightness classification measures resized CLAHE output");
+
+		auto threshold_config = MakeVideoConfig(expected_brightness.darkness, 6.0F, 0, true);
+		howdy::native::CompareEngine threshold_engine(threshold_config);
+		const auto threshold_result = threshold_engine.ProcessGrayFrame(source.clone(), 1);
+		ok &= Expect(threshold_result.status == CompareFrameStatus::kReady,
+		             "resized-frame brightness at dark threshold remains processable");
+		ok &= ExpectNear(threshold_result.brightness.darkness, expected_brightness.darkness, 0.0001,
+		                 "dark threshold uses resized-frame CLAHE statistics");
 	}
 
 	{
