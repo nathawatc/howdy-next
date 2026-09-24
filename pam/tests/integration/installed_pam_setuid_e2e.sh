@@ -4,38 +4,6 @@ set -euo pipefail
 skip() { printf 'SKIP: %s\n' "$1"; exit 77; }
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 as_user() { setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups "$@"; }
-assert_locked() {
-	local path=$1 message=$2 status
-	set +e
-	flock -n "$path" true
-	status=$?
-	set -e
-	[[ $status -eq 1 ]] || fail "$message: flock exited $status"
-}
-validate_install_prefix() {
-	local input=$1 expected_parent=${2:-/opt} normalized parent basename canonical_parent
-	validated_install_prefix=
-	[[ $input == /* ]] || return 1
-	normalized=$(realpath -m -- "$input") || return 1
-	[[ $input == "$normalized" ]] || return 1
-	parent=${normalized%/*}
-	basename=${normalized##*/}
-	[[ $basename != */* && $basename != . && $basename != .. ]] || return 1
-	[[ $basename =~ ^howdy-installed-pam-e2e-[A-Za-z0-9._-]+$ ]] || return 1
-	canonical_parent=$(realpath -e -- "$parent") || return 1
-	[[ $canonical_parent == "$expected_parent" ]] || return 1
-	[[ ! -e $normalized && ! -L $normalized ]] || return 1
-	validated_install_prefix=$normalized
-}
-validate_install_subdir() {
-	local input=$1 normalized
-	validated_install_subdir=
-	[[ $input == /* ]] || return 1
-	normalized=$(realpath -m -- "$input") || return 1
-	[[ $input == "$normalized" ]] || return 1
-	[[ $normalized == "$validated_install_prefix/"* ]] || return 1
-	validated_install_subdir=$normalized
-}
 validate_opt_directory() {
 	local canonical mode
 	[[ -d /opt && ! -L /opt ]] || return 1
@@ -46,79 +14,17 @@ validate_opt_directory() {
 	(( (8#$mode & 0022) == 0 )) || return 1
 	as_user test ! -w /opt || return 1
 }
-validate_installed_path() {
-	local input=$1 expected_type=$2 canonical
-	validated_installed_path=
-	[[ $input == "$validated_install_prefix/"* && ! -L $input ]] || return 1
-	if [[ $expected_type == file ]]; then
-		[[ -f $input ]] || return 1
-	else
-		[[ -d $input ]] || return 1
-	fi
-	canonical=$(realpath -e -- "$input") || return 1
-	[[ $canonical == "$validated_install_prefix/"* ]] || return 1
-	validated_installed_path=$canonical
-}
-run_path_validation_tests() {
-	local marker=/tmp/howdy-e2e-path-validation-$$
-	local validation_parent valid_prefix other_parent
-	validation_parent=$(mktemp -d)
-	trap 'rm -rf -- "$validation_parent"' EXIT
-	validation_parent=$(realpath -e -- "$validation_parent") || fail "cannot canonicalize validation parent"
-	other_parent="$validation_parent/other"
-	mkdir "$other_parent"
-	valid_prefix="$validation_parent/howdy-installed-pam-e2e-validation-$$"
-	[[ ! -e $marker ]] || fail "path-validation marker already exists"
-	validate_install_prefix "$valid_prefix" "$validation_parent" || fail "valid isolated prefix rejected"
-	for rejected in \
-		"$validation_parent/howdy-installed-pam-e2e-x/../../etc" \
-		"$validation_parent/howdy-installed-pam-e2e-x/subdir" \
-		"$other_parent/howdy-installed-pam-e2e-x" \
-		"$validation_parent/howdy-installed-pam-e2e-" \
-		"${validation_parent%/}//howdy-installed-pam-e2e-x" \
-		"$validation_parent/howdy-installed-pam-e2e-x/."; do
-		if validate_install_prefix "$rejected" "$validation_parent"; then
-			fail "unsafe prefix accepted: $rejected"
-		fi
-	done
-	validate_install_prefix "$valid_prefix" "$validation_parent" ||
-		fail "valid isolated prefix rejected after cases"
-	for rejected in /etc/howdy /usr/libexec/howdy "$valid_prefix/../etc" "$valid_prefix"; do
-		if validate_install_subdir "$rejected"; then
-			fail "unsafe install path accepted: $rejected"
-		fi
-	done
-	for accepted in \
-		"$valid_prefix/lib/security" \
-		"$valid_prefix/libexec/howdy" \
-		"$valid_prefix/etc/howdy" \
-		"$valid_prefix/etc/howdy/models"; do
-		validate_install_subdir "$accepted" || fail "valid install path rejected: $accepted"
-	done
-	[[ ! -e $marker && ! -e $valid_prefix ]] || fail "path validation mutated filesystem"
-	rm -rf -- "$validation_parent"
-	trap - EXIT
-	printf 'Path validation: passed without filesystem mutation\n'
-}
-
-if [[ ${1:-} == --validate-paths ]]; then
-	run_path_validation_tests
-	exit 0
-fi
-
-[[ $# -eq 9 ]] || fail "expected nine path arguments"
-build_dir=$1 raw_install_prefix=$2 raw_pam_dir=$3 raw_helper_dir=$4 raw_config_dir=$5
-raw_user_models_dir=$6 driver=$7 runtime_driver=$8 compare_probe=$9
-validate_install_prefix "$raw_install_prefix" || fail "unsafe isolated install prefix"
-install_prefix=$validated_install_prefix
-validate_install_subdir "$raw_pam_dir" || fail "unsafe PAM directory"
-pam_dir=$validated_install_subdir
-validate_install_subdir "$raw_helper_dir" || fail "unsafe helper directory"
-helper_dir=$validated_install_subdir
-validate_install_subdir "$raw_config_dir" || fail "unsafe config directory"
-config_dir=$validated_install_subdir
-validate_install_subdir "$raw_user_models_dir" || fail "unsafe user-model directory"
-user_models_dir=$validated_install_subdir
+[[ $# -eq 11 ]] || fail "expected validators and nine path arguments"
+path_validator=$1 state_verifier=$2 build_dir=$3 raw_install_prefix=$4 raw_pam_dir=$5
+raw_helper_dir=$6 raw_config_dir=$7 raw_user_models_dir=$8 driver=$9 runtime_driver=${10}
+compare_probe=${11}
+[[ -f $path_validator && -x $path_validator ]] || fail "path validator is unavailable"
+[[ -f $state_verifier && -x $state_verifier ]] || fail "state verifier is unavailable"
+install_prefix=$("$path_validator" --validate-prefix "$raw_install_prefix") || fail "unsafe isolated install prefix"
+pam_dir=$("$path_validator" --validate-subdir "$install_prefix" "$raw_pam_dir") || fail "unsafe PAM directory"
+helper_dir=$("$path_validator" --validate-subdir "$install_prefix" "$raw_helper_dir") || fail "unsafe helper directory"
+config_dir=$("$path_validator" --validate-subdir "$install_prefix" "$raw_config_dir") || fail "unsafe config directory"
+user_models_dir=$("$path_validator" --validate-subdir "$install_prefix" "$raw_user_models_dir") || fail "unsafe user-model directory"
 unset DESTDIR
 unset CMAKE_INSTALL_MODE
 snapshot_runtime_dirs() {
@@ -171,7 +77,7 @@ IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<<"$passwd_record"
 [[ $selected_uid =~ ^[0-9]+$ && $selected_uid -gt 0 ]] || skip "selected account must be non-root"
 [[ $selected_gid =~ ^[0-9]+$ ]] || skip "selected account has invalid primary GID"
 getent group "$selected_gid" >/dev/null || skip "selected account primary group does not exist"
-for command in setpriv findmnt flock mount umount realpath cmake stat getfacl setfacl; do
+for command in setpriv findmnt mount umount realpath cmake stat setfacl; do
 	command -v "$command" >/dev/null || skip "$command unavailable"
 done
 validate_opt_directory || fail "unsafe /opt directory"
@@ -230,6 +136,10 @@ trap 'exit 128' HUP INT TERM
 
 mount -t tmpfs -o mode=0755,nodev,nosuid tmpfs /run || skip "cannot isolate runtime root"
 runtime_isolated=true
+acl_status=0
+"$state_verifier" --acl-capability /run "$selected_uid" || acl_status=$?
+if [[ $acl_status -eq 77 ]]; then skip "isolated runtime filesystem lacks POSIX ACL support"; fi
+[[ $acl_status -eq 0 ]] || fail "isolated runtime ACL capability check failed"
 [[ ! -e /run/howdy ]] || fail "isolated runtime root is not initially absent"
 
 [[ ! -e $install_prefix ]] || fail "isolated install prefix already exists"
@@ -245,65 +155,24 @@ as_user test ! -w "$install_prefix" || fail "selected user can write created ins
 cleanup_install_prefix=$install_prefix
 cmake --install "$build_dir" >/dev/null
 
-validate_installed_path "$helper_dir/howdy-auth-helper" file || fail "unsafe installed helper"
-helper=$validated_installed_path
-validate_installed_path "$helper_dir/howdy-compare" file || fail "unsafe installed compare"
-compare=$validated_installed_path
-validate_installed_path "$pam_dir/pam_howdy.so" file || fail "unsafe installed PAM module"
-module=$validated_installed_path
-validate_installed_path "$config_dir/config.ini" file || fail "unsafe installed config"
-config=$validated_installed_path
-validate_installed_path "$user_models_dir" directory || fail "unsafe installed user-model directory"
-models=$validated_installed_path
+helper=$("$path_validator" --validate-installed "$install_prefix" file "$helper_dir/howdy-auth-helper") || fail "unsafe installed helper"
+compare=$("$path_validator" --validate-installed "$install_prefix" file "$helper_dir/howdy-compare") || fail "unsafe installed compare"
+module=$("$path_validator" --validate-installed "$install_prefix" file "$pam_dir/pam_howdy.so") || fail "unsafe installed PAM module"
+config=$("$path_validator" --validate-installed "$install_prefix" file "$config_dir/config.ini") || fail "unsafe installed config"
+models=$("$path_validator" --validate-installed "$install_prefix" directory "$user_models_dir") || fail "unsafe installed user-model directory"
 helper_dir=${helper%/*}
 pam_dir=${module%/*}
 config_dir=${config%/*}
 user_models_dir=$models
-[[ $(stat -c '%u:%g:%a' "$helper") == 0:0:4755 ]] || fail "helper is not root:root 4755"
-[[ $(stat -c '%u:%g:%a' "$compare") == 0:0:755 ]] || fail "compare is not root:root 0755"
-[[ $(stat -c '%u:%g:%a' "$config_dir") == 0:0:750 ]] || fail "config directory is not root:root 0750"
-[[ $(stat -c '%u:%g:%a' "$config") == 0:0:640 ]] || fail "config is not root:root 0640"
-[[ $(stat -c '%u:%g:%a' "$models") == 0:0:750 ]] || fail "models directory is not root:root 0750"
-
-parent=$helper_dir
-while true; do
-	as_user test ! -w "$parent" || fail "helper parent writable by selected user: $parent"
-	[[ $parent == / ]] && break
-	parent=${parent%/*}; [[ -n $parent ]] || parent=/
-done
+"$state_verifier" --installed "$helper" "$compare" "$config_dir" "$config" "$models" \
+	"$selected_uid" "$selected_gid" || fail "installed file verification failed"
 mount_options=$(findmnt -no OPTIONS --target "$helper") || skip "cannot inspect install filesystem"
 [[ ,$mount_options, != *,nosuid,* ]] || skip "isolated install filesystem is mounted nosuid"
-paths_header=$build_dir/generated/paths.hpp
-[[ -f $paths_header ]] || fail "generated compiled-path header missing"
-grep -Fx "inline constexpr auto kConfiguredConfigPath = \"$config\";" "$paths_header" >/dev/null ||
-	fail "compiled config path mismatch"
-grep -Fx "inline constexpr auto kConfiguredUserModelsDir = \"$models\";" "$paths_header" >/dev/null ||
-	fail "compiled models path mismatch"
-grep -Fx "inline constexpr auto kAuthHelperPath = \"$helper\";" "$paths_header" >/dev/null ||
-	fail "compiled helper path mismatch"
-grep -Fx "inline constexpr auto kCompareProcessPath = \"$compare\";" "$paths_header" >/dev/null ||
-	fail "compiled compare path mismatch"
-
-for setting in \
-	"disabled true" \
-	"detection_notice true" \
-	"no_confirmation false" \
-	"abort_if_ssh false" \
-	"abort_if_lid_closed false"; do
-	key=${setting%% *}
-	value=${setting#* }
-	count=$(grep -c "^${key} = " "$config" || true)
-	[[ $count -eq 1 ]] || fail "expected one $key setting"
-	sed -i "s/^${key} = .*/${key} = ${value}/" "$config"
-done
+"$state_verifier" --configure "$build_dir/generated/paths.hpp" "$config" "$models" "$helper" "$compare" ||
+	fail "compiled paths or config fixture verification failed"
 chown 0:0 "$config"; chmod 0640 "$config"
 source_model=$user_models_dir/$selected_user.dat
-write_source_model() {
-	local generation=$1 first=$2 second=$3
-	printf '[{"id":0,"time":%s,"label":"e2e","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[%s,%s]]}]\n' \
-		"$generation" "$first" "$second" >"$source_model"
-}
-write_source_model 1 0.1 0.2
+"$state_verifier" --write-model "$source_model" 1 0.1 0.2 || fail "cannot create source model"
 chown 0:0 "$source_model"
 chmod 0600 "$source_model"
 canonical_source_model=$(realpath -e -- "$source_model") || fail "cannot canonicalize source model"
@@ -335,35 +204,10 @@ if [[ -e /etc/howdy ]]; then
 	config_masked=true
 fi
 
-probe_error=$(mktemp)
-if as_user "$helper" prepare '../invalid-e2e-user' >/dev/null 2>"$probe_error"; then
-	rm -f "$probe_error"; fail "invalid username unexpectedly succeeded"
-fi
-if grep -F "must be installed setuid root" "$probe_error" >/dev/null; then
-	rm -f "$probe_error"; skip "setuid execution blocked by environment"
-fi
-grep -F "Invalid user name" "$probe_error" >/dev/null || {
-	cat "$probe_error" >&2
-	rm -f "$probe_error"
-	fail "setuid preflight did not reach username validation"
-}
-rm -f "$probe_error"
-if as_user "$helper" prepare root >/dev/null 2>&1; then
-	fail "helper prepared files for different username"
-fi
-
-probe_error=$(mktemp)
-if as_user "$helper" prepare "$selected_user" 3>&- >/dev/null 2>"$probe_error"; then
-	rm -f "$probe_error"
-	fail "direct helper prepare succeeded without descriptor 3"
-fi
-expected_lease_error="howdy-auth-helper requires an inherited lease socket on descriptor 3"
-[[ $(<"$probe_error") == "$expected_lease_error" ]] || {
-	cat "$probe_error" >&2
-	rm -f "$probe_error"
-	fail "direct helper missing-fd error mismatch"
-}
-rm -f "$probe_error"
+probe_status=0
+"$state_verifier" --helper-probes "$helper" "$selected_user" "$selected_uid" "$selected_gid" || probe_status=$?
+if [[ $probe_status -eq 77 ]]; then skip "setuid execution blocked by environment"; fi
+[[ $probe_status -eq 0 ]] || fail "direct helper preflight failed"
 
 snapshot_runtime_dirs "$runtime_before"
 [[ ! -s $runtime_before ]] || fail "isolated runtime unexpectedly contains selected-user generations"
@@ -382,9 +226,9 @@ expected_gen1=/run/howdy/pam-$selected_uid-gen001
 [[ $gen_a == "$expected_gen0" ]] || fail "first runtime generation mismatch: $gen_a"
 cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" ||
 	fail "first runtime generation content mismatch"
-assert_locked "$gen_a.lock" "first active lease permits exclusive lock"
+"$state_verifier" --locked "$gen_a.lock" || fail "first active lease permits exclusive lock"
 
-write_source_model 2 0.3 0.4
+"$state_verifier" --write-model "$source_model" 2 0.3 0.4 || fail "cannot mutate source model"
 [[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
 	fail "first source-model mutation changed security metadata or inode"
 cp -- "$source_model" "$model_b_snapshot"
@@ -402,10 +246,10 @@ cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" ||
 	fail "second runtime generation did not stage second source content"
 cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" ||
 	fail "first active runtime generation changed after source mutation"
-assert_locked "$gen_a.lock" "first lease released while active"
-assert_locked "$gen_b.lock" "second active lease permits exclusive lock"
+"$state_verifier" --locked "$gen_a.lock" || fail "first lease released while active"
+"$state_verifier" --locked "$gen_b.lock" || fail "second active lease permits exclusive lock"
 
-write_source_model 3 0.5 0.6
+"$state_verifier" --write-model "$source_model" 3 0.5 0.6 || fail "cannot mutate source model"
 [[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||
 	fail "second source-model mutation changed security metadata or inode"
 cp -- "$source_model" "$model_c_snapshot"
@@ -428,7 +272,7 @@ exec {a_write_fd}>&-
 wait "$a_pid" || fail "first runtime holder failed during release"
 a_pid=
 a_write_fd=
-flock -n "$gen_a.lock" true || fail "released first lease remains locked"
+"$state_verifier" --unlocked "$gen_a.lock" || fail "released first lease remains locked"
 
 coproc HOLD_C {
 	exec setpriv --reuid "$selected_uid" --regid "$selected_gid" --init-groups \
@@ -444,43 +288,12 @@ cmp -s "$model_c_snapshot" "$gen_c/models/$selected_user.dat" ||
 	fail "reused runtime slot did not stage third source content"
 cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" ||
 	fail "second active runtime generation changed during slot reuse"
-assert_locked "$gen_b.lock" "second lease released while active"
-assert_locked "$gen_c.lock" "reused active lease permits exclusive lock"
+"$state_verifier" --locked "$gen_b.lock" || fail "second lease released while active"
+"$state_verifier" --locked "$gen_c.lock" || fail "reused active lease permits exclusive lock"
 
-[[ $(stat -c '%u:%g:%a' /run/howdy) == 0:0:711 ]] || fail "runtime root metadata mismatch"
-printf -v expected_directory_acl 'user::rwx\nuser:%s:r-x\ngroup::---\nmask::r-x\nother::---' "$selected_uid"
-printf -v expected_file_acl 'user::rw-\nuser:%s:r--\ngroup::---\nmask::r--\nother::---' "$selected_uid"
-assert_acl() {
-	local path=$1 expected=$2 actual
-	actual=$(getfacl -cpn -- "$path") || fail "cannot inspect ACL: $path"
-	[[ $actual == "$expected" ]] || fail "ACL mismatch: $path"
-}
-validate_generation() {
-	local generation=$1 lock=$1.lock models_dir=$1/models visible=$1/models/$selected_user.dat
-	local backing=$1/.model_backing
-	[[ $(stat -c '%u:%g:%a' "$generation") == 0:0:750 ]] || fail "runtime generation metadata mismatch: $generation"
-	[[ $(stat -c '%u:%g:%a' "$models_dir") == 0:0:750 ]] || fail "staged models directory metadata mismatch: $models_dir"
-	[[ $(stat -c '%u:%g:%a:%h' "$generation/config.ini") == 0:0:640:1 ]] || fail "staged config metadata mismatch: $generation"
-	[[ $(stat -c '%u:%g:%a:%h' "$lock") == 0:0:600:1 ]] || fail "runtime lock metadata mismatch: $lock"
-	[[ $(stat -c '%u:%g:%a:%h' "$backing") == 0:0:640:2 ]] || fail "model backing metadata mismatch: $backing"
-	[[ $(stat -c '%u:%g:%a:%h' "$visible") == 0:0:640:2 ]] || fail "visible model metadata mismatch: $visible"
-	[[ $(stat -c '%d:%i' "$backing") == "$(stat -c '%d:%i' "$visible")" ]] || fail "model backing and visible inode differ"
-	assert_acl "$generation" "$expected_directory_acl"
-	assert_acl "$models_dir" "$expected_directory_acl"
-	assert_acl "$generation/config.ini" "$expected_file_acl"
-	assert_acl "$visible" "$expected_file_acl"
-	assert_acl "$backing" "$expected_file_acl"
-	as_user cat "$generation/config.ini" >/dev/null || fail "selected user cannot read staged config"
-	as_user cat "$visible" >/dev/null || fail "selected user cannot read staged model"
-	if setpriv --reuid "$unrelated_uid" --regid "$unrelated_gid" --clear-groups cat "$generation/config.ini" >/dev/null 2>&1; then
-		fail "unrelated user can read staged config"
-	fi
-	if setpriv --reuid "$unrelated_uid" --regid "$unrelated_gid" --clear-groups cat "$visible" >/dev/null 2>&1; then
-		fail "unrelated user can read staged model"
-	fi
-}
-validate_generation "$gen_b"
-validate_generation "$gen_c"
+"$state_verifier" --runtime-root /run/howdy || fail "runtime root metadata mismatch"
+"$state_verifier" --generation "$gen_b" "$selected_user" "$selected_uid" "$selected_gid" "$unrelated_uid" "$unrelated_gid" || fail "second generation verification failed"
+"$state_verifier" --generation "$gen_c" "$selected_user" "$selected_uid" "$selected_gid" "$unrelated_uid" "$unrelated_gid" || fail "reused generation verification failed"
 
 printf 'release\n' >&"$b_write_fd"
 exec {b_write_fd}>&-
@@ -492,8 +305,8 @@ exec {c_write_fd}>&-
 wait "$c_pid" || fail "reused runtime holder failed during release"
 c_pid=
 c_write_fd=
-flock -n "$gen_b.lock" true || fail "released second lease remains locked"
-flock -n "$gen_c.lock" true || fail "released reused lease remains locked"
+"$state_verifier" --unlocked "$gen_b.lock" || fail "released second lease remains locked"
+"$state_verifier" --unlocked "$gen_c.lock" || fail "released reused lease remains locked"
 
 # Keep the canonical inode for restoration while exercising present-to-absent refresh.
 mv -- "$source_model" "$source_model.absent"
@@ -508,11 +321,8 @@ read -r -t 10 gen_absent <&"$a_read_fd" || fail "absent runtime holder did not b
 exec {a_read_fd}<&-
 [[ $gen_absent == "$expected_gen0" ]] || fail "absent refresh did not reuse first slot"
 backing=$gen_absent/.model_backing
-[[ ! -e $gen_absent/models/$selected_user.dat ]] || fail "absent slot retains visible model"
-[[ $(stat -c '%u:%g:%a:%h' "$backing") == 0:0:600:1 ]] || fail "absent sentinel metadata mismatch"
-assert_acl "$backing" $'user::rw-\ngroup::---\nother::---'
-as_user test ! -r "$backing" || fail "absent sentinel became readable"
-assert_locked "$gen_absent.lock" "absent session lost active lease"
+"$state_verifier" --absent "$gen_absent" "$selected_user" "$selected_uid" "$selected_gid" || fail "absent generation verification failed"
+"$state_verifier" --locked "$gen_absent.lock" || fail "absent session lost active lease"
 inspect_absent() {
 	as_user "$runtime_driver" "$1" "$selected_user" "$config" "$gen_absent/models" ||
 		fail "absent sentinel inspection failed: $1"
@@ -540,7 +350,7 @@ inspect_absent --inspect-insecure
 unlink "$backing"
 mv "$backing.saved" "$backing"
 inspect_absent --inspect-absent
-assert_locked "$gen_absent.lock" "sentinel checks released active lease"
+"$state_verifier" --locked "$gen_absent.lock" || fail "sentinel checks released active lease"
 service_dir=$(mktemp -d -p "$install_prefix" 'pam service-ทดสอบ.XXXXXX')
 chmod 0755 "$service_dir"
 printf 'auth required %s workaround=off\n' "$module" >"$service_dir/howdy-e2e"
@@ -553,7 +363,7 @@ exec {a_write_fd}>&-
 wait "$a_pid" || fail "absent runtime holder failed during release"
 a_pid=
 a_write_fd=
-flock -n "$gen_absent.lock" true || fail "released absent lease remains locked"
+"$state_verifier" --unlocked "$gen_absent.lock" || fail "released absent lease remains locked"
 mv -- "$source_model.absent" "$source_model"
 
 cat "$source_model_snapshot" >"$source_model"
@@ -580,8 +390,8 @@ mv -- "$compare.production" "$compare"
 [[ $(stat -c '%u:%g:%a' "$compare") == 0:0:755 ]] || fail "restored compare metadata changed"
 
 as_user "$driver" howdy-e2e "$selected_user" "$service_dir" unavailable
-flock -n "$expected_gen0.lock" true || fail "PAM flow retained gen000 lease"
-flock -n "$expected_gen1.lock" true || fail "PAM flow retained gen001 lease"
+"$state_verifier" --unlocked "$expected_gen0.lock" || fail "PAM flow retained gen000 lease"
+"$state_verifier" --unlocked "$expected_gen1.lock" || fail "PAM flow retained gen001 lease"
 cmp -s "$config" "$source_snapshot" || fail "runtime flow changed source config"
 cmp -s "$source_model" "$source_model_snapshot" || fail "PAM flow changed restored source model"
 [[ $(stat -c '%u:%g:%a:%h:%d:%i' "$source_model") == "$source_model_metadata" ]] ||

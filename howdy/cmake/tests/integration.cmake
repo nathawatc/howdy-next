@@ -4,10 +4,13 @@ add_test(NAME native-howdy-version COMMAND howdy version)
 add_test(NAME native-howdy-nonroot-path COMMAND howdy -U coverage-user list)
 howdy_expect_test_failure(native-howdy-nonroot-path)
 add_test(NAME native-howdy-empty COMMAND howdy)
+add_executable(howdy_bash_completion_integration_test
+               tests/integration/bash_completion_test.cpp)
+howdy_configure_native_test_target(howdy_bash_completion_integration_test)
 add_test(
 	NAME native-howdy-bash-completion
 	COMMAND
-		bash
+		howdy_bash_completion_integration_test
 		"${howdy_integration_dir}/bash_completion_test.sh"
 		"$<TARGET_FILE:howdy>"
 		"${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
@@ -19,10 +22,13 @@ else()
 	set(howdy_auth_helper_install_mode 755)
 endif()
 
+add_executable(howdy_install_layout_integration_test
+               tests/integration/install_layout_test.cpp)
+howdy_configure_native_test_target(howdy_install_layout_integration_test)
 add_test(
 	NAME native-howdy-install-layout
 	COMMAND
-		sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/install_layout_test.sh"
+		howdy_install_layout_integration_test
 		"${PROJECT_BINARY_DIR}"
 		"${CMAKE_INSTALL_PREFIX}"
 		"${CMAKE_INSTALL_BINDIR}"
@@ -46,20 +52,23 @@ add_test(
 		-P "${PROJECT_SOURCE_DIR}/tests/cmake/privileged_install_paths_test.cmake"
 )
 if(NOT CMAKE_CROSSCOMPILING)
+	add_executable(howdy_docs_generator_integration_test
+                tests/integration/docs_generator_test.cpp)
+	howdy_configure_native_test_target(howdy_docs_generator_integration_test)
 	add_test(
 		NAME native-howdy-docs-generator
 		COMMAND
-			sh
-			"${howdy_integration_dir}/docs_generator_test.sh"
+			howdy_docs_generator_integration_test
 			"$<TARGET_FILE:howdy_docs_generator>"
 			"${PROJECT_BINARY_DIR}/docs-generator-test"
 	)
 endif()
+add_executable(howdy_docs_integration_test tests/integration/docs_test.cpp)
+howdy_configure_native_test_target(howdy_docs_integration_test)
 add_test(
 	NAME native-howdy-docs
 	COMMAND
-		sh
-		"${howdy_integration_dir}/docs_test.sh"
+		howdy_docs_integration_test
 		"${PROJECT_BINARY_DIR}"
 		"${PROJECT_SOURCE_DIR}"
 		"${HOWDY_MAN1_PATH}"

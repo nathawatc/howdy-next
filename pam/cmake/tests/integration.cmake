@@ -1,11 +1,17 @@
 set(pam_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
+add_executable(pam_installed_path_validator
+               tests/integration/installed_pam_path_validator.cpp)
+howdy_configure_pam_test_target(pam_installed_path_validator)
+add_executable(pam_installed_state_verifier
+               tests/integration/installed_pam_state_verifier.cpp)
+howdy_configure_pam_test_target(pam_installed_state_verifier)
+target_link_libraries(pam_installed_state_verifier PRIVATE PkgConfig::LIBACL)
 add_test(
 	NAME pam-installed-setuid-path-validation
-	COMMAND
-		bash
-		"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
-		--validate-paths
+	COMMAND pam_installed_path_validator --self-test
 )
+add_test(NAME pam-installed-setuid-state-verifier
+	COMMAND pam_installed_state_verifier --self-test)
 howdy_set_test_timeouts()
 
 if(HOWDY_ENABLE_PRIVILEGED_TESTS)
@@ -26,6 +32,9 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 			tests/integration/installed_runtime_e2e_driver.cpp
 		)
 		howdy_configure_pam_target(pam_installed_runtime_e2e_driver)
+		add_executable(pam_installed_install_environment_test
+			tests/integration/installed_pam_install_environment_test.cpp)
+		howdy_configure_pam_test_target(pam_installed_install_environment_test)
 		target_link_libraries(
 			pam_installed_runtime_e2e_driver
 			PRIVATE pam_runtime howdy_user_models howdy_user_model_readiness
@@ -43,12 +52,17 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 				pam_installed_e2e_driver
 				pam_installed_compare_e2e_probe
 				pam_installed_runtime_e2e_driver
+				pam_installed_install_environment_test
+				pam_installed_path_validator
+				pam_installed_state_verifier
 		)
 		add_test(
 			NAME installed-pam-setuid-e2e
 			COMMAND
 				bash
 				"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
+				"$<TARGET_FILE:pam_installed_path_validator>"
+				"$<TARGET_FILE:pam_installed_state_verifier>"
 				"${PROJECT_BINARY_DIR}"
 				"${CMAKE_INSTALL_PREFIX}"
 				"${HOWDY_PAM_DIR}"
@@ -62,9 +76,10 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 		add_test(
 			NAME installed-pam-setuid-install-environment
 			COMMAND
-				sh
-				"${pam_integration_dir}/installed_pam_install_environment_test.sh"
+				pam_installed_install_environment_test
 				"${pam_integration_dir}/installed_pam_setuid_e2e.sh"
+				"$<TARGET_FILE:pam_installed_path_validator>"
+				"$<TARGET_FILE:pam_installed_state_verifier>"
 				"${PROJECT_BINARY_DIR}"
 				"${CMAKE_INSTALL_PREFIX}"
 				"${HOWDY_PAM_DIR}"
