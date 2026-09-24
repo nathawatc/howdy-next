@@ -106,9 +106,9 @@ if [[ ${1:-} == --validate-paths ]]; then
 	exit 0
 fi
 
-[[ $# -eq 8 ]] || fail "expected eight path arguments"
+[[ $# -eq 9 ]] || fail "expected nine path arguments"
 build_dir=$1 raw_install_prefix=$2 raw_pam_dir=$3 raw_helper_dir=$4 raw_config_dir=$5
-raw_user_models_dir=$6 driver=$7 runtime_driver=$8
+raw_user_models_dir=$6 driver=$7 runtime_driver=$8 compare_probe=$9
 validate_install_prefix "$raw_install_prefix" || fail "unsafe isolated install prefix"
 install_prefix=$validated_install_prefix
 validate_install_subdir "$raw_pam_dir" || fail "unsafe PAM directory"
@@ -247,6 +247,8 @@ cmake --install "$build_dir" >/dev/null
 
 validate_installed_path "$helper_dir/howdy-auth-helper" file || fail "unsafe installed helper"
 helper=$validated_installed_path
+validate_installed_path "$helper_dir/howdy-compare" file || fail "unsafe installed compare"
+compare=$validated_installed_path
 validate_installed_path "$pam_dir/pam_howdy.so" file || fail "unsafe installed PAM module"
 module=$validated_installed_path
 validate_installed_path "$config_dir/config.ini" file || fail "unsafe installed config"
@@ -258,6 +260,7 @@ pam_dir=${module%/*}
 config_dir=${config%/*}
 user_models_dir=$models
 [[ $(stat -c '%u:%g:%a' "$helper") == 0:0:4755 ]] || fail "helper is not root:root 4755"
+[[ $(stat -c '%u:%g:%a' "$compare") == 0:0:755 ]] || fail "compare is not root:root 0755"
 [[ $(stat -c '%u:%g:%a' "$config_dir") == 0:0:750 ]] || fail "config directory is not root:root 0750"
 [[ $(stat -c '%u:%g:%a' "$config") == 0:0:640 ]] || fail "config is not root:root 0640"
 [[ $(stat -c '%u:%g:%a' "$models") == 0:0:750 ]] || fail "models directory is not root:root 0750"
@@ -278,9 +281,13 @@ grep -Fx "inline constexpr auto kConfiguredUserModelsDir = \"$models\";" "$paths
 	fail "compiled models path mismatch"
 grep -Fx "inline constexpr auto kAuthHelperPath = \"$helper\";" "$paths_header" >/dev/null ||
 	fail "compiled helper path mismatch"
+grep -Fx "inline constexpr auto kCompareProcessPath = \"$compare\";" "$paths_header" >/dev/null ||
+	fail "compiled compare path mismatch"
 
 for setting in \
 	"disabled true" \
+	"detection_notice true" \
+	"no_confirmation false" \
 	"abort_if_ssh false" \
 	"abort_if_lid_closed false"; do
 	key=${setting%% *}
@@ -539,7 +546,7 @@ chmod 0755 "$service_dir"
 printf 'auth required %s workaround=off\n' "$module" >"$service_dir/howdy-e2e"
 chmod 0644 "$service_dir/howdy-e2e"
 sed -i 's/^disabled = true$/disabled = false/' "$config"
-as_user "$driver" howdy-e2e "$selected_user" "$service_dir"
+as_user "$driver" howdy-e2e "$selected_user" "$service_dir" unavailable
 cat "$source_snapshot" >"$config"
 printf 'release\n' >&"$a_write_fd"
 exec {a_write_fd}>&-
@@ -555,7 +562,24 @@ cat "$source_model_snapshot" >"$source_model"
 cmp -s "$source_model" "$source_model_snapshot" || fail "source model content was not restored"
 as_user test ! -r "$source_model" || fail "restored source model is readable by selected user"
 
-as_user "$driver" howdy-e2e "$selected_user" "$service_dir"
+# Exercise the installed PAM, setuid helper, staged runtime, and compiled compare path
+# with a controlled result independent of camera hardware and ONNX model assets.
+[[ -f $compare_probe && -x $compare_probe ]] || fail "compare probe is unavailable"
+mv -- "$compare" "$compare.production"
+install -o 0 -g 0 -m 0755 -- "$compare_probe" "$compare"
+sed -i 's/^disabled = true$/disabled = false/' "$config"
+if ! success_output=$(as_user "$driver" howdy-e2e "$selected_user" "$service_dir" success 2>&1); then
+	printf '%s\n' "$success_output" >&2
+	fail "installed PAM success path failed"
+fi
+[[ $success_output == $'HOWDY_E2E_COMPARE_PROBE_OK\nPAM_SUCCESS' ]] ||
+	fail "installed compare execution or PAM success marker missing: $success_output"
+cat "$source_snapshot" >"$config"
+rm -- "$compare"
+mv -- "$compare.production" "$compare"
+[[ $(stat -c '%u:%g:%a' "$compare") == 0:0:755 ]] || fail "restored compare metadata changed"
+
+as_user "$driver" howdy-e2e "$selected_user" "$service_dir" unavailable
 flock -n "$expected_gen0.lock" true || fail "PAM flow retained gen000 lease"
 flock -n "$expected_gen1.lock" true || fail "PAM flow retained gen001 lease"
 cmp -s "$config" "$source_snapshot" || fail "runtime flow changed source config"
@@ -573,4 +597,5 @@ printf 'Runtime files: three content generations, exact metadata/ACLs, links, lo
 printf 'Absent staging: target-user readiness, sentinel rejection, active lease, PAM result passed\n'
 printf 'Canonical source model: restored, unchanged, protected\n'
 printf 'Direct helper missing-fd rejection: passed\n'
-printf 'PAM-only result: PAM_AUTHINFO_UNAVAIL\nRuntime cleanup: passed\n'
+printf 'Installed PAM compare result: PAM_SUCCESS via validated compare probe\n'
+printf 'PAM unavailable results and runtime cleanup: passed\n'

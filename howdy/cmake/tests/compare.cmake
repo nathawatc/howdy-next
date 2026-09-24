@@ -22,6 +22,22 @@ target_link_libraries(howdy_compare_entrypoint_test PRIVATE
                       howdy_compare_entrypoint howdy_opencv)
 add_dependencies(howdy_compare_entrypoint_test howdy_packaged_config)
 
+set(compare_success_root "${CMAKE_CURRENT_BINARY_DIR}/compare-success-test")
+howdy_add_native_test(
+	howdy_compare_entrypoint_success_test
+	native-compare-entrypoint-success
+	tests/compare/compare_entrypoint_success_test.cpp
+)
+target_compile_definitions(
+	howdy_compare_entrypoint_success_test
+	PRIVATE
+		"HOWDY_PACKAGED_CONFIG_PATH=\"${HOWDY_PACKAGED_CONFIG_PATH}\""
+		"HOWDY_COMPARE_SUCCESS_ROOT=\"${compare_success_root}\""
+)
+target_link_libraries(howdy_compare_entrypoint_success_test PRIVATE
+                      howdy_compare_entrypoint howdy_opencv)
+add_dependencies(howdy_compare_entrypoint_success_test howdy_packaged_config)
+
 howdy_add_native_test(
 	howdy_compare_args_test
 	native-compare-args

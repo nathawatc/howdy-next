@@ -3,6 +3,7 @@
 #include "compare/args.hpp"
 #include "compare/capture_session.hpp"
 #include "compare/engine.hpp"
+#include "compare/entrypoint/dependencies.hpp"
 #include "compare/entrypoint/internal.hpp"
 #include "compare/logic.hpp"
 #include "compare/privileges.hpp"
@@ -18,6 +19,7 @@
 #include "support/cpu_topology.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "vision/face_inference.hpp"
 #include "vision/face_model.hpp"
 
 #include <algorithm>
@@ -90,13 +92,17 @@ namespace {
 		std::reference_wrapper<const howdy::native::VideoConfig>     video_config;
 		std::reference_wrapper<howdy::native::StoredEncodings>       stored_encodings;
 		std::chrono::steady_clock::time_point                        start_time;
-		bool                                                         end_report = false;
+		bool                                                         end_report   = false;
+		const howdy::native::CompareEntrypointDependencies          *dependencies = nullptr;
 		std::optional<howdy::native::CompareEngine>                  compare_engine;
 	};
 
 	auto InitializeModel(void *raw_context) -> bool {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		auto &model   = context.face_model.emplace(context.face_config.get());
+		if (context.dependencies != nullptr) {
+			return howdy::native::FaceInferenceComplete(context.dependencies->inference);
+		}
+		auto &model = context.face_model.emplace(context.face_config.get());
 		if (!model.Ok()) {
 			std::cerr << model.ErrorMessage() << "\n";
 			return false;
@@ -109,19 +115,30 @@ namespace {
 		return context.capture_session.get().Open();
 	}
 
-	auto DropPrivileges([[maybe_unused]] void *raw_context)
-	    -> howdy::native::ComparePrivilegeResult {
+	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
+		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		if (context.dependencies != nullptr) {
+			if (context.dependencies->drop_privileges == nullptr) {
+				return {.status = howdy::native::ComparePrivilegeStatus::kVerificationFailure,
+				        .error_message = "Injected compare privilege operation unavailable"};
+			}
+			return context.dependencies->drop_privileges(context.dependencies->context);
+		}
 		return howdy::native::DropComparePrivileges();
 	}
 
 	void ConstructEngine(void *raw_context) {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
-		if (!context.face_model.has_value()) {
+		howdy::native::FaceInferenceOperations inference;
+		if (context.dependencies != nullptr) {
+			inference = context.dependencies->inference;
+		} else if (context.face_model.has_value()) {
+			inference = howdy::native::FaceModelInferenceOperations(*context.face_model);
+		} else {
 			return;
 		}
 		context.compare_engine.emplace(
-		    context.video_config.get(),
-		    howdy::native::FaceModelInferenceOperations(*context.face_model),
+		    context.video_config.get(), inference,
 		    howdy::native::PreparedFaceMatcher(std::move(context.stored_encodings.get().encodings),
 		                                       context.face_config.get().sface_metric,
 		                                       context.face_config.get().sface_threshold));
@@ -134,6 +151,11 @@ namespace {
 
 	auto WarmModel(void *raw_context) -> bool {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		if (context.dependencies != nullptr) {
+			return context.dependencies->warm_model == nullptr
+			           ? true
+			           : context.dependencies->warm_model(context.dependencies->context);
+		}
 		if (!context.face_model.has_value()) {
 			return false;
 		}
@@ -288,123 +310,148 @@ auto howdy::native::compare_entrypoint_internal::WarmModel(FaceModel &model) -> 
 	return model.WarmUpRecognizer();
 }
 
+namespace {
+
+	auto RunCompareEntrypointImpl(
+	    int argc, char **argv, const uid_t trusted_owner_uid,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root,
+	    const howdy::native::CompareEntrypointDependencies          *dependencies) -> int {
+		try {
+			const auto start_time   = std::chrono::steady_clock::now();
+			const auto parse_result = howdy::native::ParseCompareArgs(
+			    argc, argv, howdy::native::ResolveConfigPath().string());
+			if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
+				std::cout << parse_result.message;
+				return static_cast<int>(parse_result.exit_code);
+			}
+			if (parse_result.status == howdy::native::CompareArgsStatus::kError) {
+				if (!parse_result.message.empty()) {
+					std::cerr << parse_result.message;
+				}
+				return static_cast<int>(parse_result.exit_code);
+			}
+			const auto &args = parse_result.args;
+
+			auto config_result = howdy::native::LoadRuntimeConfig(
+			    args.config_path, trusted_owner_uid, validation_root);
+			if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
+			    !config_result.config.has_value()) {
+				std::cerr << config_result.error_message << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			const auto &config = *config_result.config;
+
+			const auto sandbox_result = howdy::native::ApplyCompareSandbox(config.video.timeout);
+			if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
+				ReportSandboxFailure(sandbox_result);
+				return static_cast<int>(CompareExit::kAbort);
+			}
+
+			auto loaded_models =
+			    howdy::native::LoadUserModels(args.user, howdy::native::FaceModel::kBackendName,
+			                                  trusted_owner_uid, validation_root);
+			if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
+				std::cerr << loaded_models.error_message << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			if (loaded_models.status == howdy::native::UserModelStatus::kIncompatibleBackend) {
+				std::cerr << loaded_models.error_message << "\n";
+				return static_cast<int>(CompareExit::kNoFaceModel);
+			}
+			if (loaded_models.status == howdy::native::UserModelStatus::kParseError) {
+				std::cerr << loaded_models.error_message << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			if (loaded_models.status == howdy::native::UserModelStatus::kInsecurePath) {
+				std::cerr << loaded_models.error_message << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			if (loaded_models.status != howdy::native::UserModelStatus::kOk) {
+				return static_cast<int>(CompareExit::kNoFaceModel);
+			}
+
+			if (!howdy::native::ConfigureFaceModelEnvironment()) {
+				std::cerr << "OpenCV New DNN graph engine could not be configured\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+
+			if (const auto physical_cores = howdy::native::AvailablePhysicalCoreCount();
+			    physical_cores.has_value()) {
+				cv::setNumThreads(*physical_cores);
+			}
+
+			std::optional<howdy::native::CompareCaptureSession> capture_session;
+			if (dependencies == nullptr) {
+				capture_session.emplace(config.video);
+			} else {
+				capture_session.emplace(config.video, dependencies->capture);
+			}
+
+			CompareProductionContext processing_context{
+			    .capture_session  = std::ref(*capture_session),
+			    .face_model       = std::nullopt,
+			    .face_config      = std::cref(config.face),
+			    .video_config     = std::cref(config.video),
+			    .stored_encodings = std::ref(loaded_models.stored),
+			    .start_time       = start_time,
+			    .end_report       = config.debug.end_report,
+			    .dependencies     = dependencies,
+			};
+			const auto processing_result =
+			    howdy::native::compare_processing_internal::RunCompareProcessing({
+			        .context          = &processing_context,
+			        .initialize_model = InitializeModel,
+			        .open_capture     = OpenCapture,
+			        .drop_privileges  = DropPrivileges,
+			        .construct_engine = ConstructEngine,
+			        .reset_timeout    = ResetTimeout,
+			        .warm_model       = WarmModel,
+			        .run_frame_loop   = RunFrameLoop,
+			    });
+			if (const auto *capture_open =
+			        std::get_if<howdy::native::CompareCaptureOpenResult>(&processing_result)) {
+				switch (capture_open->status) {
+					case howdy::native::CompareCaptureOpenStatus::kOpenFailed:
+						std::cerr << capture_open->error_message << "\n";
+						return static_cast<int>(CompareExit::kInvalidDevice);
+					case howdy::native::CompareCaptureOpenStatus::kInvalidDependencies:
+					case howdy::native::CompareCaptureOpenStatus::kOk:
+						return static_cast<int>(CompareExit::kAbort);
+				}
+			}
+			if (const auto *privilege_result =
+			        std::get_if<howdy::native::ComparePrivilegeResult>(&processing_result)) {
+				if (!howdy::native::ComparePrivilegeSucceeded(*privilege_result)) {
+					std::cerr << "Failed to drop compare privileges: "
+					          << privilege_result->error_message << "\n";
+				}
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			return static_cast<int>(std::get<CompareExit>(processing_result));
+
+		} catch (const cv::Exception &error) {
+			return static_cast<int>(howdy::native::CompareAbortFromCvException(
+			    error, std::cerr, "authentication compare path"));
+		} catch (const std::exception &error) {
+			return static_cast<int>(howdy::native::CompareAbortFromException(
+			    error, std::cerr, "authentication compare path"));
+		} catch (...) {
+			return static_cast<int>(howdy::native::CompareAbortFromUnknownException(
+			    std::cerr, "authentication compare path"));
+		}
+	}
+
+}  // namespace
+
 auto howdy::native::RunCompareEntrypoint(
     int argc, char **argv, const uid_t trusted_owner_uid,
     const file_security_internal::ValidationRoot &validation_root) -> int {
-	try {
-		const auto start_time   = std::chrono::steady_clock::now();
-		const auto parse_result = howdy::native::ParseCompareArgs(
-		    argc, argv, howdy::native::ResolveConfigPath().string());
-		if (parse_result.status == howdy::native::CompareArgsStatus::kHelp) {
-			std::cout << parse_result.message;
-			return static_cast<int>(parse_result.exit_code);
-		}
-		if (parse_result.status == howdy::native::CompareArgsStatus::kError) {
-			if (!parse_result.message.empty()) {
-				std::cerr << parse_result.message;
-			}
-			return static_cast<int>(parse_result.exit_code);
-		}
-		const auto &args = parse_result.args;
+	return RunCompareEntrypointImpl(argc, argv, trusted_owner_uid, validation_root, nullptr);
+}
 
-		auto config_result =
-		    howdy::native::LoadRuntimeConfig(args.config_path, trusted_owner_uid, validation_root);
-		if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
-		    !config_result.config.has_value()) {
-			std::cerr << config_result.error_message << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		const auto &config = *config_result.config;
-
-		const auto sandbox_result = howdy::native::ApplyCompareSandbox(config.video.timeout);
-		if (sandbox_result.status != howdy::native::CompareSandboxStatus::kOk) {
-			ReportSandboxFailure(sandbox_result);
-			return static_cast<int>(CompareExit::kAbort);
-		}
-
-		auto loaded_models = howdy::native::LoadUserModels(
-		    args.user, howdy::native::FaceModel::kBackendName, trusted_owner_uid, validation_root);
-		if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
-			std::cerr << loaded_models.error_message << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		if (loaded_models.status == howdy::native::UserModelStatus::kIncompatibleBackend) {
-			std::cerr << loaded_models.error_message << "\n";
-			return static_cast<int>(CompareExit::kNoFaceModel);
-		}
-		if (loaded_models.status == howdy::native::UserModelStatus::kParseError) {
-			std::cerr << loaded_models.error_message << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		if (loaded_models.status == howdy::native::UserModelStatus::kInsecurePath) {
-			std::cerr << loaded_models.error_message << "\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		if (loaded_models.status != howdy::native::UserModelStatus::kOk) {
-			return static_cast<int>(CompareExit::kNoFaceModel);
-		}
-
-		if (!howdy::native::ConfigureFaceModelEnvironment()) {
-			std::cerr << "OpenCV New DNN graph engine could not be configured\n";
-			return static_cast<int>(CompareExit::kAbort);
-		}
-
-		if (const auto physical_cores = howdy::native::AvailablePhysicalCoreCount();
-		    physical_cores.has_value()) {
-			cv::setNumThreads(*physical_cores);
-		}
-
-		howdy::native::CompareCaptureSession capture_session(config.video);
-
-		CompareProductionContext processing_context{
-		    .capture_session  = std::ref(capture_session),
-		    .face_model       = std::nullopt,
-		    .face_config      = std::cref(config.face),
-		    .video_config     = std::cref(config.video),
-		    .stored_encodings = std::ref(loaded_models.stored),
-		    .start_time       = start_time,
-		    .end_report       = config.debug.end_report,
-		};
-		const auto processing_result =
-		    howdy::native::compare_processing_internal::RunCompareProcessing({
-		        .context          = &processing_context,
-		        .initialize_model = InitializeModel,
-		        .open_capture     = OpenCapture,
-		        .drop_privileges  = DropPrivileges,
-		        .construct_engine = ConstructEngine,
-		        .reset_timeout    = ResetTimeout,
-		        .warm_model       = WarmModel,
-		        .run_frame_loop   = RunFrameLoop,
-		    });
-		if (const auto *capture_open =
-		        std::get_if<howdy::native::CompareCaptureOpenResult>(&processing_result)) {
-			switch (capture_open->status) {
-				case howdy::native::CompareCaptureOpenStatus::kOpenFailed:
-					std::cerr << capture_open->error_message << "\n";
-					return static_cast<int>(CompareExit::kInvalidDevice);
-				case howdy::native::CompareCaptureOpenStatus::kInvalidDependencies:
-				case howdy::native::CompareCaptureOpenStatus::kOk:
-					return static_cast<int>(CompareExit::kAbort);
-			}
-		}
-		if (const auto *privilege_result =
-		        std::get_if<howdy::native::ComparePrivilegeResult>(&processing_result)) {
-			if (!howdy::native::ComparePrivilegeSucceeded(*privilege_result)) {
-				std::cerr << "Failed to drop compare privileges: "
-				          << privilege_result->error_message << "\n";
-			}
-			return static_cast<int>(CompareExit::kAbort);
-		}
-		return static_cast<int>(std::get<CompareExit>(processing_result));
-
-	} catch (const cv::Exception &error) {
-		return static_cast<int>(howdy::native::CompareAbortFromCvException(
-		    error, std::cerr, "authentication compare path"));
-	} catch (const std::exception &error) {
-		return static_cast<int>(howdy::native::CompareAbortFromException(
-		    error, std::cerr, "authentication compare path"));
-	} catch (...) {
-		return static_cast<int>(howdy::native::CompareAbortFromUnknownException(
-		    std::cerr, "authentication compare path"));
-	}
+auto howdy::native::RunCompareEntrypoint(
+    int argc, char **argv, const uid_t trusted_owner_uid,
+    const file_security_internal::ValidationRoot &validation_root,
+    const CompareEntrypointDependencies          &dependencies) -> int {
+	return RunCompareEntrypointImpl(argc, argv, trusted_owner_uid, validation_root, &dependencies);
 }

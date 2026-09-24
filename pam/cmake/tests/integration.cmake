@@ -17,6 +17,11 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 		howdy_configure_pam_target(pam_installed_e2e_driver)
 		target_link_libraries(pam_installed_e2e_driver PRIVATE PAM::PAM)
 		add_executable(
+			pam_installed_compare_e2e_probe
+			tests/integration/installed_compare_e2e_probe.cpp
+		)
+		howdy_configure_pam_target(pam_installed_compare_e2e_probe)
+		add_executable(
 			pam_installed_runtime_e2e_driver
 			tests/integration/installed_runtime_e2e_driver.cpp
 		)
@@ -36,6 +41,7 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 				howdy_docs
 				howdy-gmo
 				pam_installed_e2e_driver
+				pam_installed_compare_e2e_probe
 				pam_installed_runtime_e2e_driver
 		)
 		add_test(
@@ -51,6 +57,7 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 				"${HOWDY_USER_MODELS_DIR}"
 				"$<TARGET_FILE:pam_installed_e2e_driver>"
 				"$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
+				"$<TARGET_FILE:pam_installed_compare_e2e_probe>"
 		)
 		add_test(
 			NAME installed-pam-setuid-install-environment
@@ -66,6 +73,7 @@ if(HOWDY_ENABLE_PRIVILEGED_TESTS)
 				"${HOWDY_USER_MODELS_DIR}"
 				"$<TARGET_FILE:pam_installed_e2e_driver>"
 				"$<TARGET_FILE:pam_installed_runtime_e2e_driver>"
+				"$<TARGET_FILE:pam_installed_compare_e2e_probe>"
 		)
 	else()
 		add_test(
