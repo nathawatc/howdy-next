@@ -330,7 +330,7 @@ auto main() -> int {
 	                                     "timeout = 0\n"
 	                                     "dark_threshold = 1000\n"
 	                                     "max_height = 0\n"
-	                                     "rotate = 3\n"
+	                                     "rotate = 4\n"
 	                                     "exposure = -2\n"
 	                                     "clahe_clip_limit = 0\n"
 	                                     "clahe_tile_grid_size = 0\n"

@@ -146,16 +146,19 @@ namespace {
 		const cv::Mat source = cv::Mat_<unsigned char>({2, 3}, {32, 64, 96, 128, 160, 192});
 		cv::Mat       clockwise;
 		cv::Mat       counterclockwise;
+		cv::Mat       upside_down;
 		cv::rotate(source, clockwise, cv::ROTATE_90_CLOCKWISE);
 		cv::rotate(source, counterclockwise, cv::ROTATE_90_COUNTERCLOCKWISE);
+		cv::rotate(source, upside_down, cv::ROTATE_180);
 		const std::vector<std::vector<cv::Mat>> expected{
 		    {source, source, source},
 		    {counterclockwise, clockwise, source},
 		    {clockwise, counterclockwise, clockwise},
+		    {upside_down, upside_down, upside_down},
 		};
 
 		bool ok = true;
-		for (int mode = 0; mode <= 2; ++mode) {
+		for (int mode = 0; mode <= 3; ++mode) {
 			SessionContext context;
 			context.frames     = {source, source};
 			context.stop_after = 3;

@@ -259,6 +259,19 @@ auto RunCompareEngineFrameTests() -> bool {
 	}
 
 	{
+		cv::Mat expected;
+		cv::rotate(source, expected, cv::ROTATE_180);
+		howdy::native::CompareEngine engine(MakeVideoConfig(100.0F, 100.0F, 3));
+		for (int frame_number = 1; frame_number <= 3; ++frame_number) {
+			const auto result = engine.ProcessGrayFrame(source.clone(), frame_number);
+			ok &= Expect(result.status == CompareFrameStatus::kReady,
+			             "rotate 3 compare frame is ready");
+			ok &= ExpectMatrixEqual(result.working_frame, expected,
+			                        "rotate 3 compare frame is fixed 180 degrees");
+		}
+	}
+
+	{
 		const cv::Mat fixture(16, 16, CV_8UC1, cv::Scalar(16));
 
 		howdy::native::CompareEngine disabled_engine(MakeVideoConfig(50.0F, 100.0F, 0, false));

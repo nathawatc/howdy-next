@@ -256,6 +256,11 @@ auto main() -> int {
 		ok &= Expect(config.debug.end_report, "custom debug field maps to its schema option");
 	}
 
+	const auto upside_down = LoadConfig(root, "rotate-180.ini", "[video]\nrotate = 3\n");
+	ok &= Expect(upside_down.ok && upside_down.config.has_value() &&
+	                 upside_down.config->video.rotate == 3,
+	             "rotate 3 loads as a runtime video option");
+
 	const auto boolean_mapping =
 	    LoadConfig(root, "boolean-mapping.ini",
 	               "[core]\nno_confirmation = true\nabort_if_ssh = false\n"

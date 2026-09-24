@@ -44,6 +44,10 @@ namespace howdy::native {
 			           frame_number % 2 == 0 ? cv::ROTATE_90_COUNTERCLOCKWISE
 			                                 : cv::ROTATE_90_CLOCKWISE);
 			return rotated;
+		} else if (config.rotate == 3) {
+			cv::Mat rotated;
+			cv::rotate(frame, rotated, cv::ROTATE_180);
+			return rotated;
 		}
 
 		return frame;

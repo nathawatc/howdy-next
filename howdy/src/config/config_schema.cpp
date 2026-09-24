@@ -24,7 +24,7 @@ namespace howdy::native::config_schema {
 		inline constexpr NumericRange kTimeoutRange = IntegerRange{.minimum = 1, .maximum = 300};
 		inline constexpr NumericRange kMaxHeightRange =
 		    FloatRange{.minimum = 32.0F, .maximum = 4096.0F};
-		inline constexpr NumericRange kRotateRange = IntegerRange{.minimum = 0, .maximum = 2};
+		inline constexpr NumericRange kRotateRange = IntegerRange{.minimum = 0, .maximum = 3};
 		inline constexpr NumericRange kDarkThresholdRange =
 		    FloatRange{.minimum = 0.0F, .maximum = 99.9F};
 		inline constexpr NumericRange kClaheClipLimitRange =
@@ -208,8 +208,9 @@ namespace howdy::native::config_schema {
 		           .type         = ValueType::kInteger,
 		           .fallback     = IntDefault(0),
 		           .range        = kRotateRange,
-		           .invalid_rule = "expected integer range 0..2",
-		           .description  = "Camera orientation mode: 0 landscape, 1 both, 2 portrait."},
+		           .invalid_rule = "expected integer range 0..3",
+		           .description  = "Camera orientation mode: 0 landscape, 1 both, 2 portrait, 3 "
+		                           "upside down (180 degrees)."},
 		    Option{.id           = OptionId::kFaceYunetScoreThreshold,
 		           .section      = "face",
 		           .key          = "yunet_score_threshold",
