@@ -1,6 +1,6 @@
 # Arch Linux CI Guidelines
 
-**Updated:** 2026-09-14
+**Updated:** 2026-09-24
 
 Read the [repository guidelines](../../AGENTS.md) first.
 
@@ -17,6 +17,7 @@ Covers `ci/archlinux/` and `.forgejo/workflows/archlinux.yml`.
   yyjson, libinih, and Qt 6 requirements.
 - Keep the image minimal and clear pacman caches in the same layer.
 - Keep OCI labels in `Containerfile`, not duplicated in wrapper commands.
+- E2E tests are excluded. Codeberg runners do not expose the required container privileges.
 
 ## Local CI
 
@@ -25,7 +26,7 @@ Run from the repository root:
 ```sh
 podman run --rm \
   -v "$PWD:/workspace:ro" \
-  --tmpfs /workspace/build:rw,exec \
+  --tmpfs /workspace/build:rw,exec,notmpcopyup \
   -w /workspace \
   codeberg.org/nathawat/howdy-next/ci-archlinux:latest bash -c '
     set -e
@@ -35,4 +36,5 @@ podman run --rm \
   '
 ```
 
-Image build and publishing commands are maintainer-only and live in [`../README.md`](../README.md).
+Rebuild the CI image when dependencies or the image recipe change. Image build and publishing
+commands are maintainer-only and live in [`../README.md`](../README.md).
