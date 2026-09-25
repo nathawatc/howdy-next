@@ -4,7 +4,7 @@ if(DEFINED ENV{CMAKE_INSTALL_MODE} AND NOT "$ENV{CMAKE_INSTALL_MODE}" STREQUAL "
 endif()
 if(NOT "$ENV{DESTDIR}" STREQUAL "")
   set(howdy_preflight_emulator)
-  if(@CMAKE_CROSSCOMPILING@)
+  if("@CMAKE_CROSSCOMPILING@" STREQUAL "TRUE")
     set(howdy_preflight_emulator [==[@CMAKE_CROSSCOMPILING_EMULATOR@]==])
   endif()
   # Keep the emulator prefix here: howdy_install_preflight is a target binary

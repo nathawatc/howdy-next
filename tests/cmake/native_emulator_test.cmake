@@ -30,7 +30,7 @@ configure_file(
 
 file(READ "${HOWDY_TEST_ROOT}/native_install_preflight.cmake" native_preflight)
 string(REGEX MATCH "${block_regex}" native_block "${native_preflight}")
-if(NOT native_block MATCHES "if\\(FALSE\\)")
+if(NOT native_block MATCHES "if\\(\"FALSE\" STREQUAL \"TRUE\"\\)")
   message(FATAL_ERROR "Native install preflight did not disable cross-compiling condition")
 endif()
 
@@ -65,7 +65,7 @@ configure_file(
 
 file(READ "${HOWDY_TEST_ROOT}/cross_install_preflight.cmake" cross_preflight)
 string(REGEX MATCH "${block_regex}" cross_block "${cross_preflight}")
-if(NOT cross_block MATCHES "if\\(TRUE\\)")
+if(NOT cross_block MATCHES "if\\(\"TRUE\" STREQUAL \"TRUE\"\\)")
   message(FATAL_ERROR "Cross install preflight did not enable cross-compiling condition")
 endif()
 if(NOT cross_block MATCHES "\\[==\\[${test_emulator}\\]==\\]")
