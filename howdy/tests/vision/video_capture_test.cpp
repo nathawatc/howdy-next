@@ -3,10 +3,14 @@
 #include "vision/video_capture.hpp"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
+#include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/exception.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
@@ -17,11 +21,25 @@ namespace howdy::native {
 	public:
 		class ReadContext final : public VideoCapture::FrameReader {
 		public:
-			explicit ReadContext(cv::Mat source_frame)
-			    : frame_(std::move(source_frame)) {}
+			enum class Behavior : std::uint8_t {
+				kFrame,
+				kFailure,
+				kException
+			};
+
+			explicit ReadContext(cv::Mat source_frame, Behavior behavior = Behavior::kFrame)
+			    : frame_(std::move(source_frame))
+			    , behavior_(behavior) {}
 
 			auto Read(cv::Mat &output) -> bool override {
 				calls_++;
+				if (behavior_ == Behavior::kException) {
+					throw cv::Exception(cv::Error::StsError, "injected read failure", "Read",
+					                    "video_capture_test.cpp", 1);
+				}
+				if (behavior_ == Behavior::kFailure) {
+					return false;
+				}
 				output = frame_.clone();
 				return true;
 			}
@@ -31,8 +49,9 @@ namespace howdy::native {
 			}
 
 		private:
-			cv::Mat frame_;
-			int     calls_ = 0;
+			cv::Mat  frame_;
+			Behavior behavior_ = Behavior::kFrame;
+			int      calls_    = 0;
 		};
 
 		static auto Create(CaptureSettings settings, std::shared_ptr<ReadContext> frame_reader)
@@ -100,6 +119,48 @@ namespace {
 		return ExpectRejectedFrame(cv::Mat(4, 4, CV_32FC1, cv::Scalar(0.0F)), "non-CV_8U frame");
 	}
 
+	auto ColorFrameConvertsToGray(const cv::Mat &source, const std::string &label) -> bool {
+		auto context = std::make_shared<ReadContext>(source);
+		auto capture = howdy::native::VideoCaptureTestAccess::Create(
+		    howdy::native::CaptureSettings{.device_path = "none"}, context);
+		cv::Mat    raw;
+		cv::Mat    gray;
+		const bool read_ok = capture.Read(raw, &gray);
+		bool       ok      = true;
+		ok &= Expect(read_ok && capture.Error() == howdy::native::CaptureError::kNone,
+		             label + " read succeeds");
+		ok &= Expect(read_ok && raw.type() == source.type() && raw.size() == source.size() &&
+		                 cv::norm(raw, source, cv::NORM_INF) == 0.0,
+		             label + " preserves raw color frame");
+		ok &= Expect(read_ok && gray.type() == CV_8UC1 && gray.rows == 1 && gray.cols == 1 &&
+		                 gray.at<unsigned char>(0, 0) == 76,
+		             label + " converts red pixel to grayscale");
+		ok &= Expect(context->Calls() == 1, label + " reads once");
+		return ok;
+	}
+
+	auto ReadFailureIsReported(ReadContext::Behavior behavior, const std::string &label) -> bool {
+		auto context = std::make_shared<ReadContext>(cv::Mat(), behavior);
+		auto capture = howdy::native::VideoCaptureTestAccess::Create(
+		    howdy::native::CaptureSettings{.device_path = "none"}, context);
+		cv::Mat    raw;
+		cv::Mat    gray    = GraySentinel();
+		const bool read_ok = capture.Read(raw, &gray);
+		bool       ok      = true;
+		ok &= Expect(!read_ok && capture.Error() == howdy::native::CaptureError::kReadFailed,
+		             label + " fails closed");
+		const bool expected_diagnostic =
+		    behavior == ReadContext::Behavior::kFailure
+		        ? capture.ErrorMessage() == howdy::native::kCameraReadFailureMessage
+		        : capture.ErrorMessage().starts_with(
+		              "OpenCV failed while reading camera frame: ") &&
+		              capture.ErrorMessage().contains("injected read failure");
+		ok &= Expect(expected_diagnostic, label + " reports read failure");
+		ok &= Expect(GrayIsSentinel(gray), label + " leaves gray output unchanged");
+		ok &= Expect(context->Calls() == 1, label + " reads once");
+		return ok;
+	}
+
 	auto UnconfiguredDeviceIsRejectedBeforeOpen() -> bool {
 		auto capture =
 		    howdy::native::VideoCapture(howdy::native::CaptureSettings{.device_path = "none"});
@@ -139,6 +200,10 @@ auto main() -> int {
 	ok &= OversizedFrameIsRejectedWithoutGrayscaleConversion();
 	ok &= UnsupportedChannelFrameIsRejectedWithoutGrayscaleConversion();
 	ok &= Non8uFrameIsRejectedWithoutGrayscaleConversion();
+	ok &= ColorFrameConvertsToGray(cv::Mat(1, 1, CV_8UC3, cv::Scalar(0, 0, 255)), "BGR");
+	ok &= ColorFrameConvertsToGray(cv::Mat(1, 1, CV_8UC4, cv::Scalar(0, 0, 255, 17)), "BGRA");
+	ok &= ReadFailureIsReported(ReadContext::Behavior::kFailure, "false read");
+	ok &= ReadFailureIsReported(ReadContext::Behavior::kException, "OpenCV exception");
 	ok &= UnconfiguredDeviceIsRejectedBeforeOpen();
 	ok &= InjectedReaderCannotOutliveItsContext();
 	return ok ? 0 : 1;

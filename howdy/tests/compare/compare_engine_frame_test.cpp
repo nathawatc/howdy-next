@@ -168,13 +168,10 @@ auto RunCompareEngineFrameTests() -> bool {
 
 		cv::Mat expected;
 		cv::resize(source, expected, cv::Size(), 0.5, 0.5, cv::INTER_AREA);
-		auto clahe =
-		    cv::createCLAHE(config.clahe_clip_limit,
-		                    cv::Size(config.clahe_tile_grid_size, config.clahe_tile_grid_size));
-		clahe->apply(expected, expected);
-		cv::rotate(expected, expected, cv::ROTATE_90_COUNTERCLOCKWISE);
-
+		auto clahe = howdy::native::MakeClahe(config);
+		howdy::native::ApplyClaheIfEnabled(expected, config, clahe);
 		const auto expected_brightness = howdy::native::MeasureBrightness(expected);
+		expected                       = howdy::native::RotateFrame(expected, config, 1);
 		ok &= Expect(result.status == CompareFrameStatus::kReady,
 		             "resize-before-CLAHE frame is processable");
 		ok &= ExpectMatrixEqual(result.working_frame, expected,

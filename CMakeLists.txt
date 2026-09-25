@@ -362,8 +362,18 @@ function(howdy_configure_pam_test_target target)
 	)
 endfunction()
 
-function(howdy_expect_test_failure test_name)
-	set_tests_properties(${test_name} PROPERTIES WILL_FAIL TRUE)
+function(howdy_assert_binary_result test_name target status stdout stderr)
+	add_test(
+		NAME ${test_name}
+		COMMAND
+			"${CMAKE_COMMAND}"
+			"-DBINARY=$<TARGET_FILE:${target}>"
+			"-DEXPECTED_STATUS=${status}"
+			"-DEXPECTED_STDOUT=${stdout}"
+			"-DEXPECTED_STDERR=${stderr}"
+			"-DARGUMENTS=${ARGN}"
+			-P "${PROJECT_SOURCE_DIR}/howdy/cmake/tests/assert_binary_result.cmake"
+	)
 endfunction()
 
 add_library(

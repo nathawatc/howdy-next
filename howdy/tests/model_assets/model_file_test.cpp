@@ -10,6 +10,9 @@
 
 #include <unistd.h>
 
+#include <opencv2/core/exception.hpp>
+#include <opencv2/dnn/dnn.hpp>
+
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -18,7 +21,7 @@ namespace {
 	using howdy::test::Expect;
 	using howdy::test::WriteFile;
 
-	constexpr auto kFixture = "known model fixture";
+	constexpr auto kNonPlaceholderFixture = "non-placeholder test bytes";
 
 	auto Readiness(const std::filesystem::path &path, const std::string_view label = "Model file",
 	               const std::optional<uid_t> owner_uid = std::nullopt)
@@ -47,9 +50,18 @@ auto main() -> int {
 	             "parentless model path is insecure");
 
 	const auto valid = temp_root / "valid.onnx";
-	ok &= Expect(WriteFile(valid, kFixture), "write matching model");
-	ok &= Expect(Readiness(valid).status == OpenCvModelStatus::kOk,
-	             "secure non-placeholder model is ready");
+	ok &= Expect(WriteFile(valid, kNonPlaceholderFixture), "write non-placeholder bytes");
+	const auto non_placeholder_readiness = Readiness(valid);
+	ok &= Expect(non_placeholder_readiness.status == OpenCvModelStatus::kOk &&
+	                 non_placeholder_readiness.error_message.empty(),
+	             "readiness accepts secure non-placeholder bytes without parsing ONNX");
+	bool onnx_rejected = false;
+	try {
+		onnx_rejected = cv::dnn::readNetFromONNX(valid.string()).empty();
+	} catch (const cv::Exception &) {
+		onnx_rejected = true;
+	}
+	ok &= Expect(onnx_rejected, "OpenCV rejects fabricated bytes as an ONNX model");
 
 	const auto empty = temp_root / "empty.onnx";
 	ok &= Expect(WriteFile(empty, ""), "write empty model");
@@ -101,7 +113,7 @@ auto main() -> int {
 	             "missing model remains missing");
 
 	const auto insecure = temp_root / "insecure.onnx";
-	ok &= Expect(WriteFile(insecure, kFixture), "write insecure model");
+	ok &= Expect(WriteFile(insecure, kNonPlaceholderFixture), "write insecure model");
 	ok &= Expect(chmod(insecure.c_str(), 0664) == 0, "make model group-writable");
 	ok &= Expect(Readiness(insecure).status == OpenCvModelStatus::kInsecure,
 	             "group-writable model remains insecure");
@@ -113,7 +125,7 @@ auto main() -> int {
 	ok &= Expect(chmod(insecure.c_str(), 0644) == 0, "restore insecure model mode");
 
 	const auto unreadable = temp_root / "unreadable.onnx";
-	ok &= Expect(WriteFile(unreadable, kFixture), "write unreadable model");
+	ok &= Expect(WriteFile(unreadable, kNonPlaceholderFixture), "write unreadable model");
 	ok &= Expect(chmod(unreadable.c_str(), 0000) == 0, "make model unreadable");
 	if (geteuid() != 0) {
 		const auto unreadable_readiness = Readiness(unreadable);
@@ -131,7 +143,7 @@ auto main() -> int {
 	const auto insecure_parent = temp_root / "group-writable-parent";
 	const auto insecure_child  = insecure_parent / "model.onnx";
 	fs::create_directory(insecure_parent, ec);
-	ok &= Expect(!ec && WriteFile(insecure_child, kFixture) &&
+	ok &= Expect(!ec && WriteFile(insecure_child, kNonPlaceholderFixture) &&
 	                 chmod(insecure_parent.c_str(), 0775) == 0,
 	             "create group-writable model parent");
 	ok &= Expect(Readiness(insecure_child).status == OpenCvModelStatus::kInsecure,
@@ -156,7 +168,7 @@ auto main() -> int {
 
 	const auto hard_link_source = temp_root / "hard-link-source.onnx";
 	const auto hard_link        = temp_root / "hard-link.onnx";
-	ok &= Expect(WriteFile(hard_link_source, kFixture), "create hard-link source");
+	ok &= Expect(WriteFile(hard_link_source, kNonPlaceholderFixture), "create hard-link source");
 	fs::create_hard_link(hard_link_source, hard_link, ec);
 	ok &= Expect(!ec && Readiness(hard_link).status == OpenCvModelStatus::kInsecure,
 	             "hard-linked model remains insecure");

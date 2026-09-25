@@ -164,25 +164,6 @@ auto main() -> int {
 	             "non-empty black frame reports full darkness");
 	ok &= Expect(black_brightness.hist_total > 0.0,
 	             "non-empty black frame keeps non-zero histogram total");
-	int valid_frames = 0;
-	int dark_tries   = 0;
-	if (black_brightness.hist_total == 0.0 || black_brightness.darkness >= 100.0F) {
-	} else {
-		switch (howdy::native::ClassifyBrightness(black_brightness.hist_total,
-		                                          black_brightness.darkness, 30.0F)) {
-			case howdy::native::BrightnessDecision::kBlackFrame:
-				break;
-			case howdy::native::BrightnessDecision::kTooDark:
-				valid_frames++;
-				dark_tries++;
-				break;
-			case howdy::native::BrightnessDecision::kProcessFrame:
-				valid_frames++;
-				break;
-		}
-	}
-	ok &= Expect(valid_frames == 0 && dark_tries == 0,
-	             "non-empty black frame is skipped before enrollment counters");
 	ok &= Expect(howdy::native::ClassifyBrightness(black_brightness.hist_total,
 	                                               black_brightness.darkness, 30.0F) ==
 	                 howdy::native::BrightnessDecision::kBlackFrame,

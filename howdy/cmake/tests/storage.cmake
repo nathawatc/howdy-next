@@ -3,7 +3,8 @@ howdy_add_native_test(
 	native-model-file
 	tests/model_assets/model_file_test.cpp
 )
-target_link_libraries(howdy_model_file_test PRIVATE howdy_model_file)
+target_link_libraries(howdy_model_file_test PRIVATE
+	howdy_model_file howdy_opencv)
 
 howdy_add_native_test(
 	howdy_model_provenance_test

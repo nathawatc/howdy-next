@@ -12,7 +12,13 @@
 #include "cli/test.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cstddef>
+#include <iostream>
+#include <sstream>
+#include <string>
+
+#include <sys/types.h>
 
 namespace {
 
@@ -37,6 +43,32 @@ namespace {
 		return expected;
 	}
 
+	auto RootForDispatch([[maybe_unused]] void *context) -> uid_t {
+		return 0;
+	}
+
+	auto ProductionSetDispatch() -> bool {
+		std::array<std::string, 4> arguments{"howdy", "set", "disabled", "line\nbreak"};
+		std::array<char *, 4>      argv{arguments.at(0).data(), arguments.at(1).data(),
+		                                arguments.at(2).data(), arguments.at(3).data()};
+		std::ostringstream const   output;
+		std::ostringstream const   error;
+		auto                      *old_output = std::cout.rdbuf(output.rdbuf());
+		auto                      *old_error  = std::cerr.rdbuf(error.rdbuf());
+		const int status = howdy::native::howdy_internal::HowdyMainWithDependencies(
+		    static_cast<int>(argv.size()), argv.data(),
+		    {.effective_uid = RootForDispatch,
+		     .command_mains = howdy::native::howdy_internal::ProductionCommandMains()});
+		std::cout.rdbuf(old_output);
+		std::cerr.rdbuf(old_error);
+		return Expect(
+		    status == 1 &&
+		        output.str() ==
+		            "Config values must be single-line scalars and cannot start with [\n" &&
+		        error.str().empty(),
+		    "production dispatcher invokes SetMain and rejects unsafe value");
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -57,5 +89,6 @@ auto main() -> int {
 		ok &= Expect(actual.at(index) == expected.at(index),
 		             "production command ID binds the expected public entrypoint");
 	}
+	ok &= ProductionSetDispatch();
 	return ok ? 0 : 1;
 }

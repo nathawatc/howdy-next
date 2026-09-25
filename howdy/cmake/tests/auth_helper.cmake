@@ -1,16 +1,14 @@
 add_test(NAME native-auth-helper-help COMMAND howdy_auth_helper --help)
-add_test(NAME native-auth-helper-empty COMMAND howdy_auth_helper)
-howdy_expect_test_failure(native-auth-helper-empty)
-add_test(
-	NAME native-auth-helper-unknown-command
-	COMMAND howdy_auth_helper unknown alice
-)
-howdy_expect_test_failure(native-auth-helper-unknown-command)
-add_test(
-	NAME native-auth-helper-prepare-guard
-	COMMAND howdy_auth_helper prepare ../alice
-)
-howdy_expect_test_failure(native-auth-helper-prepare-guard)
+set(auth_helper_usage
+	"Usage: $<TARGET_FILE:howdy_auth_helper> prepare <user>\n")
+howdy_assert_binary_result(native-auth-helper-empty howdy_auth_helper 1
+	"${auth_helper_usage}" "")
+howdy_assert_binary_result(
+	native-auth-helper-unknown-command howdy_auth_helper 1
+	"${auth_helper_usage}" "" unknown alice)
+howdy_assert_binary_result(
+	native-auth-helper-prepare-guard howdy_auth_helper 1 ""
+	"howdy-auth-helper must be installed setuid root\n" prepare ../alice)
 howdy_add_native_test(
 	howdy_auth_helper_test
 	native-auth-helper

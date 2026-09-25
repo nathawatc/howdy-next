@@ -1,8 +1,7 @@
 add_test(NAME native-compare-help COMMAND howdy_compare --help)
-add_test(NAME native-compare-unknown-arg COMMAND howdy_compare --unknown)
-howdy_expect_test_failure(native-compare-unknown-arg)
-add_test(NAME native-compare-missing-user COMMAND howdy_compare)
-howdy_expect_test_failure(native-compare-missing-user)
+howdy_assert_binary_result(native-compare-unknown-arg howdy_compare 12 ""
+	"Unknown argument: --unknown\n" --unknown)
+howdy_assert_binary_result(native-compare-missing-user howdy_compare 12 "" "")
 howdy_add_native_test(
 	howdy_compare_entrypoint_test
 	native-compare-no-model

@@ -1,8 +1,9 @@
 set(howdy_integration_dir "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration")
 add_test(NAME native-howdy-help COMMAND howdy --help)
 add_test(NAME native-howdy-version COMMAND howdy version)
-add_test(NAME native-howdy-nonroot-path COMMAND howdy -U coverage-user list)
-howdy_expect_test_failure(native-howdy-nonroot-path)
+howdy_assert_binary_result(native-howdy-nonroot-path howdy 1
+	"This command requires root privileges.\nRun it again with sudo.\n" ""
+	-U coverage-user list)
 add_test(NAME native-howdy-empty COMMAND howdy)
 add_executable(howdy_bash_completion_integration_test
                tests/integration/bash_completion_test.cpp)
