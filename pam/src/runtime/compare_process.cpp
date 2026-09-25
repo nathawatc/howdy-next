@@ -4,9 +4,9 @@
 
 #include "runtime/compare_process.hpp"
 
-#include "compare/args.hpp"
 #include "paths.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_invocation.hpp"
 #include "runtime/compare_launch.hpp"
 #include "support/eintr.hpp"
 #include "support/error_message.hpp"

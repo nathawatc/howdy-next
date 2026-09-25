@@ -14,7 +14,7 @@ target_link_libraries(howdy_config_template PUBLIC howdy_config_schema)
 
 add_library(howdy_runtime_config STATIC src/config/runtime_config.cpp)
 howdy_configure_native_target(howdy_runtime_config)
-target_link_libraries(howdy_runtime_config PUBLIC howdy_config_schema)
+target_link_libraries(howdy_runtime_config PRIVATE howdy_config_schema)
 
 add_library(
  howdy_config
@@ -138,11 +138,9 @@ add_library(
 howdy_configure_native_target(howdy_test_preview)
 target_link_libraries(
  howdy_test_preview
- PUBLIC
-  howdy_preview_engine
-  howdy_frame_processing
-  howdy_opencv
+ PUBLIC howdy_preview_engine
  PRIVATE
+  howdy_frame_processing
   howdy_vision_core
 )
 
@@ -320,10 +318,9 @@ add_library(
 howdy_configure_native_target(howdy_cli)
 target_link_libraries(
  howdy_cli
- PUBLIC
+ PRIVATE
   PkgConfig::LIBCURL
   howdy_opencv
- PRIVATE
   howdy_cli_core
   howdy_config
   howdy_runtime_config_loader

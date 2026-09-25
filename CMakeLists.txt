@@ -131,8 +131,6 @@ add_compile_options(
 )
 
 add_compile_definitions(
- GETTEXT_PACKAGE="howdy"
-
  "$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>"
  "$<$<CONFIG:RelWithDebInfo>:_FORTIFY_SOURCE=3>"
  "$<$<CONFIG:MinSizeRel>:_FORTIFY_SOURCE=3>"

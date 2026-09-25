@@ -47,7 +47,7 @@ namespace {
 	void SendDetectionNotice(const howdy::native::RuntimeConfig &config,
 	                         const ConversationFn               &conv_function) {
 		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
-		bindtextdomain(GETTEXT_PACKAGE, LOCALEDIR);
+		bindtextdomain(howdy::pam::kGettextDomain, LOCALEDIR);
 		if (!config.core.detection_notice) {
 			return;
 		}

@@ -1,6 +1,7 @@
 #include "compare/args.hpp"
 
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_invocation.hpp"
 #include "support/user_names.hpp"
 
 #include <cstddef>

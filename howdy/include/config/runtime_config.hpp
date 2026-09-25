@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config/config_schema.hpp"
 #include "support/face_metric.hpp"
 
 #include <string>
@@ -14,6 +13,8 @@ namespace howdy::native {
 		bool abort_if_lid_closed{};
 		bool disabled{};
 	};
+
+	auto DefaultCoreConfig() -> CoreConfig;
 
 	struct VideoConfig {
 		int         timeout{};
@@ -33,12 +34,13 @@ namespace howdy::native {
 	};
 
 	auto DefaultVideoConfig() -> VideoConfig;
+	auto DefaultFaceMetric() -> FaceMetric;
 
 	struct FaceConfig {
 		float      yunet_score_threshold{};
 		float      yunet_nms_threshold{};
 		int        yunet_top_k{};
-		FaceMetric sface_metric = config_schema::kSfaceDefaultMetric;
+		FaceMetric sface_metric = DefaultFaceMetric();
 		float      sface_threshold{};
 	};
 
@@ -48,24 +50,13 @@ namespace howdy::native {
 		bool end_report{};
 	};
 
+	auto DefaultDebugConfig() -> DebugConfig;
+
 	struct RuntimeConfig {
-		CoreConfig core{
-		    .detection_notice =
-		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreDetectionNotice),
-		    .no_confirmation =
-		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreNoConfirmation),
-		    .abort_if_ssh =
-		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreAbortIfSsh),
-		    .abort_if_lid_closed =
-		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreAbortIfLidClosed),
-		    .disabled = config_schema::RuntimeDefaultBool(config_schema::OptionId::kCoreDisabled),
-		};
+		CoreConfig  core  = DefaultCoreConfig();
 		VideoConfig video = DefaultVideoConfig();
 		FaceConfig  face  = DefaultFaceConfig();
-		DebugConfig debug{
-		    .end_report =
-		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kDebugEndReport),
-		};
+		DebugConfig debug = DefaultDebugConfig();
 	};
 
 }  // namespace howdy::native

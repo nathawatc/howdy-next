@@ -85,7 +85,7 @@ auto main() -> int {
 	const std::string initial_locale      = initial_locale_ptr == nullptr ? "" : initial_locale_ptr;
 	const char       *initial_domain_ptr  = textdomain(nullptr);
 	const std::string initial_domain      = initial_domain_ptr == nullptr ? "" : initial_domain_ptr;
-	const char       *initial_binding_ptr = bindtextdomain(GETTEXT_PACKAGE, nullptr);
+	const char       *initial_binding_ptr = bindtextdomain(howdy::pam::kGettextDomain, nullptr);
 	const std::string initial_binding = initial_binding_ptr == nullptr ? "" : initial_binding_ptr;
 	const char       *initial_language_ptr = std::getenv("LANGUAGE");
 	const bool        had_initial_language = initial_language_ptr != nullptr;
@@ -93,7 +93,7 @@ auto main() -> int {
 
 	ok &= Expect(std::setlocale(LC_ALL, "C") != nullptr, "set C locale for status mapping test");
 	textdomain("pam-host-test-domain");
-	bindtextdomain(GETTEXT_PACKAGE, HOWDY_TEST_LOCALEDIR);
+	bindtextdomain(howdy::pam::kGettextDomain, HOWDY_TEST_LOCALEDIR);
 	const std::string host_domain = textdomain(nullptr);
 
 	ok &= Expect(std::string(howdy::pam::Translate("Missing Howdy translation")) ==
@@ -230,7 +230,7 @@ auto main() -> int {
 		unsetenv("LANGUAGE");
 	}
 	if (!initial_binding.empty()) {
-		bindtextdomain(GETTEXT_PACKAGE, initial_binding.c_str());
+		bindtextdomain(howdy::pam::kGettextDomain, initial_binding.c_str());
 	}
 	if (!initial_domain.empty()) {
 		textdomain(initial_domain.c_str());

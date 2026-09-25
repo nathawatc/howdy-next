@@ -44,7 +44,7 @@ howdy_add_native_test(
  tests/cli/add_cli_capture_test.cpp
  tests/cli/add_cli_arguments_test.cpp
 )
-target_link_libraries(howdy_add_cli_test PRIVATE howdy_cli)
+target_link_libraries(howdy_add_cli_test PRIVATE howdy_cli howdy_opencv)
 
 howdy_add_native_test(
  howdy_remove_cli_test
@@ -58,7 +58,7 @@ howdy_add_native_test(
  native-test-cli
  tests/cli/test_cli_test.cpp
 )
-target_link_libraries(howdy_test_cli_test PRIVATE howdy_cli)
+target_link_libraries(howdy_test_cli_test PRIVATE howdy_cli howdy_opencv)
 
 howdy_add_native_test(
  howdy_test_preview_session_test
@@ -102,4 +102,4 @@ howdy_add_native_test(
  tests/support/atomic_files_test.cpp
 )
 target_link_libraries(howdy_download_models_test PRIVATE howdy_cli
-                       Threads::Threads)
+                       PkgConfig::LIBCURL Threads::Threads)

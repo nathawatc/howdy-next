@@ -8,10 +8,6 @@ target_link_libraries(pam_options PRIVATE howdy_pam_option_catalog)
 
 add_library(pam_message_locale STATIC src/runtime/message_locale.cpp)
 howdy_configure_pam_target(pam_message_locale)
-target_include_directories(
- pam_message_locale
- PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include"
-)
 
 add_library(
  pam_runtime STATIC
@@ -47,7 +43,7 @@ add_library(
  src/prompt/workaround.cpp
 )
 howdy_configure_pam_target(pam_prompt_core)
-target_link_libraries(pam_prompt_core PUBLIC PAM::PAM Threads::Threads)
+target_link_libraries(pam_prompt_core PUBLIC PAM::PAM PRIVATE Threads::Threads)
 
 add_library(
  pam_prompt STATIC
@@ -60,8 +56,9 @@ add_library(
 howdy_configure_pam_target(pam_prompt)
 target_link_libraries(
  pam_prompt
- PUBLIC PAM::PAM Threads::Threads pam_prompt_core
- PRIVATE PkgConfig::LIBEVDEV pam_conversation_response
+ PUBLIC PAM::PAM
+ PRIVATE Threads::Threads PkgConfig::LIBEVDEV pam_prompt_core
+         pam_conversation_response
 )
 
 add_library(

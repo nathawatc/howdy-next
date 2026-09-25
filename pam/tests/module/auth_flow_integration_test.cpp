@@ -1,4 +1,3 @@
-#include "compare/args.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "module/auth_flow_test_groups.hpp"
 #include "module/auth_flow_test_support.hpp"
@@ -11,6 +10,7 @@
 #include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_invocation.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/lid_probe.hpp"
 #include "storage/user_model_status.hpp"

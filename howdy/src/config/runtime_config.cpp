@@ -1,10 +1,22 @@
 #include "config/runtime_config.hpp"
 
 #include "config/config_schema.hpp"
+#include "support/face_metric.hpp"
 
 #include <string>
 
 namespace howdy::native {
+	auto DefaultCoreConfig() -> CoreConfig {
+		using enum config_schema::OptionId;
+		return {
+		    .detection_notice    = config_schema::RuntimeDefaultBool(kCoreDetectionNotice),
+		    .no_confirmation     = config_schema::RuntimeDefaultBool(kCoreNoConfirmation),
+		    .abort_if_ssh        = config_schema::RuntimeDefaultBool(kCoreAbortIfSsh),
+		    .abort_if_lid_closed = config_schema::RuntimeDefaultBool(kCoreAbortIfLidClosed),
+		    .disabled            = config_schema::RuntimeDefaultBool(kCoreDisabled),
+		};
+	}
+
 	auto DefaultVideoConfig() -> VideoConfig {
 		using enum config_schema::OptionId;
 		return {
@@ -25,6 +37,10 @@ namespace howdy::native {
 		};
 	}
 
+	auto DefaultFaceMetric() -> FaceMetric {
+		return config_schema::kSfaceDefaultMetric;
+	}
+
 	auto DefaultFaceConfig() -> FaceConfig {
 		using enum config_schema::OptionId;
 		FaceConfig config{
@@ -35,6 +51,11 @@ namespace howdy::native {
 		};
 		config.sface_threshold = config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold);
 		return config;
+	}
+
+	auto DefaultDebugConfig() -> DebugConfig {
+		return {.end_report =
+		            config_schema::RuntimeDefaultBool(config_schema::OptionId::kDebugEndReport)};
 	}
 
 }  // namespace howdy::native

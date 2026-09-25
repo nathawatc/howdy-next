@@ -1,13 +1,12 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_invocation.hpp"
 
 #include <cstdint>
 #include <string>
 
 namespace howdy::native {
-	inline constexpr auto kCompareConfigOption = "--config";
-
 	struct CompareArgs {
 		std::string user;
 		std::string config_path;
