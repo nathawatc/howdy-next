@@ -42,20 +42,37 @@ if(NOT CMAKE_CROSSCOMPILING)
  )
   if(NOT HOWDY_GIT_EXECUTABLE STREQUAL "")
     add_test(
-   NAME native-tidy-incremental
-   COMMAND
-    "${CMAKE_COMMAND}"
-    "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
-    "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/tidy-incremental-test"
-    "-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
-    -P "${PROJECT_SOURCE_DIR}/tests/cmake/tidy_incremental_test.cmake"
-  )
+     NAME native-tidy-incremental
+     COMMAND
+      "${CMAKE_COMMAND}"
+      "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+      "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/tidy-incremental-test"
+      "-DHOWDY_GIT_EXECUTABLE=${HOWDY_GIT_EXECUTABLE}"
+      -P "${PROJECT_SOURCE_DIR}/tests/cmake/tidy_incremental_test.cmake"
+    )
   endif()
   add_test(
+    NAME native-emulator-isolation
+    COMMAND "${CMAKE_COMMAND}"
+      "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+      "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/native-emulator-test"
+      -P "${PROJECT_SOURCE_DIR}/tests/cmake/native_emulator_test.cmake"
+  )
+endif()
+add_test(
   NAME native-config-generator
   COMMAND howdy_config_generator_test "$<TARGET_FILE:howdy_config_generator>"
- )
-  add_test(
+          ${howdy_test_emulator}
+)
+add_test(
+  NAME native-cross-pkg-config-isolation
+  COMMAND "${CMAKE_COMMAND}"
+    "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/cross-pkg-config-test"
+    "-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/pkg_config_isolation_test.cmake"
+)
+add_test(
   NAME native-config-cross-compilation
   COMMAND
    "${CMAKE_COMMAND}"
@@ -63,15 +80,15 @@ if(NOT CMAKE_CROSSCOMPILING)
    "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/config-cross-compilation-test"
    "-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
    "-DHOWDY_CONFIG_GENERATOR=$<TARGET_FILE:howdy_config_generator>"
+   "-DHOWDY_TEST_EMULATOR=${howdy_test_emulator}"
    "-DHOWDY_PACKAGED_CONFIG_SCRIPT=${HOWDY_PACKAGED_CONFIG_SCRIPT}"
    -P "${PROJECT_SOURCE_DIR}/tests/cmake/config_generation_test.cmake"
- )
-  set_tests_properties(
+)
+set_tests_properties(
   native-config-cross-compilation
   PROPERTIES
    TIMEOUT 120
- )
-endif()
+)
 add_test(
  NAME native-version-metadata
  COMMAND

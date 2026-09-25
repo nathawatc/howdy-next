@@ -15,6 +15,7 @@ add_test(
   "${howdy_integration_dir}/bash_completion_test.sh"
   "$<TARGET_FILE:howdy>"
   "${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
+  ${howdy_test_emulator}
 )
 
 if(HOWDY_INSTALL_AUTH_HELPER_SETUID)
@@ -52,18 +53,17 @@ add_test(
   "${CMAKE_COMMAND}"
   -P "${PROJECT_SOURCE_DIR}/tests/cmake/privileged_install_paths_test.cmake"
 )
-if(NOT CMAKE_CROSSCOMPILING)
-  add_executable(howdy_docs_generator_integration_test
-                tests/integration/docs_generator_test.cpp)
-  howdy_configure_native_test_target(howdy_docs_generator_integration_test)
-  add_test(
-  NAME native-howdy-docs-generator
-  COMMAND
-   howdy_docs_generator_integration_test
-   "$<TARGET_FILE:howdy_docs_generator>"
-   "${PROJECT_BINARY_DIR}/docs-generator-test"
- )
-endif()
+add_executable(howdy_docs_generator_integration_test
+              tests/integration/docs_generator_test.cpp)
+howdy_configure_native_test_target(howdy_docs_generator_integration_test)
+add_test(
+ NAME native-howdy-docs-generator
+ COMMAND
+  howdy_docs_generator_integration_test
+  "$<TARGET_FILE:howdy_docs_generator>"
+  "${PROJECT_BINARY_DIR}/docs-generator-test"
+  ${howdy_test_emulator}
+)
 add_executable(howdy_docs_integration_test tests/integration/docs_test.cpp)
 howdy_configure_native_test_target(howdy_docs_integration_test)
 add_test(

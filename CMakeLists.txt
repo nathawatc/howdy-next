@@ -30,6 +30,8 @@ include(CheckPIESupported)
 include(CheckCXXSourceCompiles)
 include(CMakePushCheckState)
 find_package(PkgConfig REQUIRED)
+set(howdy_pkg_config_prefixes OPENCV5 INIREADER YYJSON LIBCURL OPENSSL LIBEVDEV LIBACL)
+howdy_isolate_cross_pkg_config(${howdy_pkg_config_prefixes})
 find_package(Threads REQUIRED)
 find_package(Git QUIET)
 
@@ -408,6 +410,7 @@ function(howdy_assert_binary_result test_name target status stdout stderr)
   COMMAND
    "${CMAKE_COMMAND}"
    "-DBINARY=$<TARGET_FILE:${target}>"
+   "-DEMULATOR=${howdy_test_emulator}"
    "-DEXPECTED_STATUS=${status}"
    "-DEXPECTED_STDOUT=${stdout}"
    "-DEXPECTED_STDERR=${stderr}"

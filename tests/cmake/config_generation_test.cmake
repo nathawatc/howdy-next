@@ -139,8 +139,7 @@ if(NOT PACKAGED_RESULT EQUAL 0)
 endif()
 
 execute_process(
- COMMAND
-  "${HOWDY_CONFIG_GENERATOR}"
+ COMMAND ${HOWDY_TEST_EMULATOR} "${HOWDY_CONFIG_GENERATOR}"
   --output "${packaged_candidate}"
  RESULT_VARIABLE generator_result
  OUTPUT_VARIABLE generator_output

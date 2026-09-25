@@ -325,6 +325,8 @@ namespace {
 
 extern "C" auto RealRead(int fd, void *buffer, std::size_t count) -> ssize_t __asm__("__real_read");
 extern "C" auto TestRead(int fd, void *buffer, std::size_t count) -> ssize_t __asm__("__wrap_read");
+extern "C" auto TestReadChecked(int fd, void *buffer, std::size_t count, std::size_t buffer_size)
+    -> ssize_t __asm__("__wrap___read_chk");
 
 extern "C" auto TestRead(int fd, void *buffer, std::size_t count) -> ssize_t {
 	auto &failure = InjectedReadFailure();
@@ -340,6 +342,13 @@ extern "C" auto TestRead(int fd, void *buffer, std::size_t count) -> ssize_t {
 		return result;
 	}
 	return RealRead(fd, buffer, count);
+}
+
+// glibc fixes this argument order.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+extern "C" auto TestReadChecked(int fd, void *buffer, std::size_t count,
+                                [[maybe_unused]] std::size_t buffer_size) -> ssize_t {
+	return TestRead(fd, buffer, count);
 }
 
 auto RunRuntimeSessionDeadlineTests() -> bool {

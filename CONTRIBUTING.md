@@ -46,9 +46,13 @@ ctest --preset debug
 
 ## Cross-Compilation
 
-Cross-compiling requires `CMAKE_CROSSCOMPILING_EMULATOR`: Howdy builds target-side
-`howdy_config_generator` and `howdy_docs_generator`, then executes them during the
-build to generate configuration and documentation.
+Cross-compiling requires a suitable target toolchain or sysroot and
+`CMAKE_CROSSCOMPILING_EMULATOR`. Howdy builds target-side tools (`howdy_config_generator`,
+`howdy_docs_generator`, and staged preflight checks) and executes them during the build and install
+steps.
+
+Target dependencies (OpenCV, PAM, libcurl, etc.) must be provided by the target sysroot or
+toolchain; Howdy does not provide or build target dependencies.
 
 With a toolchain file:
 

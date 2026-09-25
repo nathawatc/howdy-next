@@ -28,8 +28,16 @@ namespace {
 
 	class Session {
 	public:
-		Session(const std::string &driver, const std::string &binary,
-		        const std::string &completion) {
+		Session(const std::string &driver, const std::string &binary, const std::string &completion,
+		        const std::vector<std::string> &emulator) {
+			std::vector<std::string> command = {"bash", driver, binary, completion};
+			command.insert(command.end(), emulator.begin(), emulator.end());
+			std::vector<char *> command_argv;
+			command_argv.reserve(command.size() + 1);
+			for (auto &argument : command) {
+				command_argv.push_back(argument.data());
+			}
+			command_argv.push_back(nullptr);
 			std::array<int, 2> input{};
 			std::array<int, 2> output{};
 			Require(pipe2(input.data(), O_CLOEXEC) == 0, "cannot create completion input pipe");
@@ -53,7 +61,7 @@ namespace {
 				}
 				close(input.at(0));
 				close(output.at(1));
-				execlp("bash", "bash", driver.c_str(), binary.c_str(), completion.c_str(), nullptr);
+				execvp("bash", command_argv.data());
 				_exit(127);
 			}
 			close(input.at(0));
@@ -165,7 +173,7 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc != 4) {
+	if (argc < 4) {
 		std::cerr << "usage: bash_completion_test DRIVER HOWDY COMPLETION\n";
 		return 2;
 	}
@@ -176,7 +184,7 @@ auto main(int argc, char **argv) -> int {
 		const auto *account = getpwuid(getuid());
 		Require(account != nullptr, "cannot resolve current user");
 		const std::string user = account->pw_name;
-		Session           session(args.at(1), args.at(2), args.at(3));
+		Session session(args.at(1), args.at(2), args.at(3), {args.begin() + 4, args.end()});
 
 		Check(session, "commands", {"howdy", ""},
 		      {"add", "clear", "config", "disable", "download-models", "list", "remove", "set",

@@ -39,7 +39,6 @@ target_link_libraries(
 add_executable(howdy_config_generator src/tools/generate_config.cpp)
 howdy_configure_native_target(howdy_config_generator)
 target_link_libraries(howdy_config_generator PRIVATE howdy_config_template)
-howdy_set_crosscompiling_emulator(howdy_config_generator)
 
 set(
  HOWDY_PACKAGED_CONFIG_CANDIDATE_PATH

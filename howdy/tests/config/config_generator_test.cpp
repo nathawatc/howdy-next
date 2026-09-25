@@ -25,9 +25,10 @@ namespace {
 	using howdy::test::WriteFile;
 	namespace fs = std::filesystem;
 
-	auto RunGenerator(const fs::path &generator_path, std::vector<std::string> arguments,
-	                  bool limit_file_size) -> int {
+	auto RunGenerator(const fs::path &generator_path, const std::vector<std::string> &emulator,
+	                  std::vector<std::string> arguments, bool limit_file_size) -> int {
 		arguments.insert(arguments.begin(), generator_path.string());
+		arguments.insert(arguments.begin(), emulator.begin(), emulator.end());
 		const pid_t child = fork();
 		if (child < 0) {
 			return -1;
@@ -49,7 +50,7 @@ namespace {
 				argv.push_back(argument.data());
 			}
 			argv.push_back(nullptr);
-			execv(arguments.front().c_str(), argv.data());
+			execvp(arguments.front().c_str(), argv.data());
 			_exit(127);
 		}
 
@@ -73,11 +74,12 @@ namespace {
 auto main(int argc, char **argv) -> int {
 	const auto arguments =
 	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
-	if (arguments.size() != 2) {
+	if (arguments.size() < 2) {
 		return 1;
 	}
-	const fs::path generator_path(arguments.back());
-	bool           ok = true;
+	const fs::path                 generator_path(arguments.subspan(1, 1).front());
+	const std::vector<std::string> emulator(arguments.begin() + 2, arguments.end());
+	bool                           ok = true;
 
 	const auto root =
 	    fs::temp_directory_path() / ("howdy-config-generator-test-" + std::to_string(getpid()));
@@ -89,9 +91,9 @@ auto main(int argc, char **argv) -> int {
 		return 1;
 	}
 
-	ok &= Expect(RunGenerator(generator_path, {}, false) == 2,
+	ok &= Expect(RunGenerator(generator_path, emulator, {}, false) == 2,
 	             "missing generator arguments return usage status");
-	ok &= Expect(RunGenerator(generator_path, {"--output"}, false) == 2,
+	ok &= Expect(RunGenerator(generator_path, emulator, {"--output"}, false) == 2,
 	             "incomplete output argument returns usage status");
 
 	const auto output = root / "generated" / "config.ini";
@@ -101,7 +103,7 @@ auto main(int argc, char **argv) -> int {
 	const auto unrelated_temporary = fs::path(output.string() + ".tmp");
 	ok &= Expect(WriteFile(unrelated_temporary, "must remain untouched\n"),
 	             "create unrelated output.tmp file");
-	ok &= Expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= Expect(RunGenerator(generator_path, emulator, {"--output", output.string()}, false) == 0,
 	             "generator writes new output");
 	const auto generated_content = ReadFile(output);
 	ok &= Expect(!generated_content.empty(), "successful generation creates non-empty output");
@@ -109,7 +111,7 @@ auto main(int argc, char **argv) -> int {
 	             "generator preserves unrelated output.tmp file");
 
 	ok &= Expect(WriteFile(output, "old config\n"), "create existing output");
-	ok &= Expect(RunGenerator(generator_path, {"--output", output.string()}, false) == 0,
+	ok &= Expect(RunGenerator(generator_path, emulator, {"--output", output.string()}, false) == 0,
 	             "generator replaces existing output");
 	ok &= Expect(ReadFile(output) == generated_content,
 	             "replacement output is deterministic generated content");
@@ -120,7 +122,7 @@ auto main(int argc, char **argv) -> int {
 	             "create output for failed-write test");
 	const auto staged_before = CountFilesWithPrefix(failed_output.parent_path(), ".howdy-atomic-");
 	const int  failed_write_status =
-	    RunGenerator(generator_path, {"--output", failed_output.string()}, true);
+	    RunGenerator(generator_path, emulator, {"--output", failed_output.string()}, true);
 	ok &= Expect(failed_write_status != 0, "failed atomic write returns nonzero");
 	ok &= Expect(ReadFile(failed_output) == "preserve this config\n",
 	             "failed atomic write preserves existing output");
@@ -130,7 +132,7 @@ auto main(int argc, char **argv) -> int {
 
 	const auto blocked_parent = root / "blocked-parent";
 	ok &= Expect(WriteFile(blocked_parent, "not a directory\n"), "create invalid output parent");
-	ok &= Expect(RunGenerator(generator_path,
+	ok &= Expect(RunGenerator(generator_path, emulator,
 	                          {"--output", (blocked_parent / "config.ini").string()}, false) != 0,
 	             "invalid output directory returns nonzero");
 	ok &= Expect(ReadFile(blocked_parent) == "not a directory\n",

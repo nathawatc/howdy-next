@@ -4,6 +4,7 @@ set -euo pipefail
 
 howdy_binary=$1
 completion_file=$2
+howdy_command=("${@:3}" "$howdy_binary")
 
 bash -n "$completion_file"
 
@@ -12,7 +13,7 @@ trap 'rm -rf -- "$completion_cache_dir"' EXIT
 
 howdy() {
 	if [[ ${1-} != __complete ]]; then
-		"$howdy_binary" "$@"
+		"${howdy_command[@]}" "$@"
 		return
 	fi
 
@@ -28,7 +29,7 @@ howdy() {
 		return "$status"
 	fi
 
-	if output=$("$howdy_binary" "$@"); then
+	if output=$("${howdy_command[@]}" "$@"); then
 		status=0
 	else
 		status=$?

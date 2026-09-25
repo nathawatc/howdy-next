@@ -11,7 +11,6 @@ if(NOT CMAKE_CROSSCOMPILING)
   message(FATAL_ERROR "Fixture did not enter cross-compiling mode")
 endif()
 add_executable(howdy_config_generator IMPORTED)
-howdy_set_crosscompiling_emulator(howdy_config_generator)
 get_target_property(
  fixture_emulator
  howdy_config_generator

@@ -16,6 +16,7 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <string>
 #include <thread>
 #include <vector>
@@ -63,6 +64,9 @@ extern "C" auto TestPpoll(pollfd *fds, nfds_t count, const timespec *timeout, co
     -> int __asm__("__wrap_ppoll");
 extern "C" auto RealPpoll(pollfd *fds, nfds_t count, const timespec *timeout, const sigset_t *mask)
     -> int __asm__("__real_ppoll");
+extern "C" auto TestPpollChecked(pollfd *fds, nfds_t count, const timespec *timeout,
+                                 const sigset_t *mask, std::size_t buffer_size)
+    -> int __asm__("__wrap___ppoll_chk");
 extern "C" auto TestKill(pid_t pid, int signal) -> int __asm__("__wrap_kill");
 extern "C" auto RealKill(pid_t pid, int signal) -> int __asm__("__real_kill");
 extern "C" auto TestWaitpid(pid_t pid, int *status, int options) -> pid_t __asm__("__wrap_waitpid");
@@ -111,6 +115,11 @@ auto TestPpoll(pollfd *fds, nfds_t count, const timespec *timeout, const sigset_
 		return 1;
 	}
 	return RealPpoll(fds, count, timeout, mask);
+}
+
+auto TestPpollChecked(pollfd *fds, nfds_t count, const timespec *timeout, const sigset_t *mask,
+                      [[maybe_unused]] std::size_t buffer_size) -> int {
+	return TestPpoll(fds, count, timeout, mask);
 }
 
 auto TestKill(pid_t pid, int signal) -> int {

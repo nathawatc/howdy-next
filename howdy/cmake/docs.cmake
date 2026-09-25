@@ -23,12 +23,6 @@ target_link_libraries(
   howdy_config_schema
   howdy_man_reference
 )
-if(CMAKE_CROSSCOMPILING)
-  set_property(
-  TARGET howdy_docs_generator
-  PROPERTY CROSSCOMPILING_EMULATOR "${CMAKE_CROSSCOMPILING_EMULATOR}"
- )
-endif()
 
 set(HOWDY_DOC_REFERENCE_DIR "${PROJECT_BINARY_DIR}/generated/docs")
 set(

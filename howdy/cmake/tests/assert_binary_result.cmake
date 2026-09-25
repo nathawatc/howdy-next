@@ -1,5 +1,5 @@
 execute_process(
- COMMAND "${BINARY}" ${ARGUMENTS}
+ COMMAND ${EMULATOR} "${BINARY}" ${ARGUMENTS}
  RESULT_VARIABLE actual_status
  OUTPUT_VARIABLE actual_stdout
  ERROR_VARIABLE actual_stderr

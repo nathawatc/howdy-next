@@ -74,6 +74,7 @@ target_link_options(
   "LINKER:--wrap=eventfd"
   "LINKER:--wrap=eventfd_write"
   "LINKER:--wrap=ppoll"
+  "LINKER:--wrap=__ppoll_chk"
   "LINKER:--wrap=kill"
   "LINKER:--wrap=waitpid"
 )

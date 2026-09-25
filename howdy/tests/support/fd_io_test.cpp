@@ -47,6 +47,8 @@ namespace {
 // NOLINTBEGIN(*reserved-identifier,cert-dcl*,readability-identifier-naming)
 extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t;
 extern "C" auto __real_read(int fd, void *buffer, size_t count) -> ssize_t;
+extern "C" auto __wrap___read_chk(int fd, void *buffer, size_t count, size_t buffer_size)
+    -> ssize_t;
 
 extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t {
 	if (fd != kScriptedFd) {
@@ -61,6 +63,13 @@ extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t {
 	std::memcpy(buffer, std::string_view(Script().content).substr(Script().offset).data(), size);
 	Script().offset += size;
 	return static_cast<ssize_t>(size);
+}
+
+// glibc fixes this argument order.
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+extern "C" auto __wrap___read_chk(int fd, void *buffer, size_t count,
+                                  [[maybe_unused]] size_t buffer_size) -> ssize_t {
+	return __wrap_read(fd, buffer, count);
 }
 
 // NOLINTEND(*reserved-identifier,cert-dcl*,readability-identifier-naming)

@@ -3,9 +3,14 @@ if(DEFINED ENV{CMAKE_INSTALL_MODE} AND NOT "$ENV{CMAKE_INSTALL_MODE}" STREQUAL "
   message(FATAL_ERROR "Howdy installs require CMAKE_INSTALL_MODE=COPY")
 endif()
 if(NOT "$ENV{DESTDIR}" STREQUAL "")
-  set(emulator [==[@CMAKE_CROSSCOMPILING_EMULATOR@]==])
+  set(howdy_preflight_emulator)
+  if(@CMAKE_CROSSCOMPILING@)
+    set(howdy_preflight_emulator [==[@CMAKE_CROSSCOMPILING_EMULATOR@]==])
+  endif()
+  # Keep the emulator prefix here: howdy_install_preflight is a target binary
+  # and must be executable during staged installs when cross-compiling.
   execute_process(
-    COMMAND ${emulator} "$<TARGET_FILE:howdy_install_preflight>"
+    COMMAND ${howdy_preflight_emulator} "$<TARGET_FILE:howdy_install_preflight>"
       "$ENV{DESTDIR}" "@PROJECT_BINARY_DIR@/install_destinations-$<CONFIG>.txt"
     RESULT_VARIABLE result
     ERROR_VARIABLE error
