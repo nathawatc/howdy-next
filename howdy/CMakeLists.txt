@@ -1,4 +1,5 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+install(SCRIPT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake")
 
 add_library(howdy_config_schema STATIC
  src/config/config_schema.cpp
@@ -242,7 +243,7 @@ add_executable(howdy_compare src/bin/compare.cpp)
 howdy_configure_native_target(howdy_compare)
 target_link_libraries(howdy_compare PRIVATE howdy_compare_entrypoint)
 set_target_properties(howdy_compare PROPERTIES OUTPUT_NAME "howdy-compare")
-install(
+howdy_install(
  TARGETS howdy_compare
  RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
 )
@@ -269,7 +270,7 @@ set_target_properties(
  howdy_auth_helper PROPERTIES OUTPUT_NAME "howdy-auth-helper"
 )
 if(HOWDY_INSTALL_AUTH_HELPER_SETUID)
-  install(
+  howdy_install(
   TARGETS howdy_auth_helper
   RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
   PERMISSIONS
@@ -278,7 +279,7 @@ if(HOWDY_INSTALL_AUTH_HELPER_SETUID)
    WORLD_READ WORLD_EXECUTE
  )
 else()
-  install(TARGETS howdy_auth_helper RUNTIME DESTINATION "${HOWDY_HELPER_DIR}")
+  howdy_install(TARGETS howdy_auth_helper RUNTIME DESTINATION "${HOWDY_HELPER_DIR}")
 endif()
 
 add_library(
@@ -339,7 +340,7 @@ target_link_libraries(
 add_executable(howdy src/bin/howdy_main.cpp)
 howdy_configure_native_target(howdy)
 target_link_libraries(howdy PRIVATE howdy_cli)
-install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+howdy_install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 include(cmake/docs.cmake)
 
@@ -361,24 +362,24 @@ if(BUILD_TESTING)
   include(cmake/tests/integration.cmake)
 endif()
 
-install(
+howdy_install(
  FILES "${CMAKE_CURRENT_SOURCE_DIR}/completions/howdy"
  DESTINATION "${CMAKE_INSTALL_DATADIR}/bash-completion/completions"
  PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
 )
 
-install(
- DIRECTORY DESTINATION "${HOWDY_CONFIG_DIR}"
- DIRECTORY_PERMISSIONS
-  OWNER_READ OWNER_WRITE OWNER_EXECUTE
-  GROUP_READ GROUP_EXECUTE
-)
+howdy_install_destination(D "${HOWDY_CONFIG_DIR}")
+howdy_install_destination(D "${HOWDY_USER_MODELS_DIR}")
+howdy_install_destination(F "${HOWDY_CONFIG_PATH}")
 configure_file(
  "${PROJECT_SOURCE_DIR}/cmake/install_config.cmake.in"
  "${PROJECT_BINARY_DIR}/cmake_install_config.cmake"
  @ONLY
 )
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_config.cmake")
-install(DIRECTORY DESTINATION "${HOWDY_MODELS_DIR}")
+howdy_install(DIRECTORY DESTINATION "${HOWDY_MODELS_DIR}")
 
 howdy_set_test_timeouts()
+
+add_executable(howdy_install_preflight src/tools/install_preflight.cpp)
+howdy_configure_native_target(howdy_install_preflight)

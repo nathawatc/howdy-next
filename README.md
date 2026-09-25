@@ -82,9 +82,16 @@ Install with the configured prefix:
 sudo cmake --install build/release
 ```
 
-`cmake --install --prefix` is intentionally unsupported because runtime paths
-are generated during configuration. Reconfigure with
-`-DCMAKE_INSTALL_PREFIX=<path>` to change the install prefix.
+For packaging, use an absolute `DESTDIR`. Howdy validates staged install paths and rejects unsafe
+symlinks, hard links, special files, and non-copy `CMAKE_INSTALL_MODE` values. Existing `config.ini`
+files are preserved.
+
+Normal builds with `BUILD_TESTING=OFF` require only gettext's `msgfmt`. Translation
+tests additionally require `xgettext`, `msgcmp`, and `msgattrib`. The `howdy-pot`
+and `howdy-update-po` maintenance targets are available when `xgettext` and,
+for updates, `msgmerge` are installed.
+
+`cmake --install --prefix` is not supported. To use a different install prefix, reconfigure with `-DCMAKE_INSTALL_PREFIX=<path>`.
 
 See [Contributing](CONTRIBUTING.md) for development, Debug builds, testing, and
 contribution workflow.

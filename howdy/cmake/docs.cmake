@@ -106,15 +106,15 @@ add_custom_command(
 add_custom_target(howdy_docs ALL DEPENDS "${HOWDY_MAN1_PATH}"
                   "${HOWDY_MAN5_PATH}" "${HOWDY_MAN8_PATH}")
 
-install(
+howdy_install(
  FILES "${HOWDY_MAN1_PATH}"
  DESTINATION "${CMAKE_INSTALL_MANDIR}/man1"
 )
-install(
+howdy_install(
  FILES "${HOWDY_MAN5_PATH}"
  DESTINATION "${CMAKE_INSTALL_MANDIR}/man5"
 )
-install(
+howdy_install(
  FILES "${HOWDY_MAN8_PATH}"
  DESTINATION "${CMAKE_INSTALL_MANDIR}/man8"
 )

@@ -24,6 +24,7 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE STREQUAL "")
 endif()
 
 include(GNUInstallDirs)
+include(cmake/howdy_install.cmake)
 include(CTest)
 include(CheckPIESupported)
 include(CheckCXXSourceCompiles)
@@ -222,7 +223,13 @@ if(HOWDY_USER_MODELS_DIR STREQUAL "")
   set(HOWDY_USER_MODELS_DIR "${HOWDY_CONFIG_DIR}/models")
 endif()
 
+foreach(path IN ITEMS HOWDY_PAM_DIR HOWDY_CONFIG_DIR HOWDY_MODELS_DIR
+                      HOWDY_USER_MODELS_DIR HOWDY_LOG_PATH)
+  cmake_path(ABSOLUTE_PATH ${path} BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}" NORMALIZE)
+endforeach()
+
 set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.ini")
+cmake_path(NORMAL_PATH HOWDY_CONFIG_PATH)
 set(
  HOWDY_PACKAGED_CONFIG_PATH
  "${PROJECT_BINARY_DIR}/generated/config/config.ini"
@@ -232,6 +239,32 @@ set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
 if(HOWDY_AUTH_HELPER_PATH STREQUAL "")
   set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
 endif()
+
+cmake_path(NORMAL_PATH HOWDY_HELPER_DIR)
+cmake_path(NORMAL_PATH HOWDY_COMPARE_PROCESS_PATH)
+cmake_path(ABSOLUTE_PATH HOWDY_AUTH_HELPER_PATH BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}" NORMALIZE)
+
+# CMake emits install destinations into quoted script arguments. Reject syntax
+# it cannot represent safely; runtime-only paths are escaped separately below.
+foreach(path IN ITEMS CMAKE_INSTALL_PREFIX CMAKE_INSTALL_BINDIR
+                      CMAKE_INSTALL_LIBEXECDIR CMAKE_INSTALL_DATADIR
+                      CMAKE_INSTALL_LOCALEDIR CMAKE_INSTALL_MANDIR
+                      HOWDY_PAM_DIR HOWDY_CONFIG_DIR HOWDY_MODELS_DIR
+                      HOWDY_USER_MODELS_DIR HOWDY_LICENSES_INSTALL_DIR)
+  foreach(character IN ITEMS "\"" ";" "\\" "\n" "\r")
+    string(FIND "${${path}}" "${character}" position)
+    if(NOT position EQUAL -1)
+      message(FATAL_ERROR "${path} contains unsupported install path characters")
+    endif()
+  endforeach()
+  foreach(expression IN ITEMS [=[${]=] [=[$ENV{]=] [=[$CACHE{]=] [=[$<]=])
+    string(FIND "${${path}}" "${expression}" position)
+    if(NOT position EQUAL -1)
+      message(FATAL_ERROR "${path} contains CMake expression syntax")
+    endif()
+  endforeach()
+  cmake_path(NORMAL_PATH ${path})
+endforeach()
 
 if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
   howdy_validate_privileged_test_paths(
@@ -295,8 +328,9 @@ configure_file(
  @ONLY
 )
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+install(SCRIPT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake")
 
-install(
+howdy_install(
  FILES
   "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
   "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
@@ -305,6 +339,14 @@ install(
  DESTINATION "${HOWDY_LICENSES_INSTALL_DIR}"
 )
 
+foreach(path IN ITEMS HOWDY_CONFIG_PATH HOWDY_MODELS_DIR HOWDY_USER_MODELS_DIR
+                      HOWDY_LOG_PATH HOWDY_COMPARE_PROCESS_PATH HOWDY_AUTH_HELPER_PATH)
+  set("${path}_CPP" "${${path}}")
+  string(REPLACE "\\" "\\\\" ${path}_CPP "${${path}_CPP}")
+  string(REPLACE "\"" "\\\"" ${path}_CPP "${${path}_CPP}")
+  string(REPLACE "\n" "\\n" ${path}_CPP "${${path}_CPP}")
+  string(REPLACE "\r" "\\r" ${path}_CPP "${${path}_CPP}")
+endforeach()
 configure_file(
  "${CMAKE_CURRENT_SOURCE_DIR}/howdy/include/config/paths.hpp.in"
  "${HOWDY_GENERATED_INCLUDE_DIR}/paths.hpp"
@@ -394,3 +436,10 @@ howdy_configure_pam_target(howdy_pam_option_catalog)
 
 add_subdirectory(howdy)
 add_subdirectory(pam)
+
+get_property(destinations GLOBAL PROPERTY HOWDY_INSTALL_DESTINATIONS)
+file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/install_destinations-$<CONFIG>.txt"
+     CONTENT "${destinations}")
+configure_file(cmake/install_preflight.cmake.in install_preflight.cmake.in @ONLY)
+file(GENERATE OUTPUT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake"
+     INPUT "${PROJECT_BINARY_DIR}/install_preflight.cmake.in")

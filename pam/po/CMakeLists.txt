@@ -1,21 +1,15 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+install(SCRIPT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake")
 find_program(GETTEXT_XGETTEXT_EXECUTABLE NAMES xgettext)
 find_program(GETTEXT_MSGMERGE_EXECUTABLE NAMES msgmerge)
 find_program(GETTEXT_MSGFMT_EXECUTABLE NAMES msgfmt)
 find_program(GETTEXT_MSGCMP_EXECUTABLE NAMES msgcmp)
 find_program(GETTEXT_MSGATTRIB_EXECUTABLE NAMES msgattrib)
-if(
- NOT GETTEXT_XGETTEXT_EXECUTABLE
- OR NOT GETTEXT_MSGMERGE_EXECUTABLE
- OR NOT GETTEXT_MSGFMT_EXECUTABLE
- OR NOT GETTEXT_MSGCMP_EXECUTABLE
- OR NOT GETTEXT_MSGATTRIB_EXECUTABLE
-)
-  message(
-  FATAL_ERROR
-  "Translation support requires xgettext, msgmerge, msgfmt, "
-  "msgcmp, and msgattrib from gettext"
- )
+if(NOT GETTEXT_MSGFMT_EXECUTABLE)
+  message(FATAL_ERROR "Building translations requires msgfmt from gettext")
+endif()
+if(BUILD_TESTING AND (NOT GETTEXT_XGETTEXT_EXECUTABLE OR NOT GETTEXT_MSGCMP_EXECUTABLE OR NOT GETTEXT_MSGATTRIB_EXECUTABLE))
+  message(FATAL_ERROR "Translation tests require xgettext, msgcmp, and msgattrib from gettext")
 endif()
 
 set(HOWDY_POT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/howdy.pot")
@@ -67,13 +61,14 @@ foreach(language IN LISTS HOWDY_LANGUAGES)
   VERBATIM
  )
   list(APPEND HOWDY_TRANSLATION_OUTPUTS "${mo_file}")
-  install(
+  howdy_install(
   FILES "${mo_file}"
   DESTINATION "${CMAKE_INSTALL_LOCALEDIR}/${language}/LC_MESSAGES"
  )
 endforeach()
 
-add_custom_target(
+if(GETTEXT_XGETTEXT_EXECUTABLE)
+  add_custom_target(
  howdy-pot
  COMMAND
   "${GETTEXT_XGETTEXT_EXECUTABLE}"
@@ -88,9 +83,12 @@ add_custom_target(
  VERBATIM
 )
 
-set(HOWDY_MSGMERGE_COMMANDS)
-foreach(po_file IN LISTS HOWDY_TRANSLATION_PO_FILES)
-  list(APPEND
+endif()
+
+if(GETTEXT_XGETTEXT_EXECUTABLE AND GETTEXT_MSGMERGE_EXECUTABLE)
+  set(HOWDY_MSGMERGE_COMMANDS)
+  foreach(po_file IN LISTS HOWDY_TRANSLATION_PO_FILES)
+    list(APPEND
   HOWDY_MSGMERGE_COMMANDS
   COMMAND
   "${GETTEXT_MSGMERGE_EXECUTABLE}"
@@ -99,8 +97,9 @@ foreach(po_file IN LISTS HOWDY_TRANSLATION_PO_FILES)
   "${po_file}"
   "${HOWDY_POT_FILE}"
  )
-endforeach()
-add_custom_target(howdy-update-po DEPENDS howdy-pot ${HOWDY_MSGMERGE_COMMANDS})
+  endforeach()
+  add_custom_target(howdy-update-po DEPENDS howdy-pot ${HOWDY_MSGMERGE_COMMANDS})
+endif()
 
 add_custom_target(howdy-gmo ALL DEPENDS ${HOWDY_TRANSLATION_OUTPUTS})
 

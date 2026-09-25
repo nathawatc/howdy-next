@@ -1,6 +1,7 @@
 #include "integration/process.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <exception>
 #include <filesystem>
@@ -17,6 +18,8 @@
 #include <vector>
 
 #include <unistd.h>
+
+#include <sys/stat.h>
 
 namespace fs = std::filesystem;
 
@@ -179,6 +182,90 @@ namespace {
 
 	// NOLINTEND(cppcoreguidelines-special-member-functions,hicpp-special-member-functions,misc-non-private-member-variables-in-classes)
 
+	const auto kVerifyPreflight = [](const Fixture &fixture, const fs::path &installed,
+	                                 const fs::path &root) -> void {
+		std::vector<fs::path> files;
+		std::set<fs::path>    directories;
+		for (const auto &entry : fs::recursive_directory_iterator(installed)) {
+			if (entry.is_regular_file()) {
+				files.push_back(entry.path().lexically_relative(installed));
+				directories.insert(files.back().parent_path());
+			}
+		}
+		for (const auto index : {7U, 9U, 10U}) {
+			directories.insert(fs::path(fixture.Path(index)).relative_path());
+		}
+		const auto stage   = root / "stage";
+		const auto outside = root / "outside";
+		const auto reset   = [&]() -> void {
+			fs::remove_all(root);
+			fs::create_directories(stage);
+			fs::create_directories(outside);
+		};
+		const auto reject = [&]() -> void {
+			const auto snapshot = [&]() -> std::set<fs::path> {
+				std::set<fs::path> paths;
+				for (const auto &entry : fs::recursive_directory_iterator(stage)) {
+					paths.insert(entry.path());
+				}
+				return paths;
+			};
+			const auto before = snapshot();
+			const auto start  = std::chrono::steady_clock::now();
+			const auto result = Fixture::Install(stage, fixture.build);
+			Require(result.status != 0 && result.output.contains("Unsafe install destination"),
+			        "unsafe destination accepted: " + result.output);
+			Require(snapshot() == before, "preflight rejection changed the staging tree");
+			Require(std::chrono::steady_clock::now() - start < std::chrono::seconds(5),
+			        "unsafe destination rejection was not prompt");
+		};
+		reset();
+		fs::remove(stage);
+		fs::create_directory_symlink(outside, stage);
+		reject();
+		Require(fs::is_empty(outside), "staging root symlink redirected install writes");
+
+		for (const auto &directory : directories) {
+			reset();
+			const auto path = stage / directory;
+			fs::create_directories(path.parent_path());
+			fs::create_directory_symlink(outside, path);
+			reject();
+			Require(fs::is_empty(outside), "parent symlink redirected install writes");
+		}
+		for (const auto &file : files) {
+			for (const auto *attack : {"symlink", "hardlink", "fifo", "directory"}) {
+				reset();
+				const auto path     = stage / file;
+				const auto external = outside / "file";
+				// Match source bytes so permission-only reinstall paths are exercised too.
+				fs::copy_file(installed / file, external);
+				fs::permissions(external, fs::perms::owner_read | fs::perms::owner_write);
+				const auto original = Read(external);
+				fs::create_directories(path.parent_path());
+				if (std::string_view(attack) == "symlink") {
+					fs::create_symlink(external, path);
+				} else if (std::string_view(attack) == "hardlink") {
+					fs::create_hard_link(external, path);
+				} else if (std::string_view(attack) == "fifo") {
+					Require(mkfifo(path.c_str(), 0600) == 0, "cannot create FIFO");
+				} else {
+					fs::create_directory(path);
+				}
+				reject();
+				Require(Read(external) == original, "install changed external inode content");
+				RequireMode(external, 0600);
+			}
+		}
+		reset();
+		const auto result = howdy::test::integration::RunProcess(
+		    {"cmake", "--install", fixture.build.string()},
+		    {{"DESTDIR", stage.string()}, {"CMAKE_INSTALL_MODE", "SYMLINK_OR_COPY"}});
+		Require(result.status != 0 && result.output.contains("CMAKE_INSTALL_MODE=COPY"),
+		        "unsafe install mode accepted: " + result.output);
+		Require(fs::is_empty(stage), "install mode rejection wrote files");
+	};
+
 	auto RequireRejected(const fs::path &directory, const fs::path &stage,
 	                     const std::string &different_prefix) -> void {
 		fs::remove_all(stage);
@@ -219,8 +306,12 @@ auto main(int argc, char **argv) -> int {
 		const auto same_stage     = fixture.build / "install same prefix root-ทดสอบ";
 		const auto override_stage = fixture.build / "install override root-ทดสอบ";
 		const auto literal_root   = fixture.build / "install literal prefix cases";
-		fixture.cleanup           = {stage, same_stage, override_stage, literal_root};
-		fs::remove_all(literal_root);
+		const auto attack_root    = fixture.build / "install security cases";
+		fixture.cleanup           = {stage, same_stage, override_stage, literal_root, attack_root};
+		// Remove fixtures left behind by an interrupted previous run before reuse.
+		for (const auto &path : fixture.cleanup) {
+			fs::remove_all(path);
+		}
 		for (const auto &[name, prefix] : {std::pair{"dollar", "/opt/howdy/$literal"},
 		                                   std::pair{"braced-dollar", "/opt/howdy/${UNDEFINED}"},
 		                                   std::pair{"quote", "/opt/howdy/\"quoted\""}}) {
@@ -242,8 +333,13 @@ auto main(int argc, char **argv) -> int {
 		const auto        installed_config = Staged(stage, fixture.Path(8));
 		const std::string marker           = "install-layout-config-preservation-marker\n";
 		std::ofstream(installed_config) << marker;
+		const auto installed_cli = Staged(stage, fixture.Path(0) + "/howdy");
+		const auto original_cli  = Read(installed_cli);
+		std::ofstream(installed_cli) << "old package version\n";
 		Fixture::RequireInstall(stage, fixture.build);
 		fixture.VerifyLayout(stage);
+		Require(Read(installed_cli) == original_cli,
+		        "upgrade did not replace existing regular file");
 		Require(Read(installed_config) == marker,
 		        "second staged install overwrote existing config.ini: " +
 		            installed_config.string());
@@ -261,6 +357,8 @@ auto main(int argc, char **argv) -> int {
 		}
 		Require(config_count == 1,
 		        "expected one config.ini in staged tree, found " + std::to_string(config_count));
+
+		kVerifyPreflight(fixture, stage, attack_root);
 
 		const auto same_prefixes =
 		    fixture.prefix == "/"

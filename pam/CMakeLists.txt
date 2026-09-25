@@ -1,4 +1,5 @@
 install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
+install(SCRIPT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake")
 add_subdirectory(po)
 
 add_library(pam_options STATIC src/module/pam_options.cpp)
@@ -113,7 +114,7 @@ target_compile_definitions(
 target_link_libraries(pam_howdy PRIVATE pam_production_entrypoint)
 target_link_options(pam_howdy PRIVATE "LINKER:--exclude-libs,ALL")
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
-install(
+howdy_install(
  TARGETS pam_howdy
  LIBRARY DESTINATION "${HOWDY_PAM_DIR}"
 )
