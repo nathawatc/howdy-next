@@ -52,7 +52,14 @@ file owns the suite.
 For formatting:
 
 ```sh
+# C/C++
 find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
+
+# CMake
+neocmakelsp format . -i
+
+# Markdown
+rumdl fmt .
 ```
 
 Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting
