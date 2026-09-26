@@ -419,6 +419,16 @@ function(howdy_assert_binary_result test_name target status stdout stderr)
  )
 endfunction()
 
+function(howdy_assert_binary_result_nonroot test_name target status stdout stderr)
+  if(CMAKE_CROSSCOMPILING)
+    howdy_assert_binary_result(${test_name} ${target} ${status}
+                              "${stdout}" "${stderr}" ${ARGN})
+  else()
+    howdy_assert_binary_result(${test_name} howdy_nonroot_launcher ${status}
+                              "${stdout}" "${stderr}" "$<TARGET_FILE:${target}>" ${ARGN})
+  endif()
+endfunction()
+
 add_library(
  howdy_command_catalog
  STATIC

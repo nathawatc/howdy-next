@@ -341,6 +341,11 @@ howdy_install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 include(cmake/docs.cmake)
 
 if(BUILD_TESTING)
+  if(NOT CMAKE_CROSSCOMPILING)
+    add_executable(howdy_nonroot_launcher tests/integration/nonroot_launcher.cpp)
+    howdy_configure_native_test_target(howdy_nonroot_launcher)
+  endif()
+
   function(howdy_add_native_test target test_name)
     add_executable(${target} ${ARGN})
     howdy_configure_native_test_target(${target})

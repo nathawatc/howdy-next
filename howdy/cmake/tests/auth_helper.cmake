@@ -6,7 +6,7 @@ howdy_assert_binary_result(native-auth-helper-empty howdy_auth_helper 1
 howdy_assert_binary_result(
  native-auth-helper-unknown-command howdy_auth_helper 1
  "${auth_helper_usage}" "" unknown alice)
-howdy_assert_binary_result(
+howdy_assert_binary_result_nonroot(
  native-auth-helper-prepare-guard howdy_auth_helper 1 ""
  "howdy-auth-helper must be installed setuid root\n" prepare ../alice)
 howdy_add_native_test(
