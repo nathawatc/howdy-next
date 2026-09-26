@@ -8,6 +8,7 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "support/capture_exposure.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
 #include "vision/face_model.hpp"
@@ -117,7 +118,7 @@ namespace {
 		}
 
 		howdy::native::VideoCapture capture(howdy::native::LoadCaptureSettings(config.video));
-		if (!capture.Open()) {
+		if (!howdy::native::OpenCaptureWithExposure(capture, config.video.exposure)) {
 			return howdy::native::add_internal::AddEnrollmentResult{
 			    .status = howdy::native::add_internal::AddEnrollmentStatus::kCaptureOpenError,
 			    .error_message = capture.ErrorMessage(),

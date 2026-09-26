@@ -6,6 +6,7 @@
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "support/atomic_files.hpp"
+#include "support/capture_exposure.hpp"
 #include "vision/video_capture.hpp"
 
 #include <array>
@@ -81,7 +82,7 @@ namespace {
 		(void)context;
 
 		howdy::native::VideoCapture capture(howdy::native::LoadCaptureSettings(config.video));
-		if (!capture.Open()) {
+		if (!howdy::native::OpenCaptureWithExposure(capture, config.video.exposure)) {
 			return snapshot_internal::SnapshotCaptureResult{
 			    .status        = snapshot_internal::SnapshotCaptureStatus::kOpenError,
 			    .error_message = capture.ErrorMessage(),

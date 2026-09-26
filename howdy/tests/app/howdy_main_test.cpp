@@ -1,12 +1,18 @@
 #include "app/howdy_entrypoint.hpp"
+#include "config/runtime_paths.hpp"
+#include "paths.hpp"
 #include "test_support.hpp"
 
+#include <array>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+
+#include <stdlib.h>
 
 namespace {
 
@@ -46,6 +52,19 @@ namespace {
 		}
 
 		return 1;
+	}
+
+	auto CheckProductionPaths([[maybe_unused]] int argc, [[maybe_unused]] char **argv) -> int {
+		return howdy::native::ResolveConfigPath() == kConfiguredConfigPath &&
+		               howdy::native::ResolveModelsDir() == kConfiguredModelsDir &&
+		               howdy::native::ResolveUserModelsDir() == kConfiguredUserModelsDir &&
+		               howdy::native::ResolveLogPath() == kConfiguredLogPath &&
+		               std::getenv("HOWDY_CONFIG") == nullptr &&
+		               std::getenv("HOWDY_MODELS_DIR") == nullptr &&
+		               std::getenv("HOWDY_USER_MODELS_DIR") == nullptr &&
+		               std::getenv("HOWDY_LOG_PATH") == nullptr
+		           ? 71
+		           : 1;
 	}
 
 }  // namespace
@@ -89,6 +108,20 @@ auto main() -> int {
 	const auto normal_result     = Run();
 	ok &= Expect(normal_result.status == 23 && normal_result.error.empty(),
 	             "normal dispatcher return code is preserved");
+
+	constexpr std::array path_overrides{"HOWDY_CONFIG", "HOWDY_MODELS_DIR", "HOWDY_USER_MODELS_DIR",
+	                                    "HOWDY_LOG_PATH"};
+	for (const char *name : path_overrides) {
+		ok &= Expect(setenv(name, "/tmp/howdy-redirected-path", 1) == 0,
+		             "set path override for production boundary test");
+	}
+	ok &= Expect(howdy::native::RunHowdyEntrypoint(0, nullptr, CheckProductionPaths) == 71,
+	             "production dispatch clears all four path overrides");
+
+	ok &= Expect(setenv("HOWDY_USER_MODELS_DIR", "/tmp/howdy-staged-models", 1) == 0,
+	             "set staged models override after production dispatch");
+	ok &= Expect(howdy::native::ResolveUserModelsDir() == "/tmp/howdy-staged-models",
+	             "internal resolver retains staged override support");
 
 	return ok ? 0 : 1;
 }

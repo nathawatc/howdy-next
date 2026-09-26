@@ -32,7 +32,7 @@ howdy_add_native_test(
  native-howdy-main
  tests/app/howdy_main_test.cpp
 )
-target_link_libraries(howdy_main_test PRIVATE howdy_cli_core)
+target_link_libraries(howdy_main_test PRIVATE howdy_cli_core howdy_runtime_paths)
 
 howdy_add_native_test(
  howdy_production_bindings_test

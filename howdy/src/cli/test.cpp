@@ -10,6 +10,7 @@
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "support/capture_device_path.hpp"
+#include "support/capture_exposure.hpp"
 #include "support/invoking_user.hpp"
 #include "support/invoking_user_env.hpp"
 #include "vision/face_model.hpp"
@@ -30,7 +31,6 @@
 #include <unistd.h>
 
 #include <opencv2/core/mat.hpp>
-#include <opencv2/videoio.hpp>
 
 namespace {
 
@@ -217,9 +217,10 @@ namespace {
 		if (production_context == nullptr || !production_context->capture.has_value()) {
 			return;
 		}
-		(void)production_context->capture->Set(cv::CAP_PROP_AUTO_EXPOSURE, 1.0);
-		(void)production_context->capture->Set(cv::CAP_PROP_EXPOSURE,
-		                                       static_cast<double>(production_context->exposure));
+		howdy::native::ApplyManualExposure(
+		    production_context->exposure, [production_context](int property, double value) -> bool {
+			    return production_context->capture->Set(property, value);
+		    });
 	}
 
 	auto SwitchGuiUserDependency(void *context) -> bool {

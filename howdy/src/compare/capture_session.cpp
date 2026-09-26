@@ -1,15 +1,14 @@
 #include "compare/capture_session.hpp"
 
 #include "config/runtime_config.hpp"
+#include "support/capture_exposure.hpp"
 #include "vision/video_capture.hpp"
 
 #include <chrono>
 #include <string>
 #include <utility>
 
-#include <opencv2/core/exception.hpp>
 #include <opencv2/core/mat.hpp>
-#include <opencv2/videoio.hpp>
 
 namespace {
 
@@ -173,20 +172,10 @@ namespace howdy::native {
 			return;
 		}
 
-		try {
-			(void)dependencies_.set_property(dependencies_.capture_context,
-			                                 {.id = cv::CAP_PROP_AUTO_EXPOSURE, .value = 1.0});
-		} catch (const cv::Exception &) {  // NOLINT(bugprone-empty-catch)
-			// Camera may disconnect during restoration; continue with next property.
-		}
-
-		try {
-			(void)dependencies_.set_property(
-			    dependencies_.capture_context,
-			    {.id = cv::CAP_PROP_EXPOSURE, .value = static_cast<double>(config_.exposure)});
-		} catch (const cv::Exception &) {  // NOLINT(bugprone-empty-catch)
-			// Camera may disconnect during restoration; restoration is best effort.
-		}
+		ApplyManualExposure(config_.exposure, [this](int property, double value) -> bool {
+			return dependencies_.set_property(dependencies_.capture_context,
+			                                  {.id = property, .value = value});
+		});
 	}
 
 	auto CompareCaptureSession::Stats() const -> const CompareCaptureStats & {
