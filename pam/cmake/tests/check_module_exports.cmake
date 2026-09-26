@@ -46,3 +46,16 @@ if(NOT actual_exports STREQUAL expected_exports)
   "Actual:\n  ${actual_text}"
  )
 endif()
+
+execute_process(
+ COMMAND "${NM}" -D --undefined-only --format=posix "${MODULE}"
+ RESULT_VARIABLE undefined_result
+ OUTPUT_VARIABLE undefined_output
+ ERROR_VARIABLE undefined_error
+)
+if(NOT undefined_result EQUAL 0)
+  message(FATAL_ERROR "Failed to inspect PAM module imports: ${undefined_error}")
+endif()
+if(undefined_output MATCHES "(^|\n)(openlog|closelog)(@[^ \t]*)?[ \t]")
+  message(FATAL_ERROR "PAM module must not import openlog or closelog")
+endif()

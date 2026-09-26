@@ -87,8 +87,8 @@ namespace {
 	                              int error_code) noexcept {
 		try {
 			const std::string error_message = howdy::native::SystemErrorMessage(error_code);
-			syslog(LOG_ERR, "%s failed for auth helper: %s (%d)", operation, error_message.c_str(),
-			       error_code);
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper: %s (%d)",
+			       operation, error_message.c_str(), error_code);
 			if (operations.log_observer != nullptr) {
 				const std::string message = std::string(operation) +
 				                            " failed for auth helper: " + error_message + " (" +
@@ -96,7 +96,8 @@ namespace {
 				operations.log_observer(operations.context, message);
 			}
 		} catch (...) {
-			syslog(LOG_ERR, "%s failed for auth helper (%d)", operation, error_code);
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper (%d)", operation,
+			       error_code);
 		}
 	}
 
@@ -167,7 +168,8 @@ namespace howdy::pam::auth_helper_process::internal {
 				WriteHelperSpawnErrorLog(operations, "posix_spawn_file_actions_destroy", result);
 			}
 		} catch (...) {
-			syslog(LOG_ERR, "Exception destroying auth helper spawn actions");
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Exception destroying auth helper spawn actions");
 		}
 	}
 
@@ -195,7 +197,7 @@ namespace howdy::pam::auth_helper_process::internal {
 			(void)operations.close(operations.context, owned_fd);
 		} catch (...) {
 			// Never retry a close: the callback may have closed the descriptor before throwing.
-			syslog(LOG_ERR, "Exception closing auth helper descriptor");
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Exception closing auth helper descriptor");
 		}
 	}
 

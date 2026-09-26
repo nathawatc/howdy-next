@@ -25,6 +25,8 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <security/pam_ext.h>
+
 #include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <sys/stat.h>
@@ -229,7 +231,8 @@ void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
 		// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
 		// fail-closed context for process lifetime and report explicit ownership fallback.
 		[[maybe_unused]] auto *retained_context = dispatch_context_.release();
-		syslog(LOG_CRIT, "Native fail-closed callback context retained outside quarantine");
+		pam_syslog(pamh_, LOG_CRIT,
+		           "Native fail-closed callback context retained outside quarantine");
 	}
 }
 
@@ -239,7 +242,7 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 	}
 
 	if (pamh_ == nullptr) {
-		syslog(LOG_CRIT, "Cannot restore PAM conversation: null PAM handle");
+		pam_syslog(pamh_, LOG_CRIT, "Cannot restore PAM conversation: null PAM handle");
 		RetainUnsafeDispatchContext();
 		installed_ = false;
 		return howdy::pam::ConversationRestoreResult::kUnsafe;
@@ -252,13 +255,14 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 		return howdy::pam::ConversationRestoreResult::kOriginalRestored;
 	}
 
-	syslog(LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
+	pam_syslog(pamh_, LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
 	static const struct pam_conv kFailClosedConv = {.conv        = NativePromptFailClosedDispatch,
 	                                                .appdata_ptr = nullptr};
 	const int                    fail_closed_result =
 	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &kFailClosedConv);
 	if (fail_closed_result != PAM_SUCCESS) {
-		syslog(LOG_CRIT, "Failed to install fail-closed PAM conversation: %d", fail_closed_result);
+		pam_syslog(pamh_, LOG_CRIT, "Failed to install fail-closed PAM conversation: %d",
+		           fail_closed_result);
 		RetainUnsafeDispatchContext();
 		installed_ = false;
 		return howdy::pam::ConversationRestoreResult::kUnsafe;
@@ -325,13 +329,14 @@ auto NativePromptConversation::Dispatch(int num_msg, const struct pam_message **
 		}
 		return context->owner->Handle(num_msg, msgm, response);
 	} catch (const std::exception &error) {
-		syslog(LOG_ERR, "Unhandled C++ exception in native PAM conversation: %s", error.what());
+		pam_syslog(nullptr, LOG_ERR, "Unhandled C++ exception in native PAM conversation: %s",
+		           error.what());
 		if (response != nullptr) {
 			howdy::pam::SecureFreeConversationResponses(response, num_msg);
 		}
 		return PAM_CONV_ERR;
 	} catch (...) {
-		syslog(LOG_ERR, "Unhandled non-standard exception in native PAM conversation");
+		pam_syslog(nullptr, LOG_ERR, "Unhandled non-standard exception in native PAM conversation");
 		if (response != nullptr) {
 			howdy::pam::SecureFreeConversationResponses(response, num_msg);
 		}

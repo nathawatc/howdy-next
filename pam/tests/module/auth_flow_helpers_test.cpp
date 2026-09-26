@@ -41,12 +41,12 @@ namespace {
 			direct_message = message.text;
 			return direct_result;
 		};
-		SendConversationMessage(direct_conversation, PAM_ERROR_MSG, "direct message");
+		SendConversationMessage(nullptr, direct_conversation, PAM_ERROR_MSG, "direct message");
 		ok &= Expect(direct_calls == 1 && direct_type == PAM_ERROR_MSG &&
 		                 direct_message == "direct message",
 		             "message helper invokes conversation despite conversation failure");
 		direct_result = PAM_SUCCESS;
-		SendConversationMessage(direct_conversation, PAM_TEXT_INFO, "successful message");
+		SendConversationMessage(nullptr, direct_conversation, PAM_TEXT_INFO, "successful message");
 		ok &= Expect(direct_calls == 2 && direct_type == PAM_TEXT_INFO &&
 		                 direct_message == "successful message",
 		             "message helper invokes successful conversation");
@@ -120,7 +120,7 @@ namespace {
 			return howdy::native::EncodeWaitExitStatus(exit_code);
 		};
 
-		ok &= Expect(HowdyError(make_status(howdy::native::CompareExit::kTimeoutReached),
+		ok &= Expect(HowdyError(nullptr, make_status(howdy::native::CompareExit::kTimeoutReached),
 		                        conversation) == PAM_AUTH_ERR,
 		             "timeout status fails closed");
 		ok &= Expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
@@ -128,14 +128,14 @@ namespace {
 		             "timeout status sends error conversation");
 
 		calls = 0;
-		ok &= Expect(HowdyError(make_status(howdy::native::CompareExit::kNoFaceModel),
+		ok &= Expect(HowdyError(nullptr, make_status(howdy::native::CompareExit::kNoFaceModel),
 		                        conversation) == PAM_AUTH_ERR,
 		             "no-model status fails closed");
 		ok &= Expect(calls == 0, "no-model status sends no conversation");
-		ok &= Expect(HowdyError(SIGTERM, conversation) == PAM_AUTH_ERR,
+		ok &= Expect(HowdyError(nullptr, SIGTERM, conversation) == PAM_AUTH_ERR,
 		             "signaled status fails closed");
 		ok &= Expect(calls == 0, "signaled status sends no conversation");
-		ok &= Expect(HowdyError(W_STOPCODE(SIGSTOP), conversation) == PAM_AUTH_ERR,
+		ok &= Expect(HowdyError(nullptr, W_STOPCODE(SIGSTOP), conversation) == PAM_AUTH_ERR,
 		             "stopped status fails closed");
 		ok &= Expect(calls == 0, "stopped status sends no conversation");
 
@@ -144,7 +144,7 @@ namespace {
 
 		calls                = 0;
 		std::string username = "alice";
-		ok &= Expect(HowdyStatus(username.data(), EXIT_SUCCESS, confirmation_config,
+		ok &= Expect(HowdyStatus(nullptr, username.data(), EXIT_SUCCESS, confirmation_config,
 		                         conversation) == PAM_SUCCESS,
 		             "successful status approves login");
 		ok &= Expect(calls == 1 && last_msg_type == PAM_TEXT_INFO &&
@@ -155,13 +155,14 @@ namespace {
 		quiet_config.core.no_confirmation = true;
 
 		calls = 0;
-		ok &= Expect(HowdyStatus(username.data(), EXIT_SUCCESS, quiet_config, conversation) ==
-		                 PAM_SUCCESS,
+		ok &= Expect(HowdyStatus(nullptr, username.data(), EXIT_SUCCESS, quiet_config,
+		                         conversation) == PAM_SUCCESS,
 		             "quiet successful status approves login");
 		ok &= Expect(calls == 0, "quiet successful status sends no confirmation");
 
-		ok &= Expect(HowdyStatus(username.data(), make_status(howdy::native::CompareExit::kTooDark),
-		                         quiet_config, conversation) == PAM_AUTH_ERR,
+		ok &= Expect(HowdyStatus(nullptr, username.data(),
+		                         make_status(howdy::native::CompareExit::kTooDark), quiet_config,
+		                         conversation) == PAM_AUTH_ERR,
 		             "failed status delegates to error handling");
 		ok &= Expect(calls == 1 && last_msg_type == PAM_ERROR_MSG &&
 		                 last_message == "Camera image is too dark for detection",

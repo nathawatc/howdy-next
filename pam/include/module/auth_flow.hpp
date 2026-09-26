@@ -26,17 +26,18 @@ namespace howdy::pam::auth_flow {
 	                         const IdentifyDependencies &dependencies) -> int;
 
 	__attribute__((visibility("hidden"))) void
-	SendConversationMessage(const ConversationFn &conv_function, int msg_type,
+	SendConversationMessage(pam_handle_t *pamh, const ConversationFn &conv_function, int msg_type,
 	                        const std::string &message);
 
 	__attribute__((visibility("hidden"))) auto AuthTokenPresent(pam_handle_t *pamh) -> bool;
 
-	__attribute__((visibility("hidden"))) auto HowdyError(int                   status,
+	__attribute__((visibility("hidden"))) auto HowdyError(pam_handle_t *pamh, int status,
 	                                                      const ConversationFn &conv_function)
 	    -> int;
 
 	__attribute__((visibility("hidden"))) auto
-	HowdyStatus(const char *username, int status, const howdy::native::RuntimeConfig &config,
-	            const ConversationFn &conv_function) -> int;
+	HowdyStatus(pam_handle_t *pamh, const char *username, int status,
+	            const howdy::native::RuntimeConfig &config, const ConversationFn &conv_function)
+	    -> int;
 
 }  // namespace howdy::pam::auth_flow

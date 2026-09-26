@@ -12,6 +12,8 @@
 #include <utility>
 #include <vector>
 
+#include <security/pam_ext.h>
+
 #include <sys/syslog.h>
 
 namespace {
@@ -144,7 +146,7 @@ namespace howdy::pam {
 						try {
 							observer_.end(observer_.context, generation_);
 						} catch (...) {
-							syslog(LOG_ERR, "Secret prompt generation cleanup failed");
+							pam_syslog(nullptr, LOG_ERR, "Secret prompt generation cleanup failed");
 						}
 					}
 				}
@@ -163,10 +165,11 @@ namespace howdy::pam {
 			}
 			return result;
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Unhandled C++ exception in observed PAM conversation: %s",
-			       error.what());
+			pam_syslog(nullptr, LOG_ERR, "Unhandled C++ exception in observed PAM conversation: %s",
+			           error.what());
 		} catch (...) {
-			syslog(LOG_ERR, "Unhandled non-standard exception in observed PAM conversation");
+			pam_syslog(nullptr, LOG_ERR,
+			           "Unhandled non-standard exception in observed PAM conversation");
 		}
 		SecureFreeConversationResponses(response, num_msg);
 		return PAM_CONV_ERR;
@@ -183,7 +186,8 @@ namespace howdy::pam {
 			// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
 			// fail-closed context for process lifetime and report explicit ownership fallback.
 			[[maybe_unused]] auto *retained_context = context_.release();
-			syslog(LOG_CRIT, "Observed fail-closed callback context retained outside quarantine");
+			pam_syslog(pamh_, LOG_CRIT,
+			           "Observed fail-closed callback context retained outside quarantine");
 		}
 	}
 

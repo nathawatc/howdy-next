@@ -36,7 +36,7 @@ namespace {
 namespace howdy::pam::auth_helper_process::internal {
 
 	void LogAuthHelperReadError(int error_number) {
-		syslog(LOG_ERR, "Failed to read auth helper output: %s (%d)",
+		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Failed to read auth helper output: %s (%d)",
 		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 	}
 
@@ -75,7 +75,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (kill(child_pid, SIGTERM) != 0) {
 			const int error_number = errno;
 			if (error_number != ESRCH) {
-				syslog(LOG_WARNING, "Failed to terminate auth helper process (%d)", error_number);
+				syslog(LOG_AUTHPRIV | LOG_WARNING,
+				       "pam_howdy: Failed to terminate auth helper process (%d)", error_number);
 			}
 		}
 
@@ -97,7 +98,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (kill(child_pid, SIGKILL) != 0) {
 			const int error_number = errno;
 			if (error_number != ESRCH) {
-				syslog(LOG_WARNING, "Failed to kill auth helper process (%d)", error_number);
+				syslog(LOG_AUTHPRIV | LOG_WARNING,
+				       "pam_howdy: Failed to kill auth helper process (%d)", error_number);
 			}
 		}
 		return WaitForHelperProcess(child_pid);

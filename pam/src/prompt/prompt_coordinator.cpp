@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <security/pam_ext.h>
+
 #include <sys/eventfd.h>
 #include <sys/syslog.h>
 
@@ -56,8 +58,8 @@ namespace howdy::pam {
 		    }) != 0 &&
 		    errno != EAGAIN) {
 			const int error_number = errno;
-			syslog(LOG_ERR, "Compare cancellation eventfd write failed: %s (%d)",
-			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			pam_syslog(pamh_, LOG_ERR, "Compare cancellation eventfd write failed: %s (%d)",
+			           howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			cancellation_signal_failed_ = true;
 		}
 	}
@@ -117,10 +119,11 @@ namespace howdy::pam {
 			status = operations_.WaitForCompareProcess(
 			    child_pid, compare_deadline, this, CancellationRequested, cancellation_fd_.Get());
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Compare wait failed: %s", error.what());
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Compare wait failed: %s", error.what());
 			operations_.CancelAndReapCompareProcess(child_pid);
 		} catch (...) {
-			syslog(LOG_ERR, "Compare wait failed with non-standard exception");
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Compare wait failed with non-standard exception");
 			operations_.CancelAndReapCompareProcess(child_pid);
 		}
 		return status;
@@ -163,9 +166,11 @@ namespace howdy::pam {
 		try {
 			native_prompt_->RequestAbort();
 		} catch (const std::exception &error) {
-			syslog(LOG_WARNING, "Native prompt abort failed: %s", error.what());
+			syslog(LOG_AUTHPRIV | LOG_WARNING, "pam_howdy: Native prompt abort failed: %s",
+			       error.what());
 		} catch (...) {
-			syslog(LOG_WARNING, "Native prompt abort failed with non-standard exception");
+			syslog(LOG_AUTHPRIV | LOG_WARNING,
+			       "pam_howdy: Native prompt abort failed with non-standard exception");
 		}
 	}
 
@@ -222,10 +227,12 @@ namespace howdy::pam {
 				prompt_submitter_->SubmitPrompt();
 			}
 		} catch (const std::exception &error) {
-			syslog(LOG_WARNING, "Input prompt submission failed: %s", error.what());
+			syslog(LOG_AUTHPRIV | LOG_WARNING, "pam_howdy: Input prompt submission failed: %s",
+			       error.what());
 			submission_failed = true;
 		} catch (...) {
-			syslog(LOG_WARNING, "Input prompt submission failed with non-standard exception");
+			syslog(LOG_AUTHPRIV | LOG_WARNING,
+			       "pam_howdy: Input prompt submission failed with non-standard exception");
 			submission_failed = true;
 		}
 		std::unique_lock<std::mutex> lock(mutex_);
@@ -238,9 +245,10 @@ namespace howdy::pam {
 		const bool prompt_failed = submission_failed || !state_.password_call_returned;
 		lock.unlock();
 		if (prompt_failed) {
-			syslog(LOG_ERR,
-			       "Input prompt workaround cancellation failed; waiting for user/password "
-			       "prompt to complete");
+			syslog(
+			    LOG_AUTHPRIV | LOG_ERR,
+			    "pam_howdy: Input prompt workaround cancellation failed; waiting for user/password "
+			    "prompt to complete");
 		}
 		return PromptSubmissionResult::kStop;
 	}
@@ -268,10 +276,11 @@ namespace howdy::pam {
 	void PromptCoordinator::DisableNativeWorkaround(bool unavailable) {
 		const bool fallback_to_input = requested_workaround_ == Workaround::kNativeInput;
 		if (unavailable) {
-			syslog(LOG_INFO,
-			       fallback_to_input
-			           ? "Native prompt conversation unavailable, falling back to input workaround"
-			           : "Native prompt conversation unavailable, disabling prompt workaround");
+			pam_syslog(
+			    pamh_, LOG_INFO,
+			    fallback_to_input
+			        ? "Native prompt conversation unavailable, falling back to input workaround"
+			        : "Native prompt conversation unavailable, disabling prompt workaround");
 		}
 		effective_workaround_ = fallback_to_input ? Workaround::kInput : Workaround::kOff;
 		native_prompt_.reset();
@@ -281,10 +290,11 @@ namespace howdy::pam {
 		try {
 			native_prompt_ = operations_.CreateNativePrompt(pamh_);
 		} catch (const std::exception &error) {
-			syslog(LOG_WARNING, "Native prompt conversation setup failed: %s", error.what());
+			pam_syslog(pamh_, LOG_WARNING, "Native prompt conversation setup failed: %s",
+			           error.what());
 		} catch (...) {
-			syslog(LOG_WARNING,
-			       "Native prompt conversation setup failed with non-standard exception");
+			pam_syslog(pamh_, LOG_WARNING,
+			           "Native prompt conversation setup failed with non-standard exception");
 		}
 
 		if (native_prompt_ == nullptr || !native_prompt_->Available()) {
@@ -297,7 +307,8 @@ namespace howdy::pam {
 			effective_workaround_ = Workaround::kNative;
 			return;
 		}
-		syslog(LOG_WARNING, "Failed to install native prompt conversation: %d", install_result);
+		pam_syslog(pamh_, LOG_WARNING, "Failed to install native prompt conversation: %d",
+		           install_result);
 		DisableNativeWorkaround(false);
 	}
 
@@ -321,8 +332,9 @@ namespace howdy::pam {
 		}
 
 		if (!operations_.InputPromptPreflight()) {
-			syslog(LOG_WARNING, "Input prompt workaround preflight failed; falling back to "
-			                    "standard PAM prompt");
+			pam_syslog(pamh_, LOG_WARNING,
+			           "Input prompt workaround preflight failed; falling back to "
+			           "standard PAM prompt");
 			effective_workaround_ = Workaround::kOff;
 			return;
 		}
@@ -330,15 +342,16 @@ namespace howdy::pam {
 		try {
 			prompt_submitter_ = operations_.CreatePromptSubmitter();
 			if (prompt_submitter_ == nullptr) {
-				syslog(LOG_ERR,
-				       "Input prompt workaround setup failed: submission backend unavailable");
+				pam_syslog(pamh_, LOG_ERR,
+				           "Input prompt workaround setup failed: submission backend unavailable");
 				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &err) {
-			syslog(LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
+			pam_syslog(pamh_, LOG_ERR, "Input prompt workaround setup failed: %s", err.what());
 			effective_workaround_ = Workaround::kOff;
 		} catch (...) {
-			syslog(LOG_ERR, "Input prompt workaround setup failed with non-standard exception");
+			pam_syslog(pamh_, LOG_ERR,
+			           "Input prompt workaround setup failed with non-standard exception");
 			effective_workaround_ = Workaround::kOff;
 		}
 		if (effective_workaround_ != Workaround::kInput) {
@@ -351,18 +364,19 @@ namespace howdy::pam {
 			if (secret_prompt_conversation_ == nullptr ||
 			    !secret_prompt_conversation_->Available() ||
 			    secret_prompt_conversation_->Install() != PAM_SUCCESS) {
-				syslog(LOG_ERR, "Input prompt observation setup failed");
+				pam_syslog(pamh_, LOG_ERR, "Input prompt observation setup failed");
 				secret_prompt_conversation_.reset();
 				prompt_submitter_.reset();
 				effective_workaround_ = Workaround::kOff;
 			}
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Input prompt observation setup failed: %s", error.what());
+			pam_syslog(pamh_, LOG_ERR, "Input prompt observation setup failed: %s", error.what());
 			secret_prompt_conversation_.reset();
 			prompt_submitter_.reset();
 			effective_workaround_ = Workaround::kOff;
 		} catch (...) {
-			syslog(LOG_ERR, "Input prompt observation setup failed with non-standard exception");
+			pam_syslog(pamh_, LOG_ERR,
+			           "Input prompt observation setup failed with non-standard exception");
 			secret_prompt_conversation_.reset();
 			prompt_submitter_.reset();
 			effective_workaround_ = Workaround::kOff;
@@ -379,9 +393,10 @@ namespace howdy::pam {
 		if (result == ConversationRestoreResult::kOriginalRestored) {
 			return result;
 		}
-		syslog(LOG_CRIT, result == ConversationRestoreResult::kFailClosedInstalled
-		                     ? "PAM conversation restoration failed; fail-closed callback installed"
-		                     : "PAM conversation restoration unsafe; callback context quarantined");
+		pam_syslog(pamh_, LOG_CRIT,
+		           result == ConversationRestoreResult::kFailClosedInstalled
+		               ? "PAM conversation restoration failed; fail-closed callback installed"
+		               : "PAM conversation restoration unsafe; callback context quarantined");
 		return result;
 	}
 
@@ -419,9 +434,9 @@ namespace howdy::pam {
 			(void)password;
 			return result;
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Password request failed: %s", error.what());
+			pam_syslog(pamh_, LOG_ERR, "Password request failed: %s", error.what());
 		} catch (...) {
-			syslog(LOG_ERR, "Password request failed with non-standard exception");
+			pam_syslog(pamh_, LOG_ERR, "Password request failed with non-standard exception");
 		}
 		return PAM_SYSTEM_ERR;
 	}
@@ -469,8 +484,8 @@ namespace howdy::pam {
 		    howdy::native::ScopedFd(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK)));
 		if (!cancellation_fd_.Valid()) {
 			const int error_number = errno;
-			syslog(LOG_ERR, "Compare cancellation eventfd setup failed: %s (%d)",
-			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			pam_syslog(pamh_, LOG_ERR, "Compare cancellation eventfd setup failed: %s (%d)",
+			           howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			return {.decision   = PromptCoordinatorDecision::kPamResult,
 			        .pam_status = PAM_SYSTEM_ERR};
 		}
@@ -481,10 +496,10 @@ namespace howdy::pam {
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
-				syslog(LOG_ERR, "Unable to start Howdy: %s (%d)",
-				       howdy::native::SystemErrorMessage(spawn_result).c_str(), spawn_result);
+				pam_syslog(pamh_, LOG_ERR, "Unable to start Howdy: %s (%d)",
+				           howdy::native::SystemErrorMessage(spawn_result).c_str(), spawn_result);
 			} else {
-				syslog(LOG_ERR, "Unable to start Howdy: invalid child pid");
+				pam_syslog(pamh_, LOG_ERR, "Unable to start Howdy: invalid child pid");
 			}
 			return {
 			    .decision = PromptCoordinatorDecision::kCompareSpawnFailed,
@@ -495,12 +510,13 @@ namespace howdy::pam {
 		try {
 			ask_pass = ConfigurePromptWorkaround();
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Prompt workaround setup failed: %s", error.what());
+			pam_syslog(pamh_, LOG_ERR, "Prompt workaround setup failed: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision   = PromptCoordinatorDecision::kPamResult,
 			        .pam_status = PAM_SYSTEM_ERR};
 		} catch (...) {
-			syslog(LOG_ERR, "Prompt workaround setup failed with non-standard exception");
+			pam_syslog(pamh_, LOG_ERR,
+			           "Prompt workaround setup failed with non-standard exception");
 			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision   = PromptCoordinatorDecision::kPamResult,
 			        .pam_status = PAM_SYSTEM_ERR};
@@ -513,7 +529,7 @@ namespace howdy::pam {
 			child_thread =
 			    std::thread(&PromptCoordinator::CompareWorker, this, child_pid, compare_deadline);
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Failed to start compare wait worker: %s", error.what());
+			pam_syslog(pamh_, LOG_ERR, "Failed to start compare wait worker: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
 			return {.decision   = PromptCoordinatorDecision::kPamResult,
 			        .pam_status = PAM_SYSTEM_ERR};

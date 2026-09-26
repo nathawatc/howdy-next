@@ -20,6 +20,7 @@
 #include <libintl.h>
 #include <stdlib.h>
 
+#include <security/pam_ext.h>
 #include <security/pam_modules.h>
 
 #include <sys/syslog.h>
@@ -38,14 +39,14 @@ namespace {
 	auto GetUsername(pam_handle_t *pamh, const char **username) -> int {
 		const int result = pam_get_user(pamh, username, nullptr);
 		if (result != PAM_SUCCESS || *username == nullptr || std::string_view(*username).empty()) {
-			syslog(LOG_ERR, "Unable to determine the user.");
+			pam_syslog(pamh, LOG_ERR, "Unable to determine the user.");
 			return result == PAM_SUCCESS ? PAM_USER_UNKNOWN : result;
 		}
 		return PAM_SUCCESS;
 	}
 
-	void SendDetectionNotice(const howdy::native::RuntimeConfig &config,
-	                         const ConversationFn               &conv_function) {
+	void SendDetectionNotice(pam_handle_t *pamh, const howdy::native::RuntimeConfig &config,
+	                         const ConversationFn &conv_function) {
 		// Custom install prefixes require Howdy's domain to map to its configured locale directory.
 		bindtextdomain(howdy::pam::kGettextDomain, LOCALEDIR);
 		if (!config.core.detection_notice) {
@@ -56,24 +57,24 @@ namespace {
 		    .text  = howdy::pam::Translate("Starting face verification"),
 		});
 		if (result != PAM_SUCCESS) {
-			syslog(LOG_ERR, "Unable to show the detection notice.");
+			pam_syslog(pamh, LOG_ERR, "Unable to show the detection notice.");
 		}
 	}
 
-	auto MapPromptResult(const howdy::pam::PromptCoordinatorResult &result, const char *username,
-	                     const howdy::native::RuntimeConfig &config,
-	                     const ConversationFn               &conv_function) -> int {
+	auto MapPromptResult(pam_handle_t *pamh, const howdy::pam::PromptCoordinatorResult &result,
+	                     const char *username, const howdy::native::RuntimeConfig &config,
+	                     const ConversationFn &conv_function) -> int {
 		switch (result.decision) {
 			case howdy::pam::PromptCoordinatorDecision::kPamResult:
 				return result.pam_status != PAM_SUCCESS ? result.pam_status : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kPasswordFallback:
 				return result.pam_status != PAM_SUCCESS
-				           ? howdy::pam::auth_flow::HowdyStatus(username, result.compare_status,
-				                                                config, conv_function)
+				           ? howdy::pam::auth_flow::HowdyStatus(
+				                 pamh, username, result.compare_status, config, conv_function)
 				           : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
-				return howdy::pam::auth_flow::HowdyStatus(username, result.compare_status, config,
-				                                          conv_function);
+				return howdy::pam::auth_flow::HowdyStatus(pamh, username, result.compare_status,
+				                                          config, conv_function);
 			case howdy::pam::PromptCoordinatorDecision::kCompareSpawnFailed:
 			case howdy::pam::PromptCoordinatorDecision::kAlreadyRun:
 				return PAM_SYSTEM_ERR;
@@ -85,11 +86,11 @@ namespace {
 
 namespace howdy::pam::auth_flow {
 
-	auto SendConversationMessage(const ConversationFn &conv_function, int msg_type,
-	                             const std::string &message) -> void {
+	auto SendConversationMessage(pam_handle_t *pamh, const ConversationFn &conv_function,
+	                             int msg_type, const std::string &message) -> void {
 		const int result = conv_function({.style = msg_type, .text = message});
 		if (result != PAM_SUCCESS) {
-			syslog(LOG_WARNING, "Could not send PAM status message: %d", result);
+			pam_syslog(pamh, LOG_WARNING, "Could not send PAM status message: %d", result);
 		}
 	}
 
@@ -99,76 +100,80 @@ namespace howdy::pam::auth_flow {
 		return result == PAM_SUCCESS && auth_token != nullptr;
 	}
 
-	auto HowdyError(int status, const ConversationFn &conv_function) -> int {
+	auto HowdyError(pam_handle_t *pamh, int status, const ConversationFn &conv_function) -> int {
 		const auto decision = MapCompareWaitStatus(status);
 		if (decision.conversation_kind == ConversationKind::kError) {
-			SendConversationMessage(conv_function, PAM_ERROR_MSG, decision.conversation_message);
+			SendConversationMessage(pamh, conv_function, PAM_ERROR_MSG,
+			                        decision.conversation_message);
 		}
 
 		if (CompareStatusIs(status, CompareExit::kNoFaceModel)) {
-			syslog(LOG_NOTICE, "%s", decision.log_message.c_str());
+			pam_syslog(pamh, LOG_NOTICE, "%s", decision.log_message.c_str());
 		} else if (WIFEXITED(status)) {
-			syslog(LOG_ERR, "%s", decision.log_message.c_str());
+			pam_syslog(pamh, LOG_ERR, "%s", decision.log_message.c_str());
 		} else if (WIFSIGNALED(status)) {
-			syslog(LOG_ERR, "%s (%d)", decision.log_message.c_str(), WTERMSIG(status));
+			pam_syslog(pamh, LOG_ERR, "%s (%d)", decision.log_message.c_str(), WTERMSIG(status));
 		}
 
 		return PAM_AUTH_ERR;
 	}
 
-	auto HowdyStatus(const char *username, int status, const howdy::native::RuntimeConfig &config,
-	                 const ConversationFn &conv_function) -> int {
+	auto HowdyStatus(pam_handle_t *pamh, const char *username, int status,
+	                 const howdy::native::RuntimeConfig &config,
+	                 const ConversationFn               &conv_function) -> int {
 		if (status != EXIT_SUCCESS) {
-			return HowdyError(status, conv_function);
+			return HowdyError(pamh, status, conv_function);
 		}
 
 		if (!config.core.no_confirmation) {
-			SendConversationMessage(conv_function, PAM_TEXT_INFO,
+			SendConversationMessage(pamh, conv_function, PAM_TEXT_INFO,
 			                        BuildConfirmationMessage(username));
 		}
 
-		syslog(LOG_INFO, "%s", kFaceVerificationSucceededMessage);
+		pam_syslog(pamh, LOG_INFO, "%s", kFaceVerificationSucceededMessage);
 		return PAM_SUCCESS;
 	}
 
 	namespace {
 
 		void LogEligibilityResult(
+		    pam_handle_t                                                        *pamh,
 		    const howdy::pam::auth_eligibility::AuthenticationEligibilityResult &result) {
 			using howdy::pam::auth_eligibility::AuthenticationEligibility;
 
 			if (!result.diagnostic_message.empty()) {
-				syslog(LOG_ERR, "%s", result.diagnostic_message.c_str());
+				pam_syslog(pamh, LOG_ERR, "%s", result.diagnostic_message.c_str());
 			}
 
 			switch (result.status) {
 				case AuthenticationEligibility::kEligible:
 					return;
 				case AuthenticationEligibility::kDisabled:
-					syslog(LOG_INFO, "Face verification skipped: Howdy is disabled");
+					pam_syslog(pamh, LOG_INFO, "Face verification skipped: Howdy is disabled");
 					return;
 				case AuthenticationEligibility::kSshSession:
-					syslog(LOG_INFO, "Face verification skipped for SSH session");
+					pam_syslog(pamh, LOG_INFO, "Face verification skipped for SSH session");
 					return;
 				case AuthenticationEligibility::kClosedLid:
-					syslog(LOG_INFO, "Face verification skipped: lid is closed");
+					pam_syslog(pamh, LOG_INFO, "Face verification skipped: lid is closed");
 					return;
 				case AuthenticationEligibility::kInvalidUser:
-					syslog(LOG_WARNING, "Face verification skipped: invalid username");
+					pam_syslog(pamh, LOG_WARNING, "Face verification skipped: invalid username");
 					return;
 				case AuthenticationEligibility::kMissingModel:
-					syslog(LOG_WARNING, "Face verification skipped: no enrolled face model");
+					pam_syslog(pamh, LOG_WARNING,
+					           "Face verification skipped: no enrolled face model");
 					return;
 				case AuthenticationEligibility::kInvalidModelStorage:
 					if (!result.error_message.empty()) {
-						syslog(LOG_ERR, "%s", result.error_message.c_str());
+						pam_syslog(pamh, LOG_ERR, "%s", result.error_message.c_str());
 					}
 					return;
 				case AuthenticationEligibility::kRuntimeError:
 					if (result.error_message.empty()) {
-						syslog(LOG_ERR, "Authentication eligibility failed");
+						pam_syslog(pamh, LOG_ERR, "Authentication eligibility failed");
 					} else {
-						syslog(LOG_ERR, "%s", result.error_message.c_str());
+						pam_syslog(pamh, LOG_ERR, "%s", result.error_message.c_str());
 					}
 					return;
 			}
@@ -184,8 +189,6 @@ namespace howdy::pam::auth_flow {
 		if (pamh == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
-
-		openlog("pam_howdy", 0, LOG_AUTHPRIV);
 
 		const char *username = nullptr;
 		int         pam_res  = GetUsername(pamh, &username);
@@ -205,7 +208,7 @@ namespace howdy::pam::auth_flow {
 		if (runtime_result.status != howdy::pam::RuntimeSessionLoadStatus::kOk ||
 		    runtime_result.config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 		    !runtime_result.config_result.config.has_value()) {
-			syslog(LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
+			pam_syslog(pamh, LOG_ERR, "%s", runtime_result.config_result.error_message.c_str());
 			return PAM_SYSTEM_ERR;
 		}
 		const auto &config = *runtime_result.config_result.config;
@@ -219,7 +222,7 @@ namespace howdy::pam::auth_flow {
 		const auto eligibility_result =
 		    howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility(
 		        pamh, config, username, runtime_session.UserModelsDir(), dependencies.eligibility);
-		LogEligibilityResult(eligibility_result);
+		LogEligibilityResult(pamh, eligibility_result);
 		pam_res = MapAuthenticationEligibility(eligibility_result);
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
@@ -235,7 +238,7 @@ namespace howdy::pam::auth_flow {
 			return conversation.Send(message);
 		};
 
-		SendDetectionNotice(config, conv_function);
+		SendDetectionNotice(pamh, config, conv_function);
 
 		const PamOptions pam_options         = ParsePamOptions(arguments);
 		const bool       existing_auth_token = auth_flow::AuthTokenPresent(pamh);
@@ -251,7 +254,8 @@ namespace howdy::pam::auth_flow {
 		    .staged_runtime  = runtime_session.Staged(),
 		};
 
-		return MapPromptResult(coordinator.Run(compare_request), username, config, conv_function);
+		return MapPromptResult(pamh, coordinator.Run(compare_request), username, config,
+		                       conv_function);
 	}
 
 }  // namespace howdy::pam::auth_flow

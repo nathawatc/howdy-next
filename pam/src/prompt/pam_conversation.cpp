@@ -2,6 +2,8 @@
 
 #include "prompt/conversation_response.hpp"
 
+#include <security/pam_ext.h>
+
 #include <sys/syslog.h>
 
 namespace {
@@ -36,24 +38,24 @@ namespace howdy::pam {
 
 	auto PamConversation::Acquire(pam_handle_t *pamh, PamConversation *output) noexcept -> int {
 		if (pamh == nullptr || output == nullptr) {
-			syslog(LOG_ERR, "PAM conversation is unavailable");
+			pam_syslog(pamh, LOG_ERR, "PAM conversation is unavailable");
 			return PAM_SYSTEM_ERR;
 		}
 
 		const void *item   = nullptr;
 		const int   status = pam_get_item(pamh, PAM_CONV, &item);
 		if (status != PAM_SUCCESS) {
-			syslog(LOG_ERR, "PAM conversation is unavailable");
+			pam_syslog(pamh, LOG_ERR, "PAM conversation is unavailable");
 			return status;
 		}
 		if (item == nullptr) {
-			syslog(LOG_ERR, "PAM conversation is not available");
+			pam_syslog(pamh, LOG_ERR, "PAM conversation is not available");
 			return PAM_SYSTEM_ERR;
 		}
 
 		const auto *callback = static_cast<const struct pam_conv *>(item);
 		if (callback->conv == nullptr) {
-			syslog(LOG_ERR, "PAM conversation is not available");
+			pam_syslog(pamh, LOG_ERR, "PAM conversation is not available");
 			return PAM_SYSTEM_ERR;
 		}
 

@@ -12,6 +12,10 @@
 
 #include <string.h>
 
+#include <security/pam_ext.h>
+
+#include <sys/syslog.h>
+
 namespace {
 
 	struct PamGetItemState {
@@ -29,6 +33,13 @@ namespace {
 		std::string          secret;
 	};
 
+	struct PamLogState {
+		const pam_handle_t *handle   = nullptr;
+		int                 priority = 0;
+		int                 calls    = 0;
+		std::string         message;
+	};
+
 	auto PamGetItemStateSlot() -> PamGetItemState *& {
 		static PamGetItemState *state = nullptr;
 		return state;
@@ -39,7 +50,23 @@ namespace {
 		return state;
 	}
 
+	auto PamLogStateSlot() -> PamLogState *& {
+		static PamLogState *state = nullptr;
+		return state;
+	}
+
 }  // namespace
+
+extern "C" void pam_syslog(const pam_handle_t *pamh, int priority, const char *fmt, ...) {
+	if (PamLogStateSlot() == nullptr) {
+		return;
+	}
+	auto &state    = *PamLogStateSlot();
+	state.handle   = pamh;
+	state.priority = priority;
+	++state.calls;
+	state.message = fmt;
+}
 
 extern "C" auto pam_get_item(const pam_handle_t *pamh, int item_type, const void **item) -> int {
 	if (PamGetItemStateSlot() == nullptr || pamh != PamGetItemStateSlot()->handle) {
@@ -158,7 +185,9 @@ namespace {
 		struct pam_handle     pam_handle;
 		const struct pam_conv original{.conv = TestConversation, .appdata_ptr = &state};
 		PamGetItemState       get_item_state{.handle = &pam_handle};
+		PamLogState           log_state;
 		PamGetItemStateSlot() = &get_item_state;
+		PamLogStateSlot()     = &log_state;
 
 		ok &= Expect(PamConversation::Acquire(nullptr, &conversation) == PAM_SYSTEM_ERR,
 		             "null PAM handle fails acquisition");
@@ -184,6 +213,11 @@ namespace {
 		get_item_state.item = &original;
 		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
 		             "acquires valid PAM conversation");
+		ok &= Expect(log_state.calls == 5 && log_state.handle == &pam_handle &&
+		                 log_state.priority == LOG_ERR &&
+		                 log_state.message == "PAM conversation is not available",
+		             "acquisition failures use PAM logging with original severity and handle");
+		PamLogStateSlot() = nullptr;
 		return ok;
 	}
 

@@ -5,6 +5,8 @@
 
 #include <exception>
 
+#include <security/pam_ext.h>
+
 #include <sys/syslog.h>
 
 namespace howdy::pam {
@@ -20,10 +22,11 @@ namespace howdy::pam {
 			return dependencies.authenticate(dependencies.context, pamh, arguments,
 			                                 request_auth_token);
 		} catch (const std::exception &error) {
-			syslog(LOG_ERR, "Unhandled C++ exception in pam_sm_authenticate: %s", error.what());
+			pam_syslog(pamh, LOG_ERR, "Unhandled C++ exception in pam_sm_authenticate: %s",
+			           error.what());
 			return PAM_SYSTEM_ERR;
 		} catch (...) {
-			syslog(LOG_ERR, "Unhandled non-standard exception in pam_sm_authenticate");
+			pam_syslog(pamh, LOG_ERR, "Unhandled non-standard exception in pam_sm_authenticate");
 			return PAM_SYSTEM_ERR;
 		}
 	}

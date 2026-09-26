@@ -71,7 +71,7 @@ namespace {
 				continue;
 			}
 			const int error_number = errno;
-			syslog(LOG_ERR, "waitpid failed for compare process: %s (%d)",
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: waitpid failed for compare process: %s (%d)",
 			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
 			return ChildState::kError;
@@ -104,14 +104,16 @@ namespace {
 					continue;
 				}
 				const int error_number = errno;
-				syslog(LOG_ERR, "ppoll failed for compare process: %s (%d)",
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: ppoll failed for compare process: %s (%d)",
 				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 				return WaitOutcome::kError;
 			}
 			for (const auto &descriptor : descriptors) {
 				if ((static_cast<unsigned int>(descriptor.revents) &
 				     static_cast<unsigned int>(POLLERR | POLLHUP | POLLNVAL)) != 0) {
-					syslog(LOG_ERR, "Unexpected compare poll events on fd %d: %#x", descriptor.fd,
+					syslog(LOG_AUTHPRIV | LOG_ERR,
+					       "pam_howdy: Unexpected compare poll events on fd %d: %#x", descriptor.fd,
 					       static_cast<unsigned int>(descriptor.revents));
 					return WaitOutcome::kError;
 				}
@@ -137,7 +139,8 @@ namespace {
 			return status;
 		}
 		const int error_number = errno;
-		syslog(LOG_ERR, "waitpid failed while reaping compare process: %s (%d)",
+		syslog(LOG_AUTHPRIV | LOG_ERR,
+		       "pam_howdy: waitpid failed while reaping compare process: %s (%d)",
 		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 		return std::nullopt;
 	}
@@ -145,7 +148,8 @@ namespace {
 	auto SignalCompare(pid_t child_pid, int signal) -> bool {
 		if (kill(child_pid, signal) != 0 && errno != ESRCH) {
 			const int error_number = errno;
-			syslog(LOG_ERR, "Failed to signal compare process (%d): %s (%d)", signal,
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Failed to signal compare process (%d): %s (%d)", signal,
 			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			return false;
 		}
@@ -156,7 +160,8 @@ namespace {
 		howdy::native::ScopedFd pidfd(pidfd_open(child_pid, 0));
 		if (!pidfd.Valid()) {
 			const int error_number = errno;
-			syslog(LOG_ERR, "pidfd_open failed for compare process: %s (%d)",
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: pidfd_open failed for compare process: %s (%d)",
 			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 			return {};
 		}
@@ -164,7 +169,8 @@ namespace {
 			const int normalized = fcntl(pidfd.Get(), F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
 			if (normalized < 0) {
 				const int error_number = errno;
-				syslog(LOG_ERR, "Compare pidfd normalization failed: %s (%d)",
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: Compare pidfd normalization failed: %s (%d)",
 				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 				return {};
 			}
@@ -180,7 +186,7 @@ namespace {
 		using Clock            = std::chrono::steady_clock;
 		const int abort_status = MakeCompareWaitExitStatus(CompareExit::kAbort);
 		if (child_pid <= 0) {
-			syslog(LOG_ERR, "Invalid compare child pid: %d", child_pid);
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Invalid compare child pid: %d", child_pid);
 			return abort_status;
 		}
 		const auto pidfd = OpenComparePidfd(child_pid);

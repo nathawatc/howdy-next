@@ -114,7 +114,8 @@ namespace {
 
 	void LogPrepareTimeout(const Operations &operations) {
 		constexpr std::string_view message = "Howdy auth helper prepare timed out";
-		syslog(LOG_ERR, "%.*s", static_cast<int>(message.size()), message.data());
+		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %.*s", static_cast<int>(message.size()),
+		       message.data());
 		CaptureAuthHelperLog(operations, message);
 	}
 
@@ -129,7 +130,7 @@ namespace {
 		const ssize_t          size = read(output_fd, buffer.data(), buffer.size());
 		if (size > 0) {
 			if (output->size() + static_cast<std::size_t>(size) >= kAuthHelperOutputLimit) {
-				syslog(LOG_ERR, "Howdy auth helper reached output limit");
+				syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper reached output limit");
 				return PrepareIoResult::kFailed;
 			}
 			output->append(buffer.data(), static_cast<std::size_t>(size));
@@ -157,7 +158,8 @@ namespace {
 		if (result == LeaseReceiveResult::kRetry) {
 			return PrepareIoResult::kPending;
 		}
-		syslog(LOG_ERR, "Howdy auth helper returned malformed lease descriptor");
+		syslog(LOG_AUTHPRIV | LOG_ERR,
+		       "pam_howdy: Howdy auth helper returned malformed lease descriptor");
 		return PrepareIoResult::kFailed;
 	}
 
@@ -226,12 +228,13 @@ namespace {
 			if (result == HelperWaitResult::kTimedOut) {
 				LogPrepareTimeout(operations);
 			} else {
-				syslog(LOG_ERR, "Howdy auth helper failed while waiting");
+				syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper failed while waiting");
 			}
 			return false;
 		}
 		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_ERR, "Howdy auth helper failed: %s", output.c_str());
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper failed: %s",
+			       output.c_str());
 			return false;
 		}
 		return true;
@@ -241,7 +244,8 @@ namespace {
 	    -> bool {
 		const auto auth_output = ParseAuthHelperOutput(output);
 		if (!auth_output.valid) {
-			syslog(LOG_ERR, "Howdy auth helper returned malformed output: %s", output.c_str());
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Howdy auth helper returned malformed output: %s", output.c_str());
 			return false;
 		}
 		prepared->config_path     = auth_output.config_path;
@@ -276,14 +280,15 @@ namespace {
 		}
 		if (!howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
 		        spawn.lease_socket.Parent())) {
-			syslog(LOG_ERR, "Howdy auth helper returned extra lease data");
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Howdy auth helper returned extra lease data");
 			return false;
 		}
 		CloseOwnedFd(operations, spawn.lease_socket.Parent());
 		if (!AssignPreparedPaths(helper_output, prepared) ||
 		    !howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 		        lease_fd.Get(), prepared->root_dir, 0)) {
-			syslog(LOG_ERR, "Howdy auth helper lease validation failed");
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper lease validation failed");
 			return false;
 		}
 		prepared->lease_fd = std::move(lease_fd);

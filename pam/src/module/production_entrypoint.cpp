@@ -30,7 +30,8 @@ namespace {
 		(void)context;
 		if (euidaccess("/dev/uinput", W_OK | R_OK) != 0) {
 			const int access_errno = errno;
-			syslog(LOG_ERR, "Input prompt workaround unavailable: %s (%d)",
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Input prompt workaround unavailable: %s (%d)",
 			       howdy::native::SystemErrorMessage(access_errno).c_str(), access_errno);
 			return false;
 		}
