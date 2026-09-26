@@ -92,7 +92,8 @@ body:
       value: |
         ls -ld /etc/howdy /etc/howdy/models
         ls -l /etc/howdy/config.ini
-        ls -l /usr/lib/howdy/howdy-auth-helper
+        find /usr/lib /usr/lib64 /usr/libexec /usr/local/lib /usr/local/lib64 /usr/local/libexec -maxdepth 3 -type f -name howdy-auth-helper -exec ls -l {} + 2>/dev/null
+        ls -l /run/wrappers/bin/howdy-auth-helper 2>/dev/null
     validations:
       required: false
 

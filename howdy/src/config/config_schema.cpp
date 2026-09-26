@@ -129,7 +129,8 @@ namespace howdy::native::config_schema {
 		           .fallback     = FloatDefault(320.0F),
 		           .range        = kMaxHeightRange,
 		           .invalid_rule = "expected range 32..4096",
-		           .description  = "Limit processed frame height to trade image detail for speed."},
+		           .description =
+		               "Limit authentication frame height to trade image detail for speed."},
 		    Option{.id           = OptionId::kVideoFrameWidth,
 		           .section      = "video",
 		           .key          = "frame_width",
