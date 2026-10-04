@@ -228,7 +228,7 @@ auto howdy::native::snapshot_internal::SnapshotMainWithDependencies(
 	}
 	const auto &config = *config_result.config;
 
-	auto capture_result = dependencies.capture_frames(dependencies.context, config);
+	auto const capture_result = dependencies.capture_frames(dependencies.context, config);
 	switch (capture_result.status) {
 		case SnapshotCaptureStatus::kOk:
 			break;

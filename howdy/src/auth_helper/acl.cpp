@@ -49,9 +49,11 @@ namespace howdy::native::auth_helper {
 		                            acl_perm_t permissions) -> AclVerifyResult {
 			acl_tag_t entry_tag = 0;
 			if (acl_get_tag_type(entry, &entry_tag) != 0) {
-				return {.status       = AclVerifyStatus::kReadError,
-				        .error_number = errno,
-				        .operation    = "acl_get_tag_type"};
+				return {
+				    .status       = AclVerifyStatus::kReadError,
+				    .error_number = errno,
+				    .operation    = "acl_get_tag_type",
+				};
 			}
 			if (entry_tag != tag) {
 				return {.status = AclVerifyStatus::kMalformed};
@@ -59,9 +61,11 @@ namespace howdy::native::auth_helper {
 			if (qualifier != nullptr) {
 				void *entry_qualifier = acl_get_qualifier(entry);
 				if (entry_qualifier == nullptr) {
-					return {.status       = AclVerifyStatus::kReadError,
-					        .error_number = errno,
-					        .operation    = "acl_get_qualifier"};
+					return {
+					    .status       = AclVerifyStatus::kReadError,
+					    .error_number = errno,
+					    .operation    = "acl_get_qualifier",
+					};
 				}
 				const bool matches = std::memcmp(entry_qualifier, qualifier, sizeof(uid_t)) == 0;
 				acl_free(entry_qualifier);
@@ -72,27 +76,35 @@ namespace howdy::native::auth_helper {
 
 			acl_permset_t permission_set = nullptr;
 			if (acl_get_permset(entry, &permission_set) != 0) {
-				return {.status       = AclVerifyStatus::kPermissionQueryError,
-				        .error_number = errno,
-				        .operation    = "acl_get_permset"};
+				return {
+				    .status       = AclVerifyStatus::kPermissionQueryError,
+				    .error_number = errno,
+				    .operation    = "acl_get_permset",
+				};
 			}
 			const int read_result = acl_get_perm(permission_set, ACL_READ);
 			if (read_result < 0) {
-				return {.status       = AclVerifyStatus::kPermissionQueryError,
-				        .error_number = errno,
-				        .operation    = "acl_get_perm"};
+				return {
+				    .status       = AclVerifyStatus::kPermissionQueryError,
+				    .error_number = errno,
+				    .operation    = "acl_get_perm",
+				};
 			}
 			const int write_result = acl_get_perm(permission_set, ACL_WRITE);
 			if (write_result < 0) {
-				return {.status       = AclVerifyStatus::kPermissionQueryError,
-				        .error_number = errno,
-				        .operation    = "acl_get_perm"};
+				return {
+				    .status       = AclVerifyStatus::kPermissionQueryError,
+				    .error_number = errno,
+				    .operation    = "acl_get_perm",
+				};
 			}
 			const int execute_result = acl_get_perm(permission_set, ACL_EXECUTE);
 			if (execute_result < 0) {
-				return {.status       = AclVerifyStatus::kPermissionQueryError,
-				        .error_number = errno,
-				        .operation    = "acl_get_perm"};
+				return {
+				    .status       = AclVerifyStatus::kPermissionQueryError,
+				    .error_number = errno,
+				    .operation    = "acl_get_perm",
+				};
 			}
 			if ((read_result == 1) != ((permissions & ACL_READ) != 0) ||
 			    (write_result == 1) != ((permissions & ACL_WRITE) != 0) ||
@@ -122,19 +134,27 @@ namespace howdy::native::auth_helper {
 		                const AclOperations &operations) -> AclVerifyResult {
 			acl_t acl = operations.acl_get_fd(operations.context, fd);
 			if (acl == nullptr) {
-				return {.status       = AclVerifyStatus::kReadError,
-				        .error_number = errno,
-				        .operation    = "acl_get_fd"};
+				return {
+				    .status       = AclVerifyStatus::kReadError,
+				    .error_number = errno,
+				    .operation    = "acl_get_fd",
+				};
 			}
 
-			const std::array extended_tags = {ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_MASK,
-			                                  ACL_OTHER};
-			const std::array basic_tags    = {ACL_USER_OBJ, ACL_GROUP_OBJ, ACL_OTHER, acl_tag_t{},
-			                                  acl_tag_t{}};
-			const auto      &tags          = policy.has_named_target ? extended_tags : basic_tags;
-			const std::array permissions   = {
-			    policy.owner, policy.has_named_target ? policy.target : policy.group,
-			    policy.has_named_target ? policy.group : policy.other, policy.mask, policy.other};
+			const std::array extended_tags = {
+			    ACL_USER_OBJ, ACL_USER, ACL_GROUP_OBJ, ACL_MASK, ACL_OTHER,
+			};
+			const std::array basic_tags = {
+			    ACL_USER_OBJ, ACL_GROUP_OBJ, ACL_OTHER, acl_tag_t{}, acl_tag_t{},
+			};
+			const auto      &tags        = policy.has_named_target ? extended_tags : basic_tags;
+			const std::array permissions = {
+			    policy.owner,
+			    policy.has_named_target ? policy.target : policy.group,
+			    policy.has_named_target ? policy.group : policy.other,
+			    policy.mask,
+			    policy.other,
+			};
 			const std::size_t expected_count = policy.has_named_target ? 5 : 3;
 			std::size_t       entry_count    = 0;
 			acl_entry_t       entry          = nullptr;
@@ -144,9 +164,11 @@ namespace howdy::native::auth_helper {
 				if (entry_result < 0) {
 					const int error_number = errno;
 					acl_free(acl);
-					return {.status       = AclVerifyStatus::kIterationError,
-					        .error_number = error_number,
-					        .operation    = "acl_get_entry"};
+					return {
+					    .status       = AclVerifyStatus::kIterationError,
+					    .error_number = error_number,
+					    .operation    = "acl_get_entry",
+					};
 				}
 				if (entry_result == 0) {
 					break;
@@ -167,8 +189,10 @@ namespace howdy::native::auth_helper {
 				++entry_count;
 			}
 			acl_free(acl);
-			return {.status = entry_count == expected_count ? AclVerifyStatus::kOk
-			                                                : AclVerifyStatus::kMalformed};
+			return {
+			    .status = entry_count == expected_count ? AclVerifyStatus::kOk
+				                                        : AclVerifyStatus::kMalformed,
+			};
 		}
 
 		auto LogAclVerifyFailure(const std::filesystem::path &path, const AclVerifyResult &result)

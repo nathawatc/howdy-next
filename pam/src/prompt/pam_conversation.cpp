@@ -68,8 +68,10 @@ namespace howdy::pam {
 			return PAM_SYSTEM_ERR;
 		}
 
-		const struct pam_message  pam_message{.msg_style = message.style,
-		                                      .msg       = message.text.c_str()};
+		const struct pam_message pam_message{
+		    .msg_style = message.style,
+		    .msg       = message.text.c_str(),
+		};
 		const struct pam_message *message_pointer = &pam_message;
 		ConversationResponseOwner response_owner;
 

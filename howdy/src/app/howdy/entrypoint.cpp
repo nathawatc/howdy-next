@@ -14,8 +14,12 @@ namespace howdy::native {
 			return 1;
 		}
 		try {
-			constexpr std::array path_overrides{"HOWDY_CONFIG", "HOWDY_MODELS_DIR",
-			                                    "HOWDY_USER_MODELS_DIR", "HOWDY_LOG_PATH"};
+			constexpr std::array path_overrides{
+			    "HOWDY_CONFIG",
+			    "HOWDY_MODELS_DIR",
+			    "HOWDY_USER_MODELS_DIR",
+			    "HOWDY_LOG_PATH",
+			};
 			for (const char *name : path_overrides) {
 				if (unsetenv(name) != 0) {
 					std::cerr << "Error: failed to clear Howdy path overrides\n";

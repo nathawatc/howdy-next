@@ -469,8 +469,14 @@ auto main() -> int {
 
 		ok &= Expect(session.Open().status == CompareCaptureOpenStatus::kOk,
 		             "configured-exposure session opens");
-		ok &= Expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
-		                                                        "warm-up", "clock"},
+		ok &= Expect(capture.events ==
+		                 std::vector<std::string>{
+		                     "open",
+		                     "auto-exposure",
+		                     "exposure",
+		                     "warm-up",
+		                     "clock",
+		                 },
 		             "configured exposure precedes warm-up and timeout clock");
 		ok &= Expect(capture.warm_up_calls == 1, "configured exposure warms up once");
 		ok &= Expect(capture.property_calls.size() == 2,
@@ -479,9 +485,16 @@ auto main() -> int {
 		session.RestoreExposure();
 		ok &= Expect(capture.property_calls.size() == 4,
 		             "configured exposure restoration makes two more property calls");
-		ok &= Expect(capture.events == std::vector<std::string>{"open", "auto-exposure", "exposure",
-		                                                        "warm-up", "clock", "auto-exposure",
-		                                                        "exposure"},
+		ok &= Expect(capture.events ==
+		                 std::vector<std::string>{
+		                     "open",
+		                     "auto-exposure",
+		                     "exposure",
+		                     "warm-up",
+		                     "clock",
+		                     "auto-exposure",
+		                     "exposure",
+		                 },
 		             "exposure restoration follows warm-up");
 		if (capture.property_calls.size() == 4) {
 			ok &= Expect(capture.property_calls.at(0).property == cv::CAP_PROP_AUTO_EXPOSURE &&
@@ -504,7 +517,7 @@ auto main() -> int {
 		FakeClockContext   clock;
 		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = MakeDependencies(capture, clock);
+		auto const dependencies        = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 1;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
@@ -524,7 +537,7 @@ auto main() -> int {
 		FakeClockContext   clock;
 		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = MakeDependencies(capture, clock);
+		auto const dependencies        = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 3;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
@@ -546,7 +559,7 @@ auto main() -> int {
 		FakeClockContext   clock;
 		auto               config      = MakeVideoConfig();
 		config.exposure                = 37;
-		auto dependencies              = MakeDependencies(capture, clock);
+		auto const dependencies        = MakeDependencies(capture, clock);
 		capture.throw_on_property_call = 4;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 
@@ -568,7 +581,7 @@ auto main() -> int {
 		FakeClockContext   clock;
 		auto               config   = MakeVideoConfig();
 		config.exposure             = 37;
-		auto dependencies           = MakeDependencies(capture, clock);
+		auto const dependencies     = MakeDependencies(capture, clock);
 		capture.set_property_result = false;
 		howdy::native::CompareCaptureSession session(config, dependencies);
 

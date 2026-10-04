@@ -30,9 +30,11 @@ namespace howdy::test::auth_helper {
 	                                   int permissions) -> AclCheckResult {
 		acl_tag_t entry_tag = 0;
 		if (acl_get_tag_type(entry, &entry_tag) != 0) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_tag_type"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_tag_type",
+			};
 		}
 		if (entry_tag != tag) {
 			return {.status = AclCheckStatus::kMismatch};
@@ -40,9 +42,11 @@ namespace howdy::test::auth_helper {
 		if (qualifier != nullptr) {
 			void *entry_qualifier = acl_get_qualifier(entry);
 			if (entry_qualifier == nullptr) {
-				return {.status       = AclCheckStatus::kError,
-				        .error_number = errno,
-				        .operation    = "acl_get_qualifier"};
+				return {
+				    .status       = AclCheckStatus::kError,
+				    .error_number = errno,
+				    .operation    = "acl_get_qualifier",
+				};
 			}
 			const bool matches = std::memcmp(entry_qualifier, qualifier, sizeof(uid_t)) == 0;
 			acl_free(entry_qualifier);
@@ -52,27 +56,35 @@ namespace howdy::test::auth_helper {
 		}
 		acl_permset_t permission_set = nullptr;
 		if (acl_get_permset(entry, &permission_set) != 0) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_permset"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_permset",
+			};
 		}
 		const int read_result = acl_get_perm(permission_set, ACL_READ);
 		if (read_result < 0) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_perm"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_perm",
+			};
 		}
 		const int write_result = acl_get_perm(permission_set, ACL_WRITE);
 		if (write_result < 0) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_perm"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_perm",
+			};
 		}
 		const int execute_result = acl_get_perm(permission_set, ACL_EXECUTE);
 		if (execute_result < 0) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_perm"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_perm",
+			};
 		}
 		const bool matches =
 		    (read_result == 1) == howdy::native::HasAnyBits(permissions, ACL_READ) &&
@@ -85,9 +97,11 @@ namespace howdy::test::auth_helper {
 	    -> AclCheckResult {
 		acl_t acl = acl_get_file(path.c_str(), ACL_TYPE_ACCESS);
 		if (acl == nullptr) {
-			return {.status       = AclCheckStatus::kError,
-			        .error_number = errno,
-			        .operation    = "acl_get_file"};
+			return {
+			    .status       = AclCheckStatus::kError,
+			    .error_number = errno,
+			    .operation    = "acl_get_file",
+			};
 		}
 		const int   permissions = directory ? (ACL_READ | ACL_EXECUTE) : ACL_READ;
 		int         entry_count = 0;
@@ -98,9 +112,11 @@ namespace howdy::test::auth_helper {
 			if (entry_result < 0) {
 				const int error_number = errno;
 				acl_free(acl);
-				return {.status       = AclCheckStatus::kError,
-				        .error_number = error_number,
-				        .operation    = "acl_get_entry"};
+				return {
+				    .status       = AclCheckStatus::kError,
+				    .error_number = error_number,
+				    .operation    = "acl_get_entry",
+				};
 			}
 			if (entry_result == 0) {
 				break;
@@ -111,9 +127,11 @@ namespace howdy::test::auth_helper {
 			if (acl_get_tag_type(entry, &tag) != 0) {
 				const int error_number = errno;
 				acl_free(acl);
-				return {.status       = AclCheckStatus::kError,
-				        .error_number = error_number,
-				        .operation    = "acl_get_tag_type"};
+				return {
+				    .status       = AclCheckStatus::kError,
+				    .error_number = error_number,
+				    .operation    = "acl_get_tag_type",
+				};
 			}
 			const bool expected_tag = tag == ACL_USER_OBJ || tag == ACL_USER ||
 			                          tag == ACL_GROUP_OBJ || tag == ACL_MASK || tag == ACL_OTHER;

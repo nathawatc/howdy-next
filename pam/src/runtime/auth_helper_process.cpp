@@ -176,16 +176,20 @@ namespace {
 
 		while (!output_eof || !lease_fd.Valid()) {
 			std::array<pollfd, 2> descriptors = {
-			    pollfd{.fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
-				       .events  = POLLIN,
-				       .revents = 0},
-			    pollfd{.fd      = lease_fd.Valid() ? -1 : spawn->lease_socket.Parent(),
-				       .events  = POLLIN,
-				       .revents = 0},
+			    pollfd{
+			        .fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
+			        .events  = POLLIN,
+			        .revents = 0,
+			    },
+			    pollfd{
+			        .fd      = lease_fd.Valid() ? -1 : spawn->lease_socket.Parent(),
+			        .events  = POLLIN,
+			        .revents = 0,
+			    },
 			};
-			auto     &output_descriptor = descriptors.front();
-			auto     &lease_descriptor  = descriptors.back();
-			const int poll_result =
+			auto const &output_descriptor = descriptors.front();
+			auto const &lease_descriptor  = descriptors.back();
+			const int   poll_result =
 			    poll(descriptors.data(), descriptors.size(), DeadlinePollTimeout(deadline));
 			if (poll_result < 0 && errno == EINTR) {
 				continue;
@@ -318,7 +322,7 @@ namespace howdy::pam::auth_helper_process {
 
 	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared)
 	    -> bool {
-		auto operations = ProductionOperations();
+		auto const operations = ProductionOperations();
 		return ::PrepareRuntimeAuthFilesUntil(username, prepared, operations,
 		                                      std::chrono::steady_clock::now() +
 		                                          internal::kAuthHelperTimeout);

@@ -102,7 +102,7 @@ namespace {
 		if (context.dependencies != nullptr) {
 			return howdy::native::FaceInferenceComplete(context.dependencies->inference);
 		}
-		auto &model = context.face_model.emplace(context.face_config.get());
+		auto const &model = context.face_model.emplace(context.face_config.get());
 		if (!model.Ok()) {
 			std::cerr << model.ErrorMessage() << "\n";
 			return false;
@@ -111,16 +111,18 @@ namespace {
 	}
 
 	auto OpenCapture(void *raw_context) -> howdy::native::CompareCaptureOpenResult {
-		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
 		return context.capture_session.get().Open();
 	}
 
 	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
-		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
 		if (context.dependencies != nullptr) {
 			if (context.dependencies->drop_privileges == nullptr) {
-				return {.status = howdy::native::ComparePrivilegeStatus::kVerificationFailure,
-				        .error_message = "Injected compare privilege operation unavailable"};
+				return {
+				    .status        = howdy::native::ComparePrivilegeStatus::kVerificationFailure,
+				    .error_message = "Injected compare privilege operation unavailable",
+				};
 			}
 			return context.dependencies->drop_privileges(context.dependencies->context);
 		}
@@ -145,7 +147,7 @@ namespace {
 	}
 
 	void ResetTimeout(void *raw_context) {
-		auto &context = *static_cast<CompareProductionContext *>(raw_context);
+		auto const &context = *static_cast<CompareProductionContext *>(raw_context);
 		context.capture_session.get().ResetTimeoutClock();
 	}
 

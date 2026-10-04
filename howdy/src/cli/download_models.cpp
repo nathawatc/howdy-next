@@ -193,12 +193,14 @@ namespace {
 
 	auto ModelsDirectoryFailure(std::string_view operation, const std::filesystem::path &path,
 	                            const int error_number) -> howdy::native::SecurePathCheckResult {
-		return {.ok            = false,
-		        .error_message = "Failed to " + std::string(operation) + " " +
-		                         std::string(howdy::native::kModelsDirectoryLabel) + ": " +
-		                         path.string() + " (" +
-		                         howdy::native::SystemErrorMessage(error_number) + ")",
-		        .error_code    = error_number};
+		return {
+		    .ok            = false,
+		    .error_message = "Failed to " + std::string(operation) + " " +
+			                 std::string(howdy::native::kModelsDirectoryLabel) + ": " +
+			                 path.string() + " (" +
+			                 howdy::native::SystemErrorMessage(error_number) + ")",
+		    .error_code    = error_number,
+		};
 	}
 
 	auto ValidateModelsDirectoryComponent(const int fd, const std::filesystem::path &path,

@@ -433,7 +433,7 @@ namespace howdy::native::config_internal {
 			return {.status = ConfigEditStatus::kTempCreateFailed, .editor = editor};
 		}
 
-		const auto cleanup = [&]() -> void {
+		const auto cleanup = [&] -> void {
 			RemoveIfExists(temp_copy->path);
 		};
 		const auto result_base = [&](ConfigEditStatus status,

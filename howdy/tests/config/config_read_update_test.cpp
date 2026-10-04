@@ -33,7 +33,7 @@ namespace howdy::test {
 		}
 
 		auto ExpectFloatWritePaths(const std::filesystem::path &config_path) -> bool {
-			auto write_float_config = [&]() -> bool {
+			auto write_float_config = [&] -> bool {
 				return WriteConfigTestFile(config_path, "[video]\n"
 				                                        "clahe_clip_limit = 2\n"
 				                                        "\n"
@@ -43,7 +43,7 @@ namespace howdy::test {
 				                                        "sface_threshold = 0.5\n");
 			};
 
-			auto expect_float_write_path = [&](const std::string &label) -> bool {
+			auto const expect_float_write_path = [&](const std::string &label) -> bool {
 				bool ok = true;
 				ok &= Expect(write_float_config(), label + ": write baseline float config");
 				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "clahe_clip_limit",
@@ -161,9 +161,12 @@ namespace howdy::test {
 		    "Config values must be single-line scalars and cannot start with [";
 		const auto before_unsafe = ReadConfigTestFile(context.config_path);
 
-		for (const auto &unsafe_value :
-		     {std::string(1, '\0'), std::string("\r"), std::string("true\n[video]\ntimeout = 0"),
-		      std::string("[video]")}) {
+		for (const auto &unsafe_value : {
+		         std::string(1, '\0'),
+		         std::string("\r"),
+		         std::string("true\n[video]\ntimeout = 0"),
+		         std::string("[video]"),
+		     }) {
 			std::string error;
 			ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &error,
 			                                               unsafe_value, false, false,

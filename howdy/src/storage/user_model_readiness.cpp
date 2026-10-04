@@ -59,8 +59,10 @@ namespace howdy::native {
 			}
 			switch (InspectStagedModel(*model_path, owner_uid)) {
 				case StagedReadiness::kPresent:
-					return UserModelReadinessResult{.status = UserModelStatus::kOk,
-					                                .path   = *model_path};
+					return UserModelReadinessResult{
+					    .status = UserModelStatus::kOk,
+					    .path   = *model_path,
+					};
 				case StagedReadiness::kAbsent:
 					return ReadinessFailure(UserModelStatus::kNoModel, {}, *model_path);
 				case StagedReadiness::kError:

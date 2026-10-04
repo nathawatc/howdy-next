@@ -214,7 +214,7 @@ namespace {
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return Expect(status == (howdy::native::EncodeWaitExitStatus(17)),
+		return Expect(status == howdy::native::EncodeWaitExitStatus(17),
 		              "watchdog preserves natural exit wait status") &&
 		       Expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
 	}
@@ -232,7 +232,7 @@ namespace {
 
 		const int status = howdy::pam::compare_process::WaitUntil(
 		    child_pid, std::chrono::steady_clock::now() + 1s);
-		return Expect(status == (howdy::native::EncodeWaitExitStatus(17)),
+		return Expect(status == howdy::native::EncodeWaitExitStatus(17),
 		              "blocked SIGCHLD preserves natural compare exit status") &&
 		       Expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
 	}
@@ -578,8 +578,13 @@ namespace {
 		       Expect(child_pid == -1, "production spawn failure leaves child PID unchanged") &&
 		       Expect(capture.path == kCompareProcessPath,
 		              "production spawn failure preserves executable path") &&
-		       Expect(capture.argv == std::vector<std::string>{kCompareProcessPath, "--config",
-		                                                       "/etc/howdy/config.ini", "alice"},
+		       Expect(capture.argv ==
+		                  std::vector<std::string>{
+		                      kCompareProcessPath,
+		                      "--config",
+		                      "/etc/howdy/config.ini",
+		                      "alice",
+		                  },
 		              "production spawn failure preserves exact argv") &&
 		       Expect(capture.environment.empty(),
 		              "production spawn failure preserves empty direct environment");

@@ -48,9 +48,11 @@ namespace howdy::native::compare_privileges_internal {
 	auto FatalVerificationFailure(const ComparePrivilegeDependencies &dependencies)
 	    -> ComparePrivilegeResult {
 		constexpr auto diagnostic = kFatalDiagnostic;
-		dependencies.fatal_exit(dependencies.context, {.message   = diagnostic,
-		                                               .exit_code = static_cast<int>(
-		                                                   howdy::native::CompareExit::kAbort)});
+		dependencies.fatal_exit(dependencies.context, {
+		                                                  .message   = diagnostic,
+		                                                  .exit_code = static_cast<int>(
+		                                                      howdy::native::CompareExit::kAbort),
+		                                              });
 		return {
 		    .status        = ComparePrivilegeStatus::kVerificationFailure,
 		    .error_message = "fatal compare privilege callback returned",
@@ -76,12 +78,18 @@ namespace howdy::native::compare_privileges_internal {
 
 	auto ReadProcessIdentity(const ComparePrivilegeDependencies &dependencies,
 	                         ProcessIdentity                    *identity) -> bool {
-		return dependencies.getresuid(dependencies.context, {.real      = &identity->real_uid,
-		                                                     .effective = &identity->effective_uid,
-		                                                     .saved = &identity->saved_uid}) == 0 &&
-		       dependencies.getresgid(dependencies.context, {.real      = &identity->real_gid,
-		                                                     .effective = &identity->effective_gid,
-		                                                     .saved = &identity->saved_gid}) == 0;
+		return dependencies.getresuid(dependencies.context,
+		                              {
+		                                  .real      = &identity->real_uid,
+		                                  .effective = &identity->effective_uid,
+		                                  .saved     = &identity->saved_uid,
+		                              }) == 0 &&
+		       dependencies.getresgid(dependencies.context,
+		                              {
+		                                  .real      = &identity->real_gid,
+		                                  .effective = &identity->effective_gid,
+		                                  .saved     = &identity->saved_gid,
+		                              }) == 0;
 	}
 
 	auto HandleUnprivilegedCaller(const ComparePrivilegeDependencies &dependencies, uid_t real_uid,
@@ -116,17 +124,23 @@ namespace howdy::native::compare_privileges_internal {
 		const int securebits =
 		    dependencies.prctl(dependencies.context, PR_GET_SECUREBITS, 0, 0, 0, 0);
 		if (securebits < 0) {
-			return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
-			        .error_message = "failed to query securebits"};
+			return {
+			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
+			    .error_message = "failed to query securebits",
+			};
 		}
 		if (HasAnyBits(securebits, SECBIT_KEEP_CAPS, SECBIT_NO_SETUID_FIXUP)) {
-			return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
-			        .error_message = "unsafe securebits configuration"};
+			return {
+			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
+			    .error_message = "unsafe securebits configuration",
+			};
 		}
 		if (dependencies.prctl(dependencies.context, PR_CAP_AMBIENT, PR_CAP_AMBIENT_CLEAR_ALL, 0, 0,
 		                       0) != 0) {
-			return {.status        = ComparePrivilegeStatus::kCapabilityFailure,
-			        .error_message = "failed to clear ambient capabilities"};
+			return {
+			    .status        = ComparePrivilegeStatus::kCapabilityFailure,
+			    .error_message = "failed to clear ambient capabilities",
+			};
 		}
 		return {.status = ComparePrivilegeStatus::kOk};
 	}
@@ -150,16 +164,22 @@ namespace howdy::native::compare_privileges_internal {
 			return false;
 		}
 		ProcessIdentity identity;
-		if (dependencies.getresgid(dependencies.context, {.real      = &identity.real_gid,
-		                                                  .effective = &identity.effective_gid,
-		                                                  .saved     = &identity.saved_gid}) != 0 ||
+		if (dependencies.getresgid(dependencies.context,
+		                           {
+		                               .real      = &identity.real_gid,
+		                               .effective = &identity.effective_gid,
+		                               .saved     = &identity.saved_gid,
+		                           }) != 0 ||
 		    identity.real_gid != target_gid || identity.effective_gid != target_gid ||
 		    identity.saved_gid != target_gid) {
 			return false;
 		}
-		if (dependencies.getresuid(dependencies.context, {.real      = &identity.real_uid,
-		                                                  .effective = &identity.effective_uid,
-		                                                  .saved     = &identity.saved_uid}) != 0 ||
+		if (dependencies.getresuid(dependencies.context,
+		                           {
+		                               .real      = &identity.real_uid,
+		                               .effective = &identity.effective_uid,
+		                               .saved     = &identity.saved_uid,
+		                           }) != 0 ||
 		    identity.real_uid != target_uid || identity.effective_uid != target_uid ||
 		    identity.saved_uid != target_uid) {
 			return false;

@@ -181,7 +181,7 @@ auto RunCompareEngineFrameTests() -> bool {
 		ok &= ExpectNear(result.brightness.darkness, expected_brightness.darkness, 0.0001,
 		                 "brightness classification measures resized CLAHE output");
 
-		auto threshold_config = MakeVideoConfig(expected_brightness.darkness, 6.0F, 0, true);
+		auto const threshold_config = MakeVideoConfig(expected_brightness.darkness, 6.0F, 0, true);
 		howdy::native::CompareEngine threshold_engine(threshold_config);
 		const auto threshold_result = threshold_engine.ProcessGrayFrame(source.clone(), 1);
 		ok &= Expect(threshold_result.status == CompareFrameStatus::kReady,

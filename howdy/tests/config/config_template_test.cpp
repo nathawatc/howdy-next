@@ -34,16 +34,18 @@ namespace {
 	auto SyntheticOption(OptionId id, std::string_view section, std::string_view key,
 	                     ValueType type, RuntimeDefault fallback, std::string_view description)
 	    -> Option {
-		return Option{.id           = id,
-		              .section      = section,
-		              .key          = key,
-		              .type         = type,
-		              .fallback     = fallback,
-		              .range        = {},
-		              .choices      = {},
-		              .special_rule = howdy::native::config_schema::SpecialRule::kNone,
-		              .invalid_rule = "synthetic rule",
-		              .description  = description};
+		return Option{
+		    .id           = id,
+		    .section      = section,
+		    .key          = key,
+		    .type         = type,
+		    .fallback     = fallback,
+		    .range        = {},
+		    .choices      = {},
+		    .special_rule = howdy::native::config_schema::SpecialRule::kNone,
+		    .invalid_rule = "synthetic rule",
+		    .description  = description,
+		};
 	}
 
 	auto Render(const auto &options) -> howdy::native::config_template::ConfigTemplateRenderResult {

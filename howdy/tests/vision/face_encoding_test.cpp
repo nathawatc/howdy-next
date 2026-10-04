@@ -33,7 +33,7 @@ namespace {
 	}
 
 	void AlignFace(void *opaque, const howdy::native::FaceAlignmentRequest &request) {
-		auto &context = *static_cast<FakeSfaceContext *>(opaque);
+		auto const &context = *static_cast<FakeSfaceContext *>(opaque);
 		if (context.failure == FailureOperation::kAlign) {
 			ThrowCvError("alignCrop");
 		}
@@ -41,7 +41,7 @@ namespace {
 	}
 
 	void ExtractFeature(void *opaque, [[maybe_unused]] const cv::Mat &aligned, cv::Mat &feature) {
-		auto &context = *static_cast<FakeSfaceContext *>(opaque);
+		auto const &context = *static_cast<FakeSfaceContext *>(opaque);
 		if (context.failure == FailureOperation::kFeature) {
 			ThrowCvError("feature");
 		}

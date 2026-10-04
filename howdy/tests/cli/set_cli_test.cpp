@@ -114,9 +114,10 @@ auto main() -> int {
 		ok &= Expect(context.received_lock, "updater enables lock");
 	}
 
-	for (const auto &[error, expected_output] :
-	     {std::pair{std::string("invalid config"), std::string("invalid config\n")},
-	      std::pair{std::string(), std::string("Failed to update config option\n")}}) {
+	for (const auto &[error, expected_output] : {
+	         std::pair{std::string("invalid config"), std::string("invalid config\n")},
+	         std::pair{std::string(), std::string("Failed to update config option\n")},
+	     }) {
 		TestContext context{
 		    .update_result = false,
 		    .update_error  = error,

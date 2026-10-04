@@ -32,7 +32,7 @@ namespace howdy::native {
 		if (exposure == -1) {
 			return true;
 		}
-		auto set_property = [&capture](int property, double value) -> bool {
+		auto const set_property = [&capture](int property, double value) -> bool {
 			return capture.Set(property, value);
 		};
 		ApplyManualExposure(exposure, set_property);

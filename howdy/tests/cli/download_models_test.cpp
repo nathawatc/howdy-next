@@ -36,10 +36,12 @@ auto main() -> int {
 	using howdy::test::download_models::RunDownloadModelsManifestTests;
 	using howdy::test::download_models::RunDownloadModelsProxyTests;
 	const UmaskGuard umask_guard(0022);
-	const std::array results = {RunDownloadModelsEntrypointTests(), RunAtomicFilesTests(),
-	                            RunDownloadModelsIntegrityTests(), RunDownloadModelsManifestTests(),
-	                            RunDownloadModelsProxyTests()};
-	const bool       ok      = std::ranges::all_of(results, [](bool value) -> bool {
+	const std::array results = {
+	    RunDownloadModelsEntrypointTests(), RunAtomicFilesTests(),
+	    RunDownloadModelsIntegrityTests(),  RunDownloadModelsManifestTests(),
+	    RunDownloadModelsProxyTests(),
+	};
+	const bool ok = std::ranges::all_of(results, [](bool value) -> bool {
 		return value;
 	});
 	return ok ? 0 : 1;

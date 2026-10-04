@@ -173,7 +173,7 @@ namespace howdy::test::auth_flow {
 	}
 
 	inline auto FlowEffectiveUid(void *context) -> uid_t {
-		auto *state = static_cast<RuntimeFlowState *>(context);
+		auto const *state = static_cast<RuntimeFlowState *>(context);
 		return state->effective_uid;
 	}
 

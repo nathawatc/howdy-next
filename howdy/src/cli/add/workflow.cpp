@@ -83,7 +83,7 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 	}
 	const auto &config = *config_result.config;
 
-	auto preflight_result =
+	auto const preflight_result =
 	    dependencies.preflight_enrollment(dependencies.context, args.user, config);
 	switch (preflight_result.status) {
 		case AddPreflightStatus::kOk:

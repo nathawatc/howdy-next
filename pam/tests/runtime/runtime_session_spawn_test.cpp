@@ -60,36 +60,56 @@ namespace {
 
 		const std::vector<FailureCase> failures = {
 		    {.operation = "pipe2", .expected_destroy_calls = 0, .expected_closed_fds = {}},
-		    {.operation              = "socketpair",
-			 .expected_destroy_calls = 0,
-			 .expected_closed_fds    = {10, 11}},
-		    {.operation              = "actions_init",
-			 .expected_destroy_calls = 0,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "close_output_read",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "dup_stdout",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "dup_stderr",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "close_output_write",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "close_lease_parent",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "dup_lease",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "close_lease_child",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
-		    {.operation              = "closefrom",
-			 .expected_destroy_calls = 1,
-			 .expected_closed_fds    = {10, 11, 12, 13}},
+		    {
+		        .operation              = "socketpair",
+		        .expected_destroy_calls = 0,
+		        .expected_closed_fds    = {10, 11},
+		    },
+		    {
+		        .operation              = "actions_init",
+		        .expected_destroy_calls = 0,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "close_output_read",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "dup_stdout",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "dup_stderr",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "close_output_write",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "close_lease_parent",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "dup_lease",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "close_lease_child",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
+		    {
+		        .operation              = "closefrom",
+		        .expected_destroy_calls = 1,
+		        .expected_closed_fds    = {10, 11, 12, 13},
+		    },
 		};
 		const std::vector<std::string> setup_order = {
 		    "pipe2",      "socketpair",        "actions_init",       "close_output_read",
@@ -117,8 +137,10 @@ namespace {
 			    failure.operation);
 		}
 
-		AuthHelperSpawnFake              setup_destroy_failure{.fail_operation = "dup_stdout",
-		                                                       .destroy_fails  = true};
+		AuthHelperSpawnFake setup_destroy_failure{
+		    .fail_operation = "dup_stdout",
+		    .destroy_fails  = true,
+		};
 		howdy::pam::PreparedRuntimeFiles setup_ignored;
 		ok &= Expect(!howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
 		                 "alice", &setup_ignored, SpawnOperations(&setup_destroy_failure)),
@@ -165,9 +187,12 @@ namespace {
 		    Expect(fake.socket_parameters ==
 			           std::vector<std::array<int, 3>>{{AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0}},
 			       "lease socketpair is sequenced-packet and close-on-exec");
-		ok &= Expect(fake.dup2_fds == std::vector<std::pair<int, int>>{{11, STDOUT_FILENO},
-		                                                               {11, STDERR_FILENO},
-		                                                               {13, 3}},
+		ok &= Expect(fake.dup2_fds ==
+		                 std::vector<std::pair<int, int>>{
+		                     {11, STDOUT_FILENO},
+		                     {11, STDERR_FILENO},
+		                     {13, 3},
+		                 },
 		             "child receives output and lease fd 3");
 		ok &= Expect(fake.action_closefrom_fds == std::vector<int>{4},
 		             "child closes descriptors from fd 4");
@@ -179,10 +204,24 @@ namespace {
 		             "prepare uses exact argv and empty environment");
 		ok &= Expect(fake.operations ==
 		                 std::vector<std::string>{
-		                     "pipe2", "socketpair", "actions_init", "close_output_read",
-		                     "dup_stdout", "dup_stderr", "close_output_write", "close_lease_parent",
-		                     "dup_lease", "close_lease_child", "closefrom", "spawn", "destroy",
-		                     "close", "close", "close", "close"},
+		                     "pipe2",
+		                     "socketpair",
+		                     "actions_init",
+		                     "close_output_read",
+		                     "dup_stdout",
+		                     "dup_stderr",
+		                     "close_output_write",
+		                     "close_lease_parent",
+		                     "dup_lease",
+		                     "close_lease_child",
+		                     "closefrom",
+		                     "spawn",
+		                     "destroy",
+		                     "close",
+		                     "close",
+		                     "close",
+		                     "close",
+		                 },
 		             "prepare owns actions and descriptors in order");
 
 		AuthHelperSpawnFake spawn_destroy_failure{.fail_operation = "spawn", .destroy_fails = true};
@@ -211,8 +250,10 @@ namespace {
 	}
 
 	auto TestDescriptorCollisions() -> bool {
-		AuthHelperSpawnFake              duplicate_failure{.fail_operation = "duplicate_fd",
-		                                                   .next_pipe_fds  = {STDOUT_FILENO, 11}};
+		AuthHelperSpawnFake duplicate_failure{
+		    .fail_operation = "duplicate_fd",
+		    .next_pipe_fds  = {STDOUT_FILENO, 11},
+		};
 		howdy::pam::PreparedRuntimeFiles failed_prepare;
 		bool ok = Expect(!howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
 		                     "alice", &failed_prepare, SpawnOperations(&duplicate_failure)),
@@ -267,7 +308,7 @@ namespace {
 	}
 
 	auto TestRealDescriptorCollision() -> bool {
-		auto            marker = std::filesystem::temp_directory_path() /
+		auto const      marker = std::filesystem::temp_directory_path() /
 		                         ("howdy-fd3-probe-" + std::to_string(getpid()));
 		std::error_code error;
 		std::filesystem::remove(marker, error);
@@ -500,7 +541,7 @@ namespace {
 		kSpawn,
 		kCollect,
 		kCollectLease,
-		kWait
+		kWait,
 	};
 
 	struct ReapContext {
@@ -746,8 +787,12 @@ namespace {
 		bool ok = Expect(caught, "prepare propagates injected exception after cleanup");
 		ok &=
 		    Expect(state.destroy_calls == 1, "exception destroys initialized actions exactly once");
-		for (const int fd : {state.output_pipe.at(0), state.output_pipe.at(1),
-		                     state.lease_socket.at(0), state.lease_socket.at(1)}) {
+		for (const int fd : {
+		         state.output_pipe.at(0),
+		         state.output_pipe.at(1),
+		         state.lease_socket.at(0),
+		         state.lease_socket.at(1),
+		     }) {
 			errno = 0;
 			ok &= Expect(fcntl(fd, F_GETFD) < 0 && errno == EBADF,
 			             "exception closes channel descriptor");
@@ -810,9 +855,13 @@ auto RunRuntimeSessionSpawnTests() -> bool {
 	ok &= TestLeaseValidation();
 	ok &= TestValidPrepareIgnoresDestroyFailure();
 	ok &= TestPrepareFailureReapsChild();
-	for (const auto point : {PrepareExceptionPoint::kSetup, PrepareExceptionPoint::kSpawn,
-	                         PrepareExceptionPoint::kCollect, PrepareExceptionPoint::kCollectLease,
-	                         PrepareExceptionPoint::kWait}) {
+	for (const auto point : {
+	         PrepareExceptionPoint::kSetup,
+	         PrepareExceptionPoint::kSpawn,
+	         PrepareExceptionPoint::kCollect,
+	         PrepareExceptionPoint::kCollectLease,
+	         PrepareExceptionPoint::kWait,
+	     }) {
 		ok &= TestPrepareExceptionCleanup(point);
 	}
 	return ok;

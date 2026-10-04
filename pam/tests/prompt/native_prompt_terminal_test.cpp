@@ -50,38 +50,48 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		if (terminal_fd < 0) {
 			_exit(EXIT_FAILURE);
 		}
-		const bool normal = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                       .input  = terminal_fd,
-		                                                       .output = terminal_fd,
-		                                                       .error  = terminal_fd});
-		const bool redirected_stdout =
-		    NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-			                                   .input  = terminal_fd,
-			                                   .output = pipes.at(1).Get(),
-			                                   .error  = terminal_fd});
-		const bool stdout_only = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                            .input  = pipes.at(0).Get(),
-		                                                            .output = terminal_fd,
-		                                                            .error  = pipes.at(1).Get()});
-		const bool stderr_only = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                                            .input  = pipes.at(0).Get(),
-		                                                            .output = pipes.at(1).Get(),
-		                                                            .error  = terminal_fd});
-		const bool unrelated_stdio =
-		    NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-			                                   .input  = pipes.at(0).Get(),
-			                                   .output = pipes.at(1).Get(),
-			                                   .error  = pipes.at(1).Get()});
-		const bool regular_pam_tty = NativePromptTerminalIsInteractive({.tty    = pipes.at(0).Get(),
-		                                                                .input  = terminal_fd,
-		                                                                .output = terminal_fd,
-		                                                                .error  = terminal_fd});
-		const unsigned failures    = static_cast<unsigned>(!normal) |
-		                             (static_cast<unsigned>(!redirected_stdout) << 1U) |
-		                             (static_cast<unsigned>(!stdout_only) << 2U) |
-		                             (static_cast<unsigned>(!stderr_only) << 3U) |
-		                             (static_cast<unsigned>(unrelated_stdio) << 4U) |
-		                             (static_cast<unsigned>(regular_pam_tty) << 5U);
+		const bool     normal            = NativePromptTerminalIsInteractive({
+		    .tty    = terminal_fd,
+		    .input  = terminal_fd,
+		    .output = terminal_fd,
+		    .error  = terminal_fd,
+		});
+		const bool     redirected_stdout = NativePromptTerminalIsInteractive({
+		    .tty    = terminal_fd,
+		    .input  = terminal_fd,
+		    .output = pipes.at(1).Get(),
+		    .error  = terminal_fd,
+		});
+		const bool     stdout_only       = NativePromptTerminalIsInteractive({
+		    .tty    = terminal_fd,
+		    .input  = pipes.at(0).Get(),
+		    .output = terminal_fd,
+		    .error  = pipes.at(1).Get(),
+		});
+		const bool     stderr_only       = NativePromptTerminalIsInteractive({
+		    .tty    = terminal_fd,
+		    .input  = pipes.at(0).Get(),
+		    .output = pipes.at(1).Get(),
+		    .error  = terminal_fd,
+		});
+		const bool     unrelated_stdio   = NativePromptTerminalIsInteractive({
+		    .tty    = terminal_fd,
+		    .input  = pipes.at(0).Get(),
+		    .output = pipes.at(1).Get(),
+		    .error  = pipes.at(1).Get(),
+		});
+		const bool     regular_pam_tty   = NativePromptTerminalIsInteractive({
+		    .tty    = pipes.at(0).Get(),
+		    .input  = terminal_fd,
+		    .output = terminal_fd,
+		    .error  = terminal_fd,
+		});
+		const unsigned failures          = static_cast<unsigned>(!normal) |
+		                                   (static_cast<unsigned>(!redirected_stdout) << 1U) |
+		                                   (static_cast<unsigned>(!stdout_only) << 2U) |
+		                                   (static_cast<unsigned>(!stderr_only) << 3U) |
+		                                   (static_cast<unsigned>(unrelated_stdio) << 4U) |
+		                                   (static_cast<unsigned>(regular_pam_tty) << 5U);
 		_exit(static_cast<int>(failures));
 	}
 	if (!Expect(terminal_child > 0, "native eligibility spawns terminal child")) {
@@ -111,20 +121,26 @@ auto ExpectNativeTerminalEligibility() -> bool {
 			             "regular-file PAM_TTY rejects native mode for fallback");
 		}
 	}
-	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
-	                                                 .input  = first_slave.Get(),
-	                                                 .output = first_slave.Get(),
-	                                                 .error  = first_slave.Get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({
+	                 .tty    = first_slave.Get(),
+	                 .input  = first_slave.Get(),
+	                 .output = first_slave.Get(),
+	                 .error  = first_slave.Get(),
+	             }),
 	             "foreground mismatch rejects native mode for fallback");
-	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
-	                                                 .input  = second_slave.Get(),
-	                                                 .output = second_slave.Get(),
-	                                                 .error  = second_slave.Get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({
+	                 .tty    = first_slave.Get(),
+	                 .input  = second_slave.Get(),
+	                 .output = second_slave.Get(),
+	                 .error  = second_slave.Get(),
+	             }),
 	             "different interactive descriptors reject native mode for fallback");
-	ok &= Expect(!NativePromptTerminalIsInteractive({.tty    = first_slave.Get(),
-	                                                 .input  = pipes.at(0).Get(),
-	                                                 .output = pipes.at(1).Get(),
-	                                                 .error  = pipes.at(1).Get()}),
+	ok &= Expect(!NativePromptTerminalIsInteractive({
+	                 .tty    = first_slave.Get(),
+	                 .input  = pipes.at(0).Get(),
+	                 .output = pipes.at(1).Get(),
+	                 .error  = pipes.at(1).Get(),
+	             }),
 	             "GDM-like unrelated stdio rejects native mode for fallback");
 	return ok;
 }

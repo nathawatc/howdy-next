@@ -111,8 +111,11 @@ auto main() -> int {
 	// Behavioral regression only: IEEE comparisons can also skip non-finite distance scores.
 	{
 		const auto               infinity          = std::numeric_limits<float>::infinity();
-		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
-		                                              infinity, -infinity};
+		const std::vector<float> non_finite_values = {
+		    std::numeric_limits<float>::quiet_NaN(),
+		    infinity,
+		    -infinity,
+		};
 		for (const float non_finite : non_finite_values) {
 			const auto match =
 			    CheckMatch({{non_finite, 0.0F}, {1.0F, 2.0F}}, {1.0F, 2.0F}, FaceMetric::kL2, 0.5F);
@@ -146,8 +149,11 @@ auto main() -> int {
 	// Behavioral regression only: IEEE comparisons can also skip non-finite distance scores.
 	{
 		const auto               infinity          = std::numeric_limits<float>::infinity();
-		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
-		                                              infinity, -infinity};
+		const std::vector<float> non_finite_values = {
+		    std::numeric_limits<float>::quiet_NaN(),
+		    infinity,
+		    -infinity,
+		};
 		for (const float non_finite : non_finite_values) {
 			const auto match = CheckMatch({{1.0F, 2.0F}, {non_finite, 0.0F}}, {1.0F, 2.0F},
 			                              FaceMetric::kL2Norm, 0.5F);
@@ -162,8 +168,11 @@ auto main() -> int {
 
 	{
 		const auto               infinity          = std::numeric_limits<float>::infinity();
-		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
-		                                              infinity, -infinity};
+		const std::vector<float> non_finite_values = {
+		    std::numeric_limits<float>::quiet_NaN(),
+		    infinity,
+		    -infinity,
+		};
 		for (const float non_finite : non_finite_values) {
 			const auto match =
 			    CheckMatch({{1.0F, 2.0F}}, {non_finite, 2.0F}, FaceMetric::kL2, 0.5F);
@@ -176,8 +185,11 @@ auto main() -> int {
 
 	{
 		const auto               infinity          = std::numeric_limits<float>::infinity();
-		const std::vector<float> non_finite_values = {std::numeric_limits<float>::quiet_NaN(),
-		                                              infinity, -infinity};
+		const std::vector<float> non_finite_values = {
+		    std::numeric_limits<float>::quiet_NaN(),
+		    infinity,
+		    -infinity,
+		};
 		for (const float non_finite : non_finite_values) {
 			const auto match =
 			    CheckMatch({{1.0F, 2.0F}}, {non_finite, 2.0F}, FaceMetric::kL2Norm, infinity);
@@ -280,7 +292,7 @@ auto main() -> int {
 		                                           0.5F);
 		ok &= Expect(matcher.Candidates().front().data() == data,
 		             "preparation moves embedding allocations");
-		auto                       moved = std::move(matcher);
+		auto const                 moved = std::move(matcher);
 		const std::array<float, 2> probe{1.0F, 0.0F};
 		ok &= Expect(moved.Match(probe).index == 0 && moved.Match(probe).accepted,
 		             "moved prepared state accepts array-backed spans");

@@ -64,7 +64,7 @@ namespace {
 
 	auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
 	                         pid_t *child_pid) -> int {
-		auto *operations = static_cast<howdy::pam::compare_process::Operations *>(context);
+		auto const *operations = static_cast<howdy::pam::compare_process::Operations *>(context);
 		if (operations == nullptr) {
 			return EINVAL;
 		}

@@ -109,8 +109,12 @@ auto main() -> int {
 	ok &= Expect(normal_result.status == 23 && normal_result.error.empty(),
 	             "normal dispatcher return code is preserved");
 
-	constexpr std::array path_overrides{"HOWDY_CONFIG", "HOWDY_MODELS_DIR", "HOWDY_USER_MODELS_DIR",
-	                                    "HOWDY_LOG_PATH"};
+	constexpr std::array path_overrides{
+	    "HOWDY_CONFIG",
+	    "HOWDY_MODELS_DIR",
+	    "HOWDY_USER_MODELS_DIR",
+	    "HOWDY_LOG_PATH",
+	};
 	for (const char *name : path_overrides) {
 		ok &= Expect(setenv(name, "/tmp/howdy-redirected-path", 1) == 0,
 		             "set path override for production boundary test");

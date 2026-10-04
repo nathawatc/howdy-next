@@ -69,7 +69,7 @@ namespace {
 
 	auto ExpectAuthenticationGuards() -> bool {
 		EligibilityFlowFixture fixture;
-		auto                   dependencies = MakeEligibilityFlowDependencies(&fixture);
+		auto const             dependencies = MakeEligibilityFlowDependencies(&fixture);
 		ConversationState      state;
 		struct pam_conv const  conversation{
 		    .conv        = TestConversation,

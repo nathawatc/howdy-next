@@ -225,9 +225,12 @@ auto main() -> int {
 		ok &= ExpectUpdate(context, "true", "end-of-options disable value");
 	}
 
-	for (const auto &[argument, initially_disabled, value] :
-	     {std::tuple{"1", false, "true"}, std::tuple{"true", false, "true"},
-	      std::tuple{"0", true, "false"}, std::tuple{"false", true, "false"}}) {
+	for (const auto &[argument, initially_disabled, value] : {
+	         std::tuple{"1", false, "true"},
+	         std::tuple{"true", false, "true"},
+	         std::tuple{"0", true, "false"},
+	         std::tuple{"false", true, "false"},
+	     }) {
 		TestContext context;
 		context.load_result = LoadedConfig(initially_disabled);
 		const auto result =
@@ -253,11 +256,12 @@ auto main() -> int {
 		ok &= ExpectNoCalls(context, "null dependency skips callbacks");
 	}
 
-	for (const auto &[status, error] :
-	     {std::pair{RuntimeConfigLoadStatus::kPathError, "config path failed"},
-	      std::pair{RuntimeConfigLoadStatus::kParseError, "config parse failed"},
-	      std::pair{RuntimeConfigLoadStatus::kInvalidRuntimeValue, "config validation failed"},
-	      std::pair{RuntimeConfigLoadStatus::kOk, "missing typed config"}}) {
+	for (const auto &[status, error] : {
+	         std::pair{RuntimeConfigLoadStatus::kPathError, "config path failed"},
+	         std::pair{RuntimeConfigLoadStatus::kParseError, "config parse failed"},
+	         std::pair{RuntimeConfigLoadStatus::kInvalidRuntimeValue, "config validation failed"},
+	         std::pair{RuntimeConfigLoadStatus::kOk, "missing typed config"},
+	     }) {
 		TestContext context;
 		context.load_result = {.status = status, .error_message = error};
 		const auto result   = RunDisable({.positionals = {"1"}}, DependenciesFor(context));
@@ -286,9 +290,10 @@ auto main() -> int {
 		ok &= Expect(context.updater_calls == 0, "unchanged state skips updater");
 	}
 
-	for (const auto &[error, output] :
-	     {std::pair{"atomic install failed", "atomic install failed\n"},
-	      std::pair{"", "Failed to update \"disabled\" config option\n"}}) {
+	for (const auto &[error, output] : {
+	         std::pair{"atomic install failed", "atomic install failed\n"},
+	         std::pair{"", "Failed to update \"disabled\" config option\n"},
+	     }) {
 		TestContext context;
 		context.load_result    = LoadedConfig(false);
 		context.updater_result = false;

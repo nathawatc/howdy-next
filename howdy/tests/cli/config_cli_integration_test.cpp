@@ -48,7 +48,10 @@ namespace howdy::test::config_cli {
 				return std::nullopt;
 			}
 			return EditorPasswdFixture{
-			    .uid = pwd->pw_uid, .gid = pwd->pw_gid, .name = pwd->pw_name};
+			    .uid  = pwd->pw_uid,
+			    .gid  = pwd->pw_gid,
+			    .name = pwd->pw_name,
+			};
 		}
 
 		auto FindEditorPasswdFixture() -> std::optional<EditorPasswdFixture> {
@@ -162,7 +165,7 @@ namespace howdy::test::config_cli {
 				    "fallback integration assigns selection log");
 			}
 
-			auto write_editor = [&](const fs::path &path, std::string_view name) -> bool {
+			auto const write_editor = [&](const fs::path &path, std::string_view name) -> bool {
 				const std::string script = "#!/bin/sh\nprintf '" + std::string(name) +
 				                           "\\n' > \"$HOWDY_TEST_SELECTED_EDITOR\"\nprintf "
 				                           "'[core]\\ndisabled = true\\n' > \"$1\"\n";
@@ -193,7 +196,7 @@ namespace howdy::test::config_cli {
 			ScopedEnvironmentVariable doas_user_env("DOAS_USER");
 			ScopedEnvironmentVariable pkexec_uid_env("PKEXEC_UID");
 
-			auto run_config = [&]() -> std::pair<int, std::string> {
+			auto run_config = [&] -> std::pair<int, std::string> {
 				if (!WriteFile(config_path, original) || chmod(config_path.c_str(), 0600) != 0 ||
 				    !WriteFile(selected_path, {})) {
 					return {1, {}};
@@ -204,7 +207,8 @@ namespace howdy::test::config_cli {
 				{
 					ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
 					howdy::native::file_security_internal::ValidationRoot const validation_root{
-					    temp_root};
+					    temp_root,
+					};
 					exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
 					    {}, howdy::native::config_internal::DefaultConfigEditDependencies(
 					            validation_root));
@@ -212,8 +216,8 @@ namespace howdy::test::config_cli {
 				return {exit_code, output.str()};
 			};
 
-			auto expect_editor = [&](const std::string &preference, std::string_view expected,
-			                         std::string_view message) -> void {
+			auto const expect_editor = [&](const std::string &preference, std::string_view expected,
+			                               std::string_view message) -> void {
 				if (preference.empty()) {
 					editor_env.Unset();
 				} else {
@@ -277,9 +281,9 @@ namespace howdy::test::config_cli {
 			sudo_gid_env.Unset();
 			doas_user_env.Unset();
 			pkexec_uid_env.Unset();
-			auto expect_direct_root_editor = [&](const std::string &preference,
-			                                     std::string_view   expected,
-			                                     std::string_view   message) -> void {
+			auto const expect_direct_root_editor = [&](const std::string &preference,
+			                                           std::string_view   expected,
+			                                           std::string_view   message) -> void {
 				editor_env.Set(preference);
 				const auto result = run_config();
 				ok &= Expect(result.first == 0 &&
@@ -338,7 +342,7 @@ namespace howdy::test::config_cli {
 			             "integration creates editor PATH directory");
 			ok &= Expect(chmod(editor_bin.c_str(), 0755) == 0,
 			             "integration exposes editor PATH directory");
-			ok &= Expect(WriteFile(config_path, std::string{kIntegrationOriginalContent}),
+			ok &= Expect(WriteFile(config_path, kIntegrationOriginalContent),
 			             "integration writes config baseline");
 			ok &= Expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
 			ok &=
@@ -381,7 +385,8 @@ namespace howdy::test::config_cli {
 			{
 				ScopedStreamBuffer const stdout_guard(std::cout, output.rdbuf());
 				howdy::native::file_security_internal::ValidationRoot const validation_root{
-				    temp_root};
+				    temp_root,
+				};
 				exit_code = howdy::native::config_internal::ConfigMainWithDependencies(
 				    {},
 				    howdy::native::config_internal::DefaultConfigEditDependencies(validation_root));
@@ -470,10 +475,10 @@ namespace howdy::test::config_cli {
 			howdy::native::file_security_internal::ValidationRoot const validation_root{temp_root};
 			std::error_code                                             error;
 
-			auto write_secure_config = [&]() -> bool {
+			auto const write_secure_config = [&] -> bool {
 				return WriteFile(config_path, original) && chmod(config_path.c_str(), 0644) == 0;
 			};
-			auto replace_with_symlink = [&]() -> bool {
+			auto replace_with_symlink = [&] -> bool {
 				return rename(config_path.c_str(), backup_path.c_str()) == 0 &&
 				       symlink("/dev/null", config_path.c_str()) == 0;
 			};
@@ -481,7 +486,7 @@ namespace howdy::test::config_cli {
 			ok &= Expect(write_secure_config(), "write edit identity source config");
 			{
 				bool                                                replacement_ok = false;
-				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
 					replacement_ok = replace_with_symlink();
 				});
 
@@ -500,7 +505,7 @@ namespace howdy::test::config_cli {
 			ok &= Expect(write_secure_config(), "restore edit identity source config");
 			{
 				bool                                                replacement_ok = false;
-				const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+				const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
 					replacement_ok = replace_with_symlink();
 				});
 

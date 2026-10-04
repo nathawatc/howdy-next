@@ -138,8 +138,14 @@ namespace howdy::test::dispatch {
 			}
 			for (const auto &option : howdy::native::config_schema::RuntimeConfigOptions()) {
 				Context    context;
-				const auto result = Run(context, {"howdy", "__complete", "command-values", "set",
-				                                  "1", std::string(option.key)});
+				const auto result = Run(context, {
+				                                     "howdy",
+				                                     "__complete",
+				                                     "command-values",
+				                                     "set",
+				                                     "1",
+				                                     std::string(option.key),
+				                                 });
 				ok &= Expect(
 				    result.status == 0 && result.output == ExpectedConfigOptionValues(option),
 				    "set value completion follows schema metadata for " + std::string(option.key));
@@ -160,8 +166,15 @@ namespace howdy::test::dispatch {
 			}
 			{
 				Context    context;
-				const auto result = Run(context, {"howdy", "__complete", "command-values", "set",
-				                                  "1", "timeout", "extra"});
+				const auto result = Run(context, {
+				                                     "howdy",
+				                                     "__complete",
+				                                     "command-values",
+				                                     "set",
+				                                     "1",
+				                                     "timeout",
+				                                     "extra",
+				                                 });
 				ok &= Expect(result.status != 0 && result.output.empty(),
 				             "set value completion with malformed context is rejected");
 			}

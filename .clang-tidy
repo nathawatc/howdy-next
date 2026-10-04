@@ -16,18 +16,34 @@
 #     glob/readdir/strsignal. Reentrant passwd lookup and owning system-error messages are used
 #     where replacements exist.
 #   - malloc/free-compatible ownership remains required by PAM and yyjson C ABI contracts. The
-#     corresponding blanket checks cannot model those lifecycle/ABI constraints without
-#     wrapper-only indirection or allocator mismatches rather than safer code.
+#     corresponding blanket checks cannot model those lifecycle/ABI constraints without wrapper-only
+#     indirection or allocator mismatches rather than safer code.
 #
-# All selected general-purpose checks are enforced as errors except:
+# General policy:
 #
-# - Compiler-owned diagnostics:
-#   - clang-diagnostic-*
-#   - readability-misleading-indentation
+# - All selected general-purpose checks are enforced as errors except:
+#   - Compiler-owned diagnostics:
+#     - clang-diagnostic-*
+#     - readability-misleading-indentation
+#   - Repository-wide low-signal style checks:
+#     - readability-magic-numbers
+#     - readability-identifier-length
 #
-# - Repository-wide low-signal style checks:
-#   - readability-magic-numbers
-#   - readability-identifier-length
+# - Check conflicts (stronger check wins):
+#   - readability-redundant-qualified-alias is disabled. Replacing a namespace-scope alias with a
+#     using-declaration conflicts with google-global-names-in-headers for aliases in global-scope
+#     test headers, and changes misc-include-cleaner ownership for re-exported aliases such as
+#     howdy::test::ScopedFd.
+#
+# LLVM 23 behavior changes:
+#
+# - misc-const-correctness.AnalyzeParameters is false. Const-qualifying pointee parameters changes
+#   the function type, which breaks the type-erased `void *context` callback and C/PAM ABI
+#   signatures used throughout the repository.
+# - readability-trailing-comma.SingleLineCommaPolicy is Ignore. The Remove policy misreports empty
+#   `{}` arguments followed by a comma and its fix-it deletes the argument separator.
+# - zircon-* is disabled with fuchsia-*; zircon-temporary-objects is deprecated in favor of
+#   fuchsia-temporary-objects.
 
 InheritParentConfig: false
 
@@ -35,12 +51,14 @@ Checks: >-
   *,
   -clang-diagnostic-*,
   -altera-*,
+  -zircon-*,
   -fuchsia-*,
   -llvmlibc-*,
   -readability-misleading-indentation,
   -readability-magic-numbers,
   -cppcoreguidelines-avoid-magic-numbers,
   -readability-identifier-length,
+  -readability-redundant-qualified-alias,
   -portability-avoid-pragma-once,
   -llvm-header-guard,
   -llvm-prefer-static-over-anonymous-namespace,
@@ -73,6 +91,9 @@ FormatStyle: file
 # upstream guide permits multiple forms.
 CheckOptions:
   misc-include-cleaner.IgnoreHeaders: '(^|.*/)(bits/.*|asm-generic/.*|security/_pam_.*\.h)$'
+
+  misc-const-correctness.AnalyzeParameters: false
+  readability-trailing-comma.SingleLineCommaPolicy: Ignore
 
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.ClassCase: CamelCase

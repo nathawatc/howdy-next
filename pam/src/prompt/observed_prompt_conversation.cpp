@@ -111,7 +111,7 @@ namespace howdy::pam {
 		}
 		*response = nullptr;
 		try {
-			auto *context = static_cast<DispatchContext *>(appdata_ptr);
+			auto const *context = static_cast<DispatchContext *>(appdata_ptr);
 			if (context == nullptr || num_msg <= 0 || messages == nullptr ||
 			    context->fail_closed.load()) {
 				return PAM_CONV_ERR;
@@ -185,7 +185,7 @@ namespace howdy::pam {
 		} catch (...) {
 			// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
 			// fail-closed context for process lifetime and report explicit ownership fallback.
-			[[maybe_unused]] auto *retained_context = context_.release();
+			[[maybe_unused]] auto const *retained_context = context_.release();
 			pam_syslog(pamh_, LOG_CRIT,
 			           "Observed fail-closed callback context retained outside quarantine");
 		}

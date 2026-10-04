@@ -22,10 +22,8 @@ namespace howdy::test {
 	inline auto WriteConfigTestFile(const std::filesystem::path &path, const std::string &content)
 	    -> bool {
 		const bool ok = WriteFile(path, content);
-		if (ok) {
-			if (chmod(path.c_str(), 0644) != 0) {
-				return false;
-			}
+		if (ok && chmod(path.c_str(), 0644) != 0) {
+			return false;
 		}
 		return ok;
 	}

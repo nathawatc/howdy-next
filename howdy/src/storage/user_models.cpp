@@ -153,10 +153,12 @@ namespace howdy::native {
 	    -> UserModelListResult {
 		const auto document =
 		    UserModelStore::LoadDocument(user,
-			                             {.backend      = expected_backend,
-			                              .metric       = expected_metric,
-			                              .model        = expected_model,
-			                              .strict_shape = true},
+			                             {
+		                                     .backend      = expected_backend,
+		                                     .metric       = expected_metric,
+		                                     .model        = expected_model,
+		                                     .strict_shape = true,
+		                                 },
 			                             DefaultSecureOwnerUid(), validation_root);
 		const auto &entries = document.Result();
 		if (entries.status != UserModelStatus::kOk) {
@@ -174,8 +176,8 @@ namespace howdy::native {
 	auto AppendUserModelEntry(const std::string &user, const NewUserModelEntry &new_entry,
 	                          const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelMutationResult {
-		auto  mutation = UserModelStore::BeginMutation(user, validation_root);
-		auto &entries  = mutation.document.Result();
+		auto        mutation = UserModelStore::BeginMutation(user, validation_root);
+		auto const &entries  = mutation.document.Result();
 		if (entries.status != UserModelStatus::kOk && entries.status != UserModelStatus::kNoModel) {
 			return MutationFailure(entries.status, entries.error_message);
 		}

@@ -43,7 +43,7 @@ namespace {
 	};
 
 	auto PrepareFrame(void *context, const cv::Mat &gray_frame) -> cv::Mat {
-		auto *session_context = static_cast<SessionContext *>(context);
+		auto const *session_context = static_cast<SessionContext *>(context);
 		if (session_context->invalid_prepare) {
 			return {};
 		}
@@ -218,7 +218,7 @@ namespace {
 		howdy::native::VideoConfig config{};
 		config.clahe_enabled                                = false;
 		config.dark_threshold                               = 100.0F;
-		auto                                  preview_frame = GrayFrame();
+		auto const                            preview_frame = GrayFrame();
 		SessionContext                        first_context;
 		auto                                  first_engine = MakeEngine(first_context, config);
 		test_cli_internal::TestPreviewSession first_session(config, first_engine,

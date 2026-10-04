@@ -250,9 +250,15 @@ namespace {
 			ok &= Expect(*processing_exit == CompareExit::kSuccess,
 			             "successful frame-loop result propagates");
 		}
-		ok &= Expect(context.events == std::vector<std::string>{"open", "drop", "engine", "reset",
-		                                                        "first next_frame",
-		                                                        "first inference"},
+		ok &= Expect(context.events ==
+		                 std::vector<std::string>{
+		                     "open",
+		                     "drop",
+		                     "engine",
+		                     "reset",
+		                     "first next_frame",
+		                     "first inference",
+		                 },
 		             "successful privilege validation reaches every processing stage");
 		ok &=
 		    Expect(context.startup_overlapped && context.model_on_worker && context.camera_on_main,
@@ -331,12 +337,14 @@ namespace {
 			const char *error;
 		};
 
-		constexpr std::array<FailureCase, 4> cases{{
-		    {.label = "root fsuid", .error = "inconsistent filesystem credentials"},
-		    {.label = "root fsgid", .error = "inconsistent filesystem credentials"},
-		    {.label = "mismatched fsuid", .error = "inconsistent filesystem credentials"},
-		    {.label = "mismatched fsgid", .error = "inconsistent filesystem credentials"},
-		}};
+		constexpr std::array<FailureCase, 4> cases{
+		    {
+		        {.label = "root fsuid", .error = "inconsistent filesystem credentials"},
+		        {.label = "root fsgid", .error = "inconsistent filesystem credentials"},
+		        {.label = "mismatched fsuid", .error = "inconsistent filesystem credentials"},
+		        {.label = "mismatched fsgid", .error = "inconsistent filesystem credentials"},
+		    },
+		};
 
 		bool ok = true;
 		for (const auto &test_case : cases) {
@@ -382,7 +390,7 @@ namespace {
 		context.block_warm                           = true;
 		bool         read_seen                       = false;
 		bool         loop_started_while_warm_blocked = false;
-		std::jthread release_worker([&]() -> void {
+		std::jthread release_worker([&] -> void {
 			read_seen = context.first_read_seen.try_acquire_for(std::chrono::seconds(2));
 			if (read_seen) {
 				loop_started_while_warm_blocked =
@@ -407,7 +415,7 @@ namespace {
 		context.block_warm          = true;
 		bool         reached_encode = false;
 		bool         encoded_early  = false;
-		std::jthread release_worker([&]() -> void {
+		std::jthread release_worker([&] -> void {
 			reached_encode = context.before_encode_entered.try_acquire_for(std::chrono::seconds(2));
 			if (reached_encode) {
 				encoded_early =
@@ -427,7 +435,7 @@ namespace {
 		context.block_warm                            = true;
 		context.simulate_encode                       = false;
 		bool         loop_returned_while_warm_blocked = false;
-		std::jthread release_worker([&]() -> void {
+		std::jthread release_worker([&] -> void {
 			loop_returned_while_warm_blocked =
 			    context.loop_returned.try_acquire_for(std::chrono::seconds(2)) &&
 			    !context.warm_finished;
@@ -451,15 +459,17 @@ namespace {
 			                 context.joined_before_encode && context.frame_processing_calls == 1,
 			             "optional warm failure still processes first frame");
 		}
-		for (const auto status : {howdy::native::CompareCaptureFrameStatus::kReadFailed,
-		                          howdy::native::CompareCaptureFrameStatus::kTimeout,
-		                          howdy::native::CompareCaptureFrameStatus::kNotOpen,
-		                          howdy::native::CompareCaptureFrameStatus::kInvalidDependencies}) {
+		for (const auto status : {
+		         howdy::native::CompareCaptureFrameStatus::kReadFailed,
+		         howdy::native::CompareCaptureFrameStatus::kTimeout,
+		         howdy::native::CompareCaptureFrameStatus::kNotOpen,
+		         howdy::native::CompareCaptureFrameStatus::kInvalidDependencies,
+		     }) {
 			FakeContext context;
 			context.first_status                          = status;
 			context.block_warm                            = true;
 			bool         loop_returned_while_warm_blocked = false;
-			std::jthread release_worker([&]() -> void {
+			std::jthread release_worker([&] -> void {
 				loop_returned_while_warm_blocked =
 				    context.loop_returned.try_acquire_for(std::chrono::seconds(2)) &&
 				    !context.warm_finished;
@@ -477,7 +487,7 @@ namespace {
 			FakeContext context;
 			context.read_throws = true;
 			context.block_warm  = true;
-			std::jthread release_worker([&]() -> void {
+			std::jthread release_worker([&] -> void {
 				(void)context.first_read_seen.try_acquire_for(std::chrono::seconds(2));
 				context.allow_warm_finish.release();
 			});
@@ -496,7 +506,7 @@ namespace {
 			context.loop_throws     = true;
 			context.simulate_encode = false;
 			context.block_warm      = true;
-			std::jthread release_worker([&]() -> void {
+			std::jthread release_worker([&] -> void {
 				(void)context.inference_started.try_acquire_for(std::chrono::seconds(2));
 				context.allow_warm_finish.release();
 			});

@@ -257,9 +257,11 @@ namespace howdy::native::auth_helper {
 
 		auto SlotInitialization(int slot_fd) -> SlotInitialization {
 			std::array<bool, 3>  present{};
-			constexpr std::array names = {auth_helper_protocol::kPreparedConfigFileName,
-			                              auth_helper_protocol::kPreparedUserModelsDirectoryName,
-			                              auth_helper_protocol::kPreparedModelBackingFileName};
+			constexpr std::array names = {
+			    auth_helper_protocol::kPreparedConfigFileName,
+			    auth_helper_protocol::kPreparedUserModelsDirectoryName,
+			    auth_helper_protocol::kPreparedModelBackingFileName,
+			};
 			static_assert(names.size() == present.size());
 			for (auto &&[name, is_present] : std::views::zip(names, present)) {
 				struct stat stat{};
@@ -443,11 +445,12 @@ namespace howdy::native::auth_helper {
 			if (!directory.has_value()) {
 				return std::nullopt;
 			}
-			return runtime_internal::Slot{.path =
-			                                  auth_helper_protocol::PreparedRuntimeGenerationDir(
-			                                      root, identity.target_uid, generation),
-			                              .lock_fd = std::move(*lock),
-			                              .dir_fd  = std::move(*directory)};
+			return runtime_internal::Slot{
+			    .path = auth_helper_protocol::PreparedRuntimeGenerationDir(
+			        root, identity.target_uid, generation),
+			    .lock_fd = std::move(*lock),
+			    .dir_fd  = std::move(*directory),
+			};
 		}
 
 		auto BuildPreparedPaths(runtime_internal::Slot &slot) -> std::optional<PreparedPaths> {
@@ -467,11 +470,12 @@ namespace howdy::native::auth_helper {
 			    flock(lease.Get(), LOCK_SH | LOCK_NB) != 0) {
 				return std::nullopt;
 			}
-			return PreparedPaths{.runtime_dir = slot.path,
-			                     .config_path = auth_helper_protocol::PreparedConfigPath(slot.path),
-			                     .user_models_dir =
-			                         auth_helper_protocol::PreparedUserModelsDir(slot.path),
-			                     .lease_fd = std::move(lease)};
+			return PreparedPaths{
+			    .runtime_dir     = slot.path,
+			    .config_path     = auth_helper_protocol::PreparedConfigPath(slot.path),
+			    .user_models_dir = auth_helper_protocol::PreparedUserModelsDir(slot.path),
+			    .lease_fd        = std::move(lease),
+			};
 		}
 	}  // namespace
 
@@ -530,10 +534,12 @@ namespace howdy::native::auth_helper {
 
 		auto OpenSlots(int root_fd, const RuntimeSources &sources, StagedIdentity identity,
 		               const AclOperations &operations) -> std::optional<SlotSet> {
-			constexpr std::array generations = {RuntimeGenerationSlot::kSlot0,
-			                                    RuntimeGenerationSlot::kSlot1};
-			SlotSet              slots;
-			bool                 any_valid = false;
+			constexpr std::array generations = {
+			    RuntimeGenerationSlot::kSlot0,
+			    RuntimeGenerationSlot::kSlot1,
+			};
+			SlotSet slots;
+			bool    any_valid = false;
 			static_assert(generations.size() == slots.size());
 			for (auto &&[slot, generation] : std::views::zip(slots, generations)) {
 				slot =

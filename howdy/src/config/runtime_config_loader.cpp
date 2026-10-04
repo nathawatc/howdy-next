@@ -93,8 +93,9 @@ namespace howdy::native {
 		}
 
 		auto ReadDebugConfig(const ConfigReader &reader) -> DebugConfig {
-			return {.end_report =
-			            ReadRuntimeBool(reader, config_schema::OptionId::kDebugEndReport)};
+			return {
+			    .end_report = ReadRuntimeBool(reader, config_schema::OptionId::kDebugEndReport),
+			};
 		}
 
 		auto PopulateRuntimeConfig(const ConfigReader &reader) -> std::optional<RuntimeConfig> {

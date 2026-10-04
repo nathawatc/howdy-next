@@ -268,9 +268,9 @@ namespace {
 		ok &= Expect(invalid_frame.error_message == "invalid camera frame",
 		             "invalid preview frame preserves diagnostic");
 
-		auto expect_face_model_error = [](howdy::native::PreviewFrameStatus status,
-		                                  const std::string                &diagnostic,
-		                                  const std::string                &subject) -> bool {
+		auto const expect_face_model_error = [](howdy::native::PreviewFrameStatus status,
+		                                        const std::string                &diagnostic,
+		                                        const std::string                &subject) -> bool {
 			const auto result = howdy::native::test_cli_internal::MapPreviewFrameFailure({
 			    .status        = status,
 			    .error_message = diagnostic,
@@ -294,8 +294,8 @@ namespace {
 	}
 
 	auto PreviewNonTerminalFramesMapToOk() -> bool {
-		auto expect_continue = [](howdy::native::PreviewFrameStatus status,
-		                          const std::string                &subject) -> bool {
+		auto const expect_continue = [](howdy::native::PreviewFrameStatus status,
+		                                const std::string                &subject) -> bool {
 			const auto result = howdy::native::test_cli_internal::MapPreviewFrameFailure({
 			    .status = status,
 			});
@@ -543,7 +543,8 @@ namespace {
 		}
 		auto dependencies = PreflightDependencies(context);
 
-		auto run_missing_preflight = [&](auto clear_callback, const std::string &message) -> bool {
+		auto const run_missing_preflight = [&](auto               clear_callback,
+		                                       const std::string &message) -> bool {
 			auto missing_dependencies = dependencies;
 			clear_callback(missing_dependencies);
 			const auto result = howdy::native::test_cli_internal::RunPreviewPreflight(

@@ -258,7 +258,10 @@ namespace {
 		for (const std::size_t hint :
 		     {std::size_t{0}, std::size_t{1}, std::size_t{40000}, std::size_t{90000}}) {
 			Script() = {
-			    .content = std::string(40000, 'g'), .next_error = EINTR, .error_offset = 16384};
+			    .content      = std::string(40000, 'g'),
+			    .next_error   = EINTR,
+			    .error_offset = 16384,
+			};
 			const auto result = howdy::native::ReadFdToStringBounded(
 			    {.fd = kScriptedFd, .max_bytes = 50000, .reserve_bytes = hint});
 			ok &=

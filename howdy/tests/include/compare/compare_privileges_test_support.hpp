@@ -68,17 +68,21 @@ namespace howdy::test::compare_privileges {
 		kInheritable,
 	};
 
-	constexpr std::array<std::pair<NonzeroCapability, const char *>, 3> kCapabilityCases{{
-	    {NonzeroCapability::kEffective, "effective"},
-	    {NonzeroCapability::kPermitted, "permitted"},
-	    {NonzeroCapability::kInheritable, "inheritable"},
-	}};
-
-	constexpr std::array<std::pair<NonzeroCapability, const char *>, 2>
-	    kInitiallyFatalCapabilityCases{{
+	constexpr std::array<std::pair<NonzeroCapability, const char *>, 3> kCapabilityCases{
+	    {
 	        {NonzeroCapability::kEffective, "effective"},
 	        {NonzeroCapability::kPermitted, "permitted"},
-	    }};
+	        {NonzeroCapability::kInheritable, "inheritable"},
+	    },
+	};
+
+	constexpr std::array<std::pair<NonzeroCapability, const char *>, 2>
+	    kInitiallyFatalCapabilityCases{
+	        {
+	            {NonzeroCapability::kEffective, "effective"},
+	            {NonzeroCapability::kPermitted, "permitted"},
+	        },
+	};
 
 	struct FakePrivilegeContext {
 		std::array<uid_t, 3> uids{};
@@ -212,7 +216,7 @@ namespace howdy::test::compare_privileges {
 			return -1;
 		}
 		context.gids  = context.set_gids;
-		context.fsgid = context.fsgid_mismatch ? static_cast<gid_t>(effective + 1) : effective;
+		context.fsgid = context.fsgid_mismatch ? (effective + 1) : effective;
 		return 0;
 	}
 
@@ -224,7 +228,7 @@ namespace howdy::test::compare_privileges {
 			return -1;
 		}
 		context.uids  = context.set_uids;
-		context.fsuid = context.fsuid_mismatch ? static_cast<uid_t>(effective + 1) : effective;
+		context.fsuid = context.fsuid_mismatch ? (effective + 1) : effective;
 		return 0;
 	}
 
@@ -356,22 +360,24 @@ namespace howdy::test::compare_privileges {
 	}
 
 	inline auto ExpectedPrivilegedEvents() -> std::vector<std::string> {
-		return {"getresuid",
-		        "getresgid",
-		        "lookup",
-		        "query securebits",
-		        "clear ambient capabilities",
-		        "clear supplementary groups",
-		        "setresgid",
-		        "setresuid",
-		        "clear capability sets",
-		        "read capability sets",
-		        "getresgid",
-		        "getresuid",
-		        "query fsuid",
-		        "query fsgid",
-		        "query supplementary groups",
-		        "root-regain probe"};
+		return {
+		    "getresuid",
+		    "getresgid",
+		    "lookup",
+		    "query securebits",
+		    "clear ambient capabilities",
+		    "clear supplementary groups",
+		    "setresgid",
+		    "setresuid",
+		    "clear capability sets",
+		    "read capability sets",
+		    "getresgid",
+		    "getresuid",
+		    "query fsuid",
+		    "query fsgid",
+		    "query supplementary groups",
+		    "root-regain probe",
+		};
 	}
 
 	inline void SetNonRootIdentity(FakePrivilegeContext &context) {
@@ -405,15 +411,17 @@ namespace howdy::test::compare_privileges {
 	}
 
 	inline auto ExpectedNonRootEvents() -> std::vector<std::string> {
-		return {"getresuid",
-		        "getresgid",
-		        "query fsuid",
-		        "query fsgid",
-		        "read capability sets",
-		        "clear ambient capabilities",
-		        "clear capability sets",
-		        "read capability sets",
-		        "root-regain probe"};
+		return {
+		    "getresuid",
+		    "getresgid",
+		    "query fsuid",
+		    "query fsgid",
+		    "read capability sets",
+		    "clear ambient capabilities",
+		    "clear capability sets",
+		    "read capability sets",
+		    "root-regain probe",
+		};
 	}
 
 	inline auto VerifyFatalResult(const FakePrivilegeContext                  &context,

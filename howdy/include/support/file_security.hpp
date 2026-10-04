@@ -160,8 +160,9 @@ namespace howdy::native {
 		if (!validation_root.path.empty()) {
 			const auto relative = file_security_internal::RelativeTarget(validation_root, path);
 			if (!relative) {
-				return {.error_message =
-				            std::string(label) + ": target outside validation boundary"};
+				return {
+				    .error_message = std::string(label) + ": target outside validation boundary",
+				};
 			}
 			auto current = validation_root.path;
 			// Strip trailing separators/dots so lstat still rejects a symlink root.

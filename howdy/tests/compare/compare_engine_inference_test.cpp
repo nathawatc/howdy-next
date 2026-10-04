@@ -165,7 +165,7 @@ namespace {
 		std::binary_semaphore allow_warm_finish{0};
 		std::binary_semaphore join_started{0};
 		std::binary_semaphore encoding_started{0};
-		std::jthread          warm_worker([&]() -> void {
+		std::jthread          warm_worker([&] -> void {
 			warm_started.release();
 			allow_warm_finish.acquire();
 			warm_active = false;
@@ -186,7 +186,7 @@ namespace {
 			                                   howdy::native::FaceMetric::kCosine, 0.5F),
 		    {.context = &context, .match_face = MatchFace});
 		int                   fence_calls         = 0;
-		std::function<void()> before_first_encode = [&]() -> void {
+		std::function<void()> before_first_encode = [&] -> void {
 			++fence_calls;
 			join_started.release();
 			warm_worker.join();
@@ -211,7 +211,7 @@ namespace {
 		context.detection_result.detections = {MakeDetection(1.0F), MakeDetection(20.0F)};
 		bool         reached_join           = false;
 		bool         encoded_early          = false;
-		std::jthread release_worker([&]() -> void {
+		std::jthread release_worker([&] -> void {
 			reached_join = join_started.try_acquire_for(std::chrono::seconds(2));
 			if (reached_join) {
 				encoded_early = encoding_started.try_acquire_for(std::chrono::milliseconds(30));
@@ -647,12 +647,16 @@ auto RunCompareEngineInferenceTests() -> bool {
 		    .encoded_results = {MakeEncoding(0.1F), MakeEncoding(0.3F)},
 		    .match_results =
 		        {
-		            {.index    = -1,
-					 .score    = std::numeric_limits<float>::quiet_NaN(),
-					 .accepted = false},
-		            {.index    = -1,
-					 .score    = std::numeric_limits<float>::infinity(),
-					 .accepted = false},
+		            {
+		                .index    = -1,
+		                .score    = std::numeric_limits<float>::quiet_NaN(),
+		                .accepted = false,
+		            },
+		            {
+		                .index    = -1,
+		                .score    = std::numeric_limits<float>::infinity(),
+		                .accepted = false,
+		            },
 		        },
 		};
 		howdy::native::CompareEngine engine(
@@ -669,13 +673,19 @@ auto RunCompareEngineInferenceTests() -> bool {
 		ok &= Expect(result.error_message.empty(), "all rejected detections return no error");
 	}
 
-	for (const auto metric : {howdy::native::FaceMetric::kCosine, howdy::native::FaceMetric::kL2,
-	                          howdy::native::FaceMetric::kL2Norm}) {
+	for (const auto metric : {
+	         howdy::native::FaceMetric::kCosine,
+	         howdy::native::FaceMetric::kL2,
+	         howdy::native::FaceMetric::kL2Norm,
+	     }) {
 		FakeInferenceContext context{
-		    .prepared_frame   = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
-		    .detection_result = {.status     = howdy::native::FaceDetectionStatus::kOk,
-			                     .detections = {MakeDetection(1.0F)}},
-		    .encoded_results  = {MakeEncoding(0.25F), MakeEncoding(0.25F)},
+		    .prepared_frame = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
+		    .detection_result =
+		        {
+		            .status     = howdy::native::FaceDetectionStatus::kOk,
+		            .detections = {MakeDetection(1.0F)},
+		        },
+		    .encoded_results = {MakeEncoding(0.25F), MakeEncoding(0.25F)},
 		};
 		howdy::native::CompareEngine engine(
 		    MakeVideoConfig(), MakeInferenceOperations(context),

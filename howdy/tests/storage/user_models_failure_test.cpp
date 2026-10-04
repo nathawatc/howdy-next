@@ -77,8 +77,9 @@ namespace howdy::test::user_models {
 			}
 
 			const auto baseline = *snapshot;
-			std::array changed_snapshots{baseline, baseline, baseline, baseline,
-			                             baseline, baseline, baseline};
+			std::array changed_snapshots{
+			    baseline, baseline, baseline, baseline, baseline, baseline, baseline,
+			};
 			++changed_snapshots.at(0).dev;
 			++changed_snapshots.at(1).inode;
 			++changed_snapshots.at(2).size;

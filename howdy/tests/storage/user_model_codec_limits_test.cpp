@@ -13,25 +13,29 @@ namespace howdy::test::user_model_codec {
 		using howdy::native::UserModelStatus;
 
 		bool ok = true;
-		ok &= ExpectStatus(Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                               R"("other_backend")")}))
-		                       .Result()
-		                       .status,
-		                   UserModelStatus::kIncompatibleBackend,
-		                   "backend mismatch returns kIncompatibleBackend");
-		ok &= ExpectStatus(Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                               R"("opencv_dnn_sface")", R"("l2")")}))
+		ok &= ExpectStatus(
+		    Decode(ModelList({
+		               ModelJson("7", "1700000000", R"("Office camera")", R"("other_backend")"),
+		           }))
+		        .Result()
+		        .status,
+		    UserModelStatus::kIncompatibleBackend, "backend mismatch returns kIncompatibleBackend");
+		ok &= ExpectStatus(Decode(ModelList({
+		                              ModelJson("7", "1700000000", R"("Office camera")",
+									            R"("opencv_dnn_sface")", R"("l2")"),
+		                          }))
 		                       .Result()
 		                       .status,
 		                   UserModelStatus::kIncompatibleMetric,
 		                   "metric mismatch returns kIncompatibleMetric");
-		ok &= ExpectStatus(Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                               R"("opencv_dnn_sface")", R"("cosine")",
-		                                               R"("other.onnx")")}))
-		                       .Result()
-		                       .status,
-		                   UserModelStatus::kIncompatibleModel,
-		                   "model mismatch returns kIncompatibleModel");
+		ok &= ExpectStatus(
+		    Decode(ModelList({
+		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+					             R"("cosine")", R"("other.onnx")"),
+		           }))
+		        .Result()
+		        .status,
+		    UserModelStatus::kIncompatibleModel, "model mismatch returns kIncompatibleModel");
 		return ok;
 	}
 
@@ -63,9 +67,10 @@ namespace howdy::test::user_model_codec {
 
 		bool       ok                    = true;
 		const auto max_encoding          = RepeatedArray(kMaxEncodingLength, "0.0");
-		const auto max_encoding_document = Decode(
-		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-			                     R"("cosine")", R"("sface.onnx")", "[" + max_encoding + "]")}));
+		const auto max_encoding_document = Decode(ModelList({
+		    ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+			          R"("cosine")", R"("sface.onnx")", "[" + max_encoding + "]"),
+		}));
 		ok &= ExpectStatus(max_encoding_document.Result().status, UserModelStatus::kOk,
 		                   "max encoding length returns kOk");
 		ok &= Expect(max_encoding_document.Result().entries.front().encodings.front().size() ==
@@ -73,9 +78,10 @@ namespace howdy::test::user_model_codec {
 		             "max encoding length is preserved");
 
 		const auto max_encodings          = RepeatedArray(kMaxEncodingsPerModel, "[1.0]");
-		const auto max_encodings_document = Decode(
-		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-			                     R"("cosine")", R"("sface.onnx")", max_encodings)}));
+		const auto max_encodings_document = Decode(ModelList({
+		    ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+			          R"("cosine")", R"("sface.onnx")", max_encodings),
+		}));
 		ok &= ExpectStatus(max_encodings_document.Result().status, UserModelStatus::kOk,
 		                   "max encodings per model returns kOk");
 		ok &= Expect(max_encodings_document.Result().entries.front().encodings.size() ==
@@ -96,16 +102,20 @@ namespace howdy::test::user_model_codec {
 		             "max stored models reports next_id");
 
 		ok &= ExpectStatus(
-		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-			                            "[" + RepeatedArray(kMaxEncodingLength + 1, "0.0") + "]")}))
+		    Decode(ModelList({
+		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+					             R"("cosine")", R"("sface.onnx")",
+					             "[" + RepeatedArray(kMaxEncodingLength + 1, "0.0") + "]"),
+		           }))
 		        .Result()
 		        .status,
 		    UserModelStatus::kOversized, "oversized encoding length returns kOversized");
 		ok &= ExpectStatus(
-		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-			                            RepeatedArray(kMaxEncodingsPerModel + 1, "[1.0]"))}))
+		    Decode(ModelList({
+		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+					             R"("cosine")", R"("sface.onnx")",
+					             RepeatedArray(kMaxEncodingsPerModel + 1, "[1.0]")),
+		           }))
 		        .Result()
 		        .status,
 		    UserModelStatus::kOversized, "too many encodings per model returns kOversized");
@@ -120,15 +130,19 @@ namespace howdy::test::user_model_codec {
 		using howdy::native::UserModelStatus;
 		using howdy::native::user_model_limits::kMaxJsonNestingDepth;
 
-		const auto at_limit = Decode(ModelList({ModelJson(
-		    "0", "1", R"("deep")", R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		    "[[0.1]]", ",\"unknown\":" + NestedArray(kMaxJsonNestingDepth - 2))}));
+		const auto at_limit = Decode(ModelList({
+		    ModelJson("0", "1", R"("deep")", R"("opencv_dnn_sface")", R"("cosine")",
+			          R"("sface.onnx")", "[[0.1]]",
+			          ",\"unknown\":" + NestedArray(kMaxJsonNestingDepth - 2)),
+		}));
 		bool       ok       = ExpectStatus(at_limit.Result().status, UserModelStatus::kOk,
 		                                   "container nesting exactly at limit returns kOk");
 
-		const auto over_limit = Decode(ModelList({ModelJson(
-		    "0", "1", R"("deep")", R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		    "[[0.1]]", ",\"unknown\":" + NestedArray(kMaxJsonNestingDepth - 1))}));
+		const auto over_limit = Decode(ModelList({
+		    ModelJson("0", "1", R"("deep")", R"("opencv_dnn_sface")", R"("cosine")",
+			          R"("sface.onnx")", "[[0.1]]",
+			          ",\"unknown\":" + NestedArray(kMaxJsonNestingDepth - 1)),
+		}));
 		ok &= ExpectStatus(over_limit.Result().status, UserModelStatus::kOversized,
 		                   "one container beyond nesting limit returns kOversized");
 		ok &= Expect(over_limit.Result().error_message ==

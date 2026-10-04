@@ -136,7 +136,7 @@ namespace {
 
 	auto MakeEngine(Context &context, float dark_threshold = 99.0F, bool matching_enabled = true)
 	    -> howdy::native::PreviewEngine {
-		auto config = TestVideoConfig(dark_threshold);
+		auto const config = TestVideoConfig(dark_threshold);
 		return howdy::native::PreviewEngine(
 		    config, MakePreviewDependencies(context),
 		    howdy::native::PreparedFaceMatcher(
@@ -218,7 +218,7 @@ namespace {
 		context.now_results                 = {start, start + std::chrono::milliseconds(37)};
 		auto dependencies                   = MakePreviewDependencies(context);
 		dependencies.now                    = Now;
-		auto                         config = TestVideoConfig();
+		auto const                   config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(
 		    config, dependencies,
 		    howdy::native::PreparedFaceMatcher(
@@ -374,7 +374,7 @@ namespace {
 	auto MatchingDisabledReportsDetectedFaces() -> bool {
 		auto context                        = MakeContext();
 		context.detection_result.detections = {Face()};
-		auto                         config = TestVideoConfig();
+		auto const                   config = TestVideoConfig();
 		howdy::native::PreviewEngine engine(config,
 		                                    {
 		                                        .inference =
@@ -395,8 +395,8 @@ namespace {
 	}
 
 	auto InvalidAcceptedMatchResultsFailClosed() -> bool {
-		auto run_invalid_match = [](howdy::native::FaceMatch match,
-		                            const std::string       &subject) -> bool {
+		auto const run_invalid_match = [](howdy::native::FaceMatch match,
+		                                  const std::string       &subject) -> bool {
 			auto context                        = MakeContext();
 			context.detection_result.detections = {Face()};
 			context.match_result                = match;
@@ -424,12 +424,12 @@ namespace {
 	}
 
 	auto InvalidDependencyMatrixFailsClosed() -> bool {
-		auto run_missing_dependency = [](auto               clear_dependency,
-		                                 const std::string &subject) -> auto {
+		auto const run_missing_dependency = [](auto               clear_dependency,
+		                                       const std::string &subject) -> auto {
 			auto context      = MakeContext();
 			auto dependencies = MakePreviewDependencies(context);
 			clear_dependency(dependencies);
-			auto                         config = TestVideoConfig();
+			auto const                   config = TestVideoConfig();
 			howdy::native::PreviewEngine engine(config, dependencies, {}, 0, true);
 			const auto result = engine.ProcessGrayFrame(cv::Mat(8, 8, CV_8UC1, cv::Scalar(255)));
 			return Expect(result.status == howdy::native::PreviewFrameStatus::kInvalidDependencies,
@@ -478,9 +478,11 @@ namespace {
 
 	auto PreparedMatchingReusedAcrossFrames() -> bool {
 		bool ok = true;
-		for (const auto metric :
-		     {howdy::native::FaceMetric::kCosine, howdy::native::FaceMetric::kL2,
-		      howdy::native::FaceMetric::kL2Norm}) {
+		for (const auto metric : {
+		         howdy::native::FaceMetric::kCosine,
+		         howdy::native::FaceMetric::kL2,
+		         howdy::native::FaceMetric::kL2Norm,
+		     }) {
 			auto context                        = MakeContext();
 			context.detection_result.detections = {Face()};
 			howdy::native::PreviewEngine engine(

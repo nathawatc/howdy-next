@@ -25,30 +25,34 @@ namespace {
 
 	auto SyntheticOption(OptionId id, std::string_view section, std::string_view key,
 	                     ValueType type, RuntimeDefault fallback) -> Option {
-		return Option{.id           = id,
-		              .section      = section,
-		              .key          = key,
-		              .type         = type,
-		              .fallback     = fallback,
-		              .range        = {},
-		              .choices      = {},
-		              .special_rule = SpecialRule::kNone,
-		              .invalid_rule = "synthetic rule",
-		              .description  = "Synthetic option."};
+		return Option{
+		    .id           = id,
+		    .section      = section,
+		    .key          = key,
+		    .type         = type,
+		    .fallback     = fallback,
+		    .range        = {},
+		    .choices      = {},
+		    .special_rule = SpecialRule::kNone,
+		    .invalid_rule = "synthetic rule",
+		    .description  = "Synthetic option.",
+		};
 	}
 
 	auto RangedOption(OptionId id, ValueType type, RuntimeDefault fallback, NumericRange range,
 	                  SpecialRule special_rule = SpecialRule::kNone) -> Option {
-		return Option{.id           = id,
-		              .section      = "synthetic",
-		              .key          = "value",
-		              .type         = type,
-		              .fallback     = fallback,
-		              .range        = range,
-		              .choices      = {},
-		              .special_rule = special_rule,
-		              .invalid_rule = "synthetic rule",
-		              .description  = "Synthetic option."};
+		return Option{
+		    .id           = id,
+		    .section      = "synthetic",
+		    .key          = "value",
+		    .type         = type,
+		    .fallback     = fallback,
+		    .range        = range,
+		    .choices      = {},
+		    .special_rule = special_rule,
+		    .invalid_rule = "synthetic rule",
+		    .description  = "Synthetic option.",
+		};
 	}
 
 	auto Accepts(std::span<const Option> options, std::string_view message) -> bool {
@@ -111,24 +115,28 @@ auto main() -> int {
 	ok &= Rejects(mismatched_fallback, "fallback type mismatch");
 
 	const std::array missing_fallback = {
-	    Option{.id           = OptionId::kCoreDetectionNotice,
-		       .section      = "one",
-		       .key          = "value",
-		       .type         = ValueType::kBoolean,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kCoreDetectionNotice,
+	        .section      = "one",
+	        .key          = "value",
+	        .type         = ValueType::kBoolean,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(missing_fallback, "fallback type mismatch");
 
 	const std::array invalid_id = {
-	    Option{.id           = static_cast<OptionId>(255),
-		       .section      = "video",
-		       .key          = "timeout",
-		       .type         = ValueType::kInteger,
-		       .fallback     = howdy::native::config_schema::IntDefault(5),
-		       .range        = IntegerRange{.minimum = 1, .maximum = 10},
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = static_cast<OptionId>(255),
+	        .section      = "video",
+	        .key          = "timeout",
+	        .type         = ValueType::kInteger,
+	        .fallback     = howdy::native::config_schema::IntDefault(5),
+	        .range        = IntegerRange{.minimum = 1, .maximum = 10},
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(invalid_id, "option has invalid id");
 
@@ -145,74 +153,84 @@ auto main() -> int {
 	ok &= Rejects(empty_key, "invalid or empty key");
 
 	const std::array invalid_range = {
-	    Option{.id           = OptionId::kVideoTimeout,
-		       .section      = "video",
-		       .key          = "timeout",
-		       .type         = ValueType::kInteger,
-		       .fallback     = howdy::native::config_schema::IntDefault(5),
-		       .range        = IntegerRange{.minimum = 10, .maximum = 5},
-		       .choices      = {},
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kVideoTimeout,
+	        .section      = "video",
+	        .key          = "timeout",
+	        .type         = ValueType::kInteger,
+	        .fallback     = howdy::native::config_schema::IntDefault(5),
+	        .range        = IntegerRange{.minimum = 10, .maximum = 5},
+	        .choices      = {},
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(invalid_range, "invalid numeric range");
 
 	const std::array incompatible_float_range_on_int = {
-	    Option{.id           = OptionId::kVideoTimeout,
-		       .section      = "video",
-		       .key          = "timeout",
-		       .type         = ValueType::kInteger,
-		       .fallback     = howdy::native::config_schema::IntDefault(5),
-		       .range        = FloatRange{.minimum = 1.0F, .maximum = 10.0F},
-		       .choices      = {},
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kVideoTimeout,
+	        .section      = "video",
+	        .key          = "timeout",
+	        .type         = ValueType::kInteger,
+	        .fallback     = howdy::native::config_schema::IntDefault(5),
+	        .range        = FloatRange{.minimum = 1.0F, .maximum = 10.0F},
+	        .choices      = {},
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &=
 	    Rejects(incompatible_float_range_on_int, "numeric range is incompatible with option type");
 
 	const std::array incompatible_int_range_on_float = {
-	    Option{.id           = OptionId::kFaceYunetScoreThreshold,
-		       .section      = "face",
-		       .key          = "score",
-		       .type         = ValueType::kFloatingPoint,
-		       .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
-		       .range        = IntegerRange{.minimum = 0, .maximum = 1},
-		       .choices      = {},
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kFaceYunetScoreThreshold,
+	        .section      = "face",
+	        .key          = "score",
+	        .type         = ValueType::kFloatingPoint,
+	        .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
+	        .range        = IntegerRange{.minimum = 0, .maximum = 1},
+	        .choices      = {},
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &=
 	    Rejects(incompatible_int_range_on_float, "numeric range is incompatible with option type");
 
 	const std::array incompatible_range_on_bool = {
-	    Option{.id           = OptionId::kCoreDetectionNotice,
-		       .section      = "core",
-		       .key          = "notice",
-		       .type         = ValueType::kBoolean,
-		       .fallback     = howdy::native::config_schema::BoolDefault(false),
-		       .range        = IntegerRange{.minimum = 0, .maximum = 1},
-		       .choices      = {},
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kCoreDetectionNotice,
+	        .section      = "core",
+	        .key          = "notice",
+	        .type         = ValueType::kBoolean,
+	        .fallback     = howdy::native::config_schema::BoolDefault(false),
+	        .range        = IntegerRange{.minimum = 0, .maximum = 1},
+	        .choices      = {},
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(incompatible_range_on_bool, "numeric range is incompatible with option type");
 
 	const std::array invalid_float_range = {
-	    Option{.id           = OptionId::kFaceYunetScoreThreshold,
-		       .section      = "face",
-		       .key          = "score",
-		       .type         = ValueType::kFloatingPoint,
-		       .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
-		       .range        = FloatRange{.minimum = 1.0F, .maximum = 0.0F},
-		       .choices      = {},
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kFaceYunetScoreThreshold,
+	        .section      = "face",
+	        .key          = "score",
+	        .type         = ValueType::kFloatingPoint,
+	        .fallback     = howdy::native::config_schema::FloatDefault(0.5F),
+	        .range        = FloatRange{.minimum = 1.0F, .maximum = 0.0F},
+	        .choices      = {},
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(invalid_float_range, "invalid numeric range");
 
@@ -288,26 +306,33 @@ auto main() -> int {
 	};
 	const auto sface_options = [&](float threshold) -> std::array<Option, 2> {
 		return std::array{
-		    Option{.id       = OptionId::kFaceSfaceMetric,
-			       .section  = "face",
-			       .key      = "sface_metric",
-			       .type     = ValueType::kString,
-			       .fallback = howdy::native::config_schema::StringDefault(
-		               howdy::native::FaceMetricSpelling(howdy::native::FaceMetric::kCosine)),
-			       .choices      = cosine_choices,
-			       .special_rule = SpecialRule::kNone,
-			       .invalid_rule = "synthetic rule",
-			       .description  = "Synthetic option."},
-		    Option{.id       = OptionId::kFaceSfaceThreshold,
-			       .section  = "face",
-			       .key      = "sface_threshold",
-			       .type     = ValueType::kFloatingPoint,
-			       .fallback = howdy::native::config_schema::FloatDefault(threshold),
-			       .range    = FloatRange{.minimum = 0.0F,
-			                              .maximum = howdy::native::FaceMetricThresholdMaximum()},
-			       .special_rule = SpecialRule::kSfaceThreshold,
-			       .invalid_rule = "synthetic rule",
-			       .description  = "Synthetic option."},
+		    Option{
+		        .id       = OptionId::kFaceSfaceMetric,
+		        .section  = "face",
+		        .key      = "sface_metric",
+		        .type     = ValueType::kString,
+		        .fallback = howdy::native::config_schema::StringDefault(
+		            howdy::native::FaceMetricSpelling(howdy::native::FaceMetric::kCosine)),
+		        .choices      = cosine_choices,
+		        .special_rule = SpecialRule::kNone,
+		        .invalid_rule = "synthetic rule",
+		        .description  = "Synthetic option.",
+		    },
+		    Option{
+		        .id       = OptionId::kFaceSfaceThreshold,
+		        .section  = "face",
+		        .key      = "sface_threshold",
+		        .type     = ValueType::kFloatingPoint,
+		        .fallback = howdy::native::config_schema::FloatDefault(threshold),
+		        .range =
+		            FloatRange{
+		                .minimum = 0.0F,
+		                .maximum = howdy::native::FaceMetricThresholdMaximum(),
+		            },
+		        .special_rule = SpecialRule::kSfaceThreshold,
+		        .invalid_rule = "synthetic rule",
+		        .description  = "Synthetic option.",
+		    },
 		};
 	};
 	const auto valid_sface = sface_options(cosine_threshold_max);
@@ -317,96 +342,110 @@ auto main() -> int {
 
 	const std::array<std::string_view, 3> duplicate_choices        = {"cosine", "l2", "cosine"};
 	const std::array                      duplicate_choice_options = {
-	    Option{.id           = OptionId::kFaceSfaceMetric,
-		       .section      = "face",
-		       .key          = "sface_metric",
-		       .type         = ValueType::kString,
-		       .fallback     = howdy::native::config_schema::StringDefault("cosine"),
-		       .choices      = duplicate_choices,
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kFaceSfaceMetric,
+	        .section      = "face",
+	        .key          = "sface_metric",
+	        .type         = ValueType::kString,
+	        .fallback     = howdy::native::config_schema::StringDefault("cosine"),
+	        .choices      = duplicate_choices,
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(duplicate_choice_options, "duplicate choice");
 
 	const std::array<std::string_view, 1> empty_choice         = {""};
 	const std::array                      empty_choice_options = {
-	    Option{.id           = OptionId::kFaceSfaceMetric,
-		       .section      = "face",
-		       .key          = "sface_metric",
-		       .type         = ValueType::kString,
-		       .fallback     = howdy::native::config_schema::StringDefault(""),
-		       .choices      = empty_choice,
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kFaceSfaceMetric,
+	        .section      = "face",
+	        .key          = "sface_metric",
+	        .type         = ValueType::kString,
+	        .fallback     = howdy::native::config_schema::StringDefault(""),
+	        .choices      = empty_choice,
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(empty_choice_options, "choice is empty");
 
 	const std::array<std::string_view, 1> incompatible_choices        = {"true"};
 	const std::array                      incompatible_choice_options = {
-	    Option{.id           = OptionId::kCoreDetectionNotice,
-		       .section      = "core",
-		       .key          = "detection_notice",
-		       .type         = ValueType::kBoolean,
-		       .fallback     = howdy::native::config_schema::BoolDefault(false),
-		       .choices      = incompatible_choices,
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kCoreDetectionNotice,
+	        .section      = "core",
+	        .key          = "detection_notice",
+	        .type         = ValueType::kBoolean,
+	        .fallback     = howdy::native::config_schema::BoolDefault(false),
+	        .choices      = incompatible_choices,
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(incompatible_choice_options, "choices are incompatible with option type");
 
 	const std::array<std::string_view, 2> fallback_not_in_choices       = {"cosine", "l2"};
 	const std::array                      incompatible_fallback_options = {
-	    Option{.id           = OptionId::kFaceSfaceMetric,
-		       .section      = "face",
-		       .key          = "sface_metric",
-		       .type         = ValueType::kString,
-		       .fallback     = howdy::native::config_schema::StringDefault("l2norm"),
-		       .choices      = fallback_not_in_choices,
-		       .special_rule = SpecialRule::kNone,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kFaceSfaceMetric,
+	        .section      = "face",
+	        .key          = "sface_metric",
+	        .type         = ValueType::kString,
+	        .fallback     = howdy::native::config_schema::StringDefault("l2norm"),
+	        .choices      = fallback_not_in_choices,
+	        .special_rule = SpecialRule::kNone,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(incompatible_fallback_options, "fallback is not one of choices");
 
 	const std::array<std::string_view, 1> device_path_choices   = {"none"};
 	const std::array                      free_form_device_path = {
-	    Option{.id           = OptionId::kVideoDevicePath,
-		       .section      = "video",
-		       .key          = "device_path",
-		       .type         = ValueType::kString,
-		       .fallback     = howdy::native::config_schema::StringDefault("/dev/video0"),
-		       .choices      = device_path_choices,
-		       .special_rule = SpecialRule::kDevicePath,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kVideoDevicePath,
+	        .section      = "video",
+	        .key          = "device_path",
+	        .type         = ValueType::kString,
+	        .fallback     = howdy::native::config_schema::StringDefault("/dev/video0"),
+	        .choices      = device_path_choices,
+	        .special_rule = SpecialRule::kDevicePath,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Expect(!howdy::native::config_schema::ValidateOptions(free_form_device_path).has_value(),
 	             "device path fallback remains free-form");
 
 	const std::array incompatible_special_rule = {
-	    Option{.id           = OptionId::kCoreDetectionNotice,
-		       .section      = "core",
-		       .key          = "detection_notice",
-		       .type         = ValueType::kInteger,
-		       .fallback     = howdy::native::config_schema::IntDefault(1),
-		       .special_rule = SpecialRule::kDevicePath,
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kCoreDetectionNotice,
+	        .section      = "core",
+	        .key          = "detection_notice",
+	        .type         = ValueType::kInteger,
+	        .fallback     = howdy::native::config_schema::IntDefault(1),
+	        .special_rule = SpecialRule::kDevicePath,
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(incompatible_special_rule, "special rule/type mismatch");
 
 	const std::array unknown_special_rule = {
-	    Option{.id           = OptionId::kCoreDetectionNotice,
-		       .section      = "core",
-		       .key          = "detection_notice",
-		       .type         = ValueType::kBoolean,
-		       .fallback     = howdy::native::config_schema::BoolDefault(false),
-		       .special_rule = static_cast<SpecialRule>(255),
-		       .invalid_rule = "synthetic rule",
-		       .description  = "Synthetic option."},
+	    Option{
+	        .id           = OptionId::kCoreDetectionNotice,
+	        .section      = "core",
+	        .key          = "detection_notice",
+	        .type         = ValueType::kBoolean,
+	        .fallback     = howdy::native::config_schema::BoolDefault(false),
+	        .special_rule = static_cast<SpecialRule>(255),
+	        .invalid_rule = "synthetic rule",
+	        .description  = "Synthetic option.",
+	    },
 	};
 	ok &= Rejects(unknown_special_rule, "unknown special rule");
 

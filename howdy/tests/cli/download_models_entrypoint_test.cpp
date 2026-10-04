@@ -82,10 +82,12 @@ namespace howdy::test::download_models {
 
 		auto RecorderSetoptOperations(CurlSetoptRecorder &recorder)
 		    -> howdy::native::download_models_internal::CurlSetoptOperations {
-			return {.context    = &recorder,
-			        .set_long   = FakeSetoptLong,
-			        .set_off_t  = FakeSetoptOffT,
-			        .set_string = FakeSetoptString};
+			return {
+			    .context    = &recorder,
+			    .set_long   = FakeSetoptLong,
+			    .set_off_t  = FakeSetoptOffT,
+			    .set_string = FakeSetoptString,
+			};
 		}
 
 		auto ConfiguredLong(const CurlSetoptRecorder &recorder, CURLoption option, CurlLong value)

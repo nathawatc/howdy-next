@@ -23,14 +23,14 @@ namespace {
 	}
 
 	auto RendererOwnsConfigurationAndModels() -> bool {
-		auto make_renderer = [] -> test_cli_internal::TestPreviewRenderer {
+		auto const make_renderer = [] -> test_cli_internal::TestPreviewRenderer {
 			howdy::native::VideoConfig config{};
 			config.clahe_enabled = false;
 			std::vector<howdy::native::EncodingModelInfo> models;
 			return {config, std::move(models)};
 		};
 
-		auto renderer = make_renderer();
+		auto const renderer = make_renderer();
 		return Expect(!renderer.SlowMode(),
 		              "renderer remains valid after constructor inputs leave scope");
 	}
@@ -219,10 +219,12 @@ namespace {
 		RendererLifecycleContext               context;
 		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
-		                                                {.context        = &context,
-		                                                 .initialize     = InitializeRenderer,
-		                                                 .clear_callback = ClearRendererCallback,
-		                                                 .destroy_window = DestroyRendererWindow});
+		                                                {
+		                                                    .context        = &context,
+		                                                    .initialize     = InitializeRenderer,
+		                                                    .clear_callback = ClearRendererCallback,
+		                                                    .destroy_window = DestroyRendererWindow,
+		                                                });
 
 		renderer.Shutdown();
 		renderer.Initialize();
@@ -243,10 +245,12 @@ namespace {
 		context.fail_initialize = true;
 		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
-		                                                {.context        = &context,
-		                                                 .initialize     = InitializeRenderer,
-		                                                 .clear_callback = ClearRendererCallback,
-		                                                 .destroy_window = DestroyRendererWindow});
+		                                                {
+		                                                    .context        = &context,
+		                                                    .initialize     = InitializeRenderer,
+		                                                    .clear_callback = ClearRendererCallback,
+		                                                    .destroy_window = DestroyRendererWindow,
+		                                                });
 
 		bool threw = false;
 		try {
@@ -272,10 +276,12 @@ namespace {
 		context.fail_clear_callback = true;
 		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
-		                                                {.context        = &context,
-		                                                 .initialize     = InitializeRenderer,
-		                                                 .clear_callback = ClearRendererCallback,
-		                                                 .destroy_window = DestroyRendererWindow});
+		                                                {
+		                                                    .context        = &context,
+		                                                    .initialize     = InitializeRenderer,
+		                                                    .clear_callback = ClearRendererCallback,
+		                                                    .destroy_window = DestroyRendererWindow,
+		                                                });
 		renderer.Initialize();
 
 		bool threw       = false;
@@ -307,10 +313,12 @@ namespace {
 		context.fail_destroy_window = true;
 		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
-		                                                {.context        = &context,
-		                                                 .initialize     = InitializeRenderer,
-		                                                 .clear_callback = ClearRendererCallback,
-		                                                 .destroy_window = DestroyRendererWindow});
+		                                                {
+		                                                    .context        = &context,
+		                                                    .initialize     = InitializeRenderer,
+		                                                    .clear_callback = ClearRendererCallback,
+		                                                    .destroy_window = DestroyRendererWindow,
+		                                                });
 
 		std::string error_message;
 		try {
@@ -335,10 +343,12 @@ namespace {
 		context.fail_destroy_window = true;
 		howdy::native::VideoConfig const       config{};
 		test_cli_internal::TestPreviewRenderer renderer(config, {},
-		                                                {.context        = &context,
-		                                                 .initialize     = InitializeRenderer,
-		                                                 .clear_callback = ClearRendererCallback,
-		                                                 .destroy_window = DestroyRendererWindow});
+		                                                {
+		                                                    .context        = &context,
+		                                                    .initialize     = InitializeRenderer,
+		                                                    .clear_callback = ClearRendererCallback,
+		                                                    .destroy_window = DestroyRendererWindow,
+		                                                });
 		renderer.Initialize();
 
 		std::string error_message;

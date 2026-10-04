@@ -132,8 +132,10 @@ namespace howdy::docs {
 				        ValidateRoffText({.kind = "command summary", .value = command.summary})) {
 					return error;
 				}
-				if (const auto error = ValidateRoffText({.kind  = "command argument synopsis",
-				                                         .value = command.argument_synopsis})) {
+				if (const auto error = ValidateRoffText({
+				        .kind  = "command argument synopsis",
+				        .value = command.argument_synopsis,
+				    })) {
 					return error;
 				}
 			}
@@ -312,7 +314,7 @@ namespace howdy::docs {
 
 			std::vector<std::pair<float, std::vector<std::string_view>>> groups;
 			for (const auto &policy : native::kFaceMetricPolicies) {
-				auto iter = std::ranges::find_if(groups, [&](const auto &group) -> bool {
+				auto const iter = std::ranges::find_if(groups, [&](const auto &group) -> bool {
 					return group.first == policy.threshold_maximum;
 				});
 				if (iter != groups.end()) {

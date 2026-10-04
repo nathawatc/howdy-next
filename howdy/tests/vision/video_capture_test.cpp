@@ -24,7 +24,7 @@ namespace howdy::native {
 			enum class Behavior : std::uint8_t {
 				kFrame,
 				kFailure,
-				kException
+				kException,
 			};
 
 			explicit ReadContext(cv::Mat source_frame, Behavior behavior = Behavior::kFrame)
@@ -78,8 +78,8 @@ namespace {
 	}
 
 	auto ExpectRejectedFrame(cv::Mat frame, const std::string &label) -> bool {
-		auto context = std::make_shared<ReadContext>(std::move(frame));
-		auto capture = howdy::native::VideoCaptureTestAccess::Create(
+		auto const context = std::make_shared<ReadContext>(std::move(frame));
+		auto       capture = howdy::native::VideoCaptureTestAccess::Create(
 		    howdy::native::CaptureSettings{.device_path = "none"}, context);
 
 		cv::Mat    raw;
@@ -120,8 +120,8 @@ namespace {
 	}
 
 	auto ColorFrameConvertsToGray(const cv::Mat &source, const std::string &label) -> bool {
-		auto context = std::make_shared<ReadContext>(source);
-		auto capture = howdy::native::VideoCaptureTestAccess::Create(
+		auto const context = std::make_shared<ReadContext>(source);
+		auto       capture = howdy::native::VideoCaptureTestAccess::Create(
 		    howdy::native::CaptureSettings{.device_path = "none"}, context);
 		cv::Mat    raw;
 		cv::Mat    gray;
@@ -140,8 +140,8 @@ namespace {
 	}
 
 	auto ReadFailureIsReported(ReadContext::Behavior behavior, const std::string &label) -> bool {
-		auto context = std::make_shared<ReadContext>(cv::Mat(), behavior);
-		auto capture = howdy::native::VideoCaptureTestAccess::Create(
+		auto const context = std::make_shared<ReadContext>(cv::Mat(), behavior);
+		auto       capture = howdy::native::VideoCaptureTestAccess::Create(
 		    howdy::native::CaptureSettings{.device_path = "none"}, context);
 		cv::Mat    raw;
 		cv::Mat    gray    = GraySentinel();

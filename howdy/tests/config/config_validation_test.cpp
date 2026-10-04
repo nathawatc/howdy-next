@@ -113,7 +113,7 @@ namespace {
 				++parsed_option_count;
 				auto message = std::string("packaged config key is known by schema: ");
 				message += section;
-				message += ".";
+				message += '.';
 				message += key;
 				ok &= Expect(howdy::native::config_schema::RuntimeConfigOption(section, key) !=
 				                 nullptr,
@@ -208,78 +208,100 @@ auto main() -> int {
 		const char *above;
 	};
 
-	const std::array<BoundaryCase, 10> boundary_cases = {{
-	    {.name    = "timeout",
-		 .section = "video",
-		 .key     = "timeout",
-		 .minimum = "1",
-		 .maximum = "300",
-		 .below   = "0",
-		 .above   = "301"},
-	    {.name    = "max-height",
-		 .section = "video",
-		 .key     = "max_height",
-		 .minimum = "32",
-		 .maximum = "4096",
-		 .below   = "31.99",
-		 .above   = "4096.01"},
-	    {.name    = "rotate",
-		 .section = "video",
-		 .key     = "rotate",
-		 .minimum = "0",
-		 .maximum = "3",
-		 .below   = "-1",
-		 .above   = "4"},
-	    {.name    = "dark-threshold",
-		 .section = "video",
-		 .key     = "dark_threshold",
-		 .minimum = "0",
-		 .maximum = "99.9",
-		 .below   = "-0.1",
-		 .above   = "100"},
-	    {.name    = "clahe-clip-limit",
-		 .section = "video",
-		 .key     = "clahe_clip_limit",
-		 .minimum = "0.01",
-		 .maximum = "100",
-		 .below   = "0",
-		 .above   = "100.01"},
-	    {.name    = "clahe-tile-grid-size",
-		 .section = "video",
-		 .key     = "clahe_tile_grid_size",
-		 .minimum = "1",
-		 .maximum = "64",
-		 .below   = "0",
-		 .above   = "65"},
-	    {.name    = "yunet-score-threshold",
-		 .section = "face",
-		 .key     = "yunet_score_threshold",
-		 .minimum = "0",
-		 .maximum = "1",
-		 .below   = "-0.1",
-		 .above   = "1.1"},
-	    {.name    = "yunet-nms-threshold",
-		 .section = "face",
-		 .key     = "yunet_nms_threshold",
-		 .minimum = "0",
-		 .maximum = "1",
-		 .below   = "-0.1",
-		 .above   = "1.1"},
-	    {.name    = "yunet-top-k",
-		 .section = "face",
-		 .key     = "yunet_top_k",
-		 .minimum = "1",
-		 .maximum = "10000",
-		 .below   = "0",
-		 .above   = "10001"},
-	    {.name    = "device-fps",
-		 .section = "video",
-		 .key     = "device_fps",
-		 .minimum = "0",
-		 .maximum = "480",
-		 .below   = "-1",
-		 .above   = "481"},
-	}};
+	const std::array<BoundaryCase, 10> boundary_cases = {
+	    {
+	        {
+	            .name    = "timeout",
+	            .section = "video",
+	            .key     = "timeout",
+	            .minimum = "1",
+	            .maximum = "300",
+	            .below   = "0",
+	            .above   = "301",
+	        },
+	        {
+	            .name    = "max-height",
+	            .section = "video",
+	            .key     = "max_height",
+	            .minimum = "32",
+	            .maximum = "4096",
+	            .below   = "31.99",
+	            .above   = "4096.01",
+	        },
+	        {
+	            .name    = "rotate",
+	            .section = "video",
+	            .key     = "rotate",
+	            .minimum = "0",
+	            .maximum = "3",
+	            .below   = "-1",
+	            .above   = "4",
+	        },
+	        {
+	            .name    = "dark-threshold",
+	            .section = "video",
+	            .key     = "dark_threshold",
+	            .minimum = "0",
+	            .maximum = "99.9",
+	            .below   = "-0.1",
+	            .above   = "100",
+	        },
+	        {
+	            .name    = "clahe-clip-limit",
+	            .section = "video",
+	            .key     = "clahe_clip_limit",
+	            .minimum = "0.01",
+	            .maximum = "100",
+	            .below   = "0",
+	            .above   = "100.01",
+	        },
+	        {
+	            .name    = "clahe-tile-grid-size",
+	            .section = "video",
+	            .key     = "clahe_tile_grid_size",
+	            .minimum = "1",
+	            .maximum = "64",
+	            .below   = "0",
+	            .above   = "65",
+	        },
+	        {
+	            .name    = "yunet-score-threshold",
+	            .section = "face",
+	            .key     = "yunet_score_threshold",
+	            .minimum = "0",
+	            .maximum = "1",
+	            .below   = "-0.1",
+	            .above   = "1.1",
+	        },
+	        {
+	            .name    = "yunet-nms-threshold",
+	            .section = "face",
+	            .key     = "yunet_nms_threshold",
+	            .minimum = "0",
+	            .maximum = "1",
+	            .below   = "-0.1",
+	            .above   = "1.1",
+	        },
+	        {
+	            .name    = "yunet-top-k",
+	            .section = "face",
+	            .key     = "yunet_top_k",
+	            .minimum = "1",
+	            .maximum = "10000",
+	            .below   = "0",
+	            .above   = "10001",
+	        },
+	        {
+	            .name    = "device-fps",
+	            .section = "video",
+	            .key     = "device_fps",
+	            .minimum = "0",
+	            .maximum = "480",
+	            .below   = "-1",
+	            .above   = "481",
+	        },
+	    },
+	};
 
 	for (const auto &test : boundary_cases) {
 		const auto prefix = std::string("[") + test.section + "]\n" + test.key + " = ";
@@ -386,12 +408,14 @@ auto main() -> int {
 	                     "[video]\ndevice_path = /dev/v4l/by-id/../../null\n", "device_path"),
 	             "traversal by-id device path is rejected");
 
-	const std::array<std::pair<const char *, const char *>, 4> known_runtime_options = {{
-	    {"core", "detection_notice"},
-	    {"video", "timeout"},
-	    {"face", "yunet_score_threshold"},
-	    {"debug", "end_report"},
-	}};
+	const std::array<std::pair<const char *, const char *>, 4> known_runtime_options = {
+	    {
+	        {"core", "detection_notice"},
+	        {"video", "timeout"},
+	        {"face", "yunet_score_threshold"},
+	        {"debug", "end_report"},
+	    },
+	};
 	for (const auto &[section, key] : known_runtime_options) {
 		ok &= Expect(howdy::native::config_schema::RuntimeConfigOption(section, key) != nullptr,
 		             std::string("runtime config option present: ") + section + "." + key);

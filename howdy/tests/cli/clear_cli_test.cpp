@@ -154,24 +154,37 @@ namespace {
 		for (const auto &[status, error, snapshot, expected] : std::vector<
 		         std::tuple<howdy::native::UserModelStatus, std::string,
 				            std::optional<howdy::native::UserModelFileSnapshot>, std::string>>{
-		         {howdy::native::UserModelStatus::kNoModelDirectory,
-				  {},
-				  std::nullopt,
-				  "No face models found.\n"},
-		         {howdy::native::UserModelStatus::kNoModel,
-				  {},
-				  std::nullopt,
-				  "No face models found.\n"},
-		         {howdy::native::UserModelStatus::kInsecurePath, "storage failed", std::nullopt,
-				  "storage failed\n"},
-		         {howdy::native::UserModelStatus::kOk,
-				  {},
-				  std::nullopt,
-				  "Failed to inspect user model file\n"},
+		         {
+		             howdy::native::UserModelStatus::kNoModelDirectory,
+		             {},
+		             std::nullopt,
+		             "No face models found.\n",
+		         },
+		         {
+		             howdy::native::UserModelStatus::kNoModel,
+		             {},
+		             std::nullopt,
+		             "No face models found.\n",
+		         },
+		         {
+		             howdy::native::UserModelStatus::kInsecurePath,
+		             "storage failed",
+		             std::nullopt,
+		             "storage failed\n",
+		         },
+		         {
+		             howdy::native::UserModelStatus::kOk,
+		             {},
+		             std::nullopt,
+		             "Failed to inspect user model file\n",
+		         },
 		     }) {
 			auto context           = SuccessContext();
 			context.inspect_result = {
-			    .status = status, .error_message = error, .snapshot = snapshot};
+			    .status        = status,
+			    .error_message = error,
+			    .snapshot      = snapshot,
+			};
 			auto [result, output] =
 			    RunClear(context, {.resolved_user = "alice", .assume_yes = true});
 			ok &= Expect(result == 1, "inspection outcome returns 1");
@@ -229,8 +242,11 @@ namespace {
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
 		         {howdy::native::UserModelStatus::kNoModelDirectory, {}, "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kNoModel, {}, "No face models found.\n"},
-		         {howdy::native::UserModelStatus::kModelChanged, "model changed",
-				  "model changed\n"},
+		         {
+		             howdy::native::UserModelStatus::kModelChanged,
+		             "model changed",
+		             "model changed\n",
+		         },
 		     }) {
 			auto context         = SuccessContext();
 			context.clear_result = {.status = status, .error_message = error};
@@ -277,7 +293,7 @@ namespace {
 		ok &= Expect(!ec, "create integration models dir");
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 
-		auto run_boundary_aware_clear = [&]() -> int {
+		auto const run_boundary_aware_clear = [&] -> int {
 			std::istringstream const input_stream;
 			std::ostringstream const output_stream;
 			StreamRedirect const     redirect(std::cin, input_stream.rdbuf(), std::cout,

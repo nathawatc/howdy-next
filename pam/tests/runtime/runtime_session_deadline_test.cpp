@@ -145,7 +145,7 @@ namespace {
 		kSuccess,
 		kNonzero,
 		kSignal,
-		kStall
+		kStall,
 	};
 
 	struct PrepareCase {
@@ -371,16 +371,21 @@ auto RunRuntimeSessionDeadlineTests() -> bool {
 	                     false);
 	ok &= RunPrepareCase("signaled child", {.output = output, .outcome = ChildOutcome::kSignal},
 	                     false);
-	for (const auto &invalid : {std::string("MALFORMED_OUTPUT\n"), output + "UNKNOWN=value\n",
-	                            output + "CONFIG_PATH=/duplicate\n"}) {
+	for (const auto &invalid : {
+	         std::string("MALFORMED_OUTPUT\n"),
+	         output + "UNKNOWN=value\n",
+	         output + "CONFIG_PATH=/duplicate\n",
+	     }) {
 		ok &= RunPrepareCase("malformed response", {.output = invalid}, false);
 	}
-	ok &=
-	    RunPrepareCase("output limit",
-		               {.output = std::string(
-	                        howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h'),
-		                .outcome = ChildOutcome::kStall},
-		               false);
+	ok &= RunPrepareCase(
+	    "output limit",
+	    {
+	        .output =
+	            std::string(howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h'),
+	        .outcome = ChildOutcome::kStall,
+	    },
+	    false);
 	ok &= RunPrepareCase("read error", {.output = output, .outcome = ChildOutcome::kStall}, false,
 	                     false, 0);
 	ok &= RunPrepareCase("partial read error", {.output = output, .outcome = ChildOutcome::kStall},

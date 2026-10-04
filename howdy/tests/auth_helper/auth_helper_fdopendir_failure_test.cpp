@@ -72,7 +72,10 @@ auto main() -> int {
 
 	FakeAclContext       fake_acl;
 	const StagedIdentity identity = {
-	    .target_uid = getuid(), .owner_uid = geteuid(), .owner_gid = getegid()};
+	    .target_uid = getuid(),
+	    .owner_uid  = geteuid(),
+	    .owner_gid  = getegid(),
+	};
 	const RuntimeSources sources = {
 	    .runtime_root    = temp_root / "runtime",
 	    .config          = "./config.ini",

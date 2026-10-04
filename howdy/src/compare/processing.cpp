@@ -21,7 +21,7 @@ namespace howdy::native::compare_processing_internal {
 
 		bool               model_ready = false;
 		std::exception_ptr model_error;
-		std::jthread       model_worker([&]() -> void {
+		std::jthread       model_worker([&] -> void {
 			try {
 				model_ready = dependencies.initialize_model(dependencies.context);
 			} catch (...) {
@@ -61,7 +61,7 @@ namespace howdy::native::compare_processing_internal {
 
 		std::jthread warm_worker;
 		try {
-			warm_worker = std::jthread([&]() -> void {
+			warm_worker = std::jthread([&] -> void {
 				try {
 					(void)dependencies.warm_model(dependencies.context);
 				} catch (...) {  // NOLINT(bugprone-empty-catch)
@@ -71,7 +71,7 @@ namespace howdy::native::compare_processing_internal {
 		} catch (const std::exception &) {  // NOLINT(bugprone-empty-catch)
 			// Thread creation failure skips only the optional warm-up.
 		}
-		std::function<void()> before_first_encode = [&warm_worker]() -> void {
+		std::function<void()> before_first_encode = [&warm_worker] -> void {
 			if (warm_worker.joinable()) {
 				warm_worker.join();
 			}

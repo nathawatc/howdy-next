@@ -244,7 +244,7 @@ auto main() -> int {
 	                                            "sface_threshold = 0.6942\n"),
 	             "write default float config");
 
-	auto expect_default_float_config = [&](const std::string &label) -> bool {
+	auto const expect_default_float_config = [&](const std::string &label) -> bool {
 		bool                              defaults_ok = true;
 		howdy::native::ConfigReader const defaults(default_floats_path.string());
 		defaults_ok &= Expect(defaults.Ok(), label + ": default float config parses");
@@ -296,8 +296,9 @@ auto main() -> int {
 		             "restore original locale");
 	}
 
-	const std::vector<std::string> invalid_float_values = {"1,25", "1.25abc", "nan",
-	                                                       "+inf", "-inf",    "inf"};
+	const std::vector<std::string> invalid_float_values = {
+	    "1,25", "1.25abc", "nan", "+inf", "-inf", "inf",
+	};
 	for (const auto &value : invalid_float_values) {
 		const auto invalid_float_path = temp_root / ("invalid-float-" + value + ".ini");
 		ok &= Expect(WriteFile(invalid_float_path, "[video]\n"

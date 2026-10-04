@@ -127,23 +127,42 @@ namespace howdy::native::compare_privileges_internal {
 			}
 			if (lookup_error != ERANGE) {
 				return {
-				    .error = {.status        = ComparePrivilegeStatus::kLookupFailed,
-					          .error_message = "nobody account lookup failed: " +
-					                           howdy::native::SystemErrorMessage(lookup_error)}};
+				    .error =
+				        {
+				            .status        = ComparePrivilegeStatus::kLookupFailed,
+				            .error_message = "nobody account lookup failed: " +
+							                 howdy::native::SystemErrorMessage(lookup_error),
+				        },
+				};
 			}
 			if (buffer.size() >= kMaximumPasswdBufferSize) {
-				return {.error = {.status        = ComparePrivilegeStatus::kLookupFailed,
-				                  .error_message = "nobody account lookup exceeded 64 KiB"}};
+				return {
+				    .error =
+				        {
+				            .status        = ComparePrivilegeStatus::kLookupFailed,
+				            .error_message = "nobody account lookup exceeded 64 KiB",
+				        },
+				};
 			}
 			buffer.resize(std::min(buffer.size() * 2, kMaximumPasswdBufferSize));
 		}
 		if (lookup_result == nullptr) {
-			return {.error = {.status        = ComparePrivilegeStatus::kLookupFailed,
-			                  .error_message = "nobody account not found"}};
+			return {
+			    .error =
+			        {
+			            .status        = ComparePrivilegeStatus::kLookupFailed,
+			            .error_message = "nobody account not found",
+			        },
+			};
 		}
 		if (lookup_result->pw_uid == 0 || lookup_result->pw_gid == 0) {
-			return {.error = {.status        = ComparePrivilegeStatus::kInvalidIdentity,
-			                  .error_message = "nobody account resolves to root identity"}};
+			return {
+			    .error =
+			        {
+			            .status        = ComparePrivilegeStatus::kInvalidIdentity,
+			            .error_message = "nobody account resolves to root identity",
+			        },
+			};
 		}
 		return {.uid = lookup_result->pw_uid, .gid = lookup_result->pw_gid};
 	}

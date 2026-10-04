@@ -46,9 +46,12 @@ namespace howdy::test::config_cli {
 			std::string                           edited_content{kEditedContent};
 			howdy::native::InvokingIdentityResult invoking_identity = {
 			    .status = howdy::native::InvokingIdentityStatus::kResolved,
-			    .user   = howdy::native::InvokingUser{.uid  = geteuid(),
-				                                      .gid  = getegid(),
-				                                      .name = "alice"},
+			    .user =
+			        howdy::native::InvokingUser{
+			            .uid  = geteuid(),
+			            .gid  = getegid(),
+			            .name = "alice",
+			        },
 			};
 			int                                        editor_status            = 0;
 			int                                        editor_ready_calls       = 0;
@@ -80,7 +83,7 @@ namespace howdy::test::config_cli {
 				temp_root_ = fs::path(created);
 				chmod(temp_root_.c_str(), 0700);
 				config_path_ = temp_root_ / "config.ini";
-				WriteFile(config_path_, std::string(kWorkflowOriginalContent));
+				WriteFile(config_path_, kWorkflowOriginalContent);
 				chmod(config_path_.c_str(), 0644);
 			}
 
@@ -108,12 +111,12 @@ namespace howdy::test::config_cli {
 		};
 
 		auto ResolveInvokingIdentity(void *raw) -> howdy::native::InvokingIdentityResult {
-			auto &context = *static_cast<TestContext *>(raw);
+			auto const &context = *static_cast<TestContext *>(raw);
 			return context.invoking_identity;
 		}
 
 		auto SelectEditorPreference(void *raw) -> std::string {
-			auto &context = *static_cast<TestContext *>(raw);
+			auto const &context = *static_cast<TestContext *>(raw);
 			if (context.throw_from_select_editor) {
 				throw std::runtime_error("test editor exception");
 			}
@@ -169,7 +172,7 @@ namespace howdy::test::config_cli {
 			bool                       ok = true;
 			std::ostringstream const   restored_output;
 			ScopedStreamBuffer const   outer_stdout_guard(std::cout, restored_output.rdbuf());
-			auto                      *original_stdout = std::cout.rdbuf();
+			auto const                *original_stdout = std::cout.rdbuf();
 			TestDirectoryFixture const fixture;
 			TestContext                context;
 			context.throw_from_select_editor = true;
@@ -195,7 +198,8 @@ namespace howdy::test::config_cli {
 			         std::pair{howdy::native::InvokingIdentityStatus::kInvalid,
 					           "Invalid privilege-wrapper identity; config edit aborted\n"},
 			         std::pair{howdy::native::InvokingIdentityStatus::kConflicting,
-					           "Conflicting privilege-wrapper identity; config edit aborted\n"}}) {
+					           "Conflicting privilege-wrapper identity; config edit aborted\n"},
+			     }) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
 				context.invoking_identity = {.status = identity_status};
@@ -360,7 +364,8 @@ namespace howdy::test::config_cli {
 					                      "not installed: "},
 			         std::pair{"[video]\ntimeout = 0\n",
 					           "Editing config.ini\nInvalid config value for timeout=\"0\": "
-					           "expected integer range 1..300\n"}}) {
+					           "expected integer range 1..300\n"},
+			     }) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
 				context.edited_content = error_input;

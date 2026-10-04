@@ -71,25 +71,28 @@ namespace howdy::test::add_cli {
 		}
 
 		auto FaceModelPreflightFailureStopsBeforePrompt() -> bool {
-			return PreflightFailureStopsBeforePrompt(
-			    {.status    = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
-				 .message   = "face failed",
-				 .test_name = "face-model preflight failure"});
+			return PreflightFailureStopsBeforePrompt({
+			    .status    = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,
+			    .message   = "face failed",
+			    .test_name = "face-model preflight failure",
+			});
 		}
 
 		auto IncompatibleExistingModelStopsBeforePrompt() -> bool {
-			return PreflightFailureStopsBeforePrompt(
-			    {.status =
-				     howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible,
-				 .message   = "",
-				 .test_name = "incompatible existing model"});
+			return PreflightFailureStopsBeforePrompt({
+			    .status =
+			        howdy::native::add_internal::AddPreflightStatus::kExistingModelIncompatible,
+			    .message   = "",
+			    .test_name = "incompatible existing model",
+			});
 		}
 
 		auto ExistingModelErrorStopsBeforePrompt() -> bool {
-			return PreflightFailureStopsBeforePrompt(
-			    {.status    = howdy::native::add_internal::AddPreflightStatus::kExistingModelError,
-				 .message   = "storage failed",
-				 .test_name = "existing model preflight error"});
+			return PreflightFailureStopsBeforePrompt({
+			    .status    = howdy::native::add_internal::AddPreflightStatus::kExistingModelError,
+			    .message   = "storage failed",
+			    .test_name = "existing model preflight error",
+			});
 		}
 
 		auto UnknownPreflightStatusFailsClosedBeforePrompt() -> bool {

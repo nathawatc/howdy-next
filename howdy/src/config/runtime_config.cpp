@@ -54,8 +54,10 @@ namespace howdy::native {
 	}
 
 	auto DefaultDebugConfig() -> DebugConfig {
-		return {.end_report =
-		            config_schema::RuntimeDefaultBool(config_schema::OptionId::kDebugEndReport)};
+		return {
+		    .end_report =
+		        config_schema::RuntimeDefaultBool(config_schema::OptionId::kDebugEndReport),
+		};
 	}
 
 }  // namespace howdy::native

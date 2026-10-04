@@ -49,16 +49,22 @@ namespace {
 
 	auto ProductionSetDispatch() -> bool {
 		std::array<std::string, 4> arguments{"howdy", "set", "disabled", "line\nbreak"};
-		std::array<char *, 4>      argv{arguments.at(0).data(), arguments.at(1).data(),
-		                                arguments.at(2).data(), arguments.at(3).data()};
-		std::ostringstream const   output;
-		std::ostringstream const   error;
-		auto                      *old_output = std::cout.rdbuf(output.rdbuf());
-		auto                      *old_error  = std::cerr.rdbuf(error.rdbuf());
-		const int status = howdy::native::howdy_internal::HowdyMainWithDependencies(
+		std::array<char *, 4>      argv{
+		    arguments.at(0).data(),
+		    arguments.at(1).data(),
+		    arguments.at(2).data(),
+		    arguments.at(3).data(),
+		};
+		std::ostringstream const output;
+		std::ostringstream const error;
+		auto                    *old_output = std::cout.rdbuf(output.rdbuf());
+		auto                    *old_error  = std::cerr.rdbuf(error.rdbuf());
+		const int                status = howdy::native::howdy_internal::HowdyMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(),
-		    {.effective_uid = RootForDispatch,
-			 .command_mains = howdy::native::howdy_internal::ProductionCommandMains()});
+		    {
+		        .effective_uid = RootForDispatch,
+		        .command_mains = howdy::native::howdy_internal::ProductionCommandMains(),
+		    });
 		std::cout.rdbuf(old_output);
 		std::cerr.rdbuf(old_error);
 		return Expect(

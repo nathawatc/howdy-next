@@ -126,7 +126,7 @@ namespace {
 			};
 		}
 
-		auto &face_model = production_context->face_model.emplace(config.face);
+		auto const &face_model = production_context->face_model.emplace(config.face);
 		if (!face_model.Ok()) {
 			return test_cli_internal::TestPreflightOperationResult{
 			    .error_message = face_model.ErrorMessage(),
@@ -342,7 +342,8 @@ auto howdy::native::test_cli_internal::RunPreviewPreflight(
 		};
 	}
 
-	auto face_model_result = dependencies.face_model_ready(dependencies.context, config, user);
+	auto const face_model_result =
+	    dependencies.face_model_ready(dependencies.context, config, user);
 	if (!face_model_result.ok) {
 		return TestPreviewResult{
 		    .status        = TestPreviewStatus::kFaceModelError,
@@ -359,7 +360,8 @@ auto howdy::native::test_cli_internal::RunPreviewPreflight(
 		return TestPreviewResult{.status = TestPreviewStatus::kMissingGraphicalEnvironment};
 	}
 
-	auto open_result = dependencies.open_camera(dependencies.context, config, settings.device_path);
+	auto const open_result =
+	    dependencies.open_camera(dependencies.context, config, settings.device_path);
 	if (!open_result.ok) {
 		return TestPreviewResult{
 		    .status        = TestPreviewStatus::kCameraOpenError,

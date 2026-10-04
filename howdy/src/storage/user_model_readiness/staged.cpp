@@ -319,12 +319,15 @@ namespace howdy::native {
 			const auto policy = GetStagedRuntimePolicy(StagedRuntimeRole::kAbsentModel);
 			return StatIsRegular(backing_stat, owner, policy.mode,
 			                     policy.exact_link_count.value_or(0)) &&
-			               VerifyStagedAcl({.fd         = backing.Get(),
-			                                .target_uid = parsed.target_uid,
-			                                .path_only  = true},
-			                               policy.acl)
-			           ? StagedReadiness::kAbsent
-			           : StagedReadiness::kInsecure;
+			               VerifyStagedAcl(
+			                   {
+			                       .fd         = backing.Get(),
+			                       .target_uid = parsed.target_uid,
+			                       .path_only  = true,
+			                   },
+			                   policy.acl)
+					   ? StagedReadiness::kAbsent
+					   : StagedReadiness::kInsecure;
 		}
 
 		auto ValidateStagedModelFile(int fd, const std::filesystem::path &path,

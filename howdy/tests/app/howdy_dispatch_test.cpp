@@ -339,8 +339,10 @@ namespace {
 
 	auto TestInvokingIdentityFailures() -> bool {
 		bool ok = true;
-		for (const auto status : {howdy::native::InvokingIdentityStatus::kInvalid,
-		                          howdy::native::InvokingIdentityStatus::kConflicting}) {
+		for (const auto status : {
+		         howdy::native::InvokingIdentityStatus::kInvalid,
+		         howdy::native::InvokingIdentityStatus::kConflicting,
+		     }) {
 			Context context;
 			context.identity_status    = status;
 			context.resolved_user      = "bob";

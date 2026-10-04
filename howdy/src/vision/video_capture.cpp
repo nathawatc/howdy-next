@@ -52,12 +52,10 @@ namespace howdy::native {
 		error_ = CaptureError::kNone;
 		error_message_.clear();
 
-		if (!std::filesystem::exists(settings_.device_path)) {
-			if (settings_.warn_no_device) {
-				SetError(CaptureError::kMissingDevice,
-				         "Configured camera device does not exist: " + settings_.device_path);
-				return false;
-			}
+		if (!std::filesystem::exists(settings_.device_path) && settings_.warn_no_device) {
+			SetError(CaptureError::kMissingDevice,
+			         "Configured camera device does not exist: " + settings_.device_path);
+			return false;
 		}
 
 		if (!IsAllowedCaptureDevicePath(settings_.device_path)) {

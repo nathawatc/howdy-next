@@ -130,8 +130,8 @@ namespace howdy::native {
 
 		auto ExchangePaths(const std::filesystem::path &left, const std::filesystem::path &right,
 		                   bool is_rollback) -> ExchangeResult {
-			auto      &hooks = user_model_store_test_hooks::Current();
-			const auto injected_errno =
+			auto const &hooks = user_model_store_test_hooks::Current();
+			const auto  injected_errno =
 			    is_rollback ? hooks.rollback_exchange_errno : hooks.exchange_errno;
 			if (injected_errno.has_value()) {
 				errno = *injected_errno;
@@ -180,7 +180,7 @@ namespace howdy::native {
 			if (!staged.has_value()) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
-			auto &hooks = user_model_store_test_hooks::Current();
+			auto const &hooks = user_model_store_test_hooks::Current();
 			if (hooks.fail_write || !WriteAllToFd(staged->fd.Get(), *serialized)) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
@@ -234,7 +234,7 @@ namespace howdy::native {
 			if (!PathIdentifiesFd(path, fd)) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
-			auto &hooks = user_model_store_test_hooks::Current();
+			auto const &hooks = user_model_store_test_hooks::Current();
 			if (hooks.before_delete_commit) {
 				hooks.before_delete_commit(path);
 			}
@@ -303,9 +303,11 @@ namespace howdy::native {
 				}
 			}
 
-			return LockedUserModelFile{.namespace_lock     = std::move(*namespace_lock),
-			                           .lock               = ScopedFileLock(std::move(fd)),
-			                           .created_empty_file = created_empty_file};
+			return LockedUserModelFile{
+			    .namespace_lock     = std::move(*namespace_lock),
+			    .lock               = ScopedFileLock(std::move(fd)),
+			    .created_empty_file = created_empty_file,
+			};
 		}
 
 	}  // namespace
@@ -517,10 +519,11 @@ namespace howdy::native {
 			};
 		}
 
-		const auto content =
-		    ReadFdToStringBounded({.fd            = fd,
-			                       .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
-			                       .reserve_bytes = static_cast<std::size_t>(opened_file.st_size)});
+		const auto content = ReadFdToStringBounded({
+		    .fd            = fd,
+		    .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
+		    .reserve_bytes = static_cast<std::size_t>(opened_file.st_size),
+		});
 		if (content.read_error) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,

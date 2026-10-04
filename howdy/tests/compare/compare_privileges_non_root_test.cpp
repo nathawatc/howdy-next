@@ -36,7 +36,8 @@ namespace howdy::test::compare_privileges {
 			         {{1000, 1000, 1000}, {1000, 0, 1000}, "effective GID zero"},
 			         {{1000, 1000, 1000}, {1000, 1000, 0}, "saved GID zero"},
 			         {{1000, 1001, 1000}, {1000, 1000, 1000}, "mismatched UID slots"},
-			         {{1000, 1000, 1000}, {1000, 1001, 1000}, "mismatched GID slots"}}) {
+			         {{1000, 1000, 1000}, {1000, 1001, 1000}, "mismatched GID slots"},
+			     }) {
 				FakePrivilegeContext invalid_context;
 				invalid_context.uids      = uids;
 				invalid_context.gids      = gids;
@@ -50,7 +51,8 @@ namespace howdy::test::compare_privileges {
 			         {{}, "zero supplementary groups"},
 			         {{44}, "one supplementary group"},
 			         {{10, 44, 998}, "multiple supplementary groups"},
-			         {{1000}, "effective GID duplicated in supplementary groups"}}) {
+			         {{1000}, "effective GID duplicated in supplementary groups"},
+			     }) {
 				FakePrivilegeContext group_context;
 				SetNonRootIdentity(group_context);
 				group_context.supplementary_groups = groups;
@@ -67,18 +69,25 @@ namespace howdy::test::compare_privileges {
 			for (const auto &[fsuid, fsgid, events, label] :
 			     std::vector<std::tuple<uid_t, gid_t, std::vector<std::string>, std::string>>{
 			         {0, 1000, {"getresuid", "getresgid", "query fsuid"}, "root fsuid"},
-			         {1001,
-					  1000,
-					  {"getresuid", "getresgid", "query fsuid"},
-					  "mismatched nonzero fsuid"},
-			         {1000,
-					  0,
-					  {"getresuid", "getresgid", "query fsuid", "query fsgid"},
-					  "root fsgid"},
-			         {1000,
-					  1001,
-					  {"getresuid", "getresgid", "query fsuid", "query fsgid"},
-					  "mismatched nonzero fsgid"}}) {
+			         {
+			             1001,
+			             1000,
+			             {"getresuid", "getresgid", "query fsuid"},
+			             "mismatched nonzero fsuid",
+			         },
+			         {
+			             1000,
+			             0,
+			             {"getresuid", "getresgid", "query fsuid", "query fsgid"},
+			             "root fsgid",
+			         },
+			         {
+			             1000,
+			             1001,
+			             {"getresuid", "getresgid", "query fsuid", "query fsgid"},
+			             "mismatched nonzero fsgid",
+			         },
+			     }) {
 				FakePrivilegeContext filesystem_context;
 				SetNonRootIdentity(filesystem_context);
 				filesystem_context.fsuid     = fsuid;
@@ -95,8 +104,14 @@ namespace howdy::test::compare_privileges {
 				SetCapability(capability_context.capabilities, capability);
 				const auto capability_result = Drop(capability_context);
 				ok &= VerifyFatalResult(capability_context, capability_result,
-				                        {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				                         "read capability sets", "fatal"},
+				                        {
+				                            "getresuid",
+				                            "getresgid",
+				                            "query fsuid",
+				                            "query fsgid",
+				                            "read capability sets",
+				                            "fatal",
+				                        },
 				                        std::string("initial non-root ") + label + " capability");
 			}
 
@@ -106,23 +121,50 @@ namespace howdy::test::compare_privileges {
 				SetCapability(residual_context.capabilities_after_capset, capability);
 				const auto residual_result = Drop(residual_context);
 				ok &= VerifyFatalResult(residual_context, residual_result,
-				                        {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				                         "read capability sets", "clear ambient capabilities",
-				                         "clear capability sets", "read capability sets", "fatal"},
+				                        {
+				                            "getresuid",
+				                            "getresgid",
+				                            "query fsuid",
+				                            "query fsgid",
+				                            "read capability sets",
+				                            "clear ambient capabilities",
+				                            "clear capability sets",
+				                            "read capability sets",
+				                            "fatal",
+				                        },
 				                        std::string("residual ") + label + " capability");
 			}
 
 			for (const auto &[failure, events, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
-			         {FailureOperation::kInitialCapget,
-					  {"getresuid", "getresgid", "query fsuid", "query fsgid",
-					   "read capability sets", "fatal"},
-					  "initial capability inspection failure"},
-			         {FailureOperation::kFinalCapget,
-					  {"getresuid", "getresgid", "query fsuid", "query fsgid",
-					   "read capability sets", "clear ambient capabilities",
-					   "clear capability sets", "read capability sets", "fatal"},
-					  "final capability inspection failure"}}) {
+			         {
+			             FailureOperation::kInitialCapget,
+			             {
+			                 "getresuid",
+			                 "getresgid",
+			                 "query fsuid",
+			                 "query fsgid",
+			                 "read capability sets",
+			                 "fatal",
+			             },
+			             "initial capability inspection failure",
+			         },
+			         {
+			             FailureOperation::kFinalCapget,
+			             {
+			                 "getresuid",
+			                 "getresgid",
+			                 "query fsuid",
+			                 "query fsgid",
+			                 "read capability sets",
+			                 "clear ambient capabilities",
+			                 "clear capability sets",
+			                 "read capability sets",
+			                 "fatal",
+			             },
+			             "final capability inspection failure",
+			         },
+			     }) {
 				FakePrivilegeContext capability_context;
 				SetNonRootIdentity(capability_context);
 				capability_context.failure   = failure;
@@ -133,23 +175,34 @@ namespace howdy::test::compare_privileges {
 			for (const auto &[failure, suffix, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
 			         {FailureOperation::kAmbient, {"fatal"}, "ambient-capability clear failure"},
-			         {FailureOperation::kCapset,
-					  {"clear capability sets", "fatal"},
-					  "capability-clear failure"},
-			         {FailureOperation::kRegainSucceeds,
-					  {"clear capability sets", "read capability sets", "root-regain probe",
-					   "fatal"},
-					  "successful non-root root regain"}}) {
+			         {
+			             FailureOperation::kCapset,
+			             {"clear capability sets", "fatal"},
+			             "capability-clear failure",
+			         },
+			         {
+			             FailureOperation::kRegainSucceeds,
+			             {
+			                 "clear capability sets",
+			                 "read capability sets",
+			                 "root-regain probe",
+			                 "fatal",
+			             },
+			             "successful non-root root regain",
+			         },
+			     }) {
 				FakePrivilegeContext failure_context;
 				SetNonRootIdentity(failure_context);
 				failure_context.failure   = failure;
 				const auto failure_result = Drop(failure_context);
-				auto       expected       = std::vector<std::string>{"getresuid",
-				                                                     "getresgid",
-				                                                     "query fsuid",
-				                                                     "query fsgid",
-				                                                     "read capability sets",
-				                                                     "clear ambient capabilities"};
+				auto       expected       = std::vector<std::string>{
+				    "getresuid",
+				    "getresgid",
+				    "query fsuid",
+				    "query fsgid",
+				    "read capability sets",
+				    "clear ambient capabilities",
+				};
 				expected.insert(expected.end(), suffix.begin(), suffix.end());
 				ok &= VerifyFatalResult(failure_context, failure_result, expected, label);
 			}
@@ -191,25 +244,58 @@ namespace howdy::test::compare_privileges {
 				const char              *label;
 			};
 
-			const std::array<FailureCase, 3> cases{{
-			    {.failure            = FailureOperation::kAmbient,
-				 .retain_inheritable = false,
-				 .events = {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				            "read capability sets", "clear ambient capabilities", "fatal"},
-				 .label  = "ambient-clear failure"},
-			    {.failure            = FailureOperation::kCapset,
-				 .retain_inheritable = false,
-				 .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				                        "read capability sets", "clear ambient capabilities",
-				                        "clear capability sets", "fatal"},
-				 .label              = "capset failure"},
-			    {.failure            = FailureOperation::kNone,
-				 .retain_inheritable = true,
-				 .events             = {"getresuid", "getresgid", "query fsuid", "query fsgid",
-				                        "read capability sets", "clear ambient capabilities",
-				                        "clear capability sets", "read capability sets", "fatal"},
-				 .label              = "residual inheritable capability"},
-			}};
+			const std::array<FailureCase, 3> cases{
+			    {
+			        {
+			            .failure            = FailureOperation::kAmbient,
+			            .retain_inheritable = false,
+			            .events =
+			                {
+			                    "getresuid",
+			                    "getresgid",
+			                    "query fsuid",
+			                    "query fsgid",
+			                    "read capability sets",
+			                    "clear ambient capabilities",
+			                    "fatal",
+			                },
+			            .label = "ambient-clear failure",
+			        },
+			        {
+			            .failure            = FailureOperation::kCapset,
+			            .retain_inheritable = false,
+			            .events =
+			                {
+			                    "getresuid",
+			                    "getresgid",
+			                    "query fsuid",
+			                    "query fsgid",
+			                    "read capability sets",
+			                    "clear ambient capabilities",
+			                    "clear capability sets",
+			                    "fatal",
+			                },
+			            .label = "capset failure",
+			        },
+			        {
+			            .failure            = FailureOperation::kNone,
+			            .retain_inheritable = true,
+			            .events =
+			                {
+			                    "getresuid",
+			                    "getresgid",
+			                    "query fsuid",
+			                    "query fsgid",
+			                    "read capability sets",
+			                    "clear ambient capabilities",
+			                    "clear capability sets",
+			                    "read capability sets",
+			                    "fatal",
+			                },
+			            .label = "residual inheritable capability",
+			        },
+			    },
+			};
 
 			bool ok = true;
 			for (const auto &test_case : cases) {
@@ -232,9 +318,12 @@ namespace howdy::test::compare_privileges {
 			for (const auto &[failure, events, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
 			         {FailureOperation::kInitialGetresuid, {"getresuid"}, "initial UID inspection"},
-			         {FailureOperation::kInitialGetresgid,
-					  {"getresuid", "getresgid"},
-					  "initial GID inspection"}}) {
+			         {
+			             FailureOperation::kInitialGetresgid,
+			             {"getresuid", "getresgid"},
+			             "initial GID inspection",
+			         },
+			     }) {
 				FakePrivilegeContext context;
 				SetNonRootIdentity(context);
 				context.failure     = failure;

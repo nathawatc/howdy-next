@@ -26,7 +26,7 @@ namespace {
 		constexpr std::string_view shell = "/bin/sh";
 		std::span<char>            storage(buffer, buffer_size);
 
-		auto copy_field = [&storage](std::string_view field) -> char * {
+		auto const copy_field = [&storage](std::string_view field) -> char * {
 			char *start = storage.data();
 			std::ranges::copy(field, storage.begin());
 			storage.subspan(field.size(), 1).front() = '\0';

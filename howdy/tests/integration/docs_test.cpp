@@ -119,15 +119,28 @@ auto main(int argc, char **argv) -> int {
 		            date == Date(man5_text, "HOWDY\\.INI", 5) &&
 		            date == Date(man8_text, "PAM_HOWDY", 8),
 		        "man pages do not share an ISO UTC date");
-		for (const auto &path : {source / "howdy/howdy.1.in", source / "howdy/howdy.ini.5.in",
-		                         source / "pam/pam_howdy.8.in"}) {
+		for (const auto &path : {
+		         source / "howdy/howdy.1.in",
+		         source / "howdy/howdy.ini.5.in",
+		         source / "pam/pam_howdy.8.in",
+		     }) {
 			Require(!std::regex_search(Read(path), std::regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")),
 			        "hardcoded calendar date in " + path.string());
 		}
 
-		for (const auto *command : {"add [LABEL]", "clear", "config", "disable {0|1|true|false}",
-		                            "download\\-models", "list", "remove ID", "set KEY VALUE",
-		                            "snapshot", "test [\\-\\-device DEVICE]", "version"}) {
+		for (const auto *command : {
+		         "add [LABEL]",
+		         "clear",
+		         "config",
+		         "disable {0|1|true|false}",
+		         "download\\-models",
+		         "list",
+		         "remove ID",
+		         "set KEY VALUE",
+		         "snapshot",
+		         "test [\\-\\-device DEVICE]",
+		         "version",
+		     }) {
 			const std::string label = "\\&\\fB" + std::string(command) + "\\fR";
 			ExactlyOnce(commands, label, commands_path);
 			ExactlyOnce(man1_text, label, man1);
@@ -190,9 +203,13 @@ auto main(int argc, char **argv) -> int {
 		const auto manifest = build / "install_manifest.txt";
 		if (fs::is_regular_file(manifest)) {
 			const auto text = Read(manifest);
-			for (const auto *private_file :
-			     {"howdy_docs_generator", "howdy-commands.roff", "howdy-options.roff",
-			      "pam-workarounds.roff", "howdy-ini-options.roff"}) {
+			for (const auto *private_file : {
+			         "howdy_docs_generator",
+			         "howdy-commands.roff",
+			         "howdy-options.roff",
+			         "pam-workarounds.roff",
+			         "howdy-ini-options.roff",
+			     }) {
 				Require(!text.contains(private_file),
 				        "private documentation artifact in install manifest: " +
 				            std::string(private_file));

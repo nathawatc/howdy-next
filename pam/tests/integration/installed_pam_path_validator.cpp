@@ -122,11 +122,14 @@ namespace {
 		    fs::path("/tmp") / ("howdy-e2e-path-validation-" + std::to_string(getpid()));
 		Require(IsAbsent(marker), "path-validation marker already exists");
 		Require(ValidatePrefix(valid, parent), "valid isolated prefix rejected");
-		for (const auto &rejected :
-		     {fs::path(valid.string() + "/../../etc"), valid / "subdir",
-		      other / "howdy-installed-pam-e2e-x", parent / "howdy-installed-pam-e2e-",
-		      fs::path(parent.string() + "//howdy-installed-pam-e2e-x"),
-		      fs::path((parent / "howdy-installed-pam-e2e-x").string() + "/.")}) {
+		for (const auto &rejected : {
+		         fs::path(valid.string() + "/../../etc"),
+		         valid / "subdir",
+		         other / "howdy-installed-pam-e2e-x",
+		         parent / "howdy-installed-pam-e2e-",
+		         fs::path(parent.string() + "//howdy-installed-pam-e2e-x"),
+		         fs::path((parent / "howdy-installed-pam-e2e-x").string() + "/."),
+		     }) {
 			Require(!ValidatePrefix(rejected, parent),
 			        "unsafe prefix accepted: " + rejected.string());
 		}
@@ -136,8 +139,12 @@ namespace {
 			Require(!ValidateSubdir(valid, rejected),
 			        "unsafe install path accepted: " + rejected.string());
 		}
-		for (const auto &accepted : {valid / "lib/security", valid / "libexec/howdy",
-		                             valid / "etc/howdy", valid / "etc/howdy/models"}) {
+		for (const auto &accepted : {
+		         valid / "lib/security",
+		         valid / "libexec/howdy",
+		         valid / "etc/howdy",
+		         valid / "etc/howdy/models",
+		     }) {
 			Require(ValidateSubdir(valid, accepted),
 			        "valid install path rejected: " + accepted.string());
 		}

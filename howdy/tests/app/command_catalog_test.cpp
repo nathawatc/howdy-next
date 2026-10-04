@@ -74,48 +74,60 @@ namespace {
 			++option_index;
 		}
 		const auto duplicate_ids = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "",
-			                       .argument_name = "USER",
-			                       .summary       = "One"},
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-b",
-			                       .long_name     = "",
-			                       .argument_name = "",
-			                       .summary       = "Two"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "USER",
+		        .summary       = "One",
+		    },
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-b",
+		        .long_name     = "",
+		        .argument_name = "",
+		        .summary       = "Two",
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(duplicate_ids).value_or("").contains("duplicate"),
 		             "duplicate global option IDs are rejected");
 		const auto duplicate_spellings = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "--one",
-			                       .argument_name = "USER",
-			                       .summary       = "One"},
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kPlain,
-			                       .short_name    = "-b",
-			                       .long_name     = "-a",
-			                       .argument_name = "",
-			                       .summary       = "Two"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "--one",
+		        .argument_name = "USER",
+		        .summary       = "One",
+		    },
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kPlain,
+		        .short_name    = "-b",
+		        .long_name     = "-a",
+		        .argument_name = "",
+		        .summary       = "Two",
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(duplicate_spellings).value_or("").contains("-a"),
 		             "duplicate global option spellings are rejected");
 		const auto no_spelling = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "",
-			                       .long_name     = "",
-			                       .argument_name = "",
-			                       .summary       = "Option"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "",
+		        .long_name     = "",
+		        .argument_name = "",
+		        .summary       = "Option",
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(no_spelling).value_or("").contains("spelling"),
 		             "global option without spelling is rejected");
 		const auto empty_option_summary = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "",
-			                       .argument_name = "USER",
-			                       .summary       = ""},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "USER",
+		        .summary       = "",
+		    },
 		};
 		ok &= Expect(
 		    ValidateGlobalOptionCatalog(empty_option_summary).value_or("").contains("summary"),
@@ -127,70 +139,83 @@ namespace {
 		        .long_name     = "",
 		        .argument_name = "USER",
 		        .summary       = "Option",
-		        .completion    = std::bit_cast<GlobalOptionCompletionKind>(std::uint8_t{255})},
+		        .completion    = std::bit_cast<GlobalOptionCompletionKind>(std::uint8_t{255}),
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(invalid_option_completion)
 		                 .value_or("")
 		                 .contains("completion"),
 		             "unknown global option completion kind is rejected");
 		const auto invalid_option_id = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kCount,
-			                       .short_name    = "-a",
-			                       .long_name     = "",
-			                       .argument_name = "",
-			                       .summary       = "Option"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kCount,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "",
+		        .summary       = "Option",
+		    },
 		};
 		ok &= Expect(
 		    ValidateGlobalOptionCatalog(invalid_option_id).value_or("").contains("invalid id"),
 		    "invalid global option ID is rejected");
 		const auto missing_option_id = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "",
-			                       .argument_name = "USER",
-			                       .summary       = "Option"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "USER",
+		        .summary       = "Option",
+		    },
 		};
 		ok &= Expect(
 		    ValidateGlobalOptionCatalog(missing_option_id, true).value_or("").contains("missing"),
 		    "missing production global option ID is rejected");
 		const auto repeated_alias = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "-a",
-			                       .argument_name = "USER",
-			                       .summary       = "Option"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "-a",
+		        .argument_name = "USER",
+		        .summary       = "Option",
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(repeated_alias).value_or("").contains("repeats"),
 		             "global option aliases cannot repeat");
 		const auto missing_option_argument = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kUser,
-			                       .short_name    = "-a",
-			                       .long_name     = "",
-			                       .argument_name = "",
-			                       .summary       = "Option",
-			                       .completion    = GlobalOptionCompletionKind::kUser},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kUser,
+		        .short_name    = "-a",
+		        .long_name     = "",
+		        .argument_name = "",
+		        .summary       = "Option",
+		        .completion    = GlobalOptionCompletionKind::kUser,
+		    },
 		};
 		ok &= Expect(
 		    ValidateGlobalOptionCatalog(missing_option_argument).value_or("").contains("argument"),
 		    "argument completion requires argument metadata");
 		const auto unsupported_option_argument = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kPlain,
-			                       .short_name    = "",
-			                       .long_name     = "--plain",
-			                       .argument_name = "VALUE",
-			                       .summary       = "Option"},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kPlain,
+		        .short_name    = "",
+		        .long_name     = "--plain",
+		        .argument_name = "VALUE",
+		        .summary       = "Option",
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(unsupported_option_argument)
 		                 .value_or("")
 		                 .contains("unsupported"),
 		             "unsupported option argument metadata is rejected");
 		const auto misplaced_user_completion = std::array{
-		    GlobalOptionDescriptor{.id            = GlobalOptionId::kPlain,
-			                       .short_name    = "",
-			                       .long_name     = "--plain",
-			                       .argument_name = "VALUE",
-			                       .summary       = "Option",
-			                       .completion    = GlobalOptionCompletionKind::kUser},
+		    GlobalOptionDescriptor{
+		        .id            = GlobalOptionId::kPlain,
+		        .short_name    = "",
+		        .long_name     = "--plain",
+		        .argument_name = "VALUE",
+		        .summary       = "Option",
+		        .completion    = GlobalOptionCompletionKind::kUser,
+		    },
 		};
 		ok &= Expect(ValidateGlobalOptionCatalog(misplaced_user_completion)
 		                 .value_or("")
@@ -207,146 +232,177 @@ namespace {
 		ok &= Expect(!ValidateCommandCatalog(CommandCatalog(), true).has_value(),
 		             "production command catalog is valid and complete");
 		const auto duplicate_ids = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "one",
-			                  .summary     = "One",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "two",
-			                  .summary     = "Two",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "one",
+		        .summary     = "One",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "two",
+		        .summary     = "Two",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(duplicate_ids).value_or("").contains("duplicate"),
 		             "duplicate command IDs are rejected");
 		const auto duplicate_names = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "same",
-			                  .summary     = "One",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
-		    CommandDescriptor{.id          = CommandId::kClear,
-			                  .name        = "same",
-			                  .summary     = "Two",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "same",
+		        .summary     = "One",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
+		    CommandDescriptor{
+		        .id          = CommandId::kClear,
+		        .name        = "same",
+		        .summary     = "Two",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(duplicate_names).value_or("").contains("name"),
 		             "duplicate command names are rejected");
 		const auto invalid_id = std::array{
-		    CommandDescriptor{.id          = CommandId::kCount,
-			                  .name        = "invalid",
-			                  .summary     = "Invalid",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kCount,
+		        .name        = "invalid",
+		        .summary     = "Invalid",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(invalid_id).value_or("").contains("invalid id"),
 		             "invalid command ID is rejected");
 		const auto empty_name = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "",
-			                  .summary     = "Summary",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "",
+		        .summary     = "Summary",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(empty_name).value_or("").contains("name"),
 		             "empty command name is rejected");
 		const auto empty_summary = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "name",
-			                  .summary     = "",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "name",
+		        .summary     = "",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(empty_summary).value_or("").contains("summary"),
 		             "empty command summary is rejected");
 		const auto invalid_metadata = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "invalid",
-			                  .summary     = "Invalid",
-			                  .kind        = std::bit_cast<CommandKind>(std::uint8_t{255}),
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "invalid",
+		        .summary     = "Invalid",
+		        .kind        = std::bit_cast<CommandKind>(std::uint8_t{255}),
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(invalid_metadata).value_or("").contains("kind"),
 		             "unknown command kind is rejected");
 		const auto invalid_user_target = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "invalid",
-			                  .summary     = "Invalid",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = std::bit_cast<UserTargetMode>(std::uint8_t{255})},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "invalid",
+		        .summary     = "Invalid",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = std::bit_cast<UserTargetMode>(std::uint8_t{255}),
+		    },
 		};
 		ok &=
 		    Expect(ValidateCommandCatalog(invalid_user_target).value_or("").contains("user-target"),
 			       "unknown command user-target mode is rejected");
 		const auto invalid_completion = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "invalid",
-			                  .summary     = "Invalid",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone,
-			                  .completion =
-			                      std::bit_cast<CommandCompletionKind>(std::uint8_t{255})},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "invalid",
+		        .summary     = "Invalid",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		        .completion  = std::bit_cast<CommandCompletionKind>(std::uint8_t{255}),
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(invalid_completion).value_or("").contains("completion"),
 		             "unknown command completion kind is rejected");
 		const auto reusable_boolean_completion = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "add",
-			                  .summary     = "Add",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone,
-			                  .completion  = CommandCompletionKind::kBoolean},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "add",
+		        .summary     = "Add",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		        .completion  = CommandCompletionKind::kBoolean,
+		    },
 		};
 		ok &= Expect(!ValidateCommandCatalog(reusable_boolean_completion).has_value(),
 		             "boolean completion kind is reusable metadata");
 		const auto reusable_config_completion = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "add",
-			                  .summary     = "Add",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone,
-			                  .completion  = CommandCompletionKind::kConfigSet},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "add",
+		        .summary     = "Add",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		        .completion  = CommandCompletionKind::kConfigSet,
+		    },
 		};
 		ok &= Expect(!ValidateCommandCatalog(reusable_config_completion).has_value(),
 		             "config completion kind is reusable metadata");
 		const auto reusable_version_kind = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "example",
-			                  .summary     = "Example",
-			                  .kind        = CommandKind::kVersion,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "example",
+		        .summary     = "Example",
+		        .kind        = CommandKind::kVersion,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(!ValidateCommandCatalog(reusable_version_kind).has_value(),
 		             "version command kind is reusable metadata");
 		const auto invalid_version_target = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "example",
-			                  .summary     = "Example",
-			                  .kind        = CommandKind::kVersion,
-			                  .user_target = UserTargetMode::kModelUser},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "example",
+		        .summary     = "Example",
+		        .kind        = CommandKind::kVersion,
+		        .user_target = UserTargetMode::kModelUser,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(invalid_version_target).value_or("").contains("target"),
 		             "version command user-target mismatch is rejected");
 		const auto invalid_version_completion = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "example",
-			                  .summary     = "Example",
-			                  .kind        = CommandKind::kVersion,
-			                  .user_target = UserTargetMode::kNone,
-			                  .completion  = CommandCompletionKind::kBoolean},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "example",
+		        .summary     = "Example",
+		        .kind        = CommandKind::kVersion,
+		        .user_target = UserTargetMode::kNone,
+		        .completion  = CommandCompletionKind::kBoolean,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(invalid_version_completion)
 		                 .value_or("")
 		                 .contains("completion values"),
 		             "version command completion mismatch is rejected");
 		const auto missing_id = std::array{
-		    CommandDescriptor{.id          = CommandId::kAdd,
-			                  .name        = "only",
-			                  .summary     = "Only",
-			                  .kind        = CommandKind::kEntrypoint,
-			                  .user_target = UserTargetMode::kNone},
+		    CommandDescriptor{
+		        .id          = CommandId::kAdd,
+		        .name        = "only",
+		        .summary     = "Only",
+		        .kind        = CommandKind::kEntrypoint,
+		        .user_target = UserTargetMode::kNone,
+		    },
 		};
 		ok &= Expect(ValidateCommandCatalog(missing_id, true).value_or("").contains("missing"),
 		             "missing production command ID is rejected");

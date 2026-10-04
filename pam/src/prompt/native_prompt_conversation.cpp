@@ -85,10 +85,12 @@ namespace {
 			return {};
 		}
 
-		if (!NativePromptTerminalIsInteractive({.tty    = tty_fd.Get(),
-		                                        .input  = STDIN_FILENO,
-		                                        .output = STDOUT_FILENO,
-		                                        .error  = STDERR_FILENO})) {
+		if (!NativePromptTerminalIsInteractive({
+		        .tty    = tty_fd.Get(),
+		        .input  = STDIN_FILENO,
+		        .output = STDOUT_FILENO,
+		        .error  = STDERR_FILENO,
+		    })) {
 			return {};
 		}
 		return tty_fd;
@@ -208,7 +210,7 @@ NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
     , has_original_conv_(has_original_conv)
     , tty_fd_(std::move(descriptors.tty_fd))
     , abort_pipe_{.read  = std::move(descriptors.abort_read_fd),
-	              .write = std::move(descriptors.abort_write_fd)}
+	              .write = std::move(descriptors.abort_write_fd),}
     , operations_(operations) {
 	dispatch_context_->owner = this;
 }
@@ -230,7 +232,7 @@ void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
 	} catch (...) {
 		// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
 		// fail-closed context for process lifetime and report explicit ownership fallback.
-		[[maybe_unused]] auto *retained_context = dispatch_context_.release();
+		[[maybe_unused]] auto const *retained_context = dispatch_context_.release();
 		pam_syslog(pamh_, LOG_CRIT,
 		           "Native fail-closed callback context retained outside quarantine");
 	}
@@ -256,9 +258,11 @@ auto NativePromptConversation::RestoreOriginal() noexcept -> howdy::pam::Convers
 	}
 
 	pam_syslog(pamh_, LOG_CRIT, "Failed to restore original PAM conversation: %d", restore_result);
-	static const struct pam_conv kFailClosedConv = {.conv        = NativePromptFailClosedDispatch,
-	                                                .appdata_ptr = nullptr};
-	const int                    fail_closed_result =
+	static const struct pam_conv kFailClosedConv = {
+	    .conv        = NativePromptFailClosedDispatch,
+	    .appdata_ptr = nullptr,
+	};
+	const int fail_closed_result =
 	    operations_.set_pam_item(operations_.context, pamh_, PAM_CONV, &kFailClosedConv);
 	if (fail_closed_result != PAM_SUCCESS) {
 		pam_syslog(pamh_, LOG_CRIT, "Failed to install fail-closed PAM conversation: %d",
@@ -322,7 +326,7 @@ auto NativePromptConversation::Dispatch(int num_msg, const struct pam_message **
 	}
 
 	try {
-		auto *context = static_cast<DispatchContext *>(appdata_ptr);
+		auto const *context = static_cast<DispatchContext *>(appdata_ptr);
 		if (context == nullptr || response == nullptr || context->fail_closed.load() ||
 		    context->owner == nullptr) {
 			return PAM_CONV_ERR;
@@ -358,7 +362,7 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 	*response = pam_responses;
 
 	const auto messages    = std::span(msgm, static_cast<std::size_t>(num_msg));
-	auto       responses   = std::span(pam_responses, static_cast<std::size_t>(num_msg));
+	auto const responses   = std::span(pam_responses, static_cast<std::size_t>(num_msg));
 	auto       response_it = responses.begin();
 	for (const auto *message_ptr : messages) {
 		if (message_ptr == nullptr) {
@@ -473,10 +477,12 @@ auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
 }
 
 auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResult {
-	std::array<struct pollfd, 2> fds{{
-	    {.fd = tty_fd_.Get(), .events = POLLIN, .revents = 0},
-	    {.fd = abort_pipe_.read.Get(), .events = POLLIN, .revents = 0},
-	}};
+	std::array<struct pollfd, 2> fds{
+	    {
+	        {.fd = tty_fd_.Get(), .events = POLLIN, .revents = 0},
+	        {.fd = abort_pipe_.read.Get(), .events = POLLIN, .revents = 0},
+	    },
+	};
 	while (true) {
 		const auto poll_result = PollPromptState(fds);
 		if (poll_result == PromptIoResult::kAbort) {

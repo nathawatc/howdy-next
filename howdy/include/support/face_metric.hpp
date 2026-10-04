@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -24,23 +23,29 @@ namespace howdy::native {
 	};
 
 	inline constexpr auto kFaceMetricPolicies = std::array{
-	    FaceMetricPolicy{.metric                 = FaceMetric::kCosine,
-		                 .spelling               = "cosine",
-		                 .higher_score_is_better = true,
-		                 .threshold_maximum      = 1.0F},
-	    FaceMetricPolicy{.metric                 = FaceMetric::kL2,
-		                 .spelling               = "l2",
-		                 .higher_score_is_better = false,
-		                 .threshold_maximum      = 4.0F},
-	    FaceMetricPolicy{.metric                 = FaceMetric::kL2Norm,
-		                 .spelling               = "l2norm",
-		                 .higher_score_is_better = false,
-		                 .threshold_maximum      = 4.0F},
+	    FaceMetricPolicy{
+	        .metric                 = FaceMetric::kCosine,
+	        .spelling               = "cosine",
+	        .higher_score_is_better = true,
+	        .threshold_maximum      = 1.0F,
+	    },
+	    FaceMetricPolicy{
+	        .metric                 = FaceMetric::kL2,
+	        .spelling               = "l2",
+	        .higher_score_is_better = false,
+	        .threshold_maximum      = 4.0F,
+	    },
+	    FaceMetricPolicy{
+	        .metric                 = FaceMetric::kL2Norm,
+	        .spelling               = "l2norm",
+	        .higher_score_is_better = false,
+	        .threshold_maximum      = 4.0F,
+	    },
 	};
 
 	using FaceMetricSpellingList = std::array<std::string_view, kFaceMetricPolicies.size()>;
 
-	inline constexpr auto kFaceMetricSpellings = []() -> FaceMetricSpellingList {
+	inline constexpr auto kFaceMetricSpellings = [] -> FaceMetricSpellingList {
 		FaceMetricSpellingList spellings{};
 		std::ranges::transform(kFaceMetricPolicies, spellings.begin(),
 		                       [](const FaceMetricPolicy &policy) -> std::string_view {

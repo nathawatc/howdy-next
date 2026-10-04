@@ -49,29 +49,46 @@ namespace howdy::native {
 				return {.mode = 0711};
 			case StagedRuntimeRole::kLock:
 			case StagedRuntimeRole::kAbsentModel:
-				return {.mode             = 0600,
-				        .exact_link_count = 1,
-				        .acl              = StagedAclPolicy{.owner = kAclReadWrite}};
+				return {
+				    .mode             = 0600,
+				    .exact_link_count = 1,
+				    .acl              = StagedAclPolicy{.owner = kAclReadWrite},
+				};
 			case StagedRuntimeRole::kSharedDirectory:
-				return {.mode = 0750,
-				        .acl  = StagedAclPolicy{.owner            = kAclAll,
-				                                .target           = kAclReadExecute,
-				                                .mask             = kAclReadExecute,
-				                                .has_named_target = true}};
+				return {
+				    .mode = 0750,
+				    .acl =
+				        StagedAclPolicy{
+				            .owner            = kAclAll,
+				            .target           = kAclReadExecute,
+				            .mask             = kAclReadExecute,
+				            .has_named_target = true,
+				        },
+				};
 			case StagedRuntimeRole::kConfig:
-				return {.mode             = 0640,
-				        .exact_link_count = 1,
-				        .acl              = StagedAclPolicy{.owner            = kAclReadWrite,
-				                                            .target           = kAclRead,
-				                                            .mask             = kAclRead,
-				                                            .has_named_target = true}};
+				return {
+				    .mode             = 0640,
+				    .exact_link_count = 1,
+				    .acl =
+				        StagedAclPolicy{
+				            .owner            = kAclReadWrite,
+				            .target           = kAclRead,
+				            .mask             = kAclRead,
+				            .has_named_target = true,
+				        },
+				};
 			case StagedRuntimeRole::kPresentModel:
-				return {.mode             = 0640,
-				        .exact_link_count = 2,
-				        .acl              = StagedAclPolicy{.owner            = kAclReadWrite,
-				                                            .target           = kAclRead,
-				                                            .mask             = kAclRead,
-				                                            .has_named_target = true}};
+				return {
+				    .mode             = 0640,
+				    .exact_link_count = 2,
+				    .acl =
+				        StagedAclPolicy{
+				            .owner            = kAclReadWrite,
+				            .target           = kAclRead,
+				            .mask             = kAclRead,
+				            .has_named_target = true,
+				        },
+				};
 		}
 		std::unreachable();
 	}

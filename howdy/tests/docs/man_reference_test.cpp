@@ -55,16 +55,18 @@ namespace {
 	auto SyntheticConfigOption(OptionId id, std::string_view section, std::string_view key,
 	                           ValueType type, RuntimeDefault fallback,
 	                           std::string_view description) -> Option {
-		return Option{.id           = id,
-		              .section      = section,
-		              .key          = key,
-		              .type         = type,
-		              .fallback     = fallback,
-		              .range        = {},
-		              .choices      = {},
-		              .special_rule = SpecialRule::kNone,
-		              .invalid_rule = "synthetic rule",
-		              .description  = description};
+		return Option{
+		    .id           = id,
+		    .section      = section,
+		    .key          = key,
+		    .type         = type,
+		    .fallback     = fallback,
+		    .range        = {},
+		    .choices      = {},
+		    .special_rule = SpecialRule::kNone,
+		    .invalid_rule = "synthetic rule",
+		    .description  = description,
+		};
 	}
 
 }  // namespace
@@ -251,33 +253,39 @@ auto main() -> int {
 	             "escaped config description escapes hyphens and backslashes");
 
 	const std::array control_command{
-	    CommandDescriptor{.id          = CommandId::kAdd,
-		                  .name        = "add\n",
-		                  .summary     = "Add face model",
-		                  .kind        = howdy::native::CommandKind::kEntrypoint,
-		                  .user_target = howdy::native::UserTargetMode::kNone},
+	    CommandDescriptor{
+	        .id          = CommandId::kAdd,
+	        .name        = "add\n",
+	        .summary     = "Add face model",
+	        .kind        = howdy::native::CommandKind::kEntrypoint,
+	        .user_target = howdy::native::UserTargetMode::kNone,
+	    },
 	};
 	ok &= Expect(!howdy::docs::RenderSucceeded(RenderCommandReference(control_command)),
 	             "control characters in command text are rejected");
 	const std::array control_synopsis{
-	    CommandDescriptor{.id                = CommandId::kAdd,
-		                  .name              = "sample",
-		                  .summary           = "Sample command",
-		                  .kind              = howdy::native::CommandKind::kEntrypoint,
-		                  .user_target       = howdy::native::UserTargetMode::kNone,
-		                  .completion        = howdy::native::CommandCompletionKind::kNone,
-		                  .argument_synopsis = "VALUE\n"},
+	    CommandDescriptor{
+	        .id                = CommandId::kAdd,
+	        .name              = "sample",
+	        .summary           = "Sample command",
+	        .kind              = howdy::native::CommandKind::kEntrypoint,
+	        .user_target       = howdy::native::UserTargetMode::kNone,
+	        .completion        = howdy::native::CommandCompletionKind::kNone,
+	        .argument_synopsis = "VALUE\n",
+	    },
 	};
 	const auto control_synopsis_result = RenderCommandReference(control_synopsis);
 	ok &= Expect(!howdy::docs::RenderSucceeded(control_synopsis_result) &&
 	                 control_synopsis_result.error.contains("argument synopsis"),
 	             "control characters in argument synopsis are rejected");
 	const std::array control_option{
-	    GlobalOptionDescriptor{.id            = howdy::native::GlobalOptionId::kUser,
-		                       .short_name    = "-x",
-		                       .long_name     = "",
-		                       .argument_name = "USER",
-		                       .summary       = "Summary\n"},
+	    GlobalOptionDescriptor{
+	        .id            = howdy::native::GlobalOptionId::kUser,
+	        .short_name    = "-x",
+	        .long_name     = "",
+	        .argument_name = "USER",
+	        .summary       = "Summary\n",
+	    },
 	};
 	const auto control_option_result = RenderGlobalOptionReference(control_option);
 	ok &= Expect(!howdy::docs::RenderSucceeded(control_option_result) &&

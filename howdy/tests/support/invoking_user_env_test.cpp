@@ -197,7 +197,8 @@ namespace {
 		         std::pair{howdy::native::kSudoUserEnvironmentVariable, user.name},
 		         std::pair{howdy::native::kSudoUidEnvironmentVariable, std::to_string(user.uid)},
 		         std::pair{howdy::native::kSudoGidEnvironmentVariable, std::to_string(user.gid)},
-		         std::pair{howdy::native::kSudoUidEnvironmentVariable, "not-a-number"}}) {
+		         std::pair{howdy::native::kSudoUidEnvironmentVariable, "not-a-number"},
+		     }) {
 			ScopedWrapperEnvironment::Clear();
 			ScopedWrapperEnvironment::Set(metadata.first, metadata.second);
 			ok &= Expect(howdy::native::ResolveInvokingIdentity().status ==

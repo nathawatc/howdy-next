@@ -94,7 +94,7 @@ auto main() -> int {
 	ok &= Expect(WriteFile(valid_path, "[core]\ndisabled = false\n"), "write valid config");
 	ok &= Expect(chmod(valid_path.c_str(), 0644) == 0, "secure valid config");
 	setenv("HOWDY_CONFIG", valid_path.c_str(), 1);
-	auto valid = howdy::native::LoadRuntimeConfig(
+	auto const valid = howdy::native::LoadRuntimeConfig(
 	    howdy::native::ResolveConfigPath(), howdy::native::DefaultSecureOwnerUid(), {temp_root});
 	unsetenv("HOWDY_CONFIG");
 	ok &= Expect(valid.ok && valid.status == RuntimeConfigLoadStatus::kOk, "valid config loads");
@@ -143,7 +143,7 @@ auto main() -> int {
 		bool       replacement_ok   = false;
 		const auto backup_invariant = temp_root / "invariant-backup.ini";
 		{
-			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+			const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
 				replacement_ok = rename(invariant_path.c_str(), backup_invariant.c_str()) == 0 &&
 				                 symlink("/dev/null", invariant_path.c_str()) == 0;
 			});
@@ -170,7 +170,7 @@ auto main() -> int {
 
 		bool insecure_replacement_ok = false;
 		{
-			const howdy::native::config_test_hooks::ScopedHooks hooks([&]() -> void {
+			const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
 				insecure_replacement_ok =
 				    rename(invariant_path.c_str(), backup_invariant.c_str()) == 0 &&
 				    WriteFile(invariant_path, "[core]\ndisabled = false\n") &&

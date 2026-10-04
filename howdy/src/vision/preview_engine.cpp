@@ -68,8 +68,8 @@ namespace howdy::native {
 	                               std::vector<PreviewFaceResult> &faces) -> std::optional<bool> {
 		bool matched = false;
 		for (const auto &encoded : encodings) {
-			auto match = dependencies_.matching.match_face(dependencies_.matching.context, matcher_,
-			                                               encoded.encoding);
+			auto const match = dependencies_.matching.match_face(dependencies_.matching.context,
+			                                                     matcher_, encoded.encoding);
 			if (match.accepted &&
 			    (match.index < 0 || !std::cmp_less(match.index, matcher_.Candidates().size()) ||
 			     !std::cmp_less(match.index, known_model_count_) || !std::isfinite(match.score))) {
@@ -119,12 +119,12 @@ namespace howdy::native {
 		}
 
 		const auto inference_start   = dependencies_.now(dependencies_.inference.context);
-		const auto inference_elapsed = [this, &inference_start]() -> std::chrono::milliseconds {
+		const auto inference_elapsed = [this, &inference_start] -> std::chrono::milliseconds {
 			return std::chrono::duration_cast<std::chrono::milliseconds>(
 			    dependencies_.now(dependencies_.inference.context) - inference_start);
 		};
 
-		auto prepared =
+		auto const prepared =
 		    dependencies_.inference.prepare_frame(dependencies_.inference.context, gray_frame);
 		if (ValidateFrame(prepared, FrameChannelPolicy::kBgr) != FrameValidationStatus::kValid) {
 			return {
@@ -174,7 +174,7 @@ namespace howdy::native {
 		}
 
 		std::string first_encoding_error;
-		auto        encodings =
+		auto const  encodings =
 		    EncodeFaces(prepared, detection_result.detections, faces, first_encoding_error);
 
 		if (encodings.empty()) {

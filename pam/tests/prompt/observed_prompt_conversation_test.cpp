@@ -170,11 +170,13 @@ namespace {
 
 	auto MakeMessages(std::array<struct pam_message, 3>         *messages,
 	                  std::array<const struct pam_message *, 3> *message_ptrs) -> void {
-		*messages = {{
-		    {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
-		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
-		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password confirmation: "},
-		}};
+		*messages = {
+		    {
+		        {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
+		        {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
+		        {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password confirmation: "},
+		    },
+		};
 		std::ranges::transform(*messages, message_ptrs->begin(), [](const auto &message) -> auto {
 			return &message;
 		});
@@ -187,7 +189,7 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kAllocated, .result = PAM_SUCCESS};
 			ObserverState  observer;
-			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+			auto const     wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
@@ -200,9 +202,9 @@ namespace {
 			             "observed success preserves delegated response ownership");
 			bool valid_response = false;
 			if (responses != nullptr) {
-				auto response_view = std::span(responses, std::size_t{3});
-				valid_response     = std::string_view(response_view.front().resp) == "secret";
-				for (auto &current_response : response_view) {
+				auto const response_view = std::span(responses, std::size_t{3});
+				valid_response           = std::string_view(response_view.front().resp) == "secret";
+				for (auto const &current_response : response_view) {
 					std::free(current_response.resp);
 				}
 				std::free(responses);
@@ -216,7 +218,7 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
 			ObserverState  observer{.throw_end = true};
-			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+			auto const     wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
@@ -235,7 +237,7 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kNull, .result = PAM_SUCCESS};
 			ObserverState  observer;
-			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+			auto const     wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			const struct pam_message  message{.msg_style = PAM_TEXT_INFO, .msg = "notice"};
 			const struct pam_message *message_ptr = &message;
 			auto                     *responses   = howdy::test::PamResponseSentinelForTest();
@@ -252,12 +254,16 @@ namespace {
 			ok &= Expect(responses == nullptr, "zero-message conversation clears response");
 		}
 
-		for (const auto mode : {ResponseMode::kNull, ResponseMode::kAllocated,
-		                        ResponseMode::kPartial, ResponseMode::kThrowAfterAllocation}) {
+		for (const auto mode : {
+		         ResponseMode::kNull,
+		         ResponseMode::kAllocated,
+		         ResponseMode::kPartial,
+		         ResponseMode::kThrowAfterAllocation,
+		     }) {
 			OperationState operations;
 			DispatchState  dispatch{.mode = mode, .result = PAM_CONV_ERR};
 			ObserverState  observer;
-			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+			auto const     wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
@@ -279,7 +285,7 @@ namespace {
 			OperationState operations;
 			DispatchState  dispatch{.mode = ResponseMode::kAllocated, .result = PAM_CONV_ERR};
 			ObserverState  observer;
-			auto           wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
+			auto const     wrapper = MakeDispatchWrapper(&operations, &dispatch, &observer);
 			std::array<struct pam_message, 3>         messages{};
 			std::array<const struct pam_message *, 3> message_ptrs{};
 			MakeMessages(&messages, &message_ptrs);
@@ -314,7 +320,10 @@ namespace {
 		OperationState             operations;
 		ObserverState              observer;
 		const SecretPromptObserver valid_observer{
-		    .context = &observer, .begin = BeginPrompt, .end = EndPrompt};
+		    .context = &observer,
+		    .begin   = BeginPrompt,
+		    .end     = EndPrompt,
+		};
 		const auto make = [&](pam_handle_t *pamh, SecretPromptObserver prompt_observer,
 		                      ObservedPromptConversationTestAccess::InjectedOperations injected)
 		    -> std::unique_ptr<ObservedPromptConversation> {

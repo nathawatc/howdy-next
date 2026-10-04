@@ -137,17 +137,22 @@ namespace {
 			const auto compare     = Staged(stage, helper_dir + "/howdy-compare");
 			const auto auth_helper = Staged(stage, helper_dir + "/howdy-auth-helper");
 			const auto config      = Staged(stage, config_path);
-			for (const auto &path :
-			     {howdy, compare, auth_helper, Staged(stage, pam_dir + "/pam_howdy.so"), config,
-			      Staged(stage, datadir + "/bash-completion/completions/howdy"),
-			      Staged(stage, localedir + "/th/LC_MESSAGES/howdy.mo"),
-			      Staged(stage, mandir + "/man1/howdy.1"),
-			      Staged(stage, mandir + "/man5/howdy.ini.5"),
-			      Staged(stage, mandir + "/man8/pam_howdy.8"),
-			      Staged(stage, licenses_dir + "/LICENSE"),
-			      Staged(stage, licenses_dir + "/THIRD_PARTY_NOTICES.md"),
-			      Staged(stage, licenses_dir + "/YUNET-MIT.txt"),
-			      Staged(stage, licenses_dir + "/SFACE-APACHE-2.0.txt")}) {
+			for (const auto &path : {
+			         howdy,
+			         compare,
+			         auth_helper,
+			         Staged(stage, pam_dir + "/pam_howdy.so"),
+			         config,
+			         Staged(stage, datadir + "/bash-completion/completions/howdy"),
+			         Staged(stage, localedir + "/th/LC_MESSAGES/howdy.mo"),
+			         Staged(stage, mandir + "/man1/howdy.1"),
+			         Staged(stage, mandir + "/man5/howdy.ini.5"),
+			         Staged(stage, mandir + "/man8/pam_howdy.8"),
+			         Staged(stage, licenses_dir + "/LICENSE"),
+			         Staged(stage, licenses_dir + "/THIRD_PARTY_NOTICES.md"),
+			         Staged(stage, licenses_dir + "/YUNET-MIT.txt"),
+			         Staged(stage, licenses_dir + "/SFACE-APACHE-2.0.txt"),
+			     }) {
 				Require(fs::is_regular_file(fs::symlink_status(path)) && files.contains(path),
 				        "missing installed regular file: " + path.string());
 			}
@@ -159,8 +164,11 @@ namespace {
 				Require(access(path.c_str(), X_OK) == 0,
 				        "installed executable is not executable: " + path.string());
 			}
-			for (const auto &path : {Staged(stage, models_dir), Staged(stage, user_models_dir),
-			                         Staged(stage, config_dir)}) {
+			for (const auto &path : {
+			         Staged(stage, models_dir),
+			         Staged(stage, user_models_dir),
+			         Staged(stage, config_dir),
+			     }) {
 				Require(fs::is_directory(fs::symlink_status(path)) &&
 				            directories_found.contains(path),
 				        "missing installed directory: " + path.string());
@@ -169,8 +177,18 @@ namespace {
 			RequireMode(config, 0640);
 			RequireMode(Staged(stage, config_dir), 0750);
 			RequireMode(Staged(stage, user_models_dir), 0750);
-			for (const auto *command : {"add", "clear", "config", "disable", "download-models",
-			                            "list", "remove", "set", "snapshot", "test"}) {
+			for (const auto *command : {
+			         "add",
+			         "clear",
+			         "config",
+			         "disable",
+			         "download-models",
+			         "list",
+			         "remove",
+			         "set",
+			         "snapshot",
+			         "test",
+			     }) {
 				for (const auto &directory : {bindir, helper_dir}) {
 					const auto obsolete = Staged(stage, directory + "/howdy-" + command);
 					Require(!fs::exists(obsolete),
@@ -197,13 +215,13 @@ namespace {
 		}
 		const auto stage   = root / "stage";
 		const auto outside = root / "outside";
-		const auto reset   = [&]() -> void {
+		const auto reset   = [&] -> void {
 			fs::remove_all(root);
 			fs::create_directories(stage);
 			fs::create_directories(outside);
 		};
-		const auto reject = [&]() -> void {
-			const auto snapshot = [&]() -> std::set<fs::path> {
+		const auto reject = [&] -> void {
+			const auto snapshot = [&] -> std::set<fs::path> {
 				std::set<fs::path> paths;
 				for (const auto &entry : fs::recursive_directory_iterator(stage)) {
 					paths.insert(entry.path());
@@ -272,9 +290,11 @@ namespace {
 		const auto result = Fixture::Install(stage, directory, different_prefix);
 		Require(result.status != 0,
 		        "install unexpectedly accepted prefix override: " + directory.string());
-		for (const auto *message :
-		     {"Reconfigure with -DCMAKE_INSTALL_PREFIX=<path>", "cmake --install --prefix",
-		      "runtime paths are generated at configure time"}) {
+		for (const auto *message : {
+		         "Reconfigure with -DCMAKE_INSTALL_PREFIX=<path>",
+		         "cmake --install --prefix",
+		         "runtime paths are generated at configure time",
+		     }) {
 			Require(result.output.contains(message),
 			        "prefix rejection omitted '" + std::string(message) + "': " + result.output);
 		}
@@ -292,14 +312,27 @@ auto main(int argc, char **argv) -> int {
 	}
 	try {
 		const auto args = howdy::test::integration::CopyArguments(argc, argv);
-		Fixture fixture{.build       = args.at(1),
-		                .prefix      = StripSlashes(args.at(2)),
-		                .directories = {args.at(3), args.at(4), args.at(5), args.at(6), args.at(7),
-		                                args.at(8), args.at(9), args.at(10), args.at(11),
-		                                args.at(12), args.at(13), args.at(14)},
-		                .auth_helper_mode =
-		                    static_cast<unsigned>(std::stoul(args.at(15), nullptr, 8)),
-		                .cleanup = {}};
+		Fixture    fixture{
+		    .build  = args.at(1),
+		    .prefix = StripSlashes(args.at(2)),
+		    .directories =
+		        {
+		            args.at(3),
+		            args.at(4),
+		            args.at(5),
+		            args.at(6),
+		            args.at(7),
+		            args.at(8),
+		            args.at(9),
+		            args.at(10),
+		            args.at(11),
+		            args.at(12),
+		            args.at(13),
+		            args.at(14),
+		        },
+		    .auth_helper_mode = static_cast<unsigned>(std::stoul(args.at(15), nullptr, 8)),
+		    .cleanup          = {},
+		};
 		Require(Resolve("/", "bin") == "/bin" && Resolve("/", "/etc") == "/etc",
 		        "root install prefix produced invalid destination path");
 		const auto stage          = fixture.build / "install layout root-ทดสอบ";
@@ -312,17 +345,23 @@ auto main(int argc, char **argv) -> int {
 		for (const auto &path : fixture.cleanup) {
 			fs::remove_all(path);
 		}
-		for (const auto &[name, prefix] : {std::pair{"dollar", "/opt/howdy/$literal"},
-		                                   std::pair{"braced-dollar", "/opt/howdy/${UNDEFINED}"},
-		                                   std::pair{"quote", "/opt/howdy/\"quoted\""}}) {
+		for (const auto &[name, prefix] : {
+		         std::pair{"dollar", "/opt/howdy/$literal"},
+		         std::pair{"braced-dollar", "/opt/howdy/${UNDEFINED}"},
+		         std::pair{"quote", "/opt/howdy/\"quoted\""},
+		     }) {
 			const auto case_dir = literal_root / name;
 			fs::create_directories(case_dir);
 			fs::copy_file(fixture.build / "cmake_install_prefix_guard.cmake",
 			              case_dir / "cmake_install_prefix_guard.cmake");
 			std::ofstream(case_dir / "cmake_install_prefix.txt") << prefix;
-			const auto result = howdy::test::integration::RunProcess(
-			    {"cmake", "-D", std::string("CMAKE_INSTALL_PREFIX=") + prefix, "-P",
-				 (case_dir / "cmake_install_prefix_guard.cmake").string()});
+			const auto result = howdy::test::integration::RunProcess({
+			    "cmake",
+			    "-D",
+			    std::string("CMAKE_INSTALL_PREFIX=") + prefix,
+			    "-P",
+			    (case_dir / "cmake_install_prefix_guard.cmake").string(),
+			});
 			Require(result.status == 0,
 			        "literal prefix rejected: " + std::string(prefix) + ": " + result.output);
 		}
@@ -343,9 +382,11 @@ auto main(int argc, char **argv) -> int {
 		Require(Read(installed_config) == marker,
 		        "second staged install overwrote existing config.ini: " +
 		            installed_config.string());
-		for (const auto &path : {fs::path(stage.string() + stage.string()),
-		                         fs::path(stage.string() + stage.string() + fixture.Path(8)),
-		                         fs::path(stage.string() + stage.string() + fixture.Path(10))}) {
+		for (const auto &path : {
+		         fs::path(stage.string() + stage.string()),
+		         fs::path(stage.string() + stage.string() + fixture.Path(8)),
+		         fs::path(stage.string() + stage.string() + fixture.Path(10)),
+		     }) {
 			Require(!fs::exists(path), "doubled DESTDIR path exists: " + path.string());
 		}
 		std::size_t config_count = 0;
@@ -360,11 +401,13 @@ auto main(int argc, char **argv) -> int {
 
 		kVerifyPreflight(fixture, stage, attack_root);
 
-		const auto same_prefixes =
-		    fixture.prefix == "/"
-		        ? std::vector<std::string>{"/."}
-		        : std::vector<std::string>{fixture.prefix + "/", fixture.prefix + "//",
-		                                   fixture.prefix + "/.", "/" + fixture.prefix};
+		const auto same_prefixes = fixture.prefix == "/" ? std::vector<std::string>{"/."}
+		                                                 : std::vector<std::string>{
+		                                                       fixture.prefix + "/",
+		                                                       fixture.prefix + "//",
+		                                                       fixture.prefix + "/.",
+		                                                       "/" + fixture.prefix,
+		                                                   };
 		for (const auto &prefix : same_prefixes) {
 			fs::remove_all(same_stage);
 			Fixture::RequireInstall(same_stage, fixture.build, prefix);
@@ -375,10 +418,11 @@ auto main(int argc, char **argv) -> int {
 		while (StripSlashes(different_prefix) == fixture.prefix) {
 			different_prefix += "-different";
 		}
-		for (const auto &[directory, name] :
-		     {std::pair{fixture.build / "pam", "direct pam install root-ทดสอบ"},
-		      std::pair{fixture.build / "howdy", "direct howdy install root-ทดสอบ"},
-		      std::pair{fixture.build / "pam/po", "direct pam-po install root-ทดสอบ"}}) {
+		for (const auto &[directory, name] : {
+		         std::pair{fixture.build / "pam", "direct pam install root-ทดสอบ"},
+		         std::pair{fixture.build / "howdy", "direct howdy install root-ทดสอบ"},
+		         std::pair{fixture.build / "pam/po", "direct pam-po install root-ทดสอบ"},
+		     }) {
 			const auto direct_stage = fixture.build / name;
 			fixture.cleanup.push_back(direct_stage);
 			RequireRejected(directory, direct_stage, different_prefix);

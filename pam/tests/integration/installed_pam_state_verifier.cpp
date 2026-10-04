@@ -103,16 +103,32 @@ namespace {
 	}
 
 	auto CanRead(const fs::path &path, unsigned uid, unsigned gid, bool init_groups) -> bool {
-		const auto result = howdy::test::integration::RunProcess(
-		    {"setpriv", "--reuid", std::to_string(uid), "--regid", std::to_string(gid),
-			 init_groups ? "--init-groups" : "--clear-groups", "cat", path.string()});
+		const auto result = howdy::test::integration::RunProcess({
+		    "setpriv",
+		    "--reuid",
+		    std::to_string(uid),
+		    "--regid",
+		    std::to_string(gid),
+		    init_groups ? "--init-groups" : "--clear-groups",
+		    "cat",
+		    path.string(),
+		});
 		return result.status == 0;
 	}
 
 	auto CannotWrite(const fs::path &path, unsigned uid, unsigned gid) -> bool {
-		const auto result = howdy::test::integration::RunProcess(
-		    {"setpriv", "--reuid", std::to_string(uid), "--regid", std::to_string(gid),
-			 "--init-groups", "test", "!", "-w", path.string()});
+		const auto result = howdy::test::integration::RunProcess({
+		    "setpriv",
+		    "--reuid",
+		    std::to_string(uid),
+		    "--regid",
+		    std::to_string(gid),
+		    "--init-groups",
+		    "test",
+		    "!",
+		    "-w",
+		    path.string(),
+		});
 		return result.status == 0;
 	}
 
@@ -122,7 +138,8 @@ namespace {
 		// NOLINTEND(bugprone-easily-swappable-parameters)
 		std::vector<std::string> command = {
 		    "setpriv",           "--reuid",       std::to_string(uid), "--regid",
-		    std::to_string(gid), "--init-groups", program.string()};
+		    std::to_string(gid), "--init-groups", program.string(),
+		};
 		command.insert(command.end(), arguments.begin(), arguments.end());
 		return howdy::test::integration::RunProcess(std::move(command), {}, close_fd);
 	}
@@ -178,20 +195,25 @@ namespace {
 	                      const fs::path &models, const fs::path &helper, const fs::path &compare)
 	    -> void {
 		const auto paths = ReadLines(paths_header);
-		for (const auto &[key, value] : {std::pair{"kConfiguredConfigPath", config.string()},
-		                                 std::pair{"kConfiguredUserModelsDir", models.string()},
-		                                 std::pair{"kAuthHelperPath", helper.string()},
-		                                 std::pair{"kCompareProcessPath", compare.string()}}) {
+		for (const auto &[key, value] : {
+		         std::pair{"kConfiguredConfigPath", config.string()},
+		         std::pair{"kConfiguredUserModelsDir", models.string()},
+		         std::pair{"kAuthHelperPath", helper.string()},
+		         std::pair{"kCompareProcessPath", compare.string()},
+		     }) {
 			const auto expected =
 			    "inline constexpr auto " + std::string(key) + " = \"" + value + "\";";
 			Require(std::ranges::find(paths, expected) != paths.end(),
 			        "compiled path mismatch: " + std::string(key));
 		}
 		auto lines = ReadLines(config);
-		for (const auto &[key, value] :
-		     {std::pair{"disabled", "true"}, std::pair{"detection_notice", "true"},
-		      std::pair{"no_confirmation", "false"}, std::pair{"abort_if_ssh", "false"},
-		      std::pair{"abort_if_lid_closed", "false"}}) {
+		for (const auto &[key, value] : {
+		         std::pair{"disabled", "true"},
+		         std::pair{"detection_notice", "true"},
+		         std::pair{"no_confirmation", "false"},
+		         std::pair{"abort_if_ssh", "false"},
+		         std::pair{"abort_if_lid_closed", "false"},
+		     }) {
 			const std::string prefix = std::string(key) + " = ";
 			unsigned          count  = 0;
 			for (auto &line : lines) {

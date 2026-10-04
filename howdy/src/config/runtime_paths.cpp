@@ -20,12 +20,10 @@ namespace howdy::native {
 				return {};
 			}
 
-			if (const char *value = std::getenv(name)) {
-				if (*value != '\0') {
-					std::filesystem::path path(value);
-					if (path.is_absolute()) {
-						return path;
-					}
+			if (const char *value = std::getenv(name); value != nullptr && *value != '\0') {
+				std::filesystem::path path(value);
+				if (path.is_absolute()) {
+					return path;
 				}
 			}
 			return {};

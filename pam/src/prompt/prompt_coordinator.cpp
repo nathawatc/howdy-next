@@ -486,8 +486,10 @@ namespace howdy::pam {
 			const int error_number = errno;
 			pam_syslog(pamh_, LOG_ERR, "Compare cancellation eventfd setup failed: %s (%d)",
 			           howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			return {.decision   = PromptCoordinatorDecision::kPamResult,
-			        .pam_status = PAM_SYSTEM_ERR};
+			return {
+			    .decision   = PromptCoordinatorDecision::kPamResult,
+			    .pam_status = PAM_SYSTEM_ERR,
+			};
 		}
 
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
@@ -512,14 +514,18 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Prompt workaround setup failed: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision   = PromptCoordinatorDecision::kPamResult,
-			        .pam_status = PAM_SYSTEM_ERR};
+			return {
+			    .decision   = PromptCoordinatorDecision::kPamResult,
+			    .pam_status = PAM_SYSTEM_ERR,
+			};
 		} catch (...) {
 			pam_syslog(pamh_, LOG_ERR,
 			           "Prompt workaround setup failed with non-standard exception");
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision   = PromptCoordinatorDecision::kPamResult,
-			        .pam_status = PAM_SYSTEM_ERR};
+			return {
+			    .decision   = PromptCoordinatorDecision::kPamResult,
+			    .pam_status = PAM_SYSTEM_ERR,
+			};
 		}
 
 		InitializeRunState(ask_pass);
@@ -531,8 +537,10 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Failed to start compare wait worker: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {.decision   = PromptCoordinatorDecision::kPamResult,
-			        .pam_status = PAM_SYSTEM_ERR};
+			return {
+			    .decision   = PromptCoordinatorDecision::kPamResult,
+			    .pam_status = PAM_SYSTEM_ERR,
+			};
 		}
 		int pam_result = PAM_SUCCESS;
 		if (ask_pass) {

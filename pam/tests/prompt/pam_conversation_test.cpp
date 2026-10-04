@@ -270,8 +270,10 @@ namespace {
 
 		state.response_mode = ResponseMode::kNone;
 		state.result        = PAM_SUCCESS;
-		const ConversationMessage info_message{.style = PAM_TEXT_INFO,
-		                                       .text  = "exact adapter text"};
+		const ConversationMessage info_message{
+		    .style = PAM_TEXT_INFO,
+		    .text  = "exact adapter text",
+		};
 		ok &= Expect(conversation.Send(info_message) == PAM_SUCCESS,
 		             "accepts callback without response");
 		ok &= Expect(state.calls == 1 && state.message_count == 1 &&
@@ -283,8 +285,10 @@ namespace {
 		state.response_mode          = ResponseMode::kOne;
 		state.response_was_allocated = false;
 		state.result                 = PAM_SUCCESS;
-		const ConversationMessage secret_message{.style = PAM_PROMPT_ECHO_OFF,
-		                                         .text  = "secret prompt"};
+		const ConversationMessage secret_message{
+		    .style = PAM_PROMPT_ECHO_OFF,
+		    .text  = "secret prompt",
+		};
 		ok &= Expect(conversation.Send(secret_message) == PAM_SUCCESS,
 		             "accepts callback with one response");
 		ok &= Expect(state.response_was_allocated, "callback returned one response");

@@ -37,7 +37,7 @@ public:
 
 	static auto Create(Descriptors descriptors, Operations operations)
 	    -> std::unique_ptr<NativePromptConversation> {
-		auto production = NativePromptConversation::ProductionOperations();
+		auto const production = NativePromptConversation::ProductionOperations();
 		NativePromptConversation::Operations const injected{
 		    .context = operations.context,
 		    .poll_prompt =
@@ -52,17 +52,19 @@ public:
 		    .set_pam_item     = operations.set_pam_item != nullptr ? operations.set_pam_item
 			                                                       : production.set_pam_item,
 		};
-		return std::unique_ptr<NativePromptConversation>(
-		    new NativePromptConversation(nullptr, {}, true,
-			                             {.tty_fd         = std::move(descriptors.tty_fd),
-			                              .abort_read_fd  = std::move(descriptors.abort_read_fd),
-			                              .abort_write_fd = std::move(descriptors.abort_write_fd)},
-			                             injected));
+		return std::unique_ptr<NativePromptConversation>(new NativePromptConversation(
+		    nullptr, {}, true,
+		    {
+		        .tty_fd         = std::move(descriptors.tty_fd),
+		        .abort_read_fd  = std::move(descriptors.abort_read_fd),
+		        .abort_write_fd = std::move(descriptors.abort_write_fd),
+		    },
+		    injected));
 	}
 
 	static auto Dispatch(int num_msg, const struct pam_message **messages,
 	                     struct pam_response **response, void *appdata_ptr) -> int {
-		auto *conversation = static_cast<NativePromptConversation *>(appdata_ptr);
+		auto const *conversation = static_cast<NativePromptConversation *>(appdata_ptr);
 		return NativePromptConversation::Dispatch(
 		    num_msg, messages, response,
 		    conversation == nullptr ? nullptr : conversation->dispatch_context_.get());
@@ -82,8 +84,10 @@ public:
 	static void ReplaceDescriptors(NativePromptConversation &conversation,
 	                               Descriptors               descriptors) {
 		conversation.tty_fd_     = std::move(descriptors.tty_fd);
-		conversation.abort_pipe_ = {.read  = std::move(descriptors.abort_read_fd),
-		                            .write = std::move(descriptors.abort_write_fd)};
+		conversation.abort_pipe_ = {
+		    .read  = std::move(descriptors.abort_read_fd),
+		    .write = std::move(descriptors.abort_write_fd),
+		};
 	}
 
 	static void CloseAbortWriteFd(NativePromptConversation &conversation) {

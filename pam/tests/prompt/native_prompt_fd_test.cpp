@@ -223,11 +223,16 @@ namespace {
 	}
 
 	auto RecordedDescriptorsAreClosed(const InternalFdFailureContext &failure) -> bool {
-		return std::ranges::all_of(std::array{failure.raw_pipe.at(0), failure.raw_pipe.at(1),
-		                                      failure.duplicated.at(0), failure.duplicated.at(1)},
-		                           [](const int fd) -> bool {
-			                           return fd < 0 || DescriptorIsClosed(fd);
-		                           });
+		return std::ranges::all_of(
+		    std::array{
+		        failure.raw_pipe.at(0),
+		        failure.raw_pipe.at(1),
+		        failure.duplicated.at(0),
+		        failure.duplicated.at(1),
+		    },
+		    [](const int fd) -> bool {
+			    return fd < 0 || DescriptorIsClosed(fd);
+		    });
 	}
 
 	auto InternalPipeFailureIsTransactional(std::size_t         fail_duplicate_call,
@@ -246,7 +251,8 @@ namespace {
 		    .duplicate   = InjectedInternalDuplicate,
 		    .create_pipe = InjectedInternalPipe,
 		};
-		auto pipe = howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK, &operations);
+		auto const pipe =
+		    howdy::pam::detail::CreateInternalPipe(O_CLOEXEC | O_NONBLOCK, &operations);
 		if (howdy::pam::detail::InternalPipeValid(pipe) || !RecordedDescriptorsAreClosed(context)) {
 			return false;
 		}
@@ -284,9 +290,11 @@ auto ClosedAllStdioRemainClosed() -> bool {
 }
 
 auto TtyNormalizationFailurePreservesClosedStdin() -> bool {
-	return TestInternalDescriptorsPreserveStdio({.closed_stdio            = {true, false, false},
-	                                             .terminal_stdio          = STDOUT_FILENO,
-	                                             .exhaust_tty_duplication = true});
+	return TestInternalDescriptorsPreserveStdio({
+	    .closed_stdio            = {true, false, false},
+	    .terminal_stdio          = STDOUT_FILENO,
+	    .exhaust_tty_duplication = true,
+	});
 }
 
 auto AbortPipeCreationFailureIsTransactional() -> bool {

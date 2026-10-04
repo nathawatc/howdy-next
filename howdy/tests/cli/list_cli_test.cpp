@@ -189,10 +189,15 @@ namespace {
 	auto OutOfRangeTimestampEmitsFallback() -> bool {
 		ListCliTestContext context;
 		context.list_result = {
-		    .status  = howdy::native::UserModelStatus::kOk,
-		    .entries = {{.id    = 3,
-			             .time  = std::numeric_limits<std::int64_t>::max(),
-			             .label = "front door"}},
+		    .status = howdy::native::UserModelStatus::kOk,
+		    .entries =
+		        {
+		            {
+		                .id    = 3,
+		                .time  = std::numeric_limits<std::int64_t>::max(),
+		                .label = "front door",
+		            },
+		        },
 		};
 		auto [normal_result, normal_output] = RunList(context, {.resolved_user = "alice"});
 		auto [plain_result, plain_output] =
@@ -208,10 +213,13 @@ namespace {
 	auto PlainOutputEscapesCsvFields() -> bool {
 		ListCliTestContext context;
 		context.list_result = {
-		    .status  = howdy::native::UserModelStatus::kOk,
-		    .entries = {{.id = 3, .time = 0, .label = "front,door"},
-			            {.id = 12, .time = 0, .label = "quote\"door"},
-			            {.id = 13, .time = 0, .label = "front,\"door"}},
+		    .status = howdy::native::UserModelStatus::kOk,
+		    .entries =
+		        {
+		            {.id = 3, .time = 0, .label = "front,door"},
+		            {.id = 12, .time = 0, .label = "quote\"door"},
+		            {.id = 13, .time = 0, .label = "front,\"door"},
+		        },
 		};
 		auto [result, output] = RunList(context, {.resolved_user = "alice", .plain = true});
 		return Expect(result == 0, "CSV-character labels list successfully") &&

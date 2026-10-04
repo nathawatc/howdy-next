@@ -58,7 +58,7 @@ namespace howdy::native {
 			                               ? std::string_view{}
 			                               : std::string_view(prefix).substr(content_start);
 			if (content.starts_with("version https://git-lfs.github.com/spec/v1") ||
-			    content.starts_with("<")) {
+			    content.starts_with('<')) {
 				return {.status = PlaceholderStatus::kPlaceholder};
 			}
 			return {.status = PlaceholderStatus::kOk};
@@ -72,78 +72,101 @@ namespace howdy::native {
 	    const file_security_internal::ValidationRoot &validation_root) -> OpenCvModelReadiness {
 		const auto parent = path.parent_path();
 		if (parent.empty()) {
-			return {.status = OpenCvModelStatus::kInsecure,
-			        .error_message =
-			            std::string(label) + " must have a parent directory: " + path.string()};
+			return {
+			    .status = OpenCvModelStatus::kInsecure,
+			    .error_message =
+			        std::string(label) + " must have a parent directory: " + path.string(),
+			};
 		}
 		const auto directory_security = CheckSecureRootOwnedDirectoryTree(
 		    parent, kModelsDirectoryLabel, owner_uid, validation_root);
 		if (!directory_security.ok) {
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = directory_security.error_message};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = directory_security.error_message,
+			};
 		}
 
 		struct stat path_stat{};
 		if (lstat(path.c_str(), &path_stat) != 0) {
 			const int error_number = errno;
 			if (error_number == ENOENT) {
-				return {.status        = OpenCvModelStatus::kMissing,
-				        .error_message = std::string(label) + " is missing: " + path.string()};
+				return {
+				    .status        = OpenCvModelStatus::kMissing,
+				    .error_message = std::string(label) + " is missing: " + path.string(),
+				};
 			}
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = "Failed to inspect " + std::string(label) + ": " +
-			                         path.string() + " (" +
-			                         howdy::native::SystemErrorMessage(error_number) + ")"};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
+				                 " (" + howdy::native::SystemErrorMessage(error_number) + ")",
+			};
 		}
 		if (const auto security = CheckSecurePathStat(path_stat, SecurePathKind::kRegularFile, path,
 		                                              label, owner_uid);
 		    !security.ok) {
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = security.error_message};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = security.error_message,
+			};
 		}
 
 		const ScopedFd fd(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
 		if (!fd.Valid()) {
 			const int error_number = errno;
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = "Failed to open " + std::string(label) + ": " + path.string() +
-			                         " (" + howdy::native::SystemErrorMessage(error_number) + ")"};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = "Failed to open " + std::string(label) + ": " + path.string() +
+				                 " (" + howdy::native::SystemErrorMessage(error_number) + ")",
+			};
 		}
 		struct stat opened_stat{};
 		if (fstat(fd.Get(), &opened_stat) != 0) {
 			const int error_number = errno;
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = "Failed to fstat opened " + std::string(label) + " '" +
-			                         path.string() +
-			                         "': " + howdy::native::SystemErrorMessage(error_number)};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = "Failed to fstat opened " + std::string(label) + " '" +
+				                 path.string() +
+				                 "': " + howdy::native::SystemErrorMessage(error_number),
+			};
 		}
 		if (opened_stat.st_dev != path_stat.st_dev || opened_stat.st_ino != path_stat.st_ino) {
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = "Model file changed while opening: " + path.string()};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = "Model file changed while opening: " + path.string(),
+			};
 		}
 		if (const auto security = CheckSecurePathStat(opened_stat, SecurePathKind::kRegularFile,
 		                                              path, label, owner_uid);
 		    !security.ok) {
-			return {.status        = OpenCvModelStatus::kInsecure,
-			        .error_message = security.error_message};
+			return {
+			    .status        = OpenCvModelStatus::kInsecure,
+			    .error_message = security.error_message,
+			};
 		}
 		if (opened_stat.st_size == 0) {
-			return {.status = OpenCvModelStatus::kInvalid,
-			        .error_message =
-			            "Model file is empty for " + std::string(label) + ": " + path.string()};
+			return {
+			    .status = OpenCvModelStatus::kInvalid,
+			    .error_message =
+			        "Model file is empty for " + std::string(label) + ": " + path.string(),
+			};
 		}
 
 		const auto placeholder = CheckPlaceholderPrefix(fd.Get());
 		if (placeholder.status == PlaceholderStatus::kReadError) {
-			return {.status = OpenCvModelStatus::kInsecure,
-			        .error_message =
-			            "Failed to pread " + std::string(label) + " '" + path.string() +
-			            "': " + howdy::native::SystemErrorMessage(placeholder.error_number)};
+			return {
+			    .status = OpenCvModelStatus::kInsecure,
+			    .error_message =
+			        "Failed to pread " + std::string(label) + " '" + path.string() +
+			        "': " + howdy::native::SystemErrorMessage(placeholder.error_number),
+			};
 		}
 		if (placeholder.status == PlaceholderStatus::kPlaceholder) {
-			return {.status        = OpenCvModelStatus::kInvalid,
-			        .error_message = "Model file is a placeholder for " + std::string(label) +
-			                         ": " + path.string()};
+			return {
+			    .status = OpenCvModelStatus::kInvalid,
+			    .error_message =
+			        "Model file is a placeholder for " + std::string(label) + ": " + path.string(),
+			};
 		}
 		return {.status = OpenCvModelStatus::kOk, .error_message = {}};
 	}

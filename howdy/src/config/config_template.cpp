@@ -59,10 +59,9 @@ namespace howdy::native::config_template {
 		}
 
 		auto FormatFallback(const config_schema::Option &option) -> std::optional<std::string> {
-			if (const auto *str = std::get_if<std::string_view>(&option.fallback)) {
-				if (!IsSafeIniScalar(*str)) {
-					return std::nullopt;
-				}
+			if (const auto *str = std::get_if<std::string_view>(&option.fallback);
+			    str != nullptr && !IsSafeIniScalar(*str)) {
+				return std::nullopt;
 			}
 			return config_schema::FormatFallbackValue(option);
 		}

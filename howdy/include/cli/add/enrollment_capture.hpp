@@ -109,7 +109,7 @@ namespace howdy::native {
 			}
 			result.faces = detection_result.detections;
 			if (!result.faces.empty()) {
-				result.frame = prepared;
+				result.frame = std::move(prepared);
 				break;
 			}
 		}

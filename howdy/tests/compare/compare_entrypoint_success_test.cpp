@@ -74,6 +74,7 @@ namespace {
 		return true;
 	}
 
+	// NOLINTNEXTLINE(modernize-use-string-view): must match the std::string-returning callback type
 	auto CaptureError([[maybe_unused]] void *raw_context) -> std::string {
 		return "Unexpected second capture read";
 	}
@@ -92,10 +93,17 @@ namespace {
 	auto DetectFaces(void *raw_context, [[maybe_unused]] const cv::Mat &frame)
 	    -> howdy::native::FaceDetectionResult {
 		++static_cast<FixtureContext *>(raw_context)->detect_calls;
-		return {.status     = howdy::native::FaceDetectionStatus::kOk,
-		        .detections = {{.box        = cv::Rect2f(2.0F, 2.0F, 10.0F, 10.0F),
-		                        .landmarks  = {},
-		                        .confidence = 0.95F}}};
+		return {
+		    .status = howdy::native::FaceDetectionStatus::kOk,
+		    .detections =
+		        {
+		            {
+		                .box        = cv::Rect2f(2.0F, 2.0F, 10.0F, 10.0F),
+		                .landmarks  = {},
+		                .confidence = 0.95F,
+		            },
+		        },
+		};
 	}
 
 	auto EncodeFace(void *raw_context, [[maybe_unused]] const cv::Mat &frame,
@@ -104,10 +112,11 @@ namespace {
 		auto &context = *static_cast<FixtureContext *>(raw_context);
 		++context.encode_calls;
 		context.encoded_after_warm = context.warm_calls.load() == 1;
-		return {.status = howdy::native::FaceEncodingStatus::kOk,
-		        .encoding =
-		            std::vector<float>(howdy::native::kSfaceEmbeddingSize, context.probe_value),
-		        .error_message = {}};
+		return {
+		    .status   = howdy::native::FaceEncodingStatus::kOk,
+		    .encoding = std::vector<float>(howdy::native::kSfaceEmbeddingSize, context.probe_value),
+		    .error_message = {},
+		};
 	}
 
 	auto DropPrivileges(void *raw_context) -> howdy::native::ComparePrivilegeResult {
@@ -122,18 +131,24 @@ namespace {
 
 	auto DependenciesFor(FixtureContext &context) -> howdy::native::CompareEntrypointDependencies {
 		return {
-		    .capture         = {.capture_context = &context,
-			                    .open_capture    = OpenCapture,
-			                    .warm_up_capture = WarmUpCapture,
-			                    .read_gray_frame = ReadGrayFrame,
-			                    .error_message   = CaptureError,
-			                    .set_property    = SetProperty,
-			                    .clock_context   = &context,
-			                    .now             = FixedNow},
-		    .inference       = {.context       = &context,
-			                    .prepare_frame = PrepareFrame,
-			                    .detect_faces  = DetectFaces,
-			                    .encode_face   = EncodeFace},
+		    .capture =
+		        {
+		            .capture_context = &context,
+		            .open_capture    = OpenCapture,
+		            .warm_up_capture = WarmUpCapture,
+		            .read_gray_frame = ReadGrayFrame,
+		            .error_message   = CaptureError,
+		            .set_property    = SetProperty,
+		            .clock_context   = &context,
+		            .now             = FixedNow,
+		        },
+		    .inference =
+		        {
+		            .context       = &context,
+		            .prepare_frame = PrepareFrame,
+		            .detect_faces  = DetectFaces,
+		            .encode_face   = EncodeFace,
+		        },
 		    .context         = &context,
 		    .drop_privileges = DropPrivileges,
 		    .warm_model      = WarmModel,
@@ -187,11 +202,19 @@ auto main() -> int {
 	const auto models_path = (root / "models").string();
 	bool       ok          = Expect(setenv("HOWDY_USER_MODELS_DIR", models_path.c_str(), 1) == 0,
 	                                "select fixture user-model directory");
-	std::array<std::string, 4> arguments{"howdy-compare", "--config",
-	                                     (root / "config.ini").string(), "fixture-user"};
-	std::array<char *, 4>      argv{arguments.at(0).data(), arguments.at(1).data(),
-	                                arguments.at(2).data(), arguments.at(3).data()};
-	const auto                 validation_root =
+	std::array<std::string, 4> arguments{
+	    "howdy-compare",
+	    "--config",
+	    (root / "config.ini").string(),
+	    "fixture-user",
+	};
+	std::array<char *, 4> argv{
+	    arguments.at(0).data(),
+	    arguments.at(1).data(),
+	    arguments.at(2).data(),
+	    arguments.at(3).data(),
+	};
+	const auto validation_root =
 	    howdy::native::file_security_internal::ValidationRoot{.path = root};
 
 	FixtureContext     success;

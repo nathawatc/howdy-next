@@ -55,7 +55,7 @@ namespace {
 	enum class ChildState : std::uint8_t {
 		kRunning,
 		kReaped,
-		kError
+		kError,
 	};
 
 	auto TryWaitForCompare(pid_t child_pid, int *status) -> ChildState {
@@ -82,7 +82,7 @@ namespace {
 		kExited,
 		kCancelled,
 		kTimeout,
-		kError
+		kError,
 	};
 
 	auto PollCompareUntil(int pidfd, int cancellation_fd,
@@ -94,10 +94,14 @@ namespace {
 			const timespec timeout{
 			    .tv_sec  = seconds.count(),
 			    .tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining - seconds)
-				               .count()};
+				               .count(),
+			};
 			std::array<pollfd, 2> descriptors{
-			    {{.fd = pidfd, .events = POLLIN, .revents = 0},
-				 {.fd = cancellation_fd, .events = POLLIN, .revents = 0}}};
+			    {
+			        {.fd = pidfd, .events = POLLIN, .revents = 0},
+			        {.fd = cancellation_fd, .events = POLLIN, .revents = 0},
+			    },
+			};
 			const int result = ppoll(descriptors.data(), descriptors.size(), &timeout, nullptr);
 			if (result < 0) {
 				if (errno == EINTR) {
@@ -277,8 +281,9 @@ namespace {
 		std::string config_path(request.config_path);
 		std::string username(request.username);
 
-		std::array<char *, 5> args = {compare_path.data(), config_option.data(), config_path.data(),
-		                              username.data(), nullptr};
+		std::array<char *, 5> args = {
+		    compare_path.data(), config_option.data(), config_path.data(), username.data(), nullptr,
+		};
 
 		std::string user_models_env =
 		    "HOWDY_USER_MODELS_DIR=" + std::string(request.user_models_dir);
@@ -308,12 +313,14 @@ namespace {
 			return closefrom_result;
 		}
 
-		const int spawn_result = operations.spawn({.context   = operations.context,
-		                                           .child_pid = child_pid,
-		                                           .path      = kCompareProcessPath,
-		                                           .actions   = &file_actions,
-		                                           .argv      = args,
-		                                           .envp      = compare_env});
+		const int spawn_result = operations.spawn({
+		    .context   = operations.context,
+		    .child_pid = child_pid,
+		    .path      = kCompareProcessPath,
+		    .actions   = &file_actions,
+		    .argv      = args,
+		    .envp      = compare_env,
+		});
 		(void)operations.file_actions_destroy(operations.context, &file_actions);
 		return spawn_result;
 	}

@@ -124,14 +124,21 @@ namespace {
 		bool ok = true;
 		for (const auto &[status, error, expected] :
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
-		         {howdy::native::UserModelStatus::kNoModelDirectory,
-				  {},
-				  "No face models found. Please run:\n\n\thowdy add\n\n"},
-		         {howdy::native::UserModelStatus::kNoModel,
-				  {},
-				  "No face models found. Please run:\n\n\thowdy add\n\n"},
-		         {howdy::native::UserModelStatus::kParseError, "storage failed",
-				  "storage failed\n"},
+		         {
+		             howdy::native::UserModelStatus::kNoModelDirectory,
+		             {},
+		             "No face models found. Please run:\n\n\thowdy add\n\n",
+		         },
+		         {
+		             howdy::native::UserModelStatus::kNoModel,
+		             {},
+		             "No face models found. Please run:\n\n\thowdy add\n\n",
+		         },
+		         {
+		             howdy::native::UserModelStatus::kParseError,
+		             "storage failed",
+		             "storage failed\n",
+		         },
 		     }) {
 			auto context        = SuccessContext();
 			context.list_result = {.status = status, .error_message = error};

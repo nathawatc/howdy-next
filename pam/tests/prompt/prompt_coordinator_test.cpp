@@ -81,7 +81,7 @@ namespace {
 		if (responses == nullptr) {
 			return PAM_BUF_ERR;
 		}
-		auto response_view         = std::span(responses, std::size_t{2});
+		auto const response_view   = std::span(responses, std::size_t{2});
 		response_view.front().resp = strdup("user");
 		response_view.back().resp  = strdup("secret");
 		if (response_view.front().resp == nullptr || response_view.back().resp == nullptr) {
@@ -131,7 +131,7 @@ namespace {
 		if (responses == nullptr) {
 			return PAM_BUF_ERR;
 		}
-		auto response_view         = std::span(responses, std::size_t{1});
+		auto const response_view   = std::span(responses, std::size_t{1});
 		response_view.front().resp = strdup("password");
 		if (response_view.front().resp == nullptr) {
 			std::free(responses);
@@ -173,13 +173,13 @@ namespace {
 			return PAM_BUF_ERR;
 		}
 		const auto  message_view    = std::span(messages, static_cast<std::size_t>(num_msg));
-		auto        response_view   = std::span(responses, static_cast<std::size_t>(num_msg));
+		auto const  response_view   = std::span(responses, static_cast<std::size_t>(num_msg));
 		auto        response_it     = response_view.begin();
 		std::size_t allocated_count = 0;
 		for (const auto *message : message_view) {
 			if (message == nullptr || (message->msg_style != PAM_PROMPT_ECHO_OFF &&
 			                           message->msg_style != PAM_PROMPT_ECHO_ON)) {
-				for (auto &allocated : response_view.first(allocated_count)) {
+				for (auto const &allocated : response_view.first(allocated_count)) {
 					std::free(allocated.resp);
 				}
 				std::free(responses);
@@ -189,7 +189,7 @@ namespace {
 			auto &current_response = *response_it;
 			current_response.resp  = strdup("password");
 			if (current_response.resp == nullptr) {
-				for (auto &allocated : response_view.first(allocated_count)) {
+				for (auto const &allocated : response_view.first(allocated_count)) {
 					std::free(allocated.resp);
 				}
 				std::free(responses);
@@ -644,11 +644,11 @@ namespace {
 			return false;
 		}
 
-		auto begin = [](void *context) -> howdy::pam::SecretPromptGeneration {
+		auto const begin = [](void *context) -> howdy::pam::SecretPromptGeneration {
 			ObserveSecretPrompt(context);
 			return 1;
 		};
-		auto end = [](void *, howdy::pam::SecretPromptGeneration) -> void {};
+		auto const end = [](void *, howdy::pam::SecretPromptGeneration) -> void {};
 		howdy::pam::ObservedPromptConversation wrapper(
 		    pamh, {.context = &state, .begin = begin, .end = end});
 		bool        ok = Expect(wrapper.Available(), "production observed wrapper is available") &&
@@ -658,12 +658,15 @@ namespace {
 		ok &= Expect(pam_get_item(pamh, PAM_CONV, &item) == PAM_SUCCESS && item != nullptr,
 		             "observed wrapper test reads installed conversation");
 		const auto *installed = static_cast<const struct pam_conv *>(item);
-		const std::array<struct pam_message, 2>   messages{{
-		    {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
-		    {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
-		}};
+		const std::array<struct pam_message, 2> messages{
+		    {
+		        {.msg_style = PAM_PROMPT_ECHO_ON, .msg = "User: "},
+		        {.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "},
+		    },
+		};
 		std::array<const struct pam_message *, 2> message_ptrs{
-		    {&messages.front(), &messages.back()}};
+		    {&messages.front(), &messages.back()},
+		};
 		auto *responses = howdy::test::PamResponseSentinelForTest();
 		ok &= Expect(installed->conv(2, message_ptrs.data(), &responses, installed->appdata_ptr) ==
 		                 PAM_SUCCESS,
@@ -674,9 +677,9 @@ namespace {
 		             "observed wrapper invokes original conversation once");
 		bool response_contents_valid = false;
 		if (responses != nullptr) {
-			auto response_view      = std::span(responses, std::size_t{2});
-			response_contents_valid = std::string_view(response_view.front().resp) == "user" &&
-			                          std::string_view(response_view.back().resp) == "secret";
+			auto const response_view = std::span(responses, std::size_t{2});
+			response_contents_valid  = std::string_view(response_view.front().resp) == "user" &&
+			                           std::string_view(response_view.back().resp) == "secret";
 			std::free(response_view.front().resp);
 			std::free(response_view.back().resp);
 			std::free(responses);
@@ -762,7 +765,7 @@ namespace {
 		return Expect(result.decision == PromptCoordinatorDecision::kHowdyResult,
 		              "wait exception returns failed compare result") &&
 		       Expect(result.compare_status ==
-		                  (howdy::native::EncodeWaitExitStatus(CompareExit::kAbort)),
+		                  howdy::native::EncodeWaitExitStatus(CompareExit::kAbort),
 		              "wait exception maps to compare abort") &&
 		       Expect(context.cleanup_calls == 1 && context.cleaned_pid == child_pid,
 		              "wait exception invokes injected cleanup once") &&

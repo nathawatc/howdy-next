@@ -73,9 +73,17 @@ auto main() -> int {
 	ok &=
 	    Expect(howdy::native::OpenCaptureWithExposure(manual, 42), "manual exposure opens capture");
 	ok &= Expect(manual.Read(), "manual exposure starts real capture");
-	ok &= Expect(manual.events == std::vector<std::string>{"open", "open-warm-up", "auto",
-	                                                       "exposure", "exposure-warm-up", "auto",
-	                                                       "exposure", "read"},
+	ok &= Expect(manual.events ==
+	                 std::vector<std::string>{
+	                     "open",
+	                     "open-warm-up",
+	                     "auto",
+	                     "exposure",
+	                     "exposure-warm-up",
+	                     "auto",
+	                     "exposure",
+	                     "read",
+	                 },
 	             "manual exposure reapplies after second grab and before real capture");
 
 	Capture failed_open{.open_ok = false};
@@ -87,16 +95,29 @@ auto main() -> int {
 	Capture failed_warm_up{.warm_up_ok = false};
 	ok &= Expect(!howdy::native::OpenCaptureWithExposure(failed_warm_up, 42),
 	             "manual exposure warm-up failure reaches caller");
-	ok &= Expect(failed_warm_up.events == std::vector<std::string>{"open", "open-warm-up", "auto",
-	                                                               "exposure", "exposure-warm-up"},
+	ok &= Expect(failed_warm_up.events ==
+	                 std::vector<std::string>{
+	                     "open",
+	                     "open-warm-up",
+	                     "auto",
+	                     "exposure",
+	                     "exposure-warm-up",
+	                 },
 	             "warm-up failure aborts before second exposure apply");
 
 	Capture rejected_auto{.throw_auto = true};
 	ok &= Expect(howdy::native::OpenCaptureWithExposure(rejected_auto, 42),
 	             "unsupported auto-exposure property is best effort");
-	ok &= Expect(rejected_auto.events == std::vector<std::string>{"open", "open-warm-up", "auto",
-	                                                              "exposure", "exposure-warm-up",
-	                                                              "auto", "exposure"},
+	ok &= Expect(rejected_auto.events ==
+	                 std::vector<std::string>{
+	                     "open",
+	                     "open-warm-up",
+	                     "auto",
+	                     "exposure",
+	                     "exposure-warm-up",
+	                     "auto",
+	                     "exposure",
+	                 },
 	             "explicit exposure is attempted after each auto-exposure exception");
 
 	return ok ? 0 : 1;

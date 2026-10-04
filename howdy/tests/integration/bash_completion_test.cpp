@@ -187,8 +187,19 @@ auto main(int argc, char **argv) -> int {
 		Session session(args.at(1), args.at(2), args.at(3), {args.begin() + 4, args.end()});
 
 		Check(session, "commands", {"howdy", ""},
-		      {"add", "clear", "config", "disable", "download-models", "list", "remove", "set",
-		       "snapshot", "test", "version"});
+		      {
+		          "add",
+		          "clear",
+		          "config",
+		          "disable",
+		          "download-models",
+		          "list",
+		          "remove",
+		          "set",
+		          "snapshot",
+		          "test",
+		          "version",
+		      });
 		Check(session, "command", {"howdy", "dis"}, {"disable"});
 		Check(session, "short option before command", {"howdy", "-y", "a"}, {"add"});
 		Check(session, "plain option before command", {"howdy", "--plain", "l"}, {"list"});
@@ -196,9 +207,10 @@ auto main(int argc, char **argv) -> int {
 		Check(session, "short user option before command", {"howdy", "-U", "alice", "t"}, {"test"});
 		Check(session, "long user option before command", {"howdy", "--user", "alice", "t"},
 		      {"test"});
-		const std::vector<std::string> short_options = {"-U", "--user", "--plain",
-		                                                "-y", "-h",     "--help"};
-		const std::vector<std::string> long_options  = {"--user", "--plain", "--help"};
+		const std::vector<std::string> short_options = {
+		    "-U", "--user", "--plain", "-y", "-h", "--help",
+		};
+		const std::vector<std::string> long_options = {"--user", "--plain", "--help"};
 		Check(session, "short options", {"howdy", "-"}, short_options);
 		Check(session, "long options", {"howdy", "--"}, long_options);
 		Check(session, "post-command short options", {"howdy", "add", "-"}, short_options);

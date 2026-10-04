@@ -99,7 +99,7 @@ namespace howdy::test::download_models {
 		    missing_require_existing_parent / "model.onnx";
 		fs::remove_all(missing_require_existing_parent, ec);
 		ec.clear();
-		auto missing_require_existing_staged = howdy::native::PrepareStagedFile(
+		auto const missing_require_existing_staged = howdy::native::PrepareStagedFile(
 		    missing_require_existing_destination, ".howdy-require-existing-",
 		    howdy::native::kDefaultAtomicFileMode,
 		    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,
@@ -120,7 +120,7 @@ namespace howdy::test::download_models {
 		const bool symlink_created = symlink(symlink_target.c_str(), symlink_parent.c_str()) == 0;
 		ok &= Expect(symlink_created, "create require-existing symlink parent");
 		if (symlink_created) {
-			auto symlink_staged = howdy::native::PrepareStagedFile(
+			auto const symlink_staged = howdy::native::PrepareStagedFile(
 			    symlink_destination, ".howdy-require-existing-",
 			    howdy::native::kDefaultAtomicFileMode,
 			    howdy::native::StagedFileMetadataPolicy::kPreserveExisting,

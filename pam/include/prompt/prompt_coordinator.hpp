@@ -194,7 +194,7 @@ namespace howdy::pam {
 		enum class FirstCompletion : std::uint8_t {
 			kNone,
 			kPassword,
-			kCompare
+			kCompare,
 		};
 		enum class PromptSubmissionState : std::uint8_t {
 			kNotApplicable,

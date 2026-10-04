@@ -142,42 +142,44 @@ namespace howdy::native::compare_sandbox_internal {
 
 		const rlim_t minimum_cpu =
 		    ComputeTimeoutLimit({.seconds = timeout_seconds, .margin = kCpuSoftMargin});
-		const std::array<LimitPolicy, 4> policies{{
+		const std::array<LimitPolicy, 4> policies{
 		    {
-		        .system_resource = RLIMIT_CPU,
-		        .resource        = CompareSandboxResource::kCpu,
-		        .preferred_soft  = std::max(minimum_cpu, kCpuSoftFloor),
-		        .preferred_hard  = std::max(
-		            ComputeTimeoutLimit({.seconds = timeout_seconds, .margin = kCpuHardMargin}),
-		            kCpuHardFloor),
-		        .minimum_soft = minimum_cpu,
-		        .minimum_hard = minimum_cpu,
+		        {
+		            .system_resource = RLIMIT_CPU,
+		            .resource        = CompareSandboxResource::kCpu,
+		            .preferred_soft  = std::max(minimum_cpu, kCpuSoftFloor),
+		            .preferred_hard  = std::max(
+		                ComputeTimeoutLimit({.seconds = timeout_seconds, .margin = kCpuHardMargin}),
+		                kCpuHardFloor),
+		            .minimum_soft = minimum_cpu,
+		            .minimum_hard = minimum_cpu,
+		        },
+		        {
+		            .system_resource = RLIMIT_NOFILE,
+		            .resource        = CompareSandboxResource::kOpenFiles,
+		            .preferred_soft  = kPreferredOpenFiles,
+		            .preferred_hard  = kPreferredOpenFiles,
+		            .minimum_soft    = kMinimumOpenFiles,
+		            .minimum_hard    = kMinimumOpenFiles,
+		        },
+		        {
+		            .system_resource = RLIMIT_CORE,
+		            .resource        = CompareSandboxResource::kCore,
+		            .preferred_soft  = 0,
+		            .preferred_hard  = 0,
+		            .minimum_soft    = 0,
+		            .minimum_hard    = 0,
+		        },
+		        {
+		            .system_resource = RLIMIT_AS,
+		            .resource        = CompareSandboxResource::kAddressSpace,
+		            .preferred_soft  = kPreferredAddressSpace,
+		            .preferred_hard  = kPreferredAddressSpace,
+		            .minimum_soft    = kMinimumAddressSpace,
+		            .minimum_hard    = kMinimumAddressSpace,
+		        },
 		    },
-		    {
-		        .system_resource = RLIMIT_NOFILE,
-		        .resource        = CompareSandboxResource::kOpenFiles,
-		        .preferred_soft  = kPreferredOpenFiles,
-		        .preferred_hard  = kPreferredOpenFiles,
-		        .minimum_soft    = kMinimumOpenFiles,
-		        .minimum_hard    = kMinimumOpenFiles,
-		    },
-		    {
-		        .system_resource = RLIMIT_CORE,
-		        .resource        = CompareSandboxResource::kCore,
-		        .preferred_soft  = 0,
-		        .preferred_hard  = 0,
-		        .minimum_soft    = 0,
-		        .minimum_hard    = 0,
-		    },
-		    {
-		        .system_resource = RLIMIT_AS,
-		        .resource        = CompareSandboxResource::kAddressSpace,
-		        .preferred_soft  = kPreferredAddressSpace,
-		        .preferred_hard  = kPreferredAddressSpace,
-		        .minimum_soft    = kMinimumAddressSpace,
-		        .minimum_hard    = kMinimumAddressSpace,
-		    },
-		}};
+		};
 
 		for (const auto &policy : policies) {
 			const auto result = ApplyLimit(policy, dependencies);

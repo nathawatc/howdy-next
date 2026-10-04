@@ -608,10 +608,14 @@ namespace howdy::test::user_models {
 				       "rewrite model with same-size content after clear inspection");
 			WithPresent(inspection.snapshot, [&] -> void {
 				const std::array<timespec, 2> times{
-				    timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
-					         .tv_nsec = inspection.snapshot->mtime_nanosecs},
-				    timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
-					         .tv_nsec = inspection.snapshot->mtime_nanosecs},
+				    timespec{
+				        .tv_sec  = inspection.snapshot->mtime_seconds,
+				        .tv_nsec = inspection.snapshot->mtime_nanosecs,
+				    },
+				    timespec{
+				        .tv_sec  = inspection.snapshot->mtime_seconds,
+				        .tv_nsec = inspection.snapshot->mtime_nanosecs,
+				    },
 				};
 				ok &= Expect(utimensat(AT_FDCWD, model_path.c_str(), times.data(), 0) == 0,
 				             "restore old model mtime after same-size rewrite");

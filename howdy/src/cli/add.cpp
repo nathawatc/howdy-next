@@ -65,7 +65,7 @@ namespace {
 			};
 		}
 
-		auto &face_model = production_context->face_model.emplace(config.face);
+		auto const &face_model = production_context->face_model.emplace(config.face);
 		if (!face_model.Ok()) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status        = howdy::native::add_internal::AddPreflightStatus::kFaceModelError,

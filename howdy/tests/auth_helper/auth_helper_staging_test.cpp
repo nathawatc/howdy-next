@@ -107,7 +107,10 @@ namespace {
 		fixture.config   = fixture.source / "config.ini";
 		fixture.models   = fixture.source / "models";
 		fixture.identity = {
-		    .target_uid = target_uid, .owner_uid = geteuid(), .owner_gid = getegid()};
+		    .target_uid = target_uid,
+		    .owner_uid  = geteuid(),
+		    .owner_gid  = getegid(),
+		};
 		fixture.sources = {
 		    .runtime_root    = fixture.root,
 		    .config          = "./config.ini",
@@ -378,7 +381,7 @@ namespace {
 		                 second->runtime_dir != first->runtime_dir,
 		             "active stale slot selects second fixed slot");
 		ok &= Expect(WriteFile(fixture.config, "slot-c\n"), "writes slot C source");
-		auto blocked = Prepare(fixture, operations);
+		auto const blocked = Prepare(fixture, operations);
 		ok &= Expect(!blocked.has_value(), "two active stale slots fail closed");
 
 		const auto first_generation_inode =
@@ -612,7 +615,7 @@ namespace {
 			const auto slot_inode = InodeOf(slot1);
 			ok &= Expect(chmod(slot0_lock.c_str(), 0644) == 0 && chmod(slot1.c_str(), 0700) == 0,
 			             "malforms both fixed slots");
-			auto        result = Prepare(*both_fixture, operations);
+			auto const  result = Prepare(*both_fixture, operations);
 			struct stat lock_stat{};
 			struct stat slot_stat{};
 			ok &= Expect(!result.has_value() && InodeOf(slot0_lock) == lock_inode &&

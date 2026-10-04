@@ -130,8 +130,10 @@ namespace {
 	}
 
 	auto ExpectedSuccessEvents() -> std::vector<std::string> {
-		return {"prctl",    "get cpu",  "set cpu", "get nofile", "set nofile",
-		        "get core", "set core", "get as",  "set as"};
+		return {
+		    "prctl",    "get cpu",  "set cpu", "get nofile", "set nofile",
+		    "get core", "set core", "get as",  "set as",
+		};
 	}
 
 	auto TestPreferredValuesAccepted() -> bool {
@@ -316,9 +318,13 @@ namespace {
 	}
 
 	auto TestInspectionFailuresStop() -> bool {
-		const std::vector<RlimitResource> resources{RLIMIT_CPU, RLIMIT_NOFILE, RLIMIT_CORE,
-		                                            RLIMIT_AS};
-		bool                              ok = true;
+		const std::vector<RlimitResource> resources{
+		    RLIMIT_CPU,
+		    RLIMIT_NOFILE,
+		    RLIMIT_CORE,
+		    RLIMIT_AS,
+		};
+		bool ok = true;
 		for (const auto resource : resources) {
 			FakeSandboxContext context;
 			context.failure          = FailureOperation::kGetrlimit;
@@ -339,9 +345,13 @@ namespace {
 	}
 
 	auto TestApplicationFailuresStop() -> bool {
-		const std::vector<RlimitResource> resources{RLIMIT_CPU, RLIMIT_NOFILE, RLIMIT_CORE,
-		                                            RLIMIT_AS};
-		bool                              ok = true;
+		const std::vector<RlimitResource> resources{
+		    RLIMIT_CPU,
+		    RLIMIT_NOFILE,
+		    RLIMIT_CORE,
+		    RLIMIT_AS,
+		};
+		bool ok = true;
 		for (const auto resource : resources) {
 			FakeSandboxContext context;
 			context.failure          = FailureOperation::kSetrlimit;
@@ -389,18 +399,24 @@ namespace {
 
 		const std::vector<Case> cases{
 		    {.timeout = 1, .expected_soft = 15, .expected_hard = 20, .name = "timeout below floor"},
-		    {.timeout       = 30,
-			 .expected_soft = 35,
-			 .expected_hard = 40,
-			 .name          = "timeout above floor"},
-		    {.timeout       = 300,
-			 .expected_soft = 305,
-			 .expected_hard = 310,
-			 .name          = "large valid timeout"},
-		    {.timeout       = INT_MAX,
-			 .expected_soft = static_cast<rlim_t>(INT_MAX) + 5,
-			 .expected_hard = static_cast<rlim_t>(INT_MAX) + 10,
-			 .name          = "overflow-safe timeout"},
+		    {
+		        .timeout       = 30,
+		        .expected_soft = 35,
+		        .expected_hard = 40,
+		        .name          = "timeout above floor",
+		    },
+		    {
+		        .timeout       = 300,
+		        .expected_soft = 305,
+		        .expected_hard = 310,
+		        .name          = "large valid timeout",
+		    },
+		    {
+		        .timeout       = INT_MAX,
+		        .expected_soft = static_cast<rlim_t>(INT_MAX) + 5,
+		        .expected_hard = static_cast<rlim_t>(INT_MAX) + 10,
+		        .name          = "overflow-safe timeout",
+		    },
 		};
 
 		bool ok = true;

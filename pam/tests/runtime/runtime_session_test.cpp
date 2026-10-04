@@ -251,8 +251,10 @@ namespace {
 			ok &= Expect(howdy::pam::RuntimeSessionLoadSucceeded(result),
 			             "staged config success returns ok");
 			ok &= Expect(context.load_paths ==
-			                 std::vector<std::filesystem::path>{kConfiguredConfig,
-			                                                    staged_runtime.config_path},
+			                 std::vector<std::filesystem::path>{
+			                     kConfiguredConfig,
+			                     staged_runtime.config_path,
+			                 },
 			             "staged success loads configured then staged path");
 			ok &= Expect(context.prepare_usernames == std::vector<std::string>{"alice"},
 			             "staged success prepares once for alice");
@@ -486,8 +488,10 @@ namespace {
 		    {.name = "empty models path", .prepared = empty_models},
 		    {.name = "empty root path", .prepared = empty_root},
 		    {.name = "config path outside prepared runtime root", .prepared = config_outside},
-		    {.name     = "user-model directory outside prepared runtime root",
-			 .prepared = models_outside},
+		    {
+		        .name     = "user-model directory outside prepared runtime root",
+		        .prepared = models_outside,
+		    },
 		    {.name = "sibling path with valid-looking basename", .prepared = sibling_models},
 		    {.name = "invalid prepared runtime suffix", .prepared = sibling},
 		    {.name = "config and models paths swapped", .prepared = swapped_paths},

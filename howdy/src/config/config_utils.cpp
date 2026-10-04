@@ -86,11 +86,10 @@ namespace howdy::native {
 			return FailWith(error_message, config_utils_internal::kConfigFileInspectFailureMessage);
 		}
 
-		if (expected_current_content != nullptr) {
-			if (!config_utils_internal::ExpectedContentMatches(
-			        config_path, *expected_current_content, error_message, validation_root)) {
-				return false;
-			}
+		if (expected_current_content != nullptr &&
+		    !config_utils_internal::ExpectedContentMatches(config_path, *expected_current_content,
+		                                                   error_message, validation_root)) {
+			return false;
 		}
 		const auto install_result = config_utils_internal::InstallConfigContent(
 		    config_path, content, current_stat, sync_parent);

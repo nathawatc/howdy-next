@@ -90,8 +90,8 @@ namespace howdy::native::test_cli_internal {
 				return {.status = TestPreviewStatus::kCameraReadError};
 			}
 
-			auto frame_result  = preview_engine_.get().ProcessGrayFrame(std::move(gray_frame));
-			auto frame_failure = MapPreviewFrameFailure(frame_result);
+			auto const frame_result = preview_engine_.get().ProcessGrayFrame(std::move(gray_frame));
+			auto       frame_failure = MapPreviewFrameFailure(frame_result);
 			if (frame_failure.status != TestPreviewStatus::kOk) {
 				return frame_failure;
 			}

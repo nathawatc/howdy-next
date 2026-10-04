@@ -110,8 +110,10 @@ namespace howdy::native::auth_helper::command {
 		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
 			return 1;
 		}
-		if (!SendLease({.socket_fd = auth_helper_protocol::kLeaseSocketFd,
-		                .lease_fd  = prepared->lease_fd.Get()})) {
+		if (!SendLease({
+		        .socket_fd = auth_helper_protocol::kLeaseSocketFd,
+		        .lease_fd  = prepared->lease_fd.Get(),
+		    })) {
 			prepared->lease_fd.Reset();
 			return Fail("Failed to transfer runtime lease");
 		}

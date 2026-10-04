@@ -80,9 +80,12 @@ namespace {
 				return howdy::native::FaceDetectionResult{};
 			}
 			return howdy::native::FaceDetectionResult{
-			    .detections = {howdy::native::FaceDetection{
-			        .box = cv::Rect2f(1.0F, 1.0F, 1.0F, 1.0F),
-			    }},
+			    .detections =
+			        {
+			            howdy::native::FaceDetection{
+			                .box = cv::Rect2f(1.0F, 1.0F, 1.0F, 1.0F),
+			            },
+			        },
 			};
 		}
 
@@ -390,11 +393,13 @@ namespace {
 	}
 
 	auto FrameValidationBoundariesAreAppliedToEnrollmentGrayFrames() -> bool {
-		FakeCapture   capture({FrameRead{
-		    .ok    = true,
-		    .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
-		    .gray  = cv::Mat(howdy::native::kMaxFrameDimension, 1, CV_8UC1, cv::Scalar(128)),
-		}});
+		FakeCapture   capture({
+		    FrameRead{
+		        .ok    = true,
+		        .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		        .gray  = cv::Mat(howdy::native::kMaxFrameDimension, 1, CV_8UC1, cv::Scalar(128)),
+		    },
+		});
 		FakeFaceModel face_model;
 		face_model.SetCloneFrames(false);
 
@@ -408,16 +413,18 @@ namespace {
 		ok &= Expect(face_model.DetectCalls() == 1, "8192x1 gray frame reaches detection");
 
 		ok &= InvalidGrayFrameCountsAsEmptyWithoutModelWork(
-		    FrameRead{.ok    = true,
-			          .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
-			          .gray  = cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1,
-			                           cv::Scalar(128))},
+		    FrameRead{
+		        .ok    = true,
+		        .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		        .gray = cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1, cv::Scalar(128)),
+		    },
 		    "8193x1 gray frame");
 		ok &= InvalidGrayFrameCountsAsEmptyWithoutModelWork(
-		    FrameRead{.ok    = true,
-			          .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
-			          .gray  = cv::Mat(1, howdy::native::kMaxFrameDimension + 1, CV_8UC1,
-			                           cv::Scalar(128))},
+		    FrameRead{
+		        .ok    = true,
+		        .frame = cv::Mat(1, 1, CV_8UC3, cv::Scalar(128, 128, 128)),
+		        .gray = cv::Mat(1, howdy::native::kMaxFrameDimension + 1, CV_8UC1, cv::Scalar(128)),
+		    },
 		    "1x8193 gray frame");
 		return ok;
 	}

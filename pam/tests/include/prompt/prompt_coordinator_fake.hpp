@@ -303,11 +303,9 @@ namespace howdy::test::prompt_coordinator {
 		if (fake.throw_compare_wait) {
 			throw std::runtime_error("simulated compare wait failure");
 		}
-		if (fake.request_native_prompt) {
-			if (!WaitForNativePromptCompletion(fake)) {
-				CancelAndReapCompare(context, child_pid);
-				return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
-			}
+		if (fake.request_native_prompt && !WaitForNativePromptCompletion(fake)) {
+			CancelAndReapCompare(context, child_pid);
+			return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 		}
 		while (true) {
 			int         status = 0;

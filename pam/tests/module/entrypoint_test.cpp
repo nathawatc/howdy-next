@@ -120,11 +120,14 @@ auto main() -> int {
 
 	std::array<const char *, 3> raw_argv = {"unrelated", nullptr, "workaround=input"};
 	AuthCall                    call{
-	    .expected_context            = nullptr,
-	    .expected_pamh               = howdy::test::OpaquePamHandleForTest(),
-	    .expected_args               = {.flags = 41,
-		                                .argc  = static_cast<int>(raw_argv.size()),
-		                                .argv  = raw_argv.data()},
+	    .expected_context = nullptr,
+	    .expected_pamh    = howdy::test::OpaquePamHandleForTest(),
+	    .expected_args =
+	        {
+	            .flags = 41,
+	            .argc  = static_cast<int>(raw_argv.size()),
+	            .argv  = raw_argv.data(),
+	        },
 	    .expected_request_auth_token = true,
 	    .result                      = PAM_AUTH_ERR,
 	};
@@ -176,11 +179,11 @@ auto main() -> int {
 		ok &= Expect(call.calls == 1, "locale setup failure still invokes authentication once");
 	}
 
-	const std::string global_locale = []() -> std::string {
+	const std::string global_locale = [] -> std::string {
 		const char *locale = std::setlocale(LC_ALL, nullptr);
 		return locale == nullptr ? std::string{} : std::string(locale);
 	}();
-	const std::string text_domain = []() -> std::string {
+	const std::string text_domain = [] -> std::string {
 		const char *domain = textdomain(nullptr);
 		return domain == nullptr ? std::string{} : std::string(domain);
 	}();

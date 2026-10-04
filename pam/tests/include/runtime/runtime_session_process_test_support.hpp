@@ -82,18 +82,18 @@ namespace howdy::test::runtime_session {
 	inline auto FakePipe2(void *context, int *fds, int flags) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.pipe_flags.push_back(flags);
-		auto descriptors    = std::span(fds, std::size_t{2});
-		descriptors.front() = fake.next_pipe_fds.front();
-		descriptors.back()  = fake.next_pipe_fds.back();
+		auto const descriptors = std::span(fds, std::size_t{2});
+		descriptors.front()    = fake.next_pipe_fds.front();
+		descriptors.back()     = fake.next_pipe_fds.back();
 		return FakeResult(fake, "pipe2");
 	}
 
 	inline auto FakeSocketpair(void *context, int domain, int type, int protocol, int *fds) -> int {
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.socket_parameters.push_back({domain, type, protocol});
-		auto descriptors    = std::span(fds, std::size_t{2});
-		descriptors.front() = fake.next_socket_fds.front();
-		descriptors.back()  = fake.next_socket_fds.back();
+		auto const descriptors = std::span(fds, std::size_t{2});
+		descriptors.front()    = fake.next_socket_fds.front();
+		descriptors.back()     = fake.next_socket_fds.back();
 		return FakeResult(fake, "socketpair");
 	}
 
@@ -129,8 +129,12 @@ namespace howdy::test::runtime_session {
 		(void)actions;
 		auto &fake = *static_cast<AuthHelperSpawnFake *>(context);
 		fake.action_close_fds.push_back(fd);
-		static constexpr std::array kNames = {"close_output_read", "close_output_write",
-		                                      "close_lease_parent", "close_lease_child"};
+		static constexpr std::array kNames = {
+		    "close_output_read",
+		    "close_output_write",
+		    "close_lease_parent",
+		    "close_lease_child",
+		};
 		return FakeResult(fake,
 		                  kNames.at(std::min(fake.action_close_fds.size() - 1, kNames.size() - 1)));
 	}

@@ -140,8 +140,8 @@ auto ExpectDispatchRejectsInvalidState() -> bool {
 	                 PAM_CONV_ERR,
 	             "dispatch rejects null response pointer");
 
-	auto conversation = CreateConversation({});
-	responses         = howdy::test::PamResponseSentinelForTest();
+	auto const conversation = CreateConversation({});
+	responses               = howdy::test::PamResponseSentinelForTest();
 	ok &= Expect(NativePromptConversationTestAccess::Dispatch(0, &message_ptr, &responses,
 	                                                          conversation.get()) == PAM_CONV_ERR,
 	             "dispatch rejects zero message count");
@@ -183,9 +183,11 @@ auto ExpectOriginalConversationRestored() -> bool {
 	{
 		NativePromptConversation conversation(pamh);
 		NativePromptConversationTestAccess::ReplaceDescriptors(
-		    conversation, {.tty_fd         = std::move(slave_fd),
-			               .abort_read_fd  = std::move(abort_pipe.at(0)),
-			               .abort_write_fd = std::move(abort_pipe.at(1))});
+		    conversation, {
+		                      .tty_fd         = std::move(slave_fd),
+		                      .abort_read_fd  = std::move(abort_pipe.at(0)),
+		                      .abort_write_fd = std::move(abort_pipe.at(1)),
+		                  });
 		ok &= Expect(conversation.Available(), "restore test native prompt is available");
 		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
@@ -217,9 +219,11 @@ auto ExpectRestoreHandlesNullPam() -> bool {
 		return false;
 	}
 
-	auto conversation = CreateConversation({.tty_fd         = std::move(slave_fd),
-	                                        .abort_read_fd  = std::move(abort_pipe.at(0)),
-	                                        .abort_write_fd = std::move(abort_pipe.at(1))});
+	auto conversation = CreateConversation({
+	    .tty_fd         = std::move(slave_fd),
+	    .abort_read_fd  = std::move(abort_pipe.at(0)),
+	    .abort_write_fd = std::move(abort_pipe.at(1)),
+	});
 	NativePromptConversationTestAccess::SetInstalled(*conversation, true);
 	const auto result = conversation->RestoreOriginal();
 	ok &= Expect(!NativePromptConversationTestAccess::Installed(*conversation),
@@ -281,10 +285,13 @@ auto ExpectDispatchThrowCleanup(int throw_mode, const std::string &message) -> b
 	}
 
 	LifecycleOperationContext operations{.throw_mode = throw_mode};
-	auto conversation = CreateLifecycleConversation({.tty_fd         = std::move(slave_fd),
-	                                                 .abort_read_fd  = std::move(abort_pipe.at(0)),
-	                                                 .abort_write_fd = std::move(abort_pipe.at(1))},
-	                                                &operations);
+	auto                      conversation = CreateLifecycleConversation(
+	    {
+	        .tty_fd         = std::move(slave_fd),
+	        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	        .abort_write_fd = std::move(abort_pipe.at(1)),
+	    },
+	    &operations);
 
 	const struct pam_message prompt = {
 	    .msg_style = PAM_PROMPT_ECHO_OFF,

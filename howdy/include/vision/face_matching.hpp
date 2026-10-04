@@ -170,8 +170,9 @@ namespace howdy::native {
 			return {};
 		}
 		if (known.empty() || probe.empty()) {
-			return {.score =
-			            policy->higher_score_is_better ? -1.0F : std::numeric_limits<float>::max()};
+			return {
+			    .score = policy->higher_score_is_better ? -1.0F : std::numeric_limits<float>::max(),
+			};
 		}
 		switch (metric) {
 			case FaceMetric::kCosine:
@@ -219,9 +220,10 @@ namespace howdy::native {
 				return {};
 			}
 			if (candidates_.empty() || probe.empty()) {
-				return {.score = policy->higher_score_is_better
-				                     ? -1.0F
-				                     : std::numeric_limits<float>::max()};
+				return {
+				    .score =
+				        policy->higher_score_is_better ? -1.0F : std::numeric_limits<float>::max(),
+				};
 			}
 			if (metric_ == FaceMetric::kCosine) {
 				return face_matching_detail::CosineMatch(candidates_, probe, threshold_,

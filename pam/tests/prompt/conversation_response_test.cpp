@@ -26,7 +26,10 @@ namespace {
 	void RecordErase(void *context, std::span<char> bytes) noexcept {
 		auto &state                    = *static_cast<Context *>(context);
 		state.events.at(state.count++) = {
-		    .pointer = bytes.data(), .length = bytes.size(), .erase = true};
+		    .pointer = bytes.data(),
+		    .length  = bytes.size(),
+		    .erase   = true,
+		};
 		explicit_bzero(bytes.data(), bytes.size());
 	}
 
@@ -42,12 +45,14 @@ namespace {
 		if (responses == nullptr) {
 			return nullptr;
 		}
-		auto response_view = std::span(responses, values.size());
-		std::ranges::transform(
-		    values, response_view.begin(), [](const char *value) -> pam_response {
-			    return pam_response{.resp         = value == nullptr ? nullptr : strdup(value),
-				                    .resp_retcode = 0};
-		    });
+		auto const response_view = std::span(responses, values.size());
+		std::ranges::transform(values, response_view.begin(),
+		                       [](const char *value) -> pam_response {
+			                       return pam_response{
+			                           .resp         = value == nullptr ? nullptr : strdup(value),
+			                           .resp_retcode = 0,
+			                       };
+		                       });
 		return responses;
 	}
 

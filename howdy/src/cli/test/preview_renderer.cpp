@@ -64,7 +64,7 @@ namespace howdy::native::test_cli_internal {
 			return;
 		}
 		std::exception_ptr cleanup_error;
-		auto attempt_cleanup = [&cleanup_error](bool &pending, auto &&operation) -> auto {
+		auto const attempt_cleanup = [&cleanup_error](bool &pending, auto &&operation) -> auto {
 			if (!pending) {
 				return;
 			}

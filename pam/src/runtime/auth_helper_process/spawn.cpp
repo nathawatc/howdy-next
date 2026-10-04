@@ -299,15 +299,21 @@ namespace howdy::pam::auth_helper_process::internal {
 		std::string           helper_path(kAuthHelperPath);
 		std::string           command("prepare");
 		std::string           username_string(username);
-		std::array<char *, 4> args   = {helper_path.data(), command.data(), username_string.data(),
-		                                nullptr};
+		std::array<char *, 4> args = {
+		    helper_path.data(),
+		    command.data(),
+		    username_string.data(),
+		    nullptr,
+		};
 		std::array<char *, 1> env    = {nullptr};
-		const int             result = operations.spawn({.context   = operations.context,
-		                                                 .child_pid = &spawn->child_pid,
-		                                                 .path      = kAuthHelperPath,
-		                                                 .actions   = &spawn->actions,
-		                                                 .argv      = args,
-		                                                 .envp      = env});
+		const int             result = operations.spawn({
+		    .context   = operations.context,
+		    .child_pid = &spawn->child_pid,
+		    .path      = kAuthHelperPath,
+		    .actions   = &spawn->actions,
+		    .argv      = args,
+		    .envp      = env,
+		});
 		if (result != 0) {
 			spawn->child_pid = -1;
 			WriteHelperSpawnErrorLog(operations, "posix_spawn", result);

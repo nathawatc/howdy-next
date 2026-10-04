@@ -267,14 +267,18 @@ namespace {
 		ok &= ExpectInvalidBatchRejected("wrong-pixel-depth",
 		                                 {cv::Mat(8, 8, CV_16UC3, cv::Scalar(10, 20, 30))});
 		ok &= ExpectInvalidBatchRejected("combined-width",
-		                                 {cv::Mat(1, 4097, CV_8UC3, cv::Scalar(10, 20, 30)),
-		                                  cv::Mat(1, 4097, CV_8UC3, cv::Scalar(40, 50, 60))});
+		                                 {
+		                                     cv::Mat(1, 4097, CV_8UC3, cv::Scalar(10, 20, 30)),
+		                                     cv::Mat(1, 4097, CV_8UC3, cv::Scalar(40, 50, 60)),
+		                                 });
 		ok &= ExpectInvalidBatchRejected(
 		    "oversized-frame",
 		    {cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC3, cv::Scalar(10, 20, 30))});
 		ok &= ExpectInvalidBatchRejected("shape-mismatch",
-		                                 {cv::Mat(8, 8, CV_8UC3, cv::Scalar(10, 20, 30)),
-		                                  cv::Mat(9, 8, CV_8UC3, cv::Scalar(40, 50, 60))});
+		                                 {
+		                                     cv::Mat(8, 8, CV_8UC3, cv::Scalar(10, 20, 30)),
+		                                     cv::Mat(9, 8, CV_8UC3, cv::Scalar(40, 50, 60)),
+		                                 });
 		return ok;
 	}
 
@@ -489,7 +493,8 @@ namespace {
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
 		    .context         = &context,
 		    .encode_image    = ConcurrentEncode,
-		    .validation_root = {base.parent_path().parent_path().parent_path()}};
+		    .validation_root = {base.parent_path().parent_path().parent_path()},
+		};
 		const auto installed = snapshot_internal::WriteSnapshotWithUniquePath(
 		    TinyFrames(), TextLines(), base, dependencies);
 		close(ready_pipe.at(1));
@@ -699,8 +704,10 @@ namespace {
 		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
-		    {cv::Mat(8, 4, CV_8UC3, cv::Scalar(10, 20, 30)),
-			 cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60))},
+		    {
+		        cv::Mat(8, 4, CV_8UC3, cv::Scalar(10, 20, 30)),
+		        cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60)),
+		    },
 		    TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= Expect(result, "mixed-width frames return true");
 		ok &= Expect(context.encode_calls == 1, "mixed-width frames call encoder once");

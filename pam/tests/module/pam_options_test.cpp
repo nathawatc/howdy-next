@@ -35,14 +35,22 @@ auto main() -> int {
 	             "negative PAM argc defaults to off");
 
 	const std::array<const char *, 3> null_entry_args = {nullptr, "debug", nullptr};
-	ok &= Expect(WorkaroundFor({.argc = static_cast<int>(null_entry_args.size()),
-	                            .argv = null_entry_args.data()}) == Workaround::kOff,
+	ok &= Expect(WorkaroundFor({
+	                 .argc = static_cast<int>(null_entry_args.size()),
+	                 .argv = null_entry_args.data(),
+	             }) == Workaround::kOff,
 	             "null PAM argument entries are skipped");
 
-	const std::array<const char *, 4> input_args = {"debug", "other=value", "workaround=input",
-	                                                "after"};
-	ok &= Expect(WorkaroundFor({.argc = static_cast<int>(input_args.size()),
-	                            .argv = input_args.data()}) == Workaround::kInput,
+	const std::array<const char *, 4> input_args = {
+	    "debug",
+	    "other=value",
+	    "workaround=input",
+	    "after",
+	};
+	ok &= Expect(WorkaroundFor({
+	                 .argc = static_cast<int>(input_args.size()),
+	                 .argv = input_args.data(),
+	             }) == Workaround::kInput,
 	             "input workaround is parsed among unrelated arguments");
 
 	const std::array<const char *, 1> native_args = {"workaround=native"};
@@ -61,20 +69,26 @@ auto main() -> int {
 		             "empty, unknown, and malformed values default to off");
 	}
 
-	const std::array<const char *, 2> first_valid_duplicate = {"workaround=input",
-	                                                           "workaround=native"};
+	const std::array<const char *, 2> first_valid_duplicate = {
+	    "workaround=input",
+	    "workaround=native",
+	};
 	ok &= Expect(WorkaroundFor({.argc = 2, .argv = first_valid_duplicate.data()}) ==
 	                 Workaround::kInput,
 	             "duplicate workaround options use first option");
 
-	const std::array<const char *, 2> first_native_duplicate = {"workaround=native",
-	                                                            "workaround=input"};
+	const std::array<const char *, 2> first_native_duplicate = {
+	    "workaround=native",
+	    "workaround=input",
+	};
 	ok &= Expect(WorkaroundFor({.argc = 2, .argv = first_native_duplicate.data()}) ==
 	                 Workaround::kNative,
 	             "duplicate workaround order remains first-match");
 
-	const std::array<const char *, 2> invalid_then_valid = {"workaround=invalid",
-	                                                        "workaround=native"};
+	const std::array<const char *, 2> invalid_then_valid = {
+	    "workaround=invalid",
+	    "workaround=native",
+	};
 	ok &= Expect(WorkaroundFor({.argc = 2, .argv = invalid_then_valid.data()}) == Workaround::kOff,
 	             "first invalid workaround prevents later duplicate from applying");
 

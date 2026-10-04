@@ -66,8 +66,12 @@ auto main(int argc, char **argv) -> int {
 		generated_command.insert(generated_command.end(), {"--output-dir", output_dir.string()});
 		const auto generated = howdy::test::integration::RunProcess(generated_command);
 		Require(generated.status == 0, "generation failed: " + generated.output);
-		for (const auto *fragment : {"howdy-commands.roff", "howdy-options.roff",
-		                             "pam-workarounds.roff", "howdy-ini-options.roff"}) {
+		for (const auto *fragment : {
+		         "howdy-commands.roff",
+		         "howdy-options.roff",
+		         "pam-workarounds.roff",
+		         "howdy-ini-options.roff",
+		     }) {
 			const auto path = output_dir / fragment;
 			Require(fs::is_regular_file(path) && fs::file_size(path) > 0,
 			        "missing or empty generated fragment: " + path.string());
