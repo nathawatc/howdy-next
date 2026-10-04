@@ -207,7 +207,7 @@ namespace {
 		             "accepted match reports matched face");
 		ok &=
 		    Expect(result.faces.at(0).match.index == 0 && result.faces.at(0).match.score == 0.923F,
-		           "matched face preserves model index and score for label rendering");
+			       "matched face preserves model index and score for label rendering");
 		return ok;
 	}
 
@@ -486,7 +486,7 @@ namespace {
 			howdy::native::PreviewEngine engine(
 			    TestVideoConfig(), {.inference = InferenceOperations(context)},
 			    howdy::native::PreparedFaceMatcher({context.encoding_result.encoding}, metric,
-			                                       0.5F),
+				                                   0.5F),
 			    1, true);
 			for (int frame = 0; frame < 2; ++frame) {
 				const auto result =

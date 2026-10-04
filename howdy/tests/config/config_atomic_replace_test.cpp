@@ -100,9 +100,9 @@ namespace howdy::test {
 		             "replace_config_content_atomically reports parent-sync failure");
 		ok &=
 		    Expect(install_error ==
-		               "Config was installed, but its directory could not be synced; verify state "
-		               "before retrying",
-		           "replace config parent-sync failure reports committed state");
+			           "Config was installed, but its directory could not be synced; verify state "
+			           "before retrying",
+			       "replace config parent-sync failure reports committed state");
 		ok &= Expect(ReadConfigTestFile(replace_path) == uncertain_replacement,
 		             "replace config parent-sync failure leaves committed content visible");
 		ok &= Expect(CountStagedConfigs(context.temp_root) == 0,

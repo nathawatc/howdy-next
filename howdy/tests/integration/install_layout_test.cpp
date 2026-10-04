@@ -322,7 +322,7 @@ auto main(int argc, char **argv) -> int {
 			std::ofstream(case_dir / "cmake_install_prefix.txt") << prefix;
 			const auto result = howdy::test::integration::RunProcess(
 			    {"cmake", "-D", std::string("CMAKE_INSTALL_PREFIX=") + prefix, "-P",
-			     (case_dir / "cmake_install_prefix_guard.cmake").string()});
+				 (case_dir / "cmake_install_prefix_guard.cmake").string()});
 			Require(result.status == 0,
 			        "literal prefix rejected: " + std::string(prefix) + ": " + result.output);
 		}

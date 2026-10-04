@@ -172,14 +172,14 @@ namespace howdy::native::user_model_codec_internal {
 			if (!yyjson_is_arr(encoding_json)) {
 				return EncodingParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face encoding is not an array"),
+					                  "Stored face encoding is not an array"),
 				};
 			}
 			const auto encoding_size = yyjson_arr_size(encoding_json);
 			if (encoding_size == 0 || encoding_size > user_model_limits::kMaxEncodingLength) {
 				return EncodingParseResult{
 				    .result = Failure(UserModelStatus::kOversized,
-				                      std::string(kStoredEncodingLimitMessage)),
+					                  std::string(kStoredEncodingLimitMessage)),
 				};
 			}
 
@@ -197,7 +197,7 @@ namespace howdy::native::user_model_codec_internal {
 				if (!yyjson_is_num(value)) {
 					return EncodingParseResult{
 					    .result = Failure(UserModelStatus::kInvalidShape,
-					                      std::string(kStoredEncodingInvalidMessage)),
+						                  std::string(kStoredEncodingInvalidMessage)),
 					};
 				}
 				const auto number = yyjson_get_num(value);
@@ -205,7 +205,7 @@ namespace howdy::native::user_model_codec_internal {
 				    number > std::numeric_limits<float>::max()) {
 					return EncodingParseResult{
 					    .result = Failure(UserModelStatus::kInvalidShape,
-					                      std::string(kStoredEncodingInvalidMessage)),
+						                  std::string(kStoredEncodingInvalidMessage)),
 					};
 				}
 				encoding.push_back(static_cast<float>(number));
@@ -233,7 +233,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!backend.has_value() || !metric_text.has_value() || !model_name.has_value()) {
 				return MetadataParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model metadata is invalid"),
+					                  "Stored face model metadata is invalid"),
 				};
 			}
 			const std::optional<FaceMetric> metric =
@@ -241,7 +241,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!metric_text->empty() && !metric.has_value()) {
 				return MetadataParseResult{
 				    .result = Failure(UserModelStatus::kParseError,
-				                      "Stored face model contains an unknown face metric"),
+					                  "Stored face model contains an unknown face metric"),
 				};
 			}
 			return MetadataParseResult{.backend = *backend, .metric = metric, .model = *model_name};
@@ -254,13 +254,13 @@ namespace howdy::native::user_model_codec_internal {
 			if (!yyjson_is_obj(model)) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Model file contains an invalid model entry"),
+					                  "Model file contains an invalid model entry"),
 				};
 			}
 			if (strict_shape && HasDuplicateDirectKey(model)) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model entry contains duplicate keys"),
+					                  "Stored face model entry contains duplicate keys"),
 				};
 			}
 
@@ -268,13 +268,13 @@ namespace howdy::native::user_model_codec_internal {
 			if (!id.has_value()) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model ID is not an integer"),
+					                  "Stored face model ID is not an integer"),
 				};
 			}
 			if (strict_shape && *id < 0) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model ID must not be negative"),
+					                  "Stored face model ID must not be negative"),
 				};
 			}
 
@@ -282,7 +282,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!time.has_value()) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model timestamp is not an integer"),
+					                  "Stored face model timestamp is not an integer"),
 				};
 			}
 
@@ -290,7 +290,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!label.has_value()) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kInvalidShape,
-				                      "Stored face model label is not a string"),
+					                  "Stored face model label is not a string"),
 				};
 			}
 			auto metadata = ParseMetadata(model, strict_shape);
@@ -309,7 +309,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!IsValidModelLabel(entry.label)) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kParseError,
-				                      "Model label contains unsafe path characters"),
+					                  "Model label contains unsafe path characters"),
 				};
 			}
 			if (const auto compatibility =
@@ -323,7 +323,7 @@ namespace howdy::native::user_model_codec_internal {
 				if (strict_shape) {
 					return EntryParseResult{
 					    .result = Failure(UserModelStatus::kInvalidShape,
-					                      "Stored face model data is not an array"),
+						                  "Stored face model data is not an array"),
 					};
 				}
 				return EntryParseResult{.entry = std::move(entry)};
@@ -331,7 +331,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (yyjson_arr_size(data) > user_model_limits::kMaxEncodingsPerModel) {
 				return EntryParseResult{
 				    .result = Failure(UserModelStatus::kOversized,
-				                      std::string(kStoredEncodingsLimitMessage)),
+					                  std::string(kStoredEncodingsLimitMessage)),
 				};
 			}
 
@@ -344,7 +344,7 @@ namespace howdy::native::user_model_codec_internal {
 					if (strict_shape) {
 						return EntryParseResult{
 						    .result = Failure(UserModelStatus::kInvalidShape,
-						                      "Stored face encoding is not an array"),
+							                  "Stored face encoding is not an array"),
 						};
 					}
 					continue;
@@ -426,7 +426,7 @@ namespace howdy::native::user_model_codec_internal {
 			if (!JsonDepthWithinLimit(yyjson_doc_get_root(parsed))) {
 				return DecodedDocumentJson{
 				    .result = Failure(UserModelStatus::kOversized,
-				                      "User model JSON nesting exceeds safety limit"),
+					                  "User model JSON nesting exceeds safety limit"),
 				    .doc    = nullptr,
 				};
 			}

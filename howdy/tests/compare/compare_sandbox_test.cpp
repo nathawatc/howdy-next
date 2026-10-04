@@ -310,7 +310,7 @@ namespace {
 			                 ResourceName(test_case.resource));
 			ok &=
 			    Expect(context.events == ExpectedPrefixThroughGet(test_case.resource),
-			           std::string("stop after below-minimum ") + ResourceName(test_case.resource));
+				       std::string("stop after below-minimum ") + ResourceName(test_case.resource));
 		}
 		return ok;
 	}
@@ -333,7 +333,7 @@ namespace {
 			             std::string("do not apply uninspected ") + ResourceName(resource));
 			ok &=
 			    Expect(context.events == ExpectedPrefixThroughGet(resource),
-			           std::string("stop after inspection failure for ") + ResourceName(resource));
+				       std::string("stop after inspection failure for ") + ResourceName(resource));
 		}
 		return ok;
 	}
@@ -358,7 +358,7 @@ namespace {
 			                 ResourceName(resource));
 			ok &=
 			    Expect(context.events == ExpectedPrefixThroughSet(resource),
-			           std::string("stop after application failure for ") + ResourceName(resource));
+				       std::string("stop after application failure for ") + ResourceName(resource));
 		}
 		return ok;
 	}
@@ -390,17 +390,17 @@ namespace {
 		const std::vector<Case> cases{
 		    {.timeout = 1, .expected_soft = 15, .expected_hard = 20, .name = "timeout below floor"},
 		    {.timeout       = 30,
-		     .expected_soft = 35,
-		     .expected_hard = 40,
-		     .name          = "timeout above floor"},
+			 .expected_soft = 35,
+			 .expected_hard = 40,
+			 .name          = "timeout above floor"},
 		    {.timeout       = 300,
-		     .expected_soft = 305,
-		     .expected_hard = 310,
-		     .name          = "large valid timeout"},
+			 .expected_soft = 305,
+			 .expected_hard = 310,
+			 .name          = "large valid timeout"},
 		    {.timeout       = INT_MAX,
-		     .expected_soft = static_cast<rlim_t>(INT_MAX) + 5,
-		     .expected_hard = static_cast<rlim_t>(INT_MAX) + 10,
-		     .name          = "overflow-safe timeout"},
+			 .expected_soft = static_cast<rlim_t>(INT_MAX) + 5,
+			 .expected_hard = static_cast<rlim_t>(INT_MAX) + 10,
+			 .name          = "overflow-safe timeout"},
 		};
 
 		bool ok = true;

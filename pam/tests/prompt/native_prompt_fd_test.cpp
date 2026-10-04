@@ -164,21 +164,21 @@ namespace {
 		struct stat terminal_after{};
 		const bool  terminal_preserved =
 		    scenario.terminal_stdio < 0 || (fstat(scenario.terminal_stdio, &terminal_after) == 0 &&
-		                                    terminal_before.st_dev == terminal_after.st_dev &&
-		                                    terminal_before.st_ino == terminal_after.st_ino &&
-		                                    terminal_before.st_rdev == terminal_after.st_rdev);
+			                                terminal_before.st_dev == terminal_after.st_dev &&
+			                                terminal_before.st_ino == terminal_after.st_ino &&
+			                                terminal_before.st_rdev == terminal_after.st_rdev);
 		pam_end(pamh, PAM_SUCCESS);
 		const bool expect_available =
 		    scenario.terminal_stdio >= 0 && !scenario.exhaust_tty_duplication;
 		const bool internal_fds_valid =
 		    std::ranges::all_of(internal_fds,
-		                        [](const int fd) -> bool {
+			                    [](const int fd) -> bool {
 			                        if (fd <= STDERR_FILENO) {
 				                        return false;
 			                        }
 			                        const int descriptor_flags = fcntl(fd, F_GETFD);
 			                        return descriptor_flags >= 0 &&
-			                               howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC);
+									       howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC);
 		                        }) &&
 		    internal_fds.at(0) != internal_fds.at(1) && internal_fds.at(0) != internal_fds.at(2) &&
 		    internal_fds.at(1) != internal_fds.at(2);

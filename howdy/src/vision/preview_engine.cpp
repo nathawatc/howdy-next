@@ -144,8 +144,8 @@ namespace howdy::native {
 			    .brightness     = brightness,
 			    .gray_frame     = std::move(gray_frame),
 			    .error_message  = detection_result.error_message.empty()
-			                          ? kFaceDetectionFailedMessage
-			                          : std::move(detection_result.error_message),
+				                      ? kFaceDetectionFailedMessage
+				                      : std::move(detection_result.error_message),
 			    .inference_time = inference_elapsed(),
 			};
 		}

@@ -99,9 +99,9 @@ namespace howdy::test::user_models {
 			        "alice", backend, howdy::native::DefaultSecureOwnerUid(), {temp_root});
 			    const auto elapsed = std::chrono::steady_clock::now() - started;
 			    ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
-			                 "FIFO model target is rejected");
+				             "FIFO model target is rejected");
 			    ok &= Expect(elapsed < std::chrono::seconds(1),
-			                 "FIFO model target is rejected without blocking");
+				             "FIFO model target is rejected without blocking");
 			    ok &= Expect(fs::remove(model_path, ec), "remove FIFO model target");
 			    ec.clear();
 		    },
@@ -129,7 +129,7 @@ namespace howdy::test::user_models {
 
 		ok &= Expect(
 		    WriteFile(model_path,
-		              R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
+			          R"([{"id":1,"label":"bad","backend":"other_backend","data":[[0.1,0.2]]}])"),
 		    "write incompatible backend model");
 		{
 			const auto result = howdy::native::LoadUserModels(
@@ -204,7 +204,7 @@ namespace howdy::test::user_models {
 			    const auto result = howdy::native::LoadUserModels(
 			        "alice", backend, howdy::native::DefaultSecureOwnerUid(), {temp_root});
 			    ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
-			                 "symlinked model file is rejected");
+				             "symlinked model file is rejected");
 			    ok &= Expect(fs::remove(model_path, ec), "remove symlinked model path");
 			    ec.clear();
 		    },
@@ -223,9 +223,9 @@ namespace howdy::test::user_models {
 			    const auto result =
 			        howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
 			    ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
-			                 "self-referential model symlink is rejected");
+				             "self-referential model symlink is rejected");
 			    ok &= Expect(unlink(model_path.c_str()) == 0,
-			                 "remove self-referential model symlink");
+				             "remove self-referential model symlink");
 			    ec.clear();
 		    },
 		    "model symlink loop creation failed");
@@ -290,7 +290,7 @@ namespace howdy::test::user_models {
 				    relative_staged_models, "alice", std::nullopt, {temp_root});
 				ok &=
 				    Expect(relative_staged.status == howdy::native::UserModelStatus::kInsecurePath,
-				           "relative staged-looking model path is rejected as malformed");
+					       "relative staged-looking model path is rejected as malformed");
 				ok &= Expect(close(model_fd) == 0, "close staged-path rejection model");
 			}
 		}
@@ -302,7 +302,7 @@ namespace howdy::test::user_models {
 			    const auto result = howdy::native::LoadUserModels(
 			        "alice", backend, howdy::native::DefaultSecureOwnerUid(), {temp_root});
 			    ok &= Expect(result.status != howdy::native::UserModelStatus::kOk,
-			                 "unreadable model file fails safely");
+				             "unreadable model file fails safely");
 			    ok &= Expect(chmod(model_path.c_str(), 0644) == 0, "restore unreadable model file");
 		    },
 		    "unreadable model file check while running as root");
@@ -605,13 +605,13 @@ namespace howdy::test::user_models {
 			std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 			ok &=
 			    Expect(WriteFile(model_path, R"([{"id":0,"time":1,"label":"two","data":[[1.0]]}])"),
-			           "rewrite model with same-size content after clear inspection");
+				       "rewrite model with same-size content after clear inspection");
 			WithPresent(inspection.snapshot, [&] -> void {
 				const std::array<timespec, 2> times{
 				    timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
-				             .tv_nsec = inspection.snapshot->mtime_nanosecs},
+					         .tv_nsec = inspection.snapshot->mtime_nanosecs},
 				    timespec{.tv_sec  = inspection.snapshot->mtime_seconds,
-				             .tv_nsec = inspection.snapshot->mtime_nanosecs},
+					         .tv_nsec = inspection.snapshot->mtime_nanosecs},
 				};
 				ok &= Expect(utimensat(AT_FDCWD, model_path.c_str(), times.data(), 0) == 0,
 				             "restore old model mtime after same-size rewrite");

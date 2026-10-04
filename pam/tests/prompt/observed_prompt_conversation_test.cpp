@@ -343,9 +343,9 @@ namespace {
 		    "missing observer end callback makes wrapper unavailable");
 		ok &=
 		    Expect(!make(howdy::test::OpaquePamHandleForTest(), valid_observer,
-		                 {.context = &operations, .get_item = nullptr, .set_item = InjectedSetItem})
-		                ->Available(),
-		           "missing PAM get-item operation makes wrapper unavailable");
+			             {.context = &operations, .get_item = nullptr, .set_item = InjectedSetItem})
+			            ->Available(),
+			       "missing PAM get-item operation makes wrapper unavailable");
 
 		operations.get_result = PAM_SYSTEM_ERR;
 		ok &= Expect(
@@ -374,7 +374,7 @@ namespace {
 		operations.original = {.conv = DelegatedConversation, .appdata_ptr = nullptr};
 		auto no_set =
 		    make(howdy::test::OpaquePamHandleForTest(), valid_observer,
-		         {.context = &operations, .get_item = InjectedGetItem, .set_item = nullptr});
+			     {.context = &operations, .get_item = InjectedGetItem, .set_item = nullptr});
 		ok &= Expect(no_set->Available() && no_set->Install() == PAM_SYSTEM_ERR,
 		             "missing PAM set-item operation rejects install");
 		operations.set_results.at(0) = PAM_SYSTEM_ERR;

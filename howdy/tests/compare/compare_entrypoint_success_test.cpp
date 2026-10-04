@@ -123,17 +123,17 @@ namespace {
 	auto DependenciesFor(FixtureContext &context) -> howdy::native::CompareEntrypointDependencies {
 		return {
 		    .capture         = {.capture_context = &context,
-		                        .open_capture    = OpenCapture,
-		                        .warm_up_capture = WarmUpCapture,
-		                        .read_gray_frame = ReadGrayFrame,
-		                        .error_message   = CaptureError,
-		                        .set_property    = SetProperty,
-		                        .clock_context   = &context,
-		                        .now             = FixedNow},
+			                    .open_capture    = OpenCapture,
+			                    .warm_up_capture = WarmUpCapture,
+			                    .read_gray_frame = ReadGrayFrame,
+			                    .error_message   = CaptureError,
+			                    .set_property    = SetProperty,
+			                    .clock_context   = &context,
+			                    .now             = FixedNow},
 		    .inference       = {.context       = &context,
-		                        .prepare_frame = PrepareFrame,
-		                        .detect_faces  = DetectFaces,
-		                        .encode_face   = EncodeFace},
+			                    .prepare_frame = PrepareFrame,
+			                    .detect_faces  = DetectFaces,
+			                    .encode_face   = EncodeFace},
 		    .context         = &context,
 		    .drop_privileges = DropPrivileges,
 		    .warm_model      = WarmModel,
@@ -218,7 +218,7 @@ auto main() -> int {
 	original = std::cerr.rdbuf(rejection_error.rdbuf());
 	const int rejection_result =
 	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
-	                                        validation_root, rejection_dependencies);
+		                                    validation_root, rejection_dependencies);
 	std::cerr.rdbuf(original);
 	ok &= Expect(rejection_result == static_cast<int>(howdy::native::CompareExit::kInvalidDevice) &&
 	                 rejection.read_calls == 2 && rejection.encode_calls == 1 &&

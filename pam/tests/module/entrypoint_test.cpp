@@ -123,15 +123,15 @@ auto main() -> int {
 	    .expected_context            = nullptr,
 	    .expected_pamh               = howdy::test::OpaquePamHandleForTest(),
 	    .expected_args               = {.flags = 41,
-	                                    .argc  = static_cast<int>(raw_argv.size()),
-	                                    .argv  = raw_argv.data()},
+		                                .argc  = static_cast<int>(raw_argv.size()),
+		                                .argv  = raw_argv.data()},
 	    .expected_request_auth_token = true,
 	    .result                      = PAM_AUTH_ERR,
 	};
 	call.expected_context = &call;
 	const int callback_result =
 	    RunAuthenticationEntrypoint(call.expected_pamh, call.expected_args,
-	                                call.expected_request_auth_token, DependenciesFor(call));
+		                            call.expected_request_auth_token, DependenciesFor(call));
 	ok &= Expect(callback_result == PAM_AUTH_ERR, "entrypoint propagates callback result");
 	ok &= Expect(call.calls == 1, "entrypoint invokes callback exactly once");
 	ok &= Expect(call.actual_context == call.expected_context, "entrypoint forwards context");

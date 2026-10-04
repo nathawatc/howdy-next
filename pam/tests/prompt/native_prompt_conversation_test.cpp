@@ -114,7 +114,7 @@ namespace {
 		return CreateConversation(std::move(descriptors),
 		                          operations == nullptr
 		                              ? NativePromptConversationTestAccess::Operations{}
-		                              : NativePromptConversationTestAccess::Operations{
+									  : NativePromptConversationTestAccess::Operations{
 		                                    .context      = operations,
 		                                    .post_message = NativePromptInjectedPostMessage,
 		                                    .set_pam_item = InjectedSetPamItem,
@@ -184,8 +184,8 @@ auto ExpectOriginalConversationRestored() -> bool {
 		NativePromptConversation conversation(pamh);
 		NativePromptConversationTestAccess::ReplaceDescriptors(
 		    conversation, {.tty_fd         = std::move(slave_fd),
-		                   .abort_read_fd  = std::move(abort_pipe.at(0)),
-		                   .abort_write_fd = std::move(abort_pipe.at(1))});
+			               .abort_read_fd  = std::move(abort_pipe.at(0)),
+			               .abort_write_fd = std::move(abort_pipe.at(1))});
 		ok &= Expect(conversation.Available(), "restore test native prompt is available");
 		ok &= Expect(conversation.Install() == PAM_SUCCESS,
 		             "restore test installs native conversation");
@@ -252,7 +252,7 @@ auto ExpectRestoreResult(std::array<int, 3>                    pam_set_results,
 		auto                     *response    = howdy::test::PamResponseSentinelForTest();
 		ok &=
 		    Expect(override.conv(1, &message_ptr, &response, override.appdata_ptr) == PAM_CONV_ERR,
-		           message + ": retained callback fails closed after object destruction");
+			       message + ": retained callback fails closed after object destruction");
 		ok &= Expect(response == nullptr,
 		             message + ": retained callback clears response after destruction");
 	} else if (expected == howdy::pam::ConversationRestoreResult::kFailClosedInstalled) {

@@ -263,8 +263,8 @@ namespace {
 			    {.fd = kScriptedFd, .max_bytes = 50000, .reserve_bytes = hint});
 			ok &=
 			    Expect(result.output == Script().content && !result.hit_limit && !result.read_error,
-			           "reserve hint never truncates growing files or fabricates bytes after EOF; "
-			           "EINTR retries");
+				       "reserve hint never truncates growing files or fabricates bytes after EOF; "
+				       "EINTR retries");
 			ok &= Expect(Script().calls == 5, "16 KiB chunks plus interrupt and EOF reads");
 		}
 		Script()        = {.content = "unread", .next_error = EIO};

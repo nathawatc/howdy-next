@@ -90,8 +90,8 @@ namespace howdy::native::auth_helper {
 		return internal::PrepareRuntimeAuthFiles(
 		    user, {.target_uid = identity.uid, .owner_uid = 0, .owner_gid = 0},
 		    {.runtime_root    = RuntimeRoot(),
-		     .config          = howdy::native::ResolveConfigPath(),
-		     .user_models_dir = howdy::native::ResolveUserModelsDir()},
+			 .config          = howdy::native::ResolveConfigPath(),
+			 .user_models_dir = howdy::native::ResolveUserModelsDir()},
 		    ProductionAclOperations());
 	}
 

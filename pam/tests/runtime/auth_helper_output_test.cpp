@@ -25,7 +25,7 @@ namespace {
 	auto ReadFdToString(int fd) -> std::string {
 		return howdy::native::ReadFdToStringBounded(
 		           {.fd        = fd,
-		            .max_bytes = howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit})
+				    .max_bytes = howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit})
 		    .output;
 	}
 
@@ -131,81 +131,81 @@ namespace {
 
 		const std::vector<ProtocolCase> cases = {
 		    {.name            = "valid canonical prepared-runtime output is accepted",
-		     .output          = output_for(config_path, models_dir),
-		     .expected_ok     = true,
-		     .config_path     = config_path.string(),
-		     .user_models_dir = models_dir.string()},
+			 .output          = output_for(config_path, models_dir),
+			 .expected_ok     = true,
+			 .config_path     = config_path.string(),
+			 .user_models_dir = models_dir.string()},
 		    {.name        = "config path outside prepared runtime root is rejected",
-		     .output      = output_for("/etc/howdy/config.ini", models_dir),
-		     .expected_ok = false},
+			 .output      = output_for("/etc/howdy/config.ini", models_dir),
+			 .expected_ok = false},
 		    {.name        = "user-model directory outside prepared runtime root is rejected",
-		     .output      = output_for(config_path, "/var/lib/howdy/models"),
-		     .expected_ok = false},
+			 .output      = output_for(config_path, "/var/lib/howdy/models"),
+			 .expected_ok = false},
 		    {.name        = "sibling runtime paths are rejected",
-		     .output      = output_for(config_path, PreparedUserModelsDir(sibling_dir)),
-		     .expected_ok = false},
+			 .output      = output_for(config_path, PreparedUserModelsDir(sibling_dir)),
+			 .expected_ok = false},
 		    {.name = "invalid prepared runtime suffix is rejected",
-		     .output =
-		         output_for(PreparedConfigPath(invalid_dir), PreparedUserModelsDir(invalid_dir)),
-		     .expected_ok = false},
+			 .output =
+			     output_for(PreparedConfigPath(invalid_dir), PreparedUserModelsDir(invalid_dir)),
+			 .expected_ok = false},
 		    {.name        = "config and models paths swapped are rejected",
-		     .output      = output_for(runtime_dir / kPreparedUserModelsDirectoryName,
-		                               runtime_dir / kPreparedConfigFileName),
-		     .expected_ok = false},
+			 .output      = output_for(runtime_dir / kPreparedUserModelsDirectoryName,
+			                           runtime_dir / kPreparedConfigFileName),
+			 .expected_ok = false},
 		    {.name   = "unexpected nested path is rejected",
-		     .output = output_for(runtime_dir / "nested" / kPreparedConfigFileName, models_dir),
-		     .expected_ok = false},
+			 .output = output_for(runtime_dir / "nested" / kPreparedConfigFileName, models_dir),
+			 .expected_ok = false},
 		    {.name = "parent traversal path is rejected",
-		     .output =
-		         output_for(runtime_dir / ".." / "escaped" / kPreparedConfigFileName, models_dir),
-		     .expected_ok = false},
+			 .output =
+			     output_for(runtime_dir / ".." / "escaped" / kPreparedConfigFileName, models_dir),
+			 .expected_ok = false},
 		    {.name        = "equivalent noncanonical models path is rejected",
-		     .output      = output_for(config_path, runtime_dir / "models" / ".." / "models"),
-		     .expected_ok = false},
+			 .output      = output_for(config_path, runtime_dir / "models" / ".." / "models"),
+			 .expected_ok = false},
 		    {.name = "foreign UID runtime path is rejected",
-		     .output =
-		         output_for(PreparedConfigPath(foreign_dir), PreparedUserModelsDir(foreign_dir)),
-		     .expected_ok = false},
+			 .output =
+			     output_for(PreparedConfigPath(foreign_dir), PreparedUserModelsDir(foreign_dir)),
+			 .expected_ok = false},
 		    {.name        = "relative runtime paths are rejected",
-		     .output      = output_for("relative/config.ini", "relative/models"),
-		     .expected_ok = false},
+			 .output      = output_for("relative/config.ini", "relative/models"),
+			 .expected_ok = false},
 		    {.name        = "duplicate CONFIG_PATH is rejected",
-		     .output      = "CONFIG_PATH=" + config_path.string() +
-		                    "\nCONFIG_PATH=" + (sibling_dir / kPreparedConfigFileName).string() +
-		                    "\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
-		     .expected_ok = false},
+			 .output      = "CONFIG_PATH=" + config_path.string() +
+			                "\nCONFIG_PATH=" + (sibling_dir / kPreparedConfigFileName).string() +
+			                "\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
+			 .expected_ok = false},
 		    {.name   = "duplicate USER_MODELS_DIR is rejected",
-		     .output = "CONFIG_PATH=" + config_path.string() +
-		               "\nUSER_MODELS_DIR=" + models_dir.string() +
-		               "\nUSER_MODELS_DIR=" + PreparedUserModelsDir(sibling_dir).string() + "\n",
-		     .expected_ok = false},
+			 .output = "CONFIG_PATH=" + config_path.string() +
+			           "\nUSER_MODELS_DIR=" + models_dir.string() +
+			           "\nUSER_MODELS_DIR=" + PreparedUserModelsDir(sibling_dir).string() + "\n",
+			 .expected_ok = false},
 		    {.name        = "missing CONFIG_PATH is rejected",
-		     .output      = "USER_MODELS_DIR=" + models_dir.string() + "\n",
-		     .expected_ok = false},
+			 .output      = "USER_MODELS_DIR=" + models_dir.string() + "\n",
+			 .expected_ok = false},
 		    {.name        = "missing USER_MODELS_DIR is rejected",
-		     .output      = "CONFIG_PATH=" + config_path.string() + "\n",
-		     .expected_ok = false},
+			 .output      = "CONFIG_PATH=" + config_path.string() + "\n",
+			 .expected_ok = false},
 		    {.name        = "empty CONFIG_PATH is rejected",
-		     .output      = "CONFIG_PATH=\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
-		     .expected_ok = false},
+			 .output      = "CONFIG_PATH=\nUSER_MODELS_DIR=" + models_dir.string() + "\n",
+			 .expected_ok = false},
 		    {.name        = "empty USER_MODELS_DIR is rejected",
-		     .output      = "CONFIG_PATH=" + config_path.string() + "\nUSER_MODELS_DIR=\n",
-		     .expected_ok = false},
+			 .output      = "CONFIG_PATH=" + config_path.string() + "\nUSER_MODELS_DIR=\n",
+			 .expected_ok = false},
 		    {.name        = "NOTICE line with valid required keys is rejected",
-		     .output      = "NOTICE=ignored\n" + output_for(config_path, models_dir),
-		     .expected_ok = false},
+			 .output      = "NOTICE=ignored\n" + output_for(config_path, models_dir),
+			 .expected_ok = false},
 		    {.name        = "unknown key with valid required keys is rejected",
-		     .output      = "UNKNOWN=ignored\n" + output_for(config_path, models_dir),
-		     .expected_ok = false},
+			 .output      = "UNKNOWN=ignored\n" + output_for(config_path, models_dir),
+			 .expected_ok = false},
 		    {.name        = "line without separator with valid required keys is rejected",
-		     .output      = "CONFIG_PATH=" + config_path.string() +
-		                    "\nhelper wrote stderr noise\n"
-		                    "USER_MODELS_DIR=" +
-		                    models_dir.string() + "\n",
-		     .expected_ok = false},
+			 .output      = "CONFIG_PATH=" + config_path.string() +
+			                "\nhelper wrote stderr noise\n"
+			                "USER_MODELS_DIR=" +
+			                models_dir.string() + "\n",
+			 .expected_ok = false},
 		    {.name        = "required values containing equals are rejected by path contract",
-		     .output      = output_for(runtime_dir / "config=debug.ini", models_dir),
-		     .expected_ok = false},
+			 .output      = output_for(runtime_dir / "config=debug.ini", models_dir),
+			 .expected_ok = false},
 		};
 
 		bool ok = true;

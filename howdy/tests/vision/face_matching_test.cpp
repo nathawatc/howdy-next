@@ -30,8 +30,8 @@ namespace {
 		const auto                               actual = matcher.Match(probe);
 		PreparedResultsAgree() &=
 		    Expect(actual.index == expected.index && actual.score == expected.score &&
-		               actual.accepted == expected.accepted,
-		           "prepared and single-pass matching agree");
+			           actual.accepted == expected.accepted,
+			       "prepared and single-pass matching agree");
 		return actual;
 	}
 

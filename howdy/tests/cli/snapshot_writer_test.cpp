@@ -484,7 +484,7 @@ namespace {
 		    .release_fd     = release_pipe.at(0),
 		    .wait_once      = true,
 		    .encoded_output = index == 0 ? std::array<uchar, 3>{'A', 'A', 'A'}
-		                                 : std::array<uchar, 3>{'B', 'B', 'B'},
+			                             : std::array<uchar, 3>{'B', 'B', 'B'},
 		};
 		const auto dependencies = snapshot_internal::SnapshotWriterDependencies{
 		    .context         = &context,
@@ -602,7 +602,7 @@ namespace {
 			ok &=
 			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
-			           "blocked parent returns false");
+				       "blocked parent returns false");
 		}
 		ok &= Expect(context.encode_calls == 0, "blocked parent skips encoder");
 		ok &= Expect(ReadFile(blocker) == "blocking content", "blocked parent preserves blocker");
@@ -666,7 +666,7 @@ namespace {
 			ok &=
 			    Expect(!snapshot_internal::WriteSnapshotAtPath(
 			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
-			           "insecure log root returns false");
+				       "insecure log root returns false");
 		}
 		ok &= Expect(context.encode_calls == 0, "insecure log root skips encoder");
 		ok &= Expect(!fs::exists(output), "insecure log root creates no output");
@@ -700,7 +700,7 @@ namespace {
 		WriterCallbackContext context;
 		const bool            result = snapshot_internal::WriteSnapshotAtPath(
 		    {cv::Mat(8, 4, CV_8UC3, cv::Scalar(10, 20, 30)),
-		     cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60))},
+			 cv::Mat(8, 12, CV_8UC3, cv::Scalar(40, 50, 60))},
 		    TextLines(), output, FakeDependencies(context, temp_root));
 		ok &= Expect(result, "mixed-width frames return true");
 		ok &= Expect(context.encode_calls == 1, "mixed-width frames call encoder once");

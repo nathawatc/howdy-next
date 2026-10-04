@@ -177,11 +177,11 @@ namespace {
 		while (!output_eof || !lease_fd.Valid()) {
 			std::array<pollfd, 2> descriptors = {
 			    pollfd{.fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
-			           .events  = POLLIN,
-			           .revents = 0},
+				       .events  = POLLIN,
+				       .revents = 0},
 			    pollfd{.fd      = lease_fd.Valid() ? -1 : spawn->lease_socket.Parent(),
-			           .events  = POLLIN,
-			           .revents = 0},
+				       .events  = POLLIN,
+				       .revents = 0},
 			};
 			auto     &output_descriptor = descriptors.front();
 			auto     &lease_descriptor  = descriptors.back();

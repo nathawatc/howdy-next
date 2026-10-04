@@ -187,7 +187,7 @@ namespace {
 			const int timeout_code = static_cast<int>(howdy::native::CompareExit::kTimeoutReached);
 			ok &=
 			    Expect(WIFEXITED(timed_out_status) && WEXITSTATUS(timed_out_status) == timeout_code,
-			           "compare timeout kills SIGTERM-resistant child");
+				       "compare timeout kills SIGTERM-resistant child");
 			ok &= Expect(ChildReaped(timed_out_child),
 			             "compare timeout reaps SIGTERM-resistant child");
 		}

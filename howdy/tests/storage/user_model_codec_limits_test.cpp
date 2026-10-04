@@ -65,7 +65,7 @@ namespace howdy::test::user_model_codec {
 		const auto max_encoding          = RepeatedArray(kMaxEncodingLength, "0.0");
 		const auto max_encoding_document = Decode(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("cosine")", R"("sface.onnx")", "[" + max_encoding + "]")}));
+			                     R"("cosine")", R"("sface.onnx")", "[" + max_encoding + "]")}));
 		ok &= ExpectStatus(max_encoding_document.Result().status, UserModelStatus::kOk,
 		                   "max encoding length returns kOk");
 		ok &= Expect(max_encoding_document.Result().entries.front().encodings.front().size() ==
@@ -75,7 +75,7 @@ namespace howdy::test::user_model_codec {
 		const auto max_encodings          = RepeatedArray(kMaxEncodingsPerModel, "[1.0]");
 		const auto max_encodings_document = Decode(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("cosine")", R"("sface.onnx")", max_encodings)}));
+			                     R"("cosine")", R"("sface.onnx")", max_encodings)}));
 		ok &= ExpectStatus(max_encodings_document.Result().status, UserModelStatus::kOk,
 		                   "max encodings per model returns kOk");
 		ok &= Expect(max_encodings_document.Result().entries.front().encodings.size() ==
@@ -97,22 +97,22 @@ namespace howdy::test::user_model_codec {
 
 		ok &= ExpectStatus(
 		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		                                "[" + RepeatedArray(kMaxEncodingLength + 1, "0.0") + "]")}))
+			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
+			                            "[" + RepeatedArray(kMaxEncodingLength + 1, "0.0") + "]")}))
 		        .Result()
 		        .status,
 		    UserModelStatus::kOversized, "oversized encoding length returns kOversized");
 		ok &= ExpectStatus(
 		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		                                RepeatedArray(kMaxEncodingsPerModel + 1, "[1.0]"))}))
+			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
+			                            RepeatedArray(kMaxEncodingsPerModel + 1, "[1.0]"))}))
 		        .Result()
 		        .status,
 		    UserModelStatus::kOversized, "too many encodings per model returns kOversized");
 		max_models.push_back(ModelJson(std::to_string(kMaxStoredModels)));
 		ok &=
 		    ExpectStatus(Decode(ModelList(max_models)).Result().status, UserModelStatus::kOversized,
-		                 "too many stored models returns kOversized");
+			             "too many stored models returns kOversized");
 		return ok;
 	}
 

@@ -206,11 +206,11 @@ namespace {
 		}
 		for (const auto &[uid, gid, expected_access, label] : {
 		         std::tuple{target_uid, shared_gid, true,
-		                    "named target UID traverses and reads staged files"},
+				            "named target UID traverses and reads staged files"},
 		         std::tuple{unrelated_uid, shared_gid, false,
-		                    "unrelated UID with same GID cannot access staged files"},
+				            "unrelated UID with same GID cannot access staged files"},
 		         std::tuple{unrelated_uid, unrelated_gid, false,
-		                    "unrelated UID and GID cannot access staged files"},
+				            "unrelated UID and GID cannot access staged files"},
 		     }) {
 			const auto result = ChildAccessMatches(*prepared, uid, gid, expected_access);
 			if (!result.has_value()) {
@@ -254,7 +254,7 @@ namespace {
 		const int status_flags     = fcntl(prepared->lease_fd.Get(), F_GETFL);
 		ok &=
 		    Expect(descriptor_flags >= 0 && howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC),
-		           "returned lease is close-on-exec");
+			       "returned lease is close-on-exec");
 		ok &= Expect(status_flags >= 0 &&
 		                 howdy::native::MaskedBits(status_flags, O_ACCMODE) == O_RDONLY,
 		             "returned lease is read-only");
@@ -407,7 +407,7 @@ namespace {
 		        InodeOf(reused->user_models_dir) == first_models_inode &&
 		        InodeOf(reused->config_path) == first_config_inode &&
 		        InodeOf(reused->runtime_dir /
-		                howdy::native::auth_helper_protocol::kPreparedModelBackingFileName) ==
+				        howdy::native::auth_helper_protocol::kPreparedModelBackingFileName) ==
 		            first_backing_inode,
 		    "freed slot reuses same paths and actual inodes");
 		CloseLease(second);
@@ -421,7 +421,7 @@ namespace {
 		const auto source_model = fixture.models / "alice.dat";
 		ok &=
 		    Expect(WriteFile(source_model, "model-v1\n") && chmod(source_model.c_str(), 0644) == 0,
-		           "creates secure source model");
+			       "creates secure source model");
 		auto present = Prepare(fixture, operations);
 		ok &= Expect(present.has_value(), "present model prepares");
 		if (!present.has_value()) {
@@ -475,7 +475,7 @@ namespace {
 
 		ok &=
 		    Expect(WriteFile(source_model, "model-v3\n") && chmod(source_model.c_str(), 0644) == 0,
-		           "restores source model");
+			       "restores source model");
 		auto                restored = Prepare(fixture, operations);
 		std::array<char, 9> restored_held_content{};
 		ok &= Expect(restored.has_value() && InodeOf(backing) == backing_inode &&
@@ -682,7 +682,7 @@ namespace {
 			const auto source_model = visible_fixture->models / "alice.dat";
 			ok &=
 			    Expect(WriteFile(source_model, "model\n") && chmod(source_model.c_str(), 0644) == 0,
-			           "creates visible identity source");
+				       "creates visible identity source");
 			auto visible_prepared = Prepare(*visible_fixture, operations);
 			ok &= Expect(visible_prepared.has_value(), "creates visible identity fixture");
 			CloseLease(visible_prepared);

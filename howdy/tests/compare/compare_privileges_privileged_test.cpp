@@ -84,8 +84,8 @@ namespace howdy::test::compare_privileges {
 				ok &= VerifyFatalResult(
 				    context, result,
 				    {"getresuid", "getresgid", "lookup", "query securebits",
-				     "clear ambient capabilities", "clear supplementary groups", "setresgid",
-				     "setresuid", "clear capability sets", "read capability sets", "fatal"},
+					 "clear ambient capabilities", "clear supplementary groups", "setresgid",
+					 "setresuid", "clear capability sets", "read capability sets", "fatal"},
 				    std::string("privileged residual ") + label + " capability");
 				ok &= Expect(context.lookup_name == "nobody",
 				             std::string(label) + " residual capability uses nobody path");
@@ -147,14 +147,14 @@ namespace howdy::test::compare_privileges {
 
 			const std::vector<FailureCase> cases{
 			    {.failure = FailureOperation::kSecurebits,
-			     .status  = ComparePrivilegeStatus::kCapabilityFailure,
-			     .events  = {"getresuid", "getresgid", "lookup", "query securebits"},
-			     .label   = "securebits query"},
+				 .status  = ComparePrivilegeStatus::kCapabilityFailure,
+				 .events  = {"getresuid", "getresgid", "lookup", "query securebits"},
+				 .label   = "securebits query"},
 			    {.failure = FailureOperation::kAmbient,
-			     .status  = ComparePrivilegeStatus::kCapabilityFailure,
-			     .events  = {"getresuid", "getresgid", "lookup", "query securebits",
-			                 "clear ambient capabilities"},
-			     .label   = "ambient clear"},
+				 .status  = ComparePrivilegeStatus::kCapabilityFailure,
+				 .events  = {"getresuid", "getresgid", "lookup", "query securebits",
+				             "clear ambient capabilities"},
+				 .label   = "ambient clear"},
 			};
 
 			bool ok = true;
@@ -174,7 +174,7 @@ namespace howdy::test::compare_privileges {
 
 			for (const auto &[securebits, label] : std::array<std::pair<int, const char *>, 2>{
 			         {{SECBIT_KEEP_CAPS, "KEEP_CAPS"},
-			          {SECBIT_NO_SETUID_FIXUP, "NO_SETUID_FIXUP"}}}) {
+					  {SECBIT_NO_SETUID_FIXUP, "NO_SETUID_FIXUP"}}}) {
 				FakePrivilegeContext context;
 				context.securebits = securebits;
 				const auto result  = Drop(context);
@@ -182,7 +182,7 @@ namespace howdy::test::compare_privileges {
 				             std::string(label) + " is rejected");
 				ok &=
 				    ExpectEvents(context, {"getresuid", "getresgid", "lookup", "query securebits"},
-				                 std::string(label) + " stops before credential mutation");
+					             std::string(label) + " stops before credential mutation");
 			}
 			return ok;
 		}
@@ -201,19 +201,19 @@ namespace howdy::test::compare_privileges {
 			for (const auto &[failure, events, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
 			         {FailureOperation::kGroups,
-			          {"getresuid", "getresgid", "lookup", "query securebits",
-			           "clear ambient capabilities", "clear supplementary groups", "fatal"},
-			          "supplementary-group clear failure"},
+					  {"getresuid", "getresgid", "lookup", "query securebits",
+					   "clear ambient capabilities", "clear supplementary groups", "fatal"},
+					  "supplementary-group clear failure"},
 			         {FailureOperation::kSetresgid,
-			          {"getresuid", "getresgid", "lookup", "query securebits",
-			           "clear ambient capabilities", "clear supplementary groups", "setresgid",
-			           "fatal"},
-			          "setresgid failure"},
+					  {"getresuid", "getresgid", "lookup", "query securebits",
+					   "clear ambient capabilities", "clear supplementary groups", "setresgid",
+					   "fatal"},
+					  "setresgid failure"},
 			         {FailureOperation::kSetresuid,
-			          {"getresuid", "getresgid", "lookup", "query securebits",
-			           "clear ambient capabilities", "clear supplementary groups", "setresgid",
-			           "setresuid", "fatal"},
-			          "setresuid failure"}}) {
+					  {"getresuid", "getresgid", "lookup", "query securebits",
+					   "clear ambient capabilities", "clear supplementary groups", "setresgid",
+					   "setresuid", "fatal"},
+					  "setresuid failure"}}) {
 				FakePrivilegeContext context;
 				context.failure   = failure;
 				const auto result = Drop(context);
@@ -223,23 +223,23 @@ namespace howdy::test::compare_privileges {
 			for (const auto &[failure, suffix, label] :
 			     std::vector<std::tuple<FailureOperation, std::vector<std::string>, std::string>>{
 			         {FailureOperation::kCapset,
-			          {"clear capability sets", "fatal"},
-			          "capset failure"},
+					  {"clear capability sets", "fatal"},
+					  "capset failure"},
 			         {FailureOperation::kCapget,
-			          {"clear capability sets", "read capability sets", "fatal"},
-			          "capget failure"},
+					  {"clear capability sets", "read capability sets", "fatal"},
+					  "capget failure"},
 			         {FailureOperation::kGetresgid,
-			          {"clear capability sets", "read capability sets", "getresgid", "fatal"},
-			          "GID verification failure"},
+					  {"clear capability sets", "read capability sets", "getresgid", "fatal"},
+					  "GID verification failure"},
 			         {FailureOperation::kGetresuid,
-			          {"clear capability sets", "read capability sets", "getresgid", "getresuid",
-			           "fatal"},
-			          "UID verification failure"},
+					  {"clear capability sets", "read capability sets", "getresgid", "getresuid",
+					   "fatal"},
+					  "UID verification failure"},
 			         {FailureOperation::kRegainSucceeds,
-			          {"clear capability sets", "read capability sets", "getresgid", "getresuid",
-			           "query fsuid", "query fsgid", "query supplementary groups",
-			           "root-regain probe", "fatal"},
-			          "successful root regain"}}) {
+					  {"clear capability sets", "read capability sets", "getresgid", "getresuid",
+					   "query fsuid", "query fsgid", "query supplementary groups",
+					   "root-regain probe", "fatal"},
+					  "successful root regain"}}) {
 				FakePrivilegeContext context;
 				context.failure     = failure;
 				const auto result   = Drop(context);
@@ -271,9 +271,9 @@ namespace howdy::test::compare_privileges {
 			     std::vector<std::tuple<bool, bool, std::vector<std::string>, std::string>>{
 			         {true, false, {"query fsuid", "fatal"}, "post-drop fsuid mismatch"},
 			         {false,
-			          true,
-			          {"query fsuid", "query fsgid", "fatal"},
-			          "post-drop fsgid mismatch"}}) {
+					  true,
+					  {"query fsuid", "query fsgid", "fatal"},
+					  "post-drop fsgid mismatch"}}) {
 				FakePrivilegeContext context;
 				context.fsuid_mismatch = fsuid_mismatch;
 				context.fsgid_mismatch = fsgid_mismatch;

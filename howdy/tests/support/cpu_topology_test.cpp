@@ -69,8 +69,8 @@ auto main() -> int {
 	    "missing topology leaves the OpenCV thread default unchanged");
 	ok &=
 	    Expect(!howdy::native::cpu_topology_detail::CountPhysicalCores(MakeAffinity({}), temp_root)
-	                .has_value(),
-	           "empty affinity leaves the OpenCV thread default unchanged");
+		            .has_value(),
+		       "empty affinity leaves the OpenCV thread default unchanged");
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

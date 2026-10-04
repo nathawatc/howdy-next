@@ -54,7 +54,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = std::string(label) + " must be a " + SecurePathKindName(kind) +
-			                     ": " + path.string(),
+				                 ": " + path.string(),
 			    .error_code    = 0,
 			};
 		}
@@ -63,7 +63,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = std::string(label) + " must be owned by UID " +
-			                     std::to_string(*owner_uid) + ": " + path.string(),
+				                 std::to_string(*owner_uid) + ": " + path.string(),
 			    .error_code    = 0,
 			};
 		}
@@ -107,7 +107,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
-			                     " (" + howdy::native::SystemErrorMessage(error_code) + ")",
+				                 " (" + howdy::native::SystemErrorMessage(error_code) + ")",
 			    .error_code    = error_code,
 			};
 		}
@@ -131,7 +131,7 @@ namespace howdy::native {
 			return SecurePathCheckResult{
 			    .ok            = false,
 			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
-			                     " (" + howdy::native::SystemErrorMessage(error_code) + ")",
+				                 " (" + howdy::native::SystemErrorMessage(error_code) + ")",
 			    .error_code    = error_code,
 			};
 		}

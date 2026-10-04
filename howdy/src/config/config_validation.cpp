@@ -84,10 +84,10 @@ namespace howdy::native {
 				    config_schema::RuntimeConfigOption(config_schema::OptionId::kFaceSfaceMetric);
 				const auto metric_value =
 				    config.Get(std::string(metric_option.section), std::string(metric_option.key),
-				               std::string(config_schema::RuntimeDefaultString(metric_option.id)));
+					           std::string(config_schema::RuntimeDefaultString(metric_option.id)));
 				const auto metric = ParseFaceMetric(
 				    metric_value.empty() ? config_schema::RuntimeDefaultString(metric_option.id)
-				                         : std::string_view(metric_value));
+					                     : std::string_view(metric_value));
 				if (!metric.has_value()) {
 					return InvalidConfigValueMessage(metric_option.key, metric_value,
 					                                 metric_option.invalid_rule);

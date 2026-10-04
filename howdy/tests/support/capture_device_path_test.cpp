@@ -61,12 +61,12 @@ auto main() -> int {
 	ok &= Expect(WriteFile(fake_regular, "not a character device"), "write fake regular device");
 	ok &=
 	    Expect(!howdy::native::detail::IsAllowedCaptureDevicePath(fake_regular.string(), temp_root),
-	           "regular file in direct video namespace is rejected");
+		       "regular file in direct video namespace is rejected");
 
 	const auto missing_by_id = temp_root / "dev" / "v4l" / "by-id" / "truly-missing-camera";
 	ok &=
 	    Expect(howdy::native::detail::IsAllowedCaptureDevicePath(missing_by_id.string(), temp_root),
-	           "truly missing by-id path under temp root is accepted");
+		       "truly missing by-id path under temp root is accepted");
 
 	const auto missing_by_path = temp_root / "dev" / "v4l" / "by-path" / "truly-missing-camera";
 	ok &= Expect(

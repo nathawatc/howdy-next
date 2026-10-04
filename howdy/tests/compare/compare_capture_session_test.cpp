@@ -247,7 +247,7 @@ auto main() -> int {
 		ok &= Expect(session.NextFrame().frame_number == 1, "reopen starts frame numbering at one");
 		ok &=
 		    Expect(capture.open_calls == 2 && capture.read_calls == 2 && capture.warm_up_calls == 0,
-		           "reopen reads without extra warm-ups");
+			       "reopen reads without extra warm-ups");
 	}
 
 	{

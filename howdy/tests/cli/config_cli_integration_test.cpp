@@ -343,10 +343,10 @@ namespace howdy::test::config_cli {
 			ok &= Expect(chmod(config_path.c_str(), 0600) == 0, "integration secures config file");
 			ok &=
 			    Expect(WriteFile(editor_path,
-			                     "#!/bin/sh\nprintf '%s:%s:%s:%s\\n' \"$(id -u)\" \"$(id -ru)\" "
-			                     "\"$(id -g)\" \"$(id -rg)\" > \"$HOWDY_TEST_EDITOR_CREDENTIALS\"\n"
-			                     "printf '[core\\n' > \"$1\"\n"),
-			           "integration writes fake editor");
+				                 "#!/bin/sh\nprintf '%s:%s:%s:%s\\n' \"$(id -u)\" \"$(id -ru)\" "
+				                 "\"$(id -g)\" \"$(id -rg)\" > \"$HOWDY_TEST_EDITOR_CREDENTIALS\"\n"
+				                 "printf '[core\\n' > \"$1\"\n"),
+				       "integration writes fake editor");
 			ok &= Expect(chmod(editor_path.c_str(), 0755) == 0,
 			             "integration makes fake editor executable");
 			ok &= Expect(WriteFile(credential_path, {}), "integration creates credential log");

@@ -61,35 +61,35 @@ namespace {
 		const std::vector<FailureCase> failures = {
 		    {.operation = "pipe2", .expected_destroy_calls = 0, .expected_closed_fds = {}},
 		    {.operation              = "socketpair",
-		     .expected_destroy_calls = 0,
-		     .expected_closed_fds    = {10, 11}},
+			 .expected_destroy_calls = 0,
+			 .expected_closed_fds    = {10, 11}},
 		    {.operation              = "actions_init",
-		     .expected_destroy_calls = 0,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 0,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "close_output_read",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "dup_stdout",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "dup_stderr",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "close_output_write",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "close_lease_parent",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "dup_lease",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "close_lease_child",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		    {.operation              = "closefrom",
-		     .expected_destroy_calls = 1,
-		     .expected_closed_fds    = {10, 11, 12, 13}},
+			 .expected_destroy_calls = 1,
+			 .expected_closed_fds    = {10, 11, 12, 13}},
 		};
 		const std::vector<std::string> setup_order = {
 		    "pipe2",      "socketpair",        "actions_init",       "close_output_read",
@@ -113,7 +113,7 @@ namespace {
 			    fake,
 			    std::vector<std::string>(setup_order.begin(), failed == setup_order.end()
 			                                                      ? setup_order.end()
-			                                                      : failed + 1),
+																  : failed + 1),
 			    failure.operation);
 		}
 
@@ -163,8 +163,8 @@ namespace {
 		    Expect(fake.pipe_flags == std::vector<int>{O_CLOEXEC}, "output pipe is close-on-exec");
 		ok &=
 		    Expect(fake.socket_parameters ==
-		               std::vector<std::array<int, 3>>{{AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0}},
-		           "lease socketpair is sequenced-packet and close-on-exec");
+			           std::vector<std::array<int, 3>>{{AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0}},
+			       "lease socketpair is sequenced-packet and close-on-exec");
 		ok &= Expect(fake.dup2_fds == std::vector<std::pair<int, int>>{{11, STDOUT_FILENO},
 		                                                               {11, STDERR_FILENO},
 		                                                               {13, 3}},
@@ -244,7 +244,7 @@ namespace {
 			             "fake collision normalizes both pipe descriptors");
 			ok &=
 			    Expect(fake.dup2_fds == std::vector<std::pair<int, int>>{{21, 1}, {21, 2}, {13, 3}},
-			           "fake collision uses normalized output fd and ordered lease fd");
+				       "fake collision uses normalized output fd and ordered lease fd");
 			ok &= ExpectClosedExactlyOnce(fake, {fds.at(0), fds.at(1), 20, 21, 12, 13},
 			                              "fake descriptor collision");
 		}
@@ -340,7 +340,7 @@ namespace {
 		const auto             result =
 		    sent ? howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
 		               sockets.at(0), &received_fd)
-		         : LeaseReceiveResult::kInvalid;
+			     : LeaseReceiveResult::kInvalid;
 		bool ok = Expect(result == expected, std::string(name) + " has expected result");
 		if (result == LeaseReceiveResult::kReceived) {
 			struct stat source_stat{};

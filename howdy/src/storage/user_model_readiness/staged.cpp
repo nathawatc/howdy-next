@@ -175,7 +175,7 @@ namespace howdy::native {
 		                           StagedReadiness *failure) -> std::optional<StagedDirectories> {
 			StagedDirectories directories{
 			    .root = ScopedFd(open(auth_helper_protocol::kPreparedRuntimeRoot,
-			                          O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)),
+				                      O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)),
 			};
 			if (directories.root.Get() < 0) {
 				*failure = StagedOpenFailure(errno);
@@ -194,7 +194,7 @@ namespace howdy::native {
 
 			directories.generation =
 			    ScopedFd(openat(directories.root.Get(), path.generation_name.c_str(),
-			                    O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+				                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (directories.generation.Get() < 0) {
 				*failure = StagedOpenFailure(errno);
 				return std::nullopt;
@@ -216,8 +216,8 @@ namespace howdy::native {
 
 			directories.models =
 			    ScopedFd(openat(directories.generation.Get(),
-			                    auth_helper_protocol::kPreparedUserModelsDirectoryName,
-			                    O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+				                auth_helper_protocol::kPreparedUserModelsDirectoryName,
+				                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (directories.models.Get() < 0) {
 				*failure = StagedOpenFailure(errno);
 				return std::nullopt;
@@ -302,7 +302,7 @@ namespace howdy::native {
 			if (visible.Get() >= 0) {
 				return ValidatePresentStagedFile(visible.Get(), parsed, *directories, owner)
 				           ? StagedReadiness::kPresent
-				           : StagedReadiness::kInsecure;
+						   : StagedReadiness::kInsecure;
 			}
 			if (errno != ENOENT) {
 				return errno == EACCES || errno == EIO ? StagedReadiness::kError

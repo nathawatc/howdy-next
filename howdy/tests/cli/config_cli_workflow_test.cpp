@@ -47,8 +47,8 @@ namespace howdy::test::config_cli {
 			howdy::native::InvokingIdentityResult invoking_identity = {
 			    .status = howdy::native::InvokingIdentityStatus::kResolved,
 			    .user   = howdy::native::InvokingUser{.uid  = geteuid(),
-			                                          .gid  = getegid(),
-			                                          .name = "alice"},
+				                                      .gid  = getegid(),
+				                                      .name = "alice"},
 			};
 			int                                        editor_status            = 0;
 			int                                        editor_ready_calls       = 0;
@@ -193,9 +193,9 @@ namespace howdy::test::config_cli {
 			for (const auto &[identity_status, expected_output] :
 			     std::array<std::pair<howdy::native::InvokingIdentityStatus, std::string>, 2>{
 			         std::pair{howdy::native::InvokingIdentityStatus::kInvalid,
-			                   "Invalid privilege-wrapper identity; config edit aborted\n"},
+					           "Invalid privilege-wrapper identity; config edit aborted\n"},
 			         std::pair{howdy::native::InvokingIdentityStatus::kConflicting,
-			                   "Conflicting privilege-wrapper identity; config edit aborted\n"}}) {
+					           "Conflicting privilege-wrapper identity; config edit aborted\n"}}) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
 				context.invoking_identity = {.status = identity_status};
@@ -357,10 +357,10 @@ namespace howdy::test::config_cli {
 			for (const auto &[error_input, expected_suffix] :
 			     std::array<std::pair<std::string, std::string>, 2>{
 			         std::pair{"[core\n", "Editing config.ini\nEdited config is invalid and was "
-			                              "not installed: "},
+					                      "not installed: "},
 			         std::pair{"[video]\ntimeout = 0\n",
-			                   "Editing config.ini\nInvalid config value for timeout=\"0\": "
-			                   "expected integer range 1..300\n"}}) {
+					           "Editing config.ini\nInvalid config value for timeout=\"0\": "
+					           "expected integer range 1..300\n"}}) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
 				context.edited_content = error_input;

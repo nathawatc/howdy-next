@@ -269,7 +269,7 @@ namespace howdy::test::download_models {
 		             "atomic writer preserves existing-file mode");
 		ok &=
 		    Expect(CountFilesWithPrefix(atomic_existing_path.parent_path(), ".howdy-atomic-") == 0,
-		           "atomic writer removes staged file after replacement");
+			       "atomic writer removes staged file after replacement");
 
 		const auto no_replace_path = temp_root / "atomic-no-replace";
 		ok &=

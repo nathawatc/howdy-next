@@ -38,29 +38,29 @@ namespace {
 
 		const std::array cases = {
 		    MappingCase{.name        = "eligible",
-		                .eligibility = AuthenticationEligibility::kEligible,
-		                .pam_status  = PAM_SUCCESS},
+			            .eligibility = AuthenticationEligibility::kEligible,
+			            .pam_status  = PAM_SUCCESS},
 		    MappingCase{.name        = "disabled",
-		                .eligibility = AuthenticationEligibility::kDisabled,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kDisabled,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "SSH session",
-		                .eligibility = AuthenticationEligibility::kSshSession,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kSshSession,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "closed lid",
-		                .eligibility = AuthenticationEligibility::kClosedLid,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kClosedLid,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "invalid user",
-		                .eligibility = AuthenticationEligibility::kInvalidUser,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kInvalidUser,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "missing model",
-		                .eligibility = AuthenticationEligibility::kMissingModel,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kMissingModel,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "invalid model storage",
-		                .eligibility = AuthenticationEligibility::kInvalidModelStorage,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kInvalidModelStorage,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		    MappingCase{.name        = "runtime error",
-		                .eligibility = AuthenticationEligibility::kRuntimeError,
-		                .pam_status  = PAM_AUTHINFO_UNAVAIL},
+			            .eligibility = AuthenticationEligibility::kRuntimeError,
+			            .pam_status  = PAM_AUTHINFO_UNAVAIL},
 		};
 
 		bool ok = true;
@@ -119,7 +119,7 @@ auto main() -> int {
 		             "no-model has no conversation");
 		ok &=
 		    Expect(decision.log_message == "Face verification unavailable: no enrolled face model",
-		           "no-model log message");
+			       "no-model log message");
 	}
 
 	{

@@ -281,7 +281,7 @@ auto main() -> int {
 		const auto *const expected_state = disabled ? "disabled" : "enabled";
 		ok &=
 		    Expect(result.stdout_output == std::string("Howdy is already ") + expected_state + "\n",
-		           "unchanged state stdout exact");
+			       "unchanged state stdout exact");
 		ok &= Expect(result.stderr_output.empty(), "unchanged state stderr empty");
 		ok &= Expect(context.updater_calls == 0, "unchanged state skips updater");
 	}

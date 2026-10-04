@@ -37,7 +37,7 @@ namespace {
 			} else {
 				events.emplace_back(property == cv::CAP_PROP_EXPOSURE && value == 42.0
 				                        ? "exposure"
-				                        : "wrong-exposure");
+										: "wrong-exposure");
 			}
 			return true;
 		}
@@ -67,7 +67,7 @@ auto main() -> int {
 	ok &= Expect(automatic.Read(), "automatic exposure starts real capture");
 	ok &=
 	    Expect(automatic.events == std::vector<std::string>{"open", "open-warm-up", "read"},
-	           "automatic exposure keeps built-in warm-up without manual writes or extra warm-up");
+		       "automatic exposure keeps built-in warm-up without manual writes or extra warm-up");
 
 	Capture manual;
 	ok &=

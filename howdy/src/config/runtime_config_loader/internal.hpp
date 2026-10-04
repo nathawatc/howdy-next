@@ -81,7 +81,7 @@ namespace howdy::native {
 		});
 		return std::ranges::find(option.choices, value) != option.choices.end()
 		           ? value
-		           : std::string(*fallback);
+				   : std::string(*fallback);
 	}
 
 	inline auto ReadSfaceMetric(const ConfigReader &reader) -> std::optional<FaceMetric> {

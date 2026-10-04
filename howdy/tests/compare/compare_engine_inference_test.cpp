@@ -183,7 +183,7 @@ namespace {
 		howdy::native::CompareEngine engine(
 		    MakeVideoConfig(40.0F), MakeInferenceOperations(context),
 		    howdy::native::PreparedFaceMatcher({MakeEncoding(0.5F)},
-		                                       howdy::native::FaceMetric::kCosine, 0.5F),
+			                                   howdy::native::FaceMetric::kCosine, 0.5F),
 		    {.context = &context, .match_face = MatchFace});
 		int                   fence_calls         = 0;
 		std::function<void()> before_first_encode = [&]() -> void {
@@ -372,7 +372,7 @@ auto RunCompareEngineInferenceTests() -> bool {
 		howdy::native::CompareEngine engine(
 		    MakeVideoConfig(), MakeInferenceOperations(context),
 		    howdy::native::PreparedFaceMatcher(caller_known, howdy::native::FaceMetric::kCosine,
-		                                       0.5F),
+			                                   0.5F),
 		    {.context = &context, .match_face = MatchFace});
 		caller_known.clear();
 		const auto result = engine.ProcessFaceFrame(working_frame);
@@ -557,7 +557,7 @@ auto RunCompareEngineInferenceTests() -> bool {
 			const auto result = engine.ProcessFaceFrame(working_frame);
 			ok &=
 			    Expect(result.status == howdy::native::CompareInferenceStatus::kInvalidMatchResult,
-			           "invalid accepted matcher result fails closed");
+				       "invalid accepted matcher result fails closed");
 			ok &= Expect(result.error_message == "Face matcher returned invalid match result",
 			             "invalid accepted matcher result returns stable diagnostic");
 			ok &= Expect(result.winning_index == -1,
@@ -648,11 +648,11 @@ auto RunCompareEngineInferenceTests() -> bool {
 		    .match_results =
 		        {
 		            {.index    = -1,
-		             .score    = std::numeric_limits<float>::quiet_NaN(),
-		             .accepted = false},
+					 .score    = std::numeric_limits<float>::quiet_NaN(),
+					 .accepted = false},
 		            {.index    = -1,
-		             .score    = std::numeric_limits<float>::infinity(),
-		             .accepted = false},
+					 .score    = std::numeric_limits<float>::infinity(),
+					 .accepted = false},
 		        },
 		};
 		howdy::native::CompareEngine engine(
@@ -674,13 +674,13 @@ auto RunCompareEngineInferenceTests() -> bool {
 		FakeInferenceContext context{
 		    .prepared_frame   = cv::Mat(2, 2, CV_8UC3, cv::Scalar(32, 64, 96)),
 		    .detection_result = {.status     = howdy::native::FaceDetectionStatus::kOk,
-		                         .detections = {MakeDetection(1.0F)}},
+			                     .detections = {MakeDetection(1.0F)}},
 		    .encoded_results  = {MakeEncoding(0.25F), MakeEncoding(0.25F)},
 		};
 		howdy::native::CompareEngine engine(
 		    MakeVideoConfig(), MakeInferenceOperations(context),
 		    howdy::native::PreparedFaceMatcher({MakeEncoding(-0.25F), MakeEncoding(0.25F)}, metric,
-		                                       0.5F));
+			                                   0.5F));
 		for (int frame = 0; frame < 2; ++frame) {
 			const auto result = engine.ProcessFaceFrame(working_frame);
 			ok &= Expect(result.status == howdy::native::CompareInferenceStatus::kMatch &&

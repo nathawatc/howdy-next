@@ -377,10 +377,10 @@ auto RunRuntimeSessionDeadlineTests() -> bool {
 	}
 	ok &=
 	    RunPrepareCase("output limit",
-	                   {.output = std::string(
+		               {.output = std::string(
 	                        howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit, 'h'),
-	                    .outcome = ChildOutcome::kStall},
-	                   false);
+		                .outcome = ChildOutcome::kStall},
+		               false);
 	ok &= RunPrepareCase("read error", {.output = output, .outcome = ChildOutcome::kStall}, false,
 	                     false, 0);
 	ok &= RunPrepareCase("partial read error", {.output = output, .outcome = ChildOutcome::kStall},

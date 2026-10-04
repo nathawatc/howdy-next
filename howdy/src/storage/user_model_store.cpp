@@ -208,7 +208,7 @@ namespace howdy::native {
 				CleanupStagedFile(*staged);
 				return exchange_result == ExchangeResult::kUnsupported
 				           ? AtomicFileCommitResult::kAtomicExchangeUnsupported
-				           : AtomicFileCommitResult::kNotCommitted;
+						   : AtomicFileCommitResult::kNotCommitted;
 			}
 			if (!PathIdentifiesFd(staged->path, locked_fd)) {
 				if (ExchangePaths(staged->path, path, true) == ExchangeResult::kSuccess) {
@@ -250,7 +250,7 @@ namespace howdy::native {
 			}
 			return !hooks.fail_parent_sync && SyncParentDirectory(path)
 			           ? AtomicFileCommitResult::kCommitted
-			           : AtomicFileCommitResult::kCommittedSyncFailed;
+					   : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
 		struct LockedUserModelFile {
@@ -446,7 +446,7 @@ namespace howdy::native {
 			return UserModelPathResult{
 			    .status        = UserModelStatus::kParseError,
 			    .error_message = std::string(kUserModelFileInspectionFailedMessage) + ": " +
-			                     model_path->string(),
+				                 model_path->string(),
 			};
 		}
 		if (model_exists) {
@@ -490,14 +490,14 @@ namespace howdy::native {
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,
-			                     "Failed to inspect opened user model file: " + path.string()),
+				                 "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
 		if (!OpenedModelFileIsSecureForRead(fd, path, opened_file)) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kInsecurePath,
-			                     "Opened user model file failed security validation: " +
-			                         path.string()),
+				                 "Opened user model file failed security validation: " +
+				                     path.string()),
 			};
 		}
 		if (opened_file.st_size == 0 && treat_empty_as_no_model) {
@@ -508,29 +508,29 @@ namespace howdy::native {
 		    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
 			return user_model_codec::Document(
 			    StoreListFailure(UserModelStatus::kOversized,
-			                     std::string(kUserModelFileTooLargeMessage) + path.string()));
+				                 std::string(kUserModelFileTooLargeMessage) + path.string()));
 		}
 		if (lseek(fd, 0, SEEK_SET) < 0) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,
-			                     std::string(kUserModelFileReadFailedMessage) + path.string()),
+				                 std::string(kUserModelFileReadFailedMessage) + path.string()),
 			};
 		}
 
 		const auto content =
 		    ReadFdToStringBounded({.fd            = fd,
-		                           .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
-		                           .reserve_bytes = static_cast<std::size_t>(opened_file.st_size)});
+			                       .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
+			                       .reserve_bytes = static_cast<std::size_t>(opened_file.st_size)});
 		if (content.read_error) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,
-			                     std::string(kUserModelFileReadFailedMessage) + path.string()),
+				                 std::string(kUserModelFileReadFailedMessage) + path.string()),
 			};
 		}
 		if (content.hit_limit) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kOversized,
-			                     std::string(kUserModelFileTooLargeMessage) + path.string()),
+				                 std::string(kUserModelFileTooLargeMessage) + path.string()),
 			};
 		}
 
@@ -550,7 +550,7 @@ namespace howdy::native {
 			}
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kParseError,
-			                     "Failed to open user model file: " + path.string()),
+				                 "Failed to open user model file: " + path.string()),
 			};
 		}
 		return LoadDocumentFromFd(input.Get(), path, expectations, false);
@@ -633,8 +633,8 @@ namespace howdy::native {
 		}
 		auto document =
 		    LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
-		                       {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
-		                       locked_file->created_empty_file);
+			                   {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
+			                   locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
 		    .transaction = UserModelStoreTransaction(
 		        path_result.path, std::move(locked_file->namespace_lock),

@@ -131,7 +131,7 @@ auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
 
 	auto staged =
 	    howdy::native::PrepareStagedFile(path, ".howdy-snapshot-", kSnapshotFileMode,
-	                                     howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+		                                 howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
 	if (!staged.has_value()) {
 		return false;
 	}

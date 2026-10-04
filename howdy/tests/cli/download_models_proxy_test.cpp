@@ -352,7 +352,7 @@ namespace howdy::test::download_models {
 		        .set_long   = TestSetoptLong,
 		        .set_off_t  = TestSetoptOffT,
 		        .set_string = TestSetoptString,
-		    };
+		};
 
 		auto
 		RealCurlDownloadFile(const std::string                                           &url,

@@ -536,7 +536,7 @@ namespace {
 			             "password acquisition pauses before wrapper receives secret prompt");
 			ok &=
 			    Expect(context.prompt_submissions == 0,
-			           "face success makes no submission attempt before wrapper receives ECHO_OFF");
+				       "face success makes no submission attempt before wrapper receives ECHO_OFF");
 			context.release_conversation = true;
 		}
 		context.token_condition.notify_all();
@@ -597,7 +597,7 @@ namespace {
 		}
 		ok &=
 		    Expect(howdy::pam::PromptCoordinatorTestAccess::WaitForCompareSuccess(coordinator, 1s),
-		           "no-secret-prompt face success publishes before password_call_returned");
+			       "no-secret-prompt face success publishes before password_call_returned");
 		{
 			std::scoped_lock const lock(context.token_mutex);
 			context.release_conversation = true;

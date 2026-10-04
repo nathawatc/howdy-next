@@ -171,7 +171,7 @@ namespace {
 			    };
 		    },
 		    .create_detector = [](const std::string &, const cv::Size &, float, float,
-		                          int) -> cv::Ptr<FakeDetector> {
+			                      int) -> cv::Ptr<FakeDetector> {
 			    return cv::makePtr<FakeDetector>();
 		    },
 		    .create_recognizer = [](const std::string &) -> cv::Ptr<FakeRecognizer> {
@@ -383,12 +383,12 @@ namespace {
 			             "second warm-up attempt performs no work after success or failure");
 			ok &=
 			    Expect(observations.alignments == 1 &&
-			               observations.features == (failure == WarmFailure::kEmptyAlignment ||
-			                                                 failure == WarmFailure::kCvException ||
-			                                                 failure == WarmFailure::kStdException
+				           observations.features == (failure == WarmFailure::kEmptyAlignment ||
+				                                             failure == WarmFailure::kCvException ||
+				                                             failure == WarmFailure::kStdException
 			                                             ? 0
-			                                             : 1),
-			           "warm-up invokes alignment and feature once when reached");
+														 : 1),
+				       "warm-up invokes alignment and feature once when reached");
 			ok &= Expect(observations.input_size == cv::Size(112, 112) &&
 			                 observations.input_type == CV_8UC3,
 			             "warm-up uses fixed 112 by 112 BGR input");
@@ -537,7 +537,7 @@ auto main() -> int {
 		             "default config uses canonical YuNet path");
 		ok &=
 		    Expect(recognizer_path == (models_dir / howdy::native::FaceModel::kSfaceModel).string(),
-		           "default config uses canonical SFace path");
+			       "default config uses canonical SFace path");
 	}
 
 	ok &= TestDnnEngineEnvironment();

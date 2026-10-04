@@ -94,10 +94,10 @@ namespace {
 			const timespec timeout{
 			    .tv_sec  = seconds.count(),
 			    .tv_nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining - seconds)
-			                   .count()};
+				               .count()};
 			std::array<pollfd, 2> descriptors{
 			    {{.fd = pidfd, .events = POLLIN, .revents = 0},
-			     {.fd = cancellation_fd, .events = POLLIN, .revents = 0}}};
+				 {.fd = cancellation_fd, .events = POLLIN, .revents = 0}}};
 			const int result = ppoll(descriptors.data(), descriptors.size(), &timeout, nullptr);
 			if (result < 0) {
 				if (errno == EINTR) {

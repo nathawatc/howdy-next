@@ -125,13 +125,13 @@ namespace {
 		for (const auto &[status, error, expected] :
 		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
 		         {howdy::native::UserModelStatus::kNoModelDirectory,
-		          {},
-		          "No face models found. Please run:\n\n\thowdy add\n\n"},
+				  {},
+				  "No face models found. Please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kNoModel,
-		          {},
-		          "No face models found. Please run:\n\n\thowdy add\n\n"},
+				  {},
+				  "No face models found. Please run:\n\n\thowdy add\n\n"},
 		         {howdy::native::UserModelStatus::kParseError, "storage failed",
-		          "storage failed\n"},
+				  "storage failed\n"},
 		     }) {
 			auto context        = SuccessContext();
 			context.list_result = {.status = status, .error_message = error};
@@ -196,7 +196,7 @@ namespace {
 		auto context = SuccessContext();
 		auto [null_list_result, null_list_output] =
 		    RunRemoveWithDependencies({.resolved_user = "alice", .positionals = {"3"}},
-		                              {
+			                          {
 		                                  .context                            = &context,
 		                                  .list_user_model_entries            = nullptr,
 		                                  .remove_user_model_entry_if_matches = RemoveCallback,
@@ -210,7 +210,7 @@ namespace {
 
 		auto [null_remove_result, null_remove_output] =
 		    RunRemoveWithDependencies({.resolved_user = "alice", .positionals = {"3"}},
-		                              {
+			                          {
 		                                  .context                            = &context,
 		                                  .list_user_model_entries            = ListCallback,
 		                                  .remove_user_model_entry_if_matches = nullptr,

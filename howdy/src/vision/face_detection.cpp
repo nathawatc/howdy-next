@@ -68,7 +68,7 @@ namespace howdy::native {
 		auto MakeDetection(const cv::Mat &rows, int row) -> FaceDetection {
 			FaceDetection detection{
 			    .box        = cv::Rect2f(rows.at<float>(row, 0), rows.at<float>(row, 1),
-			                             rows.at<float>(row, 2), rows.at<float>(row, 3)),
+				                         rows.at<float>(row, 2), rows.at<float>(row, 3)),
 			    .confidence = rows.at<float>(row, 14),
 			};
 			int column = 4;

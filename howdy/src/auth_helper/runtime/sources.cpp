@@ -171,7 +171,7 @@ namespace howdy::native::auth_helper {
 				default:
 					std::cerr << (readiness.error_message.empty()
 					                  ? "Failed to validate user model file"
-					                  : readiness.error_message)
+									  : readiness.error_message)
 					          << "\n";
 					return false;
 			}

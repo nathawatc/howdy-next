@@ -153,7 +153,7 @@ auto NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descript
 	return std::ranges::any_of(std::array{descriptors.input, descriptors.output, descriptors.error},
 	                           [descriptors, &tty_stat](const int fd) -> bool {
 		                           return fd >= 0 && isatty(fd) != 0 &&
-		                                  SameTerminalIdentity(descriptors.tty, tty_stat, fd);
+								          SameTerminalIdentity(descriptors.tty, tty_stat, fd);
 	                           });
 }
 
@@ -208,7 +208,7 @@ NativePromptConversation::NativePromptConversation(pam_handle_t   *pamh,
     , has_original_conv_(has_original_conv)
     , tty_fd_(std::move(descriptors.tty_fd))
     , abort_pipe_{.read  = std::move(descriptors.abort_read_fd),
-                  .write = std::move(descriptors.abort_write_fd)}
+	              .write = std::move(descriptors.abort_write_fd)}
     , operations_(operations) {
 	dispatch_context_->owner = this;
 }
@@ -460,7 +460,7 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 	}
 	return poll_result == 0 || !howdy::native::HasAnyBits(tty_poll.revents, POLLIN)
 	           ? PromptIoResult::kRetry
-	           : PromptIoResult::kReady;
+			   : PromptIoResult::kReady;
 }
 
 auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {

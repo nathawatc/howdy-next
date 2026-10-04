@@ -46,7 +46,7 @@ namespace {
 		std::ranges::transform(
 		    values, response_view.begin(), [](const char *value) -> pam_response {
 			    return pam_response{.resp         = value == nullptr ? nullptr : strdup(value),
-			                        .resp_retcode = 0};
+				                    .resp_retcode = 0};
 		    });
 		return responses;
 	}

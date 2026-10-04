@@ -150,7 +150,7 @@ namespace howdy::native::config_utils_internal {
 		}
 		return sync_parent != nullptr && sync_parent(config_path)
 		           ? ConfigInstallResult::kOk
-		           : ConfigInstallResult::kCommittedNotDurable;
+				   : ConfigInstallResult::kCommittedNotDurable;
 	}
 
 }  // namespace howdy::native::config_utils_internal

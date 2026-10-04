@@ -56,9 +56,9 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		                                                       .error  = terminal_fd});
 		const bool redirected_stdout =
 		    NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                       .input  = terminal_fd,
-		                                       .output = pipes.at(1).Get(),
-		                                       .error  = terminal_fd});
+			                                   .input  = terminal_fd,
+			                                   .output = pipes.at(1).Get(),
+			                                   .error  = terminal_fd});
 		const bool stdout_only = NativePromptTerminalIsInteractive({.tty    = terminal_fd,
 		                                                            .input  = pipes.at(0).Get(),
 		                                                            .output = terminal_fd,
@@ -69,9 +69,9 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		                                                            .error  = terminal_fd});
 		const bool unrelated_stdio =
 		    NativePromptTerminalIsInteractive({.tty    = terminal_fd,
-		                                       .input  = pipes.at(0).Get(),
-		                                       .output = pipes.at(1).Get(),
-		                                       .error  = pipes.at(1).Get()});
+			                                   .input  = pipes.at(0).Get(),
+			                                   .output = pipes.at(1).Get(),
+			                                   .error  = pipes.at(1).Get()});
 		const bool regular_pam_tty = NativePromptTerminalIsInteractive({.tty    = pipes.at(0).Get(),
 		                                                                .input  = terminal_fd,
 		                                                                .output = terminal_fd,

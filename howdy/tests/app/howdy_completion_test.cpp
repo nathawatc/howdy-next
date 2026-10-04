@@ -60,7 +60,7 @@ namespace howdy::test::dispatch {
 						expected +=
 						    option.completion == howdy::native::GlobalOptionCompletionKind::kUser
 						        ? "user"
-						        : "none";
+								: "none";
 						expected += '\n';
 					}
 				}
@@ -100,7 +100,7 @@ namespace howdy::test::dispatch {
 				    Run(context, {"howdy", "__complete", "command-options", "disable"});
 				ok &=
 				    Expect(result.status == 0 && result.output == "-h\t0\tnone\n--help\t0\tnone\n",
-				           "universal command help is advertised without inapplicable options");
+					       "universal command help is advertised without inapplicable options");
 			}
 			{
 				Context    context;
@@ -226,7 +226,7 @@ namespace howdy::test::dispatch {
 				}
 				ok &=
 				    Expect(result.status == 0 && result.output == expected && result.error.empty(),
-				           "completion query returns canonical catalog command list");
+					       "completion query returns canonical catalog command list");
 				ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
 				             "completion query skips user and root checks");
 				ok &= Expect(!context.command_id.has_value() &&
@@ -276,7 +276,7 @@ namespace howdy::test::dispatch {
 					             "malformed completion query prints no command list");
 					ok &=
 					    Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0,
-					           "malformed completion query skips user and root checks");
+						       "malformed completion query skips user and root checks");
 					ok &= Expect(!context.command_id.has_value() &&
 					                 !context.command_invocation.has_value(),
 					             "malformed completion query does not dispatch a command");
@@ -287,10 +287,10 @@ namespace howdy::test::dispatch {
 				const auto result = Run(context, {"howdy", "config", "--help"});
 				ok &=
 				    Expect(result.status == 0 && result.error.empty() &&
-				               result.output.starts_with(
+					           result.output.starts_with(
 				                   "Edit config\n\nUsage: howdy config [OPTIONS]\n\nOptions:\n") &&
-				               result.output.contains("-h, --help"),
-				           "help after command renders contextual command help");
+					           result.output.contains("-h, --help"),
+					       "help after command renders contextual command help");
 				ok &= Expect(context.resolve_user_calls == 0 && context.effective_uid_calls == 0 &&
 				                 !context.command_id.has_value(),
 				             "command help skips user, privilege, and command execution");
@@ -300,8 +300,8 @@ namespace howdy::test::dispatch {
 				const auto result = Run(context, {"howdy", "test", "--help"});
 				ok &=
 				    Expect(result.status == 0 && result.output.contains("--device <DEVICE>") &&
-				               result.output.contains("-U, --user <USER>"),
-				           "command help includes applicable global and command-specific options");
+					           result.output.contains("-U, --user <USER>"),
+					       "command help includes applicable global and command-specific options");
 			}
 			{
 				ok &= Expect(
@@ -315,7 +315,7 @@ namespace howdy::test::dispatch {
 				Context    context;
 				const auto result =
 				    Run(context, {"howdy", "version"}, nullptr,
-				        std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)>{});
+					    std::array<CommandMain, static_cast<std::size_t>(CommandId::kCount)>{});
 				const auto expected = howdy::native::FormatVersion(howdy::native::kProjectVersion,
 				                                                   howdy::native::kBuildCommit) +
 				                      "\n";

@@ -172,8 +172,8 @@ namespace {
 			const auto                            result = session.Run(source);
 			ok &=
 			    Expect(result.status == test_cli_internal::TestPreviewStatus::kOk &&
-			               context.presented_frames.size() == 3,
-			           "test preview presents three frames in rotate mode " + std::to_string(mode));
+				           context.presented_frames.size() == 3,
+				       "test preview presents three frames in rotate mode " + std::to_string(mode));
 			if (context.presented_frames.size() != 3) {
 				continue;
 			}

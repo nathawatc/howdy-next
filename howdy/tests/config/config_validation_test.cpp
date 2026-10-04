@@ -210,75 +210,75 @@ auto main() -> int {
 
 	const std::array<BoundaryCase, 10> boundary_cases = {{
 	    {.name    = "timeout",
-	     .section = "video",
-	     .key     = "timeout",
-	     .minimum = "1",
-	     .maximum = "300",
-	     .below   = "0",
-	     .above   = "301"},
+		 .section = "video",
+		 .key     = "timeout",
+		 .minimum = "1",
+		 .maximum = "300",
+		 .below   = "0",
+		 .above   = "301"},
 	    {.name    = "max-height",
-	     .section = "video",
-	     .key     = "max_height",
-	     .minimum = "32",
-	     .maximum = "4096",
-	     .below   = "31.99",
-	     .above   = "4096.01"},
+		 .section = "video",
+		 .key     = "max_height",
+		 .minimum = "32",
+		 .maximum = "4096",
+		 .below   = "31.99",
+		 .above   = "4096.01"},
 	    {.name    = "rotate",
-	     .section = "video",
-	     .key     = "rotate",
-	     .minimum = "0",
-	     .maximum = "3",
-	     .below   = "-1",
-	     .above   = "4"},
+		 .section = "video",
+		 .key     = "rotate",
+		 .minimum = "0",
+		 .maximum = "3",
+		 .below   = "-1",
+		 .above   = "4"},
 	    {.name    = "dark-threshold",
-	     .section = "video",
-	     .key     = "dark_threshold",
-	     .minimum = "0",
-	     .maximum = "99.9",
-	     .below   = "-0.1",
-	     .above   = "100"},
+		 .section = "video",
+		 .key     = "dark_threshold",
+		 .minimum = "0",
+		 .maximum = "99.9",
+		 .below   = "-0.1",
+		 .above   = "100"},
 	    {.name    = "clahe-clip-limit",
-	     .section = "video",
-	     .key     = "clahe_clip_limit",
-	     .minimum = "0.01",
-	     .maximum = "100",
-	     .below   = "0",
-	     .above   = "100.01"},
+		 .section = "video",
+		 .key     = "clahe_clip_limit",
+		 .minimum = "0.01",
+		 .maximum = "100",
+		 .below   = "0",
+		 .above   = "100.01"},
 	    {.name    = "clahe-tile-grid-size",
-	     .section = "video",
-	     .key     = "clahe_tile_grid_size",
-	     .minimum = "1",
-	     .maximum = "64",
-	     .below   = "0",
-	     .above   = "65"},
+		 .section = "video",
+		 .key     = "clahe_tile_grid_size",
+		 .minimum = "1",
+		 .maximum = "64",
+		 .below   = "0",
+		 .above   = "65"},
 	    {.name    = "yunet-score-threshold",
-	     .section = "face",
-	     .key     = "yunet_score_threshold",
-	     .minimum = "0",
-	     .maximum = "1",
-	     .below   = "-0.1",
-	     .above   = "1.1"},
+		 .section = "face",
+		 .key     = "yunet_score_threshold",
+		 .minimum = "0",
+		 .maximum = "1",
+		 .below   = "-0.1",
+		 .above   = "1.1"},
 	    {.name    = "yunet-nms-threshold",
-	     .section = "face",
-	     .key     = "yunet_nms_threshold",
-	     .minimum = "0",
-	     .maximum = "1",
-	     .below   = "-0.1",
-	     .above   = "1.1"},
+		 .section = "face",
+		 .key     = "yunet_nms_threshold",
+		 .minimum = "0",
+		 .maximum = "1",
+		 .below   = "-0.1",
+		 .above   = "1.1"},
 	    {.name    = "yunet-top-k",
-	     .section = "face",
-	     .key     = "yunet_top_k",
-	     .minimum = "1",
-	     .maximum = "10000",
-	     .below   = "0",
-	     .above   = "10001"},
+		 .section = "face",
+		 .key     = "yunet_top_k",
+		 .minimum = "1",
+		 .maximum = "10000",
+		 .below   = "0",
+		 .above   = "10001"},
 	    {.name    = "device-fps",
-	     .section = "video",
-	     .key     = "device_fps",
-	     .minimum = "0",
-	     .maximum = "480",
-	     .below   = "-1",
-	     .above   = "481"},
+		 .section = "video",
+		 .key     = "device_fps",
+		 .minimum = "0",
+		 .maximum = "480",
+		 .below   = "-1",
+		 .above   = "481"},
 	}};
 
 	for (const auto &test : boundary_cases) {
@@ -321,7 +321,7 @@ auto main() -> int {
 	             "exposure below sentinel is invalid");
 	ok &=
 	    Expect(Rejects(temp_root / "exposure-above.ini", "[video]\nexposure = 10001\n", "exposure"),
-	           "exposure above maximum is invalid");
+		       "exposure above maximum is invalid");
 
 	for (const auto *const value : {"nan", "+inf", "-inf"}) {
 		ok &= Expect(Rejects(temp_root / (std::string("non-finite-") + value + ".ini"),
@@ -340,24 +340,24 @@ auto main() -> int {
 	             "cosine threshold maximum boundary is valid");
 	ok &= Expect(
 	    RejectsExact(temp_root / "cosine-threshold-over.ini",
-	                 "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
-	                 "Invalid config value for sface_threshold=\"1.001\": expected range 0..1"),
+		             "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
+		             "Invalid config value for sface_threshold=\"1.001\": expected range 0..1"),
 	    "cosine threshold above maximum keeps validation message");
 	ok &= Expect(Validates(temp_root / "l2-threshold-max.ini",
 	                       "[face]\nsface_metric = l2\nsface_threshold = 4\n"),
 	             "l2 threshold maximum boundary is valid");
 	ok &= Expect(
 	    RejectsExact(temp_root / "l2-threshold-over.ini",
-	                 "[face]\nsface_metric = l2\nsface_threshold = 4.001\n",
-	                 "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
+		             "[face]\nsface_metric = l2\nsface_threshold = 4.001\n",
+		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
 	    "l2 threshold above maximum keeps validation message");
 	ok &= Expect(Validates(temp_root / "l2norm-threshold-max.ini",
 	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 4\n"),
 	             "normalized l2norm threshold maximum is valid");
 	ok &= Expect(
 	    RejectsExact(temp_root / "l2norm-threshold-over.ini",
-	                 "[face]\nsface_metric = L2NORM\nsface_threshold = 4.001\n",
-	                 "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
+		             "[face]\nsface_metric = L2NORM\nsface_threshold = 4.001\n",
+		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
 	    "normalized l2norm threshold above maximum keeps validation message");
 
 	for (const auto *const metric : {"cosine", "COSINE", "l2", "L2", "l2norm", "L2NORM"}) {
@@ -367,17 +367,17 @@ auto main() -> int {
 	}
 	ok &=
 	    Expect(RejectsExact(temp_root / "invalid-metric.ini", "[face]\nsface_metric = euclidean\n",
-	                        "Invalid config value for sface_metric=\"euclidean\": expected one "
-	                        "of: cosine, l2, l2norm"),
-	           "unknown sface metric is rejected through existing validation contract");
+		                    "Invalid config value for sface_metric=\"euclidean\": expected one "
+		                    "of: cosine, l2, l2norm"),
+		       "unknown sface metric is rejected through existing validation contract");
 
 	for (const auto *const device_path :
 	     {"none", "/dev/video0", "/dev/v4l/by-path/platform-camera", "/dev/v4l/by-id/usb-camera"}) {
 		ok &=
 		    Expect(Validates(temp_root / (std::string("device-path-") +
-		                                  std::to_string(std::string(device_path).size()) + ".ini"),
-		                     "[video]\ndevice_path = " + std::string(device_path) + "\n"),
-		           std::string("device path is accepted: ") + device_path);
+			                              std::to_string(std::string(device_path).size()) + ".ini"),
+			                 "[video]\ndevice_path = " + std::string(device_path) + "\n"),
+			       std::string("device path is accepted: ") + device_path);
 	}
 	ok &= Expect(Rejects(temp_root / "unrelated-device-path.ini",
 	                     "[video]\ndevice_path = /tmp/camera\n", "device_path"),

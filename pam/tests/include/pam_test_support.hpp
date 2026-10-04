@@ -32,7 +32,7 @@ namespace howdy::test {
 
 		PamTestConfigDirectory()
 		    : root_(std::filesystem::temp_directory_path() /
-		            ("howdy-pam-test-" + std::to_string(getpid()))) {
+			        ("howdy-pam-test-" + std::to_string(getpid()))) {
 			std::error_code error;
 			std::filesystem::remove_all(root_, error);
 			valid_ = std::filesystem::create_directories(root_, error) && !error;

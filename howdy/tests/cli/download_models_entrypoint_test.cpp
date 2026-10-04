@@ -44,7 +44,7 @@ namespace howdy::test::download_models {
 		auto SetoptResult(CurlSetoptRecorder &recorder, const CURLoption option) -> CURLcode {
 			return recorder.failing_option.has_value() && *recorder.failing_option == option
 			           ? CURLE_UNKNOWN_OPTION
-			           : CURLE_OK;
+					   : CURLE_OK;
 		}
 
 		auto FakeSetoptLong(void *context, CURL * /*curl*/, CURLoption option, CurlLong value)
@@ -93,7 +93,7 @@ namespace howdy::test::download_models {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
 				    return call.option == option && call.result == CURLE_OK &&
-				           call.long_value == value;
+					       call.long_value == value;
 			    });
 		}
 
@@ -102,7 +102,7 @@ namespace howdy::test::download_models {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
 				    return call.option == option && call.result == CURLE_OK &&
-				           call.off_t_value == value;
+					       call.off_t_value == value;
 			    });
 		}
 
@@ -111,7 +111,7 @@ namespace howdy::test::download_models {
 			return std::ranges::any_of(
 			    recorder.calls, [option, value](const CurlSetoptCall &call) -> bool {
 				    return call.option == option && call.result == CURLE_OK &&
-				           call.string_value.has_value() && *call.string_value == value;
+					       call.string_value.has_value() && *call.string_value == value;
 			    });
 		}
 
@@ -156,9 +156,9 @@ namespace howdy::test::download_models {
 		             "transfer policy configures low-speed timeout");
 		ok &=
 		    Expect(ConfiguredOffT(successful_policy_recorder, CURLOPT_MAXFILESIZE_LARGE,
-		                          static_cast<curl_off_t>(
+			                      static_cast<curl_off_t>(
 		                              howdy::native::download_models_internal::kMaxDownloadBytes)),
-		           "transfer policy configures maximum download size");
+			       "transfer policy configures maximum download size");
 		ok &= Expect(ConfiguredString(successful_policy_recorder, CURLOPT_PROTOCOLS_STR, "https"),
 		             "transfer policy restricts initial URLs to HTTPS");
 		ok &= Expect(
@@ -270,7 +270,7 @@ namespace howdy::test::download_models {
 		int existing_exit = 0;
 		ok &= Expect(
 		    RunFirstDownloadAttempt({.models_dir = existing_models_dir, .output = existing_output},
-		                            &existing_exit),
+			                        &existing_exit),
 		    "capture existing-directory download-models output");
 		const auto existing_stdout = ReadFile(existing_output);
 		ok &=
@@ -301,7 +301,7 @@ namespace howdy::test::download_models {
 		             "missing model after parent creation reaches download");
 		ok &=
 		    Expect(missing_parent_stdout.contains("Downloading face_detection_yunet_2026may.onnx"),
-		           "missing parent path starts first model download");
+			       "missing parent path starts first model download");
 
 		const auto symlink_target     = temp_root / "symlink-target";
 		const auto symlink_parent     = temp_root / "symlink-parent";
@@ -339,7 +339,7 @@ namespace howdy::test::download_models {
 		int unsafe_parent_exit = 0;
 		ok &= Expect(
 		    RunFirstDownloadAttempt({.models_dir = unsafe_models_dir, .output = unsafe_output},
-		                            &unsafe_parent_exit),
+			                        &unsafe_parent_exit),
 		    "capture unsafe-parent download-models output");
 		const auto unsafe_parent_stdout = ReadFile(unsafe_output);
 		ok &= Expect(unsafe_parent_exit == EXIT_FAILURE && AttemptedDownloads() == 0,
@@ -362,7 +362,7 @@ namespace howdy::test::download_models {
 		ok &=
 		    Expect(RunFirstDownloadAttempt(
 		               {.models_dir = blocked_models_dir, .output = blocked_output}, &blocked_exit),
-		           "capture blocked models-dir download-models output");
+			       "capture blocked models-dir download-models output");
 		const auto blocked_stdout = ReadFile(blocked_output);
 		ok &= Expect(blocked_exit == EXIT_FAILURE, "blocked models directory aborts cleanly");
 		ok &= Expect(AttemptedDownloads() == 0,

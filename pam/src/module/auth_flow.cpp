@@ -71,7 +71,7 @@ namespace {
 				return result.pam_status != PAM_SUCCESS
 				           ? howdy::pam::auth_flow::HowdyStatus(
 				                 pamh, username, result.compare_status, config, conv_function)
-				           : PAM_IGNORE;
+						   : PAM_IGNORE;
 			case howdy::pam::PromptCoordinatorDecision::kHowdyResult:
 				return howdy::pam::auth_flow::HowdyStatus(pamh, username, result.compare_status,
 				                                          config, conv_function);

@@ -153,11 +153,11 @@ namespace howdy::native {
 	    -> UserModelListResult {
 		const auto document =
 		    UserModelStore::LoadDocument(user,
-		                                 {.backend      = expected_backend,
-		                                  .metric       = expected_metric,
-		                                  .model        = expected_model,
-		                                  .strict_shape = true},
-		                                 DefaultSecureOwnerUid(), validation_root);
+			                             {.backend      = expected_backend,
+			                              .metric       = expected_metric,
+			                              .model        = expected_model,
+			                              .strict_shape = true},
+			                             DefaultSecureOwnerUid(), validation_root);
 		const auto &entries = document.Result();
 		if (entries.status != UserModelStatus::kOk) {
 			return UserModelsListFailure(entries.status, entries.error_message);
@@ -227,7 +227,7 @@ namespace howdy::native {
 		    .id        = entries.next_id,
 		    .time      = static_cast<std::int64_t>(std::time(nullptr)),
 		    .label     = new_entry.label.empty() ? ("Model #" + std::to_string(entries.next_id))
-		                                         : new_entry.label,
+			                                     : new_entry.label,
 		    .backend   = new_entry.backend,
 		    .metric    = new_entry.metric,
 		    .model     = new_entry.model,

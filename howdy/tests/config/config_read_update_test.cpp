@@ -62,12 +62,12 @@ namespace howdy::test {
 				    label + ": yunet_score_threshold written unchanged");
 				ok &=
 				    Expect(howdy::native::UpdateConfigValue(config_path, "yunet_nms_threshold",
-				                                            nullptr, "0.3", false, true,
-				                                            {config_path.parent_path()}),
-				           label + ": update_config_value accepts yunet_nms_threshold dot decimal");
+					                                        nullptr, "0.3", false, true,
+					                                        {config_path.parent_path()}),
+					       label + ": update_config_value accepts yunet_nms_threshold dot decimal");
 				ok &=
 				    Expect(ReadConfigTestFile(config_path).contains("yunet_nms_threshold = 0.3\n"),
-				           label + ": yunet_nms_threshold written unchanged");
+					       label + ": yunet_nms_threshold written unchanged");
 				ok &= Expect(howdy::native::UpdateConfigValue(config_path, "sface_threshold",
 				                                              nullptr, "0.6942", false, true,
 				                                              {config_path.parent_path()}),
@@ -194,8 +194,8 @@ namespace howdy::test {
 
 		ok &=
 		    Expect(howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
-		                                            "42", false, true, {context.temp_root}),
-		           "update_config_value succeeds in later section");
+			                                        "42", false, true, {context.temp_root}),
+			       "update_config_value succeeds in later section");
 		const auto after_threshold = ReadConfigTestFile(context.config_path);
 		ok &=
 		    Expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
@@ -288,8 +288,8 @@ namespace howdy::test {
 		             "rejected injection leaves config unchanged");
 		ok &=
 		    Expect(!howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
-		                                             "1000", false, true, {context.temp_root}),
-		           "update_config_value rejects semantically invalid values");
+			                                         "1000", false, true, {context.temp_root}),
+			       "update_config_value rejects semantically invalid values");
 		ok &= Expect(ReadConfigTestFile(context.config_path) == after_threshold,
 		             "semantic validation failure leaves config unchanged");
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "device_fps", nullptr,

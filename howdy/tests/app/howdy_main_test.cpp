@@ -64,7 +64,7 @@ namespace {
 		               std::getenv("HOWDY_USER_MODELS_DIR") == nullptr &&
 		               std::getenv("HOWDY_LOG_PATH") == nullptr
 		           ? 71
-		           : 1;
+				   : 1;
 	}
 
 }  // namespace

@@ -58,7 +58,7 @@ namespace {
 		const int status = howdy::native::howdy_internal::HowdyMainWithDependencies(
 		    static_cast<int>(argv.size()), argv.data(),
 		    {.effective_uid = RootForDispatch,
-		     .command_mains = howdy::native::howdy_internal::ProductionCommandMains()});
+			 .command_mains = howdy::native::howdy_internal::ProductionCommandMains()});
 		std::cout.rdbuf(old_output);
 		std::cerr.rdbuf(old_error);
 		return Expect(

@@ -121,15 +121,15 @@ namespace howdy::native::compare_privileges_internal {
 			lookup_result = nullptr;
 			const int lookup_error =
 			    dependencies.getpwnam_r(dependencies.context, "nobody", &nobody, buffer.data(),
-			                            buffer.size(), &lookup_result);
+				                        buffer.size(), &lookup_result);
 			if (lookup_error == 0) {
 				break;
 			}
 			if (lookup_error != ERANGE) {
 				return {
 				    .error = {.status        = ComparePrivilegeStatus::kLookupFailed,
-				              .error_message = "nobody account lookup failed: " +
-				                               howdy::native::SystemErrorMessage(lookup_error)}};
+					          .error_message = "nobody account lookup failed: " +
+					                           howdy::native::SystemErrorMessage(lookup_error)}};
 			}
 			if (buffer.size() >= kMaximumPasswdBufferSize) {
 				return {.error = {.status        = ComparePrivilegeStatus::kLookupFailed,

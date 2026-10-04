@@ -99,10 +99,10 @@ namespace howdy::test::download_models {
 		        DependenciesState().downloaded_urls.at(0) == kPinnedModelArtifacts.at(0).url &&
 		        DependenciesState().downloaded_urls.at(1) == kPinnedModelArtifacts.at(1).url &&
 		        fs::file_size(manifest_models_dir / kPinnedModelArtifacts.at(0).filename,
-		                      yunet_size_ec) == kPinnedModelArtifacts.at(0).size &&
+				              yunet_size_ec) == kPinnedModelArtifacts.at(0).size &&
 		        !yunet_size_ec &&
 		        fs::file_size(manifest_models_dir / kPinnedModelArtifacts.at(1).filename,
-		                      sface_size_ec) == kPinnedModelArtifacts.at(1).size &&
+				              sface_size_ec) == kPinnedModelArtifacts.at(1).size &&
 		        !sface_size_ec,
 		    "each official download matches its independently pinned artifact");
 

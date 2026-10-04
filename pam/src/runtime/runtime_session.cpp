@@ -70,7 +70,7 @@ namespace howdy::pam {
 			    config_result.config.has_value();
 			return RuntimeSessionLoadResult{
 			    .status        = config_ok ? RuntimeSessionLoadStatus::kOk
-			                               : RuntimeSessionLoadStatus::kConfigLoadFailed,
+				                           : RuntimeSessionLoadStatus::kConfigLoadFailed,
 			    .config_result = std::move(config_result),
 			};
 		}
@@ -101,7 +101,7 @@ namespace howdy::pam {
 		    config_result.config.has_value();
 		return RuntimeSessionLoadResult{
 		    .status        = config_ok ? RuntimeSessionLoadStatus::kOk
-		                               : RuntimeSessionLoadStatus::kConfigLoadFailed,
+			                           : RuntimeSessionLoadStatus::kConfigLoadFailed,
 		    .config_result = std::move(config_result),
 		};
 	}
@@ -121,7 +121,7 @@ namespace howdy::pam {
 	auto ProductionRuntimeSessionOperations() -> RuntimeSessionOperations {
 		auto operations =
 		    RuntimeSessionOperations::Create(nullptr, PrepareRuntimeFilesDependency,
-		                                     LoadRuntimeConfigDependency, EffectiveUidDependency);
+			                                 LoadRuntimeConfigDependency, EffectiveUidDependency);
 		if (!operations.has_value()) {
 			throw std::logic_error("Failed to create production runtime session operations");
 		}

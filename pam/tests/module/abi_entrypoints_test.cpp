@@ -121,8 +121,8 @@ auto main() -> int {
 
 	ok &=
 	    Expect(RunPamAuthenticate(pamh, 0, 0, nullptr,
-	                              {.context = nullptr, .authenticate = nullptr}) == PAM_SYSTEM_ERR,
-	           "ABI adapter rejects null callback");
+		                          {.context = nullptr, .authenticate = nullptr}) == PAM_SYSTEM_ERR,
+		       "ABI adapter rejects null callback");
 
 	ok &= Expect(pam_sm_open_session(nullptr, 0, 0, nullptr) == PAM_IGNORE,
 	             "open_session remains ignored");

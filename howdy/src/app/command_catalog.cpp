@@ -34,8 +34,8 @@ namespace howdy::native {
 		            .max_positionals   = 1,
 		            .global_options =
 		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
-		                                                GlobalOptionBit(GlobalOptionId::kPlain),
-		                                                GlobalOptionBit(GlobalOptionId::kYes)),
+						                                GlobalOptionBit(GlobalOptionId::kPlain),
+						                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kClear,
@@ -49,7 +49,7 @@ namespace howdy::native {
 		            .max_positionals   = 0,
 		            .global_options =
 		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
-		                                                GlobalOptionBit(GlobalOptionId::kYes)),
+						                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kConfig,
@@ -96,7 +96,7 @@ namespace howdy::native {
 		            .max_positionals   = 0,
 		            .global_options =
 		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
-		                                                GlobalOptionBit(GlobalOptionId::kPlain)),
+						                                GlobalOptionBit(GlobalOptionId::kPlain)),
 		        },
 		        {
 		            .id                = CommandId::kRemove,
@@ -110,7 +110,7 @@ namespace howdy::native {
 		            .max_positionals   = 1,
 		            .global_options =
 		                CombineBitsAs<GlobalOptionMask>(GlobalOptionBit(GlobalOptionId::kUser),
-		                                                GlobalOptionBit(GlobalOptionId::kYes)),
+						                                GlobalOptionBit(GlobalOptionId::kYes)),
 		        },
 		        {
 		            .id                = CommandId::kSet,

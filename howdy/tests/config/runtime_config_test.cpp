@@ -159,9 +159,9 @@ auto main() -> int {
 		                              source + " yunet_top_k matches schema");
 		matches &=
 		    Expect(face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
-		               howdy::native::FaceMetricSpelling(face.sface_metric) ==
-		                   howdy::native::config_schema::RuntimeDefaultString(kFaceSfaceMetric),
-		           source + " sface_metric matches schema");
+			           howdy::native::FaceMetricSpelling(face.sface_metric) ==
+			               howdy::native::config_schema::RuntimeDefaultString(kFaceSfaceMetric),
+			       source + " sface_metric matches schema");
 		matches &= expect_float_default(face.sface_threshold, kFaceSfaceThreshold,
 		                                source + " sface_threshold matches schema");
 		return matches;
@@ -195,7 +195,7 @@ auto main() -> int {
 		ok &= expect_video_defaults(config.video, "minimal config");
 		ok &= Expect(
 		    NearlyEqual(config.face.sface_threshold,
-		                howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
+			            howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
 		    "cosine threshold default loads from schema");
 	}
 
@@ -263,8 +263,8 @@ auto main() -> int {
 
 	const auto boolean_mapping =
 	    LoadConfig(root, "boolean-mapping.ini",
-	               "[core]\nno_confirmation = true\nabort_if_ssh = false\n"
-	               "[video]\nwarn_no_device = true\nclahe_enabled = false\n");
+		           "[core]\nno_confirmation = true\nabort_if_ssh = false\n"
+		           "[video]\nwarn_no_device = true\nclahe_enabled = false\n");
 	ok &= Expect(boolean_mapping.ok && boolean_mapping.config.has_value(),
 	             "same-type boolean mapping config loads");
 	if (boolean_mapping.config.has_value()) {
@@ -333,12 +333,12 @@ auto main() -> int {
 		        config.video.timeout ==
 		            howdy::native::config_schema::RuntimeDefaultInt(kVideoTimeout) &&
 		        NearlyEqual(config.video.dark_threshold,
-		                    howdy::native::config_schema::RuntimeDefaultFloat(kVideoDarkThreshold)),
+				            howdy::native::config_schema::RuntimeDefaultFloat(kVideoDarkThreshold)),
 		    "empty values preserve schema defaults");
 		ok &= Expect(
 		    config.face.sface_metric == howdy::native::config_schema::kSfaceDefaultMetric &&
 		        NearlyEqual(config.face.sface_threshold,
-		                    howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
+				            howdy::native::config_schema::RuntimeDefaultFloat(kFaceSfaceThreshold)),
 		    "empty face values preserve schema defaults");
 	}
 

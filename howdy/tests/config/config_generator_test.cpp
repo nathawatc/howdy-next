@@ -128,7 +128,7 @@ auto main(int argc, char **argv) -> int {
 	             "failed atomic write preserves existing output");
 	ok &=
 	    Expect(CountFilesWithPrefix(failed_output.parent_path(), ".howdy-atomic-") == staged_before,
-	           "failed atomic write cleans staged files");
+		       "failed atomic write cleans staged files");
 
 	const auto blocked_parent = root / "blocked-parent";
 	ok &= Expect(WriteFile(blocked_parent, "not a directory\n"), "create invalid output parent");

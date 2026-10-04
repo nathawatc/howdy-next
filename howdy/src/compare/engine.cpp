@@ -110,7 +110,7 @@ namespace howdy::native {
 			    .status        = CompareFrameStatus::kInvalidPreprocessed,
 			    .brightness    = brightness,
 			    .error_message = FrameValidationMessage("Frame after preprocessing", working_frame,
-			                                            working_validation),
+				                                        working_validation),
 			};
 		}
 
@@ -136,7 +136,7 @@ namespace howdy::native {
 			return {
 			    .status        = CompareInferenceStatus::kInvalidPreparedFrame,
 			    .error_message = FrameValidationMessage("Prepared frame for face detection",
-			                                            prepared, prepared_validation),
+				                                        prepared, prepared_validation),
 			};
 		}
 

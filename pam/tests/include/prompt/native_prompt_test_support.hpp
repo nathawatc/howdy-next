@@ -45,19 +45,19 @@ public:
 		    .read_prompt =
 		        operations.read_prompt != nullptr ? operations.read_prompt : production.read_prompt,
 		    .restore_terminal = operations.restore_terminal != nullptr
-		                            ? operations.restore_terminal
-		                            : production.restore_terminal,
+			                        ? operations.restore_terminal
+			                        : production.restore_terminal,
 		    .post_message     = operations.post_message != nullptr ? operations.post_message
-		                                                           : production.post_message,
+			                                                       : production.post_message,
 		    .set_pam_item     = operations.set_pam_item != nullptr ? operations.set_pam_item
-		                                                           : production.set_pam_item,
+			                                                       : production.set_pam_item,
 		};
 		return std::unique_ptr<NativePromptConversation>(
 		    new NativePromptConversation(nullptr, {}, true,
-		                                 {.tty_fd         = std::move(descriptors.tty_fd),
-		                                  .abort_read_fd  = std::move(descriptors.abort_read_fd),
-		                                  .abort_write_fd = std::move(descriptors.abort_write_fd)},
-		                                 injected));
+			                             {.tty_fd         = std::move(descriptors.tty_fd),
+			                              .abort_read_fd  = std::move(descriptors.abort_read_fd),
+			                              .abort_write_fd = std::move(descriptors.abort_write_fd)},
+			                             injected));
 	}
 
 	static auto Dispatch(int num_msg, const struct pam_message **messages,

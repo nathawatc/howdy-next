@@ -501,7 +501,7 @@ namespace {
 	auto TestProductionStagedRuntimeEnvironment() -> bool {
 		return TestProductionSpawnAdapter(
 		    MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
-		                       "/run/howdy/runtime/models", true),
+			                   "/run/howdy/runtime/models", true),
 		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
 		    "production staged runtime", {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"});
 	}

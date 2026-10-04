@@ -512,8 +512,8 @@ namespace {
 		ok &= Expect(result == 0, "GUI/read sequence returns 0");
 		ok &=
 		    ExpectSequence(context.sequence,
-		                   {"face", "display", "open", "switch_gui_user", "initialize_gui", "read"},
-		                   "GUI initialization runs before first camera read");
+			               {"face", "display", "open", "switch_gui_user", "initialize_gui", "read"},
+			               "GUI initialization runs before first camera read");
 		ok &= Expect(error.str().empty(), "GUI/read sequence writes no failure diagnostic");
 		return ok;
 	}

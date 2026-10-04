@@ -180,7 +180,7 @@ namespace howdy::test::add_cli {
 			             "no-sufficiently-bright capture failure prints diagnostic");
 			ok &=
 			    Expect(!error_output.contains("All frames were too dark; check dark_threshold"),
-			           "no-sufficiently-bright capture failure does not print too-dark diagnostic");
+				       "no-sufficiently-bright capture failure does not print too-dark diagnostic");
 			return ok;
 		}
 

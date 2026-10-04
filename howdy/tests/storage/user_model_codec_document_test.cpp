@@ -169,11 +169,11 @@ namespace howdy::test::user_model_codec {
 		bool       ok       = true;
 		const auto document = Decode(ModelList({
 		    ModelJson("10", "1700000010", R"("highest")", R"("opencv_dnn_sface")", R"("cosine")",
-		              R"("sface.onnx")", "[[10.0]]"),
+			          R"("sface.onnx")", "[[10.0]]"),
 		    ModelJson("2", "1700000002", R"("lowest")", R"("opencv_dnn_sface")", R"("cosine")",
-		              R"("sface.onnx")", "[[2.0,2.5]]"),
+			          R"("sface.onnx")", "[[2.0,2.5]]"),
 		    ModelJson("7", "1700000007", R"("middle")", R"("opencv_dnn_sface")", R"("cosine")",
-		              R"("sface.onnx")", "[[7.0]]"),
+			          R"("sface.onnx")", "[[7.0]]"),
 		}));
 		ok &= ExpectStatus(document.Result().status, UserModelStatus::kOk,
 		                   "out-of-order non-contiguous model IDs return kOk");
@@ -216,10 +216,10 @@ namespace howdy::test::user_model_codec {
 		bool       ok       = true;
 		const auto original = ModelList({
 		    ModelJson("0", "1", R"("first")", R"("opencv_dnn_sface")", R"("cosine")",
-		              R"("sface.onnx")", "[[0.1,0.2]]",
-		              R"(,"future_field":{"revision":2,"weight":0.123456789})"),
+			          R"("sface.onnx")", "[[0.1,0.2]]",
+			          R"(,"future_field":{"revision":2,"weight":0.123456789})"),
 		    ModelJson("1", "2", R"("second")", R"("opencv_dnn_sface")", R"("cosine")",
-		              R"("sface.onnx")", "[[0.3,0.4]]"),
+			          R"("sface.onnx")", "[[0.3,0.4]]"),
 		});
 
 		auto                 append_document = Decode(original);

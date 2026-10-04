@@ -135,7 +135,7 @@ namespace howdy::native::auth_helper {
 			}
 			runtime_internal::UniqueFd fd(
 			    openat(slot_fd, auth_helper_protocol::kPreparedUserModelsDirectoryName,
-			           O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+				       O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
@@ -302,7 +302,7 @@ namespace howdy::native::auth_helper {
 				                                                 policy.acl, operations) &&
 				               ModelsDirectoryContainsOnly(models_fd, user + ".dat", false)
 				           ? ModelState::kAbsent
-				           : ModelState::kInvalid;
+						   : ModelState::kInvalid;
 			}
 			return ValidateRegular(backing_stat, identity, StagedRuntimeRole::kPresentModel) &&
 			               ValidateRegular(visible_stat, identity,
@@ -315,7 +315,7 @@ namespace howdy::native::auth_helper {
 			                   operations) &&
 			               ModelsDirectoryContainsOnly(models_fd, user + ".dat", true)
 			           ? ModelState::kPresent
-			           : ModelState::kInvalid;
+					   : ModelState::kInvalid;
 		}
 
 		auto SlotIsFresh(runtime_internal::Slot                            &slot,

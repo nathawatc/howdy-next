@@ -109,12 +109,12 @@ auto main() -> int {
 	             "8192x1 grayscale frame is valid");
 	ok &= Expect(
 	    howdy::native::ValidateFrame(cv::Mat(howdy::native::kMaxFrameDimension + 1, 1, CV_8UC1),
-	                                 howdy::native::FrameChannelPolicy::kGray) ==
+		                             howdy::native::FrameChannelPolicy::kGray) ==
 	        howdy::native::FrameValidationStatus::kOversizedDimensions,
 	    "8193x1 grayscale frame is oversized");
 	ok &= Expect(
 	    howdy::native::ValidateFrame(cv::Mat(1, howdy::native::kMaxFrameDimension + 1, CV_8UC1),
-	                                 howdy::native::FrameChannelPolicy::kGray) ==
+		                             howdy::native::FrameChannelPolicy::kGray) ==
 	        howdy::native::FrameValidationStatus::kOversizedDimensions,
 	    "1x8193 grayscale frame is oversized");
 	ok &= Expect(howdy::native::ValidateFrame(cv::Mat(1, 1, CV_8UC1),

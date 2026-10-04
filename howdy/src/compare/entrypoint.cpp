@@ -140,8 +140,8 @@ namespace {
 		context.compare_engine.emplace(
 		    context.video_config.get(), inference,
 		    howdy::native::PreparedFaceMatcher(std::move(context.stored_encodings.get().encodings),
-		                                       context.face_config.get().sface_metric,
-		                                       context.face_config.get().sface_threshold));
+			                                   context.face_config.get().sface_metric,
+			                                   context.face_config.get().sface_threshold));
 	}
 
 	void ResetTimeout(void *raw_context) {
@@ -154,7 +154,7 @@ namespace {
 		if (context.dependencies != nullptr) {
 			return context.dependencies->warm_model == nullptr
 			           ? true
-			           : context.dependencies->warm_model(context.dependencies->context);
+					   : context.dependencies->warm_model(context.dependencies->context);
 		}
 		if (!context.face_model.has_value()) {
 			return false;
@@ -349,7 +349,7 @@ namespace {
 
 			auto loaded_models =
 			    howdy::native::LoadUserModels(args.user, howdy::native::FaceModel::kBackendName,
-			                                  trusted_owner_uid, validation_root);
+				                              trusted_owner_uid, validation_root);
 			if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
 				std::cerr << loaded_models.error_message << "\n";
 				return static_cast<int>(CompareExit::kAbort);

@@ -222,7 +222,7 @@ namespace {
 			             "root owner check selects source model filename");
 			ok &=
 			    Expect(selected_path.has_value() && fs::equivalent(*selected_path, model_path, ec),
-			           "root owner check selects equivalent source model path");
+				       "root owner check selects equivalent source model path");
 			ec.clear();
 		}
 

@@ -105,14 +105,14 @@ namespace {
 	auto CanRead(const fs::path &path, unsigned uid, unsigned gid, bool init_groups) -> bool {
 		const auto result = howdy::test::integration::RunProcess(
 		    {"setpriv", "--reuid", std::to_string(uid), "--regid", std::to_string(gid),
-		     init_groups ? "--init-groups" : "--clear-groups", "cat", path.string()});
+			 init_groups ? "--init-groups" : "--clear-groups", "cat", path.string()});
 		return result.status == 0;
 	}
 
 	auto CannotWrite(const fs::path &path, unsigned uid, unsigned gid) -> bool {
 		const auto result = howdy::test::integration::RunProcess(
 		    {"setpriv", "--reuid", std::to_string(uid), "--regid", std::to_string(gid),
-		     "--init-groups", "test", "!", "-w", path.string()});
+			 "--init-groups", "test", "!", "-w", path.string()});
 		return result.status == 0;
 	}
 

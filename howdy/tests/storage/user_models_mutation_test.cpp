@@ -132,7 +132,7 @@ namespace howdy::test::user_models {
 			const auto replacement_path = temp_root / "post-lock-begin-mutation-replacement.dat";
 			ok &=
 			    Expect(WriteFile(model_path, original_model),
-			           "write secure existing model before begin_mutation regular-file swap test");
+				       "write secure existing model before begin_mutation regular-file swap test");
 			ok &= Expect(WriteFile(replacement_path, replacement_model),
 			             "write replacement file before begin_mutation regular-file swap test");
 
@@ -215,7 +215,7 @@ namespace howdy::test::user_models {
 			             "begin_mutation ABA hooks execute exactly once");
 			ok &=
 			    Expect(hook.installed_b && hook.restored_a && !hook.rollback_failed,
-			           "begin_mutation ABA test installs B before lock and restores A after lock");
+				       "begin_mutation ABA test installs B before lock and restores A after lock");
 			ok &= Expect(result.document.Result().status ==
 			                 howdy::native::UserModelStatus::kModelChanged,
 			             "begin_mutation rejects ABA inode replacement");
@@ -342,7 +342,7 @@ namespace howdy::test::user_models {
 			const howdy::native::NewUserModelEntry oversized_entry{
 			    .label = std::string(static_cast<std::size_t>(
 			                             howdy::native::user_model_limits::kMaxUserModelFileBytes),
-			                         'x'),
+				                     'x'),
 			    .backend   = backend,
 			    .metric    = howdy::native::FaceMetric::kCosine,
 			    .model     = "sface.onnx",

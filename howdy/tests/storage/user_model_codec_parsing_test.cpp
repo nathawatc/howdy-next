@@ -21,7 +21,7 @@ namespace howdy::test::user_model_codec {
 			const auto metric_json = std::string("\"") + std::string(spelling) + "\"";
 			const auto document    = howdy::native::user_model_codec::DecodeDocument(
 			    ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-			                         R"("opencv_dnn_sface")", metric_json, R"("sface.onnx")")}),
+				                     R"("opencv_dnn_sface")", metric_json, R"("sface.onnx")")}),
 			    kBackend, std::nullopt, kModel);
 			ok &= ExpectStatus(document.Result().status, UserModelStatus::kOk,
 			                   std::string(spelling) + " stored metric is accepted");
@@ -38,7 +38,7 @@ namespace howdy::test::user_model_codec {
 
 		const auto unknown = howdy::native::user_model_codec::DecodeDocument(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("euclidean")", R"("sface.onnx")")}),
+			                     R"("euclidean")", R"("sface.onnx")")}),
 		    kBackend, std::nullopt, kModel);
 		ok &= ExpectStatus(unknown.Result().status, UserModelStatus::kParseError,
 		                   "unknown stored metric is rejected");
@@ -47,7 +47,7 @@ namespace howdy::test::user_model_codec {
 
 		const auto legacy = howdy::native::user_model_codec::DecodeDocument(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("L2NORM")", R"("sface.onnx")")}),
+			                     R"("L2NORM")", R"("sface.onnx")")}),
 		    kBackend, std::nullopt, kModel);
 		const auto serialized = howdy::native::user_model_codec::SerializeDocument(legacy);
 		ok &= Expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
@@ -98,8 +98,8 @@ namespace howdy::test::user_model_codec {
 		for (const std::string_view number : {"NaN", "Infinity", "1e999"}) {
 			ok &= ExpectStatus(
 			    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-			                                R"("opencv_dnn_sface")", R"("cosine")",
-			                                R"("sface.onnx")", "[[" + std::string(number) + "]]")}))
+				                            R"("opencv_dnn_sface")", R"("cosine")",
+				                            R"("sface.onnx")", "[[" + std::string(number) + "]]")}))
 			        .Result()
 			        .status,
 			    UserModelStatus::kParseError, std::string(number) + " encoding is rejected");
@@ -113,21 +113,21 @@ namespace howdy::test::user_model_codec {
 		bool ok = true;
 		ok &=
 		    ExpectStatus(Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                             R"("opencv_dnn_sface")", R"("cosine")",
-		                                             R"("sface.onnx")", "[[1.0]]", ",\"id\":8")}))
-		                     .Result()
-		                     .status,
-		                 UserModelStatus::kInvalidShape, "duplicate known direct key is rejected");
+			                                         R"("opencv_dnn_sface")", R"("cosine")",
+			                                         R"("sface.onnx")", "[[1.0]]", ",\"id\":8")}))
+			                 .Result()
+			                 .status,
+			             UserModelStatus::kInvalidShape, "duplicate known direct key is rejected");
 		ok &= ExpectStatus(
 		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		                                "[[1.0]]", R"(,"future":1,"future":2)")}))
+			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
+			                            "[[1.0]]", R"(,"future":1,"future":2)")}))
 		        .Result()
 		        .status,
 		    UserModelStatus::kInvalidShape, "duplicate unknown direct key is rejected");
 		const auto tolerant_duplicate = Decode(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("cosine")", R"("sface.onnx")", "[[1.0]]", ",\"id\":8")}),
+			                     R"("cosine")", R"("sface.onnx")", "[[1.0]]", ",\"id\":8")}),
 		    false);
 		ok &= ExpectStatus(tolerant_duplicate.Result().status, UserModelStatus::kOk,
 		                   "duplicate direct key is tolerated without strict shape");
@@ -138,8 +138,8 @@ namespace howdy::test::user_model_codec {
 		             "tolerant duplicate key keeps the last ID");
 		const auto tolerant_known_fields = Decode(
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("cosine")", R"("sface.onnx")", "[[1.0]]",
-		                         R"(,"label":"Backup camera","data":[[4.0,5.0]])")}),
+			                     R"("cosine")", R"("sface.onnx")", "[[1.0]]",
+			                     R"(,"label":"Backup camera","data":[[4.0,5.0]])")}),
 		    false);
 		ok &= ExpectStatus(tolerant_known_fields.Result().status, UserModelStatus::kOk,
 		                   "duplicate label and data are tolerated without strict shape");
@@ -152,8 +152,8 @@ namespace howdy::test::user_model_codec {
 		             "tolerant duplicate data keeps the last value");
 		ok &= ExpectStatus(
 		    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-		                                R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
-		                                "[[1.0]]", R"(,"future":{"revision":1,"revision":2})")}))
+			                            R"("opencv_dnn_sface")", R"("cosine")", R"("sface.onnx")",
+			                            "[[1.0]]", R"(,"future":{"revision":1,"revision":2})")}))
 		        .Result()
 		        .status,
 		    UserModelStatus::kOk, "nested unknown duplicate key is not recursively rejected");
@@ -172,7 +172,7 @@ namespace howdy::test::user_model_codec {
 		                   UserModelStatus::kInvalidShape, "out-of-range model id is rejected");
 		ok &=
 		    ExpectStatus(Decode(ModelList({ModelJson("7", R"("bad")")})).Result().status,
-		                 UserModelStatus::kInvalidShape, "string model time returns kInvalidShape");
+			             UserModelStatus::kInvalidShape, "string model time returns kInvalidShape");
 		ok &= ExpectStatus(Decode(ModelList({ModelJson("7", "1.5")})).Result().status,
 		                   UserModelStatus::kInvalidShape, "real model time returns kInvalidShape");
 		ok &= ExpectStatus(
@@ -195,7 +195,7 @@ namespace howdy::test::user_model_codec {
 		    R"([{"id":7,"time":1700000000,"label":"Office camera","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx"}])";
 		ok &=
 		    ExpectStatus(Decode(missing_data, true).Result().status, UserModelStatus::kInvalidShape,
-		                 "missing data with strict shape returns kInvalidShape");
+			             "missing data with strict shape returns kInvalidShape");
 		const auto tolerant_missing_data = Decode(missing_data, false);
 		ok &= ExpectStatus(tolerant_missing_data.Result().status, UserModelStatus::kOk,
 		                   "missing data without strict shape returns kOk");
@@ -205,7 +205,7 @@ namespace howdy::test::user_model_codec {
 
 		const auto non_array_encoding =
 		    ModelList({ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		                         R"("cosine")", R"("sface.onnx")", R"([[1.0],"bad",[2.0]])")});
+			                     R"("cosine")", R"("sface.onnx")", R"([[1.0],"bad",[2.0]])")});
 		const auto tolerant_non_array = Decode(non_array_encoding, false);
 		ok &= ExpectStatus(tolerant_non_array.Result().status, UserModelStatus::kOk,
 		                   "non-array encoding without strict shape returns kOk");
@@ -243,8 +243,8 @@ namespace howdy::test::user_model_codec {
 		ok &=
 		    ExpectStatus(howdy::native::user_model_codec::ValidateEncoding(
 		                     {std::numeric_limits<float>::infinity()})
-		                     .status,
-		                 UserModelStatus::kInvalidShape, "infinity encoding returns kInvalidShape");
+			                 .status,
+			             UserModelStatus::kInvalidShape, "infinity encoding returns kInvalidShape");
 		ok &= ExpectStatus(howdy::native::user_model_codec::ValidateEncoding(
 		                       std::vector<float>(kMaxEncodingLength + 1, 0.0F))
 		                       .status,
@@ -263,7 +263,7 @@ namespace howdy::test::user_model_codec {
 		                   "missing strict model ID returns kInvalidShape");
 		ok &=
 		    ExpectStatus(Decode(ModelList({ModelJson("-1")})).Result().status,
-		                 UserModelStatus::kInvalidShape, "negative model ID returns kInvalidShape");
+			             UserModelStatus::kInvalidShape, "negative model ID returns kInvalidShape");
 
 		const auto signed_time = Decode(ModelList({ModelJson("7", "-1")}));
 		ok &= ExpectStatus(signed_time.Result().status, UserModelStatus::kOk,
@@ -276,7 +276,7 @@ namespace howdy::test::user_model_codec {
 		    ModelJson("7", "1700000000", R"("Office camera")", "7"),
 		    ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")", "7"),
 		    ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-		              R"("cosine")", "7"),
+			          R"("cosine")", "7"),
 		};
 		for (const auto &content : invalid_metadata) {
 			ok &= ExpectStatus(Decode(ModelList({content})).Result().status,
@@ -303,8 +303,8 @@ namespace howdy::test::user_model_codec {
 		for (const std::string_view value : {"null", "\"not-a-number\"", "{}"}) {
 			ok &= ExpectStatus(
 			    Decode(ModelList({ModelJson("7", "1700000000", R"("Office camera")",
-			                                R"("opencv_dnn_sface")", R"("cosine")",
-			                                R"("sface.onnx")", "[[" + std::string(value) + "]]")}))
+				                            R"("opencv_dnn_sface")", R"("cosine")",
+				                            R"("sface.onnx")", "[[" + std::string(value) + "]]")}))
 			        .Result()
 			        .status,
 			    UserModelStatus::kInvalidShape,
@@ -321,7 +321,7 @@ namespace howdy::test::user_model_codec {
 			const auto encoding = "[[" + std::string(number) + "]]";
 			const auto document = Decode(ModelList(
 			    {ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
-			               R"("cosine")", R"("sface.onnx")", encoding)}));
+				           R"("cosine")", R"("sface.onnx")", encoding)}));
 			ok &= ExpectStatus(document.Result().status, UserModelStatus::kInvalidShape,
 			                   std::string(number) +
 			                       " encoding outside float range returns kInvalidShape");

@@ -105,7 +105,7 @@ namespace {
 			    return {.status = howdy::native::OpenCvModelStatus::kOk};
 		    },
 		    .create_detector = [](const std::string &, const cv::Size &, float, float,
-		                          int) -> cv::Ptr<cv::FaceDetectorYN> {
+			                      int) -> cv::Ptr<cv::FaceDetectorYN> {
 			    return cv::makePtr<FakeDetector>();
 		    },
 		    .create_recognizer = [&counts](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {

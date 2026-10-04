@@ -111,8 +111,8 @@ namespace {
 		return {
 		    .status        = context.privilege_status,
 		    .error_message = context.privilege_status == ComparePrivilegeStatus::kOk
-		                         ? ""
-		                         : context.privilege_error,
+			                     ? ""
+			                     : context.privilege_error,
 		};
 	}
 
@@ -256,7 +256,7 @@ namespace {
 		             "successful privilege validation reaches every processing stage");
 		ok &=
 		    Expect(context.startup_overlapped && context.model_on_worker && context.camera_on_main,
-		           "model initialization overlaps camera setup on the main thread");
+			       "model initialization overlaps camera setup on the main thread");
 		ok &= Expect(context.joined_before_drop, "model worker finishes before privilege drop");
 		ok &= Expect(context.warm_on_worker && context.read_on_main &&
 		                 context.warm_seen_during_read && context.joined_before_encode &&
@@ -351,7 +351,7 @@ namespace {
 			if (privilege_result != nullptr) {
 				ok &=
 				    Expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
-				           std::string(test_case.label) + " status is preserved");
+					       std::string(test_case.label) + " status is preserved");
 				ok &= Expect(privilege_result->error_message == test_case.error,
 				             std::string(test_case.label) + " diagnostic data is preserved");
 			}
@@ -526,7 +526,7 @@ namespace {
 			             "model failure aborts and takes precedence over camera failure");
 			ok &=
 			    Expect(context.model_finished && context.events == std::vector<std::string>{"open"},
-			           "model failure joins worker and skips privilege drop and processing");
+				       "model failure joins worker and skips privilege drop and processing");
 		}
 		return ok;
 	}
@@ -547,7 +547,7 @@ namespace {
 			ok &= Expect(caught, "startup exceptions propagate with model failure precedence");
 			ok &=
 			    Expect(context.model_finished && context.events == std::vector<std::string>{"open"},
-			           "startup exception joins worker and skips privilege drop and processing");
+				       "startup exception joins worker and skips privilege drop and processing");
 		}
 		return ok;
 	}

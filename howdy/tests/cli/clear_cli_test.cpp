@@ -153,21 +153,21 @@ namespace {
 		bool ok = true;
 		for (const auto &[status, error, snapshot, expected] : std::vector<
 		         std::tuple<howdy::native::UserModelStatus, std::string,
-		                    std::optional<howdy::native::UserModelFileSnapshot>, std::string>>{
+				            std::optional<howdy::native::UserModelFileSnapshot>, std::string>>{
 		         {howdy::native::UserModelStatus::kNoModelDirectory,
-		          {},
-		          std::nullopt,
-		          "No face models found.\n"},
+				  {},
+				  std::nullopt,
+				  "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kNoModel,
-		          {},
-		          std::nullopt,
-		          "No face models found.\n"},
+				  {},
+				  std::nullopt,
+				  "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kInsecurePath, "storage failed", std::nullopt,
-		          "storage failed\n"},
+				  "storage failed\n"},
 		         {howdy::native::UserModelStatus::kOk,
-		          {},
-		          std::nullopt,
-		          "Failed to inspect user model file\n"},
+				  {},
+				  std::nullopt,
+				  "Failed to inspect user model file\n"},
 		     }) {
 			auto context           = SuccessContext();
 			context.inspect_result = {
@@ -230,7 +230,7 @@ namespace {
 		         {howdy::native::UserModelStatus::kNoModelDirectory, {}, "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kNoModel, {}, "No face models found.\n"},
 		         {howdy::native::UserModelStatus::kModelChanged, "model changed",
-		          "model changed\n"},
+				  "model changed\n"},
 		     }) {
 			auto context         = SuccessContext();
 			context.clear_result = {.status = status, .error_message = error};
@@ -257,7 +257,7 @@ namespace {
 		const char                      *existing_models_dir = std::getenv("HOWDY_USER_MODELS_DIR");
 		const std::optional<std::string> saved_models_dir =
 		    existing_models_dir == nullptr ? std::nullopt
-		                                   : std::optional<std::string>(existing_models_dir);
+			                               : std::optional<std::string>(existing_models_dir);
 		const std::string temp_template_path =
 		    (fs::current_path() / "howdy-clear-cli-test-XXXXXX").string();
 		std::vector<char> temp_template(temp_template_path.begin(), temp_template_path.end());

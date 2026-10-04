@@ -109,11 +109,11 @@ auto main() -> int {
 	             "absolute config override still resolves before trust check");
 	ok &=
 	    Expect(!howdy::native::CheckSecureConfigPath(insecure_config, std::nullopt, {temp_root}).ok,
-	           "insecure config path is rejected before runtime use");
+		       "insecure config path is rejected before runtime use");
 	ok &= Expect(chmod(insecure_dir.c_str(), 0755) == 0, "restore insecure config dir mode");
 	ok &=
 	    Expect(howdy::native::CheckSecureConfigPath(insecure_config, std::nullopt, {temp_root}).ok,
-	           "restored config fixture is secure inside boundary");
+		       "restored config fixture is secure inside boundary");
 
 	const auto insecure_models = temp_root / "insecure-models";
 	fs::create_directories(insecure_models, ec);

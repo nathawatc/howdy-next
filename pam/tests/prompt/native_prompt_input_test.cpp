@@ -135,7 +135,7 @@ namespace {
 		std::array<char, 64> prompt_buffer{};
 		const ssize_t        prompt_bytes =
 		    ReadWithTimeout(master_fd, {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
-		                    kPromptReadTimeoutMs);
+			                kPromptReadTimeoutMs);
 		ok &= Expect(prompt_bytes > 0, message + ": prompt is written to tty");
 
 		constexpr std::array<char, 7> password{'s', 'e', 'c', 'r', 'e', 't', '\n'};
@@ -235,9 +235,9 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 	InputOperationContext operations{.restore_failure = true};
 	auto                  conversation = std::shared_ptr<NativePromptConversation>(
 	    CreateInputConversation({.tty_fd         = std::move(slave_fd),
-	                             .abort_read_fd  = std::move(abort_pipe.at(0)),
-	                             .abort_write_fd = std::move(abort_pipe.at(1))},
-	                            &operations));
+		                         .abort_read_fd  = std::move(abort_pipe.at(0)),
+		                         .abort_write_fd = std::move(abort_pipe.at(1))},
+		                        &operations));
 	NativePromptConversationTestAccess::CloseAbortWriteFd(*conversation);
 
 	auto         response       = std::make_shared<char *>(nullptr);
@@ -297,8 +297,8 @@ auto ExpectPtyHangupAbortsPrompt() -> bool {
 
 	auto conversation = std::shared_ptr<NativePromptConversation>(
 	    CreateConversation({.tty_fd         = std::move(slave_fd),
-	                        .abort_read_fd  = std::move(abort_pipe.at(0)),
-	                        .abort_write_fd = std::move(abort_pipe.at(1))}));
+		                    .abort_read_fd  = std::move(abort_pipe.at(0)),
+		                    .abort_write_fd = std::move(abort_pipe.at(1))}));
 
 	auto         response       = std::make_shared<char *>(nullptr);
 	auto         result_promise = std::make_shared<std::promise<int>>();
@@ -592,7 +592,7 @@ auto ExpectNativeMessageStyles() -> bool {
 	ok &=
 	    Expect(NativePromptConversationTestAccess::Dispatch(
 	               1, &unsupported_ptr, &unsupported_response, conversation.get()) == PAM_CONV_ERR,
-	           "unsupported message style is rejected");
+		       "unsupported message style is rejected");
 	ok &= Expect(unsupported_response == nullptr, "unsupported message style clears responses");
 
 	auto                 invalid_tty          = CreateConversation({});
@@ -600,7 +600,7 @@ auto ExpectNativeMessageStyles() -> bool {
 	ok &=
 	    Expect(NativePromptConversationTestAccess::Dispatch(
 	               1, &null_message_ptr, &invalid_tty_response, invalid_tty.get()) == PAM_CONV_ERR,
-	           "message dispatch rejects missing terminal");
+		       "message dispatch rejects missing terminal");
 	ok &= Expect(invalid_tty_response == nullptr,
 	             "missing terminal message dispatch clears responses");
 

@@ -81,7 +81,7 @@ namespace howdy::test::download_models {
 		int replacement_exit = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &replacement_exit, test_models, SuccessfulFakeDownloadFile),
+			                &replacement_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run empty replacement");
 		const auto replacement_stdout = ReadFile(replacement_output);
 		ok &= Expect(replacement_exit == 0 && AttemptedDownloads() == 1 &&
@@ -96,7 +96,7 @@ namespace howdy::test::download_models {
 		int arbitrary_exit = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &arbitrary_exit, test_models, SuccessfulFakeDownloadFile),
+			                &arbitrary_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run arbitrary replacement");
 		ok &= Expect(arbitrary_exit == 0 && AttemptedDownloads() == 1,
 		             "arbitrary installed model triggers replacement");
@@ -111,7 +111,7 @@ namespace howdy::test::download_models {
 		int wrong_hash_exit = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &wrong_hash_exit, test_models, SuccessfulFakeDownloadFile),
+			                &wrong_hash_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run wrong-hash replacement");
 		ok &= Expect(wrong_hash_exit == 0 && AttemptedDownloads() == 1,
 		             "wrong-hash installed model triggers replacement");
@@ -122,7 +122,7 @@ namespace howdy::test::download_models {
 		int staged_mismatch_exit               = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &staged_mismatch_exit, test_models, SuccessfulFakeDownloadFile),
+			                &staged_mismatch_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run staged checksum mismatch");
 		ok &= Expect(staged_mismatch_exit == EXIT_FAILURE &&
 		                 ReadFile(replacement_model) == "old destination",
@@ -138,7 +138,7 @@ namespace howdy::test::download_models {
 		int staged_size_exit                   = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &staged_size_exit, test_models, SuccessfulFakeDownloadFile),
+			                &staged_size_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run staged size mismatch");
 		ok &= Expect(staged_size_exit == EXIT_FAILURE &&
 		                 ReadFile(replacement_model) == "old destination",
@@ -156,9 +156,9 @@ namespace howdy::test::download_models {
 		int staged_fstat_exit                     = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &staged_fstat_exit, test_models, SuccessfulFakeDownloadFile,
-		                    howdy::native::download_models_internal::Sha256FileDescriptor,
-		                    SelectivelyFailingFstat),
+			                &staged_fstat_exit, test_models, SuccessfulFakeDownloadFile,
+			                howdy::native::download_models_internal::Sha256FileDescriptor,
+			                SelectivelyFailingFstat),
 		    "run staged fstat failure");
 		const auto staged_fstat_stdout = ReadFile(replacement_output);
 		ok &= Expect(staged_fstat_exit == EXIT_FAILURE &&
@@ -180,8 +180,8 @@ namespace howdy::test::download_models {
 		DependenciesState().downloaded_content = kTestModelContent;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &hash_read_failure_exit, test_models, SuccessfulFakeDownloadFile,
-		                    FailingSha256File),
+			                &hash_read_failure_exit, test_models, SuccessfulFakeDownloadFile,
+			                FailingSha256File),
 		    "run staged hash operation failure");
 		ok &= Expect(hash_read_failure_exit == EXIT_FAILURE &&
 		                 ReadFile(replacement_model) == "old destination",
@@ -210,14 +210,14 @@ namespace howdy::test::download_models {
 		int installed_exit                     = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &installed_exit, test_models, SuccessfulFakeDownloadFile),
+			                &installed_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run successful matching replacement");
 		ok &= Expect(installed_exit == 0 && ReadFile(replacement_model) == kTestModelContent,
 		             "matching staged test model installs atomically");
 		int second_run_exit = 0;
 		ok &= Expect(
 		    RunTestDownload({.models_dir = replacement_models_dir, .output = replacement_output},
-		                    &second_run_exit, test_models, SuccessfulFakeDownloadFile),
+			                &second_run_exit, test_models, SuccessfulFakeDownloadFile),
 		    "run installed matching test model");
 		ok &= Expect(second_run_exit == 0 && AttemptedDownloads() == 0,
 		             "second run performs zero downloads");

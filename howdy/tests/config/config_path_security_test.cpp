@@ -68,7 +68,7 @@ namespace howdy::test {
 		if (install_failure_security.ok && set_file_size_limit) {
 			update_failed =
 			    !howdy::native::UpdateConfigValue(install_failure_path, "disabled", &update_error,
-			                                      "true", false, false, {context.temp_root});
+				                                  "true", false, false, {context.temp_root});
 		}
 		if (set_file_size_limit) {
 			ok &= Expect(file_size_limit_guard.Restore(),

@@ -280,7 +280,7 @@ namespace howdy::pam {
 			    pamh_, LOG_INFO,
 			    fallback_to_input
 			        ? "Native prompt conversation unavailable, falling back to input workaround"
-			        : "Native prompt conversation unavailable, disabling prompt workaround");
+					: "Native prompt conversation unavailable, disabling prompt workaround");
 		}
 		effective_workaround_ = fallback_to_input ? Workaround::kInput : Workaround::kOff;
 		native_prompt_.reset();
@@ -322,8 +322,8 @@ namespace howdy::pam {
 		ConfigureInputWorkaround();
 		return effective_workaround_ == Workaround::kNative
 		           ? native_prompt_ != nullptr && !existing_auth_token_
-		           : ShouldAskForPassword(ask_auth_tok_, effective_workaround_,
-		                                  existing_auth_token_);
+				   : ShouldAskForPassword(ask_auth_tok_, effective_workaround_,
+				                          existing_auth_token_);
 	}
 
 	void PromptCoordinator::ConfigureInputWorkaround() {
@@ -396,7 +396,7 @@ namespace howdy::pam {
 		pam_syslog(pamh_, LOG_CRIT,
 		           result == ConversationRestoreResult::kFailClosedInstalled
 		               ? "PAM conversation restoration failed; fail-closed callback installed"
-		               : "PAM conversation restoration unsafe; callback context quarantined");
+					   : "PAM conversation restoration unsafe; callback context quarantined");
 		return result;
 	}
 

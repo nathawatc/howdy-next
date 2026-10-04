@@ -182,7 +182,7 @@ namespace {
 			             "direct success returns ok");
 			ok &=
 			    Expect(context.load_paths == std::vector<std::filesystem::path>{kConfiguredConfig},
-			           "direct success loads configured path once");
+				       "direct success loads configured path once");
 			ok &= Expect(context.prepare_usernames.empty(), "direct success does not prepare");
 			ok &= Expect(!session.Staged(), "direct success is not staged");
 			ok &= Expect(session.ConfigPath() == kConfiguredConfig,
@@ -487,7 +487,7 @@ namespace {
 		    {.name = "empty root path", .prepared = empty_root},
 		    {.name = "config path outside prepared runtime root", .prepared = config_outside},
 		    {.name     = "user-model directory outside prepared runtime root",
-		     .prepared = models_outside},
+			 .prepared = models_outside},
 		    {.name = "sibling path with valid-looking basename", .prepared = sibling_models},
 		    {.name = "invalid prepared runtime suffix", .prepared = sibling},
 		    {.name = "config and models paths swapped", .prepared = swapped_paths},

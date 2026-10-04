@@ -131,8 +131,8 @@ namespace {
 		const auto no_wrapper = howdy::native::ResolveInvokingIdentity();
 		ok &=
 		    Expect(no_wrapper.status == howdy::native::InvokingIdentityStatus::kNoWrapperIdentity &&
-		               !no_wrapper.user.has_value(),
-		           "no wrapper metadata is represented explicitly");
+			           !no_wrapper.user.has_value(),
+			       "no wrapper metadata is represented explicitly");
 
 		ScopedWrapperEnvironment::Set(howdy::native::kDoasUserEnvironmentVariable, user.name);
 		ok &= ExpectResolved(howdy::native::ResolveInvokingIdentity(), user,

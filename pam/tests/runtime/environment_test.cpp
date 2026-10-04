@@ -54,7 +54,7 @@ auto main() -> int {
 	values.process["SSH_CONNECTION"] = "process-value";
 	ok &=
 	    Expect(FindEnvironmentVariable(nullptr, "SSH_CONNECTION", deps) == EnvironmentSource::kPam,
-	           "PAM environment wins over process environment");
+		       "PAM environment wins over process environment");
 	ok &= Expect(values.pam_calls == 1 && values.process_calls == 0,
 	             "process environment is not consulted after PAM hit");
 
@@ -82,7 +82,7 @@ auto main() -> int {
 	const std::string embedded_null("EMPTY\0SUFFIX", 12);
 	ok &=
 	    Expect(FindEnvironmentVariable(nullptr, embedded_null, deps) == EnvironmentSource::kMissing,
-	           "embedded-null variable name is rejected");
+		       "embedded-null variable name is rejected");
 	ok &= Expect(FindEnvironmentVariable(nullptr, "", deps) == EnvironmentSource::kMissing,
 	             "empty variable name is rejected");
 	ok &= Expect(FindEnvironmentVariable(nullptr, "INVALID=NAME", deps) ==
@@ -101,7 +101,7 @@ auto main() -> int {
 	values.pam["PAM_ONLY"] = "yes";
 	ok &=
 	    Expect(FindEnvironmentVariable(nullptr, "PAM_ONLY", no_process) == EnvironmentSource::kPam,
-	           "null process callback safely permits PAM lookup");
+		       "null process callback safely permits PAM lookup");
 
 	const EnvironmentLookupDependencies no_pam{
 	    .context             = &values,
@@ -111,7 +111,7 @@ auto main() -> int {
 	values.process["FALLBACK"] = "yes";
 	ok &=
 	    Expect(FindEnvironmentVariable(nullptr, "FALLBACK", no_pam) == EnvironmentSource::kProcess,
-	           "null PAM callback safely permits process fallback");
+		       "null PAM callback safely permits process fallback");
 
 	const EnvironmentLookupDependencies no_callbacks{
 	    .context             = &values,

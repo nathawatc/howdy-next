@@ -79,15 +79,15 @@ auto main() -> int {
 
 	const std::array primitive_options = {
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "alpha", "enabled", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(true), "Enable synthetic mode."),
+		                howdy::native::config_schema::BoolDefault(true), "Enable synthetic mode."),
 	    SyntheticOption(OptionId::kCoreNoConfirmation, "alpha", "count", ValueType::kInteger,
-	                    howdy::native::config_schema::IntDefault(320), "Number of samples to use."),
+		                howdy::native::config_schema::IntDefault(320), "Number of samples to use."),
 	    SyntheticOption(OptionId::kCoreAbortIfSsh, "beta", "ratio", ValueType::kFloatingPoint,
-	                    howdy::native::config_schema::FloatDefault(1.25F),
-	                    "Scaling ratio for synthetic mode."),
+		                howdy::native::config_schema::FloatDefault(1.25F),
+		                "Scaling ratio for synthetic mode."),
 	    SyntheticOption(OptionId::kCoreAbortIfLidClosed, "beta", "path", ValueType::kString,
-	                    howdy::native::config_schema::StringDefault("none"),
-	                    "Device path used by synthetic mode."),
+		                howdy::native::config_schema::StringDefault("none"),
+		                "Device path used by synthetic mode."),
 	};
 	const auto primitive_result = Render(primitive_options);
 	ok &= Expect(primitive_result.ok, "primitive schema renders");
@@ -145,8 +145,8 @@ auto main() -> int {
 			ok &= Expect(option.description != option.key, "description explains option");
 			ok &=
 			    Expect(!production_result.content.contains("# " + std::string(option.description)),
-			           "production config does not contain per-option description comment: " +
-			               std::string(option.key));
+				       "production config does not contain per-option description comment: " +
+				           std::string(option.key));
 			const auto canonical_fallback =
 			    howdy::native::config_schema::FormatFallbackValue(option);
 			ok &= Expect(canonical_fallback.has_value() &&
@@ -183,37 +183,37 @@ auto main() -> int {
 
 	const std::array empty_description = {
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "one", "value", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), ""),
+		                howdy::native::config_schema::BoolDefault(false), ""),
 	};
 	ok &= RejectsRenderingError(empty_description, "empty or unsafe description");
 
 	const std::array unsafe_section = {
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "one]", "value", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), "Boolean option."),
+		                howdy::native::config_schema::BoolDefault(false), "Boolean option."),
 	};
 	ok &= RejectsRenderingError(unsafe_section, "invalid or empty section");
 
 	const std::array unsafe_key = {
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "one", "value=other", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), "Boolean option."),
+		                howdy::native::config_schema::BoolDefault(false), "Boolean option."),
 	};
 	ok &= RejectsRenderingError(unsafe_key, "invalid or empty key");
 
 	for (const auto *const unsafe : {"line\nbreak", "value=other", "value # comment"}) {
 		const std::array unsafe_string = {
 		    SyntheticOption(OptionId::kCoreDetectionNotice, "one", "value", ValueType::kString,
-		                    howdy::native::config_schema::StringDefault(unsafe), "String option."),
+			                howdy::native::config_schema::StringDefault(unsafe), "String option."),
 		};
 		ok &= RejectsRenderingError(unsafe_string, "cannot serialize fallback");
 	}
 
 	const std::array repeated_section = {
 	    SyntheticOption(OptionId::kCoreDetectionNotice, "one", "first", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), "First option."),
+		                howdy::native::config_schema::BoolDefault(false), "First option."),
 	    SyntheticOption(OptionId::kCoreNoConfirmation, "two", "second", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), "Second option."),
+		                howdy::native::config_schema::BoolDefault(false), "Second option."),
 	    SyntheticOption(OptionId::kCoreAbortIfSsh, "one", "third", ValueType::kBoolean,
-	                    howdy::native::config_schema::BoolDefault(false), "Third option."),
+		                howdy::native::config_schema::BoolDefault(false), "Third option."),
 	};
 	ok &= RejectsRenderingError(repeated_section, "section reused non-contiguously");
 

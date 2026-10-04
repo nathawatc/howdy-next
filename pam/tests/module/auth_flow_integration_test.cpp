@@ -118,9 +118,9 @@ namespace {
 		             "installs unavailable PAM conversation");
 		ok &=
 		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                       {.context      = &dependencies,
-		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
-		           "unavailable PAM conversation fails closed");
+			                                   {.context      = &dependencies,
+			                                    .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+			       "unavailable PAM conversation fails closed");
 		return ok;
 	}
 
@@ -145,9 +145,9 @@ namespace {
 		fixture.runtime.effective_uid       = 1000;
 		ok &=
 		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                       {.context      = &dependencies,
-		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
-		           "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
+			                                   {.context      = &dependencies,
+			                                    .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+			       "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
 		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "runtime staging attempts preparation after inaccessible config");
 
@@ -157,9 +157,9 @@ namespace {
 		fixture.runtime.load_calls          = 0;
 		ok &=
 		    Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                       {.context      = &dependencies,
-		                                        .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
-		           "runtime configuration failure maps to PAM_SYSTEM_ERR");
+			                                   {.context      = &dependencies,
+			                                    .authenticate = IdentifyForTest}) == PAM_SYSTEM_ERR,
+			       "runtime configuration failure maps to PAM_SYSTEM_ERR");
 		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
 		             "non-staging runtime failure skips preparation");
 

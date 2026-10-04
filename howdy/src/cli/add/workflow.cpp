@@ -140,7 +140,7 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 
 	const auto append_result =
 	    dependencies.append_user_model(dependencies.context, args.user,
-	                                   howdy::native::NewUserModelEntry{
+		                               howdy::native::NewUserModelEntry{
 	                                       .label     = label,
 	                                       .backend   = howdy::native::FaceModel::kBackendName,
 	                                       .metric    = enrollment_result.metric,

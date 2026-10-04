@@ -304,8 +304,8 @@ namespace {
 		        .inference = howdy::native::FaceModelInferenceOperations(face_model),
 		    },
 		    howdy::native::PreparedFaceMatcher(std::move(loaded_models.stored.encodings),
-		                                       config.face.sface_metric,
-		                                       config.face.sface_threshold),
+			                                   config.face.sface_metric,
+			                                   config.face.sface_threshold),
 		    loaded_models.stored.models.size(),
 		    loaded_models.status == howdy::native::UserModelStatus::kOk);
 
