@@ -25,6 +25,13 @@ namespace howdy::native::user_model_codec_internal {
 
 	namespace {
 
+#if YYJSON_VERSION_HEX >= 0x000D00
+		using ReadOnlyVal = yyjson_val const;
+#else
+		// yyjson 0.12 read helpers require a mutable pointer even for read-only traversal.
+		using ReadOnlyVal = yyjson_val;
+#endif
+
 		constexpr auto kStoredModelsIncompatibleMessage =
 		    "Stored face models use incompatible face-recognition metadata";
 
@@ -90,8 +97,7 @@ namespace howdy::native::user_model_codec_internal {
 		auto HasDuplicateDirectKey(yyjson_val *model) -> bool {
 			std::set<std::string_view> seen_keys;
 			auto                       iterator = yyjson_obj_iter_with(model);
-			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
-			while (auto *key = yyjson_obj_iter_next(&iterator)) {
+			while (ReadOnlyVal *key = yyjson_obj_iter_next(&iterator)) {
 				const std::string_view name(yyjson_get_str(key), yyjson_get_len(key));
 				if (!seen_keys.insert(name).second) {
 					return true;
@@ -113,8 +119,7 @@ namespace howdy::native::user_model_codec_internal {
 
 		auto ReadIntField(yyjson_val *model, const char *key, bool strict_shape)
 		    -> std::optional<int> {
-			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
-			auto *value = FindLastField(model, key);
+			ReadOnlyVal *value = FindLastField(model, key);
 			if (value == nullptr) {
 				return strict_shape ? std::nullopt : std::optional<int>(-1);
 			}
@@ -136,8 +141,7 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ReadTimeField(yyjson_val *model) -> std::optional<std::int64_t> {
-			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
-			auto *value = FindLastField(model, "time");
+			ReadOnlyVal *value = FindLastField(model, "time");
 			if (value == nullptr) {
 				return 0;
 			}
@@ -156,8 +160,7 @@ namespace howdy::native::user_model_codec_internal {
 
 		auto ReadStringField(yyjson_val *model, const char *key, bool strict_shape)
 		    -> std::optional<std::string> {
-			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
-			auto *value = FindLastField(model, key);
+			ReadOnlyVal *value = FindLastField(model, key);
 			if (value == nullptr) {
 				return std::string();
 			}
@@ -189,14 +192,9 @@ namespace howdy::native::user_model_codec_internal {
 
 			std::vector<float> encoding;
 			encoding.reserve(encoding_size);
-			size_t index = 0;
-			size_t count = 0;
-#if YYJSON_VERSION_HEX >= 0x000D00
-			yyjson_val const *value = nullptr;
-#else
-			// yyjson 0.12 read helpers require a mutable pointer even for read-only traversal.
-			yyjson_val *value = nullptr;
-#endif
+			size_t       index = 0;
+			size_t       count = 0;
+			ReadOnlyVal *value = nullptr;
 			yyjson_arr_foreach(encoding_json, index, count, value) {
 				if (!yyjson_is_num(value)) {
 					return EncodingParseResult{
@@ -322,8 +320,7 @@ namespace howdy::native::user_model_codec_internal {
 				return EntryParseResult{.result = compatibility};
 			}
 
-			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
-			auto *data = FindLastField(model, "data");
+			ReadOnlyVal *data = FindLastField(model, "data");
 			if (!yyjson_is_arr(data)) {
 				if (strict_shape) {
 					return EntryParseResult{
