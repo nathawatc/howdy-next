@@ -90,7 +90,8 @@ namespace howdy::native::user_model_codec_internal {
 		auto HasDuplicateDirectKey(yyjson_val *model) -> bool {
 			std::set<std::string_view> seen_keys;
 			auto                       iterator = yyjson_obj_iter_with(model);
-			while (auto const *key = yyjson_obj_iter_next(&iterator)) {
+			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
+			while (auto *key = yyjson_obj_iter_next(&iterator)) {
 				const std::string_view name(yyjson_get_str(key), yyjson_get_len(key));
 				if (!seen_keys.insert(name).second) {
 					return true;
@@ -112,7 +113,8 @@ namespace howdy::native::user_model_codec_internal {
 
 		auto ReadIntField(yyjson_val *model, const char *key, bool strict_shape)
 		    -> std::optional<int> {
-			auto const *value = FindLastField(model, key);
+			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
+			auto *value = FindLastField(model, key);
 			if (value == nullptr) {
 				return strict_shape ? std::nullopt : std::optional<int>(-1);
 			}
@@ -134,7 +136,8 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ReadTimeField(yyjson_val *model) -> std::optional<std::int64_t> {
-			auto const *value = FindLastField(model, "time");
+			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
+			auto *value = FindLastField(model, "time");
 			if (value == nullptr) {
 				return 0;
 			}
@@ -153,7 +156,8 @@ namespace howdy::native::user_model_codec_internal {
 
 		auto ReadStringField(yyjson_val *model, const char *key, bool strict_shape)
 		    -> std::optional<std::string> {
-			auto const *value = FindLastField(model, key);
+			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
+			auto *value = FindLastField(model, key);
 			if (value == nullptr) {
 				return std::string();
 			}
@@ -318,7 +322,8 @@ namespace howdy::native::user_model_codec_internal {
 				return EntryParseResult{.result = compatibility};
 			}
 
-			auto const *data = FindLastField(model, "data");
+			// NOLINTNEXTLINE(misc-const-correctness): yyjson 0.12 takes non-const yyjson_val *
+			auto *data = FindLastField(model, "data");
 			if (!yyjson_is_arr(data)) {
 				if (strict_shape) {
 					return EntryParseResult{
