@@ -26,6 +26,10 @@ auto main() -> int {
 	             "malformed username containing dot-dot is rejected");
 	ok &= Expect(!howdy::native::IsValidModelUserName(".alice"),
 	             "hidden-file style username is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName("-h"),
+	             "short option-shaped username is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName("--help"),
+	             "long option-shaped username is rejected");
 	ok &= Expect(!howdy::native::IsValidModelUserName("alice bob"),
 	             "username containing whitespace is rejected");
 

@@ -17,7 +17,7 @@ namespace howdy::native {
 			return false;
 		}
 
-		if (user.front() == '.' || user.contains("..")) {
+		if (user.front() == '.' || user.front() == '-' || user.contains("..")) {
 			return false;
 		}
 

@@ -19,15 +19,19 @@ namespace howdy::native {
 		const auto arguments =
 		    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
 
-		for (std::size_t index = 1; index < arguments.size(); ++index) {
-			const std::string_view arg(arguments.subspan(index, 1).front());
-			if (arg == "--help" || arg == "-h") {
+		if (arguments.size() == 2) {
+			const std::string_view option(arguments.subspan(1, 1).front());
+			if (option == "--help" || option == "-h") {
 				result.status    = CompareArgsStatus::kHelp;
 				result.exit_code = CompareExit::kSuccess;
 				result.message =
 				    "Usage: " + std::string(arguments.front()) + " [--config PATH] <user>\n";
 				return result;
 			}
+		}
+
+		for (std::size_t index = 1; index < arguments.size(); ++index) {
+			const std::string_view arg(arguments.subspan(index, 1).front());
 			if (arg == kCompareConfigOption && index + 1 < arguments.size()) {
 				result.args.config_path = arguments.subspan(++index, 1).front();
 				continue;
