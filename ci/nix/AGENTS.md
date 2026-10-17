@@ -1,6 +1,6 @@
 # Nix CI Guidelines
 
-**Updated:** 2026-09-14
+**Updated:** 2026-10-17
 
 Read the [repository guidelines](../../AGENTS.md) first.
 
@@ -25,7 +25,7 @@ Run from the repository root:
 ```sh
 podman run --rm --network=none \
   -v "$PWD:/workspace:ro" -w /workspace \
-  codeberg.org/nathawat/howdy-next/ci-nix:2.35.2-1 bash -c '
+  codeberg.org/nathawat/howdy-next/ci-nix:2.35.3-1 bash -c '
     set -e
     bash ci/nix/check-prebuilt.sh
     nix flake check --offline --no-update-lock-file --no-build --all-systems
