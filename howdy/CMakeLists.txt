@@ -222,6 +222,8 @@ add_library(howdy_compare_entrypoint STATIC src/compare/entrypoint.cpp)
 howdy_configure_native_target(howdy_compare_entrypoint)
 target_link_libraries(
  howdy_compare_entrypoint
+ PUBLIC
+  howdy_opencv
  PRIVATE
   howdy_runtime_config_loader
   howdy_compare_args
