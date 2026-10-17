@@ -679,6 +679,9 @@ auto ExpectNativePromptInputEdges() -> bool {
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
 	                 3, password, response_too_long) == CharacterResult::kAbort,
 	             "Ctrl-C aborts password input");
+	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
+	                 '\0', password, response_too_long) == CharacterResult::kAbort,
+	             "embedded NUL aborts password input");
 	return ok;
 }
 

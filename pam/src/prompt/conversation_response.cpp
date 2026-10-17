@@ -21,6 +21,30 @@ namespace {
 
 namespace howdy::pam::detail {
 
+	void SecureFreeConversationResponses(struct pam_response          **responses,
+	                                     std::span<const std::size_t>   lengths,
+	                                     ConversationResponseOperations operations) noexcept {
+		if (responses == nullptr || *responses == nullptr || operations.erase == nullptr ||
+		    operations.release == nullptr) {
+			return;
+		}
+		auto *owned_responses    = *responses;
+		*responses               = nullptr;
+		auto const response_view = std::span(owned_responses, lengths.size());
+		auto       length_it     = lengths.begin();
+		for (auto &owned_response : response_view) {
+			const auto length = *length_it++;
+			char      *secret = owned_response.resp;
+			if (secret == nullptr) {
+				continue;
+			}
+			operations.erase(operations.context, {secret, length});
+			operations.release({.context = operations.context, .pointer = secret});
+			owned_response.resp = nullptr;
+		}
+		operations.release({.context = operations.context, .pointer = owned_responses});
+	}
+
 	void SecureFreeConversationResponses(struct pam_response **responses, int count,
 	                                     ConversationResponseOperations operations) noexcept {
 		if (responses == nullptr || *responses == nullptr || operations.erase == nullptr ||
@@ -45,6 +69,12 @@ namespace howdy::pam::detail {
 }  // namespace howdy::pam::detail
 
 namespace howdy::pam {
+	void SecureFreeConversationResponses(struct pam_response        **responses,
+	                                     std::span<const std::size_t> lengths) noexcept {
+		detail::SecureFreeConversationResponses(
+		    responses, lengths, {.erase = EraseResponse, .release = ReleaseResponse});
+	}
+
 	void SecureFreeConversationResponses(struct pam_response **responses, int count) noexcept {
 		detail::SecureFreeConversationResponses(
 		    responses, count, {.erase = EraseResponse, .release = ReleaseResponse});

@@ -354,32 +354,60 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 		return PAM_CONV_ERR;
 	}
 
-	auto *pam_responses = static_cast<struct pam_response *>(
-	    std::calloc(static_cast<std::size_t>(num_msg), sizeof(struct pam_response)));
+	const auto               count = static_cast<std::size_t>(num_msg);
+	std::vector<std::size_t> response_lengths(count, 0);
+	auto                    *pam_responses =
+	    static_cast<struct pam_response *>(std::calloc(count, sizeof(struct pam_response)));
 	if (pam_responses == nullptr) {
 		return PAM_BUF_ERR;
 	}
-	*response = pam_responses;
 
-	const auto messages    = std::span(msgm, static_cast<std::size_t>(num_msg));
-	auto const responses   = std::span(pam_responses, static_cast<std::size_t>(num_msg));
+	class ResponseCleanupGuard {
+	public:
+		ResponseCleanupGuard(struct pam_response     **responses,
+		                     std::vector<std::size_t> *lengths) noexcept
+		    : responses_(responses)
+		    , lengths_(lengths) {}
+
+		ResponseCleanupGuard(const ResponseCleanupGuard &)                     = delete;
+		auto operator=(const ResponseCleanupGuard &) -> ResponseCleanupGuard & = delete;
+		ResponseCleanupGuard(ResponseCleanupGuard &&)                          = delete;
+		auto operator=(ResponseCleanupGuard &&) -> ResponseCleanupGuard &      = delete;
+
+		void Release() noexcept {
+			responses_ = nullptr;
+		}
+
+		~ResponseCleanupGuard() {
+			if (responses_ != nullptr && *responses_ != nullptr && lengths_ != nullptr) {
+				howdy::pam::SecureFreeConversationResponses(responses_, *lengths_);
+			}
+		}
+
+	private:
+		struct pam_response     **responses_ = nullptr;
+		std::vector<std::size_t> *lengths_   = nullptr;
+	} cleanup_guard{&pam_responses, &response_lengths};
+
+	const auto messages    = std::span(msgm, count);
+	auto const responses   = std::span(pam_responses, count);
 	auto       response_it = responses.begin();
+	auto       length_it   = response_lengths.begin();
 	for (const auto *message_ptr : messages) {
 		if (message_ptr == nullptr) {
-			howdy::pam::SecureFreeConversationResponses(&pam_responses, num_msg);
-			*response = nullptr;
 			return PAM_CONV_ERR;
 		}
 
 		auto                     &current_response = *response_it++;
+		auto                     &current_length   = *length_it++;
 		const struct pam_message &message          = *message_ptr;
 		int                       result           = PAM_SUCCESS;
 		switch (message.msg_style) {
 			case PAM_PROMPT_ECHO_OFF:
-				result = PromptInput(message, &current_response.resp, true);
+				result = PromptInput(message, &current_response.resp, true, &current_length);
 				break;
 			case PAM_PROMPT_ECHO_ON:
-				result = PromptInput(message, &current_response.resp, false);
+				result = PromptInput(message, &current_response.resp, false, &current_length);
 				break;
 			case PAM_TEXT_INFO:
 			case PAM_ERROR_MSG:
@@ -398,11 +426,11 @@ auto NativePromptConversation::Handle(int num_msg, const struct pam_message **ms
 			continue;
 		}
 
-		howdy::pam::SecureFreeConversationResponses(&pam_responses, num_msg);
-		*response = nullptr;
 		return result;
 	}
 
+	*response = pam_responses;
+	cleanup_guard.Release();
 	return PAM_SUCCESS;
 }
 
@@ -518,9 +546,12 @@ auto NativePromptConversation::ReadPromptPassword(
 }
 
 auto NativePromptConversation::PromptInput(const struct pam_message &message, char **response,
-                                           bool hide_input) -> int {
+                                           bool hide_input, std::size_t *response_length) -> int {
 	if (response == nullptr || !tty_fd_.Valid() || abort_requested_.load()) {
 		return PAM_CONV_ERR;
+	}
+	if (response_length != nullptr) {
+		*response_length = 0;
 	}
 
 	struct termios original_termios{};
@@ -603,6 +634,9 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 	std::memcpy(pam_response->resp, password.Data(), password.Size());
 	pam_response->resp_retcode = 0;
 	*response                  = pam_response->resp;
+	if (response_length != nullptr) {
+		*response_length = password.Size() + 1;
+	}
 	std::free(pam_response);
 	return PAM_SUCCESS;
 }

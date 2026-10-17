@@ -42,7 +42,7 @@ namespace howdy::pam::native_prompt_input {
 		if (ch == '\n' || ch == '\r') {
 			return CharacterResult::kComplete;
 		}
-		if (ch == 3) {
+		if (ch == 3 || ch == '\0') {
 			return CharacterResult::kAbort;
 		}
 		if (ch == '\b' || ch == 127) {

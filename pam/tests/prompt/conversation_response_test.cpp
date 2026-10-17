@@ -78,6 +78,34 @@ namespace {
 		return ok && howdy::test::Expect(context.count == (strings * 2) + 1,
 		                                 "each response and array released once");
 	}
+
+	auto TestExplicitLengthCleanupWithEmbeddedNul() -> bool {
+		Context context;
+		auto   *responses =
+		    static_cast<struct pam_response *>(std::calloc(1, sizeof(struct pam_response)));
+		if (responses == nullptr) {
+			return false;
+		}
+		constexpr std::array<char, 9> embedded_secret{'a', 'b', '\0', 's', 'e', 'c', 'r', 'e', 't'};
+		responses->resp =
+		    static_cast<char *>(std::calloc(embedded_secret.size() + 1, sizeof(char)));
+		if (responses->resp == nullptr) {
+			std::free(responses);
+			return false;
+		}
+		std::memcpy(responses->resp, embedded_secret.data(), embedded_secret.size());
+		const std::array<std::size_t, 1> lengths{embedded_secret.size() + 1};
+
+		howdy::pam::detail::SecureFreeConversationResponses(
+		    &responses, lengths,
+		    {.context = &context, .erase = RecordErase, .release = RecordRelease});
+		return howdy::test::Expect(responses == nullptr, "explicit cleanup nulls caller pointer") &&
+		       howdy::test::Expect(context.count == 3,
+		                           "explicit cleanup records erase and releases") &&
+		       howdy::test::Expect(context.events.at(0).erase &&
+		                               context.events.at(0).length == embedded_secret.size() + 1,
+		                           "explicit cleanup erases full allocation past embedded NUL");
+	}
 }  // namespace
 
 auto main() -> int {
@@ -90,5 +118,6 @@ auto main() -> int {
 	ok &= TestCleanup({"one", "two"});
 	ok &= TestCleanup({"partial", nullptr, "last"});
 	ok &= TestCleanup({nullptr, nullptr});
+	ok &= TestExplicitLengthCleanupWithEmbeddedNul();
 	return ok ? 0 : 1;
 }

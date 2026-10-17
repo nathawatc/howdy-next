@@ -19,4 +19,7 @@ namespace howdy::pam::detail {
 
 	void SecureFreeConversationResponses(struct pam_response **responses, int count,
 	                                     ConversationResponseOperations operations) noexcept;
+	void SecureFreeConversationResponses(struct pam_response          **responses,
+	                                     std::span<const std::size_t>   lengths,
+	                                     ConversationResponseOperations operations) noexcept;
 }  // namespace howdy::pam::detail

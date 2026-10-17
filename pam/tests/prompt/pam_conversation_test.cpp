@@ -112,6 +112,11 @@ namespace howdy::pam {
 		std::free(owned_responses);
 	}
 
+	void SecureFreeConversationResponses(struct pam_response        **responses,
+	                                     std::span<const std::size_t> lengths) noexcept {
+		SecureFreeConversationResponses(responses, static_cast<int>(lengths.size()));
+	}
+
 }  // namespace howdy::pam
 
 namespace {

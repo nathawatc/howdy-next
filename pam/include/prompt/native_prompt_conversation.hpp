@@ -91,7 +91,8 @@ private:
 	auto        Handle(int num_msg, const struct pam_message **msgm, struct pam_response **response)
 	    -> int;
 	[[nodiscard]] auto WriteMessageLine(const struct pam_message &message) const -> int;
-	auto PromptInput(const struct pam_message &message, char **response, bool hide_input) -> int;
+	auto PromptInput(const struct pam_message &message, char **response, bool hide_input,
+	                 std::size_t *response_length = nullptr) -> int;
 	auto ReadPromptPassword(howdy::pam::native_prompt_input::SensitiveBuffer &password,
 	                        bool &response_too_long) -> bool;
 	auto PollPrompt(std::array<struct pollfd, 2> &fds) const -> int;
