@@ -121,9 +121,8 @@ auto main() -> int {
 	ok &= Expect(chmod(large_runtime_path.c_str(), 0644) == 0, "secure large runtime config");
 	const auto large_runtime =
 	    howdy::native::LoadRuntimeConfig(large_runtime_path, std::nullopt, {temp_root});
-	ok &= Expect(large_runtime.ok && large_runtime.config.has_value() &&
-	                 large_runtime.config->video.timeout == 7,
-	             "runtime config accepts content above bounded config size");
+	ok &= ExpectFailure(large_runtime, RuntimeConfigLoadStatus::kParseError,
+	                    "runtime config rejects content above bounded config size");
 
 	const auto      dir_config_path = temp_root / "dir-config.ini";
 	std::error_code ec;

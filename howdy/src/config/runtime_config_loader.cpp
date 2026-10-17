@@ -141,7 +141,7 @@ namespace howdy::native {
 			    config_path, security.error_message, security.error_code);
 		}
 
-		const auto content = ReadConfigFromFd(fd.Get(), std::nullopt);
+		const auto content = ReadConfigFromFd(fd.Get());
 		fd.Reset();
 		if (!content.has_value()) {
 			return FailureResult<RuntimeConfigLoadStatus::kParseError>(
