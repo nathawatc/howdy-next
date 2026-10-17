@@ -10,6 +10,7 @@
 #include <system_error>
 
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include <sys/stat.h>
 
@@ -47,6 +48,21 @@ namespace howdy::test {
 		             "validate_config_content rejects oversized content without error output");
 		ok &= Expect(howdy::native::ValidateConfigContent(valid_content, &validation_error),
 		             "validate_config_content accepts valid config");
+		{
+			const char *previous_tmpdir = getenv("TMPDIR");
+			const auto  previous_copy =
+			    previous_tmpdir == nullptr ? std::string{} : std::string(previous_tmpdir);
+			const auto missing_tmpdir = (context.temp_root / "missing-tmpdir").string();
+			setenv("TMPDIR", missing_tmpdir.c_str(), 1);
+			validation_error.clear();
+			ok &= Expect(howdy::native::ValidateConfigContent(valid_content, &validation_error),
+			             "validate_config_content parses in memory without TMPDIR");
+			if (previous_tmpdir == nullptr) {
+				unsetenv("TMPDIR");
+			} else {
+				setenv("TMPDIR", previous_copy.c_str(), 1);
+			}
+		}
 		validation_error.clear();
 		ok &= Expect(!howdy::native::ValidateConfigContent("[core\n", &validation_error),
 		             "validate_config_content rejects invalid syntax");

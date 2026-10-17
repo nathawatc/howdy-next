@@ -30,8 +30,7 @@ namespace howdy::native::config_utils_internal {
 
 	namespace {
 
-		constexpr auto kConfigValidationFailureMessage = "Failed to validate updated config";
-		constexpr auto kConfigTempPrefix               = ".howdy-config-";
+		constexpr auto kConfigTempPrefix = ".howdy-config-";
 
 		auto OpenLockFile(const std::filesystem::path &config_path) -> int {
 			return open(LockFilePath(config_path).c_str(),
@@ -164,38 +163,8 @@ namespace howdy::native {
 			}
 			return false;
 		}
-		const auto        temp_root     = std::filesystem::temp_directory_path();
-		std::string       temp_template = (temp_root / "howdy-config-validate-XXXXXX").string();
-		std::vector<char> writable(temp_template.begin(), temp_template.end());
-		writable.push_back('\0');
 
-		const int fd = mkostemp(writable.data(), O_CLOEXEC);
-		if (fd < 0) {
-			if (error_message != nullptr) {
-				*error_message = config_utils_internal::kConfigValidationFailureMessage;
-			}
-			return false;
-		}
-
-		const std::filesystem::path temp_path(writable.data());
-		bool                        ok = WriteAllToFd(fd, content);
-		if (close(fd) != 0) {
-			ok = false;
-		}
-
-		if (!ok) {
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
-			if (error_message != nullptr) {
-				*error_message = config_utils_internal::kConfigValidationFailureMessage;
-			}
-			return false;
-		}
-
-		ConfigReader const config(temp_path.string());
-		std::error_code    ec;
-		std::filesystem::remove(temp_path, ec);
-
+		ConfigReader const config("<memory>", content);
 		if (!config.Ok()) {
 			if (error_message != nullptr) {
 				*error_message = kUpdatedConfigInvalidMessage;
