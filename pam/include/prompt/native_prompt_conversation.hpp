@@ -2,6 +2,7 @@
 
 #include "prompt/conversation_restore.hpp"
 #include "prompt/internal_fd.hpp"
+#include "prompt/native_prompt_input.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <array>
@@ -91,6 +92,8 @@ private:
 	    -> int;
 	[[nodiscard]] auto WriteMessageLine(const struct pam_message &message) const -> int;
 	auto PromptInput(const struct pam_message &message, char **response, bool hide_input) -> int;
+	auto ReadPromptPassword(howdy::pam::native_prompt_input::SensitiveBuffer &password,
+	                        bool &response_too_long) -> bool;
 	auto PollPrompt(std::array<struct pollfd, 2> &fds) const -> int;
 	auto ReadPromptChar(char *ch) const -> ssize_t;
 	auto PollPromptState(std::array<struct pollfd, 2> &fds) -> PromptIoResult;

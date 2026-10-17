@@ -498,13 +498,28 @@ auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResul
 	}
 }
 
+auto NativePromptConversation::ReadPromptPassword(
+    howdy::pam::native_prompt_input::SensitiveBuffer &password, bool &response_too_long) -> bool {
+	while (true) {
+		char ch = '\0';
+		if (WaitForPromptCharacter(&ch) == PromptIoResult::kAbort) {
+			return false;
+		}
+
+		const auto character_result =
+		    howdy::pam::native_prompt_input::ProcessCharacter(ch, password, response_too_long);
+		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kComplete) {
+			return true;
+		}
+		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kAbort) {
+			return false;
+		}
+	}
+}
+
 auto NativePromptConversation::PromptInput(const struct pam_message &message, char **response,
                                            bool hide_input) -> int {
-	if (response == nullptr || !tty_fd_.Valid()) {
-		return PAM_CONV_ERR;
-	}
-
-	if (abort_requested_.load()) {
+	if (response == nullptr || !tty_fd_.Valid() || abort_requested_.load()) {
 		return PAM_CONV_ERR;
 	}
 
@@ -526,46 +541,50 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 	if (tcsetattr(tty_fd_.Get(), TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
-	const auto abort_prompt = [this, &original_termios] -> int {
-		const bool restored = RestorePromptTerminal(original_termios);
-		if (!restored) {
-			terminal_restore_failed_.store(true);
+
+	class PromptTerminalGuard {
+	public:
+		PromptTerminalGuard(NativePromptConversation *owner,
+		                    const struct termios     *original) noexcept
+		    : owner_(owner)
+		    , original_(original) {}
+
+		PromptTerminalGuard(const PromptTerminalGuard &)                     = delete;
+		auto operator=(const PromptTerminalGuard &) -> PromptTerminalGuard & = delete;
+		PromptTerminalGuard(PromptTerminalGuard &&)                          = delete;
+		auto operator=(PromptTerminalGuard &&) -> PromptTerminalGuard &      = delete;
+
+		[[nodiscard]] auto Restore() -> bool {
+			if (owner_ == nullptr) {
+				return true;
+			}
+			auto      *owner    = std::exchange(owner_, nullptr);
+			const bool restored = owner->RestorePromptTerminal(*original_);
+			if (!restored) {
+				owner->terminal_restore_failed_.store(true);
+			}
+			WriteNewline(owner->tty_fd_.Get());
+			return restored;
 		}
-		WriteNewline(tty_fd_.Get());
-		return PAM_CONV_ERR;
-	};
+
+		~PromptTerminalGuard() {
+			(void)Restore();
+		}
+
+	private:
+		NativePromptConversation *owner_    = nullptr;
+		const struct termios     *original_ = nullptr;
+	} terminal_guard{this, &original_termios};
 
 	const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
 	if (!WriteAll(tty_fd_.Get(), prompt_text)) {
-		return abort_prompt();
+		return PAM_CONV_ERR;
 	}
 
 	howdy::pam::native_prompt_input::SensitiveBuffer password;
 	bool                                             response_too_long = false;
-
-	while (true) {
-		char ch = '\0';
-		if (WaitForPromptCharacter(&ch) == PromptIoResult::kAbort) {
-			return abort_prompt();
-		}
-
-		const auto character_result =
-		    howdy::pam::native_prompt_input::ProcessCharacter(ch, password, response_too_long);
-		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kComplete) {
-			break;
-		}
-		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kAbort) {
-			return abort_prompt();
-		}
-	}
-
-	if (!RestorePromptTerminal(original_termios)) {
-		terminal_restore_failed_.store(true);
-		WriteNewline(tty_fd_.Get());
-		return PAM_CONV_ERR;
-	}
-	WriteNewline(tty_fd_.Get());
-	if (response_too_long) {
+	if (!ReadPromptPassword(password, response_too_long) || !terminal_guard.Restore() ||
+	    response_too_long) {
 		return PAM_CONV_ERR;
 	}
 

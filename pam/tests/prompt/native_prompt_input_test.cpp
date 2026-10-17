@@ -1,3 +1,4 @@
+#include "pam_test_support.hpp"
 #include "prompt/native_prompt_conversation.hpp"
 #include "prompt/native_prompt_input.hpp"
 #include "prompt/native_prompt_test_groups.hpp"
@@ -12,6 +13,7 @@
 #include <future>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -21,6 +23,7 @@
 #include <unistd.h>
 
 #include <sys/poll.h>
+#include <sys/types.h>
 
 using howdy::test::Expect;
 
@@ -33,11 +36,15 @@ namespace {
 		int                       restore_eintr_count = 0;
 		bool                      abort_on_poll       = false;
 		bool                      abort_on_read       = false;
+		bool                      throw_on_poll       = false;
 		bool                      restore_failure     = false;
 	};
 
 	auto InjectedPoll(void *context, struct pollfd *fds, nfds_t count, int timeout) -> int {
 		auto &operations = *static_cast<InputOperationContext *>(context);
+		if (operations.throw_on_poll) {
+			throw std::runtime_error("simulated poll exception");
+		}
 		if (operations.poll_eintr_count > 0) {
 			--operations.poll_eintr_count;
 			if (operations.abort_on_poll) {
@@ -780,5 +787,55 @@ auto ExpectRestoreFailureFailsClosed() -> bool {
 	if (response != nullptr) {
 		std::free(response);
 	}
+	return ok;
+}
+
+auto ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure() -> bool {
+	bool ok = true;
+
+	for (const bool restore_failure : {false, true}) {
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+
+		ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "exception restore test opens pty");
+		ok &= Expect(OpenPipe(&abort_pipe), "exception restore test creates abort pipe");
+		if (!ok) {
+			return false;
+		}
+
+		const struct pam_message  prompt{.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "Password: "};
+		const struct pam_message *prompt_ptr   = &prompt;
+		const int                 slave_raw_fd = slave_fd.Get();
+		InputOperationContext     operations{
+		    .throw_on_poll   = true,
+		    .restore_failure = restore_failure,
+		};
+		auto const conversation = CreateInputConversation(
+		    {
+		        .tty_fd         = std::move(slave_fd),
+		        .abort_read_fd  = std::move(abort_pipe.at(0)),
+		        .abort_write_fd = std::move(abort_pipe.at(1)),
+		    },
+		    &operations);
+
+		auto     *responses = howdy::test::PamResponseSentinelForTest();
+		const int result = NativePromptConversationTestAccess::Dispatch(1, &prompt_ptr, &responses,
+		                                                                conversation.get());
+		ok &= Expect(result == PAM_CONV_ERR, "exception during prompt fails closed");
+		ok &= Expect(responses == nullptr, "exception during prompt clears responses");
+		ok &= Expect(NativePromptConversationTestAccess::TerminalRestoreFailed(*conversation) ==
+		                 restore_failure,
+		             "exception during prompt records terminal restore outcome");
+
+		if (!restore_failure) {
+			struct termios restored_termios{};
+			ok &= Expect(tcgetattr(slave_raw_fd, &restored_termios) == 0,
+			             "exception restore test reads restored terminal state");
+			ok &= Expect(howdy::native::HasAllBits(restored_termios.c_lflag, ICANON, ECHO, ISIG),
+			             "exception during prompt restores terminal flags");
+		}
+	}
+
 	return ok;
 }

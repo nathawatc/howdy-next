@@ -38,3 +38,4 @@ auto ExpectNativeMessageStyles() -> bool;
 auto ExpectNativePromptInputEdges() -> bool;
 auto ExpectOversizedPromptFailsClosed() -> bool;
 auto ExpectRestoreFailureFailsClosed() -> bool;
+auto ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure() -> bool;

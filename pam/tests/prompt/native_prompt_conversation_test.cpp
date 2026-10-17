@@ -381,6 +381,7 @@ auto main() -> int {
 	ok &= ExpectNativePromptInputEdges();
 	ok &= ExpectOversizedPromptFailsClosed();
 	ok &= ExpectRestoreFailureFailsClosed();
+	ok &= ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure();
 	ok &= ExpectRestoreHandlesNullPam();
 	ok &= ExpectRestoreResult({PAM_SUCCESS, PAM_SUCCESS, PAM_SUCCESS},
 	                          howdy::pam::ConversationRestoreResult::kOriginalRestored,
