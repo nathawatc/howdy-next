@@ -142,6 +142,8 @@ namespace howdy::test::download_models {
 		             "transfer policy configures successfully");
 		ok &= Expect(ConfiguredLong(successful_policy_recorder, CURLOPT_FOLLOWLOCATION, 1L),
 		             "transfer policy follows redirects");
+		ok &= Expect(ConfiguredLong(successful_policy_recorder, CURLOPT_MAXREDIRS, 5L),
+		             "transfer policy caps redirects");
 		ok &= Expect(ConfiguredLong(successful_policy_recorder, CURLOPT_SSL_VERIFYPEER, 1L),
 		             "transfer policy verifies TLS peer");
 		ok &= Expect(ConfiguredLong(successful_policy_recorder, CURLOPT_SSL_VERIFYHOST, 2L),
@@ -166,6 +168,19 @@ namespace howdy::test::download_models {
 		ok &= Expect(
 		    ConfiguredString(successful_policy_recorder, CURLOPT_REDIR_PROTOCOLS_STR, "https"),
 		    "transfer policy restricts redirects to HTTPS");
+
+		CurlSetoptRecorder max_redirects_failure_recorder{
+		    .failing_option = CURLOPT_MAXREDIRS,
+		};
+		ok &= Expect(!howdy::native::download_models_internal::ConfigureTransferPolicy(
+		                 nullptr, RecorderSetoptOperations(max_redirects_failure_recorder)),
+		             "max redirects failure aborts transfer policy");
+		ok &= Expect(ConfiguredOption(max_redirects_failure_recorder, CURLOPT_MAXREDIRS),
+		             "max redirects restriction is attempted");
+		ok &= Expect(!ConfiguredLong(max_redirects_failure_recorder, CURLOPT_MAXREDIRS, 5L),
+		             "failed max redirects is not reported as configured");
+		ok &= Expect(!ConfiguredOption(max_redirects_failure_recorder, CURLOPT_SSL_VERIFYPEER),
+		             "max redirects failure skips subsequent configuration");
 
 		CurlSetoptRecorder initial_protocol_failure_recorder{
 		    .failing_option = CURLOPT_PROTOCOLS_STR,

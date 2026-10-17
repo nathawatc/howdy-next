@@ -49,6 +49,7 @@ namespace {
 	constexpr CurlLong kTransferTimeoutSeconds  = 300;
 	constexpr CurlLong kLowSpeedBytesPerSecond  = 1024;
 	constexpr CurlLong kLowSpeedTimeoutSeconds  = 30;
+	constexpr CurlLong kMaxRedirects            = 5;
 
 	using howdy::native::ScopedFd;
 	using howdy::native::download_models_internal::CurlSetoptOperations;
@@ -140,6 +141,8 @@ auto howdy::native::download_models_internal::ConfigureTransferPolicy(
 	}
 
 	return operations.set_long(operations.context, curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK &&
+	       operations.set_long(operations.context, curl, CURLOPT_MAXREDIRS, kMaxRedirects) ==
+	           CURLE_OK &&
 	       operations.set_long(operations.context, curl, CURLOPT_SSL_VERIFYPEER, 1L) == CURLE_OK &&
 	       operations.set_long(operations.context, curl, CURLOPT_SSL_VERIFYHOST, 2L) == CURLE_OK &&
 	       operations.set_long(operations.context, curl, CURLOPT_NOSIGNAL, 1L) == CURLE_OK &&
