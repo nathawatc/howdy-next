@@ -120,12 +120,12 @@ namespace {
 		auto [normal_result, normal_output] = RunList(context, {.resolved_user = "alice"});
 		auto [plain_result, plain_output] =
 		    RunList(context, {.resolved_user = "alice", .plain = true});
-		return Expect(normal_result == 1, "no model directory normal returns 1") &&
+		return Expect(normal_result == 0, "no model directory normal returns 0") &&
 		       Expect(normal_output ==
 		                  "No face models found. Use the add command to add a face model for "
 		                  "this user.\n",
 		              "no model directory normal prints safe guidance") &&
-		       Expect(plain_result == 1, "no model directory plain returns 1") &&
+		       Expect(plain_result == 0, "no model directory plain returns 0") &&
 		       Expect(plain_output.empty(), "no model directory plain stays silent") &&
 		       Expect(context.list_calls == 2 && context.listed_user == "alice",
 		              "no model directory lists alice twice");
@@ -137,11 +137,11 @@ namespace {
 		auto [normal_result, normal_output] = RunList(context, {.resolved_user = "alice"});
 		auto [plain_result, plain_output] =
 		    RunList(context, {.resolved_user = "alice", .plain = true});
-		return Expect(normal_result == 1, "no model normal returns 1") &&
+		return Expect(normal_result == 0, "no model normal returns 0") &&
 		       Expect(normal_output == "No face models found. Use the add command to add a face "
 		                               "model for this user.\n",
 		              "no model normal prints safe guidance") &&
-		       Expect(plain_result == 1, "no model plain returns 1") &&
+		       Expect(plain_result == 0, "no model plain returns 0") &&
 		       Expect(plain_output.empty(), "no model plain stays silent");
 	}
 
@@ -149,7 +149,7 @@ namespace {
 		ListCliTestContext context;
 		context.list_result   = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
 		auto [result, output] = RunList(context, {.resolved_user = "$(id)"});
-		return Expect(result == 1, "shell-like user no model directory returns 1") &&
+		return Expect(result == 0, "shell-like user no model directory returns 0") &&
 		       Expect(output == "No face models found. Use the add command to add a face model for "
 		                        "this user.\n",
 		              "no model guidance does not render user into a shell command") &&

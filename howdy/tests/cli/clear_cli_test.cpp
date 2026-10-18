@@ -151,32 +151,36 @@ namespace {
 
 	auto InspectionOutcomesPreserveMessages() -> bool {
 		bool ok = true;
-		for (const auto &[status, error, snapshot, expected] : std::vector<
+		for (const auto &[status, error, snapshot, expected, expected_exit] : std::vector<
 		         std::tuple<howdy::native::UserModelStatus, std::string,
-				            std::optional<howdy::native::UserModelFileSnapshot>, std::string>>{
+				            std::optional<howdy::native::UserModelFileSnapshot>, std::string, int>>{
 		         {
 		             howdy::native::UserModelStatus::kNoModelDirectory,
 		             {},
 		             std::nullopt,
 		             "No face models found.\n",
+		             0,
 		         },
 		         {
 		             howdy::native::UserModelStatus::kNoModel,
 		             {},
 		             std::nullopt,
 		             "No face models found.\n",
+		             0,
 		         },
 		         {
 		             howdy::native::UserModelStatus::kInsecurePath,
 		             "storage failed",
 		             std::nullopt,
 		             "storage failed\n",
+		             1,
 		         },
 		         {
 		             howdy::native::UserModelStatus::kOk,
 		             {},
 		             std::nullopt,
 		             "Failed to inspect user model file\n",
+		             1,
 		         },
 		     }) {
 			auto context           = SuccessContext();
@@ -187,7 +191,7 @@ namespace {
 			};
 			auto [result, output] =
 			    RunClear(context, {.resolved_user = "alice", .assume_yes = true});
-			ok &= Expect(result == 1, "inspection outcome returns 1");
+			ok &= Expect(result == expected_exit, "inspection outcome returns expected status");
 			ok &= Expect(output == expected, "inspection outcome preserves message");
 			ok &= Expect(context.inspect_calls == 1 && context.clear_calls == 0,
 			             "inspection outcome inspects once and skips clear");
@@ -238,21 +242,32 @@ namespace {
 
 	auto ClearOutcomesPreserveMessages() -> bool {
 		bool ok = true;
-		for (const auto &[status, error, expected] :
-		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string>>{
-		         {howdy::native::UserModelStatus::kNoModelDirectory, {}, "No face models found.\n"},
-		         {howdy::native::UserModelStatus::kNoModel, {}, "No face models found.\n"},
+		for (const auto &[status, error, expected, expected_exit] :
+		     std::vector<std::tuple<howdy::native::UserModelStatus, std::string, std::string, int>>{
+		         {
+		             howdy::native::UserModelStatus::kNoModelDirectory,
+		             {},
+		             "No face models found.\n",
+		             0,
+		         },
+		         {
+		             howdy::native::UserModelStatus::kNoModel,
+		             {},
+		             "No face models found.\n",
+		             0,
+		         },
 		         {
 		             howdy::native::UserModelStatus::kModelChanged,
 		             "model changed",
 		             "model changed\n",
+		             1,
 		         },
 		     }) {
 			auto context         = SuccessContext();
 			context.clear_result = {.status = status, .error_message = error};
 			auto [result, output] =
 			    RunClear(context, {.resolved_user = "alice", .assume_yes = true});
-			ok &= Expect(result == 1, "clear outcome returns 1");
+			ok &= Expect(result == expected_exit, "clear outcome returns expected status");
 			ok &= Expect(output == expected, "clear outcome preserves message");
 			ok &= Expect(context.inspect_calls == 1 && context.clear_calls == 1,
 			             "clear outcome invokes callbacks once");

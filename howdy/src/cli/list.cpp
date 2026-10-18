@@ -60,7 +60,7 @@ auto howdy::native::list_internal::ListMainWithDependencies(
 			std::cout
 			    << "No face models found. Use the add command to add a face model for this user.\n";
 		}
-		return kListExitAbort;
+		return kListExitOk;
 	}
 	if (models.status != howdy::native::UserModelStatus::kOk) {
 		if (!invocation.plain) {
