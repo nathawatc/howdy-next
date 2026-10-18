@@ -114,5 +114,7 @@ howdy_add_native_test(
  howdy_compare_sandbox_test
  native-compare-sandbox
  tests/compare/compare_sandbox_test.cpp
+ tests/compare/compare_sandbox_limit_test.cpp
+ tests/compare/compare_sandbox_seccomp_test.cpp
 )
 target_link_libraries(howdy_compare_sandbox_test PRIVATE howdy_compare_sandbox)
