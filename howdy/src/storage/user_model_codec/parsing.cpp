@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <limits>
@@ -94,17 +95,76 @@ namespace howdy::native::user_model_codec_internal {
 			return UserModelListResult{.status = UserModelStatus::kOk};
 		}
 
-		auto HasDuplicateDirectKey(yyjson_val *model) -> bool {
-			std::set<std::string_view> seen_keys;
-			auto                       iterator = yyjson_obj_iter_with(model);
-			while (ReadOnlyVal *key = yyjson_obj_iter_next(&iterator)) {
-				const std::string_view name(yyjson_get_str(key), yyjson_get_len(key));
-				if (!seen_keys.insert(name).second) {
+		enum class ModelKeyBit : std::uint8_t {
+			kNone    = 0,
+			kId      = 1U << 0U,
+			kTime    = 1U << 1U,
+			kLabel   = 1U << 2U,
+			kData    = 1U << 3U,
+			kBackend = 1U << 4U,
+			kMetric  = 1U << 5U,
+			kModel   = 1U << 6U,
+		};
+
+		constexpr auto ClassifyModelKey(std::string_view name) noexcept -> ModelKeyBit {
+			if (name == "id") {
+				return ModelKeyBit::kId;
+			}
+			if (name == "time") {
+				return ModelKeyBit::kTime;
+			}
+			if (name == "label") {
+				return ModelKeyBit::kLabel;
+			}
+			if (name == "data") {
+				return ModelKeyBit::kData;
+			}
+			if (name == "backend") {
+				return ModelKeyBit::kBackend;
+			}
+			if (name == "metric") {
+				return ModelKeyBit::kMetric;
+			}
+			if (name == "model") {
+				return ModelKeyBit::kModel;
+			}
+			return ModelKeyBit::kNone;
+		}
+
+	}  // namespace
+
+	auto HasDuplicateDirectKey(yyjson_val *model) -> bool {
+		if (yyjson_obj_size(model) <= 1) {
+			return false;
+		}
+
+		std::uint8_t seen_known_keys = 0;
+		auto         iterator        = yyjson_obj_iter_with(model);
+		while (ReadOnlyVal *key = yyjson_obj_iter_next(&iterator)) {
+			const std::string_view name(yyjson_get_str(key), yyjson_get_len(key));
+			const auto             known_bit = static_cast<std::uint8_t>(ClassifyModelKey(name));
+			if (known_bit != 0) {
+				if ((seen_known_keys & known_bit) != 0) {
+					return true;
+				}
+				seen_known_keys |= known_bit;
+				continue;
+			}
+
+			auto inner_iterator = yyjson_obj_iter_with(model);
+			while (ReadOnlyVal *prev_key = yyjson_obj_iter_next(&inner_iterator)) {
+				if (prev_key == key) {
+					break;
+				}
+				if (std::string_view(yyjson_get_str(prev_key), yyjson_get_len(prev_key)) == name) {
 					return true;
 				}
 			}
-			return false;
 		}
+		return false;
+	}
+
+	namespace {
 
 		auto FindLastField(yyjson_val *model, std::string_view name) -> yyjson_val * {
 			yyjson_val *value    = nullptr;

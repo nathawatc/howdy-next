@@ -78,4 +78,7 @@ namespace howdy::native::user_model_codec_internal {
 	                   std::optional<FaceMetric> expected_metric, const std::string &expected_model,
 	                   bool strict_shape) -> DecodedDocumentJson;
 
+	[[nodiscard]] __attribute__((visibility("hidden"))) auto
+	HasDuplicateDirectKey(yyjson_val *model) -> bool;
+
 }  // namespace howdy::native::user_model_codec_internal

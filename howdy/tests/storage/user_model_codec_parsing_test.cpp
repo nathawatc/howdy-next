@@ -3,12 +3,144 @@
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
 #include "support/face_metric.hpp"
+#include "test_support.hpp"
 
+#include <atomic>
+#include <cstdlib>
 #include <limits>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <yyjson.h>
+
+namespace {
+
+	class CppAllocationTracker {
+	public:
+		static void Enable() noexcept {
+			Tracking().store(true, std::memory_order_relaxed);
+			Detected().store(false, std::memory_order_relaxed);
+		}
+
+		static void Disable() noexcept {
+			Tracking().store(false, std::memory_order_relaxed);
+		}
+
+		static void RecordAllocation() noexcept {
+			if (Tracking().load(std::memory_order_relaxed)) {
+				Detected().store(true, std::memory_order_relaxed);
+			}
+		}
+
+		[[nodiscard]] static auto DetectedAllocation() noexcept -> bool {
+			return Detected().load(std::memory_order_relaxed);
+		}
+
+	private:
+		static auto Tracking() noexcept -> std::atomic<bool> & {
+			static std::atomic<bool> tracking{false};
+			return tracking;
+		}
+
+		static auto Detected() noexcept -> std::atomic<bool> & {
+			static std::atomic<bool> detected{false};
+			return detected;
+		}
+	};
+
+	class ScopedCppAllocationTracker {
+	public:
+		ScopedCppAllocationTracker() noexcept {
+			CppAllocationTracker::Enable();
+		}
+
+		ScopedCppAllocationTracker(const ScopedCppAllocationTracker &)                     = delete;
+		auto operator=(const ScopedCppAllocationTracker &) -> ScopedCppAllocationTracker & = delete;
+		ScopedCppAllocationTracker(ScopedCppAllocationTracker &&)                          = delete;
+		auto operator=(ScopedCppAllocationTracker &&) -> ScopedCppAllocationTracker &      = delete;
+
+		~ScopedCppAllocationTracker() noexcept {
+			CppAllocationTracker::Disable();
+		}
+
+		[[nodiscard]] static auto AllocationDetected() noexcept -> bool {
+			return CppAllocationTracker::DetectedAllocation();
+		}
+	};
+
+	auto TestHasDuplicateDirectKey(std::string_view json_object, bool expected_duplicate,
+	                               bool verify_no_cpp_allocations, const std::string &label)
+	    -> bool {
+		yyjson_doc *doc = yyjson_read(json_object.data(), json_object.size(), 0);
+		if (doc == nullptr) {
+			return howdy::test::Expect(false, label + ": failed to parse test json");
+		}
+		yyjson_val *root      = yyjson_doc_get_root(doc);
+		bool        duplicate = false;
+		bool        no_alloc  = true;
+		if (verify_no_cpp_allocations) {
+			ScopedCppAllocationTracker const tracker;
+			duplicate = howdy::native::user_model_codec_internal::HasDuplicateDirectKey(root);
+			no_alloc  = !ScopedCppAllocationTracker::AllocationDetected();
+		} else {
+			duplicate = howdy::native::user_model_codec_internal::HasDuplicateDirectKey(root);
+		}
+		yyjson_doc_free(doc);
+		return howdy::test::Expect(duplicate == expected_duplicate,
+		                           label + ": duplicate mismatch") &&
+		       howdy::test::Expect(no_alloc,
+		                           label + ": unexpected C++ allocation via operator new");
+	}
+
+}  // namespace
+
+#ifdef __GNUC__
+#	pragma GCC diagnostic push
+#	pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
+auto operator new(std::size_t size) -> void * {
+	CppAllocationTracker::RecordAllocation();
+	void *ptr = std::malloc(size);
+	if (ptr == nullptr) {
+		throw std::bad_alloc();
+	}
+	return ptr;
+}
+
+auto operator delete(void *ptr) noexcept -> void {
+	std::free(ptr);
+}
+
+auto operator delete(void *ptr, std::size_t size) noexcept -> void {
+	(void)size;
+	std::free(ptr);
+}
+
+auto operator new[](std::size_t size) -> void * {
+	CppAllocationTracker::RecordAllocation();
+	void *ptr = std::malloc(size);
+	if (ptr == nullptr) {
+		throw std::bad_alloc();
+	}
+	return ptr;
+}
+
+auto operator delete[](void *ptr) noexcept -> void {
+	std::free(ptr);
+}
+
+auto operator delete[](void *ptr, std::size_t size) noexcept -> void {
+	(void)size;
+	std::free(ptr);
+}
+
+#ifdef __GNUC__
+#	pragma GCC diagnostic pop
+#endif
 
 namespace howdy::test::user_model_codec {
 
@@ -119,6 +251,51 @@ namespace howdy::test::user_model_codec {
 		using howdy::native::UserModelStatus;
 
 		bool ok = true;
+		ok &= TestHasDuplicateDirectKey("{}", false, true,
+		                                "empty object (no keys) has no duplicates");
+		ok &= TestHasDuplicateDirectKey(R"({"id": 1})", false, true,
+		                                "single known key has no duplicates");
+		ok &= TestHasDuplicateDirectKey(R"({"future": 1})", false, true,
+		                                "single unknown key has no duplicates");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 7, "time": 1700000000, "label": "front", "backend": "opencv_dnn_sface"})",
+		    false, true, "normal object with multiple distinct known keys has no duplicates");
+		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "id": 2})", true, true,
+		                                "adjacent duplicate known key id is detected");
+		ok &= TestHasDuplicateDirectKey(R"({"label": "a", "label": "b"})", true, true,
+		                                "adjacent duplicate known key label is detected");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 1, "time": 100, "label": "cam", "data": [[1.0]], "id": 2})", true, true,
+		    "duplicate known key id appearing later is detected");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 1, "time": 100, "label": "cam", "backend": "sface", "metric": "cosine", "model": "m", "time": 200})",
+		    true, true, "duplicate known key time appearing later is detected");
+		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future": 42})", false, true,
+		                                "single unknown key alongside known key has no duplicates");
+		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future_a": 1, "future_b": 2})", false, true,
+		                                "multiple distinct unknown keys have no duplicates");
+		ok &= TestHasDuplicateDirectKey(R"({"future": 1, "future": 2})", true, true,
+		                                "adjacent duplicate unknown key is detected");
+		ok &= TestHasDuplicateDirectKey(R"({"id": 1, "future": 1, "time": 100, "future": 2})", true,
+		                                true, "duplicate unknown key appearing later is detected");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx"})",
+		    false, true, "all seven known keys present exactly once have no duplicates");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx", "model": "sface2.onnx"})",
+		    true, true, "all seven known keys with duplicate trailing key is detected");
+		ok &= TestHasDuplicateDirectKey(
+		    R"({"id": 1, "time": 100, "label": "cam", "data": [], "backend": "opencv_dnn_sface", "metric": "cosine", "model": "sface.onnx", "id": 2})",
+		    true, true, "all seven known keys with duplicate leading key is detected");
+
+		ok &= ExpectStatus(
+		    Decode(
+		        ModelList({
+		            R"({"id":7,"time":1700000000,"label":"Office camera","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[1.0]]})",
+		        }))
+		        .Result()
+		        .status,
+		    UserModelStatus::kOk, "all known keys decode strictly");
 		ok &= ExpectStatus(
 		    Decode(ModelList({
 		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
@@ -126,7 +303,7 @@ namespace howdy::test::user_model_codec {
 		           }))
 		        .Result()
 		        .status,
-		    UserModelStatus::kInvalidShape, "duplicate known direct key is rejected");
+		    UserModelStatus::kInvalidShape, "duplicate known direct key is rejected in decode");
 		ok &= ExpectStatus(
 		    Decode(ModelList({
 		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
@@ -135,7 +312,16 @@ namespace howdy::test::user_model_codec {
 		           }))
 		        .Result()
 		        .status,
-		    UserModelStatus::kInvalidShape, "duplicate unknown direct key is rejected");
+		    UserModelStatus::kInvalidShape, "duplicate unknown direct key is rejected in decode");
+		ok &= ExpectStatus(
+		    Decode(ModelList({
+		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
+					             R"("cosine")", R"("sface.onnx")", "[[1.0]]",
+					             R"(,"future_a":1,"future_b":2)"),
+		           }))
+		        .Result()
+		        .status,
+		    UserModelStatus::kOk, "multiple distinct unknown direct keys are accepted in decode");
 		const auto tolerant_duplicate =
 		    Decode(ModelList({
 		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
