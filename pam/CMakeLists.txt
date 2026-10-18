@@ -65,6 +65,7 @@ add_library(
  pam_module STATIC
  src/module/auth_eligibility.cpp
  src/module/auth_flow.cpp
+ src/module/confirmation_message.cpp
  src/module/status_mapping.cpp
 )
 howdy_configure_pam_target(pam_module)

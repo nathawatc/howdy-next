@@ -12,7 +12,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
   spawn/wait/cancel/reap callback binding
 - `entrypoint.cpp`: injectable entrypoint boundary
 - `auth_flow.cpp`: service policy, readiness, runtime/prompt composition, PAM result mapping
-- `auth_eligibility.cpp`, `pam_options.cpp`, `status_mapping.cpp`: focused policy helpers
+- `auth_eligibility.cpp`, `confirmation_message.cpp`, `pam_options.cpp`, `status_mapping.cpp`:
+  focused policy helpers
 
 ## Rules
 

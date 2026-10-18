@@ -25,6 +25,18 @@ target_compile_definitions(
 add_dependencies(pam_status_mapping_test howdy-gmo)
 
 howdy_add_pam_test(
+ pam_confirmation_message_test
+ pam-confirmation-message
+ tests/module/confirmation_message_test.cpp
+)
+target_link_libraries(pam_confirmation_message_test PRIVATE pam_module)
+target_compile_definitions(
+ pam_confirmation_message_test
+ PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
+)
+add_dependencies(pam_confirmation_message_test howdy-gmo)
+
+howdy_add_pam_test(
  pam_auth_eligibility_test
  pam-auth-eligibility
  tests/module/auth_eligibility_test.cpp

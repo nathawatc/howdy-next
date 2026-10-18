@@ -210,8 +210,6 @@ auto main() -> int {
 		             "helper execution-style failure reports controlled error");
 	}
 
-	ok &= Expect(BuildConfirmationMessage("alice") == "Face matched user alice",
-	             "confirmation message is formatted");
 	ok &= Expect(BuildUnknownErrorMessage(42) == "Unknown error: 42",
 	             "unknown error message is formatted");
 	ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
