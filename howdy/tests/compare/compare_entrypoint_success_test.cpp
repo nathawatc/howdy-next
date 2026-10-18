@@ -2,6 +2,7 @@
 #include "compare/entrypoint.hpp"
 #include "compare/entrypoint/dependencies.hpp"
 #include "compare/privileges.hpp"
+#include "compare/sandbox.hpp"
 #include "protocol/compare_exit.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "test_support.hpp"
@@ -10,6 +11,7 @@
 
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -46,6 +48,7 @@ namespace {
 		int              detect_calls  = 0;
 		int              encode_calls  = 0;
 		int              drop_calls    = 0;
+		int              seccomp_calls = 0;
 		std::atomic<int> warm_calls{0};
 		bool             encoded_after_warm = false;
 		float            probe_value        = 1.0F;
@@ -129,6 +132,19 @@ namespace {
 		return true;
 	}
 
+	auto ApplySeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
+		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
+		return {};
+	}
+
+	auto UnsupportedSeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
+		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
+		return {
+		    .status       = howdy::native::CompareSeccompStatus::kUnsupported,
+		    .error_number = ENOSYS,
+		};
+	}
+
 	auto DependenciesFor(FixtureContext &context) -> howdy::native::CompareEntrypointDependencies {
 		return {
 		    .capture =
@@ -152,6 +168,7 @@ namespace {
 		    .context         = &context,
 		    .drop_privileges = DropPrivileges,
 		    .warm_model      = WarmModel,
+		    .apply_seccomp   = ApplySeccomp,
 		};
 	}
 
@@ -217,27 +234,28 @@ auto main() -> int {
 	const auto validation_root =
 	    howdy::native::file_security_internal::ValidationRoot{.path = root};
 
-	FixtureContext     success;
-	const auto         dependencies = DependenciesFor(success);
-	std::ostringstream report;  // NOLINT(misc-const-correctness)
-	auto              *original = std::cout.rdbuf(report.rdbuf());
-	const int          result   = howdy::native::RunCompareEntrypoint(
+	FixtureContext           success;
+	const auto               dependencies = DependenciesFor(success);
+	const std::ostringstream report;
+	auto                    *original = std::cout.rdbuf(report.rdbuf());
+	const int                result   = howdy::native::RunCompareEntrypoint(
 	    static_cast<int>(argv.size()), argv.data(), geteuid(), validation_root, dependencies);
 	std::cout.rdbuf(original);
 	ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kSuccess),
 	             "production compare entrypoint returns kSuccess after matching fixture face");
-	ok &= Expect(success.open_calls == 1 && success.read_calls == 1 && success.prepare_calls == 1 &&
-	                 success.detect_calls == 1 && success.encode_calls == 1 &&
-	                 success.drop_calls == 1 && success.warm_calls.load() == 1 &&
-	                 success.encoded_after_warm,
-	             "entrypoint runs capture, preprocessing, inference, and privilege stages");
+	ok &=
+	    Expect(success.open_calls == 1 && success.read_calls == 1 && success.prepare_calls == 1 &&
+		           success.detect_calls == 1 && success.encode_calls == 1 &&
+		           success.drop_calls == 1 && success.seccomp_calls == 1 &&
+		           success.warm_calls.load() == 1 && success.encoded_after_warm,
+		       "entrypoint runs capture, preprocessing, inference, sandbox, and privilege stages");
 	ok &= Expect(report.str().contains("Winning model: 7 (\"fixture\")"),
 	             "success report identifies the loaded stored model");
 
 	FixtureContext rejection;
-	rejection.probe_value                     = -1.0F;
-	const auto         rejection_dependencies = DependenciesFor(rejection);
-	std::ostringstream rejection_error;  // NOLINT(misc-const-correctness)
+	rejection.probe_value                           = -1.0F;
+	const auto               rejection_dependencies = DependenciesFor(rejection);
+	const std::ostringstream rejection_error;
 	original = std::cerr.rdbuf(rejection_error.rdbuf());
 	const int rejection_result =
 	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
@@ -245,8 +263,27 @@ auto main() -> int {
 	std::cerr.rdbuf(original);
 	ok &= Expect(rejection_result == static_cast<int>(howdy::native::CompareExit::kInvalidDevice) &&
 	                 rejection.read_calls == 2 && rejection.encode_calls == 1 &&
+	                 rejection.seccomp_calls == 1 &&
 	                 rejection_error.str().contains("Unexpected second capture read"),
 	             "nonmatching embedding continues capture and does not authenticate");
+
+	FixtureContext unsupported;
+	auto           unsupported_dependencies = DependenciesFor(unsupported);
+	unsupported_dependencies.apply_seccomp  = UnsupportedSeccomp;
+	const std::ostringstream unsupported_error;
+	original = std::cerr.rdbuf(unsupported_error.rdbuf());
+	const std::ostringstream unsupported_report;
+	auto                    *original_out = std::cout.rdbuf(unsupported_report.rdbuf());
+	const int                unsupported_result =
+	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
+		                                    validation_root, unsupported_dependencies);
+	std::cout.rdbuf(original_out);
+	std::cerr.rdbuf(original);
+	ok &= Expect(
+	    unsupported_result == static_cast<int>(howdy::native::CompareExit::kSuccess) &&
+	        unsupported.seccomp_calls == 1 &&
+	        unsupported_error.str().contains("Seccomp filter sandboxing is not supported"),
+	    "best-effort seccomp logs warning and continues authentication on unsupported kernel");
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

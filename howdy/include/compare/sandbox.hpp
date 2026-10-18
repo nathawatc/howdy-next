@@ -26,6 +26,20 @@ namespace howdy::native {
 		int                    error_number = 0;
 	};
 
+	enum class CompareSeccompStatus : std::uint8_t {
+		kOk,
+		kUnsupported,
+		kFilterConstructionFailure,
+		kInstallationFailure,
+	};
+
+	struct CompareSeccompResult {
+		CompareSeccompStatus status       = CompareSeccompStatus::kOk;
+		int                  error_number = 0;
+	};
+
 	[[nodiscard]] auto ApplyCompareSandbox(int timeout_seconds) -> CompareSandboxResult;
+
+	[[nodiscard]] auto ApplyCompareSeccompFilter() -> CompareSeccompResult;
 
 }  // namespace howdy::native

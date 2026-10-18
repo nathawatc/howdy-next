@@ -31,6 +31,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -59,30 +60,56 @@ namespace {
 		return "unknown";
 	}
 
+	void EmitStderrWithErrno(std::string_view message, int error_number) {
+		std::cerr << message;
+		if (error_number != 0) {
+			std::cerr << ": " << howdy::native::SystemErrorMessage(error_number);
+		}
+		std::cerr << "\n";
+	}
+
 	void ReportSandboxFailure(const howdy::native::CompareSandboxResult &result) {
 		switch (result.status) {
 			case howdy::native::CompareSandboxStatus::kOk:
 				return;
 			case howdy::native::CompareSandboxStatus::kNoNewPrivilegesFailure:
-				std::cerr << "Failed to enable no_new_privs sandboxing";
-				break;
+				EmitStderrWithErrno("Failed to enable no_new_privs sandboxing",
+				                    result.error_number);
+				return;
 			case howdy::native::CompareSandboxStatus::kLimitInspectionFailure:
-				std::cerr << "Failed to inspect " << SandboxResourceName(result.resource)
-				          << " sandbox limit";
-				break;
+				EmitStderrWithErrno(std::string("Failed to inspect ") +
+				                        SandboxResourceName(result.resource) + " sandbox limit",
+				                    result.error_number);
+				return;
 			case howdy::native::CompareSandboxStatus::kLimitBelowMinimum:
 				std::cerr << "Inherited " << SandboxResourceName(result.resource)
 				          << " limit is below Howdy's minimum sandbox policy\n";
 				return;
 			case howdy::native::CompareSandboxStatus::kLimitApplicationFailure:
-				std::cerr << "Failed to apply " << SandboxResourceName(result.resource)
-				          << " sandbox limit";
-				break;
+				EmitStderrWithErrno(std::string("Failed to apply ") +
+				                        SandboxResourceName(result.resource) + " sandbox limit",
+				                    result.error_number);
+				return;
 		}
-		if (result.error_number != 0) {
-			std::cerr << ": " << howdy::native::SystemErrorMessage(result.error_number);
+	}
+
+	void ReportSeccompFailure(const howdy::native::CompareSeccompResult &result) {
+		switch (result.status) {
+			case howdy::native::CompareSeccompStatus::kOk:
+				return;
+			case howdy::native::CompareSeccompStatus::kUnsupported:
+				EmitStderrWithErrno("Seccomp filter sandboxing is not supported by the kernel",
+				                    result.error_number);
+				return;
+			case howdy::native::CompareSeccompStatus::kFilterConstructionFailure:
+				EmitStderrWithErrno("Failed to construct compare seccomp filter",
+				                    result.error_number);
+				return;
+			case howdy::native::CompareSeccompStatus::kInstallationFailure:
+				EmitStderrWithErrno("Failed to install compare seccomp filter",
+				                    result.error_number);
+				return;
 		}
-		std::cerr << "\n";
 	}
 
 	struct CompareProductionContext {
@@ -265,6 +292,16 @@ namespace {
 		return CompareExit::kAbort;
 	}
 
+	auto ApplySeccomp(const CompareProductionContext &context)
+	    -> howdy::native::CompareSeccompResult {
+		if (context.dependencies != nullptr) {
+			return context.dependencies->apply_seccomp == nullptr
+			           ? howdy::native::CompareSeccompResult{}
+					   : context.dependencies->apply_seccomp(context.dependencies->context);
+		}
+		return howdy::native::ApplyCompareSeccompFilter();
+	}
+
 	auto RunFrameLoop(void *raw_context, std::function<void()> &before_first_encode)
 	    -> CompareExit {
 		auto &context = *static_cast<CompareProductionContext *>(raw_context);
@@ -273,6 +310,11 @@ namespace {
 		}
 		auto &capture_session = context.capture_session.get();
 		auto &compare_engine  = *context.compare_engine;
+
+		const auto seccomp_result = ApplySeccomp(context);
+		if (seccomp_result.status != howdy::native::CompareSeccompStatus::kOk) {
+			ReportSeccompFailure(seccomp_result);
+		}
 
 		while (true) {
 			auto capture_result = capture_session.NextFrame();
