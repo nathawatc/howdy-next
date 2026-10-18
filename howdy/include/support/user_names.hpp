@@ -2,9 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <filesystem>
-#include <optional>
-#include <string>
 #include <string_view>
 
 namespace howdy::native {
@@ -24,23 +21,6 @@ namespace howdy::native {
 		return std::ranges::all_of(user, [](const char raw) -> bool {
 			const auto ch = static_cast<unsigned char>(raw);
 			return raw != '/' && raw != '\\' && std::isspace(ch) == 0 && std::iscntrl(ch) == 0;
-		});
-	}
-
-	inline auto ResolveUserModelPath(const std::filesystem::path &base_dir,
-	                                 const std::string_view       user)
-	    -> std::optional<std::filesystem::path> {
-		if (!IsValidModelUserName(user)) {
-			return std::nullopt;
-		}
-
-		return base_dir / (std::string(user) + ".dat");
-	}
-
-	inline auto IsValidModelLabel(const std::string_view label) -> bool {
-		return std::ranges::all_of(label, [](const char raw) -> bool {
-			const auto ch = static_cast<unsigned char>(raw);
-			return raw != '/' && raw != '\\' && std::iscntrl(ch) == 0;
 		});
 	}
 

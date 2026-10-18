@@ -7,6 +7,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 ## Ownership
 
 - `include/storage/user_model_types.hpp`: user-model value and result contracts
+- `include/storage/user_model_label.hpp`: model label validation contract
+- `include/storage/user_model_path.hpp`: user-model file path resolution contract
 - `include/storage/user_models.hpp`: public list/mutation/load operation API
 - `user_model_codec.cpp`: private document lifecycle, mutability, and serialization
 - `user_model_codec/parsing.cpp`: JSON grammar, limits, duplicate-key checks, raw entry decoding

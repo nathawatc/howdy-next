@@ -1,5 +1,6 @@
 #include "config/runtime_paths.hpp"
 #include "storage/user_model_limits.hpp"
+#include "storage/user_model_path.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"

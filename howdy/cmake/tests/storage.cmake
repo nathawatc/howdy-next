@@ -31,6 +31,18 @@ target_link_libraries(
 )
 
 howdy_add_native_test(
+ howdy_user_model_path_test
+ native-user-model-path
+ tests/storage/user_model_path_test.cpp
+)
+
+howdy_add_native_test(
+ howdy_user_model_label_test
+ native-user-model-label
+ tests/storage/user_model_label_test.cpp
+)
+
+howdy_add_native_test(
  howdy_user_model_codec_test
  native-user-model-codec
  tests/storage/user_model_codec_test.cpp

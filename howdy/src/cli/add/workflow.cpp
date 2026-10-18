@@ -3,9 +3,9 @@
 #include "cli/add/internal.hpp"
 #include "compare/logic.hpp"
 #include "config/runtime_config_loader.hpp"
+#include "storage/user_model_label.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
-#include "support/user_names.hpp"
 #include "vision/face_model.hpp"
 
 #include <iostream>

@@ -1,9 +1,9 @@
 #include "internal.hpp"
+#include "storage/user_model_label.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/face_metric.hpp"
-#include "support/user_names.hpp"
 
 #include <algorithm>
 #include <cmath>

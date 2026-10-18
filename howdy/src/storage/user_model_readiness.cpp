@@ -1,5 +1,6 @@
 #include "storage/user_model_readiness.hpp"
 
+#include "storage/user_model_path.hpp"
 #include "storage/user_model_status.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"

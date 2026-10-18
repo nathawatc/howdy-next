@@ -1,5 +1,6 @@
 #include "storage/user_models.hpp"
 
+#include "storage/user_model_label.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -7,7 +8,6 @@
 #include "support/face_metric.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
-#include "support/user_names.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
 

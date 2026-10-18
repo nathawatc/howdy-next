@@ -5,7 +5,6 @@
 #include "storage/user_models_test_support.hpp"
 #include "support/face_metric.hpp"
 #include "support/file_security.hpp"
-#include "support/user_names.hpp"
 
 #include <algorithm>
 #include <array>
@@ -60,17 +59,6 @@ namespace howdy::test::user_models {
 		ok &= Expect(!ec, "create models dir");
 
 		const std::string backend = "opencv_dnn_sface";
-		ok &= Expect(howdy::native::IsValidModelUserName("alice@example.com"),
-		             "domain-style usernames remain valid");
-		ok &= Expect(!howdy::native::IsValidModelUserName("../alice"),
-		             "malformed path-traversal username input is rejected");
-		ok &= Expect(!howdy::native::IsValidModelUserName("alice..bob"),
-		             "malformed username containing dot-dot is rejected");
-		ok &= Expect(!howdy::native::ResolveUserModelPath(models_dir, "../alice").has_value(),
-		             "unsafe model paths are not constructed");
-		ok &= Expect(!howdy::native::ResolveUserModelPath(models_dir, "alice..bob").has_value(),
-		             "dot-dot username input is rejected before model path construction");
-
 		{
 			const auto result = howdy::native::LoadUserModels(
 			    "../alice", backend, howdy::native::DefaultSecureOwnerUid(), {temp_root});
