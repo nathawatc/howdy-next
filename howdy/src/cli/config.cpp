@@ -19,7 +19,12 @@ namespace {
 	}
 
 	void PrintConfigInstallError(const howdy::native::config_internal::ConfigEditResult &result) {
-		if (result.error == howdy::native::kUpdatedConfigInvalidMessage) {
+		if (result.status ==
+		    howdy::native::config_internal::ConfigEditStatus::kInvalidEditedConfig) {
+			if (!result.error.empty() &&
+			    result.error != howdy::native::kUpdatedConfigInvalidMessage) {
+				std::cout << result.error << "\n";
+			}
 			std::cout << "Edited config is invalid and was not installed: "
 			          << result.temp_path.string() << "\n";
 		} else if (!result.error.empty()) {

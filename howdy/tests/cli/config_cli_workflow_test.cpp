@@ -364,7 +364,8 @@ namespace howdy::test::config_cli {
 					                      "not installed: "},
 			         std::pair{"[video]\ntimeout = 0\n",
 					           "Editing config.ini\nInvalid config value for timeout=\"0\": "
-					           "expected integer range 1..300\n"},
+					           "expected integer range 1..300\nEdited config is invalid and was "
+					           "not installed: "},
 			     }) {
 				TestDirectoryFixture const fixture;
 				TestContext                context;
@@ -372,12 +373,8 @@ namespace howdy::test::config_cli {
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1, "invalid edit exits with failure code");
-				if (error_input == "[core\n") {
-					ok &= Expect(result.output.starts_with(expected_suffix),
-					             "invalid edit reports recovery prefix exact");
-				} else {
-					ok &= Expect(result.output == expected_suffix, "validation error output exact");
-				}
+				ok &= Expect(result.output.starts_with(expected_suffix),
+				             "invalid edit reports validation error and recovery path");
 				ok &= Expect(!context.recorded_temp_path.empty(), "temp path recorded");
 				ok &= Expect(fs::exists(context.recorded_temp_path),
 				             "invalid edit PRESERVES temp file");
