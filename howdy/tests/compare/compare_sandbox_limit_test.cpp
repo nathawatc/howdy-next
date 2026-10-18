@@ -181,6 +181,13 @@ namespace {
 		}
 		{
 			FakeSandboxContext context;
+			context.inherited[RLIMIT_CPU] = MakeLimit(5, 5);
+			ok &= Expect(Apply(context, 10).status == CompareSandboxStatus::kOk,
+			             "accept tight CPU hard limit below timeout");
+			ok &= ExpectLimit(context, RLIMIT_CPU, 5, 5, "clamp CPU to tight hard limit");
+		}
+		{
+			FakeSandboxContext context;
 			context.inherited[RLIMIT_NOFILE] = MakeLimit(24, 24);
 			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable open-file hard limit");
@@ -206,6 +213,13 @@ namespace {
 			ok &= Expect(Apply(context).status == CompareSandboxStatus::kOk,
 			             "accept lower usable CPU soft limit");
 			ok &= ExpectLimit(context, RLIMIT_CPU, 10, 20, "preserve CPU soft limit");
+		}
+		{
+			FakeSandboxContext context;
+			context.inherited[RLIMIT_CPU] = MakeLimit(5, 100);
+			ok &= Expect(Apply(context, 10).status == CompareSandboxStatus::kOk,
+			             "accept tight CPU soft limit below timeout");
+			ok &= ExpectLimit(context, RLIMIT_CPU, 5, 20, "preserve tight CPU soft limit");
 		}
 		{
 			FakeSandboxContext context;
@@ -293,7 +307,6 @@ namespace {
 		};
 
 		const std::vector<Case> cases{
-		    {.resource = RLIMIT_CPU, .inherited = MakeLimit(8, 100)},
 		    {.resource = RLIMIT_NOFILE, .inherited = MakeLimit(15, 100)},
 		    {.resource = RLIMIT_AS, .inherited = MakeLimit((2 * kGibibyte) - 1, 4 * kGibibyte)},
 		};
