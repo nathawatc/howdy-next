@@ -116,7 +116,7 @@ namespace howdy::native::test_cli_internal {
 		}
 
 		PrintText(overlay, 0, height,
-		          "RESOLUTION: " + std::to_string(height) + "x" + std::to_string(width));
+		          "RESOLUTION: " + std::to_string(width) + "x" + std::to_string(height));
 		PrintText(overlay, 1, height, "FPS: " + std::to_string(stats.fps));
 		PrintText(overlay, 2, height, "FRAMES: " + std::to_string(stats.total_frames));
 		PrintText(overlay, 3, height,
