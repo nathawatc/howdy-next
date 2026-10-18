@@ -3,6 +3,7 @@
 #include "config/runtime_config.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -79,6 +80,30 @@ namespace howdy::native {
 			++hist_index;
 		}
 		return stats;
+	}
+
+	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
+	    -> BrightnessDecision {
+		if (hist_total == 0.0 || darkness == kBrightnessPercentScale) {
+			return BrightnessDecision::kBlackFrame;
+		}
+		if (darkness > dark_threshold) {
+			return BrightnessDecision::kTooDark;
+		}
+		return BrightnessDecision::kProcessFrame;
+	}
+
+	auto FrameResizeScale(FrameGeometry frame, float max_height) -> double {
+		const int scaling_axis = frame.rotation == 2 ? frame.width : frame.height;
+		if (scaling_axis <= 0 || max_height <= 0.0F) {
+			return 1.0;
+		}
+
+		const double scale = static_cast<double>(max_height) / static_cast<double>(scaling_axis);
+		if (!std::isfinite(scale) || scale >= 1.0) {
+			return 1.0;
+		}
+		return scale;
 	}
 
 }  // namespace howdy::native

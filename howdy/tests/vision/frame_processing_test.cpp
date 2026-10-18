@@ -1,4 +1,3 @@
-#include "compare/logic.hpp"
 #include "config/runtime_config.hpp"
 #include "support/frame_limits.hpp"
 #include "test_support.hpp"
@@ -7,6 +6,7 @@
 
 #include <array>
 #include <cstddef>
+#include <limits>
 
 #include <opencv2/core.hpp>
 #include <opencv2/core/cvstd_wrapper.hpp>
@@ -193,6 +193,34 @@ auto main() -> int {
 	                                               normal_brightness.darkness, 24.9F) ==
 	                 howdy::native::BrightnessDecision::kTooDark,
 	             "brightness above threshold is too dark");
+	ok &= Expect(howdy::native::ClassifyBrightness(0.0, 10.0F, 50.0F) ==
+	                 howdy::native::BrightnessDecision::kBlackFrame,
+	             "zero histogram is black frame");
+	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 100.0F, 50.0F) ==
+	                 howdy::native::BrightnessDecision::kBlackFrame,
+	             "100 percent darkness is black frame");
+	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 100.0F, 100.0F) ==
+	                 howdy::native::BrightnessDecision::kBlackFrame,
+	             "black frame classification wins at maximum threshold");
+
+	ok &= ExpectNear(
+	    howdy::native::FrameResizeScale({.width = 640, .height = 480, .rotation = 0}, 320.0F),
+	    320.0 / 480.0, 0.000001, "landscape resize caps by frame height");
+	ok &= ExpectNear(
+	    howdy::native::FrameResizeScale({.width = 640, .height = 480, .rotation = 2}, 320.0F),
+	    320.0 / 640.0, 0.000001, "portrait resize caps by rotated frame height");
+	ok &= Expect(howdy::native::FrameResizeScale({.width = 340, .height = 340, .rotation = 0},
+	                                             1024.0F) == 1.0,
+	             "resize cap does not upscale small Brio frames");
+	ok &= Expect(
+	    howdy::native::FrameResizeScale({.width = 640, .height = 0, .rotation = 0}, 320.0F) == 1.0,
+	    "invalid capture height does not force huge upscale");
+	ok &= Expect(
+	    howdy::native::FrameResizeScale({.width = 640, .height = 480, .rotation = 0}, -1.0F) == 1.0,
+	    "negative resize cap is ignored");
+	ok &= Expect(howdy::native::FrameResizeScale({.width = 640, .height = 480, .rotation = 0},
+	                                             std::numeric_limits<float>::infinity()) == 1.0,
+	             "non-finite resize cap is ignored");
 
 	return ok ? 0 : 1;
 }

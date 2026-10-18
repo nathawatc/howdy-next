@@ -2,7 +2,6 @@
 #include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
-#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -12,28 +11,11 @@
 namespace {
 
 	using howdy::test::Expect;
-	using howdy::test::ExpectNear;
 
 }  // namespace
 
 auto main() -> int {
 	bool ok = true;
-
-	ok &= Expect(howdy::native::ClassifyBrightness(0.0, 10.0F, 50.0F) ==
-	                 howdy::native::BrightnessDecision::kBlackFrame,
-	             "zero histogram is black frame");
-	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 100.0F, 50.0F) ==
-	                 howdy::native::BrightnessDecision::kBlackFrame,
-	             "100 percent darkness is black frame");
-	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 100.0F, 100.0F) ==
-	                 howdy::native::BrightnessDecision::kBlackFrame,
-	             "black frame classification wins at maximum threshold");
-	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 70.0F, 50.0F) ==
-	                 howdy::native::BrightnessDecision::kTooDark,
-	             "above threshold is too dark");
-	ok &= Expect(howdy::native::ClassifyBrightness(5.0, 40.0F, 50.0F) ==
-	                 howdy::native::BrightnessDecision::kProcessFrame,
-	             "below threshold is processable");
 
 	ok &= Expect(howdy::native::TimeoutExit(2, 2) == howdy::native::CompareExit::kTooDark,
 	             "all valid frames too dark returns too-dark exit");
@@ -41,25 +23,6 @@ auto main() -> int {
 	             "no dark frames returns timeout exit");
 	ok &= Expect(howdy::native::TimeoutExit(1, 2) == howdy::native::CompareExit::kTimeoutReached,
 	             "mixed valid frames returns timeout exit");
-
-	ok &= ExpectNear(
-	    howdy::native::CompareResizeScale({.width = 640, .height = 480, .rotation = 0}, 320.0F),
-	    320.0 / 480.0, 0.000001, "landscape resize caps by frame height");
-	ok &= ExpectNear(
-	    howdy::native::CompareResizeScale({.width = 640, .height = 480, .rotation = 2}, 320.0F),
-	    320.0 / 640.0, 0.000001, "portrait resize caps by rotated frame height");
-	ok &= Expect(howdy::native::CompareResizeScale({.width = 340, .height = 340, .rotation = 0},
-	                                               1024.0F) == 1.0,
-	             "resize cap does not upscale small Brio frames");
-	ok &= Expect(howdy::native::CompareResizeScale({.width = 640, .height = 0, .rotation = 0},
-	                                               320.0F) == 1.0,
-	             "invalid capture height does not force huge upscale");
-	ok &= Expect(howdy::native::CompareResizeScale({.width = 640, .height = 480, .rotation = 0},
-	                                               -1.0F) == 1.0,
-	             "negative resize cap is ignored");
-	ok &= Expect(howdy::native::CompareResizeScale({.width = 640, .height = 480, .rotation = 0},
-	                                               std::numeric_limits<float>::infinity()) == 1.0,
-	             "non-finite resize cap is ignored");
 
 	ok &= Expect(static_cast<int>(howdy::native::CompareExit::kSuccess) == 0,
 	             "success exit code remains stable");

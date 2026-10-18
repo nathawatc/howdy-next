@@ -1,9 +1,7 @@
 #include "compare/logic.hpp"
 
 #include "protocol/compare_exit.hpp"
-#include "vision/frame_processing.hpp"
 
-#include <cmath>
 #include <exception>
 #include <ostream>
 #include <string_view>
@@ -12,35 +10,11 @@
 
 namespace howdy::native {
 
-	auto ClassifyBrightness(double hist_total, float darkness, float dark_threshold)
-	    -> BrightnessDecision {
-		if (hist_total == 0.0 || darkness == kBrightnessPercentScale) {
-			return BrightnessDecision::kBlackFrame;
-		}
-		if (darkness > dark_threshold) {
-			return BrightnessDecision::kTooDark;
-		}
-		return BrightnessDecision::kProcessFrame;
-	}
-
 	auto TimeoutExit(int dark_tries, int valid_frames) -> CompareExit {
 		if (dark_tries > 0 && valid_frames == dark_tries) {
 			return CompareExit::kTooDark;
 		}
 		return CompareExit::kTimeoutReached;
-	}
-
-	auto CompareResizeScale(FrameGeometry frame, float max_height) -> double {
-		const int scaling_axis = frame.rotation == 2 ? frame.width : frame.height;
-		if (scaling_axis <= 0 || max_height <= 0.0F) {
-			return 1.0;
-		}
-
-		const double scale = static_cast<double>(max_height) / static_cast<double>(scaling_axis);
-		if (!std::isfinite(scale) || scale >= 1.0) {
-			return 1.0;
-		}
-		return scale;
 	}
 
 	auto CompareAbortFromCvException(const cv::Exception &error, std::ostream &stream,

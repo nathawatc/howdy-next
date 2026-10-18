@@ -1,6 +1,5 @@
 #include "compare/engine.hpp"
 
-#include "compare/logic.hpp"
 #include "config/runtime_config.hpp"
 #include "support/frame_limits.hpp"
 #include "vision/face_detection.hpp"
@@ -72,7 +71,7 @@ namespace howdy::native {
 			};
 		}
 
-		const double scaling_factor = CompareResizeScale(
+		const double scaling_factor = FrameResizeScale(
 		    {.width = gray_frame.cols, .height = gray_frame.rows, .rotation = config_.rotate},
 		    config_.max_height);
 		const cv::Mat source_frame  = std::move(gray_frame);

@@ -16,6 +16,7 @@ engine; do not add a local workaround for that warning.
 ## Ownership
 
 - `frame_validation.hpp`: generic `cv::Mat` shape/type/channel validation
+- `frame_processing.*`: CLAHE, rotation, brightness analysis, and resize scaling
 - `face_detection.*`: detector-output parsing into semantic results
 - `FaceModel`: detector/recognizer initialization and model-backed inference
 - `VideoCapture`: allowed device paths, open/read/configuration, warm-up, error mapping

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "compare/logic.hpp"
 #include "config/runtime_config.hpp"
 #include "vision/face_detection.hpp"
 #include "vision/frame_processing.hpp"
