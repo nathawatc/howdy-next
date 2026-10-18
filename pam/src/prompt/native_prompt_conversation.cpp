@@ -619,24 +619,15 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		return PAM_CONV_ERR;
 	}
 
-	auto *pam_response =
-	    static_cast<struct pam_response *>(std::calloc(1, sizeof(struct pam_response)));
-	if (pam_response == nullptr) {
+	char *response_buffer = static_cast<char *>(std::calloc(password.Size() + 1, sizeof(char)));
+	if (response_buffer == nullptr) {
 		return PAM_BUF_ERR;
 	}
 
-	pam_response->resp = static_cast<char *>(std::calloc(password.Size() + 1, sizeof(char)));
-	if (pam_response->resp == nullptr) {
-		std::free(pam_response);
-		return PAM_BUF_ERR;
-	}
-
-	std::memcpy(pam_response->resp, password.Data(), password.Size());
-	pam_response->resp_retcode = 0;
-	*response                  = pam_response->resp;
+	std::memcpy(response_buffer, password.Data(), password.Size());
+	*response = response_buffer;
 	if (response_length != nullptr) {
 		*response_length = password.Size() + 1;
 	}
-	std::free(pam_response);
 	return PAM_SUCCESS;
 }
