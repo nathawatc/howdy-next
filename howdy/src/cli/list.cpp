@@ -54,12 +54,8 @@ auto howdy::native::list_internal::ListMainWithDependencies(
 	}
 	const auto &user   = *invocation.resolved_user;
 	const auto  models = dependencies.list_user_model_entries(dependencies.context, user);
-	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout
-		    << "No face models found. Use the add command to add a face model for this user.\n";
-		return kListExitAbort;
-	}
-	if (models.status == howdy::native::UserModelStatus::kNoModel) {
+	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory ||
+	    models.status == howdy::native::UserModelStatus::kNoModel) {
 		if (!invocation.plain) {
 			std::cout
 			    << "No face models found. Use the add command to add a face model for this user.\n";
