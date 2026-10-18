@@ -72,6 +72,12 @@ howdy_add_native_test(
 )
 
 howdy_add_native_test(
+ howdy_wayland_display_test
+ native-wayland-display
+ tests/support/wayland_display_test.cpp
+)
+
+howdy_add_native_test(
  howdy_capture_device_path_test
  native-capture-device-path
  tests/support/capture_device_path_test.cpp

@@ -3,11 +3,8 @@
 #include "test_support.hpp"
 
 #include <array>
-#include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <limits>
 #include <optional>
 #include <string>
@@ -18,22 +15,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace {
 
 	using howdy::test::Expect;
-
-	auto ExpectSocketNode(const std::filesystem::path &path, std::string_view description) -> bool {
-		if (mknod(path.c_str(), S_IFSOCK | 0600, 0) == 0) {
-			return true;
-		}
-
-		const int error = errno;
-		return Expect(false, std::string(description) + ": errno " + std::to_string(error) + " (" +
-		                         std::strerror(error) + ")");
-	}
 
 	struct PasswdFixture {
 		uid_t       uid;
@@ -256,29 +242,6 @@ auto main() -> int {
 	             "stale DBUS session bus address is cleared when bus is unavailable");
 	ok &= Expect(std::getenv("WAYLAND_SOCKET") == nullptr,
 	             "stale Wayland socket is cleared during GUI environment preparation");
-
-	auto        runtime_template = std::to_array("/tmp/howdy-wayland-runtime-XXXXXX");
-	char const *runtime_path     = mkdtemp(runtime_template.data());
-	ok &= Expect(runtime_path != nullptr, "Wayland discovery test creates runtime directory");
-	if (runtime_path != nullptr) {
-		const std::filesystem::path runtime_dir(runtime_path);
-		ok &= Expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
-		             "runtime directory without Wayland socket has no display");
-
-		std::ofstream(runtime_dir / "wayland-0.lock") << "lock";
-		ok &= ExpectSocketNode(runtime_dir / "wayland-1",
-		                       "Wayland discovery test creates first socket");
-		const auto single_display = howdy::native::FindWaylandDisplay(runtime_dir);
-		ok &= Expect(single_display.has_value() && *single_display == "wayland-1",
-		             "single Wayland socket is detected");
-
-		ok &= ExpectSocketNode(runtime_dir / "wayland-2",
-		                       "Wayland discovery test creates second socket");
-		ok &= Expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
-		             "multiple Wayland sockets are treated as ambiguous");
-
-		std::filesystem::remove_all(runtime_dir);
-	}
 
 	unsetenv("XDG_RUNTIME_DIR");
 	unsetenv("DBUS_SESSION_BUS_ADDRESS");
