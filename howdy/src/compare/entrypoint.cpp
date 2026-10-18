@@ -348,14 +348,6 @@ namespace {
 		}
 	}
 
-}  // namespace
-
-auto howdy::native::compare_entrypoint_internal::WarmModel(FaceModel &model) -> bool {
-	return model.WarmUpRecognizer();
-}
-
-namespace {
-
 	auto RunCompareEntrypointImpl(
 	    int argc, char **argv, const uid_t trusted_owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root,

@@ -218,12 +218,14 @@ howdy_configure_native_target(howdy_compare_processing)
 target_link_libraries(howdy_compare_processing PUBLIC howdy_opencv PRIVATE
                       Threads::Threads)
 
-add_library(howdy_compare_entrypoint STATIC src/compare/entrypoint.cpp)
+add_library(
+ howdy_compare_entrypoint STATIC
+ src/compare/entrypoint.cpp
+ src/compare/entrypoint/internal.cpp
+)
 howdy_configure_native_target(howdy_compare_entrypoint)
 target_link_libraries(
  howdy_compare_entrypoint
- PUBLIC
-  howdy_opencv
  PRIVATE
   howdy_runtime_config_loader
   howdy_compare_args
