@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <vector>
 
+#include <sched.h>
 #include <unistd.h>
 
 #include <sys/prctl.h>
@@ -375,7 +376,7 @@ namespace howdy::native::compare_sandbox_internal {
 		allowed_syscalls.erase(last, end);
 
 		std::vector<struct sock_filter> filter;
-		filter.reserve(16 + (allowed_syscalls.size() * 2));
+		filter.reserve(23 + (allowed_syscalls.size() * 2));
 
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, arch))));
@@ -417,6 +418,27 @@ namespace howdy::native::compare_sandbox_internal {
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 		filter.push_back(
 		    BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(PR_GET_NAME), 0, 1));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
+#	endif
+
+#	ifdef SYS_clone3
+		// glibc pthread_create probes clone3 first. Seccomp cannot inspect pointer-backed
+		// clone_args in cBPF. Returning ENOSYS causes glibc to fall back cleanly to clone(2)
+		// where flags can be verified.
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_clone3), 0, 1));
+		filter.push_back(BPF_STMT(
+		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(ENOSYS) & SECCOMP_RET_DATA)));
+#	endif
+
+#	ifdef SYS_clone
+		// Permit thread creation (e.g. OpenCV parallel worker pool, std::jthread) while
+		// forbidding process creation (fork without CLONE_THREAD).
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_clone), 0, 4));
+		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+		                          static_cast<__u32>(offsetof(struct seccomp_data, args[0]))));
+		filter.push_back(
+		    BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, static_cast<__u32>(CLONE_THREAD), 0, 1));
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
 		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS));
 #	endif

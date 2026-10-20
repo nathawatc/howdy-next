@@ -16,6 +16,7 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -378,6 +379,69 @@ namespace {
 #endif
 	}
 
+	auto TestFilterCloneArgumentFiltering() -> bool {
+#ifndef HOWDY_SECCOMP_UNSUPPORTED_ARCH
+		const auto filter = howdy::native::compare_sandbox_internal::BuildCompareSeccompFilter();
+		bool       ok     = true;
+
+#	ifdef SYS_clone3
+		std::size_t clone3_index = filter.size();
+		for (std::size_t i = 0; i < filter.size(); ++i) {
+			if (filter.at(i).code == (BPF_JMP | BPF_JEQ | BPF_K) &&
+			    filter.at(i).k == static_cast<__u32>(SYS_clone3)) {
+				clone3_index = i;
+				break;
+			}
+		}
+		ok &= Expect(clone3_index + 1 < filter.size(), "filter contains clone3 block");
+		if (clone3_index + 1 < filter.size()) {
+			ok &= Expect(filter.at(clone3_index).jt == 0 && filter.at(clone3_index).jf == 1,
+			             "clone3 jump skips errno return on mismatch");
+			ok &= Expect(
+			    filter.at(clone3_index + 1).code == (BPF_RET | BPF_K) &&
+			        filter.at(clone3_index + 1).k ==
+			            (SECCOMP_RET_ERRNO | (static_cast<__u32>(ENOSYS) & SECCOMP_RET_DATA)),
+			    "clone3 returns ENOSYS errno");
+		}
+#	endif
+
+#	ifdef SYS_clone
+		std::size_t clone_index = filter.size();
+		for (std::size_t i = 0; i < filter.size(); ++i) {
+			if (filter.at(i).code == (BPF_JMP | BPF_JEQ | BPF_K) &&
+			    filter.at(i).k == static_cast<__u32>(SYS_clone)) {
+				clone_index = i;
+				break;
+			}
+		}
+		ok &= Expect(clone_index + 4 < filter.size(), "filter contains clone argument block");
+		if (clone_index + 4 < filter.size()) {
+			ok &= Expect(filter.at(clone_index).jt == 0 && filter.at(clone_index).jf == 4,
+			             "clone jump skips argument block on mismatch");
+			ok &= Expect(filter.at(clone_index + 1).code == (BPF_LD | BPF_W | BPF_ABS) &&
+			                 filter.at(clone_index + 1).k ==
+			                     static_cast<__u32>(offsetof(struct seccomp_data, args[0])),
+			             "loads low 32-bit args[0]");
+			ok &=
+			    Expect(filter.at(clone_index + 2).code == (BPF_JMP | BPF_JSET | BPF_K) &&
+				           filter.at(clone_index + 2).k == static_cast<__u32>(CLONE_THREAD) &&
+				           filter.at(clone_index + 2).jt == 0 && filter.at(clone_index + 2).jf == 1,
+				       "checks CLONE_THREAD");
+			ok &= Expect(filter.at(clone_index + 3).code == (BPF_RET | BPF_K) &&
+			                 filter.at(clone_index + 3).k == SECCOMP_RET_ALLOW,
+			             "allows CLONE_THREAD");
+			ok &= Expect(filter.at(clone_index + 4).code == (BPF_RET | BPF_K) &&
+			                 filter.at(clone_index + 4).k == SECCOMP_RET_KILL_PROCESS,
+			             "kills clone without CLONE_THREAD");
+		}
+#	endif
+
+		return ok;
+#else
+		return true;
+#endif
+	}
+
 	auto TestApplySeccompSuccess() -> bool {
 		FakeSeccompContext context;
 		const auto result = howdy::native::compare_sandbox_internal::ApplyCompareSeccompFilter({
@@ -494,6 +558,14 @@ namespace {
 				return 5;
 			}
 #endif
+#ifdef SYS_clone3
+			errno = 0;
+			if (syscall(SYS_clone3, nullptr, 0) != -1 || errno != ENOSYS) {
+				return 7;
+			}
+#endif
+			std::thread thread_probe([] -> void {});
+			thread_probe.join();
 			return 0;
 		}
 		free(non_main_arena_block);
@@ -514,10 +586,10 @@ namespace {
 			return 0;
 		}
 		if (action == "bad-clone") {
-#ifdef SYS_clone3
-			(void)syscall(SYS_clone3, nullptr, 0);
-#elifdef SYS_clone
+#ifdef SYS_clone
 			(void)syscall(SYS_clone, 0, nullptr, nullptr, nullptr, 0);
+#elifdef SYS_fork
+			(void)syscall(SYS_fork);
 #endif
 			return 0;
 		}
@@ -600,6 +672,7 @@ auto RunCompareSandboxSeccompTests() -> bool {
 	ok &= TestFilterContainsArchitectureCheck();
 	ok &= TestFilterSyscallAllowlistContents();
 	ok &= TestFilterPrctlArgumentFiltering();
+	ok &= TestFilterCloneArgumentFiltering();
 	ok &= TestApplySeccompSuccess();
 	ok &= TestApplySeccompUnsupportedKernel();
 	ok &= TestApplySeccompInstallationFailure();
