@@ -506,6 +506,9 @@ namespace {
 	}
 
 	auto RunSeccompChildProbe(std::string_view action) -> int {
+#ifdef PR_SET_DUMPABLE
+		(void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
 		constexpr std::size_t non_main_arena_block_size = 256UZ * 1024UZ;
 		void                 *non_main_arena_block      = nullptr;
 		std::thread           arena_worker([&non_main_arena_block] -> void {
