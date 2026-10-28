@@ -53,7 +53,7 @@ For formatting:
 
 ```sh
 # C/C++
-find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
+git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
 
 # CMake
 neocmakelsp format . -i

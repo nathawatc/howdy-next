@@ -100,7 +100,7 @@ cmake --build --preset release --target howdy-update-po --parallel "$(nproc)"
 Format C/C++ with `.clang-format`:
 
 ```sh
-find howdy pam -type f \( -name '*.cpp' -o -name '*.hpp' -o -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format -i
+git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
 ```
 
 Static analysis before submit:
