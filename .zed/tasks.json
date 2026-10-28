@@ -145,7 +145,8 @@
 	},
 	{
 		"label": "CMake: Test Privileged E2E",
-		"command": "run0 --setenv=HOWDY_E2E_USER=\"$USER\" ctest --preset e2e",
+		"command": "run0",
+		"args": ["--setenv=HOWDY_E2E_USER=\"$USER\"", "ctest", "--preset", "e2e"],
 		"cwd": "$ZED_WORKTREE_ROOT",
 		"use_new_terminal": false,
 		"allow_concurrent_runs": false,
