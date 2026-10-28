@@ -1,0 +1,34 @@
+root = true
+
+# Project defaults: Hard tabs matching .clang-format (TabWidth/IndentWidth: 4)
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = tab
+indent_size = 4
+tab_width = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# CMake formatting: Consumed by neocmakelsp
+[{CMakeLists.txt,*.cmake}]
+indent_style = space
+indent_size = 2
+
+# Language specifications: YAML spec forbids tabs; Nix 2-space convention
+[*.{yml,yaml,nix}]
+indent_style = space
+indent_size = 2
+
+# Markdown rules: Matches .rumdl.toml ([MD013] line-length=100); 2-space list indentation
+[*.md]
+indent_style = space
+indent_size = 2
+max_line_length = 100
+
+# Shell formatting: Equivalent to shfmt flags (-s, -bn, -ci, -sr); consumed by shfmt
+[[shell]]
+simplify = true
+binary_next_line = true
+switch_case_indent = true
+space_redirects = true

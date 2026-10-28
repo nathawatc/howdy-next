@@ -61,7 +61,7 @@ rumdl fmt .
 
 # Shell
 git ls-files '*.sh' | xargs shellcheck
-shfmt -w -s -bn -ci -sr .
+shfmt -w .
 ```
 
 Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting
