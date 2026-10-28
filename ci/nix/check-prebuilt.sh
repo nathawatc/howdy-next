@@ -12,10 +12,10 @@ metadata=/etc/howdy-nix-ci/dependencies
 options=(--offline --no-update-lock-file)
 expected=$(nix eval "${options[@]}" --raw \
 	.#packages.x86_64-linux.ci-dependencies.outPath) || fail "Cannot evaluate dependencies offline."
-[[ $expected == "$(<"$metadata")" ]] || fail "Dependency set changed."
+[[ $expected == "$(< "$metadata")" ]] || fail "Dependency set changed."
 
-inputs=$(nix derivation show "${options[@]}" .#packages.x86_64-linux.howdy-next |
-	jq -er '[.derivations[].inputs.drvs | to_entries[] |
+inputs=$(nix derivation show "${options[@]}" .#packages.x86_64-linux.howdy-next \
+	| jq -er '[.derivations[].inputs.drvs | to_entries[] |
 		"/nix/store/" + .key + "^" + (.value.outputs | join(","))] |
 		unique | .[]') || fail "Cannot inspect package dependencies."
 printf '%s\n' "$inputs" | nix build "${options[@]}" --no-link \

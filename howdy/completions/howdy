@@ -5,7 +5,7 @@ _howdy() {
 
 	local current_word="${COMP_WORDS[COMP_CWORD]-}"
 	local previous_word=""
-	if (( COMP_CWORD > 0 )); then
+	if ((COMP_CWORD > 0)); then
 		previous_word="${COMP_WORDS[COMP_CWORD - 1]}"
 	fi
 
@@ -15,7 +15,7 @@ _howdy() {
 	local -A global_option_completion=()
 	local spelling takes_argument parses_after_command completion_kind
 	while IFS=$'\t' read -r spelling takes_argument parses_after_command completion_kind; do
-		if [[ -n "$spelling" ]]; then
+		if [[ -n $spelling ]]; then
 			global_option_spellings+=("$spelling")
 			global_option_takes_argument["$spelling"]="$takes_argument"
 			global_option_parses_after_command["$spelling"]="$parses_after_command"
@@ -29,31 +29,31 @@ _howdy() {
 	local completion_disabled=0
 	local options_ended=0
 	local index=1
-	while (( index < COMP_CWORD && command_index < 0 )); do
+	while ((index < COMP_CWORD && command_index < 0)); do
 		local word="${COMP_WORDS[index]}"
-		if (( ! options_ended )) && [[ "$word" == "--" ]]; then
+		if ((! options_ended)) && [[ $word == "--" ]]; then
 			options_ended=1
-			(( index += 1 ))
+			((index += 1))
 			continue
 		fi
-		if (( ! options_ended )) && [[ "$word" == -* ]]; then
-			if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
+		if ((! options_ended)) && [[ $word == -* ]]; then
+			if [[ -z ${global_option_takes_argument[$word]+set} ]]; then
 				completion_disabled=1
 				break
 			fi
-			if [[ "${global_option_parses_after_command[$word]}" == 1 ]]; then
+			if [[ ${global_option_parses_after_command[$word]} == 1 ]]; then
 				pre_command_global_options+=("$word")
 			else
 				completion_disabled=1
 			fi
-			if [[ "${global_option_takes_argument[$word]}" == "1" ]]; then
-				if (( index + 1 < COMP_CWORD )) && [[ -z "${COMP_WORDS[index + 1]}" ]]; then
+			if [[ ${global_option_takes_argument[$word]} == "1" ]]; then
+				if ((index + 1 < COMP_CWORD)) && [[ -z ${COMP_WORDS[index + 1]} ]]; then
 					completion_disabled=1
 					break
 				fi
-				(( index += 2 ))
+				((index += 2))
 			else
-				(( index += 1 ))
+				((index += 1))
 			fi
 			continue
 		fi
@@ -64,10 +64,10 @@ _howdy() {
 	local -a command_option_spellings=()
 	local -A command_option_takes_argument=()
 	local command_max_positionals=0
-	if (( command_index >= 0 )); then
+	if ((command_index >= 0)); then
 		local command_spelling command_takes_argument
 		while IFS=$'\t' read -r command_spelling command_takes_argument _; do
-			if [[ -n "$command_spelling" ]]; then
+			if [[ -n $command_spelling ]]; then
 				command_option_spellings+=("$command_spelling")
 				command_option_takes_argument["$command_spelling"]="$command_takes_argument"
 			fi
@@ -78,7 +78,7 @@ _howdy() {
 		fi
 		local pre_command_option
 		for pre_command_option in "${pre_command_global_options[@]}"; do
-			if [[ -z "${command_option_takes_argument[$pre_command_option]+set}" ]]; then
+			if [[ -z ${command_option_takes_argument[$pre_command_option]+set} ]]; then
 				completion_disabled=1
 				break
 			fi
@@ -87,121 +87,121 @@ _howdy() {
 
 	local positional_argument_count=0
 	local -a positional_arguments=()
-	if (( command_index >= 0 && ! completion_disabled )); then
+	if ((command_index >= 0 && ! completion_disabled)); then
 		local command_options_ended=$options_ended
 		local -A seen_command_specific_options=()
 		index=$((command_index + 1))
-		while (( index < COMP_CWORD )); do
+		while ((index < COMP_CWORD)); do
 			local word="${COMP_WORDS[index]}"
-			if (( ! command_options_ended )) && [[ "$word" == "--" ]]; then
+			if ((! command_options_ended)) && [[ $word == "--" ]]; then
 				command_options_ended=1
-				(( index += 1 ))
+				((index += 1))
 				continue
 			fi
-			if (( ! command_options_ended )) && [[ "$word" == -* ]]; then
-				if [[ -z "${command_option_takes_argument[$word]+set}" ]] ||
-					[[ "$word" == "-h" || "$word" == "--help" ]]; then
+			if ((! command_options_ended)) && [[ $word == -* ]]; then
+				if [[ -z ${command_option_takes_argument[$word]+set} ]] \
+					|| [[ $word == "-h" || $word == "--help" ]]; then
 					completion_disabled=1
 					break
 				fi
 
-				if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
-					if [[ -n "${seen_command_specific_options[$word]+set}" ]]; then
+				if [[ -z ${global_option_takes_argument[$word]+set} ]]; then
+					if [[ -n ${seen_command_specific_options[$word]+set} ]]; then
 						completion_disabled=1
 						break
 					fi
 					seen_command_specific_options["$word"]=1
 				fi
 
-				if [[ "${command_option_takes_argument[$word]}" == "1" ]]; then
-					if (( index + 1 >= COMP_CWORD )); then
+				if [[ ${command_option_takes_argument[$word]} == "1" ]]; then
+					if ((index + 1 >= COMP_CWORD)); then
 						break
 					fi
 					local option_value="${COMP_WORDS[index + 1]}"
-					if [[ -z "$option_value" ]] ||
-						{ [[ -z "${global_option_takes_argument[$word]+set}" ]] &&
-							[[ "$option_value" == -* ]]; }; then
+					if [[ -z $option_value ]] \
+						|| { [[ -z ${global_option_takes_argument[$word]+set} ]] \
+							&& [[ $option_value == -* ]]; }; then
 						completion_disabled=1
 						break
 					fi
-					(( index += 2 ))
+					((index += 2))
 				else
-					(( index += 1 ))
+					((index += 1))
 				fi
 				continue
 			fi
 
-			(( positional_argument_count += 1 ))
-			if (( positional_argument_count > command_max_positionals )); then
+			((positional_argument_count += 1))
+			if ((positional_argument_count > command_max_positionals)); then
 				completion_disabled=1
 				break
 			fi
 			positional_arguments+=("$word")
-			(( index += 1 ))
+			((index += 1))
 		done
 		options_ended=$command_options_ended
 	fi
 
-	if (( completion_disabled )); then
+	if ((completion_disabled)); then
 		return 0
 	fi
 
-	if (( ! options_ended )) && [[ "$previous_word" == -* ]] &&
-		[[ -n "${global_option_takes_argument[$previous_word]+set}" ]] &&
-		[[ "${global_option_takes_argument[$previous_word]}" == "1" ]]; then
-		if (( command_index >= 0 )) &&
-			[[ -z "${command_option_takes_argument[$previous_word]+set}" ]]; then
+	if ((! options_ended)) && [[ $previous_word == -* ]] \
+		&& [[ -n ${global_option_takes_argument[$previous_word]+set} ]] \
+		&& [[ ${global_option_takes_argument[$previous_word]} == "1" ]]; then
+		if ((command_index >= 0)) \
+			&& [[ -z ${command_option_takes_argument[$previous_word]+set} ]]; then
 			return 0
 		fi
-		if [[ "${global_option_completion[$previous_word]}" == user ]]; then
+		if [[ ${global_option_completion[$previous_word]} == user ]]; then
 			mapfile -t COMPREPLY < <(compgen -u -- "$current_word")
 		fi
 		return 0
 	fi
-	if [[ "$previous_word" == -* ]] &&
-		[[ -n "${command_option_takes_argument[$previous_word]+set}" ]] &&
-		[[ "${command_option_takes_argument[$previous_word]}" == "1" ]]; then
+	if [[ $previous_word == -* ]] \
+		&& [[ -n ${command_option_takes_argument[$previous_word]+set} ]] \
+		&& [[ ${command_option_takes_argument[$previous_word]} == "1" ]]; then
 		return 0
 	fi
 
-	if [[ "$current_word" == -* ]] && (( ! options_ended )); then
-		if (( command_index >= 0 )); then
+	if [[ $current_word == -* ]] && ((! options_ended)); then
+		if ((command_index >= 0)); then
 			local -A used_command_options=()
 			local command_options_ended=0
 			index=$((command_index + 1))
-			while (( index < COMP_CWORD )); do
+			while ((index < COMP_CWORD)); do
 				local word="${COMP_WORDS[index]}"
-				if (( ! command_options_ended )) && [[ "$word" == "--" ]]; then
+				if ((! command_options_ended)) && [[ $word == "--" ]]; then
 					command_options_ended=1
-					(( index += 1 ))
+					((index += 1))
 					continue
 				fi
-				if (( ! command_options_ended )) &&
-					[[ -n "${command_option_takes_argument[$word]+set}" ]]; then
-					if [[ -z "${global_option_takes_argument[$word]+set}" ]]; then
+				if ((! command_options_ended)) \
+					&& [[ -n ${command_option_takes_argument[$word]+set} ]]; then
+					if [[ -z ${global_option_takes_argument[$word]+set} ]]; then
 						used_command_options["$word"]=1
 					fi
-					if [[ "${command_option_takes_argument[$word]}" == "1" ]]; then
-						(( index += 2 ))
+					if [[ ${command_option_takes_argument[$word]} == "1" ]]; then
+						((index += 2))
 					else
-						(( index += 1 ))
+						((index += 1))
 					fi
 					continue
 				fi
-				(( index += 1 ))
+				((index += 1))
 			done
 
 			for spelling in "${command_option_spellings[@]}"; do
-				if [[ -n "${used_command_options[$spelling]+set}" ]]; then
+				if [[ -n ${used_command_options[$spelling]+set} ]]; then
 					continue
 				fi
-				if [[ "$spelling" == "$current_word"* ]]; then
+				if [[ $spelling == "$current_word"* ]]; then
 					COMPREPLY+=("$spelling")
 				fi
 			done
 		else
 			for spelling in "${global_option_spellings[@]}"; do
-				if [[ "$spelling" == "$current_word"* ]]; then
+				if [[ $spelling == "$current_word"* ]]; then
 					COMPREPLY+=("$spelling")
 				fi
 			done
@@ -209,11 +209,11 @@ _howdy() {
 		return 0
 	fi
 
-	if (( command_index < 0 )); then
+	if ((command_index < 0)); then
 		local -a commands=()
 		mapfile -t commands < <(howdy __complete commands -- "${pre_command_global_options[@]}")
 		for command in "${commands[@]}"; do
-			if [[ "$command" == "$current_word"* ]]; then
+			if [[ $command == "$current_word"* ]]; then
 				COMPREPLY+=("$command")
 			fi
 		done
@@ -226,7 +226,7 @@ _howdy() {
 	)
 	local value
 	for value in "${values[@]}"; do
-		if [[ "$value" == "$current_word"* ]]; then
+		if [[ $value == "$current_word"* ]]; then
 			COMPREPLY+=("$value")
 		fi
 	done

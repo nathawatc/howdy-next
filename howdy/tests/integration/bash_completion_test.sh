@@ -25,7 +25,7 @@ howdy() {
 	cache_status="$completion_cache_dir/$cache_key.status"
 	if [[ -f $cache_status ]]; then
 		cat "$cache_output"
-		IFS= read -r status <"$cache_status"
+		IFS= read -r status < "$cache_status"
 		return "$status"
 	fi
 
@@ -35,25 +35,25 @@ howdy() {
 		status=$?
 	fi
 	if [[ -n $output ]]; then
-		printf '%s\n' "$output" >"$cache_output"
+		printf '%s\n' "$output" > "$cache_output"
 	else
-		: >"$cache_output"
+		: > "$cache_output"
 	fi
-	printf '%s\n' "$status" >"$cache_status"
+	printf '%s\n' "$status" > "$cache_status"
 	cat "$cache_output"
 	return "$status"
 }
 
 current_user=$(id -un)
-if ! type complete >/dev/null 2>&1; then
+if ! type complete > /dev/null 2>&1; then
 	complete() { :; }
 fi
-if ! type compgen >/dev/null 2>&1; then
+if ! type compgen > /dev/null 2>&1; then
 	compgen() {
-		if (( $# != 3 )) || [[ $1 != -u || $2 != -- ]]; then
+		if (($# != 3)) || [[ $1 != -u || $2 != -- ]]; then
 			return 2
 		fi
-		if [[ "$current_user" == "$3"* ]]; then
+		if [[ $current_user == "$3"* ]]; then
 			printf '%s\n' "$current_user"
 		fi
 	}
