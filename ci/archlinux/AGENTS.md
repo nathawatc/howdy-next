@@ -1,7 +1,5 @@
 # Arch Linux CI Guidelines
 
-**Updated:** 2026-09-24
-
 Read the [repository guidelines](../../AGENTS.md) first.
 
 ## Scope

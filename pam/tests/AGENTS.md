@@ -1,7 +1,5 @@
 # PAM Test Guidelines
 
-**Updated:** 2026-09-06
-
 Read [`../AGENTS.md`](../AGENTS.md) and the relevant `src/*/AGENTS.md` first.
 
 ## Rules

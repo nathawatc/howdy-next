@@ -1,7 +1,5 @@
 # Repository Guidelines
 
-**Updated:** 2026-09-19
-
 This file defines repository-wide rules. Read the nearest `AGENTS.md` before changing a subsystem;
 local files add detail but do not override these invariants.
 

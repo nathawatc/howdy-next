@@ -1,7 +1,5 @@
 # Howdy Test Guidelines
 
-**Updated:** 2026-09-06
-
 Read [`../AGENTS.md`](../AGENTS.md) first, then the production subsystem guide for code under test.
 
 ## Rules

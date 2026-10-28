@@ -1,7 +1,5 @@
 # PAM Prompt Guidelines
 
-**Updated:** 2026-09-17
-
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership

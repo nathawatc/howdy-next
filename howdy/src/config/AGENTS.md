@@ -1,7 +1,5 @@
 # Config Guidelines
 
-**Updated:** 2026-09-13
-
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership

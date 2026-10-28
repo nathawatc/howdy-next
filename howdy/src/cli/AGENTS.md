@@ -1,7 +1,5 @@
 # CLI Guidelines
 
-**Updated:** 2026-09-06
-
 Read [`../../AGENTS.md`](../../AGENTS.md) and [`../app/AGENTS.md`](../app/AGENTS.md) first.
 
 ## Layout

@@ -1,7 +1,5 @@
 # PAM Runtime Guidelines
 
-**Updated:** 2026-09-06
-
 Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Ownership

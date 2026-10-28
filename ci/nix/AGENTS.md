@@ -1,7 +1,5 @@
 # Nix CI Guidelines
 
-**Updated:** 2026-10-17
-
 Read the [repository guidelines](../../AGENTS.md) first.
 
 ## Scope

@@ -1,7 +1,5 @@
 # Howdy Package Guidelines
 
-**Updated:** 2026-09-13
-
 Read the [repository guidelines](../AGENTS.md) first.
 
 ## Scope

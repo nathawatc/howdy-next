@@ -1,7 +1,5 @@
 # PAM Package Guidelines
 
-**Updated:** 2026-09-06
-
 Read the [repository guidelines](../AGENTS.md) first.
 
 ## Subsystem Guides
