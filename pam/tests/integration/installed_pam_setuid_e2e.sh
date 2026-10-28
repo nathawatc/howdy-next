@@ -89,9 +89,9 @@ source_model_snapshot=$(mktemp)
 model_b_snapshot=$(mktemp)
 model_c_snapshot=$(mktemp)
 third_error=$(mktemp)
-service_dir= masked_config_dir= cleanup_install_prefix= config_masked=false
-runtime_isolated=false helper=
-a_pid= b_pid= c_pid= a_write_fd= b_write_fd= c_write_fd=
+service_dir="" masked_config_dir="" cleanup_install_prefix="" config_masked=false
+runtime_isolated=false helper=""
+a_pid="" b_pid="" c_pid="" a_write_fd="" b_write_fd="" c_write_fd=""
 cleanup() {
 	status=$?
 	trap - EXIT HUP INT TERM
@@ -103,7 +103,7 @@ cleanup() {
 			c) pid=${c_pid:-}; fd=${c_write_fd:-} ;;
 		esac
 		if [[ -n $fd ]]; then
-			printf 'release\n' >&"$fd" 2>/dev/null || true
+			eval "printf 'release\\n' >&${fd} 2>/dev/null" || true
 			eval "exec ${fd}>&-"
 		fi
 		if [[ -n $pid ]]; then
@@ -183,7 +183,7 @@ cp --preserve=mode,ownership,timestamps "$config" "$source_snapshot"
 as_user test ! -r "$config" || fail "protected source config is readable by selected user"
 as_user test ! -r "$source_model" || fail "protected source model is readable by selected user"
 
-unrelated_uid= unrelated_gid=
+unrelated_uid="" unrelated_gid=""
 while IFS=: read -r _ _ candidate_uid candidate_gid _; do
 	if [[ $candidate_uid =~ ^[0-9]+$ && $candidate_gid =~ ^[0-9]+$ &&
 		$candidate_uid -gt 0 && $candidate_uid -ne $selected_uid ]]; then

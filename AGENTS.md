@@ -60,6 +60,9 @@ neocmakelsp format . -i
 
 # Markdown
 rumdl fmt .
+
+# Shell
+git ls-files '*.sh' | xargs shellcheck
 ```
 
 Do not use `clang-format --dry-run` (including `--dry-run --Werror`) as a formatting

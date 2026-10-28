@@ -58,6 +58,7 @@ if ! type compgen >/dev/null 2>&1; then
 		fi
 	}
 fi
+# shellcheck source=/dev/null
 source "$completion_file"
 
 while IFS= read -r -d '' word_count; do

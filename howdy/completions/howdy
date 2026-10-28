@@ -63,15 +63,13 @@ _howdy() {
 
 	local -a command_option_spellings=()
 	local -A command_option_takes_argument=()
-	local -A command_option_completion=()
 	local command_max_positionals=0
 	if (( command_index >= 0 )); then
-		local command_spelling command_takes_argument command_completion_kind
-		while IFS=$'\t' read -r command_spelling command_takes_argument command_completion_kind; do
+		local command_spelling command_takes_argument
+		while IFS=$'\t' read -r command_spelling command_takes_argument _; do
 			if [[ -n "$command_spelling" ]]; then
 				command_option_spellings+=("$command_spelling")
 				command_option_takes_argument["$command_spelling"]="$command_takes_argument"
-				command_option_completion["$command_spelling"]="$command_completion_kind"
 			fi
 		done < <(howdy __complete command-options "$command")
 
