@@ -2,11 +2,11 @@
 
 #include "auth_helper/runtime.hpp"
 #include "protocol/auth_helper_protocol.hpp"
+#include "support/eintr.hpp"
 #include "support/passwd_lookup.hpp"
 #include "support/user_names.hpp"
 
 #include <array>
-#include <cerrno>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -66,16 +66,9 @@ namespace howdy::native::auth_helper::command {
 			header->cmsg_type      = SCM_RIGHTS;
 			header->cmsg_len       = CMSG_LEN(sizeof(int));
 			std::memcpy(CMSG_DATA(header), &transfer.lease_fd, sizeof(transfer.lease_fd));
-			while (true) {
-				const ssize_t sent = sendmsg(transfer.socket_fd, &message, MSG_NOSIGNAL);
-				if (sent == 1) {
-					return true;
-				}
-				if (sent < 0 && errno == EINTR) {
-					continue;
-				}
-				return false;
-			}
+			return RetryOnEintr([&] -> ssize_t {
+				       return sendmsg(transfer.socket_fd, &message, MSG_NOSIGNAL);
+			       }) == 1;
 		}
 	}  // namespace
 

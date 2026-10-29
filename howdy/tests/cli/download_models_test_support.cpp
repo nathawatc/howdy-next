@@ -5,7 +5,6 @@
 #include "support/fd_io.hpp"
 
 #include <cerrno>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -80,32 +79,6 @@ namespace howdy::test::download_models {
 	auto TestModelFileOwnerUid() -> std::optional<uid_t> {
 		++DependenciesState().owner_uid_attempts;
 		return std::nullopt;
-	}
-
-	namespace {
-
-		auto GetEnvValue(const char *name) -> std::optional<std::string> {
-			const char *value = std::getenv(name);
-			if (value == nullptr) {
-				return std::nullopt;
-			}
-			return std::string(value);
-		}
-
-	}  // namespace
-
-	EnvVarGuard::EnvVarGuard(const char *env_name, const std::string &value)
-	    : name_(env_name)
-	    , previous_(GetEnvValue(env_name)) {
-		setenv(name_, value.c_str(), 1);
-	}
-
-	EnvVarGuard::~EnvVarGuard() {
-		if (previous_.has_value()) {
-			setenv(name_, previous_->c_str(), 1);
-			return;
-		}
-		unsetenv(name_);
 	}
 
 	namespace {

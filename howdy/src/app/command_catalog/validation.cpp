@@ -54,31 +54,9 @@ namespace howdy::native::command_catalog_internal {
 			return command.name.empty() ? std::string{"<unnamed>"} : std::string(command.name);
 		}
 
-		auto OptionLabel(const GlobalOptionDescriptor &option) -> std::string {
-			std::string label;
-			if (!option.short_name.empty()) {
-				label += option.short_name;
-			}
-			if (!option.long_name.empty()) {
-				if (!label.empty()) {
-					label += ", ";
-				}
-				label += option.long_name;
-			}
-			return label.empty() ? std::string{"<unspelled>"} : label;
-		}
-
-		auto CommandOptionLabel(const CommandOptionDescriptor &option) -> std::string {
-			std::string label;
-			if (!option.short_name.empty()) {
-				label += option.short_name;
-			}
-			if (!option.long_name.empty()) {
-				if (!label.empty()) {
-					label += ", ";
-				}
-				label += option.long_name;
-			}
+		template <typename OptionDescriptor>
+		auto OptionLabel(const OptionDescriptor &option) -> std::string {
+			const auto label = FormatOptionSpellings(option);
 			return label.empty() ? std::string{"<unspelled>"} : label;
 		}
 
@@ -136,13 +114,13 @@ namespace howdy::native::command_catalog_internal {
 					return "command option has no spelling: " + name;
 				}
 				if (option.summary.empty()) {
-					return "command option summary is empty: " + CommandOptionLabel(option);
+					return "command option summary is empty: " + OptionLabel(option);
 				}
 				if (std::ranges::any_of(command.options.first(option_index),
 				                        [&option](const auto &previous) -> bool {
 					                        return OptionSpellingsCollide(option, previous);
 				                        })) {
-					return "duplicate command option spelling: " + CommandOptionLabel(option);
+					return "duplicate command option spelling: " + OptionLabel(option);
 				}
 				++option_index;
 			}

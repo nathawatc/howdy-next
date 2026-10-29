@@ -22,7 +22,6 @@
 #include <chrono>
 #include <clocale>
 #include <cstdlib>
-#include <optional>
 #include <string>
 
 #include <libintl.h>
@@ -47,35 +46,7 @@ namespace {
 
 	using howdy::pam::RunAuthenticationEntrypoint;
 	using howdy::test::Expect;
-
-	class ScopedEnv {
-	public:
-		ScopedEnv(ScopedEnv &&)                     = delete;
-		auto operator=(ScopedEnv &&) -> ScopedEnv & = delete;
-
-		explicit ScopedEnv(const char *name)
-		    : name_(name) {
-			const char *value = getenv(name_.c_str());
-			if (value != nullptr) {
-				original_ = value;
-			}
-		}
-
-		ScopedEnv(const ScopedEnv &)                     = delete;
-		auto operator=(const ScopedEnv &) -> ScopedEnv & = delete;
-
-		~ScopedEnv() {
-			if (original_.has_value()) {
-				setenv(name_.c_str(), original_->c_str(), 1);
-				return;
-			}
-			unsetenv(name_.c_str());
-		}
-
-	private:
-		std::string                name_;
-		std::optional<std::string> original_;
-	};
+	using ScopedEnv = howdy::test::ScopedEnvironmentVariable;
 
 	auto ExpectAuthenticationNoticeAndConversationGuards() -> bool {
 		EligibilityFlowFixture fixture;

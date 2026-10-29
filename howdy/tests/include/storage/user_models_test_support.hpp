@@ -17,12 +17,9 @@
 namespace howdy::test::user_models {
 
 	using howdy::test::Expect;
+	using howdy::test::NestedArray;
 	using howdy::test::ReadFile;
 	using howdy::test::WriteFile;
-
-	inline auto NestedArray(std::size_t depth) -> std::string {
-		return std::string(depth, '[') + "0" + std::string(depth, ']');
-	}
 
 	inline auto ExpectationFromEntry(const howdy::native::UserModelEntry &entry)
 	    -> howdy::native::UserModelEntryExpectation {

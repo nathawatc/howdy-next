@@ -16,7 +16,6 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
-#include <vector>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -66,34 +65,22 @@ namespace howdy::test::config_cli {
 
 		class TestDirectoryFixture {
 		public:
-			TestDirectoryFixture(const TestDirectoryFixture &)                     = delete;
-			auto operator=(const TestDirectoryFixture &) -> TestDirectoryFixture & = delete;
-			TestDirectoryFixture(TestDirectoryFixture &&)                          = delete;
-			auto operator=(TestDirectoryFixture &&) -> TestDirectoryFixture &      = delete;
-
-			TestDirectoryFixture() {
-				const auto temp_template = fs::temp_directory_path() / "howdy-workflow-test-XXXXXX";
-				std::string       template_str = temp_template.string();
-				std::vector<char> writable(template_str.begin(), template_str.end());
-				writable.push_back('\0');
-				const char *created = mkdtemp(writable.data());
-				if (created == nullptr) {
-					throw std::runtime_error("failed to create test directory");
-				}
-				temp_root_ = fs::path(created);
-				chmod(temp_root_.c_str(), 0700);
-				config_path_ = temp_root_ / "config.ini";
+			TestDirectoryFixture()
+			    : temp_root_([] -> fs::path {
+				    const auto created = howdy::test::CreateTempDirectory("howdy-workflow-test-");
+				    if (!created.has_value()) {
+					    throw std::runtime_error("failed to create test directory");
+				    }
+				    return *created;
+			    }())
+			    , config_path_(temp_root_.Path() / "config.ini") {
+				chmod(temp_root_.Path().c_str(), 0700);
 				WriteFile(config_path_, kWorkflowOriginalContent);
 				chmod(config_path_.c_str(), 0644);
 			}
 
-			~TestDirectoryFixture() {
-				std::error_code ec;
-				fs::remove_all(temp_root_, ec);
-			}
-
 			[[nodiscard]] auto TempRoot() const -> const fs::path & {
-				return temp_root_;
+				return temp_root_.Path();
 			}
 
 			[[nodiscard]] auto ConfigPath() const -> const fs::path & {
@@ -101,8 +88,8 @@ namespace howdy::test::config_cli {
 			}
 
 		private:
-			fs::path temp_root_;
-			fs::path config_path_;
+			howdy::test::TemporaryDirectory temp_root_;
+			fs::path                        config_path_;
 		};
 
 		struct RunResult {

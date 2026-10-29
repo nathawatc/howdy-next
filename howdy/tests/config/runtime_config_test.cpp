@@ -11,58 +11,18 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
-#include <utility>
 
 #include <stdlib.h>
 
 namespace {
 
+	using howdy::test::CreateTempDirectory;
 	using howdy::test::Expect;
+	using howdy::test::TemporaryDirectory;
 	using howdy::test::WriteFile;
-
-	class TemporaryDirectory {
-	public:
-		explicit TemporaryDirectory(std::filesystem::path directory_path)
-		    : path_(std::move(directory_path)) {}
-
-		~TemporaryDirectory() {
-			std::error_code ec;
-			std::filesystem::remove_all(path_, ec);
-		}
-
-		TemporaryDirectory(const TemporaryDirectory &)                     = delete;
-		auto operator=(const TemporaryDirectory &) -> TemporaryDirectory & = delete;
-		TemporaryDirectory(TemporaryDirectory &&)                          = delete;
-		auto operator=(TemporaryDirectory &&) -> TemporaryDirectory &      = delete;
-
-		[[nodiscard]] auto Path() const -> const std::filesystem::path & {
-			return path_;
-		}
-
-	private:
-		std::filesystem::path path_;
-	};
 
 	auto NearlyEqual(float lhs, float rhs) -> bool {
 		return std::abs(lhs - rhs) < 0.0001F;
-	}
-
-	auto CreateTempDirectory() -> std::optional<std::filesystem::path> {
-		std::error_code ec;
-		const auto      temp_root =
-		    std::filesystem::temp_directory_path(ec) / "howdy-runtime-config-test-XXXXXX";
-		if (ec) {
-			return std::nullopt;
-		}
-
-		std::string template_path = temp_root.string();
-		char const *created       = mkdtemp(template_path.data());
-		if (created == nullptr) {
-			return std::nullopt;
-		}
-
-		return std::filesystem::path(created);
 	}
 
 	auto LoadConfig(const std::filesystem::path &root, const std::string &filename,
@@ -87,7 +47,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 
-	const auto temp_directory = CreateTempDirectory();
+	const auto temp_directory = CreateTempDirectory("howdy-runtime-config-test-");
 	if (!temp_directory.has_value()) {
 		std::cerr << "FAIL: create temp directory\n";
 		return 1;

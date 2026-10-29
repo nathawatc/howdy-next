@@ -52,19 +52,7 @@ namespace howdy::test::download_models {
 	auto SelectivelyFailingFstat(int fd, struct stat *stat_buf) -> int;
 	auto TestModelFileOwnerUid() -> std::optional<uid_t>;
 
-	class EnvVarGuard {
-	public:
-		EnvVarGuard(const char *env_name, const std::string &value);
-		EnvVarGuard(const EnvVarGuard &)                     = delete;
-		auto operator=(const EnvVarGuard &) -> EnvVarGuard & = delete;
-		EnvVarGuard(EnvVarGuard &&)                          = delete;
-		auto operator=(EnvVarGuard &&) -> EnvVarGuard &      = delete;
-		~EnvVarGuard();
-
-	private:
-		const char                *name_;
-		std::optional<std::string> previous_;
-	};
+	using EnvVarGuard = howdy::test::ScopedEnvironmentVariable;
 
 	struct DownloadPaths {
 		std::filesystem::path models_dir;

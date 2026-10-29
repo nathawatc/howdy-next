@@ -1,6 +1,7 @@
 #pragma once
 
-#include "auth_helper/auth_helper_acl_policy.hpp"
+#include "auth_helper/acl.hpp"
+#include "storage/staged_runtime_policy.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -8,19 +9,15 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <system_error>
 
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <sys/acl.h>
 #include <sys/types.h>
 
-#include <acl/libacl.h>
-
 namespace howdy::test::auth_helper {
-
-	constexpr acl_perm_t kAclRead    = acl_perm_t{ACL_READ};
-	constexpr acl_perm_t kAclWrite   = acl_perm_t{ACL_WRITE};
-	constexpr acl_perm_t kAclExecute = acl_perm_t{ACL_EXECUTE};
 
 	enum class AclSupport : std::uint8_t {
 		kSupported,
@@ -28,63 +25,32 @@ namespace howdy::test::auth_helper {
 		kError,
 	};
 
-	inline auto AddAclProbeEntry(acl_t &acl, acl_tag_t tag, const void *qualifier,
-	                             acl_perm_t permissions) -> bool {
-		acl_entry_t   entry          = nullptr;
-		acl_permset_t permission_set = nullptr;
-		if (acl_create_entry(&acl, &entry) != 0 || acl_set_tag_type(entry, tag) != 0 ||
-		    (qualifier != nullptr && acl_set_qualifier(entry, qualifier) != 0) ||
-		    acl_get_permset(entry, &permission_set) != 0 || acl_clear_perms(permission_set) != 0) {
-			return false;
-		}
-		for (const acl_perm_t permission : {kAclRead, kAclWrite, kAclExecute}) {
-			if ((permissions & permission) != 0 && acl_add_perm(permission_set, permission) != 0) {
-				return false;
-			}
-		}
-		return acl_set_permset(entry, permission_set) == 0;
-	}
-
-	struct AclProbeResult {
-		bool ready           = false;
-		bool policy_mismatch = false;
-		int  error_number    = 0;
+	struct AclProbeContext {
+		std::optional<int> injected_error;
+		int                error_number = 0;
 	};
 
-	inline auto ConfigureAclProbe(acl_t &acl, int fd, const std::filesystem::path &probe_path,
-	                              std::optional<int> injected_error) -> AclProbeResult {
-		const uid_t uid          = geteuid();
-		bool        ready        = AddAclProbeEntry(acl, ACL_USER_OBJ, nullptr, kAclRead) &&
-		                           AddAclProbeEntry(acl, ACL_USER, &uid, kAclRead) &&
-		                           AddAclProbeEntry(acl, ACL_GROUP_OBJ, nullptr, 0) &&
-		                           AddAclProbeEntry(acl, ACL_MASK, nullptr, kAclRead) &&
-		                           AddAclProbeEntry(acl, ACL_OTHER, nullptr, 0);
-		int         error_number = ready ? 0 : errno;
-		if (ready && acl_valid(acl) != 0) {
-			error_number = errno;
-			ready        = false;
+	inline auto ProbeAclSetFd(void *raw_context, int fd, acl_t acl) -> int {
+		auto &context = *static_cast<AclProbeContext *>(raw_context);
+		if (context.injected_error.has_value()) {
+			errno                = *context.injected_error;
+			context.error_number = *context.injected_error;
+			return -1;
 		}
-		if (ready && injected_error.has_value()) {
-			errno        = *injected_error;
-			error_number = errno;
-			ready        = false;
+		if (acl_set_fd(fd, acl) != 0) {
+			context.error_number = errno;
+			return -1;
 		}
-		if (ready && acl_set_fd(fd, acl) != 0) {
-			error_number = errno;
-			ready        = false;
+		return 0;
+	}
+
+	inline auto ProbeAclGetFd(void *raw_context, int fd) -> acl_t {
+		auto &context = *static_cast<AclProbeContext *>(raw_context);
+		acl_t acl     = acl_get_fd(fd);
+		if (acl == nullptr) {
+			context.error_number = errno;
 		}
-		if (!ready) {
-			return {.error_number = error_number};
-		}
-		const auto acl_check = CheckPrivateAcl(probe_path, uid, false);
-		if (acl_check.status == AclCheckStatus::kError) {
-			return {.error_number = acl_check.error_number};
-		}
-		if (acl_check.status == AclCheckStatus::kMismatch) {
-			std::cerr << "FAIL: ACL support probe policy mismatch '" << probe_path << "'\n";
-			return {.policy_mismatch = true};
-		}
-		return {.ready = true};
+		return acl;
 	}
 
 	inline auto ProbeAclSupport(const std::filesystem::path &root,
@@ -99,34 +65,25 @@ namespace howdy::test::auth_helper {
 			return AclSupport::kError;
 		}
 
-		AclProbeResult probe_result;
-		AclSupport     result = AclSupport::kError;
-		acl_t          acl    = acl_init(5);
-		if (acl == nullptr) {
-			probe_result.error_number = errno;
-		} else {
-			probe_result = ConfigureAclProbe(acl, fd, probe_path, injected_error);
-			if (probe_result.ready) {
-				result = AclSupport::kSupported;
-			}
-		}
-		if (acl != nullptr) {
-			acl_free(acl);
-		}
+		AclProbeContext                                 context{.injected_error = injected_error};
+		const howdy::native::auth_helper::AclOperations operations{
+		    .context    = &context,
+		    .acl_get_fd = ProbeAclGetFd,
+		    .acl_set_fd = ProbeAclSetFd,
+		};
+		const auto policy =
+		    howdy::native::GetStagedRuntimePolicy(howdy::native::StagedRuntimeRole::kConfig).acl;
+		const bool ready = howdy::native::auth_helper::SetPersistentAclWithOperations(
+		    fd, probe_path, geteuid(), policy, operations);
 		close(fd);
 		std::error_code cleanup_ec;
 		std::filesystem::remove(probe_path, cleanup_ec);
-		if (result == AclSupport::kSupported) {
-			return result;
+		if (ready) {
+			return AclSupport::kSupported;
 		}
-		if (probe_result.policy_mismatch) {
-			return AclSupport::kError;
-		}
-		if (probe_result.error_number == ENOTSUP || probe_result.error_number == EOPNOTSUPP) {
+		if (context.error_number == ENOTSUP || context.error_number == EOPNOTSUPP) {
 			return AclSupport::kUnsupported;
 		}
-		std::cerr << "FAIL: ACL support probe '" << probe_path
-		          << "': " << std::strerror(probe_result.error_number) << "\n";
 		return AclSupport::kError;
 	}
 

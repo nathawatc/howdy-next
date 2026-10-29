@@ -1,4 +1,5 @@
 #include "integration/process.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -29,6 +30,8 @@
 namespace fs = std::filesystem;
 
 namespace {
+	using Cleanup = howdy::test::TemporaryDirectory;
+
 	struct AclFree {
 		auto operator()(void *resource) const -> void {
 			acl_free(resource);
@@ -311,30 +314,11 @@ namespace {
 		        "absent sentinel became readable: " + backing.string());
 	}
 
-	class Cleanup {
-	public:
-		explicit Cleanup(fs::path root)
-		    : root_(std::move(root)) {}
-
-		Cleanup(const Cleanup &)                     = delete;
-		auto operator=(const Cleanup &) -> Cleanup & = delete;
-		Cleanup(Cleanup &&)                          = delete;
-		auto operator=(Cleanup &&) -> Cleanup &      = delete;
-
-		~Cleanup() {
-			std::error_code error;
-			fs::remove_all(root_, error);
-		}
-
-	private:
-		fs::path root_;
-	};
-
 	auto CheckAclCapability(const fs::path &parent, unsigned uid) -> int {
 		std::string template_path = (parent / "howdy-e2e-acl.XXXXXX").string();
 		const char *created       = mkdtemp(template_path.data());
 		Require(created != nullptr, "cannot create runtime ACL fixture");
-		const Cleanup   cleanup(created);
+		const Cleanup   cleanup{fs::path(created)};
 		const auto      text = DirectoryAclForUser(uid);
 		const AclHandle expected(acl_from_text(text.c_str()));
 		Require(expected != nullptr, "cannot create runtime ACL");

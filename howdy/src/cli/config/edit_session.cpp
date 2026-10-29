@@ -198,11 +198,11 @@ namespace howdy::native::config_internal {
 
 			close(report_write_fd);
 			int status = 0;
-			while (waitpid(child_pid, &status, 0) < 0) {
-				if (errno != EINTR) {
-					close(report_read_fd);
-					return -1;
-				}
+			if (howdy::native::RetryOnEintr([&] -> pid_t {
+				    return waitpid(child_pid, &status, 0);
+			    }) < 0) {
+				close(report_read_fd);
+				return -1;
 			}
 
 			unsigned char report_byte = 0;

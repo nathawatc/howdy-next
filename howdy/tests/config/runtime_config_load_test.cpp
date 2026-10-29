@@ -12,8 +12,6 @@
 #include <optional>
 #include <string>
 #include <system_error>
-#include <utility>
-#include <vector>
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -22,7 +20,9 @@
 
 namespace {
 
+	using howdy::test::CreateTempDirectory;
 	using howdy::test::Expect;
+	using howdy::test::TemporaryDirectory;
 	using howdy::test::WriteFile;
 
 	auto ExpectFailure(const howdy::native::RuntimeConfigLoadResult &result,
@@ -36,43 +36,6 @@ namespace {
 		return ok;
 	}
 
-	class TemporaryDirectory {
-	public:
-		explicit TemporaryDirectory(std::filesystem::path directory_path)
-		    : path_(std::move(directory_path)) {}
-
-		TemporaryDirectory(const TemporaryDirectory &)                     = delete;
-		auto operator=(const TemporaryDirectory &) -> TemporaryDirectory & = delete;
-		TemporaryDirectory(TemporaryDirectory &&)                          = delete;
-		auto operator=(TemporaryDirectory &&) -> TemporaryDirectory &      = delete;
-
-		~TemporaryDirectory() {
-			std::error_code ec;
-			std::filesystem::remove_all(path_, ec);
-		}
-
-		[[nodiscard]] auto Path() const -> const std::filesystem::path & {
-			return path_;
-		}
-
-	private:
-		std::filesystem::path path_;
-	};
-
-	auto CreateTempDirectory() -> std::optional<std::filesystem::path> {
-		const auto template_path =
-		    std::filesystem::temp_directory_path() / "howdy-runtime-config-load-test-XXXXXX";
-		const auto        template_string = template_path.string();
-		std::vector<char> path_buffer(template_string.begin(), template_string.end());
-		path_buffer.push_back('\0');
-
-		char const *created = mkdtemp(path_buffer.data());
-		if (created == nullptr) {
-			return std::nullopt;
-		}
-		return std::filesystem::path(created);
-	}
-
 }  // namespace
 
 auto main() -> int {
@@ -81,7 +44,7 @@ auto main() -> int {
 
 	bool ok = true;
 
-	const auto temp_directory = CreateTempDirectory();
+	const auto temp_directory = CreateTempDirectory("howdy-runtime-config-load-test-");
 	if (!temp_directory.has_value()) {
 		std::cerr << "FAIL: create unique temp root\n";
 		return 1;

@@ -1,7 +1,7 @@
 #include "runtime/environment.hpp"
+#include "runtime/environment_test_support.hpp"
 #include "test_support.hpp"
 
-#include <map>
 #include <string>
 #include <string_view>
 
@@ -11,36 +11,10 @@ namespace {
 	using howdy::pam::runtime::EnvironmentSource;
 	using howdy::pam::runtime::FindEnvironmentVariable;
 	using howdy::test::Expect;
-
-	struct EnvironmentValues {
-		std::map<std::string, std::string> pam;
-		std::map<std::string, std::string> process;
-		int                                pam_calls     = 0;
-		int                                process_calls = 0;
-	};
-
-	auto LookupPam(void *context, pam_handle_t *pamh, const char *name) -> const char * {
-		(void)pamh;
-		auto *values = static_cast<EnvironmentValues *>(context);
-		++values->pam_calls;
-		const auto found = values->pam.find(name == nullptr ? "" : name);
-		return found == values->pam.end() ? nullptr : found->second.c_str();
-	}
-
-	auto LookupProcess(void *context, const char *name) -> const char * {
-		auto *values = static_cast<EnvironmentValues *>(context);
-		++values->process_calls;
-		const auto found = values->process.find(name == nullptr ? "" : name);
-		return found == values->process.end() ? nullptr : found->second.c_str();
-	}
-
-	auto Dependencies(EnvironmentValues *values) -> EnvironmentLookupDependencies {
-		return {
-		    .context             = values,
-		    .pam_environment     = LookupPam,
-		    .process_environment = LookupProcess,
-		};
-	}
+	using howdy::test::runtime_environment::Dependencies;
+	using howdy::test::runtime_environment::EnvironmentValues;
+	using howdy::test::runtime_environment::LookupPam;
+	using howdy::test::runtime_environment::LookupProcess;
 
 }  // namespace
 

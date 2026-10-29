@@ -6,6 +6,7 @@
 
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace howdy::docs {
 
@@ -17,6 +18,8 @@ namespace howdy::docs {
 	[[nodiscard]] inline auto RenderSucceeded(const RenderResult &result) noexcept -> bool {
 		return result.error.empty();
 	}
+
+	[[nodiscard]] auto EscapeRoff(std::string_view value) -> std::string;
 
 	[[nodiscard]] auto RenderCommandReference(std::span<const native::CommandDescriptor> commands)
 	    -> RenderResult;

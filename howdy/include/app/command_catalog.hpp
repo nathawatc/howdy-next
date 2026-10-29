@@ -111,4 +111,37 @@ namespace howdy::native {
 	[[nodiscard]] auto FindGlobalOption(std::string_view spelling)
 	    -> const GlobalOptionDescriptor *;
 
+	template <typename OptionDescriptor>
+	[[nodiscard]] inline auto FormatOptionSpellings(const OptionDescriptor &option) -> std::string {
+		std::string label(option.short_name);
+		if (!option.long_name.empty()) {
+			if (!label.empty()) {
+				label += ", ";
+			}
+			label += option.long_name;
+		}
+		return label;
+	}
+
+	enum class OptionArgumentStyle : std::uint8_t {
+		kBracketed,
+		kPlain,
+	};
+
+	template <typename OptionDescriptor>
+	[[nodiscard]] inline auto
+	FormatOptionLabel(const OptionDescriptor &option,
+	                  OptionArgumentStyle style = OptionArgumentStyle::kBracketed) -> std::string {
+		std::string label = FormatOptionSpellings(option);
+		if (!option.argument_name.empty()) {
+			const bool bracketed = style == OptionArgumentStyle::kBracketed;
+			label += bracketed ? " <" : " ";
+			label += option.argument_name;
+			if (bracketed) {
+				label += '>';
+			}
+		}
+		return label;
+	}
+
 }  // namespace howdy::native

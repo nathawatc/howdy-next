@@ -30,7 +30,7 @@ namespace howdy::pam::native_prompt_input {
 	};
 
 	enum class CharacterResult : std::uint8_t {
-		kEepReading,
+		kKeepReading,
 		kComplete,
 		kAbort,
 	};

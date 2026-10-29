@@ -21,26 +21,7 @@
 namespace {
 
 	using howdy::test::Expect;
-
-	class StreamRedirect {
-	public:
-		StreamRedirect(const StreamRedirect &)                     = delete;
-		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
-		StreamRedirect(StreamRedirect &&)                          = delete;
-		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
-
-		StreamRedirect(std::ostream &stream, std::streambuf *new_output)
-		    : output_(stream)
-		    , old_output_(stream.rdbuf(new_output)) {}
-
-		~StreamRedirect() {
-			output_.rdbuf(old_output_);
-		}
-
-	private:
-		std::ostream   &output_;
-		std::streambuf *old_output_;
-	};
+	using howdy::test::StreamRedirect;
 
 	class TimezoneGuard {
 	public:

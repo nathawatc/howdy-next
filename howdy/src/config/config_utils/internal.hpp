@@ -1,16 +1,15 @@
 #pragma once
 
 #include "support/atomic_files.hpp"
+#include "support/file_lock.hpp"
 #include "support/file_security/validation_root.hpp"
-#include "support/scoped_fd.hpp"
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include <sys/stat.h>
 
 namespace howdy::native::config_utils_internal {
 
@@ -20,41 +19,18 @@ namespace howdy::native::config_utils_internal {
 	constexpr auto kConfigFileLockFailureMessage    = "Failed to lock config file";
 	constexpr auto kUpdatedConfigTooLargeMessage    = "Updated config exceeds maximum size";
 
-	class __attribute__((visibility("hidden"))) ConfigLockGuard {
-	public:
-		ConfigLockGuard() = default;
-		~ConfigLockGuard();
-		ConfigLockGuard(const ConfigLockGuard &)                     = delete;
-		auto operator=(const ConfigLockGuard &) -> ConfigLockGuard & = delete;
-		ConfigLockGuard(ConfigLockGuard &&other) noexcept;
-		auto operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard &;
-
-	private:
-		ScopedFd fd_;
-
-		friend auto AcquireConfigLock(ConfigLockGuard             &guard,
-		                              const std::filesystem::path &config_path) -> bool;
-	};
-
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	AcquireConfigLock(ConfigLockGuard &guard, const std::filesystem::path &config_path) -> bool;
+	AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path) -> bool;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	ExpectedContentMatches(const std::filesystem::path &config_path, const std::string &expected,
 	                       std::string                                  *error_message,
 	                       const file_security_internal::ValidationRoot &validation_root) -> bool;
 
-	enum class ConfigInstallResult : std::uint8_t {
-		kOk,
-		kStageFailed,
-		kNotCommitted,
-		kCommittedNotDurable,
-	};
-
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	InstallConfigContent(const std::filesystem::path &config_path, const std::string &content,
-	                     const struct stat &current_stat, SyncParentDirectoryFn sync_parent)
-	    -> ConfigInstallResult;
+	                     SyncParentDirectoryFn sync_parent)
+	    -> std::optional<AtomicFileCommitResult>;
 
 	struct ConfigLineReplacement {
 		std::string_view section;

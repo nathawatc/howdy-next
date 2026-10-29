@@ -2,6 +2,7 @@
 
 #include "prompt/native_prompt_conversation.hpp"
 #include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -174,26 +175,18 @@ struct ReadBuffer {
 inline auto ReadWithTimeout(int fd, ReadBuffer buffer, int timeout_ms) -> ssize_t {
 	struct pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
 
-	while (true) {
-		const int poll_result = poll(&poll_fd, 1, timeout_ms);
-		if (poll_result < 0 && errno == EINTR) {
-			continue;
-		}
-		if (poll_result == 0) {
-			return 0;
-		}
-		if (poll_result < 0 || !howdy::native::HasAnyBits(poll_fd.revents, POLLIN)) {
-			return -1;
-		}
-
-		while (true) {
-			const ssize_t bytes_read = read(fd, buffer.data, buffer.size);
-			if (bytes_read < 0 && errno == EINTR) {
-				continue;
-			}
-			return bytes_read;
-		}
+	const int poll_result = howdy::native::RetryOnEintr([&] -> int {
+		return poll(&poll_fd, 1, timeout_ms);
+	});
+	if (poll_result == 0) {
+		return 0;
 	}
+	if (poll_result < 0 || !howdy::native::HasAnyBits(poll_fd.revents, POLLIN)) {
+		return -1;
+	}
+	return howdy::native::RetryOnEintr([&] -> ssize_t {
+		return read(fd, buffer.data, buffer.size);
+	});
 }
 
 inline auto CreateConversation(NativePromptConversationTestAccess::Descriptors descriptors,

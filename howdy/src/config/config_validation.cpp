@@ -6,12 +6,11 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cerrno>
-#include <cstdlib>
-#include <limits>
+#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <variant>
 
 namespace howdy::native {
@@ -25,21 +24,18 @@ namespace howdy::native {
 		}
 
 		auto ParseIntStrict(std::string_view value) -> std::optional<int> {
-			if (value.empty()) {
+			if (!value.empty() && value.front() == '+') {
+				value.remove_prefix(1);
+				if (value.empty() || value.front() == '-') {
+					return std::nullopt;
+				}
+			}
+			int        parsed = 0;
+			const auto result = std::from_chars(value.begin(), value.end(), parsed);
+			if (result.ec != std::errc{} || result.ptr != value.end() || value.empty()) {
 				return std::nullopt;
 			}
-
-			errno                 = 0;
-			char             *end = nullptr;
-			const std::string owned_value(value);
-			const auto        parsed = std::strtol(owned_value.c_str(), &end, 10);
-			if (errno != 0 || end == nullptr || *end != '\0' ||
-			    parsed < std::numeric_limits<int>::min() ||
-			    parsed > std::numeric_limits<int>::max()) {
-				return std::nullopt;
-			}
-
-			return static_cast<int>(parsed);
+			return parsed;
 		}
 
 		auto IsValidBoolText(std::string_view value) -> bool {

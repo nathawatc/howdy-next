@@ -1,6 +1,7 @@
 #include "storage/user_model_codec_test_support.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
+#include "test_support.hpp"
 
 #include <cstddef>
 #include <string>
@@ -41,6 +42,8 @@ namespace howdy::test::user_model_codec {
 
 	namespace {
 
+		using howdy::test::NestedArray;
+
 		auto RepeatedArray(std::size_t count, std::string_view value) -> std::string {
 			std::string output = "[";
 			for (std::size_t index = 0; index < count; ++index) {
@@ -51,10 +54,6 @@ namespace howdy::test::user_model_codec {
 			}
 			output += ']';
 			return output;
-		}
-
-		auto NestedArray(std::size_t depth) -> std::string {
-			return std::string(depth, '[') + "0" + std::string(depth, ']');
 		}
 
 	}  // namespace

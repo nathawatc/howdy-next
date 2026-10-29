@@ -1,10 +1,12 @@
 #include "prompt/native_prompt_conversation.hpp"
 
+#include "conversation_restore/internal.hpp"
 #include "prompt/conversation_response.hpp"
 #include "prompt/conversation_restore.hpp"
 #include "prompt/internal_fd.hpp"
 #include "prompt/native_prompt_input.hpp"
 #include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "support/scoped_fd.hpp"
 
@@ -15,7 +17,6 @@
 #include <cstring>
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <string>
 #include <utility>
@@ -101,9 +102,7 @@ namespace {
 	}
 
 	auto WriteNewline(int fd) -> void {
-		constexpr char newline = '\n';
-		while (write(fd, &newline, 1) < 0 && errno == EINTR) {
-		}
+		(void)howdy::native::WriteAllToFd(fd, "\n");
 	}
 
 	void DrainAbortPipe(int fd) {
@@ -224,15 +223,7 @@ NativePromptConversation::~NativePromptConversation() {
 void NativePromptConversation::RetainUnsafeDispatchContext() noexcept {
 	dispatch_context_->fail_closed.store(true);
 	dispatch_context_->owner = nullptr;
-	static std::mutex                                    quarantine_mutex;
-	static std::vector<std::unique_ptr<DispatchContext>> quarantine;
-	try {
-		std::scoped_lock const lock(quarantine_mutex);
-		quarantine.push_back(std::move(dispatch_context_));
-	} catch (...) {
-		// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
-		// fail-closed context for process lifetime and report explicit ownership fallback.
-		[[maybe_unused]] auto const *retained_context = dispatch_context_.release();
+	if (!howdy::pam::QuarantineUnsafeCallbackContext(dispatch_context_)) {
 		pam_syslog(pamh_, LOG_CRIT,
 		           "Native fail-closed callback context retained outside quarantine");
 	}
@@ -300,19 +291,9 @@ void NativePromptConversation::RequestAbort() {
 	}
 
 	constexpr char signal = 'x';
-	while (true) {
-		const ssize_t result = write(abort_pipe_.write.Get(), &signal, 1);
-		if (result == 1) {
-			return;
-		}
-		if (result < 0 && errno == EINTR) {
-			continue;
-		}
-		if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-			return;
-		}
-		return;
-	}
+	(void)howdy::native::RetryOnEintr([&] -> ssize_t {
+		return write(abort_pipe_.write.Get(), &signal, 1);
+	});
 }
 
 [[nodiscard]] auto NativePromptConversation::TerminalRestoreFailed() const noexcept -> bool {
@@ -450,13 +431,10 @@ auto NativePromptConversation::WriteMessageLine(const struct pam_message &messag
 
 auto NativePromptConversation::RestorePromptTerminal(const struct termios &original_termios) const
     -> bool {
-	while (operations_.restore_terminal(operations_.context, tty_fd_.Get(), &original_termios) !=
-	       0) {
-		if (errno != EINTR) {
-			return false;
-		}
-	}
-	return true;
+	return howdy::native::RetryOnEintr([&] -> int {
+		       return operations_.restore_terminal(operations_.context, tty_fd_.Get(),
+			                                       &original_termios);
+	       }) == 0;
 }
 
 auto NativePromptConversation::PollPrompt(std::array<struct pollfd, 2> &fds) const -> int {

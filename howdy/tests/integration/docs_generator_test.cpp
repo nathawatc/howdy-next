@@ -1,4 +1,5 @@
 #include "integration/process.hpp"
+#include "test_support.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -6,32 +7,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <system_error>
-#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
 
 namespace {
 
-	class Cleanup {
-	public:
-		explicit Cleanup(fs::path root)
-		    : root_(std::move(root)) {}
-
-		Cleanup(const Cleanup &)                     = delete;
-		auto operator=(const Cleanup &) -> Cleanup & = delete;
-		Cleanup(Cleanup &&)                          = delete;
-		auto operator=(Cleanup &&) -> Cleanup &      = delete;
-
-		~Cleanup() {
-			std::error_code error;
-			fs::remove_all(root_, error);
-		}
-
-	private:
-		fs::path root_;
-	};
+	using Cleanup = howdy::test::TemporaryDirectory;
 
 	auto Require(bool condition, const std::string &message) -> void {
 		if (!condition) {

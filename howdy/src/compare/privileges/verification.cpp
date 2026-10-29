@@ -3,11 +3,10 @@
 #include "internal.hpp"
 #include "protocol/compare_exit.hpp"
 #include "support/bit_flags.hpp"
+#include "support/fd_io.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cerrno>
-#include <cstddef>
 
 #include <unistd.h>
 
@@ -61,18 +60,7 @@ namespace howdy::native::compare_privileges_internal {
 
 	[[noreturn]] void FatalComparePrivilegeFailure([[maybe_unused]] void *context,
 	                                               FatalExitRequest       request) {
-		while (!request.message.empty()) {
-			const ssize_t written =
-			    write(STDERR_FILENO, request.message.data(), request.message.size());
-			if (written > 0) {
-				request.message.remove_prefix(static_cast<std::size_t>(written));
-				continue;
-			}
-			if (written < 0 && errno == EINTR) {
-				continue;
-			}
-			break;
-		}
+		(void)WriteAllToFd(STDERR_FILENO, request.message);
 		_exit(request.exit_code);
 	}
 

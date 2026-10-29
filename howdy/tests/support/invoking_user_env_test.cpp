@@ -226,9 +226,12 @@ auto main() -> int {
 	bool ok = true;
 	ok &= RunInvokingIdentityTests();
 
-	setenv("XDG_RUNTIME_DIR", "/tmp/stale-runtime", 1);
-	setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/tmp/stale-bus", 1);
-	setenv("WAYLAND_SOCKET", "stale-wayland-fd", 1);
+	const howdy::test::ScopedEnvironmentVariable runtime_dir("XDG_RUNTIME_DIR",
+	                                                         "/tmp/stale-runtime");
+	const howdy::test::ScopedEnvironmentVariable dbus_bus("DBUS_SESSION_BUS_ADDRESS",
+	                                                      "unix:path=/tmp/stale-bus");
+	const howdy::test::ScopedEnvironmentVariable wayland_socket("WAYLAND_SOCKET",
+	                                                            "stale-wayland-fd");
 
 	howdy::native::InvokingUser user{};
 	user.uid  = static_cast<uid_t>(-1);
@@ -242,10 +245,6 @@ auto main() -> int {
 	             "stale DBUS session bus address is cleared when bus is unavailable");
 	ok &= Expect(std::getenv("WAYLAND_SOCKET") == nullptr,
 	             "stale Wayland socket is cleared during GUI environment preparation");
-
-	unsetenv("XDG_RUNTIME_DIR");
-	unsetenv("DBUS_SESSION_BUS_ADDRESS");
-	unsetenv("WAYLAND_SOCKET");
 
 	return ok ? 0 : 1;
 }

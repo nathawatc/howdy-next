@@ -5,51 +5,28 @@
 #include "config/test_hooks.hpp"
 #include "internal.hpp"
 #include "support/atomic_files.hpp"
-#include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
-#include <cerrno>
 #include <filesystem>
+#include <optional>
 #include <string>
-#include <system_error>
 #include <utility>
-#include <vector>
 
 #include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 
 namespace howdy::native::config_utils_internal {
 
 	namespace {
 
 		constexpr auto kConfigTempPrefix = ".howdy-config-";
-
-		auto OpenLockFile(const std::filesystem::path &config_path) -> int {
-			return open(LockFilePath(config_path).c_str(),
-			            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
-		}
-
-		auto LockFd(int fd) -> bool {
-			while (flock(fd, LOCK_EX) != 0) {
-				if (errno != EINTR) {
-					return false;
-				}
-			}
-			return true;
-		}
-
-		void UnlockFd(int fd) {
-			while (flock(fd, LOCK_UN) != 0 && errno == EINTR) {
-			}
-		}
 
 		auto FailWith(std::string *error_message, const std::string &message) -> bool {
 			if (error_message != nullptr) {
@@ -60,33 +37,18 @@ namespace howdy::native::config_utils_internal {
 
 	}  // namespace
 
-	ConfigLockGuard::~ConfigLockGuard() {
-		if (fd_.Valid()) {
-			UnlockFd(fd_.Get());
-		}
-	}
-
-	ConfigLockGuard::ConfigLockGuard(ConfigLockGuard &&other) noexcept
-	    : fd_(std::move(other.fd_)) {}
-
-	auto ConfigLockGuard::operator=(ConfigLockGuard &&other) noexcept -> ConfigLockGuard & {
-		if (this != &other) {
-			if (fd_.Valid()) {
-				UnlockFd(fd_.Get());
-			}
-			fd_ = std::move(other.fd_);
-		}
-		return *this;
-	}
-
-	auto AcquireConfigLock(ConfigLockGuard &guard, const std::filesystem::path &config_path)
+	auto AcquireConfigLock(ScopedFileLock &guard, const std::filesystem::path &config_path)
 	    -> bool {
-		guard.fd_.Reset(OpenLockFile(config_path));
-		if (guard.fd_.Valid() && LockFd(guard.fd_.Get())) {
-			return true;
+		ScopedFd fd(open(LockFilePath(config_path).c_str(),
+		                 O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR));
+		if (!fd.Valid() || RetryOnEintr([&] -> int {
+			                   return flock(fd.Get(), LOCK_EX);
+		                   }) != 0) {
+			guard.Release();
+			return false;
 		}
-		guard.fd_.Reset();
-		return false;
+		guard = ScopedFileLock(std::move(fd));
+		return true;
 	}
 
 	auto ExpectedContentMatches(const std::filesystem::path &config_path,
@@ -117,39 +79,19 @@ namespace howdy::native::config_utils_internal {
 	}
 
 	auto InstallConfigContent(const std::filesystem::path &config_path, const std::string &content,
-	                          const struct stat &current_stat, SyncParentDirectoryFn sync_parent)
-	    -> ConfigInstallResult {
-		std::string temp =
-		    (config_path.parent_path() / (std::string(kConfigTempPrefix) + "XXXXXX")).string();
-		std::vector<char> writable(temp.begin(), temp.end());
-		writable.push_back('\0');
-		const int fd = mkostemp(writable.data(), O_CLOEXEC);
-		if (fd < 0) {
-			return ConfigInstallResult::kStageFailed;
+	                          SyncParentDirectoryFn sync_parent)
+	    -> std::optional<AtomicFileCommitResult> {
+		auto staged = PrepareStagedFile(config_path, kConfigTempPrefix, kDefaultAtomicFileMode,
+		                                StagedFileMetadataPolicy::kPreserveExisting,
+		                                StagedFileParentPolicy::kRequireExisting);
+		if (!staged.has_value()) {
+			return std::nullopt;
 		}
-
-		const std::filesystem::path temp_path(writable.data());
-		bool ok = fchown(fd, current_stat.st_uid, current_stat.st_gid) == 0 &&
-		          fchmod(fd, MaskedBitsAs<mode_t>(current_stat.st_mode, 07777)) == 0 &&
-		          WriteAllToFd(fd, content) && SyncFd(fd);
-		if (close(fd) != 0) {
-			ok = false;
+		if (!WriteAllToFd(staged->fd.Get(), content)) {
+			CleanupStagedFile(*staged);
+			return AtomicFileCommitResult::kNotCommitted;
 		}
-		if (!ok) {
-			std::error_code ec;
-			std::filesystem::remove(temp_path, ec);
-			return ConfigInstallResult::kNotCommitted;
-		}
-
-		std::error_code ec;
-		std::filesystem::rename(temp_path, config_path, ec);
-		if (ec) {
-			std::filesystem::remove(temp_path, ec);
-			return ConfigInstallResult::kNotCommitted;
-		}
-		return sync_parent != nullptr && sync_parent(config_path)
-		           ? ConfigInstallResult::kOk
-				   : ConfigInstallResult::kCommittedNotDurable;
+		return InstallStagedFile(*staged, config_path, sync_parent);
 	}
 
 }  // namespace howdy::native::config_utils_internal

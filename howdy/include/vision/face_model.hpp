@@ -45,7 +45,7 @@ namespace howdy::native {
 	private:
 		struct Backend;
 
-		friend class FaceModelBackendFactory;
+		friend class FaceModelTestAccess;
 
 		FaceModel(const FaceConfig &config, Backend backend);
 		void Initialize(const FaceConfig &config);

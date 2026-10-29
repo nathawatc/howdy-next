@@ -13,26 +13,7 @@
 namespace {
 
 	using howdy::test::Expect;
-
-	class StreamRedirect {
-	public:
-		StreamRedirect(const StreamRedirect &)                     = delete;
-		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
-		StreamRedirect(StreamRedirect &&)                          = delete;
-		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
-
-		StreamRedirect(std::ostream &stream, std::streambuf *new_buffer)
-		    : output_(stream)
-		    , old_buffer_(stream.rdbuf(new_buffer)) {}
-
-		~StreamRedirect() {
-			output_.rdbuf(old_buffer_);
-		}
-
-	private:
-		std::ostream   &output_;
-		std::streambuf *old_buffer_;
-	};
+	using howdy::test::StreamRedirect;
 
 	struct TestCliTestContext {
 		howdy::native::RuntimeConfigLoadResult config_result;

@@ -7,8 +7,8 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/internal.hpp"
 #include "storage/user_model_status.hpp"
+#include "support/eintr.hpp"
 
-#include <cerrno>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -34,10 +34,10 @@ namespace howdy::native::auth_helper {
 			if (!allocation.has_value()) {
 				return std::nullopt;
 			}
-			while (flock(allocation->Get(), LOCK_EX) != 0) {
-				if (errno != EINTR) {
-					return std::nullopt;
-				}
+			if (RetryOnEintr([&] -> int {
+				    return flock(allocation->Get(), LOCK_EX);
+			    }) != 0) {
+				return std::nullopt;
 			}
 
 			auto config_source = runtime_internal::OpenSourceFile(

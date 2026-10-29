@@ -38,33 +38,7 @@ namespace {
 	constexpr auto kOpenCvFunction  = "FaceDetectorYNImpl::detect";
 	constexpr auto kDnnEngineEnv    = "OPENCV_FORCE_DNN_ENGINE";
 
-	class ScopedEnvironment final {
-	public:
-		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
-		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
-
-		explicit ScopedEnvironment(const char *name)
-		    : name_(name) {
-			if (const auto *value = std::getenv(name); value != nullptr) {
-				original_value_ = value;
-			}
-		}
-
-		~ScopedEnvironment() {
-			if (original_value_.has_value()) {
-				setenv(name_, original_value_->c_str(), 1);
-			} else {
-				unsetenv(name_);
-			}
-		}
-
-		ScopedEnvironment(const ScopedEnvironment &)                     = delete;
-		auto operator=(const ScopedEnvironment &) -> ScopedEnvironment & = delete;
-
-	private:
-		const char                *name_;
-		std::optional<std::string> original_value_;
-	};
+	using ScopedEnvironment = howdy::test::ScopedEnvironmentVariable;
 
 	[[noreturn]] void ThrowCvError() {
 		throw cv::Exception(cv::Error::StsError, kRawError, kOpenCvFunction, kOpenCvSource, 73);

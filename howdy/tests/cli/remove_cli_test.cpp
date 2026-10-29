@@ -16,32 +16,7 @@
 namespace {
 
 	using howdy::test::Expect;
-
-	class StreamRedirect {
-	public:
-		StreamRedirect(const StreamRedirect &)                     = delete;
-		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
-		StreamRedirect(StreamRedirect &&)                          = delete;
-		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
-
-		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
-		               std::ostream &output_stream, std::streambuf *new_output)
-		    : input_(input_stream)
-		    , output_(output_stream)
-		    , old_input_(input_stream.rdbuf(new_input))
-		    , old_output_(output_stream.rdbuf(new_output)) {}
-
-		~StreamRedirect() {
-			input_.rdbuf(old_input_);
-			output_.rdbuf(old_output_);
-		}
-
-	private:
-		std::istream   &input_;
-		std::ostream   &output_;
-		std::streambuf *old_input_;
-		std::streambuf *old_output_;
-	};
+	using howdy::test::StreamRedirect;
 
 	struct RemoveCliTestContext {
 		howdy::native::UserModelListResult       list_result;

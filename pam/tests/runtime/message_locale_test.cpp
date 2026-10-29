@@ -17,41 +17,7 @@ namespace {
 
 	using howdy::pam::ScopedMessageLocale;
 	using howdy::test::Expect;
-
-	class ScopedEnvironment {
-	public:
-		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
-		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
-
-		explicit ScopedEnvironment(const char *name)
-		    : name_(name) {
-			const char *value = std::getenv(name_.c_str());
-			if (value != nullptr) {
-				had_original_ = true;
-				original_     = value;
-			}
-		}
-
-		ScopedEnvironment(const ScopedEnvironment &)                     = delete;
-		auto operator=(const ScopedEnvironment &) -> ScopedEnvironment & = delete;
-
-		~ScopedEnvironment() {
-			if (had_original_) {
-				setenv(name_.c_str(), original_.c_str(), 1);
-			} else {
-				unsetenv(name_.c_str());
-			}
-		}
-
-		void Set(const char *value) {
-			setenv(name_.c_str(), value, 1);
-		}
-
-	private:
-		std::string name_;
-		std::string original_;
-		bool        had_original_ = false;
-	};
+	using ScopedEnvironment = howdy::test::ScopedEnvironmentVariable;
 
 	auto CurrentGlobalLocale() -> std::string {
 		const char *locale = std::setlocale(LC_ALL, nullptr);

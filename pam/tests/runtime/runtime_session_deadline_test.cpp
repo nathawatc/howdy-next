@@ -352,7 +352,7 @@ extern "C" auto TestReadChecked(int fd, void *buffer, std::size_t count,
 }
 
 auto RunRuntimeSessionDeadlineTests() -> bool {
-	const auto output = TestPreparedRuntimeOutput("dead01");
+	const auto output = TestPreparedRuntimeOutput();
 	bool       ok     = TestPrepareRuntimeAuthFilesStalledChild();
 	ok &= RunPrepareCase("normal response", {.output = output}, false, true);
 	ok &= RunPrepareCase("empty output", {}, false);

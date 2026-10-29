@@ -1,8 +1,8 @@
 #pragma once
 
+#include "support/eintr.hpp"
 #include "support/scoped_fd.hpp"
 
-#include <cerrno>
 #include <filesystem>
 #include <utility>
 
@@ -43,8 +43,9 @@ namespace howdy::native {
 			if (!fd_.Valid()) {
 				return;
 			}
-			while (flock(fd_.Get(), LOCK_UN) != 0 && errno == EINTR) {
-			}
+			(void)RetryOnEintr([this] -> int {
+				return flock(fd_.Get(), LOCK_UN);
+			});
 			fd_.Reset();
 		}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 #include <optional>
@@ -23,6 +24,7 @@ namespace howdy::native {
 
 	namespace passwd_lookup_detail {
 		constexpr std::size_t kInitialBufferSize = 1024;
+		constexpr std::size_t kMaximumBufferSize = std::size_t{1024} * 1024;
 
 		template <typename Lookup> auto LookupPasswd(Lookup lookup) -> std::optional<PasswdRecord> {
 			passwd            entry{};
@@ -34,10 +36,10 @@ namespace howdy::native {
 				if (error == 0) {
 					break;
 				}
-				if (error != ERANGE || buffer.size() > buffer.max_size() / 2) {
+				if (error != ERANGE || buffer.size() >= kMaximumBufferSize) {
 					return std::nullopt;
 				}
-				buffer.resize(buffer.size() * 2);
+				buffer.resize(std::min(buffer.size() * 2, kMaximumBufferSize));
 			}
 			if (result == nullptr) {
 				return std::nullopt;

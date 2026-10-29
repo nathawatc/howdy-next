@@ -59,23 +59,20 @@ namespace {
 	};
 
 	auto TryWaitForCompare(pid_t child_pid, int *status) -> ChildState {
-		while (true) {
-			const pid_t result = waitpid(child_pid, status, WNOHANG);
-			if (result == child_pid) {
-				return ChildState::kReaped;
-			}
-			if (result == 0) {
-				return ChildState::kRunning;
-			}
-			if (errno == EINTR) {
-				continue;
-			}
-			const int error_number = errno;
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: waitpid failed for compare process: %s (%d)",
-			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
-			return ChildState::kError;
+		const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
+			return waitpid(child_pid, status, WNOHANG);
+		});
+		if (result == child_pid) {
+			return ChildState::kReaped;
 		}
+		if (result == 0) {
+			return ChildState::kRunning;
+		}
+		const int error_number = errno;
+		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: waitpid failed for compare process: %s (%d)",
+		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+		*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
+		return ChildState::kError;
 	}
 
 	enum class WaitOutcome : std::uint8_t {
@@ -365,8 +362,9 @@ namespace howdy::pam::compare_process {
 		} catch (...) {
 			(void)kill(child_pid, SIGKILL);
 			int status = 0;
-			while (waitpid(child_pid, &status, 0) < 0 && errno == EINTR) {
-			}
+			(void)howdy::native::RetryOnEintr([&] -> pid_t {
+				return waitpid(child_pid, &status, 0);
+			});
 		}
 	}
 

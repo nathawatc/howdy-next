@@ -5,7 +5,6 @@
 
 #include <array>
 #include <clocale>
-#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -19,6 +18,7 @@ namespace {
 	using howdy::pam::PamModuleArguments;
 	using howdy::pam::RunAuthenticationEntrypoint;
 	using howdy::test::Expect;
+	using ScopedEnvironment = howdy::test::ScopedEnvironmentVariable;
 
 	struct AuthCall {
 		void              *expected_context = nullptr;
@@ -32,41 +32,6 @@ namespace {
 		pam_handle_t      *actual_pamh                 = nullptr;
 		PamModuleArguments actual_args{};
 		bool               actual_request_auth_token = false;
-	};
-
-	class ScopedEnvironment {
-	public:
-		ScopedEnvironment(ScopedEnvironment &&)                     = delete;
-		auto operator=(ScopedEnvironment &&) -> ScopedEnvironment & = delete;
-
-		explicit ScopedEnvironment(const char *name)
-		    : name_(name) {
-			const char *value = std::getenv(name_.c_str());
-			if (value != nullptr) {
-				had_original_ = true;
-				original_     = value;
-			}
-		}
-
-		ScopedEnvironment(const ScopedEnvironment &)                     = delete;
-		auto operator=(const ScopedEnvironment &) -> ScopedEnvironment & = delete;
-
-		~ScopedEnvironment() {
-			if (had_original_) {
-				setenv(name_.c_str(), original_.c_str(), 1);
-			} else {
-				unsetenv(name_.c_str());
-			}
-		}
-
-		void Set(const char *value) {
-			setenv(name_.c_str(), value, 1);
-		}
-
-	private:
-		std::string name_;
-		std::string original_;
-		bool        had_original_ = false;
 	};
 
 	auto FakeAuthenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,

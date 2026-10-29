@@ -12,6 +12,7 @@
 
 namespace {
 
+	using howdy::docs::EscapeRoff;
 	using howdy::docs::RenderCommandReference;
 	using howdy::docs::RenderConfigOptionReference;
 	using howdy::docs::RenderGlobalOptionReference;
@@ -31,25 +32,6 @@ namespace {
 	auto HasExactlyOneFinalNewline(std::string_view value) -> bool {
 		return !value.empty() && value.back() == '\n' &&
 		       (value.size() == 1 || value.at(value.size() - 2) != '\n');
-	}
-
-	auto EscapeForRoff(std::string_view value) -> std::string {
-		std::string escaped;
-		escaped.reserve(value.size());
-		for (const char character : value) {
-			switch (character) {
-				case '\\':
-					escaped += "\\\\";
-					break;
-				case '-':
-					escaped += "\\-";
-					break;
-				default:
-					escaped += character;
-					break;
-			}
-		}
-		return escaped;
 	}
 
 	auto SyntheticConfigOption(OptionId id, std::string_view section, std::string_view key,
@@ -160,7 +142,7 @@ auto main() -> int {
 		const auto key_tag = "\\&\\fB" + std::string(opt.key) + "\\fR";
 		ok &= Expect(config_result.output.contains(key_tag),
 		             "config option key tag appears: " + std::string(opt.key));
-		ok &= Expect(config_result.output.contains(EscapeForRoff(opt.description)),
+		ok &= Expect(config_result.output.contains(EscapeRoff(opt.description)),
 		             "config option description appears: " + std::string(opt.key));
 	}
 
@@ -196,7 +178,7 @@ auto main() -> int {
 	}
 	for (const auto &pattern : howdy::native::kAcceptedCaptureDevicePatterns) {
 		ok &=
-		    Expect(config_result.output.contains(EscapeForRoff(pattern)),
+		    Expect(config_result.output.contains(EscapeRoff(pattern)),
 			       "device_path documentation includes accepted pattern: " + std::string(pattern));
 	}
 

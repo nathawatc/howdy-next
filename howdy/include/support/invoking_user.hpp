@@ -2,12 +2,13 @@
 
 #include "support/passwd_lookup.hpp"
 
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include <sys/types.h>
 
@@ -45,21 +46,12 @@ namespace howdy::native {
 			if (value == nullptr || *value == '\0') {
 				return std::nullopt;
 			}
-
-			IdType parsed = 0;
-			for (const char character : std::string_view(value)) {
-				if (character < '0' || character > '9') {
-					return std::nullopt;
-				}
-
-				const auto digit = static_cast<IdType>(character - '0');
-				if (parsed >
-				    (std::numeric_limits<IdType>::max() - digit) / static_cast<IdType>(10)) {
-					return std::nullopt;
-				}
-				parsed = (parsed * static_cast<IdType>(10)) + digit;
+			const std::string_view view(value);
+			IdType                 parsed = 0;
+			const auto             result = std::from_chars(view.begin(), view.end(), parsed);
+			if (result.ec != std::errc{} || result.ptr != view.end()) {
+				return std::nullopt;
 			}
-
 			return parsed;
 		}
 

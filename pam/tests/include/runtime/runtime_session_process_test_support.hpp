@@ -23,29 +23,24 @@
 namespace howdy::test::runtime_session {
 	using howdy::test::Expect;
 
-	inline auto TestPreparedRuntimeRoot(std::string_view suffix = "helper")
-	    -> std::filesystem::path {
-		(void)suffix;
+	inline auto TestPreparedRuntimeRoot() -> std::filesystem::path {
 		return howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
 		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), getuid(),
 		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 	}
 
-	inline auto TestPreparedRuntimeConfigPath(std::string_view suffix = "helper")
-	    -> std::filesystem::path {
-		return howdy::native::auth_helper_protocol::PreparedConfigPath(
-		    TestPreparedRuntimeRoot(suffix));
+	inline auto TestPreparedRuntimeConfigPath() -> std::filesystem::path {
+		return howdy::native::auth_helper_protocol::PreparedConfigPath(TestPreparedRuntimeRoot());
 	}
 
-	inline auto TestPreparedRuntimeModelsDir(std::string_view suffix = "helper")
-	    -> std::filesystem::path {
+	inline auto TestPreparedRuntimeModelsDir() -> std::filesystem::path {
 		return howdy::native::auth_helper_protocol::PreparedUserModelsDir(
-		    TestPreparedRuntimeRoot(suffix));
+		    TestPreparedRuntimeRoot());
 	}
 
-	inline auto TestPreparedRuntimeOutput(std::string_view suffix = "helper") -> std::string {
-		return "CONFIG_PATH=" + TestPreparedRuntimeConfigPath(suffix).string() +
-		       "\nUSER_MODELS_DIR=" + TestPreparedRuntimeModelsDir(suffix).string() + "\n";
+	inline auto TestPreparedRuntimeOutput() -> std::string {
+		return "CONFIG_PATH=" + TestPreparedRuntimeConfigPath().string() +
+		       "\nUSER_MODELS_DIR=" + TestPreparedRuntimeModelsDir().string() + "\n";
 	}
 
 	struct AuthHelperSpawnFake {

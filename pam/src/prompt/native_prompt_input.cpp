@@ -49,17 +49,17 @@ namespace howdy::pam::native_prompt_input {
 			if (!password.Empty()) {
 				password.PopBack();
 			}
-			return CharacterResult::kEepReading;
+			return CharacterResult::kKeepReading;
 		}
 		if (response_too_long) {
-			return CharacterResult::kEepReading;
+			return CharacterResult::kKeepReading;
 		}
 		if (password.Full()) {
 			response_too_long = true;
-			return CharacterResult::kEepReading;
+			return CharacterResult::kKeepReading;
 		}
 		password.PushBack(ch);
-		return CharacterResult::kEepReading;
+		return CharacterResult::kKeepReading;
 	}
 
 }  // namespace howdy::pam::native_prompt_input

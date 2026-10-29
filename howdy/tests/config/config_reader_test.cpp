@@ -7,7 +7,6 @@
 #include "test_support.hpp"
 
 #include <clocale>
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -15,32 +14,15 @@
 #include <system_error>
 #include <vector>
 
-#include <stdlib.h>
-
 namespace {
 
 	using howdy::test::Expect;
+	using howdy::test::ScopedEnvironmentVariable;
 	using howdy::test::WriteFile;
 
 	auto Near(float value, float expected) -> bool {
 		constexpr float tolerance = 0.0001F;
 		return value > expected - tolerance && value < expected + tolerance;
-	}
-
-	auto GetEnvValue(const char *name) -> std::optional<std::string> {
-		const char *value = std::getenv(name);
-		if (value == nullptr) {
-			return std::nullopt;
-		}
-		return std::string(value);
-	}
-
-	void RestoreEnvValue(const char *name, const std::optional<std::string> &value) {
-		if (value.has_value()) {
-			setenv(name, value->c_str(), 1);
-			return;
-		}
-		unsetenv(name);
 	}
 
 }  // namespace
@@ -277,20 +259,16 @@ auto main() -> int {
 	const char *current_locale = std::setlocale(LC_ALL, nullptr);
 	const auto  previous_locale =
 	    current_locale == nullptr ? std::optional<std::string>() : std::string(current_locale);
-	const auto previous_lc_all     = GetEnvValue("LC_ALL");
-	const auto previous_lc_numeric = GetEnvValue("LC_NUMERIC");
-	const auto previous_lang       = GetEnvValue("LANG");
-	unsetenv("LC_ALL");
-	setenv("LANG", "C", 1);
-	setenv("LC_NUMERIC", "nl_NL.UTF-8", 1);
-	if (std::setlocale(LC_ALL, "") != nullptr) {
-		ok &= expect_default_float_config("LC_NUMERIC=nl_NL.UTF-8");
-	} else {
-		std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+	{
+		const ScopedEnvironmentVariable lc_all("LC_ALL");
+		const ScopedEnvironmentVariable lang("LANG", "C");
+		const ScopedEnvironmentVariable lc_numeric("LC_NUMERIC", "nl_NL.UTF-8");
+		if (std::setlocale(LC_ALL, "") != nullptr) {
+			ok &= expect_default_float_config("LC_NUMERIC=nl_NL.UTF-8");
+		} else {
+			std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+		}
 	}
-	RestoreEnvValue("LC_ALL", previous_lc_all);
-	RestoreEnvValue("LC_NUMERIC", previous_lc_numeric);
-	RestoreEnvValue("LANG", previous_lang);
 	if (previous_locale.has_value()) {
 		ok &= Expect(std::setlocale(LC_ALL, previous_locale->c_str()) != nullptr,
 		             "restore original locale");

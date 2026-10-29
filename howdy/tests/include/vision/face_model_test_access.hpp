@@ -5,21 +5,12 @@
 #include <utility>
 
 namespace howdy::native {
-	class FaceModelBackendFactory {
+	class FaceModelTestAccess {
 	public:
 		using Backend = FaceModel::Backend;
 
 		static auto Create(const FaceConfig &config, Backend backend) -> FaceModel {
 			return {config, std::move(backend)};
-		}
-	};
-
-	class FaceModelTestAccess {
-	public:
-		using Backend = FaceModelBackendFactory::Backend;
-
-		static auto Create(const FaceConfig &config, Backend backend) -> FaceModel {
-			return FaceModelBackendFactory::Create(config, std::move(backend));
 		}
 	};
 

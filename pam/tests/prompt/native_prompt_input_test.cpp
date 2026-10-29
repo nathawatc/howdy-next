@@ -4,6 +4,7 @@
 #include "prompt/native_prompt_test_groups.hpp"
 #include "prompt/native_prompt_test_support.hpp"
 #include "support/bit_flags.hpp"
+#include "support/fd_io.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -109,17 +110,7 @@ namespace {
 	}
 
 	auto WriteAll(int fd, std::string_view data) -> bool {
-		while (!data.empty()) {
-			const ssize_t result = write(fd, data.data(), data.size());
-			if (result < 0 && errno == EINTR) {
-				continue;
-			}
-			if (result <= 0) {
-				return false;
-			}
-			data.remove_prefix(static_cast<std::size_t>(result));
-		}
-		return true;
+		return howdy::native::WriteAllToFd(fd, data);
 	}
 
 	auto ExpectPromptInputReturnsPasswordAfterRetry(NativePromptConversation *conversation,
@@ -657,20 +648,20 @@ auto ExpectNativePromptInputEdges() -> bool {
 	SensitiveBuffer password;
 	bool            response_too_long = false;
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 '\b', password, response_too_long) == CharacterResult::kEepReading &&
+	                 '\b', password, response_too_long) == CharacterResult::kKeepReading &&
 	                 password.Empty(),
 	             "backspace on empty password is ignored");
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 'x', password, response_too_long) == CharacterResult::kEepReading &&
+	                 'x', password, response_too_long) == CharacterResult::kKeepReading &&
 	                 password.Size() == 1,
 	             "ordinary character is appended to password");
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 127, password, response_too_long) == CharacterResult::kEepReading &&
+	                 127, password, response_too_long) == CharacterResult::kKeepReading &&
 	                 password.Empty(),
 	             "delete removes last password character");
 	response_too_long = true;
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 'y', password, response_too_long) == CharacterResult::kEepReading &&
+	                 'y', password, response_too_long) == CharacterResult::kKeepReading &&
 	                 password.Empty(),
 	             "characters after response overflow are drained");
 	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(

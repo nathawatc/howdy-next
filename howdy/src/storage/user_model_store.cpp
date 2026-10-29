@@ -7,6 +7,7 @@
 #include "storage/user_model_types.hpp"
 #include "support/atomic_files.hpp"
 #include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
@@ -141,11 +142,11 @@ namespace howdy::native {
 			}
 
 #if defined(SYS_renameat2) && defined(RENAME_EXCHANGE)
-			while (syscall(SYS_renameat2, AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(),
-			               RENAME_EXCHANGE) != 0) {
-				if (errno != EINTR) {
-					return ExchangeResultForErrno(errno);
-				}
+			if (RetryOnEintr([&] -> decltype(syscall(0)) {
+				    return syscall(SYS_renameat2, AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(),
+					               RENAME_EXCHANGE);
+			    }) != 0) {
+				return ExchangeResultForErrno(errno);
 			}
 			return ExchangeResult::kSuccess;
 #else
@@ -269,13 +270,10 @@ namespace howdy::native {
 			// permission still allows uncooperative actors to rename or unlink entries.
 			ScopedFd fd(
 			    open(path.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (!fd.Valid()) {
+			if (!fd.Valid() || RetryOnEintr([&] -> int {
+				                   return flock(fd.Get(), LOCK_EX);
+			                   }) != 0) {
 				return std::nullopt;
-			}
-			while (flock(fd.Get(), LOCK_EX) != 0) {
-				if (errno != EINTR) {
-					return std::nullopt;
-				}
 			}
 
 			return ScopedFileLock(std::move(fd));
@@ -298,13 +296,11 @@ namespace howdy::native {
 				return std::nullopt;
 			}
 			struct stat opened_file{};
-			if (fstat(fd.Get(), &opened_file) != 0 || !OpenedModelFileIsSecure(opened_file)) {
+			if (fstat(fd.Get(), &opened_file) != 0 || !OpenedModelFileIsSecure(opened_file) ||
+			    RetryOnEintr([&] -> int {
+				    return flock(fd.Get(), LOCK_EX);
+			    }) != 0) {
 				return std::nullopt;
-			}
-			while (flock(fd.Get(), LOCK_EX) != 0) {
-				if (errno != EINTR) {
-					return std::nullopt;
-				}
 			}
 
 			return LockedUserModelFile{

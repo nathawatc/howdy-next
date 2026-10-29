@@ -5,6 +5,7 @@
 #include "config/test_hooks.hpp"
 #include "config_utils/internal.hpp"
 #include "support/atomic_files.hpp"
+#include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
@@ -66,7 +67,7 @@ namespace howdy::native {
 			return FailWith(error_message, initial_security.error_message);
 		}
 
-		config_utils_internal::ConfigLockGuard config_lock;
+		ScopedFileLock config_lock;
 		if (lock && !config_utils_internal::AcquireConfigLock(config_lock, config_path)) {
 			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
 		}
@@ -91,17 +92,17 @@ namespace howdy::native {
 		                                                   error_message, validation_root)) {
 			return false;
 		}
-		const auto install_result = config_utils_internal::InstallConfigContent(
-		    config_path, content, current_stat, sync_parent);
-		if (install_result == config_utils_internal::ConfigInstallResult::kCommittedNotDurable) {
+		const auto install_result =
+		    config_utils_internal::InstallConfigContent(config_path, content, sync_parent);
+		if (!install_result.has_value()) {
+			return FailWith(error_message, "Failed to stage updated config");
+		}
+		if (*install_result == AtomicFileCommitResult::kCommittedSyncFailed) {
 			return FailWith(error_message,
 			                "Config was installed, but its directory could not be synced; verify "
 			                "state before retrying");
 		}
-		if (install_result == config_utils_internal::ConfigInstallResult::kStageFailed) {
-			return FailWith(error_message, "Failed to stage updated config");
-		}
-		if (install_result == config_utils_internal::ConfigInstallResult::kNotCommitted) {
+		if (!AtomicFileCommitIsDurable(*install_result)) {
 			return FailWith(error_message, kEditedConfigInstallFailedMessage);
 		}
 		return true;
@@ -122,7 +123,7 @@ namespace howdy::native {
 			return FailWith(error_message, initial_security.error_message);
 		}
 
-		config_utils_internal::ConfigLockGuard config_lock;
+		ScopedFileLock config_lock;
 		if (lock && !config_utils_internal::AcquireConfigLock(config_lock, config_path)) {
 			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
 		}

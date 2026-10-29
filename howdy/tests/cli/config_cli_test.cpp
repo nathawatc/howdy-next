@@ -2,8 +2,6 @@
 
 #include <unistd.h>
 
-#include <sys/types.h>
-
 extern "C" auto real_initgroups(const char *user, gid_t group) -> int asm("__real_initgroups");
 extern "C" auto wrap_initgroups(const char *user, gid_t group) -> int asm("__wrap_initgroups");
 

@@ -43,11 +43,18 @@ namespace {
 		return 0;
 	}
 
+	auto AlwaysErange([[maybe_unused]] passwd *entry, [[maybe_unused]] char *buffer,
+	                  [[maybe_unused]] std::size_t buffer_size, passwd **result) -> int {
+		*result = nullptr;
+		return ERANGE;
+	}
+
 }  // namespace
 
 auto main() -> int {
+	bool ok = Expect(!howdy::native::passwd_lookup_detail::LookupPasswd(AlwaysErange).has_value(),
+	                 "repeated ERANGE fails closed at the buffer cap");
 	const auto record = howdy::native::passwd_lookup_detail::LookupPasswd(LargeRecordLookup);
-	bool       ok     = true;
 	ok &= Expect(record.has_value(), "passwd lookup grows beyond the former 64 KiB limit");
 	if (record.has_value()) {
 		ok &= Expect(record->uid == 1234 && record->gid == 5678,

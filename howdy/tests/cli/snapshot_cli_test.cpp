@@ -18,28 +18,9 @@
 namespace {
 
 	using howdy::test::Expect;
+	using howdy::test::StreamRedirect;
 
 	constexpr std::size_t kSnapshotFrameCount = 4;
-
-	class StreamRedirect {
-	public:
-		StreamRedirect(const StreamRedirect &)                     = delete;
-		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
-		StreamRedirect(StreamRedirect &&)                          = delete;
-		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
-
-		StreamRedirect(std::ostream &stream, std::streambuf *new_buffer)
-		    : output_(stream)
-		    , old_buffer_(stream.rdbuf(new_buffer)) {}
-
-		~StreamRedirect() {
-			output_.rdbuf(old_buffer_);
-		}
-
-	private:
-		std::ostream   &output_;
-		std::streambuf *old_buffer_;
-	};
 
 	struct SnapshotCliTestContext {
 		howdy::native::RuntimeConfigLoadResult                  config_result;

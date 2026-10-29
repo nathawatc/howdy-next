@@ -1,5 +1,6 @@
 #include "prompt/observed_prompt_conversation.hpp"
 
+#include "conversation_restore/internal.hpp"
 #include "prompt/conversation_response.hpp"
 #include "prompt/conversation_restore.hpp"
 
@@ -7,10 +8,7 @@
 #include <cstddef>
 #include <exception>
 #include <memory>
-#include <mutex>
 #include <span>
-#include <utility>
-#include <vector>
 
 #include <security/pam_ext.h>
 
@@ -177,15 +175,7 @@ namespace howdy::pam {
 
 	void ObservedPromptConversation::RetainUnsafeContext() noexcept {
 		context_->fail_closed.store(true);
-		static std::mutex                                    quarantine_mutex;
-		static std::vector<std::unique_ptr<DispatchContext>> quarantine;
-		try {
-			std::scoped_lock const lock(quarantine_mutex);
-			quarantine.push_back(std::move(context_));
-		} catch (...) {
-			// Allocation failure cannot make stale PAM callback safe to free. Retain tiny
-			// fail-closed context for process lifetime and report explicit ownership fallback.
-			[[maybe_unused]] auto const *retained_context = context_.release();
+		if (!QuarantineUnsafeCallbackContext(context_)) {
 			pam_syslog(pamh_, LOG_CRIT,
 			           "Observed fail-closed callback context retained outside quarantine");
 		}

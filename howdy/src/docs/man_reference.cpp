@@ -59,25 +59,6 @@ namespace howdy::docs {
 			return std::nullopt;
 		}
 
-		auto EscapeRoff(std::string_view value) -> std::string {
-			std::string escaped;
-			escaped.reserve(value.size());
-			for (const char character : value) {
-				switch (character) {
-					case '\\':
-						escaped += "\\\\";
-						break;
-					case '-':
-						escaped += "\\-";
-						break;
-					default:
-						escaped += character;
-						break;
-				}
-			}
-			return escaped;
-		}
-
 		void AppendEntry(std::string &output, ReferenceEntry entry) {
 			output += ".TP\n\\&\\fB";
 			output += EscapeRoff(entry.label);
@@ -99,24 +80,6 @@ namespace howdy::docs {
 			if (!command.argument_synopsis.empty()) {
 				label += ' ';
 				label += command.argument_synopsis;
-			}
-			return label;
-		}
-
-		auto FormatOptionLabel(const native::GlobalOptionDescriptor &option) -> std::string {
-			std::string label;
-			if (!option.short_name.empty()) {
-				label += option.short_name;
-			}
-			if (!option.long_name.empty()) {
-				if (!label.empty()) {
-					label += ", ";
-				}
-				label += option.long_name;
-			}
-			if (!option.argument_name.empty()) {
-				label += ' ';
-				label += option.argument_name;
 			}
 			return label;
 		}
@@ -417,6 +380,25 @@ namespace howdy::docs {
 
 	}  // namespace
 
+	auto EscapeRoff(std::string_view value) -> std::string {
+		std::string escaped;
+		escaped.reserve(value.size());
+		for (const char character : value) {
+			switch (character) {
+				case '\\':
+					escaped += "\\\\";
+					break;
+				case '-':
+					escaped += "\\-";
+					break;
+				default:
+					escaped += character;
+					break;
+			}
+		}
+		return escaped;
+	}
+
 	auto RenderCommandReference(std::span<const native::CommandDescriptor> commands)
 	    -> RenderResult {
 		if (const auto error = native::ValidateCommandCatalog(commands)) {
@@ -445,7 +427,11 @@ namespace howdy::docs {
 
 		std::string output;
 		for (const auto &option : options) {
-			AppendEntry(output, {.label = FormatOptionLabel(option), .summary = option.summary});
+			AppendEntry(output, {
+			                        .label = native::FormatOptionLabel(
+			                            option, native::OptionArgumentStyle::kPlain),
+			                        .summary = option.summary,
+			                    });
 		}
 		return Finish(std::move(output));
 	}

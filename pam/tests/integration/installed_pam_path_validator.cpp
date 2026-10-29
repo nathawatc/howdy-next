@@ -1,3 +1,5 @@
+#include "test_support.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <exception>
@@ -10,7 +12,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <utility>
 #include <vector>
 
 #include <stdlib.h>
@@ -19,6 +20,8 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+	using Cleanup = howdy::test::TemporaryDirectory;
 
 	auto IsAbsent(const fs::path &path) -> bool {
 		std::error_code error;
@@ -88,25 +91,6 @@ namespace {
 			throw std::runtime_error(message);
 		}
 	}
-
-	class Cleanup {
-	public:
-		explicit Cleanup(fs::path root)
-		    : root_(std::move(root)) {}
-
-		Cleanup(const Cleanup &)                     = delete;
-		auto operator=(const Cleanup &) -> Cleanup & = delete;
-		Cleanup(Cleanup &&)                          = delete;
-		auto operator=(Cleanup &&) -> Cleanup &      = delete;
-
-		~Cleanup() {
-			std::error_code error;
-			fs::remove_all(root_, error);
-		}
-
-	private:
-		fs::path root_;
-	};
 
 	auto SelfTest() -> void {
 		std::string template_path = "/tmp/howdy-e2e-path-validation.XXXXXX";

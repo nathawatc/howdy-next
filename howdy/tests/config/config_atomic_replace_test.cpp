@@ -10,20 +10,13 @@
 #include <system_error>
 
 #include <fcntl.h>
-#include <stdlib.h>
 
 #include <sys/stat.h>
 
 namespace howdy::test {
 	namespace {
 		auto CountStagedConfigs(const std::filesystem::path &directory) -> std::size_t {
-			std::size_t count = 0;
-			for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-				if (entry.path().filename().string().starts_with(".howdy-config-")) {
-					++count;
-				}
-			}
-			return count;
+			return CountFilesWithPrefix(directory, ".howdy-config-");
 		}
 
 	}  // namespace
@@ -49,19 +42,11 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::ValidateConfigContent(valid_content, &validation_error),
 		             "validate_config_content accepts valid config");
 		{
-			const char *previous_tmpdir = getenv("TMPDIR");
-			const auto  previous_copy =
-			    previous_tmpdir == nullptr ? std::string{} : std::string(previous_tmpdir);
-			const auto missing_tmpdir = (context.temp_root / "missing-tmpdir").string();
-			setenv("TMPDIR", missing_tmpdir.c_str(), 1);
+			const ScopedEnvironmentVariable tmpdir_env(
+			    "TMPDIR", (context.temp_root / "missing-tmpdir").string());
 			validation_error.clear();
 			ok &= Expect(howdy::native::ValidateConfigContent(valid_content, &validation_error),
 			             "validate_config_content parses in memory without TMPDIR");
-			if (previous_tmpdir == nullptr) {
-				unsetenv("TMPDIR");
-			} else {
-				setenv("TMPDIR", previous_copy.c_str(), 1);
-			}
 		}
 		validation_error.clear();
 		ok &= Expect(!howdy::native::ValidateConfigContent("[core\n", &validation_error),
@@ -94,6 +79,12 @@ namespace howdy::test {
 		ok &= Expect(install_error == "Updated config exceeds maximum size" &&
 		                 ReadConfigTestFile(replace_path) == before_oversized_replace,
 		             "oversized replacement leaves existing config unchanged");
+		const auto missing_path = context.temp_root / "missing-replace-config.ini";
+		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(
+		                 missing_path, replacement_content, &install_error, true, true, nullptr,
+		                 howdy::native::SyncParentDirectory, {context.temp_root}) &&
+		                 !std::filesystem::exists(missing_path),
+		             "replace_config_content_atomically does not create a missing config");
 		ok &= Expect(howdy::native::ReplaceConfigContentAtomically(
 		                 replace_path, replacement_content, &install_error, true, true, nullptr,
 		                 howdy::native::SyncParentDirectory, {context.temp_root}),

@@ -4,7 +4,6 @@
 #include "storage/user_model_types.hpp"
 #include "test_support.hpp"
 
-#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -20,33 +19,8 @@
 namespace {
 
 	using howdy::test::Expect;
+	using howdy::test::StreamRedirect;
 	using howdy::test::WriteFile;
-
-	class StreamRedirect {
-	public:
-		StreamRedirect(const StreamRedirect &)                     = delete;
-		auto operator=(const StreamRedirect &) -> StreamRedirect & = delete;
-		StreamRedirect(StreamRedirect &&)                          = delete;
-		auto operator=(StreamRedirect &&) -> StreamRedirect &      = delete;
-
-		StreamRedirect(std::istream &input_stream, std::streambuf *new_input,
-		               std::ostream &output_stream, std::streambuf *new_output)
-		    : input_(input_stream)
-		    , output_(output_stream)
-		    , old_input_(input_stream.rdbuf(new_input))
-		    , old_output_(output_stream.rdbuf(new_output)) {}
-
-		~StreamRedirect() {
-			input_.rdbuf(old_input_);
-			output_.rdbuf(old_output_);
-		}
-
-	private:
-		std::istream   &input_;
-		std::ostream   &output_;
-		std::streambuf *old_input_;
-		std::streambuf *old_output_;
-	};
 
 	struct ClearCliTestContext {
 		howdy::native::UserModelInspectResult  inspect_result;
@@ -285,28 +259,22 @@ namespace {
 	auto BoundaryAwareClearRemovesUnparseableModelFiles() -> bool {
 		namespace fs = std::filesystem;
 
-		const char                      *existing_models_dir = std::getenv("HOWDY_USER_MODELS_DIR");
-		const std::optional<std::string> saved_models_dir =
-		    existing_models_dir == nullptr ? std::nullopt
-			                               : std::optional<std::string>(existing_models_dir);
-		const std::string temp_template_path =
-		    (fs::current_path() / "howdy-clear-cli-test-XXXXXX").string();
-		std::vector<char> temp_template(temp_template_path.begin(), temp_template_path.end());
-		temp_template.push_back('\0');
-		const char *temp_path = mkdtemp(temp_template.data());
+		std::string temp_template = (fs::current_path() / "howdy-clear-cli-test-XXXXXX").string();
+		const char *temp_path     = mkdtemp(temp_template.data());
 		if (!Expect(temp_path != nullptr, "create unique integration temp dir")) {
 			return false;
 		}
 
-		bool            ok         = true;
-		const fs::path  temp_root  = temp_path;
-		const auto      models_dir = temp_root / "models";
-		const auto      model_path = models_dir / "alice.dat";
-		std::error_code ec;
-
+		bool                                  ok = true;
+		const howdy::test::TemporaryDirectory temp_dir{fs::path(temp_path)};
+		const auto                           &temp_root  = temp_dir.Path();
+		const auto                            models_dir = temp_root / "models";
+		const auto                            model_path = models_dir / "alice.dat";
+		std::error_code                       ec;
 		fs::create_directories(models_dir, ec);
 		ok &= Expect(!ec, "create integration models dir");
-		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
+		const howdy::test::ScopedEnvironmentVariable models_env("HOWDY_USER_MODELS_DIR",
+		                                                        models_dir.string());
 
 		auto const run_boundary_aware_clear = [&] -> int {
 			std::istringstream const input_stream;
@@ -335,13 +303,6 @@ namespace {
 		ok &= Expect(run_boundary_aware_clear() == 0,
 		             "boundary-aware clear removes wrong-shape JSON");
 		ok &= Expect(!fs::exists(model_path), "wrong-shape JSON model deleted");
-
-		fs::remove_all(temp_root, ec);
-		if (saved_models_dir.has_value()) {
-			setenv("HOWDY_USER_MODELS_DIR", saved_models_dir->c_str(), 1);
-		} else {
-			unsetenv("HOWDY_USER_MODELS_DIR");
-		}
 		return ok;
 	}
 

@@ -17,26 +17,6 @@
 namespace howdy::native::howdy_cli_internal {
 	namespace {
 
-		template <typename OptionDescriptor>
-		auto FormatOptionLabel(const OptionDescriptor &option) -> std::string {
-			std::string label;
-			if (!option.short_name.empty()) {
-				label += option.short_name;
-			}
-			if (!option.long_name.empty()) {
-				if (!label.empty()) {
-					label += ", ";
-				}
-				label += option.long_name;
-			}
-			if (!option.argument_name.empty()) {
-				label += " <";
-				label += option.argument_name;
-				label += '>';
-			}
-			return label;
-		}
-
 		auto FormatCommandUsage(const CommandDescriptor &command) -> std::string {
 			std::string usage = "howdy ";
 			usage += command.name;
