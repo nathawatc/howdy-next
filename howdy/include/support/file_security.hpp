@@ -2,6 +2,7 @@
 
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <cerrno>
 #include <cstdint>
@@ -9,7 +10,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <sys/stat.h>
@@ -210,6 +213,208 @@ namespace howdy::native {
 		}
 
 		return SecurePathCheckResult{.ok = true, .error_message = {}};
+	}
+
+	namespace file_security_internal {
+
+		struct ResolvedDirectoryRoot {
+			SecurePathCheckResult check;
+			std::filesystem::path root;
+			std::filesystem::path relative;
+		};
+
+		inline auto ResolveDirectoryRoot(const std::filesystem::path &path,
+		                                 const std::string_view       label,
+		                                 const ValidationRoot        &validation_root)
+		    -> ResolvedDirectoryRoot {
+			const auto normalized = path.lexically_normal();
+			if (!normalized.is_absolute()) {
+				return {
+				    .check =
+				        {
+				            .ok = false,
+				            .error_message =
+				                std::string(label) + " must be absolute: " + path.string(),
+				            .error_code = EINVAL,
+				        },
+				};
+			}
+
+			if (!validation_root.path.empty()) {
+				const auto rel = RelativeTarget(validation_root, normalized);
+				if (!rel) {
+					return {
+					    .check =
+					        {
+					            .ok = false,
+					            .error_message =
+					                std::string(label) + ": target outside validation boundary",
+					            .error_code = 0,
+					        },
+					};
+				}
+				auto root = validation_root.path;
+				while (root != root.root_path() &&
+				       (root.filename().empty() || root.filename() == ".")) {
+					root = root.parent_path();
+				}
+				return {
+				    .check =
+				        {
+				            .ok = true,
+				        },
+				    .root     = std::move(root),
+				    .relative = *rel,
+				};
+			}
+
+			auto root = normalized.root_path();
+			if (root.empty()) {
+				root = "/";
+			}
+			auto relative = normalized.lexically_relative(root);
+			return {
+			    .check =
+			        {
+			            .ok = true,
+			        },
+			    .root     = std::move(root),
+			    .relative = std::move(relative),
+			};
+		}
+
+		inline auto EnterSecureDirectoryComponent(int current_fd, const std::filesystem::path &comp,
+		                                          mode_t                       mode,
+		                                          const std::filesystem::path &comp_path,
+		                                          const std::string_view       label,
+		                                          const std::optional<uid_t>   owner_uid,
+		                                          const ValidationRoot        &validation_root)
+		    -> std::pair<SecurePathCheckResult, ScopedFd> {
+			constexpr int k_dir_open_flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW;
+			ScopedFd      next(openat(current_fd, comp.c_str(), k_dir_open_flags));
+			if (!next.Valid()) {
+				const int open_error = errno;
+				if (open_error != ENOENT) {
+					auto security = CheckSecureRootOwnedDirectoryTree(comp_path, label, owner_uid,
+					                                                  validation_root);
+					if (!security.ok) {
+						return {std::move(security), {}};
+					}
+					return {
+					    {
+					        .ok            = false,
+					        .error_message = "Failed to open " + std::string(label) +
+							                 " component: " + comp_path.string(),
+					        .error_code    = open_error,
+					    },
+					    {},
+					};
+				}
+				if (mkdirat(current_fd, comp.c_str(), mode) != 0 && errno != EEXIST) {
+					return {
+					    {
+					        .ok            = false,
+					        .error_message = "Failed to create " + std::string(label) +
+							                 " component: " + comp_path.string(),
+					        .error_code    = errno,
+					    },
+					    {},
+					};
+				}
+				next.Reset(openat(current_fd, comp.c_str(), k_dir_open_flags));
+				if (!next.Valid() || fchmod(next.Get(), mode) != 0) {
+					return {
+					    {
+					        .ok            = false,
+					        .error_message = "Failed to secure " + std::string(label) +
+							                 " component: " + comp_path.string(),
+					        .error_code    = errno,
+					    },
+					    {},
+					};
+				}
+			}
+
+			struct stat comp_st{};
+			if (fstat(next.Get(), &comp_st) != 0) {
+				return {
+				    {
+				        .ok            = false,
+				        .error_message = "Failed to stat " + std::string(label) +
+						                 " component: " + comp_path.string(),
+				        .error_code    = errno,
+				    },
+				    {},
+				};
+			}
+			auto sec = CheckSecurePathStat(comp_st, SecurePathKind::kDirectory, comp_path, label,
+			                               owner_uid);
+			if (!sec.ok) {
+				return {std::move(sec), {}};
+			}
+			return {{
+			            .ok = true,
+			        },
+			        std::move(next)};
+		}
+
+	}  // namespace file_security_internal
+
+	inline auto
+	CreateSecureDirectoryTree(const std::filesystem::path &path, const std::string_view label,
+	                          const mode_t leaf_mode, const mode_t ancestor_mode = 0700,
+	                          const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid(),
+	                          const file_security_internal::ValidationRoot &validation_root = {})
+	    -> SecurePathCheckResult {
+		auto resolved = file_security_internal::ResolveDirectoryRoot(path, label, validation_root);
+		if (!resolved.check.ok) {
+			return std::move(resolved.check);
+		}
+
+		ScopedFd current(
+		    open(resolved.root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+		if (!current.Valid()) {
+			return {
+			    .ok            = false,
+			    .error_message = "Failed to open directory root: " + resolved.root.string(),
+			    .error_code    = errno,
+			};
+		}
+
+		struct stat root_st{};
+		if (fstat(current.Get(), &root_st) != 0) {
+			return {
+			    .ok            = false,
+			    .error_message = "Failed to stat directory root: " + resolved.root.string(),
+			    .error_code    = errno,
+			};
+		}
+		auto root_security = CheckSecurePathStat(root_st, SecurePathKind::kDirectory, resolved.root,
+		                                         label, owner_uid);
+		if (!root_security.ok) {
+			return root_security;
+		}
+
+		const auto normalized   = path.lexically_normal();
+		auto       current_path = resolved.root;
+		for (const auto &comp : resolved.relative) {
+			if (comp.empty() || comp == ".") {
+				continue;
+			}
+			current_path /= comp;
+			const mode_t mode = (current_path == normalized) ? leaf_mode : ancestor_mode;
+
+			auto [status, next] = file_security_internal::EnterSecureDirectoryComponent(
+			    current.Get(), comp, mode, current_path, label, owner_uid, validation_root);
+			if (!status.ok) {
+				return status;
+			}
+			current = std::move(next);
+		}
+
+		return {
+		    .ok = true,
+		};
 	}
 
 	struct SecurePathLabels {

@@ -11,6 +11,7 @@
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 #include "support/user_names.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
@@ -177,7 +178,9 @@ namespace howdy::native {
 			    !CleanupStaleWriteArtifacts(path)) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
-			auto staged = PrepareStagedFile(path, kUserModelTempPrefix, kUserModelFileMode);
+			auto staged = PrepareStagedFile(path, kUserModelTempPrefix, kUserModelFileMode,
+			                                StagedFileMetadataPolicy::kPreserveExisting,
+			                                StagedFileParentPolicy::kRequireExisting);
 			if (!staged.has_value()) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
@@ -424,12 +427,18 @@ namespace howdy::native {
 				        "Failed to inspect user models directory: " + models_dir.string(),
 				};
 			}
-			std::filesystem::create_directories(models_dir, ec);
-			if (ec || chmod(models_dir.c_str(), kUserModelsDirMode) != 0) {
+			const auto create_result =
+			    CreateSecureDirectoryTree(models_dir, kUserModelsDirectoryLabel, kUserModelsDirMode,
+				                          0700, owner_uid, validation_root);
+			if (!create_result.ok) {
 				return UserModelPathResult{
-				    .status = UserModelStatus::kDirectoryCreateFailed,
-				    .error_message =
-				        "Failed to create secure user models directory: " + models_dir.string(),
+				    .status        = create_result.error_code == 0
+					                     ? UserModelStatus::kInsecurePath
+					                     : UserModelStatus::kDirectoryCreateFailed,
+				    .error_message = create_result.error_code == 0
+					                     ? create_result.error_message
+					                     : "Failed to create secure user models directory: " +
+					                           models_dir.string(),
 				};
 			}
 		}

@@ -1,3 +1,4 @@
+#include "support/bit_flags.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "test_support.hpp"
@@ -277,6 +278,38 @@ auto main() -> int {
 	} else {
 		std::cerr << "SKIP: lstat failure permission check while running as root\n";
 	}
+
+	const auto create_root = temp_root / "create-tree";
+	const auto create_leaf = create_root / "sub" / "leaf";
+	const howdy::native::file_security_internal::ValidationRoot create_boundary{temp_root};
+
+	const auto created = howdy::native::CreateSecureDirectoryTree(
+	    create_leaf, "Test directory", 0750, 0700, geteuid(), create_boundary);
+	ok &= Expect(created.ok, "CreateSecureDirectoryTree creates nested tree");
+
+	struct stat leaf_stat{};
+	struct stat sub_stat{};
+	ok &= Expect(stat(create_leaf.c_str(), &leaf_stat) == 0, "stat created leaf directory");
+	ok &= Expect(stat((create_root / "sub").c_str(), &sub_stat) == 0, "stat created sub directory");
+	ok &= Expect(howdy::native::MaskedBits(leaf_stat.st_mode, 0777) == 0750,
+	             "created leaf mode is 0750");
+	ok &= Expect(howdy::native::MaskedBits(sub_stat.st_mode, 0777) == 0700,
+	             "created sub ancestor mode is 0700");
+
+	const auto recreated = howdy::native::CreateSecureDirectoryTree(
+	    create_leaf, "Test directory", 0750, 0700, geteuid(), create_boundary);
+	ok &= Expect(recreated.ok, "CreateSecureDirectoryTree is idempotent on existing tree");
+
+	const auto outside_result = howdy::native::CreateSecureDirectoryTree(
+	    "/tmp/outside-tree", "Outside directory", 0750, 0700, geteuid(), create_boundary);
+	ok &= Expect(!outside_result.ok, "CreateSecureDirectoryTree rejects target outside boundary");
+
+	const auto link_root = temp_root / "link-root";
+	fs::create_directory_symlink(create_root, link_root, ec);
+	const auto link_result = howdy::native::CreateSecureDirectoryTree(
+	    link_root / "x", "Link directory", 0750, 0700, geteuid(),
+	    howdy::native::file_security_internal::ValidationRoot{link_root});
+	ok &= Expect(!ec && !link_result.ok, "CreateSecureDirectoryTree rejects symlink boundary root");
 
 	fs::remove_all(temp_root, ec);
 

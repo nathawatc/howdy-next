@@ -14,7 +14,6 @@
 #include <iostream>
 #include <span>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #include <opencv2/core.hpp>
@@ -69,37 +68,18 @@ namespace {
 auto howdy::native::snapshot_internal::EnsureSnapshotDirectory(
     const std::filesystem::path                  &directory,
     const file_security_internal::ValidationRoot &validation_root) -> bool {
-	const auto log_root = directory.parent_path();
-	if (std::filesystem::exists(log_root)) {
-		const auto root_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    log_root, "Log directory", DefaultSecureOwnerUid(), validation_root);
-		if (!root_security.ok) {
-			std::cerr << root_security.error_message << "\n";
-			return false;
-		}
-	}
-
-	std::error_code ec;
-	std::filesystem::create_directories(directory, ec);
-	if (ec) {
-		std::cerr << "Failed to create snapshot directory: " << directory << "\n";
-		return false;
-	}
-	if (chmod(log_root.c_str(), kSnapshotDirectoryMode) != 0 ||
-	    chmod(directory.c_str(), kSnapshotDirectoryMode) != 0) {
-		std::cerr << "Failed to secure snapshot directory: " << directory << "\n";
+	const auto log_root          = directory.parent_path();
+	const auto log_root_security = howdy::native::CreateSecureDirectoryTree(
+	    log_root, "Log directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
+	    DefaultSecureOwnerUid(), validation_root);
+	if (!log_root_security.ok) {
+		std::cerr << log_root_security.error_message << "\n";
 		return false;
 	}
 
-	const auto root_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-	    log_root, "Log directory", DefaultSecureOwnerUid(), validation_root);
-	if (!root_security.ok) {
-		std::cerr << root_security.error_message << "\n";
-		return false;
-	}
-
-	const auto directory_security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-	    directory, "Snapshot directory", DefaultSecureOwnerUid(), validation_root);
+	const auto directory_security = howdy::native::CreateSecureDirectoryTree(
+	    directory, "Snapshot directory", kSnapshotDirectoryMode, kSnapshotDirectoryMode,
+	    DefaultSecureOwnerUid(), validation_root);
 	if (!directory_security.ok) {
 		std::cerr << directory_security.error_message << "\n";
 		return false;
@@ -131,7 +111,8 @@ auto howdy::native::snapshot_internal::WriteSnapshotAtPath(
 
 	auto staged =
 	    howdy::native::PrepareStagedFile(path, ".howdy-snapshot-", kSnapshotFileMode,
-		                                 howdy::native::StagedFileMetadataPolicy::kUseDefaultMode);
+		                                 howdy::native::StagedFileMetadataPolicy::kUseDefaultMode,
+		                                 howdy::native::StagedFileParentPolicy::kRequireExisting);
 	if (!staged.has_value()) {
 		return false;
 	}

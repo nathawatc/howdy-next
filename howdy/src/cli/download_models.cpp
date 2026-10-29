@@ -31,7 +31,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include <sys/stat.h>
 #include <sys/types.h>
 
 #include <curl/curl.h>
@@ -194,111 +193,6 @@ auto howdy::native::download_models_internal::DownloadModelsWriteCallback(void  
 
 namespace {
 
-	auto ModelsDirectoryFailure(std::string_view operation, const std::filesystem::path &path,
-	                            const int error_number) -> howdy::native::SecurePathCheckResult {
-		return {
-		    .ok            = false,
-		    .error_message = "Failed to " + std::string(operation) + " " +
-			                 std::string(howdy::native::kModelsDirectoryLabel) + ": " +
-			                 path.string() + " (" +
-			                 howdy::native::SystemErrorMessage(error_number) + ")",
-		    .error_code    = error_number,
-		};
-	}
-
-	auto ValidateModelsDirectoryComponent(const int fd, const std::filesystem::path &path,
-	                                      const std::optional<uid_t> owner_uid)
-	    -> howdy::native::SecurePathCheckResult {
-		struct stat component_stat{};
-		if (fstat(fd, &component_stat) != 0) {
-			return ModelsDirectoryFailure("inspect", path, errno);
-		}
-		return howdy::native::CheckSecurePathStat(component_stat,
-		                                          howdy::native::SecurePathKind::kDirectory, path,
-		                                          howdy::native::kModelsDirectoryLabel, owner_uid);
-	}
-
-	auto ValidateModelsBoundary(
-	    const std::filesystem::path &models_dir, const std::optional<uid_t> owner_uid,
-	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
-	    -> howdy::native::SecurePathCheckResult {
-		if (!models_dir.is_absolute()) {
-			return ModelsDirectoryFailure("open", models_dir, EINVAL);
-		}
-
-		if (validation_root.path.empty()) {
-			return {.ok = true};
-		}
-		if (!howdy::native::file_security_internal::RelativeTarget(validation_root, models_dir)) {
-			return ModelsDirectoryFailure("validate boundary", models_dir, EINVAL);
-		}
-		return howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    validation_root.path, howdy::native::kModelsDirectoryLabel, owner_uid, validation_root);
-	}
-
-	auto CreateSecureModelsDirectory(
-	    const std::filesystem::path &models_dir, const std::optional<uid_t> owner_uid,
-	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
-	    -> howdy::native::SecurePathCheckResult {
-		constexpr int directory_open_flags  = O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW;
-		const auto    normalized_models_dir = models_dir.lexically_normal();
-		const auto    root =
-		    validation_root.path.empty() ? normalized_models_dir.root_path() : validation_root.path;
-		auto boundary_security = ValidateModelsBoundary(models_dir, owner_uid, validation_root);
-		if (!boundary_security.ok) {
-			return boundary_security;
-		}
-		ScopedFd current(open(root.c_str(), directory_open_flags));
-		if (current.Get() < 0) {
-			return ModelsDirectoryFailure("open", root, errno);
-		}
-
-		auto current_path = root;
-		if (auto security =
-		        ValidateModelsDirectoryComponent(current.Get(), current_path, owner_uid);
-		    !security.ok) {
-			return security;
-		}
-
-		for (const auto &component : normalized_models_dir.lexically_relative(root)) {
-			if (component == std::filesystem::path(".")) {
-				continue;
-			}
-
-			const auto component_path = current_path / component;
-			ScopedFd   next(openat(current.Get(), component.c_str(), directory_open_flags));
-			if (next.Get() < 0) {
-				const int open_error = errno;
-				if (open_error != ENOENT) {
-					const auto security = howdy::native::CheckSecureRootOwnedDirectoryTree(
-					    component_path, howdy::native::kModelsDirectoryLabel, owner_uid,
-					    validation_root);
-					return security.ok ? ModelsDirectoryFailure("open", component_path, open_error)
-					                   : security;
-				}
-				if (mkdirat(current.Get(), component.c_str(), 0755) != 0 && errno != EEXIST) {
-					return ModelsDirectoryFailure("create", component_path, errno);
-				}
-				next.Reset(openat(current.Get(), component.c_str(), directory_open_flags));
-				if (next.Get() < 0) {
-					return ModelsDirectoryFailure("open", component_path, errno);
-				}
-			}
-
-			if (auto security =
-			        ValidateModelsDirectoryComponent(next.Get(), component_path, owner_uid);
-			    !security.ok) {
-				return security;
-			}
-			current      = std::move(next);
-			current_path = component_path;
-		}
-
-		return howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    normalized_models_dir, howdy::native::kModelsDirectoryLabel, owner_uid,
-		    validation_root);
-	}
-
 	auto PrepareStagedDownload(
 	    const std::filesystem::path &destination, const std::optional<uid_t> owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root)
@@ -450,10 +344,11 @@ auto howdy::native::download_models_internal::DownloadModelsMainWithDependencies
 		return kDownloadModelsExitAbort;
 	}
 
-	const auto models_dir = howdy::native::ResolveModelsDir();
-	const auto owner_uid  = dependencies.model_file_owner_uid();
-	const auto models_dir_security =
-	    CreateSecureModelsDirectory(models_dir, owner_uid, dependencies.validation_root);
+	const auto models_dir          = howdy::native::ResolveModelsDir();
+	const auto owner_uid           = dependencies.model_file_owner_uid();
+	const auto models_dir_security = howdy::native::CreateSecureDirectoryTree(
+	    models_dir, howdy::native::kModelsDirectoryLabel, 0755, 0755, owner_uid,
+	    dependencies.validation_root);
 	if (!models_dir_security.ok) {
 		std::cout << "Failed to create models directory: " << models_dir_security.error_message
 		          << "\n";
