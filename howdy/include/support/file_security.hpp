@@ -310,7 +310,8 @@ namespace howdy::native {
 					    {},
 					};
 				}
-				if (mkdirat(current_fd, comp.c_str(), mode) != 0 && errno != EEXIST) {
+				const bool created = mkdirat(current_fd, comp.c_str(), mode) == 0;
+				if (!created && errno != EEXIST) {
 					return {
 					    {
 					        .ok            = false,
@@ -322,7 +323,9 @@ namespace howdy::native {
 					};
 				}
 				next.Reset(openat(current_fd, comp.c_str(), k_dir_open_flags));
-				if (!next.Valid() || fchmod(next.Get(), mode) != 0) {
+				// Only chmod a directory we created; a raced EEXIST is validated below, not
+				// modified.
+				if (!next.Valid() || (created && fchmod(next.Get(), mode) != 0)) {
 					return {
 					    {
 					        .ok            = false,
