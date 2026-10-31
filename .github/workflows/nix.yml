@@ -9,6 +9,8 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/nathawatc/howdy-next/ci-nix:2.35.3-1
+      env:
+        HOME: /root
 
     steps:
       - uses: actions/checkout@v7

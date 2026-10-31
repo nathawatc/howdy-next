@@ -19,7 +19,16 @@ RUN mkdir -p /etc/howdy-nix-ci /nix/var/nix/gcroots \
 		path:/prewarm#packages.x86_64-linux.ci-runtime \
 	&& readlink /nix/var/nix/gcroots/ci-dependencies > /etc/howdy-nix-ci/dependencies \
 	&& rm -rf /prewarm \
-	&& nix-store --gc
+	&& nix-store --gc \
+	&& GLIBC_LIB=$(dirname $(find /nix/store -name "ld-linux-x86-64.so.2" | head -n1)) \
+	&& GCC_LIB=$(dirname $(find /nix/store -name "libstdc++.so.6" | head -n1)) \
+	&& LDCONFIG=$(find /nix/store -name "ldconfig" | head -n1) \
+	&& mkdir -p /lib64 /lib /etc "$GLIBC_LIB/../etc" \
+	&& ln -sf "$GLIBC_LIB/ld-linux-x86-64.so.2" /lib64/ld-linux-x86-64.so.2 \
+	&& ln -sf "$GLIBC_LIB/ld-linux-x86-64.so.2" /lib/ld-linux-x86-64.so.2 \
+	&& printf "%s\n%s\n" "$GLIBC_LIB" "$GCC_LIB" > /etc/ld.so.conf \
+	&& "$LDCONFIG" -C "$GLIBC_LIB/../etc/ld.so.cache" -f /etc/ld.so.conf \
+	&& printf '[safe]\n\tdirectory = *\n' > /etc/gitconfig
 
 ENV PATH="/nix/var/nix/gcroots/ci-runtime/bin:${PATH}"
 WORKDIR /
