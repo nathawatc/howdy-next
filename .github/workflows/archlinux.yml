@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/nathawatc/ci-archlinux:latest
+      image: ghcr.io/nathawatc/howdy-next/ci-archlinux:latest
 
     steps:
       - uses: actions/checkout@v7

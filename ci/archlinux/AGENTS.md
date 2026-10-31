@@ -8,7 +8,7 @@ Covers `ci/archlinux/` and `.github/workflows/archlinux.yml`.
 
 ## Rules
 
-- Keep `.github/workflows/archlinux.yml` aligned with `ghcr.io/nathawatc/ci-archlinux:latest`.
+- Keep `.github/workflows/archlinux.yml` aligned with `ghcr.io/nathawatc/howdy-next/ci-archlinux:latest`.
 - Build from `docker.io/library/archlinux:latest`.
 - Install dependencies with pacman; do not build OpenCV from source in CI.
 - Keep dependency floors aligned with root CMake requirements, including CMake, glibc, OpenCV,
@@ -26,7 +26,7 @@ podman run --rm \
   -v "$PWD:/workspace:ro" \
   --tmpfs /workspace/build:rw,exec,notmpcopyup \
   -w /workspace \
-  ghcr.io/nathawatc/ci-archlinux:latest bash -c '
+  ghcr.io/nathawatc/howdy-next/ci-archlinux:latest bash -c '
     set -e
     cmake --preset release -DHOWDY_WARNINGS_AS_ERRORS=ON
     cmake --build --preset release --parallel "$(nproc)"
