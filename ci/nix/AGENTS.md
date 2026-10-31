@@ -4,7 +4,7 @@ Read the [repository guidelines](../../AGENTS.md) first.
 
 ## Scope
 
-Covers `ci/nix/` and `.forgejo/workflows/nix.yml`.
+Covers `ci/nix/` and `.github/workflows/nix.yml`.
 
 ## Rules
 
@@ -23,7 +23,7 @@ Run from the repository root:
 ```sh
 podman run --rm --network=none \
   -v "$PWD:/workspace:ro" -w /workspace \
-  codeberg.org/nathawat/howdy-next/ci-nix:2.35.3-1 bash -c '
+  ghcr.io/nathawatc/ci-nix:2.35.3-1 bash -c '
     set -e
     bash ci/nix/check-prebuilt.sh
     nix flake check --offline --no-update-lock-file --no-build --all-systems

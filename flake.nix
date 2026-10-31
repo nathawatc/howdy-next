@@ -116,7 +116,7 @@
 
           meta = {
             description = "C++ facial-recognition authentication for Linux";
-            homepage = "https://codeberg.org/nathawat/howdy-next";
+            homepage = "https://github.com/nathawatc/howdy-next";
             license = pkgs.lib.licenses.gpl3Plus;
             mainProgram = "howdy";
             platforms = systems;

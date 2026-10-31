@@ -20,5 +20,5 @@ RUN pacman -Syu --noconfirm --needed \
 		'yyjson>=0.12.0' \
 	&& pacman -Scc --noconfirm
 
-LABEL org.opencontainers.image.source="https://codeberg.org/nathawat/howdy-next" \
+LABEL org.opencontainers.image.source="https://github.com/nathawatc/howdy-next" \
 	  org.opencontainers.image.description="Howdy Next Arch Linux CI build image"

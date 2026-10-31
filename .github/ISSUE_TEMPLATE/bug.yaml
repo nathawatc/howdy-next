@@ -1,5 +1,5 @@
 name: Bug report
-about: Report a reproducible Howdy Next bug.
+description: Report a reproducible Howdy Next bug.
 title: "bug: "
 labels:
   - kind/bug

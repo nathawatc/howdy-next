@@ -2,11 +2,11 @@ blank_issues_enabled: true
 
 contact_links:
   - name: Troubleshooting wiki
-    url: https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting
+    url: https://github.com/nathawatc/howdy-next/wiki/Troubleshooting
     about: Common camera, model, PAM, configuration, and polkit problems.
   - name: PAM integration wiki
-    url: https://codeberg.org/nathawat/howdy-next/wiki/PAM-integration
+    url: https://github.com/nathawatc/howdy-next/wiki/PAM-integration
     about: PAM ordering and lock-screen guidance.
   - name: Polkit integration wiki
-    url: https://codeberg.org/nathawat/howdy-next/wiki/Polkit-integration
+    url: https://github.com/nathawatc/howdy-next/wiki/Polkit-integration
     about: Polkit 127+ sandbox compatibility notes.

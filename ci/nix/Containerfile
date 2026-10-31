@@ -24,5 +24,5 @@ RUN mkdir -p /etc/howdy-nix-ci /nix/var/nix/gcroots \
 ENV PATH="/nix/var/nix/gcroots/ci-runtime/bin:${PATH}"
 WORKDIR /
 
-LABEL org.opencontainers.image.source="https://codeberg.org/nathawat/howdy-next" \
+LABEL org.opencontainers.image.source="https://github.com/nathawatc/howdy-next" \
 		org.opencontainers.image.description="Howdy Next Nix CI build image"

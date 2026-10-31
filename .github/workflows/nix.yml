@@ -6,9 +6,9 @@ on:
 
 jobs:
   build:
-    runs-on: codeberg-medium
+    runs-on: ubuntu-latest
     container:
-      image: codeberg.org/nathawat/howdy-next/ci-nix:2.35.3-1
+      image: ghcr.io/nathawatc/ci-nix:2.35.3-1
 
     steps:
       - uses: actions/checkout@v7

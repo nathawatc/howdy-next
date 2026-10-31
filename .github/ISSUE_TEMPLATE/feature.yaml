@@ -1,5 +1,5 @@
 name: Feature request
-about: Propose a new Howdy Next feature or behavior change.
+description: Propose a new Howdy Next feature or behavior change.
 title: "feat: "
 labels:
   - kind/feature

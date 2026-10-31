@@ -4,7 +4,7 @@ project(
  howdy
  VERSION 3.4.2
  DESCRIPTION "Modern C++ facial authentication on Linux"
- HOMEPAGE_URL "https://codeberg.org/nathawat/howdy-next"
+ HOMEPAGE_URL "https://github.com/nathawatc/howdy-next"
  LANGUAGES CXX
 )
 

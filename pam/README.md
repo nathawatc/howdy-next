@@ -36,5 +36,5 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for build and contribution guidance.
 
 See `pam_howdy(8)` for module syntax, options, and workaround modes.
 
-See the [PAM Integration wiki page](https://codeberg.org/nathawat/howdy-next/wiki/PAM-Integration)
+See the [PAM Integration wiki page](https://github.com/nathawatc/howdy-next/wiki/PAM-Integration)
 for service ordering, lock-screen setup, and troubleshooting.

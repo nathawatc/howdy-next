@@ -11,7 +11,7 @@
 
 ```sh
 podman build \
-  -t codeberg.org/nathawat/howdy-next/ci-archlinux:latest \
+  -t ghcr.io/nathawatc/ci-archlinux:latest \
   -f ci/archlinux/Containerfile .
 ```
 
@@ -19,7 +19,7 @@ podman build \
 
 ```sh
 podman build --pull=always --no-cache \
-  -t codeberg.org/nathawat/howdy-next/ci-archlinux:latest \
+  -t ghcr.io/nathawatc/ci-archlinux:latest \
   -f ci/archlinux/Containerfile .
 ```
 
@@ -29,18 +29,18 @@ podman build --pull=always --no-cache \
 podman push \
 	--compression-format=zstd \
 	--compression-level=20 \
-	codeberg.org/nathawat/howdy-next/ci-archlinux:latest
+	ghcr.io/nathawatc/ci-archlinux:latest
 ```
 
 ## Nix
 
-The image tag follows `<nix-version>-<revision>` and must match `.forgejo/workflows/nix.yml`.
+The image tag follows `<nix-version>-<revision>` and must match `.github/workflows/nix.yml`.
 
 ### Build Using Cache
 
 ```sh
 podman build \
-  -t codeberg.org/nathawat/howdy-next/ci-nix:<nix-version>-<revision> \
+  -t ghcr.io/nathawatc/ci-nix:<nix-version>-<revision> \
   -f ci/nix/Containerfile .
 ```
 
@@ -48,7 +48,7 @@ podman build \
 
 ```sh
 podman build --pull=always --no-cache \
-  -t codeberg.org/nathawat/howdy-next/ci-nix:<nix-version>-<revision> \
+  -t ghcr.io/nathawatc/ci-nix:<nix-version>-<revision> \
   -f ci/nix/Containerfile .
 ```
 
@@ -58,7 +58,7 @@ podman build --pull=always --no-cache \
 podman push \
 	--compression-format=zstd \
 	--compression-level=20 \
-	codeberg.org/nathawat/howdy-next/ci-nix:<nix-version>-<revision>
+	ghcr.io/nathawatc/ci-nix:<nix-version>-<revision>
 ```
 
-Authenticate with `podman login codeberg.org` before pushing if needed.
+Authenticate with `podman login ghcr.io` before pushing if needed.

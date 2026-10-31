@@ -37,7 +37,7 @@ nix build
 nix develop
 ```
 
-See the [wiki](https://codeberg.org/nathawat/howdy-next/wiki/NixOS) for installation, setup, and PAM configuration.
+See the [wiki](https://github.com/nathawatc/howdy-next/wiki/NixOS) for installation, setup, and PAM configuration.
 
 ## Build from Source
 
@@ -113,7 +113,7 @@ See `pam_howdy(8)` for PAM configuration and workaround modes.
 
 Errors print to console. Check `journalctl -b -t pam_howdy` if auth fails quietly.
 
-See [wiki](https://codeberg.org/nathawat/howdy-next/wiki/Troubleshooting) for
+See [wiki](https://github.com/nathawatc/howdy-next/wiki/Troubleshooting) for
 common issues.
 
 > [!WARNING]
