@@ -375,12 +375,14 @@ auto main() -> int {
 	ok &= ExpectPollEintrWithAbortFailsClosed();
 	ok &= ExpectReadEintrRetriesAndAcceptsInput();
 	ok &= ExpectReadEintrWithAbortFailsClosed();
-	ok &= ExpectReadZeroRetriesAndAcceptsInput();
+	ok &= ExpectReadZeroAbortsPrompt();
 	ok &= ExpectReadEagainRetriesAndAcceptsInput();
 	ok &= ExpectReadEagainWithAbortFailsClosed();
 	ok &= ExpectRestoreEintrRetriesAndRestores();
 	ok &= ExpectNativeMessageStyles();
 	ok &= ExpectNativePromptInputEdges();
+	ok &= ExpectKernelLineEditing();
+	ok &= ExpectAbortDuringStoppedOutputDoesNotHang();
 	ok &= ExpectOversizedPromptFailsClosed();
 	ok &= ExpectRestoreFailureFailsClosed();
 	ok &= ExpectPromptExceptionRestoresTerminalAndRecordsRestoreFailure();

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <span>
 
 #include <poll.h>
 #include <termios.h>
@@ -93,13 +94,14 @@ private:
 	[[nodiscard]] auto WriteMessageLine(const struct pam_message &message) const -> int;
 	auto PromptInput(const struct pam_message &message, char **response, bool hide_input,
 	                 std::size_t *response_length = nullptr) -> int;
-	auto ReadPromptPassword(howdy::pam::native_prompt_input::SensitiveBuffer &password,
+	auto ReadPromptPassword(const struct termios                             &terminal,
+	                        howdy::pam::native_prompt_input::SensitiveBuffer &password,
 	                        bool &response_too_long) -> bool;
 	auto PollPrompt(std::array<struct pollfd, 2> &fds) const -> int;
-	auto ReadPromptChar(char *ch) const -> ssize_t;
-	auto PollPromptState(std::array<struct pollfd, 2> &fds) -> PromptIoResult;
-	auto ReadPromptState(char *ch) -> PromptIoResult;
-	auto WaitForPromptCharacter(char *ch) -> PromptIoResult;
+	[[nodiscard]] auto ReadPromptChunk(std::span<char> buffer) const -> ssize_t;
+	auto               PollPromptState(std::array<struct pollfd, 2> &fds) -> PromptIoResult;
+	auto ReadPromptState(std::span<char> buffer, std::size_t *count) -> PromptIoResult;
+	auto WaitForPromptInput(std::span<char> buffer, std::size_t *count) -> PromptIoResult;
 	[[nodiscard]] auto RestorePromptTerminal(const struct termios &original_termios) const -> bool;
 	void               RetainUnsafeDispatchContext() noexcept;
 

@@ -53,6 +53,24 @@ unavailable in that case. The native mode does not silently fall back to input
 injection when terminal setup or conversation installation fails; it disables the
 workaround and uses the normal PAM conversation instead.
 .PP
+The native prompt reads the line from
+.B PAM_TTY
+in canonical mode, so the terminal's own editing characters (erase, kill, word
+erase) work as configured by
+.BR stty (1),
+also when the caller left the terminal in raw mode. Literal next is disabled.
+The interrupt or suspend character, or end-of-file on an empty line, cancel the
+prompt at once; the quit character cancels it when the line is entered. A
+cancelled prompt discards the partly typed line. The native prompt reads only
+.BR PAM_TTY ,
+so a password piped to standard input (for example
+.BR "sudo -S" )
+is ignored while native handling is active; use the default mode for such
+services. If the process is killed while the prompt is shown, the terminal keeps
+the prompt settings (no echo, signal characters off); run
+.B stty sane
+to recover.
+.PP
 .B workaround=native-input
 tries native handling first. If native handling is unavailable or cannot be
 installed, it falls back to the input behavior described above. If native handling

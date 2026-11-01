@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -23,6 +24,7 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <string.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -98,8 +100,9 @@ namespace {
 	}
 
 	// The tty is O_NONBLOCK (so a stolen byte cannot park read() past an abort); wait for output
-	// room instead of failing the prompt on EAGAIN.
-	auto WriteAll(int fd, std::string_view text) -> bool {
+	// room instead of failing the prompt on EAGAIN, but give up once an abort is requested (^S
+	// can stop output indefinitely).
+	auto WriteAll(int fd, std::string_view text, const std::atomic<bool> &abort_requested) -> bool {
 		while (!text.empty()) {
 			const ssize_t written = howdy::native::RetryOnEintr([&] -> ssize_t {
 				return write(fd, text.data(), text.size());
@@ -108,7 +111,8 @@ namespace {
 				text.remove_prefix(static_cast<std::size_t>(written));
 				continue;
 			}
-			if (written == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+			if (written == 0 || (errno != EAGAIN && errno != EWOULDBLOCK) ||
+			    abort_requested.load()) {
 				return false;
 			}
 			struct pollfd out{.fd = fd, .events = POLLOUT, .revents = 0};
@@ -121,9 +125,56 @@ namespace {
 		return true;
 	}
 
-	auto WriteNewline(int fd) -> void {
-		(void)WriteAll(fd, "\n");
+	auto PromptTermios(const termios &original_termios, bool hide_input) -> termios {
+		// Canonical mode leaves line editing (erase, kill, word erase, EOF, IUTF8) to the kernel
+		// with the user's stty characters, as getpass-style prompts do. ICRNL, IEXTEN and
+		// OPOST/ONLCR are forced so a raw-mode caller gets the same Enter, editing and output.
+		// ISIG stays off so ^C cannot kill the caller with the terminal unrestored; VEOL/VEOL2 end
+		// the line on ^C and ^Z so ProcessCharacter aborts at once. Literal next is off, so every
+		// '\n' ends a line and no signal character can hide in the password.
+		struct termios prompt_termios = original_termios;
+		prompt_termios.c_iflag |= ICRNL;
+		prompt_termios.c_iflag &= static_cast<tcflag_t>(~INLCR);
+		prompt_termios.c_oflag |= OPOST;
+		prompt_termios.c_oflag |= ONLCR;
+		prompt_termios.c_lflag |= ICANON;
+		prompt_termios.c_lflag |= IEXTEN;
+		prompt_termios.c_lflag &= static_cast<tcflag_t>(~ISIG);
+		prompt_termios.c_cc[VLNEXT] = _POSIX_VDISABLE;
+		// shortcut: ^\ has no slot left and aborts only on Enter, and a user-set eol/eol2 is
+		// replaced while the prompt is shown; fine while both are rare.
+		prompt_termios.c_cc[VEOL]  = original_termios.c_cc[VINTR];
+		prompt_termios.c_cc[VEOL2] = original_termios.c_cc[VSUSP];
+		if (hide_input) {
+			prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHO);
+			prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHONL);
+		} else {
+			prompt_termios.c_lflag |= ECHO;
+		}
+		return prompt_termios;
 	}
+
+	// One read() into this holds a whole line: n_tty caps a canonical line at N_TTY_BUF_SIZE.
+	// Erased on every exit path, exceptions included.
+	class TtyLine {
+	public:
+		TtyLine()                                    = default;
+		TtyLine(const TtyLine &)                     = delete;
+		auto operator=(const TtyLine &) -> TtyLine & = delete;
+		TtyLine(TtyLine &&)                          = delete;
+		auto operator=(TtyLine &&) -> TtyLine &      = delete;
+
+		~TtyLine() {
+			explicit_bzero(bytes_.data(), bytes_.size());
+		}
+
+		[[nodiscard]] auto Bytes() -> std::span<char> {
+			return bytes_;
+		}
+
+	private:
+		std::array<char, 4096> bytes_{};
+	};
 
 	void DrainAbortPipe(int fd) {
 		std::array<char, 32> buffer{};
@@ -440,12 +491,11 @@ auto NativePromptConversation::WriteMessageLine(const struct pam_message &messag
 		return PAM_CONV_ERR;
 	}
 
-	const std::string text = message.msg == nullptr ? "" : message.msg;
-	if (!WriteAll(tty_fd_.Get(), text)) {
+	std::string text = message.msg == nullptr ? "" : message.msg;
+	text += '\n';
+	if (!WriteAll(tty_fd_.Get(), text, abort_requested_)) {
 		return PAM_CONV_ERR;
 	}
-
-	WriteNewline(tty_fd_.Get());
 	return PAM_SUCCESS;
 }
 
@@ -462,8 +512,9 @@ auto NativePromptConversation::PollPrompt(std::array<struct pollfd, 2> &fds) con
 	                               kAbortPollTimeoutMs);
 }
 
-auto NativePromptConversation::ReadPromptChar(char *ch) const -> ssize_t {
-	return operations_.read_prompt(operations_.context, tty_fd_.Get(), ch, 1);
+auto NativePromptConversation::ReadPromptChunk(std::span<char> buffer) const -> ssize_t {
+	return operations_.read_prompt(operations_.context, tty_fd_.Get(), buffer.data(),
+	                               buffer.size());
 }
 
 auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds)
@@ -493,18 +544,25 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 			   : PromptIoResult::kReady;
 }
 
-auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
-	const ssize_t bytes_read = ReadPromptChar(ch);
+auto NativePromptConversation::ReadPromptState(std::span<char> buffer, std::size_t *count)
+    -> PromptIoResult {
+	const ssize_t bytes_read = ReadPromptChunk(buffer);
 	if (bytes_read < 0) {
-		// EAGAIN: another reader took the byte after poll(); go back to poll() so abort is seen.
+		// EAGAIN: another reader took the line after poll(); go back to poll() so abort is seen.
 		const bool transient = errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
 		return transient && !abort_requested_.load() ? PromptIoResult::kRetry
 		                                             : PromptIoResult::kAbort;
 	}
-	return bytes_read == 0 ? PromptIoResult::kRetry : PromptIoResult::kReady;
+	// Canonical mode: 0 is EOF (^D on an empty line) or hangup, as for getpass().
+	if (bytes_read == 0) {
+		return PromptIoResult::kAbort;
+	}
+	*count = static_cast<std::size_t>(bytes_read);
+	return PromptIoResult::kReady;
 }
 
-auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResult {
+auto NativePromptConversation::WaitForPromptInput(std::span<char> buffer, std::size_t *count)
+    -> PromptIoResult {
 	std::array<struct pollfd, 2> fds{
 	    {
 	        {.fd = tty_fd_.Get(), .events = POLLIN, .revents = 0},
@@ -519,7 +577,7 @@ auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResul
 		if (poll_result == PromptIoResult::kRetry) {
 			continue;
 		}
-		const auto read_result = ReadPromptState(ch);
+		const auto read_result = ReadPromptState(buffer, count);
 		if (read_result != PromptIoResult::kRetry) {
 			return read_result;
 		}
@@ -527,20 +585,28 @@ auto NativePromptConversation::WaitForPromptCharacter(char *ch) -> PromptIoResul
 }
 
 auto NativePromptConversation::ReadPromptPassword(
-    howdy::pam::native_prompt_input::SensitiveBuffer &password, bool &response_too_long) -> bool {
+    const struct termios &terminal, howdy::pam::native_prompt_input::SensitiveBuffer &password,
+    bool &response_too_long) -> bool {
+	// One read() takes the whole line; reading byte by byte would see a mid-line EOF marker as
+	// end of file on pre-5.12 kernels.
+	TtyLine line;
 	while (true) {
-		char ch = '\0';
-		if (WaitForPromptCharacter(&ch) == PromptIoResult::kAbort) {
+		std::size_t count = 0;
+		if (WaitForPromptInput(line.Bytes(), &count) == PromptIoResult::kAbort) {
 			return false;
 		}
 
-		const auto character_result =
-		    howdy::pam::native_prompt_input::ProcessCharacter(ch, password, response_too_long);
-		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kComplete) {
-			return true;
-		}
-		if (character_result == howdy::pam::native_prompt_input::CharacterResult::kAbort) {
-			return false;
+		// shortcut: a raw-mode caller's typeahead arrives as one pushed line; bytes after a '\r'
+		// in it are discarded and an echo-on prompt then lacks its newline. Rare; fail-safe.
+		for (const char ch : line.Bytes().first(count)) {
+			const auto character_result = howdy::pam::native_prompt_input::ProcessCharacter(
+			    ch, terminal, password, response_too_long);
+			if (character_result == howdy::pam::native_prompt_input::CharacterResult::kComplete) {
+				return true;
+			}
+			if (character_result == howdy::pam::native_prompt_input::CharacterResult::kAbort) {
+				return false;
+			}
 		}
 	}
 }
@@ -559,42 +625,57 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		return PAM_CONV_ERR;
 	}
 
-	struct termios prompt_termios = original_termios;
-	prompt_termios.c_lflag &= static_cast<tcflag_t>(~ICANON);
-	prompt_termios.c_lflag &= static_cast<tcflag_t>(~ISIG);
-	if (hide_input) {
-		prompt_termios.c_lflag &= static_cast<tcflag_t>(~ECHO);
-	} else {
-		prompt_termios.c_lflag |= ECHO;
-	}
-	prompt_termios.c_cc[VMIN]  = 1;
-	prompt_termios.c_cc[VTIME] = 0;
+	const struct termios prompt_termios = PromptTermios(original_termios, hide_input);
 	if (tcsetattr(tty_fd_.Get(), TCSANOW, &prompt_termios) != 0) {
 		return PAM_CONV_ERR;
 	}
 
 	class PromptTerminalGuard {
 	public:
-		PromptTerminalGuard(NativePromptConversation *owner,
-		                    const struct termios     *original) noexcept
+		PromptTerminalGuard(NativePromptConversation *owner, const struct termios *original,
+		                    bool echo) noexcept
 		    : owner_(owner)
-		    , original_(original) {}
+		    , original_(original)
+		    , echo_(echo) {}
 
 		PromptTerminalGuard(const PromptTerminalGuard &)                     = delete;
 		auto operator=(const PromptTerminalGuard &) -> PromptTerminalGuard & = delete;
 		PromptTerminalGuard(PromptTerminalGuard &&)                          = delete;
 		auto operator=(PromptTerminalGuard &&) -> PromptTerminalGuard &      = delete;
 
+		void MarkPromptShown() noexcept {
+			prompt_shown_ = true;
+		}
+
+		void MarkLineRead() noexcept {
+			line_read_ = true;
+		}
+
 		[[nodiscard]] auto Restore() -> bool {
 			if (owner_ == nullptr) {
 				return true;
 			}
-			auto      *owner    = std::exchange(owner_, nullptr);
+			auto *owner = std::exchange(owner_, nullptr);
+			// Drop a half-typed secret so it cannot reach the next reader of the terminal: before
+			// the restore (a non-canonical original would make it readable) and after it (keys
+			// typed in between). Typeahead is kept when the prompt was never shown.
+			const bool discard_input = prompt_shown_ && !line_read_;
+			if (discard_input) {
+				(void)tcflush(owner->tty_fd_.Get(), TCIFLUSH);
+			}
+			// Before the restore, while ONLCR is forced. With echo on, the kernel already echoed
+			// the newline that ended the line.
+			// After a face-match abort, output stopped with ^S (IXON) must not hang cleanup.
+			if (!line_read_ || !echo_) {
+				(void)WriteAll(owner->tty_fd_.Get(), "\n", owner->abort_requested_);
+			}
 			const bool restored = owner->RestorePromptTerminal(*original_);
 			if (!restored) {
 				owner->terminal_restore_failed_.store(true);
 			}
-			WriteNewline(owner->tty_fd_.Get());
+			if (discard_input) {
+				(void)tcflush(owner->tty_fd_.Get(), TCIFLUSH);
+			}
 			return restored;
 		}
 
@@ -603,19 +684,26 @@ auto NativePromptConversation::PromptInput(const struct pam_message &message, ch
 		}
 
 	private:
-		NativePromptConversation *owner_    = nullptr;
-		const struct termios     *original_ = nullptr;
-	} terminal_guard{this, &original_termios};
+		NativePromptConversation *owner_        = nullptr;
+		const struct termios     *original_     = nullptr;
+		bool                      echo_         = false;
+		bool                      prompt_shown_ = false;
+		bool                      line_read_    = false;
+	} terminal_guard{this, &original_termios, !hide_input};
 
 	const std::string prompt_text = message.msg == nullptr ? "" : message.msg;
-	if (!WriteAll(tty_fd_.Get(), prompt_text)) {
+	if (!WriteAll(tty_fd_.Get(), prompt_text, abort_requested_)) {
 		return PAM_CONV_ERR;
 	}
+	terminal_guard.MarkPromptShown();
 
 	howdy::pam::native_prompt_input::SensitiveBuffer password;
 	bool                                             response_too_long = false;
-	if (!ReadPromptPassword(password, response_too_long) || !terminal_guard.Restore() ||
-	    response_too_long) {
+	if (!ReadPromptPassword(original_termios, password, response_too_long)) {
+		return PAM_CONV_ERR;
+	}
+	terminal_guard.MarkLineRead();
+	if (!terminal_guard.Restore() || response_too_long) {
 		return PAM_CONV_ERR;
 	}
 
