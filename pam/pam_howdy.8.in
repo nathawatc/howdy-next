@@ -146,6 +146,19 @@ PAM consumers that run authentication as the regular user use the installed
 .B howdy-auth-helper
 setuid helper to prepare temporary root-controlled runtime copies of the
 protected config and enrolled model before recognition.
+.PP
+.B abort_if_ssh
+is a convenience, not a security boundary. It detects SSH only through the
+.BR SSH_CONNECTION ,
+.BR SSH_CLIENT ,
+.BR SSH_TTY ,
+and
+.B SSHD_OPTS
+environment variables, which the caller controls. A user logged in over SSH can
+unset them before running
+.BR sudo (8)
+and get a face check on the local camera. Do not rely on it to keep remote
+users from authenticating with the face of whoever sits at the machine.
 .SH FILES
 .TP
 .I @HOWDY_CONFIG_PATH_ROFF@
