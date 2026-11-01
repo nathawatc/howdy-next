@@ -441,12 +441,6 @@ namespace howdy::test::config_cli {
 				             "edited temp config exactly at size limit is read");
 				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid() + 1, &snapshot),
 				             "edited temp config owned by another user is rejected");
-				const fs::path extra_link = copy->path.string() + ".link";
-				ok &= Expect(link(copy->path.c_str(), extra_link.c_str()) == 0,
-				             "create extra hard link to edited temp config");
-				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot),
-				             "hard-linked edited temp config is rejected");
-				fs::remove(extra_link, error);
 				ok &=
 				    Expect(WriteFile(copy->path, over_limit), "write oversized edited temp config");
 				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot),

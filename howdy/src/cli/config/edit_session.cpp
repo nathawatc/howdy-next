@@ -339,10 +339,9 @@ namespace howdy::native::config_internal {
 		}
 
 		struct stat edited_stat{};
-		// The invoking user controls the temp path; refuse links to files root can read.
+		// The invoking user controls the temp path; a hard link to a root-owned file fails here.
 		const bool edited_ok = fstat(input_fd.Get(), &edited_stat) == 0 &&
-		                       S_ISREG(edited_stat.st_mode) && edited_stat.st_nlink == 1 &&
-		                       edited_stat.st_uid == expected_owner;
+		                       S_ISREG(edited_stat.st_mode) && edited_stat.st_uid == expected_owner;
 		if (!edited_ok) {
 			return false;
 		}

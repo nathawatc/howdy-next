@@ -86,7 +86,7 @@ namespace howdy::native::config_internal {
 	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> std::optional<TempConfigCopy>;
 
-	// Rejects a temp file not owned by expected_owner or with extra hard links.
+	// Rejects a temp file that is not a regular file owned by expected_owner.
 	auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path, uid_t expected_owner,
 	                            std::string *content) -> bool;
 
