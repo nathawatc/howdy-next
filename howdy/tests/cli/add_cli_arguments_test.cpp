@@ -172,6 +172,27 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
+		auto LongCommandLabelStopsBeforeCapture() -> bool {
+			auto context = MakeSuccessContext();
+
+			const int at_limit = RunAdd(
+			    context, {.resolved_user = "alice", .positionals = {"abcdefghijklmnopqrstuvwx"}});
+			bool ok = true;
+			ok &= Expect(at_limit == 0, "24-byte command label is accepted");
+			ok &= Expect(context.appended_entry.label == "abcdefghijklmnopqrstuvwx",
+			             "24-byte command label is stored unchanged");
+
+			auto      long_context = MakeSuccessContext();
+			const int too_long =
+			    RunAdd(long_context,
+				       {.resolved_user = "alice", .positionals = {"abcdefghijklmnopqrstuvwxy"}});
+			ok &= Expect(too_long == 1, "25-byte command label returns 1");
+			ok &= Expect(long_context.load_calls == 0, "long label skips config load");
+			ok &= Expect(long_context.capture_calls == 0, "long label skips camera capture");
+			ok &= Expect(long_context.append_calls == 0, "long label skips storage mutation");
+			return ok;
+		}
+
 		auto InteractiveLabelTruncatesTo24Characters() -> bool {
 			auto                     context = MakeSuccessContext();
 			std::istringstream const input("abcdefghijklmnopqrstuvwxyz\n");
@@ -186,6 +207,22 @@ namespace howdy::test::add_cli {
 			             "capture receives truncated interactive label");
 			ok &= Expect(context.appended_entry.label == "abcdefghijklmnopqrstuvwx",
 			             "append receives truncated interactive label");
+			return ok;
+		}
+
+		auto InteractiveLabelTruncatesOnUtf8Boundary() -> bool {
+			auto context = MakeSuccessContext();
+			// 23 ASCII bytes, then a 3-byte Thai character that straddles the 24-byte limit.
+			std::istringstream const input("abcdefghijklmnopqrstuvw\xE0\xB8\x81z\n");
+			std::ostringstream const output;
+			StreamRedirect const     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+
+			const int result = RunAdd(context, {.resolved_user = "alice"});
+
+			bool ok = true;
+			ok &= Expect(result == 0, "multibyte interactive label add returns 0");
+			ok &= Expect(context.appended_entry.label == "abcdefghijklmnopqrstuvw",
+			             "interactive label is cut before a split UTF-8 character");
 			return ok;
 		}
 
@@ -223,7 +260,9 @@ namespace howdy::test::add_cli {
 		ok &= YesFlagSkipsLabelPrompt();
 		ok &= CommandLabelPreservesCsvCharacters();
 		ok &= InvalidLabelStopsBeforeCapture();
+		ok &= LongCommandLabelStopsBeforeCapture();
 		ok &= InteractiveLabelTruncatesTo24Characters();
+		ok &= InteractiveLabelTruncatesOnUtf8Boundary();
 		ok &= AppendFailureReturnsError();
 		return ok;
 	}

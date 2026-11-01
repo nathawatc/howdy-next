@@ -8,6 +8,8 @@
 #include "storage/user_model_types.hpp"
 #include "vision/face_model.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -16,6 +18,8 @@ namespace {
 
 	constexpr auto kAddExitOk    = 0;
 	constexpr auto kAddExitAbort = 1;
+	// Command-line labels over this are rejected; typed labels are cut to it.
+	constexpr std::size_t kMaxLabelBytes = 24;
 
 	struct AddArgs {
 		std::string user;
@@ -74,6 +78,10 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 		std::cerr << "Invalid model label\n";
 		return kAddExitAbort;
 	}
+	if (args.label.size() > kMaxLabelBytes) {
+		std::cerr << "Model label is too long (maximum " << kMaxLabelBytes << " bytes)\n";
+		return kAddExitAbort;
+	}
 
 	auto config_result = dependencies.load_runtime_config(dependencies.context);
 	if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
@@ -107,7 +115,13 @@ auto howdy::native::add_internal::AddMainWithDependencies(
 		std::string input;
 		std::getline(std::cin, input);
 		if (!input.empty()) {
-			label = input.substr(0, 24);
+			// Cut on a UTF-8 code point boundary so a long multibyte label stays valid.
+			std::size_t cut = std::min(input.size(), kMaxLabelBytes);
+			while (cut > 0 && cut < input.size() &&
+			       howdy::native::user_model_label_detail::IsUtf8Continuation(input.at(cut))) {
+				--cut;
+			}
+			label = input.substr(0, cut);
 		}
 	}
 	if (!howdy::native::IsValidModelLabel(label)) {
