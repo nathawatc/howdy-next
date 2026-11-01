@@ -215,9 +215,29 @@ auto main() -> int {
 	}
 
 	{
-		const auto match = CheckMatch({{0.0F, 2.0F}}, {0.0F, 0.0F}, FaceMetric::kL2Norm, 2.0F);
-		ok &= Expect(match.score == 2.0F, "l2norm threshold boundary has exact score");
+		const auto match = CheckMatch({{0.0F, 2.0F}}, {3.0F, 0.0F}, FaceMetric::kL2Norm,
+		                              std::numbers::sqrt2_v<float>);
+		ok &= Expect(match.score == std::numbers::sqrt2_v<float>,
+		             "l2norm threshold boundary has exact score");
 		ok &= Expect(match.accepted, "l2norm threshold boundary is accepted");
+	}
+
+	{
+		const auto normalized = CheckMatch({{1.0F, 2.0F}}, {3.0F, 6.0F}, FaceMetric::kL2Norm, 0.0F);
+		ok &= Expect(normalized.index == 0 && normalized.score == 0.0F && normalized.accepted,
+		             "l2norm ignores embedding length");
+		const auto raw = CheckMatch({{1.0F, 2.0F}}, {3.0F, 6.0F}, FaceMetric::kL2, 0.0F);
+		ok &= Expect(raw.index == 0 && raw.score > 0.0F && !raw.accepted,
+		             "l2 keeps embedding length");
+	}
+
+	{
+		const auto match = CheckMatch({{0.0F, 2.0F}}, {0.0F, 0.0F}, FaceMetric::kL2Norm, 4.0F);
+		ok &= Expect(match.index == -1 && !match.accepted, "zero l2norm probe is rejected");
+		const auto zero_candidate =
+		    CheckMatch({{0.0F, 0.0F}, {0.0F, 2.0F}}, {0.0F, 1.0F}, FaceMetric::kL2Norm, 0.0F);
+		ok &= Expect(zero_candidate.index == 1 && zero_candidate.accepted,
+		             "zero l2norm candidate is skipped");
 	}
 
 	{
