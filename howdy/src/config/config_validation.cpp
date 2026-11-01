@@ -73,7 +73,6 @@ namespace howdy::native {
 			}
 			const auto *range   = std::get_if<config_schema::FloatRange>(&option.range);
 			const float minimum = range != nullptr ? range->minimum : 0.0F;
-			const float maximum = range != nullptr ? range->maximum : 0.0F;
 
 			if (option.special_rule == config_schema::SpecialRule::kSfaceThreshold) {
 				const auto &metric_option =
@@ -95,10 +94,10 @@ namespace howdy::native {
 				}
 				const float policy_max = policy->threshold_maximum;
 				if (*parsed < minimum || *parsed > policy_max) {
-					const auto *const range_rule = policy->threshold_maximum == maximum
-					                                   ? "expected range 0..4"
-					                                   : "expected range 0..1";
-					return InvalidConfigValueMessage(option.key, value, range_rule);
+					const auto maximum_text =
+					    config_schema::FormatFloatingPointValue(policy_max).value_or("");
+					return InvalidConfigValueMessage(option.key, value,
+					                                 "expected range 0.." + maximum_text);
 				}
 				return std::nullopt;
 			}

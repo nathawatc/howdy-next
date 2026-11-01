@@ -35,11 +35,12 @@ namespace howdy::native {
 	        .higher_score_is_better = false,
 	        .threshold_maximum      = 4.0F,
 	    },
+	    // Unit vectors are at most 2 apart, so a higher threshold would accept every face.
 	    FaceMetricPolicy{
 	        .metric                 = FaceMetric::kL2Norm,
 	        .spelling               = "l2norm",
 	        .higher_score_is_better = false,
-	        .threshold_maximum      = 4.0F,
+	        .threshold_maximum      = 2.0F,
 	    },
 	};
 

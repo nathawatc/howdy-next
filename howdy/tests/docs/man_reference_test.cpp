@@ -161,7 +161,7 @@ auto main() -> int {
 	ok &= Expect(config_result.output.contains("\n.br\n\\&Choices: \\fBcosine\\fR, l2, l2norm.\n"),
 	             "face sface_metric choices renders with bold fallback token on separate line");
 	ok &= Expect(config_result.output.contains(
-	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2 and l2norm.\n"),
+	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2, 0..2 for l2norm.\n"),
 	             "face sface_threshold metric-dependent range renders on separate line without "
 	             "default annotation");
 	ok &= Expect(config_result.output.contains(

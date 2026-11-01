@@ -374,13 +374,13 @@ auto main() -> int {
 		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
 	    "l2 threshold above maximum keeps validation message");
 	ok &= Expect(Validates(temp_root / "l2norm-threshold-max.ini",
-	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 4\n"),
+	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 2\n"),
 	             "normalized l2norm threshold maximum is valid");
 	ok &= Expect(
 	    RejectsExact(temp_root / "l2norm-threshold-over.ini",
-		             "[face]\nsface_metric = L2NORM\nsface_threshold = 4.001\n",
-		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
-	    "normalized l2norm threshold above maximum keeps validation message");
+		             "[face]\nsface_metric = L2NORM\nsface_threshold = 2.001\n",
+		             "Invalid config value for sface_threshold=\"2.001\": expected range 0..2"),
+	    "l2norm threshold above unit-vector distance bound is rejected");
 
 	for (const auto *const metric : {"cosine", "COSINE", "l2", "L2", "l2norm", "L2NORM"}) {
 		ok &= Expect(Validates(temp_root / (std::string("metric-") + metric + ".ini"),
