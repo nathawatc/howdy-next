@@ -22,7 +22,6 @@ namespace howdy::native {
 		kNoModel,
 		kNoModelDirectory,
 		kIncompatibleBackend,
-		kIncompatibleMetric,
 		kIncompatibleModel,
 		kParseError,
 		kInvalidShape,

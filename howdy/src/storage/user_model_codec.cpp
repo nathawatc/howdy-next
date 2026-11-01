@@ -151,10 +151,9 @@ namespace howdy::native::user_model_codec {
 	auto Document::operator=(Document &&) noexcept -> Document & = default;
 
 	auto DecodeDocument(std::string_view input, const std::string &expected_backend,
-	                    std::optional<FaceMetric> expected_metric,
 	                    const std::string &expected_model, bool strict_shape) -> Document {
-		auto decoded = user_model_codec_internal::DecodeDocumentJson(
-		    input, expected_backend, expected_metric, expected_model, strict_shape);
+		auto decoded = user_model_codec_internal::DecodeDocumentJson(input, expected_backend,
+		                                                             expected_model, strict_shape);
 		if (decoded.doc == nullptr) {
 			return Document(std::move(decoded.result));
 		}

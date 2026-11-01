@@ -76,16 +76,10 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ValidateCompatibility(const UserModelEntry &entry, const std::string &expected_backend,
-		                           const std::optional<FaceMetric> &expected_metric,
 		                           const std::string &expected_model) -> UserModelListResult {
 			if (!expected_backend.empty() && !entry.backend.empty() &&
 			    entry.backend != expected_backend) {
 				return Failure(UserModelStatus::kIncompatibleBackend,
-				               kStoredModelsIncompatibleMessage);
-			}
-			if (expected_metric.has_value() && entry.metric.has_value() &&
-			    *entry.metric != *expected_metric) {
-				return Failure(UserModelStatus::kIncompatibleMetric,
 				               kStoredModelsIncompatibleMessage);
 			}
 			if (!expected_model.empty() && !entry.model.empty() && entry.model != expected_model) {
@@ -310,7 +304,6 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ParseModelEntry(yyjson_val *model, const std::string &expected_backend,
-		                     const std::optional<FaceMetric> &expected_metric,
 		                     const std::string &expected_model, bool strict_shape)
 		    -> EntryParseResult {
 			if (!yyjson_is_obj(model)) {
@@ -375,7 +368,7 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 			if (const auto compatibility =
-			        ValidateCompatibility(entry, expected_backend, expected_metric, expected_model);
+			        ValidateCompatibility(entry, expected_backend, expected_model);
 			    compatibility.status != UserModelStatus::kOk) {
 				return EntryParseResult{.result = compatibility};
 			}
@@ -422,7 +415,6 @@ namespace howdy::native::user_model_codec_internal {
 		}
 
 		auto ParseEntries(yyjson_val *models, const std::string &expected_backend,
-		                  const std::optional<FaceMetric> &expected_metric,
 		                  const std::string &expected_model, bool strict_shape)
 		    -> UserModelListResult {
 			if (!yyjson_is_arr(models)) {
@@ -444,8 +436,8 @@ namespace howdy::native::user_model_codec_internal {
 			size_t              count = 0;
 			yyjson_val         *model = nullptr;
 			yyjson_arr_foreach(models, index, count, model) {
-				auto parsed = ParseModelEntry(model, expected_backend, expected_metric,
-				                              expected_model, strict_shape);
+				auto parsed =
+				    ParseModelEntry(model, expected_backend, expected_model, strict_shape);
 				if (parsed.result.status != UserModelStatus::kOk) {
 					return parsed.result;
 				}
@@ -471,7 +463,6 @@ namespace howdy::native::user_model_codec_internal {
 	}  // namespace
 
 	auto DecodeDocumentJson(std::string_view input, const std::string &expected_backend,
-	                        std::optional<FaceMetric> expected_metric,
 	                        const std::string &expected_model, bool strict_shape)
 	    -> DecodedDocumentJson {
 		yyjson_doc *parsed = yyjson_read(input.data(), input.size(), YYJSON_READ_ALLOW_BOM);
@@ -493,7 +484,7 @@ namespace howdy::native::user_model_codec_internal {
 				};
 			}
 			auto result = ParseEntries(yyjson_doc_get_root(parsed), expected_backend,
-			                           expected_metric, expected_model, strict_shape);
+			                           expected_model, strict_shape);
 			return DecodedDocumentJson{
 			    .result = std::move(result),
 			    .doc    = parsed_owner.release(),

@@ -197,7 +197,6 @@ namespace {
 		    std::pair{UserModelStatus::kNoModel, ModelCondition::kMissingModel},
 		    std::pair{UserModelStatus::kNoModelDirectory, ModelCondition::kMissingModel},
 		    std::pair{UserModelStatus::kIncompatibleBackend, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kIncompatibleMetric, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kIncompatibleModel, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kParseError, ModelCondition::kInvalidStorage},
 		    std::pair{UserModelStatus::kInvalidShape, ModelCondition::kInvalidStorage},

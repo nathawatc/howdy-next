@@ -125,13 +125,11 @@ namespace howdy::test::user_models {
 				});
 				clear_paused.wait();
 				const auto during_clear = howdy::native::ListUserModelEntries(
-				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx",
-				    {temp_root});
+				    "alice", backend, "sface.onnx", {temp_root});
 				allow_clear.count_down();
 				clearer.join();
 				const auto after_clear = howdy::native::ListUserModelEntries(
-				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx",
-				    {temp_root});
+				    "alice", backend, "sface.onnx", {temp_root});
 				ok &= Expect(during_clear.status == howdy::native::UserModelStatus::kOk &&
 				                 !during_clear.entries.empty(),
 				             "reader during clear observes original model document");
@@ -291,16 +289,23 @@ namespace howdy::test::user_models {
 			expect_invalid_append(incompatible_backend,
 			                      howdy::native::UserModelStatus::kIncompatibleBackend,
 			                      "append rejects incompatible backend");
-			auto incompatible_metric   = second_entry;
-			incompatible_metric.metric = howdy::native::FaceMetric::kL2;
-			expect_invalid_append(incompatible_metric,
-			                      howdy::native::UserModelStatus::kIncompatibleMetric,
-			                      "append rejects incompatible metric");
 			auto incompatible_model  = second_entry;
 			incompatible_model.model = "other.onnx";
 			expect_invalid_append(incompatible_model,
 			                      howdy::native::UserModelStatus::kIncompatibleModel,
 			                      "append rejects incompatible model");
+		}
+		{
+			// Stored embeddings are raw SFace output, so the metric only affects matching.
+			const auto original_content = ReadFile(model_path);
+			auto       other_metric     = second_entry;
+			other_metric.metric         = howdy::native::FaceMetric::kL2;
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", other_metric, {temp_root});
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
+			             "append accepts a different metric");
+			ok &= Expect(WriteFile(model_path, original_content),
+			             "restore model after different-metric append");
 		}
 		{
 			const auto original_content = ReadFile(model_path);
@@ -344,8 +349,8 @@ namespace howdy::test::user_models {
 			});
 			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
 			    "alice", first_entry_expectation, {temp_root});
-			const auto remaining = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto remaining =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
 			             "remove distinguishes committed parent-sync failure");
 			ok &= Expect(!result.removed_last &&
@@ -459,15 +464,15 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto before_parent_sync_failure = ReadFile(model_path);
-			const auto before                     = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto before =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 			    .fail_parent_sync = true,
 			});
 			const auto                                                    result =
 			    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-			const auto after = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto after =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kDurabilityUncertain,
 			             "append distinguishes committed parent-sync failure");
 			ok &= Expect(result.error_message.contains("verify state before retrying"),
@@ -481,17 +486,16 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto original_content = ReadFile(model_path);
-			const auto before           = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto before =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			{
 				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 				    .fail_write_cleanup = true,
 				});
 				const auto                                                    result =
 				    howdy::native::AppendUserModelEntry("alice", second_entry, {temp_root});
-				const auto after = howdy::native::ListUserModelEntries(
-				    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx",
-				    {temp_root});
+				const auto after = howdy::native::ListUserModelEntries("alice", backend,
+				                                                       "sface.onnx", {temp_root});
 				ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
 				             "append reports success after committed write with cleanup failure");
 				ok &= Expect(before.status == howdy::native::UserModelStatus::kOk &&
@@ -627,8 +631,8 @@ namespace howdy::test::user_models {
 			             "verified remove reports model changed when expected entry is missing");
 		}
 		{
-			const auto listing = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto listing =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified stale remove");
@@ -642,8 +646,8 @@ namespace howdy::test::user_models {
 			    howdy::native::RemoveUserModelEntryIfMatches("alice", expected, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
 			             "verified remove aborts when model entry changes after listing");
-			const auto after = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto after =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(after.status == howdy::native::UserModelStatus::kOk &&
 			                 after.entries.size() == 2 && after.entries.at(0).label == "changed",
 			             "stale verified remove leaves changed model entry");
@@ -654,8 +658,8 @@ namespace howdy::test::user_models {
 		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
 		    "restore unchanged entries before verified remove");
 		{
-			const auto listing = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto listing =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2,
 			             "list entries before verified remove");
@@ -668,7 +672,7 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.entry.id == 0 && result.entry.label == "first",
 			             "verified remove returns actual removed entry");
 			const auto remaining =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "verified remove preserves other model entries");
 		}
@@ -694,7 +698,7 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.entry.id == 0 && result.entry.label == "first",
 			             "remove returns actual removed entry");
 			const auto remaining =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "remove preserves other model entries");
 			const auto persisted = ReadFile(model_path);

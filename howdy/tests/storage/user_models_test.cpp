@@ -39,8 +39,7 @@ namespace howdy::test::user_models {
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);
 		ok &= ExpectReadinessChecks(temp_root);
 		{
-			const auto result =
-			    howdy::native::ListUserModelEntries("alice", {}, {}, {}, {temp_root});
+			const auto result = howdy::native::ListUserModelEntries("alice", {}, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kNoModelDirectory,
 			             "missing model directory returns kNoModelDirectory");
 		}
@@ -209,7 +208,7 @@ namespace howdy::test::user_models {
 		    symlink(model_path.c_str(), model_path.c_str()) == 0,
 		    [&] -> void {
 			    const auto result =
-			        howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			        howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			    ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath,
 				             "self-referential model symlink is rejected");
 			    ok &= Expect(unlink(model_path.c_str()) == 0,
@@ -330,7 +329,7 @@ namespace howdy::test::user_models {
 		ok &= Expect(WriteFile(model_path, R"({"id":1})"), "write wrong top-level JSON shape");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects wrong top-level JSON shape");
 		}
@@ -348,7 +347,7 @@ namespace howdy::test::user_models {
 		    "write negative ID model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects negative model IDs");
 		}
@@ -360,7 +359,7 @@ namespace howdy::test::user_models {
 		    "write duplicate ID models");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects duplicate model IDs");
 		}
@@ -372,7 +371,7 @@ namespace howdy::test::user_models {
 		    "write non-integer ID model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-integer model IDs");
 		}
@@ -384,7 +383,7 @@ namespace howdy::test::user_models {
 		    "write max-int ID model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects max-int model IDs");
 		}
@@ -396,7 +395,7 @@ namespace howdy::test::user_models {
 		    "write non-integer timestamp model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-integer timestamps");
 		}
@@ -408,7 +407,7 @@ namespace howdy::test::user_models {
 		    "write non-string label model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-string labels");
 		}
@@ -420,7 +419,7 @@ namespace howdy::test::user_models {
 		    "write non-numeric encoding value model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects non-numeric encoding values");
 		}
@@ -432,7 +431,7 @@ namespace howdy::test::user_models {
 		    "write nested encoding array model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects nested encoding arrays");
 		}
@@ -444,7 +443,7 @@ namespace howdy::test::user_models {
 		    "write nested encoding object model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "lifecycle listing rejects nested encoding objects");
 		}
@@ -456,7 +455,7 @@ namespace howdy::test::user_models {
 		    "write non-finite encoding value model");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status != howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing rejects non-finite encoding values when representable");
 		}
@@ -465,16 +464,10 @@ namespace howdy::test::user_models {
 		    WriteFile(
 		        model_path,
 		        R"([{"id":1,"label":"bad","backend":"opencv_dnn_sface","metric":"l2","model":"sface.onnx","data":[[0.1]]}])"),
-		    "write incompatible metric model");
+		    "write model stored under a different metric");
 		{
-			const auto result = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kIncompatibleMetric,
-			             "lifecycle listing rejects incompatible metric");
-		}
-		{
-			const auto result = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kL2, "other.onnx", {temp_root});
+			const auto result =
+			    howdy::native::ListUserModelEntries("alice", backend, "other.onnx", {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kIncompatibleModel,
 			             "lifecycle listing rejects incompatible model metadata");
 		}
@@ -486,7 +479,7 @@ namespace howdy::test::user_models {
 		ok &= Expect(WriteFile(model_path, oversized_json), "write oversized model JSON");
 		{
 			const auto result =
-			    howdy::native::ListUserModelEntries("alice", backend, {}, {}, {temp_root});
+			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOversized,
 			             "lifecycle listing rejects oversized model JSON");
 		}
@@ -636,8 +629,8 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.entry.id == 11, "append returns actual created model ID");
 			ok &= Expect(result.entry.label == "Model #11",
 			             "append default label matches actual created model ID");
-			const auto listing = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto listing =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(listing.status == howdy::native::UserModelStatus::kOk &&
 			                 listing.entries.size() == 2 && listing.entries.at(1).id == 11 &&
 			                 listing.entries.at(1).label == "Model #11",

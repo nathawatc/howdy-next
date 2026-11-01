@@ -41,7 +41,6 @@ namespace howdy::native::user_model_codec {
 		Document(UserModelListResult result, std::unique_ptr<Impl> impl);
 
 		friend auto DecodeDocument(std::string_view input, const std::string &expected_backend,
-		                           std::optional<FaceMetric> expected_metric,
 		                           const std::string &expected_model, bool strict_shape)
 		    -> Document;
 		friend auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool;
@@ -51,7 +50,6 @@ namespace howdy::native::user_model_codec {
 	};
 
 	auto DecodeDocument(std::string_view input, const std::string &expected_backend,
-	                    std::optional<FaceMetric> expected_metric,
 	                    const std::string &expected_model, bool strict_shape = true) -> Document;
 	auto AppendEntry(Document &document, const UserModelEntry &entry) -> bool;
 	auto EraseEntry(Document &document, std::size_t index) -> bool;
@@ -75,8 +73,7 @@ namespace howdy::native::user_model_codec_internal {
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	DecodeDocumentJson(std::string_view input, const std::string &expected_backend,
-	                   std::optional<FaceMetric> expected_metric, const std::string &expected_model,
-	                   bool strict_shape) -> DecodedDocumentJson;
+	                   const std::string &expected_model, bool strict_shape) -> DecodedDocumentJson;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	HasDuplicateDirectKey(yyjson_val *model) -> bool;

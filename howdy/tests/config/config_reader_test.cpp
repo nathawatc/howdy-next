@@ -343,6 +343,18 @@ auto main() -> int {
 	             "invalid frame height falls back");
 	ok &= Expect(howdy::native::ReadRuntimeInt(invalid, OptionId::kVideoDeviceFps) == 0,
 	             "invalid device fps falls back");
+	const auto wide_threshold_path = temp_root / "wide-threshold.ini";
+	ok &= Expect(WriteFile(wide_threshold_path, "[face]\nsface_threshold = 3\n"),
+	             "write threshold above the unit-vector distance bound");
+	howdy::native::ConfigReader const wide_threshold(wide_threshold_path.string());
+	ok &= Expect(
+	    Near(howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2),
+		     3.0F),
+	    "l2 keeps threshold of 3");
+	ok &= Expect(
+	    Near(howdy::native::ReadSfaceThreshold(wide_threshold, howdy::native::FaceMetric::kL2Norm),
+		     0.6942F),
+	    "l2norm falls back from a threshold above 2");
 	ok &= Expect(
 	    Near(howdy::native::ReadRuntimeFloat(invalid, OptionId::kFaceYunetScoreThreshold), 0.8845F),
 	    "invalid yunet score threshold falls back");

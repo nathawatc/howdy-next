@@ -76,10 +76,9 @@ namespace howdy::native {
 
 	private:
 		struct UserModelExpectations {
-			std::string               backend;
-			std::optional<FaceMetric> metric;
-			std::string               model;
-			bool                      strict_shape;
+			std::string backend;
+			std::string model;
+			bool        strict_shape;
 		};
 
 		struct UserModelPathResult {
@@ -111,10 +110,11 @@ namespace howdy::native {
 		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
 		                                                   std::string *message) -> UserModelStatus;
 
-		friend auto ListUserModelEntries(
-		    const std::string &user, const std::string &expected_backend,
-		    std::optional<FaceMetric> expected_metric, const std::string &expected_model,
-		    const file_security_internal::ValidationRoot &validation_root) -> UserModelListResult;
+		friend auto
+		ListUserModelEntries(const std::string &user, const std::string &expected_backend,
+		                     const std::string                            &expected_model,
+		                     const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelListResult;
 		friend auto
 		InspectUserModelFile(const std::string                            &user,
 		                     const file_security_internal::ValidationRoot &validation_root)

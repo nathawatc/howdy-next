@@ -49,7 +49,7 @@ namespace howdy::test::user_model_codec {
 
 	inline auto Decode(std::string_view content, bool strict_shape = true)
 	    -> howdy::native::user_model_codec::Document {
-		return howdy::native::user_model_codec::DecodeDocument(content, kBackend, kMetric, kModel,
+		return howdy::native::user_model_codec::DecodeDocument(content, kBackend, kModel,
 		                                                       strict_shape);
 	}
 

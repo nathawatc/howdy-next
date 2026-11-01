@@ -434,16 +434,17 @@ namespace howdy::test::config_cli {
 			ok &= Expect(copy.has_value() && copy->original_content == at_limit,
 			             "source config exactly at size limit is copied");
 			if (copy.has_value()) {
+				using howdy::native::config_internal::ReadTempConfigSnapshot;
 				std::string snapshot;
-				ok &= Expect(
-				    howdy::native::config_internal::ReadTempConfigSnapshot(copy->path, &snapshot) &&
-				        snapshot == at_limit,
-				    "edited temp config exactly at size limit is read");
+				ok &= Expect(ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot) &&
+				                 snapshot == at_limit,
+				             "edited temp config exactly at size limit is read");
+				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid() + 1, &snapshot),
+				             "edited temp config owned by another user is rejected");
 				ok &=
 				    Expect(WriteFile(copy->path, over_limit), "write oversized edited temp config");
-				ok &= Expect(
-				    !howdy::native::config_internal::ReadTempConfigSnapshot(copy->path, &snapshot),
-				    "oversized edited temp config is rejected");
+				ok &= Expect(!ReadTempConfigSnapshot(copy->path, geteuid(), &snapshot),
+				             "oversized edited temp config is rejected");
 				fs::remove(copy->path, error);
 			}
 

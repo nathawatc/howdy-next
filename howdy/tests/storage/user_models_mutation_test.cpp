@@ -392,8 +392,8 @@ namespace howdy::test::user_models {
 		             "append adds second model entry");
 		ok &= Expect(second_append.entry.id == 1, "append allocates next model ID");
 		{
-			const auto result = howdy::native::ListUserModelEntries(
-			    "alice", backend, howdy::native::FaceMetric::kCosine, "sface.onnx", {temp_root});
+			const auto result =
+			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
 			             "lifecycle listing loads appended entries");
 			ok &= Expect(result.entries.size() == 2, "append preserves existing entries");

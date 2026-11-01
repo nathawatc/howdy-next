@@ -21,14 +21,6 @@ namespace howdy::test::user_model_codec {
 		        .Result()
 		        .status,
 		    UserModelStatus::kIncompatibleBackend, "backend mismatch returns kIncompatibleBackend");
-		ok &= ExpectStatus(Decode(ModelList({
-		                              ModelJson("7", "1700000000", R"("Office camera")",
-									            R"("opencv_dnn_sface")", R"("l2")"),
-		                          }))
-		                       .Result()
-		                       .status,
-		                   UserModelStatus::kIncompatibleMetric,
-		                   "metric mismatch returns kIncompatibleMetric");
 		ok &= ExpectStatus(
 		    Decode(ModelList({
 		               ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
