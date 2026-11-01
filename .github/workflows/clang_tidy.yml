@@ -1,0 +1,39 @@
+name: Clang Tidy
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tidy:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/nathawatc/howdy-next/ci-archlinux:latest
+
+    steps:
+      # Depth 2 keeps HEAD^1 available: on pull_request HEAD is the merge commit
+      # and HEAD^1 is the base branch tip, so the diff is exactly the PR change.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      # Tidy only needs compile_commands.json and generated headers, not objects.
+      - name: Configure
+        run: |
+          cmake --preset debug
+          cmake --build --preset debug --target howdy_version_metadata
+
+      # The container user does not own the checkout, so git refuses the repo
+      # ("dubious ownership") and `git diff` falls back to --no-index mode.
+      - name: Trust workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Tidy changed code
+        run: cmake -DBUILD_DIR=build/debug -DBASE=HEAD^1 -P cmake/tidy_incremental.cmake

@@ -4,6 +4,8 @@ RUN pacman -Syu --noconfirm --needed \
 		'glibc>=2.36' \
 		'cmake>=3.31' \
 		acl \
+		ccache \
+		'clang>=23' \
 		curl \
 		gcc \
 		gettext \

@@ -103,7 +103,7 @@ Format C/C++ with `.clang-format`:
 git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
 ```
 
-Static analysis before submit:
+Static analysis before submit (CI runs the same script on pull requests):
 
 ```sh
 cmake -DBUILD_DIR=build/debug -P "cmake/tidy_incremental.cmake"

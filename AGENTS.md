@@ -70,9 +70,10 @@ settings, LLVM 22 can emit no-op replacements and report false formatting violat
 `clang-format -i` produces no byte changes. Verify formatting by running `clang-format -i` and
 checking `git diff`, or by comparing formatter stdout with the source file.
 
-CI does not run `clang-tidy`. For changed code, run `cmake/tidy_incremental.cmake` against
-`build/debug` (`build/release` enables `_FORTIFY_SOURCE=3`, which triggers known
-`android-cloexec-open` false positives on 3-argument `open` calls).
+CI runs `clang-tidy` on pull requests through `cmake/tidy_incremental.cmake` against `build/debug`
+(see [`ci/archlinux/AGENTS.md`](ci/archlinux/AGENTS.md)). For changed code, run the same script
+locally before pushing. Do not use `build/release` (it enables `_FORTIFY_SOURCE=3`, which triggers
+known `android-cloexec-open` false positives on 3-argument `open` calls).
 
 ## Security
 

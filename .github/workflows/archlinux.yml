@@ -1,11 +1,18 @@
 name: Arch Linux build and test
 
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+
+env:
+  CCACHE_DIR: /tmp/ccache
+  CCACHE_MAXSIZE: 500M
+  CCACHE_COMPRESS: "1"
 
 jobs:
   build:
@@ -16,6 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Pull requests restore main's cache but never save their own, so they
+      # cannot evict it from the repository cache quota.
+      - name: Restore ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-archlinux-${{ github.sha }}
+          restore-keys: ccache-archlinux-
+
       - name: Configure
         run: cmake --preset release -DHOWDY_WARNINGS_AS_ERRORS=ON
 
@@ -24,3 +40,14 @@ jobs:
 
       - name: Test
         run: ctest --preset release
+
+      - name: Show ccache statistics
+        if: always()
+        run: ccache --show-stats
+
+      - name: Save ccache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-archlinux-${{ github.sha }}
