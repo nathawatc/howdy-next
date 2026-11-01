@@ -26,7 +26,7 @@ namespace howdy::native::auth_helper::runtime_internal {
 	struct __attribute__((visibility("hidden"))) Slot {
 		std::filesystem::path path;
 		UniqueFd              lock_fd;
-		UniqueFd              dir_fd;
+		UniqueFd              dir_fd;  // invalid until the slot directory is first built
 	};
 
 	using SlotSet = std::array<std::optional<Slot>, 2>;
@@ -65,7 +65,7 @@ namespace howdy::native::auth_helper::runtime_internal {
 	    -> std::optional<PreparedPaths>;
 
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
-	RefreshAvailableSlot(SlotSet &slots, const SourceFile &config_source,
+	RefreshAvailableSlot(int root_fd, SlotSet &slots, const SourceFile &config_source,
 	                     const std::optional<SourceFile> &model_source, const std::string &user,
 	                     internal::StagedIdentity identity, const AclOperations &operations)
 	    -> std::optional<PreparedPaths>;
