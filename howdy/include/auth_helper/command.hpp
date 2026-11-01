@@ -14,12 +14,11 @@ namespace howdy::native::auth_helper::command {
 	// the caller of the setuid helper controls.
 	__attribute__((visibility("hidden"))) void SyslogDiagnosticLines(std::string_view text);
 	// PAM reads helper stdout and stderr as one stream and rejects any line it does not expect, so
-	// diagnostics written while `operation` runs reach stderr only when it fails or throws, and
-	// go to `report_success` when it succeeds.
+	// diagnostics written while `operation` runs reach stderr only when it fails or throws. Each
+	// line also goes to `log` as soon as it is written, so it survives PAM killing the helper.
 	__attribute__((visibility("hidden"))) auto RunWithQuietDiagnostics(
 	    const std::function<bool()>                 &operation,
-	    const std::function<void(std::string_view)> &report_success = SyslogDiagnosticLines)
-	    -> bool;
+	    const std::function<void(std::string_view)> &log = SyslogDiagnosticLines) -> bool;
 	__attribute__((visibility("hidden"))) auto PrepareForUser(const std::string &user) -> int;
 	__attribute__((visibility("hidden"))) auto Run(int argc, char **argv) -> int;
 

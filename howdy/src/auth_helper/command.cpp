@@ -99,9 +99,8 @@ namespace howdy::native::auth_helper::command {
 	}
 
 	auto RunWithQuietDiagnostics(const std::function<bool()>                 &operation,
-	                             const std::function<void(std::string_view)> &report_success)
-	    -> bool {
-		ScopedStreamCapture capture(std::cerr);
+	                             const std::function<void(std::string_view)> &log) -> bool {
+		ScopedStreamCapture capture(std::cerr, log);
 		bool                succeeded = false;
 		try {
 			succeeded = operation();
@@ -110,9 +109,7 @@ namespace howdy::native::auth_helper::command {
 			throw;
 		}
 		const auto diagnostics = capture.Release();
-		if (succeeded) {
-			report_success(diagnostics);
-		} else {
+		if (!succeeded) {
 			std::cerr << diagnostics;
 		}
 		return succeeded;

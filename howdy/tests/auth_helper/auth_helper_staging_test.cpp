@@ -616,6 +616,48 @@ namespace {
 		return ok;
 	}
 
+	// Fails only on files, so a rebuild creates its side directory and then fails while writing.
+	auto FailingFileAclSet(void *context, int fd, acl_t acl) -> int {
+		struct stat stat{};
+		if (fstat(fd, &stat) == 0 && S_ISDIR(stat.st_mode)) {
+			return acl_set_fd(fd, acl);
+		}
+		return FailingAclSet(context, fd, acl);
+	}
+
+	// A rebuild that fails the damaged slot in place and no side directory behind, so the
+	// next run can rebuild it.
+	auto ExpectFailedRebuildCleanedUp(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                  const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		bool ok      = true;
+		auto fixture = MakeFixture(temp_root, "failed-rebuild", target_uid);
+		auto slot0   = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
+		ok &= Expect(slot0.has_value(), "creates failed-rebuild fixture");
+		CloseLease(slot0);
+		if (!fixture.has_value() || !slot0.has_value()) {
+			return false;
+		}
+		const auto slot_inode = InodeOf(slot0->runtime_dir);
+		const auto build = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationBuildPath(
+		    slot0->runtime_dir);
+		std::error_code ec;
+		std::filesystem::remove(slot0->config_path, ec);
+		auto failing       = operations;
+		failing.acl_set_fd = FailingFileAclSet;
+		std::string replayed;
+		const auto  failed = PrepareQuiet(*fixture, failing, replayed);
+		ok &= Expect(!ec && !failed.has_value() && InodeOf(slot0->runtime_dir) == slot_inode &&
+		                 !std::filesystem::exists(build) && !replayed.empty(),
+		             "failed rebuild keeps the damaged slot and removes its side directory");
+		auto rebuilt = Prepare(*fixture, operations);
+		ok &= Expect(rebuilt.has_value() && rebuilt->runtime_dir == slot0->runtime_dir &&
+		                 ReadFile(rebuilt->config_path) == "config-v1\n",
+		             "the next run rebuilds the slot");
+		CloseLease(rebuilt);
+		return ok;
+	}
+
 	// A build interrupted by a kill leaves only its side directory behind: the next rebuild
 	// removes it first.
 	auto
@@ -937,6 +979,7 @@ auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
 	ok &= ExpectPartialSlotRebuilt(temp_root, target_uid, context.operations);
 	ok &= ExpectInterruptedBuildCleanedUp(temp_root, target_uid, context.operations);
 	ok &= ExpectFailedWriteNotRebuilt(temp_root, target_uid, context.operations);
+	ok &= ExpectFailedRebuildCleanedUp(temp_root, target_uid, context.operations);
 	ok &= ExpectMalformedSlotDiscovery(temp_root, target_uid, context.operations);
 	ok &= ExpectCreationIdentityRestored(temp_root, target_uid, context.operations);
 	ok &= ExpectDamagedObjectsRebuilt(temp_root, target_uid, context.operations);

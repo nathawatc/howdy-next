@@ -27,7 +27,6 @@
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <stdio.h>
 #include <unistd.h>
 
 #include <sys/file.h>
@@ -449,12 +448,14 @@ namespace howdy::native::auth_helper {
 				if (error_number == ENOENT) {
 					return true;
 				}
-				// A non-directory (or symlink) at the name is a leftover too; unlink the name.
-				if ((error_number == ENOTDIR || error_number == ELOOP) &&
-				    unlinkat(parent_fd, name.c_str(), 0) == 0) {
-					return true;
+				if (error_number != ENOTDIR && error_number != ELOOP) {
+					return LogSlotsErrnoFailure("open stale runtime directory", path, error_number);
 				}
-				return LogSlotsErrnoFailure("open stale runtime directory", path, error_number);
+				// A non-directory (or symlink) at the name is a leftover too; unlink the name.
+				if (unlinkat(parent_fd, name.c_str(), 0) != 0) {
+					return LogSlotsErrnoFailure("remove stale runtime object", path, errno);
+				}
+				return true;
 			}
 			const auto names = DirectoryEntries(directory.Get());
 			if (!names.has_value()) {
@@ -483,22 +484,16 @@ namespace howdy::native::auth_helper {
 
 		auto InstallSlotDirectory(int root_fd, const std::string &from, const std::string &to,
 		                          bool replacing) -> int {
+			// No plain renameat fallback: it would silently replace whatever is at the final name.
 #if defined(SYS_renameat2) && defined(RENAME_EXCHANGE) && defined(RENAME_NOREPLACE)
-			if (RetryOnEintr([&] -> decltype(syscall(0)) {
-				    return syscall(SYS_renameat2, root_fd, from.c_str(), root_fd, to.c_str(),
-					               replacing ? RENAME_EXCHANGE : RENAME_NOREPLACE);
-			    }) == 0) {
-				return 0;
-			}
+			return static_cast<int>(RetryOnEintr([&] -> decltype(syscall(0)) {
+				return syscall(SYS_renameat2, root_fd, from.c_str(), root_fd, to.c_str(),
+				               replacing ? RENAME_EXCHANGE : RENAME_NOREPLACE);
+			}));
 #else
 			errno = ENOSYS;
-#endif
-			// Without renameat2 a new slot is still installed with renameat: the allocation lock
-			// guarantees nothing exists at the final name. Replacing a slot needs the exchange.
-			if (!replacing && (errno == ENOSYS || errno == EINVAL)) {
-				return renameat(root_fd, from.c_str(), root_fd, to.c_str());
-			}
 			return -1;
+#endif
 		}
 
 		// Builds a complete slot in a side directory and swaps it into place, so a kill at any
@@ -525,28 +520,26 @@ namespace howdy::native::auth_helper {
 			// mkdirat fails with EEXIST and the build fails closed.
 			auto directory =
 			    CreateSlotDirectory(root_fd, build_name, build.path, identity, operations);
+			bool installed = false;
 			if (directory.has_value()) {
 				build.dir_fd = std::move(*directory);
+				installed    = WriteSlotContents(build, config_source, model_source, user, identity,
+				                                 operations, true) == SlotWrite::kWritten;
+				if (installed &&
+				    InstallSlotDirectory(root_fd, build_name, final_name, replacing) != 0) {
+					LogSlotsErrnoFailure("install rebuilt runtime slot", slot.path, errno);
+					installed = false;
+				}
 			}
-			if (!build.dir_fd.Valid() ||
-			    WriteSlotContents(build, config_source, model_source, user, identity, operations,
-			                      true) != SlotWrite::kWritten) {
-				build.dir_fd.Reset();
-				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
+			if (installed) {
+				slot.dir_fd = std::move(build.dir_fd);
+			}
+			// Removes the failed build, or the previous slot an exchange left at the side name.
+			// A failure here only leaves cleanup behind: OpenSlot removes it before the next build.
+			build.dir_fd.Reset();
+			(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
+			if (!installed) {
 				return false;
-			}
-			if (InstallSlotDirectory(root_fd, build_name, final_name, replacing) != 0) {
-				const int error_number = errno;
-				LogSlotsErrnoFailure("install rebuilt runtime slot", slot.path, error_number);
-				build.dir_fd.Reset();
-				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
-				return false;
-			}
-			// The rename committed the new slot, so later failures here only leave cleanup behind:
-			// the previous directory now at the side name is removed again before the next build.
-			slot.dir_fd = std::move(build.dir_fd);
-			if (replacing) {
-				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
 			}
 			if (!howdy::native::SyncFd(root_fd)) {
 				const int error_number = errno;

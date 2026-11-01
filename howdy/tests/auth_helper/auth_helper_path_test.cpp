@@ -68,32 +68,39 @@ namespace {
 			reported.clear();
 			ScopedStreamCapture outer(std::cerr);
 			try {
-				(void)RunWithQuietDiagnostics(operation, [&](std::string_view text) -> void {
-					reported = text;
+				(void)RunWithQuietDiagnostics(operation, [&](std::string_view line) -> void {
+					reported += std::string(line) + "|";
 				});
 			} catch (const std::runtime_error &) {
 				std::cerr << "[rethrown]";
 			}
 			return outer.Release();
 		};
-		ok &=
-		    Expect(run([] -> bool {
-			           std::cerr << "slot diagnostic\n";
-			           return true;
-		           }).empty() &&
-			           reported == "slot diagnostic\n",
-			       "diagnostics are reported, not written to stderr, when the operation succeeds");
 		ok &= Expect(run([] -> bool {
 			             std::cerr << "slot diagnostic\n";
-			             return false;
-		             }) == "slot diagnostic\n" &&
-		                 reported.empty(),
-		             "diagnostics reach stderr when the operation fails");
+			             return true;
+		             }).empty() &&
+		                 reported == "slot diagnostic|",
+		             "diagnostics are logged, not written to stderr, when the operation succeeds");
+		ok &= Expect(run([&] -> bool {
+			             std::cerr << "first\nsecond";
+			             const bool logged_live = reported == "first|";
+			             std::cerr << "\n";
+			             return !logged_live;
+		             }) == "first\nsecond\n" &&
+		                 reported == "first|second|",
+		             "each line is logged as it is written, before the operation returns");
+		ok &= Expect(run([] -> bool {
+			             std::cerr << "no newline";
+			             return true;
+		             }).empty() &&
+		                 reported == "no newline|",
+		             "a last line without a newline is still logged on success");
 		ok &= Expect(run([] -> bool {
 			             std::cerr << "slot diagnostic\n";
 			             throw std::runtime_error("prepare failed");
 		             }) == "slot diagnostic\n[rethrown]" &&
-		                 reported.empty(),
+		                 reported == "slot diagnostic|",
 		             "diagnostics reach stderr before an exception propagates");
 		return ok;
 	}
