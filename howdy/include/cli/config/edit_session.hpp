@@ -8,6 +8,8 @@
 #include <optional>
 #include <string>
 
+#include <sys/types.h>
+
 namespace howdy::native::config_internal {
 
 	struct TempConfigCopy {
@@ -84,8 +86,9 @@ namespace howdy::native::config_internal {
 	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> std::optional<TempConfigCopy>;
 
-	auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path, std::string *content)
-	    -> bool;
+	// Rejects a temp file not owned by expected_owner or with extra hard links.
+	auto ReadTempConfigSnapshot(const std::filesystem::path &temp_path, uid_t expected_owner,
+	                            std::string *content) -> bool;
 
 	auto FileContentMatches(const std::filesystem::path &path, const std::string &expected,
 	                        const file_security_internal::ValidationRoot &validation_root = {})

@@ -328,7 +328,8 @@ namespace howdy::native::config_internal {
 		};
 	}
 
-	auto ReadTempConfigSnapshot(const fs::path &temp_path, std::string *content) -> bool {
+	auto ReadTempConfigSnapshot(const fs::path &temp_path, uid_t expected_owner,
+	                            std::string *content) -> bool {
 		if (content == nullptr) {
 			return false;
 		}
@@ -338,8 +339,10 @@ namespace howdy::native::config_internal {
 		}
 
 		struct stat edited_stat{};
-		const bool  edited_ok =
-		    fstat(input_fd.Get(), &edited_stat) == 0 && S_ISREG(edited_stat.st_mode);
+		// The invoking user controls the temp path; refuse links to files root can read.
+		const bool edited_ok = fstat(input_fd.Get(), &edited_stat) == 0 &&
+		                       S_ISREG(edited_stat.st_mode) && edited_stat.st_nlink == 1 &&
+		                       edited_stat.st_uid == expected_owner;
 		if (!edited_ok) {
 			return false;
 		}
@@ -467,7 +470,8 @@ namespace howdy::native::config_internal {
 		}
 
 		std::string edited_content;
-		if (!ReadTempConfigSnapshot(temp_copy->path, &edited_content)) {
+		const uid_t temp_owner = invoking_user.has_value() ? invoking_user->uid : geteuid();
+		if (!ReadTempConfigSnapshot(temp_copy->path, temp_owner, &edited_content)) {
 			cleanup();
 			return result_base(ConfigEditStatus::kReadFailed);
 		}
