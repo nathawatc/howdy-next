@@ -16,8 +16,7 @@ namespace howdy::native::disable_internal {
 
 	using UpdateConfigValueFn = bool (*)(void *context, const std::filesystem::path &config_path,
 	                                     const std::string &key, const std::string &value,
-	                                     std::string *error_message, bool lock,
-	                                     bool validate_runtime);
+	                                     std::string *error_message, bool lock);
 
 	struct DisableDependencies {
 		void               *context             = nullptr;

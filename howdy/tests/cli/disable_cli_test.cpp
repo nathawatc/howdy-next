@@ -37,8 +37,7 @@ namespace {
 		std::filesystem::path   updater_path;
 		std::string             updater_key;
 		std::string             updater_value;
-		bool                    received_lock             = false;
-		bool                    received_validate_runtime = true;
+		bool                    received_lock = false;
 		RuntimeConfigLoadResult load_result;
 		bool                    updater_result = true;
 		std::string             updater_error;
@@ -76,15 +75,14 @@ namespace {
 
 	auto UpdateConfigValue(void *raw_context, const std::filesystem::path &config_path,
 	                       const std::string &key, const std::string &value,
-	                       std::string *error_message, bool lock, bool validate_runtime) -> bool {
+	                       std::string *error_message, bool lock) -> bool {
 		auto &context = *static_cast<TestContext *>(raw_context);
 		++context.updater_calls;
-		context.updater_path              = config_path;
-		context.updater_key               = key;
-		context.updater_value             = value;
-		context.received_lock             = lock;
-		context.received_validate_runtime = validate_runtime;
-		*error_message                    = context.updater_error;
+		context.updater_path  = config_path;
+		context.updater_key   = key;
+		context.updater_value = value;
+		context.received_lock = lock;
+		*error_message        = context.updater_error;
 		return context.updater_result;
 	}
 
@@ -128,7 +126,6 @@ namespace {
 		ok &= Expect(context.updater_key == "disabled", message + " passes key");
 		ok &= Expect(context.updater_value == value, message + " passes value");
 		ok &= Expect(context.received_lock, message + " enables lock");
-		ok &= Expect(!context.received_validate_runtime, message + " disables runtime validation");
 		return ok;
 	}
 

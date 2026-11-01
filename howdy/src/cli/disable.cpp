@@ -31,10 +31,9 @@ namespace {
 
 	auto UpdateConfigValueDependency(void *context, const std::filesystem::path &config_path,
 	                                 const std::string &key, const std::string &value,
-	                                 std::string *error_message, bool lock, bool validate_runtime)
-	    -> bool {
+	                                 std::string *error_message, bool lock) -> bool {
 		return howdy::native::UpdateConfigValue(
-		    config_path, key, error_message, value, lock, validate_runtime,
+		    config_path, key, error_message, value, lock, true,
 		    *static_cast<howdy::native::file_security_internal::ValidationRoot *>(context));
 	}
 
@@ -80,7 +79,7 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
 	std::string error_message;
 	if (!dependencies.update_config_value(dependencies.context, config_path,
 	                                      std::string(disabled_option.key), out_value,
-	                                      &error_message, true, false)) {
+	                                      &error_message, true)) {
 		std::cout << (error_message.empty() ? "Failed to update \"disabled\" config option"
 		                                    : error_message)
 		          << "\n";
