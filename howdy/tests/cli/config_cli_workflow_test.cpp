@@ -301,14 +301,16 @@ namespace howdy::test::config_cli {
 				// Only root can hand the file to another uid, as a hostile editor could.
 				TestDirectoryFixture const fixture;
 				TestContext                context;
-				context.on_editor = [](const fs::path &temp_path) -> void {
+				bool                       handed_over = false;
+				context.on_editor = [&handed_over](const fs::path &temp_path) -> void {
 					WriteFile(temp_path, kEditedContent);
-					(void)chown(temp_path.c_str(), geteuid() + 1, getegid());
+					handed_over = chown(temp_path.c_str(), geteuid() + 1, getegid()) == 0;
 				};
 				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
 				                                           fixture.ConfigPath().string());
 				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
 				const auto              result = session.Run({});
+				ok &= Expect(handed_over, "editor hands temp file to another uid");
 				ok &= Expect(result.status == ConfigEditStatus::kReadFailed,
 				             "edited temp file owned by another user is not read");
 				ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
