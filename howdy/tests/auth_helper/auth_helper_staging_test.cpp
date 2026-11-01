@@ -6,6 +6,7 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
+#include "support/scoped_stream_capture.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -143,6 +144,25 @@ namespace {
 		    "alice", fixture.identity, fixture.sources, operations);
 		std::filesystem::current_path(previous, ec);
 		return ec ? std::nullopt : std::move(result);
+	}
+
+	// Runs Prepare the way the helper does. PAM parses stderr together with stdout, so a
+	// successful run must leave stderr empty; `replayed` receives what reaches the real stderr.
+	auto PrepareQuiet(const Fixture                                   &fixture,
+	                  const howdy::native::auth_helper::AclOperations &operations,
+	                  std::string &replayed) -> std::optional<PreparedPaths> {
+		howdy::native::ScopedStreamCapture output(std::cerr);
+		std::optional<PreparedPaths>       result;
+		(void)howdy::native::auth_helper::command::RunWithQuietDiagnostics(
+		    [&] -> bool {
+			    result = Prepare(fixture, operations);
+			    return result.has_value();
+		    },
+		    [](std::string_view text) -> void {
+			    (void)text;
+		    });
+		replayed = output.Release();
+		return result;
 	}
 
 	auto ExpectProtocolPaths() -> bool {
@@ -617,8 +637,10 @@ namespace {
 			const auto lock_path  = PreparedRuntimeGenerationLockPath(lock_prepared->runtime_dir);
 			const auto lock_inode = InodeOf(lock_path);
 			ok &= Expect(chmod(lock_path.c_str(), 0644) == 0, "malforms lock mode");
-			auto        fallback = Prepare(*lock_fixture, operations);
+			std::string replayed;
+			auto        fallback = PrepareQuiet(*lock_fixture, operations, replayed);
 			struct stat lock_stat{};
+			ok &= Expect(replayed.empty(), "lock fallback leaves helper stderr empty");
 			ok &= Expect(
 			    fallback.has_value() && fallback->runtime_dir != lock_prepared->runtime_dir &&
 			        InodeOf(lock_path) == lock_inode && lstat(lock_path.c_str(), &lock_stat) == 0 &&
@@ -640,9 +662,11 @@ namespace {
 			const auto slot_inode = InodeOf(slot1);
 			ok &= Expect(chmod(slot0_lock.c_str(), 0644) == 0 && chmod(slot1.c_str(), 0700) == 0,
 			             "malforms both fixed slots");
-			auto const  result = Prepare(*both_fixture, operations);
+			std::string replayed;
+			auto const  result = PrepareQuiet(*both_fixture, operations, replayed);
 			struct stat lock_stat{};
 			struct stat slot_stat{};
+			ok &= Expect(!replayed.empty(), "failed preparation still reports diagnostics");
 			ok &= Expect(!result.has_value() && InodeOf(slot0_lock) == lock_inode &&
 			                 InodeOf(slot1) == slot_inode &&
 			                 lstat(slot0_lock.c_str(), &lock_stat) == 0 &&
@@ -676,8 +700,10 @@ namespace {
 		if (mode_prepared.has_value()) {
 			ok &= Expect(chmod(mode_prepared->config_path.c_str(), 0600) == 0,
 			             "malforms config mode");
-			auto        fallback = Prepare(*mode_fixture, operations);
+			std::string replayed;
+			auto        fallback = PrepareQuiet(*mode_fixture, operations, replayed);
 			struct stat damaged_stat{};
+			ok &= Expect(replayed.empty(), "config fallback leaves helper stderr empty");
 			ok &= Expect(fallback.has_value() &&
 			                 fallback->runtime_dir != mode_prepared->runtime_dir &&
 			                 lstat(mode_prepared->config_path.c_str(), &damaged_stat) == 0 &&
@@ -695,8 +721,10 @@ namespace {
 			const auto extra = temp_root / "unexpected-config-link";
 			ok &= Expect(link(link_prepared->config_path.c_str(), extra.c_str()) == 0,
 			             "adds unexpected config hard link");
-			auto        fallback = Prepare(*link_fixture, operations);
+			std::string replayed;
+			auto        fallback = PrepareQuiet(*link_fixture, operations, replayed);
 			struct stat damaged_stat{};
+			ok &= Expect(replayed.empty(), "extra-link fallback leaves helper stderr empty");
 			ok &= Expect(fallback.has_value() &&
 			                 fallback->runtime_dir != link_prepared->runtime_dir &&
 			                 lstat(link_prepared->config_path.c_str(), &damaged_stat) == 0 &&

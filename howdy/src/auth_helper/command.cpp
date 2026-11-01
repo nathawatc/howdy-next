@@ -4,12 +4,15 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "support/eintr.hpp"
 #include "support/passwd_lookup.hpp"
+#include "support/scoped_stream_capture.hpp"
 #include "support/user_names.hpp"
 
 #include <array>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -18,6 +21,7 @@
 
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syslog.h>
 #include <sys/types.h>
 #include <sys/uio.h>  // IWYU pragma: keep
 
@@ -70,6 +74,7 @@ namespace howdy::native::auth_helper::command {
 				       return sendmsg(transfer.socket_fd, &message, MSG_NOSIGNAL);
 			       }) == 1;
 		}
+
 	}  // namespace
 
 	auto PrintPreparedPaths(const std::filesystem::path &config_path,
@@ -78,6 +83,39 @@ namespace howdy::native::auth_helper::command {
 		using howdy::native::auth_helper_protocol::kUserModelsDirKey;
 		std::cout << kConfigPathKey << "=" << config_path.string() << "\n";
 		std::cout << kUserModelsDirKey << "=" << user_models_dir.string() << "\n";
+	}
+
+	void SyslogDiagnosticLines(std::string_view text) {
+		if (text.empty()) {
+			return;
+		}
+		openlog("howdy-auth-helper", LOG_PID, LOG_AUTHPRIV);
+		for (const auto line : std::views::split(text, '\n')) {
+			if (!line.empty()) {
+				syslog(LOG_WARNING, "%.*s", static_cast<int>(line.size()), line.data());
+			}
+		}
+		closelog();
+	}
+
+	auto RunWithQuietDiagnostics(const std::function<bool()>                 &operation,
+	                             const std::function<void(std::string_view)> &report_success)
+	    -> bool {
+		ScopedStreamCapture capture(std::cerr);
+		bool                succeeded = false;
+		try {
+			succeeded = operation();
+		} catch (...) {
+			std::cerr << capture.Release();
+			throw;
+		}
+		const auto diagnostics = capture.Release();
+		if (succeeded) {
+			report_success(diagnostics);
+		} else {
+			std::cerr << diagnostics;
+		}
+		return succeeded;
 	}
 
 	auto PrepareForUser(const std::string &user) -> int {
@@ -99,23 +137,29 @@ namespace howdy::native::auth_helper::command {
 			return Fail("howdy-auth-helper requires an inherited lease socket on descriptor 3");
 		}
 
-		auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(user, {.uid = uid});
-		if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
-			return 1;
-		}
-		if (!SendLease({
-		        .socket_fd = auth_helper_protocol::kLeaseSocketFd,
-		        .lease_fd  = prepared->lease_fd.Get(),
-		    })) {
+		const bool succeeded = RunWithQuietDiagnostics([&] -> bool {
+			auto prepared = howdy::native::auth_helper::PrepareRuntimeAuthFiles(user, {.uid = uid});
+			if (!prepared.has_value() || !prepared->lease_fd.Valid()) {
+				return false;
+			}
+			const bool sent = SendLease({
+			    .socket_fd = auth_helper_protocol::kLeaseSocketFd,
+			    .lease_fd  = prepared->lease_fd.Get(),
+			});
 			prepared->lease_fd.Reset();
-			return Fail("Failed to transfer runtime lease");
-		}
-		prepared->lease_fd.Reset();
-		PrintPreparedPaths(prepared->config_path, prepared->user_models_dir);
-		if (!std::cout.good()) {
-			return Fail("Failed to write prepared runtime paths");
-		}
-		return 0;
+			if (!sent) {
+				std::cerr << "Failed to transfer runtime lease\n";
+				return false;
+			}
+			PrintPreparedPaths(prepared->config_path, prepared->user_models_dir);
+			std::cout.flush();
+			if (!std::cout.good()) {
+				std::cerr << "Failed to write prepared runtime paths\n";
+				return false;
+			}
+			return true;
+		});
+		return succeeded ? 0 : 1;
 	}
 
 	auto Run(int argc, char **argv) -> int {
