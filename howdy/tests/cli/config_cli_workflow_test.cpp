@@ -456,14 +456,21 @@ namespace howdy::test::config_cli {
 				};
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(!context.recorded_temp_path.empty(), "stale temp path recorded");
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output == "Editing config.ini\n"
 				                                  "Config changed while editing; not installing "
-				                                  "stale edited config\n",
-				             "install failure output exact");
-				ok &= Expect(!context.recorded_temp_path.empty() &&
-				                 !fs::exists(context.recorded_temp_path),
-				             "install failure removes temp once");
+				                                  "stale edited config\n"
+				                                  "Edited config was kept: " +
+				                                      context.recorded_temp_path.string() + "\n",
+				             "stale output exact");
+				ok &= Expect(fs::exists(context.recorded_temp_path) &&
+				                 ReadFile(context.recorded_temp_path) == "[core]\nother = 1\n",
+				             "stale keeps edited temp");
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == "[core]\ndisabled = true\n",
+				             "stale leaves concurrent config");
+				std::error_code ec;
+				fs::remove(context.recorded_temp_path, ec);
 			}
 
 			{

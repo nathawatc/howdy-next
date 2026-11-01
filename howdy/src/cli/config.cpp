@@ -27,10 +27,13 @@ namespace {
 			}
 			std::cout << "Edited config is invalid and was not installed: "
 			          << result.temp_path.string() << "\n";
-		} else if (!result.error.empty()) {
-			std::cout << result.error << "\n";
-		} else {
-			std::cout << howdy::native::kEditedConfigInstallFailedMessage << '\n';
+			return;
+		}
+		std::cout << (result.error.empty() ? howdy::native::kEditedConfigInstallFailedMessage
+		                                   : result.error)
+		          << "\n";
+		if (!result.temp_path.empty()) {
+			std::cout << "Edited config was kept: " << result.temp_path.string() << "\n";
 		}
 	}
 

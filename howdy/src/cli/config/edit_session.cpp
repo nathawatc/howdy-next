@@ -489,12 +489,10 @@ namespace howdy::native::config_internal {
 		if (!howdy::native::ReplaceConfigContentAtomically(
 		        config_path, edited_content, &install_error, true, false,
 		        &temp_copy->original_content, SyncParentDirectory, dependencies_.validation_root)) {
-			cleanup();
-			const auto result_status =
-			    install_error == howdy::native::kStaleEditedConfigMessage ||
-			            install_error == "Config changed while editor was open"
-			        ? ConfigEditStatus::kConfigChanged
-			        : ConfigEditStatus::kInstallFailed;
+			// Keep the valid edits: the install was refused or may not be durable.
+			const auto result_status = install_error == howdy::native::kStaleEditedConfigMessage
+			                               ? ConfigEditStatus::kConfigChanged
+			                               : ConfigEditStatus::kInstallFailed;
 			return result_base(result_status, std::move(install_error));
 		}
 
