@@ -74,6 +74,20 @@ namespace howdy::native::auth_helper {
 			       fchown(fd, identity.owner_uid, identity.owner_gid) == 0;
 		}
 
+		// Opens `name` read-write; when `create` is set and it is missing, creates it 0600 with
+		// O_EXCL. `created` tells the caller it still has to apply owner and ACL.
+		auto OpenOrCreateFile(int dir_fd, const char *name, bool create, bool &created)
+		    -> runtime_internal::UniqueFd {
+			created    = false;
+			int raw_fd = openat(dir_fd, name, O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+			if (create && raw_fd < 0 && errno == ENOENT) {
+				raw_fd =
+				    openat(dir_fd, name, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+				created = raw_fd >= 0;
+			}
+			return runtime_internal::UniqueFd(raw_fd);
+		}
+
 		auto ApplyPrivateAcl(int fd, const std::filesystem::path &path, StagedIdentity identity,
 		                     StagedRuntimeRole role, const AclOperations &operations) -> bool {
 			const auto policy = GetStagedRuntimePolicy(role);
@@ -165,14 +179,8 @@ namespace howdy::native::auth_helper {
 		                    StagedIdentity identity, const AclOperations &operations, bool create)
 		    -> std::optional<runtime_internal::UniqueFd> {
 			bool created = false;
-			int  raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedConfigFileName,
-			                      O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-			if (create && raw_fd < 0 && errno == ENOENT) {
-				raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedConfigFileName,
-				                 O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-				created = raw_fd >= 0;
-			}
-			runtime_internal::UniqueFd fd(raw_fd);
+			auto fd      = OpenOrCreateFile(slot_fd, auth_helper_protocol::kPreparedConfigFileName,
+			                                create, created);
 			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
@@ -196,14 +204,8 @@ namespace howdy::native::auth_helper {
 		                      StagedIdentity identity, const AclOperations &operations, bool create)
 		    -> std::optional<runtime_internal::UniqueFd> {
 			bool created = false;
-			int  raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedModelBackingFileName,
-			                      O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-			if (create && raw_fd < 0 && errno == ENOENT) {
-				raw_fd  = openat(slot_fd, auth_helper_protocol::kPreparedModelBackingFileName,
-				                 O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-				created = raw_fd >= 0;
-			}
-			runtime_internal::UniqueFd fd(raw_fd);
+			auto fd = OpenOrCreateFile(slot_fd, auth_helper_protocol::kPreparedModelBackingFileName,
+			                           create, created);
 			if (fd.Get() < 0) {
 				return std::nullopt;
 			}
@@ -616,17 +618,27 @@ namespace howdy::native::auth_helper {
 
 		auto OpenOrCreateRoot(const std::filesystem::path &path, uid_t owner_uid, gid_t owner_gid)
 		    -> std::optional<UniqueFd> {
-			if (!internal::ValidateRuntimeRoot(path, owner_uid, owner_gid)) {
+			const auto policy  = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
+			const bool created = mkdir(path.c_str(), policy.mode) == 0;
+			if (!created && errno != EEXIST) {
+				LogSlotsErrnoFailure("create runtime directory", path, errno);
 				return std::nullopt;
 			}
 			UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
 			if (fd.Get() < 0) {
+				LogSlotsErrnoFailure("open runtime directory", path, errno);
+				return std::nullopt;
+			}
+			// Staging creates the root with umask 0 and the owner's group, so this is normally a
+			// no-op; it still corrects what a parent's setgid bit or default ACL imposes.
+			if (created && (fchown(fd.Get(), owner_uid, owner_gid) != 0 ||
+			                fchmod(fd.Get(), policy.mode) != 0)) {
 				return std::nullopt;
 			}
 			struct stat stat{};
-			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
 			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
 			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
+				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
 				return std::nullopt;
 			}
 			return fd;
@@ -637,13 +649,7 @@ namespace howdy::native::auth_helper {
 		                      const AclOperations &operations, bool create)
 		    -> std::optional<UniqueFd> {
 			bool created = false;
-			int  raw_fd  = openat(root_fd, name.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-			if (create && raw_fd < 0 && errno == ENOENT) {
-				raw_fd  = openat(root_fd, name.c_str(),
-				                 O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-				created = raw_fd >= 0;
-			}
-			UniqueFd fd(raw_fd);
+			auto fd      = OpenOrCreateFile(root_fd, name.c_str(), create, created);
 			if (fd.Get() < 0) {
 				LogSlotsErrnoFailure("open runtime lock", display_path, errno);
 				return std::nullopt;
@@ -742,29 +748,7 @@ namespace howdy::native::auth_helper {
 
 		auto ValidateRuntimeRoot(const std::filesystem::path &path, uid_t owner_uid,
 		                         gid_t owner_gid) -> bool {
-			const auto policy  = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
-			const bool created = mkdir(path.c_str(), policy.mode) == 0;
-			if (!created && errno != EEXIST) {
-				return LogSlotsErrnoFailure("create runtime directory", path, errno);
-			}
-			runtime_internal::UniqueFd const fd(
-			    open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.Get() < 0) {
-				return LogSlotsErrnoFailure("open runtime directory", path, errno);
-			}
-			// Staging creates the root with umask 0 and the owner's group, so this is normally a
-			// no-op; it still corrects what a parent's setgid bit or default ACL imposes.
-			if (created && (fchown(fd.Get(), owner_uid, owner_gid) != 0 ||
-			                fchmod(fd.Get(), policy.mode) != 0)) {
-				return false;
-			}
-			struct stat stat{};
-			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
-			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
-				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
-				return false;
-			}
-			return true;
+			return runtime_internal::OpenOrCreateRoot(path, owner_uid, owner_gid).has_value();
 		}
 
 	}  // namespace internal
