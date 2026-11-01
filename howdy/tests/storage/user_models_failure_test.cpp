@@ -291,16 +291,23 @@ namespace howdy::test::user_models {
 			expect_invalid_append(incompatible_backend,
 			                      howdy::native::UserModelStatus::kIncompatibleBackend,
 			                      "append rejects incompatible backend");
-			auto incompatible_metric   = second_entry;
-			incompatible_metric.metric = howdy::native::FaceMetric::kL2;
-			expect_invalid_append(incompatible_metric,
-			                      howdy::native::UserModelStatus::kIncompatibleMetric,
-			                      "append rejects incompatible metric");
 			auto incompatible_model  = second_entry;
 			incompatible_model.model = "other.onnx";
 			expect_invalid_append(incompatible_model,
 			                      howdy::native::UserModelStatus::kIncompatibleModel,
 			                      "append rejects incompatible model");
+		}
+		{
+			// Stored embeddings are raw SFace output, so the metric only affects matching.
+			const auto original_content = ReadFile(model_path);
+			auto       other_metric     = second_entry;
+			other_metric.metric         = howdy::native::FaceMetric::kL2;
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", other_metric, {temp_root});
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kOk,
+			             "append accepts a different metric");
+			ok &= Expect(WriteFile(model_path, original_content),
+			             "restore model after different-metric append");
 		}
 		{
 			const auto original_content = ReadFile(model_path);

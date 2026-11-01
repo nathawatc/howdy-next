@@ -209,10 +209,6 @@ namespace howdy::native {
 				return MutationFailure(UserModelStatus::kIncompatibleBackend,
 				                       kExistingModelsIncompatibleMessage);
 			}
-			if (entry.metric.has_value() && *entry.metric != new_entry.metric) {
-				return MutationFailure(UserModelStatus::kIncompatibleMetric,
-				                       kExistingModelsIncompatibleMessage);
-			}
 			if (!entry.model.empty() && entry.model != new_entry.model) {
 				return MutationFailure(UserModelStatus::kIncompatibleModel,
 				                       kExistingModelsIncompatibleMessage);

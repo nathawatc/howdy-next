@@ -44,7 +44,6 @@ namespace {
 
 	auto IsExistingModelIncompatibleStatus(howdy::native::UserModelStatus status) -> bool {
 		return status == howdy::native::UserModelStatus::kIncompatibleBackend ||
-		       status == howdy::native::UserModelStatus::kIncompatibleMetric ||
 		       status == howdy::native::UserModelStatus::kIncompatibleModel;
 	}
 
@@ -73,9 +72,9 @@ namespace {
 			};
 		}
 
-		const auto entries = howdy::native::ListUserModelEntries(
-		    user, howdy::native::FaceModel::kBackendName, face_model.Metric(),
-		    howdy::native::FaceModel::kSfaceModel);
+		const auto entries =
+		    howdy::native::ListUserModelEntries(user, howdy::native::FaceModel::kBackendName, {},
+			                                    howdy::native::FaceModel::kSfaceModel);
 		if (IsExistingModelIncompatibleStatus(entries.status)) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status =
