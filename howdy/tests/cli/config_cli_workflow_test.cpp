@@ -282,6 +282,41 @@ namespace howdy::test::config_cli {
 			return ok;
 		}
 
+		auto EditedTempOwnerIsChecked() -> bool {
+			bool ok = true;
+			{
+				// Without a privilege wrapper the editor runs as the current user.
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.invoking_identity = {
+				    .status = howdy::native::InvokingIdentityStatus::kNoWrapperIdentity,
+				};
+				const auto result =
+				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
+				ok &= Expect(result.exit_code == 0 &&
+				                 ReadFile(fixture.ConfigPath()) == kEditedContent,
+				             "edit without wrapper identity accepts file owned by current user");
+			}
+			if (geteuid() == 0) {
+				// Only root can hand the file to another uid, as a hostile editor could.
+				TestDirectoryFixture const fixture;
+				TestContext                context;
+				context.on_editor = [](const fs::path &temp_path) -> void {
+					WriteFile(temp_path, kEditedContent);
+					(void)chown(temp_path.c_str(), geteuid() + 1, getegid());
+				};
+				ScopedEnvironmentVariable const config_env("HOWDY_CONFIG",
+				                                           fixture.ConfigPath().string());
+				const ConfigEditSession session(DependenciesFor(context, fixture.TempRoot()));
+				const auto              result = session.Run({});
+				ok &= Expect(result.status == ConfigEditStatus::kReadFailed,
+				             "edited temp file owned by another user is not read");
+				ok &= Expect(ReadFile(fixture.ConfigPath()) == kWorkflowOriginalContent,
+				             "config stays unchanged after owner mismatch");
+			}
+			return ok;
+		}
+
 		auto EditorExecutionFailures() -> bool {
 			bool ok = true;
 			{
@@ -464,6 +499,7 @@ namespace howdy::test::config_cli {
 		ok &= InvokingIdentityFailuresAbortEdit();
 		ok &= EditorSelectionAndSecurityWorkflow();
 		ok &= EditorExecutionFailures();
+		ok &= EditedTempOwnerIsChecked();
 		ok &= InvalidEditPreservesTempFile();
 		ok &= SuccessfulAndUnchangedWorkflows();
 		return ok;
