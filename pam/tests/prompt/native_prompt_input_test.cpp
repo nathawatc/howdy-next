@@ -34,6 +34,7 @@ namespace {
 		int                       poll_eintr_count    = 0;
 		int                       read_eintr_count    = 0;
 		int                       read_zero_count     = 0;
+		int                       read_eagain_count   = 0;
 		int                       restore_eintr_count = 0;
 		bool                      abort_on_poll       = false;
 		bool                      abort_on_read       = false;
@@ -65,6 +66,14 @@ namespace {
 				operations.conversation->RequestAbort();
 			}
 			errno = EINTR;
+			return -1;
+		}
+		if (operations.read_eagain_count > 0) {
+			--operations.read_eagain_count;
+			if (operations.abort_on_read) {
+				operations.conversation->RequestAbort();
+			}
+			errno = EAGAIN;
 			return -1;
 		}
 		if (operations.read_zero_count > 0) {
@@ -509,6 +518,85 @@ auto ExpectReadZeroRetriesAndAcceptsInput() -> bool {
 	    &operations);
 	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
 	                                                  "read zero retry test");
+}
+
+auto ExpectReadEagainRetriesAndAcceptsInput() -> bool {
+	bool                    ok = true;
+	ScopedFd                master_fd;
+	ScopedFd                slave_fd;
+	std::array<ScopedFd, 2> abort_pipe;
+
+	ok &=
+	    Expect(OpenPtyPair(&master_fd, &slave_fd), "read EAGAIN retry test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "read EAGAIN retry test creates abort pipe");
+	if (!ok) {
+		return false;
+	}
+
+	InputOperationContext operations{.read_eagain_count = 1};
+	auto const            conversation = CreateInputConversation(
+	    {
+	        .tty_fd         = std::move(slave_fd),
+	        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	        .abort_write_fd = std::move(abort_pipe.at(1)),
+	    },
+	    &operations);
+	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
+	                                                  "read EAGAIN retry test");
+}
+
+auto ExpectReadEagainWithAbortFailsClosed() -> bool {
+	bool                    ok = true;
+	ScopedFd                master_fd;
+	ScopedFd                slave_fd;
+	std::array<ScopedFd, 2> abort_pipe;
+
+	ok &=
+	    Expect(OpenPtyPair(&master_fd, &slave_fd), "read EAGAIN abort test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "read EAGAIN abort test creates abort pipe");
+	if (!ok) {
+		return false;
+	}
+
+	const struct pam_message prompt = {
+	    .msg_style = PAM_PROMPT_ECHO_OFF,
+	    .msg       = "Password: ",
+	};
+
+	InputOperationContext operations{.read_eagain_count = 1, .abort_on_read = true};
+	auto                  conversation = CreateInputConversation(
+	    {
+	        .tty_fd         = std::move(slave_fd),
+	        .abort_read_fd  = std::move(abort_pipe.at(0)),
+	        .abort_write_fd = std::move(abort_pipe.at(1)),
+	    },
+	    &operations);
+
+	int         prompt_result = PAM_SUCCESS;
+	char       *response      = nullptr;
+	std::thread prompt_thread([&] -> void {
+		prompt_result =
+		    NativePromptConversationTestAccess::PromptInput(*conversation, prompt, &response, true);
+	});
+
+	std::array<char, 64> prompt_buffer{};
+	const ssize_t        prompt_bytes = ReadWithTimeout(
+	    master_fd.Get(), {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+	    kPromptReadTimeoutMs);
+	ok &= Expect(prompt_bytes > 0, "read EAGAIN abort test prompt is written to tty");
+
+	constexpr char password = 's';
+	ok &= Expect(write(master_fd.Get(), &password, 1) == 1,
+	             "read EAGAIN abort test makes tty readable");
+
+	prompt_thread.join();
+
+	ok &= Expect(prompt_result == PAM_CONV_ERR, "read EAGAIN abort test fails closed");
+	ok &= Expect(response == nullptr, "read EAGAIN abort test returns no response");
+	if (response != nullptr) {
+		std::free(response);
+	}
+	return ok;
 }
 
 auto ExpectRestoreEintrRetriesAndRestores() -> bool {

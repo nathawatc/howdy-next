@@ -7,7 +7,6 @@
 #include "prompt/native_prompt_input.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
-#include "support/fd_io.hpp"
 #include "support/scoped_fd.hpp"
 
 #include <algorithm>
@@ -19,6 +18,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -80,8 +80,8 @@ namespace {
 			tty_path = "/dev/" + tty_path;
 		}
 
-		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(
-		    howdy::pam::detail::ScopedFd(open(tty_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY)));
+		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(howdy::pam::detail::ScopedFd(
+		    open(tty_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK)));
 		if (!tty_fd.Valid()) {
 			return {};
 		}
@@ -97,12 +97,32 @@ namespace {
 		return tty_fd;
 	}
 
-	auto WriteAll(int fd, const std::string &text) -> bool {
-		return howdy::native::WriteAllToFd(fd, text);
+	// The tty is O_NONBLOCK (so a stolen byte cannot park read() past an abort); wait for output
+	// room instead of failing the prompt on EAGAIN.
+	auto WriteAll(int fd, std::string_view text) -> bool {
+		while (!text.empty()) {
+			const ssize_t written = howdy::native::RetryOnEintr([&] -> ssize_t {
+				return write(fd, text.data(), text.size());
+			});
+			if (written > 0) {
+				text.remove_prefix(static_cast<std::size_t>(written));
+				continue;
+			}
+			if (written == 0 || (errno != EAGAIN && errno != EWOULDBLOCK)) {
+				return false;
+			}
+			struct pollfd out{.fd = fd, .events = POLLOUT, .revents = 0};
+			if (howdy::native::RetryOnEintr([&] -> int {
+				    return poll(&out, 1, kAbortPollTimeoutMs);
+			    }) < 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	auto WriteNewline(int fd) -> void {
-		(void)howdy::native::WriteAllToFd(fd, "\n");
+		(void)WriteAll(fd, "\n");
 	}
 
 	void DrainAbortPipe(int fd) {
@@ -476,8 +496,10 @@ auto NativePromptConversation::PollPromptState(std::array<struct pollfd, 2> &fds
 auto NativePromptConversation::ReadPromptState(char *ch) -> PromptIoResult {
 	const ssize_t bytes_read = ReadPromptChar(ch);
 	if (bytes_read < 0) {
-		return errno == EINTR && !abort_requested_.load() ? PromptIoResult::kRetry
-		                                                  : PromptIoResult::kAbort;
+		// EAGAIN: another reader took the byte after poll(); go back to poll() so abort is seen.
+		const bool transient = errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK;
+		return transient && !abort_requested_.load() ? PromptIoResult::kRetry
+		                                             : PromptIoResult::kAbort;
 	}
 	return bytes_read == 0 ? PromptIoResult::kRetry : PromptIoResult::kReady;
 }

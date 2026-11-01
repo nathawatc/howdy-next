@@ -33,6 +33,8 @@ auto ExpectPollEintrWithAbortFailsClosed() -> bool;
 auto ExpectReadEintrRetriesAndAcceptsInput() -> bool;
 auto ExpectReadEintrWithAbortFailsClosed() -> bool;
 auto ExpectReadZeroRetriesAndAcceptsInput() -> bool;
+auto ExpectReadEagainRetriesAndAcceptsInput() -> bool;
+auto ExpectReadEagainWithAbortFailsClosed() -> bool;
 auto ExpectRestoreEintrRetriesAndRestores() -> bool;
 auto ExpectNativeMessageStyles() -> bool;
 auto ExpectNativePromptInputEdges() -> bool;

@@ -376,6 +376,8 @@ auto main() -> int {
 	ok &= ExpectReadEintrRetriesAndAcceptsInput();
 	ok &= ExpectReadEintrWithAbortFailsClosed();
 	ok &= ExpectReadZeroRetriesAndAcceptsInput();
+	ok &= ExpectReadEagainRetriesAndAcceptsInput();
+	ok &= ExpectReadEagainWithAbortFailsClosed();
 	ok &= ExpectRestoreEintrRetriesAndRestores();
 	ok &= ExpectNativeMessageStyles();
 	ok &= ExpectNativePromptInputEdges();
