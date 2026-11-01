@@ -156,7 +156,7 @@ namespace howdy::test::user_model_codec {
 			        ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
 					          metric_json, R"("sface.onnx")"),
 			    }),
-			    kBackend, std::nullopt, kModel);
+			    kBackend, kModel);
 			ok &= ExpectStatus(document.Result().status, UserModelStatus::kOk,
 			                   std::string(spelling) + " stored metric is accepted");
 			ok &= Expect(!document.Result().entries.empty() &&
@@ -175,7 +175,7 @@ namespace howdy::test::user_model_codec {
 		        ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
 				          R"("euclidean")", R"("sface.onnx")"),
 		    }),
-		    kBackend, std::nullopt, kModel);
+		    kBackend, kModel);
 		ok &= ExpectStatus(unknown.Result().status, UserModelStatus::kParseError,
 		                   "unknown stored metric is rejected");
 		ok &= Expect(unknown.Result().error_message.contains("unknown face metric"),
@@ -186,14 +186,14 @@ namespace howdy::test::user_model_codec {
 		        ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
 				          R"("L2NORM")", R"("sface.onnx")"),
 		    }),
-		    kBackend, std::nullopt, kModel);
+		    kBackend, kModel);
 		const auto serialized = howdy::native::user_model_codec::SerializeDocument(legacy);
 		ok &= Expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
 		             "existing persisted metric spelling is preserved");
 
 		const auto missing = howdy::native::user_model_codec::DecodeDocument(
 		    R"([{"id":7,"time":1700000000,"label":"legacy","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[1.0]]}])",
-		    kBackend, FaceMetric::kCosine, kModel);
+		    kBackend, kModel);
 		ok &= ExpectStatus(missing.Result().status, UserModelStatus::kOk,
 		                   "missing persisted metric remains compatible");
 		ok &= Expect(!missing.Result().entries.empty() &&

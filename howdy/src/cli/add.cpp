@@ -72,9 +72,8 @@ namespace {
 			};
 		}
 
-		const auto entries =
-		    howdy::native::ListUserModelEntries(user, howdy::native::FaceModel::kBackendName, {},
-			                                    howdy::native::FaceModel::kSfaceModel);
+		const auto entries = howdy::native::ListUserModelEntries(
+		    user, howdy::native::FaceModel::kBackendName, howdy::native::FaceModel::kSfaceModel);
 		if (IsExistingModelIncompatibleStatus(entries.status)) {
 			return howdy::native::add_internal::AddPreflightResult{
 			    .status =

@@ -544,8 +544,7 @@ namespace howdy::native {
 		}
 
 		return user_model_codec::DecodeDocument(content.output, expectations.backend,
-		                                        expectations.metric, expectations.model,
-		                                        expectations.strict_shape);
+		                                        expectations.model, expectations.strict_shape);
 	}
 
 	auto UserModelStore::LoadDocumentFromPath(const std::filesystem::path &path,
@@ -640,10 +639,9 @@ namespace howdy::native {
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
-		auto document =
-		    LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
-			                   {.backend = {}, .metric = {}, .model = {}, .strict_shape = true},
-			                   locked_file->created_empty_file);
+		auto document = LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
+		                                   {.backend = {}, .model = {}, .strict_shape = true},
+		                                   locked_file->created_empty_file);
 		return UserModelStoreMutationResult{
 		    .transaction = UserModelStoreTransaction(
 		        path_result.path, std::move(locked_file->namespace_lock),

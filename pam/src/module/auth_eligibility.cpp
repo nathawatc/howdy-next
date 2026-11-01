@@ -50,7 +50,6 @@ namespace howdy::pam::auth_eligibility {
 			case kNoModelDirectory:
 				return ModelCondition::kMissingModel;
 			case kIncompatibleBackend:
-			case kIncompatibleMetric:
 			case kIncompatibleModel:
 			case kParseError:
 			case kInvalidShape:

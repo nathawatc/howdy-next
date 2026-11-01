@@ -5,7 +5,6 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/atomic_files.hpp"
-#include "support/face_metric.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "user_model_codec/internal.hpp"
@@ -147,7 +146,6 @@ namespace howdy::native {
 	}  // namespace
 
 	auto ListUserModelEntries(const std::string &user, const std::string &expected_backend,
-	                          std::optional<FaceMetric>                     expected_metric,
 	                          const std::string                            &expected_model,
 	                          const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelListResult {
@@ -155,7 +153,6 @@ namespace howdy::native {
 		    UserModelStore::LoadDocument(user,
 			                             {
 		                                     .backend      = expected_backend,
-		                                     .metric       = expected_metric,
 		                                     .model        = expected_model,
 		                                     .strict_shape = true,
 		                                 },
@@ -323,8 +320,8 @@ namespace howdy::native {
 	                    const file_security_internal::ValidationRoot &validation_root)
 	    -> UserModelLoadResult {
 		auto document = UserModelStore::LoadDocument(
-		    user, {.backend = expected_backend, .metric = {}, .model = {}, .strict_shape = false},
-		    owner_uid, validation_root);
+		    user, {.backend = expected_backend, .model = {}, .strict_shape = false}, owner_uid,
+		    validation_root);
 		auto               &entries = document.Result();
 		UserModelLoadResult result{
 		    .status        = RemapLoadStatus(entries.status),

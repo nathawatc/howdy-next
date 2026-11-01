@@ -17,7 +17,6 @@ namespace howdy::native {
 	                    const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelLoadResult;
 	auto ListUserModelEntries(const std::string &user, const std::string &expected_backend,
-	                          std::optional<FaceMetric>                     expected_metric = {},
 	                          const std::string                            &expected_model  = {},
 	                          const file_security_internal::ValidationRoot &validation_root = {})
 	    -> UserModelListResult;
