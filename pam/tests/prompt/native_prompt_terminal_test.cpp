@@ -21,6 +21,12 @@
 
 using howdy::test::Expect;
 
+namespace {
+	constexpr auto FailureBit(bool failed, unsigned shift) -> unsigned {
+		return failed ? (1U << shift) : 0U;
+	}
+}  // namespace
+
 auto ExpectNativeTerminalEligibility() -> bool {
 	ScopedFd                first_master;
 	ScopedFd                first_slave;
@@ -86,12 +92,9 @@ auto ExpectNativeTerminalEligibility() -> bool {
 		    .output = terminal_fd,
 		    .error  = terminal_fd,
 		});
-		const unsigned failures          = static_cast<unsigned>(!normal) |
-		                                   (static_cast<unsigned>(!redirected_stdout) << 1U) |
-		                                   (static_cast<unsigned>(!stdout_only) << 2U) |
-		                                   (static_cast<unsigned>(!stderr_only) << 3U) |
-		                                   (static_cast<unsigned>(unrelated_stdio) << 4U) |
-		                                   (static_cast<unsigned>(regular_pam_tty) << 5U);
+		const unsigned failures = FailureBit(!normal, 0U) | FailureBit(!redirected_stdout, 1U) |
+		                          FailureBit(!stdout_only, 2U) | FailureBit(!stderr_only, 3U) |
+		                          FailureBit(unrelated_stdio, 4U) | FailureBit(regular_pam_tty, 5U);
 		_exit(static_cast<int>(failures));
 	}
 	if (!Expect(terminal_child > 0, "native eligibility spawns terminal child")) {
@@ -188,9 +191,9 @@ auto ExpectNativeTerminalAliases() -> bool {
 		    {.tty = alias_fd, .input = terminal_fd, .output = -1, .error = -1});
 		const bool different_pty_same_session = NativePromptTerminalIsInteractive(
 		    {.tty = terminal_fd, .input = other_fd, .output = -1, .error = -1});
-		const unsigned failures = static_cast<unsigned>(!path_target_alias) |
-		                          (static_cast<unsigned>(!alias_target_path) << 1U) |
-		                          (static_cast<unsigned>(different_pty_same_session) << 2U);
+		const unsigned failures = FailureBit(!path_target_alias, 0U) |
+		                          FailureBit(!alias_target_path, 1U) |
+		                          FailureBit(different_pty_same_session, 2U);
 		_exit(static_cast<int>(failures));
 	}
 
