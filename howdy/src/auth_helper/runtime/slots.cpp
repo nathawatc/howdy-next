@@ -5,6 +5,7 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
 #include "support/bit_flags.hpp"
+#include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 
@@ -14,21 +15,26 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <functional>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <unistd.h>
 
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
+
+#include <linux/fs.h>
 
 namespace howdy::native::auth_helper {
 	namespace {
@@ -89,35 +95,36 @@ namespace howdy::native::auth_helper {
 			       VerifyPersistentAclWithOperations(fd, path, uid_t{0}, policy.acl, operations);
 		}
 
-		auto OpenSlotDirectory(int root_fd, const std::filesystem::path &root,
-		                       RuntimeGenerationSlot generation, StagedIdentity identity,
-		                       const AclOperations &operations, bool create)
+		auto ValidSlotDirectory(int fd, const std::filesystem::path &path, StagedIdentity identity,
+		                        const AclOperations &operations) -> bool {
+			struct stat stat{};
+			if (fstat(fd, &stat) != 0 ||
+			    !ValidateDirectory(stat, identity, StagedRuntimeRole::kSharedDirectory) ||
+			    !VerifyPersistentAclWithOperations(
+			        fd, path, identity.target_uid,
+			        GetStagedRuntimePolicy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
+				std::cerr << "Runtime slot failed strict validation: " << path << "\n";
+				return false;
+			}
+			return true;
+		}
+
+		// Creates a new slot directory, used only for side directories being built.
+		auto CreateSlotDirectory(int root_fd, const std::string &name,
+		                         const std::filesystem::path &path, StagedIdentity identity,
+		                         const AclOperations &operations)
 		    -> std::optional<runtime_internal::UniqueFd> {
-			const auto name = auth_helper_protocol::PreparedRuntimeGenerationName(
-			    identity.target_uid, generation);
-			bool created = false;
-			if (create && mkdirat(root_fd, name.c_str(), 0700) == 0) {
-				created = true;
-			} else if (create && errno != EEXIST) {
+			if (mkdirat(root_fd, name.c_str(), 0700) != 0) {
+				const int error_number = errno;
+				LogSlotsErrnoFailure("create runtime slot", path, error_number);
 				return std::nullopt;
 			}
 			runtime_internal::UniqueFd fd(
 			    openat(root_fd, name.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-			if (fd.Get() < 0) {
-				return std::nullopt;
-			}
-			const auto path = root / name;
-			if (created && !ApplyPrivateAcl(fd.Get(), path, identity,
-			                                StagedRuntimeRole::kSharedDirectory, operations)) {
-				return std::nullopt;
-			}
-			struct stat stat{};
-			if (fstat(fd.Get(), &stat) != 0 ||
-			    !ValidateDirectory(stat, identity, StagedRuntimeRole::kSharedDirectory) ||
-			    !VerifyPersistentAclWithOperations(
-			        fd.Get(), path, identity.target_uid,
-			        GetStagedRuntimePolicy(StagedRuntimeRole::kSharedDirectory).acl, operations)) {
-				std::cerr << "Runtime slot failed strict validation: " << path << "\n";
+			if (!fd.Valid() ||
+			    !ApplyPrivateAcl(fd.Get(), path, identity, StagedRuntimeRole::kSharedDirectory,
+			                     operations) ||
+			    !ValidSlotDirectory(fd.Get(), path, identity, operations)) {
 				return std::nullopt;
 			}
 			return fd;
@@ -210,37 +217,53 @@ namespace howdy::native::auth_helper {
 			return fd;
 		}
 
-		auto ModelsDirectoryContainsOnly(int models_fd, std::string_view expected_name,
-		                                 bool expected_present) -> bool {
-			runtime_internal::UniqueFd duplicate(
-			    openat(models_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
-			if (duplicate.Get() < 0) {
-				return false;
+		struct DirectoryCloser {
+			void operator()(DIR *directory) const {
+				(void)closedir(directory);
 			}
-			DIR *directory = fdopendir(duplicate.Get());
+		};
+
+		// Names in a directory other than "." and "..", or nullopt when it cannot be read.
+		auto DirectoryEntries(int directory_fd) -> std::optional<std::vector<std::string>> {
+			runtime_internal::UniqueFd duplicate(
+			    openat(directory_fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC));
+			if (duplicate.Get() < 0) {
+				return std::nullopt;
+			}
+			const std::unique_ptr<DIR, DirectoryCloser> directory(fdopendir(duplicate.Get()));
 			if (directory == nullptr) {
-				return false;
+				return std::nullopt;
 			}
 			(void)duplicate.Release();
-			bool found = false;
-			errno      = 0;
-			while (dirent *entry = readdir(directory)) {
+			std::vector<std::string> names;
+			while (true) {
+				errno               = 0;
+				const dirent *entry = readdir(directory.get());
+				if (entry == nullptr) {
+					break;
+				}
 				const auto             name_bytes = std::span{entry->d_name};
 				const auto             name_end   = std::ranges::find(name_bytes, '\0');
 				const std::string_view name(
 				    name_bytes.data(), static_cast<std::size_t>(name_end - name_bytes.begin()));
-				if (name == "." || name == "..") {
-					continue;
+				if (name != "." && name != "..") {
+					names.emplace_back(name);
 				}
-				if (name != expected_name || found) {
-					(void)closedir(directory);
-					return false;
-				}
-				found = true;
 			}
-			const bool ok = errno == 0 && found == expected_present;
-			(void)closedir(directory);
-			return ok;
+			if (errno != 0) {
+				return std::nullopt;
+			}
+			return names;
+		}
+
+		auto ModelsDirectoryContainsOnly(int models_fd, std::string_view expected_name,
+		                                 bool expected_present) -> bool {
+			const auto names = DirectoryEntries(models_fd);
+			if (!names.has_value()) {
+				return false;
+			}
+			return expected_present ? names->size() == 1 && names->front() == expected_name
+			                        : names->empty();
 		}
 
 		enum class ModelState : std::uint8_t {
@@ -248,35 +271,6 @@ namespace howdy::native::auth_helper {
 			kPresent,
 			kInvalid,
 		};
-
-		enum class SlotInitialization : std::uint8_t {
-			kEmpty,
-			kComplete,
-			kInvalid,
-		};
-
-		auto SlotInitialization(int slot_fd) -> SlotInitialization {
-			std::array<bool, 3>  present{};
-			constexpr std::array names = {
-			    auth_helper_protocol::kPreparedConfigFileName,
-			    auth_helper_protocol::kPreparedUserModelsDirectoryName,
-			    auth_helper_protocol::kPreparedModelBackingFileName,
-			};
-			static_assert(names.size() == present.size());
-			for (auto &&[name, is_present] : std::views::zip(names, present)) {
-				struct stat stat{};
-				if (fstatat(slot_fd, name, &stat, AT_SYMLINK_NOFOLLOW) == 0) {
-					is_present = true;
-				} else if (errno != ENOENT) {
-					return SlotInitialization::kInvalid;
-				}
-			}
-			if (std::ranges::all_of(present, std::identity{})) {
-				return SlotInitialization::kComplete;
-			}
-			return std::ranges::none_of(present, std::identity{}) ? SlotInitialization::kEmpty
-			                                                      : SlotInitialization::kInvalid;
-		}
 
 		auto InspectModelState(int models_fd, const std::filesystem::path &slot_path,
 		                       const std::string &user, int backing_fd, StagedIdentity identity,
@@ -325,6 +319,9 @@ namespace howdy::native::auth_helper {
 		                 const std::optional<runtime_internal::SourceFile> &model_source,
 		                 const std::string &user, StagedIdentity identity,
 		                 const AclOperations &operations) -> bool {
+			if (!slot.dir_fd.Valid()) {
+				return false;
+			}
 			auto models =
 			    OpenModelsDirectory(slot.dir_fd.Get(), slot.path, identity, operations, false);
 			auto config = OpenConfigFile(slot.dir_fd.Get(), slot.path, identity, operations, false);
@@ -348,18 +345,20 @@ namespace howdy::native::auth_helper {
 			       runtime_internal::SourceUnchanged(*model_source);
 		}
 
-		auto UpdateSlot(runtime_internal::Slot                            &slot,
-		                const runtime_internal::SourceFile                &config_source,
-		                const std::optional<runtime_internal::SourceFile> &model_source,
-		                const std::string &user, StagedIdentity identity,
-		                const AclOperations &operations) -> bool {
-			const auto initialization = SlotInitialization(slot.dir_fd.Get());
-			if (initialization == SlotInitialization::kInvalid) {
-				std::cerr << "Persistent runtime objects are incomplete in " << slot.path << "\n";
-				return false;
-			}
-			const bool create = initialization == SlotInitialization::kEmpty;
-			auto       models =
+		enum class SlotWrite : std::uint8_t {
+			kWritten,
+			kUnusable,  // the slot's objects are missing or fail strict validation
+			kFailed,    // the write itself failed, for example because a source changed
+		};
+
+		// Writes the sources into the slot's fixed objects: in place for an existing slot, or into
+		// freshly created objects when `create` is set for a side directory being built.
+		auto WriteSlotContents(const runtime_internal::Slot                      &slot,
+		                       const runtime_internal::SourceFile                &config_source,
+		                       const std::optional<runtime_internal::SourceFile> &model_source,
+		                       const std::string &user, StagedIdentity identity,
+		                       const AclOperations &operations, bool create) -> SlotWrite {
+			auto models =
 			    OpenModelsDirectory(slot.dir_fd.Get(), slot.path, identity, operations, create);
 			auto config =
 			    OpenConfigFile(slot.dir_fd.Get(), slot.path, identity, operations, create);
@@ -369,20 +368,20 @@ namespace howdy::native::auth_helper {
 				std::cerr << "Failed to open persistent runtime objects in " << slot.path
 				          << " (models=" << models.has_value() << ", config=" << config.has_value()
 				          << ", backing=" << backing.has_value() << ")\n";
-				return false;
+				return SlotWrite::kUnusable;
 			}
 			const auto state = InspectModelState(models->Get(), slot.path, user, backing->Get(),
 			                                     identity, operations);
 			if (state == ModelState::kInvalid) {
 				std::cerr << "Persistent model state failed strict validation in " << slot.path
 				          << "\n";
-				return false;
+				return SlotWrite::kUnusable;
 			}
 			if (!runtime_internal::CopySourceToOpenFile(config_source, config->Get()) ||
 			    !ApplyPrivateAcl(config->Get(), auth_helper_protocol::PreparedConfigPath(slot.path),
 			                     identity, StagedRuntimeRole::kConfig, operations)) {
 				std::cerr << "Failed to update persistent config in " << slot.path << "\n";
-				return false;
+				return SlotWrite::kFailed;
 			}
 
 			const std::string model_name = user + ".dat";
@@ -395,38 +394,166 @@ namespace howdy::native::auth_helper {
 				    !ApplyPrivateAcl(backing->Get(), visible_path, identity,
 				                     StagedRuntimeRole::kPresentModel, operations)) {
 					std::cerr << "Failed to update persistent model in " << slot.path << "\n";
-					return false;
+					return SlotWrite::kFailed;
 				}
 				if (state == ModelState::kAbsent &&
 				    linkat(slot.dir_fd.Get(), auth_helper_protocol::kPreparedModelBackingFileName,
 				           models->Get(), model_name.c_str(), 0) != 0) {
-					return LogSlotsErrnoFailure("link visible model", visible_path, errno);
+					LogSlotsErrnoFailure("link visible model", visible_path, errno);
+					return SlotWrite::kFailed;
 				}
 			} else {
 				if (state == ModelState::kPresent &&
 				    unlinkat(models->Get(), model_name.c_str(), 0) != 0) {
-					return false;
+					LogSlotsErrnoFailure("unlink visible model", visible_path, errno);
+					return SlotWrite::kFailed;
 				}
 				if (ftruncate(backing->Get(), 0) != 0 || !howdy::native::SyncFd(backing->Get()) ||
 				    !ApplyOwnerOnlyAcl(backing->Get(), backing_path,
 				                       StagedRuntimeRole::kAbsentModel, operations)) {
-					return false;
+					std::cerr << "Failed to clear persistent model in " << slot.path << "\n";
+					return SlotWrite::kFailed;
 				}
 			}
 			if (!howdy::native::SyncFd(models->Get()) ||
 			    !howdy::native::SyncFd(slot.dir_fd.Get())) {
 				std::cerr << "Failed to sync persistent runtime directories in " << slot.path
 				          << "\n";
-				return false;
+				return SlotWrite::kFailed;
 			}
-			const bool valid = InspectModelState(models->Get(), slot.path, user, backing->Get(),
-			                                     identity, operations) != ModelState::kInvalid;
-			if (!valid) {
+			if (InspectModelState(models->Get(), slot.path, user, backing->Get(), identity,
+			                      operations) == ModelState::kInvalid) {
 				std::cerr << "Updated model state failed strict validation in " << slot.path
 				          << "\n";
+				return SlotWrite::kUnusable;
 			}
-			return valid && runtime_internal::SourceUnchanged(config_source) &&
-			       (!model_source.has_value() || runtime_internal::SourceUnchanged(*model_source));
+			const bool sources_unchanged =
+			    runtime_internal::SourceUnchanged(config_source) &&
+			    (!model_source.has_value() || runtime_internal::SourceUnchanged(*model_source));
+			return sources_unchanged ? SlotWrite::kWritten : SlotWrite::kFailed;
+		}
+
+		// Deepest nesting removed from a stale side directory; a slot itself nests one level.
+		constexpr int kMaxStaleTreeDepth = 4;
+
+		// Removes `name` under `parent_fd` with everything below it. Used only for side
+		// directories in the runtime root, which only root can write, so their contents are known
+		// to be ours. unlinkat and O_NOFOLLOW never follow a symlink out of the root. Recursion is
+		// bounded by kMaxStaleTreeDepth; anything nested deeper fails closed and stays in place.
+		auto RemoveStaleTree(int parent_fd, const std::string &name,  // NOLINT(misc-no-recursion)
+		                     const std::filesystem::path &path, int depth_left) -> bool {
+			const runtime_internal::UniqueFd directory(
+			    openat(parent_fd, name.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+			if (!directory.Valid()) {
+				const int error_number = errno;
+				if (error_number == ENOENT) {
+					return true;
+				}
+				// A non-directory (or symlink) at the name is a leftover too; unlink the name.
+				if ((error_number == ENOTDIR || error_number == ELOOP) &&
+				    unlinkat(parent_fd, name.c_str(), 0) == 0) {
+					return true;
+				}
+				return LogSlotsErrnoFailure("open stale runtime directory", path, error_number);
+			}
+			const auto names = DirectoryEntries(directory.Get());
+			if (!names.has_value()) {
+				std::cerr << "Failed to list stale runtime directory " << path << "\n";
+				return false;
+			}
+			for (const auto &entry : *names) {
+				if (unlinkat(directory.Get(), entry.c_str(), 0) == 0) {
+					continue;
+				}
+				const int error_number = errno;
+				if (error_number != EISDIR || depth_left == 0) {
+					return LogSlotsErrnoFailure("remove stale runtime object", path / entry,
+					                            error_number);
+				}
+				if (!RemoveStaleTree(directory.Get(), entry, path / entry, depth_left - 1)) {
+					return false;
+				}
+			}
+			if (unlinkat(parent_fd, name.c_str(), AT_REMOVEDIR) != 0) {
+				const int error_number = errno;
+				return LogSlotsErrnoFailure("remove stale runtime directory", path, error_number);
+			}
+			return true;
+		}
+
+		auto InstallSlotDirectory(int root_fd, const std::string &from, const std::string &to,
+		                          bool replacing) -> int {
+#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE) && defined(RENAME_NOREPLACE)
+			if (RetryOnEintr([&] -> decltype(syscall(0)) {
+				    return syscall(SYS_renameat2, root_fd, from.c_str(), root_fd, to.c_str(),
+					               replacing ? RENAME_EXCHANGE : RENAME_NOREPLACE);
+			    }) == 0) {
+				return 0;
+			}
+#else
+			errno = ENOSYS;
+#endif
+			// Without renameat2 a new slot is still installed with renameat: the allocation lock
+			// guarantees nothing exists at the final name. Replacing a slot needs the exchange.
+			if (!replacing && (errno == ENOSYS || errno == EINVAL)) {
+				return renameat(root_fd, from.c_str(), root_fd, to.c_str());
+			}
+			return -1;
+		}
+
+		// Builds a complete slot in a side directory and swaps it into place, so a kill at any
+		// point leaves either the previous slot directory or the finished one, never a half-built
+		// slot. Runs under the slot's exclusive lock; the side directory name is fixed per slot,
+		// so leftovers of an interrupted build are removed first. Rebuilding a slot that was only
+		// briefly unreadable is harmless: it gets a fresh copy of the trusted sources.
+		auto RebuildSlot(int root_fd, runtime_internal::Slot &slot,
+		                 const runtime_internal::SourceFile                &config_source,
+		                 const std::optional<runtime_internal::SourceFile> &model_source,
+		                 const std::string &user, StagedIdentity identity,
+		                 const AclOperations &operations) -> bool {
+			const auto             final_name = slot.path.filename().string();
+			runtime_internal::Slot build{
+			    .path = auth_helper_protocol::PreparedRuntimeGenerationBuildPath(slot.path),
+			};
+			const auto build_name = build.path.filename().string();
+			const bool replacing  = slot.dir_fd.Valid();
+			if (replacing) {
+				std::cerr << "Rebuilding runtime slot that could not be opened or validated: "
+				          << slot.path << "\n";
+			}
+			// OpenSlot already removed any leftover under the allocation lock; if one remains,
+			// mkdirat fails with EEXIST and the build fails closed.
+			auto directory =
+			    CreateSlotDirectory(root_fd, build_name, build.path, identity, operations);
+			if (directory.has_value()) {
+				build.dir_fd = std::move(*directory);
+			}
+			if (!build.dir_fd.Valid() ||
+			    WriteSlotContents(build, config_source, model_source, user, identity, operations,
+			                      true) != SlotWrite::kWritten) {
+				build.dir_fd.Reset();
+				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
+				return false;
+			}
+			if (InstallSlotDirectory(root_fd, build_name, final_name, replacing) != 0) {
+				const int error_number = errno;
+				LogSlotsErrnoFailure("install rebuilt runtime slot", slot.path, error_number);
+				build.dir_fd.Reset();
+				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
+				return false;
+			}
+			// The rename committed the new slot, so later failures here only leave cleanup behind:
+			// the previous directory now at the side name is removed again before the next build.
+			slot.dir_fd = std::move(build.dir_fd);
+			if (replacing) {
+				(void)RemoveStaleTree(root_fd, build_name, build.path, kMaxStaleTreeDepth);
+			}
+			if (!howdy::native::SyncFd(root_fd)) {
+				const int error_number = errno;
+				LogSlotsErrnoFailure("sync runtime directory", slot.path.parent_path(),
+				                     error_number);
+			}
+			return true;
 		}
 
 		auto OpenSlot(int root_fd, const std::filesystem::path &root,
@@ -440,17 +567,30 @@ namespace howdy::native::auth_helper {
 			if (!lock.has_value()) {
 				return std::nullopt;
 			}
-			auto directory =
-			    OpenSlotDirectory(root_fd, root, generation, identity, operations, create);
-			if (!directory.has_value()) {
-				return std::nullopt;
-			}
-			return runtime_internal::Slot{
+			runtime_internal::Slot slot{
 			    .path = auth_helper_protocol::PreparedRuntimeGenerationDir(
 			        root, identity.target_uid, generation),
 			    .lock_fd = std::move(*lock),
-			    .dir_fd  = std::move(*directory),
 			};
+			// Every builder holds the allocation lock, so a side directory seen here was left by an
+			// interrupted run: remove it before it can linger with stale staged copies.
+			const auto side_path =
+			    auth_helper_protocol::PreparedRuntimeGenerationBuildPath(slot.path);
+			(void)RemoveStaleTree(root_fd, side_path.filename().string(), side_path,
+			                      kMaxStaleTreeDepth);
+			// A missing slot directory is built by the first refresh; an existing one must pass
+			// strict validation and is never replaced if it does not.
+			runtime_internal::UniqueFd directory(
+			    openat(root_fd, slot.path.filename().c_str(),
+				       O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+			if (!directory.Valid()) {
+				return errno == ENOENT ? std::optional{std::move(slot)} : std::nullopt;
+			}
+			if (!ValidSlotDirectory(directory.Get(), slot.path, identity, operations)) {
+				return std::nullopt;
+			}
+			slot.dir_fd = std::move(directory);
+			return slot;
 		}
 
 		auto BuildPreparedPaths(runtime_internal::Slot &slot) -> std::optional<PreparedPaths> {
@@ -568,7 +708,7 @@ namespace howdy::native::auth_helper {
 			return std::nullopt;
 		}
 
-		auto RefreshAvailableSlot(SlotSet &slots, const SourceFile &config_source,
+		auto RefreshAvailableSlot(int root_fd, SlotSet &slots, const SourceFile &config_source,
 		                          const std::optional<SourceFile> &model_source,
 		                          const std::string &user, StagedIdentity identity,
 		                          const AclOperations &operations) -> std::optional<PreparedPaths> {
@@ -576,7 +716,17 @@ namespace howdy::native::auth_helper {
 				if (!slot.has_value() || flock(slot->lock_fd.Get(), LOCK_EX | LOCK_NB) != 0) {
 					continue;
 				}
-				if (!UpdateSlot(*slot, config_source, model_source, user, identity, operations)) {
+				// A healthy slot is updated in place and keeps its inodes; a missing slot, or one
+				// whose objects fail validation, is rebuilt and swapped in. A failed write leaves
+				// the slot for the next run to inspect, and is never answered with a rebuild.
+				const auto written = slot->dir_fd.Valid()
+				                         ? WriteSlotContents(*slot, config_source, model_source,
+				                                             user, identity, operations, false)
+				                         : SlotWrite::kUnusable;
+				if (written == SlotWrite::kFailed ||
+				    (written == SlotWrite::kUnusable &&
+				     !RebuildSlot(root_fd, *slot, config_source, model_source, user, identity,
+				                  operations))) {
 					slot->lock_fd.Reset();
 					continue;
 				}

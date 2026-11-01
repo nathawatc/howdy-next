@@ -64,6 +64,12 @@ namespace howdy::native::auth_helper_protocol {
 		return {runtime_dir.string() + ".lock"};
 	}
 
+	// Side directory a slot is rebuilt in before it is swapped into place.
+	inline auto PreparedRuntimeGenerationBuildPath(const std::filesystem::path &runtime_dir)
+	    -> std::filesystem::path {
+		return runtime_dir.parent_path() / ("." + runtime_dir.filename().string() + ".build");
+	}
+
 	inline auto PreparedConfigPath(const std::filesystem::path &runtime_dir)
 	    -> std::filesystem::path {
 		return runtime_dir / kPreparedConfigFileName;

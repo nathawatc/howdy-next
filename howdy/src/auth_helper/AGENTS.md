@@ -20,5 +20,10 @@ Preserve this high-level order: open/validate runtime root â†’ allocation lock â
 slot refresh.
 
 Keep descriptor-relative checks, ACL/mode/owner validation, source-stability checks, generation-slot
-locking, lease identity, and fail-closed invalid-state handling. Do not split `runtime/slots.cpp`
+locking, lease identity, and fail-closed invalid-state handling. A healthy slot is updated in
+place; a missing slot, or one whose contents fail validation, is rebuilt in its side directory
+and swapped in with `renameat2`, never repaired object by object. A slot directory or lock that
+itself fails validation is never replaced. Staging runs with umask 0 and effective group root
+so the runtime root and lock files are valid the moment they appear; anything that also needs
+an ACL is created only inside a side directory. Do not split `runtime/slots.cpp`
 merely for LOC; its slot lifecycle is intentionally cohesive.

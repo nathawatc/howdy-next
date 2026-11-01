@@ -120,8 +120,8 @@ namespace howdy::native::auth_helper {
 			    fresh.has_value()) {
 				return fresh;
 			}
-			return runtime_internal::RefreshAvailableSlot(*slots, *config_source, model_source,
-			                                              user, identity, operations);
+			return runtime_internal::RefreshAvailableSlot(root->Get(), *slots, *config_source,
+			                                              model_source, user, identity, operations);
 		}
 
 	}  // namespace internal

@@ -27,6 +27,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/acl.h>
 #include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -305,8 +306,8 @@ namespace {
 		const auto config_inode  = InodeOf(first->config_path);
 		const auto backing_path  = first->runtime_dir / kPreparedModelBackingFileName;
 		const auto backing_inode = InodeOf(backing_path);
-		ok &= Expect(CountRuntimeGenerations(fixture.root) == 2,
-		             "exactly two fixed generation directories exist");
+		ok &= Expect(CountRuntimeGenerations(fixture.root) == 1,
+		             "only the leased generation directory is built");
 		ok &= Expect(config_inode.has_value() && backing_inode.has_value(),
 		             "persistent config and backing inodes exist");
 
@@ -403,6 +404,8 @@ namespace {
 		ok &= Expect(WriteFile(fixture.config, "slot-c\n"), "writes slot C source");
 		auto const blocked = Prepare(fixture, operations);
 		ok &= Expect(!blocked.has_value(), "two active stale slots fail closed");
+		ok &= Expect(CountRuntimeGenerations(fixture.root) == 2,
+		             "at most two fixed generation directories exist");
 
 		const auto first_generation_inode =
 		    first.has_value() ? InodeOf(first->runtime_dir) : std::nullopt;
@@ -519,13 +522,13 @@ namespace {
 		return ok;
 	}
 
-	auto ExpectPartialSlotFallback(const std::filesystem::path &temp_root, uid_t target_uid,
-	                               const howdy::native::auth_helper::AclOperations &operations)
+	// A slot left incomplete (for example by a helper killed mid-update) is rebuilt in a side
+	// directory and swapped in, then served and reused like any healthy slot.
+	auto ExpectPartialSlotRebuilt(const std::filesystem::path &temp_root, uid_t target_uid,
+	                              const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		using howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
-		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir;
 		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath;
-		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
 		bool ok      = true;
 		auto fixture = MakeFixture(temp_root, "partial-slot", target_uid);
 		auto slot0   = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
@@ -535,44 +538,163 @@ namespace {
 			return false;
 		}
 
-		const auto      slot0_backing       = slot0->runtime_dir / kPreparedModelBackingFileName;
-		const auto      slot0_backing_inode = InodeOf(slot0_backing);
-		const auto      slot0_models_inode  = InodeOf(slot0->user_models_dir);
+		const auto      slot0_dir_inode = InodeOf(slot0->runtime_dir);
 		std::error_code ec;
 		std::filesystem::remove(slot0->config_path, ec);
-		const auto expected_slot1 =
-		    PreparedRuntimeGenerationDir(fixture->root, target_uid, RuntimeGenerationSlot::kSlot1);
-		auto slot1 = Prepare(*fixture, operations);
-		ok &= Expect(!ec && slot1.has_value() && slot1->runtime_dir == expected_slot1 &&
-		                 !std::filesystem::exists(slot0->config_path) &&
-		                 InodeOf(slot0_backing) == slot0_backing_inode &&
-		                 InodeOf(slot0->user_models_dir) == slot0_models_inode,
-		             "partial slot0 stays untouched while empty slot1 serves");
-		if (!slot1.has_value()) {
+		std::string replayed;
+		auto        rebuilt = PrepareQuiet(*fixture, operations, replayed);
+		ok &=
+		    Expect(!ec && rebuilt.has_value() && rebuilt->runtime_dir == slot0->runtime_dir &&
+			           InodeOf(slot0->runtime_dir) != slot0_dir_inode &&
+			           ReadFile(rebuilt->config_path) == "config-v1\n" &&
+			           !std::filesystem::exists(
+		                   howdy::native::auth_helper_protocol::PreparedRuntimeGenerationBuildPath(
+		                       slot0->runtime_dir)),
+			       "partial slot0 is rebuilt, swapped in and its old directory removed");
+		ok &= Expect(replayed.empty(), "rebuilt slot leaves helper stderr empty");
+		if (!rebuilt.has_value()) {
 			return false;
 		}
-		const auto slot1_config_inode = InodeOf(slot1->config_path);
-		const auto slot1_backing_inode =
-		    InodeOf(slot1->runtime_dir / kPreparedModelBackingFileName);
+		const auto config_inode  = InodeOf(rebuilt->config_path);
+		const auto backing_inode = InodeOf(rebuilt->runtime_dir / kPreparedModelBackingFileName);
+		CloseLease(rebuilt);
 		auto repeated = Prepare(*fixture, operations);
-		ok &= Expect(repeated.has_value() && repeated->runtime_dir == slot1->runtime_dir &&
-		                 InodeOf(repeated->config_path) == slot1_config_inode &&
+		ok &= Expect(repeated.has_value() && repeated->runtime_dir == slot0->runtime_dir &&
+		                 InodeOf(repeated->config_path) == config_inode &&
 		                 InodeOf(repeated->runtime_dir / kPreparedModelBackingFileName) ==
-		                     slot1_backing_inode,
-		             "slot1 reuse stays on persistent bounded inodes");
+		                     backing_inode,
+		             "rebuilt slot0 is reused on persistent bounded inodes");
+		CloseLease(repeated);
 
 		const auto slot0_lock = PreparedRuntimeGenerationLockPath(slot0->runtime_dir);
 		const int  probe      = open(slot0_lock.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
 		const bool lock_clean = probe >= 0 && flock(probe, LOCK_EX | LOCK_NB) == 0;
-		ok &= Expect(lock_clean, "abandoned malformed slot0 retains no helper lock");
+		ok &= Expect(lock_clean, "rebuilt slot0 retains no helper lock");
 		if (lock_clean) {
 			(void)flock(probe, LOCK_UN);
 		}
 		if (probe >= 0) {
 			(void)close(probe);
 		}
-		CloseLease(slot1);
-		CloseLease(repeated);
+		return ok;
+	}
+
+	auto FailingAclSet(void *context, int fd, acl_t acl) -> int {
+		(void)context;
+		(void)fd;
+		(void)acl;
+		errno = EIO;
+		return -1;
+	}
+
+	// A write that fails part-way (here: applying the ACL) is not answered with a rebuild; the
+	// slot stays for the next run to inspect, and the failure fails closed.
+	auto ExpectFailedWriteNotRebuilt(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                 const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		bool ok       = true;
+		auto fixture  = MakeFixture(temp_root, "failed-write", target_uid);
+		auto prepared = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
+		ok &= Expect(prepared.has_value(), "creates failed-write fixture");
+		CloseLease(prepared);
+		if (!fixture.has_value() || !prepared.has_value()) {
+			return false;
+		}
+		const auto slot_inode = InodeOf(prepared->runtime_dir);
+		ok &= Expect(WriteFile(fixture->config, "config-v2\n"), "changes the source");
+		auto failing       = operations;
+		failing.acl_set_fd = FailingAclSet;
+		std::string replayed;
+		const auto  result = PrepareQuiet(*fixture, failing, replayed);
+		ok &=
+		    Expect(!result.has_value() && InodeOf(prepared->runtime_dir) == slot_inode &&
+			           !std::filesystem::exists(
+		                   howdy::native::auth_helper_protocol::PreparedRuntimeGenerationBuildPath(
+		                       prepared->runtime_dir)) &&
+			           !replayed.empty(),
+			       "failed in-place write fails closed without rebuilding the slot");
+		return ok;
+	}
+
+	// A build interrupted by a kill leaves only its side directory behind: the next rebuild
+	// removes it first.
+	auto
+	ExpectInterruptedBuildCleanedUp(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir;
+		using howdy::native::auth_helper_protocol::RuntimeGenerationSlot;
+		bool ok      = true;
+		auto fixture = MakeFixture(temp_root, "interrupted-build", target_uid);
+		auto slot0   = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
+		ok &= Expect(slot0.has_value(), "creates interrupted-build fixture");
+		CloseLease(slot0);
+		if (!fixture.has_value() || !slot0.has_value()) {
+			return false;
+		}
+		const auto build = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationBuildPath(
+		    slot0->runtime_dir);
+		std::error_code ec;
+		std::filesystem::create_directories(build / "models", ec);
+		ok &= Expect(!ec && WriteFile(build / "config.ini", "partial\n") &&
+		                 WriteFile(build / "models" / "alice.dat", "partial\n"),
+		             "leaves an interrupted build behind");
+		std::filesystem::remove(slot0->config_path, ec);
+		auto rebuilt = Prepare(*fixture, operations);
+		ok &= Expect(!ec && rebuilt.has_value() && rebuilt->runtime_dir == slot0->runtime_dir &&
+		                 ReadFile(rebuilt->config_path) == "config-v1\n" &&
+		                 !std::filesystem::exists(build),
+		             "interrupted build is removed and the slot rebuilt");
+		CloseLease(rebuilt);
+
+		// A leftover beside a healthy slot is removed by the next run, not only by a rebuild, and
+		// a non-directory at the side name is removed too.
+		ok &= Expect(WriteFile(build, "not a directory\n"), "leaves a file at the side name");
+		auto healthy = Prepare(*fixture, operations);
+		ok &= Expect(healthy.has_value() && healthy->runtime_dir == slot0->runtime_dir &&
+		                 !std::filesystem::exists(build),
+		             "leftover beside a healthy slot is removed by the next run");
+		CloseLease(healthy);
+
+		// Nested leftovers are removed without following symlinks out of the runtime root.
+		const auto outside = temp_root / "interrupted-build-outside";
+		ok &= Expect(WriteFile(outside, "keep\n"), "creates a file outside the runtime root");
+		std::filesystem::create_directories(build / "models" / "nested", ec);
+		ok &= Expect(!ec && symlink(outside.c_str(), (build / "models" / "link").c_str()) == 0,
+		             "leaves nested content and a symlink in an interrupted build");
+		std::filesystem::remove(slot0->config_path, ec);
+		auto cleaned = Prepare(*fixture, operations);
+		ok &= Expect(!ec && cleaned.has_value() && cleaned->runtime_dir == slot0->runtime_dir &&
+		                 !std::filesystem::exists(build) && ReadFile(outside) == "keep\n",
+		             "nested leftovers are removed without following symlinks");
+		CloseLease(cleaned);
+
+		// Nesting deeper than any build creates fails closed; the other slot serves.
+		std::filesystem::create_directories(build / "a" / "b" / "c" / "d" / "e" / "f", ec);
+		std::filesystem::remove(slot0->config_path, ec);
+		const auto expected_slot1 =
+		    PreparedRuntimeGenerationDir(fixture->root, target_uid, RuntimeGenerationSlot::kSlot1);
+		auto fallback = Prepare(*fixture, operations);
+		ok &= Expect(!ec && fallback.has_value() && fallback->runtime_dir == expected_slot1 &&
+		                 std::filesystem::exists(build / "a" / "b" / "c" / "d" / "e" / "f") &&
+		                 !std::filesystem::exists(slot0->config_path),
+		             "leftovers nested beyond the limit fail closed while slot1 serves");
+		CloseLease(fallback);
+
+		// After the swap the previous directory sits at the side name. If it cannot be removed,
+		// the rebuilt slot still serves: the swap already committed it.
+		std::filesystem::remove_all(build, ec);
+		const auto deep = slot0->user_models_dir / "a" / "b" / "c" / "d" / "e";
+		std::filesystem::create_directories(deep, ec);
+		ok &= Expect(!ec && WriteFile(fixture->config, "config-v2\n"),
+		             "changes the source so the next run refreshes slot0 first");
+		auto swapped = Prepare(*fixture, operations);
+		ok &= Expect(swapped.has_value() && swapped->runtime_dir == slot0->runtime_dir &&
+		                 ReadFile(swapped->config_path) == "config-v2\n" &&
+		                 !std::filesystem::exists(deep) &&
+		                 std::filesystem::exists(build / "models" / "a" / "b" / "c" / "d" / "e"),
+		             "rebuilt slot serves even when the swapped-out directory cannot be removed");
+		CloseLease(swapped);
 		return ok;
 	}
 
@@ -653,6 +775,12 @@ namespace {
 		auto both_prepared =
 		    both_fixture.has_value() ? Prepare(*both_fixture, operations) : std::nullopt;
 		ok &= Expect(both_prepared.has_value(), "creates both-slot malformed fixture");
+		if (both_fixture.has_value() && both_prepared.has_value()) {
+			ok &= Expect(WriteFile(both_fixture->config, "config-v2\n"), "changes the source");
+			auto second = Prepare(*both_fixture, operations);
+			ok &= Expect(second.has_value(), "builds slot1 while slot0 is leased");
+			CloseLease(second);
+		}
 		CloseLease(both_prepared);
 		if (both_fixture.has_value() && both_prepared.has_value()) {
 			const auto slot0_lock = PreparedRuntimeGenerationLockPath(both_prepared->runtime_dir);
@@ -687,8 +815,10 @@ namespace {
 		return ok;
 	}
 
-	auto ExpectMalformedObjectsFail(const std::filesystem::path &temp_root, uid_t target_uid,
-	                                const howdy::native::auth_helper::AclOperations &operations)
+	// Damaged objects in a valid slot directory are never used: the slot is rebuilt from the
+	// trusted sources and swapped in.
+	auto ExpectDamagedObjectsRebuilt(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                 const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
 		bool ok = true;
 
@@ -703,12 +833,12 @@ namespace {
 			std::string replayed;
 			auto        fallback = PrepareQuiet(*mode_fixture, operations, replayed);
 			struct stat damaged_stat{};
-			ok &= Expect(replayed.empty(), "config fallback leaves helper stderr empty");
+			ok &= Expect(replayed.empty(), "rebuilt slot leaves helper stderr empty");
 			ok &= Expect(fallback.has_value() &&
-			                 fallback->runtime_dir != mode_prepared->runtime_dir &&
+			                 fallback->runtime_dir == mode_prepared->runtime_dir &&
 			                 lstat(mode_prepared->config_path.c_str(), &damaged_stat) == 0 &&
-			                 howdy::native::MaskedBits(damaged_stat.st_mode, 07777) == 0600,
-			             "malformed config remains untouched while other slot serves");
+			                 howdy::native::MaskedBits(damaged_stat.st_mode, 07777) == 0640,
+			             "slot with a damaged config mode is rebuilt");
 			CloseLease(fallback);
 		}
 
@@ -724,12 +854,14 @@ namespace {
 			std::string replayed;
 			auto        fallback = PrepareQuiet(*link_fixture, operations, replayed);
 			struct stat damaged_stat{};
-			ok &= Expect(replayed.empty(), "extra-link fallback leaves helper stderr empty");
+			ok &= Expect(replayed.empty(), "rebuilt slot leaves helper stderr empty");
+			struct stat extra_stat{};
 			ok &= Expect(fallback.has_value() &&
-			                 fallback->runtime_dir != link_prepared->runtime_dir &&
+			                 fallback->runtime_dir == link_prepared->runtime_dir &&
 			                 lstat(link_prepared->config_path.c_str(), &damaged_stat) == 0 &&
-			                 damaged_stat.st_nlink == 2,
-			             "unexpected link count remains untouched while other slot serves");
+			                 damaged_stat.st_nlink == 1 && lstat(extra.c_str(), &extra_stat) == 0 &&
+			                 extra_stat.st_nlink == 1,
+			             "slot with an extra config link is rebuilt; the other name is kept");
 			CloseLease(fallback);
 		}
 
@@ -750,10 +882,11 @@ namespace {
 				             "replaces visible name with foreign inode");
 				const auto foreign_inode = InodeOf(visible);
 				auto       fallback      = Prepare(*visible_fixture, operations);
-				ok &= Expect(fallback.has_value() &&
-				                 fallback->runtime_dir != visible_prepared->runtime_dir &&
-				                 InodeOf(visible) == foreign_inode,
-				             "visible mismatch remains untouched while other slot serves");
+				ok &=
+				    Expect(fallback.has_value() &&
+					           fallback->runtime_dir == visible_prepared->runtime_dir &&
+					           InodeOf(visible) != foreign_inode && ReadFile(visible) == "model\n",
+					       "slot with a foreign visible model is rebuilt");
 				CloseLease(fallback);
 			}
 		}
@@ -770,10 +903,10 @@ namespace {
 				auto        fallback = Prepare(*owner_fixture, operations);
 				struct stat damaged_stat{};
 				ok &= Expect(fallback.has_value() &&
-				                 fallback->runtime_dir != owner_prepared->runtime_dir &&
+				                 fallback->runtime_dir == owner_prepared->runtime_dir &&
 				                 lstat(owner_prepared->config_path.c_str(), &damaged_stat) == 0 &&
-				                 damaged_stat.st_uid == 61007,
-				             "malformed owner remains untouched while other slot serves");
+				                 damaged_stat.st_uid == geteuid(),
+				             "slot with a foreign config owner is rebuilt");
 				CloseLease(fallback);
 			}
 		}
@@ -801,10 +934,12 @@ auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
 			ok &= test(*fixture, context.operations);
 		}
 	}
-	ok &= ExpectPartialSlotFallback(temp_root, target_uid, context.operations);
+	ok &= ExpectPartialSlotRebuilt(temp_root, target_uid, context.operations);
+	ok &= ExpectInterruptedBuildCleanedUp(temp_root, target_uid, context.operations);
+	ok &= ExpectFailedWriteNotRebuilt(temp_root, target_uid, context.operations);
 	ok &= ExpectMalformedSlotDiscovery(temp_root, target_uid, context.operations);
 	ok &= ExpectCreationIdentityRestored(temp_root, target_uid, context.operations);
-	ok &= ExpectMalformedObjectsFail(temp_root, target_uid, context.operations);
+	ok &= ExpectDamagedObjectsRebuilt(temp_root, target_uid, context.operations);
 	if (context.acl_supported) {
 		ok &= ExpectCrossUidAclAccess(temp_root, context.production_operations);
 	}
