@@ -261,6 +261,7 @@ auto main(int argc, char **argv) -> int {
 		Check(session, "disable rejects short user value", {"howdy", "disable", "-U", ""});
 		Check(session, "disable rejects user value", {"howdy", "disable", "--user", ""});
 		Check(session, "end-of-options suppresses user", {"howdy", "add", "--", "-U", ""});
+		Check(session, "dash command after terminator", {"howdy", "--", "-U", ""});
 		Check(session, "used test device option",
 		      {"howdy", "test", "--device", "/dev/video0", "--d"});
 		Check(session, "set numeric value", {"howdy", "set", "timeout", ""});

@@ -71,9 +71,9 @@ _howdy() {
 				command_option_spellings+=("$command_spelling")
 				command_option_takes_argument["$command_spelling"]="$command_takes_argument"
 			fi
-		done < <(howdy __complete command-options "$command")
+		done < <(howdy __complete -- command-options "$command")
 
-		if ! command_max_positionals=$(howdy __complete command-max-positionals "$command"); then
+		if ! command_max_positionals=$(howdy __complete -- command-max-positionals "$command"); then
 			completion_disabled=1
 		fi
 		local pre_command_option
@@ -222,7 +222,7 @@ _howdy() {
 
 	local -a values=()
 	mapfile -t values < <(
-		howdy __complete command-values "$command" "$positional_argument_count" "${positional_arguments[@]}"
+		howdy __complete -- command-values "$command" "$positional_argument_count" "${positional_arguments[@]}"
 	)
 	local value
 	for value in "${values[@]}"; do

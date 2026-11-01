@@ -69,9 +69,14 @@ while IFS= read -r -d '' word_count; do
 		COMP_WORDS+=("$word")
 	done
 	COMP_CWORD=$((${#COMP_WORDS[@]} - 1))
-	_howdy
+	# Completion must not write diagnostics to the user's terminal.
+	_howdy 2>> "$completion_cache_dir/stderr"
 	printf '%s\0' "${#COMPREPLY[@]}"
 	for completion in "${COMPREPLY[@]}"; do
 		printf '%s\0' "$completion"
 	done
 done
+if [[ -s $completion_cache_dir/stderr ]]; then
+	cat "$completion_cache_dir/stderr" >&2
+	exit 3
+fi
