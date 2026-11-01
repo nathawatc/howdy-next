@@ -617,9 +617,10 @@ namespace {
 			if (child_pid <= 0) {
 				return;
 			}
-			prompt_context.next_child_pid       = child_pid;
-			prompt_context.token_result         = token_result;
-			prompt_context.token_waits_for_reap = !blocked_child;
+			prompt_context.next_child_pid                     = child_pid;
+			prompt_context.token_result                       = token_result;
+			prompt_context.token_waits_for_reap               = !blocked_child;
+			prompt_context.token_waits_for_compare_completion = !blocked_child;
 			prompt_context.token_delay =
 			    blocked_child ? std::chrono::milliseconds(50) : std::chrono::milliseconds(0);
 

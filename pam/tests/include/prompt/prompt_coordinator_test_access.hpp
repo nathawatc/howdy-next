@@ -18,6 +18,15 @@ namespace howdy::pam {
 			});
 		}
 
+		static auto WaitForCompareCompletion(PromptCoordinator                  &coordinator,
+		                                     std::chrono::steady_clock::duration timeout) -> bool {
+			std::unique_lock<std::mutex> lock(coordinator.mutex_);
+			return coordinator.condition_.wait_for(lock, timeout, [&coordinator] -> bool {
+				return coordinator.state_.first_completion !=
+				       PromptCoordinator::FirstCompletion::kNone;
+			});
+		}
+
 		[[nodiscard]] static auto PasswordCallReturned(PromptCoordinator &coordinator) -> bool {
 			std::scoped_lock const lock(coordinator.mutex_);
 			return coordinator.state_.password_call_returned;

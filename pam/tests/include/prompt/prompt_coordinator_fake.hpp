@@ -88,6 +88,7 @@ namespace howdy::test::prompt_coordinator {
 		bool                                  complete_without_conversation      = false;
 		bool                                  hold_reaped_until_cancel           = false;
 		bool                                  token_waits_for_reap               = false;
+		bool                                  token_waits_for_compare_completion = false;
 		bool                                  throw_compare_wait                 = false;
 		bool                                  child_reaped_by_wait               = false;
 		bool                                  before_conversation                = false;
@@ -512,6 +513,15 @@ namespace howdy::test::prompt_coordinator {
 			fake.reap_condition.wait_for(lock, 1s, [&fake] -> bool {
 				return fake.child_reaped_by_wait;
 			});
+		}
+		// The reap signal fires before the coordinator publishes the compare result, so a
+		// password return right after it can win the first-completion race. Wait for the
+		// published result. The observer context is the coordinator; it is only populated when
+		// the input workaround creates the secret prompt conversation.
+		if (fake.token_waits_for_compare_completion &&
+		    fake.secret_prompt_observer.context != nullptr) {
+			(void)howdy::pam::PromptCoordinatorTestAccess::WaitForCompareCompletion(
+			    *static_cast<PromptCoordinator *>(fake.secret_prompt_observer.context), 1s);
 		}
 		if (fake.request_native_prompt) {
 			(void)pamh;
