@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <future>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -20,6 +21,7 @@
 #include <thread>
 #include <utility>
 
+#include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -482,9 +484,7 @@ auto ExpectReadEintrWithAbortFailsClosed() -> bool {
 	    kPromptReadTimeoutMs);
 	ok &= Expect(prompt_bytes > 0, "read EINTR abort test prompt is written to tty");
 
-	constexpr char password = 's';
-	ok &= Expect(write(master_fd.Get(), &password, 1) == 1,
-	             "read EINTR abort test makes tty readable");
+	ok &= Expect(WriteAll(master_fd.Get(), "s\n"), "read EINTR abort test makes tty readable");
 
 	prompt_thread.join();
 
@@ -496,17 +496,22 @@ auto ExpectReadEintrWithAbortFailsClosed() -> bool {
 	return ok;
 }
 
-auto ExpectReadZeroRetriesAndAcceptsInput() -> bool {
+auto ExpectReadZeroAbortsPrompt() -> bool {
 	bool                    ok = true;
 	ScopedFd                master_fd;
 	ScopedFd                slave_fd;
 	std::array<ScopedFd, 2> abort_pipe;
 
-	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "read zero retry test opens pseudo terminal");
-	ok &= Expect(OpenPipe(&abort_pipe), "read zero retry test creates abort pipe");
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "read zero test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "read zero test creates abort pipe");
 	if (!ok) {
 		return false;
 	}
+
+	const struct pam_message prompt = {
+	    .msg_style = PAM_PROMPT_ECHO_OFF,
+	    .msg       = "Password: ",
+	};
 
 	InputOperationContext operations{.read_zero_count = 1};
 	auto const            conversation = CreateInputConversation(
@@ -516,8 +521,29 @@ auto ExpectReadZeroRetriesAndAcceptsInput() -> bool {
 	        .abort_write_fd = std::move(abort_pipe.at(1)),
 	    },
 	    &operations);
-	return ExpectPromptInputReturnsPasswordAfterRetry(conversation.get(), master_fd.Get(),
-	                                                  "read zero retry test");
+
+	int         prompt_result = PAM_SUCCESS;
+	char       *response      = nullptr;
+	std::thread prompt_thread([&] -> void {
+		prompt_result =
+		    NativePromptConversationTestAccess::PromptInput(*conversation, prompt, &response, true);
+	});
+
+	std::array<char, 64> prompt_buffer{};
+	ok &= Expect(ReadWithTimeout(master_fd.Get(),
+	                             {.data = prompt_buffer.data(), .size = prompt_buffer.size()},
+	                             kPromptReadTimeoutMs) > 0,
+	             "read zero test prompt is written to tty");
+	ok &= Expect(WriteAll(master_fd.Get(), "secret\n"), "read zero test makes tty readable");
+
+	prompt_thread.join();
+
+	ok &= Expect(prompt_result == PAM_CONV_ERR, "read returning EOF aborts the prompt");
+	ok &= Expect(response == nullptr, "read zero test returns no response");
+	if (response != nullptr) {
+		std::free(response);
+	}
+	return ok;
 }
 
 auto ExpectReadEagainRetriesAndAcceptsInput() -> bool {
@@ -585,9 +611,7 @@ auto ExpectReadEagainWithAbortFailsClosed() -> bool {
 	    kPromptReadTimeoutMs);
 	ok &= Expect(prompt_bytes > 0, "read EAGAIN abort test prompt is written to tty");
 
-	constexpr char password = 's';
-	ok &= Expect(write(master_fd.Get(), &password, 1) == 1,
-	             "read EAGAIN abort test makes tty readable");
+	ok &= Expect(WriteAll(master_fd.Get(), "s\n"), "read EAGAIN abort test makes tty readable");
 
 	prompt_thread.join();
 
@@ -730,37 +754,285 @@ auto ExpectNativeMessageStyles() -> bool {
 
 auto ExpectNativePromptInputEdges() -> bool {
 	using howdy::pam::native_prompt_input::CharacterResult;
+	using howdy::pam::native_prompt_input::ProcessCharacter;
 	using howdy::pam::native_prompt_input::SensitiveBuffer;
 
-	bool            ok = true;
+	bool           ok = true;
+	struct termios terminal{};
+	terminal.c_cc[VINTR] = 0x18;  // stty intr ^X
+	terminal.c_cc[VQUIT] = 0x1c;
+	terminal.c_cc[VSUSP] = 0x1a;
+
 	SensitiveBuffer password;
 	bool            response_too_long = false;
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 '\b', password, response_too_long) == CharacterResult::kKeepReading &&
-	                 password.Empty(),
-	             "backspace on empty password is ignored");
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 'x', password, response_too_long) == CharacterResult::kKeepReading &&
+	ok &= Expect(ProcessCharacter('x', terminal, password, response_too_long) ==
+	                     CharacterResult::kKeepReading &&
 	                 password.Size() == 1,
 	             "ordinary character is appended to password");
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 127, password, response_too_long) == CharacterResult::kKeepReading &&
-	                 password.Empty(),
-	             "delete removes last password character");
+	ok &= Expect(ProcessCharacter(127, terminal, password, response_too_long) ==
+	                     CharacterResult::kKeepReading &&
+	                 password.Size() == 0,
+	             "DEL reaching the reader (erase is ^H) still erases");
+	ok &= Expect(ProcessCharacter('\b', terminal, password, response_too_long) ==
+	                     CharacterResult::kKeepReading &&
+	                 password.Size() == 0,
+	             "backspace on an empty password is ignored");
+	for (const char byte : {'a', '\xc3', '\xa9'}) {
+		(void)ProcessCharacter(byte, terminal, password, response_too_long);
+	}
+	(void)ProcessCharacter('\b', terminal, password, response_too_long);
+	ok &= Expect(password.Size() == 2, "without IUTF8 backspace removes one byte");
+	terminal.c_iflag = IUTF8;
+	(void)ProcessCharacter('\xa9', terminal, password, response_too_long);
+	(void)ProcessCharacter('\b', terminal, password, response_too_long);
+	ok &= Expect(password.Size() == 1, "with IUTF8 backspace removes a whole UTF-8 character");
+	ok &= Expect(ProcessCharacter(3, terminal, password, response_too_long) ==
+	                     CharacterResult::kKeepReading &&
+	                 password.Size() == 2,
+	             "default ^C is data when the user remapped intr");
+	for (const char signal_char : {'\x18', '\x1c', '\x1a', '\0'}) {
+		ok &= Expect(ProcessCharacter(signal_char, terminal, password, response_too_long) ==
+		                 CharacterResult::kAbort,
+		             "configured intr, quit, susp, and NUL abort password input");
+	}
 	response_too_long = true;
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 'y', password, response_too_long) == CharacterResult::kKeepReading &&
-	                 password.Empty(),
+	ok &= Expect(ProcessCharacter('y', terminal, password, response_too_long) ==
+	                     CharacterResult::kKeepReading &&
+	                 password.Size() == 2,
 	             "characters after response overflow are drained");
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 '\r', password, response_too_long) == CharacterResult::kComplete,
-	             "carriage return completes password input");
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 3, password, response_too_long) == CharacterResult::kAbort,
-	             "Ctrl-C aborts password input");
-	ok &= Expect(howdy::pam::native_prompt_input::ProcessCharacter(
-	                 '\0', password, response_too_long) == CharacterResult::kAbort,
-	             "embedded NUL aborts password input");
+	ok &= Expect(ProcessCharacter('\r', terminal, password, response_too_long) ==
+	                 CharacterResult::kComplete,
+	             "carriage return from raw-mode typeahead completes password input");
+	ok &= Expect(ProcessCharacter('\n', terminal, password, response_too_long) ==
+	                 CharacterResult::kComplete,
+	             "newline completes password input");
+	return ok;
+}
+
+namespace {
+	struct PtyPromptCase {
+		std::string_view input;
+		bool             hide_input  = true;
+		tcflag_t         extra_iflag = 0;
+		tcflag_t         extra_lflag = 0;
+		tcflag_t         clear_iflag = 0;
+		tcflag_t         clear_lflag = 0;
+		tcflag_t         clear_oflag = 0;
+		bool             raw         = false;  // caller left the tty in cfmakeraw() mode
+		std::string_view typeahead;            // typed before the prompt switched modes
+		bool             abort_after_echo = false;
+	};
+
+	struct PtyPromptRun {
+		int         result    = PAM_SUCCESS;
+		bool        timed_out = false;
+		std::string response;
+		std::string output;    // what the terminal displayed
+		std::string leftover;  // what the next reader gets after "next\n" is typed
+	};
+
+	auto ReadChunk(int fd, int timeout_ms) -> std::string {
+		std::array<char, 256> buffer{};
+		const ssize_t         count =
+		    ReadWithTimeout(fd, {.data = buffer.data(), .size = buffer.size()}, timeout_ms);
+		return count > 0 ? std::string(buffer.data(), static_cast<std::size_t>(count))
+		                 : std::string();
+	}
+
+	// Runs one native prompt on a real pty so the kernel line discipline does the editing.
+	auto RunPtyPrompt(const PtyPromptCase &test_case) -> std::optional<PtyPromptRun> {
+		ScopedFd                master_fd;
+		ScopedFd                slave_fd;
+		std::array<ScopedFd, 2> abort_pipe;
+		struct termios          terminal{};
+		if (!OpenPtyPair(&master_fd, &slave_fd) || !OpenPipe(&abort_pipe) ||
+		    tcgetattr(slave_fd.Get(), &terminal) != 0) {
+			return std::nullopt;
+		}
+		if (test_case.raw) {
+			cfmakeraw(&terminal);
+		}
+		terminal.c_iflag |= test_case.extra_iflag;
+		terminal.c_lflag |= test_case.extra_lflag;
+		terminal.c_iflag &= ~test_case.clear_iflag;
+		terminal.c_lflag &= ~test_case.clear_lflag;
+		terminal.c_oflag &= ~test_case.clear_oflag;
+		if (tcsetattr(slave_fd.Get(), TCSANOW, &terminal) != 0) {
+			return std::nullopt;
+		}
+
+		if (!WriteAll(master_fd.Get(), test_case.typeahead)) {
+			return std::nullopt;
+		}
+
+		const int                slave_raw_fd = slave_fd.Get();
+		auto const               conversation = CreateConversation({
+		    .tty_fd         = std::move(slave_fd),
+		    .abort_read_fd  = std::move(abort_pipe.at(0)),
+		    .abort_write_fd = std::move(abort_pipe.at(1)),
+		});
+		const struct pam_message message{
+		    .msg_style = test_case.hide_input ? PAM_PROMPT_ECHO_OFF : PAM_PROMPT_ECHO_ON,
+		    .msg       = "P: ",
+		};
+
+		PtyPromptRun run;
+		char        *response = nullptr;
+		auto         result   = std::async(std::launch::async, [&] -> int {
+			return NativePromptConversationTestAccess::PromptInput(*conversation, message,
+			                                                       &response, test_case.hide_input);
+		});
+
+		run.output = ReadChunk(master_fd.Get(), kPromptReadTimeoutMs);
+		(void)WriteAll(master_fd.Get(), test_case.input);
+		if (test_case.abort_after_echo) {
+			// The echo proves the kernel holds the partial line before the abort flushes it.
+			while (!run.output.contains(test_case.input)) {
+				const auto chunk = ReadChunk(master_fd.Get(), kPromptReadTimeoutMs);
+				if (chunk.empty()) {
+					break;
+				}
+				run.output += chunk;
+			}
+			conversation->RequestAbort();
+		}
+		if (result.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+			run.timed_out = true;
+			conversation->RequestAbort();
+		}
+		run.result = result.get();
+		for (auto chunk = ReadChunk(master_fd.Get(), 100); !chunk.empty();
+		     chunk      = ReadChunk(master_fd.Get(), 100)) {
+			run.output += chunk;
+		}
+		if (response != nullptr) {
+			run.response = response;
+			std::free(response);
+		}
+
+		(void)WriteAll(master_fd.Get(), "next\n");
+		run.leftover = ReadChunk(slave_raw_fd, kPromptReadTimeoutMs);
+		return run;
+	}
+
+	struct PtyPromptExpectation {
+		int              result = PAM_SUCCESS;
+		std::string_view response;
+		std::string_view output;
+	};
+
+	auto ExpectPtyPrompt(const PtyPromptCase &test_case, const PtyPromptExpectation &expected,
+	                     const std::string &message) -> bool {
+		const auto maybe_run = RunPtyPrompt(test_case);
+		if (!maybe_run.has_value()) {
+			return Expect(false, message + ": sets up pty");
+		}
+		const PtyPromptRun &run = *maybe_run;
+		bool                ok  = true;
+		ok &= Expect(!run.timed_out, message + ": prompt finishes without an abort request");
+		ok &= Expect(run.result == expected.result, message + ": result");
+		ok &= Expect(run.response == expected.response, message + ": response");
+		ok &= Expect(run.output == expected.output,
+		             message + ": terminal output, got [" + run.output + "]");
+		ok &= Expect(run.leftover == "next\n",
+		             message + ": no input left for the next reader, got [" + run.leftover + "]");
+		return ok;
+	}
+}  // namespace
+
+auto ExpectKernelLineEditing() -> bool {
+	constexpr std::string_view hidden_output = "P: \r\n";
+	bool                       ok            = true;
+	// ^U kill, then a UTF-8 character erased whole (IUTF8) with one DEL.
+	ok &= ExpectPtyPrompt({.input = "wrong\025s\303\251\177ecret\n", .extra_iflag = IUTF8},
+	                      {.response = "secret", .output = hidden_output}, "kill and UTF-8 erase");
+	ok &= ExpectPtyPrompt({.input = "foo bar\027baz\n"},
+	                      {.response = "foo baz", .output = hidden_output}, "word erase");
+	ok &= ExpectPtyPrompt({.input = "a\026\025b\n"}, {.response = "b", .output = hidden_output},
+	                      "literal next is disabled, so ^U still kills the line");
+	ok &= ExpectPtyPrompt({.input = "ab\004c\n"}, {.response = "abc", .output = hidden_output},
+	                      "EOF mid-line is not data");
+	ok &= ExpectPtyPrompt({.input = "\004"}, {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "EOF on empty line aborts");
+	ok &= ExpectPtyPrompt({.input = "ab\032"}, {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "suspend aborts without Enter");
+	ok &= ExpectPtyPrompt({.input = "a\034b\n"}, {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "quit aborts and discards the rest of the line");
+	ok &= ExpectPtyPrompt({.input = "abc\r", .clear_iflag = ICRNL},
+	                      {.response = "abc", .output = hidden_output},
+	                      "Enter ends the line despite the caller's -icrnl");
+	ok &= ExpectPtyPrompt({.input = "pwx\b\n"}, {.response = "pw", .output = hidden_output},
+	                      "a Backspace byte that is not stty erase still erases");
+	ok &= ExpectPtyPrompt({.input = "pv\177w zz\027\r", .raw = true},
+	                      {.response = "pw ", .output = hidden_output},
+	                      "Enter, erase and word erase work for a cfmakeraw() caller");
+	ok &= ExpectPtyPrompt({.input = "a\003", .raw = true},
+	                      {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "intr aborts at once for a cfmakeraw() caller");
+	ok &= ExpectPtyPrompt({.input = "a\032", .raw = true},
+	                      {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "susp aborts at once for a cfmakeraw() caller");
+	ok &= ExpectPtyPrompt({.input = "", .raw = true, .typeahead = "pw\r"},
+	                      {.response = "pw", .output = hidden_output},
+	                      "raw-mode typeahead ending in carriage return completes");
+	ok &= ExpectPtyPrompt({.input = "a\003", .clear_lflag = ISIG},
+	                      {.result = PAM_CONV_ERR, .output = hidden_output},
+	                      "intr aborts at once even when the caller had ISIG off");
+	ok &= ExpectPtyPrompt({.input = "pw\n", .clear_oflag = ONLCR},
+	                      {.response = "pw", .output = hidden_output},
+	                      "prompt newline gets its carriage return despite the caller's -onlcr");
+	ok &= ExpectPtyPrompt({.input = "pw\n", .extra_lflag = ECHONL},
+	                      {.response = "pw", .output = hidden_output},
+	                      "hidden prompt prints one newline even with ECHONL");
+	ok &= ExpectPtyPrompt({.input = "vi\177s\n", .hide_input = false},
+	                      {.response = "vs", .output = "P: vi\b \bs\r\n"},
+	                      "echo-on prompt erases on screen and ends one line");
+	ok &= ExpectPtyPrompt({.input = "part", .hide_input = false, .abort_after_echo = true},
+	                      {.result = PAM_CONV_ERR, .output = "P: part\r\n"},
+	                      "abort discards the half-typed line");
+	return ok;
+}
+
+auto ExpectAbortDuringStoppedOutputDoesNotHang() -> bool {
+	bool                    ok = true;
+	ScopedFd                master_fd;
+	ScopedFd                slave_fd;
+	std::array<ScopedFd, 2> abort_pipe;
+	ok &= Expect(OpenPtyPair(&master_fd, &slave_fd), "stopped output test opens pseudo terminal");
+	ok &= Expect(OpenPipe(&abort_pipe), "stopped output test creates abort pipe");
+	if (!ok) {
+		return false;
+	}
+
+	// Same effect as the user pressing ^S with IXON: writes to the tty stall.
+	const int slave_raw_fd = slave_fd.Get();
+	ok &= Expect(tcflow(slave_raw_fd, TCOOFF) == 0, "stopped output test stops tty output");
+	// Production opens PAM_TTY with O_NONBLOCK (OpenTtyFd).
+	ok &= Expect(
+	    fcntl(slave_raw_fd, F_SETFL,
+		      howdy::native::CombineBitsAs<int>(fcntl(slave_raw_fd, F_GETFL), O_NONBLOCK)) == 0,
+	    "stopped output test makes the tty non-blocking like production");
+	auto const               conversation = CreateConversation({
+	    .tty_fd         = std::move(slave_fd),
+	    .abort_read_fd  = std::move(abort_pipe.at(0)),
+	    .abort_write_fd = std::move(abort_pipe.at(1)),
+	});
+	const struct pam_message message{.msg_style = PAM_PROMPT_ECHO_OFF, .msg = "P: "};
+	char                    *response = nullptr;
+	auto                     result   = std::async(std::launch::async, [&] -> int {
+		return NativePromptConversationTestAccess::PromptInput(*conversation, message, &response,
+		                                                       true);
+	});
+
+	ok &= Expect(result.wait_for(std::chrono::milliseconds(300)) == std::future_status::timeout,
+	             "prompt write waits while output is stopped");
+	conversation->RequestAbort();
+	const bool finished = result.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+	ok &= Expect(finished, "abort ends the prompt even while output is stopped");
+	(void)tcflow(slave_raw_fd, TCOON);
+	ok &= Expect(result.get() == PAM_CONV_ERR, "aborted stopped-output prompt fails closed");
+	ok &= Expect(response == nullptr, "aborted stopped-output prompt returns no response");
+	std::free(response);
 	return ok;
 }
 
