@@ -616,16 +616,23 @@ namespace {
 		return ok;
 	}
 
-	// Fails only on files, so a rebuild creates its side directory and then fails while writing.
+	// Wraps the test's ACL operations (passed as `context`) and fails only on files, so a rebuild
+	// creates its side directory and then fails while writing.
+	auto DelegatingAclGet(void *context, int fd) -> acl_t {
+		const auto *inner = static_cast<const howdy::native::auth_helper::AclOperations *>(context);
+		return inner->acl_get_fd(inner->context, fd);
+	}
+
 	auto FailingFileAclSet(void *context, int fd, acl_t acl) -> int {
+		const auto *inner = static_cast<const howdy::native::auth_helper::AclOperations *>(context);
 		struct stat stat{};
 		if (fstat(fd, &stat) == 0 && S_ISDIR(stat.st_mode)) {
-			return acl_set_fd(fd, acl);
+			return inner->acl_set_fd(inner->context, fd, acl);
 		}
 		return FailingAclSet(context, fd, acl);
 	}
 
-	// A rebuild that fails the damaged slot in place and no side directory behind, so the
+	// A rebuild that fails leaves the damaged slot in place and no side directory behind, so the
 	// next run can rebuild it.
 	auto ExpectFailedRebuildCleanedUp(const std::filesystem::path &temp_root, uid_t target_uid,
 	                                  const howdy::native::auth_helper::AclOperations &operations)
@@ -643,8 +650,12 @@ namespace {
 		    slot0->runtime_dir);
 		std::error_code ec;
 		std::filesystem::remove(slot0->config_path, ec);
-		auto failing       = operations;
-		failing.acl_set_fd = FailingFileAclSet;
+		auto                                            inner   = operations;
+		const howdy::native::auth_helper::AclOperations failing = {
+		    .context    = &inner,
+		    .acl_get_fd = DelegatingAclGet,
+		    .acl_set_fd = FailingFileAclSet,
+		};
 		std::string replayed;
 		const auto  failed = PrepareQuiet(*fixture, failing, replayed);
 		ok &= Expect(!ec && !failed.has_value() && InodeOf(slot0->runtime_dir) == slot_inode &&
