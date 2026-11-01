@@ -2,7 +2,7 @@ name: PAM authentication issue
 description: Report sudo, login, polkit, lock-screen, or pam_howdy problems.
 title: "bug(pam): "
 labels:
-  - kind/bug
+  - bug
 body:
   - type: markdown
     attributes:

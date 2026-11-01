@@ -2,7 +2,7 @@ name: Feature request
 description: Propose a new Howdy Next feature or behavior change.
 title: "feat: "
 labels:
-  - kind/feature
+  - enhancement
 body:
   - type: markdown
     attributes:
