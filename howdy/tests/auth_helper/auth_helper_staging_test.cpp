@@ -556,6 +556,31 @@ namespace {
 		return ok;
 	}
 
+	// Staging creates its objects with umask 0 and the owner's group, and restores the caller's
+	// umask afterwards, so a narrow caller umask can neither change nor outlive staging.
+	auto ExpectCreationIdentityRestored(const std::filesystem::path &temp_root, uid_t target_uid,
+	                                    const howdy::native::auth_helper::AclOperations &operations)
+	    -> bool {
+		using howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath;
+		bool         ok       = true;
+		auto         fixture  = MakeFixture(temp_root, "creation-identity", target_uid);
+		const mode_t previous = umask(077);
+		auto         prepared = fixture.has_value() ? Prepare(*fixture, operations) : std::nullopt;
+		const mode_t restored = umask(previous);
+		struct stat  root_stat{};
+		struct stat  lock_stat{};
+		ok &= Expect(prepared.has_value() && restored == 077 && getegid() == getgid() &&
+		                 lstat(fixture->root.c_str(), &root_stat) == 0 &&
+		                 howdy::native::MaskedBits(root_stat.st_mode, 07777) == 0711 &&
+		                 lstat(PreparedRuntimeGenerationLockPath(prepared->runtime_dir).c_str(),
+		                       &lock_stat) == 0 &&
+		                 howdy::native::MaskedBits(lock_stat.st_mode, 07777) == 0600 &&
+		                 lock_stat.st_gid == getegid(),
+		             "staging restores the caller umask and creates exact modes");
+		CloseLease(prepared);
+		return ok;
+	}
+
 	auto ExpectMalformedSlotDiscovery(const std::filesystem::path &temp_root, uid_t target_uid,
 	                                  const howdy::native::auth_helper::AclOperations &operations)
 	    -> bool {
@@ -750,6 +775,7 @@ auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
 	}
 	ok &= ExpectPartialSlotFallback(temp_root, target_uid, context.operations);
 	ok &= ExpectMalformedSlotDiscovery(temp_root, target_uid, context.operations);
+	ok &= ExpectCreationIdentityRestored(temp_root, target_uid, context.operations);
 	ok &= ExpectMalformedObjectsFail(temp_root, target_uid, context.operations);
 	if (context.acl_supported) {
 		ok &= ExpectCrossUidAclAccess(temp_root, context.production_operations);

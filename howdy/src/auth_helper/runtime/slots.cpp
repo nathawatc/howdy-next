@@ -609,6 +609,8 @@ namespace howdy::native::auth_helper {
 			if (fd.Get() < 0) {
 				return LogSlotsErrnoFailure("open runtime directory", path, errno);
 			}
+			// Staging creates the root with umask 0 and the owner's group, so this is normally a
+			// no-op; it still corrects what a parent's setgid bit or default ACL imposes.
 			if (created && (fchown(fd.Get(), owner_uid, owner_gid) != 0 ||
 			                fchmod(fd.Get(), policy.mode) != 0)) {
 				return false;
