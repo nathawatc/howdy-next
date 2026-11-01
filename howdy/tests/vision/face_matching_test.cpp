@@ -4,9 +4,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <numbers>
+#include <numeric>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -22,10 +25,73 @@ namespace {
 		return agree;
 	}
 
+	auto AllFinite(const std::vector<float> &values) -> bool {
+		return std::ranges::all_of(values, [](float value) -> bool {
+			return std::isfinite(value);
+		});
+	}
+
+	// Scores one candidate from scratch; nullopt means the candidate is skipped.
+	auto ReferenceScore(const std::vector<float> &candidate, const std::vector<float> &query,
+	                    std::optional<float> probe_norm, FaceMetric metric)
+	    -> std::optional<float> {
+		if (candidate.size() != query.size() || !AllFinite(candidate)) {
+			return std::nullopt;
+		}
+		if (metric != FaceMetric::kCosine) {
+			return std::sqrt(std::inner_product(candidate.begin(), candidate.end(), query.begin(),
+			                                    0.0F, std::plus<>(),
+			                                    [](float left, float right) -> float {
+				                                    return (left - right) * (left - right);
+			                                    }));
+		}
+		const auto  candidate_norm = howdy::native::face_matching_detail::VectorNorm(candidate);
+		const float dot =
+		    std::inner_product(candidate.begin(), candidate.end(), query.begin(), 0.0F);
+		if (!candidate_norm.has_value() || !probe_norm.has_value() || !std::isfinite(dot)) {
+			return std::nullopt;
+		}
+		const float score = dot / std::max(*candidate_norm * *probe_norm, 1.0e-12F);
+		return std::isfinite(score) ? std::optional<float>{score} : std::nullopt;
+	}
+
+	// Single-pass reference with no cached norms or validity, checked against PreparedFaceMatcher.
+	auto ReferenceMatch(const std::vector<std::vector<float>> &known,
+	                    const std::vector<float> &probe, FaceMetric metric, float threshold)
+	    -> howdy::native::FaceMatch {
+		using howdy::native::face_matching_detail::UnitVector;
+		const auto *policy = howdy::native::GetFaceMetricPolicy(metric);
+		if (policy == nullptr) {
+			return {};
+		}
+		const bool               higher = policy->higher_score_is_better;
+		howdy::native::FaceMatch match{.score = higher ? -1.0F : std::numeric_limits<float>::max()};
+		const auto probe_norm = howdy::native::face_matching_detail::VectorNorm(probe);
+		const auto query      = metric == FaceMetric::kL2Norm ? UnitVector(probe) : probe;
+		if (known.empty() || query.empty() || !AllFinite(query)) {
+			return match;
+		}
+		int index = 0;
+		for (const auto &known_candidate : known) {
+			const auto candidate =
+			    metric == FaceMetric::kL2Norm ? UnitVector(known_candidate) : known_candidate;
+			const auto score = ReferenceScore(candidate, query, probe_norm, metric);
+			if (score.has_value() &&
+			    (higher ? (match.index < 0 || *score > match.score) : *score < match.score)) {
+				match.index = index;
+				match.score = *score;
+			}
+			++index;
+		}
+		match.accepted =
+		    match.index >= 0 && (higher ? match.score >= threshold : match.score <= threshold);
+		return match;
+	}
+
 	// Run every semantic case through both calculation paths.
 	auto CheckMatch(const std::vector<std::vector<float>> &known, const std::vector<float> &probe,
 	                FaceMetric metric, float threshold) -> howdy::native::FaceMatch {
-		const auto expected = howdy::native::FindBestFaceMatch(known, probe, metric, threshold);
+		const auto expected = ReferenceMatch(known, probe, metric, threshold);
 		const howdy::native::PreparedFaceMatcher matcher(known, metric, threshold);
 		const auto                               actual = matcher.Match(probe);
 		PreparedResultsAgree() &=
