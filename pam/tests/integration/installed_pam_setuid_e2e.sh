@@ -83,7 +83,7 @@ IFS=: read -r account_name _ selected_uid selected_gid _ _ _ <<< "$passwd_record
 [[ $selected_uid =~ ^[0-9]+$ && $selected_uid -gt 0 ]] || skip "selected account must be non-root"
 [[ $selected_gid =~ ^[0-9]+$ ]] || skip "selected account has invalid primary GID"
 getent group "$selected_gid" > /dev/null || skip "selected account primary group does not exist"
-for command in setpriv findmnt mount umount realpath cmake stat setfacl; do
+for command in setpriv findmnt mount umount realpath cmake stat setfacl cmp; do
 	command -v "$command" > /dev/null || skip "$command unavailable"
 done
 validate_opt_directory || fail "unsafe /opt directory"
