@@ -332,6 +332,28 @@ namespace howdy::test::download_models {
 		    CountFilesWithPrefix(atomic_directory_target.parent_path(), ".howdy-atomic-") == 0,
 		    "atomic writer creates no staged file for directory target");
 
+		const auto atomic_link_real = temp_root / "atomic-link-real";
+		const auto atomic_link      = temp_root / "atomic-link";
+		ok &= Expect(WriteFile(atomic_link_real, "real content"), "create symlink target file");
+		fs::create_symlink(atomic_link_real, atomic_link, ec);
+		ok &= Expect(!ec, "create symlink atomic writer destination");
+		ok &=
+		    Expect(!CommitIsDurable(howdy::native::WriteAtomicFile(atomic_link, "must not write")),
+			       "atomic writer rejects symlink destination");
+		ok &= Expect(fs::is_symlink(atomic_link, ec) && !ec &&
+		                 ReadFile(atomic_link_real) == "real content",
+		             "atomic writer leaves symlink and its target unchanged");
+
+		const auto atomic_dangling = temp_root / "atomic-dangling-link";
+		fs::create_symlink(temp_root / "atomic-missing-target", atomic_dangling, ec);
+		ok &= Expect(!ec, "create dangling symlink atomic writer destination");
+		ok &= Expect(
+		    !CommitIsDurable(howdy::native::WriteAtomicFile(atomic_dangling, "must not write")),
+		    "atomic writer rejects dangling symlink destination");
+		ok &= Expect(fs::is_symlink(atomic_dangling, ec) && !ec &&
+		                 !fs::exists(temp_root / "atomic-missing-target", ec),
+		             "atomic writer leaves dangling symlink unchanged");
+
 		const auto atomic_blocked_parent = temp_root / "atomic-blocked-parent";
 		ok &= Expect(WriteFile(atomic_blocked_parent, "blocking content"),
 		             "create file blocking atomic writer parent");
