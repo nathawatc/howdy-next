@@ -122,6 +122,15 @@ namespace {
 		std::filesystem::create_directory(user_owned_dir, ec);
 		ok &= Expect(!ec, "creates runtime root directory fixture");
 		ok &= Expect(chmod(user_owned_dir.c_str(), 0711) == 0, "sets runtime root fixture mode");
+		// Use the directory's real owner: a setgid parent can give it a gid other than getegid().
+		// Only the gid differs in the wrong-group case, and an existing root is never chowned, so
+		// it needs no root.
+		struct stat owned_stat{};
+		ok &= Expect(lstat(user_owned_dir.c_str(), &owned_stat) == 0, "stats runtime root fixture");
+		ok &= Expect(ValidateRuntimeRoot(user_owned_dir, owned_stat.st_uid, owned_stat.st_gid),
+		             "existing runtime root with its own owner and group is accepted");
+		ok &= Expect(!ValidateRuntimeRoot(user_owned_dir, owned_stat.st_uid, owned_stat.st_gid + 1),
+		             "existing runtime root with a wrong group is rejected");
 
 		const auto missing_dir = temp_root / "runtime-root-missing";
 		ok &= Expect(!std::filesystem::exists(missing_dir),
@@ -141,17 +150,17 @@ namespace {
 		for (const mode_t bad_mode : {mode_t{0777}, mode_t{0755}}) {
 			ok &=
 			    Expect(chmod(user_owned_dir.c_str(), bad_mode) == 0, "sets bad runtime root mode");
-			ok &= Expect(!ValidateRuntimeRoot(user_owned_dir, geteuid(), getegid()),
+			ok &= Expect(!ValidateRuntimeRoot(user_owned_dir, owned_stat.st_uid, owned_stat.st_gid),
 			             "existing runtime root with a wrong mode is rejected");
 		}
 		ok &= Expect(chmod(user_owned_dir.c_str(), 0711) == 0, "restores runtime root mode");
-		ok &= Expect(ValidateRuntimeRoot(user_owned_dir, geteuid(), getegid()),
+		ok &= Expect(ValidateRuntimeRoot(user_owned_dir, owned_stat.st_uid, owned_stat.st_gid),
 		             "existing runtime root with the exact owner and mode is accepted");
 
 		const auto symlink_path = temp_root / "runtime-root-symlink";
 		ok &= Expect(symlink(user_owned_dir.c_str(), symlink_path.c_str()) == 0,
 		             "creates runtime root symlink fixture");
-		ok &= Expect(!ValidateRuntimeRoot(symlink_path, geteuid(), getegid()),
+		ok &= Expect(!ValidateRuntimeRoot(symlink_path, owned_stat.st_uid, owned_stat.st_gid),
 		             "symlinked runtime root is rejected");
 
 		if (geteuid() == 0) {
