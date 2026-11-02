@@ -51,7 +51,7 @@ howdy_add_native_test(
  tests/support/fd_io_test.cpp
 )
 target_link_options(howdy_fd_io_test PRIVATE "LINKER:--wrap=read"
-                      "LINKER:--wrap=__read_chk")
+                      "LINKER:--wrap=__read_chk" "LINKER:--wrap=write")
 
 howdy_add_native_test(
  howdy_user_names_test
