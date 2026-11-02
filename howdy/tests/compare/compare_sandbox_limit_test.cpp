@@ -386,6 +386,27 @@ namespace {
 		return ok;
 	}
 
+	auto TestNullDependencyFailsClosed() -> bool {
+		bool ok = true;
+		for (int missing = 0; missing < 3; ++missing) {
+			FakeSandboxContext context;
+			auto               dependencies = MakeDependencies(context);
+			if (missing == 0) {
+				dependencies.getrlimit = nullptr;
+			} else if (missing == 1) {
+				dependencies.setrlimit = nullptr;
+			} else {
+				dependencies.prctl = nullptr;
+			}
+			const auto result =
+			    howdy::native::compare_sandbox_internal::ApplyCompareSandbox(4, dependencies);
+			ok &= Expect(result.status == CompareSandboxStatus::kNoNewPrivilegesFailure &&
+			                 result.error_number == EINVAL && context.events.empty(),
+			             "null sandbox callback fails closed without invoking callbacks");
+		}
+		return ok;
+	}
+
 	auto TestNoNewPrivilegesFailureStops() -> bool {
 		FakeSandboxContext context;
 		context.failure   = FailureOperation::kPrctl;
@@ -455,6 +476,7 @@ auto RunCompareSandboxLimitTests() -> bool {
 	ok &= TestBelowMinimumStops();
 	ok &= TestInspectionFailuresStop();
 	ok &= TestApplicationFailuresStop();
+	ok &= TestNullDependencyFailsClosed();
 	ok &= TestNoNewPrivilegesFailureStops();
 	ok &= TestTimeoutDerivedCpuArithmetic();
 	return ok;
