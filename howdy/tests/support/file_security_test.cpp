@@ -98,6 +98,83 @@ namespace {
 		return ok;
 	}
 
+	// Directory shapes that real distributions ship. Each case pins the current
+	// fail-closed verdict so a port that wants to relax it has to do so on purpose.
+	auto DistroLayoutChecks(const std::filesystem::path &fixture) -> bool {
+		namespace fs = std::filesystem;
+		using howdy::native::CheckSecureRootOwnedDirectoryTree;
+		using howdy::native::file_security_internal::ValidationRoot;
+		const auto rootfs = fixture / "distro-rootfs";
+		fs::create_directories(rootfs / "etc" / "howdy" / "models");
+		fs::create_directories(rootfs / "usr" / "share" / "howdy" / "models");
+		fs::create_directories(rootfs / "usr" / "local" / "etc");
+		fs::create_directories(rootfs / "usr" / "lib" / "security");
+		fs::create_directories(rootfs / "var" / "usrlocal" / "etc");
+		bool ok = true;
+		for (const auto &directory : {
+		         rootfs,
+		         rootfs / "etc",
+		         rootfs / "etc" / "howdy",
+		         rootfs / "etc" / "howdy" / "models",
+		         rootfs / "usr",
+		         rootfs / "usr" / "share",
+		         rootfs / "usr" / "share" / "howdy",
+		         rootfs / "usr" / "share" / "howdy" / "models",
+		         rootfs / "usr" / "lib",
+		         rootfs / "usr" / "lib" / "security",
+		         rootfs / "var",
+		         rootfs / "var" / "usrlocal",
+		         rootfs / "var" / "usrlocal" / "etc",
+		     }) {
+			// Distro directories are 0755: group/world readable, never writable.
+			ok &= Expect(chmod(directory.c_str(), 0755) == 0, "distro directory is 0755");
+		}
+		const ValidationRoot boundary{rootfs};
+		const auto check = [&](const fs::path &target) -> howdy::native::SecurePathCheckResult {
+			return CheckSecureRootOwnedDirectoryTree(target, "Distro directory", geteuid(),
+			                                         boundary);
+		};
+
+		ok &= Expect(check(rootfs / "etc" / "howdy" / "models").ok,
+		             "/etc/howdy/models under 0755 ancestors is accepted");
+		ok &= Expect(check(rootfs / "usr" / "share" / "howdy" / "models").ok,
+		             "/usr/share/howdy/models under 0755 ancestors is accepted");
+
+		// Debian's historical /usr/local is root:staff 2775.
+		const auto usr_local = rootfs / "usr" / "local";
+		ok &= Expect(chmod(usr_local.c_str(), 02775) == 0, "make /usr/local staff-writable");
+		const auto staff_writable = check(usr_local / "etc");
+		ok &= Expect(!staff_writable.ok && staff_writable.error_message.contains(
+		                                       "must not be group-writable: " + usr_local.string()),
+		             "setgid group-writable /usr/local ancestor is rejected");
+		ok &= Expect(chmod(usr_local.c_str(), 0755) == 0, "restore /usr/local");
+		ok &= Expect(check(usr_local / "etc").ok, "0755 /usr/local ancestor is accepted");
+
+		// Ubuntu ships /var/log as root:syslog 0775.
+		fs::create_directories(rootfs / "var" / "log");
+		ok &= Expect(chmod((rootfs / "var" / "log").c_str(), 0775) == 0,
+		             "make /var/log syslog-writable");
+		const auto syslog_writable = check(rootfs / "var" / "log");
+		ok &= Expect(!syslog_writable.ok &&
+		                 syslog_writable.error_message.contains("must not be group-writable"),
+		             "group-writable /var/log is rejected");
+
+		// Fedora Atomic links /usr/local to /var/usrlocal; merged-/usr systems link
+		// /lib to usr/lib. A symlinked ancestor is never followed.
+		fs::remove_all(usr_local);
+		fs::create_directory_symlink(rootfs / "var" / "usrlocal", usr_local);
+		const auto linked_usr_local = check(usr_local / "etc");
+		ok &= Expect(!linked_usr_local.ok &&
+		                 linked_usr_local.error_message.contains("must be a directory"),
+		             "symlinked /usr/local ancestor is rejected");
+		fs::create_directory_symlink(rootfs / "usr" / "lib", rootfs / "lib");
+		ok &= Expect(!check(rootfs / "lib" / "security").ok,
+		             "merged-usr /lib symlink ancestor is rejected");
+		ok &= Expect(check(rootfs / "usr" / "lib" / "security").ok,
+		             "the real /usr/lib/security path is accepted");
+		return ok;
+	}
+
 	auto SecureFile(const std::filesystem::path &path,
 	                std::optional<uid_t>         owner_uid = std::nullopt)
 	    -> howdy::native::SecurePathCheckResult {
@@ -151,6 +228,7 @@ auto main() -> int {
 	ok &= Expect(!ec, "create temp root");
 	ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure fixture boundary");
 	ok &= BoundaryChecks(temp_root);
+	ok &= DistroLayoutChecks(temp_root);
 
 	const auto safe_file = temp_root / "safe-file";
 	const auto safe_dir  = temp_root / "safe-dir";

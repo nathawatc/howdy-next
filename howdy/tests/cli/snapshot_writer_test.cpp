@@ -729,6 +729,61 @@ namespace {
 		return CleanupTempRoot(temp_root, ok);
 	}
 
+	// The production log path is /var/log/howdy/snapshots, so every distro's /var/log
+	// is an ancestor that must pass the secure-directory walk.
+	auto SnapshotDirectoryUnderDistroVarLog(const std::string &name, mode_t var_log_mode,
+	                                        bool symlink_var_log, bool expect_created,
+	                                        std::string_view expected_diagnostic) -> bool {
+		bool            ok       = true;
+		const auto      rootfs   = MakeTempRoot(name, ok);
+		const auto      var_log  = rootfs / "var" / "log";
+		const auto      snapshot = var_log / "howdy" / "snapshots";
+		std::error_code ec;
+		if (symlink_var_log) {
+			const auto elsewhere = rootfs / "elsewhere";
+			fs::create_directories(rootfs / "var", ec);
+			fs::create_directories(elsewhere, ec);
+			ok &= Expect(chmod((rootfs / "var").c_str(), 0755) == 0, "secure var");
+			ok &= Expect(chmod(elsewhere.c_str(), 0755) == 0, "secure symlink target");
+			fs::create_directory_symlink(elsewhere, var_log, ec);
+		} else {
+			fs::create_directories(var_log, ec);
+			ok &= Expect(chmod((rootfs / "var").c_str(), 0755) == 0, "secure var");
+			ok &= Expect(chmod(var_log.c_str(), var_log_mode) == 0, "set var/log mode");
+		}
+		ok &= Expect(!ec, "distro var/log fixture created");
+		ok &= Expect(chmod(rootfs.c_str(), 0755) == 0, "secure fixture root");
+
+		std::ostringstream error;
+		bool               created = false;
+		{
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
+			created = snapshot_internal::EnsureSnapshotDirectory(snapshot, {rootfs});
+		}
+		ok &= Expect(created == expect_created, name + ": snapshot directory verdict");
+		if (!expected_diagnostic.empty()) {
+			ok &= Expect(error.str().contains(expected_diagnostic),
+			             name + ": diagnostic mentions " + std::string(expected_diagnostic));
+			ok &= Expect(!fs::exists(var_log / "howdy"), name + ": nothing created under var/log");
+		}
+		if (expect_created) {
+			ok &= ExpectMode(var_log / "howdy", kSnapshotDirectoryMode, name + ": howdy log mode");
+			ok &= ExpectMode(snapshot, kSnapshotDirectoryMode, name + ": snapshots mode");
+		}
+		return CleanupTempRoot(rootfs, ok);
+	}
+
+	auto DistroVarLogLayouts() -> bool {
+		bool ok = true;
+		ok &= SnapshotDirectoryUnderDistroVarLog("var-log-fedora-debian", 0755, false, true, "");
+		// Ubuntu: /var/log is root:syslog 0775.
+		ok &= SnapshotDirectoryUnderDistroVarLog("var-log-ubuntu", 0775, false, false,
+		                                         "Log directory must not be group-writable");
+		ok &= SnapshotDirectoryUnderDistroVarLog("var-log-symlink", 0755, true, false,
+		                                         "Log directory must be a directory");
+		return ok;
+	}
+
 	auto MissingDirectoriesAreCreatedAndSecured() -> bool {
 		bool                  ok            = true;
 		const auto            temp_root     = MakeTempRoot("directory-creation", ok);
@@ -807,6 +862,7 @@ auto main() -> int {
 	ok &= InsecureSnapshotsDirRejectsBeforeEncoding();
 	ok &= SymlinkedSnapshotsDirRejectsBeforeEncoding();
 	ok &= MissingDirectoriesAreCreatedAndSecured();
+	ok &= DistroVarLogLayouts();
 	ok &= MixedWidthFramesAreSupported();
 	ok &= CommittedSyncFailureIsReported();
 	return ok ? 0 : 1;
