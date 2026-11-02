@@ -17,7 +17,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <iostream>
 #include <iterator>
 #include <span>
 #include <stdexcept>
@@ -653,23 +652,20 @@ namespace {
 		static_cast<ReapContext *>(context)->log_messages.emplace_back(message);
 	}
 
-	auto TestValidPrepareIgnoresDestroyFailure() -> bool {
-		if (geteuid() != 0) {
-			std::cerr << "SKIP: the production runtime slot test needs root\n";
-			return true;
+	// Runs a valid helper exchange inside a temporary runtime root. With `inject_root` the
+	// operations point at that root; without it the production /run/howdy root applies and the
+	// output must be rejected as foreign, which proves the root is honored and fails closed.
+	auto RunValidPrepare(bool inject_root) -> bool {
+		auto        directory_template = std::to_array("/tmp/howdy-prepare-root-XXXXXX");
+		char const *parent             = mkdtemp(directory_template.data());
+		if (!Expect(parent != nullptr, "valid prepare creates temporary runtime root")) {
+			return false;
 		}
 		ReapContext state;
 		state.root = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
-		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), 0,
-		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
+		    parent, getuid(), howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		std::error_code error;
 		const auto      lock_path = std::filesystem::path(state.root.string() + ".lock");
-		// The production slot path is not injectable; never touch one that is already in use.
-		if (std::filesystem::exists(state.root, error) ||
-		    std::filesystem::exists(lock_path, error)) {
-			std::cerr << "SKIP: a real runtime slot already exists; not touching it\n";
-			return true;
-		}
 		std::filesystem::create_directories(state.root / "models", error);
 		const int creator_fd = open(lock_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 		bool      ok = Expect(!error && creator_fd >= 0, "valid prepare creates runtime lease");
@@ -686,22 +682,40 @@ namespace {
 			operations.actions_destroy = FailingActionsDestroy;
 			operations.spawn           = ValidSpawn;
 			operations.log_observer    = ReapLog;
+			// The lease is always acceptable, so only the runtime root can reject the exchange.
+			operations.lease_owner_uid = geteuid();
+			if (inject_root) {
+				operations.runtime_root = parent;
+			}
 			howdy::pam::PreparedRuntimeFiles prepared;
-			ok &= Expect(howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
-			                 "alice", &prepared, operations,
-			                 std::chrono::steady_clock::now() + std::chrono::seconds(1)),
-			             "valid output and lease survive post-spawn destroy failure");
-			ok &= Expect(state.destroy_calls == 1 && prepared.root_dir == state.root,
-			             "valid prepare preserves paths and destroys actions once");
-			ok &= Expect(state.log_messages.size() == 1 &&
-			                 state.log_messages.at(0).contains("posix_spawn_file_actions_destroy"),
-			             "valid prepare logs post-spawn destroy failure");
+			const bool accepted = howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
+			    "alice", &prepared, operations,
+			    std::chrono::steady_clock::now() + std::chrono::seconds(1));
+			if (inject_root) {
+				ok &= Expect(accepted, "valid output and lease survive post-spawn destroy failure");
+				ok &= Expect(state.destroy_calls == 1 && prepared.root_dir == state.root,
+				             "valid prepare preserves paths and destroys actions once");
+				ok &= Expect(
+				    state.log_messages.size() == 1 &&
+				        state.log_messages.at(0).contains("posix_spawn_file_actions_destroy"),
+				    "valid prepare logs post-spawn destroy failure");
+			} else {
+				ok &= Expect(!accepted && !prepared.lease_fd.Valid(),
+				             "output outside the production runtime root is rejected");
+			}
 			prepared.lease_fd.Reset();
 			(void)close(state.lease_fd);
 		}
-		std::filesystem::remove_all(state.root, error);
-		std::filesystem::remove(lock_path, error);
+		std::filesystem::remove_all(parent, error);
 		return ok;
+	}
+
+	auto TestValidPrepareIgnoresDestroyFailure() -> bool {
+		return RunValidPrepare(true);
+	}
+
+	auto TestPrepareRejectsOutputOutsideProductionRoot() -> bool {
+		return RunValidPrepare(false);
 	}
 
 	auto EofSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
@@ -904,6 +918,7 @@ auto RunRuntimeSessionSpawnTests() -> bool {
 	ok &= TestLeaseReceiver();
 	ok &= TestLeaseValidation();
 	ok &= TestValidPrepareIgnoresDestroyFailure();
+	ok &= TestPrepareRejectsOutputOutsideProductionRoot();
 	ok &= TestPrepareFailureReapsChild();
 	for (const auto point : {
 	         PrepareExceptionPoint::kSetup,
