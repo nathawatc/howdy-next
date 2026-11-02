@@ -655,6 +655,7 @@ namespace {
 
 	auto TestValidPrepareIgnoresDestroyFailure() -> bool {
 		if (geteuid() != 0) {
+			std::cerr << "SKIP: the production runtime slot test needs root\n";
 			return true;
 		}
 		ReapContext state;
