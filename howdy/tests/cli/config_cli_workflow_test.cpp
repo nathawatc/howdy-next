@@ -274,8 +274,7 @@ namespace howdy::test::config_cli {
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1, "unsafe path fails");
-				ok &= Expect(result.output.contains("must not be group or world-writable") ||
-				                 result.output.contains("Config file"),
+				ok &= Expect(result.output.contains("Config file must not be group-writable"),
 				             "unsafe path output contains security error");
 				ok &= Expect(context.editor_calls == 0, "unsafe path stops before editor");
 			}
