@@ -18,6 +18,7 @@
 
 namespace {
 
+	using howdy::native::CreateSecureDirectoryTree;
 	using howdy::test::Expect;
 	using howdy::test::WriteFile;
 
@@ -97,8 +98,10 @@ namespace {
 		return ok;
 	}
 
-	auto SecureFile(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
-		return howdy::native::CheckSecureRootOwnedFile(path, "Test file", std::nullopt);
+	auto SecureFile(const std::filesystem::path &path,
+	                std::optional<uid_t>         owner_uid = std::nullopt)
+	    -> howdy::native::SecurePathCheckResult {
+		return howdy::native::CheckSecureRootOwnedFile(path, "Test file", owner_uid);
 	}
 
 	auto SecureFd(int fd, const std::filesystem::path &path,
@@ -107,20 +110,24 @@ namespace {
 		return howdy::native::CheckSecureRootOwnedFd(fd, path, "Test file", owner_uid);
 	}
 
-	auto SecureDir(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
-		return howdy::native::CheckSecureRootOwnedDirectory(path, "Test directory", std::nullopt);
+	auto SecureDir(const std::filesystem::path &path, std::optional<uid_t> owner_uid = std::nullopt)
+	    -> howdy::native::SecurePathCheckResult {
+		return howdy::native::CheckSecureRootOwnedDirectory(path, "Test directory", owner_uid);
 	}
 
-	auto SecureDirTree(const std::filesystem::path &path) -> howdy::native::SecurePathCheckResult {
+	auto SecureDirTree(const std::filesystem::path &path,
+	                   std::optional<uid_t>         owner_uid = std::nullopt)
+	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::CheckSecureRootOwnedDirectoryTree(
-		    path, "Test directory tree", std::nullopt,
+		    path, "Test directory tree", owner_uid,
 		    {std::filesystem::current_path() / "howdy-file-security-test"});
 	}
 
-	auto SecureFileWithDirectory(const std::filesystem::path &path)
+	auto SecureFileWithDirectory(const std::filesystem::path &path,
+	                             std::optional<uid_t>         owner_uid = std::nullopt)
 	    -> howdy::native::SecurePathCheckResult {
 		return howdy::native::CheckSecureRootOwnedFileWithDirectory(
-		    path, {.directory = "Test parent directory", .file = "Test file"}, std::nullopt,
+		    path, {.directory = "Test parent directory", .file = "Test file"}, owner_uid,
 		    {std::filesystem::current_path() / "howdy-file-security-test"});
 	}
 
@@ -153,6 +160,19 @@ auto main() -> int {
 
 	ok &= Expect(SecureFile(safe_file).ok, "safe regular file is accepted");
 	ok &= Expect(SecureDir(safe_dir).ok, "safe directory is accepted");
+
+	const auto        wrong_owner = static_cast<uid_t>(geteuid() == 0 ? 1 : 0);
+	const char *const owner_text  = "must be owned by UID";
+	ok &= Expect(SecureFile(safe_file, geteuid()).ok && SecureDir(safe_dir, geteuid()).ok,
+	             "matching owner is accepted by path checks");
+	ok &= Expect(SecureFile(safe_file, wrong_owner).error_message.contains(owner_text),
+	             "file with wrong owner is rejected");
+	ok &= Expect(SecureDir(safe_dir, wrong_owner).error_message.contains(owner_text),
+	             "directory with wrong owner is rejected");
+	ok &= Expect(SecureDirTree(safe_dir, wrong_owner).error_message.contains(owner_text),
+	             "directory tree with wrong owner is rejected");
+	ok &= Expect(SecureFileWithDirectory(safe_file, wrong_owner).error_message.contains(owner_text),
+	             "file with directory and wrong owner is rejected");
 
 	int const safe_fd = open(safe_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
 	ok &= Expect(safe_fd >= 0, "open safe file descriptor");
@@ -299,6 +319,38 @@ auto main() -> int {
 	const auto recreated = howdy::native::CreateSecureDirectoryTree(
 	    create_leaf, "Test directory", 0750, 0700, geteuid(), create_boundary);
 	ok &= Expect(recreated.ok, "CreateSecureDirectoryTree is idempotent on existing tree");
+
+	const auto bad_root = temp_root / "bad-tree";
+	const auto bad_leaf = bad_root / "sub" / "leaf";
+	ok &= Expect(
+	    CreateSecureDirectoryTree(bad_root, "Bad directory", 0750, 0700, geteuid(), create_boundary)
+	        .ok,
+	    "create tree root for insecure component cases");
+	fs::create_directory_symlink(real_dir, bad_root / "sub", ec);
+	ok &= Expect(!ec, "replace intermediate component with symlink");
+	ok &= Expect(!CreateSecureDirectoryTree(bad_leaf, "Bad directory", 0750, 0700, geteuid(),
+	                                        create_boundary)
+	                  .ok,
+	             "CreateSecureDirectoryTree rejects existing symlink component");
+	ok &= Expect(!fs::exists(real_dir / "leaf", ec), "symlinked component is not populated");
+
+	ok &= Expect(chmod((create_root / "sub").c_str(), 0777) == 0, "make intermediate insecure");
+	ok &= Expect(!CreateSecureDirectoryTree(create_leaf, "Bad directory", 0750, 0700, geteuid(),
+	                                        create_boundary)
+	                  .ok,
+	             "CreateSecureDirectoryTree rejects insecure existing intermediate");
+	ok &= Expect(chmod((create_root / "sub").c_str(), 0700) == 0, "restore intermediate");
+	ok &= Expect(chmod(create_leaf.c_str(), 0777) == 0, "make leaf insecure");
+	ok &= Expect(!CreateSecureDirectoryTree(create_leaf, "Bad directory", 0750, 0700, geteuid(),
+	                                        create_boundary)
+	                  .ok,
+	             "CreateSecureDirectoryTree rejects insecure existing leaf");
+	ok &= Expect(chmod(create_leaf.c_str(), 0750) == 0, "restore leaf");
+
+	ok &= Expect(!CreateSecureDirectoryTree("relative/tree", "Relative directory", 0750, 0700,
+	                                        geteuid(), create_boundary)
+	                  .ok,
+	             "CreateSecureDirectoryTree rejects relative target");
 
 	const auto outside_result = howdy::native::CreateSecureDirectoryTree(
 	    "/tmp/outside-tree", "Outside directory", 0750, 0700, geteuid(), create_boundary);
