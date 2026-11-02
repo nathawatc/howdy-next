@@ -40,6 +40,8 @@ namespace howdy::native::test_cli_internal {
 		[[nodiscard]] auto SlowMode() const -> bool;
 
 	private:
+		friend class TestPreviewRendererTestAccess;
+
 		// OpenCV MouseCallback requires int, int, int, int, void *.
 		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 		static void MouseCallback(int event, int x, int y, int flags, void *userdata);

@@ -1,4 +1,5 @@
 #include "cli/test/preview_renderer.hpp"
+#include "cli/test_preview_renderer_test_access.hpp"
 #include "cli/test_preview_test_groups.hpp"
 #include "config/runtime_config.hpp"
 #include "storage/user_model_types.hpp"
@@ -23,16 +24,26 @@ namespace {
 	}
 
 	auto RendererOwnsConfigurationAndModels() -> bool {
-		auto const make_renderer = [] -> test_cli_internal::TestPreviewRenderer {
+		// Non-default values, and a label past the small-string limit so it is heap allocated: the
+		// renderer must keep its own copies once the constructor inputs are gone.
+		const std::string label(64, 'm');
+		auto const        make_renderer = [&label] -> test_cli_internal::TestPreviewRenderer {
 			howdy::native::VideoConfig config{};
-			config.clahe_enabled = false;
+			config.clahe_enabled = true;
 			std::vector<howdy::native::EncodingModelInfo> models;
+			models.push_back({.id = 7, .label = std::string(label)});
 			return {config, std::move(models)};
 		};
 
 		auto const renderer = make_renderer();
-		return Expect(!renderer.SlowMode(),
-		              "renderer remains valid after constructor inputs leave scope");
+		bool       ok       = Expect(!renderer.SlowMode(), "renderer starts outside slow mode");
+		ok &=
+		    Expect(test_cli_internal::TestPreviewRendererTestAccess::Config(renderer).clahe_enabled,
+			       "renderer keeps its configuration after constructor inputs leave scope");
+		const auto &models = test_cli_internal::TestPreviewRendererTestAccess::Models(renderer);
+		ok &= Expect(models.size() == 1 && models.front().id == 7 && models.front().label == label,
+		             "renderer keeps its models after constructor inputs leave scope");
+		return ok;
 	}
 
 	struct RendererLifecycleContext {
