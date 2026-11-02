@@ -95,6 +95,14 @@ namespace {
 		       Expect(output.empty(), "null dependency stays silent");
 	}
 
+	auto MissingResolvedUserAbortsSilently() -> bool {
+		ListCliTestContext context;
+		auto [result, output] = RunList(context, {});
+		return Expect(result == 1, "missing resolved user returns 1") &&
+		       Expect(output.empty(), "missing resolved user stays silent") &&
+		       Expect(context.list_calls == 0, "missing resolved user skips list callback");
+	}
+
 	auto NoModelDirectoryPrintsGuidance() -> bool {
 		ListCliTestContext context;
 		context.list_result = {.status = howdy::native::UserModelStatus::kNoModelDirectory};
@@ -229,6 +237,7 @@ auto main() -> int {
 	const TimezoneGuard timezone_guard;
 	bool                ok = true;
 	ok &= NullDependencyAbortsSilently();
+	ok &= MissingResolvedUserAbortsSilently();
 	ok &= NoModelDirectoryPrintsGuidance();
 	ok &= NoModelPreservesNormalAndPlainOutput();
 	ok &= NoModelGuidanceDoesNotRenderUserAsShellCommand();
