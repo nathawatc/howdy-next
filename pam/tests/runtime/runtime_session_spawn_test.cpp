@@ -504,6 +504,9 @@ namespace {
 			ok &= Expect(howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 			                 lease_fd, generation, geteuid()),
 			             "lease validation accepts exact unlocked sibling and takes shared lock");
+			ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+			                 lease_fd, generation, geteuid() + 1),
+			             "lease validation rejects a lease owned by another uid");
 			const int independent_fd = open(lock_path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
 			ok &= Expect(independent_fd >= 0, "lease validation opens independent lock descriptor");
 			if (independent_fd >= 0) {
