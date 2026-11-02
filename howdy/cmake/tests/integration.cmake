@@ -53,6 +53,27 @@ add_test(
   "${CMAKE_COMMAND}"
   -P "${PROJECT_SOURCE_DIR}/tests/cmake/privileged_install_paths_test.cmake"
 )
+if(CMAKE_CROSSCOMPILING)
+  set(howdy_run_host_native_install_paths_case OFF)
+else()
+  set(howdy_run_host_native_install_paths_case ON)
+endif()
+add_test(
+ NAME native-install-paths-matrix
+ COMMAND
+  "${CMAKE_COMMAND}"
+  "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+  "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/install-paths-matrix-test"
+  "-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+  "-DHOWDY_RUN_HOST_NATIVE_CASE=${howdy_run_host_native_install_paths_case}"
+  "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+  -P "${PROJECT_SOURCE_DIR}/tests/cmake/install_paths_matrix_test.cmake"
+)
+set_tests_properties(
+ native-install-paths-matrix
+ PROPERTIES
+  TIMEOUT 120
+)
 add_executable(howdy_docs_generator_integration_test
               tests/integration/docs_generator_test.cpp)
 howdy_configure_native_test_target(howdy_docs_generator_integration_test)
