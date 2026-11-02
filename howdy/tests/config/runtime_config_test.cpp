@@ -14,6 +14,8 @@
 
 #include <stdlib.h>
 
+#include <sys/stat.h>
+
 namespace {
 
 	using howdy::test::CreateTempDirectory;
@@ -35,6 +37,17 @@ namespace {
 			    .path          = path,
 			    .config        = std::nullopt,
 			    .error_message = "failed to create test file",
+			    .error_code    = 0,
+			};
+		}
+
+		if (chmod(path.c_str(), 0644) != 0) {
+			return {
+			    .ok            = false,
+			    .status        = howdy::native::RuntimeConfigLoadStatus::kPathError,
+			    .path          = path,
+			    .config        = std::nullopt,
+			    .error_message = "failed to chmod test file",
 			    .error_code    = 0,
 			};
 		}
