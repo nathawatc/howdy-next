@@ -123,7 +123,7 @@ auto main(int argc, char **argv) -> int {
 	const auto staged_before = CountFilesWithPrefix(failed_output.parent_path(), ".howdy-atomic-");
 	const int  failed_write_status =
 	    RunGenerator(generator_path, emulator, {"--output", failed_output.string()}, true);
-	ok &= Expect(failed_write_status != 0, "failed atomic write returns nonzero");
+	ok &= Expect(failed_write_status == 1, "failed atomic write returns generator failure status");
 	ok &= Expect(ReadFile(failed_output) == "preserve this config\n",
 	             "failed atomic write preserves existing output");
 	ok &=
