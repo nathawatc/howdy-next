@@ -1,6 +1,7 @@
 #include "compare/args.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_invocation.hpp"
+#include "support/user_names.hpp"
 #include "test_support.hpp"
 
 #include <string>
@@ -149,6 +150,27 @@ auto main() -> int {
 		ok &= Expect(result.exit_code == howdy::native::CompareExit::kAbort,
 		             "compare rejects malformed dot-dot username input with abort");
 	}
+
+	const auto expect_error = [&ok](std::vector<std::string> args, const std::string &message,
+	                                const char *label) -> void {
+		auto       argv   = ArgvFrom(args);
+		const auto result = howdy::native::ParseCompareArgs(static_cast<int>(argv.size()),
+		                                                    argv.data(), "/tmp/config.ini");
+		ok &= Expect(
+		    result.status == howdy::native::CompareArgsStatus::kError &&
+		        result.exit_code == howdy::native::CompareExit::kAbort &&
+		        (message.empty() ? result.message.empty() : result.message.contains(message)),
+		    label);
+	};
+	expect_error({"howdy-compare", "--config"}, "Unknown argument: --config",
+	             "trailing --config without value is unknown");
+	expect_error({"howdy-compare", "--config", "/x.ini"}, "", "config without user is error");
+	expect_error({"howdy-compare", ""}, "", "empty user is error");
+	expect_error({"howdy-compare", "alice/bob"},
+	             std::string(howdy::native::kInvalidUserNameMessage),
+	             "slash in user name is rejected with message");
+	expect_error({"howdy-compare", "../alice"}, std::string(howdy::native::kInvalidUserNameMessage),
+	             "path traversal user reports invalid user message");
 
 	return ok ? 0 : 1;
 }
