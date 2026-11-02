@@ -1,4 +1,5 @@
 #include "test_support.hpp"
+#include "vision/face_detection.hpp"
 #include "vision/face_encoding.hpp"
 #include "vision/face_encoding/internal.hpp"
 
@@ -26,6 +27,7 @@ namespace {
 		cv::Mat          aligned = cv::Mat(112, 112, CV_8UC3, cv::Scalar(1, 2, 3));
 		cv::Mat feature = cv::Mat(1, static_cast<int>(howdy::native::kSfaceEmbeddingSize), CV_32FC1,
 		                          cv::Scalar(0.25F));
+		cv::Mat seen_face;
 	};
 
 	[[noreturn]] void ThrowCvError(const char *operation) {
@@ -33,7 +35,8 @@ namespace {
 	}
 
 	void AlignFace(void *opaque, const howdy::native::FaceAlignmentRequest &request) {
-		auto const &context = *static_cast<FakeSfaceContext *>(opaque);
+		auto &context = *static_cast<FakeSfaceContext *>(opaque);
+		request.face.get().copyTo(context.seen_face);
 		if (context.failure == FailureOperation::kAlign) {
 			ThrowCvError("alignCrop");
 		}
@@ -123,6 +126,29 @@ auto main() -> int {
 		const auto result = ClaimedSuccess(howdy::native::kSfaceEmbeddingSize);
 		ok &= Expect(howdy::native::FaceEncodingSucceeded(result),
 		             "claimed success with valid encoding is successful");
+	}
+
+	{
+		FakeSfaceContext                   context;
+		const howdy::native::FaceDetection face{
+		    .box = {1.0F, 2.0F, 3.0F, 4.0F},
+		    .landmarks =
+		        {{{10.0F, 11.0F}, {12.0F, 13.0F}, {14.0F, 15.0F}, {16.0F, 17.0F}, {18.0F, 19.0F}}},
+		    .confidence = 0.5F,
+		};
+		const auto result = howdy::native::EncodeSface(
+		    cv::Mat(120, 160, CV_8UC3, cv::Scalar(8, 16, 32)), face,
+		    {.context = &context, .align_face = AlignFace, .extract_feature = ExtractFeature});
+		ok &= Expect(howdy::native::FaceEncodingSucceeded(result), "populated face encodes");
+		const std::vector<float> expected{
+		    1.0F,  2.0F,  3.0F,  4.0F,  10.0F, 11.0F, 12.0F, 13.0F,
+		    14.0F, 15.0F, 16.0F, 17.0F, 18.0F, 19.0F, 0.5F,
+		};
+		ok &= Expect(context.seen_face.type() == CV_32FC1 && context.seen_face.rows == 1 &&
+		                 context.seen_face.cols == 15 &&
+		                 std::vector<float>(context.seen_face.begin<float>(),
+		                                    context.seen_face.end<float>()) == expected,
+		             "face row maps box, landmarks and confidence in order");
 	}
 
 	{
