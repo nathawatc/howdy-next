@@ -210,6 +210,21 @@ namespace howdy::test::add_cli {
 			return ok;
 		}
 
+		auto InteractiveInvalidLabelStopsBeforeCapture() -> bool {
+			auto                     context = MakeSuccessContext();
+			std::istringstream const input("bad/name\n");
+			std::ostringstream const output;
+			StreamRedirect const     redirect(std::cin, input.rdbuf(), std::cout, output.rdbuf());
+
+			const int result = RunAdd(context, {.resolved_user = "alice"});
+
+			bool ok = true;
+			ok &= Expect(result == 1, "invalid interactive label returns 1");
+			ok &= Expect(context.capture_calls == 0, "invalid interactive label skips capture");
+			ok &= Expect(context.append_calls == 0, "invalid interactive label skips append");
+			return ok;
+		}
+
 		auto InteractiveLabelTruncatesOnUtf8Boundary() -> bool {
 			auto context = MakeSuccessContext();
 			// 23 ASCII bytes, then a 3-byte Thai character that straddles the 24-byte limit.
@@ -256,6 +271,7 @@ namespace howdy::test::add_cli {
 	auto RunAddCliArgumentTests() -> bool {
 		bool ok = true;
 		ok &= ExplicitEmptyLabelStillPrompts();
+		ok &= InteractiveInvalidLabelStopsBeforeCapture();
 		ok &= PlainModeSkipsLabelPrompt();
 		ok &= YesFlagSkipsLabelPrompt();
 		ok &= CommandLabelPreservesCsvCharacters();
