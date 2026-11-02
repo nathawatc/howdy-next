@@ -123,6 +123,17 @@ namespace {
 		return ok;
 	}
 
+	auto MissingResolvedUserAbortsWithoutCallbacks() -> bool {
+		auto context          = SuccessContext();
+		auto [result, output] = RunClear(context, {});
+		bool ok               = true;
+		ok &= Expect(result == 1, "missing resolved user returns 1");
+		ok &= Expect(output.empty(), "missing resolved user stays silent");
+		ok &= Expect(context.inspect_calls == 0 && context.clear_calls == 0,
+		             "missing resolved user skips callbacks");
+		return ok;
+	}
+
 	auto InspectionOutcomesPreserveMessages() -> bool {
 		bool ok = true;
 		for (const auto &[status, error, snapshot, expected, expected_exit] : std::vector<
@@ -311,6 +322,7 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= IncompleteDependenciesAbortWithoutCallbacks();
+	ok &= MissingResolvedUserAbortsWithoutCallbacks();
 	ok &= InspectionOutcomesPreserveMessages();
 	ok &= RejectedConfirmationAborts();
 	ok &= AcceptedConfirmationPassesSnapshot();
