@@ -499,7 +499,7 @@ namespace {
 		    .seccomp = nullptr,
 		});
 		bool       ok     = true;
-		ok &= Expect(result.status == CompareSeccompStatus::kInstallationFailure,
+		ok &= Expect(result.status == CompareSeccompStatus::kInvalidDependencies,
 		             "null seccomp callback fails closed");
 		ok &= Expect(result.error_number == EINVAL, "null seccomp callback reports EINVAL");
 		return ok;

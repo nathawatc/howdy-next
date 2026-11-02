@@ -41,6 +41,19 @@ namespace {
 		static ReadScript script;
 		return script;
 	}
+
+	// Each step is one write() call: >0 accepts at most that many bytes, 0 returns 0, and <0
+	// fails with errno set to the negated value. Steps past the end accept everything.
+	struct WriteScript {
+		std::vector<int> steps;
+		std::string      written;
+		std::size_t      calls = 0;
+	};
+
+	auto WriteState() -> WriteScript & {
+		static WriteScript script;
+		return script;
+	}
 }  // namespace
 
 // GNU ld requires these exact symbol names for syscall interposition.
@@ -49,6 +62,24 @@ extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t;
 extern "C" auto __real_read(int fd, void *buffer, size_t count) -> ssize_t;
 extern "C" auto __wrap___read_chk(int fd, void *buffer, size_t count, size_t buffer_size)
     -> ssize_t;
+extern "C" auto __wrap_write(int fd, const void *buffer, size_t count) -> ssize_t;
+extern "C" auto __real_write(int fd, const void *buffer, size_t count) -> ssize_t;
+
+extern "C" auto __wrap_write(int fd, const void *buffer, size_t count) -> ssize_t {
+	if (fd != kScriptedFd) {
+		return __real_write(fd, buffer, count);
+	}
+	auto      &script = WriteState();
+	const auto call   = script.calls++;
+	const int  step = call < script.steps.size() ? script.steps.at(call) : static_cast<int>(count);
+	if (step < 0) {
+		errno = -step;
+		return -1;
+	}
+	const auto accepted = std::min(count, static_cast<std::size_t>(step));
+	script.written.append(static_cast<const char *>(buffer), accepted);
+	return static_cast<ssize_t>(accepted);
+}
 
 extern "C" auto __wrap_read(int fd, void *buffer, size_t count) -> ssize_t {
 	if (fd != kScriptedFd) {
@@ -144,6 +175,36 @@ namespace {
 		if (previous_handler != SIG_ERR) {
 			(void)std::signal(SIGPIPE, previous_handler);
 		}
+		return ok;
+	}
+
+	auto ExpectWriteRetries() -> bool {
+		bool              ok      = true;
+		const std::string content = "0123456789";
+
+		WriteState() = {.steps = {3, 1}};
+		ok &= Expect(howdy::native::WriteAllToFd(kScriptedFd, content),
+		             "short writes are continued until all bytes are written");
+		ok &= Expect(WriteState().written == content && WriteState().calls == 3,
+		             "short writes resume at the unwritten offset");
+
+		WriteState() = {.steps = {-EINTR, 4, -EINTR}};
+		ok &= Expect(howdy::native::WriteAllToFd(kScriptedFd, content),
+		             "EINTR before and after a short write is retried");
+		ok &= Expect(WriteState().written == content && WriteState().calls == 4,
+		             "EINTR retries neither drop nor repeat bytes");
+
+		WriteState() = {.steps = {4, 0}};
+		ok &= Expect(!howdy::native::WriteAllToFd(kScriptedFd, content),
+		             "a zero-byte write after progress fails instead of looping");
+		ok &= Expect(WriteState().written == content.substr(0, 4) && WriteState().calls == 2,
+		             "a zero-byte write stops the loop");
+
+		WriteState() = {.steps = {5, -EIO}};
+		ok &= Expect(!howdy::native::WriteAllToFd(kScriptedFd, content),
+		             "a non-EINTR error after a short write fails");
+		ok &= Expect(WriteState().written == content.substr(0, 5) && WriteState().calls == 2,
+		             "a non-EINTR error is not retried");
 		return ok;
 	}
 
@@ -350,6 +411,7 @@ auto main() -> int {
 	ok &= ExpectEmptyWrite(temp_root);
 	ok &= ExpectInvalidFdFailure();
 	ok &= ExpectWriteFailures();
+	ok &= ExpectWriteRetries();
 	ok &= ExpectFullWrite(temp_root);
 	ok &= ExpectBoundedReading(temp_root);
 	ok &= ExpectReadHintsAndInterruptions();

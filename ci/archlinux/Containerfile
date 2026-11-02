@@ -20,6 +20,8 @@ RUN pacman -Syu --noconfirm --needed \
 		pkgconf \
 		qt6-base \
 		'yyjson>=0.12.0' \
+	&& sed -i 's/^#\(th_TH\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+	&& locale-gen \
 	&& pacman -Scc --noconfirm
 
 LABEL org.opencontainers.image.source="https://github.com/nathawatc/howdy-next" \

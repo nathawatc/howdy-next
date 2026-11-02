@@ -35,7 +35,14 @@ namespace {
 		std::array<bool, 3> closed_stdio{};
 		int                 terminal_stdio          = -1;
 		bool                exhaust_tty_duplication = false;
+		bool                tty_via_symlink         = false;
 	};
+
+	auto SetPamTty(pam_handle_t *pamh, const char *slave_name, bool via_symlink,
+	               howdy::test::TtySymlink &link) -> bool {
+		const char *pam_tty = via_symlink ? link.Create(slave_name) : slave_name;
+		return pam_tty != nullptr && pam_set_item(pamh, PAM_TTY, pam_tty) == PAM_SUCCESS;
+	}
 
 	auto RedirectStdioToNull(int null_fd) -> bool {
 		return std::ranges::all_of(std::array{STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO},
@@ -136,7 +143,8 @@ namespace {
 		    PAM_SUCCESS) {
 			return false;
 		}
-		if (pam_set_item(pamh, PAM_TTY, slave_name) != PAM_SUCCESS) {
+		howdy::test::TtySymlink tty_link;
+		if (!SetPamTty(pamh, slave_name, scenario.tty_via_symlink, tty_link)) {
 			pam_end(pamh, PAM_SYSTEM_ERR);
 			return false;
 		}
@@ -294,6 +302,13 @@ auto TtyNormalizationFailurePreservesClosedStdin() -> bool {
 	    .closed_stdio            = {true, false, false},
 	    .terminal_stdio          = STDOUT_FILENO,
 	    .exhaust_tty_duplication = true,
+	});
+}
+
+auto TtySymlinkIntoDevIsCanonicalized() -> bool {
+	return TestInternalDescriptorsPreserveStdio({
+	    .terminal_stdio  = STDIN_FILENO,
+	    .tty_via_symlink = true,
 	});
 }
 

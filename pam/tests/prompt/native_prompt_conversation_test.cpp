@@ -361,6 +361,8 @@ auto main() -> int {
 	                     "all closed stdio remains closed and native stays unavailable");
 	ok &= ExpectIsolated(TtyNormalizationFailurePreservesClosedStdin,
 	                     "PAM_TTY normalization failure preserves closed stdin");
+	ok &= ExpectIsolated(TtySymlinkIntoDevIsCanonicalized,
+	                     "PAM_TTY symlink into /dev is canonicalized and stays available");
 	ok &= ExpectIsolated(AbortPipeCreationFailureIsTransactional,
 	                     "abort pipe creation failure is transactional");
 	ok &= ExpectIsolated(AbortPipeFirstNormalizationFailureIsTransactional,
@@ -369,6 +371,7 @@ auto main() -> int {
 	                     "abort pipe write normalization failure is transactional");
 	ok &= ExpectOriginalConversationRestored();
 	ok &= ExpectInvalidPamTtyIsUnavailable();
+	ok &= ExpectPamTtyResolution();
 	ok &= ExpectIsolated(ExpectAbortRequestUnblocksWithoutPipeWakeup, "abort wake test");
 	ok &= ExpectIsolated(ExpectPtyHangupAbortsPrompt, "PTY hangup test");
 	ok &= ExpectPollEintrWithoutAbortDoesNotAbortPrompt();

@@ -22,6 +22,8 @@ auto ClosedStderrPreservedWithTerminalStdin() -> bool;
 auto ClosedStdinStdoutPreservedWithTerminalStderr() -> bool;
 auto ClosedAllStdioRemainClosed() -> bool;
 auto TtyNormalizationFailurePreservesClosedStdin() -> bool;
+auto TtySymlinkIntoDevIsCanonicalized() -> bool;
+auto ExpectPamTtyResolution() -> bool;
 auto AbortPipeCreationFailureIsTransactional() -> bool;
 auto AbortPipeFirstNormalizationFailureIsTransactional() -> bool;
 auto AbortPipeSecondNormalizationFailureIsTransactional() -> bool;

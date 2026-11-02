@@ -84,6 +84,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		int descriptor = -1;
 		std::memcpy(&descriptor, CMSG_DATA(control), sizeof(descriptor));
 		howdy::native::ScopedFd received_fd(descriptor);
+		// Defence in depth: MSG_CMSG_CLOEXEC should already have set FD_CLOEXEC.
 		const int descriptor_flags = received_fd.Valid() ? fcntl(received_fd.Get(), F_GETFD) : -1;
 		if (!received_fd.Valid() || descriptor_flags < 0 ||
 		    !howdy::native::HasAnyBits(descriptor_flags, FD_CLOEXEC)) {

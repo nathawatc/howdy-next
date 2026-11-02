@@ -160,7 +160,7 @@ namespace howdy::native::compare_sandbox_internal {
 		if (dependencies.prctl == nullptr || dependencies.getrlimit == nullptr ||
 		    dependencies.setrlimit == nullptr) {
 			return {
-			    .status       = CompareSandboxStatus::kNoNewPrivilegesFailure,
+			    .status       = CompareSandboxStatus::kInvalidDependencies,
 			    .resource     = CompareSandboxResource::kNone,
 			    .error_number = EINVAL,
 			};
@@ -452,7 +452,7 @@ namespace howdy::native::compare_sandbox_internal {
 	    -> CompareSeccompResult {
 		if (dependencies.seccomp == nullptr) {
 			return {
-			    .status       = CompareSeccompStatus::kInstallationFailure,
+			    .status       = CompareSeccompStatus::kInvalidDependencies,
 			    .error_number = EINVAL,
 			};
 		}

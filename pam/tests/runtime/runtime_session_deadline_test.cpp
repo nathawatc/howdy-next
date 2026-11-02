@@ -1,4 +1,5 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
+#include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "runtime/runtime_session.hpp"
 #include "runtime/runtime_session_process_test_support.hpp"
@@ -273,8 +274,8 @@ namespace {
 		ok &= Expect(prepared.config_path.empty() != reaches_lease_validation,
 		             std::string(name) + " reaches expected validation stage");
 		if (reaches_lease_validation) {
-			const auto parsed =
-			    howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(state.output);
+			const auto parsed = howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(
+			    state.output, howdy::native::auth_helper_protocol::PreparedRuntimeRoot());
 			ok &= Expect(prepared.config_path == parsed.config_path &&
 			                 prepared.user_models_dir == parsed.user_models_dir,
 			             std::string(name) + " preserves parsed paths");

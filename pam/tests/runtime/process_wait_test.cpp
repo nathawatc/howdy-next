@@ -114,8 +114,8 @@ namespace {
 		const auto deadline = cancellation
 		                          ? std::chrono::steady_clock::now() + std::chrono::seconds(1)
 		                          : std::chrono::steady_clock::now();
-		const int  status   = howdy::pam::compare_process::WaitUntil(child_pid, deadline, &boundary,
-		                                                             ReleaseTerminalBoundaryChild);
+		const int status = howdy::pam::compare_process::WaitUntil(child_pid, deadline, &boundary,
+		                                                          ReleaseTerminalBoundaryChild, -1);
 		const auto expected_exit   = cancellation ? howdy::native::CompareExit::kAbort
 		                                          : howdy::native::CompareExit::kTimeoutReached;
 		const int  expected_status = howdy::native::EncodeWaitExitStatus(expected_exit);
@@ -133,7 +133,8 @@ namespace {
 		ok &= Expect(compare_child_pid > 0, "spawns compare child");
 		if (compare_child_pid > 0) {
 			const int status = howdy::pam::compare_process::WaitUntil(
-			    compare_child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(1));
+			    compare_child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(1),
+			    nullptr, nullptr, -1);
 			ok &= Expect(WIFEXITED(status) && WEXITSTATUS(status) == 7,
 			             "compare wait preserves child exit status");
 		}
@@ -149,7 +150,8 @@ namespace {
 
 		constexpr pid_t nonexistent_child = std::numeric_limits<pid_t>::max();
 		const int       compare_failure   = howdy::pam::compare_process::WaitUntil(
-		    nonexistent_child, std::chrono::steady_clock::now() + std::chrono::seconds(1));
+		    nonexistent_child, std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr,
+		    nullptr, -1);
 		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
 		ok &= Expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
 		             "compare wait failure returns abort status");
@@ -163,7 +165,7 @@ namespace {
 		if (cancelled_child > 0) {
 			const int cancelled_status = howdy::pam::compare_process::WaitUntil(
 			    cancelled_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
-			    nullptr, AlwaysCancelCompare);
+			    nullptr, AlwaysCancelCompare, -1);
 			ok &= Expect(WIFEXITED(cancelled_status) && WEXITSTATUS(cancelled_status) == abort_code,
 			             "compare cancellation returns abort status");
 			ok &= Expect(ChildReaped(cancelled_child), "compare cancellation reaps child");
@@ -183,7 +185,7 @@ namespace {
 		ok &= Expect(timed_out_child > 0, "spawns SIGTERM-resistant compare child");
 		if (timed_out_child > 0) {
 			const int timed_out_status = howdy::pam::compare_process::WaitUntil(
-			    timed_out_child, std::chrono::steady_clock::now());
+			    timed_out_child, std::chrono::steady_clock::now(), nullptr, nullptr, -1);
 			const int timeout_code = static_cast<int>(howdy::native::CompareExit::kTimeoutReached);
 			ok &=
 			    Expect(WIFEXITED(timed_out_status) && WEXITSTATUS(timed_out_status) == timeout_code,

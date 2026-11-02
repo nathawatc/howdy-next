@@ -6,12 +6,60 @@
 #include "test_support.hpp"
 
 #include <array>
-#include <cerrno>
+#include <filesystem>
 #include <memory>
+#include <string>
 
 #include <fcntl.h>
 #include <poll.h>
+#include <stdlib.h>
 #include <unistd.h>
+
+namespace howdy::test {
+	// A symlink to `target` inside a private temporary directory (outside /dev).
+	class TtySymlink {
+	public:
+		TtySymlink()                                       = default;
+		TtySymlink(const TtySymlink &)                     = delete;
+		TtySymlink(TtySymlink &&)                          = delete;
+		auto operator=(const TtySymlink &) -> TtySymlink & = delete;
+		auto operator=(TtySymlink &&) -> TtySymlink &      = delete;
+
+		~TtySymlink() {
+			if (!link_.empty()) {
+				unlink(link_.c_str());
+			}
+			if (!directory_.empty()) {
+				rmdir(directory_.c_str());
+			}
+		}
+
+		auto Create(const char *target) -> const char * {
+			std::error_code error;
+			auto            path_template =
+			    (std::filesystem::temp_directory_path(error) / "howdy-pam-tty-link-XXXXXX")
+			        .string();
+			if (error || mkdtemp(path_template.data()) == nullptr) {
+				return nullptr;
+			}
+			directory_ = path_template;
+			link_      = directory_ + "/tty";
+			if (symlink(target, link_.c_str()) != 0) {
+				link_.clear();
+				return nullptr;
+			}
+			return link_.c_str();
+		}
+
+		[[nodiscard]] auto Path() const -> const std::string & {
+			return link_;
+		}
+
+	private:
+		std::string directory_;
+		std::string link_;
+	};
+}  // namespace howdy::test
 
 class NativePromptConversationTestAccess {
 public:

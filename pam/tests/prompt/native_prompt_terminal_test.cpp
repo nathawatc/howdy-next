@@ -8,7 +8,10 @@
 #include <array>
 #include <cerrno>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <string>
+#include <string_view>
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -16,6 +19,7 @@
 
 #include <security/pam_appl.h>
 
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -257,5 +261,68 @@ auto ExpectInvalidPamTtyIsUnavailable() -> bool {
 		unlink(path_template.data());
 	}
 	pam_end(pamh, PAM_SUCCESS);
+	return ok;
+}
+
+auto ExpectPamTtyResolution() -> bool {
+	bool       ok          = true;
+	const auto resolves_to = [](std::string_view pam_tty, std::string_view expected) -> bool {
+		const auto target = ResolveNativePromptTty(pam_tty);
+		return target.has_value() && target->path == expected;
+	};
+
+	ok &= Expect(!ResolveNativePromptTty("").has_value(), "empty PAM_TTY is rejected");
+	ok &= Expect(resolves_to("/dev/null", "/dev/null"), "absolute /dev character device resolves");
+	ok &= Expect(resolves_to("null", "/dev/null"), "relative PAM_TTY resolves under /dev");
+	ok &= Expect(resolves_to("/dev/../dev/null", "/dev/null"),
+	             "dot-dot staying in /dev canonicalizes");
+	ok &= Expect(!ResolveNativePromptTty("/dev/../etc/passwd").has_value(),
+	             "dot-dot escaping /dev is rejected");
+	ok &=
+	    Expect(!ResolveNativePromptTty("/etc/passwd").has_value(), "path outside /dev is rejected");
+	ok &=
+	    Expect(!ResolveNativePromptTty("/dev/shm").has_value(), "directory under /dev is rejected");
+
+	{
+		howdy::test::TtySymlink into_dev;
+		ok &=
+		    Expect(into_dev.Create("/dev/null") != nullptr, "PAM_TTY test creates symlink to /dev");
+		ok &= Expect(resolves_to(into_dev.Path(), "/dev/null"),
+		             "symlink outside /dev resolves to its canonical /dev target");
+		howdy::test::TtySymlink out_of_dev;
+		ok &= Expect(out_of_dev.Create("/etc/passwd") != nullptr,
+		             "PAM_TTY test creates symlink outside /dev");
+		ok &= Expect(!ResolveNativePromptTty(out_of_dev.Path()).has_value(),
+		             "symlink resolving outside /dev is rejected");
+	}
+
+	{
+		ScopedFd master;
+		ScopedFd slave;
+		ok &= Expect(OpenPtyPair(&master, &slave), "PAM_TTY test opens pseudo-terminal");
+		std::array<char, 128> slave_name{};
+		ok &= Expect(ttyname_r(slave.Get(), slave_name.data(), slave_name.size()) == 0,
+		             "PAM_TTY test names pseudo-terminal slave");
+		const auto  target = ResolveNativePromptTty(slave_name.data());
+		struct stat slave_metadata{};
+		ok &= Expect(target.has_value() && target->path == slave_name.data() &&
+		                 fstat(slave.Get(), &slave_metadata) == 0 &&
+		                 target->rdevice == slave_metadata.st_rdev,
+		             "pseudo-terminal slave resolves to its character device");
+	}
+
+	// /dev/shm is world-writable and starts with /dev/; a FIFO there must not be opened.
+	const std::string fifo_path = "/dev/shm/howdy-pam-tty-fifo-" + std::to_string(getpid());
+	unlink(fifo_path.c_str());
+	if (mkfifo(fifo_path.c_str(), 0600) == 0) {
+		ok &= Expect(!ResolveNativePromptTty(fifo_path).has_value(),
+		             "non-character node under /dev is rejected");
+		unlink(fifo_path.c_str());
+	} else {
+		const int error = errno;
+		ok &= Expect(error == ENOENT || error == EACCES || error == EROFS,
+		             "PAM_TTY FIFO setup fails only when /dev/shm is unavailable");
+		std::cerr << "SKIP: /dev/shm FIFO PAM_TTY case (" << std::strerror(error) << ")\n";
+	}
 	return ok;
 }

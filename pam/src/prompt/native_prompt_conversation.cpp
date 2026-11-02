@@ -17,6 +17,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -24,6 +25,7 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <stdlib.h>
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
@@ -74,17 +76,24 @@ namespace {
 			return {};
 		}
 
-		auto tty_path = std::string(static_cast<const char *>(tty_item));
-		if (tty_path.empty()) {
+		const auto target = ResolveNativePromptTty(static_cast<const char *>(tty_item));
+		if (!target.has_value()) {
 			return {};
-		}
-		if (tty_path.front() != '/') {
-			tty_path = "/dev/" + tty_path;
 		}
 
 		auto tty_fd = howdy::pam::detail::NormalizeInternalFd(howdy::pam::detail::ScopedFd(
-		    open(tty_path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK)));
+		    open(target->path.c_str(), O_RDWR | O_CLOEXEC | O_NOCTTY | O_NONBLOCK | O_NOFOLLOW)));
 		if (!tty_fd.Valid()) {
+			return {};
+		}
+
+		// O_NOFOLLOW covers only the last component; confirm the descriptor is the approved
+		// character device so a swapped parent directory cannot redirect the open. Not covered by
+		// tests: forcing a mismatch would need a race seam between resolve and open.
+		struct stat opened{};
+		if (fstat(tty_fd.Get(), &opened) != 0 || !S_ISCHR(opened.st_mode) ||
+		    opened.st_dev != target->device || opened.st_ino != target->inode ||
+		    opened.st_rdev != target->rdevice) {
 			return {};
 		}
 
@@ -204,6 +213,36 @@ namespace {
 	}
 
 }  // namespace
+
+auto ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePromptTtyTarget> {
+	if (pam_tty.empty()) {
+		return std::nullopt;
+	}
+	auto path = std::string(pam_tty);
+	if (path.front() != '/') {
+		path = "/dev/" + path;
+	}
+
+	// Resolve symlinks and ".." so PAM_TTY cannot steer the open outside /dev.
+	const std::unique_ptr<char, decltype(&std::free)> canonical(realpath(path.c_str(), nullptr),
+	                                                            &std::free);
+	if (canonical == nullptr || !std::string_view(canonical.get()).starts_with("/dev/")) {
+		return std::nullopt;
+	}
+
+	// /dev also holds world-writable directories (shm, mqueue); never open anything but a
+	// character device.
+	struct stat metadata{};
+	if (stat(canonical.get(), &metadata) != 0 || !S_ISCHR(metadata.st_mode)) {
+		return std::nullopt;
+	}
+	return NativePromptTtyTarget{
+	    .path    = canonical.get(),
+	    .device  = metadata.st_dev,
+	    .inode   = metadata.st_ino,
+	    .rdevice = metadata.st_rdev,
+	};
+}
 
 auto NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool {
 	if (descriptors.tty < 0 || isatty(descriptors.tty) == 0) {
