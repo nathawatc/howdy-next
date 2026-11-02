@@ -74,6 +74,11 @@ set_tests_properties(
  PROPERTIES
   TIMEOUT 120
 )
+howdy_add_native_test(
+ howdy_distro_conformance_test
+ native-distro-conformance
+ tests/integration/distro_conformance_test.cpp
+)
 add_executable(howdy_docs_generator_integration_test
               tests/integration/docs_generator_test.cpp)
 howdy_configure_native_test_target(howdy_docs_generator_integration_test)
