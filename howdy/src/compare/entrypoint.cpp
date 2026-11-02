@@ -314,6 +314,11 @@ namespace {
 		const auto seccomp_result = ApplySeccomp(context);
 		if (seccomp_result.status != howdy::native::CompareSeccompStatus::kOk) {
 			ReportSeccompFailure(seccomp_result);
+			// Only a kernel without seccomp is tolerated; a filter that failed to build or
+			// install must not leave the scan running unsandboxed.
+			if (seccomp_result.status != howdy::native::CompareSeccompStatus::kUnsupported) {
+				return CompareExit::kAbort;
+			}
 		}
 
 		while (true) {

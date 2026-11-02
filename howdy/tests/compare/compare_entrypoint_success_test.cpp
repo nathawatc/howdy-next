@@ -145,6 +145,14 @@ namespace {
 		};
 	}
 
+	auto FailedSeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
+		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
+		return {
+		    .status       = howdy::native::CompareSeccompStatus::kInstallationFailure,
+		    .error_number = ENOMEM,
+		};
+	}
+
 	auto DependenciesFor(FixtureContext &context) -> howdy::native::CompareEntrypointDependencies {
 		return {
 		    .capture =
@@ -284,6 +292,19 @@ auto main() -> int {
 	        unsupported.seccomp_calls == 1 &&
 	        unsupported_error.str().contains("Seccomp filter sandboxing is not supported"),
 	    "best-effort seccomp logs warning and continues authentication on unsupported kernel");
+
+	FixtureContext failed;
+	auto           failed_dependencies = DependenciesFor(failed);
+	failed_dependencies.apply_seccomp  = FailedSeccomp;
+	const std::ostringstream failed_error;
+	original = std::cerr.rdbuf(failed_error.rdbuf());
+	const int failed_result =
+	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
+		                                    validation_root, failed_dependencies);
+	std::cerr.rdbuf(original);
+	ok &= Expect(failed_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+	                 failed.seccomp_calls == 1 && failed.read_calls == 0,
+	             "seccomp installation failure aborts before reading any frame");
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);
