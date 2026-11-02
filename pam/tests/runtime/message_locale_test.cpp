@@ -51,7 +51,7 @@ namespace {
 		const char *const                 selected_locale =
 		    FirstAvailableLocale(candidates, LC_MESSAGES_MASK | LC_CTYPE_MASK);
 		if (selected_locale == nullptr) {
-			return true;
+			return howdy::test::SkipUnavailable("locale-c-utf8", "C.UTF-8 locale is not available");
 		}
 
 		locale_t expected_locale =

@@ -629,7 +629,8 @@ namespace {
 		}
 
 		if (WIFEXITED(*allowed_status) && WEXITSTATUS(*allowed_status) == 77) {
-			return Expect(true, "live seccomp skipped on unsupported kernel");
+			return howdy::test::SkipUnavailable("seccomp",
+			                                    "live seccomp unsupported on this kernel");
 		}
 
 		bool ok = true;

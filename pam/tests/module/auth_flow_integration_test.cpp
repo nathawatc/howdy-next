@@ -190,6 +190,8 @@ namespace {
 		const bool locale_available = std::setlocale(LC_ALL, host_environment_locale) != nullptr;
 		if (locale_available) {
 			setenv("LC_ALL", host_environment_locale, 1);
+		} else {
+			ok &= howdy::test::SkipUnavailable("locale-c-utf8", "C.UTF-8 locale is not available");
 		}
 		ok &= Expect(std::setlocale(LC_ALL, "C") != nullptr, "locale integration enters C locale");
 		textdomain("pam-host-test-domain");

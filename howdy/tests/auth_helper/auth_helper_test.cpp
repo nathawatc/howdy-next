@@ -5,7 +5,6 @@
 #include "test_support.hpp"
 
 #include <filesystem>
-#include <iostream>
 #include <string>
 #include <system_error>
 
@@ -30,7 +29,8 @@ auto main() -> int {
 	ok &= Expect(!ec, "creates auth-helper temp root");
 	const auto acl_support_result = ProbeAclSupport(temp_root);
 	if (acl_support_result == AclSupport::kUnsupported) {
-		std::cerr << "SKIP: filesystem does not support usable POSIX named-user ACLs\n";
+		ok &= howdy::test::SkipUnavailable(
+		    "acl", "filesystem does not support usable POSIX named-user ACLs");
 	} else if (acl_support_result == AclSupport::kError) {
 		ok = false;
 	}

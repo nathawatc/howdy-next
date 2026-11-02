@@ -35,6 +35,40 @@ namespace howdy::test {
 		return condition;
 	}
 
+	// HOWDY_TEST_REQUIRE is a comma-separated list of host capabilities (for example
+	// "locale-th,acl,seccomp") that the environment must provide. CI images set it so a missing
+	// locale, ACL support, or seccomp cannot silently turn a test into a skip.
+	inline auto IsRequired(std::string_view capability) -> bool {
+		const char *const configured = std::getenv("HOWDY_TEST_REQUIRE");
+		if (configured == nullptr) {
+			return false;
+		}
+		std::string_view remaining(configured);
+		while (!remaining.empty()) {
+			const auto separator = remaining.find(',');
+			if (remaining.substr(0, separator) == capability) {
+				return true;
+			}
+			if (separator == std::string_view::npos) {
+				break;
+			}
+			remaining.remove_prefix(separator + 1);
+		}
+		return false;
+	}
+
+	// Reports an unavailable host capability. Returns true (skip) unless the capability is
+	// required, in which case the test must fail.
+	inline auto SkipUnavailable(std::string_view capability, std::string_view reason) -> bool {
+		if (IsRequired(capability)) {
+			std::cerr << "FAIL: required capability '" << capability << "' unavailable: " << reason
+			          << '\n';
+			return false;
+		}
+		std::cerr << "SKIP: " << reason << '\n';
+		return true;
+	}
+
 	using ScopedFd = howdy::native::ScopedFd;
 
 	struct NonStandardExceptionForTest {};

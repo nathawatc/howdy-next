@@ -9,7 +9,6 @@
 #include <clocale>
 #include <csignal>
 #include <cstdlib>
-#include <iostream>
 #include <string>
 
 #include <libintl.h>
@@ -236,7 +235,8 @@ auto main() -> int {
 		ok &= Expect(std::string(textdomain(nullptr)) == host_domain,
 		             "translated Howdy message ignores host default domain");
 	} else {
-		std::cerr << "SKIP: Thai locale is not generated; translated catalog assertion not run\n";
+		ok &= howdy::test::SkipUnavailable(
+		    "locale-th", "Thai locale is not generated; translated catalog assertion not run");
 		skipped_translation = true;
 	}
 

@@ -8,7 +8,6 @@
 
 #include <clocale>
 #include <filesystem>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -266,7 +265,7 @@ auto main() -> int {
 		if (std::setlocale(LC_ALL, "") != nullptr) {
 			ok &= expect_default_float_config("LC_NUMERIC=nl_NL.UTF-8");
 		} else {
-			std::cerr << "SKIP: nl_NL.UTF-8 locale is not generated\n";
+			ok &= howdy::test::SkipUnavailable("locale-nl", "nl_NL.UTF-8 locale is not generated");
 		}
 	}
 	if (previous_locale.has_value()) {
