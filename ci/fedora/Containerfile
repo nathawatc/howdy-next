@@ -1,0 +1,67 @@
+FROM registry.fedoraproject.org/fedora:45
+
+ENV PKG_CONFIG_PATH=/opt/howdy-deps/lib/pkgconfig \
+	HOWDY_TEST_MODELS_DIR=/opt/howdy-deps/models
+
+# Packages first so the expensive source build below stays cached.
+# redhat-rpm-config provides the %{build_cxxflags} the workflow builds with.
+# A hung mirror connection otherwise stalls the build indefinitely: bound each attempt and
+# retry, which also picks another mirror. On a slow link, FEDORA_REPO_URL pins one fast
+# mirror (see ci/README.md); leave it empty for the default mirror selection.
+ARG FEDORA_REPO_URL=
+RUN set --; \
+	if [ -n "$FEDORA_REPO_URL" ]; then \
+		set -- '--disablerepo=*' "--repofrompath=mirror,$FEDORA_REPO_URL" \
+			--setopt=mirror.gpgcheck=1 \
+			'--setopt=mirror.gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-fedora-$releasever-primary' \
+			--enablerepo=mirror; \
+	fi; \
+	for attempt in 1 2 3; do \
+		if timeout 600 dnf install --assumeyes --setopt=install_weak_deps=False "$@" \
+			acl \
+			ccache \
+			clang \
+			cmake \
+			curl \
+			diffutils \
+			findutils \
+			gcc-c++ \
+			gettext \
+			git \
+			glibc-langpack-nl \
+			glibc-langpack-th \
+			gtk3-devel \
+			gzip \
+			inih-devel \
+			libacl-devel \
+			libcurl-devel \
+			libevdev-devel \
+			libjpeg-turbo-devel \
+			libpng-devel \
+			make \
+			openssl-devel \
+			pam-devel \
+			pkgconf-pkg-config \
+			redhat-rpm-config \
+			tar \
+			which \
+			xz \
+			yyjson-devel \
+			zlib-ng-compat-devel \
+			zstd \
+		; then break; fi; \
+		test "$attempt" -lt 3 || exit 1; \
+		echo "dnf install attempt $attempt failed; retrying" >&2; \
+	done \
+	&& dnf clean all
+
+# Builds OpenCV 5 (and yyjson when too old) into /opt/howdy-deps.
+COPY ci/common/build-deps.sh /usr/local/bin/howdy-build-deps
+RUN howdy-build-deps libs
+
+COPY howdy/include/model_assets/opencv_model_manifest.hpp /tmp/opencv_model_manifest.hpp
+RUN howdy-build-deps models \
+	&& rm /tmp/opencv_model_manifest.hpp
+
+LABEL org.opencontainers.image.source="https://github.com/nathawatc/howdy-next" \
+	  org.opencontainers.image.description="Howdy Next Fedora 45 CI build image"

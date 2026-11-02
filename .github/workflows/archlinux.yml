@@ -13,6 +13,10 @@ env:
   CCACHE_DIR: /tmp/ccache
   CCACHE_MAXSIZE: 500M
   CCACHE_COMPRESS: "1"
+  # Fail instead of silently skipping when the image lacks a locale, seccomp, or a
+  # system PAM directory. Add locale-nl once ci-archlinux is rebuilt with nl_NL.UTF-8;
+  # models and acl are not required because this image carries no models.
+  HOWDY_TEST_REQUIRE: locale-th,locale-c-utf8,seccomp,pam-system-dir
 
 jobs:
   build:

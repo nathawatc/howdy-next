@@ -1,0 +1,46 @@
+FROM docker.io/library/ubuntu:26.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PKG_CONFIG_PATH=/opt/howdy-deps/lib/pkgconfig \
+	HOWDY_TEST_MODELS_DIR=/opt/howdy-deps/models
+
+# Packages first so the expensive source build below stays cached.
+RUN apt-get update \
+	&& apt-get install --yes --no-install-recommends \
+		acl \
+		build-essential \
+		ca-certificates \
+		ccache \
+		cmake \
+		curl \
+		dpkg-dev \
+		gettext \
+		git \
+		libacl1-dev \
+		libcurl4-openssl-dev \
+		libevdev-dev \
+		libgtk-3-dev \
+		libinih-dev \
+		libjpeg-dev \
+		libpam0g-dev \
+		libpng-dev \
+		libssl-dev \
+		libyyjson-dev \
+		locales \
+		pkgconf \
+		zlib1g-dev \
+		zstd \
+	&& sed -i -E 's/^# *((th_TH|nl_NL)\.UTF-8 UTF-8)/\1/' /etc/locale.gen \
+	&& locale-gen \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Builds OpenCV 5 (and yyjson when too old) into /opt/howdy-deps.
+COPY ci/common/build-deps.sh /usr/local/bin/howdy-build-deps
+RUN howdy-build-deps libs
+
+COPY howdy/include/model_assets/opencv_model_manifest.hpp /tmp/opencv_model_manifest.hpp
+RUN howdy-build-deps models \
+	&& rm /tmp/opencv_model_manifest.hpp
+
+LABEL org.opencontainers.image.source="https://github.com/nathawatc/howdy-next" \
+	  org.opencontainers.image.description="Howdy Next Ubuntu 26.04 CI build image"

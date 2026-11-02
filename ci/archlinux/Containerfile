@@ -1,7 +1,7 @@
 FROM docker.io/library/archlinux:latest
 
 # The base image's pacman.conf skips usr/share/i18n/*, so locale sources such as
-# th_TH are missing; stop skipping them and reinstall glibc (no --needed) to restore them.
+# th_TH and nl_NL are missing; stop skipping them and reinstall glibc (no --needed) to restore them.
 RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 	&& pacman -Syu --noconfirm \
 		'glibc>=2.36' \
@@ -23,7 +23,7 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 		pkgconf \
 		qt6-base \
 		'yyjson>=0.12.0' \
-	&& sed -i 's/^#\(th_TH\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
+	&& sed -i -E 's/^#((th_TH|nl_NL)\.UTF-8 UTF-8)/\1/' /etc/locale.gen \
 	&& locale-gen \
 	&& pacman -Scc --noconfirm
 

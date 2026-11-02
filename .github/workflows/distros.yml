@@ -1,0 +1,89 @@
+name: Distro build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CCACHE_DIR: /tmp/ccache
+  CCACHE_MAXSIZE: 500M
+  CCACHE_COMPRESS: "1"
+  # Fail instead of silently skipping when an image lacks a locale, ACL support,
+  # seccomp, a system PAM directory, or the face models.
+  HOWDY_TEST_REQUIRE: locale-th,locale-nl,locale-c-utf8,acl,seccomp,pam-system-dir,models
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Debian's dpkg-buildflags defines _FORTIFY_SOURCE=2, which the project's
+          # =3 redefines; -Werror turns that into an error (ci/README.md, finding 3).
+          # Drop werror: "OFF" once the port resolves it.
+          - name: debian-13
+            image: ghcr.io/nathawatc/howdy-next/ci-debian:13-1
+            flags: dpkg
+            werror: "OFF"
+          - name: ubuntu-26.04
+            image: ghcr.io/nathawatc/howdy-next/ci-ubuntu:26.04-1
+            flags: dpkg
+            werror: "ON"
+          - name: fedora-45
+            image: ghcr.io/nathawatc/howdy-next/ci-fedora:45-1
+            flags: rpm
+            werror: "ON"
+          - name: fedora-45-clang
+            image: ghcr.io/nathawatc/howdy-next/ci-fedora:45-1
+            flags: clang
+            werror: "ON"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Trust workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Pull requests restore main's cache but never save their own, so they
+      # cannot evict it from the repository cache quota.
+      - name: Restore ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.name }}-
+
+      # Build like a distribution package: /usr prefix, so GNUInstallDirs picks the
+      # distro's own library directory, and the distro's hardening flags.
+      - name: Configure
+        run: |
+          eval "$(bash ci/common/distro-build-flags.sh ${{ matrix.flags }})"
+          cmake --preset release \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DHOWDY_WARNINGS_AS_ERRORS=${{ matrix.werror }}
+
+      - name: Build
+        run: cmake --build --preset release --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --preset release
+
+      - name: Show ccache statistics
+        if: always()
+        run: ccache --show-stats
+
+      - name: Save ccache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.name }}-${{ github.sha }}

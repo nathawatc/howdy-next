@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -51,6 +52,7 @@ namespace {
 	constexpr int              kExitSandbox            = 2;
 	constexpr int              kExitModelLoad          = 3;
 	constexpr int              kExitSeccompFailure     = 4;
+	constexpr int              kExitException          = 5;
 	constexpr int              kExitSeccompUnsupported = 77;
 	constexpr int              kSandboxTimeoutSeconds  = 5;
 	constexpr int              kFrameWidth             = 640;
@@ -274,7 +276,14 @@ namespace {
 
 auto main(int argc, char **argv) -> int {
 	if (argc == 4 && std::string_view(argv[1]) == kProbeFlag) {
-		return RunWorkloadChild(argv[2], argv[3]);
+		// An uncaught exception would reach abort(), which the filter kills with SIGSYS and
+		// hides the real cause (for example OpenCV out of memory under RLIMIT_AS).
+		try {
+			return RunWorkloadChild(argv[2], argv[3]);
+		} catch (const std::exception &error) {
+			std::cerr << "FAIL: uncaught exception in workload child: " << error.what() << '\n';
+			return kExitException;
+		}
 	}
 
 	bool ok = true;
