@@ -655,6 +655,80 @@ namespace {
 		return CleanupTempRoot(temp_root, ok);
 	}
 
+	auto NullSyncParentRejectsBeforeEncoding() -> bool {
+		bool                  ok        = true;
+		const auto            temp_root = MakeTempRoot("null-sync-parent", ok);
+		const auto            output    = temp_root / "log" / "snapshots" / "test.jpg";
+		WriterCallbackContext context;
+		auto                  dependencies = FakeDependencies(context, temp_root);
+		dependencies.sync_parent           = nullptr;
+		ok &= Expect(!snapshot_internal::WriteSnapshotAtPath(TinyFrames(), TextLines(), output,
+		                                                     dependencies),
+		             "null sync_parent returns false");
+		ok &= Expect(context.encode_calls == 0, "null sync_parent skips encoder");
+		ok &= Expect(!fs::exists(temp_root / "log"), "null sync_parent skips directory setup");
+		return CleanupTempRoot(temp_root, ok);
+	}
+
+	auto InsecureSnapshotsDirRejectsBeforeEncoding() -> bool {
+		bool            ok            = true;
+		const auto      temp_root     = MakeTempRoot("insecure-snapshots-dir", ok);
+		const auto      log_root      = temp_root / "log";
+		const auto      snapshots_dir = log_root / "snapshots";
+		const auto      output        = snapshots_dir / "test.jpg";
+		std::error_code ec;
+		fs::create_directories(snapshots_dir, ec);
+		ok &= Expect(!ec, "insecure snapshots dir created");
+		ok &= Expect(chmod(log_root.c_str(), kSnapshotDirectoryMode) == 0, "log root secured");
+		ok &= Expect(chmod(snapshots_dir.c_str(), S_IRWXU | S_IRWXG) == 0,
+		             "snapshots dir made group-writable");
+		WriterCallbackContext    context;
+		std::ostringstream const error;
+		{
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
+			ok &=
+			    Expect(!snapshot_internal::WriteSnapshotAtPath(
+			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
+				       "insecure snapshots dir returns false");
+		}
+		ok &= Expect(context.encode_calls == 0, "insecure snapshots dir skips encoder");
+		ok &= Expect(!fs::exists(output), "insecure snapshots dir creates no output");
+		ok &= Expect(CountStagedFiles(snapshots_dir) == 0,
+		             "insecure snapshots dir creates no staged file");
+		ok &= Expect(error.str().contains("Snapshot directory must not be group-writable"),
+		             "insecure snapshots dir reports security diagnostic");
+		return CleanupTempRoot(temp_root, ok);
+	}
+
+	auto SymlinkedSnapshotsDirRejectsBeforeEncoding() -> bool {
+		bool            ok            = true;
+		const auto      temp_root     = MakeTempRoot("symlinked-snapshots-dir", ok);
+		const auto      log_root      = temp_root / "log";
+		const auto      snapshots_dir = log_root / "snapshots";
+		const auto      target        = temp_root / "elsewhere";
+		const auto      output        = snapshots_dir / "test.jpg";
+		std::error_code ec;
+		fs::create_directories(log_root, ec);
+		fs::create_directories(target, ec);
+		ok &= Expect(!ec, "symlink fixture directories created");
+		ok &= Expect(chmod(log_root.c_str(), kSnapshotDirectoryMode) == 0, "log root secured");
+		ok &= Expect(chmod(target.c_str(), kSnapshotDirectoryMode) == 0, "symlink target secured");
+		fs::create_directory_symlink(target, snapshots_dir, ec);
+		ok &= Expect(!ec, "snapshots dir symlink created");
+		WriterCallbackContext    context;
+		std::ostringstream const error;
+		{
+			StreamRedirect const redirect(std::cerr, error.rdbuf());
+			ok &=
+			    Expect(!snapshot_internal::WriteSnapshotAtPath(
+			               TinyFrames(), TextLines(), output, FakeDependencies(context, temp_root)),
+				       "symlinked snapshots dir returns false");
+		}
+		ok &= Expect(context.encode_calls == 0, "symlinked snapshots dir skips encoder");
+		ok &= Expect(fs::is_empty(target, ec) && !ec, "symlink target is untouched");
+		return CleanupTempRoot(temp_root, ok);
+	}
+
 	auto MissingDirectoriesAreCreatedAndSecured() -> bool {
 		bool                  ok            = true;
 		const auto            temp_root     = MakeTempRoot("directory-creation", ok);
@@ -729,6 +803,9 @@ auto main() -> int {
 	ok &= RealImageOutput({.name = "hidden-png-output", .filename = ".png", .extension = ".png"});
 	ok &= ExtensionlessRejectsBeforeDirectorySetup();
 	ok &= InsecureExistingLogRootRejectsBeforeEncoding();
+	ok &= NullSyncParentRejectsBeforeEncoding();
+	ok &= InsecureSnapshotsDirRejectsBeforeEncoding();
+	ok &= SymlinkedSnapshotsDirRejectsBeforeEncoding();
 	ok &= MissingDirectoriesAreCreatedAndSecured();
 	ok &= MixedWidthFramesAreSupported();
 	ok &= CommittedSyncFailureIsReported();
