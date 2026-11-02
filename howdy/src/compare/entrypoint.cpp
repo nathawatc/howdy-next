@@ -90,6 +90,9 @@ namespace {
 				                        SandboxResourceName(result.resource) + " sandbox limit",
 				                    result.error_number);
 				return;
+			case howdy::native::CompareSandboxStatus::kInvalidDependencies:
+				EmitStderrWithErrno("Invalid compare sandbox dependencies", result.error_number);
+				return;
 		}
 	}
 
@@ -108,6 +111,9 @@ namespace {
 			case howdy::native::CompareSeccompStatus::kInstallationFailure:
 				EmitStderrWithErrno("Failed to install compare seccomp filter",
 				                    result.error_number);
+				return;
+			case howdy::native::CompareSeccompStatus::kInvalidDependencies:
+				EmitStderrWithErrno("Invalid compare seccomp dependencies", result.error_number);
 				return;
 		}
 	}

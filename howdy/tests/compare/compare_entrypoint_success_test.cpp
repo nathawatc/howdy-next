@@ -154,6 +154,14 @@ namespace {
 		};
 	}
 
+	auto InvalidSeccomp(void *raw_context) -> howdy::native::CompareSeccompResult {
+		++static_cast<FixtureContext *>(raw_context)->seccomp_calls;
+		return {
+		    .status       = howdy::native::CompareSeccompStatus::kInvalidDependencies,
+		    .error_number = EINVAL,
+		};
+	}
+
 	auto DependenciesFor(FixtureContext &context) -> howdy::native::CompareEntrypointDependencies {
 		return {
 		    .capture =
@@ -306,6 +314,20 @@ auto main() -> int {
 	ok &= Expect(failed_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
 	                 failed.seccomp_calls == 1 && failed.read_calls == 0,
 	             "seccomp installation failure aborts before reading any frame");
+
+	FixtureContext invalid;
+	auto           invalid_dependencies = DependenciesFor(invalid);
+	invalid_dependencies.apply_seccomp  = InvalidSeccomp;
+	const std::ostringstream invalid_error;
+	original = std::cerr.rdbuf(invalid_error.rdbuf());
+	const int invalid_result =
+	    howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(), geteuid(),
+		                                    validation_root, invalid_dependencies);
+	std::cerr.rdbuf(original);
+	ok &= Expect(invalid_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+	                 invalid.seccomp_calls == 1 && invalid.read_calls == 0 &&
+	                 invalid_error.str().contains("Invalid compare seccomp dependencies"),
+	             "seccomp invalid dependencies abort before reading any frame");
 
 	// Each fail-closed case must abort before any capture read.
 	const auto expect_abort = [&](const char *label, uid_t owner, auto configure,

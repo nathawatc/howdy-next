@@ -10,6 +10,7 @@ namespace howdy::native {
 		kLimitInspectionFailure,
 		kLimitBelowMinimum,
 		kLimitApplicationFailure,
+		kInvalidDependencies,
 	};
 
 	enum class CompareSandboxResource : std::uint8_t {
@@ -31,6 +32,7 @@ namespace howdy::native {
 		kUnsupported,
 		kFilterConstructionFailure,
 		kInstallationFailure,
+		kInvalidDependencies,
 	};
 
 	struct CompareSeccompResult {

@@ -400,7 +400,8 @@ namespace {
 			}
 			const auto result =
 			    howdy::native::compare_sandbox_internal::ApplyCompareSandbox(4, dependencies);
-			ok &= Expect(result.status == CompareSandboxStatus::kNoNewPrivilegesFailure &&
+			ok &= Expect(result.status == CompareSandboxStatus::kInvalidDependencies &&
+			                 result.resource == CompareSandboxResource::kNone &&
 			                 result.error_number == EINVAL && context.events.empty(),
 			             "null sandbox callback fails closed without invoking callbacks");
 		}
