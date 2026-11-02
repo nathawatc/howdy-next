@@ -219,6 +219,7 @@ namespace {
 		config.clahe_enabled                                = false;
 		config.dark_threshold                               = 100.0F;
 		auto const                            preview_frame = GrayFrame();
+		auto const                            original      = preview_frame.clone();
 		SessionContext                        first_context;
 		auto                                  first_engine = MakeEngine(first_context, config);
 		test_cli_internal::TestPreviewSession first_session(config, first_engine,
@@ -242,8 +243,10 @@ namespace {
 		             "both sessions present caller-owned prefetched frame");
 		ok &= Expect(first_context.read_calls == 0 && second_context.read_calls == 0,
 		             "both sessions skip capture read for prefetched frame");
-		ok &=
-		    Expect(!preview_frame.empty(), "both sessions preserve caller-owned prefetched frame");
+		ok &= Expect(preview_frame.size() == original.size() &&
+		                 preview_frame.type() == original.type() &&
+		                 cv::countNonZero(preview_frame != original) == 0,
+		             "both sessions preserve caller-owned prefetched frame");
 		return ok;
 	}
 
