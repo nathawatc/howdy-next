@@ -118,13 +118,15 @@ namespace howdy::native::auth_helper_protocol {
 		return true;
 	}
 
-	inline auto MatchesPreparedRuntimeLayout(const std::filesystem::path &runtime_dir,
+	// `runtime_root` must itself be canonical and absolute; anything else fails closed.
+	inline auto MatchesPreparedRuntimeLayout(const std::filesystem::path &runtime_root,
+	                                         const std::filesystem::path &runtime_dir,
 	                                         const std::filesystem::path &config_path,
 	                                         const std::filesystem::path &user_models_dir,
 	                                         uid_t                        expected_uid) -> bool {
-		if (!IsCanonicalAbsolutePath(runtime_dir) || !IsCanonicalAbsolutePath(config_path) ||
-		    !IsCanonicalAbsolutePath(user_models_dir) ||
-		    runtime_dir.parent_path() != PreparedRuntimeRoot()) {
+		if (!IsCanonicalAbsolutePath(runtime_root) || !IsCanonicalAbsolutePath(runtime_dir) ||
+		    !IsCanonicalAbsolutePath(config_path) || !IsCanonicalAbsolutePath(user_models_dir) ||
+		    runtime_dir.parent_path() != runtime_root) {
 			return false;
 		}
 
@@ -136,6 +138,14 @@ namespace howdy::native::auth_helper_protocol {
 		}
 		return config_path == PreparedConfigPath(runtime_dir) &&
 		       user_models_dir == PreparedUserModelsDir(runtime_dir);
+	}
+
+	inline auto MatchesPreparedRuntimeLayout(const std::filesystem::path &runtime_dir,
+	                                         const std::filesystem::path &config_path,
+	                                         const std::filesystem::path &user_models_dir,
+	                                         uid_t                        expected_uid) -> bool {
+		return MatchesPreparedRuntimeLayout(PreparedRuntimeRoot(), runtime_dir, config_path,
+		                                    user_models_dir, expected_uid);
 	}
 
 }  // namespace howdy::native::auth_helper_protocol

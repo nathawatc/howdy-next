@@ -42,7 +42,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}  // namespace
 
-	auto ParseAuthHelperOutput(const std::string &output) -> Output {
+	auto ParseAuthHelperOutput(const std::string &output, const std::filesystem::path &runtime_root)
+	    -> Output {
 		Output result;
 		bool   saw_config_path     = false;
 		bool   saw_user_models_dir = false;
@@ -87,7 +88,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		const std::filesystem::path config_path(result.config_path);
 		const std::filesystem::path user_models_dir(result.user_models_dir);
 		result.valid = howdy::native::auth_helper_protocol::MatchesPreparedRuntimeLayout(
-		    config_path.parent_path(), config_path, user_models_dir, getuid());
+		    runtime_root, config_path.parent_path(), config_path, user_models_dir, getuid());
 		return result;
 	}
 
@@ -244,9 +245,9 @@ namespace {
 		return true;
 	}
 
-	auto AssignPreparedPaths(const std::string &output, howdy::pam::PreparedRuntimeFiles *prepared)
-	    -> bool {
-		const auto auth_output = ParseAuthHelperOutput(output);
+	auto AssignPreparedPaths(const std::string &output, const Operations &operations,
+	                         howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
+		const auto auth_output = ParseAuthHelperOutput(output, operations.runtime_root);
 		if (!auth_output.valid) {
 			syslog(LOG_AUTHPRIV | LOG_ERR,
 			       "pam_howdy: Howdy auth helper returned malformed output: %s", output.c_str());
@@ -289,9 +290,9 @@ namespace {
 			return false;
 		}
 		CloseOwnedFd(operations, spawn.lease_socket.Parent());
-		if (!AssignPreparedPaths(helper_output, prepared) ||
+		if (!AssignPreparedPaths(helper_output, operations, prepared) ||
 		    !howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
-		        lease_fd.Get(), prepared->root_dir, 0)) {
+		        lease_fd.Get(), prepared->root_dir, operations.lease_owner_uid)) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper lease validation failed");
 			return false;
 		}

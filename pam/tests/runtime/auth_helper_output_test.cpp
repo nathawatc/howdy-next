@@ -255,8 +255,8 @@ namespace {
 
 		bool ok = true;
 		for (const auto &test_case : cases) {
-			const auto parsed =
-			    howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(test_case.output);
+			const auto parsed = howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput(
+			    test_case.output, howdy::native::auth_helper_protocol::PreparedRuntimeRoot());
 			ok &=
 			    Expect(parsed.valid == test_case.expected_ok, test_case.name + " parser validity");
 			if (test_case.expected_ok) {

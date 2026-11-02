@@ -1,13 +1,17 @@
 #pragma once
 
+#include "protocol/auth_helper_protocol.hpp"
 #include "runtime/runtime_session.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include <spawn.h>
+
+#include <sys/types.h>
 
 namespace howdy::pam::auth_helper_process {
 
@@ -37,6 +41,12 @@ namespace howdy::pam::auth_helper_process {
 		int (*spawn)(const SpawnRequest &)                                             = nullptr;
 		int (*close)(void *, int fd)                                                   = nullptr;
 		LogObserver log_observer                                                       = nullptr;
+
+		// Directory the helper's runtime generation must live in, and the uid that must own its
+		// lease. The defaults are the production values; a non-canonical root fails closed.
+		std::filesystem::path runtime_root =
+		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot();
+		uid_t lease_owner_uid = 0;
 	};
 
 	struct Output {

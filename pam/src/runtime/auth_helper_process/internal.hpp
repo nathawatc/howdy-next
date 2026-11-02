@@ -112,7 +112,8 @@ namespace howdy::pam::auth_helper_process::internal {
 	    -> bool;
 
 	// auth_helper_process.cpp
-	__attribute__((visibility("hidden"))) auto ParseAuthHelperOutput(const std::string &output)
+	__attribute__((visibility("hidden"))) auto
+	ParseAuthHelperOutput(const std::string &output, const std::filesystem::path &runtime_root)
 	    -> Output;
 
 }  // namespace howdy::pam::auth_helper_process::internal
