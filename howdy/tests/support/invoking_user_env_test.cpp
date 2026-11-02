@@ -230,6 +230,10 @@ namespace {
 		         "999999999999999999999999",
 		         "4294967294",
 		     }) {
+			// The last value is only "unknown" if this host has no passwd entry for it.
+			if (uid == "4294967294" && getpwuid(4294967294U) != nullptr) {
+				continue;
+			}
 			ScopedWrapperEnvironment::Set(howdy::native::kPkexecUidEnvironmentVariable, uid);
 			ok &= Expect(howdy::native::ResolveInvokingIdentity().status ==
 			                 howdy::native::InvokingIdentityStatus::kInvalid,
