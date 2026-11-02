@@ -1,6 +1,9 @@
 #include "support/user_names.hpp"
 #include "test_support.hpp"
 
+#include <string>
+#include <string_view>
+
 namespace {
 
 	using howdy::test::Expect;
@@ -30,6 +33,19 @@ auto main() -> int {
 	             "long option-shaped username is rejected");
 	ok &= Expect(!howdy::native::IsValidModelUserName("alice bob"),
 	             "username containing whitespace is rejected");
+	ok &= Expect(howdy::native::IsValidModelUserName(std::string(255, 'a')),
+	             "255-byte username is accepted");
+	ok &= Expect(!howdy::native::IsValidModelUserName(std::string(256, 'a')),
+	             "256-byte username is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName("a\x01"
+	                                                  "b"),
+	             "username containing a control character is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName(std::string_view("a\0b", 3)),
+	             "username containing NUL is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName("alice\nbob"),
+	             "username containing newline is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName("."), "dot username is rejected");
+	ok &= Expect(!howdy::native::IsValidModelUserName(".."), "dot-dot username is rejected");
 
 	return ok ? 0 : 1;
 }
