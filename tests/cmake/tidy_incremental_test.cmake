@@ -177,12 +177,77 @@ execute_process(
  OUTPUT_VARIABLE failure_output
  ERROR_VARIABLE failure_error
 )
-set(ENV{PATH} "${old_path}")
 if(failure_result EQUAL 0)
   message(
   FATAL_ERROR
   "run-clang-tidy failure was not propagated:\n"
   "${failure_output}\n${failure_error}"
+ )
+endif()
+
+# A crashing clang-scan-deps must fail closed, not look like "nothing affected".
+file(WRITE "${scan_deps}" "#!/bin/sh\nexit 1\n")
+file(CHMOD "${scan_deps}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+execute_process(
+ COMMAND "${CMAKE_COMMAND}" "-DBUILD_DIR=${build_dir}" -DBASE=HEAD
+  -P "${fixture_root}/cmake/tidy_incremental.cmake"
+ WORKING_DIRECTORY "${fixture_root}"
+ RESULT_VARIABLE scan_failure_result
+ OUTPUT_VARIABLE scan_failure_output
+ ERROR_VARIABLE scan_failure_error
+)
+string(FIND "${scan_failure_output}\n${scan_failure_error}"
+       "clang-scan-deps failed" scan_failure_message)
+if(scan_failure_result EQUAL 0 OR scan_failure_message EQUAL -1)
+  message(
+  FATAL_ERROR
+  "clang-scan-deps failure was not propagated:\n"
+  "${scan_failure_output}\n${scan_failure_error}"
+ )
+endif()
+
+# A missing compile database must fail closed.
+execute_process(
+ COMMAND "${CMAKE_COMMAND}" "-DBUILD_DIR=${fixture_root}/build/missing"
+  -DBASE=HEAD -P "${fixture_root}/cmake/tidy_incremental.cmake"
+ WORKING_DIRECTORY "${fixture_root}"
+ RESULT_VARIABLE missing_db_result
+ OUTPUT_VARIABLE missing_db_output
+ ERROR_VARIABLE missing_db_error
+)
+string(FIND "${missing_db_output}\n${missing_db_error}"
+       "compile_commands.json" missing_db_message)
+if(missing_db_result EQUAL 0 OR missing_db_message EQUAL -1)
+  message(
+  FATAL_ERROR
+  "Missing compile database was not rejected:\n"
+  "${missing_db_output}\n${missing_db_error}"
+ )
+endif()
+
+# A failing git must fail closed.
+execute_process(
+ COMMAND "${CMAKE_COMMAND}" "-DBUILD_DIR=${build_dir}" -DBASE=no-such-ref
+  -P "${fixture_root}/cmake/tidy_incremental.cmake"
+ WORKING_DIRECTORY "${fixture_root}"
+ RESULT_VARIABLE git_failure_result
+ OUTPUT_VARIABLE git_failure_output
+ ERROR_VARIABLE git_failure_error
+)
+set(ENV{PATH} "${old_path}")
+if(git_failure_result EQUAL 0)
+  message(
+  FATAL_ERROR
+  "git failure was not propagated:\n"
+  "${git_failure_output}\n${git_failure_error}"
+ )
+endif()
+string(FIND "${git_failure_output}\n${git_failure_error}" "no-such-ref" git_failure_message)
+if(git_failure_message EQUAL -1)
+  message(
+  FATAL_ERROR
+  "git failure did not come from the unknown base ref:\n"
+  "${git_failure_output}\n${git_failure_error}"
  )
 endif()
 

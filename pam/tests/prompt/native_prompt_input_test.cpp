@@ -268,12 +268,9 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 	ok &= Expect(prompt_bytes > 0, "abort wake test prompt is written to tty");
 
 	conversation->RequestAbort();
-	if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-		master_fd.Reset();
-		conversation->RequestAbort();
-	}
-	if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-		(void)Expect(false, "abort wake test prompt thread stops before timeout");
+	// The prompt polls every 100 ms; the wide margin only absorbs a loaded runner.
+	if (result_future.wait_for(std::chrono::seconds(10)) != std::future_status::ready) {
+		(void)Expect(false, "RequestAbort alone wakes the prompt before timeout");
 		_exit(EXIT_FAILURE);
 	}
 	conversation->RequestAbort();

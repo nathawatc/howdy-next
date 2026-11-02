@@ -97,12 +97,14 @@ auto main() -> int {
 	ok &= Expect(howdy::native::ResolveLogPath() == default_log_path,
 	             "relative HOWDY_LOG_PATH is ignored and default log path is used");
 
+	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "pin temp root mode");
 	const auto insecure_dir    = temp_root / "insecure-config-dir";
 	const auto insecure_config = insecure_dir / "config.ini";
 	fs::create_directories(insecure_dir, ec);
 	ok &= Expect(!ec, "create insecure config dir");
 	ok &= Expect(WriteFile(insecure_config, "[core]\ndisabled = false\n"),
 	             "write insecure config fixture");
+	ok &= Expect(chmod(insecure_config.c_str(), 0644) == 0, "pin config fixture mode");
 	ok &= Expect(chmod(insecure_dir.c_str(), 0777) == 0, "make config dir insecure");
 	setenv("HOWDY_CONFIG", insecure_config.c_str(), 1);
 	ok &= Expect(howdy::native::ResolveConfigPath() == insecure_config,

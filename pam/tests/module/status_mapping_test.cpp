@@ -224,6 +224,7 @@ auto main() -> int {
 			break;
 		}
 	}
+	bool skipped_translation = false;
 	if (selected_thai_locale != nullptr) {
 		const auto translated =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kTimeoutReached));
@@ -236,6 +237,7 @@ auto main() -> int {
 		             "translated Howdy message ignores host default domain");
 	} else {
 		std::cerr << "SKIP: Thai locale is not generated; translated catalog assertion not run\n";
+		skipped_translation = true;
 	}
 
 	if (had_initial_language) {
@@ -254,5 +256,8 @@ auto main() -> int {
 		             "restore initial locale");
 	}
 
-	return ok ? 0 : 1;
+	if (!ok) {
+		return 1;
+	}
+	return skipped_translation ? 77 : 0;
 }

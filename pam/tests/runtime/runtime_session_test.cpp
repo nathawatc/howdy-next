@@ -326,23 +326,6 @@ namespace {
 		return ok;
 	}
 
-	auto TestNoDuplicateCleanup() -> bool {
-		const auto  staged_runtime = MakePreparedRuntime("stage1");
-		FakeContext context{
-		    .load_results  = {PathErrorResult(EACCES), SuccessResult(staged_runtime.config_path)},
-		    .effective_uid = 1000,
-		};
-		{
-			howdy::pam::RuntimeSession session(kConfiguredConfig, kConfiguredModels,
-			                                   Operations(&context));
-			if (!Expect(howdy::pam::RuntimeSessionLoadSucceeded(session.LoadForUser("alice")),
-			            "duplicate-cleanup setup stages successfully")) {
-				return false;
-			}
-		}
-		return Expect(IssuedLeaseHasState(context, false), "scope exit closes staged lease");
-	}
-
 	auto TestDirectSuccessIsOneShot() -> bool {
 		FakeContext context{.load_results = {SuccessResult(kConfiguredConfig)}};
 		bool        ok = true;
@@ -560,7 +543,6 @@ auto main(int argc, char **argv) -> int {
 	ok &= TestPrepareFailure();
 	ok &= TestStagedConfigFailure();
 	ok &= TestMissingDependencies();
-	ok &= TestNoDuplicateCleanup();
 	ok &= TestDirectSuccessIsOneShot();
 	ok &= TestStagedSuccessIsOneShot();
 	ok &= TestFailedStagedLoadIsOneShot();

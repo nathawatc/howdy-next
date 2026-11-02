@@ -123,6 +123,30 @@ namespace {
 		              "invalid fd fails");
 	}
 
+	auto ExpectWriteFailures() -> bool {
+		bool ok = Expect(!howdy::native::WriteAllToFd(STDOUT_FILENO, nullptr, 5),
+		                 "null data with non-zero size fails");
+
+		const ScopedFd full(open("/dev/full", O_WRONLY | O_CLOEXEC));
+		ok &= Expect(full.Get() >= 0, "opens /dev/full");
+		if (full.Get() >= 0) {
+			ok &= Expect(!howdy::native::WriteAllToFd(full.Get(), "x"), "ENOSPC write fails");
+		}
+
+		const auto previous_handler = std::signal(SIGPIPE, SIG_IGN);
+		ok &= Expect(previous_handler != SIG_ERR, "ignore SIGPIPE for broken pipe write");
+		std::array<int, 2> raw_fds{{-1, -1}};
+		if (previous_handler != SIG_ERR && pipe2(raw_fds.data(), O_CLOEXEC) == 0) {
+			close(raw_fds.at(0));
+			const ScopedFd write_end(raw_fds.at(1));
+			ok &= Expect(!howdy::native::WriteAllToFd(write_end.Get(), "x"), "EPIPE write fails");
+		}
+		if (previous_handler != SIG_ERR) {
+			(void)std::signal(SIGPIPE, previous_handler);
+		}
+		return ok;
+	}
+
 	auto OpenPipe(std::array<ScopedFd, 2> *fds) -> bool {
 		std::array<int, 2> raw_fds{{-1, -1}};
 		if (pipe2(raw_fds.data(), O_CLOEXEC) != 0) {
@@ -325,6 +349,7 @@ auto main() -> int {
 
 	ok &= ExpectEmptyWrite(temp_root);
 	ok &= ExpectInvalidFdFailure();
+	ok &= ExpectWriteFailures();
 	ok &= ExpectFullWrite(temp_root);
 	ok &= ExpectBoundedReading(temp_root);
 	ok &= ExpectReadHintsAndInterruptions();

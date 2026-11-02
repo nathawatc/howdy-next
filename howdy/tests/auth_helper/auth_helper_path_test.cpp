@@ -138,6 +138,22 @@ namespace {
 		ok &= Expect(howdy::native::MaskedBits(missing_stat.st_mode, 0777) == 0711,
 		             "created runtime root has expected mode");
 
+		for (const mode_t bad_mode : {mode_t{0777}, mode_t{0755}}) {
+			ok &=
+			    Expect(chmod(user_owned_dir.c_str(), bad_mode) == 0, "sets bad runtime root mode");
+			ok &= Expect(!ValidateRuntimeRoot(user_owned_dir, geteuid(), getegid()),
+			             "existing runtime root with a wrong mode is rejected");
+		}
+		ok &= Expect(chmod(user_owned_dir.c_str(), 0711) == 0, "restores runtime root mode");
+		ok &= Expect(ValidateRuntimeRoot(user_owned_dir, geteuid(), getegid()),
+		             "existing runtime root with the exact owner and mode is accepted");
+
+		const auto symlink_path = temp_root / "runtime-root-symlink";
+		ok &= Expect(symlink(user_owned_dir.c_str(), symlink_path.c_str()) == 0,
+		             "creates runtime root symlink fixture");
+		ok &= Expect(!ValidateRuntimeRoot(symlink_path, geteuid(), getegid()),
+		             "symlinked runtime root is rejected");
+
 		if (geteuid() == 0) {
 			ok &= Expect(ValidateRuntimeRoot(user_owned_dir, 0, 0),
 			             "root-owned runtime root directory is accepted");
@@ -157,7 +173,9 @@ namespace {
 
 		ScopedFd dir_fd(open(temp_root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC));
 		ok &= Expect(dir_fd.Get() >= 0, "opens directory fd");
-		ok &= Expect(!SecureSourceFileStat(dir_fd.Get(), "Directory", 0),
+		struct stat dir_stat{};
+		ok &= Expect(fstat(dir_fd.Get(), &dir_stat) == 0, "stats directory fd");
+		ok &= Expect(!SecureSourceFileStat(dir_fd.Get(), "Directory", dir_stat.st_uid),
 		             "directory fd is rejected as source file");
 
 		const auto regular_path = temp_root / "source-file";
@@ -165,7 +183,11 @@ namespace {
 		ok &= Expect(chmod(regular_path.c_str(), 0664) == 0, "makes source group-writable");
 		ScopedFd group_writable_fd(open(regular_path.c_str(), O_RDONLY | O_CLOEXEC));
 		ok &= Expect(group_writable_fd.Get() >= 0, "opens group-writable source");
-		ok &= Expect(!SecureSourceFileStat(group_writable_fd.Get(), "Group writable source", 0),
+		struct stat group_stat{};
+		ok &=
+		    Expect(fstat(group_writable_fd.Get(), &group_stat) == 0, "stats group-writable source");
+		ok &= Expect(!SecureSourceFileStat(group_writable_fd.Get(), "Group writable source",
+		                                   group_stat.st_uid),
 		             "group-writable source is rejected");
 		group_writable_fd.Reset();
 

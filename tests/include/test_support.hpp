@@ -20,7 +20,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/stat.h>
+
 namespace howdy::test {
+
+	// Fixtures are created with plain streams and mkdir; the secure-path checks under test reject
+	// group-writable files, so pin the umask instead of inheriting the caller's shell setting.
+	inline const mode_t kPinnedTestUmask = umask(022);
 
 	inline auto Expect(bool condition, std::string_view message) -> bool {
 		if (!condition) {

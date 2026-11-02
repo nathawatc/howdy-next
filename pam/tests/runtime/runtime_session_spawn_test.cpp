@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <iterator>
 #include <span>
 #include <stdexcept>
@@ -517,6 +518,29 @@ namespace {
 				(void)close(independent_fd);
 			}
 
+			const auto link_path = std::filesystem::path(parent) / "extra.link";
+			ok &= Expect(link(lock_path.c_str(), link_path.c_str()) == 0,
+			             "lease validation hardlinks the lock file");
+			ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+			                 lease_fd, generation, geteuid()),
+			             "lease validation rejects a second hard link");
+			(void)unlink(link_path.c_str());
+
+			ok &= Expect(chmod(lock_path.c_str(), 0644) == 0, "lease validation loosens mode");
+			ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+			                 lease_fd, generation, geteuid()),
+			             "lease validation rejects a non-0600 lock file");
+			(void)chmod(lock_path.c_str(), 0600);
+
+			const int dir_fd = open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+			ok &= Expect(dir_fd >= 0, "lease validation opens a directory descriptor");
+			if (dir_fd >= 0) {
+				ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+				                 dir_fd, generation, geteuid()),
+				             "lease validation rejects a non-regular descriptor");
+				(void)close(dir_fd);
+			}
+
 			const auto wrong_path = std::filesystem::path(parent) / "wrong.lock";
 			const int  wrong_creator =
 			    open(wrong_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
@@ -533,6 +557,22 @@ namespace {
 				(void)close(wrong_fd);
 			}
 			(void)close(lease_fd);
+		}
+		const int holder_fd = open(lock_path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
+		const int locked_fd = open(lock_path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+		ok &= Expect(holder_fd >= 0 && locked_fd >= 0, "lease validation opens held-lock fds");
+		if (holder_fd >= 0 && locked_fd >= 0) {
+			ok &= Expect(flock(holder_fd, LOCK_EX | LOCK_NB) == 0,
+			             "lease validation holds exclusive lock");
+			ok &= Expect(!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+			                 locked_fd, generation, geteuid()),
+			             "lease validation rejects an exclusively locked lease");
+		}
+		if (holder_fd >= 0) {
+			(void)close(holder_fd);
+		}
+		if (locked_fd >= 0) {
+			(void)close(locked_fd);
 		}
 		std::error_code error;
 		std::filesystem::remove_all(parent, error);
@@ -615,6 +655,7 @@ namespace {
 
 	auto TestValidPrepareIgnoresDestroyFailure() -> bool {
 		if (geteuid() != 0) {
+			std::cerr << "SKIP: the production runtime slot test needs root\n";
 			return true;
 		}
 		ReapContext state;
@@ -622,8 +663,14 @@ namespace {
 		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), 0,
 		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		std::error_code error;
+		const auto      lock_path = std::filesystem::path(state.root.string() + ".lock");
+		// The production slot path is not injectable; never touch one that is already in use.
+		if (std::filesystem::exists(state.root, error) ||
+		    std::filesystem::exists(lock_path, error)) {
+			std::cerr << "SKIP: a real runtime slot already exists; not touching it\n";
+			return true;
+		}
 		std::filesystem::create_directories(state.root / "models", error);
-		const auto lock_path = std::filesystem::path(state.root.string() + ".lock");
 		const int creator_fd = open(lock_path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
 		bool      ok = Expect(!error && creator_fd >= 0, "valid prepare creates runtime lease");
 		if (creator_fd >= 0) {

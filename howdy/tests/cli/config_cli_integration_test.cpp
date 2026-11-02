@@ -428,7 +428,8 @@ namespace howdy::test::config_cli {
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
 			std::error_code   error;
 
-			ok &= Expect(WriteFile(source_path, at_limit), "write source config at size limit");
+			ok &= Expect(WriteFile(source_path, at_limit) && chmod(source_path.c_str(), 0600) == 0,
+			             "write source config at size limit");
 			const auto copy = howdy::native::config_internal::CreateTempConfigCopy(
 			    source_path, std::nullopt, validation_root);
 			ok &= Expect(copy.has_value() && copy->original_content == at_limit,

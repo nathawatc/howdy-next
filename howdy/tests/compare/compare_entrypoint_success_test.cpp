@@ -30,6 +30,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #ifndef HOWDY_PACKAGED_CONFIG_PATH
 #	error "HOWDY_PACKAGED_CONFIG_PATH must be defined by CMake"
@@ -305,6 +306,53 @@ auto main() -> int {
 	ok &= Expect(failed_result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
 	                 failed.seccomp_calls == 1 && failed.read_calls == 0,
 	             "seccomp installation failure aborts before reading any frame");
+
+	// Each fail-closed case must abort before any capture read.
+	const auto expect_abort = [&](const char *label, uid_t owner, auto configure,
+	                              const char *diagnostic) -> bool {
+		FixtureContext context;
+		auto           case_dependencies = DependenciesFor(context);
+		configure(case_dependencies);
+		const std::ostringstream case_error;
+		auto                    *saved  = std::cerr.rdbuf(case_error.rdbuf());
+		const int                status = howdy::native::RunCompareEntrypoint(
+		    static_cast<int>(argv.size()), argv.data(), owner, validation_root, case_dependencies);
+		std::cerr.rdbuf(saved);
+		return Expect(status == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+		                  context.read_calls == 0 && !case_error.str().empty() &&
+		                  case_error.str().contains(diagnostic),
+		              label);
+	};
+	const auto keep = [](howdy::native::CompareEntrypointDependencies &) -> void {};
+	const auto fail_drop =
+	    [](howdy::native::CompareEntrypointDependencies &case_dependencies) -> void {
+		case_dependencies.drop_privileges = [](void *) -> howdy::native::ComparePrivilegeResult {
+			return {
+			    .status        = howdy::native::ComparePrivilegeStatus::kVerificationFailure,
+			    .error_message = "injected",
+			};
+		};
+	};
+	const auto config_file = root / "config.ini";
+	const auto model_file  = root / "models" / "fixture-user.dat";
+
+	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),
+	                   fail_drop, "Failed to drop compare privileges: injected");
+	ok &= expect_abort("untrusted config owner aborts", geteuid() + 1, keep,
+	                   "Config directory must be owned by UID");
+	ok &= Expect(chmod(config_file.c_str(), 0666) == 0, "make config world-writable");
+	ok &= expect_abort("world-writable config aborts", geteuid(), keep,
+	                   "Config file must not be group-writable");
+	ok &= Expect(chmod(config_file.c_str(), 0644) == 0, "restore config mode");
+	ok &= Expect(chmod(model_file.c_str(), 0666) == 0, "make user model world-writable");
+	ok &= expect_abort("world-writable user model aborts", geteuid(), keep,
+	                   "User model file must not be group-writable");
+	ok &= Expect(chmod(model_file.c_str(), 0600) == 0, "restore user model mode");
+	ok &= Expect(howdy::test::WriteFile(model_file, "not json") &&
+	                 chmod(model_file.c_str(), 0600) == 0,
+	             "write malformed user model");
+	ok &= expect_abort("malformed user model aborts", geteuid(), keep,
+	                   "Failed to parse user model JSON");
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

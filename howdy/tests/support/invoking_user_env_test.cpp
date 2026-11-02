@@ -211,6 +211,35 @@ namespace {
 		                 howdy::native::InvokingIdentityStatus::kConflicting,
 		             "pkexec and sudo metadata conflicts");
 
+		ScopedWrapperEnvironment::Clear();
+		ScopedWrapperEnvironment::Set(howdy::native::kDoasUserEnvironmentVariable, "");
+		ok &= Expect(howdy::native::ResolveInvokingIdentity().status ==
+		                 howdy::native::InvokingIdentityStatus::kInvalid,
+		             "empty doas user is rejected");
+
+		ScopedWrapperEnvironment::Set(howdy::native::kDoasUserEnvironmentVariable,
+		                              "no-such-user-xyz");
+		ok &= Expect(howdy::native::ResolveInvokingIdentity().status ==
+		                 howdy::native::InvokingIdentityStatus::kInvalid,
+		             "unknown doas user is rejected");
+
+		ScopedWrapperEnvironment::Clear();
+		for (const auto &uid : std::array<std::string, 4>{
+		         "not-a-number",
+		         "-1",
+		         "999999999999999999999999",
+		         "4294967294",
+		     }) {
+			// The last value is only "unknown" if this host has no passwd entry for it.
+			if (uid == "4294967294" && getpwuid(4294967294U) != nullptr) {
+				continue;
+			}
+			ScopedWrapperEnvironment::Set(howdy::native::kPkexecUidEnvironmentVariable, uid);
+			ok &= Expect(howdy::native::ResolveInvokingIdentity().status ==
+			                 howdy::native::InvokingIdentityStatus::kInvalid,
+			             "malformed or unknown pkexec UID is rejected");
+		}
+
 		ok &= Expect(!howdy::native::ParseUidEnv("+1").has_value(),
 		             "UID parser rejects signed values");
 		ok &=
@@ -233,9 +262,21 @@ auto main() -> int {
 	const howdy::test::ScopedEnvironmentVariable wayland_socket("WAYLAND_SOCKET",
 	                                                            "stale-wayland-fd");
 
+	const howdy::test::ScopedEnvironmentVariable config_home("XDG_CONFIG_HOME",
+	                                                         "/tmp/stale-config");
+	const howdy::test::ScopedEnvironmentVariable cache_home("XDG_CACHE_HOME", "/tmp/stale-cache");
+	const howdy::test::ScopedEnvironmentVariable data_home("XDG_DATA_HOME", "/tmp/stale-data");
+	const howdy::test::ScopedEnvironmentVariable state_home("XDG_STATE_HOME", "/tmp/stale-state");
+	const howdy::test::ScopedEnvironmentVariable home_var("HOME", "/stale/home");
+	const howdy::test::ScopedEnvironmentVariable user_var("USER", "stale-user");
+	const howdy::test::ScopedEnvironmentVariable logname_var("LOGNAME", "stale-user");
+	const howdy::test::ScopedEnvironmentVariable shell_var("SHELL", "/stale/shell");
+
 	howdy::native::InvokingUser user{};
-	user.uid  = static_cast<uid_t>(-1);
-	user.home = "/path/that/does/not/exist";
+	user.uid   = static_cast<uid_t>(-1);
+	user.name  = "reset-user";
+	user.home  = "/path/that/does/not/exist";
+	user.shell = "/bin/reset-shell";
 
 	howdy::native::ResetInvokingUserGuiEnvironment(user);
 
@@ -245,6 +286,24 @@ auto main() -> int {
 	             "stale DBUS session bus address is cleared when bus is unavailable");
 	ok &= Expect(std::getenv("WAYLAND_SOCKET") == nullptr,
 	             "stale Wayland socket is cleared during GUI environment preparation");
+	for (const char *name :
+	     {"XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME"}) {
+		ok &= Expect(std::getenv(name) == nullptr,
+		             std::string("stale ") + name + " is cleared for the invoking user");
+	}
+	const auto env_is = [](const char *name, std::string_view expected) -> bool {
+		const char *value = std::getenv(name);
+		return value != nullptr && value == expected;
+	};
+	ok &= Expect(env_is("HOME", user.home), "HOME comes from the invoking user");
+	ok &= Expect(env_is("USER", user.name) && env_is("LOGNAME", user.name),
+	             "USER and LOGNAME come from the invoking user");
+	ok &= Expect(env_is("SHELL", user.shell), "SHELL comes from the invoking user");
+
+	user.name.clear();
+	howdy::native::ResetInvokingUserEnvironment(user);
+	ok &= Expect(std::getenv("USER") == nullptr && std::getenv("LOGNAME") == nullptr,
+	             "empty invoking user name unsets USER and LOGNAME");
 
 	return ok ? 0 : 1;
 }

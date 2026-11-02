@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 namespace {
 
@@ -73,6 +74,24 @@ auto main() -> int {
 	                    "default loader retains full ancestor validation");
 	ok &= Expect(default_load.path == valid_path, "default loader resolves configured path");
 	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "restore loader fixture boundary");
+
+	ok &= ExpectFailure(howdy::native::LoadRuntimeConfig(
+	                        valid_path, static_cast<uid_t>(geteuid() + 1), {temp_root}),
+	                    RuntimeConfigLoadStatus::kPathError, "mismatched owner_uid is rejected");
+	ok &= Expect(
+	    howdy::native::LoadRuntimeConfig(valid_path, static_cast<uid_t>(geteuid() + 1), {temp_root})
+	        .error_message.contains("owned by UID"),
+	    "mismatched owner_uid reports ownership error");
+
+	const auto      symlink_path = temp_root / "link.ini";
+	std::error_code link_ec;
+	fs::create_symlink(valid_path, symlink_path, link_ec);
+	ok &= Expect(!link_ec, "create symlinked config");
+	const auto symlink_result =
+	    howdy::native::LoadRuntimeConfig(symlink_path, std::nullopt, {temp_root});
+	ok &= ExpectFailure(symlink_result, RuntimeConfigLoadStatus::kPathError,
+	                    "symlinked config is rejected");
+	ok &= Expect(symlink_result.error_code == ELOOP, "symlinked config preserves ELOOP");
 
 	const auto        large_runtime_path    = temp_root / "large-runtime.ini";
 	const std::string large_runtime_content = "[core]\ndisabled = false\n[video]\ntimeout = 7\n" +
@@ -156,6 +175,7 @@ auto main() -> int {
 
 	const auto malformed_path = temp_root / "malformed.ini";
 	ok &= Expect(WriteFile(malformed_path, "[core\n"), "write malformed config");
+	ok &= Expect(chmod(malformed_path.c_str(), 0644) == 0, "secure malformed config");
 	const auto malformed =
 	    howdy::native::LoadRuntimeConfig(malformed_path, std::nullopt, {temp_root});
 	ok &= ExpectFailure(malformed, RuntimeConfigLoadStatus::kParseError, "malformed config");
@@ -168,6 +188,7 @@ auto main() -> int {
 
 	const auto invalid_path = temp_root / "invalid.ini";
 	ok &= Expect(WriteFile(invalid_path, "[video]\ntimeout = 0\n"), "write invalid config");
+	ok &= Expect(chmod(invalid_path.c_str(), 0644) == 0, "secure invalid config");
 	const auto invalid = howdy::native::LoadRuntimeConfig(invalid_path, std::nullopt, {temp_root});
 	ok &= ExpectFailure(invalid, RuntimeConfigLoadStatus::kInvalidRuntimeValue,
 	                    "invalid runtime config");

@@ -111,9 +111,18 @@ namespace howdy::test {
 
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");
+		std::string size_error;
+		// The padding-only fixture has no "disabled" key, so the update must get past the read
+		// and the size limit and fail only on the missing option.
+		const bool at_limit_updated =
+		    howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error, "true",
+			                                 false, false, {context.temp_root});
+		ok &= Expect(
+		    !at_limit_updated && size_error == "Could not find a \"disabled\" config option to set",
+		    "config exactly at size limit is read before the missing option fails: " + size_error);
+		size_error.clear();
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_over_limit),
 		             "write oversized config");
-		std::string size_error;
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error,
 		                                               "true", false, false, {context.temp_root}),
 		             "update_config_value rejects oversized current config");

@@ -49,11 +49,31 @@ namespace {
 		return ERANGE;
 	}
 
+	auto IoError([[maybe_unused]] passwd *entry, [[maybe_unused]] char *buffer,
+	             [[maybe_unused]] std::size_t buffer_size, passwd **result) -> int {
+		*result = nullptr;
+		return EIO;
+	}
+
+	auto NotFound([[maybe_unused]] passwd *entry, [[maybe_unused]] char *buffer,
+	              [[maybe_unused]] std::size_t buffer_size, passwd **result) -> int {
+		*result = nullptr;
+		return 0;
+	}
+
 }  // namespace
 
 auto main() -> int {
 	bool ok = Expect(!howdy::native::passwd_lookup_detail::LookupPasswd(AlwaysErange).has_value(),
 	                 "repeated ERANGE fails closed at the buffer cap");
+	ok &= Expect(!howdy::native::passwd_lookup_detail::LookupPasswd(IoError).has_value(),
+	             "non-ERANGE lookup error fails closed");
+	ok &= Expect(!howdy::native::passwd_lookup_detail::LookupPasswd(NotFound).has_value(),
+	             "missing passwd entry fails closed");
+	ok &=
+	    Expect(!howdy::native::LookupPasswdByName("").has_value(), "empty passwd name is rejected");
+	ok &= Expect(!howdy::native::LookupPasswdByName(std::string_view("root\0x", 6)).has_value(),
+	             "passwd name containing NUL is rejected");
 	const auto record = howdy::native::passwd_lookup_detail::LookupPasswd(LargeRecordLookup);
 	ok &= Expect(record.has_value(), "passwd lookup grows beyond the former 64 KiB limit");
 	if (record.has_value()) {

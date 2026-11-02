@@ -141,6 +141,22 @@ namespace {
 		return ok;
 	}
 
+	auto MissingUserOrPositionalAbortsBeforeStorage() -> bool {
+		bool ok = true;
+		for (const auto &invocation : {
+		         howdy::native::CommandInvocation{.positionals = {"3"}, .assume_yes = true},
+		         howdy::native::CommandInvocation{.resolved_user = "alice", .assume_yes = true},
+		     }) {
+			auto context          = SuccessContext();
+			auto [result, output] = RunRemove(context, invocation);
+			ok &= Expect(result == 1, "missing user or ID returns 1");
+			ok &= Expect(output.empty(), "missing user or ID stays silent");
+			ok &= Expect(context.list_calls == 0 && context.remove_calls == 0,
+			             "missing user or ID skips storage callbacks");
+		}
+		return ok;
+	}
+
 	auto RejectedConfirmationAborts() -> bool {
 		auto context = SuccessContext();
 		auto [result, output] =
@@ -243,6 +259,7 @@ auto main() -> int {
 	bool ok = true;
 	ok &= ListStatusesPreserveMessages();
 	ok &= InvalidAndMissingIdsAbort();
+	ok &= MissingUserOrPositionalAbortsBeforeStorage();
 	ok &= RejectedConfirmationAborts();
 	ok &= AcceptedConfirmationPassesCompleteExpectation();
 	ok &= IncompleteDependenciesAbortWithoutCallbacks();

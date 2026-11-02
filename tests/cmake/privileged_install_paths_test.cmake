@@ -28,6 +28,26 @@ if(DEFINED HOWDY_PRIVILEGED_TEST_CASE)
     set(howdy_mandir "/usr/share/man")
   elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "licenses")
     set(howdy_licenses_install_dir "/usr/share/licenses/howdy")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "pam_dir")
+    set(howdy_pam_dir "/lib/security")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "config_dir")
+    set(howdy_config_dir "/etc/howdy")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "models_dir")
+    set(howdy_models_dir "/usr/share/howdy/models")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "user_models_dir")
+    set(howdy_user_models_dir "/etc/howdy/models")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "log_path")
+    set(howdy_log_path "/var/log/howdy")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "helper_dir")
+    set(howdy_helper_dir "/usr/libexec/howdy")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "auth_helper_path")
+    set(howdy_auth_helper_path "/usr/libexec/howdy/howdy-auth-helper")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "traversal")
+    set(howdy_config_dir "${howdy_prefix}/../../etc/howdy")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "prefix")
+    set(howdy_prefix "/usr")
+  elseif(HOWDY_PRIVILEGED_TEST_CASE STREQUAL "prefix_traversal")
+    set(howdy_prefix "/opt/howdy-installed-pam-e2e-x/../../etc")
   endif()
 
   howdy_validate_privileged_test_paths(
@@ -52,6 +72,14 @@ else()
   localedir
   mandir
   licenses
+  pam_dir
+  config_dir
+  models_dir
+  user_models_dir
+  log_path
+  helper_dir
+  auth_helper_path
+  traversal
  )
   set(rejected_paths
   /usr/bin
@@ -59,6 +87,14 @@ else()
   /usr/share/locale
   /usr/share/man
   /usr/share/licenses/howdy
+  /lib/security
+  /etc/howdy
+  /usr/share/howdy/models
+  /etc/howdy/models
+  /var/log/howdy
+  /usr/libexec/howdy
+  /usr/libexec/howdy/howdy-auth-helper
+  /opt/howdy-installed-pam-e2e-configure-test/../../etc/howdy
  )
   list(LENGTH rejected_cases rejected_case_count)
   math(EXPR rejected_last_index "${rejected_case_count} - 1")
@@ -81,9 +117,11 @@ else()
     "${rejected_case}=${rejected_path}"
    )
     endif()
+    # CMake wraps long diagnostics, so compare with whitespace runs collapsed.
+    string(REGEX REPLACE "[ \t\r\n]+" " " rejected_text "${rejected_output} ${rejected_error}")
     string(
    FIND
-   "${rejected_output}\n${rejected_error}"
+   "${rejected_text}"
    "Privileged-test path escapes isolated prefix: ${rejected_path}"
    rejected_message
   )
@@ -92,6 +130,31 @@ else()
     FATAL_ERROR
     "Escaped install destination omitted isolation diagnostic: "
     "${rejected_case}=${rejected_path}\n${rejected_output}\n${rejected_error}"
+   )
+    endif()
+  endforeach()
+
+  foreach(prefix_case IN ITEMS prefix prefix_traversal)
+    execute_process(
+   COMMAND
+    "${CMAKE_COMMAND}"
+    "-DHOWDY_PRIVILEGED_TEST_CASE=${prefix_case}"
+    -P "${CMAKE_CURRENT_LIST_FILE}"
+   RESULT_VARIABLE prefix_result
+   OUTPUT_VARIABLE prefix_output
+   ERROR_VARIABLE prefix_error
+  )
+    string(
+   FIND
+   "${prefix_output}\n${prefix_error}"
+   "Privileged tests require an isolated CMAKE_INSTALL_PREFIX"
+   prefix_message
+  )
+    if(prefix_result EQUAL 0 OR prefix_message EQUAL -1)
+      message(
+    FATAL_ERROR
+    "Non-isolated install prefix not rejected: ${prefix_case}\n"
+    "${prefix_output}\n${prefix_error}"
    )
     endif()
   endforeach()

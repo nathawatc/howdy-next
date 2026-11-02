@@ -1,3 +1,4 @@
+#include "../../src/storage/user_model_readiness/internal.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -268,10 +269,24 @@ namespace howdy::test::user_models {
 				    fs::path("/run/howdy/pam-" + uid + "-gen000/not-models/alice.dat"),
 				    fs::path("/run/howdy/pam-" + uid + "-gen000/models/../alice.dat"),
 				};
+				using howdy::native::user_model_readiness_internal::ClassifyStagedPath;
+				using howdy::native::user_model_readiness_internal::StagedPathKind;
+				ok &= Expect(ClassifyStagedPath(
+				                 fs::path("/run/howdy/pam-" + uid + "-gen000/models/alice.dat")) ==
+				                 StagedPathKind::kStaged,
+				             "well-formed staged path is classified as staged");
 				for (const auto &path : malformed_paths) {
+					if (path.string().starts_with("/run/howdy/")) {
+						ok &= Expect(ClassifyStagedPath(path) == StagedPathKind::kMalformed,
+						             "staged classifier flags malformed path: " + path.string());
+					}
 					ok &= Expect(!howdy::native::ValidateStagedUserModelFile(model_fd, path),
 					             "staged validator rejects malformed path: " + path.string());
 				}
+				ok &= Expect(
+				    ClassifyStagedPath(fs::path("pam-" + uid + "-gen000/models/alice.dat")) ==
+				        StagedPathKind::kMalformed,
+				    "relative staged-looking path is classified as malformed");
 				const auto relative_staged_models = fs::path("pam-" + uid + "-gen000") / "models";
 				const auto relative_staged        = howdy::native::CheckUserModelReadiness(
 				    relative_staged_models, "alice", std::nullopt, {temp_root});

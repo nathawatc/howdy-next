@@ -262,12 +262,14 @@ namespace {
 	}
 
 	auto ExpectDispatch() -> bool {
-		bool                  ok = true;
-		ConversationState     state;
-		struct pam_handle     pam_handle;
-		const struct pam_conv original{.conv = TestConversation, .appdata_ptr = &state};
-		PamGetItemState       get_item_state{.handle = &pam_handle, .item = &original};
-		PamGetItemStateSlot() = &get_item_state;
+		bool                     ok = true;
+		ConversationState        state;
+		ConversationCleanupState cleanup;
+		struct pam_handle        pam_handle;
+		const struct pam_conv    original{.conv = TestConversation, .appdata_ptr = &state};
+		PamGetItemState          get_item_state{.handle = &pam_handle, .item = &original};
+		PamGetItemStateSlot()          = &get_item_state;
+		ConversationCleanupStateSlot() = &cleanup;
 
 		PamConversation conversation;
 		ok &= Expect(PamConversation::Acquire(&pam_handle, &conversation) == PAM_SUCCESS,
@@ -290,6 +292,7 @@ namespace {
 		state.response_mode          = ResponseMode::kOne;
 		state.response_was_allocated = false;
 		state.result                 = PAM_SUCCESS;
+		cleanup                      = {};
 		const ConversationMessage secret_message{
 		    .style = PAM_PROMPT_ECHO_OFF,
 		    .text  = "secret prompt",
@@ -297,16 +300,24 @@ namespace {
 		ok &= Expect(conversation.Send(secret_message) == PAM_SUCCESS,
 		             "accepts callback with one response");
 		ok &= Expect(state.response_was_allocated, "callback returned one response");
+		ok &= Expect(cleanup.calls == 1 && cleanup.responses == state.allocated_responses &&
+		                 cleanup.secret == "adapter-secret",
+		             "send frees the response returned on success");
 		ok &= Expect(state.message_style == PAM_PROMPT_ECHO_OFF &&
 		                 state.message_text == "secret prompt",
 		             "forwards prompt style and text");
 
 		state.response_was_allocated = false;
 		state.result                 = PAM_CONV_ERR;
+		cleanup                      = {};
 		const ConversationMessage error_message{.style = PAM_ERROR_MSG, .text = "failed callback"};
 		ok &= Expect(conversation.Send(error_message) == PAM_CONV_ERR,
 		             "propagates callback failure status");
-		ok &= Expect(state.response_was_allocated, "cleans response returned on callback failure");
+		ok &= Expect(state.response_was_allocated, "callback returned a response on failure");
+		ok &= Expect(cleanup.calls == 1 && cleanup.responses == state.allocated_responses &&
+		                 cleanup.secret == "adapter-secret",
+		             "send frees response returned on callback failure");
+		ConversationCleanupStateSlot() = nullptr;
 		return ok;
 	}
 

@@ -20,7 +20,6 @@
 #include <thread>
 #include <vector>
 
-#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -215,6 +214,16 @@ namespace howdy::test::user_models {
 			    },
 			    "atomic write failure checks while running as root");
 			return ok;
+		}
+
+		// The canonical file must still exist and hold the mutated entry, not the replacement.
+		auto CanonicalShowsChangedEntry(const std::filesystem::path &model_path,
+		                                const std::string           &replacement) -> bool {
+			if (!std::filesystem::exists(model_path)) {
+				return false;
+			}
+			const auto content = ReadFile(model_path);
+			return content != replacement && content.contains("\"second\"");
 		}
 
 	}  // namespace
@@ -602,7 +611,7 @@ namespace howdy::test::user_models {
 			             "uncertain commit result makes no mutation-state claim");
 			ok &= Expect(HasStagedModelFile(models_dir),
 			             "failed rollback retains staged file for uncertain state");
-			ok &= Expect(ReadFile(model_path) != replacement_model,
+			ok &= Expect(CanonicalShowsChangedEntry(model_path, replacement_model),
 			             "failed rollback leaves changed canonical namespace visible");
 
 			RemoveStagedModelFiles(models_dir, &ec);
