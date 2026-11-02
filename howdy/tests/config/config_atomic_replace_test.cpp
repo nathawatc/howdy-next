@@ -23,14 +23,13 @@ namespace howdy::test {
 
 	auto RunConfigAtomicReplaceTests(ConfigUtilsTestContext &context) -> bool {
 		using howdy::test::Expect;
-		bool                  ok = true;
-		std::error_code const ec;
-		const std::string     valid_content = "[core]\n"
-		                                      "disabled = false\n"
-		                                      "\n"
-		                                      "[video]\n"
-		                                      "dark_threshold = 50\n";
-		std::string           validation_error;
+		bool              ok            = true;
+		const std::string valid_content = "[core]\n"
+		                                  "disabled = false\n"
+		                                  "\n"
+		                                  "[video]\n"
+		                                  "dark_threshold = 50\n";
+		std::string       validation_error;
 		ok &= Expect(
 		    !howdy::native::ValidateConfigContent(context.config_over_limit, &validation_error),
 		    "validate_config_content rejects oversized content");
