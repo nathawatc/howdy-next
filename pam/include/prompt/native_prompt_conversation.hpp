@@ -130,8 +130,9 @@ struct NativeTerminalDescriptors {
 
 struct NativePromptTtyTarget {
 	std::string path;
-	dev_t       device = 0;
-	ino_t       inode  = 0;
+	dev_t       device  = 0;
+	ino_t       inode   = 0;
+	dev_t       rdevice = 0;
 };
 
 // Canonicalizes a PAM_TTY value. Accepts only a character device whose canonical path is under

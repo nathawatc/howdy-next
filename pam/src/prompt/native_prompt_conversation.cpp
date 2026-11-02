@@ -87,11 +87,13 @@ namespace {
 			return {};
 		}
 
-		// O_NOFOLLOW covers only the last component; confirm the descriptor is the node that was
-		// approved so a swapped parent directory cannot redirect the open.
+		// O_NOFOLLOW covers only the last component; confirm the descriptor is the approved
+		// character device so a swapped parent directory cannot redirect the open. Not covered by
+		// tests: forcing a mismatch would need a race seam between resolve and open.
 		struct stat opened{};
-		if (fstat(tty_fd.Get(), &opened) != 0 || opened.st_dev != target->device ||
-		    opened.st_ino != target->inode) {
+		if (fstat(tty_fd.Get(), &opened) != 0 || !S_ISCHR(opened.st_mode) ||
+		    opened.st_dev != target->device || opened.st_ino != target->inode ||
+		    opened.st_rdev != target->rdevice) {
 			return {};
 		}
 
@@ -235,9 +237,10 @@ auto ResolveNativePromptTty(std::string_view pam_tty) -> std::optional<NativePro
 		return std::nullopt;
 	}
 	return NativePromptTtyTarget{
-	    .path   = canonical.get(),
-	    .device = metadata.st_dev,
-	    .inode  = metadata.st_ino,
+	    .path    = canonical.get(),
+	    .device  = metadata.st_dev,
+	    .inode   = metadata.st_ino,
+	    .rdevice = metadata.st_rdev,
 	};
 }
 

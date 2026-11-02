@@ -8,6 +8,8 @@
 #include <array>
 #include <cerrno>
 #include <cstdlib>
+#include <cstring>
+#include <iostream>
 #include <string>
 #include <string_view>
 
@@ -294,12 +296,33 @@ auto ExpectPamTtyResolution() -> bool {
 		             "symlink resolving outside /dev is rejected");
 	}
 
+	{
+		ScopedFd master;
+		ScopedFd slave;
+		ok &= Expect(OpenPtyPair(&master, &slave), "PAM_TTY test opens pseudo-terminal");
+		std::array<char, 128> slave_name{};
+		ok &= Expect(ttyname_r(slave.Get(), slave_name.data(), slave_name.size()) == 0,
+		             "PAM_TTY test names pseudo-terminal slave");
+		const auto  target = ResolveNativePromptTty(slave_name.data());
+		struct stat slave_metadata{};
+		ok &= Expect(target.has_value() && target->path == slave_name.data() &&
+		                 fstat(slave.Get(), &slave_metadata) == 0 &&
+		                 target->rdevice == slave_metadata.st_rdev,
+		             "pseudo-terminal slave resolves to its character device");
+	}
+
 	// /dev/shm is world-writable and starts with /dev/; a FIFO there must not be opened.
 	const std::string fifo_path = "/dev/shm/howdy-pam-tty-fifo-" + std::to_string(getpid());
+	unlink(fifo_path.c_str());
 	if (mkfifo(fifo_path.c_str(), 0600) == 0) {
 		ok &= Expect(!ResolveNativePromptTty(fifo_path).has_value(),
 		             "non-character node under /dev is rejected");
 		unlink(fifo_path.c_str());
+	} else {
+		const int error = errno;
+		ok &= Expect(error == ENOENT || error == EACCES || error == EROFS,
+		             "PAM_TTY FIFO setup fails only when /dev/shm is unavailable");
+		std::cerr << "SKIP: /dev/shm FIFO PAM_TTY case (" << std::strerror(error) << ")\n";
 	}
 	return ok;
 }
