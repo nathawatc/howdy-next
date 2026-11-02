@@ -23,6 +23,7 @@ target_compile_definitions(
  PRIVATE HOWDY_TEST_LOCALEDIR="${CMAKE_CURRENT_BINARY_DIR}/po"
 )
 add_dependencies(pam_status_mapping_test howdy-gmo)
+set_tests_properties(pam-status-mapping PROPERTIES SKIP_RETURN_CODE 77)
 
 howdy_add_pam_test(
  pam_confirmation_message_test
