@@ -111,9 +111,15 @@ namespace howdy::test {
 
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");
+		std::string size_error;
+		static_cast<void>(howdy::native::UpdateConfigValue(context.config_path, "disabled",
+		                                                   &size_error, "true", false, false,
+		                                                   {context.temp_root}));
+		ok &= Expect(size_error != "Failed to read config file",
+		             "config exactly at size limit is not rejected as oversized");
+		size_error.clear();
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_over_limit),
 		             "write oversized config");
-		std::string size_error;
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error,
 		                                               "true", false, false, {context.temp_root}),
 		             "update_config_value rejects oversized current config");
