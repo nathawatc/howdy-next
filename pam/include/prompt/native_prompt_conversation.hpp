@@ -9,7 +9,10 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 
 #include <poll.h>
 #include <termios.h>
@@ -124,6 +127,17 @@ struct NativeTerminalDescriptors {
 	int output = -1;
 	int error  = -1;
 };
+
+struct NativePromptTtyTarget {
+	std::string path;
+	dev_t       device = 0;
+	ino_t       inode  = 0;
+};
+
+// Canonicalizes a PAM_TTY value. Accepts only a character device whose canonical path is under
+// /dev/; the returned identity lets the caller verify that the opened descriptor is that node.
+__attribute__((visibility("hidden"))) auto ResolveNativePromptTty(std::string_view pam_tty)
+    -> std::optional<NativePromptTtyTarget>;
 
 __attribute__((visibility("hidden"))) auto
 NativePromptTerminalIsInteractive(const NativeTerminalDescriptors &descriptors) -> bool;
