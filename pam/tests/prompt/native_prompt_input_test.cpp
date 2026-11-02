@@ -269,11 +269,7 @@ auto ExpectAbortRequestUnblocksWithoutPipeWakeup() -> bool {
 
 	conversation->RequestAbort();
 	if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-		master_fd.Reset();
-		conversation->RequestAbort();
-	}
-	if (result_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-		(void)Expect(false, "abort wake test prompt thread stops before timeout");
+		(void)Expect(false, "RequestAbort alone wakes the prompt before timeout");
 		_exit(EXIT_FAILURE);
 	}
 	conversation->RequestAbort();
