@@ -124,3 +124,13 @@ howdy_add_native_test(
  tests/compare/compare_sandbox_seccomp_test.cpp
 )
 target_link_libraries(howdy_compare_sandbox_test PRIVATE howdy_compare_sandbox)
+
+howdy_add_native_test(
+ howdy_compare_sandbox_workload_test
+ native-compare-sandbox-workload
+ tests/compare/compare_sandbox_workload_test.cpp
+)
+target_link_libraries(
+ howdy_compare_sandbox_workload_test
+ PRIVATE howdy_compare_sandbox howdy_face_model howdy_frame_processing howdy_runtime_config howdy_opencv
+)
