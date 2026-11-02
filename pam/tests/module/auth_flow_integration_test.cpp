@@ -387,10 +387,11 @@ namespace {
 	}
 
 	struct ProductionPromptSpawnState {
-		int   calls         = 0;
-		int   child_exit    = EXIT_SUCCESS;
-		pid_t child_pid     = -1;
-		bool  request_valid = false;
+		int         calls         = 0;
+		int         child_exit    = EXIT_SUCCESS;
+		pid_t       child_pid     = -1;
+		bool        request_valid = false;
+		std::string expected_config_path;
 	};
 
 	auto SpawnProductionCompare(const howdy::pam::compare_process::SpawnRequest &request) -> int {
@@ -415,7 +416,9 @@ namespace {
 		    request.actions != nullptr && program != nullptr &&
 		    std::string_view(program) == kCompareProcessPath && config_option != nullptr &&
 		    std::string_view(config_option) == howdy::native::kCompareConfigOption &&
-		    config_path != nullptr && username != nullptr && terminator == nullptr &&
+		    config_path != nullptr &&
+		    std::string_view(config_path) == state->expected_config_path && username != nullptr &&
+		    std::string_view(username) == "test-user" && terminator == nullptr &&
 		    request.envp.front() == nullptr;
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
@@ -441,9 +444,11 @@ namespace {
 
 	auto ExpectProductionPromptComposition() -> bool {
 		ProductionPromptSpawnState spawn_state;
-		auto compare_operations    = howdy::pam::compare_process::ProductionOperations();
-		compare_operations.context = &spawn_state;
-		compare_operations.spawn   = SpawnProductionCompare;
+		// The default fixture loads the configured config directly, without staging.
+		spawn_state.expected_config_path = kConfiguredConfigPath;
+		auto compare_operations          = howdy::pam::compare_process::ProductionOperations();
+		compare_operations.context       = &spawn_state;
+		compare_operations.spawn         = SpawnProductionCompare;
 		auto const production_prompt =
 		    howdy::pam::ProductionPromptCoordinatorOperations(compare_operations);
 
