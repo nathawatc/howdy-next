@@ -187,7 +187,7 @@ namespace {
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 40ms);
+		    child_pid, std::chrono::steady_clock::now() + 40ms, nullptr, nullptr, -1);
 		return Expect(status == TimeoutWaitStatus(),
 		              "watchdog timeout returns synthetic timeout status") &&
 		       Expect(ChildReaped(child_pid), "watchdog timeout reaps blocked child");
@@ -200,7 +200,7 @@ namespace {
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 40ms);
+		    child_pid, std::chrono::steady_clock::now() + 40ms, nullptr, nullptr, -1);
 		return Expect(status == TimeoutWaitStatus(),
 		              "SIGTERM-ignoring child returns synthetic timeout status") &&
 		       Expect(ChildReaped(child_pid), "SIGTERM-ignoring child is SIGKILLed and reaped");
@@ -213,7 +213,7 @@ namespace {
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 1s);
+		    child_pid, std::chrono::steady_clock::now() + 1s, nullptr, nullptr, -1);
 		return Expect(status == howdy::native::EncodeWaitExitStatus(17),
 		              "watchdog preserves natural exit wait status") &&
 		       Expect(ChildReaped(child_pid), "watchdog reaps naturally exited child");
@@ -231,7 +231,7 @@ namespace {
 		}
 
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, std::chrono::steady_clock::now() + 1s);
+		    child_pid, std::chrono::steady_clock::now() + 1s, nullptr, nullptr, -1);
 		return Expect(status == howdy::native::EncodeWaitExitStatus(17),
 		              "blocked SIGCHLD preserves natural compare exit status") &&
 		       Expect(ChildReaped(child_pid), "blocked SIGCHLD reaps natural compare child");
@@ -248,8 +248,9 @@ namespace {
 			return false;
 		}
 
-		const auto start   = std::chrono::steady_clock::now();
-		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
+		const auto start = std::chrono::steady_clock::now();
+		const int  status =
+		    howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms, nullptr, nullptr, -1);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		return Expect(status == TimeoutWaitStatus(),
 		              "blocked SIGCHLD returns synthetic compare timeout status") &&
@@ -268,8 +269,9 @@ namespace {
 			return false;
 		}
 
-		const auto start   = std::chrono::steady_clock::now();
-		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms);
+		const auto start = std::chrono::steady_clock::now();
+		const int  status =
+		    howdy::pam::compare_process::WaitUntil(child_pid, start + 40ms, nullptr, nullptr, -1);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		return Expect(status == TimeoutWaitStatus(),
 		              "blocked SIGTERM returns synthetic compare timeout status") &&
@@ -360,8 +362,8 @@ namespace {
 		WaitState().fail_pidfd         = pidfd_failure;
 		WaitState().invalid_poll_event = bad_event;
 		WaitState().poll_error         = !pidfd_failure && !bad_event ? EIO : 0;
-		const int status =
-		    howdy::pam::compare_process::WaitUntil(child, std::chrono::steady_clock::now() + 5s);
+		const int status               = howdy::pam::compare_process::WaitUntil(
+		    child, std::chrono::steady_clock::now() + 5s, nullptr, nullptr, -1);
 		WaitState().fail_pidfd = false;
 		return Expect(status ==
 		                  howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort),
@@ -408,8 +410,8 @@ namespace {
 		}
 		WaitState().poll_calls     = 0;
 		WaitState().fail_poll_call = 2;
-		const int status =
-		    howdy::pam::compare_process::WaitUntil(child, std::chrono::steady_clock::now() + 40ms);
+		const int status           = howdy::pam::compare_process::WaitUntil(
+		    child, std::chrono::steady_clock::now() + 40ms, nullptr, nullptr, -1);
 		WaitState().fail_poll_call = 0;
 		return Expect(status ==
 		                  howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort),
@@ -445,8 +447,9 @@ namespace {
 		}
 		WaitState().poll_error = EINTR;
 		WaitState().poll_calls = WaitState().term_calls = WaitState().kill_calls = 0;
-		const auto start   = std::chrono::steady_clock::now();
-		const int  status  = howdy::pam::compare_process::WaitUntil(child, start + 40ms);
+		const auto start = std::chrono::steady_clock::now();
+		const int  status =
+		    howdy::pam::compare_process::WaitUntil(child, start + 40ms, nullptr, nullptr, -1);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		return Expect(status == TimeoutWaitStatus(), "interrupted ppoll preserves timeout") &&
 		       Expect(WaitState().poll_calls == 3,

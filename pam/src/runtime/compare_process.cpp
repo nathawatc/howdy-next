@@ -335,10 +335,6 @@ namespace howdy::pam::compare_process {
 		return SpawnCompareProcess(request, child_pid, operations);
 	}
 
-	auto WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline) -> int {
-		return WaitForCompareProcess(child_pid, deadline, nullptr, nullptr, -1);
-	}
-
 	auto WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
 	               void                          *cancellation_context,
 	               CompareCancellationRequestedFn cancellation_requested, int cancellation_fd)
