@@ -96,6 +96,34 @@ Source:
 - <https://github.com/opencv/opencv_zoo/tree/fedcba9876543210fedcba9876543210fedcba98/models/fixture>
 )";
 
+	constexpr auto kWrongSourceUrlFixtureNotice = R"(# Notices
+
+## Fixture Model
+
+Artifact:
+
+- `fixture.onnx`
+- SHA-256: `fixture-sha256`
+
+Source:
+
+- OpenCV Zoo, revision `0123456789abcdef0123456789abcdef01234567`
+- <https://github.com/opencv/opencv_zoo/tree/0123456789abcdef0123456789abcdef01234567/models/other>
+)";
+
+	constexpr auto kDuplicateSectionFixtureNotice = R"(# Notices
+
+## Fixture Model
+
+- `fixture.onnx`
+- SHA-256: `fixture-sha256`
+
+## Fixture Model Copy
+
+- `fixture.onnx`
+- SHA-256: `fixture-sha256`
+)";
+
 	auto IsHexDigit(const char value) -> bool {
 		return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') ||
 		       (value >= 'A' && value <= 'F');
@@ -244,6 +272,14 @@ Source:
 		    CheckModelProvenance(kWrongRevisionFixtureNotice, kFixtureModel);
 		ok &= Expect(!wrong_revision.ok && wrong_revision.error.contains("revision"),
 		             "wrong revision fails within artifact section");
+
+		const auto wrong_source = CheckModelProvenance(kWrongSourceUrlFixtureNotice, kFixtureModel);
+		ok &= Expect(!wrong_source.ok && wrong_source.error.contains("source URL"),
+		             "wrong source URL fails within artifact section");
+
+		const auto duplicate = CheckModelProvenance(kDuplicateSectionFixtureNotice, kFixtureModel);
+		ok &= Expect(!duplicate.ok && duplicate.error.contains("multiple"),
+		             "filename in multiple notice sections is rejected");
 
 		const auto malformed_model = OpenCvModelDescriptor{
 		    .filename = kFixtureModel.filename,
