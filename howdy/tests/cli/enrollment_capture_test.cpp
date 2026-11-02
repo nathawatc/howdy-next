@@ -531,9 +531,14 @@ namespace {
 			for (std::size_t index = 0; index < frames.size(); ++index) {
 				const auto &frame = frames.at(index);
 				const auto &want  = expected.at(static_cast<std::size_t>(mode)).at(index);
+				// Appending avoids a GCC 15 -Wstringop-overflow false positive that LTO builds
+				// (Ubuntu's dpkg-buildflags) report for a chained std::string operator+.
+				std::string label = "enrollment rotate mode ";
+				label += std::to_string(mode);
+				label += " frame ";
+				label += std::to_string(index + 1);
 				ok &= Expect(frame.size() == want.size() && cv::countNonZero(frame != want) == 0,
-				             "enrollment rotate mode " + std::to_string(mode) + " frame " +
-				                 std::to_string(index + 1));
+				             label);
 			}
 		}
 
