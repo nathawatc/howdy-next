@@ -48,9 +48,11 @@ howdy_add_pam_test(
  pam_abi_entrypoints_test
  pam-abi-entrypoints
  tests/module/abi_entrypoints_test.cpp
- src/module/main/unsupported_entrypoints.cpp
 )
-target_link_libraries(pam_abi_entrypoints_test PRIVATE pam_entrypoint)
+target_link_libraries(
+ pam_abi_entrypoints_test
+ PRIVATE pam_entrypoint pam_unsupported_entrypoints
+)
 
 howdy_add_pam_test(
  pam_auth_flow_helpers_test
@@ -60,14 +62,10 @@ howdy_add_pam_test(
  tests/runtime/auth_helper_output_test.cpp
  tests/runtime/process_wait_test.cpp
 )
-target_compile_definitions(
- pam_auth_flow_helpers_test
- PRIVATE
-  HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
-)
 target_link_libraries(
  pam_auth_flow_helpers_test
  PRIVATE pam_entrypoint pam_module pam_production_entrypoint
+         pam_explicit_config_path
 )
 
 add_test(

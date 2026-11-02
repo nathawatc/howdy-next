@@ -163,6 +163,7 @@ add_library(
  howdy_user_models
  STATIC
  src/storage/user_model_store.cpp
+ src/storage/user_model_store/internal.hpp
  src/storage/user_models.cpp
 )
 howdy_configure_native_target(howdy_user_models)

@@ -119,4 +119,5 @@ if(BUILD_TESTING)
    -P
    "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/tests/check_translations.cmake"
  )
+  set_tests_properties(pam-translation-catalogs PROPERTIES TIMEOUT 30)
 endif()

@@ -2,6 +2,12 @@ install(SCRIPT "${PROJECT_BINARY_DIR}/cmake_install_prefix_guard.cmake")
 install(SCRIPT "${PROJECT_BINARY_DIR}/install_preflight-$<CONFIG>.cmake")
 add_subdirectory(po)
 
+# Runtime config must only be loaded from the explicit path inside PAM.
+add_library(pam_explicit_config_path INTERFACE)
+target_compile_definitions(
+ pam_explicit_config_path INTERFACE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+)
+
 add_library(pam_options STATIC src/module/pam_options.cpp)
 howdy_configure_pam_target(pam_options)
 target_link_libraries(pam_options PRIVATE howdy_pam_option_catalog)
@@ -23,11 +29,11 @@ add_library(
  src/runtime/session_probe.cpp
 )
 howdy_configure_pam_target(pam_runtime)
-target_compile_definitions(
- pam_runtime PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+target_link_libraries(
+ pam_runtime
+ PUBLIC PAM::PAM
+ PRIVATE howdy_runtime_config_loader pam_explicit_config_path
 )
-target_link_libraries(pam_runtime PUBLIC PAM::PAM PRIVATE
-                      howdy_runtime_config_loader)
 
 add_library(
  pam_conversation_response STATIC
@@ -46,19 +52,30 @@ howdy_configure_pam_target(pam_prompt_core)
 target_link_libraries(pam_prompt_core PUBLIC PAM::PAM PRIVATE Threads::Threads)
 
 add_library(
+ pam_observed_prompt_conversation STATIC
+ src/prompt/observed_prompt_conversation.cpp
+ src/prompt/conversation_restore/internal.hpp
+)
+howdy_configure_pam_target(pam_observed_prompt_conversation)
+target_link_libraries(
+ pam_observed_prompt_conversation
+ PUBLIC PAM::PAM
+ PRIVATE pam_conversation_response
+)
+
+add_library(
  pam_prompt STATIC
  src/prompt/prompt_submitter.cpp
  src/prompt/pam_conversation.cpp
  src/prompt/native_prompt_conversation.cpp
  src/prompt/native_prompt_input.cpp
- src/prompt/observed_prompt_conversation.cpp
 )
 howdy_configure_pam_target(pam_prompt)
 target_link_libraries(
  pam_prompt
  PUBLIC PAM::PAM
  PRIVATE Threads::Threads PkgConfig::LIBEVDEV pam_prompt_core
-         pam_conversation_response
+         pam_conversation_response pam_observed_prompt_conversation
 )
 
 add_library(
@@ -72,13 +89,13 @@ howdy_configure_pam_target(pam_module)
 target_compile_definitions(
  pam_module
  PRIVATE
-  HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
   LOCALEDIR="${CMAKE_INSTALL_FULL_LOCALEDIR}"
 )
 target_link_libraries(
  pam_module
  PUBLIC PAM::PAM
  PRIVATE pam_options pam_prompt pam_runtime howdy_user_model_readiness
+         pam_explicit_config_path
 )
 
 add_library(pam_entrypoint STATIC src/module/entrypoint.cpp)
@@ -100,16 +117,21 @@ target_link_libraries(
  PRIVATE pam_module pam_prompt pam_runtime
 )
 
+# OBJECT so the pam_sm_* symbols are always linked (nothing references them).
 add_library(
- pam_howdy MODULE
- src/module/main.cpp
+ pam_unsupported_entrypoints OBJECT
  src/module/main/unsupported_entrypoints.cpp
 )
+howdy_configure_pam_target(pam_unsupported_entrypoints)
+target_link_libraries(pam_unsupported_entrypoints PRIVATE PAM::PAM)
+
+add_library(pam_howdy MODULE src/module/main.cpp)
 howdy_configure_pam_target(pam_howdy)
-target_compile_definitions(
- pam_howdy PRIVATE HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+target_link_libraries(
+ pam_howdy
+ PRIVATE pam_production_entrypoint pam_unsupported_entrypoints
+         pam_explicit_config_path
 )
-target_link_libraries(pam_howdy PRIVATE pam_production_entrypoint)
 target_link_options(pam_howdy PRIVATE "LINKER:--exclude-libs,ALL")
 set_target_properties(pam_howdy PROPERTIES PREFIX "" OUTPUT_NAME "pam_howdy")
 howdy_install(

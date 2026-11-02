@@ -12,7 +12,7 @@ howdy_add_native_test(
  tests/cli/config_cli_workflow_test.cpp
  tests/cli/config_cli_integration_test.cpp
 )
-target_link_options(howdy_config_cli_test PRIVATE -Wl,--wrap=initgroups)
+target_link_options(howdy_config_cli_test PRIVATE "LINKER:--wrap=initgroups")
 target_link_libraries(howdy_config_cli_test PRIVATE howdy_cli)
 
 howdy_add_native_test(

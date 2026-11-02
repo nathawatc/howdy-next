@@ -50,11 +50,11 @@ howdy_add_pam_test(
  tests/prompt/prompt_coordinator_test.cpp
  tests/prompt/prompt_coordinator_modes_test.cpp
  tests/prompt/prompt_coordinator_adapter_test.cpp
- src/prompt/observed_prompt_conversation.cpp
 )
 target_link_libraries(
  pam_prompt_coordinator_test
  PRIVATE pam_prompt_core pam_conversation_response
+         pam_observed_prompt_conversation
 )
 
 howdy_add_pam_test(

@@ -33,11 +33,9 @@ howdy_add_pam_test(
  tests/runtime/runtime_session_spawn_test.cpp
  tests/runtime/runtime_session_deadline_test.cpp
 )
-target_compile_definitions(
+target_link_libraries(
  pam_runtime_session_test
- PRIVATE
-  HOWDY_RUNTIME_CONFIG_EXPLICIT_PATH_ONLY
+ PRIVATE pam_runtime pam_explicit_config_path
 )
-target_link_libraries(pam_runtime_session_test PRIVATE pam_runtime)
 target_link_options(pam_runtime_session_test PRIVATE "LINKER:--wrap=read"
                       "LINKER:--wrap=__read_chk")
