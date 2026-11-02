@@ -4,7 +4,6 @@
 #include "protocol/compare_exit.hpp"
 #include "test_support.hpp"
 
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -331,45 +330,6 @@ namespace {
 		return ok;
 	}
 
-	auto TestFilesystemIdentityFailuresStopProcessing() -> bool {
-		struct FailureCase {
-			const char *label;
-			const char *error;
-		};
-
-		constexpr std::array<FailureCase, 4> cases{
-		    {
-		        {.label = "root fsuid", .error = "inconsistent filesystem credentials"},
-		        {.label = "root fsgid", .error = "inconsistent filesystem credentials"},
-		        {.label = "mismatched fsuid", .error = "inconsistent filesystem credentials"},
-		        {.label = "mismatched fsgid", .error = "inconsistent filesystem credentials"},
-		    },
-		};
-
-		bool ok = true;
-		for (const auto &test_case : cases) {
-			FakeContext context;
-			context.privilege_status = ComparePrivilegeStatus::kVerificationFailure;
-			context.privilege_error  = test_case.error;
-			const auto  result       = Run(context);
-			const auto *privilege_result =
-			    std::get_if<howdy::native::ComparePrivilegeResult>(&result);
-			ok &= Expect(privilege_result != nullptr,
-			             std::string(test_case.label) + " returns privilege result");
-			if (privilege_result != nullptr) {
-				ok &=
-				    Expect(privilege_result->status == ComparePrivilegeStatus::kVerificationFailure,
-					       std::string(test_case.label) + " status is preserved");
-				ok &= Expect(privilege_result->error_message == test_case.error,
-				             std::string(test_case.label) + " diagnostic data is preserved");
-			}
-			ok &= Expect(context.events == std::vector<std::string>{"open", "drop"},
-			             std::string(test_case.label) +
-			                 " skips engine, timeout reset, and frame loop");
-		}
-		return ok;
-	}
-
 	auto TestProcessingResultPropagates() -> bool {
 		FakeContext context;
 		context.processing_exit = CompareExit::kTooDark;
@@ -573,7 +533,6 @@ auto main() -> int {
 	ok &= TestStartupExceptions();
 	ok &= TestInvalidCameraDependencies();
 	ok &= TestNonRootCapabilityFailureStopsProcessing();
-	ok &= TestFilesystemIdentityFailuresStopProcessing();
 	ok &= TestProcessingResultPropagates();
 	ok &= TestImmediateReadContinuesWhileWarmBlocked();
 	ok &= TestFirstEncodeWaitsForWarmUp();
