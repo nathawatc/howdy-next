@@ -375,6 +375,10 @@ auto main(int argc, char **argv) -> int {
 		const auto installed_cli = Staged(stage, fixture.Path(0) + "/howdy");
 		const auto original_cli  = Read(installed_cli);
 		std::ofstream(installed_cli) << "old package version\n";
+		// cmake --install compares file times at one-second resolution: a binary linked in the same
+		// second would otherwise count as up to date and the stale copy would be kept.
+		fs::last_write_time(installed_cli,
+		                    fs::file_time_type::clock::now() - std::chrono::hours(1));
 		Fixture::RequireInstall(stage, fixture.build);
 		fixture.VerifyLayout(stage);
 		Require(Read(installed_cli) == original_cli,
