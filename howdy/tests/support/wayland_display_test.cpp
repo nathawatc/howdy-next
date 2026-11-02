@@ -47,6 +47,12 @@ auto main() -> int {
 		ok &= Expect(single_display.has_value() && *single_display == "wayland-1",
 		             "single Wayland socket is detected");
 
+		std::ofstream(runtime_dir / "wayland-3") << "not a socket";
+		std::filesystem::create_symlink("wayland-1", runtime_dir / "wayland-4");
+		const auto spoof_display = howdy::native::FindWaylandDisplay(runtime_dir);
+		ok &= Expect(spoof_display.has_value() && *spoof_display == "wayland-1",
+		             "regular file and symlink are not counted as Wayland sockets");
+
 		ok &= ExpectSocketNode(runtime_dir / "wayland-2",
 		                       "Wayland display test creates second socket");
 		ok &= Expect(!howdy::native::FindWaylandDisplay(runtime_dir).has_value(),
