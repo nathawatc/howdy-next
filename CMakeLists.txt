@@ -25,6 +25,7 @@ endif()
 
 include(GNUInstallDirs)
 include(cmake/howdy_install.cmake)
+include(cmake/howdy_install_paths.cmake)
 include(CTest)
 include(CheckPIESupported)
 include(CheckCXXSourceCompiles)
@@ -169,21 +170,10 @@ target_include_directories(
 )
 target_link_libraries(howdy_opencv INTERFACE PkgConfig::OPENCV5)
 
-set(HOWDY_PAM_DIR "" CACHE PATH "pam_howdy destination directory")
-set(HOWDY_CONFIG_DIR "" CACHE PATH "Howdy configuration directory")
-set(HOWDY_MODELS_DIR "" CACHE PATH "OpenCV ONNX models directory")
-set(HOWDY_USER_MODELS_DIR "" CACHE PATH "User models directory")
-set(HOWDY_LOG_PATH "/var/log/howdy" CACHE PATH "Howdy log directory")
 option(
  HOWDY_INSTALL_AUTH_HELPER_SETUID
  "Install howdy-auth-helper with setuid permissions"
  ON
-)
-set(
- HOWDY_AUTH_HELPER_PATH
- ""
- CACHE FILEPATH
- "Path used by PAM to execute the privileged auth helper"
 )
 set(
  HOWDY_LICENSES_INSTALL_DIR
@@ -192,57 +182,7 @@ set(
  "Directory for Howdy license and third-party notice files"
 )
 
-if(BUILD_TESTING AND HOWDY_ENABLE_PRIVILEGED_TESTS)
-  if(HOWDY_PAM_DIR STREQUAL "")
-    set(HOWDY_PAM_DIR "${CMAKE_INSTALL_PREFIX}/lib/security")
-  endif()
-  if(HOWDY_CONFIG_DIR STREQUAL "")
-    set(HOWDY_CONFIG_DIR "${CMAKE_INSTALL_PREFIX}/etc/howdy")
-  endif()
-  if(HOWDY_MODELS_DIR STREQUAL "")
-    set(HOWDY_MODELS_DIR "${CMAKE_INSTALL_PREFIX}/share/howdy/models")
-  endif()
-  if(HOWDY_USER_MODELS_DIR STREQUAL "")
-    set(HOWDY_USER_MODELS_DIR "${CMAKE_INSTALL_PREFIX}/etc/howdy/models")
-  endif()
-  if(HOWDY_LOG_PATH STREQUAL "/var/log/howdy")
-    set(HOWDY_LOG_PATH "${CMAKE_INSTALL_PREFIX}/var/log/howdy")
-  endif()
-endif()
-
-if(HOWDY_PAM_DIR STREQUAL "")
-  set(HOWDY_PAM_DIR "${CMAKE_INSTALL_FULL_LIBDIR}/security")
-endif()
-if(HOWDY_CONFIG_DIR STREQUAL "")
-  set(HOWDY_CONFIG_DIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/howdy")
-endif()
-if(HOWDY_MODELS_DIR STREQUAL "")
-  set(HOWDY_MODELS_DIR "${CMAKE_INSTALL_FULL_DATADIR}/howdy/models")
-endif()
-if(HOWDY_USER_MODELS_DIR STREQUAL "")
-  set(HOWDY_USER_MODELS_DIR "${HOWDY_CONFIG_DIR}/models")
-endif()
-
-foreach(path IN ITEMS HOWDY_PAM_DIR HOWDY_CONFIG_DIR HOWDY_MODELS_DIR
-                      HOWDY_USER_MODELS_DIR HOWDY_LOG_PATH)
-  cmake_path(ABSOLUTE_PATH ${path} BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}" NORMALIZE)
-endforeach()
-
-set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.ini")
-cmake_path(NORMAL_PATH HOWDY_CONFIG_PATH)
-set(
- HOWDY_PACKAGED_CONFIG_PATH
- "${PROJECT_BINARY_DIR}/generated/config/config.ini"
-)
-set(HOWDY_HELPER_DIR "${CMAKE_INSTALL_FULL_LIBEXECDIR}/howdy")
-set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")
-if(HOWDY_AUTH_HELPER_PATH STREQUAL "")
-  set(HOWDY_AUTH_HELPER_PATH "${HOWDY_HELPER_DIR}/howdy-auth-helper")
-endif()
-
-cmake_path(NORMAL_PATH HOWDY_HELPER_DIR)
-cmake_path(NORMAL_PATH HOWDY_COMPARE_PROCESS_PATH)
-cmake_path(ABSOLUTE_PATH HOWDY_AUTH_HELPER_PATH BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}" NORMALIZE)
+howdy_resolve_install_paths()
 
 # CMake emits install destinations into quoted script arguments. Reject syntax
 # it cannot represent safely; runtime-only paths are escaped separately below.
