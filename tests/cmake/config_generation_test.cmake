@@ -201,4 +201,70 @@ if(EXISTS "${missing_output}")
   message(FATAL_ERROR "Missing-candidate publish left a final generated config")
 endif()
 
+function(expect_publish_rejected name diagnostic)
+  run_packaged_action(publish "${bad_candidate}" "${bad_output}")
+  if(PACKAGED_RESULT EQUAL 0)
+    message(FATAL_ERROR "${name} candidate unexpectedly published")
+  endif()
+  string(FIND "${PACKAGED_OUTPUT}" "${diagnostic}" bad_message)
+  if(bad_message EQUAL -1)
+    message(
+    FATAL_ERROR
+    "${name} publish omitted its diagnostic:\n${PACKAGED_OUTPUT}"
+   )
+  endif()
+  if(EXISTS "${bad_output}" OR IS_SYMLINK "${bad_output}")
+    message(FATAL_ERROR "${name} publish left a final generated config")
+  endif()
+endfunction()
+
+set(bad_root "${HOWDY_TEST_ROOT}/bad-candidate")
+set(bad_candidate "${bad_root}/config.ini.candidate")
+set(bad_output "${bad_root}/config.ini")
+set(bad_target "${bad_root}/target.txt")
+file(MAKE_DIRECTORY "${bad_root}")
+
+# Symlink candidate: rejected, candidate link removed, target untouched.
+file(WRITE "${bad_target}" "[core]\n")
+file(CREATE_LINK "${bad_target}" "${bad_candidate}" SYMBOLIC)
+expect_publish_rejected(Symlink "did not produce a regular candidate file")
+if(IS_SYMLINK "${bad_candidate}")
+  message(FATAL_ERROR "Rejected symlink candidate was not removed")
+endif()
+if(NOT EXISTS "${bad_target}")
+  message(FATAL_ERROR "Rejected symlink candidate removed its target")
+endif()
+
+# Directory candidate: rejected and never recursively removed.
+file(MAKE_DIRECTORY "${bad_candidate}")
+file(WRITE "${bad_candidate}/keep" "keep\n")
+expect_publish_rejected(Directory "did not produce a regular candidate file")
+if(NOT EXISTS "${bad_candidate}/keep")
+  message(FATAL_ERROR "Rejected directory candidate was recursively removed")
+endif()
+run_packaged_action(prepare "${bad_candidate}" "${bad_output}")
+if(PACKAGED_RESULT EQUAL 0)
+  message(FATAL_ERROR "Prepare removed a candidate directory")
+endif()
+file(REMOVE_RECURSE "${bad_candidate}")
+
+# Empty candidate: rejected and removed.
+file(WRITE "${bad_candidate}" "")
+expect_publish_rejected(Empty "produced an empty candidate file")
+if(EXISTS "${bad_candidate}")
+  message(FATAL_ERROR "Rejected empty candidate was not removed")
+endif()
+
+# Prepare removes a stale candidate and a stale symlink.
+file(WRITE "${bad_candidate}" "stale\n")
+run_packaged_action(prepare "${bad_candidate}" "${bad_output}")
+if(NOT PACKAGED_RESULT EQUAL 0 OR EXISTS "${bad_candidate}")
+  message(FATAL_ERROR "Prepare kept a stale candidate:\n${PACKAGED_OUTPUT}")
+endif()
+file(CREATE_LINK "${HOWDY_TEST_ROOT}/nonexistent" "${bad_candidate}" SYMBOLIC)
+run_packaged_action(prepare "${bad_candidate}" "${bad_output}")
+if(NOT PACKAGED_RESULT EQUAL 0 OR IS_SYMLINK "${bad_candidate}")
+  message(FATAL_ERROR "Prepare kept a stale symlink:\n${PACKAGED_OUTPUT}")
+endif()
+
 file(REMOVE_RECURSE "${HOWDY_TEST_ROOT}")
