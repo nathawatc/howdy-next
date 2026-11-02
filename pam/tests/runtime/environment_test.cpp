@@ -57,15 +57,22 @@ auto main() -> int {
 	ok &=
 	    Expect(FindEnvironmentVariable(nullptr, embedded_null, deps) == EnvironmentSource::kMissing,
 		       "embedded-null variable name is rejected");
+	const std::string oversized_name(64, 'A');
+	const std::string longest_name(63, 'A');
+	values.pam[""]             = "x";
+	values.pam["INVALID=NAME"] = "x";
+	values.pam[oversized_name] = "x";
+	values.pam[longest_name]   = "x";
 	ok &= Expect(FindEnvironmentVariable(nullptr, "", deps) == EnvironmentSource::kMissing,
 	             "empty variable name is rejected");
 	ok &= Expect(FindEnvironmentVariable(nullptr, "INVALID=NAME", deps) ==
 	                 EnvironmentSource::kMissing,
 	             "variable name containing equals is rejected");
-	const std::string oversized_name(64, 'A');
 	ok &= Expect(FindEnvironmentVariable(nullptr, oversized_name, deps) ==
 	                 EnvironmentSource::kMissing,
 	             "oversized variable name is rejected safely");
+	ok &= Expect(FindEnvironmentVariable(nullptr, longest_name, deps) == EnvironmentSource::kPam,
+	             "longest allowed variable name still resolves");
 
 	const EnvironmentLookupDependencies no_process{
 	    .context             = &values,
