@@ -214,14 +214,6 @@ auto main() -> int {
 		ok &= ExpectNoCalls(context, "invalid argument skips dependencies");
 	}
 
-	{
-		TestContext context;
-		context.load_result = LoadedConfig(false);
-		const auto result   = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 0, "end-of-options disable value succeeds");
-		ok &= ExpectUpdate(context, "true", "end-of-options disable value");
-	}
-
 	for (const auto &[argument, initially_disabled, value] : {
 	         std::tuple{"1", false, "true"},
 	         std::tuple{"true", false, "true"},
