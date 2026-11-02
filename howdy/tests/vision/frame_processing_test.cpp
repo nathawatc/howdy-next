@@ -73,15 +73,25 @@ auto main() -> int {
 	                                                           enabled_config.clahe_tile_grid_size),
 	             "CLAHE preserves configured tile grid size");
 
-	cv::Mat enabled_frame(8, 8, CV_8UC1, cv::Scalar(32));
+	cv::Mat enabled_frame(8, 8, CV_8UC1);
+	for (int row = 0; row < 8; ++row) {
+		for (int col = 0; col < 8; ++col) {
+			enabled_frame.at<uchar>(row, col) = static_cast<uchar>(32 + row + col);
+		}
+	}
+	const cv::Mat enabled_before = enabled_frame.clone();
 	howdy::native::ApplyClaheIfEnabled(enabled_frame, enabled_config, enabled_clahe);
+	ok &= Expect(cv::countNonZero(enabled_frame != enabled_before) > 0,
+	             "enabled CLAHE changes a low-contrast frame");
 	ok &= Expect(enabled_frame.rows == 8 && enabled_frame.cols == 8 &&
 	                 enabled_frame.type() == CV_8UC1,
 	             "enabled CLAHE preserves frame shape and type");
 
 	cv::Ptr<cv::CLAHE> empty_enabled_clahe;
-	cv::Mat            empty_enabled_frame(8, 8, CV_8UC1, cv::Scalar(48));
+	cv::Mat            empty_enabled_frame = enabled_before.clone();
 	howdy::native::ApplyClaheIfEnabled(empty_enabled_frame, enabled_config, empty_enabled_clahe);
+	ok &= Expect(cv::countNonZero(empty_enabled_frame != enabled_before) == 0,
+	             "enabled CLAHE with empty processor leaves pixels unchanged");
 	ok &= Expect(empty_enabled_frame.rows == 8 && empty_enabled_frame.cols == 8 &&
 	                 empty_enabled_frame.type() == CV_8UC1,
 	             "enabled CLAHE with empty processor preserves frame shape and type");
