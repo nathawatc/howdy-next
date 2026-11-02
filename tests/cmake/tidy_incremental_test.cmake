@@ -242,5 +242,13 @@ if(git_failure_result EQUAL 0)
   "${git_failure_output}\n${git_failure_error}"
  )
 endif()
+string(FIND "${git_failure_output}\n${git_failure_error}" "no-such-ref" git_failure_message)
+if(git_failure_message EQUAL -1)
+  message(
+  FATAL_ERROR
+  "git failure did not come from the unknown base ref:\n"
+  "${git_failure_output}\n${git_failure_error}"
+ )
+endif()
 
 file(REMOVE_RECURSE "${HOWDY_TEST_ROOT}")
