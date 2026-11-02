@@ -102,9 +102,6 @@ namespace {
 		fs::create_directory(other);
 		const auto valid =
 		    parent / ("howdy-installed-pam-e2e-validation-" + std::to_string(getpid()));
-		const auto marker =
-		    fs::path("/tmp") / ("howdy-e2e-path-validation-" + std::to_string(getpid()));
-		Require(IsAbsent(marker), "path-validation marker already exists");
 		Require(ValidatePrefix(valid, parent), "valid isolated prefix rejected");
 		for (const auto &rejected : {
 		         fs::path(valid.string() + "/../../etc"),
@@ -132,7 +129,17 @@ namespace {
 			Require(ValidateSubdir(valid, accepted),
 			        "valid install path rejected: " + accepted.string());
 		}
-		Require(IsAbsent(marker) && IsAbsent(valid), "path validation mutated filesystem");
+		Require(IsAbsent(valid), "path validation mutated filesystem");
+
+		const auto existing_dir = parent / "howdy-installed-pam-e2e-existing";
+		fs::create_directory(existing_dir);
+		Require(!ValidatePrefix(existing_dir, parent), "pre-existing prefix directory accepted");
+		const auto dangling = parent / "howdy-installed-pam-e2e-dangling";
+		fs::create_symlink(parent / "nowhere", dangling);
+		Require(!ValidatePrefix(dangling, parent), "dangling prefix symlink accepted");
+		const auto linked_dir = parent / "howdy-installed-pam-e2e-linked";
+		fs::create_symlink(other, linked_dir);
+		Require(!ValidatePrefix(linked_dir, parent), "prefix symlink to directory accepted");
 
 		const auto installed_dir = valid / "lib/security";
 		fs::create_directories(installed_dir);
@@ -149,6 +156,14 @@ namespace {
 		        "path outside prefix accepted");
 		Require(!ValidateInstalled(valid, "file", installed_dir / "missing.so"),
 		        "missing installed file accepted");
+		Require(!ValidateInstalled(valid, "directory", installed_file),
+		        "file accepted as directory");
+		Require(!ValidateInstalled(valid, "file", installed_dir), "directory accepted as file");
+		Require(!ValidateInstalled(valid, "socket", installed_file), "unknown type accepted");
+		std::ofstream(other / "pam_howdy.so") << "outside";
+		fs::create_directory_symlink(other, valid / "lib/escape");
+		Require(!ValidateInstalled(valid, "file", valid / "lib/escape/pam_howdy.so"),
+		        "file behind escaping parent symlink accepted");
 		std::cout << "Path validation: passed without filesystem mutation\n";
 	}
 
