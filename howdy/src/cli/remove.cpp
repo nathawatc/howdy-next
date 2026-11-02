@@ -47,12 +47,8 @@ auto howdy::native::remove_internal::RemoveMainWithDependencies(
 	const auto &id_text = invocation.positionals.front();
 
 	const auto models = dependencies.list_user_model_entries(dependencies.context, user);
-	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory) {
-		std::cout << "No face models found. Please run:\n";
-		std::cout << "\n\thowdy add\n\n";
-		return kRemoveExitAbort;
-	}
-	if (models.status == howdy::native::UserModelStatus::kNoModel) {
+	if (models.status == howdy::native::UserModelStatus::kNoModelDirectory ||
+	    models.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << "No face models found. Please run:\n";
 		std::cout << "\n\thowdy add\n\n";
 		return kRemoveExitAbort;
