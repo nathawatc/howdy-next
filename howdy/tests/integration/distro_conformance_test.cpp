@@ -13,12 +13,13 @@
 #include <vector>
 
 #include <fcntl.h>
-#include <poll.h>
 #include <pwd.h>
 #include <stdio.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sys/eventfd.h>
+#include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 
@@ -33,7 +34,7 @@ namespace {
 
 	using howdy::test::Expect;
 
-	constexpr std::size_t kMaximumPasswdBufferSize = 64U * 1024U;
+	constexpr std::size_t kMaximumPasswdBufferSize = 64UZ * 1024UZ;
 
 	// compare drops privileges to the "nobody" account. Debian and Ubuntu pair it
 	// with group "nogroup", Fedora and Arch with "nobody"; only the numeric ids
@@ -65,20 +66,24 @@ namespace {
 			return false;
 		}
 		const fs::path path(value);
-		return path == path.lexically_normal() && path.filename() != "" &&
-		       value.find("//") == std::string_view::npos;
+		return path == path.lexically_normal() && path.filename() != "" && !value.contains("//");
 	}
 
 	auto TestGeneratedPathsAreNormalizedAbsolutePaths() -> bool {
 		bool ok = true;
-		for (const auto &[name, value] : {
-		         std::pair<std::string_view, std::string_view>{"config path",
-				                                               kConfiguredConfigPath},
-		         {"models dir", kConfiguredModelsDir},
-		         {"user models dir", kConfiguredUserModelsDir},
-		         {"log path", kConfiguredLogPath},
-		         {"compare process path", kCompareProcessPath},
-		         {"auth helper path", kAuthHelperPath},
+
+		struct NamedPath {
+			std::string_view name;
+			std::string_view value;
+		};
+
+		for (const auto &[name, value] : std::array{
+		         NamedPath{.name = "config path", .value = kConfiguredConfigPath},
+		         NamedPath{.name = "models dir", .value = kConfiguredModelsDir},
+		         NamedPath{.name = "user models dir", .value = kConfiguredUserModelsDir},
+		         NamedPath{.name = "log path", .value = kConfiguredLogPath},
+		         NamedPath{.name = "compare process path", .value = kCompareProcessPath},
+		         NamedPath{.name = "auth helper path", .value = kAuthHelperPath},
 		     }) {
 			ok &= Expect(IsNormalizedAbsolutePath(value),
 			             std::string("configured ") + std::string(name) +
@@ -117,7 +122,7 @@ namespace {
 	auto TestProcSelfFdResolvesPathDescriptors(const fs::path &directory) -> bool {
 		const auto file = directory / "proc-fd-probe";
 		bool       ok   = Expect(howdy::test::WriteFile(file, "probe"), "writes proc fd probe");
-		howdy::test::ScopedFd descriptor(open(file.c_str(), O_PATH | O_CLOEXEC));
+		const howdy::test::ScopedFd descriptor(open(file.c_str(), O_PATH | O_CLOEXEC));
 		ok &= Expect(descriptor.Get() >= 0, "opens O_PATH descriptor");
 		if (descriptor.Get() < 0) {
 			return false;
@@ -138,17 +143,16 @@ namespace {
 	auto TestCompareProcessKernelPrimitives() -> bool {
 		bool ok = true;
 
-		howdy::test::ScopedFd pidfd(static_cast<int>(syscall(SYS_pidfd_open, getpid(), 0)));
+		const howdy::test::ScopedFd pidfd(static_cast<int>(syscall(SYS_pidfd_open, getpid(), 0)));
 		ok &= Expect(pidfd.Get() >= 0, std::string("pidfd_open works: ") + std::strerror(errno));
 
-		howdy::test::ScopedFd event(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
+		const howdy::test::ScopedFd event(eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK));
 		ok &= Expect(event.Get() >= 0, std::string("eventfd works: ") + std::strerror(errno));
 
 		if (event.Get() >= 0) {
-			std::array<pollfd, 1> descriptors{
-			    {{.fd = event.Get(), .events = POLLIN, .revents = 0}}};
+			pollfd         descriptor{.fd = event.Get(), .events = POLLIN, .revents = 0};
 			const timespec timeout{.tv_sec = 0, .tv_nsec = 1'000'000};
-			const int      ready = ppoll(descriptors.data(), descriptors.size(), &timeout, nullptr);
+			const int      ready = ppoll(&descriptor, 1, &timeout, nullptr);
 			ok &= Expect(ready == 0, "ppoll times out on an idle eventfd");
 		}
 		return ok;

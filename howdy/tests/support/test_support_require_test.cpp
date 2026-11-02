@@ -35,8 +35,8 @@ namespace {
 	}
 
 	auto TestSkipUnavailable() -> bool {
-		bool               ok = true;
-		std::ostringstream errors;
+		bool                     ok = true;
+		const std::ostringstream errors;
 		{
 			const ScopedStreamBuffer redirect(std::cerr, errors.rdbuf());
 			{

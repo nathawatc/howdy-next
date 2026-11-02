@@ -754,8 +754,8 @@ namespace {
 		ok &= Expect(!ec, "distro var/log fixture created");
 		ok &= Expect(chmod(rootfs.c_str(), 0755) == 0, "secure fixture root");
 
-		std::ostringstream error;
-		bool               created = false;
+		const std::ostringstream error;
+		bool                     created = false;
 		{
 			StreamRedirect const redirect(std::cerr, error.rdbuf());
 			created = snapshot_internal::EnsureSnapshotDirectory(snapshot, {rootfs});

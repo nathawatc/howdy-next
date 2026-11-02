@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -15,18 +16,27 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <signal.h>
 #include <spawn.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <opencv2/core.hpp>
+#include <opencv2/core/cvstd_wrapper.hpp>
+#include <opencv2/core/exception.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/core/utility.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/face.hpp>
 
+#include <sys/types.h>
 #include <sys/wait.h>
 
 // Runs the production seccomp filter over the OpenCV work the compare frame loop
@@ -79,7 +89,7 @@ namespace {
 				                  for (int j = 0; j < 20000; ++j) {
 					                  total += static_cast<double>(i * j % 7);
 				                  }
-				                  sums[static_cast<std::size_t>(i)] = total;
+				                  sums.at(static_cast<std::size_t>(i)) = total;
 			                  }
 		                  });
 	}
@@ -110,9 +120,10 @@ namespace {
 	// A detector row: x, y, w, h, five landmarks (x, y), score. Lets the recognizer
 	// run without depending on the detector finding a face in noise.
 	auto MakeFaceRow() -> cv::Mat {
-		const std::array<float, 15> values = {100, 100, 200, 200, 160, 160, 240,  160,
-		                                      200, 200, 165, 250, 235, 250, 0.99F};
-		cv::Mat                     row(1, 15, CV_32F);
+		const std::array<float, 15> values = {
+		    100, 100, 200, 200, 160, 160, 240, 160, 200, 200, 165, 250, 235, 250, 0.99F,
+		};
+		cv::Mat row(1, 15, CV_32F);
 		for (int i = 0; i < 15; ++i) {
 			row.at<float>(0, i) = values.at(static_cast<std::size_t>(i));
 		}
@@ -200,8 +211,8 @@ namespace {
 			cv::Mat gray = MakeSyntheticFrame(frame_number);
 			(void)howdy::native::MeasureBrightness(gray);
 			howdy::native::ApplyClaheIfEnabled(gray, video, clahe);
-			cv::Mat rotated = howdy::native::RotateFrame(gray, video, frame_number);
-			cv::Mat resized;
+			const cv::Mat rotated = howdy::native::RotateFrame(gray, video, frame_number);
+			cv::Mat       resized;
 			cv::resize(rotated, resized, cv::Size(), 0.5, 0.5, cv::INTER_AREA);
 			(void)howdy::native::FaceModel::PrepareFrame(resized);
 			ExerciseParallelBackend();
@@ -212,8 +223,8 @@ namespace {
 
 		Phase("allocation churn");
 		for (int i = 0; i < 16; ++i) {
-			cv::Mat large(2048, 2048, CV_8UC3, cv::Scalar::all(i));
-			cv::Mat blurred;
+			const cv::Mat large(2048, 2048, CV_8UC3, cv::Scalar::all(i));
+			cv::Mat       blurred;
 			cv::GaussianBlur(large, blurred, cv::Size(5, 5), 0);
 		}
 
@@ -228,8 +239,9 @@ namespace {
 		std::string           flag(kProbeFlag);
 		std::string           mode_argument(mode);
 		std::string           models_argument(models_directory);
-		std::array<char *, 5> arguments = {program.data(), flag.data(), mode_argument.data(),
-		                                   models_argument.data(), nullptr};
+		std::array<char *, 5> arguments = {
+		    program.data(), flag.data(), mode_argument.data(), models_argument.data(), nullptr,
+		};
 		// An empty environment keeps inherited LD_PRELOAD or sanitizer variables from
 		// running extra syscalls before the filter is installed.
 		std::array<char *, 1> environment = {nullptr};
@@ -275,11 +287,13 @@ namespace {
 }  // namespace
 
 auto main(int argc, char **argv) -> int {
-	if (argc == 4 && std::string_view(argv[1]) == kProbeFlag) {
+	const auto arguments =
+	    std::span(argv, argc > 0 ? static_cast<std::size_t>(argc) : std::size_t{0});
+	if (arguments.size() == 4 && std::string_view(arguments.subspan(1).front()) == kProbeFlag) {
 		// An uncaught exception would reach abort(), which the filter kills with SIGSYS and
 		// hides the real cause (for example OpenCV out of memory under RLIMIT_AS).
 		try {
-			return RunWorkloadChild(argv[2], argv[3]);
+			return RunWorkloadChild(arguments.subspan(2).front(), arguments.back());
 		} catch (const std::exception &error) {
 			std::cerr << "FAIL: uncaught exception in workload child: " << error.what() << '\n';
 			return kExitException;
