@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include <sys/stat.h>
+#include <sys/types.h>
 
 #include <curl/curl.h>
 #include <curl/system.h>
@@ -122,6 +123,10 @@ namespace howdy::test::download_models {
 			                           [option](const CurlSetoptCall &call) -> bool {
 				                           return call.option == option;
 			                           });
+		}
+
+		auto ForeignModelFileOwnerUid() -> std::optional<uid_t> {
+			return geteuid() + 1;
 		}
 
 	}  // namespace
@@ -276,6 +281,58 @@ namespace howdy::test::download_models {
 		    Expect(AttemptedOwnerUidLookups() == 0, "null owner callback invokes no owner lookup");
 		ok &= Expect(!fs::exists(null_owner_models_dir, ec) && !ec,
 		             "null owner callback creates no models directory");
+
+		for (const bool null_sha : {true, false}) {
+			const std::string name       = null_sha ? "null-sha256" : "null-fstat";
+			const auto        models_dir = temp_root / name / "models";
+			const auto        out_path   = temp_root / (name + "-output.txt");
+			int               exit_code  = 0;
+			{
+				EnvVarGuard const models_env("HOWDY_MODELS_DIR", models_dir.string());
+				ResetDependencyAttempts();
+				ok &= Expect(
+				    CaptureDownloadModelsStdout(
+				        out_path, &exit_code,
+				        howdy::native::download_models_internal::DownloadModelsDependencies{
+				            .download_file        = FakeDownloadFile,
+				            .model_file_owner_uid = TestModelFileOwnerUid,
+				            .sha256_file =
+				                null_sha
+							        ? nullptr
+							        : howdy::native::download_models_internal::Sha256FileDescriptor,
+				            .fstat_file = null_sha ? ::fstat : nullptr,
+				        }),
+				    "capture null integrity callback output");
+			}
+			ok &= Expect(exit_code == EXIT_FAILURE, name + " callback aborts");
+			ok &= Expect(ReadFile(out_path).empty(), name + " callback emits no output");
+			ok &= Expect(AttemptedDownloads() == 0, name + " callback invokes no download");
+			ok &= Expect(!fs::exists(models_dir, ec) && !ec,
+			             name + " callback creates no models directory");
+		}
+
+		const auto foreign_models_dir = temp_root / "foreign-owner-models";
+		const auto foreign_output     = temp_root / "foreign-owner-output.txt";
+		fs::create_directories(foreign_models_dir, ec);
+		ok &= Expect(!ec, "create foreign-owner models directory");
+		ok &= Expect(chmod(foreign_models_dir.c_str(), 0755) == 0,
+		             "make foreign-owner models directory secure");
+		int foreign_exit = 0;
+		{
+			EnvVarGuard const models_env("HOWDY_MODELS_DIR", foreign_models_dir.string());
+			ResetDependencyAttempts();
+			ok &= Expect(CaptureDownloadModelsStdout(
+			                 foreign_output, &foreign_exit,
+			                 howdy::native::download_models_internal::DownloadModelsDependencies{
+			                     .download_file        = FakeDownloadFile,
+			                     .model_file_owner_uid = ForeignModelFileOwnerUid,
+			                 }),
+			             "capture foreign-owner output");
+		}
+		ok &= Expect(foreign_exit == EXIT_FAILURE, "foreign-owned models directory aborts");
+		ok &= Expect(ReadFile(foreign_output).contains("Failed to create models directory"),
+		             "foreign-owned models directory reports directory failure");
+		ok &= Expect(AttemptedDownloads() == 0, "foreign-owned models directory skips download");
 
 		const auto existing_models_dir = temp_root / "existing-models";
 		const auto existing_output     = temp_root / "existing-output.txt";
