@@ -1,6 +1,9 @@
 FROM docker.io/library/archlinux:latest
 
-RUN pacman -Syu --noconfirm --needed \
+# The base image's pacman.conf skips usr/share/i18n/*, so locale sources such as
+# th_TH are missing; stop skipping them and reinstall glibc (no --needed) to restore them.
+RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
+	&& pacman -Syu --noconfirm \
 		'glibc>=2.36' \
 		'cmake>=3.31' \
 		acl \
