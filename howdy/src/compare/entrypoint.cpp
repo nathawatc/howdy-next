@@ -422,10 +422,7 @@ namespace {
 				return static_cast<int>(CompareExit::kAbort);
 			}
 
-			if (const auto physical_cores = howdy::native::AvailablePhysicalCoreCount();
-			    physical_cores.has_value()) {
-				cv::setNumThreads(*physical_cores);
-			}
+			cv::setNumThreads(howdy::native::AvailableThreadCount());
 
 			std::optional<howdy::native::CompareCaptureSession> capture_session;
 			if (dependencies == nullptr) {

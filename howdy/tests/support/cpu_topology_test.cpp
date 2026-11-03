@@ -66,11 +66,18 @@ auto main() -> int {
 	ok &= Expect(
 	    !howdy::native::cpu_topology_detail::CountPhysicalCores(MakeAffinity({0, 1, 8}), temp_root)
 	         .has_value(),
-	    "missing topology leaves the OpenCV thread default unchanged");
+	    "missing topology reports no physical core count");
 	ok &=
 	    Expect(!howdy::native::cpu_topology_detail::CountPhysicalCores(MakeAffinity({}), temp_root)
 		            .has_value(),
-		       "empty affinity leaves the OpenCV thread default unchanged");
+		       "empty affinity reports no physical core count");
+
+	ok &= Expect(howdy::native::ThreadCountFromAffinity(MakeAffinity({0, 1, 2, 3}), temp_root) == 2,
+	             "thread count uses physical cores when topology is readable");
+	ok &= Expect(howdy::native::ThreadCountFromAffinity(MakeAffinity({0, 1, 8}), temp_root) == 3,
+	             "thread count falls back to allowed CPUs when topology is missing");
+	ok &= Expect(howdy::native::ThreadCountFromAffinity(MakeAffinity({}), temp_root) == 1,
+	             "thread count is never zero");
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

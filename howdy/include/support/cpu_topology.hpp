@@ -1,11 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 
 #include <sched.h>
 
@@ -39,13 +41,27 @@ namespace howdy::native {
 
 	}  // namespace cpu_topology_detail
 
-	inline auto AvailablePhysicalCoreCount() -> std::optional<int> {
+	// Threads OpenCV should use: the physical core count, or every allowed CPU when the topology
+	// cannot be read (the same count OpenCV picks by default, so that case is unchanged). Never 0,
+	// so compare always sets an explicit count; an OpenMP-backend OpenCV otherwise falls back to
+	// OMP_NUM_THREADS, which compare pins to 1.
+	inline auto ThreadCountFromAffinity(const cpu_set_t             &affinity,
+	                                    const std::filesystem::path &sys_cpu_root) -> int {
+		if (const auto physical_cores =
+		        cpu_topology_detail::CountPhysicalCores(affinity, sys_cpu_root);
+		    physical_cores.has_value()) {
+			return *physical_cores;
+		}
+		return std::max(1, CPU_COUNT(&affinity));
+	}
+
+	inline auto AvailableThreadCount() -> int {
 		cpu_set_t affinity{};
 		CPU_ZERO(&affinity);
 		if (sched_getaffinity(0, sizeof(affinity), &affinity) != 0) {
-			return std::nullopt;
+			return std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
 		}
-		return cpu_topology_detail::CountPhysicalCores(affinity, "/sys/devices/system/cpu");
+		return ThreadCountFromAffinity(affinity, "/sys/devices/system/cpu");
 	}
 
 }  // namespace howdy::native
