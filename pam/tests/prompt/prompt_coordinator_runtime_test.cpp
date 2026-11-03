@@ -498,7 +498,7 @@ namespace {
 		return TestProductionSpawnAdapter(
 		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
 		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
-		    "production direct runtime", {});
+		    "production direct runtime", {"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"});
 	}
 
 	auto TestProductionStagedRuntimeEnvironment() -> bool {
@@ -506,7 +506,12 @@ namespace {
 		    MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
 			                   "/run/howdy/runtime/models", true),
 		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
-		    "production staged runtime", {"HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models"});
+		    "production staged runtime",
+		    {
+		        "HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models",
+		        "OPENBLAS_NUM_THREADS=1",
+		        "OMP_NUM_THREADS=1",
+		    });
 	}
 
 	auto TestOwnedLaunchRequestFromTemporaries() -> bool {
@@ -520,7 +525,12 @@ namespace {
 		return TestProductionSpawnAdapter(
 		    request,
 		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
-		    "owned temporary request", {"HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models"});
+		    "owned temporary request",
+		    {
+		        "HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models",
+		        "OPENBLAS_NUM_THREADS=1",
+		        "OMP_NUM_THREADS=1",
+		    });
 	}
 
 	auto TestProductionFileActionsInitFailure() -> bool {
@@ -589,8 +599,9 @@ namespace {
 		                      "alice",
 		                  },
 		              "production spawn failure preserves exact argv") &&
-		       Expect(capture.environment.empty(),
-		              "production spawn failure preserves empty direct environment");
+		       Expect(capture.environment ==
+		                  std::vector<std::string>{"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"},
+		              "production spawn failure preserves fixed direct environment");
 	}
 
 }  // namespace

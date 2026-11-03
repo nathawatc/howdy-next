@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <fcntl.h>
 #include <pwd.h>
@@ -65,9 +66,18 @@ auto main(int argc, char **argv) -> int {
 	if (models_env == nullptr || environ == nullptr || *environ == nullptr) {
 		return Fail("compare environment was not isolated");
 	}
-	const auto environment = std::span(environ, std::size_t{2});
-	if (environment.back() != nullptr || std::string_view(environment.front()) !=
-	                                         std::string("HOWDY_USER_MODELS_DIR=") + models_env) {
+	const std::vector<std::string> expected = {
+	    std::string("HOWDY_USER_MODELS_DIR=") + models_env,
+	    "OPENBLAS_NUM_THREADS=1",
+	    "OMP_NUM_THREADS=1",
+	};
+	// Walk to the terminating nullptr so a shorter or longer environment is a plain mismatch,
+	// never an out-of-bounds read.
+	std::vector<std::string> environment;
+	for (std::size_t index = 0; environ[index] != nullptr; ++index) {
+		environment.emplace_back(environ[index]);
+	}
+	if (environment != expected) {
 		return Fail("compare environment was not isolated");
 	}
 	const std::filesystem::path config(config_arg);
