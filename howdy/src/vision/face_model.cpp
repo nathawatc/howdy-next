@@ -14,6 +14,7 @@
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -38,6 +39,21 @@ namespace howdy::native {
 		    "Failed to initialize face recognizer";
 		constexpr auto kFaceEncodingProcessingFailureMessage =
 		    "Face encoding failed while processing camera frame";
+
+		// Allocation failure (for example RLIMIT_AS exhaustion in the compare sandbox) is the one
+		// cause worth naming; other OpenCV text stays out of the stable, sanitized diagnostic.
+		auto IsOutOfMemory(const std::exception &error) -> bool {
+			if (dynamic_cast<const std::bad_alloc *>(&error) != nullptr) {
+				return true;
+			}
+			const auto *cv_error = dynamic_cast<const cv::Exception *>(&error);
+			return cv_error != nullptr && cv_error->code == cv::Error::StsNoMem;
+		}
+
+		auto InitializationFailureMessage(const char *base, const std::exception &error)
+		    -> std::string {
+			return IsOutOfMemory(error) ? std::string(base) + ": out of memory" : std::string(base);
+		}
 
 		void AlignFace(void *context, const FaceAlignmentRequest &request) {
 			static_cast<cv::FaceRecognizerSF *>(context)->alignCrop(
@@ -136,11 +152,8 @@ namespace howdy::native {
 		try {
 			detector_ = backend_->create_detector(yunet_model, input_size_, score_threshold,
 			                                      nms_threshold, top_k);
-		} catch (const cv::Exception &) {
-			SetError(kFaceDetectorInitializationMessage);
-			return;
-		} catch (const std::exception &) {
-			SetError(kFaceDetectorInitializationMessage);
+		} catch (const std::exception &error) {
+			SetError(InitializationFailureMessage(kFaceDetectorInitializationMessage, error));
 			return;
 		}
 		if (detector_.empty()) {
@@ -154,11 +167,8 @@ namespace howdy::native {
 		}
 		try {
 			recognizer_ = backend_->create_recognizer(sface_model);
-		} catch (const cv::Exception &) {
-			SetError(kFaceRecognizerInitializationMessage);
-			return;
-		} catch (const std::exception &) {
-			SetError(kFaceRecognizerInitializationMessage);
+		} catch (const std::exception &error) {
+			SetError(InitializationFailureMessage(kFaceRecognizerInitializationMessage, error));
 			return;
 		}
 		if (recognizer_.empty()) {

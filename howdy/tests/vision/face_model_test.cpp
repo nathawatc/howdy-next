@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -42,6 +43,14 @@ namespace {
 
 	[[noreturn]] void ThrowCvError() {
 		throw cv::Exception(cv::Error::StsError, kRawError, kOpenCvFunction, kOpenCvSource, 73);
+	}
+
+	[[noreturn]] void ThrowCvOutOfMemory() {
+		throw cv::Exception(cv::Error::StsNoMem, kRawError, kOpenCvFunction, kOpenCvSource, 74);
+	}
+
+	[[noreturn]] void ThrowBadAlloc() {
+		throw std::bad_alloc();
 	}
 
 	[[noreturn]] void ThrowStdError() {
@@ -532,6 +541,37 @@ auto main() -> int {
 		auto const model = howdy::native::FaceModelTestAccess::Create(
 		    howdy::native::DefaultFaceConfig(), std::move(backend));
 		ok &= ExpectInitFailure(model, "Failed to initialize face detector");
+	}
+
+	{
+		auto backend            = SuccessfulBackend();
+		backend.create_detector = [](const std::string &, const cv::Size &, float, float,
+		                             int) -> cv::Ptr<cv::FaceDetectorYN> {
+			ThrowCvOutOfMemory();
+		};
+		auto const model = howdy::native::FaceModelTestAccess::Create(
+		    howdy::native::DefaultFaceConfig(), std::move(backend));
+		ok &= ExpectInitFailure(model, "Failed to initialize face detector: out of memory");
+	}
+
+	{
+		auto backend              = SuccessfulBackend();
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
+			ThrowCvOutOfMemory();
+		};
+		auto const model = howdy::native::FaceModelTestAccess::Create(
+		    howdy::native::DefaultFaceConfig(), std::move(backend));
+		ok &= ExpectInitFailure(model, "Failed to initialize face recognizer: out of memory");
+	}
+
+	{
+		auto backend              = SuccessfulBackend();
+		backend.create_recognizer = [](const std::string &) -> cv::Ptr<cv::FaceRecognizerSF> {
+			ThrowBadAlloc();
+		};
+		auto const model = howdy::native::FaceModelTestAccess::Create(
+		    howdy::native::DefaultFaceConfig(), std::move(backend));
+		ok &= ExpectInitFailure(model, "Failed to initialize face recognizer: out of memory");
 	}
 
 	{
