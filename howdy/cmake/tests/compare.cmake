@@ -38,6 +38,12 @@ target_compile_definitions(
 target_link_libraries(howdy_compare_entrypoint_success_test PRIVATE
                       howdy_compare_entrypoint howdy_opencv)
 add_dependencies(howdy_compare_entrypoint_success_test howdy_packaged_config)
+# The entrypoint applies the 2.5 GiB address-space limit in this process. Pin the same threads the
+# PAM module passes to compare so an OpenMP-built OpenBLAS does not reserve the limit at load.
+set_tests_properties(
+ native-compare-entrypoint-success
+ PROPERTIES ENVIRONMENT "OPENBLAS_NUM_THREADS=1;OMP_NUM_THREADS=1"
+)
 
 howdy_add_native_test(
  howdy_compare_args_test
