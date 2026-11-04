@@ -22,7 +22,10 @@
 #include <chrono>
 #include <clocale>
 #include <cstdlib>
+#include <ranges>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include <libintl.h>
 #include <signal.h>
@@ -397,10 +400,17 @@ namespace {
 	auto SpawnProductionCompare(const howdy::pam::compare_process::SpawnRequest &request) -> int {
 		auto *state = static_cast<ProductionPromptSpawnState *>(request.context);
 		if (state == nullptr || request.child_pid == nullptr || request.argv.size() != 5 ||
-		    request.envp.size() != 1) {
+		    request.envp.empty()) {
 			return EINVAL;
 		}
 		++state->calls;
+		std::vector<std::string> environment;
+		for (const char *entry :
+		     request.envp | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			environment.emplace_back(entry);
+		}
 		auto        arguments     = request.argv;
 		const char *program       = arguments.front();
 		arguments                 = arguments.subspan(1);
@@ -419,7 +429,11 @@ namespace {
 		    config_path != nullptr &&
 		    std::string_view(config_path) == state->expected_config_path && username != nullptr &&
 		    std::string_view(username) == "test-user" && terminator == nullptr &&
-		    request.envp.front() == nullptr;
+		    request.envp.size() == environment.size() + 1 &&
+		    environment == std::vector<std::string>{
+		                       "OPENBLAS_NUM_THREADS=1",
+		                       "OMP_NUM_THREADS=1",
+		                   };
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
 			return errno;

@@ -19,8 +19,11 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include <fcntl.h>
 #include <signal.h>
@@ -42,6 +45,14 @@ extern "C" {
 namespace {
 	using CompareOperations   = howdy::pam::compare_process::Operations;
 	using CompareSpawnRequest = howdy::pam::compare_process::SpawnRequest;
+
+	// Fixed compare environment entries that keep a threaded BLAS from reserving address space per
+	// CPU thread. OpenBLAS built with OpenMP (Arch) obeys OMP_NUM_THREADS and ignores
+	// OPENBLAS_NUM_THREADS; pthread builds obey OPENBLAS_NUM_THREADS.
+	constexpr auto kCompareThreadPins = std::to_array<std::string_view>({
+	    "OPENBLAS_NUM_THREADS=1",
+	    "OMP_NUM_THREADS=1",
+	});
 
 	// Lets compare process perform SIGTERM cleanup without extending scan deadline.
 	constexpr auto kCompareTerminationGrace = std::chrono::milliseconds(250);
@@ -285,17 +296,23 @@ namespace {
 		std::string user_models_env =
 		    "HOWDY_USER_MODELS_DIR=" + std::string(request.user_models_dir);
 
-		std::array<char *, 2> runtime_env = {
-		    user_models_env.data(),
-		    nullptr,
-		};
-		std::array<char *, 1> empty_env = {
-		    nullptr,
-		};
-
-		const std::span<char *const> compare_env = request.staged_runtime
-		                                               ? std::span<char *const>(runtime_env)
-		                                               : std::span<char *const>(empty_env);
+		// Compare never calls BLAS, but a threaded BLAS linked into OpenCV starts its thread pool
+		// when the library loads and reserves address space per thread (about 128 MiB per OpenMP
+		// thread with Arch's OpenBLAS), which can exhaust the compare RLIMIT_AS. The pool is
+		// created before main(), so the environment is the only place to limit it. These are fixed
+		// values, never copied from the caller. If compare starts using BLAS-heavy OpenCV calls,
+		// revisit this.
+		auto                pins = std::ranges::to<std::vector<std::string>>(kCompareThreadPins);
+		std::vector<char *> environment;
+		environment.reserve(pins.size() + 2);
+		if (request.staged_runtime) {
+			environment.push_back(user_models_env.data());
+		}
+		for (auto &pin : pins) {
+			environment.push_back(pin.data());
+		}
+		environment.push_back(nullptr);
+		const std::span<char *const> compare_env(environment);
 
 		posix_spawn_file_actions_t file_actions;
 		const int init_result = operations.file_actions_init(operations.context, &file_actions);

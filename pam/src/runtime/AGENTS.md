@@ -19,8 +19,17 @@ Preserve process/FD ownership, EINTR behavior, deadline semantics, timeout termi
 output bounds, protocol validation, and lease path/owner/mode/device/inode/flock checks.
 
 `RuntimeSession` is one-shot. Invalid staged paths, missing typed config, or repeated load attempts
-fail closed. Direct compare runtime uses an empty environment; staged runtime exports only
-`HOWDY_USER_MODELS_DIR`. Keep compare argv behavior unchanged.
+fail closed. Compare runs with a fixed environment, never copied from the caller. Direct runtime
+exports only `OPENBLAS_NUM_THREADS=1` and `OMP_NUM_THREADS=1`; staged runtime adds
+`HOWDY_USER_MODELS_DIR` first. The thread pins stop a threaded BLAS linked into OpenCV from
+reserving address space per CPU thread at library load, which exhausts the compare `RLIMIT_AS`
+(issues #11, #12). OpenBLAS built with OpenMP (Arch) reserves about 128 MiB per thread and obeys
+only `OMP_NUM_THREADS`; pthread builds obey `OPENBLAS_NUM_THREADS`, so both are pinned. The pool is
+created before `main()`, so only the environment can limit it. Compare made no BLAS or LAPACK calls
+when counted on OpenCV 5.0.0 (detector, align, SFace feature), so the pins cost no BLAS speed;
+recheck that count when OpenCV changes. Compare also sets OpenCV's thread count explicitly, which
+overrides the `OMP_NUM_THREADS` pin for an OpenMP-backend OpenCV. Keep compare argv behavior
+unchanged.
 
 Do not fragment `auth_helper_process` further for LOC; its process lifecycle is intentionally one
 auditable subsystem.
