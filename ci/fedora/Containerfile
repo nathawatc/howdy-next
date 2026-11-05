@@ -33,12 +33,14 @@ RUN set --; \
 			gtk3-devel \
 			gzip \
 			inih-devel \
-			libacl-devel \
+			lapack-devel \
+		libacl-devel \
 			libcurl-devel \
 			libevdev-devel \
 			libjpeg-turbo-devel \
 			libpng-devel \
 			make \
+		openblas-devel \
 			openssl-devel \
 			pam-devel \
 			pkgconf-pkg-config \

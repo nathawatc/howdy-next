@@ -122,8 +122,8 @@ them is fixed by the CI change.
    setuid helper creating `/run/howdy`.
 7. `howdy download-models` writes to `/usr/share/howdy/models` at runtime. Debian policy and
    Fedora Atomic (read-only `/usr`) prefer `/var/lib/howdy`, which the Nix package already uses.
-8. Distribution OpenBLAS is multi-threaded, and OpenCV linked against it exhausts the compare
-   sandbox's 2.5 GiB `RLIMIT_AS` on a 16-core machine: model inference fails with OpenCV
-   "Insufficient memory" (Debian 13, OpenBLAS pthread build). `OPENBLAS_NUM_THREADS=1` avoids it,
-   and so does the single-threaded OpenBLAS the Nix package uses. The CI images build OpenCV
-   without LAPACK to sidestep this; a packaged OpenCV with BLAS needs the same care.
+8. Distribution OpenBLAS is multi-threaded, and OpenCV linked against it exhausted the compare
+   sandbox's 2.5 GiB `RLIMIT_AS` on a 16-core machine (Debian 13). Fixed in compare by pinning
+   `OPENBLAS_NUM_THREADS` and `OMP_NUM_THREADS` (#13). The CI images build OpenCV with LAPACK
+   against the distribution's OpenBLAS, and `native-compare-sandbox-workload` runs with the same
+   pins; without them the model workload fails with OpenCV "Insufficient memory".

@@ -5,10 +5,6 @@
 #   build-deps.sh libs     OpenCV 5, and yyjson when the distro's is too old
 #   build-deps.sh models   download and verify the ONNX models
 #
-# LAPACK is off on purpose: distribution OpenBLAS is multi-threaded, and its per-thread
-# buffers exhaust the compare sandbox's RLIMIT_AS (ci/README.md, finding 8). Nix avoids
-# this with a single-threaded OpenBLAS.
-#
 # Floors match the root CMakeLists.txt; yyjson, inih, and OpenCV are each built only
 # when the distribution's pkg-config version is below the floor. OpenCV flags mirror
 # nix/opencv5.nix so every CI environment tests the same OpenCV configuration.
@@ -125,7 +121,7 @@ build_opencv() {
 		-DWITH_OPENCL=OFF \
 		-DWITH_OPENGL=OFF \
 		-DWITH_IPP=OFF \
-		-DWITH_LAPACK=OFF \
+		-DWITH_LAPACK=ON \
 		-DWITH_OPENMP=ON \
 		-DWITH_PROTOBUF=ON \
 		-DBUILD_PROTOBUF=ON \
