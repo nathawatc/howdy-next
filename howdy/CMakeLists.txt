@@ -149,7 +149,9 @@ add_library(howdy_user_model_codec STATIC
  src/storage/user_model_codec/parsing.cpp
 )
 howdy_configure_native_target(howdy_user_model_codec)
-target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
+# PUBLIC: user_model_codec/internal.hpp includes <yyjson.h> and is also included by
+# howdy_user_models, which needs yyjson's include directory when it is not a default one.
+target_link_libraries(howdy_user_model_codec PUBLIC PkgConfig::YYJSON)
 
 add_library(howdy_face_model STATIC src/vision/face_model.cpp)
 howdy_configure_native_target(howdy_face_model)

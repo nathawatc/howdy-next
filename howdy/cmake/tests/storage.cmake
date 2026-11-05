@@ -27,6 +27,7 @@ target_link_libraries(
  howdy_user_models_test
  PRIVATE
   howdy_user_models
+  howdy_user_model_codec
   howdy_user_model_readiness
 )
 
