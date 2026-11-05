@@ -73,6 +73,14 @@ add_test(
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/pkg_config_isolation_test.cmake"
 )
 add_test(
+  NAME native-fortify-flags
+  COMMAND "${CMAKE_COMMAND}"
+    "-DHOWDY_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
+    "-DHOWDY_TEST_ROOT=${PROJECT_BINARY_DIR}/fortify-flags-test"
+    "-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/fortify_flags_test.cmake"
+)
+add_test(
   NAME native-config-cross-compilation
   COMMAND
    "${CMAKE_COMMAND}"

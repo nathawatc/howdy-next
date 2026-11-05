@@ -27,13 +27,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Debian's dpkg-buildflags defines _FORTIFY_SOURCE=2, which the project's
-          # =3 redefines; -Werror turns that into an error (ci/README.md, finding 3).
-          # Drop werror: "OFF" once the port resolves it.
           - name: debian-13
             image: ghcr.io/nathawatc/howdy-next/ci-debian:13-1
             flags: dpkg
-            werror: "OFF"
+            werror: "ON"
           - name: ubuntu-26.04
             image: ghcr.io/nathawatc/howdy-next/ci-ubuntu:26.04-1
             flags: dpkg

@@ -10,6 +10,7 @@ project(
 
 include(cmake/howdy_cross_compilation.cmake)
 include(cmake/howdy_privileged_test_paths.cmake)
+include(cmake/howdy_fortify.cmake)
 include(cmake/howdy_test_timeouts.cmake)
 
 string(TIMESTAMP HOWDY_MAN_DATE "%Y-%m-%d" UTC)
@@ -133,11 +134,7 @@ add_compile_options(
  "$<$<AND:$<BOOL:${HOWDY_WARNINGS_AS_ERRORS}>,${howdy_cxx_compiler}>:-Werror>"
 )
 
-add_compile_definitions(
- "$<$<CONFIG:Release>:_FORTIFY_SOURCE=3>"
- "$<$<CONFIG:RelWithDebInfo>:_FORTIFY_SOURCE=3>"
- "$<$<CONFIG:MinSizeRel>:_FORTIFY_SOURCE=3>"
-)
+howdy_add_fortify_source()
 
 add_link_options(
  "LINKER:-z,relro"

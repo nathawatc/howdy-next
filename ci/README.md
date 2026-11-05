@@ -114,6 +114,9 @@ them is fixed by the CI change.
    ancestor check. `native-file-security` and `native-snapshot-writer` pin that verdict.
 3. Debian's `dpkg-buildflags` passes `-D_FORTIFY_SOURCE=2`, which collides with the `=3` the
    project adds for Release builds. The warning is an error under `HOWDY_WARNINGS_AS_ERRORS`.
+   **Resolved:** `cmake/howdy_fortify.cmake` skips the project's level when the C++ flags already
+   define one, so the distribution's level wins. `native-fortify-flags` pins this, and the Debian
+   row now builds with `-Werror`.
 4. Debian's `dh_fixperms` strips setuid from `howdy-auth-helper` and widens the `/etc/howdy` and
    `config.ini` modes. Packaging needs overrides.
 5. `ScopedMessageLocale` reads the process environment, but Debian and Ubuntu put `LANG` in the
