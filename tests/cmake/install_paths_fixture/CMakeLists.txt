@@ -20,6 +20,7 @@ foreach(name IN ITEMS
  HOWDY_HELPER_DIR
  HOWDY_COMPARE_PROCESS_PATH
  HOWDY_AUTH_HELPER_PATH
+ HOWDY_PRIVATE_LIBDIR
 )
   string(APPEND resolved "set(RESOLVED_${name} \"${${name}}\")\n")
 endforeach()

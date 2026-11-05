@@ -80,6 +80,23 @@ add_test(
     "-DHOWDY_CMAKE_GENERATOR=${CMAKE_GENERATOR}"
     -P "${PROJECT_SOURCE_DIR}/tests/cmake/fortify_flags_test.cmake"
 )
+file(
+  GENERATE
+  OUTPUT "${PROJECT_BINARY_DIR}/private-libdir-manifest.txt"
+  CONTENT
+   "howdy=$<TARGET_PROPERTY:howdy,INSTALL_RPATH>
+howdy_compare=$<TARGET_PROPERTY:howdy_compare,INSTALL_RPATH>
+howdy_auth_helper=$<TARGET_PROPERTY:howdy_auth_helper,INSTALL_RPATH>
+pam_howdy=$<TARGET_PROPERTY:pam_howdy,INSTALL_RPATH>
+"
+)
+add_test(
+  NAME native-private-libdir-scope
+  COMMAND "${CMAKE_COMMAND}"
+    "-DHOWDY_PRIVATE_LIBDIR_MANIFEST=${PROJECT_BINARY_DIR}/private-libdir-manifest.txt"
+    "-DHOWDY_EXPECTED_PRIVATE_LIBDIR=${HOWDY_PRIVATE_LIBDIR}"
+    -P "${PROJECT_SOURCE_DIR}/tests/cmake/private_libdir_scope_test.cmake"
+)
 add_test(
   NAME native-config-cross-compilation
   COMMAND

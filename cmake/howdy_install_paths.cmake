@@ -1,3 +1,25 @@
+# HOWDY_PRIVATE_LIBDIR becomes the RUNPATH of the binaries that link a bundled OpenCV, so
+# an unsafe value would let the loader search a directory the packager did not intend.
+# Validated on the raw value: normalization would hide a `..` and `$ORIGIN` is rejected,
+# because glibc treats it specially for setuid callers.
+function(howdy_validate_private_libdir value)
+  foreach(character IN ITEMS "$" ":" "\"" ";" "\\" " " "\t" "\n" "\r")
+    string(FIND "${value}" "${character}" position)
+    if(NOT position EQUAL -1)
+      message(
+       FATAL_ERROR
+       "HOWDY_PRIVATE_LIBDIR '${value}' contains a character that is not allowed in a RUNPATH directory ($ : \" ; \\ or whitespace)"
+      )
+    endif()
+  endforeach()
+  if(NOT IS_ABSOLUTE "${value}")
+    message(FATAL_ERROR "HOWDY_PRIVATE_LIBDIR '${value}' must be an absolute path")
+  endif()
+  if("${value}" MATCHES "(^|/)\\.\\.(/|$)")
+    message(FATAL_ERROR "HOWDY_PRIVATE_LIBDIR '${value}' must not contain '..'")
+  endif()
+endfunction()
+
 # Resolves every installed/runtime path Howdy bakes into paths.hpp. A macro, not a
 # function, so the cache entries and results land in the caller scope. Needs
 # GNUInstallDirs and a project() so CMAKE_INSTALL_FULL_* and PROJECT_BINARY_DIR exist.
@@ -7,6 +29,17 @@ macro(howdy_resolve_install_paths)
   set(HOWDY_MODELS_DIR "" CACHE PATH "OpenCV ONNX models directory")
   set(HOWDY_USER_MODELS_DIR "" CACHE PATH "User models directory")
   set(HOWDY_LOG_PATH "/var/log/howdy" CACHE PATH "Howdy log directory")
+  # STRING, not PATH: CMake would turn a relative PATH value into an absolute one under
+  # the build directory and the validation below would accept it.
+  set(
+   HOWDY_PRIVATE_LIBDIR
+   ""
+   CACHE STRING
+   "Absolute directory holding a bundled OpenCV; becomes the RUNPATH of howdy and howdy-compare"
+  )
+  if(NOT HOWDY_PRIVATE_LIBDIR STREQUAL "")
+    howdy_validate_private_libdir("${HOWDY_PRIVATE_LIBDIR}")
+  endif()
   set(
    HOWDY_AUTH_HELPER_PATH
    ""

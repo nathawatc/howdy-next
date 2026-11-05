@@ -343,6 +343,15 @@ howdy_configure_native_target(howdy)
 target_link_libraries(howdy PRIVATE howdy_cli)
 howdy_install(TARGETS howdy RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
+# Only the binaries that link OpenCV get the private RUNPATH. The setuid helper and
+# pam_howdy.so (loaded into sudo, gdm, and login) never do.
+if(NOT HOWDY_PRIVATE_LIBDIR STREQUAL "")
+  set_property(
+   TARGET howdy howdy_compare
+   PROPERTY INSTALL_RPATH "${HOWDY_PRIVATE_LIBDIR}"
+  )
+endif()
+
 include(cmake/docs.cmake)
 
 if(BUILD_TESTING)

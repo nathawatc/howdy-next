@@ -30,8 +30,8 @@ endfunction()
 function(run_case name)
   cmake_parse_arguments(
    PARSE_ARGV 1 case
-   "HOST_NATIVE"
-   "EXPECT_PAM_DIR;EXPECT_CONFIG_DIR;EXPECT_CONFIG_PATH;EXPECT_MODELS_DIR;EXPECT_USER_MODELS_DIR;EXPECT_LOG_PATH;EXPECT_HELPER_DIR;EXPECT_COMPARE_PROCESS_PATH;EXPECT_AUTH_HELPER_PATH"
+   "HOST_NATIVE;EXPECT_CONFIGURE_FAILURE"
+   "EXPECT_PAM_DIR;EXPECT_CONFIG_DIR;EXPECT_CONFIG_PATH;EXPECT_MODELS_DIR;EXPECT_USER_MODELS_DIR;EXPECT_LOG_PATH;EXPECT_HELPER_DIR;EXPECT_COMPARE_PROCESS_PATH;EXPECT_AUTH_HELPER_PATH;EXPECT_PRIVATE_LIBDIR;EXPECT_ERROR"
    "DEFINES"
   )
   set(build_dir "${HOWDY_TEST_ROOT}/${name}")
@@ -55,6 +55,14 @@ function(run_case name)
    OUTPUT_VARIABLE configure_output
    ERROR_VARIABLE configure_error
   )
+  if(case_EXPECT_CONFIGURE_FAILURE)
+    if(configure_result EQUAL 0)
+      record_failure("[${name}] configure succeeded, expected it to fail")
+    elseif(DEFINED case_EXPECT_ERROR AND NOT "${configure_error}" MATCHES "${case_EXPECT_ERROR}")
+      record_failure("[${name}] configure failed without '${case_EXPECT_ERROR}':\n${configure_error}")
+    endif()
+    return()
+  endif()
   if(NOT configure_result EQUAL 0)
     record_failure("[${name}] fixture configure failed (${configure_result}):\n${configure_output}\n${configure_error}")
     return()
@@ -70,6 +78,15 @@ function(run_case name)
       record_failure("[${name}] HOWDY_${key}: expected '${case_EXPECT_${key}}', got '${actual}'")
     endif()
   endforeach()
+  # No private libdir unless a case asks for one, so Arch, Fedora, Ubuntu, and Nix
+  # never get a RUNPATH by accident.
+  set(expected_private_libdir "")
+  if(DEFINED case_EXPECT_PRIVATE_LIBDIR)
+    set(expected_private_libdir "${case_EXPECT_PRIVATE_LIBDIR}")
+  endif()
+  if(NOT RESOLVED_HOWDY_PRIVATE_LIBDIR STREQUAL expected_private_libdir)
+    record_failure("[${name}] HOWDY_PRIVATE_LIBDIR: expected '${expected_private_libdir}', got '${RESOLVED_HOWDY_PRIVATE_LIBDIR}'")
+  endif()
   set(RESOLVED_CMAKE_INSTALL_LIBDIR "${RESOLVED_CMAKE_INSTALL_LIBDIR}" PARENT_SCOPE)
 endfunction()
 
@@ -147,6 +164,54 @@ run_case(
  EXPECT_COMPARE_PROCESS_PATH /usr/libexec/howdy/howdy-compare
  EXPECT_AUTH_HELPER_PATH /run/wrappers/bin/howdy-auth-helper
 )
+# Debian: the arguments debhelper's cmake buildsystem passes (prefix, sysconfdir,
+# localstatedir, multiarch libdir) plus the ones debian/rules adds. debian/rules must
+# keep passing exactly these.
+run_case(
+ debian-package
+ DEFINES
+  -DCMAKE_INSTALL_PREFIX=/usr
+  -DCMAKE_INSTALL_SYSCONFDIR=/etc
+  -DCMAKE_INSTALL_LOCALSTATEDIR=/var
+  -DCMAKE_INSTALL_LIBDIR=lib/x86_64-linux-gnu
+  -DCMAKE_INSTALL_LIBEXECDIR=libexec
+  -DHOWDY_MODELS_DIR=/var/lib/howdy/models
+  -DHOWDY_USER_MODELS_DIR=/var/lib/howdy/user-models
+  -DHOWDY_PRIVATE_LIBDIR=/usr/lib/x86_64-linux-gnu/howdy
+ EXPECT_PAM_DIR /usr/lib/x86_64-linux-gnu/security
+ EXPECT_CONFIG_DIR /etc/howdy
+ EXPECT_CONFIG_PATH /etc/howdy/config.ini
+ EXPECT_MODELS_DIR /var/lib/howdy/models
+ EXPECT_USER_MODELS_DIR /var/lib/howdy/user-models
+ EXPECT_LOG_PATH /var/log/howdy
+ EXPECT_HELPER_DIR /usr/libexec/howdy
+ EXPECT_COMPARE_PROCESS_PATH /usr/libexec/howdy/howdy-compare
+ EXPECT_AUTH_HELPER_PATH /usr/libexec/howdy/howdy-auth-helper
+ EXPECT_PRIVATE_LIBDIR /usr/lib/x86_64-linux-gnu/howdy
+)
+
+# The private library directory is a RUNPATH. Anything that could add a second
+# search directory, depend on the caller, or point into the build tree is rejected.
+# The relative value is passed without a type on purpose: that is how a packager
+# supplies it, and a PATH cache entry would silently make it absolute.
+foreach(rejected IN ITEMS
+ "lib/howdy"
+ "$ORIGIN/../lib"
+ "/usr/lib/howdy:/tmp"
+ "/usr/lib/../tmp"
+ "/usr/lib/howdy/.."
+ "/usr/lib/$LIB"
+ "/usr/lib/how dy"
+)
+  string(MAKE_C_IDENTIFIER "${rejected}" rejected_id)
+  run_case(
+   "reject-private-libdir-${rejected_id}"
+   EXPECT_CONFIGURE_FAILURE
+   EXPECT_ERROR "HOWDY_PRIVATE_LIBDIR"
+   DEFINES -DCMAKE_INSTALL_PREFIX=/usr "-DHOWDY_PRIVATE_LIBDIR=${rejected}"
+  )
+endforeach()
+
 # Privileged end-to-end builds stay under the isolated prefix regardless of the
 # library layout.
 run_case(
