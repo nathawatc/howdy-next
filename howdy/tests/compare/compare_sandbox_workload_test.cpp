@@ -156,9 +156,7 @@ namespace {
 		if (!howdy::native::ConfigureFaceModelEnvironment()) {
 			return kExitFailure;
 		}
-		if (const auto cores = howdy::native::AvailablePhysicalCoreCount(); cores.has_value()) {
-			cv::setNumThreads(*cores);
-		}
+		cv::setNumThreads(howdy::native::AvailableThreadCount());
 
 		Phase("sandbox");
 		const auto sandbox = howdy::native::ApplyCompareSandbox(kSandboxTimeoutSeconds);
@@ -242,9 +240,12 @@ namespace {
 		std::array<char *, 5> arguments = {
 		    program.data(), flag.data(), mode_argument.data(), models_argument.data(), nullptr,
 		};
-		// An empty environment keeps inherited LD_PRELOAD or sanitizer variables from
-		// running extra syscalls before the filter is installed.
-		std::array<char *, 1> environment = {nullptr};
+		// Only the BLAS/OpenMP thread pins that compare passes (pam compare_process.cpp), so the
+		// child sees the same library start-up as production. Nothing else is inherited: no
+		// LD_PRELOAD or sanitizer variables running extra syscalls before the filter.
+		std::string           openblas_threads("OPENBLAS_NUM_THREADS=1");
+		std::string           omp_threads("OMP_NUM_THREADS=1");
+		std::array<char *, 3> environment = {openblas_threads.data(), omp_threads.data(), nullptr};
 		pid_t                 pid         = -1;
 		if (posix_spawn(&pid, "/proc/self/exe", nullptr, nullptr, arguments.data(),
 		                environment.data()) != 0) {
