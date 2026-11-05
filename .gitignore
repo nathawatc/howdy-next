@@ -1,5 +1,6 @@
 # Build trees
 /build/
+/obj-*/
 
 # Maintainer-local CMake/IDE state
 /CMakeUserPresets.json
@@ -12,3 +13,7 @@
 *.tmp
 *.bak
 *.swp
+
+# Bundled build components unpacked by `debian/rules get-orig-components`
+/opencv/
+/yyjson/

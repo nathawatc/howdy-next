@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+	remove | purge)
+		pam-auth-update --package
+		;;
+esac
+
+if [ "$1" = purge ]; then
+	# Models, enrolled face data, and snapshots. Purge removes the biometric data.
+	rm -rf /var/lib/howdy /var/log/howdy
+	rmdir --ignore-fail-on-non-empty /etc/howdy 2> /dev/null || true
+fi
+
+#DEBHELPER#

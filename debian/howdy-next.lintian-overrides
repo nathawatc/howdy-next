@@ -1,0 +1,17 @@
+# The OpenCV libraries are private to this package and are not in the default search path.
+# Only howdy and howdy-compare get this RUNPATH; the setuid helper and pam_howdy.so must not.
+howdy-next: custom-library-search-path RUNPATH /usr/lib/*/howdy [usr/bin/howdy]
+howdy-next: custom-library-search-path RUNPATH /usr/lib/*/howdy [usr/libexec/howdy/howdy-compare]
+
+# howdy-auth-helper prepares root-controlled copies of the config and models for the
+# unprivileged PAM process. The setuid bit is the design (see pam_howdy(8)).
+howdy-next: elevated-privileges 4755 root/root [usr/libexec/howdy/howdy-auth-helper]
+
+# /etc/howdy holds the face-authentication config and, below it, protected data. The runtime
+# checks reject group- or world-writable paths; the read bits are closed on purpose.
+howdy-next: non-standard-dir-perm 0750 != 0755 [etc/howdy/]
+howdy-next: non-standard-file-perm 0640 != 0644 [etc/howdy/config.ini]
+howdy-next: non-standard-dir-perm 0750 != 0755 [var/lib/howdy/user-models/]
+
+# Not uploaded to the Debian archive, so there is no ITP bug to close.
+howdy-next: initial-upload-closes-no-bugs [usr/share/doc/howdy-next/changelog.Debian.gz:1]

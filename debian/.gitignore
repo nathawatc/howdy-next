@@ -1,0 +1,11 @@
+# dpkg-buildpackage and debhelper output
+/.debhelper/
+/debhelper-build-stamp
+/files
+/*.debhelper.log
+/*.substvars
+/howdy-next/
+/howdy-next-dbgsym/
+/build-*/
+/stage/
+/pkgconfig-shim/

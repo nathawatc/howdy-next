@@ -1,0 +1,49 @@
+Source: howdy-next
+Section: admin
+Priority: optional
+Maintainer: Scott <158021536+nathawatc@users.noreply.github.com>
+Rules-Requires-Root: no
+Standards-Version: 4.7.2
+Homepage: https://github.com/nathawatc/howdy-next
+Vcs-Browser: https://github.com/nathawatc/howdy-next
+Vcs-Git: https://github.com/nathawatc/howdy-next.git
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.31),
+ gettext,
+ libacl1-dev,
+ libcurl4-openssl-dev (>= 7.85.0),
+ libevdev-dev,
+ libgtk-3-dev,
+ libinih-dev (>= 59),
+ libjpeg-dev,
+ liblapacke-dev,
+ libopenblas-dev,
+ libpam0g-dev,
+ libpng-dev,
+ libssl-dev,
+ pkgconf,
+ zlib1g-dev,
+ libpam-modules <!nocheck>,
+ locales-all <!nocheck>,
+
+Package: howdy-next
+Architecture: any
+Depends:
+ libpam-runtime,
+ ${misc:Depends},
+ ${shlibs:Depends},
+Conflicts: howdy
+Description: face authentication for PAM
+ Howdy Next authenticates a user by face recognition through PAM. It
+ provides the pam_howdy.so module, the howdy command, and a setuid helper
+ that prepares root-controlled copies of the configuration and enrolled
+ models for the unprivileged authentication process.
+ .
+ OpenCV 5 is bundled in a private directory, because Debian does not
+ package it. The face-recognition models are downloaded and verified by
+ "howdy download-models".
+ .
+ Face authentication is weaker than a password. The PAM profile is installed
+ disabled; enable it with "pam-auth-update --enable howdy" after enrolling a
+ face with "howdy add".

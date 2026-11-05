@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+# Take the module out of the PAM stack before pam_howdy.so is deleted, so there is no
+# window in which common-auth names a missing module.
+if [ "$1" = remove ]; then
+	pam-auth-update --package --remove howdy
+fi
+
+#DEBHELPER#

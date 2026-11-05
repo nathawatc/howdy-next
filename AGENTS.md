@@ -10,6 +10,7 @@ local files add detail but do not override these invariants.
 - [`ci/fedora/AGENTS.md`](ci/fedora/AGENTS.md): Fedora CI image and workflow rules
 - [`ci/nix/AGENTS.md`](ci/nix/AGENTS.md): Nix CI image, Flake, and module checks
 - [`ci/ubuntu/AGENTS.md`](ci/ubuntu/AGENTS.md): Ubuntu CI image and workflow rules
+- [`debian/AGENTS.md`](debian/AGENTS.md): Debian source package
 - [`howdy/AGENTS.md`](howdy/AGENTS.md): native Howdy package
 - [`pam/AGENTS.md`](pam/AGENTS.md): PAM module
 

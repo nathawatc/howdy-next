@@ -1,0 +1,4 @@
+# OpenCV's tarball carries the "Lenna" test image in docs, samples, and test resources. None
+# of it is built or installed, and the binary package is clean. A source upload to the
+# Debian archive would need the opencv component repacked without these files (+ds).
+howdy-next source: license-problem-non-free-img-lenna [opencv/*]

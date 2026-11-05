@@ -1,0 +1,169 @@
+#!/usr/bin/make -f
+# Debian 13 ships neither OpenCV 5 nor yyjson 0.12, and its INIReader.pc reports 58 for
+# the r59 library. OpenCV is built from the "opencv" source component into a private
+# directory and shipped with the package; yyjson is linked statically; inih gets a
+# generated .pc. See debian/AGENTS.md.
+
+# Full RELRO for the bundled libraries too, as the project does for its own binaries.
+export DEB_BUILD_MAINT_OPTIONS = hardening=+bindnow
+
+include /usr/share/dpkg/architecture.mk
+include /usr/share/dpkg/pkg-info.mk
+
+OPENCV_VERSION := 5.0.0
+YYJSON_VERSION := 0.12.0
+INIH_MINIMUM   := 59
+
+PRIVATE_LIBDIR := /usr/lib/$(DEB_HOST_MULTIARCH)/howdy
+STAGE          := $(CURDIR)/debian/stage
+SHIM           := $(CURDIR)/debian/pkgconfig-shim
+PACKAGE_DIR    := $(CURDIR)/debian/howdy-next
+
+# Maintainer and CI builds set HOWDY_WERROR=ON; Debian builds leave warnings as warnings.
+HOWDY_WERROR ?= OFF
+
+export PKG_CONFIG_PATH := $(STAGE)/opencv/lib/pkgconfig:$(STAGE)/yyjson/lib/pkgconfig:$(SHIM)
+
+# Mirrors nix/opencv5.nix and ci/common/build-deps.sh: the same OpenCV everywhere. The
+# libraries search their own directory ($ORIGIN) for each other, so they resolve in the
+# staging prefix during the build tests and in the private directory once installed, with
+# no environment variable (the sandbox tests run children with a fixed environment).
+# RUNPATH is not transitive, so the executables' own RUNPATH cannot do this for them.
+OPENCV_FLAGS = \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_PREFIX=$(STAGE)/opencv \
+	-DCMAKE_INSTALL_LIBDIR=lib \
+	-DCMAKE_SKIP_RPATH=OFF \
+	-DCMAKE_INSTALL_RPATH='$$ORIGIN' \
+	-DCMAKE_SKIP_BUILD_RPATH=ON \
+	-DBUILD_LIST=core,imgproc,imgcodecs,dnn,videoio,highgui,objdetect \
+	-DBUILD_SHARED_LIBS=ON \
+	-DBUILD_TESTS=OFF \
+	-DBUILD_PERF_TESTS=OFF \
+	-DBUILD_EXAMPLES=OFF \
+	-DBUILD_DOCS=OFF \
+	-DBUILD_PACKAGE=OFF \
+	-DBUILD_opencv_apps=OFF \
+	-DBUILD_opencv_python3=OFF \
+	-DOPENCV_GENERATE_PKGCONFIG=ON \
+	-DOPENCV_ENABLE_PKG_CONFIG=ON \
+	-DWITH_GTK=ON \
+	-DWITH_GTK_2_X=OFF \
+	-DWITH_QT=OFF \
+	-DWITH_FFMPEG=OFF \
+	-DWITH_GSTREAMER=OFF \
+	-DWITH_V4L=ON \
+	-DWITH_OPENCL=OFF \
+	-DWITH_OPENGL=OFF \
+	-DWITH_IPP=OFF \
+	-DWITH_LAPACK=ON \
+	-DWITH_OPENMP=ON \
+	-DWITH_PROTOBUF=ON \
+	-DBUILD_PROTOBUF=ON \
+	-DWITH_JPEG=ON \
+	-DWITH_PNG=ON \
+	-DWITH_TIFF=OFF \
+	-DWITH_WEBP=OFF \
+	-DWITH_OPENJPEG=OFF \
+	-DWITH_OPENEXR=OFF \
+	-DWITH_AVIF=OFF \
+	-DWITH_JPEGXL=OFF \
+	-DWITH_EIGEN=OFF \
+	-DWITH_TBB=OFF \
+	-DWITH_ITT=OFF
+
+YYJSON_FLAGS = \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_PREFIX=$(STAGE)/yyjson \
+	-DCMAKE_INSTALL_LIBDIR=lib \
+	-DBUILD_SHARED_LIBS=OFF \
+	-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+	-DYYJSON_BUILD_TESTS=OFF
+
+# These must match the debian-package case in tests/cmake/install_paths_matrix_test.cmake.
+# debhelper passes -DCMAKE_SKIP_RPATH=ON, which would also drop the install RPATH that
+# HOWDY_PRIVATE_LIBDIR sets, and the build RPATH the tests need to find the staged OpenCV.
+HOWDY_FLAGS = \
+	-DCMAKE_SKIP_RPATH=OFF \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_LIBEXECDIR=libexec \
+	-DHOWDY_MODELS_DIR=/var/lib/howdy/models \
+	-DHOWDY_USER_MODELS_DIR=/var/lib/howdy/user-models \
+	-DHOWDY_PRIVATE_LIBDIR=$(PRIVATE_LIBDIR) \
+	-DHOWDY_LICENSES_INSTALL_DIR=share/doc/howdy-next \
+	-DHOWDY_WARNINGS_AS_ERRORS=$(HOWDY_WERROR) \
+	-DHOWDY_USE_CCACHE=OFF
+
+%:
+	dh $@
+
+# Fetches and unpacks the pinned source components. Run once before building from a git
+# checkout; a source package built from the orig tarballs already contains them.
+.PHONY: get-orig-components
+get-orig-components:
+	cd .. && curl --fail --silent --show-error --location \
+		--output $(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM).orig-opencv.tar.gz \
+		https://github.com/opencv/opencv/archive/refs/tags/$(OPENCV_VERSION).tar.gz
+	cd .. && curl --fail --silent --show-error --location \
+		--output $(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM).orig-yyjson.tar.gz \
+		https://github.com/ibireme/yyjson/archive/refs/tags/$(YYJSON_VERSION).tar.gz
+	cd .. && sha256sum --check --strict $(CURDIR)/debian/upstream/SHA256SUMS
+	rm -rf opencv yyjson
+	mkdir opencv yyjson
+	tar -xzf ../$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM).orig-opencv.tar.gz --strip-components=1 -C opencv
+	tar -xzf ../$(DEB_SOURCE)_$(DEB_VERSION_UPSTREAM).orig-yyjson.tar.gz --strip-components=1 -C yyjson
+
+# A generated .pc is not a fix for the library: Debian's libinih-dev is r59 but its
+# INIReader.pc says 58. The shim is used only when the installed package really is r59
+# or newer, so an older inih still fails the build instead of failing at run time.
+override_dh_auto_configure:
+	test -f opencv/CMakeLists.txt || { echo "opencv component missing: run debian/rules get-orig-components" >&2; exit 1; }
+	test -f yyjson/CMakeLists.txt || { echo "yyjson component missing: run debian/rules get-orig-components" >&2; exit 1; }
+	mkdir -p $(SHIM)
+	if pkgconf --atleast-version=$(INIH_MINIMUM) INIReader; then \
+		:; \
+	else \
+		inih_version=$$(dpkg-query --show --showformat='$${Version}' libinih-dev) && \
+		dpkg --compare-versions "$$inih_version" ge $(INIH_MINIMUM) || \
+			{ echo "libinih-dev $$inih_version is older than r$(INIH_MINIMUM)" >&2; exit 1; }; \
+		sed 's/^Version: .*/Version: $(INIH_MINIMUM)/' \
+			/usr/lib/$(DEB_HOST_MULTIARCH)/pkgconfig/INIReader.pc > $(SHIM)/INIReader.pc; \
+	fi
+	pkgconf --atleast-version=$(INIH_MINIMUM) INIReader
+	dh_auto_configure --sourcedirectory=yyjson --builddirectory=debian/build-yyjson -- $(YYJSON_FLAGS)
+	dh_auto_build --sourcedirectory=yyjson --builddirectory=debian/build-yyjson
+	cmake --install debian/build-yyjson
+	dh_auto_configure --sourcedirectory=opencv --builddirectory=debian/build-opencv -- $(OPENCV_FLAGS)
+	dh_auto_build --sourcedirectory=opencv --builddirectory=debian/build-opencv
+	cmake --install debian/build-opencv
+	# CMake bakes the install prefix into the generated .pc files twice.
+	sed -i "s|{exec_prefix}/$(STAGE)/opencv|{exec_prefix}|;s|{prefix}/$(STAGE)/opencv|{prefix}|" \
+		$(STAGE)/opencv/lib/pkgconfig/opencv5.pc
+	sed -i "s|{exec_prefix}/$(STAGE)/yyjson|{exec_prefix}|;s|{prefix}/$(STAGE)/yyjson|{prefix}|" \
+		$(STAGE)/yyjson/lib/pkgconfig/yyjson.pc
+	pkgconf --atleast-version=5.0.0 opencv5
+	pkgconf --atleast-version=0.12.0 yyjson
+	dh_auto_configure -- $(HOWDY_FLAGS)
+
+override_dh_auto_install:
+	dh_auto_install
+	install -d $(PACKAGE_DIR)$(PRIVATE_LIBDIR)
+	cp -a $(STAGE)/opencv/lib/libopencv_*.so.* $(PACKAGE_DIR)$(PRIVATE_LIBDIR)/
+
+# dh_fixperms would clear the setuid bit and widen /etc/howdy; CMake sets the modes.
+override_dh_fixperms:
+	dh_fixperms \
+		-Xusr/libexec/howdy/howdy-auth-helper \
+		-Xetc/howdy \
+		-Xvar/lib/howdy
+
+# The bundled libraries are private: no shlibs file, no ldconfig trigger.
+override_dh_makeshlibs:
+	dh_makeshlibs -Xusr/lib/$(DEB_HOST_MULTIARCH)/howdy
+
+override_dh_shlibdeps:
+	dh_shlibdeps -l$(PACKAGE_DIR)$(PRIVATE_LIBDIR)
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf debian/build-opencv debian/build-yyjson $(STAGE) $(SHIM)
