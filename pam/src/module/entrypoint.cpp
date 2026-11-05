@@ -14,7 +14,7 @@ namespace howdy::pam {
 	auto RunAuthenticationEntrypoint(pam_handle_t *pamh, PamModuleArguments arguments,
 	                                 bool                          request_auth_token,
 	                                 const EntrypointDependencies &dependencies) noexcept -> int {
-		ScopedMessageLocale const message_locale;
+		ScopedMessageLocale const message_locale(pamh, dependencies.environment);
 		try {
 			if (dependencies.authenticate == nullptr) {
 				return PAM_SYSTEM_ERR;

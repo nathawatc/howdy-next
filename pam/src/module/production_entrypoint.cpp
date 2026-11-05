@@ -10,6 +10,7 @@
 #include "prompt/prompt_submitter.hpp"
 #include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
+#include "runtime/environment.hpp"
 #include "runtime/runtime_session.hpp"
 #include "support/error_message.hpp"
 
@@ -114,6 +115,7 @@ namespace howdy::pam {
 		return {
 		    .context      = nullptr,
 		    .authenticate = ProductionAuthenticate,
+		    .environment  = runtime::ProductionEnvironmentLookupDependencies(),
 		};
 	}
 

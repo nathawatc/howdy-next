@@ -1,3 +1,5 @@
+#include "pam_test_support.hpp"
+#include "runtime/environment.hpp"
 #include "runtime/message_locale.hpp"
 #include "test_support.hpp"
 
@@ -6,6 +8,7 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #include <langinfo.h>
@@ -89,6 +92,150 @@ namespace {
 		return ok;
 	}
 
+	// A PAM environment with the three locale variables; nullptr means unset.
+	struct FakePamEnvironment {
+		const char *lc_all      = nullptr;
+		const char *lc_messages = nullptr;
+		const char *lang        = nullptr;
+		int         lookups     = 0;
+	};
+
+	auto FakePamLookup(void *context, pam_handle_t *pamh, const char *name) -> const char * {
+		auto *environment = static_cast<FakePamEnvironment *>(context);
+		if (pamh != howdy::test::OpaquePamHandleForTest()) {
+			return nullptr;
+		}
+		++environment->lookups;
+		const std::string_view variable(name);
+		if (variable == "LC_ALL") {
+			return environment->lc_all;
+		}
+		if (variable == "LC_MESSAGES") {
+			return environment->lc_messages;
+		}
+		return variable == "LANG" ? environment->lang : nullptr;
+	}
+
+	// The names of the LC_MESSAGES and LC_CTYPE categories while a guard built from
+	// `pam_environment` and the given process-environment LC_ALL is active. The thread
+	// starts in the "C" locale so any change is visible.
+	auto ActiveLocaleNames(FakePamEnvironment &pam_environment, const char *process_lc_all)
+	    -> std::string {
+		locale_t baseline_locale = newlocale(LC_ALL_MASK, "C", nullptr);
+		if (baseline_locale == nullptr) {
+			return "baseline-unavailable";
+		}
+		const locale_t previous_locale = uselocale(baseline_locale);
+
+		ScopedEnvironment       lc_all("LC_ALL");
+		const ScopedEnvironment lc_messages("LC_MESSAGES");
+		const ScopedEnvironment lc_ctype("LC_CTYPE");
+		const ScopedEnvironment lang("LANG");
+		if (process_lc_all != nullptr) {
+			lc_all.Set(process_lc_all);
+		}
+
+		const howdy::pam::runtime::EnvironmentLookupDependencies dependencies{
+		    .context             = &pam_environment,
+		    .pam_environment     = FakePamLookup,
+		    .process_environment = nullptr,
+		};
+		std::string names;
+		{
+			ScopedMessageLocale message_locale(howdy::test::OpaquePamHandleForTest(), dependencies);
+			const locale_t      active_locale = uselocale(nullptr);
+			names = LocaleCategoryName(active_locale, LC_MESSAGES) + "|" +
+			        LocaleCategoryName(active_locale, LC_CTYPE);
+		}
+		const bool restored = uselocale(nullptr) == baseline_locale;
+		(void)uselocale(previous_locale);
+		freelocale(baseline_locale);
+		return restored ? names : names + "|not-restored";
+	}
+
+	auto ExpectPamEnvironmentSelection() -> bool {
+		const std::array<const char *, 2> candidates = {"C.UTF-8", "C.utf8"};
+		const char *const utf8 = FirstAvailableLocale(candidates, LC_MESSAGES_MASK | LC_CTYPE_MASK);
+		if (utf8 == nullptr) {
+			return howdy::test::SkipUnavailable("locale-c-utf8", "C.UTF-8 locale is not available");
+		}
+		locale_t          utf8_locale = newlocale(LC_MESSAGES_MASK | LC_CTYPE_MASK, utf8, nullptr);
+		const std::string utf8_name   = LocaleCategoryName(utf8_locale, LC_MESSAGES);
+		freelocale(utf8_locale);
+		const std::string utf8_names = utf8_name + "|" + utf8_name;
+		const std::string c_names    = "C|C";
+
+		bool ok = true;
+		{
+			FakePamEnvironment pam{.lang = utf8};
+			ok &= Expect(ActiveLocaleNames(pam, "C") == utf8_names,
+			             "PAM LANG beats a process LC_ALL");
+		}
+		{
+			FakePamEnvironment pam{.lc_all = "C", .lang = utf8};
+			ok &= Expect(ActiveLocaleNames(pam, utf8) == c_names, "PAM LC_ALL beats PAM LANG");
+		}
+		{
+			FakePamEnvironment pam{.lc_all = utf8, .lang = "C"};
+			ok &= Expect(ActiveLocaleNames(pam, nullptr) == utf8_names,
+			             "PAM LC_ALL selects the locale");
+		}
+		{
+			FakePamEnvironment pam{.lc_messages = utf8, .lang = "C"};
+			ok &= Expect(ActiveLocaleNames(pam, nullptr) == utf8_names,
+			             "PAM LC_MESSAGES beats PAM LANG");
+		}
+		{
+			FakePamEnvironment pam{.lc_all = "", .lc_messages = "", .lang = utf8};
+			ok &= Expect(ActiveLocaleNames(pam, nullptr) == utf8_names,
+			             "empty PAM values are skipped");
+		}
+		{
+			FakePamEnvironment pam{};
+			ok &= Expect(ActiveLocaleNames(pam, utf8) == utf8_names,
+			             "empty PAM environment falls back to the process environment");
+			ok &= Expect(pam.lookups == 3, "all three PAM locale variables are consulted");
+		}
+		{
+			FakePamEnvironment pam{.lang = "xx_XX.UTF-8"};
+			ok &= Expect(ActiveLocaleNames(pam, utf8) == utf8_names,
+			             "uninstalled PAM locale falls back to the process environment");
+		}
+
+		const std::string                long_name(200, 'a');
+		const std::array<std::string, 7> hostile = {
+		    "../x",       "/tmp/x",  ".hidden", std::string("C.UTF-8\n"),
+		    "th_TH/../x", long_name, "C UTF-8",
+		};
+		for (const std::string &name : hostile) {
+			FakePamEnvironment pam{.lang = name.c_str()};
+			ok &= Expect(ActiveLocaleNames(pam, utf8) == utf8_names,
+			             "hostile PAM locale name is rejected, process environment is used");
+		}
+		{
+			// An invalid higher-precedence name is not skipped in favor of a valid LANG.
+			FakePamEnvironment pam{.lc_all = "../x", .lang = utf8};
+			ok &= Expect(ActiveLocaleNames(pam, nullptr) == c_names,
+			             "invalid PAM LC_ALL does not fall through to LANG");
+		}
+		return ok;
+	}
+
+	auto ExpectThaiFromPamEnvironment() -> bool {
+		const std::array<const char *, 2> candidates = {"th_TH.UTF-8", "th_TH.utf8"};
+		const char *const thai = FirstAvailableLocale(candidates, LC_MESSAGES_MASK | LC_CTYPE_MASK);
+		if (thai == nullptr) {
+			return howdy::test::SkipUnavailable("locale-th", "th_TH.UTF-8 locale is not available");
+		}
+		locale_t          thai_locale = newlocale(LC_MESSAGES_MASK | LC_CTYPE_MASK, thai, nullptr);
+		const std::string thai_name   = LocaleCategoryName(thai_locale, LC_MESSAGES);
+		freelocale(thai_locale);
+
+		FakePamEnvironment pam{.lang = thai};
+		return Expect(ActiveLocaleNames(pam, "C") == thai_name + "|" + thai_name,
+		              "PAM LANG selects Thai while the process environment is C");
+	}
+
 }  // namespace
 
 static_assert(!std::is_copy_constructible_v<ScopedMessageLocale>);
@@ -109,6 +256,8 @@ auto main() -> int {
 	ok &= Expect(CurrentTextDomain() == text_domain,
 	             "normal scope leaves host gettext domain unchanged");
 	ok &= ExpectEnvironmentSelectedCategories();
+	ok &= ExpectPamEnvironmentSelection();
+	ok &= ExpectThaiFromPamEnvironment();
 
 	bool threw = false;
 	try {

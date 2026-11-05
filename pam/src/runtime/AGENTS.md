@@ -47,3 +47,13 @@ helper), and so does `systemd-run --user`, so no logind signal is exact. Every h
 a bypass (`su` to another user, lingering processes of an ended SSH session, sshd/xrdp stacks before
 a session exists, tmux started locally) or disabled local face unlock while any SSH session was
 open. Do not reopen this without a process-ancestry design that addresses all of those cases.
+
+## Message Locale
+
+`ScopedMessageLocale` takes the locale for LC_MESSAGES and LC_CTYPE from the PAM environment first
+(`LC_ALL`, then `LC_MESSAGES`, then `LANG`, through `EnvironmentLookupDependencies`), because Debian
+and Ubuntu set `LANG` with `pam_env`, not in the process. The PAM environment can be set by the user
+being authenticated, so names are limited to `[A-Za-z0-9_.@-]`, 64 characters, no leading `.`. An
+invalid or uninstalled name falls back to the process environment and never fails authentication.
+The first non-empty variable decides; an invalid `LC_ALL` is not skipped in favor of `LANG`. The
+lookup runs on the caller thread. `LANGUAGE` is still read from the process by `dgettext`.

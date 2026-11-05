@@ -120,7 +120,9 @@ them is fixed by the CI change.
 4. Debian's `dh_fixperms` strips setuid from `howdy-auth-helper` and widens the `/etc/howdy` and
    `config.ini` modes. Packaging needs overrides.
 5. `ScopedMessageLocale` reads the process environment, but Debian and Ubuntu put `LANG` in the
-   PAM environment through `pam_env`, so Thai prompts may not appear there.
+   PAM environment through `pam_env`, so Thai prompts may not appear there. **Resolved:**
+   `ScopedMessageLocale` now reads `LC_ALL`, `LC_MESSAGES`, then `LANG` from the PAM environment
+   and falls back to the process environment. `pam-message-locale` and `pam-entrypoint` pin it.
 6. Nothing handles SELinux on Fedora: gdm reaching the camera through `howdy-compare`, and the
    setuid helper creating `/run/howdy`.
 7. `howdy download-models` writes to `/usr/share/howdy/models` at runtime. Debian policy and

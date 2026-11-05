@@ -7,7 +7,9 @@
 #include <clocale>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
+#include <langinfo.h>
 #include <libintl.h>
 #include <locale.h>
 #include <stdlib.h>
@@ -78,6 +80,61 @@ namespace {
 		              "entrypoint preserves host gettext domain");
 	}
 
+	// Records what the entrypoint hands to the PAM environment lookup and which
+	// message locale is active while the authentication callback runs.
+	struct PamLocaleProbe {
+		pam_handle_t *lookup_pamh = nullptr;
+		int           lookups     = 0;
+		std::string   active_messages_locale;
+	};
+
+	auto ProbeLookup(void *context, pam_handle_t *pamh, const char *name) -> const char * {
+		auto &probe       = *static_cast<PamLocaleProbe *>(context);
+		probe.lookup_pamh = pamh;
+		++probe.lookups;
+		return std::string_view(name) == "LANG" ? "C.UTF-8" : nullptr;
+	}
+
+	auto ProbeAuthenticate(void *context, pam_handle_t *pamh, PamModuleArguments arguments,
+	                       bool request_auth_token) -> int {
+		(void)pamh;
+		(void)arguments;
+		(void)request_auth_token;
+		auto &probe = *static_cast<PamLocaleProbe *>(context);
+		probe.active_messages_locale =
+		    nl_langinfo_l(_NL_LOCALE_NAME(LC_MESSAGES), uselocale(nullptr));
+		return PAM_SUCCESS;
+	}
+
+	auto ExpectPamEnvironmentReachesLocale() -> bool {
+		locale_t utf8_locale = newlocale(LC_MESSAGES_MASK, "C.UTF-8", nullptr);
+		if (utf8_locale == nullptr) {
+			return howdy::test::SkipUnavailable("locale-c-utf8", "C.UTF-8 locale is not available");
+		}
+		const std::string utf8_name = nl_langinfo_l(_NL_LOCALE_NAME(LC_MESSAGES), utf8_locale);
+		freelocale(utf8_locale);
+
+		const ScopedEnvironment lc_all("LC_ALL");
+		const ScopedEnvironment lc_messages("LC_MESSAGES");
+		const ScopedEnvironment lang("LANG");
+
+		PamLocaleProbe probe;
+		pam_handle_t  *pamh   = howdy::test::OpaquePamHandleForTest();
+		const int      result = RunAuthenticationEntrypoint(
+		    pamh, {}, true,
+		    {
+		        .context      = &probe,
+		        .authenticate = ProbeAuthenticate,
+		        .environment  = {.context = &probe, .pam_environment = ProbeLookup},
+		    });
+		return Expect(result == PAM_SUCCESS, "probe authentication succeeds") &&
+		       Expect(probe.lookups == 3, "entrypoint consults the PAM environment") &&
+		       Expect(probe.lookup_pamh == pamh,
+		              "entrypoint passes its PAM handle to the lookup") &&
+		       Expect(probe.active_messages_locale == utf8_name,
+		              "PAM LANG is the message locale during authentication");
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -143,6 +200,8 @@ auto main() -> int {
 		             "locale setup failure does not fail authentication");
 		ok &= Expect(call.calls == 1, "locale setup failure still invokes authentication once");
 	}
+
+	ok &= ExpectPamEnvironmentReachesLocale();
 
 	const std::string global_locale = [] -> std::string {
 		const char *locale = std::setlocale(LC_ALL, nullptr);
