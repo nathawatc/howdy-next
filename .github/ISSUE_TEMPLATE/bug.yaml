@@ -84,6 +84,25 @@ body:
       required: true
 
   - type: textarea
+    id: opencv-runtime
+    attributes:
+      label: OpenCV threading and BLAS
+      description: |
+        Needed for crashes, hangs, "Failed to initialize face detector/recognizer", and out-of-memory errors. Run this and paste the output, then name the package that provides your BLAS/LAPACK (for example `pacman -Qo`, `dpkg -S`, or `rpm -qf` on the `liblapack` path shown).
+
+        - OpenCV's own direct dependencies show its threading backend: `libtbb` is TBB, `libgomp` is OpenMP, neither is its pthreads backend.
+        - `libgomp` in the full `ldd` list but not in the direct list comes from BLAS (an OpenMP OpenBLAS build).
+      render: shell
+      placeholder: |
+        core=$(ldconfig -p | awk '/libopencv_core\.so\./{print $NF; exit}')
+        echo "OpenCV: $core"
+        readelf -d "$core" | grep NEEDED | grep -E 'tbb|gomp|blas|lapack'
+        ldd "$core" | grep -E 'tbb|gomp|blas|lapack'
+        env | grep -E '^(OMP|OPENBLAS)_'
+    validations:
+      required: false
+
+  - type: textarea
     id: config
     attributes:
       label: Relevant configuration
