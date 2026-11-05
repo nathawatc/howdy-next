@@ -267,7 +267,7 @@ auto main() -> int {
 	             "integer fallback allowed sentinel is valid");
 
 	const NumericRange floating_range = FloatRange{.minimum = 2.0F, .maximum = 4.0F};
-	for (const auto [fallback, message] : std::array{
+	for (const auto &[fallback, message] : std::array{
 	         std::pair{3.0F, "floating fallback inside range is valid"},
 	         std::pair{2.0F, "floating fallback minimum is valid"},
 	         std::pair{4.0F, "floating fallback maximum is valid"},
