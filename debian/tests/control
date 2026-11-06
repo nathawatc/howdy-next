@@ -1,0 +1,15 @@
+Tests: installed-layout
+Depends: @, binutils
+Restrictions: needs-root, allow-stderr
+
+Tests: pam-stack
+Depends: @, pamtester
+Restrictions: needs-root, isolation-container, allow-stderr
+
+Tests: download-models
+Depends: @, ca-certificates
+Restrictions: needs-root, needs-internet, allow-stderr
+
+Tests: purge
+Depends: @
+Restrictions: needs-root, isolation-container, breaks-testbed, allow-stderr

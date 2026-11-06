@@ -1,0 +1,33 @@
+#!/bin/sh
+# howdy download-models writes verified, root-owned models under /var/lib/howdy, not into the
+# package-owned /usr/share.
+set -eu
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+models=/var/lib/howdy/models
+
+howdy download-models
+
+count=0
+for model in "$models"/*.onnx; do
+	[ -f "$model" ] || fail "no .onnx models in $models"
+	count=$((count + 1))
+	[ -s "$model" ] || fail "$model is empty"
+	owner=$(stat -c '%U' "$model")
+	mode=$(stat -c '%a' "$model")
+	[ "$owner" = root ] || fail "$model is owned by $owner"
+	[ $((0$mode & 022)) -eq 0 ] || fail "$model is group- or world-writable ($mode)"
+done
+[ "$count" -ge 2 ] || fail "expected a detector and a recognizer, found $count models"
+
+[ "$(stat -c '%a %U:%G' "$models")" = '755 root:root' ] || fail "$models changed owner or mode"
+[ ! -e /usr/share/howdy ] || fail "models were written under /usr/share/howdy"
+
+# A second run finds verified models and succeeds.
+howdy download-models
+
+echo "PASS: download-models"

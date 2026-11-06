@@ -1,0 +1,67 @@
+#!/bin/sh
+# The PAM profile ships disabled and toggles cleanly. With the module enabled and no camera or
+# enrolled face, pam_howdy.so loads, steps aside, and the rest of the stack decides.
+set -eu
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+services="howdy-autopkgtest-deny howdy-autopkgtest-permit howdy-autopkgtest-missing"
+cleanup() {
+	pam-auth-update --package --remove howdy > /dev/null 2>&1 || true
+	for service in $services; do
+		rm -f "/etc/pam.d/$service"
+	done
+}
+trap cleanup EXIT
+
+[ -f /usr/share/pam-configs/howdy ] || fail "the pam-auth-update profile is not installed"
+grep -q pam_howdy /etc/pam.d/common-auth && fail "pam_howdy is enabled by default"
+
+pam-auth-update --enable howdy > /dev/null
+grep -q pam_howdy /etc/pam.d/common-auth || fail "--enable howdy did not add pam_howdy"
+grep -q pam_unix /etc/pam.d/common-auth || fail "enabling howdy removed pam_unix"
+pam-auth-update --remove howdy > /dev/null
+grep -q pam_howdy /etc/pam.d/common-auth && fail "--remove howdy left pam_howdy in common-auth"
+grep -q pam_unix /etc/pam.d/common-auth || fail "removing howdy removed pam_unix"
+
+# The profile's line, followed by what stands in for the password stack. pam-auth-update turns
+# the profile's "end" into a skip count; a service file spells that action "done".
+printf 'auth [success=done default=ignore] pam_howdy.so\nauth requisite pam_deny.so\naccount required pam_permit.so\n' \
+	> /etc/pam.d/howdy-autopkgtest-deny
+# Strict: only "no camera or enrolled face" (authinfo_unavail) may step aside. A module that
+# fails to load or returns anything else fails the stack, which "default=ignore" would hide.
+printf 'auth [success=done authinfo_unavail=ignore default=bad] pam_howdy.so\nauth requisite pam_permit.so\naccount required pam_permit.so\n' \
+	> /etc/pam.d/howdy-autopkgtest-permit
+printf 'auth required pam_howdy_does_not_exist.so\n' > /etc/pam.d/howdy-autopkgtest-missing
+
+# pam_howdy ignored, pam_deny decides: Howdy neither authenticated nor loaded wrongly.
+if output=$(pamtester -v howdy-autopkgtest-deny nobody authenticate 2>&1); then
+	fail "authentication succeeded though no face is enrolled: $output"
+fi
+case "$output" in
+	*"Authentication failure"*) ;;
+	*) fail "expected pam_deny to decide, got: $output" ;;
+esac
+
+# pam_howdy reports only that it is unavailable and pam_permit decides: it loaded, and it did
+# not block the stack.
+output=$(pamtester -v howdy-autopkgtest-permit nobody authenticate 2>&1) \
+	|| fail "pam_howdy blocked the stack: $output"
+case "$output" in
+	*"successfully authenticated"*) ;;
+	*) fail "unexpected pamtester output: $output" ;;
+esac
+
+# The harness really reports a module that cannot be loaded, so the two results above mean
+# pam_howdy.so loaded.
+if output=$(pamtester -v howdy-autopkgtest-missing nobody authenticate 2>&1); then
+	fail "pamtester accepted a missing module"
+fi
+case "$output" in
+	*"Authentication failure"*) fail "a missing module looks like an ordinary failure: $output" ;;
+esac
+
+echo "PASS: pam stack"

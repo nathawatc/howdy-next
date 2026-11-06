@@ -1,0 +1,23 @@
+#!/bin/sh
+# Purging removes the data, the configuration, and the PAM entry even if the profile is still
+# enabled, and leaves the rest of the stack intact. Runs last: it removes the package under test.
+set -eu
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+pam-auth-update --enable howdy > /dev/null
+grep -q pam_howdy /etc/pam.d/common-auth || fail "could not enable the profile"
+
+dpkg --purge howdy-next
+
+[ ! -e /var/lib/howdy ] || fail "/var/lib/howdy survived the purge"
+[ ! -e /var/log/howdy ] || fail "/var/log/howdy survived the purge"
+[ ! -e /etc/howdy ] || fail "/etc/howdy survived the purge"
+[ ! -e /usr/share/pam-configs/howdy ] || fail "the pam-auth-update profile survived the purge"
+grep -q howdy /etc/pam.d/common-auth && fail "common-auth still names howdy after the purge"
+grep -q pam_unix /etc/pam.d/common-auth || fail "the purge removed pam_unix from common-auth"
+
+echo "PASS: purge"

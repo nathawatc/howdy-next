@@ -50,3 +50,19 @@ out of git.
 When `dpkg-buildpackage` is re-run with `-nc`, debhelper skips steps it already logged in
 `debian/.debhelper`; delete that directory to force a rebuild. CMake also reads `LDFLAGS` only
 when a build directory is first created, so change linker flags with a clean build.
+
+## Package Tests
+
+`debian/tests` runs against the installed package: layout and modes, RUNPATH scope, a setuid
+secure-exec load of `howdy-compare`, the PAM profile, model download, and purge. Run them in a
+disposable container; the `null` runner changes the system it runs on and cannot declare
+isolation, so the two restrictions are ignored on purpose:
+
+```sh
+autopkgtest --ignore-restrictions=isolation-container,breaks-testbed \
+  ../howdy-next_*.deb . -- null
+```
+
+Keep `pam-stack` strict. With `default=ignore`, libpam also ignores a `pam_howdy.so` that fails
+to load, so the test would pass without the module. Only `authinfo_unavail` may step aside.
+In a service file the profile's `end` is spelled `done`; `end` is a pam-auth-update keyword.

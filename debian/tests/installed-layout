@@ -1,0 +1,98 @@
+#!/bin/sh
+# Pins the installed package: owners and modes, the private OpenCV directory and which
+# binaries may carry a RUNPATH, that everything resolves, and that no development files or
+# system-wide library entries leak out of the bundle.
+set -eu
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+private=$(dpkg -L howdy-next | sed -n 's|/libopencv_core\.so\.[0-9]*\.[0-9]*\.[0-9]*$||p' | head -n 1)
+[ -n "$private" ] || fail "no bundled libopencv_core in the package"
+case "$private" in
+	/usr/lib/*/howdy) ;;
+	*) fail "bundled OpenCV is in '$private', expected /usr/lib/<multiarch>/howdy" ;;
+esac
+
+expect_mode() {
+	actual=$(stat -c '%a %U:%G' "$1")
+	[ "$actual" = "$2" ] || fail "$1 is '$actual', expected '$2'"
+}
+
+expect_mode /usr/libexec/howdy/howdy-auth-helper '4755 root:root'
+expect_mode /usr/libexec/howdy/howdy-compare '755 root:root'
+expect_mode /usr/bin/howdy '755 root:root'
+expect_mode /etc/howdy '750 root:root'
+expect_mode /etc/howdy/config.ini '640 root:root'
+expect_mode /var/lib/howdy '755 root:root'
+expect_mode /var/lib/howdy/models '755 root:root'
+expect_mode /var/lib/howdy/user-models '750 root:root'
+
+pam_module=$(dpkg -L howdy-next | grep '/security/pam_howdy\.so$')
+[ -f "$pam_module" ] || fail "pam_howdy.so is not installed"
+
+runpath() {
+	readelf -d "$1" | sed -n 's/.*\(RUNPATH\|RPATH\).*\[\(.*\)\]/\2/p'
+}
+
+# Only the binaries that link OpenCV carry the absolute private path.
+for binary in /usr/bin/howdy /usr/libexec/howdy/howdy-compare; do
+	[ "$(runpath "$binary")" = "$private" ] || fail "$binary RUNPATH is '$(runpath "$binary")'"
+done
+
+# The setuid helper and the module loaded into sudo, gdm, and login never do.
+for binary in /usr/libexec/howdy/howdy-auth-helper "$pam_module"; do
+	[ -z "$(runpath "$binary")" ] || fail "$binary must have no RUNPATH, has '$(runpath "$binary")'"
+done
+
+# The bundled libraries find each other relative to themselves.
+libraries=0
+for library in "$private"/libopencv_*.so.*.*.*; do
+	libraries=$((libraries + 1))
+	# shellcheck disable=SC2016 # the RUNPATH value is the literal string $ORIGIN
+	[ "$(runpath "$library")" = '$ORIGIN' ] || fail "$library RUNPATH is '$(runpath "$library")'"
+	readelf -d "$library" | grep -q 'BIND_NOW' || fail "$library is not linked with -z now"
+done
+[ "$libraries" -ge 7 ] || fail "only $libraries bundled OpenCV libraries"
+
+for file in /usr/bin/howdy /usr/libexec/howdy/howdy-compare /usr/libexec/howdy/howdy-auth-helper \
+	"$pam_module" "$private"/libopencv_*.so.*.*.*; do
+	if ldd "$file" | grep -q 'not found'; then
+		ldd "$file" >&2
+		fail "$file has unresolved libraries"
+	fi
+done
+
+# Private bundle: no headers, pkg-config or CMake files, development symlinks, or ldconfig entry.
+if dpkg -L howdy-next | grep -E '\.(pc|h|hpp|a)$|/include/|/cmake/'; then
+	fail "development files are installed"
+fi
+if find "$private" -name '*.so' | grep .; then
+	fail "development symlinks are installed in $private"
+fi
+if ldconfig -p | grep -q libopencv; then
+	fail "the bundled OpenCV is registered with ldconfig"
+fi
+if [ -e /var/lib/dpkg/info/howdy-next.shlibs ] || [ -e /var/lib/dpkg/info/howdy-next.triggers ]; then
+	fail "the private libraries are published through shlibs or triggers"
+fi
+
+howdy --help > /dev/null
+
+# howdy-compare runs from inside sudo or su, where the kernel sets AT_SECURE and glibc limits
+# $ORIGIN. A setuid-root wrapper started by an unprivileged user reproduces that.
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+chmod 755 "$workdir"
+cp /usr/bin/env "$workdir/secure-env"
+chmod 4755 "$workdir/secure-env"
+output=$(su nobody -s /bin/sh -c "$workdir/secure-env /usr/libexec/howdy/howdy-compare --help" 2>&1 || true)
+case "$output" in
+	*"error while loading shared libraries"*) fail "howdy-compare cannot load OpenCV when run setuid: $output" ;;
+	*Usage*) ;;
+	*) fail "howdy-compare printed no usage when run setuid: $output" ;;
+esac
+
+echo "PASS: installed layout"
