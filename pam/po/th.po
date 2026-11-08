@@ -2,7 +2,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: howdy\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-05-13 00:00+0000\n"
+"POT-Creation-Date: 2026-10-18 12:12+0700\n"
 "PO-Revision-Date: 2026-05-19 20:45+0700\n"
 "Last-Translator: nathawat\n"
 "Language-Team: Thai\n"
@@ -12,22 +12,24 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/module/auth_flow.cpp
+#: src/module/auth_flow.cpp:58
 msgid "Starting face verification"
 msgstr "กำลังเริ่มการยืนยันใบหน้า"
 
-#: src/module/status_mapping.cpp
-msgid "Face verification timed out"
-msgstr "การยืนยันใบหน้าหมดเวลา"
-
-#: src/module/status_mapping.cpp
-msgid "Camera image is too dark for detection"
-msgstr "ภาพจากกล้องมืดเกินไปสำหรับการตรวจจับ"
-
-#: src/module/status_mapping.cpp
+#: src/module/confirmation_message.cpp:9
+#, c++-format
 msgid "Face matched user {}"
 msgstr "ใบหน้าตรงกับผู้ใช้ {}"
 
-#: src/module/status_mapping.cpp
+#: src/module/status_mapping.cpp:52
+msgid "Face verification timed out"
+msgstr "การยืนยันใบหน้าหมดเวลา"
+
+#: src/module/status_mapping.cpp:61
+msgid "Camera image is too dark for detection"
+msgstr "ภาพจากกล้องมืดเกินไปสำหรับการตรวจจับ"
+
+#: src/module/status_mapping.cpp:92
+#, c++-format
 msgid "Unknown error: {}"
 msgstr "ข้อผิดพลาดที่ไม่รู้จัก: {}"
