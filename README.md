@@ -49,7 +49,9 @@ linux>=5.3 glibc>=2.36, cmake>=3.31, acl, pkgconf, gettext, libevdev, libinih>=5
 
 The PAM compare requires `pidfd_open`, `eventfd`, and `ppoll`. Configure does not probe the kernel.
 
-Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+.
+Build tools: GCC/Clang, GNU Make/Ninja, CMake 3.31+, Rust 1.85+ (cargo, rustc), Corrosion, cbindgen.
+Packagers building without network access pass `-DHOWDY_CARGO_OFFLINE=ON` after fetching the
+sources pinned in `Cargo.lock` (for example `cargo fetch --locked`).
 
 Howdy uses OpenCV HighGUI for graphical preview. An OpenCV package may bring a
 GUI backend such as Qt, depending on how the distribution builds OpenCV; Qt is

@@ -41,6 +41,9 @@ jobs:
       - name: Test
         run: ctest --preset release
 
+      - name: Cargo deny
+        run: cmake --build --preset release --target howdy_cargo_deny
+
       - name: Show ccache statistics
         if: always()
         run: ccache --show-stats

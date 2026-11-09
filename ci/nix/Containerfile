@@ -6,7 +6,7 @@ RUN printf '%s\n' \
 	>> /etc/nix/nix.conf
 
 WORKDIR /prewarm
-COPY flake.nix flake.lock CMakeLists.txt ./
+COPY flake.nix flake.lock CMakeLists.txt Cargo.lock ./
 COPY nix/ ./nix/
 # Build and collect in one layer: neither temporary build inputs nor a second
 # copy of the base image's Nix store should inflate the published image.

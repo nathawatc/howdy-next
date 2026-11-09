@@ -76,6 +76,10 @@ add_custom_target(
  DEPENDS "${HOWDY_PACKAGED_CONFIG_PATH}"
 )
 
+add_library(howdy_rust_ffi STATIC src/support/rust_ffi.cpp)
+howdy_configure_native_target(howdy_rust_ffi)
+howdy_link_rust_ffi(howdy_rust_ffi)
+
 add_library(howdy_runtime_paths STATIC src/config/runtime_paths.cpp)
 howdy_configure_native_target(howdy_runtime_paths)
 

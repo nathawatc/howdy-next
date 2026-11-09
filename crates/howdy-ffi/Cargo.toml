@@ -1,0 +1,15 @@
+[package]
+name = "howdy-ffi"
+version = "0.0.0"
+description = "C ABI boundary between Howdy C++ and its Rust components"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib is linked by C++ through CMake; rlib lets `cargo test` build the crate.
+crate-type = ["staticlib", "rlib"]
+
+[lints]
+workspace = true

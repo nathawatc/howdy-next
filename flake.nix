@@ -54,7 +54,19 @@
             pkgs.ninja
             pkgs.pkg-config
             pkgs.gettext
+            pkgs.cargo
+            pkgs.rustc
+            pkgs.clippy
+            pkgs.rustfmt
+            pkgs.corrosion
+            pkgs.rust-cbindgen
+            pkgs.rustPlatform.cargoSetupHook
           ];
+
+          # Cargo sources come from Cargo.lock; the build never touches the network.
+          cargoDeps = pkgs.rustPlatform.importCargoLock {
+            lockFile = ./Cargo.lock;
+          };
 
           buildInputs = [
             pkgs.acl
@@ -74,6 +86,7 @@
             "-DHOWDY_AUTH_HELPER_PATH=/run/wrappers/bin/howdy-auth-helper"
             "-DHOWDY_INSTALL_AUTH_HELPER_SETUID=OFF"
             "-DHOWDY_LICENSES_INSTALL_DIR=share/licenses/howdy-next"
+            "-DHOWDY_CARGO_OFFLINE=ON"
           ];
 
           # CMake's install scripts must be staged: /etc and /var are host

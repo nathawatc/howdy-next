@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["crates/howdy-ffi"]
+exclude = ["fuzz"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+
+# catch_unwind at the FFI boundary requires unwinding panics.
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"
+lto = true
+codegen-units = 1

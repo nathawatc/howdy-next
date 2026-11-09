@@ -54,6 +54,13 @@ target_link_options(howdy_fd_io_test PRIVATE "LINKER:--wrap=read"
                       "LINKER:--wrap=__read_chk" "LINKER:--wrap=write")
 
 howdy_add_native_test(
+ howdy_rust_ffi_test
+ native-rust-ffi
+ tests/support/rust_ffi_test.cpp
+)
+target_link_libraries(howdy_rust_ffi_test PRIVATE howdy_rust_ffi)
+
+howdy_add_native_test(
  howdy_user_names_test
  native-user-names
  tests/support/user_names_test.cpp

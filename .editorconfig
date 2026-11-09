@@ -32,3 +32,8 @@ simplify = true
 binary_next_line = true
 switch_case_indent = true
 space_redirects = true
+
+# Rust and Cargo: rustfmt defaults (4 spaces)
+[*.{rs,toml}]
+indent_style = space
+indent_size = 4

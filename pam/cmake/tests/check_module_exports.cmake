@@ -2,7 +2,7 @@ if(NOT DEFINED NM OR NM STREQUAL "")
   message(FATAL_ERROR "CMake did not provide an nm tool")
 endif()
 if(NOT DEFINED MODULE OR NOT EXISTS "${MODULE}")
-  message(FATAL_ERROR "PAM module does not exist: ${MODULE}")
+  message(FATAL_ERROR "Module does not exist: ${MODULE}")
 endif()
 
 execute_process(
@@ -27,21 +27,25 @@ endforeach()
 list(REMOVE_DUPLICATES actual_exports)
 list(SORT actual_exports)
 
-set(expected_exports
- pam_sm_acct_mgmt
- pam_sm_authenticate
- pam_sm_chauthtok
- pam_sm_close_session
- pam_sm_open_session
- pam_sm_setcred
-)
+if(DEFINED EXPECTED_EXPORTS)
+  set(expected_exports ${EXPECTED_EXPORTS})
+else()
+  set(expected_exports
+   pam_sm_acct_mgmt
+   pam_sm_authenticate
+   pam_sm_chauthtok
+   pam_sm_close_session
+   pam_sm_open_session
+   pam_sm_setcred
+  )
+endif()
 list(SORT expected_exports)
 
 if(NOT actual_exports STREQUAL expected_exports)
   string(JOIN "\n  " actual_text ${actual_exports})
   string(JOIN "\n  " expected_text ${expected_exports})
   message(FATAL_ERROR
-  "Unexpected PAM module exports.\n"
+  "Unexpected module exports.\n"
   "Expected:\n  ${expected_text}\n"
   "Actual:\n  ${actual_text}"
  )

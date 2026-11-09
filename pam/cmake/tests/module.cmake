@@ -76,3 +76,19 @@ add_test(
   "-DMODULE=$<TARGET_FILE:pam_howdy>"
   -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests/check_module_exports.cmake"
 )
+
+add_library(pam_rust_ffi_export_probe MODULE tests/module/rust_ffi_export_probe.cpp)
+howdy_configure_pam_target(pam_rust_ffi_export_probe)
+target_link_libraries(pam_rust_ffi_export_probe PRIVATE howdy_rust_ffi)
+target_link_options(pam_rust_ffi_export_probe PRIVATE "LINKER:--exclude-libs,ALL")
+set_target_properties(pam_rust_ffi_export_probe PROPERTIES PREFIX "")
+
+add_test(
+ NAME pam-rust-ffi-exports
+ COMMAND
+  "${CMAKE_COMMAND}"
+  "-DNM=${CMAKE_NM}"
+  "-DMODULE=$<TARGET_FILE:pam_rust_ffi_export_probe>"
+  "-DEXPECTED_EXPORTS=HowdyRustFfiProbe"
+  -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/tests/check_module_exports.cmake"
+)

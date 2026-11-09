@@ -12,7 +12,8 @@ Covers `ci/archlinux/`, `.github/workflows/archlinux.yml`, and `.github/workflow
 - Build from `docker.io/library/archlinux:latest`.
 - Install dependencies with pacman; do not build OpenCV from source in CI.
 - Keep dependency floors aligned with root CMake requirements, including CMake, glibc, OpenCV,
-  yyjson, libinih, and Qt 6 requirements.
+  yyjson, libinih, and Qt 6 requirements, and keep the `rust` floor at the workspace
+  `rust-version`.
 - Keep the image minimal and clear pacman caches in the same layer.
 - Keep OCI labels in `Containerfile`, not duplicated in wrapper commands.
 - Keep the `clang` floor aligned with the LLVM version `.clang-tidy` is written for.
@@ -20,7 +21,10 @@ Covers `ci/archlinux/`, `.github/workflows/archlinux.yml`, and `.github/workflow
   pull requests restore it so they cannot evict it from the repository cache quota.
 - `clang_tidy.yml` reuses this image, checks out with `fetch-depth: 2`, and passes `BASE=HEAD^1`
   to `cmake/tidy_incremental.cmake`. Configure the `debug` preset and build only
-  `howdy_version_metadata`: tidy needs `compile_commands.json` and generated headers, not objects.
+  `howdy_generated_headers`: tidy needs `compile_commands.json` and generated headers (version
+  metadata and the Rust FFI header), not objects.
+- `archlinux.yml` runs `howdy_cargo_deny` after the build; it needs network access for the
+  advisory database, so it stays outside CTest.
 - E2E tests are excluded. GitHub Actions runners do not expose the required container privileges.
 
 ## Local CI
@@ -50,7 +54,7 @@ podman run --rm \
   ghcr.io/nathawatc/howdy-next/ci-archlinux:latest bash -c '
     set -e
     cmake --preset debug
-    cmake --build --preset debug --target howdy_version_metadata
+    cmake --build --preset debug --target howdy_generated_headers
     cmake -DBUILD_DIR=build/debug -DBASE="$(git merge-base HEAD main)" \
       -P cmake/tidy_incremental.cmake
   '

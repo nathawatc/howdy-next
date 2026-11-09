@@ -354,6 +354,7 @@ configure_file(
 )
 
 include(cmake/compile_commands.cmake)
+include(cmake/howdy_rust.cmake)
 
 function(howdy_configure_common_target target)
   howdy_defer_compile_commands_mirror(${target})

@@ -1,5 +1,6 @@
 # Build trees
 /build/
+/target/
 
 # Maintainer-local CMake/IDE state
 /CMakeUserPresets.json

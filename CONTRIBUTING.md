@@ -24,7 +24,8 @@ contribution under the GNU General Public License v3.0 or later
 
 ## Basic Workflow
 
-Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja. Installing `ccache` is
+Use CMake 3.31+ with GCC/Clang and GNU Make/Ninja, plus Rust 1.85+ with Corrosion and
+cbindgen (see [`crates/AGENTS.md`](crates/AGENTS.md)). Installing `ccache` is
 recommended for faster incremental rebuilds. Howdy uses it automatically when
 available; pass `-DHOWDY_USE_CCACHE=OFF` at configure time to disable it.
 
@@ -52,7 +53,9 @@ Cross-compiling requires a suitable target toolchain or sysroot and
 steps.
 
 Target dependencies (OpenCV, PAM, libcurl, etc.) must be provided by the target sysroot or
-toolchain; Howdy does not provide or build target dependencies.
+toolchain; Howdy does not provide or build target dependencies. Rust crates are built by Corrosion
+for the target triple it derives from the toolchain (override with `Rust_CARGO_TARGET`), so the Rust
+standard library for that target must be installed.
 
 With a toolchain file:
 

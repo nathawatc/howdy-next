@@ -29,6 +29,9 @@ targets.
 - Reuse `support/fd_io.hpp`, `support/atomic_files.hpp`, and `support/file_security.hpp` instead of
   duplicating bounded I/O, staged-file, or secure-path logic.
 - Use shared model readiness/integrity checks before inference or authentication.
+- Reach Rust only through a C++ wrapper that links with `howdy_link_rust_ffi()` (for example
+  `support/rust_ffi.hpp`); never include the generated `howdy_ffi.h` elsewhere. See
+  [`../crates/AGENTS.md`](../crates/AGENTS.md).
 - Keep OpenCV include directories marked as system includes through `howdy_opencv`.
 - Shared auth-helper output keys live in `protocol/auth_helper_protocol.hpp`; reject malformed,
   duplicate, unknown, or incomplete output.

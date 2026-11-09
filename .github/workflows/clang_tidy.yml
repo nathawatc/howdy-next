@@ -28,7 +28,7 @@ jobs:
       - name: Configure
         run: |
           cmake --preset debug
-          cmake --build --preset debug --target howdy_version_metadata
+          cmake --build --preset debug --target howdy_generated_headers
 
       # The container user does not own the checkout, so git refuses the repo
       # ("dubious ownership") and `git diff` falls back to --no-index mode.

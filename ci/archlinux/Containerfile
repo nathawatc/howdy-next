@@ -7,8 +7,11 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 		'glibc>=2.36' \
 		'cmake>=3.31' \
 		acl \
+		cargo-deny \
+		cbindgen \
 		ccache \
 		'clang>=23' \
+		corrosion \
 		curl \
 		gcc \
 		gettext \
@@ -22,6 +25,7 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 		pam \
 		pkgconf \
 		qt6-base \
+		'rust>=1:1.85' \
 		'yyjson>=0.12.0' \
 	&& sed -i 's/^#\(th_TH\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
 	&& locale-gen \
