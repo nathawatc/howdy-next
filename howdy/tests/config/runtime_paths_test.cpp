@@ -36,7 +36,7 @@ auto main() -> int {
 	fs::create_directories(temp_root, ec);
 	ok &= Expect(!ec, "create temp root");
 
-	const auto config_path     = temp_root / "custom-config.ini";
+	const auto config_path     = temp_root / "custom-config.toml";
 	const auto models_dir      = temp_root / "custom-models";
 	const auto user_models_dir = temp_root / "custom-user-models";
 	const auto log_path        = temp_root / "custom-log";
@@ -83,7 +83,7 @@ auto main() -> int {
 	ok &= Expect(howdy::native::ResolveLogPath() == default_log_path,
 	             "empty HOWDY_LOG_PATH is ignored");
 
-	setenv("HOWDY_CONFIG", "relative-config.ini", 1);
+	setenv("HOWDY_CONFIG", "relative-config.toml", 1);
 	setenv("HOWDY_MODELS_DIR", "relative-models", 1);
 	setenv("HOWDY_USER_MODELS_DIR", "relative-user-models", 1);
 	setenv("HOWDY_LOG_PATH", "relative-log", 1);
@@ -99,7 +99,7 @@ auto main() -> int {
 
 	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "pin temp root mode");
 	const auto insecure_dir    = temp_root / "insecure-config-dir";
-	const auto insecure_config = insecure_dir / "config.ini";
+	const auto insecure_config = insecure_dir / "config.toml";
 	fs::create_directories(insecure_dir, ec);
 	ok &= Expect(!ec, "create insecure config dir");
 	ok &= Expect(WriteFile(insecure_config, "[core]\ndisabled = false\n"),

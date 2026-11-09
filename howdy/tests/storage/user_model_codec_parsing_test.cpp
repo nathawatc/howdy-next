@@ -168,7 +168,6 @@ namespace howdy::test::user_model_codec {
 		expect_metric("cosine", FaceMetric::kCosine);
 		expect_metric("l2", FaceMetric::kL2);
 		expect_metric("l2norm", FaceMetric::kL2Norm);
-		expect_metric("L2NORM", FaceMetric::kL2Norm);
 
 		const auto unknown = howdy::native::user_model_codec::DecodeDocument(
 		    ModelList({
@@ -181,15 +180,14 @@ namespace howdy::test::user_model_codec {
 		ok &= Expect(unknown.Result().error_message.contains("unknown face metric"),
 		             "unknown stored metric reports explicit error");
 
-		const auto legacy = howdy::native::user_model_codec::DecodeDocument(
+		const auto uppercase = howdy::native::user_model_codec::DecodeDocument(
 		    ModelList({
 		        ModelJson("7", "1700000000", R"("Office camera")", R"("opencv_dnn_sface")",
 				          R"("L2NORM")", R"("sface.onnx")"),
 		    }),
 		    kBackend, kModel);
-		const auto serialized = howdy::native::user_model_codec::SerializeDocument(legacy);
-		ok &= Expect(serialized.has_value() && serialized->contains(R"("metric":"L2NORM")"),
-		             "existing persisted metric spelling is preserved");
+		ok &= ExpectStatus(uppercase.Result().status, UserModelStatus::kParseError,
+		                   "metric spelling is case-sensitive");
 
 		const auto missing = howdy::native::user_model_codec::DecodeDocument(
 		    R"([{"id":7,"time":1700000000,"label":"legacy","backend":"opencv_dnn_sface","model":"sface.onnx","data":[[1.0]]}])",

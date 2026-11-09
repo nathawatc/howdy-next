@@ -12,7 +12,7 @@ Covers `ci/archlinux/`, `.github/workflows/archlinux.yml`, and `.github/workflow
 - Build from `docker.io/library/archlinux:latest`.
 - Install dependencies with pacman; do not build OpenCV from source in CI.
 - Keep dependency floors aligned with root CMake requirements, including CMake, glibc, OpenCV,
-  yyjson, libinih, and Qt 6 requirements, and keep the `rust` floor at the workspace
+  yyjson, and Qt 6 requirements, and keep the `rust` floor at the workspace
   `rust-version`.
 - Keep the image minimal and clear pacman caches in the same layer.
 - Keep OCI labels in `Containerfile`, not duplicated in wrapper commands.

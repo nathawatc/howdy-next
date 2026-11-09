@@ -1,5 +1,6 @@
-#include "../../src/config/config_reader/internal.hpp"
+#include "../../src/config/config_document/internal.hpp"
 #include "../../src/config/config_validation/internal.hpp"
+#include "config/config_document_test_support.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "support/bit_flags.hpp"
@@ -51,7 +52,7 @@ namespace howdy::test {
 		ok &= Expect(fs::create_directories(install_failure_dir, ec) || !ec,
 		             "create install-failure directory");
 		ok &= Expect(!ec, "no error creating install-failure directory");
-		const auto install_failure_path = install_failure_dir / "config.ini";
+		const auto install_failure_path = install_failure_dir / "config.toml";
 		ok &= Expect(WriteConfigTestFile(install_failure_path, "[core]\ndisabled = false\n"),
 		             "write install-failure config");
 		std::string update_error;
@@ -82,8 +83,8 @@ namespace howdy::test {
 		ok &= Expect(CountFilesWithPrefix(install_failure_dir, ".howdy-config-") == 0,
 		             "failed install leaves no staged config file");
 
-		const auto symlink_target = install_failure_dir / "symlink-target.ini";
-		const auto symlink_config = install_failure_dir / "symlink-config.ini";
+		const auto symlink_target = install_failure_dir / "symlink-target.toml";
+		const auto symlink_config = install_failure_dir / "symlink-config.toml";
 		ok &= Expect(WriteConfigTestFile(symlink_target, "[core]\ndisabled = false\n"),
 		             "write symlink config target");
 		fs::create_symlink(symlink_target, symlink_config, ec);
@@ -111,7 +112,7 @@ namespace howdy::test {
 		const auto insecure_dir = context.temp_root / "insecure-dir";
 		ok &= Expect(fs::create_directories(insecure_dir, ec) || !ec, "create insecure config dir");
 		ok &= Expect(!ec, "no error creating insecure config dir");
-		const auto insecure_config_path = insecure_dir / "config.ini";
+		const auto insecure_config_path = insecure_dir / "config.toml";
 		ok &= Expect(WriteConfigTestFile(insecure_config_path, "[core]\ndisabled = false\n"),
 		             "write config in insecure dir");
 		const auto insecure_config_lock_path = LockFilePath(insecure_config_path);
@@ -136,7 +137,7 @@ namespace howdy::test {
 		ok &= Expect(fs::create_directories(nested_config_dir, ec) || !ec,
 		             "create nested config dir");
 		ok &= Expect(!ec, "no error creating nested config dir");
-		const auto nested_config_path = nested_config_dir / "config.ini";
+		const auto nested_config_path = nested_config_dir / "config.toml";
 		ok &= Expect(WriteConfigTestFile(nested_config_path, "[core]\ndisabled = false\n"),
 		             "write config in nested dir");
 		const auto nested_config_lock_path = LockFilePath(nested_config_path);
@@ -162,7 +163,7 @@ namespace howdy::test {
 		ok &= Expect(fs::create_directories(unreadable_dir, ec) || !ec,
 		             "create unreadable config dir");
 		ok &= Expect(!ec, "no error creating unreadable config dir");
-		const auto unreadable_config_path = unreadable_dir / "config.ini";
+		const auto unreadable_config_path = unreadable_dir / "config.toml";
 		ok &= Expect(WriteConfigTestFile(unreadable_config_path, "[core]\ndisabled = false\n"),
 		             "write config in unreadable dir");
 		ok &= Expect(chmod(unreadable_dir.c_str(), 0000) == 0, "make config dir unreadable");
@@ -182,7 +183,7 @@ namespace howdy::test {
 		ok &=
 		    Expect(chmod(unreadable_dir.c_str(), 0755) == 0, "restore unreadable config dir mode");
 
-		const auto protected_path = context.temp_root / "protected.ini";
+		const auto protected_path = context.temp_root / "protected.toml";
 		ok &= Expect(WriteConfigTestFile(protected_path, "[core]\ndisabled = false\n"),
 		             "write protected config");
 		ok &= Expect(chmod(protected_path.c_str(), 0600) == 0, "set protected config mode");
@@ -205,14 +206,14 @@ namespace howdy::test {
 		ok &= Expect(howdy::native::MaskedBits(protected_stat.st_mode, 0777) == 0600,
 		             "atomic write preserves config mode");
 
-		const auto hardlink_path = context.temp_root / "protected-hardlink.ini";
+		const auto hardlink_path = context.temp_root / "protected-hardlink.toml";
 		ok &= Expect(link(protected_path.c_str(), hardlink_path.c_str()) == 0,
 		             "create hard link to protected config");
 		ok &= Expect(!howdy::native::UpdateConfigValue(hardlink_path, "disabled", nullptr, "false",
 		                                               false, true, {context.temp_root}),
 		             "update_config_value rejects hard-linked config");
 
-		howdy::native::ConfigReader const validated(context.config_path.string());
+		const auto validated = howdy::native::test_support::ReadConfigDocument(context.config_path);
 		ok &= Expect(validated.Ok(), "validated config still parses");
 		ok &= Expect(!howdy::native::ValidateRuntimeConfig(validated).has_value(),
 		             "validated config passes semantic validation");

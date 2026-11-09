@@ -73,7 +73,7 @@ namespace howdy::test::config_cli {
 				    }
 				    return *created;
 			    }())
-			    , config_path_(temp_root_.Path() / "config.ini") {
+			    , config_path_(temp_root_.Path() / "config.toml") {
 				chmod(temp_root_.Path().c_str(), 0700);
 				WriteFile(config_path_, kWorkflowOriginalContent);
 				chmod(config_path_.c_str(), 0644);
@@ -342,7 +342,7 @@ namespace howdy::test::config_cli {
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
-				                 result.output == "Editing config.ini\nFailed to launch editor\n",
+				                 result.output == "Editing config.toml\nFailed to launch editor\n",
 				             "editor launch failure output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
 				                 !fs::exists(context.recorded_temp_path),
@@ -357,7 +357,7 @@ namespace howdy::test::config_cli {
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 &&
 				                 result.output ==
-				                     "Editing config.ini\n"
+				                     "Editing config.toml\n"
 				                     "Editor exited unsuccessfully; config not updated\n",
 				             "unsuccessful editor output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
@@ -372,7 +372,7 @@ namespace howdy::test::config_cli {
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 1 && result.output ==
-				                                          "Editing config.ini\nFailed to install "
+				                                          "Editing config.toml\nFailed to install "
 				                                          "edited config\n",
 				             "snapshot failure output exact");
 			}
@@ -383,10 +383,9 @@ namespace howdy::test::config_cli {
 			bool ok = true;
 			for (const auto &[error_input, expected_suffix] :
 			     std::array<std::pair<std::string, std::string>, 2>{
-			         std::pair{"[core\n", "Editing config.ini\nEdited config is invalid and was "
-					                      "not installed: "},
+			         std::pair{"[core\n", "Editing config.toml\nUpdated config is invalid: line 1"},
 			         std::pair{"[video]\ntimeout = 0\n",
-					           "Editing config.ini\nInvalid config value for timeout=\"0\": "
+					           "Editing config.toml\nInvalid config value for timeout=\"0\": "
 					           "expected integer range 1..300\nEdited config is invalid and was "
 					           "not installed: "},
 			     }) {
@@ -437,7 +436,7 @@ namespace howdy::test::config_cli {
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 0 &&
-				                 result.output == "Editing config.ini\nNo config changes made\n",
+				                 result.output == "Editing config.toml\nNo config changes made\n",
 				             "no-op output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
 				                 !fs::exists(context.recorded_temp_path),
@@ -451,20 +450,21 @@ namespace howdy::test::config_cli {
 				TestContext          context;
 				context.on_editor = [&](const fs::path &temp_path) -> void {
 					WriteFile(fixture.ConfigPath(), "[core]\ndisabled = true\n");
-					WriteFile(temp_path, "[core]\nother = 1\n");
+					WriteFile(temp_path, "[core]\nabort_if_ssh = false\n");
 				};
 				const auto result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(!context.recorded_temp_path.empty(), "stale temp path recorded");
 				ok &= Expect(result.exit_code == 1 &&
-				                 result.output == "Editing config.ini\n"
+				                 result.output == "Editing config.toml\n"
 				                                  "Config changed while editing; not installing "
 				                                  "stale edited config\n"
 				                                  "Edited config was kept: " +
 				                                      context.recorded_temp_path.string() + "\n",
 				             "stale output exact");
 				ok &= Expect(fs::exists(context.recorded_temp_path) &&
-				                 ReadFile(context.recorded_temp_path) == "[core]\nother = 1\n",
+				                 ReadFile(context.recorded_temp_path) ==
+				                     "[core]\nabort_if_ssh = false\n",
 				             "stale keeps edited temp");
 				ok &= Expect(ReadFile(fixture.ConfigPath()) == "[core]\ndisabled = true\n",
 				             "stale leaves concurrent config");
@@ -478,7 +478,7 @@ namespace howdy::test::config_cli {
 				const auto                 result =
 				    RunConfig(DependenciesFor(context, fixture.TempRoot()), fixture.ConfigPath());
 				ok &= Expect(result.exit_code == 0 &&
-				                 result.output == "Editing config.ini\nConfig updated\n",
+				                 result.output == "Editing config.toml\nConfig updated\n",
 				             "success output exact");
 				ok &= Expect(!context.recorded_temp_path.empty() &&
 				                 !fs::exists(context.recorded_temp_path),

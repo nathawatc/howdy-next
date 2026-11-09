@@ -13,3 +13,6 @@
 *.tmp
 *.bak
 *.swp
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/coverage/

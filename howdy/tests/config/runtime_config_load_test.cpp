@@ -54,7 +54,7 @@ auto main() -> int {
 	const auto              &temp_root = temp_directory_guard.Path();
 	ok &= Expect(chmod(temp_root.c_str(), 0755) == 0, "secure temp root");
 
-	const auto valid_path = temp_root / "valid.ini";
+	const auto valid_path = temp_root / "valid.toml";
 	ok &= Expect(WriteFile(valid_path, "[core]\ndisabled = false\n"), "write valid config");
 	ok &= Expect(chmod(valid_path.c_str(), 0644) == 0, "secure valid config");
 	setenv("HOWDY_CONFIG", valid_path.c_str(), 1);
@@ -83,7 +83,7 @@ auto main() -> int {
 	        .error_message.contains("owned by UID"),
 	    "mismatched owner_uid reports ownership error");
 
-	const auto      symlink_path = temp_root / "link.ini";
+	const auto      symlink_path = temp_root / "link.toml";
 	std::error_code link_ec;
 	fs::create_symlink(valid_path, symlink_path, link_ec);
 	ok &= Expect(!link_ec, "create symlinked config");
@@ -93,7 +93,7 @@ auto main() -> int {
 	                    "symlinked config is rejected");
 	ok &= Expect(symlink_result.error_code == ELOOP, "symlinked config preserves ELOOP");
 
-	const auto        large_runtime_path    = temp_root / "large-runtime.ini";
+	const auto        large_runtime_path    = temp_root / "large-runtime.toml";
 	const std::string large_runtime_content = "[core]\ndisabled = false\n[video]\ntimeout = 7\n" +
 	                                          std::string(howdy::native::kMaxConfigFileSize, '\n');
 	ok &= Expect(large_runtime_content.size() > howdy::native::kMaxConfigFileSize,
@@ -106,7 +106,7 @@ auto main() -> int {
 	ok &= ExpectFailure(large_runtime, RuntimeConfigLoadStatus::kParseError,
 	                    "runtime config rejects content above bounded config size");
 
-	const auto      dir_config_path = temp_root / "dir-config.ini";
+	const auto      dir_config_path = temp_root / "dir-config.toml";
 	std::error_code ec;
 	fs::create_directory(dir_config_path, ec);
 	ok &= Expect(!ec, "create directory config path");
@@ -116,13 +116,13 @@ auto main() -> int {
 	                    "directory config is rejected");
 
 	{
-		const auto invariant_path = temp_root / "invariant.ini";
+		const auto invariant_path = temp_root / "invariant.toml";
 		ok &= Expect(WriteFile(invariant_path, "[core]\ndisabled = false\n[video]\ntimeout = 7\n"),
 		             "write invariant original config");
 		ok &= Expect(chmod(invariant_path.c_str(), 0644) == 0, "secure invariant config");
 
 		bool       replacement_ok   = false;
-		const auto backup_invariant = temp_root / "invariant-backup.ini";
+		const auto backup_invariant = temp_root / "invariant-backup.toml";
 		{
 			const howdy::native::config_test_hooks::ScopedHooks hooks([&] -> void {
 				replacement_ok = rename(invariant_path.c_str(), backup_invariant.c_str()) == 0 &&
@@ -168,12 +168,12 @@ auto main() -> int {
 		}
 	}
 
-	const auto missing_path = temp_root / "missing.ini";
+	const auto missing_path = temp_root / "missing.toml";
 	const auto missing = howdy::native::LoadRuntimeConfig(missing_path, std::nullopt, {temp_root});
 	ok &= ExpectFailure(missing, RuntimeConfigLoadStatus::kPathError, "missing config");
 	ok &= Expect(missing.error_code == ENOENT, "missing config preserves open errno");
 
-	const auto malformed_path = temp_root / "malformed.ini";
+	const auto malformed_path = temp_root / "malformed.toml";
 	ok &= Expect(WriteFile(malformed_path, "[core\n"), "write malformed config");
 	ok &= Expect(chmod(malformed_path.c_str(), 0644) == 0, "secure malformed config");
 	const auto malformed =
@@ -183,10 +183,10 @@ auto main() -> int {
 	             "parse error message includes parse prefix");
 	ok &= Expect(malformed.error_message.contains(malformed_path.string()),
 	             "parse error message includes path");
-	ok &= Expect(malformed.error_message.contains("(error "),
-	             "parse error message includes parser code");
+	ok &= Expect(malformed.error_message.contains("(line "),
+	             "parse error message includes parser position");
 
-	const auto invalid_path = temp_root / "invalid.ini";
+	const auto invalid_path = temp_root / "invalid.toml";
 	ok &= Expect(WriteFile(invalid_path, "[video]\ntimeout = 0\n"), "write invalid config");
 	ok &= Expect(chmod(invalid_path.c_str(), 0644) == 0, "secure invalid config");
 	const auto invalid = howdy::native::LoadRuntimeConfig(invalid_path, std::nullopt, {temp_root});
@@ -202,7 +202,7 @@ auto main() -> int {
 	const auto insecure_root = temp_root / "insecure-root";
 	fs::create_directories(insecure_root, ec);
 	ok &= Expect(!ec, "create insecure trust root");
-	const auto insecure_root_config = insecure_root / "config.ini";
+	const auto insecure_root_config = insecure_root / "config.toml";
 	ok &= Expect(WriteFile(insecure_root_config, "[core]\ndisabled = false\n"),
 	             "write insecure trust-root config");
 	ok &= Expect(chmod(insecure_root.c_str(), 0777) == 0, "make trust root insecure");

@@ -28,6 +28,8 @@ ignore = true
 [bans]
 multiple-versions = "deny"
 wildcards = "deny"
+# Internal path dependencies between unpublished workspace crates.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

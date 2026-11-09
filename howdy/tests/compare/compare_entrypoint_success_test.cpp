@@ -196,17 +196,17 @@ namespace {
 		if (!fs::create_directories(root / "models", error) || error) {
 			return false;
 		}
-		fs::copy_file(HOWDY_PACKAGED_CONFIG_PATH, root / "config.ini", error);
+		fs::copy_file(HOWDY_PACKAGED_CONFIG_PATH, root / "config.toml", error);
 		if (error) {
 			return false;
 		}
-		std::string config = howdy::test::ReadFile(root / "config.ini");
+		std::string config = howdy::test::ReadFile(root / "config.toml");
 		const auto  report = config.find("end_report = false");
 		if (report == std::string::npos) {
 			return false;
 		}
 		config.replace(report, sizeof("end_report = false") - 1, "end_report = true");
-		if (!howdy::test::WriteFile(root / "config.ini", config)) {
+		if (!howdy::test::WriteFile(root / "config.toml", config)) {
 			return false;
 		}
 		std::string model =
@@ -221,7 +221,7 @@ namespace {
 		const auto model_path = root / "models" / "fixture-user.dat";
 		return howdy::test::WriteFile(model_path, model) && chmod(root.c_str(), 0755) == 0 &&
 		       chmod((root / "models").c_str(), 0755) == 0 &&
-		       chmod((root / "config.ini").c_str(), 0644) == 0 &&
+		       chmod((root / "config.toml").c_str(), 0644) == 0 &&
 		       chmod(model_path.c_str(), 0600) == 0;
 	}
 
@@ -239,7 +239,7 @@ auto main() -> int {
 	std::array<std::string, 4> arguments{
 	    "howdy-compare",
 	    "--config",
-	    (root / "config.ini").string(),
+	    (root / "config.toml").string(),
 	    "fixture-user",
 	};
 	std::array<char *, 4> argv{
@@ -355,7 +355,7 @@ auto main() -> int {
 			};
 		};
 	};
-	const auto config_file = root / "config.ini";
+	const auto config_file = root / "config.toml";
 	const auto model_file  = root / "models" / "fixture-user.dat";
 
 	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),

@@ -92,7 +92,7 @@ auto main(int argc, char **argv) -> int {
 		return 1;
 	}
 	if (!howdy::docs::RenderSucceeded(config_reference)) {
-		std::cerr << "howdy_docs_generator: rendering howdy-ini-options.roff failed: "
+		std::cerr << "howdy_docs_generator: rendering howdy-toml-options.roff failed: "
 		          << config_reference.error << '\n';
 		return 1;
 	}
@@ -101,7 +101,7 @@ auto main(int argc, char **argv) -> int {
 	    Fragment{.filename = "howdy-commands.roff", .content = command_reference.output},
 	    Fragment{.filename = "howdy-options.roff", .content = option_reference.output},
 	    Fragment{.filename = "pam-workarounds.roff", .content = workaround_reference.output},
-	    Fragment{.filename = "howdy-ini-options.roff", .content = config_reference.output},
+	    Fragment{.filename = "howdy-toml-options.roff", .content = config_reference.output},
 	};
 	const fs::path output_dir(arguments.subspan(2, 1).front());
 	for (const auto &fragment : fragments) {

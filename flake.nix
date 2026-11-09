@@ -71,7 +71,6 @@
           buildInputs = [
             pkgs.acl
             pkgs.curl
-            pkgs.inih
             pkgs.libevdev
             pkgs.openssl
             (opencv5For pkgs)
@@ -97,8 +96,8 @@
             DESTDIR="$howdyInstallRoot" cmake --install .
             mkdir -p "$out"
             cp -a "$howdyInstallRoot/$out/." "$out/"
-            install -Dm0640 "$howdyInstallRoot/etc/howdy/config.ini" \
-              "$out/share/howdy/config.ini"
+            install -Dm0640 "$howdyInstallRoot/etc/howdy/config.toml" \
+              "$out/share/howdy/config.toml"
             runHook postInstall
           '';
 
@@ -121,7 +120,7 @@
             test -x "$out/libexec/howdy/howdy-auth-helper"
             test ! -u "$out/libexec/howdy/howdy-auth-helper"
             test -s "$out/lib/security/pam_howdy.so"
-            test -s "$out/share/howdy/config.ini"
+            test -s "$out/share/howdy/config.toml"
             test ! -e "$out/etc"
             test ! -e "$out/var"
             runHook postInstallCheck
@@ -223,7 +222,7 @@
             # the immutable package output. C copies template only when absent.
             systemd.tmpfiles.rules = [
               "d /etc/howdy 0750 root root -"
-              "C /etc/howdy/config.ini 0640 root root - ${cfg.package}/share/howdy/config.ini"
+              "C /etc/howdy/config.toml 0640 root root - ${cfg.package}/share/howdy/config.toml"
               "d /var/lib/howdy 0750 root root -"
               "d /var/lib/howdy/models 0750 root root -"
               "d /var/lib/howdy/user-models 0750 root root -"
@@ -282,7 +281,7 @@
             assert wrapper.group == "root";
             assert wrapper.source == "${package}/libexec/howdy/howdy-auth-helper";
             assert nixpkgs.lib.elem
-              "C /etc/howdy/config.ini 0640 root root - ${package}/share/howdy/config.ini"
+              "C /etc/howdy/config.toml 0640 root root - ${package}/share/howdy/config.toml"
               moduleConfig.config.systemd.tmpfiles.rules;
             pkgs.runCommand "howdy-next-module-evaluation" { } "touch $out";
         });

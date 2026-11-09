@@ -12,6 +12,8 @@ namespace howdy::native {
 		bool abort_if_ssh{};
 		bool abort_if_lid_closed{};
 		bool disabled{};
+
+		friend auto operator==(const CoreConfig &, const CoreConfig &) -> bool = default;
 	};
 
 	auto DefaultCoreConfig() -> CoreConfig;
@@ -31,6 +33,8 @@ namespace howdy::native {
 		int         exposure{};
 		int         device_fps{};
 		int         rotate{};
+
+		friend auto operator==(const VideoConfig &, const VideoConfig &) -> bool = default;
 	};
 
 	auto DefaultVideoConfig() -> VideoConfig;
@@ -42,12 +46,16 @@ namespace howdy::native {
 		int        yunet_top_k{};
 		FaceMetric sface_metric = DefaultFaceMetric();
 		float      sface_threshold{};
+
+		friend auto operator==(const FaceConfig &, const FaceConfig &) -> bool = default;
 	};
 
 	auto DefaultFaceConfig() -> FaceConfig;
 
 	struct DebugConfig {
 		bool end_report{};
+
+		friend auto operator==(const DebugConfig &, const DebugConfig &) -> bool = default;
 	};
 
 	auto DefaultDebugConfig() -> DebugConfig;
@@ -57,6 +65,8 @@ namespace howdy::native {
 		VideoConfig video = DefaultVideoConfig();
 		FaceConfig  face  = DefaultFaceConfig();
 		DebugConfig debug = DefaultDebugConfig();
+
+		friend auto operator==(const RuntimeConfig &, const RuntimeConfig &) -> bool = default;
 	};
 
 }  // namespace howdy::native

@@ -9,7 +9,7 @@ PAM-specific dependencies:
 
 - Linux >= 5.3 and glibc >= 2.36 (pidfd-based compare waits)
 - Linux-PAM
-- INIReader
+- Rust (the `howdy-ffi` static library, for config.toml parsing)
 - libevdev
 
 ## Source Layout

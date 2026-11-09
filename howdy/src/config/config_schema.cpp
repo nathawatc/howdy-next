@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -16,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <variant>
 
 namespace howdy::native::config_schema {
@@ -336,15 +336,39 @@ namespace howdy::native::config_schema {
 		return nullptr;
 	}
 
-	auto IsAcceptedBooleanText(std::string_view value) -> bool {
-		std::string lowered;
-		lowered.reserve(value.size());
-		for (const char character : value) {
-			lowered.push_back(
-			    static_cast<char>(std::tolower(static_cast<unsigned char>(character))));
+	auto RuntimeConfigOptionByKey(std::string_view key) -> const Option * {
+		for (const auto &option : kRuntimeConfigOptions) {
+			if (option.key == key) {
+				return &option;
+			}
 		}
-		return std::ranges::find(kAcceptedBooleanSpellings, lowered) !=
-		       kAcceptedBooleanSpellings.end();
+		return nullptr;
+	}
+
+	auto OptionName(const Option &option) -> std::string {
+		return std::string(option.section) + "." + std::string(option.key);
+	}
+
+	auto IsRuntimeConfigSection(std::string_view section) -> bool {
+		return std::ranges::any_of(RuntimeConfigOptions(), [&](const Option &option) -> bool {
+			return option.section == section;
+		});
+	}
+
+	auto FallbackConfigValue(const Option &option) -> std::optional<ConfigValue> {
+		if (const auto *flag = std::get_if<bool>(&option.fallback)) {
+			return ConfigValue{*flag};
+		}
+		if (const auto *number = std::get_if<int>(&option.fallback)) {
+			return ConfigValue{*number};
+		}
+		if (const auto *number = std::get_if<float>(&option.fallback)) {
+			return ConfigValue{*number};
+		}
+		if (const auto *text = std::get_if<std::string_view>(&option.fallback)) {
+			return ConfigValue{std::string(*text)};
+		}
+		return std::nullopt;
 	}
 
 	auto FormatIntegerValue(int value) -> std::optional<std::string> {
@@ -369,39 +393,18 @@ namespace howdy::native::config_schema {
 		return std::string(buffer.data(), result.ptr);
 	}
 
-	namespace {
-
-		auto FormatRuntimeDefault(const RuntimeDefault &value) -> std::optional<std::string> {
-			struct Visitor {
-				auto operator()(std::monostate unused) const -> std::optional<std::string> {
-					(void)unused;
-					return std::nullopt;
-				}
-
-				auto operator()(bool val) const -> std::optional<std::string> {
-					return val ? "true" : "false";
-				}
-
-				auto operator()(int val) const -> std::optional<std::string> {
-					return FormatIntegerValue(val);
-				}
-
-				auto operator()(float val) const -> std::optional<std::string> {
-					return FormatFloatingPointValue(val);
-				}
-
-				auto operator()(std::string_view val) const -> std::optional<std::string> {
-					return std::string(val);
-				}
-			};
-
-			return std::visit(Visitor{}, value);
+	auto FormatConfigValue(const ConfigValue &value) -> std::string {
+		if (const auto *flag = std::get_if<bool>(&value)) {
+			return *flag ? "true" : "false";
 		}
-
-	}  // namespace
-
-	auto FormatFallbackValue(const Option &option) -> std::optional<std::string> {
-		return FormatRuntimeDefault(option.fallback);
+		if (const auto *number = std::get_if<int>(&value)) {
+			return FormatIntegerValue(*number).value_or("");
+		}
+		if (const auto *number = std::get_if<float>(&value)) {
+			return FormatFloatingPointValue(*number).value_or("");
+		}
+		const auto *text = std::get_if<std::string>(&value);
+		return text == nullptr ? std::string() : *text;
 	}
 
 	auto RuntimeDefaultBool(OptionId id) -> bool {

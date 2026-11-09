@@ -1,5 +1,6 @@
-#include "../../src/config/config_reader/internal.hpp"
+#include "../../src/config/config_document/internal.hpp"
 #include "../../src/config/config_validation/internal.hpp"
+#include "config/config_document_test_support.hpp"
 #include "config/config_utils.hpp"
 #include "config/config_utils_test_support.hpp"
 #include "support/file_security.hpp"
@@ -10,6 +11,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace howdy::test {
 	namespace {
@@ -104,7 +106,7 @@ namespace howdy::test {
 		                                                      "dark_threshold = 60\n"),
 		             "write initial config");
 		const auto parentless_check = howdy::native::CheckSecureConfigPath(
-		    "config.ini", howdy::native::DefaultSecureOwnerUid(), {context.temp_root});
+		    "config.toml", howdy::native::DefaultSecureOwnerUid(), {context.temp_root});
 		ok &= Expect(!parentless_check.ok &&
 		                 parentless_check.error_message.contains("must have a parent directory"),
 		             "check_secure_config_path rejects parentless config path");
@@ -112,14 +114,14 @@ namespace howdy::test {
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_at_limit),
 		             "write config exactly at size limit");
 		std::string size_error;
-		// The padding-only fixture has no "disabled" key, so the update must get past the read
-		// and the size limit and fail only on the missing option.
+		// The comment-only fixture has no "disabled" key, so the update must get past the read
+		// and fail only because appending the option exceeds the size limit.
 		const bool at_limit_updated =
 		    howdy::native::UpdateConfigValue(context.config_path, "disabled", &size_error, "true",
 			                                 false, false, {context.temp_root});
-		ok &= Expect(
-		    !at_limit_updated && size_error == "Could not find a \"disabled\" config option to set",
-		    "config exactly at size limit is read before the missing option fails: " + size_error);
+		ok &= Expect(!at_limit_updated && size_error.contains("exceeds maximum size"),
+		             "config exactly at size limit is read before the size limit fails: " +
+		                 size_error);
 		size_error.clear();
 		ok &= Expect(WriteConfigTestFile(context.config_path, context.config_over_limit),
 		             "write oversized config");
@@ -143,15 +145,15 @@ namespace howdy::test {
 		const auto after_disabled = ReadConfigTestFile(context.config_path);
 		ok &= Expect(after_disabled.contains("disabled = true\n"), "disabled key updated");
 
-		constexpr auto expected_scalar_error =
-		    "Config values must be single-line scalars and cannot start with [";
-		const auto before_unsafe = ReadConfigTestFile(context.config_path);
+		constexpr auto expected_scalar_error = "Config values must be printable ASCII";
+		const auto     before_unsafe         = ReadConfigTestFile(context.config_path);
 
 		for (const auto &unsafe_value : {
 		         std::string(1, '\0'),
 		         std::string("\r"),
 		         std::string("true\n[video]\ntimeout = 0"),
-		         std::string("[video]"),
+		         std::string("/dev/video0\t"),
+		         std::string("\x1b[2J"),
 		     }) {
 			std::string error;
 			ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "disabled", &error,
@@ -164,107 +166,196 @@ namespace howdy::test {
 			             "unsafe scalar update leaves config file unchanged");
 		}
 
+		for (const auto &[key, expected] : {
+		         std::pair<std::string, std::string>{"no_such_option",
+				                                     "Could not find a \"no_such_option\" "
+				                                     "config option to set"},
+		         std::pair<std::string, std::string>{"\x1b]0;x\a",
+				                                     "Config keys must be printable ASCII"},
+		     }) {
+			std::string error;
+			ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, key, &error, "1",
+			                                               false, false, {context.temp_root}),
+			             "update_config_value rejects unknown key");
+			ok &= Expect(error == expected, "unknown key diagnostic: " + error);
+			ok &= Expect(ReadConfigTestFile(context.config_path) == before_unsafe,
+			             "unknown key update leaves config file unchanged");
+		}
+
 		std::string nonexistent_path_error;
 		ok &= Expect(!howdy::native::UpdateConfigValue(
-		                 context.temp_root / "nonexistent.ini", "disabled", &nonexistent_path_error,
-		                 "[section]", false, false, {context.temp_root}),
+		                 context.temp_root / "nonexistent.toml", "disabled",
+		                 &nonexistent_path_error, "line\nbreak", false, false, {context.temp_root}),
 		             "unsafe scalar fails before filesystem/path checks");
 		ok &= Expect(nonexistent_path_error == expected_scalar_error,
 		             "unsafe scalar on nonexistent path returns scalar diagnostic");
 
-		const auto empty_scalar_path = context.temp_root / "empty-scalar.ini";
-		ok &= Expect(WriteConfigTestFile(empty_scalar_path, "[video]\ndevice_path = none\n"),
+		const auto empty_scalar_path = context.temp_root / "empty-scalar.toml";
+		ok &= Expect(WriteConfigTestFile(empty_scalar_path, "[video]\ndevice_path = \"none\"\n"),
 		             "write config for empty scalar update");
 		ok &= Expect(howdy::native::UpdateConfigValue(empty_scalar_path, "device_path", nullptr, "",
 		                                              false, false, {context.temp_root}),
 		             "update_config_value accepts empty scalar value");
-		ok &= Expect(ReadConfigTestFile(empty_scalar_path) == "[video]\ndevice_path = \n",
-		             "empty scalar value is written unchanged");
+		ok &= Expect(ReadConfigTestFile(empty_scalar_path) == "[video]\ndevice_path = \"\"\n",
+		             "empty scalar value is written as an empty TOML string");
+
+		const auto reset_path = context.temp_root / "reset.toml";
+		ok &=
+		    Expect(WriteConfigTestFile(reset_path, "[video]\ntimeout = 9 # mine\ndark_threshold = "
+			                                       "60.0\n"),
+			       "write config for empty numeric update");
+		ok &= Expect(howdy::native::UpdateConfigValue(reset_path, "timeout", nullptr, "", false,
+		                                              true, {context.temp_root}),
+		             "empty value for a number resets it to the default");
+		ok &= Expect(ReadConfigTestFile(reset_path) ==
+		                 "[video]\ntimeout = 4 # mine\ndark_threshold = 60.0\n",
+		             "reset writes the schema default and keeps the key and its comment");
+		ok &= Expect(howdy::native::UpdateConfigValue(reset_path, "timeout", nullptr, "", false,
+		                                              true, {context.temp_root}) &&
+		                 ReadConfigTestFile(reset_path) ==
+		                     "[video]\ntimeout = 4 # mine\ndark_threshold = 60.0\n",
+		             "resetting again leaves the file unchanged");
+
+		const auto crlf_path = context.temp_root / "crlf.toml";
+		ok &= Expect(WriteConfigTestFile(crlf_path, "[video]\r\ndark_threshold = 60.0\r\n"),
+		             "write CRLF config");
+		ok &= Expect(howdy::native::UpdateConfigValue(crlf_path, "timeout", nullptr, "5", false,
+		                                              true, {context.temp_root}) &&
+		                 howdy::native::UpdateConfigValue(crlf_path, "disabled", nullptr, "true",
+		                                                  false, true, {context.temp_root}),
+		             "insert key and table into CRLF config");
+		ok &= Expect(ReadConfigTestFile(crlf_path) ==
+		                 "[video]\ndark_threshold = 60.0\ntimeout = 5\n\n[core]\ndisabled = true\n",
+		             "a CRLF config is rewritten with LF line endings: " +
+		                 ReadConfigTestFile(crlf_path));
+
+		const auto unicode_path = context.temp_root / "unicode.toml";
+		ok &= Expect(WriteConfigTestFile(unicode_path,
+		                                 "\xEF\xBB\xBF[video]\ndevice_path = "
+		                                 "\"/dev/v4l/by-id/usb-Camera\" # cam\xC3\xA9ra avant\n"),
+		             "write config with a non-ASCII comment and BOM");
+		ok &= Expect(howdy::native::UpdateConfigValue(unicode_path, "device_path", nullptr,
+		                                              "/dev/video2", false, true,
+		                                              {context.temp_root}),
+		             "update line with a non-ASCII comment");
+		ok &= Expect(ReadConfigTestFile(unicode_path) ==
+		                 "[video]\ndevice_path = \"/dev/video2\" # cam\xC3\xA9ra avant\n",
+		             "non-ASCII comment survives the edit; the BOM is dropped");
+		const auto bom_line_path = context.temp_root / "bom-line.toml";
+		ok &= Expect(WriteConfigTestFile(bom_line_path, "\xEF\xBB\xBF"
+		                                                "[core]\ndisabled = false # é\n"),
+		             "write config with BOM");
+		ok &= Expect(howdy::native::UpdateConfigValue(bom_line_path, "disabled", nullptr, "true",
+		                                              false, true, {context.temp_root}) &&
+		                 ReadConfigTestFile(bom_line_path) == "[core]\ndisabled = true # é\n",
+		             "edit after a BOM keeps the comment");
 
 		ok &=
 		    Expect(howdy::native::UpdateConfigValue(context.config_path, "dark_threshold", nullptr,
 			                                        "42", false, true, {context.temp_root}),
 			       "update_config_value succeeds in later section");
 		const auto after_threshold = ReadConfigTestFile(context.config_path);
-		ok &=
-		    Expect(after_threshold.contains("dark_threshold = 42\n"), "dark_threshold key updated");
+		ok &= Expect(after_threshold.contains("dark_threshold = 42.0\n"),
+		             "float option is written as a TOML float");
 
-		const auto whitespace_path = context.temp_root / "whitespace.ini";
+		const auto whitespace_path = context.temp_root / "whitespace.toml";
 		ok &= Expect(WriteConfigTestFile(whitespace_path, "   \n\t  "),
 		             "write whitespace-only config lines");
 		ok &= Expect(!howdy::native::UpdateConfigValue(whitespace_path, "missing_key", nullptr, "x",
 		                                               false, false, {context.temp_root}),
-		             "update_config_value ignores whitespace-only lines");
-		const auto alternate_syntax_path = context.temp_root / "alternate-syntax.ini";
-		ok &= Expect(WriteConfigTestFile(alternate_syntax_path, "[core]\ndisabled true\n"),
-		             "write space-separated config option");
-		ok &= Expect(howdy::native::UpdateConfigValue(alternate_syntax_path, "disabled", nullptr,
-		                                              "false", false, false, {context.temp_root}),
-		             "update_config_value accepts space-separated option syntax");
-		ok &= Expect(ReadConfigTestFile(alternate_syntax_path) == "[core]\ndisabled = false\n",
-		             "space-separated option is normalized");
+		             "update_config_value rejects unknown option names");
 
-		const auto mixed_case_path = context.temp_root / "mixed-case.ini";
-		ok &= Expect(WriteConfigTestFile(mixed_case_path, "[CORE]\nDISABLED=false\n"),
-		             "write mixed-case config identifiers");
-		ok &= Expect(howdy::native::UpdateConfigValue(mixed_case_path, "disabled", nullptr, "true",
-		                                              false, false, {context.temp_root}),
-		             "update_config_value matches config identifiers case-insensitively");
-		ok &= Expect(ReadConfigTestFile(mixed_case_path) == "[CORE]\ndisabled = true\n",
-		             "mixed-case option is updated in matching section");
+		// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+		const auto edit_case = [&](const std::string &name, const std::string &before,
+		                           const std::string &key, const std::string &value,
+		                           const std::string &expected) -> bool {
+			const auto  path = context.temp_root / (name + ".toml");
+			std::string error;
+			bool        case_ok = Expect(WriteConfigTestFile(path, before), name + ": write");
+			case_ok &= Expect(howdy::native::UpdateConfigValue(path, key, &error, value, false,
+			                                                   true, {context.temp_root}),
+			                  name + ": update succeeds: " + error);
+			const auto after = ReadConfigTestFile(path);
+			case_ok &=
+			    Expect(after == expected, name + ": expected:\n" + expected + "got:\n" + after);
+			return case_ok;
+		};
+		const auto refused_case = [&](const std::string &name, const std::string &before,
+		                              const std::string &key, const std::string &value,
+		                              const std::string &error_fragment) -> bool {
+			const auto  path = context.temp_root / (name + ".toml");
+			std::string error;
+			bool        case_ok = Expect(WriteConfigTestFile(path, before), name + ": write");
+			case_ok &= Expect(!howdy::native::UpdateConfigValue(path, key, &error, value, false,
+			                                                    true, {context.temp_root}),
+			                  name + ": update is refused");
+			case_ok &= Expect(error.contains(error_fragment),
+			                  name + ": error mentions " + error_fragment + ", got: " + error);
+			case_ok &= Expect(ReadConfigTestFile(path) == before, name + ": file unchanged");
+			return case_ok;
+		};
+		// NOLINTEND(bugprone-easily-swappable-parameters)
 
-		const auto bom_path = context.temp_root / "bom.ini";
-		ok &= Expect(WriteConfigTestFile(bom_path, "\xEF\xBB\xBF[core]\ndisabled=false\n"),
-		             "write config with UTF-8 BOM");
-		ok &= Expect(howdy::native::UpdateConfigValue(bom_path, "disabled", nullptr, "true", false,
-		                                              false, {context.temp_root}),
-		             "update_config_value recognizes BOM-prefixed section");
-		ok &= Expect(ReadConfigTestFile(bom_path) == "\xEF\xBB\xBF[core]\ndisabled = true\n",
-		             "BOM-prefixed config option is updated");
+		ok &= edit_case(
+		    "preserve-comments",
+		    "# header\n[core]\n# note\n  disabled=false   # trailing\nabort_if_ssh = true\n",
+		    "disabled", "true",
+		    "# header\n[core]\n# note\n  disabled=true   # trailing\nabort_if_ssh = true\n");
+		ok &= edit_case("bom", "\xEF\xBB\xBF[core]\ndisabled=false\n", "disabled", "true",
+		                "[core]\ndisabled=true\n");
+		ok &= edit_case("int-normalized", "[video]\ntimeout = 4\n", "timeout", "+5",
+		                "[video]\ntimeout = 5\n");
+		ok &= edit_case("string-quoted", "[video]\ndevice_path = \"none\"\n", "device_path",
+		                "/dev/video2", "[video]\ndevice_path = \"/dev/video2\"\n");
+		ok &= edit_case("insert-into-table",
+		                "[core]\ndisabled = false\n# tail comment\n\n[video]\ntimeout = 4\n",
+		                "abort_if_ssh", "false",
+		                "[core]\ndisabled = false\nabort_if_ssh = false\n# tail comment\n\n"
+		                "[video]\ntimeout = 4\n");
+		ok &= edit_case("insert-after-header", "[core]\n\n[video]\ntimeout = 4", "disabled", "true",
+		                "[core]\ndisabled = true\n\n[video]\ntimeout = 4\n");
+		ok &= edit_case("insert-no-trailing-newline", "[video]\ntimeout = 4", "rotate", "2",
+		                "[video]\ntimeout = 4\nrotate = 2\n");
+		ok &= edit_case("append-table", "[core]\ndisabled = false", "end_report", "true",
+		                "[core]\ndisabled = false\n\n[debug]\nend_report = true\n");
+		ok &= edit_case("append-to-empty", "", "timeout", "9", "[video]\ntimeout = 9\n");
+		ok &= edit_case(
+		    "comment-mentions-key",
+		    "[core]\n# disabled = false\nabort_if_ssh = true # disabled\ndisabled = false\n",
+		    "disabled", "true",
+		    "[core]\n# disabled = false\nabort_if_ssh = true # disabled\ndisabled = true\n");
 
-		const auto duplicate_name_path = context.temp_root / "duplicate-name.ini";
-		ok &= Expect(WriteConfigTestFile(duplicate_name_path, "[other]\n"
-		                                                      "disabled = false\n"
-		                                                      "\n"
-		                                                      "[core]\n"
-		                                                      "disabled backup = false\n"
-		                                                      "disabled=false\n"),
-		             "write same option name in unrelated section");
-		ok &= Expect(howdy::native::UpdateConfigValue(duplicate_name_path, "disabled", nullptr,
-		                                              "true", false, false, {context.temp_root}),
-		             "update_config_value targets schema-owned section");
-		const auto duplicate_name_content = ReadConfigTestFile(duplicate_name_path);
-		ok &= Expect(duplicate_name_content == "[other]\n"
-		                                       "disabled = false\n"
-		                                       "\n"
-		                                       "[core]\n"
-		                                       "disabled backup = false\n"
-		                                       "disabled = true\n",
-		             "unrelated and similarly named options remain unchanged");
-		howdy::native::ConfigReader const duplicate_name_reader(duplicate_name_path.string());
-		ok &= Expect(duplicate_name_reader.Ok() &&
-		                 duplicate_name_reader.GetBool("core", "disabled", false),
-		             "updated file has effective core.disabled value");
+		ok &= refused_case("invalid-toml", "[core]\ndisabled true\n", "disabled", "false",
+		                   "not valid TOML");
+		ok &= refused_case("duplicate-target", "[core]\ndisabled = true\ndisabled = false\n",
+		                   "disabled", "true", "not valid TOML");
+		ok &= edit_case("inline-table", "core = { disabled = false }\n", "disabled", "true",
+		                "core = { disabled = true }\n");
+		ok &= edit_case("dotted-key", "core.disabled = false # note\n", "disabled", "true",
+		                "core.disabled = true # note\n");
+		ok &= edit_case("multi-line-string", "[video]\ndevice_path = \"\"\"\n/dev/video0\"\"\"\n",
+		                "device_path", "/dev/video1", "[video]\ndevice_path = \"/dev/video1\"\n");
+		ok &= refused_case("mixed-case-table", "[CORE]\nDISABLED = false\n", "disabled", "true",
+		                   "unknown table [CORE]");
+		ok &=
+		    refused_case("invalid-int-text", "[video]\ntimeout = 4\n", "timeout", "abc",
+			             "Invalid config value for timeout=\"abc\": expected integer range 1..300");
+		ok &= refused_case("invalid-bool-text", "[core]\ndisabled = false\n", "disabled", "maybe",
+		                   "Invalid config value for disabled=\"maybe\": expected a boolean");
+		ok &= refused_case("bool-alias-spelling", "[core]\ndisabled = false\n", "disabled", "yes",
+		                   "Invalid config value for disabled=\"yes\": expected a boolean");
+		ok &= refused_case("control-char-string", "[video]\ndevice_path = \"none\"\n",
+		                   "device_path", std::string("/dev/video\x01"), "must be printable ASCII");
 
-		const auto        duplicate_target_path    = context.temp_root / "duplicate-target.ini";
-		const std::string duplicate_target_content = "[core]\n"
-		                                             "disabled =\n"
-		                                             "disabled = false\n";
-		ok &= Expect(WriteConfigTestFile(duplicate_target_path, duplicate_target_content),
-		             "write duplicate target option");
-		howdy::native::ConfigReader const duplicate_target_reader(duplicate_target_path.string());
-		ok &= Expect(duplicate_target_reader.Ok() &&
-		                 !duplicate_target_reader.GetBool("core", "disabled", true),
-		             "duplicate target fixture has effective false value before update");
-		std::string duplicate_target_error;
-		ok &= Expect(!howdy::native::UpdateConfigValue(duplicate_target_path, "disabled",
-		                                               &duplicate_target_error, "true", false,
-		                                               false, {context.temp_root}),
-		             "update_config_value rejects duplicate target options");
-		ok &= Expect(duplicate_target_error.contains("appears more than once"),
-		             "duplicate target update reports duplicate option");
-		ok &= Expect(ReadConfigTestFile(duplicate_target_path) == duplicate_target_content,
-		             "rejected duplicate target update leaves config unchanged");
+		const auto recovery_path = context.temp_root / "recovery-structure.toml";
+		ok &= Expect(WriteConfigTestFile(recovery_path, "[CORE]\nDISABLED = false\n"),
+		             "write structurally invalid config for recovery write");
+		std::string recovery_error;
+		ok &= Expect(!howdy::native::UpdateConfigValue(recovery_path, "disabled", &recovery_error,
+		                                               "true", false, false, {context.temp_root}),
+		             "recovery writes still require schema-valid TOML");
+		ok &= Expect(recovery_error.contains("unknown table [CORE]"),
+		             "recovery write reports structural error: " + recovery_error);
 
 		ok &= Expect(!howdy::native::UpdateConfigValue(context.config_path, "missing_key", nullptr,
 		                                               "x", false, true, {context.temp_root}),
@@ -301,7 +392,8 @@ namespace howdy::test {
 		const auto after_disable_recovery = ReadConfigTestFile(context.config_path);
 		ok &= Expect(after_disable_recovery.contains("disabled = true\n"),
 		             "recovery write updates disabled key");
-		howdy::native::ConfigReader const still_invalid(context.config_path.string());
+		const auto still_invalid =
+		    howdy::native::test_support::ReadConfigDocument(context.config_path);
 		ok &= Expect(still_invalid.Ok(), "recovery-write config still parses");
 		ok &= Expect(howdy::native::ValidateRuntimeConfig(still_invalid).has_value(),
 		             "recovery write does not mask unrelated invalid config values");

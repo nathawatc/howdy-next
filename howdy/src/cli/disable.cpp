@@ -45,14 +45,14 @@ auto howdy::native::disable_internal::DisableMainWithDependencies(
 	const std::string &argument_value = invocation.positionals.front();
 	std::string        out_value;
 	bool               disabled = false;
-	if (argument_value == "1" || argument_value == "true") {
+	if (argument_value == "true") {
 		out_value = "true";
 		disabled  = true;
-	} else if (argument_value == "0" || argument_value == "false") {
+	} else if (argument_value == "false") {
 		out_value = "false";
 		disabled  = false;
 	} else {
-		std::cout << "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n";
+		std::cout << "Invalid value; use false to enable, or true to disable Howdy\n";
 		return kDisableExitAbort;
 	}
 	if (dependencies.resolve_config_path == nullptr ||

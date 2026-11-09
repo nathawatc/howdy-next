@@ -253,7 +253,7 @@ auto main() -> int {
 	const auto missing_file = temp_root / "missing-file";
 	ok &= Expect(!SecureFile(missing_file).ok, "missing file is rejected");
 
-	const auto missing_parent_file = temp_root / "missing-parent" / "config.ini";
+	const auto missing_parent_file = temp_root / "missing-parent" / "config.toml";
 	ok &= Expect(!SecureFileWithDirectory(missing_parent_file).ok,
 	             "missing parent directory is rejected before file use");
 
@@ -263,7 +263,7 @@ auto main() -> int {
 	ok &= Expect(!ec, "create insecure parent tree");
 	ok &= Expect(chmod(insecure_parent.c_str(), 0777) == 0, "make ancestor world-writable");
 	ok &= Expect(!SecureDirTree(child_dir).ok, "insecure ancestor directory is rejected");
-	const auto child_file = child_dir / "config.ini";
+	const auto child_file = child_dir / "config.toml";
 	ok &= Expect(WriteFile(child_file, "content"), "write file under insecure dir");
 	ok &= Expect(!SecureFileWithDirectory(child_file).ok,
 	             "file under insecure directory is rejected");

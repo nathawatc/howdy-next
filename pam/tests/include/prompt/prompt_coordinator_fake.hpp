@@ -609,7 +609,7 @@ namespace howdy::test::prompt_coordinator {
 		};
 	}
 
-	inline auto MakeCompareRequest(std::string_view config_path     = "/etc/howdy/config.ini",
+	inline auto MakeCompareRequest(std::string_view config_path     = "/etc/howdy/config.toml",
 	                               std::string_view username        = "alice",
 	                               std::string_view user_models_dir = "/etc/howdy/models",
 	                               bool             staged_runtime  = false)

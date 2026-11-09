@@ -36,10 +36,10 @@ set(
 )
 set(
  HOWDY_CONFIG_REFERENCE_PATH
- "${HOWDY_DOC_REFERENCE_DIR}/howdy-ini-options.roff"
+ "${HOWDY_DOC_REFERENCE_DIR}/howdy-toml-options.roff"
 )
 set(HOWDY_MAN1_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.1")
-set(HOWDY_MAN5_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.ini.5")
+set(HOWDY_MAN5_PATH "${CMAKE_CURRENT_BINARY_DIR}/howdy.toml.5")
 set(HOWDY_MAN8_PATH "${CMAKE_CURRENT_BINARY_DIR}/pam_howdy.8")
 set(HOWDY_MAN_COMPOSE_SCRIPT "${PROJECT_SOURCE_DIR}/cmake/compose_man.cmake")
 
@@ -59,7 +59,7 @@ add_custom_command(
   "${CMAKE_COMMAND}"
   "-DMAN1_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
   "-DMAN1_OUTPUT_PATH=${HOWDY_MAN1_PATH}"
-  "-DMAN5_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.ini.5.in"
+  "-DMAN5_TEMPLATE=${CMAKE_CURRENT_SOURCE_DIR}/howdy.toml.5.in"
   "-DMAN5_OUTPUT_PATH=${HOWDY_MAN5_PATH}"
   "-DMAN8_TEMPLATE=${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
   "-DMAN8_OUTPUT_PATH=${HOWDY_MAN8_PATH}"
@@ -78,7 +78,7 @@ add_custom_command(
  DEPENDS
   howdy_docs_generator
   "${CMAKE_CURRENT_SOURCE_DIR}/howdy.1.in"
-  "${CMAKE_CURRENT_SOURCE_DIR}/howdy.ini.5.in"
+  "${CMAKE_CURRENT_SOURCE_DIR}/howdy.toml.5.in"
   "${PROJECT_SOURCE_DIR}/pam/pam_howdy.8.in"
   "${PROJECT_SOURCE_DIR}/howdy/include/app/command_catalog.hpp"
   "${PROJECT_SOURCE_DIR}/howdy/src/app/command_catalog.cpp"

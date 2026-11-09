@@ -142,7 +142,7 @@ namespace {
 		    },
 		    {
 		        .name        = "config path outside prepared runtime root is rejected",
-		        .output      = output_for("/etc/howdy/config.ini", models_dir),
+		        .output      = output_for("/etc/howdy/config.toml", models_dir),
 		        .expected_ok = false,
 		    },
 		    {
@@ -191,7 +191,7 @@ namespace {
 		    },
 		    {
 		        .name        = "relative runtime paths are rejected",
-		        .output      = output_for("relative/config.ini", "relative/models"),
+		        .output      = output_for("relative/config.toml", "relative/models"),
 		        .expected_ok = false,
 		    },
 		    {
@@ -248,7 +248,7 @@ namespace {
 		    },
 		    {
 		        .name        = "required values containing equals are rejected by path contract",
-		        .output      = output_for(runtime_dir / "config=debug.ini", models_dir),
+		        .output      = output_for(runtime_dir / "config=debug.toml", models_dir),
 		        .expected_ok = false,
 		    },
 		};

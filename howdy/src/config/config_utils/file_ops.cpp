@@ -1,4 +1,4 @@
-#include "../config_reader/internal.hpp"
+#include "../config_document/internal.hpp"
 #include "../config_validation/internal.hpp"
 #include "config/config_limits.hpp"
 #include "config/config_utils.hpp"
@@ -98,7 +98,8 @@ namespace howdy::native::config_utils_internal {
 
 namespace howdy::native {
 
-	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool {
+	auto ValidateConfigContent(const std::string &content, std::string *error_message,
+	                           bool check_ranges) -> bool {
 		if (content.size() > kMaxConfigFileSize) {
 			if (error_message != nullptr) {
 				*error_message = config_utils_internal::kUpdatedConfigTooLargeMessage;
@@ -106,14 +107,17 @@ namespace howdy::native {
 			return false;
 		}
 
-		ConfigReader const config("<memory>", content);
+		const auto config = ConfigDocument::FromContent(content);
 		if (!config.Ok()) {
 			if (error_message != nullptr) {
-				*error_message = kUpdatedConfigInvalidMessage;
+				*error_message = std::string(kUpdatedConfigInvalidMessage) + ": " + config.Error();
 			}
 			return false;
 		}
 
+		if (!check_ranges) {
+			return true;
+		}
 		if (const auto validation = ValidateRuntimeConfig(config)) {
 			if (error_message != nullptr) {
 				*error_message = *validation;

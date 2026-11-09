@@ -16,7 +16,7 @@ namespace howdy::native::auth_helper_protocol {
 
 	inline constexpr const char *kPreparedRuntimeRoot             = "/run/howdy";
 	inline constexpr const char *kPreparedRuntimeDirectoryPrefix  = "pam-";
-	inline constexpr const char *kPreparedConfigFileName          = "config.ini";
+	inline constexpr const char *kPreparedConfigFileName          = "config.toml";
 	inline constexpr const char *kPreparedUserModelsDirectoryName = "models";
 	inline constexpr const char *kPreparedModelBackingFileName    = ".model_backing";
 	inline constexpr int         kLeaseSocketFd                   = 3;

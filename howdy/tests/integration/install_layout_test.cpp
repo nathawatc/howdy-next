@@ -146,7 +146,7 @@ namespace {
 			         Staged(stage, datadir + "/bash-completion/completions/howdy"),
 			         Staged(stage, localedir + "/th/LC_MESSAGES/howdy.mo"),
 			         Staged(stage, mandir + "/man1/howdy.1"),
-			         Staged(stage, mandir + "/man5/howdy.ini.5"),
+			         Staged(stage, mandir + "/man5/howdy.toml.5"),
 			         Staged(stage, mandir + "/man8/pam_howdy.8"),
 			         Staged(stage, licenses_dir + "/LICENSE"),
 			         Staged(stage, licenses_dir + "/THIRD_PARTY_NOTICES.md"),
@@ -384,7 +384,7 @@ auto main(int argc, char **argv) -> int {
 		Require(Read(installed_cli) == original_cli,
 		        "upgrade did not replace existing regular file");
 		Require(Read(installed_config) == marker,
-		        "second staged install overwrote existing config.ini: " +
+		        "second staged install overwrote existing config.toml: " +
 		            installed_config.string());
 		for (const auto &path : {
 		         fs::path(stage.string() + stage.string()),
@@ -396,12 +396,12 @@ auto main(int argc, char **argv) -> int {
 		std::size_t config_count = 0;
 		for (const auto &entry : fs::recursive_directory_iterator(stage)) {
 			if (fs::is_regular_file(fs::symlink_status(entry.path())) &&
-			    entry.path().filename() == "config.ini") {
+			    entry.path().filename() == "config.toml") {
 				++config_count;
 			}
 		}
 		Require(config_count == 1,
-		        "expected one config.ini in staged tree, found " + std::to_string(config_count));
+		        "expected one config.toml in staged tree, found " + std::to_string(config_count));
 
 		kVerifyPreflight(fixture, stage, attack_root);
 

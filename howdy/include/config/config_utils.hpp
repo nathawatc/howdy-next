@@ -34,7 +34,7 @@ namespace howdy::native {
 		return "; process uid=" + std::to_string(getuid()) + " euid=" + std::to_string(geteuid()) +
 		       " cannot inspect the restricted Howdy config path. PAM consumers such "
 		       "as lock screens must call pam_howdy from a privileged authentication "
-		       "helper; do not make /etc/howdy or config.ini world-readable";
+		       "helper; do not make /etc/howdy or config.toml world-readable";
 	}
 
 	inline auto
@@ -123,7 +123,10 @@ namespace howdy::native {
 		return result.output;
 	}
 
-	auto ValidateConfigContent(const std::string &content, std::string *error_message) -> bool;
+	// Checks config.toml text: TOML syntax, structure, and schema types always; value ranges and
+	// cross-option rules only when `check_ranges` is set (recovery writes clear it).
+	auto ValidateConfigContent(const std::string &content, std::string *error_message,
+	                           bool check_ranges = true) -> bool;
 	auto ReplaceConfigContentAtomically(
 	    const std::filesystem::path &config_path, const std::string &content,
 	    std::string *error_message = nullptr, bool lock = true, bool validate_runtime = true,

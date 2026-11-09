@@ -52,7 +52,7 @@ auto main(int argc, char **argv) -> int {
 		         "howdy-commands.roff",
 		         "howdy-options.roff",
 		         "pam-workarounds.roff",
-		         "howdy-ini-options.roff",
+		         "howdy-toml-options.roff",
 		     }) {
 			const auto path = output_dir / fragment;
 			Require(fs::is_regular_file(path) && fs::file_size(path) > 0,

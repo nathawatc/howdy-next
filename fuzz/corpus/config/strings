@@ -1,0 +1,5 @@
+[video]
+device_path = '''
+multi
+line'''
+escaped = "\u0000"

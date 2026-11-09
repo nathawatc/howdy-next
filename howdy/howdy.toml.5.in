@@ -1,0 +1,45 @@
+.TH HOWDY.TOML 5 "@HOWDY_MAN_DATE@" "Howdy Next @PROJECT_VERSION@" "File Formats"
+.SH NAME
+howdy.toml \- Howdy Next configuration file
+.SH DESCRIPTION
+The file
+.I @HOWDY_CONFIG_PATH_ROFF@
+contains runtime configuration for Howdy Next.
+.PP
+The configuration file uses TOML syntax. Options are grouped into tables, and each
+option is a key and a typed value:
+.PP
+.nf
+[core]
+disabled = false
+
+[video]
+device_path = "/dev/v4l/by-id/usb-camera-video-index0"
+max_height = 320.0
+timeout = 4
+.fi
+.PP
+Booleans are written as
+.B true
+or
+.BR false .
+Integers are written without quotes.
+Floating-point options accept integers or decimals.
+Strings are enclosed in double quotes and must be printable ASCII; an empty string selects
+the default value. Table and key names must be printable ASCII as well.
+Lines beginning with
+.B #
+are comments.
+Omitted options use the defaults listed below.
+.PP
+Howdy rejects unknown tables, unknown keys, and values of the wrong type, and then
+fails closed.
+.SH "CONFIGURATION OPTIONS"
+@HOWDY_CONFIG_REFERENCE@
+.SH FILES
+.TP
+.I @HOWDY_CONFIG_PATH_ROFF@
+Main Howdy configuration file.
+.SH "SEE ALSO"
+.BR howdy (1),
+.BR pam_howdy (8)

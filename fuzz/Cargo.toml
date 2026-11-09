@@ -1,0 +1,30 @@
+[package]
+name = "howdy-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+howdy-config = { path = "../crates/howdy-config", features = ["fuzzing"] }
+
+# Standalone: cargo-fuzz needs nightly, so this crate stays out of the main workspace.
+[workspace]
+
+[[bin]]
+name = "config_parse"
+path = "fuzz_targets/config_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "config_set"
+path = "fuzz_targets/config_set.rs"
+test = false
+doc = false
+bench = false

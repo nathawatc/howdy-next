@@ -72,7 +72,7 @@ namespace howdy::native {
 		                .kind              = CommandKind::kEntrypoint,
 		                .user_target       = UserTargetMode::kNone,
 		                .completion        = CommandCompletionKind::kBoolean,
-		                .argument_synopsis = "{0|1|true|false}",
+		                .argument_synopsis = "{true|false}",
 		                .min_positionals   = 1,
 		                .max_positionals   = 1,
 		            },

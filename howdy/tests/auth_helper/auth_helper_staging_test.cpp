@@ -12,6 +12,7 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -106,7 +107,7 @@ namespace {
 		Fixture fixture;
 		fixture.root     = temp_root / (std::string(name) + "-runtime");
 		fixture.source   = temp_root / (std::string(name) + "-source");
-		fixture.config   = fixture.source / "config.ini";
+		fixture.config   = fixture.source / "config.toml";
 		fixture.models   = fixture.source / "models";
 		fixture.identity = {
 		    .target_uid = target_uid,
@@ -115,7 +116,7 @@ namespace {
 		};
 		fixture.sources = {
 		    .runtime_root    = fixture.root,
-		    .config          = "./config.ini",
+		    .config          = "./config.toml",
 		    .user_models_dir = "./models",
 		};
 		std::error_code ec;
@@ -198,9 +199,9 @@ namespace {
 		std::ostringstream const output;
 		auto                    *previous = std::cout.rdbuf(output.rdbuf());
 		howdy::native::auth_helper::command::PrintPreparedPaths(
-		    "/run/howdy/pam-1000-gen000/config.ini", "/run/howdy/pam-1000-gen000/models");
+		    "/run/howdy/pam-1000-gen000/config.toml", "/run/howdy/pam-1000-gen000/models");
 		std::cout.rdbuf(previous);
-		ok &= Expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-gen000/config.ini\n"
+		ok &= Expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-gen000/config.toml\n"
 		                             "USER_MODELS_DIR=/run/howdy/pam-1000-gen000/models\n",
 		             "stdout protocol remains exact");
 		return ok;
@@ -689,7 +690,7 @@ namespace {
 		    slot0->runtime_dir);
 		std::error_code ec;
 		std::filesystem::create_directories(build / "models", ec);
-		ok &= Expect(!ec && WriteFile(build / "config.ini", "partial\n") &&
+		ok &= Expect(!ec && WriteFile(build / "config.toml", "partial\n") &&
 		                 WriteFile(build / "models" / "alice.dat", "partial\n"),
 		             "leaves an interrupted build behind");
 		std::filesystem::remove(slot0->config_path, ec);

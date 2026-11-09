@@ -15,8 +15,8 @@ namespace howdy::test {
 	struct ConfigUtilsTestContext {
 		std::filesystem::path temp_root;
 		std::filesystem::path config_path;
-		std::string           config_at_limit   = std::string(native::kMaxConfigFileSize, 'x');
-		std::string           config_over_limit = std::string(native::kMaxConfigFileSize + 1, 'x');
+		std::string config_at_limit   = "#" + std::string(native::kMaxConfigFileSize - 1, 'x');
+		std::string config_over_limit = "#" + std::string(native::kMaxConfigFileSize, 'x');
 	};
 
 	inline auto WriteConfigTestFile(const std::filesystem::path &path, const std::string &content)

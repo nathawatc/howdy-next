@@ -7,7 +7,15 @@ howdy_add_native_test(
  tests/config/config_path_security_test.cpp
 )
 target_link_libraries(howdy_config_utils_test PRIVATE howdy_config
-                      PkgConfig::INIREADER)
+                      howdy_config_document)
+
+howdy_add_native_test(
+ howdy_config_document_test
+ native-config-document
+ tests/config/config_document_test.cpp
+)
+target_link_libraries(howdy_config_document_test PRIVATE howdy_config
+                      howdy_config_document howdy_config_schema)
 
 howdy_add_native_test(
  howdy_config_schema_test
@@ -22,7 +30,7 @@ howdy_add_native_test(
  tests/config/config_template_test.cpp
 )
 target_link_libraries(howdy_config_template_test PRIVATE howdy_config_template
-                      howdy_config PkgConfig::INIREADER)
+                      howdy_config howdy_config_document)
 
 add_executable(
  howdy_config_generator_test tests/config/config_generator_test.cpp
@@ -119,7 +127,7 @@ target_compile_definitions(
 add_dependencies(howdy_config_validation_test howdy_packaged_config)
 target_link_libraries(
  howdy_config_validation_test
- PRIVATE howdy_config PkgConfig::INIREADER
+ PRIVATE howdy_config howdy_config_document
 )
 
 howdy_add_native_test(
@@ -150,16 +158,6 @@ howdy_add_native_test(
 target_link_libraries(
  howdy_runtime_config_test
  PRIVATE howdy_runtime_config_loader
-)
-
-howdy_add_native_test(
- howdy_config_reader_test
- native-config-reader
- tests/config/config_reader_test.cpp
-)
-target_link_libraries(
- howdy_config_reader_test
- PRIVATE howdy_config PkgConfig::INIREADER
 )
 
 howdy_add_native_test(

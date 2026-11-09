@@ -3,7 +3,6 @@
 #include "config/config_schema.hpp"
 
 #include <algorithm>
-#include <array>
 #include <charconv>
 #include <cstddef>
 #include <iostream>
@@ -15,8 +14,6 @@
 
 namespace howdy::native::howdy_completion_internal {
 	namespace {
-
-		constexpr std::array<std::string_view, 2> kBooleanCompletionValues{"false", "true"};
 
 		auto PrintCompletionCommands(std::span<const std::string> required_options = {}) -> bool {
 			std::vector<GlobalOptionId> required_option_ids;
@@ -114,7 +111,7 @@ namespace howdy::native::howdy_completion_internal {
 			}
 			switch (option.type) {
 				case config_schema::ValueType::kBoolean:
-					for (const auto value : kBooleanCompletionValues) {
+					for (const auto value : config_schema::kBooleanValues) {
 						std::cout << value << '\n';
 					}
 					return;
@@ -136,7 +133,7 @@ namespace howdy::native::howdy_completion_internal {
 				if (position != 0) {
 					return false;
 				}
-				for (const auto value : kBooleanCompletionValues) {
+				for (const auto value : config_schema::kBooleanValues) {
 					std::cout << value << '\n';
 				}
 				return true;
@@ -153,12 +150,9 @@ namespace howdy::native::howdy_completion_internal {
 			if (position != 1) {
 				return false;
 			}
-			const auto &key = previous_positionals.front();
-			for (const auto &option : config_schema::RuntimeConfigOptions()) {
-				if (option.key == key) {
-					PrintConfigOptionValues(option);
-					break;
-				}
+			if (const auto *option =
+			        config_schema::RuntimeConfigOptionByKey(previous_positionals.front())) {
+				PrintConfigOptionValues(*option);
 			}
 			return true;
 		}

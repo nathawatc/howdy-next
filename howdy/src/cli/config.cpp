@@ -15,14 +15,13 @@ namespace {
 
 	void PrintEditorReady(void *context) {
 		(void)context;
-		std::cout << "Editing config.ini\n";
+		std::cout << "Editing config.toml\n";
 	}
 
 	void PrintConfigInstallError(const howdy::native::config_internal::ConfigEditResult &result) {
 		if (result.status ==
 		    howdy::native::config_internal::ConfigEditStatus::kInvalidEditedConfig) {
-			if (!result.error.empty() &&
-			    result.error != howdy::native::kUpdatedConfigInvalidMessage) {
+			if (!result.error.empty()) {
 				std::cout << result.error << "\n";
 			}
 			std::cout << "Edited config is invalid and was not installed: "

@@ -96,7 +96,7 @@ auto main(int argc, char **argv) -> int {
 	ok &= Expect(RunGenerator(generator_path, emulator, {"--output"}, false) == 2,
 	             "incomplete output argument returns usage status");
 
-	const auto output = root / "generated" / "config.ini";
+	const auto output = root / "generated" / "config.toml";
 	error.clear();
 	fs::create_directories(output.parent_path(), error);
 	ok &= Expect(!error, "create generator output directory");
@@ -116,7 +116,7 @@ auto main(int argc, char **argv) -> int {
 	ok &= Expect(ReadFile(output) == generated_content,
 	             "replacement output is deterministic generated content");
 
-	const auto failed_output = root / "failed" / "config.ini";
+	const auto failed_output = root / "failed" / "config.toml";
 	fs::create_directories(failed_output.parent_path(), error);
 	ok &= Expect(!error && WriteFile(failed_output, "preserve this config\n"),
 	             "create output for failed-write test");
@@ -133,7 +133,7 @@ auto main(int argc, char **argv) -> int {
 	const auto blocked_parent = root / "blocked-parent";
 	ok &= Expect(WriteFile(blocked_parent, "not a directory\n"), "create invalid output parent");
 	ok &= Expect(RunGenerator(generator_path, emulator,
-	                          {"--output", (blocked_parent / "config.ini").string()}, false) != 0,
+	                          {"--output", (blocked_parent / "config.toml").string()}, false) != 0,
 	             "invalid output directory returns nonzero");
 	ok &= Expect(ReadFile(blocked_parent) == "not a directory\n",
 	             "invalid output directory remains unchanged");

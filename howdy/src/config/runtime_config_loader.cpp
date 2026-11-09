@@ -4,7 +4,7 @@
 #include "config/config_utils.hpp"
 #include "config/runtime_config.hpp"
 #include "config/test_hooks.hpp"
-#include "config_reader/internal.hpp"
+#include "config_document/internal.hpp"
 #include "config_validation/internal.hpp"
 #include "runtime_config_loader/internal.hpp"
 #include "support/error_message.hpp"
@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fcntl.h>
@@ -49,7 +50,7 @@ namespace howdy::native {
 			};
 		}
 
-		auto ReadCoreConfig(const ConfigReader &reader) -> CoreConfig {
+		auto ReadCoreConfig(const ConfigDocument &reader) -> CoreConfig {
 			using enum config_schema::OptionId;
 			return {
 			    .detection_notice    = ReadRuntimeBool(reader, kCoreDetectionNotice),
@@ -60,7 +61,7 @@ namespace howdy::native {
 			};
 		}
 
-		auto ReadVideoConfig(const ConfigReader &reader) -> VideoConfig {
+		auto ReadVideoConfig(const ConfigDocument &reader) -> VideoConfig {
 			using enum config_schema::OptionId;
 			return {
 			    .timeout              = ReadRuntimeInt(reader, kVideoTimeout),
@@ -80,7 +81,7 @@ namespace howdy::native {
 			};
 		}
 
-		auto ReadFaceConfig(const ConfigReader &reader, FaceMetric metric) -> FaceConfig {
+		auto ReadFaceConfig(const ConfigDocument &reader, FaceMetric metric) -> FaceConfig {
 			using enum config_schema::OptionId;
 			FaceConfig config{
 			    .yunet_score_threshold = ReadRuntimeFloat(reader, kFaceYunetScoreThreshold),
@@ -92,13 +93,13 @@ namespace howdy::native {
 			return config;
 		}
 
-		auto ReadDebugConfig(const ConfigReader &reader) -> DebugConfig {
+		auto ReadDebugConfig(const ConfigDocument &reader) -> DebugConfig {
 			return {
 			    .end_report = ReadRuntimeBool(reader, config_schema::OptionId::kDebugEndReport),
 			};
 		}
 
-		auto PopulateRuntimeConfig(const ConfigReader &reader) -> std::optional<RuntimeConfig> {
+		auto PopulateRuntimeConfig(const ConfigDocument &reader) -> std::optional<RuntimeConfig> {
 			const auto metric = ReadSfaceMetric(reader);
 			if (!metric.has_value()) {
 				return std::nullopt;
@@ -110,6 +111,30 @@ namespace howdy::native {
 			config.face  = ReadFaceConfig(reader, *metric);
 			config.debug = ReadDebugConfig(reader);
 			return config;
+		}
+
+		auto ParseRuntimeConfigContent(const std::filesystem::path &config_path,
+		                               std::string_view content) -> RuntimeConfigLoadResult {
+			const auto reader = ConfigDocument::FromContent(content);
+			if (!reader.Ok()) {
+				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
+				    config_path, "Failed to parse config: " + config_path.string() + " (" +
+				                     reader.Error() + ")");
+			}
+			const auto invalid =
+			    [&config_path](const std::string &detail) -> RuntimeConfigLoadResult {
+				return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
+				    config_path,
+				    "Invalid runtime config in " + config_path.string() + ": " + detail);
+			};
+			if (const auto validation = ValidateRuntimeConfig(reader)) {
+				return invalid(*validation);
+			}
+			auto populated = PopulateRuntimeConfig(reader);
+			if (!populated.has_value()) {
+				return invalid("unknown face metric");
+			}
+			return SuccessResult(config_path, std::move(*populated));
 		}
 
 	}  // namespace
@@ -145,28 +170,10 @@ namespace howdy::native {
 		fd.Reset();
 		if (!content.has_value()) {
 			return FailureResult<RuntimeConfigLoadStatus::kParseError>(
-			    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
+			    config_path, "Failed to parse config: " + config_path.string() + " (read failed)");
 		}
 
-		const ConfigReader reader(config_path.string(), *content);
-		if (!reader.Ok()) {
-			return FailureResult<RuntimeConfigLoadStatus::kParseError>(
-			    config_path, "Failed to parse config: " + config_path.string() + " (error " +
-			                     std::to_string(reader.ParseError()) + ")");
-		}
-
-		if (const auto validation = ValidateRuntimeConfig(reader)) {
-			return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
-			    config_path,
-			    "Invalid runtime config in " + config_path.string() + ": " + *validation);
-		}
-
-		auto populated = PopulateRuntimeConfig(reader);
-		if (!populated.has_value()) {
-			return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
-			    config_path,
-			    "Invalid runtime config in " + config_path.string() + ": unknown face metric");
-		}
-		return SuccessResult(config_path, std::move(*populated));
+		return ParseRuntimeConfigContent(config_path, *content);
 	}
+
 }  // namespace howdy::native

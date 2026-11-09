@@ -1,0 +1,4 @@
+video.timeout = 4
+face = { sface_metric = "cosine", sface_threshold = 0.5 }
+[core]
+disabled = true # trailing

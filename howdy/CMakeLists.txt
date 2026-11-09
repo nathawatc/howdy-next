@@ -8,9 +8,23 @@ add_library(howdy_config_schema STATIC
 )
 howdy_configure_native_target(howdy_config_schema)
 
+add_library(
+ howdy_config_document
+ STATIC
+ src/config/config_document.cpp
+ src/config/config_document/internal.hpp
+)
+howdy_configure_native_target(howdy_config_document)
+howdy_link_rust_ffi(howdy_config_document)
+target_link_libraries(howdy_config_document PRIVATE howdy_config_schema)
+
 add_library(howdy_config_template STATIC src/config/config_template.cpp)
 howdy_configure_native_target(howdy_config_template)
-target_link_libraries(howdy_config_template PUBLIC howdy_config_schema)
+target_link_libraries(
+ howdy_config_template
+ PUBLIC howdy_config_schema
+ PRIVATE howdy_config_document
+)
 
 add_library(howdy_runtime_config STATIC src/config/runtime_config.cpp)
 howdy_configure_native_target(howdy_runtime_config)
@@ -19,12 +33,9 @@ target_link_libraries(howdy_runtime_config PRIVATE howdy_config_schema)
 add_library(
  howdy_config
  STATIC
- src/config/config_reader.cpp
- src/config/config_reader/internal.hpp
  src/config/config_utils.cpp
  src/config/config_utils/internal.hpp
  src/config/config_utils/file_ops.cpp
- src/config/config_utils/key_file.cpp
  src/config/config_validation.cpp
  src/config/config_validation/internal.hpp
 )
@@ -32,8 +43,8 @@ howdy_configure_native_target(howdy_config)
 target_link_libraries(
  howdy_config
  PRIVATE
+  howdy_config_document
   howdy_config_schema
-  PkgConfig::INIREADER
 )
 
 add_executable(howdy_config_generator src/tools/generate_config.cpp)
@@ -68,7 +79,7 @@ add_custom_command(
  DEPENDS
   howdy_config_generator
   "${HOWDY_PACKAGED_CONFIG_SCRIPT}"
- COMMENT "Generating packaged Howdy config.ini"
+ COMMENT "Generating packaged Howdy config.toml"
  VERBATIM
 )
 add_custom_target(
@@ -93,7 +104,7 @@ howdy_configure_native_target(howdy_runtime_config_loader)
 target_link_libraries(
  howdy_runtime_config_loader
  PUBLIC howdy_runtime_config
- PRIVATE howdy_config howdy_runtime_paths PkgConfig::INIREADER
+ PRIVATE howdy_config howdy_config_document howdy_runtime_paths
 )
 
 add_library(

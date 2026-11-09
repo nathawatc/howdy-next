@@ -25,7 +25,7 @@ namespace {
 
 	using howdy::test::Expect;
 
-	constexpr auto kConfiguredConfig = "/etc/howdy/config.ini";
+	constexpr auto kConfiguredConfig = "/etc/howdy/config.toml";
 	constexpr auto kConfiguredModels = "/var/lib/howdy/models";
 
 	struct PreparedRuntimePaths {
@@ -438,7 +438,7 @@ namespace {
 		empty_root.root_dir.clear();
 
 		auto config_outside            = valid;
-		config_outside.config_path     = "/etc/howdy/config.ini";
+		config_outside.config_path     = "/etc/howdy/config.toml";
 		auto models_outside            = valid;
 		models_outside.user_models_dir = "/var/lib/howdy/models";
 		auto sibling_models            = valid;
@@ -447,7 +447,7 @@ namespace {
 		swapped_paths.config_path      = valid.user_models_dir;
 		swapped_paths.user_models_dir  = valid.config_path;
 		auto nested_config             = valid;
-		nested_config.config_path = (fs::path(valid.root_dir) / "nested" / "config.ini").string();
+		nested_config.config_path = (fs::path(valid.root_dir) / "nested" / "config.toml").string();
 		auto escaped_models       = valid;
 		escaped_models.user_models_dir =
 		    (fs::path(valid.root_dir) / "models" / ".." / "models").string();
@@ -455,15 +455,15 @@ namespace {
 		noncanonical_root.root_dir =
 		    fs::path(valid.root_dir).parent_path() / ".." / fs::path(valid.root_dir).filename();
 		auto wrong_config_name            = valid;
-		wrong_config_name.config_path     = (fs::path(valid.root_dir) / "settings.ini").string();
+		wrong_config_name.config_path     = (fs::path(valid.root_dir) / "settings.toml").string();
 		auto wrong_models_name            = valid;
 		wrong_models_name.user_models_dir = (fs::path(valid.root_dir) / "user-models").string();
 		auto relative_paths               = valid;
-		relative_paths.config_path        = "relative/config.ini";
+		relative_paths.config_path        = "relative/config.toml";
 		relative_paths.user_models_dir    = "relative/models";
 		auto outside_root                 = valid;
 		outside_root.root_dir             = "/tmp/howdy-auth-helper-runtime";
-		outside_root.config_path          = "/tmp/howdy-auth-helper-runtime/config.ini";
+		outside_root.config_path          = "/tmp/howdy-auth-helper-runtime/config.toml";
 		outside_root.user_models_dir      = "/tmp/howdy-auth-helper-runtime/models";
 
 		const std::vector<TestCase> test_cases = {

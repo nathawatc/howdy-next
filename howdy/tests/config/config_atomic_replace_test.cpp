@@ -50,8 +50,8 @@ namespace howdy::test {
 		validation_error.clear();
 		ok &= Expect(!howdy::native::ValidateConfigContent("[core\n", &validation_error),
 		             "validate_config_content rejects invalid syntax");
-		ok &= Expect(validation_error == "Updated config is invalid",
-		             "invalid config syntax reports stable invalid-config error");
+		ok &= Expect(validation_error.starts_with("Updated config is invalid: line 1"),
+		             "invalid config syntax reports invalid-config error with position");
 		validation_error.clear();
 		ok &= Expect(
 		    !howdy::native::ValidateConfigContent("[video]\ntimeout = 0\n", &validation_error),
@@ -60,7 +60,7 @@ namespace howdy::test {
 		ok &= Expect(validation_error != "Updated config is invalid",
 		             "invalid runtime config reports runtime validation error");
 
-		const auto replace_path = context.temp_root / "replace.ini";
+		const auto replace_path = context.temp_root / "replace.toml";
 		ok &= Expect(WriteConfigTestFile(replace_path, valid_content),
 		             "write replace config baseline");
 		ok &= Expect(chmod(replace_path.c_str(), 0600) == 0, "set replace config mode");
@@ -78,7 +78,7 @@ namespace howdy::test {
 		ok &= Expect(install_error == "Updated config exceeds maximum size" &&
 		                 ReadConfigTestFile(replace_path) == before_oversized_replace,
 		             "oversized replacement leaves existing config unchanged");
-		const auto missing_path = context.temp_root / "missing-replace-config.ini";
+		const auto missing_path = context.temp_root / "missing-replace-config.toml";
 		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(
 		                 missing_path, replacement_content, &install_error, true, true, nullptr,
 		                 howdy::native::SyncParentDirectory, {context.temp_root}) &&
@@ -209,7 +209,7 @@ namespace howdy::test {
 		ok &= Expect(fs::create_directories(replace_insecure_dir, ec) || !ec,
 		             "create insecure replace dir");
 		ok &= Expect(!ec, "no error creating insecure replace dir");
-		const auto replace_insecure_path = replace_insecure_dir / "config.ini";
+		const auto replace_insecure_path = replace_insecure_dir / "config.toml";
 		ok &= Expect(WriteConfigTestFile(replace_insecure_path, valid_content),
 		             "write insecure replace config");
 		ok &= Expect(chmod(replace_insecure_dir.c_str(), 0777) == 0,
@@ -221,7 +221,7 @@ namespace howdy::test {
 		ok &= Expect(chmod(replace_insecure_dir.c_str(), 0755) == 0,
 		             "restore replace config dir mode");
 
-		const auto non_regular_path = context.temp_root / "non-regular.ini";
+		const auto non_regular_path = context.temp_root / "non-regular.toml";
 		ok &=
 		    Expect(fs::create_directory(non_regular_path, ec), "create non-regular config target");
 		ok &= Expect(!howdy::native::ReplaceConfigContentAtomically(

@@ -30,7 +30,7 @@ include(CheckPIESupported)
 include(CheckCXXSourceCompiles)
 include(CMakePushCheckState)
 find_package(PkgConfig REQUIRED)
-set(howdy_pkg_config_prefixes OPENCV5 INIREADER YYJSON LIBCURL OPENSSL LIBEVDEV LIBACL)
+set(howdy_pkg_config_prefixes OPENCV5 YYJSON LIBCURL OPENSSL LIBEVDEV LIBACL)
 howdy_isolate_cross_pkg_config(${howdy_pkg_config_prefixes})
 find_package(Threads REQUIRED)
 find_package(Git QUIET)
@@ -146,7 +146,6 @@ add_link_options(
 )
 
 pkg_check_modules(OPENCV5 REQUIRED IMPORTED_TARGET opencv5>=5.0.0)
-pkg_check_modules(INIREADER REQUIRED IMPORTED_TARGET INIReader>=59)
 pkg_check_modules(YYJSON REQUIRED IMPORTED_TARGET yyjson>=0.12.0)
 pkg_check_modules(LIBCURL REQUIRED IMPORTED_TARGET libcurl>=7.85.0)
 pkg_check_modules(OPENSSL REQUIRED IMPORTED_TARGET openssl)
@@ -228,11 +227,11 @@ foreach(path IN ITEMS HOWDY_PAM_DIR HOWDY_CONFIG_DIR HOWDY_MODELS_DIR
   cmake_path(ABSOLUTE_PATH ${path} BASE_DIRECTORY "${CMAKE_INSTALL_PREFIX}" NORMALIZE)
 endforeach()
 
-set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.ini")
+set(HOWDY_CONFIG_PATH "${HOWDY_CONFIG_DIR}/config.toml")
 cmake_path(NORMAL_PATH HOWDY_CONFIG_PATH)
 set(
  HOWDY_PACKAGED_CONFIG_PATH
- "${PROJECT_BINARY_DIR}/generated/config/config.ini"
+ "${PROJECT_BINARY_DIR}/generated/config/config.toml"
 )
 set(HOWDY_HELPER_DIR "${CMAKE_INSTALL_FULL_LIBEXECDIR}/howdy")
 set(HOWDY_COMPARE_PROCESS_PATH "${HOWDY_HELPER_DIR}/howdy-compare")

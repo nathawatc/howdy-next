@@ -496,16 +496,16 @@ namespace {
 
 	auto TestProductionDirectRuntimeEnvironment() -> bool {
 		return TestProductionSpawnAdapter(
-		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
-		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
+		    MakeCompareRequest("/etc/howdy/config.toml", "alice", "/etc/howdy/models", false),
+		    {kCompareProcessPath, "--config", "/etc/howdy/config.toml", "alice"},
 		    "production direct runtime", {"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"});
 	}
 
 	auto TestProductionStagedRuntimeEnvironment() -> bool {
 		return TestProductionSpawnAdapter(
-		    MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
+		    MakeCompareRequest("/run/howdy/runtime/config.toml", "alice",
 			                   "/run/howdy/runtime/models", true),
-		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.ini", "alice"},
+		    {kCompareProcessPath, "--config", "/run/howdy/runtime/config.toml", "alice"},
 		    "production staged runtime",
 		    {
 		        "HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models",
@@ -516,7 +516,7 @@ namespace {
 
 	auto TestOwnedLaunchRequestFromTemporaries() -> bool {
 		const howdy::pam::CompareLaunchRequest request = {
-		    .config_path     = std::string("/run/howdy/temporary/config.ini"),
+		    .config_path     = std::string("/run/howdy/temporary/config.toml"),
 		    .username        = std::string("temporary-user"),
 		    .user_models_dir = std::string("/run/howdy/temporary/models"),
 		    .staged_runtime  = true,
@@ -524,7 +524,7 @@ namespace {
 
 		return TestProductionSpawnAdapter(
 		    request,
-		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.ini", "temporary-user"},
+		    {kCompareProcessPath, "--config", "/run/howdy/temporary/config.toml", "temporary-user"},
 		    "owned temporary request",
 		    {
 		        "HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models",
@@ -595,7 +595,7 @@ namespace {
 		                  std::vector<std::string>{
 		                      kCompareProcessPath,
 		                      "--config",
-		                      "/etc/howdy/config.ini",
+		                      "/etc/howdy/config.toml",
 		                      "alice",
 		                  },
 		              "production spawn failure preserves exact argv") &&

@@ -1,13 +1,17 @@
 [workspace]
 resolver = "3"
-members = ["crates/howdy-ffi"]
+members = ["crates/howdy-config", "crates/howdy-ffi"]
 exclude = ["fuzz"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "GPL-3.0-or-later"
 publish = false
+
+[workspace.dependencies]
+howdy-config = { path = "crates/howdy-config" }
+toml_edit = { version = "0.25.19", default-features = false, features = ["parse", "display"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

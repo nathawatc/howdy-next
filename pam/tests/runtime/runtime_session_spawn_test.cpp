@@ -622,7 +622,7 @@ namespace {
 			return errno;
 		}
 		if (pid == 0) {
-			const std::string output = "CONFIG_PATH=" + (state.root / "config.ini").string() +
+			const std::string output = "CONFIG_PATH=" + (state.root / "config.toml").string() +
 			                           "\nUSER_MODELS_DIR=" + (state.root / "models").string() +
 			                           "\n";
 			const bool output_ok = write(state.output_pipe.at(1), output.data(), output.size()) ==

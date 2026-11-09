@@ -273,7 +273,7 @@ namespace {
 	                      unsigned unrelated_gid) -> void {
 		// NOLINTEND(bugprone-easily-swappable-parameters)
 		const auto models_dir = generation / "models";
-		const auto config     = generation / "config.ini";
+		const auto config     = generation / "config.toml";
 		const auto backing    = generation / ".model_backing";
 		const auto visible    = models_dir / (user + ".dat");
 		const auto lock       = fs::path(generation.string() + ".lock");

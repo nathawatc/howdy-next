@@ -1,0 +1,6 @@
+[core]
+# comment
+disabled = "yes"  # wrong type
+
+[fuzz]
+key = 1

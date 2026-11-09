@@ -1,167 +1,123 @@
 #include "config/config_schema.hpp"
-#include "config_reader/internal.hpp"
+#include "config_document/internal.hpp"
 #include "config_validation/internal.hpp"
 #include "support/capture_device_path.hpp"
 #include "support/face_metric.hpp"
 
 #include <algorithm>
-#include <cctype>
-#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <variant>
 
 namespace howdy::native {
+	auto InvalidConfigValueMessage(std::string_view key, std::string_view value,
+	                               std::string_view rule) -> std::string {
+		return "Invalid config value for " + std::string(key) + "=\"" + std::string(value) +
+		       "\": " + std::string(rule);
+	}
+
 	namespace {
 
-		auto NormalizedLower(std::string value) -> std::string {
-			for (char &ch : value) {
-				ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-			}
-			return value;
+		auto InvalidValue(const config_schema::Option      &option,
+		                  const config_schema::ConfigValue &value, std::string_view rule)
+		    -> std::string {
+			return InvalidConfigValueMessage(option.key, config_schema::FormatConfigValue(value),
+			                                 rule);
 		}
 
-		auto ParseIntStrict(std::string_view value) -> std::optional<int> {
-			if (!value.empty() && value.front() == '+') {
-				value.remove_prefix(1);
-				if (value.empty() || value.front() == '-') {
-					return std::nullopt;
-				}
-			}
-			int        parsed = 0;
-			const auto result = std::from_chars(value.begin(), value.end(), parsed);
-			if (result.ec != std::errc{} || result.ptr != value.end() || value.empty()) {
+		auto ValidateInteger(const config_schema::Option &option, int value)
+		    -> std::optional<std::string> {
+			const auto *range = std::get_if<config_schema::IntegerRange>(&option.range);
+			if (range == nullptr ||
+			    (range->allowed_value.has_value() && value == *range->allowed_value) ||
+			    (value >= range->minimum && value <= range->maximum)) {
 				return std::nullopt;
 			}
-			return parsed;
+			return InvalidValue(option, config_schema::ConfigValue{value}, option.invalid_rule);
 		}
 
-		auto IsValidBoolText(std::string_view value) -> bool {
-			return config_schema::IsAcceptedBooleanText(value);
-		}
-
-		auto InvalidConfigValueMessage(std::string_view key, std::string_view value,
-		                               std::string_view rule) -> std::string {
-			return "Invalid config value for " + std::string(key) + "=\"" + std::string(value) +
-			       "\": " + std::string(rule);
-		}
-
-		auto ValidateInteger(const config_schema::Option &option, std::string_view value)
+		auto ValidateSfaceThreshold(const ConfigDocument        &config,
+		                            const config_schema::Option &option, float value, float minimum)
 		    -> std::optional<std::string> {
-			const auto parsed = ParseIntStrict(value);
-			if (!parsed.has_value()) {
-				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
+			const auto &metric_option =
+			    config_schema::RuntimeConfigOption(config_schema::OptionId::kFaceSfaceMetric);
+			const auto metric_value = config.GetString(
+			    metric_option.section, metric_option.key,
+			    std::string(config_schema::RuntimeDefaultString(metric_option.id)));
+			const auto  metric = ParseFaceMetric(metric_value);
+			const auto *policy = metric.has_value() ? GetFaceMetricPolicy(*metric) : nullptr;
+			if (policy == nullptr) {
+				return InvalidConfigValueMessage(metric_option.key, metric_value,
+				                                 metric_option.invalid_rule);
 			}
-			if (const auto *range = std::get_if<config_schema::IntegerRange>(&option.range)) {
-				if (range->allowed_value.has_value() && *parsed == *range->allowed_value) {
-					return std::nullopt;
-				}
-				if (*parsed < range->minimum || *parsed > range->maximum) {
-					return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
-				}
+			if (value >= minimum && value <= policy->threshold_maximum) {
+				return std::nullopt;
 			}
-			return std::nullopt;
+			const auto maximum_text =
+			    config_schema::FormatFloatingPointValue(policy->threshold_maximum).value_or("");
+			return InvalidValue(option, config_schema::ConfigValue{value},
+			                    "expected range 0.." + maximum_text);
 		}
 
-		auto ValidateFloat(const ConfigReader &config, const config_schema::Option &option,
-		                   std::string_view value) -> std::optional<std::string> {
-			const auto parsed = ParseConfigFloatStrict(value);
-			if (!parsed.has_value()) {
-				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
-			}
+		auto ValidateFloat(const ConfigDocument &config, const config_schema::Option &option,
+		                   float value) -> std::optional<std::string> {
 			const auto *range   = std::get_if<config_schema::FloatRange>(&option.range);
 			const float minimum = range != nullptr ? range->minimum : 0.0F;
-
 			if (option.special_rule == config_schema::SpecialRule::kSfaceThreshold) {
-				const auto &metric_option =
-				    config_schema::RuntimeConfigOption(config_schema::OptionId::kFaceSfaceMetric);
-				const auto metric_value =
-				    config.Get(std::string(metric_option.section), std::string(metric_option.key),
-					           std::string(config_schema::RuntimeDefaultString(metric_option.id)));
-				const auto metric = ParseFaceMetric(
-				    metric_value.empty() ? config_schema::RuntimeDefaultString(metric_option.id)
-					                     : std::string_view(metric_value));
-				if (!metric.has_value()) {
-					return InvalidConfigValueMessage(metric_option.key, metric_value,
-					                                 metric_option.invalid_rule);
-				}
-				const auto *policy = GetFaceMetricPolicy(*metric);
-				if (policy == nullptr) {
-					return InvalidConfigValueMessage(metric_option.key, metric_value,
-					                                 metric_option.invalid_rule);
-				}
-				const float policy_max = policy->threshold_maximum;
-				if (*parsed < minimum || *parsed > policy_max) {
-					const auto maximum_text =
-					    config_schema::FormatFloatingPointValue(policy_max).value_or("");
-					return InvalidConfigValueMessage(option.key, value,
-					                                 "expected range 0.." + maximum_text);
-				}
-				return std::nullopt;
+				return ValidateSfaceThreshold(config, option, value, minimum);
 			}
-			if (range != nullptr && (*parsed < range->minimum || *parsed > range->maximum)) {
-				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
+			if (range != nullptr && (value < range->minimum || value > range->maximum)) {
+				return InvalidValue(option, config_schema::ConfigValue{value}, option.invalid_rule);
 			}
 			return std::nullopt;
 		}
 
-		auto ValidateString(const config_schema::Option &option, std::string_view value)
+		auto ValidateString(const config_schema::Option &option, const std::string &value)
 		    -> std::optional<std::string> {
+			const bool listed = std::ranges::find(option.choices, value) != option.choices.end();
 			if (option.special_rule == config_schema::SpecialRule::kDevicePath) {
-				if (std::ranges::find(option.choices, value) != option.choices.end()) {
+				if (listed || IsAllowedCaptureDevicePath(value)) {
 					return std::nullopt;
 				}
-				if (value.empty() || !IsAllowedCaptureDevicePath(value)) {
-					return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
-				}
-				return std::nullopt;
+				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
-			if (!option.choices.empty() &&
-			    std::ranges::find(option.choices, NormalizedLower(std::string(value))) ==
-			        option.choices.end()) {
+			if (!option.choices.empty() && !listed) {
 				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
 			return std::nullopt;
 		}
 
-		auto ValidateKnownConfigValue(const ConfigReader          &config,
-		                              const config_schema::Option &option, std::string_view value)
+		// ConfigDocument already guarantees each value has its option's type; only ranges,
+		// choices, and cross-option rules remain.
+		auto ValidateKnownConfigValue(const ConfigDocument             &config,
+		                              const config_schema::Option      &option,
+		                              const config_schema::ConfigValue &value)
 		    -> std::optional<std::string> {
-			switch (option.type) {
-				case config_schema::ValueType::kBoolean:
-					if (!IsValidBoolText(value)) {
-						return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
-					}
-					return std::nullopt;
-				case config_schema::ValueType::kInteger: {
-					return ValidateInteger(option, value);
-				}
-				case config_schema::ValueType::kFloatingPoint: {
-					return ValidateFloat(config, option, value);
-				}
-				case config_schema::ValueType::kString:
-					return ValidateString(option, value);
+			if (const auto *number = std::get_if<int>(&value)) {
+				return ValidateInteger(option, *number);
+			}
+			if (const auto *number = std::get_if<float>(&value)) {
+				return ValidateFloat(config, option, *number);
+			}
+			if (const auto *text = std::get_if<std::string>(&value)) {
+				return ValidateString(option, *text);
 			}
 			return std::nullopt;
 		}
 
 	}  // namespace
 
-	auto ValidateRuntimeConfig(const ConfigReader &config) -> std::optional<std::string> {
+	auto ValidateRuntimeConfig(const ConfigDocument &config) -> std::optional<std::string> {
 		for (const auto &option : config_schema::RuntimeConfigOptions()) {
-			const auto value = config.Get(std::string(option.section), std::string(option.key), "");
-			if (value.empty()) {
-				// Empty values preserve existing behavior: they are treated like unset values
-				// and fall back to runtime defaults.
+			const auto *value = config.Value(option.section, option.key);
+			if (value == nullptr) {
 				continue;
 			}
-			if (const auto validation = ValidateKnownConfigValue(config, option, value)) {
+			if (const auto validation = ValidateKnownConfigValue(config, option, *value)) {
 				return validation;
 			}
 		}
-
 		return std::nullopt;
 	}
 

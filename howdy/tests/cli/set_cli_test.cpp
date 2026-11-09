@@ -15,7 +15,7 @@ namespace {
 	using howdy::native::set_internal::SetDependencies;
 
 	struct TestContext {
-		std::filesystem::path config_path   = "/test/howdy/config.ini";
+		std::filesystem::path config_path   = "/test/howdy/config.toml";
 		int                   resolve_calls = 0;
 		int                   update_calls  = 0;
 		std::filesystem::path received_path;
@@ -76,13 +76,12 @@ auto main() -> int {
 	{
 		TestContext context{
 		    .update_result = false,
-		    .update_error  = "Config values must be single-line scalars and cannot start with [",
+		    .update_error  = "Config values must be printable ASCII",
 		};
 		const auto result =
 		    RunSet({.positionals = {"key", "line\nbreak"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "updater scalar failure aborts");
-		ok &= Expect(result.output ==
-		                 "Config values must be single-line scalars and cannot start with [\n",
+		ok &= Expect(result.output == "Config values must be printable ASCII\n",
 		             "updater scalar failure prints diagnostic");
 		ok &= Expect(context.resolve_calls == 1, "updater scalar failure resolves path first");
 		ok &= Expect(context.update_calls == 1, "updater scalar failure invokes updater once");

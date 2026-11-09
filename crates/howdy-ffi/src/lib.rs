@@ -6,7 +6,7 @@
 mod boundary;
 pub mod ffi;
 
-/// Version of the exported C ABI. C++ compares it with the value in the generated header.
+/// Version of the exported C ABI. Tests compare it with the value in the generated header.
 pub const HOWDY_FFI_ABI_VERSION: u32 = 1;
 
 /// Result of every exported function.
@@ -19,4 +19,8 @@ pub enum HowdyFfiStatus {
     InvalidArgument = 1,
     /// The call panicked; the panic was caught at the boundary.
     Panic = 2,
+    /// Text input was not valid UTF-8.
+    InvalidUtf8 = 3,
+    /// Text input exceeded its size limit; nothing was read past the length.
+    TooLarge = 4,
 }

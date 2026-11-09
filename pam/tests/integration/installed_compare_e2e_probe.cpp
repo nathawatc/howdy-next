@@ -84,7 +84,7 @@ auto main(int argc, char **argv) -> int {
 	const auto                  generation      = config.parent_path();
 	const auto                  generation_name = generation.filename().string();
 	const auto                  expected_prefix = "pam-" + std::to_string(account->pw_uid) + "-gen";
-	if (config.filename() != "config.ini" || generation.parent_path() != "/run/howdy" ||
+	if (config.filename() != "config.toml" || generation.parent_path() != "/run/howdy" ||
 	    !generation_name.starts_with(expected_prefix) ||
 	    std::filesystem::path(models_env) != generation / "models") {
 		return Fail("compare did not receive the staged runtime paths");

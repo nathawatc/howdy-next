@@ -1,0 +1,9 @@
+# See howdy.toml(5) for configuration options.
+
+[core]
+disabled = false
+
+[video]
+timeout = 4
+max_height = 320.0
+device_path = "/dev/video0"

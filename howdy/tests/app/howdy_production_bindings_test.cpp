@@ -67,12 +67,9 @@ namespace {
 		    });
 		std::cout.rdbuf(old_output);
 		std::cerr.rdbuf(old_error);
-		return Expect(
-		    status == 1 &&
-		        output.str() ==
-		            "Config values must be single-line scalars and cannot start with [\n" &&
-		        error.str().empty(),
-		    "production dispatcher invokes SetMain and rejects unsafe value");
+		return Expect(status == 1 && output.str() == "Config values must be printable ASCII\n" &&
+		                  error.str().empty(),
+		              "production dispatcher invokes SetMain and rejects unsafe value");
 	}
 
 }  // namespace

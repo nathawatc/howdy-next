@@ -37,7 +37,7 @@ corrosion_import_crate(
 set(HOWDY_RUST_INCLUDE_DIR "${PROJECT_BINARY_DIR}/rust-include")
 set(howdy_ffi_header "${HOWDY_RUST_INCLUDE_DIR}/howdy_ffi.h")
 file(
- GLOB howdy_ffi_sources
+ GLOB_RECURSE howdy_ffi_sources
  CONFIGURE_DEPENDS
  "${howdy_ffi_crate_dir}/src/*.rs"
 )

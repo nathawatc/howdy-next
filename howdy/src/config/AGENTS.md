@@ -12,26 +12,31 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `config_utils.cpp`: high-level secure config transaction orchestration
 - `config_utils/file_ops.cpp`: locks, secure file I/O, staging/install, expected-content checks,
   content validation
-- `config_utils/key_file.cpp`: INI scalar/line parsing and comment-preserving replacement
+- `config_document.cpp`: the only config code that calls Rust (`howdy-config` over
+  `howdy_ffi.h`); schema-checked TOML parsing and comment-preserving single-option edits
 
-Private cross-TU contracts stay in each component's `internal.hpp`. ConfigReader and strict float
-parsing live in `config_reader/internal.hpp`; semantic validation lives in
+Private cross-TU contracts stay in each component's `internal.hpp`. ConfigDocument and
+SetConfigValue and `howdy set` input parsing (ParseOptionValueText,
+IsSafeConfigText) live in `config_document/internal.hpp`; semantic validation lives in
 `config_validation/internal.hpp`; typed parsing helpers live in `runtime_config_loader/internal.hpp`.
-Config tests include these private contracts directly; do not expose INIReader through public headers.
+Config tests include these private contracts directly. TOML syntax, escaping, and layout belong to
+`crates/howdy-config`; never parse or emit TOML text in C++. The one exception is the packaged
+config's fixed header comment in `config_template.cpp`, which Rust parses with every edit.
 
 ## Invariants
 
 - `config_schema` is the single source of truth for option metadata and packaged fallback values.
-  Generate packaged `config.ini`; do not hand-edit generated defaults.
-- Runtime consumers use typed config; do not add raw `ConfigReader` lookups outside config
+  Generate packaged `config.toml`; do not hand-edit generated defaults.
+- Runtime consumers use typed config; do not add raw `ConfigDocument` lookups outside config
   parsing/loading code.
 - Consumers that only need `RuntimeConfig` link to `howdy_runtime_config`, not
-  `howdy_runtime_config_loader`; secure loading, filesystem, UID, INI parsing, and validation remain
+  `howdy_runtime_config_loader`; secure loading, filesystem, UID, TOML parsing, and validation remain
   behind the loader and private config implementation.
 - Keep secure path checks, locks, revalidation, staged install, parent sync, and commit-state
   handling intact.
 - Preserve expected-current-content stale detection.
-- Keep INI text editing separate from filesystem transaction policy.
+- Keep TOML text editing separate from filesystem transaction policy.
+- Unknown tables/keys and wrong TOML types are structural errors, not ignored values.
 - Treat post-rename sync failure as potentially committed.
 
 Tests under `tests/config/` cover parsing, path security, atomic write/replace, runtime loading, and

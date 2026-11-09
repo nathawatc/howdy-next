@@ -157,7 +157,7 @@ auto main() -> int {
 	ok &= expect_bool_default(defaults.debug.end_report, kDebugEndReport,
 	                          "debug end_report struct default matches schema");
 
-	const auto minimal = LoadConfig(root, "minimal.ini", "[core]\n");
+	const auto minimal = LoadConfig(root, "minimal.toml", "[core]\n");
 	ok &= Expect(minimal.ok, "minimal config loads");
 	ok &= Expect(minimal.config.has_value(), "minimal config has config");
 	if (minimal.config.has_value()) {
@@ -172,7 +172,7 @@ auto main() -> int {
 		    "cosine threshold default loads from schema");
 	}
 
-	const auto custom = LoadConfig(root, "custom.ini",
+	const auto custom = LoadConfig(root, "custom.toml",
 	                               "[core]\n"
 	                               "no_confirmation = false\n"
 	                               "detection_notice = true\n"
@@ -181,7 +181,7 @@ auto main() -> int {
 	                               "disabled = false\n"
 	                               "[video]\n"
 	                               "timeout = 12\n"
-	                               "device_path = none\n"
+	                               "device_path = \"none\"\n"
 	                               "warn_no_device = false\n"
 	                               "max_height = 640\n"
 	                               "frame_width = 1280\n"
@@ -198,7 +198,7 @@ auto main() -> int {
 	                               "yunet_score_threshold = 0.8\n"
 	                               "yunet_nms_threshold = 0.2\n"
 	                               "yunet_top_k = 1234\n"
-	                               "sface_metric = l2\n"
+	                               "sface_metric = \"l2\"\n"
 	                               "sface_threshold = 3.5\n"
 	                               "[debug]\n"
 	                               "end_report = true\n");
@@ -229,13 +229,13 @@ auto main() -> int {
 		ok &= Expect(config.debug.end_report, "custom debug field maps to its schema option");
 	}
 
-	const auto upside_down = LoadConfig(root, "rotate-180.ini", "[video]\nrotate = 3\n");
+	const auto upside_down = LoadConfig(root, "rotate-180.toml", "[video]\nrotate = 3\n");
 	ok &= Expect(upside_down.ok && upside_down.config.has_value() &&
 	                 upside_down.config->video.rotate == 3,
 	             "rotate 3 loads as a runtime video option");
 
 	const auto boolean_mapping =
-	    LoadConfig(root, "boolean-mapping.ini",
+	    LoadConfig(root, "boolean-mapping.toml",
 		           "[core]\nno_confirmation = true\nabort_if_ssh = false\n"
 		           "[video]\nwarn_no_device = true\nclahe_enabled = false\n");
 	ok &= Expect(boolean_mapping.ok && boolean_mapping.config.has_value(),
@@ -247,8 +247,8 @@ auto main() -> int {
 		             "same-type boolean fields map to distinct schema options");
 	}
 
-	const auto cosine =
-	    LoadConfig(root, "cosine.ini", "[face]\nsface_metric = COSINE\nsface_threshold = 0.5\n");
+	const auto cosine = LoadConfig(root, "cosine.toml",
+	                               "[face]\nsface_metric = \"cosine\"\nsface_threshold = 0.5\n");
 	ok &= Expect(cosine.ok, "cosine config loads");
 	ok &= Expect(cosine.config.has_value(), "cosine config has config");
 	if (cosine.config.has_value()) {
@@ -258,12 +258,13 @@ auto main() -> int {
 	}
 
 	const auto invalid_cosine = LoadConfig(
-	    root, "invalid-cosine.ini", "[face]\nsface_metric = cosine\nsface_threshold = 1.1\n");
+	    root, "invalid-cosine.toml", "[face]\nsface_metric = \"cosine\"\nsface_threshold = 1.1\n");
 	ok &= Expect(!invalid_cosine.ok && invalid_cosine.error_message.contains("sface_threshold"),
 	             "cosine threshold above one fails");
 	ok &= Expect(!invalid_cosine.config.has_value(), "invalid cosine config has no config");
 
-	const auto l2 = LoadConfig(root, "l2.ini", "[face]\nsface_metric = l2\nsface_threshold = 4\n");
+	const auto l2 =
+	    LoadConfig(root, "l2.toml", "[face]\nsface_metric = \"l2\"\nsface_threshold = 4\n");
 	ok &= Expect(l2.ok, "l2 config loads");
 	ok &= Expect(l2.config.has_value(), "l2 config has config");
 	if (l2.config.has_value()) {
@@ -274,7 +275,7 @@ auto main() -> int {
 	}
 
 	const auto sentinel =
-	    LoadConfig(root, "sentinel.ini", "[video]\nframe_width = -1\nexposure = -1\n");
+	    LoadConfig(root, "sentinel.toml", "[video]\nframe_width = -1\nexposure = -1\n");
 	ok &= Expect(sentinel.ok && sentinel.config.has_value(), "allowed video sentinels load");
 	if (sentinel.config.has_value()) {
 		const auto &config = *sentinel.config;
@@ -282,22 +283,22 @@ auto main() -> int {
 		             "allowed video sentinels map to correct fields");
 	}
 
-	const auto invalid_fps = LoadConfig(root, "invalid-fps.ini", "[video]\ndevice_fps = -1\n");
+	const auto invalid_fps = LoadConfig(root, "invalid-fps.toml", "[video]\ndevice_fps = -1\n");
 	ok &= Expect(!invalid_fps.ok && invalid_fps.error_message.contains("device_fps"),
 	             "negative device fps fails");
 	ok &= Expect(!invalid_fps.config.has_value(), "invalid fps config has no config");
 
 	const auto invalid_float =
-	    LoadConfig(root, "invalid-float.ini", "[video]\ndark_threshold = fast\n");
+	    LoadConfig(root, "invalid-float.toml", "[video]\ndark_threshold = \"fast\"\n");
 	ok &= Expect(!invalid_float.ok && invalid_float.error_message.contains("dark_threshold"),
 	             "invalid float text fails");
 	ok &= Expect(!invalid_float.config.has_value(), "invalid float config has no config");
 
-	const auto empty = LoadConfig(root, "empty.ini",
-	                              "[core]\ndisabled = \n"
-	                              "[video]\ntimeout = \ndark_threshold = \n"
-	                              "[face]\nsface_metric = \nsface_threshold = \n");
-	ok &= Expect(empty.ok, "empty values load");
+	const auto empty = LoadConfig(root, "empty.toml",
+	                              "[core]\n"
+	                              "[video]\ndevice_path = \"\"\n"
+	                              "[face]\nsface_metric = \"\"\n");
+	ok &= Expect(empty.ok, "empty tables and empty strings load");
 	ok &= Expect(empty.config.has_value(), "empty config has config");
 	if (empty.config.has_value()) {
 		const auto &config = *empty.config;

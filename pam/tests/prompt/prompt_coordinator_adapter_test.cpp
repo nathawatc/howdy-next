@@ -70,14 +70,15 @@ namespace {
 
 	auto TestDirectRuntimeLaunchRequest() -> bool {
 		return TestLaunchRequest(
-		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
-		    "/etc/howdy/config.ini", "alice", "/etc/howdy/models", false, "direct runtime request");
+		    MakeCompareRequest("/etc/howdy/config.toml", "alice", "/etc/howdy/models", false),
+		    "/etc/howdy/config.toml", "alice", "/etc/howdy/models", false,
+		    "direct runtime request");
 	}
 
 	auto TestStagedRuntimeLaunchRequest() -> bool {
-		return TestLaunchRequest(MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
+		return TestLaunchRequest(MakeCompareRequest("/run/howdy/runtime/config.toml", "alice",
 		                                            "/run/howdy/runtime/models", true),
-		                         "/run/howdy/runtime/config.ini", "alice",
+		                         "/run/howdy/runtime/config.toml", "alice",
 		                         "/run/howdy/runtime/models", true, "staged runtime request");
 	}
 
@@ -114,7 +115,7 @@ namespace {
 
 		const auto first  = coordinator.Run(MakeCompareRequest());
 		const auto second = coordinator.Run(
-		    MakeCompareRequest("/different/config.ini", "bob", "/different/models", true));
+		    MakeCompareRequest("/different/config.toml", "bob", "/different/models", true));
 		return Expect(first.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "spawn-failure one-shot first run reports spawn failure") &&
 		       Expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
@@ -159,7 +160,7 @@ namespace {
 			return false;
 		}
 		const auto before = GetCallbackCounts(context);
-		const auto second = coordinator.Run(MakeCompareRequest("/different/config.ini"));
+		const auto second = coordinator.Run(MakeCompareRequest("/different/config.toml"));
 		return Expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "one-shot second run is rejected") &&
 		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,

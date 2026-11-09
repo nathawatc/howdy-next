@@ -3,16 +3,19 @@
 #include "config/config_limits.hpp"
 #include "config/config_schema.hpp"
 #include "config/test_hooks.hpp"
+#include "config_document/internal.hpp"
 #include "config_utils/internal.hpp"
+#include "config_validation/internal.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
-#include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <fcntl.h>
@@ -39,6 +42,43 @@ namespace howdy::native {
 	}  // namespace config_test_hooks
 
 	namespace {
+
+		// The option and typed value a `howdy set key value` request writes, or the reason it is
+		// rejected (`value` is then empty).
+		struct RequestedEdit {
+			const config_schema::Option              *option = nullptr;
+			std::optional<config_schema::ConfigValue> value;
+			std::string                               error;
+		};
+
+		auto Rejected(std::string error) -> RequestedEdit {
+			return {.option = nullptr, .value = std::nullopt, .error = std::move(error)};
+		}
+
+		auto ResolveRequestedEdit(const std::string &key, const std::string &value)
+		    -> RequestedEdit {
+			const auto *option = config_schema::RuntimeConfigOptionByKey(key);
+			if (option == nullptr) {
+				// Unsafe text is reported without echoing it back to the terminal.
+				if (!IsSafeConfigText(key)) {
+					return Rejected("Config keys must be printable ASCII");
+				}
+				return Rejected("Could not find a \"" + key + "\" config option to set");
+			}
+			// An empty value resets a non-string option by writing its schema default, so the key
+			// stays in the file; strings store "", which also selects the default.
+			auto typed_value = value.empty() && option->type != config_schema::ValueType::kString
+			                       ? config_schema::FallbackConfigValue(*option)
+			                       : ParseOptionValueText(*option, value);
+			if (typed_value.has_value()) {
+				return {.option = option, .value = std::move(typed_value), .error = {}};
+			}
+			// Unsafe text is reported without echoing it back to the terminal.
+			if (!IsSafeConfigText(value)) {
+				return Rejected("Config values must be printable ASCII");
+			}
+			return Rejected(InvalidConfigValueMessage(key, value, option->invalid_rule));
+		}
 
 		auto FailWith(std::string *error_message, const std::string &message) -> bool {
 			if (error_message != nullptr) {
@@ -72,7 +112,8 @@ namespace howdy::native {
 			return FailWith(error_message, config_utils_internal::kConfigFileLockFailureMessage);
 		}
 
-		if (validate_runtime && !ValidateConfigContent(content, error_message)) {
+		// Even recovery writes (validate_runtime == false) never install structurally invalid TOML.
+		if (!ValidateConfigContent(content, error_message, validate_runtime)) {
 			return false;
 		}
 
@@ -112,9 +153,9 @@ namespace howdy::native {
 	                       std::string *error_message, const std::string &value, bool lock,
 	                       bool                                          validate_runtime,
 	                       const file_security_internal::ValidationRoot &validation_root) -> bool {
-		if (!config_utils_internal::IsSafeIniScalarValue(value)) {
-			return FailWith(error_message,
-			                "Config values must be single-line scalars and cannot start with [");
+		const auto requested = ResolveRequestedEdit(key, value);
+		if (requested.option == nullptr || !requested.value.has_value()) {
+			return FailWith(error_message, requested.error);
 		}
 
 		const auto initial_security =
@@ -147,35 +188,17 @@ namespace howdy::native {
 		if (!current_content.has_value()) {
 			return FailWith(error_message, config_utils_internal::kConfigFileReadFailureMessage);
 		}
-		auto lines = config_utils_internal::SplitLinesPreserveNewlines(*current_content);
-
-		const auto options = config_schema::RuntimeConfigOptions();
-		const auto option  = std::ranges::find_if(options, [&](const auto &candidate) -> auto {
-			return candidate.key == key;
-		});
-		if (option == options.end()) {
-			return FailWith(error_message, "Could not find a \"" + key + "\" config option to set");
-		}
-		const auto replace_result = config_utils_internal::ReplaceLineValue(
-		    lines, {.section = option->section, .key = key, .value = value});
-		if (replace_result == config_utils_internal::ConfigLineReplaceResult::kDuplicate) {
-			return FailWith(error_message, "Config option \"" + key +
-			                                   "\" appears more than once in section [" +
-			                                   std::string(option->section) + "]");
-		}
-		if (replace_result == config_utils_internal::ConfigLineReplaceResult::kNotFound) {
-			return FailWith(error_message, "Could not find a \"" + key + "\" config option to set");
+		const auto edited = SetConfigValue(*current_content, *requested.option, *requested.value);
+		if (!edited.ok) {
+			return FailWith(error_message, "Cannot update config: " + edited.error);
 		}
 
-		const auto updated_content = config_utils_internal::JoinLines(lines);
-		if (validate_runtime && !ValidateConfigContent(updated_content, error_message)) {
-			return false;
-		}
-
+		// ReplaceConfigContentAtomically validates the edited content (ranges only when
+		// validate_runtime is set), checks it against the content read above, and installs it.
 		std::string install_error;
 		const bool  ok = ReplaceConfigContentAtomically(
-		    config_path, updated_content, error_message == nullptr ? nullptr : &install_error,
-		    false, false, &*current_content, SyncParentDirectory, validation_root);
+		    config_path, edited.content, error_message == nullptr ? nullptr : &install_error, false,
+		    validate_runtime, &*current_content, SyncParentDirectory, validation_root);
 		if (!ok && error_message != nullptr) {
 			*error_message =
 			    install_error.empty() || install_error == kEditedConfigInstallFailedMessage

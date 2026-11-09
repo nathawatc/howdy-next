@@ -19,7 +19,7 @@ The
 option is service-local. It is configured on the
 .B pam_howdy.so
 line and is not read from
-.IR config.ini .
+.IR config.toml .
 Omit the option for the default mode.
 @PAM_WORKAROUND_REFERENCE@
 .SH "WORKAROUND BEHAVIOR"
@@ -189,7 +189,7 @@ Configured directory containing enrolled user face models.
 Setuid helper used for unprivileged PAM consumers.
 .SH SEE ALSO
 .BR howdy (1),
-.BR howdy.ini (5),
+.BR howdy.toml (5),
 .BR pam (8),
 .BR pam_unix (8),
 .BR pam_fprintd (8)

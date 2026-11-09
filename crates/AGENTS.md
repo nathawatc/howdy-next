@@ -29,7 +29,8 @@ Covers the Cargo workspace (`Cargo.toml`, `Cargo.lock`, `deny.toml`), `crates/`,
   into C++ or a PAM client. Keep `panic = "unwind"` in both Cargo profiles.
 - Memory allocated by Rust is released only by an exported Rust free function.
 - Bound input sizes on the C++ side before calling Rust, and re-check them in Rust.
-- `HOWDY_FFI_ABI_VERSION` changes whenever an export signature or status value changes.
+- `HOWDY_FFI_ABI_VERSION` stays at 1 until the first release that ships `howdy-ffi`; after that,
+  bump it whenever an export signature or status value changes.
 
 ## Dependencies
 

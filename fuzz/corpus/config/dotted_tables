@@ -1,0 +1,5 @@
+# lead
+core.x = 1 # keep
+video.t = 2
+[fuzz]
+key = 1 # c

@@ -11,5 +11,8 @@ publish.workspace = true
 # staticlib is linked by C++ through CMake; rlib lets `cargo test` build the crate.
 crate-type = ["staticlib", "rlib"]
 
+[dependencies]
+howdy-config.workspace = true
+
 [lints]
 workspace = true

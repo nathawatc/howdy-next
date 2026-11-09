@@ -32,7 +32,7 @@ namespace {
 		int                     resolver_calls = 0;
 		int                     loader_calls   = 0;
 		int                     updater_calls  = 0;
-		std::filesystem::path   resolved_path  = "/test/howdy/config.ini";
+		std::filesystem::path   resolved_path  = "/test/howdy/config.toml";
 		std::filesystem::path   loader_path;
 		std::filesystem::path   updater_path;
 		std::string             updater_key;
@@ -140,7 +140,7 @@ namespace {
 
 		bool                             ok        = true;
 		const fs::path                   temp_root = fs::current_path() / "howdy-disable-cli-test";
-		const fs::path                   config_path = temp_root / "config.ini";
+		const fs::path                   config_path = temp_root / "config.toml";
 		const char                      *old_config  = std::getenv("HOWDY_CONFIG");
 		const std::optional<std::string> saved_config =
 		    old_config == nullptr ? std::nullopt : std::optional<std::string>{old_config};
@@ -174,7 +174,7 @@ namespace {
 		             "rejected invalid runtime config remains unchanged");
 
 		const fs::path insecure_dir  = temp_root / "insecure-config-dir";
-		const fs::path insecure_path = insecure_dir / "config.ini";
+		const fs::path insecure_path = insecure_dir / "config.toml";
 		fs::create_directories(insecure_dir, error);
 		ok &= Expect(!error, "integration creates insecure directory");
 		ok &= Expect(WriteFile(insecure_path, "[core]\ndisabled = false\n"),
@@ -208,24 +208,29 @@ auto main() -> int {
 		const auto  result = RunDisable({.positionals = {"invalid"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "invalid argument returns 1");
 		ok &= Expect(result.stdout_output ==
-		                 "Invalid value; use 0 or false to enable, or 1 or true to disable Howdy\n",
+		                 "Invalid value; use false to enable, or true to disable Howdy\n",
 		             "invalid argument stdout exact");
 		ok &= Expect(result.stderr_output.empty(), "invalid argument stderr empty");
 		ok &= ExpectNoCalls(context, "invalid argument skips dependencies");
 	}
 
+	for (const auto *const alias : {"1", "0", "yes", "True"}) {
+		TestContext context;
+		const auto  result = RunDisable({.positionals = {alias}}, DependenciesFor(context));
+		ok &= Expect(result.exit_code == 1 && context.updater_calls == 0,
+		             std::string("non-boolean argument is rejected: ") + alias);
+	}
+
 	for (const auto &[argument, initially_disabled, value] : {
-	         std::tuple{"1", false, "true"},
 	         std::tuple{"true", false, "true"},
-	         std::tuple{"0", true, "false"},
 	         std::tuple{"false", true, "false"},
 	     }) {
 		TestContext context;
 		context.load_result = LoadedConfig(initially_disabled);
 		const auto result =
 		    RunDisable({.positionals = {std::string(argument)}}, DependenciesFor(context));
-		ok &= Expect(result.exit_code == 0, std::string(argument) + " alias succeeds");
-		ok &= ExpectUpdate(context, value, std::string(argument) + " alias");
+		ok &= Expect(result.exit_code == 0, std::string(argument) + " succeeds");
+		ok &= ExpectUpdate(context, value, std::string(argument));
 	}
 
 	for (const int missing_callback : {0, 1, 2}) {
@@ -238,7 +243,7 @@ auto main() -> int {
 		} else {
 			dependencies.update_config_value = nullptr;
 		}
-		const auto result = RunDisable({.positionals = {"1"}}, dependencies);
+		const auto result = RunDisable({.positionals = {"true"}}, dependencies);
 		ok &= Expect(result.exit_code == 1, "null dependency returns 1");
 		ok &= Expect(result.stdout_output.empty() && result.stderr_output.empty(),
 		             "null dependency streams empty");
@@ -253,7 +258,7 @@ auto main() -> int {
 	     }) {
 		TestContext context;
 		context.load_result = {.status = status, .error_message = error};
-		const auto result   = RunDisable({.positionals = {"1"}}, DependenciesFor(context));
+		const auto result   = RunDisable({.positionals = {"true"}}, DependenciesFor(context));
 		ok &= Expect(result.exit_code == 1, "load failure returns 1");
 		ok &= Expect(result.stdout_output.empty(), "load failure stdout empty");
 		ok &=
@@ -265,7 +270,7 @@ auto main() -> int {
 	}
 
 	for (const auto &[argument, disabled, value] :
-	     {std::tuple{"1", true, "true"}, std::tuple{"0", false, "false"}}) {
+	     {std::tuple{"true", true, "true"}, std::tuple{"false", false, "false"}}) {
 		TestContext context;
 		context.load_result = LoadedConfig(disabled);
 		const auto result =

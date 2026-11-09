@@ -66,3 +66,24 @@ License:
 Howdy Next does not bundle this model in the source tree. The
 `howdy download-models` command downloads the pinned artifact. The pinned
 SFace directory does not contain an additional `NOTICE` file.
+
+## Rust Crates
+
+Material:
+
+- Crates statically linked into `pam_howdy.so`, `howdy`, and `howdy-compare` through the
+  `howdy-ffi` library; exact versions are pinned in `Cargo.lock`
+
+Source and license (each crate's license file ships in its source package on
+<https://crates.io>):
+
+| Crate | Version | License | Source |
+| --- | --- | --- | --- |
+| `equivalent` | 1.0.3 | `Apache-2.0 OR MIT` | <https://github.com/indexmap-rs/equivalent> |
+| `hashbrown` | 0.17.1 | `MIT OR Apache-2.0` | <https://github.com/rust-lang/hashbrown> |
+| `indexmap` | 2.14.2 | `Apache-2.0 OR MIT` | <https://github.com/indexmap-rs/indexmap> |
+| `toml_datetime` | 1.1.3 | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
+| `toml_edit` | 0.25.19 | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
+| `toml_parser` | 1.1.5 | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
+| `toml_writer` | 1.2.0 | `MIT OR Apache-2.0` | <https://github.com/toml-rs/toml> |
+| `winnow` | 1.0.5 | `MIT` | <https://github.com/winnow-rs/winnow> |

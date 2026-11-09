@@ -173,7 +173,7 @@ cmake --install "$build_dir" > /dev/null
 helper=$("$path_validator" --validate-installed "$install_prefix" file "$helper_dir/howdy-auth-helper") || fail "unsafe installed helper"
 compare=$("$path_validator" --validate-installed "$install_prefix" file "$helper_dir/howdy-compare") || fail "unsafe installed compare"
 module=$("$path_validator" --validate-installed "$install_prefix" file "$pam_dir/pam_howdy.so") || fail "unsafe installed PAM module"
-config=$("$path_validator" --validate-installed "$install_prefix" file "$config_dir/config.ini") || fail "unsafe installed config"
+config=$("$path_validator" --validate-installed "$install_prefix" file "$config_dir/config.toml") || fail "unsafe installed config"
 models=$("$path_validator" --validate-installed "$install_prefix" directory "$user_models_dir") || fail "unsafe installed user-model directory"
 helper_dir=${helper%/*}
 pam_dir=${module%/*}

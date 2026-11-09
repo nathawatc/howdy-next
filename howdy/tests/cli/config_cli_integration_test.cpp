@@ -134,7 +134,7 @@ namespace howdy::test::config_cli {
 
 			bool              ok             = true;
 			const fs::path    temp_root      = created_path;
-			const fs::path    config_path    = temp_root / "config.ini";
+			const fs::path    config_path    = temp_root / "config.toml";
 			const fs::path    editor_bin     = temp_root / "bin";
 			const fs::path    micro_path     = editor_bin / "micro";
 			const fs::path    nano_path      = editor_bin / "nano";
@@ -225,7 +225,7 @@ namespace howdy::test::config_cli {
 				}
 				const auto result = run_config();
 				ok &= Expect(result.first == 0, message);
-				ok &= Expect(result.second == "Editing config.ini\nConfig updated\n", message);
+				ok &= Expect(result.second == "Editing config.toml\nConfig updated\n", message);
 				ok &= Expect(ReadFile(selected_path) == expected, message);
 			};
 
@@ -273,7 +273,7 @@ namespace howdy::test::config_cli {
 			ok &= Expect(
 			    exit_127_result.first == 1 &&
 			        exit_127_result.second ==
-			            "Editing config.ini\nEditor exited unsuccessfully; config not updated\n",
+			            "Editing config.toml\nEditor exited unsuccessfully; config not updated\n",
 			    "real editor exit 127 reports editor failure");
 
 			sudo_user_env.Unset();
@@ -287,7 +287,7 @@ namespace howdy::test::config_cli {
 				editor_env.Set(preference);
 				const auto result = run_config();
 				ok &= Expect(result.first == 0 &&
-				                 result.second == "Editing config.ini\nConfig updated\n" &&
+				                 result.second == "Editing config.toml\nConfig updated\n" &&
 				                 ReadFile(selected_path) == expected,
 				             message);
 			};
@@ -329,7 +329,7 @@ namespace howdy::test::config_cli {
 
 			bool            ok              = true;
 			const fs::path  temp_root       = created_path;
-			const fs::path  config_path     = temp_root / "config.ini";
+			const fs::path  config_path     = temp_root / "config.toml";
 			const fs::path  editor_bin      = temp_root / "bin";
 			const fs::path  editor_path     = editor_bin / "fake-editor";
 			const fs::path  credential_path = temp_root / "editor-credentials";
@@ -397,9 +397,11 @@ namespace howdy::test::config_cli {
 			const auto reported_temp_path =
 			    PathReportedAfter(output.str(), std::string(recovery_prefix));
 			ok &= Expect(exit_code == 1, "integration aborts invalid edit");
-			ok &= Expect(output.str() == "Editing config.ini\n" + std::string(recovery_prefix) +
-			                                 reported_temp_path.string() + "\n",
-			             "integration output exact");
+			ok &= Expect(output.str().starts_with("Editing config.toml\nUpdated config is invalid: "
+			                                      "line 1") &&
+			                 output.str().ends_with(std::string(recovery_prefix) +
+			                                        reported_temp_path.string() + "\n"),
+			             "integration output reports parse position and recovery path");
 			ok &= Expect(!reported_temp_path.empty(), "integration reports recovery path");
 			ok &= Expect(fs::exists(reported_temp_path, error) && !error,
 			             "integration preserves invalid temp file");
@@ -423,7 +425,7 @@ namespace howdy::test::config_cli {
 			fs::create_directory(temp_root);
 			ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure size test boundary");
 			howdy::native::file_security_internal::ValidationRoot const validation_root{temp_root};
-			const fs::path    source_path = temp_root / "config.ini";
+			const fs::path    source_path = temp_root / "config.toml";
 			const std::string at_limit(howdy::native::kMaxConfigFileSize, 'x');
 			const std::string over_limit(howdy::native::kMaxConfigFileSize + 1, 'x');
 			std::error_code   error;
@@ -471,8 +473,8 @@ namespace howdy::test::config_cli {
 
 			bool              ok = true;
 			const fs::path    temp_root(created_path);
-			const fs::path    config_path = temp_root / "config.ini";
-			const fs::path    backup_path = temp_root / "config-backup.ini";
+			const fs::path    config_path = temp_root / "config.toml";
+			const fs::path    backup_path = temp_root / "config-backup.toml";
 			const std::string original    = "[core]\ndisabled = false\n";
 			howdy::native::file_security_internal::ValidationRoot const validation_root{temp_root};
 			std::error_code                                             error;

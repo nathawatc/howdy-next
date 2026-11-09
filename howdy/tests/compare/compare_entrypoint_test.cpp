@@ -136,7 +136,7 @@ namespace {
 		if (!fs::create_directories(root / "models", error) || error) {
 			return false;
 		}
-		fs::copy_file(HOWDY_PACKAGED_CONFIG_PATH, root / "config.ini",
+		fs::copy_file(HOWDY_PACKAGED_CONFIG_PATH, root / "config.toml",
 		              fs::copy_options::overwrite_existing, error);
 		if (error) {
 			return false;
@@ -155,7 +155,7 @@ namespace {
 		if (error) {
 			return false;
 		}
-		fs::permissions(root / "config.ini",
+		fs::permissions(root / "config.toml",
 		                fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
 		                    fs::perms::others_read,
 		                fs::perm_options::replace, error);
@@ -172,7 +172,7 @@ auto main() -> int {
 		return 1;
 	}
 
-	const auto config_path = (root / "config.ini").string();
+	const auto config_path = (root / "config.toml").string();
 	const auto models_path = (root / "models").string();
 	bool       ok          = true;
 	ok &= TestProductionWarmBridge();

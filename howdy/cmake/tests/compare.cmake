@@ -2,7 +2,7 @@ add_test(NAME native-compare-help COMMAND howdy_compare --help)
 howdy_assert_binary_result(native-compare-unknown-arg howdy_compare 12 ""
  "Unknown argument: --unknown\n" --unknown)
 howdy_assert_binary_result(native-compare-pam-help-user howdy_compare 12 ""
- "Unknown argument: --help\n" --config /tmp/config.ini --help)
+ "Unknown argument: --help\n" --config /tmp/config.toml --help)
 howdy_assert_binary_result(native-compare-missing-user howdy_compare 12 "" "")
 howdy_add_native_test(
  howdy_compare_entrypoint_test

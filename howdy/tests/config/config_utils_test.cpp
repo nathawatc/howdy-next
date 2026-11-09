@@ -13,7 +13,7 @@ auto main() -> int {
 	howdy::test::ConfigUtilsTestContext context{
 	    .temp_root = fs::current_path() / "howdy-config-utils-test-work",
 	};
-	context.config_path = context.temp_root / "config.ini";
+	context.config_path = context.temp_root / "config.toml";
 
 	fs::remove_all(context.temp_root, ec);
 	fs::create_directories(context.temp_root, ec);

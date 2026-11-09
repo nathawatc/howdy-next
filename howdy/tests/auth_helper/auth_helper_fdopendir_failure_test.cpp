@@ -54,7 +54,7 @@ auto main() -> int {
 	    fs::current_path() / ("howdy-auth-helper-fdopendir-test-" + std::to_string(getpid()));
 	const auto      source = temp_root / "source";
 	const auto      models = source / "models";
-	const auto      config = source / "config.ini";
+	const auto      config = source / "config.toml";
 	std::error_code ec;
 	fs::remove_all(temp_root, ec);
 	ec.clear();
@@ -78,7 +78,7 @@ auto main() -> int {
 	};
 	const RuntimeSources sources = {
 	    .runtime_root    = temp_root / "runtime",
-	    .config          = "./config.ini",
+	    .config          = "./config.toml",
 	    .user_models_dir = "./models",
 	};
 	const auto prepared = howdy::native::auth_helper::internal::PrepareRuntimeAuthFiles(

@@ -8,6 +8,7 @@
 #include "support/face_metric.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <span>
@@ -177,12 +178,12 @@ namespace howdy::docs {
 			std::string       result           = "Values: ";
 			const auto       *val              = std::get_if<bool>(&option.fallback);
 			const auto *const default_spelling = (val != nullptr && *val) ? "true" : "false";
-			for (std::size_t index = 0;
-			     index < native::config_schema::kAcceptedBooleanSpellings.size(); ++index) {
+			for (std::size_t index = 0; index < native::config_schema::kBooleanValues.size();
+			     ++index) {
 				if (index > 0) {
 					result += ", ";
 				}
-				const auto spelling = native::config_schema::kAcceptedBooleanSpellings.at(index);
+				const auto spelling = native::config_schema::kBooleanValues.at(index);
 				if (spelling == default_spelling) {
 					result += "\\fB";
 					result += EscapeRoff(spelling);

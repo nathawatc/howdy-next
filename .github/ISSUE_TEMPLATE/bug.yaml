@@ -87,7 +87,7 @@ body:
     id: config
     attributes:
       label: Relevant configuration
-      description: Include only relevant `/etc/howdy/config.ini` keys and PAM lines. Remove private data.
+      description: Include only relevant `/etc/howdy/config.toml` keys and PAM lines. Remove private data.
       render: ini
     validations:
       required: false

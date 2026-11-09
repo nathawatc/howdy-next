@@ -23,10 +23,6 @@ namespace howdy::native::config_schema_internal {
 		using config_schema::SpecialRule;
 		using config_schema::ValueType;
 
-		auto OptionName(const Option &option) -> std::string {
-			return std::string(option.section) + "." + std::string(option.key);
-		}
-
 		auto IsKnownValueType(ValueType type) -> bool {
 			switch (type) {
 				case ValueType::kBoolean:

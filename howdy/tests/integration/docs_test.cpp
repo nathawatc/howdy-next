@@ -108,7 +108,7 @@ auto main(int argc, char **argv) -> int {
 		const auto     commands_path    = refs / "howdy-commands.roff";
 		const auto     options_path     = refs / "howdy-options.roff";
 		const auto     workarounds_path = refs / "pam-workarounds.roff";
-		const auto     ini_path         = refs / "howdy-ini-options.roff";
+		const auto     ini_path         = refs / "howdy-toml-options.roff";
 		const auto     commands         = RequireNonempty(commands_path);
 		const auto     options          = RequireNonempty(options_path);
 		const auto     workarounds      = RequireNonempty(workarounds_path);
@@ -116,12 +116,12 @@ auto main(int argc, char **argv) -> int {
 
 		const auto date = Date(man1_text, "HOWDY", 1);
 		Require(std::regex_match(date, std::regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")) &&
-		            date == Date(man5_text, "HOWDY\\.INI", 5) &&
+		            date == Date(man5_text, "HOWDY\\.TOML", 5) &&
 		            date == Date(man8_text, "PAM_HOWDY", 8),
 		        "man pages do not share an ISO UTC date");
 		for (const auto &path : {
 		         source / "howdy/howdy.1.in",
-		         source / "howdy/howdy.ini.5.in",
+		         source / "howdy/howdy.toml.5.in",
 		         source / "pam/pam_howdy.8.in",
 		     }) {
 			Require(!std::regex_search(Read(path), std::regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")),
@@ -132,7 +132,7 @@ auto main(int argc, char **argv) -> int {
 		         "add [LABEL]",
 		         "clear",
 		         "config",
-		         "disable {0|1|true|false}",
+		         "disable {true|false}",
 		         "download\\-models",
 		         "list",
 		         "remove ID",
@@ -170,8 +170,8 @@ auto main(int argc, char **argv) -> int {
 			ExactlyOnce(man5_text, label, man5);
 		}
 		Contains(man5_text, "Show progress messages for each face scan attempt.", man5);
-		Contains(man1_text, "howdy.ini (5)", man1);
-		Contains(man8_text, "howdy.ini (5)", man8);
+		Contains(man1_text, "howdy.toml (5)", man1);
+		Contains(man8_text, "howdy.toml (5)", man8);
 		Contains(man5_text, "howdy (1)", man5);
 		Contains(man5_text, "pam_howdy (8)", man5);
 		Contains(man1_text, RoffPath(args.at(7)), man1);
@@ -183,8 +183,11 @@ auto main(int argc, char **argv) -> int {
 		Contains(man8_text, RoffPath(args.at(10)), man8);
 		Contains(man5_text, RoffPath(args.at(7)), man5);
 
-		for (const auto &path :
-		     {source / "howdy/howdy.1", source / "howdy/howdy.ini.5", source / "pam/pam_howdy.8"}) {
+		for (const auto &path : {
+		         source / "howdy/howdy.1",
+		         source / "howdy/howdy.toml.5",
+		         source / "pam/pam_howdy.8",
+		     }) {
 			Require(!fs::exists(path), "checked-in generated man page: " + path.string());
 		}
 		const auto readme = Read(source / "README.md");
@@ -208,7 +211,7 @@ auto main(int argc, char **argv) -> int {
 			         "howdy-commands.roff",
 			         "howdy-options.roff",
 			         "pam-workarounds.roff",
-			         "howdy-ini-options.roff",
+			         "howdy-toml-options.roff",
 			     }) {
 				Require(!text.contains(private_file),
 				        "private documentation artifact in install manifest: " +

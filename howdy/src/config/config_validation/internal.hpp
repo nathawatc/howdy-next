@@ -2,11 +2,15 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace howdy::native {
 
-	class ConfigReader;
+	class ConfigDocument;
 
-	auto ValidateRuntimeConfig(const ConfigReader &config) -> std::optional<std::string>;
+	auto InvalidConfigValueMessage(std::string_view key, std::string_view value,
+	                               std::string_view rule) -> std::string;
+
+	auto ValidateRuntimeConfig(const ConfigDocument &config) -> std::optional<std::string>;
 
 }  // namespace howdy::native

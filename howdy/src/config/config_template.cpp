@@ -1,6 +1,7 @@
 #include "config/config_template.hpp"
 
 #include "config/config_schema.hpp"
+#include "config_document/internal.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -8,33 +9,23 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace howdy::native::config_template {
 	namespace {
 
-		auto OptionName(const config_schema::Option &option) -> std::string {
-			return std::string(option.section) + "." + std::string(option.key);
-		}
-
 		auto Failure(std::string message) -> ConfigTemplateRenderResult {
 			return {.ok = false, .error = std::move(message)};
 		}
 
-		auto IsAsciiSpace(char value) -> bool {
-			return value == ' ' || value == '\t' || value == '\n' || value == '\r' ||
-			       value == '\f' || value == '\v';
-		}
-
-		auto IsSafeIniName(std::string_view value) -> bool {
-			if (!value.empty() && (IsAsciiSpace(value.front()) || IsAsciiSpace(value.back()))) {
-				return false;
-			}
-			return std::ranges::all_of(value, [](const char raw_character) -> bool {
-				const auto character = static_cast<unsigned char>(raw_character);
-				return character >= 0x20U && character != 0x7fU && character != '[' &&
-				       character != ']' && character != ';' && character != '#' && character != '=';
+		// Table and key names stay TOML bare keys, so the file reads naturally and matches the
+		// names documented in howdy.toml(5).
+		auto IsBareKey(std::string_view value) -> bool {
+			return !value.empty() && std::ranges::all_of(value, [](const char character) -> bool {
+				return (character >= 'a' && character <= 'z') ||
+				       (character >= 'A' && character <= 'Z') ||
+				       (character >= '0' && character <= '9') || character == '_' ||
+				       character == '-';
 			});
 		}
 
@@ -46,33 +37,13 @@ namespace howdy::native::config_template {
 			       });
 		}
 
-		auto IsSafeIniScalar(std::string_view value) -> bool {
-			if (!value.empty() && (IsAsciiSpace(value.front()) || IsAsciiSpace(value.back()))) {
-				return false;
-			}
-			return std::ranges::all_of(value, [](const char raw_character) -> bool {
-				const auto character = static_cast<unsigned char>(raw_character);
-				return character >= 0x20U && character != 0x7fU && character != ';' &&
-				       character != '#' && character != '=' && character != '[' &&
-				       character != ']' && character != '\'' && character != '"';
-			});
-		}
-
-		auto FormatFallback(const config_schema::Option &option) -> std::optional<std::string> {
-			if (const auto *str = std::get_if<std::string_view>(&option.fallback);
-			    str != nullptr && !IsSafeIniScalar(*str)) {
-				return std::nullopt;
-			}
-			return config_schema::FormatFallbackValue(option);
-		}
-
 		auto ValidateRenderingConstraints(const config_schema::Option &option)
 		    -> std::optional<std::string> {
 			const auto name = OptionName(option);
-			if (!IsSafeIniName(option.section)) {
+			if (!IsBareKey(option.section)) {
 				return "invalid or empty section: " + name;
 			}
-			if (!IsSafeIniName(option.key)) {
+			if (!IsBareKey(option.key)) {
 				return "invalid or empty key: " + name;
 			}
 			if (!IsSafeDescription(option.description)) {
@@ -111,7 +82,7 @@ namespace howdy::native::config_template {
 		std::vector<std::string_view> seen_sections;
 		seen_sections.reserve(options.size());
 
-		std::string      rendered = "# See howdy.ini(5) for configuration options.\n\n";
+		std::string      rendered = "# See howdy.toml(5) for configuration options.\n\n";
 		std::string_view current_section;
 		bool             first_option = true;
 		for (const auto &option : options) {
@@ -127,25 +98,21 @@ namespace howdy::native::config_template {
 				return Failure(*error);
 			}
 			if (starts_section) {
-				if (!first_option) {
-					rendered += '\n';
-				}
 				seen_sections.push_back(option.section);
 				current_section = option.section;
-				rendered += '[';
-				rendered += option.section;
-				rendered += "]\n";
 			}
 
-			const auto value = FormatFallback(option);
+			const auto value = config_schema::FallbackConfigValue(option);
 			if (!value.has_value()) {
-				return Failure("cannot serialize fallback as INI scalar: " + name);
+				return Failure("option has no fallback value: " + name);
 			}
-
-			rendered += option.key;
-			rendered += " = ";
-			rendered += *value;
-			rendered += '\n';
+			// The Rust TOML editor is the only TOML encoder: it appends each table and quotes or
+			// escapes values, so the template and `howdy set` write identical syntax.
+			auto edited = SetConfigValue(rendered, option, *value);
+			if (!edited.ok) {
+				return Failure("cannot serialize fallback as TOML: " + name + ": " + edited.error);
+			}
+			rendered     = std::move(edited.content);
 			first_option = false;
 		}
 

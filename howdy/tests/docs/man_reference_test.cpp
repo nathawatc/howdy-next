@@ -64,7 +64,7 @@ auto main() -> int {
 	             "command reference renders optional positional syntax");
 	ok &= Expect(command_result.output.contains("Add face model"),
 	             "command reference renders command summary");
-	ok &= Expect(command_result.output.contains(R"(\&\fBdisable {0|1|true|false}\fR)"),
+	ok &= Expect(command_result.output.contains(R"(\&\fBdisable {true|false}\fR)"),
 	             "command reference renders finite-value syntax");
 	ok &= Expect(command_result.output.contains(R"(\&\fBremove ID\fR)"),
 	             "command reference renders required positional syntax");
@@ -164,18 +164,13 @@ auto main() -> int {
 	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2, 0..2 for l2norm.\n"),
 	             "face sface_threshold metric-dependent range renders on separate line without "
 	             "default annotation");
-	ok &= Expect(config_result.output.contains(
-	                 "\n.br\n\\&Values: true, \\fBfalse\\fR, 1, 0, yes, no, on, off.\n"),
+	ok &= Expect(config_result.output.contains("\n.br\n\\&Values: \\fBfalse\\fR, true.\n"),
 	             "boolean option with false default bolds false token");
-	ok &= Expect(config_result.output.contains(
-	                 "\n.br\n\\&Values: \\fBtrue\\fR, false, 1, 0, yes, no, on, off.\n"),
+	ok &= Expect(config_result.output.contains("\n.br\n\\&Values: false, \\fBtrue\\fR.\n"),
 	             "boolean option with true default bolds true token");
 
-	for (const auto &spelling : howdy::native::config_schema::kAcceptedBooleanSpellings) {
-		ok &= Expect(config_result.output.contains(spelling),
-		             "boolean option documentation includes accepted spelling: " +
-		                 std::string(spelling));
-	}
+	ok &= Expect(!config_result.output.contains("Values: true, false, 1"),
+	             "boolean option documentation lists only TOML boolean literals");
 	for (const auto &pattern : howdy::native::kAcceptedCaptureDevicePatterns) {
 		ok &=
 		    Expect(config_result.output.contains(EscapeRoff(pattern)),

@@ -87,7 +87,7 @@ lock ordering, staged-file semantics, and durability handling. Treat a commit-sy
 potentially committed. Do not weaken `/etc/howdy`, model, user-model, PAM, or helper protocol checks
 to simplify code.
 
-Runtime code uses typed `RuntimeConfig`; do not add raw `ConfigReader` lookups to consumers.
+Runtime code uses typed `RuntimeConfig`; do not add raw `ConfigDocument` lookups to consumers.
 
 ## Commits
 
