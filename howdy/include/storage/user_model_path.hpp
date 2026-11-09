@@ -9,14 +9,24 @@
 
 namespace howdy::native {
 
-	inline auto ResolveUserModelPath(const std::filesystem::path &base_dir,
-	                                 const std::string_view       user)
-	    -> std::optional<std::filesystem::path> {
+	// Extension of a user's model file, `<user>.model`; the only definition of the name.
+	inline constexpr std::string_view kUserModelFileExtension = ".model";
+
+	inline auto UserModelFileName(const std::string_view user) -> std::optional<std::string> {
 		if (!IsValidModelUserName(user)) {
 			return std::nullopt;
 		}
+		return std::string(user) + std::string(kUserModelFileExtension);
+	}
 
-		return base_dir / (std::string(user) + ".dat");
+	inline auto ResolveUserModelPath(const std::filesystem::path &base_dir,
+	                                 const std::string_view       user)
+	    -> std::optional<std::filesystem::path> {
+		auto file_name = UserModelFileName(user);
+		if (!file_name.has_value()) {
+			return std::nullopt;
+		}
+		return base_dir / *file_name;
 	}
 
 }  // namespace howdy::native

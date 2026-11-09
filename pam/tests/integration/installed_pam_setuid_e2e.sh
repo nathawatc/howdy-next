@@ -187,7 +187,7 @@ mount_options=$(findmnt -no OPTIONS --target "$helper") || skip "cannot inspect 
 	|| fail "compiled paths or config fixture verification failed"
 chown 0:0 "$config"
 chmod 0640 "$config"
-source_model=$user_models_dir/$selected_user.dat
+source_model=$user_models_dir/$selected_user.model
 "$state_verifier" --write-model "$source_model" 1 0.1 0.2 || fail "cannot create source model"
 chown 0:0 "$source_model"
 chmod 0600 "$source_model"
@@ -240,7 +240,7 @@ exec {a_read_fd}<&-
 expected_gen0=/run/howdy/pam-$selected_uid-gen000
 expected_gen1=/run/howdy/pam-$selected_uid-gen001
 [[ $gen_a == "$expected_gen0" ]] || fail "first runtime generation mismatch: $gen_a"
-cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" \
+cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.model" \
 	|| fail "first runtime generation content mismatch"
 "$state_verifier" --locked "$gen_a.lock" || fail "first active lease permits exclusive lock"
 
@@ -258,9 +258,9 @@ b_pid=$HOLD_B_PID
 read -r -t 10 gen_b <&"$b_read_fd" || fail "second runtime holder did not become ready"
 exec {b_read_fd}<&-
 [[ $gen_b == "$expected_gen1" ]] || fail "second runtime generation mismatch: $gen_b"
-cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" \
+cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.model" \
 	|| fail "second runtime generation did not stage second source content"
-cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.dat" \
+cmp -s "$source_model_snapshot" "$gen_a/models/$selected_user.model" \
 	|| fail "first active runtime generation changed after source mutation"
 "$state_verifier" --locked "$gen_a.lock" || fail "first lease released while active"
 "$state_verifier" --locked "$gen_b.lock" || fail "second active lease permits exclusive lock"
@@ -300,9 +300,9 @@ c_pid=$HOLD_C_PID
 read -r -t 10 gen_c <&"$c_read_fd" || fail "reused runtime holder did not become ready"
 exec {c_read_fd}<&-
 [[ $gen_c == "$gen_a" ]] || fail "released runtime slot was not reused"
-cmp -s "$model_c_snapshot" "$gen_c/models/$selected_user.dat" \
+cmp -s "$model_c_snapshot" "$gen_c/models/$selected_user.model" \
 	|| fail "reused runtime slot did not stage third source content"
-cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.dat" \
+cmp -s "$model_b_snapshot" "$gen_b/models/$selected_user.model" \
 	|| fail "second active runtime generation changed during slot reuse"
 "$state_verifier" --locked "$gen_b.lock" || fail "second lease released while active"
 "$state_verifier" --locked "$gen_c.lock" || fail "reused active lease permits exclusive lock"

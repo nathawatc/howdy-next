@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 howdy-config = { path = "../crates/howdy-config", features = ["fuzzing"] }
+howdy-user-model = { path = "../crates/howdy-user-model", features = ["fuzzing"] }
 
 # Standalone: cargo-fuzz needs nightly, so this crate stays out of the main workspace.
 [workspace]
@@ -25,6 +26,20 @@ bench = false
 [[bin]]
 name = "config_set"
 path = "fuzz_targets/config_set.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "user_model_decode"
+path = "fuzz_targets/user_model_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "user_model_round_trip"
+path = "fuzz_targets/user_model_round_trip.rs"
 test = false
 doc = false
 bench = false

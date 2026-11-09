@@ -5,11 +5,11 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 ## Ownership
 
 - `include/storage/user_model_types.hpp`: user-model value and result contracts
-- `include/storage/user_model_label.hpp`: model label validation contract
-- `include/storage/user_model_path.hpp`: user-model file path resolution contract
+- `include/storage/user_model_codec.hpp`: binary model codec, exported limits, and label rules
+- `include/storage/user_model_path.hpp`: the `<user>.model` file name and path resolution
 - `include/storage/user_models.hpp`: public list/mutation/load operation API
-- `user_model_codec.cpp`: private document lifecycle, mutability, and serialization
-- `user_model_codec/parsing.cpp`: JSON grammar, limits, duplicate-key checks, raw entry decoding
+- `user_model_codec.cpp`: the only C++ caller of the Rust `howdy-user-model` codec; maps codec
+  errors to `UserModelStatus` and messages
 - `user_model_store.cpp`: secure user-model transaction boundary
 - `user_models.cpp`: high-level list/mutation/load operations
 - `user_model_readiness.cpp`: readiness routing and canonical checks
@@ -21,9 +21,10 @@ filesystem-security implementation.
 
 ## Invariants
 
-Preserve codec grammar, strict/non-strict behavior, numeric and nesting limits, duplicate direct-key
-rejection, finite encodings, model-count/encoding-count bounds, IDs, compatibility checks, and
-serialization behavior.
+The byte layout, CRC32C, limits, id order, finite-value checks, and label rules are owned by the
+Rust `howdy-user-model` crate (see [`../../../crates/AGENTS.md`](../../../crates/AGENTS.md)); do not
+re-implement or re-check them in C++. Decoding has one strict mode for every caller, and encoding
+is canonical. Backend/model compatibility is policy and lives only in `user_models.cpp`.
 
 `user_model_store.cpp` owns secure open → lock → snapshot/identity check → mutate/remove → staged
 commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not split it for

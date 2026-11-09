@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/howdy-config", "crates/howdy-ffi"]
+members = ["crates/howdy-config", "crates/howdy-ffi", "crates/howdy-user-model"]
 exclude = ["fuzz"]
 
 [workspace.package]
@@ -10,7 +10,9 @@ license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]
+crc = "3.4.0"
 howdy-config = { path = "crates/howdy-config" }
+howdy-user-model = { path = "crates/howdy-user-model" }
 toml_edit = { version = "0.25.19", default-features = false, features = ["parse", "display"] }
 
 [workspace.lints.rust]

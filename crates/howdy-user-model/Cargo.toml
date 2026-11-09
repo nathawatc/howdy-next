@@ -1,0 +1,18 @@
+[package]
+name = "howdy-user-model"
+version = "0.0.0"
+description = "Howdy binary user-model file encoding, decoding, limits, and label rules"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Fuzz-target helpers (`howdy_user_model::fuzzing`); only the fuzz crate enables it.
+fuzzing = []
+
+[dependencies]
+crc.workspace = true
+
+[lints]
+workspace = true

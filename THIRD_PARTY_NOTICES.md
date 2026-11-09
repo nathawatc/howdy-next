@@ -79,6 +79,8 @@ Source and license (each crate's license file ships in its source package on
 
 | Crate | Version | License | Source |
 | --- | --- | --- | --- |
+| `crc` | 3.4.0 | `MIT OR Apache-2.0` | <https://github.com/mrhooray/crc-rs> |
+| `crc-catalog` | 2.5.0 | `MIT OR Apache-2.0` | <https://github.com/akhilles/crc-catalog> |
 | `equivalent` | 1.0.3 | `Apache-2.0 OR MIT` | <https://github.com/indexmap-rs/equivalent> |
 | `hashbrown` | 0.17.1 | `MIT OR Apache-2.0` | <https://github.com/rust-lang/hashbrown> |
 | `indexmap` | 2.14.2 | `Apache-2.0 OR MIT` | <https://github.com/indexmap-rs/indexmap> |

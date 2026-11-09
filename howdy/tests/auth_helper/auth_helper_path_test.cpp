@@ -249,7 +249,7 @@ namespace {
 		std::optional<fs::path> selected_path;
 		const auto              missing_dir = temp_root / "missing-source-models";
 
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(
 		    SelectSourceModelPath(missing_dir, "alice", std::nullopt, selected_path, {temp_root}),
 		    "missing source models directory is treated as no staged model");
@@ -257,19 +257,19 @@ namespace {
 		    Expect(!selected_path.has_value(), "missing source models directory selects no model");
 
 		const auto models_dir = temp_root / "source-models";
-		const auto model_path = models_dir / "alice.dat";
+		const auto model_path = models_dir / "alice.model";
 		fs::create_directory(models_dir, ec);
 		ok &= Expect(!ec, "creates source models directory");
 		ok &= Expect(chmod(models_dir.c_str(), 0755) == 0, "secures source models directory");
 
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(!SelectSourceModelPath(models_dir, "../alice", std::nullopt, selected_path,
 		                                    {temp_root}),
 		             "invalid source model user fails closed");
 		ok &= Expect(!selected_path.has_value(),
 		             "invalid source model user clears stale selected path");
 
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(
 		    SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
 		    "missing source model file preserves prepare behavior");
@@ -284,12 +284,12 @@ namespace {
 
 		const auto relative_models_dir = fs::relative(models_dir, fs::current_path(), ec);
 		ok &= Expect(!ec, "resolves relative source models directory");
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(SelectSourceModelPath(relative_models_dir, "alice", geteuid(), selected_path),
 		             "secure source model is accepted with calling uid owner check");
 		ok &=
 		    Expect(selected_path.has_value(), "calling uid owner check selects source model path");
-		ok &= Expect(selected_path.has_value() && selected_path->filename() == "alice.dat",
+		ok &= Expect(selected_path.has_value() && selected_path->filename() == "alice.model",
 		             "calling uid owner check selects source model filename");
 		ok &= Expect(selected_path.has_value() && fs::equivalent(*selected_path, model_path, ec),
 		             "calling uid owner check selects equivalent source model path");
@@ -299,19 +299,19 @@ namespace {
 		ok &= Expect(lstat(model_path.c_str(), &model_stat) == 0, "stats secure source model");
 		const uid_t mismatched_owner =
 		    model_stat.st_uid == 0 ? static_cast<uid_t>(1) : static_cast<uid_t>(0);
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(
 		    !SelectSourceModelPath(relative_models_dir, "alice", mismatched_owner, selected_path),
 		    "secure source model with mismatched owner uid fails closed");
 		ok &= Expect(!selected_path.has_value(), "mismatched owner uid clears stale selected path");
 
 		if (geteuid() == 0) {
-			selected_path = temp_root / "unexpected.dat";
+			selected_path = temp_root / "unexpected.model";
 			ok &= Expect(SelectSourceModelPath(relative_models_dir, "alice", static_cast<uid_t>(0),
 			                                   selected_path),
 			             "secure source model is accepted with root owner check");
 			ok &= Expect(selected_path.has_value(), "root owner check selects source model path");
-			ok &= Expect(selected_path.has_value() && selected_path->filename() == "alice.dat",
+			ok &= Expect(selected_path.has_value() && selected_path->filename() == "alice.model",
 			             "root owner check selects source model filename");
 			ok &=
 			    Expect(selected_path.has_value() && fs::equivalent(*selected_path, model_path, ec),
@@ -319,12 +319,12 @@ namespace {
 			ec.clear();
 		}
 
-		const auto symlink_target = models_dir / "target.dat";
+		const auto symlink_target = models_dir / "target.model";
 		ok &= Expect(WriteFile(symlink_target, "target"), "writes source model symlink target");
 		fs::remove(model_path, ec);
 		ec.clear();
 		if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
-			selected_path = temp_root / "unexpected.dat";
+			selected_path = temp_root / "unexpected.model";
 			ok &= Expect(!SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path,
 			                                    {temp_root}),
 			             "symlinked source model file fails closed");
@@ -344,7 +344,7 @@ namespace {
 		ok &= Expect(chmod(real_models_dir.c_str(), 0755) == 0,
 		             "secures real source models directory");
 		if (symlink(real_models_dir.c_str(), symlink_models_dir.c_str()) == 0) {
-			selected_path = temp_root / "unexpected.dat";
+			selected_path = temp_root / "unexpected.model";
 			ok &= Expect(!SelectSourceModelPath(symlink_models_dir, "alice", std::nullopt,
 			                                    selected_path, {temp_root}),
 			             "symlinked source models directory fails closed");
@@ -360,7 +360,7 @@ namespace {
 		ok &= Expect(WriteFile(model_path, "not-json"), "restores secure source model");
 		ok &=
 		    Expect(chmod(model_path.c_str(), 0664) == 0, "makes source model file group-writable");
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(
 		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
 		    "group-writable source model file fails closed");
@@ -375,7 +375,7 @@ namespace {
 
 		ok &= Expect(chmod(models_dir.c_str(), 0775) == 0,
 		             "makes source models directory group-writable");
-		selected_path = temp_root / "unexpected.dat";
+		selected_path = temp_root / "unexpected.model";
 		ok &= Expect(
 		    !SelectSourceModelPath(models_dir, "alice", std::nullopt, selected_path, {temp_root}),
 		    "group-writable source models directory fails closed");

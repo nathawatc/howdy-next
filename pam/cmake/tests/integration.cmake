@@ -5,7 +5,7 @@ howdy_configure_pam_test_target(pam_installed_path_validator)
 add_executable(pam_installed_state_verifier
                tests/integration/installed_pam_state_verifier.cpp)
 howdy_configure_pam_test_target(pam_installed_state_verifier)
-target_link_libraries(pam_installed_state_verifier PRIVATE PkgConfig::LIBACL)
+target_link_libraries(pam_installed_state_verifier PRIVATE PkgConfig::LIBACL howdy_user_model_codec)
 add_test(
  NAME pam-installed-setuid-path-validation
  COMMAND pam_installed_path_validator --self-test

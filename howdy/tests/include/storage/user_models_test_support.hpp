@@ -1,5 +1,6 @@
 #pragma once
 
+#include "storage/user_model_codec_test_support.hpp"
 #include "storage/user_model_readiness.hpp"
 #include "storage/user_model_types.hpp"
 #include "test_support.hpp"
@@ -8,6 +9,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -17,9 +19,11 @@
 namespace howdy::test::user_models {
 
 	using howdy::test::Expect;
-	using howdy::test::NestedArray;
 	using howdy::test::ReadFile;
 	using howdy::test::WriteFile;
+	using howdy::test::user_model_codec::CorruptModelFile;
+	using howdy::test::user_model_codec::EncodeModels;
+	using howdy::test::user_model_codec::ModelEntry;
 
 	inline auto ExpectationFromEntry(const howdy::native::UserModelEntry &entry)
 	    -> howdy::native::UserModelEntryExpectation {
@@ -139,7 +143,7 @@ namespace howdy::test::user_models {
 		bool            ok = true;
 		std::error_code ec;
 		const auto      models_dir = temp_root / "explicit-readiness-models";
-		const auto      model_path = models_dir / "readiness-user.dat";
+		const auto      model_path = models_dir / "readiness-user.model";
 
 		fs::remove_all(models_dir, ec);
 		ec.clear();
@@ -204,18 +208,18 @@ namespace howdy::test::user_models {
 			             "readiness missing model file returns kNoModel");
 		}
 
-		ok &= Expect(WriteFile(model_path, "not-json"), "write readiness model file");
+		ok &= Expect(WriteFile(model_path, "not-a-model"), "write readiness model file");
 		ok &= Expect(chmod(model_path.c_str(), 0644) == 0, "set readiness model file mode");
 		{
 			const auto result = howdy::native::CheckUserModelReadiness(models_dir, "readiness-user",
 			                                                           std::nullopt, {temp_root});
 			ok &= Expect(result.status == UserModelStatus::kOk,
-			             "readiness accepts secure model without parsing JSON");
+			             "readiness accepts secure model without decoding it");
 			ok &= Expect(result.path == model_path, "readiness respects explicit models directory");
 		}
 
-		const auto symlink_target = models_dir / "readiness-target.dat";
-		ok &= Expect(WriteFile(symlink_target, "not-json"), "write readiness symlink target");
+		const auto symlink_target = models_dir / "readiness-target.model";
+		ok &= Expect(WriteFile(symlink_target, "not-a-model"), "write readiness symlink target");
 		fs::remove(model_path, ec);
 		ec.clear();
 		if (symlink(symlink_target.c_str(), model_path.c_str()) == 0) {
@@ -229,7 +233,7 @@ namespace howdy::test::user_models {
 			std::cerr << "SKIP: readiness model symlink creation failed\n";
 		}
 
-		const auto missing_target = models_dir / "readiness-missing-target.dat";
+		const auto missing_target = models_dir / "readiness-missing-target.model";
 		if (symlink(missing_target.c_str(), model_path.c_str()) == 0) {
 			const auto result = howdy::native::CheckUserModelReadiness(models_dir, "readiness-user",
 			                                                           std::nullopt, {temp_root});
@@ -241,8 +245,8 @@ namespace howdy::test::user_models {
 			std::cerr << "SKIP: dangling readiness model symlink creation failed\n";
 		}
 
-		ok &= Expect(WriteFile(model_path, "not-json"), "restore readiness model after symlink");
-		const auto hardlink_path = models_dir / "readiness-hardlink.dat";
+		ok &= Expect(WriteFile(model_path, "not-a-model"), "restore readiness model after symlink");
+		const auto hardlink_path = models_dir / "readiness-hardlink.model";
 		if (link(model_path.c_str(), hardlink_path.c_str()) == 0) {
 			const auto result = howdy::native::CheckUserModelReadiness(models_dir, "readiness-user",
 			                                                           std::nullopt, {temp_root});

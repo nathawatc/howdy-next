@@ -25,7 +25,6 @@ RUN sed -i 's|usr/share/i18n/\*||' /etc/pacman.conf \
 		pkgconf \
 		qt6-base \
 		'rust>=1:1.88' \
-		'yyjson>=0.12.0' \
 	&& sed -i 's/^#\(th_TH\.UTF-8 UTF-8\)/\1/' /etc/locale.gen \
 	&& locale-gen \
 	&& pacman -Scc --noconfirm

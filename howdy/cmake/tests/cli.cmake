@@ -3,7 +3,7 @@ howdy_add_native_test(
  native-clear-cli
  tests/cli/clear_cli_test.cpp
 )
-target_link_libraries(howdy_clear_cli_test PRIVATE howdy_cli)
+target_link_libraries(howdy_clear_cli_test PRIVATE howdy_cli howdy_user_model_codec)
 
 howdy_add_native_test(
  howdy_config_cli_test

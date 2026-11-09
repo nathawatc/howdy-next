@@ -4,6 +4,7 @@
 #include "compare/privileges.hpp"
 #include "compare/sandbox.hpp"
 #include "protocol/compare_exit.hpp"
+#include "storage/user_model_codec_test_support.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "test_support.hpp"
 #include "vision/face_detection.hpp"
@@ -13,7 +14,6 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
@@ -209,16 +209,10 @@ namespace {
 		if (!howdy::test::WriteFile(root / "config.toml", config)) {
 			return false;
 		}
-		std::string model =
-		    R"([{"id":7,"time":1,"label":"fixture","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[)";
-		for (std::size_t index = 0; index < howdy::native::kSfaceEmbeddingSize; ++index) {
-			if (index != 0) {
-				model += ',';
-			}
-			model += "1.0";
-		}
-		model += "]] }]";
-		const auto model_path = root / "models" / "fixture-user.dat";
+		const std::vector<float> encoding(howdy::native::kSfaceEmbeddingSize, 1.0F);
+		const auto entry      = howdy::test::user_model_codec::ModelEntry(7, "fixture", {encoding});
+		const auto model      = howdy::test::user_model_codec::EncodeModels(std::vector{entry});
+		const auto model_path = root / "models" / "fixture-user.model";
 		return howdy::test::WriteFile(model_path, model) && chmod(root.c_str(), 0755) == 0 &&
 		       chmod((root / "models").c_str(), 0755) == 0 &&
 		       chmod((root / "config.toml").c_str(), 0644) == 0 &&
@@ -356,7 +350,7 @@ auto main() -> int {
 		};
 	};
 	const auto config_file = root / "config.toml";
-	const auto model_file  = root / "models" / "fixture-user.dat";
+	const auto model_file  = root / "models" / "fixture-user.model";
 
 	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),
 	                   fail_drop, "Failed to drop compare privileges: injected");
@@ -370,11 +364,11 @@ auto main() -> int {
 	ok &= expect_abort("world-writable user model aborts", geteuid(), keep,
 	                   "User model file must not be group-writable");
 	ok &= Expect(chmod(model_file.c_str(), 0600) == 0, "restore user model mode");
-	ok &= Expect(howdy::test::WriteFile(model_file, "not json") &&
+	ok &= Expect(howdy::test::WriteFile(model_file, "not a howdy user model file") &&
 	                 chmod(model_file.c_str(), 0600) == 0,
 	             "write malformed user model");
 	ok &= expect_abort("malformed user model aborts", geteuid(), keep,
-	                   "Failed to parse user model JSON");
+	                   "File is not a Howdy user model file");
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

@@ -158,13 +158,9 @@ target_link_libraries(
   howdy_vision_core
 )
 
-add_library(howdy_user_model_codec STATIC
- src/storage/user_model_codec.cpp
- src/storage/user_model_codec/internal.hpp
- src/storage/user_model_codec/parsing.cpp
-)
+add_library(howdy_user_model_codec STATIC src/storage/user_model_codec.cpp)
 howdy_configure_native_target(howdy_user_model_codec)
-target_link_libraries(howdy_user_model_codec PRIVATE PkgConfig::YYJSON)
+howdy_link_rust_ffi(howdy_user_model_codec)
 
 add_library(howdy_face_model STATIC src/vision/face_model.cpp)
 howdy_configure_native_target(howdy_face_model)
@@ -345,6 +341,7 @@ target_link_libraries(
   howdy_runtime_config_loader
   howdy_face_model
   howdy_user_models
+  howdy_user_model_codec
   howdy_runtime_paths
   howdy_test_preview
   howdy_preview_engine

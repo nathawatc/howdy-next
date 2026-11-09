@@ -15,7 +15,7 @@ namespace howdy::native {
 		std::int64_t                    time = 0;
 		std::string                     label;
 		std::string                     backend;
-		std::optional<FaceMetric>       metric;
+		FaceMetric                      metric = FaceMetric::kCosine;
 		std::string                     model;
 		std::vector<std::vector<float>> encodings;
 	};
@@ -52,12 +52,12 @@ namespace howdy::native {
 	};
 
 	struct UserModelEntryExpectation {
-		int                       id   = -1;
-		std::int64_t              time = 0;
-		std::string               label;
-		std::string               backend;
-		std::optional<FaceMetric> metric;
-		std::string               model;
+		int          id   = -1;
+		std::int64_t time = 0;
+		std::string  label;
+		std::string  backend;
+		FaceMetric   metric = FaceMetric::kCosine;
+		std::string  model;
 	};
 
 	struct UserModelMutationResult {

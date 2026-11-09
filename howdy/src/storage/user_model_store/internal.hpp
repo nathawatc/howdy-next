@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../user_model_codec/internal.hpp"
+#include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "support/atomic_files.hpp"
 #include "support/file_lock.hpp"
@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include <sys/types.h>
 
@@ -23,8 +24,8 @@ namespace howdy::native {
 		    -> UserModelStoreTransaction & = default;
 		~UserModelStoreTransaction();
 
-		[[nodiscard]] auto WriteDocument(const user_model_codec::Document &document) const
-		    -> AtomicFileCommitResult;
+		// Commits already-encoded model file bytes.
+		[[nodiscard]] auto WriteContent(std::string_view content) const -> AtomicFileCommitResult;
 		[[nodiscard]] auto RemoveFile() const -> AtomicFileCommitResult;
 
 	private:
@@ -52,7 +53,7 @@ namespace howdy::native {
 
 	struct UserModelStoreMutationResult {
 		std::optional<UserModelStoreTransaction> transaction;
-		user_model_codec::Document               document;
+		UserModelListResult                      models;
 	};
 
 	struct UserModelStoreTransactionResult {
@@ -75,12 +76,6 @@ namespace howdy::native {
 		    -> UserModelStoreTransactionResult;
 
 	private:
-		struct UserModelExpectations {
-			std::string backend;
-			std::string model;
-			bool        strict_shape;
-		};
-
 		struct UserModelPathResult {
 			UserModelStatus       status = UserModelStatus::kOk;
 			std::string           error_message;
@@ -92,21 +87,18 @@ namespace howdy::native {
 		        const file_security_internal::ValidationRoot &validation_root)
 		    -> UserModelPathResult;
 		[[nodiscard]] static auto
-		LoadDocument(const std::string &user, const UserModelExpectations &expectations,
-		             std::optional<uid_t>                          owner_uid,
-		             const file_security_internal::ValidationRoot &validation_root)
-		    -> user_model_codec::Document;
+		LoadModels(const std::string &user, std::optional<uid_t> owner_uid,
+		           const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelListResult;
 		[[nodiscard]] static auto
 		Inspect(const std::string                            &user,
 		        const file_security_internal::ValidationRoot &validation_root)
 		    -> UserModelInspectResult;
-		[[nodiscard]] static auto LoadDocumentFromPath(const std::filesystem::path &path,
-		                                               const UserModelExpectations &expectations)
-		    -> user_model_codec::Document;
-		[[nodiscard]] static auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
-		                                             const UserModelExpectations &expectations,
-		                                             bool treat_empty_as_no_model)
-		    -> user_model_codec::Document;
+		[[nodiscard]] static auto LoadModelsFromPath(const std::filesystem::path &path)
+		    -> UserModelListResult;
+		[[nodiscard]] static auto LoadModelsFromFd(int fd, const std::filesystem::path &path,
+		                                           bool treat_empty_as_no_model)
+		    -> UserModelListResult;
 		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
 		                                                   std::string *message) -> UserModelStatus;
 

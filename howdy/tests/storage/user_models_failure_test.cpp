@@ -1,4 +1,4 @@
-#include "storage/user_model_limits.hpp"
+#include "storage/user_model_codec.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
 #include "storage/user_model_types.hpp"
@@ -29,18 +29,14 @@ namespace howdy::test::user_models {
 
 	namespace {
 
-		auto MakeMaxModelsDocument() -> std::string {
-			std::string document = "[";
-			for (std::size_t index = 0; index < howdy::native::user_model_limits::kMaxStoredModels;
+		auto MakeMaxModelsFile() -> std::string {
+			std::vector<howdy::native::UserModelEntry> entries;
+			entries.reserve(howdy::native::user_model_codec::kMaxModels);
+			for (std::size_t index = 0; index < howdy::native::user_model_codec::kMaxModels;
 			     ++index) {
-				if (index != 0) {
-					document += ',';
-				}
-				document +=
-				    R"({"id":)" + std::to_string(index) + R"(,"label":"model","data":[[0.1]]})";
+				entries.push_back(ModelEntry(static_cast<int>(index), "model", {{0.1F}}));
 			}
-			document += ']';
-			return document;
+			return EncodeModels(entries);
 		}
 
 		auto HasStagedModelFile(const std::filesystem::path &models_dir) -> bool {
@@ -223,7 +219,11 @@ namespace howdy::test::user_models {
 				return false;
 			}
 			const auto content = ReadFile(model_path);
-			return content != replacement && content.contains("\"second\"");
+			const auto decoded = howdy::native::user_model_codec::Decode(content);
+			return content != replacement &&
+			       std::ranges::any_of(decoded.entries, [](const auto &entry) -> bool {
+				       return entry.label == "second";
+			       });
 		}
 
 	}  // namespace
@@ -233,9 +233,11 @@ namespace howdy::test::user_models {
 		bool              ok         = true;
 		const auto        temp_root  = fs::current_path() / "howdy-user-models-test";
 		const auto        models_dir = temp_root / "models";
-		const auto        model_path = models_dir / "alice.dat";
+		const auto        model_path = models_dir / "alice.model";
 		const std::string backend    = "opencv_dnn_sface";
 		std::error_code   ec;
+		const auto        first_and_second = EncodeModels(
+		    std::vector{ModelEntry(0, "first"), ModelEntry(1, "second", {{0.3F, 0.4F}})});
 		const howdy::native::NewUserModelEntry first_entry{
 		    .label     = "first",
 		    .backend   = backend,
@@ -289,7 +291,7 @@ namespace howdy::test::user_models {
 
 			auto too_many_encodings = first_entry;
 			too_many_encodings.encodings.assign(
-			    howdy::native::user_model_limits::kMaxEncodingsPerModel + 1, {0.1F});
+			    howdy::native::user_model_codec::kMaxEncodingsPerModel + 1, {0.1F});
 			expect_invalid_append(too_many_encodings, howdy::native::UserModelStatus::kOversized,
 			                      "append rejects too many encodings");
 
@@ -318,7 +320,7 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto original_content = ReadFile(model_path);
-			ok &= Expect(WriteFile(model_path, MakeMaxModelsDocument()),
+			ok &= Expect(WriteFile(model_path, MakeMaxModelsFile()),
 			             "write model list at maximum entry count");
 			const auto max_result =
 			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
@@ -329,9 +331,9 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto original_content = ReadFile(model_path);
-			ok &= Expect(
-			    WriteFile(model_path, R"([{"id":2147483646,"label":"near-max","data":[[0.1]]}])"),
-			    "write model with next ID at INT_MAX");
+			const auto near_max         = ModelEntry(2147483646, "near-max", {{0.1F}});
+			ok &= Expect(WriteFile(model_path, EncodeModels(std::vector{near_max})),
+			             "write model with next ID at INT_MAX");
 			const auto max_id_result =
 			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 			ok &= Expect(max_id_result.status == howdy::native::UserModelStatus::kInvalidShape,
@@ -371,16 +373,16 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto original_content = ReadFile(model_path);
-			ok &= Expect(WriteFile(model_path, R"([{"id":0,"label":"only","data":[[0.1]]}])"),
+			ok &= Expect(WriteFile(model_path, EncodeModels(std::vector{ModelEntry(0, "only")})),
 			             "write one-entry model before last remove failure");
 			{
 				const howdy::native::UserModelEntryExpectation only_expected{
 				    .id      = 0,
-				    .time    = 0,
+				    .time    = 1,
 				    .label   = "only",
-				    .backend = "",
-				    .metric  = std::nullopt,
-				    .model   = "",
+				    .backend = backend,
+				    .metric  = howdy::native::FaceMetric::kCosine,
+				    .model   = "sface.onnx",
 				};
 				const howdy::native::user_model_store_test_hooks::ScopedHooks hooks({
 				    .fail_parent_sync = true,
@@ -527,9 +529,9 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto before_swap_during_write = ReadFile(model_path);
-			const auto replacement_path         = temp_root / "swap-during-write-model.dat";
-			const auto replacement_model        = std::string(
-			    R"([{"id":0,"time":1,"label":"swap-during-write","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.4,0.5]]}])");
+			const auto replacement_path         = temp_root / "swap-during-write-model.model";
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "swap-during-write", {{0.4F, 0.5F}})});
 			ok &= Expect(WriteFile(replacement_path, replacement_model),
 			             "write replacement before swap-during-write test");
 			PostLockRegularFileSwap hook{.replacement_path = replacement_path};
@@ -553,11 +555,11 @@ namespace howdy::test::user_models {
 		}
 		{
 			const auto before_swap_after_check = ReadFile(model_path);
-			const auto replacement_model       = std::string(
-			    R"([{"id":0,"time":1,"label":"swap-after-write-check","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.6,0.7]]}])");
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "swap-after-write-check", {{0.6F, 0.7F}})});
 			PreservingRegularFileSwap hook{
-			    .replacement_path = temp_root / "swap-after-write-check-replacement.dat",
-			    .displaced_path   = temp_root / "swap-after-write-check-original.dat",
+			    .replacement_path = temp_root / "swap-after-write-check-replacement.model",
+			    .displaced_path   = temp_root / "swap-after-write-check-original.model",
 			};
 			ok &= Expect(WriteFile(hook.replacement_path, replacement_model),
 			             "write replacement before post-check write swap test");
@@ -584,12 +586,12 @@ namespace howdy::test::user_models {
 			             "restore model after post-check write swap test");
 		}
 		{
-			const auto original_content  = ReadFile(model_path);
-			const auto replacement_model = std::string(
-			    R"([{"id":0,"time":1,"label":"rollback-failure-replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.8,0.9]]}])");
+			const auto original_content = ReadFile(model_path);
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "rollback-replacement", {{0.8F, 0.9F}})});
 			PreservingRegularFileSwap hook{
-			    .replacement_path = temp_root / "rollback-failure-replacement.dat",
-			    .displaced_path   = temp_root / "rollback-failure-original.dat",
+			    .replacement_path = temp_root / "rollback-failure-replacement.model",
+			    .displaced_path   = temp_root / "rollback-failure-original.model",
 			};
 			ok &= Expect(WriteFile(hook.replacement_path, replacement_model),
 			             "write replacement before rollback-failure test");
@@ -646,11 +648,11 @@ namespace howdy::test::user_models {
 			                 listing.entries.size() == 2,
 			             "list entries before verified stale remove");
 			const auto expected = ExpectationFromEntry(listing.entries.at(0));
-			ok &= Expect(
-			    WriteFile(
-			        model_path,
-			        R"([{"id":0,"time":2,"label":"changed","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
-			    "rewrite model entry after remove listing");
+			auto       changed  = ModelEntry(0, "changed");
+			changed.time        = 2;
+			const auto second   = ModelEntry(1, "second", {{0.3F, 0.4F}});
+			ok &= Expect(WriteFile(model_path, EncodeModels(std::vector{changed, second})),
+			             "rewrite model entry after remove listing");
 			const auto result =
 			    howdy::native::RemoveUserModelEntryIfMatches("alice", expected, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kModelChanged,
@@ -661,11 +663,8 @@ namespace howdy::test::user_models {
 			                 after.entries.size() == 2 && after.entries.at(0).label == "changed",
 			             "stale verified remove leaves changed model entry");
 		}
-		ok &= Expect(
-		    WriteFile(
-		        model_path,
-		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]]}])"),
-		    "restore unchanged entries before verified remove");
+		ok &= Expect(WriteFile(model_path, first_and_second),
+		             "restore unchanged entries before verified remove");
 		{
 			const auto listing =
 			    howdy::native::ListUserModelEntries("alice", backend, "sface.onnx", {temp_root});
@@ -685,11 +684,8 @@ namespace howdy::test::user_models {
 			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "verified remove preserves other model entries");
 		}
-		ok &= Expect(
-		    WriteFile(
-		        model_path,
-		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]},{"id":1,"time":1,"label":"second","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.3,0.4]],"future_field":{"revision":2}}])"),
-		    "restore entries before legacy remove");
+		ok &= Expect(WriteFile(model_path, first_and_second),
+		             "restore entries before remove by expectation");
 		{
 			const howdy::native::UserModelEntryExpectation expected_0{
 			    .id      = 0,
@@ -710,10 +706,9 @@ namespace howdy::test::user_models {
 			    howdy::native::ListUserModelEntries("alice", backend, {}, {temp_root});
 			ok &= Expect(remaining.entries.size() == 1 && remaining.entries.at(0).id == 1,
 			             "remove preserves other model entries");
-			const auto persisted = ReadFile(model_path);
-			ok &= Expect(persisted.contains("\"future_field\"") &&
-			                 persisted.contains("\"revision\":2"),
-			             "remove preserves unknown fields in another entry");
+			ok &= Expect(ReadFile(model_path) ==
+			                 EncodeModels(std::vector{ModelEntry(1, "second", {{0.3F, 0.4F}})}),
+			             "remove re-encodes the remaining entry unchanged");
 		}
 		{
 			const howdy::native::UserModelEntryExpectation expected_1{
@@ -759,7 +754,7 @@ namespace howdy::test::user_models {
 			             "append creates missing secure models directory");
 			struct stat dir_stat{};
 			struct stat file_stat{};
-			const auto  created_model_path = created_models_dir / "created-user.dat";
+			const auto  created_model_path = created_models_dir / "created-user.model";
 			ok &= Expect(stat(created_models_dir.c_str(), &dir_stat) == 0,
 			             "stat append-created models directory");
 			ok &= Expect(stat(created_model_path.c_str(), &file_stat) == 0,
@@ -778,7 +773,7 @@ namespace howdy::test::user_models {
 			};
 			const auto result = howdy::native::AppendUserModelEntry(
 			    "rejected-user", empty_encoding_entry, {temp_root});
-			const auto rejected_path = created_models_dir / "rejected-user.dat";
+			const auto rejected_path = created_models_dir / "rejected-user.model";
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "invalid first append is rejected");
 			ok &= Expect(!fs::exists(rejected_path),

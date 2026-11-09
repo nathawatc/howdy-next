@@ -4,6 +4,7 @@
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "storage/staged_runtime_policy.hpp"
+#include "storage/user_model_path.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
 #include "support/error_message.hpp"
@@ -282,13 +283,17 @@ namespace howdy::native::auth_helper {
 			    backing_stat.st_gid != identity.owner_gid) {
 				return ModelState::kInvalid;
 			}
+			const auto model_name = UserModelFileName(user);
+			if (!model_name.has_value()) {
+				return ModelState::kInvalid;
+			}
 			const auto backing_path =
 			    slot_path / auth_helper_protocol::kPreparedModelBackingFileName;
 			const auto model_path =
-			    auth_helper_protocol::PreparedUserModelsDir(slot_path) / (user + ".dat");
+			    auth_helper_protocol::PreparedUserModelsDir(slot_path) / *model_name;
 			struct stat visible_stat{};
-			const bool  visible = fstatat(models_fd, (user + ".dat").c_str(), &visible_stat,
-			                              AT_SYMLINK_NOFOLLOW) == 0;
+			const bool  visible =
+			    fstatat(models_fd, model_name->c_str(), &visible_stat, AT_SYMLINK_NOFOLLOW) == 0;
 			if (!visible && errno != ENOENT) {
 				return ModelState::kInvalid;
 			}
@@ -297,7 +302,7 @@ namespace howdy::native::auth_helper {
 				return ValidateRegular(backing_stat, identity, StagedRuntimeRole::kAbsentModel) &&
 				               VerifyPersistentAclWithOperations(backing_fd, backing_path, uid_t{0},
 				                                                 policy.acl, operations) &&
-				               ModelsDirectoryContainsOnly(models_fd, user + ".dat", false)
+				               ModelsDirectoryContainsOnly(models_fd, *model_name, false)
 				           ? ModelState::kAbsent
 						   : ModelState::kInvalid;
 			}
@@ -310,7 +315,7 @@ namespace howdy::native::auth_helper {
 			                   backing_fd, model_path, identity.target_uid,
 			                   GetStagedRuntimePolicy(StagedRuntimeRole::kPresentModel).acl,
 			                   operations) &&
-			               ModelsDirectoryContainsOnly(models_fd, user + ".dat", true)
+			               ModelsDirectoryContainsOnly(models_fd, *model_name, true)
 			           ? ModelState::kPresent
 					   : ModelState::kInvalid;
 		}
@@ -365,10 +370,13 @@ namespace howdy::native::auth_helper {
 			    OpenConfigFile(slot.dir_fd.Get(), slot.path, identity, operations, create);
 			auto backing =
 			    OpenModelBacking(slot.dir_fd.Get(), slot.path, identity, operations, create);
-			if (!models.has_value() || !config.has_value() || !backing.has_value()) {
+			const auto model_name = UserModelFileName(user);
+			if (!models.has_value() || !config.has_value() || !backing.has_value() ||
+			    !model_name.has_value()) {
 				std::cerr << "Failed to open persistent runtime objects in " << slot.path
 				          << " (models=" << models.has_value() << ", config=" << config.has_value()
-				          << ", backing=" << backing.has_value() << ")\n";
+				          << ", backing=" << backing.has_value()
+				          << ", model name=" << model_name.has_value() << ")\n";
 				return SlotWrite::kUnusable;
 			}
 			const auto state = InspectModelState(models->Get(), slot.path, user, backing->Get(),
@@ -385,11 +393,10 @@ namespace howdy::native::auth_helper {
 				return SlotWrite::kFailed;
 			}
 
-			const std::string model_name = user + ".dat";
-			const auto        backing_path =
+			const auto backing_path =
 			    slot.path / auth_helper_protocol::kPreparedModelBackingFileName;
 			const auto visible_path =
-			    auth_helper_protocol::PreparedUserModelsDir(slot.path) / model_name;
+			    auth_helper_protocol::PreparedUserModelsDir(slot.path) / *model_name;
 			if (model_source.has_value()) {
 				if (!runtime_internal::CopySourceToOpenFile(*model_source, backing->Get()) ||
 				    !ApplyPrivateAcl(backing->Get(), visible_path, identity,
@@ -399,13 +406,13 @@ namespace howdy::native::auth_helper {
 				}
 				if (state == ModelState::kAbsent &&
 				    linkat(slot.dir_fd.Get(), auth_helper_protocol::kPreparedModelBackingFileName,
-				           models->Get(), model_name.c_str(), 0) != 0) {
+				           models->Get(), model_name->c_str(), 0) != 0) {
 					LogSlotsErrnoFailure("link visible model", visible_path, errno);
 					return SlotWrite::kFailed;
 				}
 			} else {
 				if (state == ModelState::kPresent &&
-				    unlinkat(models->Get(), model_name.c_str(), 0) != 0) {
+				    unlinkat(models->Get(), model_name->c_str(), 0) != 0) {
 					LogSlotsErrnoFailure("unlink visible model", visible_path, errno);
 					return SlotWrite::kFailed;
 				}

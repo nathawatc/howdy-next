@@ -28,6 +28,7 @@ target_link_libraries(
  PRIVATE
   howdy_user_models
   howdy_user_model_readiness
+  howdy_user_model_codec
 )
 
 howdy_add_native_test(
@@ -37,18 +38,9 @@ howdy_add_native_test(
 )
 
 howdy_add_native_test(
- howdy_user_model_label_test
- native-user-model-label
- tests/storage/user_model_label_test.cpp
-)
-
-howdy_add_native_test(
  howdy_user_model_codec_test
  native-user-model-codec
  tests/storage/user_model_codec_test.cpp
- tests/storage/user_model_codec_parsing_test.cpp
- tests/storage/user_model_codec_document_test.cpp
- tests/storage/user_model_codec_limits_test.cpp
 )
 target_link_libraries(
  howdy_user_model_codec_test PRIVATE howdy_user_model_codec

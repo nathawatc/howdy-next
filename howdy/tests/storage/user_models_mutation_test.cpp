@@ -1,5 +1,5 @@
 #include "../../src/storage/user_model_store/internal.hpp"
-#include "storage/user_model_limits.hpp"
+#include "storage/user_model_codec.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_store/test_hooks.hpp"
 #include "storage/user_model_types.hpp"
@@ -7,13 +7,11 @@
 #include "storage/user_models_test_support.hpp"
 #include "support/face_metric.hpp"
 
-#include <cstddef>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <limits>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include <fcntl.h>
 
@@ -26,7 +24,7 @@ namespace howdy::test::user_models {
 		bool              ok         = true;
 		const auto        temp_root  = fs::current_path() / "howdy-user-models-test";
 		const auto        models_dir = temp_root / "models";
-		const auto        model_path = models_dir / "alice.dat";
+		const auto        model_path = models_dir / "alice.model";
 		const std::string backend    = "opencv_dnn_sface";
 		std::error_code   ec;
 
@@ -48,8 +46,7 @@ namespace howdy::test::user_models {
 		    .model   = "sface.onnx",
 		};
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
 			const auto victim_path    = temp_root / "post-lock-revalidate-victim.txt";
 			const auto victim_content = std::string("victim sentinel\n");
 			ok &= Expect(
@@ -69,8 +66,7 @@ namespace howdy::test::user_models {
 			             "begin_mutation post-lock revalidation hook executes exactly once");
 			ok &= Expect(hook.swapped,
 			             "begin_mutation post-lock hook atomically replaces model with symlink");
-			ok &= Expect(result.document.Result().status ==
-			                 howdy::native::UserModelStatus::kInsecurePath,
+			ok &= Expect(result.models.status == howdy::native::UserModelStatus::kInsecurePath,
 			             "begin_mutation post-lock revalidation rejects symlink replacement");
 			ok &= Expect(!result.transaction.has_value(),
 			             "begin_mutation post-lock validation failure creates no transaction");
@@ -87,8 +83,7 @@ namespace howdy::test::user_models {
 			ec.clear();
 		}
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
 			const auto victim_path    = temp_root / "post-lock-lock-existing-victim.txt";
 			const auto victim_content = std::string("lock existing victim sentinel\n");
 			ok &= Expect(
@@ -125,11 +120,10 @@ namespace howdy::test::user_models {
 			ec.clear();
 		}
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
-			const std::string replacement_model =
-			    R"([{"id":0,"time":1,"label":"replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.5,0.6]]}])";
-			const auto replacement_path = temp_root / "post-lock-begin-mutation-replacement.dat";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "replacement", {{0.5F, 0.6F}})});
+			const auto replacement_path = temp_root / "post-lock-begin-mutation-replacement.model";
 			ok &=
 			    Expect(WriteFile(model_path, original_model),
 				       "write secure existing model before begin_mutation regular-file swap test");
@@ -147,8 +141,7 @@ namespace howdy::test::user_models {
 			             "begin_mutation regular-file swap hook executes exactly once");
 			ok &= Expect(hook.swapped,
 			             "begin_mutation hook atomically replaces model with regular file");
-			ok &= Expect(result.document.Result().status ==
-			                 howdy::native::UserModelStatus::kModelChanged,
+			ok &= Expect(result.models.status == howdy::native::UserModelStatus::kModelChanged,
 			             "begin_mutation rejects post-lock regular-file inode replacement");
 			ok &= Expect(!result.transaction.has_value(),
 			             "begin_mutation regular-file replacement failure creates no transaction");
@@ -158,11 +151,10 @@ namespace howdy::test::user_models {
 			ec.clear();
 		}
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
-			const std::string replacement_model =
-			    R"([{"id":0,"time":1,"label":"replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.7,0.8]]}])";
-			const auto replacement_path = temp_root / "post-lock-lock-existing-replacement.dat";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "replacement", {{0.7F, 0.8F}})});
+			const auto replacement_path = temp_root / "post-lock-lock-existing-replacement.model";
 			ok &= Expect(WriteFile(model_path, original_model),
 			             "write secure existing model before lock_existing regular-file swap test");
 			ok &= Expect(WriteFile(replacement_path, replacement_model),
@@ -189,14 +181,13 @@ namespace howdy::test::user_models {
 			ec.clear();
 		}
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
-			const std::string replacement_model =
-			    R"([{"id":0,"time":1,"label":"aba-replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.9,1.0]]}])";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "aba-replacement", {{0.9F, 1.0F}})});
 			AbaRegularFileSwap hook{
-			    .replacement_path              = temp_root / "begin-mutation-aba-b.dat",
-			    .original_saved_path           = temp_root / "begin-mutation-aba-a-saved.dat",
-			    .locked_replacement_saved_path = temp_root / "begin-mutation-aba-b-locked.dat",
+			    .replacement_path              = temp_root / "begin-mutation-aba-b.model",
+			    .original_saved_path           = temp_root / "begin-mutation-aba-a-saved.model",
+			    .locked_replacement_saved_path = temp_root / "begin-mutation-aba-b-locked.model",
 			};
 			ok &= Expect(WriteFile(model_path, original_model),
 			             "write A before begin_mutation ABA swap test");
@@ -216,8 +207,7 @@ namespace howdy::test::user_models {
 			ok &=
 			    Expect(hook.installed_b && hook.restored_a && !hook.rollback_failed,
 				       "begin_mutation ABA test installs B before lock and restores A after lock");
-			ok &= Expect(result.document.Result().status ==
-			                 howdy::native::UserModelStatus::kModelChanged,
+			ok &= Expect(result.models.status == howdy::native::UserModelStatus::kModelChanged,
 			             "begin_mutation rejects ABA inode replacement");
 			ok &= Expect(!result.transaction.has_value(),
 			             "begin_mutation ABA rejection creates no transaction");
@@ -231,14 +221,13 @@ namespace howdy::test::user_models {
 			ec.clear();
 		}
 		{
-			const std::string original_model =
-			    R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]]}])";
-			const std::string replacement_model =
-			    R"([{"id":0,"time":1,"label":"aba-replacement","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[1.1,1.2]]}])";
+			const auto original_model = EncodeModels(std::vector{ModelEntry(0, "first")});
+			const auto replacement_model =
+			    EncodeModels(std::vector{ModelEntry(0, "aba-replacement", {{1.1F, 1.2F}})});
 			AbaRegularFileSwap hook{
-			    .replacement_path              = temp_root / "lock-existing-aba-b.dat",
-			    .original_saved_path           = temp_root / "lock-existing-aba-a-saved.dat",
-			    .locked_replacement_saved_path = temp_root / "lock-existing-aba-b-locked.dat",
+			    .replacement_path              = temp_root / "lock-existing-aba-b.model",
+			    .original_saved_path           = temp_root / "lock-existing-aba-a-saved.model",
+			    .locked_replacement_saved_path = temp_root / "lock-existing-aba-b-locked.model",
 			};
 			ok &= Expect(WriteFile(model_path, original_model),
 			             "write A before lock_existing ABA swap test");
@@ -270,7 +259,7 @@ namespace howdy::test::user_models {
 			fs::remove(hook.locked_replacement_saved_path, ec);
 			ec.clear();
 		}
-		ok &= Expect(WriteFile(model_path, "not-json"),
+		ok &= Expect(WriteFile(model_path, "not-a-model"),
 		             "write malformed existing file before mutations");
 		const auto malformed_before_mutation = ReadFile(model_path);
 		{
@@ -289,46 +278,72 @@ namespace howdy::test::user_models {
 			ok &= Expect(ReadFile(model_path) == malformed_before_mutation,
 			             "failed remove leaves malformed existing file unchanged");
 		}
-		ok &= Expect(WriteFile(model_path, R"({"id":1})"),
-		             "write invalid-shape existing file before mutations");
-		const auto invalid_shape_before_mutation = ReadFile(model_path);
+		ok &= Expect(WriteFile(model_path, CorruptModelFile()),
+		             "write corrupted existing file before mutations");
+		const auto corrupted_before_mutation = ReadFile(model_path);
 		{
 			const auto result =
 			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
-			             "append rejects invalid-shape existing file");
-			ok &= Expect(ReadFile(model_path) == invalid_shape_before_mutation,
-			             "failed append leaves invalid-shape existing file unchanged");
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kParseError,
+			             "append rejects corrupted existing file");
+			ok &= Expect(ReadFile(model_path) == corrupted_before_mutation,
+			             "failed append leaves corrupted existing file unchanged");
 		}
 		{
 			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
 			    "alice", first_entry_expectation, {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
-			             "remove rejects invalid-shape existing file");
-			ok &= Expect(ReadFile(model_path) == invalid_shape_before_mutation,
-			             "failed remove leaves invalid-shape existing file unchanged");
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kParseError,
+			             "remove rejects corrupted existing file");
+			ok &= Expect(ReadFile(model_path) == corrupted_before_mutation,
+			             "failed remove leaves corrupted existing file unchanged");
 		}
-		const auto deeply_nested_model =
-		    R"([{"id":0,"time":1,"label":"deep","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1]],"unknown":)" +
-		    NestedArray(howdy::native::user_model_limits::kMaxJsonNestingDepth) + "}]";
-		ok &= Expect(WriteFile(model_path, deeply_nested_model),
-		             "write deeply nested unknown field before mutations");
-		const auto deeply_nested_before_mutation = ReadFile(model_path);
+		ok &=
+		    Expect(WriteFile(model_path,
+			                 std::string(howdy::native::user_model_codec::kMaxFileBytes + 1, 'x')),
+			       "write oversized existing file before mutations");
+		const auto oversized_before_mutation = ReadFile(model_path);
 		{
 			const auto result =
 			    howdy::native::AppendUserModelEntry("alice", first_entry, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOversized,
-			             "append rejects deeply nested unknown field");
-			ok &= Expect(ReadFile(model_path) == deeply_nested_before_mutation,
-			             "deep nesting append failure leaves model file unchanged");
+			             "append rejects oversized existing file");
+			ok &= Expect(ReadFile(model_path) == oversized_before_mutation,
+			             "oversized append failure leaves model file unchanged");
 		}
 		{
 			const auto result = howdy::native::RemoveUserModelEntryIfMatches(
 			    "alice", first_entry_expectation, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kOversized,
-			             "remove rejects deeply nested unknown field");
-			ok &= Expect(ReadFile(model_path) == deeply_nested_before_mutation,
-			             "deep nesting remove failure leaves model file unchanged");
+			             "remove rejects oversized existing file");
+			ok &= Expect(ReadFile(model_path) == oversized_before_mutation,
+			             "oversized remove failure leaves model file unchanged");
+		}
+		{
+			// Seven entries at the encoding limits fit the file limit; an eighth does not.
+			namespace codec = howdy::native::user_model_codec;
+			const std::vector<std::vector<float>> max_encodings(
+			    codec::kMaxEncodingsPerModel, std::vector<float>(codec::kMaxEncodingLength, 0.5F));
+			std::vector<howdy::native::UserModelEntry> large;
+			large.reserve(7);
+			for (int id = 0; id < 7; ++id) {
+				large.push_back(ModelEntry(id, "large", max_encodings));
+			}
+			ok &= Expect(WriteFile(model_path, EncodeModels(large)),
+			             "write near-limit model before oversized append");
+			const auto                             before_oversized_append = ReadFile(model_path);
+			const howdy::native::NewUserModelEntry oversized_entry{
+			    .label     = "large",
+			    .backend   = backend,
+			    .metric    = howdy::native::FaceMetric::kCosine,
+			    .model     = "sface.onnx",
+			    .encodings = max_encodings,
+			};
+			const auto result =
+			    howdy::native::AppendUserModelEntry("alice", oversized_entry, {temp_root});
+			ok &= Expect(result.status == howdy::native::UserModelStatus::kOversized,
+			             "append rejects an encoded model larger than the file limit");
+			ok &= Expect(ReadFile(model_path) == before_oversized_append,
+			             "oversized append leaves existing model file unchanged");
 		}
 		fs::remove(model_path, ec);
 		ec.clear();
@@ -337,29 +352,8 @@ namespace howdy::test::user_models {
 		ok &= Expect(first_append.status == howdy::native::UserModelStatus::kOk,
 		             "append creates first model entry");
 		ok &= Expect(first_append.entry.id == 0, "append allocates first model ID");
-		{
-			const auto                             before_oversized_append = ReadFile(model_path);
-			const howdy::native::NewUserModelEntry oversized_entry{
-			    .label = std::string(static_cast<std::size_t>(
-			                             howdy::native::user_model_limits::kMaxUserModelFileBytes),
-				                     'x'),
-			    .backend   = backend,
-			    .metric    = howdy::native::FaceMetric::kCosine,
-			    .model     = "sface.onnx",
-			    .encodings = {{0.3F, 0.4F}},
-			};
-			const auto result =
-			    howdy::native::AppendUserModelEntry("alice", oversized_entry, {temp_root});
-			ok &= Expect(result.status == howdy::native::UserModelStatus::kWriteFailed,
-			             "append rejects serialized model larger than read limit");
-			ok &= Expect(ReadFile(model_path) == before_oversized_append,
-			             "oversized append leaves existing model file unchanged");
-		}
-		ok &= Expect(
-		    WriteFile(
-		        model_path,
-		        R"([{"id":0,"time":1,"label":"first","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[0.1,0.2]],"future_field":"preserved"}])"),
-		    "add unknown field to existing model entry");
+		ok &= Expect(WriteFile(model_path, EncodeModels(std::vector{ModelEntry(0, "first")})),
+		             "pin existing model entry timestamp");
 
 		const howdy::native::NewUserModelEntry second_entry{
 		    .label     = "second",
@@ -376,14 +370,12 @@ namespace howdy::test::user_models {
 		    .encodings = {{std::numeric_limits<float>::infinity()}},
 		};
 		{
+			const auto before_invalid_append = ReadFile(model_path);
 			const auto result =
 			    howdy::native::AppendUserModelEntry("alice", invalid_encoding_entry, {temp_root});
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "append rejects invalid new-entry encodings before writing");
-			std::ifstream     persisted(model_path);
-			const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
-			                                 std::istreambuf_iterator<char>());
-			ok &= Expect(!persisted_text.contains("invalid"),
+			ok &= Expect(ReadFile(model_path) == before_invalid_append,
 			             "append does not write invalid new-entry encodings");
 		}
 		const auto second_append =
@@ -401,11 +393,6 @@ namespace howdy::test::user_models {
 			                 result.entries.at(1).label == "second",
 			             "lifecycle listing preserves entry order");
 			ok &= Expect(result.next_id == 2, "lifecycle listing reports next model ID");
-			std::ifstream     persisted(model_path);
-			const std::string persisted_text((std::istreambuf_iterator<char>(persisted)),
-			                                 std::istreambuf_iterator<char>());
-			ok &= Expect(persisted_text.contains("future_field"),
-			             "append preserves unknown fields in existing entries");
 		}
 		return ok;
 	}

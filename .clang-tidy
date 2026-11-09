@@ -15,7 +15,7 @@
 #     prctl/syscall), process-environment APIs, and legacy POSIX interfaces such as
 #     glob/readdir/strsignal. Reentrant passwd lookup and owning system-error messages are used
 #     where replacements exist.
-#   - malloc/free-compatible ownership remains required by PAM and yyjson C ABI contracts. The
+#   - malloc/free-compatible ownership remains required by PAM C ABI contracts. The
 #     corresponding blanket checks cannot model those lifecycle/ABI constraints without wrapper-only
 #     indirection or allocator mismatches rather than safer code.
 #

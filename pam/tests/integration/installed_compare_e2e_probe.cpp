@@ -90,7 +90,7 @@ auto main(int argc, char **argv) -> int {
 		return Fail("compare did not receive the staged runtime paths");
 	}
 	if (!ReadableRootOwnedFile(config) ||
-	    !ReadableRootOwnedFile(generation / "models" / (std::string(user) + ".dat"))) {
+	    !ReadableRootOwnedFile(generation / "models" / (std::string(user) + ".model"))) {
 		return Fail("compare cannot read staged config and model");
 	}
 

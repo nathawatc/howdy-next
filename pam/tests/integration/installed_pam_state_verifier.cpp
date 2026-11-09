@@ -1,4 +1,8 @@
 #include "integration/process.hpp"
+#include "storage/user_model_codec.hpp"
+#include "storage/user_model_status.hpp"
+#include "storage/user_model_types.hpp"
+#include "support/face_metric.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -239,12 +243,24 @@ namespace {
 
 	auto WriteModel(const fs::path &path, const std::string &generation, const std::string &first,
 	                const std::string &second) -> void {
-		std::ofstream output(path, std::ios::trunc);
+		const std::vector<float> encoding = {std::stof(first), std::stof(second)};
+		const std::vector<howdy::native::UserModelEntry> entries = {
+		    howdy::native::UserModelEntry{
+		        .id        = 0,
+		        .time      = std::stoll(generation),
+		        .label     = "e2e",
+		        .backend   = "opencv_dnn_sface",
+		        .metric    = howdy::native::FaceMetric::kCosine,
+		        .model     = "sface.onnx",
+		        .encodings = {encoding},
+		    },
+		};
+		const auto encoded = howdy::native::user_model_codec::Encode(entries);
+		Require(encoded.status == howdy::native::UserModelStatus::kOk,
+		        "cannot encode source model: " + encoded.error_message);
+		std::ofstream output(path, std::ios::binary | std::ios::trunc);
 		Require(output.good(), "cannot write source model: " + path.string());
-		output
-		    << R"([{"id":0,"time":)" << generation
-		    << R"(,"label":"e2e","backend":"opencv_dnn_sface","metric":"cosine","model":"sface.onnx","data":[[)"
-		    << first << ',' << second << "]]}]\n";
+		output.write(encoded.content.data(), static_cast<std::streamsize>(encoded.content.size()));
 		output.flush();
 		Require(output.good(), "cannot write source model: " + path.string());
 	}
@@ -275,7 +291,7 @@ namespace {
 		const auto models_dir = generation / "models";
 		const auto config     = generation / "config.toml";
 		const auto backing    = generation / ".model_backing";
-		const auto visible    = models_dir / (user + ".dat");
+		const auto visible    = models_dir / (user + ".model");
 		const auto lock       = fs::path(generation.string() + ".lock");
 		Inspect(generation, true, 0750);
 		Inspect(models_dir, true, 0750);
@@ -304,7 +320,7 @@ namespace {
 
 	auto VerifyAbsent(const fs::path &generation, const std::string &user, unsigned selected_uid,
 	                  unsigned selected_gid) -> void {
-		const auto visible = generation / "models" / (user + ".dat");
+		const auto visible = generation / "models" / (user + ".model");
 		Require(!fs::exists(visible) && !fs::is_symlink(fs::symlink_status(visible)),
 		        "absent slot retains visible model: " + visible.string());
 		const auto backing = generation / ".model_backing";

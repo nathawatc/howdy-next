@@ -77,7 +77,7 @@ namespace {
 			    open(prepared.runtime_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC),
 			    open(prepared.user_models_dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC),
 			    open(prepared.config_path.c_str(), O_RDONLY | O_CLOEXEC),
-			    open((prepared.user_models_dir / "alice.dat").c_str(), O_RDONLY | O_CLOEXEC),
+			    open((prepared.user_models_dir / "alice.model").c_str(), O_RDONLY | O_CLOEXEC),
 			};
 			bool matches = true;
 			for (const int fd : descriptors) {
@@ -220,8 +220,9 @@ namespace {
 		constexpr gid_t shared_gid    = 61003;
 		constexpr gid_t unrelated_gid = 61004;
 		auto            fixture       = MakeFixture(temp_root, "acl-access", target_uid);
-		if (!fixture.has_value() || !WriteFile(fixture->models / "alice.dat", "model-content\n") ||
-		    chmod((fixture->models / "alice.dat").c_str(), 0644) != 0) {
+		if (!fixture.has_value() ||
+		    !WriteFile(fixture->models / "alice.model", "model-content\n") ||
+		    chmod((fixture->models / "alice.model").c_str(), 0644) != 0) {
 			return false;
 		}
 		auto prepared = Prepare(*fixture, production_operations);
@@ -445,7 +446,7 @@ namespace {
 	auto ExpectPresentAbsent(const Fixture                                   &fixture,
 	                         const howdy::native::auth_helper::AclOperations &operations) -> bool {
 		bool       ok           = true;
-		const auto source_model = fixture.models / "alice.dat";
+		const auto source_model = fixture.models / "alice.model";
 		ok &=
 		    Expect(WriteFile(source_model, "model-v1\n") && chmod(source_model.c_str(), 0644) == 0,
 			       "creates secure source model");
@@ -456,7 +457,7 @@ namespace {
 		}
 		const auto backing = present->runtime_dir /
 		                     howdy::native::auth_helper_protocol::kPreparedModelBackingFileName;
-		const auto visible = present->user_models_dir / "alice.dat";
+		const auto visible = present->user_models_dir / "alice.model";
 		const auto backing_inode = InodeOf(backing);
 		ok &= Expect(backing_inode.has_value() && InodeOf(visible) == backing_inode,
 		             "visible model is backing hard link");
@@ -691,7 +692,7 @@ namespace {
 		std::error_code ec;
 		std::filesystem::create_directories(build / "models", ec);
 		ok &= Expect(!ec && WriteFile(build / "config.toml", "partial\n") &&
-		                 WriteFile(build / "models" / "alice.dat", "partial\n"),
+		                 WriteFile(build / "models" / "alice.model", "partial\n"),
 		             "leaves an interrupted build behind");
 		std::filesystem::remove(slot0->config_path, ec);
 		auto rebuilt = Prepare(*fixture, operations);
@@ -921,7 +922,7 @@ namespace {
 
 		auto visible_fixture = MakeFixture(temp_root, "malformed-visible", target_uid);
 		if (visible_fixture.has_value()) {
-			const auto source_model = visible_fixture->models / "alice.dat";
+			const auto source_model = visible_fixture->models / "alice.model";
 			ok &=
 			    Expect(WriteFile(source_model, "model\n") && chmod(source_model.c_str(), 0644) == 0,
 				       "creates visible identity source");
@@ -929,7 +930,7 @@ namespace {
 			ok &= Expect(visible_prepared.has_value(), "creates visible identity fixture");
 			CloseLease(visible_prepared);
 			if (visible_prepared.has_value()) {
-				const auto      visible = visible_prepared->user_models_dir / "alice.dat";
+				const auto      visible = visible_prepared->user_models_dir / "alice.model";
 				std::error_code ec;
 				std::filesystem::remove(visible, ec);
 				ok &= Expect(!ec && WriteFile(visible, "foreign inode\n"),

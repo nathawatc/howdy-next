@@ -44,7 +44,7 @@ See the [wiki](https://github.com/nathawatc/howdy-next/wiki/NixOS) for installat
 Dependencies:
 
 ```text
-linux>=5.3 glibc>=2.36, cmake>=3.31, acl, pkgconf, gettext, libevdev, opencv>=5.0.0, libcurl>=7.85.0, openssl, yyjson>=0.12.0, pam
+linux>=5.3 glibc>=2.36, cmake>=3.31, acl, pkgconf, gettext, libevdev, opencv>=5.0.0, libcurl>=7.85.0, openssl, pam
 ```
 
 The PAM compare requires `pidfd_open`, `eventfd`, and `ppoll`. Configure does not probe the kernel.

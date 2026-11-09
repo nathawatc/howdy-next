@@ -1,5 +1,7 @@
 #include "app/command_invocation.hpp"
 #include "cli/clear/internal.hpp"
+#include "storage/user_model_codec.hpp"
+#include "storage/user_model_codec_test_support.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "test_support.hpp"
@@ -280,7 +282,7 @@ namespace {
 		const howdy::test::TemporaryDirectory temp_dir{fs::path(temp_path)};
 		const auto                           &temp_root  = temp_dir.Path();
 		const auto                            models_dir = temp_root / "models";
-		const auto                            model_path = models_dir / "alice.dat";
+		const auto                            model_path = models_dir / "alice.model";
 		std::error_code                       ec;
 		fs::create_directories(models_dir, ec);
 		ok &= Expect(!ec, "create integration models dir");
@@ -296,24 +298,22 @@ namespace {
 			    {.resolved_user = "alice", .assume_yes = true}, {temp_root});
 		};
 
-		ok &= Expect(WriteFile(model_path, "not-json"), "write malformed model JSON");
+		ok &= Expect(WriteFile(model_path, "not-a-model"), "write malformed model");
 		ok &=
-		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes malformed JSON");
-		ok &= Expect(!fs::exists(model_path), "malformed JSON model deleted");
+		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes malformed model");
+		ok &= Expect(!fs::exists(model_path), "malformed model deleted");
 
-		std::string oversized_json =
-		    R"json([{"id":1,"label":"large","data":[[0.1]],"padding":")json";
-		oversized_json.append((1024 * 1024) + 1, 'x');
-		oversized_json += "\"}]";
-		ok &= Expect(WriteFile(model_path, oversized_json), "write oversized model JSON");
+		const std::string oversized_model(howdy::native::user_model_codec::kMaxFileBytes + 1, 'x');
+		ok &= Expect(WriteFile(model_path, oversized_model), "write oversized model");
 		ok &=
-		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes oversized JSON");
-		ok &= Expect(!fs::exists(model_path), "oversized JSON model deleted");
+		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes oversized model");
+		ok &= Expect(!fs::exists(model_path), "oversized model deleted");
 
-		ok &= Expect(WriteFile(model_path, R"({"id":1})"), "write wrong-shape model JSON");
-		ok &= Expect(run_boundary_aware_clear() == 0,
-		             "boundary-aware clear removes wrong-shape JSON");
-		ok &= Expect(!fs::exists(model_path), "wrong-shape JSON model deleted");
+		ok &= Expect(WriteFile(model_path, howdy::test::user_model_codec::CorruptModelFile()),
+		             "write corrupted model");
+		ok &=
+		    Expect(run_boundary_aware_clear() == 0, "boundary-aware clear removes corrupted model");
+		ok &= Expect(!fs::exists(model_path), "corrupted model deleted");
 		return ok;
 	}
 

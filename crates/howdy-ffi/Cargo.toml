@@ -13,6 +13,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 howdy-config.workspace = true
+howdy-user-model.workspace = true
 
 [lints]
 workspace = true

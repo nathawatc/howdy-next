@@ -29,15 +29,6 @@
 
       opencv5For = pkgs: pkgs.callPackage ./nix/opencv5.nix { };
 
-      # nixpkgs 26.05 ships yyjson.pc with duplicated absolute prefixes.
-      # CMake's imported pkg-config target would otherwise use invalid paths.
-      yyjsonFor = pkgs:
-        pkgs.yyjson.overrideAttrs (old: {
-          postInstall = (old.postInstall or "") + ''
-            sed -i "s|$out/$out|$out|g" "$out/lib/pkgconfig/yyjson.pc"
-          '';
-        });
-
       howdyNextFor = system:
         let
           pkgs = pkgsFor system;
@@ -75,7 +66,6 @@
             pkgs.openssl
             (opencv5For pkgs)
             pkgs.pam
-            (yyjsonFor pkgs)
           ];
 
           cmakeFlags = [

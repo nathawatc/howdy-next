@@ -77,10 +77,6 @@ namespace howdy::test {
 		return count;
 	}
 
-	inline auto NestedArray(std::size_t depth) -> std::string {
-		return std::string(depth, '[') + "0" + std::string(depth, ']');
-	}
-
 	class StreamRedirect {
 	public:
 		StreamRedirect(const StreamRedirect &)                     = delete;
