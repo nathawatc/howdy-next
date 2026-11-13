@@ -26,8 +26,9 @@ reserving address space per CPU thread at library load, which exhausts the compa
 (issues #11, #12). OpenBLAS built with OpenMP (Arch) reserves about 128 MiB per thread and obeys
 only `OMP_NUM_THREADS`; pthread builds obey `OPENBLAS_NUM_THREADS`, so both are pinned. The pool is
 created before `main()`, so only the environment can limit it. Compare made no BLAS or LAPACK calls
-when counted on OpenCV 5.0.0 (detector, align, SFace feature), so the pins cost no BLAS speed;
-recheck that count when OpenCV changes. Compare also sets OpenCV's thread count explicitly, which
+when counted on OpenCV 5.0.0 and 5.1.0 (detector, align, SFace feature; 5.1 runs DNN GEMM through
+its vendored MLAS, not BLAS), so the pins cost no BLAS speed; recheck that count when OpenCV
+changes. Compare also sets OpenCV's thread count explicitly, which
 overrides the `OMP_NUM_THREADS` pin for an OpenMP-backend OpenCV. Keep compare argv behavior
 unchanged.
 
