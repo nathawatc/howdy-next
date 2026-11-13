@@ -28,6 +28,11 @@ cmake --build --preset debug --parallel "$(nproc)"
 ctest --preset debug
 ```
 
+Look up pkg-config dependencies with `howdy_pkg_check_modules()` (`cmake/howdy_pkg_config.cmake`),
+not `pkg_check_modules()` directly. Since CMake 4.5, `pkg_check_modules(REQUIRED)` accepts a package
+whose `Requires` cannot be resolved (issue #15); the wrapper first runs the same
+`pkg-config --cflags --libs` query and fails configure when it fails.
+
 Use focused tests while iterating, then run the full relevant preset before closing a change. A
 CTest suite may span several translation units; inspect CMake source lists before assuming one test
 file owns the suite.
