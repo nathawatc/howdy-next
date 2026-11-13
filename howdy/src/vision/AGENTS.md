@@ -10,8 +10,16 @@ after the engine enum was renumbered and the Classic engine removed). The packag
 `face_detection_yunet_2026may.onnx` and SFace `face_recognition_sface_2021dec_int8.onnx`.
 
 Do not add model combinations or runtime model-path overrides without fresh OpenCV 5 validation.
-OpenCV versions before 5.1 may print an upstream `setPreferableTarget` warning with the new graph
-engine; do not add a local workaround for that warning.
+
+OpenCV 5.0.0 and 5.1.0 print an upstream `setPreferableTarget` warning ("Targets are not supported
+by the new graph engine for now") when YuNet and SFace load. The warning is cosmetic: inference
+still runs on the New graph engine. Upstream opencv/opencv#29457 silenced it for `DNN_TARGET_CPU`,
+but opencv/opencv#29286 reintroduced it for builds without CUDA before 5.1.0 was tagged. Do not
+add a local workaround for that warning.
+
+OpenCV 5.1 SFace embeddings differ slightly from 5.0 (cosine about 0.99 for the same input), while
+YuNet detections and the preprocessing pipeline are bit-identical. Enrollments made on 5.0 remain
+usable on 5.1; scores sitting right at `sface_threshold` may move by a few hundredths.
 
 ## Ownership
 
