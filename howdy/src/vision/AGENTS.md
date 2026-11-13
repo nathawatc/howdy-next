@@ -11,11 +11,17 @@ after the engine enum was renumbered and the Classic engine removed). The packag
 
 Do not add model combinations or runtime model-path overrides without fresh OpenCV 5 validation.
 
-OpenCV 5.0.0 and 5.1.0 print an upstream `setPreferableTarget` warning ("Targets are not supported
-by the new graph engine for now") when YuNet and SFace load. The warning is cosmetic: inference
-still runs on the New graph engine. Upstream opencv/opencv#29457 silenced it for `DNN_TARGET_CPU`,
-but opencv/opencv#29286 reintroduced it for builds without CUDA before 5.1.0 was tagged. Do not
-add a local workaround for that warning.
+OpenCV 5.0.0 and 5.1.0 print a cosmetic upstream `setPreferableTarget` warning ("Targets are not
+supported by the new graph engine for now") when YuNet and SFace load; inference still runs on the
+New graph engine. Upstream status, history, and the remaining work live in
+[issue #2](https://github.com/nathawatc/howdy-next/issues/2); do not duplicate them here.
+
+`ConfigureFaceModelEnvironment()` installs `InstallOpenCvLogFilter()`, which drops only that record
+(level, source file, function, and message must all match) on OpenCV 5.0.0 through 5.1.0
+(`kFiltersOpenCvTargetWarning`) and forwards every other OpenCV log record with OpenCV's own
+formatting. Keep the filter for 5.0.0 through 5.1.0 even after upstream ships a fix: those releases
+always print the warning. Extend the version range only after confirming a newer release still
+prints the warning. Do not broaden it into log level changes or other message suppression.
 
 OpenCV 5.1 SFace embeddings differ slightly from 5.0 (cosine about 0.99 for the same input), while
 YuNet detections and the preprocessing pipeline are bit-identical. Enrollments made on 5.0 remain
