@@ -7,6 +7,7 @@
 #include "vision/face_encoding.hpp"
 #include "vision/face_inference.hpp"
 #include "vision/face_model.hpp"
+#include "vision/face_model/internal.hpp"
 #include "vision/face_model_test_access.hpp"
 
 #include <array>
@@ -27,6 +28,8 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/core/version.hpp>
+#include <opencv2/dnn/dnn.hpp>
 #include <opencv2/objdetect/face.hpp>
 
 namespace {
@@ -451,11 +454,12 @@ namespace {
 		return ok;
 	}
 
-	auto TestDnnEngineEnvironment() -> bool {
+	auto TestDnnEngineOverride(const std::string &forced_engine,
+	                           const std::string &conflicting_engine) -> bool {
 		bool ok = true;
 		for (const bool preconfigure : {false, true}) {
 			const ScopedEnvironment environment(kDnnEngineEnv);
-			setenv(kDnnEngineEnv, "1", 1);
+			setenv(kDnnEngineEnv, conflicting_engine.c_str(), 1);
 			if (preconfigure) {
 				ok &= Expect(howdy::native::ConfigureFaceModelEnvironment(),
 				             "DNN engine can be configured before parallel initialization");
@@ -486,12 +490,43 @@ namespace {
 			    howdy::native::DefaultFaceConfig(), std::move(backend));
 			ok &= Expect(model.Ok(), "engine override model initializes");
 			const auto *engine = std::getenv(kDnnEngineEnv);
-			ok &= Expect(engine != nullptr && std::string(engine) == "2",
+			ok &= Expect(engine != nullptr && engine == forced_engine,
 			             "New DNN graph engine overrides conflicting environment");
-			ok &= Expect(readiness_engine == (preconfigure ? "2" : "1"),
+			ok &= Expect(readiness_engine == (preconfigure ? forced_engine : conflicting_engine),
 			             "readiness checks preserve the preconfigured DNN engine");
-			ok &= Expect(detector_engine == "2",
+			ok &= Expect(detector_engine == forced_engine,
 			             "New DNN graph engine is forced before factory call");
+		}
+		return ok;
+	}
+
+	auto TestDnnEngineEnvironment() -> bool {
+		bool              ok = true;
+		const std::string forced_engine(howdy::native::ForcedDnnEngine());
+		// Pin the expected value independently of production so a renumbered enum or a wrong
+		// version branch fails here. Every other engine an inherited value could select must be
+		// overridden.
+#if CV_VERSION_MAJOR == 5 && CV_VERSION_MINOR == 0
+		constexpr auto   expected_engine = "2";  // ENGINE_NEW
+		const std::array conflicting_engines{
+		    cv::dnn::ENGINE_CLASSIC,
+		    cv::dnn::ENGINE_AUTO,
+		    cv::dnn::ENGINE_ORT,
+		};
+#else
+		constexpr auto   expected_engine = "1";  // ENGINE_OPENCV
+		const std::array conflicting_engines{
+		    cv::dnn::ENGINE_AUTO,
+		    cv::dnn::ENGINE_ORT,
+		};
+#endif
+		ok &= Expect(forced_engine == expected_engine,
+		             "forced DNN engine selects the New graph engine for this OpenCV version");
+		for (const auto conflicting : conflicting_engines) {
+			const std::string conflicting_engine = std::to_string(conflicting);
+			ok &= Expect(conflicting_engine != forced_engine,
+			             "conflicting DNN engine differs from the forced engine");
+			ok &= TestDnnEngineOverride(forced_engine, conflicting_engine);
 		}
 		return ok;
 	}
