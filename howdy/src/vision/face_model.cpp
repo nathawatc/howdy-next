@@ -11,6 +11,7 @@
 #include "vision/face_model/internal.hpp"
 #include "vision/frame_validation.hpp"
 
+#include <array>
 #include <exception>
 #include <filesystem>
 #include <memory>
@@ -26,6 +27,8 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/core/version.hpp>
+#include <opencv2/dnn/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/objdetect/face.hpp>
 
@@ -63,16 +66,34 @@ namespace howdy::native {
 		void ExtractFeature(void *context, const cv::Mat &aligned, cv::Mat &feature) {
 			static_cast<cv::FaceRecognizerSF *>(context)->feature(aligned, feature);
 		}
+
+		// Per-version mapping is documented at ForcedDnnEngine() in vision/face_model/internal.hpp.
+#if CV_VERSION_MAJOR == 5 && CV_VERSION_MINOR == 0
+		constexpr int kForcedEngine = cv::dnn::ENGINE_NEW;
+#else
+		constexpr int kForcedEngine = cv::dnn::ENGINE_OPENCV;
+#endif
+		static_assert(kForcedEngine > 0 && kForcedEngine <= 9,
+		              "OPENCV_FORCE_DNN_ENGINE value must be a single digit");
+		constexpr std::array<char, 2> kForcedEngineValue{
+		    static_cast<char>('0' + kForcedEngine),
+		    '\0',
+		};
 	}  // namespace
+
+	auto ForcedDnnEngine() -> const char * {
+		return kForcedEngineValue.data();
+	}
 
 	auto ConfigureFaceModelEnvironment() -> bool {
 		// Avoid environment mutation when compare has configured it before its worker starts.
 		const auto *engine = getenv("OPENCV_FORCE_DNN_ENGINE");
-		if (engine != nullptr && std::string_view(engine) == "2") {
+		if (engine != nullptr && std::string_view(engine) == ForcedDnnEngine()) {
 			return true;
 		}
-		// Temporary OpenCV 5 workaround: forbid Classic-engine fallback for our ONNX models.
-		return setenv("OPENCV_FORCE_DNN_ENGINE", "2", 1) == 0;
+		// Pin the intended engine: OpenCV 5.0 would otherwise fall back to the Classic engine,
+		// and an inherited value could select another engine such as ONNX Runtime.
+		return setenv("OPENCV_FORCE_DNN_ENGINE", ForcedDnnEngine(), 1) == 0;
 	}
 
 	FaceModel::FaceModel(const FaceConfig &config)

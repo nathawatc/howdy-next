@@ -4,8 +4,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Model Baseline
 
-Current production inference uses OpenCV 5 DNN with `OPENCV_FORCE_DNN_ENGINE=2`. The packaged pair
-is YuNet `face_detection_yunet_2026may.onnx` and SFace `face_recognition_sface_2021dec_int8.onnx`.
+Current production inference uses the OpenCV 5 New DNN graph engine, pinned through
+`OPENCV_FORCE_DNN_ENGINE` (`ForcedDnnEngine()`: `ENGINE_NEW` on OpenCV 5.0, `ENGINE_OPENCV` on 5.1+
+after the engine enum was renumbered and the Classic engine removed). The packaged pair is YuNet
+`face_detection_yunet_2026may.onnx` and SFace `face_recognition_sface_2021dec_int8.onnx`.
 
 Do not add model combinations or runtime model-path overrides without fresh OpenCV 5 validation.
 OpenCV versions before 5.1 may print an upstream `setPreferableTarget` warning with the new graph
