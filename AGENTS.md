@@ -53,8 +53,8 @@ For formatting:
 # C/C++
 git ls-files '*.cpp' '*.hpp' | xargs clang-format -i
 
-# CMake
-neocmakelsp format . -i
+# CMake (format, then enforce the LSP's C0301 100-column limit, which `format` does not check)
+git ls-files -z '*CMakeLists.txt' '*.cmake' | xargs -0 sh -c 'neocmakelsp format -i "$@" && awk '\''length > 100 { print FILENAME ":" FNR ": " length; bad = 1 } END { exit bad }'\'' "$@"' sh
 
 # Markdown
 rumdl fmt .
