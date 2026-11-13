@@ -16,13 +16,13 @@ let
 in
 stdenv.mkDerivation {
   pname = "opencv5";
-  version = "5.0.0";
+  version = "5.1.0";
 
   src = fetchFromGitHub {
     owner = "opencv";
     repo = "opencv";
-    tag = "5.0.0";
-    hash = "sha256-fmMHLQ5IHDKztuIaetQj/deCl82pVYh+Dvp8G9Xb5bk=";
+    tag = "5.1.0";
+    hash = "sha256-36KmbxhKCerIrpItFGyQL7duGKS9AQB75+cGqSI/y74=";
   };
 
   strictDeps = true;
