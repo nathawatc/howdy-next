@@ -161,7 +161,9 @@ if(BUILD_TESTING)
     add_executable(${target} ${ARGN})
     howdy_configure_pam_test_target(${target})
     if(HOWDY_HAVE_PAM_START_CONFDIR)
-      target_compile_definitions(${target} PRIVATE HOWDY_HAVE_PAM_START_CONFDIR)
+      # See PamStartForTest in pam/tests/include/pam_test_support.hpp.
+      target_compile_definitions(
+        ${target} PRIVATE HOWDY_PAM_TEST_CONFDIR="${PROJECT_SOURCE_DIR}/pam/tests/confdir")
     endif()
     add_test(NAME ${test_name} COMMAND ${target})
   endfunction()

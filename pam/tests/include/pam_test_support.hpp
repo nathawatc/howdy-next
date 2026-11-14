@@ -1,13 +1,12 @@
 #pragma once
 
-#include <cstddef>
-#include <filesystem>
-#include <fstream>
-#include <string>
-
-#include <unistd.h>
-
 #include <security/pam_appl.h>
+
+// Unused here. Includers that name pid_t or ssize_t rely on <sys/types.h> declaring them first:
+// glibc declares each typedef in whichever header comes first, and misc-include-cleaner attributes
+// it there. Including <sys/types.h> in those tests is not enough, because their standard headers
+// come earlier and can declare pid_t via <sched.h>.
+#include <sys/types.h>  // IWYU pragma: keep
 
 struct pam_handle {};
 
@@ -23,53 +22,16 @@ namespace howdy::test {
 		return &sentinel;
 	}
 
-	class PamTestConfigDirectory {
-	public:
-		PamTestConfigDirectory(const PamTestConfigDirectory &)                     = delete;
-		auto operator=(const PamTestConfigDirectory &) -> PamTestConfigDirectory & = delete;
-		PamTestConfigDirectory(PamTestConfigDirectory &&)                          = delete;
-		auto operator=(PamTestConfigDirectory &&) -> PamTestConfigDirectory &      = delete;
-
-		PamTestConfigDirectory()
-		    : root_(std::filesystem::temp_directory_path() /
-			        ("howdy-pam-test-" + std::to_string(getpid()))) {
-			std::error_code error;
-			std::filesystem::remove_all(root_, error);
-			valid_ = std::filesystem::create_directories(root_, error) && !error;
-		}
-
-		~PamTestConfigDirectory() {
-			std::error_code error;
-			std::filesystem::remove_all(root_, error);
-		}
-
-		auto Start(const char *service, const char *username, const struct pam_conv *conversation,
-		           pam_handle_t **handle) -> int {
-#ifdef HOWDY_HAVE_PAM_START_CONFDIR
-			if (!valid_) {
-				return PAM_SYSTEM_ERR;
-			}
-			std::ofstream config(root_ / service, std::ios::trunc);
-			config << "# isolated Howdy PAM test service\n";
-			if (!config.good()) {
-				return PAM_SYSTEM_ERR;
-			}
-			config.close();
-			return pam_start_confdir(service, username, conversation, root_.c_str(), handle);
-#else
-			return pam_start(service, username, conversation, handle);
-#endif
-		}
-
-	private:
-		std::filesystem::path root_;
-		bool                  valid_ = false;
-	};
-
 	inline auto PamStartForTest(const char *service, const char *username,
 	                            const struct pam_conv *conversation, pam_handle_t **handle) -> int {
-		static PamTestConfigDirectory config;
-		return config.Start(service, username, conversation, handle);
+#ifdef HOWDY_PAM_TEST_CONFDIR
+		// pam/tests/confdir holds only an empty "other" service, which Linux-PAM uses for every
+		// service name without its own file, so these tests never read /etc/pam.d.
+		return pam_start_confdir(service, username, conversation, HOWDY_PAM_TEST_CONFDIR, handle);
+#else
+		// Without pam_start_confdir, service names resolve against the host's /etc/pam.d.
+		return pam_start(service, username, conversation, handle);
+#endif
 	}
 
 }  // namespace howdy::test
