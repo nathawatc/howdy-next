@@ -72,7 +72,7 @@ namespace howdy::native::auth_helper {
 			if (!root.has_value()) {
 				return std::nullopt;
 			}
-			const auto allocation_name = ".pam-" + std::to_string(identity.target_uid) + ".lock";
+			const auto allocation_name = runtime_internal::AllocationLockName(identity.target_uid);
 			auto       allocation      = runtime_internal::OpenRootOnlyLock(
 			    root->Get(), allocation_name, sources.runtime_root / allocation_name, identity,
 			    operations, true);
@@ -124,6 +124,20 @@ namespace howdy::native::auth_helper {
 			                                              model_source, user, identity, operations);
 		}
 
+		auto PurgeRuntimeAuthFiles(StagedIdentity               identity,
+		                           const std::filesystem::path &runtime_root,
+		                           const AclOperations &operations, StagedPurgeLockWait lock_wait)
+		    -> StagedPurgeResult {
+			bool missing = false;
+			auto root    = runtime_internal::OpenExistingRoot(runtime_root, identity.owner_uid,
+			                                                  identity.owner_gid, missing);
+			if (!root.has_value()) {
+				return missing ? StagedPurgeResult::kNothingStaged : StagedPurgeResult::kFailed;
+			}
+			return runtime_internal::PurgeSlots(root->Get(), runtime_root, identity, operations,
+			                                    lock_wait);
+		}
+
 	}  // namespace internal
 
 	auto RuntimeRoot() -> std::filesystem::path {
@@ -140,6 +154,13 @@ namespace howdy::native::auth_helper {
 		        .user_models_dir = howdy::native::ResolveUserModelsDir(),
 		    },
 		    ProductionAclOperations());
+	}
+
+	auto PurgeRuntimeAuthFiles(RuntimeIdentity identity, StagedPurgeLockWait lock_wait)
+	    -> StagedPurgeResult {
+		return internal::PurgeRuntimeAuthFiles(
+		    {.target_uid = identity.uid, .owner_uid = 0, .owner_gid = 0}, RuntimeRoot(),
+		    ProductionAclOperations(), lock_wait);
 	}
 
 }  // namespace howdy::native::auth_helper

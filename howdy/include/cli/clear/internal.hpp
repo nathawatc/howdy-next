@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_invocation.hpp"
+#include "auth_helper/staged_copies.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/file_security/validation_root.hpp"
 
@@ -19,6 +20,8 @@ namespace howdy::native::clear_internal {
 		void                              *context                               = nullptr;
 		InspectUserModelFileFn             inspect_user_model_file               = nullptr;
 		ClearUserModelEntriesIfUnchangedFn clear_user_model_entries_if_unchanged = nullptr;
+		// Optional: drops staged runtime copies once the models may have changed.
+		auth_helper::PurgeStagedCopiesFn purge_staged_copies = nullptr;
 	};
 
 	auto ClearMainWithDependencies(const CommandInvocation &invocation,

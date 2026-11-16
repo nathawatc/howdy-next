@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <iostream>
@@ -438,6 +439,121 @@ namespace {
 		    "freed slot reuses same paths and actual inodes");
 		CloseLease(second);
 		CloseLease(reused);
+		return ok;
+	}
+
+	auto ExpectPurge(const Fixture                                   &fixture,
+	                 const howdy::native::auth_helper::AclOperations &operations) -> bool {
+		using howdy::native::auth_helper::StagedPurgeResult;
+		using howdy::native::auth_helper::internal::PurgeRuntimeAuthFiles;
+		bool ok = true;
+		ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+		                 StagedPurgeResult::kNothingStaged,
+		             "purge without a runtime root finds nothing");
+		ok &= Expect(!std::filesystem::exists(fixture.root), "purge does not create the root");
+
+		const auto source_model = fixture.models / "alice.dat";
+		ok &=
+		    Expect(WriteFile(source_model, "model-v1\n") && chmod(source_model.c_str(), 0644) == 0,
+			       "creates secure source model");
+		auto first = Prepare(fixture, operations);
+		ok &= Expect(first.has_value(), "stages slot A with the model");
+		ok &= Expect(WriteFile(fixture.config, "purge-b\n"), "changes the source config");
+		auto second = Prepare(fixture, operations);
+		ok &= Expect(second.has_value(), "stages slot B while slot A is leased");
+		if (!first.has_value() || !second.has_value()) {
+			return false;
+		}
+		const auto leased_dir = first->runtime_dir;
+		const auto idle_dir   = second->runtime_dir;
+		CloseLease(second);
+
+		ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+		                 StagedPurgeResult::kInUse,
+		             "purge reports the leased slot");
+		ok &= Expect(!std::filesystem::exists(idle_dir), "purge removes the idle slot");
+		ok &= Expect(ReadFile(first->user_models_dir / "alice.dat") == "model-v1\n",
+		             "purge leaves the leased slot intact");
+		ok &= Expect(
+		    std::filesystem::exists(
+		        howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath(idle_dir)),
+		    "purge keeps the slot lock file");
+
+		// A retry does not wait for a staging run that holds the allocation lock.
+		{
+			const auto allocation_path =
+			    fixture.root / (".pam-" + std::to_string(fixture.identity.target_uid) + ".lock");
+			const int allocation = open(allocation_path.c_str(), O_RDWR | O_CLOEXEC);
+			ok &= Expect(allocation >= 0 && flock(allocation, LOCK_EX | LOCK_NB) == 0,
+			             "test holds the allocation lock like a staging run");
+			const auto start = std::chrono::steady_clock::now();
+			const auto result =
+			    PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations,
+				                      howdy::native::auth_helper::StagedPurgeLockWait::kNone);
+			const auto elapsed = std::chrono::steady_clock::now() - start;
+			ok &= Expect(result == StagedPurgeResult::kInUse,
+			             "a held allocation lock is reported as in use");
+			ok &= Expect(elapsed < std::chrono::milliseconds(200),
+			             "a retry purge does not wait for the allocation lock");
+			if (allocation >= 0) {
+				(void)close(allocation);
+			}
+		}
+
+		CloseLease(first);
+		ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+		                 StagedPurgeResult::kPurged,
+		             "purge removes the released slot");
+		ok &= Expect(!std::filesystem::exists(leased_dir) &&
+		                 CountRuntimeGenerations(fixture.root) == 0,
+		             "no staged copy remains after purge");
+		ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+		                 StagedPurgeResult::kNothingStaged,
+		             "second purge finds nothing");
+
+		auto other_identity       = fixture.identity;
+		other_identity.target_uid = fixture.identity.target_uid + 1;
+		ok &= Expect(PurgeRuntimeAuthFiles(other_identity, fixture.root, operations) ==
+		                 StagedPurgeResult::kNothingStaged,
+		             "purge for a user that never staged finds nothing");
+
+		auto restaged = Prepare(fixture, operations);
+		ok &= Expect(restaged.has_value() &&
+		                 ReadFile(restaged->user_models_dir / "alice.dat") == "model-v1\n" &&
+		                 ReadFile(restaged->config_path) == "purge-b\n",
+		             "next prepare rebuilds a purged slot");
+		if (!restaged.has_value()) {
+			return false;
+		}
+		const auto damaged_dir = restaged->runtime_dir;
+		CloseLease(restaged);
+
+		// Prepare never replaces a slot that fails validation, and neither does purge.
+		ok &= Expect(chmod(damaged_dir.c_str(), 0700) == 0, "damages the slot directory mode");
+		{
+			howdy::native::ScopedStreamCapture diagnostics(std::cerr);
+			ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+			                 StagedPurgeResult::kFailed,
+			             "purge refuses a slot that fails validation");
+			(void)diagnostics.Release();
+		}
+		ok &=
+		    Expect(std::filesystem::exists(damaged_dir), "purge leaves the invalid slot in place");
+
+		// Leases are only visible through the lock file, so a slot without one is not removed.
+		ok &= Expect(chmod(damaged_dir.c_str(), 0750) == 0, "restores the slot directory mode");
+		const auto lock_path =
+		    howdy::native::auth_helper_protocol::PreparedRuntimeGenerationLockPath(damaged_dir);
+		ok &= Expect(std::filesystem::remove(lock_path), "removes the slot lock file");
+		{
+			howdy::native::ScopedStreamCapture diagnostics(std::cerr);
+			ok &= Expect(PurgeRuntimeAuthFiles(fixture.identity, fixture.root, operations) ==
+			                 StagedPurgeResult::kFailed,
+			             "purge refuses a slot whose lock file is missing");
+			(void)diagnostics.Release();
+		}
+		ok &=
+		    Expect(std::filesystem::exists(damaged_dir), "purge leaves the unlocked slot in place");
 		return ok;
 	}
 
@@ -980,6 +1096,7 @@ auto RunAuthHelperStagingTests(const std::filesystem::path    &temp_root,
 	         std::pair{"model", &ExpectPresentAbsent},
 	         std::pair{"reuse", &ExpectReuseAndInodeBound},
 	         std::pair{"limit", &ExpectTwoSlotLimit},
+	         std::pair{"purge", &ExpectPurge},
 	     }) {
 		auto fixture = MakeFixture(temp_root, name, target_uid);
 		ok &= Expect(fixture.has_value(), std::string("creates ") + name + " fixture");
