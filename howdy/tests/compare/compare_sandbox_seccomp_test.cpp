@@ -7,6 +7,7 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <span>
@@ -31,6 +32,8 @@
 #include <linux/filter.h>
 #include <linux/prctl.h>
 #include <linux/seccomp.h>
+#include <linux/uvcvideo.h>
+#include <linux/videodev2.h>
 
 namespace {
 
@@ -47,6 +50,33 @@ namespace {
 #else
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
 #endif
+
+	constexpr __u32 kTcgets     = 0x5401U;
+	constexpr __u32 kTcgets2    = 0x802C542AU;
+	constexpr __u32 kTiocgwinsz = 0x5413U;
+	// Requests the filter lets through: isatty queries plus V4L2 and UVC camera requests.
+	constexpr auto kPermittedIoctls = std::to_array<__u32>({
+	    kTcgets,
+	    kTcgets2,
+	    kTiocgwinsz,
+	    static_cast<__u32>(VIDIOC_QUERYCAP),
+	    static_cast<__u32>(VIDIOC_DQBUF),
+	    static_cast<__u32>(VIDIOC_S_EXT_CTRLS),
+	    static_cast<__u32>(UVCIOC_CTRL_QUERY),
+	});
+	// Requests the filter must refuse on an inherited terminal: TIOCSTI, TIOCLINUX, TIOCSETD,
+	// TCSETS, TCSETS2 (a terminal request that does carry direction bits), VT_ACTIVATE,
+	// KDSETMODE, and FIONREAD.
+	constexpr auto kRefusedIoctls = std::to_array<__u32>({
+	    0x5412U,
+	    0x541CU,
+	    0x5423U,
+	    0x5402U,
+	    0x402C542BU,
+	    0x5606U,
+	    0x4B3AU,
+	    0x541BU,
+	});
 
 	struct FakeSeccompContext {
 		unsigned int                    operation = 0;
@@ -135,9 +165,6 @@ namespace {
 #	endif
 #	ifdef SYS_close
 		    SYS_close,
-#	endif
-#	ifdef SYS_ioctl
-		    SYS_ioctl,
 #	endif
 #	ifdef SYS_poll
 		    SYS_poll,
@@ -297,6 +324,9 @@ namespace {
 #	ifdef SYS_prctl
 		         SYS_prctl,
 #	endif
+#	ifdef SYS_ioctl
+		         SYS_ioctl,
+#	endif
 #	ifdef SYS_socket
 		         SYS_socket,
 #	endif
@@ -373,6 +403,61 @@ namespace {
 		ok &= Expect(filter.at(prctl_index + 6).code == (BPF_RET | BPF_K) &&
 		                 filter.at(prctl_index + 6).k == SECCOMP_RET_KILL_PROCESS,
 		             "kills disallowed prctl option");
+		return ok;
+#else
+		return true;
+#endif
+	}
+
+	auto TestFilterIoctlArgumentFiltering() -> bool {
+#if defined(SYS_ioctl) && !defined(HOWDY_SECCOMP_UNSUPPORTED_ARCH)
+		const auto  filter = howdy::native::compare_sandbox_internal::BuildCompareSeccompFilter();
+		std::size_t ioctl_index = filter.size();
+		for (std::size_t i = 0; i < filter.size(); ++i) {
+			if (filter.at(i).code == (BPF_JMP | BPF_JEQ | BPF_K) &&
+			    filter.at(i).k == static_cast<__u32>(SYS_ioctl)) {
+				ioctl_index = i;
+				break;
+			}
+		}
+
+		bool ok = true;
+		ok &= Expect(ioctl_index + 13 < filter.size(), "filter contains ioctl argument block");
+		if (ioctl_index + 13 >= filter.size()) {
+			return false;
+		}
+
+		const auto is = [&](std::size_t offset, const struct sock_filter &expected) -> bool {
+			const auto &actual = filter.at(ioctl_index + offset);
+			return actual.code == expected.code && actual.k == expected.k &&
+			       actual.jt == expected.jt && actual.jf == expected.jf;
+		};
+		constexpr __u32 denied = SECCOMP_RET_ERRNO | (static_cast<__u32>(EPERM) & SECCOMP_RET_DATA);
+		constexpr __u32 allow_jump = BPF_JMP | BPF_JEQ | BPF_K;
+
+		ok &= Expect(filter.at(ioctl_index).jt == 0 && filter.at(ioctl_index).jf == 13,
+		             "ioctl jump skips argument block on mismatch");
+		ok &= Expect(is(1, BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+		                            static_cast<__u32>(offsetof(struct seccomp_data, args[1])))),
+		             "loads low 32-bit ioctl request");
+		ok &= Expect(is(2, BPF_JUMP(allow_jump, kTcgets, 0, 1)), "checks TCGETS");
+		ok &= Expect(is(3, BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)), "allows TCGETS");
+		ok &= Expect(is(4, BPF_JUMP(allow_jump, kTcgets2, 0, 1)), "checks TCGETS2");
+		ok &= Expect(is(5, BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)), "allows TCGETS2");
+		ok &= Expect(is(6, BPF_JUMP(allow_jump, kTiocgwinsz, 0, 1)), "checks TIOCGWINSZ");
+		ok &= Expect(is(7, BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)), "allows TIOCGWINSZ");
+		ok &= Expect(is(8, BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0xffff0000U, 0, 4)),
+		             "bare legacy requests skip to denial");
+		ok &= Expect(is(9, BPF_STMT(BPF_ALU | BPF_AND | BPF_K, 0x0000ff00U)),
+		             "isolates ioctl type byte");
+		ok &= Expect(is(10, BPF_JUMP(allow_jump, static_cast<__u32>('V') << 8U, 1, 0)),
+		             "checks V4L2 ioctl type");
+		ok &= Expect(is(11, BPF_JUMP(allow_jump, static_cast<__u32>('u') << 8U, 0, 1)),
+		             "checks UVC ioctl type");
+		ok &= Expect(is(12, BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW)),
+		             "allows camera ioctl types");
+		ok &= Expect(is(13, BPF_STMT(BPF_RET | BPF_K, denied)),
+		             "denies every other ioctl with EPERM");
 		return ok;
 #else
 		return true;
@@ -505,6 +590,27 @@ namespace {
 		return ok;
 	}
 
+	// /dev/null answers every ioctl with ENOTTY, so a request the filter lets through is told
+	// apart from one it refuses with EPERM.
+	auto ProbeIoctlFilter(int fd) -> int {
+		const auto ioctl_errno = [fd](__u32 request) -> int {
+			std::uint64_t argument = 0;
+			errno                  = 0;
+			return syscall(SYS_ioctl, fd, std::uint64_t{request}, &argument) == -1 ? errno : 0;
+		};
+		if (!std::ranges::all_of(kPermittedIoctls, [&](__u32 request) -> bool {
+			    return ioctl_errno(request) == ENOTTY;
+		    })) {
+			return 8;
+		}
+		if (!std::ranges::all_of(kRefusedIoctls, [&](__u32 request) -> bool {
+			    return ioctl_errno(request) == EPERM;
+		    })) {
+			return 9;
+		}
+		return 0;
+	}
+
 	auto RunSeccompChildProbe(std::string_view action) -> int {
 #ifdef PR_SET_DUMPABLE
 		(void)prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
@@ -519,6 +625,13 @@ namespace {
 		});
 		arena_worker.join();
 		if (non_main_arena_block == nullptr) {
+			return 1;
+		}
+
+		// Opened before the filter, which refuses open afterwards.
+		const int ioctl_probe_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
+		if (ioctl_probe_fd < 0) {
+			free(non_main_arena_block);
 			return 1;
 		}
 
@@ -569,6 +682,10 @@ namespace {
 #endif
 			std::thread thread_probe([] -> void {});
 			thread_probe.join();
+
+			if (const int ioctl_result = ProbeIoctlFilter(ioctl_probe_fd); ioctl_result != 0) {
+				return ioctl_result;
+			}
 			return 0;
 		}
 		free(non_main_arena_block);
@@ -675,6 +792,7 @@ auto RunCompareSandboxSeccompTests() -> bool {
 	ok &= TestFilterContainsArchitectureCheck();
 	ok &= TestFilterSyscallAllowlistContents();
 	ok &= TestFilterPrctlArgumentFiltering();
+	ok &= TestFilterIoctlArgumentFiltering();
 	ok &= TestFilterCloneArgumentFiltering();
 	ok &= TestApplySeccompSuccess();
 	ok &= TestApplySeccompUnsupportedKernel();

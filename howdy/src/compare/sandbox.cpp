@@ -44,6 +44,30 @@ namespace {
 #	define HOWDY_SECCOMP_UNSUPPORTED_ARCH 1
 #endif
 
+	// ioctl request layout: direction and size in the upper 16 bits, then type, then number.
+	constexpr __u32 kIoctlDirectionSizeMask = 0xffff0000U;
+	constexpr __u32 kIoctlTypeMask          = 0x0000ff00U;
+	constexpr __u32 kIoctlTypeShift         = 8;
+	constexpr __u32 kIoctlTypeV4l2          = static_cast<__u32>('V') << kIoctlTypeShift;
+	constexpr __u32 kIoctlTypeUvc           = static_cast<__u32>('u') << kIoctlTypeShift;
+	constexpr __u32 kIoctlTcgets            = 0x5401U;
+	// _IOR('T', 0x2A, struct termios2), spelled out so no termios header is needed; the
+	// structure is 44 bytes on every architecture this filter supports.
+	constexpr __u32 kIoctlTcgets2    = 0x802C542AU;
+	constexpr __u32 kIoctlTiocgwinsz = 0x5413U;
+	// Read-only requests stdio uses to ask whether a descriptor is a terminal.
+	constexpr auto kIsattyIoctls = std::to_array<__u32>({
+	    kIoctlTcgets,
+	    kIoctlTcgets2,
+	    kIoctlTiocgwinsz,
+	});
+	// Instructions in the ioctl block after its syscall-number test: the request load, an
+	// allow pair per isatty request, then the direction test, type mask, two type tests, and
+	// the allow and deny returns. Derived so the block's skip offset cannot drift from its size.
+	constexpr std::size_t kIoctlTypeCheckInstructions = 6;
+	constexpr std::size_t kIoctlBlockInstructions =
+	    1 + (kIsattyIoctls.size() * 2) + kIoctlTypeCheckInstructions;
+
 	constexpr rlim_t kPreferredOpenFiles = 32;
 	// Measured peak is five descriptors; 16 leaves room beyond stdio, camera, config/model files,
 	// and OpenCV's internal descriptors.
@@ -242,13 +266,6 @@ namespace howdy::native::compare_sandbox_internal {
 #	ifdef SYS_close
 		    SYS_close,
 #	endif
-#	ifdef SYS_ioctl
-		    // Broad ioctl allowance is necessary for V4L2 streaming (e.g. VIDIOC_DQBUF,
-		    // VIDIOC_QBUF, VIDIOC_QUERYBUF, VIDIOC_STREAMON/OFF, exposure restore VIDIOC_S_CTRL,
-		    // VIDIOC_S_EXT_CTRLS, and vendor UVC controls across camera models) and stdio isatty
-		    // queries (TCGETS). Restricting request numbers is brittle across kernel drivers.
-		    SYS_ioctl,
-#	endif
 #	ifdef SYS_poll
 		    SYS_poll,
 #	endif
@@ -376,7 +393,7 @@ namespace howdy::native::compare_sandbox_internal {
 		allowed_syscalls.erase(last, end);
 
 		std::vector<struct sock_filter> filter;
-		filter.reserve(23 + (allowed_syscalls.size() * 2));
+		filter.reserve(24 + kIoctlBlockInstructions + (allowed_syscalls.size() * 2));
 
 		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 		                          static_cast<__u32>(offsetof(struct seccomp_data, arch))));
@@ -405,6 +422,34 @@ namespace howdy::native::compare_sandbox_internal {
 		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_open), 0, 1));
 		filter.push_back(BPF_STMT(
 		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(EACCES) & SECCOMP_RET_DATA)));
+#	endif
+
+#	ifdef SYS_ioctl
+		// Compare inherits the PAM application's stdio, which is usually the user's terminal.
+		// An unrestricted ioctl would let a compromised worker inject input (TIOCSTI,
+		// TIOCLINUX), change the line discipline or terminal settings, or switch consoles
+		// (VT_*, KD*). Permit only what the scan needs, by ioctl type instead of by request
+		// number so camera drivers stay free to add controls: V4L2 ('V') and UVC ('u')
+		// requests, which always encode a direction and size, plus the read-only stdio isatty
+		// queries (TCGETS, TCGETS2 since glibc 2.42, TIOCGWINSZ on musl). Everything else
+		// fails with EPERM: bare legacy requests such as VT_ACTIVATE share the 'V' type but
+		// carry no direction bits. The filter cannot see which descriptor a request targets,
+		// so the permitted types are allowed on every inherited descriptor, not only the camera.
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, static_cast<__u32>(SYS_ioctl), 0,
+		                          static_cast<__u8>(kIoctlBlockInstructions)));
+		filter.push_back(BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+		                          static_cast<__u32>(offsetof(struct seccomp_data, args[1]))));
+		for (const __u32 isatty_request : kIsattyIoctls) {
+			filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, isatty_request, 0, 1));
+			filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+		}
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, kIoctlDirectionSizeMask, 0, 4));
+		filter.push_back(BPF_STMT(BPF_ALU | BPF_AND | BPF_K, kIoctlTypeMask));
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kIoctlTypeV4l2, 1, 0));
+		filter.push_back(BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, kIoctlTypeUvc, 0, 1));
+		filter.push_back(BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
+		filter.push_back(BPF_STMT(
+		    BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (static_cast<__u32>(EPERM) & SECCOMP_RET_DATA)));
 #	endif
 
 #	ifdef SYS_prctl
