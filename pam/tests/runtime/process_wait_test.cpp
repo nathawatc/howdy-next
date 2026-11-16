@@ -1,10 +1,13 @@
 #include "../../src/runtime/auth_helper_process/internal.hpp"
 #include "module/auth_flow_test_groups.hpp"
 #include "protocol/compare_exit.hpp"
+#include "runtime/child_process.hpp"
 #include "runtime/compare_process.hpp"
+#include "runtime/compare_process_test_support.hpp"
 #include "support/eintr.hpp"
 #include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
+#include "support/scoped_fd.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -114,8 +117,8 @@ namespace {
 		const auto deadline = cancellation
 		                          ? std::chrono::steady_clock::now() + std::chrono::seconds(1)
 		                          : std::chrono::steady_clock::now();
-		const int status = howdy::pam::compare_process::WaitUntil(child_pid, deadline, &boundary,
-		                                                          ReleaseTerminalBoundaryChild, -1);
+		const int  status   = howdy::test::prompt_coordinator::WaitUntilForTestChild(
+		    child_pid, deadline, &boundary, ReleaseTerminalBoundaryChild, -1);
 		const auto expected_exit   = cancellation ? howdy::native::CompareExit::kAbort
 		                                          : howdy::native::CompareExit::kTimeoutReached;
 		const int  expected_status = howdy::native::EncodeWaitExitStatus(expected_exit);
@@ -127,12 +130,120 @@ namespace {
 		return ok;
 	}
 
+	// A PAM application that reaps children itself can take the compare child first. The wait
+	// must then fail closed without signalling: the PID no longer belongs to compare.
+	auto ExpectReapedElsewhereFailsClosed() -> bool {
+		bool        ok        = true;
+		const pid_t child_pid = SpawnExitingChild(0);
+		ok &= Expect(child_pid > 0, "spawns child that the application reaps");
+		if (child_pid <= 0) {
+			return false;
+		}
+		int status = 0;
+		ok &= Expect(howdy::native::RetryOnEintr([&] -> pid_t {
+			             return waitpid(child_pid, &status, 0);
+		             }) == child_pid,
+		             "application reaps the child first");
+		const int result = howdy::test::prompt_coordinator::WaitUntilForTestChild(
+		    child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr, nullptr,
+		    -1);
+		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
+		ok &= Expect(WIFEXITED(result) && WEXITSTATUS(result) == abort_code,
+		             "wait on a child reaped elsewhere returns abort, not its success status");
+		return ok;
+	}
+
+	// The helper paths share the same rule: a helper the application reaped is an error, and the
+	// terminate path reaps one that is still running.
+	auto ExpectHelperTrackedThroughPidfd() -> bool {
+		using howdy::pam::auth_helper_process::internal::HelperWaitResult;
+		using howdy::pam::auth_helper_process::internal::TerminateAndReapHelperProcess;
+		using howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil;
+		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
+		bool       ok         = true;
+
+		const pid_t reaped_child = SpawnExitingChild(0);
+		ok &= Expect(reaped_child > 0, "spawns helper that the application reaps");
+		if (reaped_child > 0) {
+			int status = 0;
+			ok &= Expect(howdy::native::RetryOnEintr([&] -> pid_t {
+				             return waitpid(reaped_child, &status, 0);
+			             }) == reaped_child,
+			             "application reaps the helper first");
+			const int terminated = TerminateAndReapHelperProcess(reaped_child, -1);
+			ok &= Expect(WIFEXITED(terminated) && WEXITSTATUS(terminated) == abort_code,
+			             "terminating a helper reaped elsewhere returns abort");
+			int        wait_status = 0;
+			const auto waited      = WaitForHelperProcessUntil(
+			    reaped_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
+			    &wait_status, -1);
+			ok &= Expect(waited == HelperWaitResult::kWaitError,
+			             "waiting on a helper reaped elsewhere is an error, not success");
+		}
+
+		const pid_t stuck_child = SpawnSigtermIgnoringChild();
+		ok &= Expect(stuck_child > 0, "spawns SIGTERM-resistant helper");
+		if (stuck_child > 0) {
+			int        status = 0;
+			const auto waited = WaitForHelperProcessUntil(
+			    stuck_child, std::chrono::steady_clock::now(), &status, -1);
+			ok &= Expect(waited == HelperWaitResult::kTimedOut, "helper deadline reports timeout");
+			ok &= Expect(ChildReaped(stuck_child), "helper deadline kills and reaps the helper");
+		}
+
+		// The grace wait returns as soon as the helper exits, even with a stale EINTR in errno
+		// from an earlier, retried call.
+		const pid_t polite_child = SpawnBlockedChild();
+		ok &= Expect(polite_child > 0, "spawns helper that exits on SIGTERM");
+		if (polite_child > 0) {
+			const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(polite_child));
+			errno              = EINTR;
+			const auto start   = std::chrono::steady_clock::now();
+			const int  status  = TerminateAndReapHelperProcess(polite_child, pidfd.Get());
+			const auto elapsed = std::chrono::steady_clock::now() - start;
+			ok &= Expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM,
+			             "helper terminated by SIGTERM is reaped with its status");
+			ok &= Expect(elapsed < std::chrono::milliseconds(300),
+			             "helper grace wait ends when the helper exits");
+		}
+
+		const pid_t exiting_child = SpawnExitingChild(5);
+		ok &= Expect(exiting_child > 0, "spawns exiting helper");
+		if (exiting_child > 0) {
+			int        status = 0;
+			const auto waited = WaitForHelperProcessUntil(
+			    exiting_child, std::chrono::steady_clock::now() + std::chrono::seconds(5), &status,
+			    -1);
+			ok &= Expect(waited == HelperWaitResult::kExited && WIFEXITED(status) &&
+			                 WEXITSTATUS(status) == 5,
+			             "helper wait preserves exit status through the pidfd");
+		}
+		return ok;
+	}
+
+	auto ExpectSignalledChildStatus() -> bool {
+		bool        ok        = true;
+		const pid_t child_pid = SpawnBlockedChild();
+		ok &= Expect(child_pid > 0, "spawns child to kill");
+		if (child_pid <= 0) {
+			return false;
+		}
+		ok &= Expect(kill(child_pid, SIGKILL) == 0, "kills compare child externally");
+		const int status = howdy::test::prompt_coordinator::WaitUntilForTestChild(
+		    child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(5), nullptr, nullptr,
+		    -1);
+		ok &= Expect(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL,
+		             "compare wait reports the terminating signal");
+		ok &= Expect(ChildReaped(child_pid), "signalled compare child is reaped");
+		return ok;
+	}
+
 	auto ExpectProcessWaiting() -> bool {
 		bool        ok                = true;
 		const pid_t compare_child_pid = SpawnExitingChild(7);
 		ok &= Expect(compare_child_pid > 0, "spawns compare child");
 		if (compare_child_pid > 0) {
-			const int status = howdy::pam::compare_process::WaitUntil(
+			const int status = howdy::test::prompt_coordinator::WaitUntilForTestChild(
 			    compare_child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(1),
 			    nullptr, nullptr, -1);
 			ok &= Expect(WIFEXITED(status) && WEXITSTATUS(status) == 7,
@@ -142,28 +253,36 @@ namespace {
 		const pid_t helper_child_pid = SpawnExitingChild(9);
 		ok &= Expect(helper_child_pid > 0, "spawns helper child");
 		if (helper_child_pid > 0) {
-			const int status =
-			    howdy::pam::auth_helper_process::internal::WaitForHelperProcess(helper_child_pid);
-			ok &= Expect(WIFEXITED(status) && WEXITSTATUS(status) == 9,
-			             "helper wait preserves child exit status");
+			int        status = 0;
+			const auto waited =
+			    howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+			        helper_child_pid, std::chrono::steady_clock::now() + std::chrono::seconds(5),
+			        &status, -1);
+			ok &= Expect(
+			    waited == howdy::pam::auth_helper_process::internal::HelperWaitResult::kExited &&
+			        WIFEXITED(status) && WEXITSTATUS(status) == 9,
+			    "helper wait preserves child exit status");
 		}
 
 		constexpr pid_t nonexistent_child = std::numeric_limits<pid_t>::max();
-		const int       compare_failure   = howdy::pam::compare_process::WaitUntil(
+		const int       compare_failure   = howdy::test::prompt_coordinator::WaitUntilForTestChild(
 		    nonexistent_child, std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr,
 		    nullptr, -1);
 		const auto abort_code = static_cast<int>(howdy::native::CompareExit::kAbort);
 		ok &= Expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
 		             "compare wait failure returns abort status");
-		const int helper_failure =
-		    howdy::pam::auth_helper_process::internal::WaitForHelperProcess(nonexistent_child);
-		ok &= Expect(WIFEXITED(helper_failure) && WEXITSTATUS(helper_failure) == abort_code,
-		             "helper wait failure returns abort status");
+		int helper_failure_status = 0;
+		ok &= Expect(howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+		                 nonexistent_child,
+		                 std::chrono::steady_clock::now() + std::chrono::seconds(1),
+		                 &helper_failure_status, -1) ==
+		                 howdy::pam::auth_helper_process::internal::HelperWaitResult::kWaitError,
+		             "helper wait failure is reported as an error");
 
 		const pid_t cancelled_child = SpawnBlockedChild();
 		ok &= Expect(cancelled_child > 0, "spawns cancellable compare child");
 		if (cancelled_child > 0) {
-			const int cancelled_status = howdy::pam::compare_process::WaitUntil(
+			const int cancelled_status = howdy::test::prompt_coordinator::WaitUntilForTestChild(
 			    cancelled_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
 			    nullptr, AlwaysCancelCompare, -1);
 			ok &= Expect(WIFEXITED(cancelled_status) && WEXITSTATUS(cancelled_status) == abort_code,
@@ -173,18 +292,21 @@ namespace {
 
 		ok &= ExpectTerminalOutcomePreserved(false);
 		ok &= ExpectTerminalOutcomePreserved(true);
+		ok &= ExpectReapedElsewhereFailsClosed();
+		ok &= ExpectSignalledChildStatus();
+		ok &= ExpectHelperTrackedThroughPidfd();
 
 		const pid_t cleanup_child = SpawnSigtermIgnoringChild();
 		ok &= Expect(cleanup_child > 0, "spawns compare child for noexcept cleanup");
 		if (cleanup_child > 0) {
-			howdy::pam::compare_process::CancelAndReap(cleanup_child);
+			howdy::pam::compare_process::CancelAndReap(cleanup_child, -1);
 			ok &= Expect(ChildReaped(cleanup_child), "noexcept compare cleanup reaps child");
 		}
 
 		const pid_t timed_out_child = SpawnSigtermIgnoringChild();
 		ok &= Expect(timed_out_child > 0, "spawns SIGTERM-resistant compare child");
 		if (timed_out_child > 0) {
-			const int timed_out_status = howdy::pam::compare_process::WaitUntil(
+			const int timed_out_status = howdy::test::prompt_coordinator::WaitUntilForTestChild(
 			    timed_out_child, std::chrono::steady_clock::now(), nullptr, nullptr, -1);
 			const int timeout_code = static_cast<int>(howdy::native::CompareExit::kTimeoutReached);
 			ok &=

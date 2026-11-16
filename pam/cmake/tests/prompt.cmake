@@ -77,4 +77,6 @@ target_link_options(
   "LINKER:--wrap=__ppoll_chk"
   "LINKER:--wrap=kill"
   "LINKER:--wrap=waitpid"
+  "LINKER:--wrap=pidfd_send_signal"
+  "LINKER:--wrap=waitid"
 )

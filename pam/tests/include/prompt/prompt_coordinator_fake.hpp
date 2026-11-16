@@ -19,6 +19,7 @@
 #include <string_view>
 #include <thread>
 #include <tuple>
+#include <utility>
 
 #include <security/pam_appl.h>
 
@@ -38,49 +39,53 @@ namespace howdy::test::prompt_coordinator {
 	using namespace std::chrono_literals;
 
 	struct FakeContext {
-		std::thread::id                       run_thread;
-		std::thread::id                       wait_thread;
-		std::thread::id                       auth_token_thread;
-		std::thread::id                       submission_thread;
-		std::thread::id                       native_create_thread;
-		std::thread::id                       native_install_thread;
-		std::thread::id                       native_restore_thread;
-		std::thread::id                       native_abort_thread;
-		std::chrono::milliseconds             token_delay{0};
-		PromptCoordinator                    *coordinator_for_submission = nullptr;
-		howdy::pam::SecretPromptObserver      secret_prompt_observer{};
-		std::string                           spawned_config_path;
-		std::string                           spawned_username;
-		std::string                           spawned_user_models_dir;
-		std::mutex                            reap_mutex;
-		std::mutex                            token_mutex;
-		std::mutex                            submission_mutex;
-		std::mutex                            native_prompt_mutex;
-		std::condition_variable               reap_condition;
-		std::condition_variable               token_condition;
-		std::condition_variable               submission_condition;
-		std::condition_variable               native_prompt_condition;
-		std::atomic<int>                      spawn_calls{0};
-		std::atomic<pid_t>                    spawned_pid{-1};
-		std::atomic<int>                      wait_calls{0};
-		std::atomic<pid_t>                    waited_pid{-1};
-		std::atomic<int>                      last_wait_status{0};
-		std::atomic<int>                      terminate_calls{0};
-		std::atomic<pid_t>                    terminated_pid{-1};
-		std::atomic<int>                      cleanup_calls{0};
-		std::atomic<pid_t>                    cleaned_pid{-1};
-		std::atomic<int>                      preflight_calls{0};
-		std::atomic<int>                      prompt_submitter_constructions{0};
-		std::atomic<int>                      prompt_submissions{0};
-		std::atomic<int>                      auth_token_calls{0};
-		int                                   token_result          = PAM_SUCCESS;
-		int                                   native_install_result = PAM_SUCCESS;
-		std::atomic<int>                      native_abort_calls{0};
-		std::atomic<int>                      native_restore_calls{0};
-		std::atomic<int>                      secret_restore_calls{0};
-		std::atomic<int>                      original_conversation_calls{0};
-		int                                   spawn_result   = 0;
-		pid_t                                 next_child_pid = -1;
+		std::thread::id                  run_thread;
+		std::thread::id                  wait_thread;
+		std::thread::id                  auth_token_thread;
+		std::thread::id                  submission_thread;
+		std::thread::id                  native_create_thread;
+		std::thread::id                  native_install_thread;
+		std::thread::id                  native_restore_thread;
+		std::thread::id                  native_abort_thread;
+		std::chrono::milliseconds        token_delay{0};
+		PromptCoordinator               *coordinator_for_submission = nullptr;
+		howdy::pam::SecretPromptObserver secret_prompt_observer{};
+		std::string                      spawned_config_path;
+		std::string                      spawned_username;
+		std::string                      spawned_user_models_dir;
+		std::mutex                       reap_mutex;
+		std::mutex                       token_mutex;
+		std::mutex                       submission_mutex;
+		std::mutex                       native_prompt_mutex;
+		std::condition_variable          reap_condition;
+		std::condition_variable          token_condition;
+		std::condition_variable          submission_condition;
+		std::condition_variable          native_prompt_condition;
+		std::atomic<int>                 spawn_calls{0};
+		std::atomic<pid_t>               spawned_pid{-1};
+		std::atomic<int>                 wait_calls{0};
+		std::atomic<pid_t>               waited_pid{-1};
+		std::atomic<int>                 waited_pidfd{-1};
+		std::atomic<int>                 last_wait_status{0};
+		std::atomic<int>                 terminate_calls{0};
+		std::atomic<pid_t>               terminated_pid{-1};
+		std::atomic<int>                 cleanup_calls{0};
+		std::atomic<pid_t>               cleaned_pid{-1};
+		std::atomic<int>                 cleaned_pidfd{-1};
+		std::atomic<int>                 preflight_calls{0};
+		std::atomic<int>                 prompt_submitter_constructions{0};
+		std::atomic<int>                 prompt_submissions{0};
+		std::atomic<int>                 auth_token_calls{0};
+		int                              token_result          = PAM_SUCCESS;
+		int                              native_install_result = PAM_SUCCESS;
+		std::atomic<int>                 native_abort_calls{0};
+		std::atomic<int>                 native_restore_calls{0};
+		std::atomic<int>                 secret_restore_calls{0};
+		std::atomic<int>                 original_conversation_calls{0};
+		int                              spawn_result   = 0;
+		pid_t                            next_child_pid = -1;
+		// Handed to the coordinator by the fake spawn, which then owns and closes it.
+		int                                   next_child_pidfd = -1;
 		std::atomic<bool>                     auth_token_active{false};
 		bool                                  block_token_until_release          = false;
 		bool                                  use_real_auth_token                = false;
@@ -251,8 +256,10 @@ namespace howdy::test::prompt_coordinator {
 		       lhs.submitter == rhs.submitter && lhs.auth == rhs.auth;
 	}
 
+	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 	inline auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
-	                                pid_t *child_pid) -> int {
+	                                pid_t *child_pid, int *child_pidfd) -> int {
+		// NOLINTEND(bugprone-easily-swappable-parameters)
 		auto &fake = *static_cast<FakeContext *>(context);
 
 		++fake.spawn_calls;
@@ -266,6 +273,7 @@ namespace howdy::test::prompt_coordinator {
 		}
 
 		*child_pid       = fake.next_child_pid;
+		*child_pidfd     = std::exchange(fake.next_child_pidfd, -1);
 		fake.spawned_pid = *child_pid;
 		return 0;
 	}
@@ -289,9 +297,9 @@ namespace howdy::test::prompt_coordinator {
 		return true;
 	}
 
-	inline void CancelAndReapCompare(void *context, pid_t child_pid) noexcept;
+	inline void CancelAndReapCompare(void *context, pid_t child_pid, int child_pidfd) noexcept;
 
-	inline auto WaitForCompare(void *context, pid_t child_pid,
+	inline auto WaitForCompare(void *context, pid_t child_pid, int child_pidfd,
 	                           [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
 	                           void                                      *cancellation_context,
 	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested,
@@ -299,13 +307,14 @@ namespace howdy::test::prompt_coordinator {
 		(void)cancellation_fd;
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
-		fake.waited_pid  = child_pid;
-		fake.wait_thread = std::this_thread::get_id();
+		fake.waited_pid   = child_pid;
+		fake.waited_pidfd = child_pidfd;
+		fake.wait_thread  = std::this_thread::get_id();
 		if (fake.throw_compare_wait) {
 			throw std::runtime_error("simulated compare wait failure");
 		}
 		if (fake.request_native_prompt && !WaitForNativePromptCompletion(fake)) {
-			CancelAndReapCompare(context, child_pid);
+			CancelAndReapCompare(context, child_pid, child_pidfd);
 			return howdy::native::EncodeWaitExitStatus(CompareExit::kAbort);
 		}
 		while (true) {
@@ -346,10 +355,11 @@ namespace howdy::test::prompt_coordinator {
 		}
 	}
 
-	inline void CancelAndReapCompare(void *context, pid_t child_pid) noexcept {
+	inline void CancelAndReapCompare(void *context, pid_t child_pid, int child_pidfd) noexcept {
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.cleanup_calls;
-		fake.cleaned_pid = child_pid;
+		fake.cleaned_pid   = child_pid;
+		fake.cleaned_pidfd = child_pidfd;
 		(void)kill(child_pid, SIGTERM);
 		int status = 0;
 		(void)howdy::test::process::ReapTestChild(child_pid, &status);

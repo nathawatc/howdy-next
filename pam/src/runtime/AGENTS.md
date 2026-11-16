@@ -10,6 +10,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `auth_helper_process/io.cpp`: bounded I/O, timeout, wait, terminate, reap
 - `auth_helper_process/lease.cpp`: SCM_RIGHTS lease transport and validation
 - `compare_process.cpp`: compare argv/environment, descriptor closure, timeout/reap
+- `child_process.cpp`: `TrackedChild`, the one pidfd wait/signal implementation with PID fallback,
+  used by both child lifecycles
 
 `auth_helper_process/internal.hpp` is private cross-TU plumbing.
 
@@ -17,6 +19,25 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 
 Preserve process/FD ownership, EINTR behavior, deadline semantics, timeout termination/reap, helper
 output bounds, protocol validation, and lease path/owner/mode/device/inode/flock checks.
+
+Signal and reap child processes through a pidfd, never a bare PID: a PAM application that reaps
+children itself can free the PID for reuse. Take the pidfd right after spawn and carry it to every
+wait and signal; never open one later from the PID, which may by then name another process. A
+pidfd is required: when it cannot be taken, stop the child at once and fail the spawn (compare has
+always needed `pidfd_open` to poll, so this costs no configuration that worked before). The auth
+helper keeps it in `PreparedHelperSpawn`; compare hands it back through the spawn callback, and the
+prompt coordinator owns it for the run.
+
+`ECHILD` from a pidfd wait, or `ESRCH` from a signal (an exited, unreaped child still accepts
+signals), means the child was reaped elsewhere; it is then never signalled or waited on again.
+Where a pidfd signal fails later (a filter on the application), the signal falls back to the PID
+only after the kernel reports an unreaped child with it; when nothing can confirm that, no signal
+is sent. A wait falls back to the PID only on a kernel without `waitid(P_PIDFD)` (`EINVAL`, Linux
+5.3); any other wait failure fails closed. Nothing blocks on a child that could not be
+signalled. `TrackedChild` and `KillAndReap` in
+`child_process.cpp` hold these rules for both children.
+glibc's `<sys/pidfd.h>` tests `_PIDFD_H` but never defines it (seen in 2.44), so a second inclusion
+in one unity-build translation unit fails; only `child_process.cpp` includes it.
 
 `RuntimeSession` is one-shot. Invalid staged paths, missing typed config, or repeated load attempts
 fail closed. Compare runs with a fixed environment, never copied from the caller. Direct runtime

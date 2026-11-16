@@ -22,15 +22,20 @@
 namespace howdy::pam {
 	class PromptCoordinatorTestAccess;
 
+	// On success `child_pidfd` receives an owned pidfd for the child, taken right after spawn and
+	// already placed above STDERR_FILENO (runtime::OpenChildPidfd); a spawn that cannot take one
+	// stops the child and fails. Wait and cancel borrow it and require it: with -1 the production
+	// wait stops the child by confirmed PID and fails closed.
 	using SpawnCompareProcessFn = int (*)(void *context, const CompareLaunchRequest &request,
-	                                      pid_t *child_pid);
+	                                      pid_t *child_pid, int *child_pidfd);
 
-	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid,
+	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid, int child_pidfd,
 	                                        std::chrono::steady_clock::time_point deadline,
 	                                        void                          *cancellation_context,
 	                                        CompareCancellationRequestedFn cancellation_requested,
 	                                        int                            cancellation_fd);
-	using CancelAndReapCompareProcessFn = void (*)(void *context, pid_t child_pid) noexcept;
+	using CancelAndReapCompareProcessFn = void (*)(void *context, pid_t child_pid,
+	                                               int child_pidfd) noexcept;
 
 	using InputPromptPreflightFn = bool (*)(void *context);
 
@@ -66,21 +71,21 @@ namespace howdy::pam {
 		}
 
 		[[nodiscard]] auto SpawnCompareProcess(const CompareLaunchRequest &request,
-		                                       pid_t                      *child_pid) const -> int {
-			return spawn_compare_process_(context_, request, child_pid);
+		                                       pid_t *child_pid, int *child_pidfd) const -> int {
+			return spawn_compare_process_(context_, request, child_pid, child_pidfd);
 		}
 
-		[[nodiscard]] auto
-		WaitForCompareProcess(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-		                      void                          *cancellation_context,
-		                      CompareCancellationRequestedFn cancellation_requested,
-		                      int                            cancellation_fd = -1) const -> int {
-			return wait_for_compare_process_(context_, child_pid, deadline, cancellation_context,
-			                                 cancellation_requested, cancellation_fd);
+		[[nodiscard]] auto WaitForCompareProcess(
+		    pid_t child_pid, int child_pidfd, std::chrono::steady_clock::time_point deadline,
+		    void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
+		    int cancellation_fd = -1) const -> int {
+			return wait_for_compare_process_(context_, child_pid, child_pidfd, deadline,
+			                                 cancellation_context, cancellation_requested,
+			                                 cancellation_fd);
 		}
 
-		void CancelAndReapCompareProcess(pid_t child_pid) const noexcept {
-			cancel_and_reap_compare_process_(context_, child_pid);
+		void CancelAndReapCompareProcess(pid_t child_pid, int child_pidfd) const noexcept {
+			cancel_and_reap_compare_process_(context_, child_pid, child_pidfd);
 		}
 
 		[[nodiscard]] auto InputPromptPreflight() const -> bool {
@@ -266,10 +271,12 @@ namespace howdy::pam {
 		std::unique_ptr<SecretPromptConversation> secret_prompt_conversation_;
 		std::unique_ptr<PromptSubmitter>          prompt_submitter_;
 		howdy::native::ScopedFd                   cancellation_fd_;
-		bool                                      cancellation_signal_failed_ = false;
-		State                                     state_;
-		Workaround                                effective_workaround_ = Workaround::kOff;
-		bool                                      run_started_          = false;
+		// The spawned compare child's pidfd, owned for the run; the worker only borrows it.
+		howdy::native::ScopedFd child_pidfd_;
+		bool                    cancellation_signal_failed_ = false;
+		State                   state_;
+		Workaround              effective_workaround_ = Workaround::kOff;
+		bool                    run_started_          = false;
 	};
 
 }  // namespace howdy::pam

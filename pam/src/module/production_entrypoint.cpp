@@ -63,17 +63,17 @@ namespace {
 	}
 
 	auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
-	                         pid_t *child_pid) -> int {
+	                         pid_t *child_pid, int *child_pidfd) -> int {
 		auto const *operations = static_cast<howdy::pam::compare_process::Operations *>(context);
 		if (operations == nullptr) {
 			return EINVAL;
 		}
-		return howdy::pam::compare_process::Spawn(request, child_pid, *operations);
+		return howdy::pam::compare_process::Spawn(request, child_pid, child_pidfd, *operations);
 	}
 
-	void CancelAndReapCompareProcess(void *context, pid_t child_pid) noexcept {
+	void CancelAndReapCompareProcess(void *context, pid_t child_pid, int child_pidfd) noexcept {
 		(void)context;
-		howdy::pam::compare_process::CancelAndReap(child_pid);
+		howdy::pam::compare_process::CancelAndReap(child_pid, child_pidfd);
 	}
 
 	auto ProductionIdentifyDependencies() -> howdy::pam::auth_flow::IdentifyDependencies {

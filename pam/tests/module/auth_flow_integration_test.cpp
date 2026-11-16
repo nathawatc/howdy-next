@@ -11,10 +11,12 @@
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_invocation.hpp"
+#include "runtime/child_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/lid_probe.hpp"
 #include "storage/user_model_status.hpp"
 #include "support/process_test_support.hpp"
+#include "support/scoped_fd.hpp"
 #include "test_support.hpp"
 
 #include <array>
@@ -498,9 +500,12 @@ namespace {
 		const pid_t wait_child = SpawnExitingChild(7);
 		ok &= Expect(wait_child > 0, "production wait adapter test spawns child");
 		if (wait_child > 0) {
+			// Production hands the spawn-time pidfd; this test forked the child, so opens one.
+			const howdy::native::ScopedFd wait_pidfd(
+			    howdy::pam::runtime::OpenChildPidfd(wait_child));
 			const int wait_status = production_prompt.WaitForCompareProcess(
-			    wait_child, std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr,
-			    nullptr);
+			    wait_child, wait_pidfd.Get(),
+			    std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr, nullptr);
 			ok &= Expect(WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == 7,
 			             "production wait adapter preserves child exit status");
 			ok &= Expect(ChildReaped(wait_child), "production wait adapter reaps direct child");
@@ -509,7 +514,7 @@ namespace {
 		const pid_t blocked_child = SpawnBlockedChild();
 		ok &= Expect(blocked_child > 0, "production cancel adapter test spawns child");
 		if (blocked_child > 0) {
-			production_prompt.CancelAndReapCompareProcess(blocked_child);
+			production_prompt.CancelAndReapCompareProcess(blocked_child, -1);
 			ok &= Expect(ChildReaped(blocked_child),
 			             "production cancel adapter terminates and reaps compare child");
 		}
