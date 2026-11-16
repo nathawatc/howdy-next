@@ -20,7 +20,11 @@ namespace howdy::native {
 		std::string_view spelling;
 		bool             higher_score_is_better;
 		float            threshold_maximum;
+		// Set when a threshold of exactly 0 would already accept unrelated faces.
+		bool threshold_minimum_exclusive = false;
 	};
+
+	inline constexpr float kFaceMetricThresholdMinimum = 0.0F;
 
 	inline constexpr auto kFaceMetricPolicies = std::array{
 	    FaceMetricPolicy{
@@ -28,6 +32,8 @@ namespace howdy::native {
 	        .spelling               = "cosine",
 	        .higher_score_is_better = true,
 	        .threshold_maximum      = 1.0F,
+	        // A score of 0 means no similarity, so a threshold of 0 would accept strangers.
+	        .threshold_minimum_exclusive = true,
 	    },
 	    FaceMetricPolicy{
 	        .metric                 = FaceMetric::kL2,
@@ -35,12 +41,14 @@ namespace howdy::native {
 	        .higher_score_is_better = false,
 	        .threshold_maximum      = 4.0F,
 	    },
-	    // Unit vectors are at most 2 apart, so a higher threshold would accept every face.
+	    // Unit vectors with no similarity (cosine 0) are sqrt(2) apart and opposite ones are 2
+	    // apart. The cap is 1.41, just below sqrt(2), so every accepted face has positive
+	    // similarity, matching the cosine rule above.
 	    FaceMetricPolicy{
 	        .metric                 = FaceMetric::kL2Norm,
 	        .spelling               = "l2norm",
 	        .higher_score_is_better = false,
-	        .threshold_maximum      = 2.0F,
+	        .threshold_maximum      = 1.41F,
 	    },
 	};
 
@@ -61,6 +69,15 @@ namespace howdy::native {
 			maximum = std::max(maximum, policy.threshold_maximum);
 		}
 		return maximum;
+	}
+
+	// False for NaN, so an unparsable threshold never passes.
+	[[nodiscard]] constexpr auto FaceMetricThresholdAllowed(const FaceMetricPolicy &policy,
+	                                                        float threshold) noexcept -> bool {
+		const bool above_minimum = policy.threshold_minimum_exclusive
+		                               ? threshold > kFaceMetricThresholdMinimum
+		                               : threshold >= kFaceMetricThresholdMinimum;
+		return above_minimum && threshold <= policy.threshold_maximum;
 	}
 
 	[[nodiscard]] constexpr auto GetFaceMetricPolicy(FaceMetric metric)

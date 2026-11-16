@@ -107,6 +107,8 @@ namespace howdy::native::config_schema {
 	auto IsAcceptedBooleanText(std::string_view value) -> bool;
 	auto FormatIntegerValue(int value) -> std::optional<std::string>;
 	auto FormatFloatingPointValue(float value) -> std::optional<std::string>;
+	// Accepted sface_threshold values for one metric, for example "0..4" or "above 0 up to 1".
+	auto FormatSfaceThresholdRange(const FaceMetricPolicy &policy) -> std::string;
 	auto FormatFallbackValue(const Option &option) -> std::optional<std::string>;
 
 	auto ValidateOptions(std::span<const Option> options) -> std::optional<std::string>;

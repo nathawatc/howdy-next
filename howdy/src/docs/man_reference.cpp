@@ -269,21 +269,18 @@ namespace howdy::docs {
 			return "";
 		}
 
-		auto FormatSfaceThresholdRange(const native::config_schema::Option &option) -> std::string {
-			const auto *range     = std::get_if<native::config_schema::FloatRange>(&option.range);
-			const auto  min_float = range != nullptr ? range->minimum : 0.0F;
-			const auto  min_str   = native::config_schema::FormatFloatingPointValue(min_float);
-			const auto  min_val   = min_str ? *min_str : "0";
-
-			std::vector<std::pair<float, std::vector<std::string_view>>> groups;
+		auto FormatSfaceThresholdRange() -> std::string {
+			// Metrics that accept the same values share one entry.
+			std::vector<std::pair<std::string, std::vector<std::string_view>>> groups;
 			for (const auto &policy : native::kFaceMetricPolicies) {
-				auto const iter = std::ranges::find_if(groups, [&](const auto &group) -> bool {
-					return group.first == policy.threshold_maximum;
+				auto       range = native::config_schema::FormatSfaceThresholdRange(policy);
+				auto const iter  = std::ranges::find_if(groups, [&](const auto &group) -> bool {
+					return group.first == range;
 				});
 				if (iter != groups.end()) {
 					iter->second.push_back(policy.spelling);
 				} else {
-					groups.push_back({policy.threshold_maximum, {policy.spelling}});
+					groups.push_back({std::move(range), {policy.spelling}});
 				}
 			}
 
@@ -292,11 +289,7 @@ namespace howdy::docs {
 				if (g_idx > 0) {
 					range_str += ", ";
 				}
-				const auto max_str =
-				    native::config_schema::FormatFloatingPointValue(groups.at(g_idx).first);
-				range_str += EscapeRoff(min_val);
-				range_str += "..";
-				range_str += EscapeRoff(max_str.value_or(""));
+				range_str += EscapeRoff(groups.at(g_idx).first);
 				range_str += " for ";
 				const auto &spellings = groups.at(g_idx).second;
 				for (std::size_t s_idx = 0; s_idx < spellings.size(); ++s_idx) {
@@ -324,7 +317,7 @@ namespace howdy::docs {
 				return FormatDevicePaths(fallback_str);
 			}
 			if (option.special_rule == native::config_schema::SpecialRule::kSfaceThreshold) {
-				return FormatSfaceThresholdRange(option);
+				return FormatSfaceThresholdRange();
 			}
 			if (!option.choices.empty()) {
 				return FormatChoices(option.choices, fallback_str);

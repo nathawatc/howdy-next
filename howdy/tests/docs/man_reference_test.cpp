@@ -160,10 +160,11 @@ auto main() -> int {
 	             "video frame_width sentinel range renders on separate line");
 	ok &= Expect(config_result.output.contains("\n.br\n\\&Choices: \\fBcosine\\fR, l2, l2norm.\n"),
 	             "face sface_metric choices renders with bold fallback token on separate line");
-	ok &= Expect(config_result.output.contains(
-	                 "\n.br\n\\&Range: 0..1 for cosine, 0..4 for l2, 0..2 for l2norm.\n"),
-	             "face sface_threshold metric-dependent range renders on separate line without "
-	             "default annotation");
+	ok &= Expect(
+	    config_result.output.contains(
+	        "\n.br\n\\&Range: above 0 up to 1 for cosine, 0..4 for l2, 0..1.41 for l2norm.\n"),
+	    "face sface_threshold metric-dependent range renders on separate line without "
+	    "default annotation");
 	ok &= Expect(config_result.output.contains(
 	                 "\n.br\n\\&Values: true, \\fBfalse\\fR, 1, 0, yes, no, on, off.\n"),
 	             "boolean option with false default bolds false token");

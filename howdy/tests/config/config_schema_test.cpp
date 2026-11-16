@@ -338,7 +338,7 @@ auto main() -> int {
 	const auto valid_sface = sface_options(cosine_threshold_max);
 	ok &= Accepts(valid_sface, "cosine SFace fallback at effective maximum is valid");
 	const auto invalid_sface = sface_options(cosine_threshold_max + 0.1F);
-	ok &= Rejects(invalid_sface, "sface threshold fallback exceeds cosine range");
+	ok &= Rejects(invalid_sface, "sface threshold fallback outside cosine range");
 
 	const std::array<std::string_view, 3> duplicate_choices        = {"cosine", "l2", "cosine"};
 	const std::array                      duplicate_choice_options = {

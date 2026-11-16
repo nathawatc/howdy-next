@@ -71,8 +71,7 @@ namespace howdy::native {
 			if (!parsed.has_value()) {
 				return InvalidConfigValueMessage(option.key, value, option.invalid_rule);
 			}
-			const auto *range   = std::get_if<config_schema::FloatRange>(&option.range);
-			const float minimum = range != nullptr ? range->minimum : 0.0F;
+			const auto *range = std::get_if<config_schema::FloatRange>(&option.range);
 
 			if (option.special_rule == config_schema::SpecialRule::kSfaceThreshold) {
 				const auto &metric_option =
@@ -92,12 +91,10 @@ namespace howdy::native {
 					return InvalidConfigValueMessage(metric_option.key, metric_value,
 					                                 metric_option.invalid_rule);
 				}
-				const float policy_max = policy->threshold_maximum;
-				if (*parsed < minimum || *parsed > policy_max) {
-					const auto maximum_text =
-					    config_schema::FormatFloatingPointValue(policy_max).value_or("");
-					return InvalidConfigValueMessage(option.key, value,
-					                                 "expected range 0.." + maximum_text);
+				if (!FaceMetricThresholdAllowed(*policy, *parsed)) {
+					return InvalidConfigValueMessage(
+					    option.key, value,
+					    "expected range " + config_schema::FormatSfaceThresholdRange(*policy));
 				}
 				return std::nullopt;
 			}
