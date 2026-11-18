@@ -1,0 +1,35 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: howdy\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-18 12:12+0700\n"
+"PO-Revision-Date: 2026-11-17 17:14+0700\n"
+"Last-Translator: imngkhang\n"
+"Language-Team: Vietnamese\n"
+"Language: vi\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+#: src/module/auth_flow.cpp:58
+msgid "Starting face verification"
+msgstr "Bắt đầu xác thực khuôn mặt"
+
+#: src/module/confirmation_message.cpp:9
+#, c++-format
+msgid "Face matched user {}"
+msgstr "Khuôn mặt khớp với người dùng {}"
+
+#: src/module/status_mapping.cpp:52
+msgid "Face verification timed out"
+msgstr "Đã hết thời gian xác thực khuôn mặt"
+
+#: src/module/status_mapping.cpp:61
+msgid "Camera image is too dark for detection"
+msgstr "Hình ảnh từ máy ảnh quá tối để phát hiện"
+
+#: src/module/status_mapping.cpp:92
+#, c++-format
+msgid "Unknown error: {}"
+msgstr "Lỗi không xác định: {}"
