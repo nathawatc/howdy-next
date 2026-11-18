@@ -1,4 +1,5 @@
 #include "app/command_invocation.hpp"
+#include "auth_helper/staged_copies.hpp"
 #include "cli/clear/internal.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -27,6 +28,7 @@ namespace {
 		howdy::native::UserModelMutationResult clear_result;
 		int                                    inspect_calls = 0;
 		int                                    clear_calls   = 0;
+		int                                    purge_calls   = 0;
 		std::string                            inspected_user;
 		std::string                            cleared_user;
 		howdy::native::UserModelFileSnapshot   received_snapshot;
@@ -70,6 +72,53 @@ namespace {
 		context->cleared_user      = user;
 		context->received_snapshot = expected_snapshot;
 		return context->clear_result;
+	}
+
+	auto PurgeCallback(void *raw_context, [[maybe_unused]] const std::string &user,
+	                   [[maybe_unused]] howdy::native::auth_helper::StagedPurgeTrigger trigger)
+	    -> void {
+		++static_cast<ClearCliTestContext *>(raw_context)->purge_calls;
+	}
+
+	// Staged copies go whenever the models may be gone, and a run that finds no models retries a
+	// purge that an earlier run could not finish.
+	auto StagedCopiesPurgedWheneverModelsMayBeGone() -> bool {
+		using howdy::native::UserModelStatus;
+		const auto run = [](ClearCliTestContext &context) -> void {
+			std::ostringstream const output_stream;
+			StreamRedirect const     redirect(std::cout, output_stream.rdbuf());
+			(void)howdy::native::clear_internal::ClearMainWithDependencies(
+			    {.resolved_user = "alice", .assume_yes = true},
+			    {
+			        .context                               = &context,
+			        .inspect_user_model_file               = InspectCallback,
+			        .clear_user_model_entries_if_unchanged = ClearCallback,
+			        .purge_staged_copies                   = PurgeCallback,
+			    });
+		};
+		bool ok = true;
+		for (const auto &[status, expected_purges] : {
+		         std::pair{UserModelStatus::kOk, 1},
+		         std::pair{UserModelStatus::kDurabilityUncertain, 1},
+		         std::pair{UserModelStatus::kCommitStateUncertain, 1},
+		         std::pair{UserModelStatus::kNoModel, 1},
+		         std::pair{UserModelStatus::kModelChanged, 0},
+		         std::pair{UserModelStatus::kWriteFailed, 0},
+		     }) {
+			auto context                = SuccessContext();
+			context.clear_result.status = status;
+			run(context);
+			ok &= Expect(context.purge_calls == expected_purges,
+			             "clear purges staged copies exactly when the models may be gone");
+		}
+		for (const auto status : {UserModelStatus::kNoModel, UserModelStatus::kNoModelDirectory}) {
+			ClearCliTestContext context;
+			context.inspect_result.status = status;
+			run(context);
+			ok &= Expect(context.purge_calls == 1 && context.clear_calls == 0,
+			             "clear with no stored models still purges staged copies");
+		}
+		return ok;
 	}
 
 	auto
@@ -329,6 +378,7 @@ auto main() -> int {
 	ok &= YesFlagBypassesConfirmation();
 	ok &= ClearOutcomesPreserveMessages();
 	ok &= SuccessfulClearPreservesOutput();
+	ok &= StagedCopiesPurgedWheneverModelsMayBeGone();
 	ok &= BoundaryAwareClearRemovesUnparseableModelFiles();
 	return ok ? 0 : 1;
 }

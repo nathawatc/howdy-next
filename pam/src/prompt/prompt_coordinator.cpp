@@ -117,14 +117,15 @@ namespace howdy::pam {
 		int status = howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort);
 		try {
 			status = operations_.WaitForCompareProcess(
-			    child_pid, compare_deadline, this, CancellationRequested, cancellation_fd_.Get());
+			    child_pid, child_pidfd_.Get(), compare_deadline, this, CancellationRequested,
+			    cancellation_fd_.Get());
 		} catch (const std::exception &error) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Compare wait failed: %s", error.what());
-			operations_.CancelAndReapCompareProcess(child_pid);
+			operations_.CancelAndReapCompareProcess(child_pid, child_pidfd_.Get());
 		} catch (...) {
 			syslog(LOG_AUTHPRIV | LOG_ERR,
 			       "pam_howdy: Compare wait failed with non-standard exception");
-			operations_.CancelAndReapCompareProcess(child_pid);
+			operations_.CancelAndReapCompareProcess(child_pid, child_pidfd_.Get());
 		}
 		return status;
 	}
@@ -425,6 +426,7 @@ namespace howdy::pam {
 		}
 		condition_.notify_all();
 		CompareWorker(child_pid, compare_deadline);
+		child_pidfd_.Reset();
 		(void)RestorePromptConversation();
 	}
 
@@ -494,7 +496,11 @@ namespace howdy::pam {
 
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
 		pid_t      child_pid        = -1;
-		const int  spawn_result     = operations_.SpawnCompareProcess(request, &child_pid);
+		int        raw_child_pidfd  = -1;
+		const int  spawn_result =
+		    operations_.SpawnCompareProcess(request, &child_pid, &raw_child_pidfd);
+		// Owned from here on every path, including a failed spawn that still returned one.
+		child_pidfd_.Reset(raw_child_pidfd);
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
@@ -503,6 +509,7 @@ namespace howdy::pam {
 			} else {
 				pam_syslog(pamh_, LOG_ERR, "Unable to start Howdy: invalid child pid");
 			}
+			child_pidfd_.Reset();  // a failed spawn may still have handed one over
 			return {
 			    .decision = PromptCoordinatorDecision::kCompareSpawnFailed,
 			};
@@ -550,6 +557,7 @@ namespace howdy::pam {
 		}
 
 		child_thread.join();
+		child_pidfd_.Reset();  // the worker has reaped the child; nothing borrows it any more
 		const bool terminal_restore_failed =
 		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
 		const auto restore_result = RestorePromptConversation();

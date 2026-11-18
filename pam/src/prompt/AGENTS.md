@@ -20,7 +20,8 @@ production wiring belongs in `src/module/production_entrypoint.cpp`. Retain expl
 operation objects instead of introducing virtual interfaces or a broader OO abstraction layer.
 
 The caller thread owns PAM conversation install/restore and `pam_get_authtok()`. The compare worker
-performs no PAM operation and owns one child lifecycle.
+performs no PAM operation and owns one child lifecycle. The coordinator owns the child's pidfd
+returned by the spawn callback until the run ends; wait and cancel callbacks only borrow it.
 
 Native prompt requires an eligible foreground TTY and safe descriptor identity. Long-lived
 Howdy-owned descriptors must end above `STDERR_FILENO`.

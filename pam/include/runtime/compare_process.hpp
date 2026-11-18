@@ -30,19 +30,25 @@ namespace howdy::pam::compare_process {
 	};
 
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
+	// On success `child_pidfd` receives an owned pidfd for the child taken right after spawn, which
+	// the caller passes to the wait. Both out-parameters are required (EINVAL otherwise). When no
+	// pidfd can be taken, the child is stopped and Spawn returns the error.
 	__attribute__((visibility("hidden"))) auto Spawn(const CompareLaunchRequest &request,
-	                                                 pid_t *child_pid, const Operations &operations)
-	    -> int;
-	// cancellation_fd is borrowed until return; signal it whenever cancellation becomes true.
-	// The callback preserves the initial cancellation/exit race and is not polled.
+	                                                 pid_t *child_pid, int *child_pidfd,
+	                                                 const Operations &operations) -> int;
+	// `child_pidfd` is the borrowed pidfd from Spawn and is required: with -1 the child is
+	// stopped by PID and the wait fails closed. cancellation_fd is borrowed until return; signal it
+	// whenever cancellation becomes true. The callback preserves the initial cancellation/exit race
+	// and is not polled.
 	__attribute__((visibility("hidden"))) auto
-	WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	WaitUntil(pid_t child_pid, int child_pidfd, std::chrono::steady_clock::time_point deadline,
 	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
 	          int cancellation_fd) -> int;
 	__attribute__((visibility("hidden"))) auto
-	Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	     void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
-	     int cancellation_fd) -> int;
-	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid) noexcept;
+	Wait(void *context, pid_t child_pid, int child_pidfd,
+	     std::chrono::steady_clock::time_point deadline, void *cancellation_context,
+	     CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int;
+	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid,
+	                                                         int   child_pidfd) noexcept;
 
 }  // namespace howdy::pam::compare_process

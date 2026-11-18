@@ -354,17 +354,26 @@ auto main() -> int {
 		             std::string("strict parser rejects non-finite value: ") + value);
 	}
 
+	ok &=
+	    Expect(RejectsExact(temp_root / "cosine-threshold-zero.ini",
+		                    "[face]\nsface_metric = cosine\nsface_threshold = 0\n",
+		                    "Invalid config value for sface_threshold=\"0\": expected range above "
+		                    "0 up to 1"),
+		       "cosine threshold of zero would accept unrelated faces and is rejected");
 	ok &= Expect(Validates(temp_root / "cosine-threshold-min.ini",
-	                       "[face]\nsface_metric = cosine\nsface_threshold = 0\n"),
-	             "cosine threshold minimum boundary is valid");
+	                       "[face]\nsface_metric = cosine\nsface_threshold = 0.001\n"),
+	             "smallest positive cosine threshold is valid");
+	ok &= Expect(Validates(temp_root / "l2-threshold-zero.ini",
+	                       "[face]\nsface_metric = l2\nsface_threshold = 0\n"),
+	             "distance threshold of zero only accepts exact matches and stays valid");
 	ok &= Expect(Validates(temp_root / "cosine-threshold-max.ini",
 	                       "[face]\nsface_metric = cosine\nsface_threshold = 1\n"),
 	             "cosine threshold maximum boundary is valid");
-	ok &= Expect(
-	    RejectsExact(temp_root / "cosine-threshold-over.ini",
-		             "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
-		             "Invalid config value for sface_threshold=\"1.001\": expected range 0..1"),
-	    "cosine threshold above maximum keeps validation message");
+	ok &= Expect(RejectsExact(temp_root / "cosine-threshold-over.ini",
+	                          "[face]\nsface_metric = cosine\nsface_threshold = 1.001\n",
+	                          "Invalid config value for sface_threshold=\"1.001\": expected range "
+	                          "above 0 up to 1"),
+	             "cosine threshold above maximum keeps validation message");
 	ok &= Expect(Validates(temp_root / "l2-threshold-max.ini",
 	                       "[face]\nsface_metric = l2\nsface_threshold = 4\n"),
 	             "l2 threshold maximum boundary is valid");
@@ -374,13 +383,18 @@ auto main() -> int {
 		             "Invalid config value for sface_threshold=\"4.001\": expected range 0..4"),
 	    "l2 threshold above maximum keeps validation message");
 	ok &= Expect(Validates(temp_root / "l2norm-threshold-max.ini",
-	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 2\n"),
+	                       "[face]\nsface_metric = L2NORM\nsface_threshold = 1.41\n"),
 	             "normalized l2norm threshold maximum is valid");
 	ok &= Expect(
 	    RejectsExact(temp_root / "l2norm-threshold-over.ini",
-		             "[face]\nsface_metric = L2NORM\nsface_threshold = 2.001\n",
-		             "Invalid config value for sface_threshold=\"2.001\": expected range 0..2"),
-	    "l2norm threshold above unit-vector distance bound is rejected");
+		             "[face]\nsface_metric = L2NORM\nsface_threshold = 1.42\n",
+		             "Invalid config value for sface_threshold=\"1.42\": expected range 0..1.41"),
+	    "l2norm threshold that admits faces without positive similarity is rejected");
+	ok &= Expect(
+	    RejectsExact(temp_root / "l2norm-threshold-all.ini",
+		             "[face]\nsface_metric = L2NORM\nsface_threshold = 2\n",
+		             "Invalid config value for sface_threshold=\"2\": expected range 0..1.41"),
+	    "l2norm threshold at the unit-vector distance bound would accept every face");
 
 	for (const auto *const metric : {"cosine", "COSINE", "l2", "L2", "l2norm", "L2NORM"}) {
 		ok &= Expect(Validates(temp_root / (std::string("metric-") + metric + ".ini"),

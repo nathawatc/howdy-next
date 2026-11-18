@@ -22,6 +22,7 @@ add_library(
  src/runtime/auth_helper_process/io.cpp
  src/runtime/auth_helper_process/lease.cpp
  src/runtime/auth_helper_process/spawn.cpp
+ src/runtime/child_process.cpp
  src/runtime/compare_process.cpp
  src/runtime/environment.cpp
  src/runtime/lid_probe.cpp

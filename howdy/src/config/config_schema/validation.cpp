@@ -182,8 +182,8 @@ namespace howdy::native::config_schema_internal {
 			for (const auto &option : options) {
 				if (option.special_rule == SpecialRule::kSfaceThreshold) {
 					const auto *threshold = std::get_if<float>(&option.fallback);
-					if (threshold != nullptr && *threshold > policy->threshold_maximum) {
-						return "sface threshold fallback exceeds " + std::string(policy->spelling) +
+					if (threshold != nullptr && !FaceMetricThresholdAllowed(*policy, *threshold)) {
+						return "sface threshold fallback outside " + std::string(policy->spelling) +
 						       " range: " + OptionName(option);
 					}
 				}

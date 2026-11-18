@@ -32,6 +32,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 
 #include <linux/fs.h>
 
@@ -612,6 +613,153 @@ namespace howdy::native::auth_helper {
 			    .lease_fd        = std::move(lease),
 			};
 		}
+
+		auto RootIsValid(int fd, const std::filesystem::path &path, uid_t owner_uid,
+		                 gid_t owner_gid) -> bool {
+			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kRuntimeRoot);
+			struct stat stat{};
+			if (fstat(fd, &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
+			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
+				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
+				return false;
+			}
+			return true;
+		}
+
+		auto RootOnlyLockIsValid(int fd, const std::filesystem::path &display_path,
+		                         StagedIdentity identity, const AclOperations &operations) -> bool {
+			struct stat stat{};
+			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kLock);
+			if (fstat(fd, &stat) != 0 ||
+			    !ValidateRegular(stat, identity, StagedRuntimeRole::kLock) ||
+			    !VerifyPersistentAclWithOperations(fd, display_path, uid_t{0}, policy.acl,
+			                                       operations)) {
+				std::cerr << "Runtime lock failed strict validation: " << display_path << "\n";
+				return false;
+			}
+			return true;
+		}
+
+		enum class ExistingLock : std::uint8_t {
+			kMissing,
+			kInvalid,
+			kOpened,
+		};
+
+		// Opens a lock that a prepare run created, without creating one. A lock that fails the
+		// prepare path's validation is reported, never used.
+		auto OpenExistingLock(int root_fd, const std::string &name,
+		                      const std::filesystem::path &display_path, StagedIdentity identity,
+		                      const AclOperations &operations, runtime_internal::UniqueFd &lock)
+		    -> ExistingLock {
+			bool missing = false;
+			auto opened  = runtime_internal::OpenRootOnlyLock(root_fd, name, display_path, identity,
+			                                                  operations, false, &missing);
+			if (!opened.has_value()) {
+				return missing ? ExistingLock::kMissing : ExistingLock::kInvalid;
+			}
+			lock = std::move(*opened);
+			return ExistingLock::kOpened;
+		}
+
+		constexpr int        kPurgeLockAttempts      = 20;
+		constexpr useconds_t kPurgeLockRetryInterval = 50'000;
+
+		// A helper run holds the allocation lock for milliseconds, so wait briefly for it instead
+		// of giving up; a run stopped by its caller must still not hang the command.
+		auto TryLockExclusive(int fd) -> bool {
+			return RetryOnEintr([fd] -> int {
+				       return flock(fd, LOCK_EX | LOCK_NB);
+			       }) == 0;
+		}
+
+		auto LockAllocation(int fd, StagedPurgeLockWait lock_wait) -> bool {
+			const int attempts = lock_wait == StagedPurgeLockWait::kBrief ? kPurgeLockAttempts : 1;
+			for (int attempt = 0; attempt < attempts; ++attempt) {
+				if (attempt > 0) {
+					usleep(kPurgeLockRetryInterval);
+				}
+				if (TryLockExclusive(fd)) {
+					return true;
+				}
+				if (errno != EWOULDBLOCK) {
+					return false;
+				}
+			}
+			errno = EWOULDBLOCK;
+			return false;
+		}
+
+		enum class SlotPurge : std::uint8_t {
+			kAbsent,
+			kRemoved,
+			kInUse,
+			kFailed,
+		};
+
+		// Removes one slot if it is idle and passes the same validation prepare demands. A slot
+		// that fails validation stays in place for an administrator, as it does for prepare.
+		auto PurgeSlot(int root_fd, const std::filesystem::path &root,
+		               RuntimeGenerationSlot generation, StagedIdentity identity,
+		               const AclOperations &operations) -> SlotPurge {
+			const auto lock_name = auth_helper_protocol::PreparedRuntimeGenerationLockName(
+			    identity.target_uid, generation);
+			runtime_internal::UniqueFd lock;
+			const auto                 lock_state =
+			    OpenExistingLock(root_fd, lock_name, root / lock_name, identity, operations, lock);
+			if (lock_state == ExistingLock::kInvalid) {
+				return SlotPurge::kFailed;
+			}
+			// A lease is a shared lock on this file; never pull a slot out from under one.
+			if (lock_state == ExistingLock::kOpened && !TryLockExclusive(lock.Get())) {
+				return errno == EWOULDBLOCK ? SlotPurge::kInUse : SlotPurge::kFailed;
+			}
+
+			const auto slot_path = auth_helper_protocol::PreparedRuntimeGenerationDir(
+			    root, identity.target_uid, generation);
+			const auto side_path =
+			    auth_helper_protocol::PreparedRuntimeGenerationBuildPath(slot_path);
+			const auto slot_name = slot_path.filename().string();
+			bool       present   = false;
+			{
+				const runtime_internal::UniqueFd directory(openat(
+				    root_fd, slot_name.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+				if (directory.Valid()) {
+					if (!ValidSlotDirectory(directory.Get(), slot_path, identity, operations)) {
+						return SlotPurge::kFailed;
+					}
+					present = true;
+				} else if (errno != ENOENT) {
+					LogSlotsErrnoFailure("open runtime slot", slot_path, errno);
+					return SlotPurge::kFailed;
+				}
+			}
+			// Leases are only visible through the lock, so a slot without one cannot be shown
+			// to be idle and is left alone, its side tree included.
+			if (present && lock_state == ExistingLock::kMissing) {
+				std::cerr << "Runtime slot has no lock file and was not removed: " << slot_path
+				          << "\n";
+				return SlotPurge::kFailed;
+			}
+			const auto side_name = side_path.filename().string();
+			if (!RemoveStaleTree(root_fd, side_name, side_path, kMaxStaleTreeDepth)) {
+				return SlotPurge::kFailed;
+			}
+			if (!present) {
+				return SlotPurge::kAbsent;
+			}
+			// Move the slot to its side name first so it disappears in one step; an interrupted
+			// removal then leaves only a side directory, which the next prepare or purge clears.
+			// The move never replaces anything that appeared at the side name.
+			if (InstallSlotDirectory(root_fd, slot_name, side_name, false) != 0) {
+				LogSlotsErrnoFailure("retire runtime slot", slot_path, errno);
+				return SlotPurge::kFailed;
+			}
+			if (!RemoveStaleTree(root_fd, side_name, side_path, kMaxStaleTreeDepth)) {
+				return SlotPurge::kFailed;
+			}
+			return SlotPurge::kRemoved;
+		}
 	}  // namespace
 
 	namespace runtime_internal {
@@ -635,10 +783,23 @@ namespace howdy::native::auth_helper {
 			                fchmod(fd.Get(), policy.mode) != 0)) {
 				return std::nullopt;
 			}
-			struct stat stat{};
-			if (fstat(fd.Get(), &stat) != 0 || !S_ISDIR(stat.st_mode) || stat.st_uid != owner_uid ||
-			    stat.st_gid != owner_gid || MaskedBits(stat.st_mode, 07777) != policy.mode) {
-				std::cerr << "Runtime directory failed strict validation: " << path << "\n";
+			if (!RootIsValid(fd.Get(), path, owner_uid, owner_gid)) {
+				return std::nullopt;
+			}
+			return fd;
+		}
+
+		auto OpenExistingRoot(const std::filesystem::path &path, uid_t owner_uid, gid_t owner_gid,
+		                      bool &missing) -> std::optional<UniqueFd> {
+			UniqueFd fd(open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
+			missing = !fd.Valid() && errno == ENOENT;
+			if (!fd.Valid()) {
+				if (!missing) {
+					LogSlotsErrnoFailure("open runtime directory", path, errno);
+				}
+				return std::nullopt;
+			}
+			if (!RootIsValid(fd.Get(), path, owner_uid, owner_gid)) {
 				return std::nullopt;
 			}
 			return fd;
@@ -646,10 +807,16 @@ namespace howdy::native::auth_helper {
 
 		auto OpenRootOnlyLock(int root_fd, const std::string &name,
 		                      const std::filesystem::path &display_path, StagedIdentity identity,
-		                      const AclOperations &operations, bool create)
+		                      const AclOperations &operations, bool create, bool *missing)
 		    -> std::optional<UniqueFd> {
 			bool created = false;
 			auto fd      = OpenOrCreateFile(root_fd, name.c_str(), create, created);
+			if (missing != nullptr) {
+				*missing = fd.Get() < 0 && errno == ENOENT;
+				if (*missing) {
+					return std::nullopt;  // reported by the caller, which asked to tell it apart
+				}
+			}
 			if (fd.Get() < 0) {
 				LogSlotsErrnoFailure("open runtime lock", display_path, errno);
 				return std::nullopt;
@@ -659,13 +826,7 @@ namespace howdy::native::auth_helper {
 			                                   operations))) {
 				return std::nullopt;
 			}
-			struct stat stat{};
-			const auto  policy = GetStagedRuntimePolicy(StagedRuntimeRole::kLock);
-			if (fstat(fd.Get(), &stat) != 0 ||
-			    !ValidateRegular(stat, identity, StagedRuntimeRole::kLock) ||
-			    !VerifyPersistentAclWithOperations(fd.Get(), display_path, uid_t{0}, policy.acl,
-			                                       operations)) {
-				std::cerr << "Runtime lock failed strict validation: " << display_path << "\n";
+			if (!RootOnlyLockIsValid(fd.Get(), display_path, identity, operations)) {
 				return std::nullopt;
 			}
 			return fd;
@@ -740,6 +901,57 @@ namespace howdy::native::auth_helper {
 			}
 			std::cerr << "No usable auth-helper runtime slot\n";
 			return std::nullopt;
+		}
+
+		auto PurgeSlots(int root_fd, const std::filesystem::path &root, StagedIdentity identity,
+		                const AclOperations &operations, StagedPurgeLockWait lock_wait)
+		    -> StagedPurgeResult {
+			// No allocation lock means no helper run ever staged anything for this user.
+			const auto allocation_name = AllocationLockName(identity.target_uid);
+			UniqueFd   allocation;
+			switch (OpenExistingLock(root_fd, allocation_name, root / allocation_name, identity,
+			                         operations, allocation)) {
+				case ExistingLock::kMissing:
+					return StagedPurgeResult::kNothingStaged;
+				case ExistingLock::kInvalid:
+					return StagedPurgeResult::kFailed;
+				case ExistingLock::kOpened:
+					break;
+			}
+			if (!LockAllocation(allocation.Get(), lock_wait)) {
+				return errno == EWOULDBLOCK ? StagedPurgeResult::kInUse
+				                            : StagedPurgeResult::kFailed;
+			}
+
+			bool removed = false;
+			bool in_use  = false;
+			bool failed  = false;
+			for (const auto generation :
+			     {RuntimeGenerationSlot::kSlot0, RuntimeGenerationSlot::kSlot1}) {
+				switch (PurgeSlot(root_fd, root, generation, identity, operations)) {
+					case SlotPurge::kAbsent:
+						break;
+					case SlotPurge::kRemoved:
+						removed = true;
+						break;
+					case SlotPurge::kInUse:
+						in_use = true;
+						break;
+					case SlotPurge::kFailed:
+						failed = true;
+						break;
+				}
+			}
+			if (removed) {
+				(void)howdy::native::SyncFd(root_fd);
+			}
+			if (failed) {
+				return StagedPurgeResult::kFailed;
+			}
+			if (in_use) {
+				return StagedPurgeResult::kInUse;
+			}
+			return removed ? StagedPurgeResult::kPurged : StagedPurgeResult::kNothingStaged;
 		}
 
 	}  // namespace runtime_internal

@@ -250,20 +250,26 @@ howdy_install(
  RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
 )
 
+# Staging runtime without the setuid helper's command front end, so the CLI can
+# purge staged copies without linking the helper's argument and lease handling.
 add_library(
- howdy_auth_helper_core STATIC
+ howdy_auth_helper_runtime STATIC
  src/auth_helper/acl.cpp
  src/auth_helper/runtime.cpp
  src/auth_helper/runtime/internal.hpp
  src/auth_helper/runtime/sources.cpp
  src/auth_helper/runtime/slots.cpp
- src/auth_helper/command.cpp
+ src/auth_helper/staged_copies.cpp
 )
-howdy_configure_native_target(howdy_auth_helper_core)
+howdy_configure_native_target(howdy_auth_helper_runtime)
 target_link_libraries(
- howdy_auth_helper_core
+ howdy_auth_helper_runtime
  PRIVATE PkgConfig::LIBACL howdy_runtime_paths howdy_user_model_readiness
 )
+
+add_library(howdy_auth_helper_core STATIC src/auth_helper/command.cpp)
+howdy_configure_native_target(howdy_auth_helper_core)
+target_link_libraries(howdy_auth_helper_core PUBLIC howdy_auth_helper_runtime)
 
 add_executable(howdy_auth_helper src/bin/auth_helper.cpp)
 howdy_configure_native_target(howdy_auth_helper)
@@ -326,6 +332,7 @@ target_link_libraries(
   PkgConfig::LIBCURL
   howdy_opencv
   howdy_cli_core
+  howdy_auth_helper_runtime
   howdy_config
   howdy_runtime_config_loader
   howdy_face_model

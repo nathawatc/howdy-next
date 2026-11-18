@@ -7,11 +7,11 @@
 #include "paths.hpp"
 #include "protocol/compare_exit.hpp"
 #include "protocol/compare_invocation.hpp"
+#include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
-#include "support/eintr.hpp"
+#include "support/bit_flags.hpp"
 #include "support/error_message.hpp"
 #include "support/process_status.hpp"
-#include "support/scoped_fd.hpp"
 
 #include <algorithm>
 #include <array>
@@ -25,7 +25,6 @@
 #include <string_view>
 #include <vector>
 
-#include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
 #include <stdlib.h>
@@ -35,12 +34,6 @@
 #include <sys/poll.h>
 #include <sys/syslog.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-
-// Keep C linkage explicit for glibc headers without a C++ linkage guard.
-extern "C" {
-#include <sys/pidfd.h>
-}
 
 namespace {
 	using CompareOperations   = howdy::pam::compare_process::Operations;
@@ -63,28 +56,63 @@ namespace {
 		return howdy::native::EncodeWaitExitStatus(exit_code);
 	}
 
-	enum class ChildState : std::uint8_t {
-		kRunning,
-		kReaped,
-		kError,
-	};
+	using howdy::pam::runtime::ChildState;
 
-	auto TryWaitForCompare(pid_t child_pid, int *status) -> ChildState {
-		const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
-			return waitpid(child_pid, status, WNOHANG);
-		});
-		if (result == child_pid) {
-			return ChildState::kReaped;
+	// The compare child with this module's logging and status policy; the pidfd and PID-fallback
+	// rules live in runtime::TrackedChild.
+	class CompareChild {
+	public:
+		CompareChild(pid_t pid, int pidfd)
+		    : child_(pid, pidfd) {}
+
+		// Non-blocking. On kError `status` holds the abort status, and a child that may still be
+		// running (any failure but ECHILD) has been stopped, as the helper path does.
+		auto TryWait(int *status) -> ChildState {
+			const auto state = child_.Wait(false, status);
+			if (state == ChildState::kError) {
+				const int error_number = errno;
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: wait failed for compare process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+				if (error_number != ECHILD) {
+					(void)howdy::pam::runtime::KillAndReap(child_);
+				}
+				*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
+			}
+			return state;
 		}
-		if (result == 0) {
-			return ChildState::kRunning;
+
+		auto Reap() -> std::optional<int> {
+			int status = 0;
+			if (child_.Wait(true, &status) == ChildState::kReaped) {
+				return status;
+			}
+			const int error_number = errno;
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: wait failed while reaping compare process: %s (%d)",
+			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			return std::nullopt;
 		}
-		const int error_number = errno;
-		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: waitpid failed for compare process: %s (%d)",
-		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-		*status = MakeCompareWaitExitStatus(CompareExit::kAbort);
-		return ChildState::kError;
-	}
+
+		// False means the child could not be signalled at all; do not block on it afterwards.
+		[[nodiscard]] auto Signal(int signal) -> bool {
+			const int error_number = child_.Signal(signal);
+			if (error_number == 0) {
+				return true;
+			}
+			// ECHILD: reaped elsewhere; the wait that follows reports it once.
+			if (error_number == ECHILD) {
+				return false;
+			}
+			syslog(LOG_AUTHPRIV | LOG_ERR,
+			       "pam_howdy: Failed to signal compare process (%d): %s (%d)", signal,
+			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+			return false;
+		}
+
+	private:
+		howdy::pam::runtime::TrackedChild child_;
+	};
 
 	enum class WaitOutcome : std::uint8_t {
 		kExited,
@@ -121,19 +149,22 @@ namespace {
 				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
 				return WaitOutcome::kError;
 			}
-			for (const auto &descriptor : descriptors) {
-				if ((static_cast<unsigned int>(descriptor.revents) &
-				     static_cast<unsigned int>(POLLERR | POLLHUP | POLLNVAL)) != 0) {
-					syslog(LOG_AUTHPRIV | LOG_ERR,
-					       "pam_howdy: Unexpected compare poll events on fd %d: %#x", descriptor.fd,
-					       static_cast<unsigned int>(descriptor.revents));
-					return WaitOutcome::kError;
-				}
+			const auto pidfd_events        = descriptors.front().revents;
+			const auto cancellation_events = descriptors.back().revents;
+			// POLLHUP on a pidfd means the child has been reaped (Linux 6.9+), which the reap that
+			// follows reports; on the cancellation eventfd it is an error.
+			if (howdy::native::HasAnyBits(pidfd_events, POLLERR, POLLNVAL) ||
+			    howdy::native::HasAnyBits(cancellation_events, POLLERR, POLLHUP, POLLNVAL)) {
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: Unexpected compare poll events: pidfd %#x, cancellation %#x",
+				       static_cast<unsigned int>(pidfd_events),
+				       static_cast<unsigned int>(cancellation_events));
+				return WaitOutcome::kError;
 			}
-			if ((static_cast<unsigned int>(descriptors.front().revents) & POLLIN) != 0) {
+			if (howdy::native::HasAnyBits(pidfd_events, POLLIN, POLLHUP)) {
 				return WaitOutcome::kExited;
 			}
-			if ((static_cast<unsigned int>(descriptors.back().revents) & POLLIN) != 0) {
+			if (howdy::native::HasAnyBits(cancellation_events, POLLIN)) {
 				return WaitOutcome::kCancelled;
 			}
 			if (Clock::now() >= deadline) {
@@ -142,56 +173,14 @@ namespace {
 		}
 	}
 
-	auto ReapCompare(pid_t child_pid) -> std::optional<int> {
-		int         status = 0;
-		const pid_t result = howdy::native::RetryOnEintr([&] -> pid_t {
-			return waitpid(child_pid, &status, 0);
-		});
-		if (result == child_pid) {
-			return status;
-		}
-		const int error_number = errno;
-		syslog(LOG_AUTHPRIV | LOG_ERR,
-		       "pam_howdy: waitpid failed while reaping compare process: %s (%d)",
-		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-		return std::nullopt;
+	void KillAndReapCompare(pid_t child_pid, int child_pidfd) noexcept {
+		howdy::pam::runtime::TrackedChild child(child_pid, child_pidfd);
+		(void)howdy::pam::runtime::KillAndReap(child);
 	}
 
-	auto SignalCompare(pid_t child_pid, int signal) -> bool {
-		if (kill(child_pid, signal) != 0 && errno != ESRCH) {
-			const int error_number = errno;
-			syslog(LOG_AUTHPRIV | LOG_ERR,
-			       "pam_howdy: Failed to signal compare process (%d): %s (%d)", signal,
-			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			return false;
-		}
-		return true;
-	}
-
-	auto OpenComparePidfd(pid_t child_pid) -> howdy::native::ScopedFd {
-		howdy::native::ScopedFd pidfd(pidfd_open(child_pid, 0));
-		if (!pidfd.Valid()) {
-			const int error_number = errno;
-			syslog(LOG_AUTHPRIV | LOG_ERR,
-			       "pam_howdy: pidfd_open failed for compare process: %s (%d)",
-			       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			return {};
-		}
-		if (pidfd.Get() <= STDERR_FILENO) {
-			const int normalized = fcntl(pidfd.Get(), F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
-			if (normalized < 0) {
-				const int error_number = errno;
-				syslog(LOG_AUTHPRIV | LOG_ERR,
-				       "pam_howdy: Compare pidfd normalization failed: %s (%d)",
-				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-				return {};
-			}
-			pidfd.Reset(normalized);
-		}
-		return pidfd;
-	}
-
-	auto WaitForCompareProcess(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	auto WaitForCompareProcess(pid_t child_pid, int child_pidfd,
+	                           std::chrono::steady_clock::time_point      deadline,
 	                           void                                      *cancellation_context,
 	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested,
 	                           int                                        cancellation_fd) -> int {
@@ -201,54 +190,57 @@ namespace {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Invalid compare child pid: %d", child_pid);
 			return abort_status;
 		}
-		const auto pidfd = OpenComparePidfd(child_pid);
-		if (!pidfd.Valid()) {
-			int status = 0;
-			if (TryWaitForCompare(child_pid, &status) == ChildState::kRunning) {
-				(void)SignalCompare(child_pid, SIGKILL);
-				(void)ReapCompare(child_pid);
-			}
+		// The pidfd taken at spawn is borrowed and required: it is what the wait polls, and one
+		// opened now could name a process that reused the PID. Without it, stop the child by PID
+		// and fail closed.
+		if (child_pidfd < 0) {
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: No pidfd for compare process %d", child_pid);
+			KillAndReapCompare(child_pid, -1);
 			return abort_status;
 		}
 
 		// Preserve exit-before-cancellation precedence and the terminal decision once made.
-		int status = 0;
-		if (TryWaitForCompare(child_pid, &status) != ChildState::kRunning) {
+		CompareChild child(child_pid, child_pidfd);
+		int          status = 0;
+		if (child.TryWait(&status) != ChildState::kRunning) {
 			return status;
 		}
 		WaitOutcome outcome = WaitOutcome::kTimeout;
 		if (cancellation_requested != nullptr && cancellation_requested(cancellation_context)) {
 			outcome = WaitOutcome::kCancelled;
 		} else if (Clock::now() < deadline) {
-			outcome = PollCompareUntil(pidfd.Get(), cancellation_fd, deadline);
+			outcome = PollCompareUntil(child_pidfd, cancellation_fd, deadline);
 		}
 		if (outcome == WaitOutcome::kExited) {
-			return ReapCompare(child_pid).value_or(abort_status);
+			return child.Reap().value_or(abort_status);
 		}
 		int        terminal_status = outcome == WaitOutcome::kTimeout
 		                                 ? MakeCompareWaitExitStatus(CompareExit::kTimeoutReached)
 		                                 : abort_status;
-		const auto child_state     = TryWaitForCompare(child_pid, &status);
+		const auto child_state     = child.TryWait(&status);
 		if (child_state != ChildState::kRunning) {
 			return child_state == ChildState::kReaped ? terminal_status : abort_status;
 		}
 		if (outcome != WaitOutcome::kError) {
-			if (!SignalCompare(child_pid, SIGTERM)) {
+			if (!child.Signal(SIGTERM)) {
 				terminal_status = abort_status;
 			}
 			const auto grace =
-			    PollCompareUntil(pidfd.Get(), -1, Clock::now() + kCompareTerminationGrace);
+			    PollCompareUntil(child_pidfd, -1, Clock::now() + kCompareTerminationGrace);
 			if (grace == WaitOutcome::kExited) {
-				return ReapCompare(child_pid).has_value() ? terminal_status : abort_status;
+				return child.Reap().has_value() ? terminal_status : abort_status;
 			}
 			if (grace == WaitOutcome::kError) {
 				terminal_status = abort_status;
 			}
 		}
-		if (!SignalCompare(child_pid, SIGKILL)) {
-			terminal_status = abort_status;
+		if (!child.Signal(SIGKILL)) {
+			// A blocking reap would wait forever on a child that was never signalled; still
+			// collect it if it has exited meanwhile.
+			(void)child.TryWait(&status);
+			return abort_status;
 		}
-		return ReapCompare(child_pid).has_value() ? terminal_status : abort_status;
+		return child.Reap().has_value() ? terminal_status : abort_status;
 	}
 
 	auto CallPosixSpawnFileActionsInit(void *context, posix_spawn_file_actions_t *actions) -> int {
@@ -347,37 +339,51 @@ namespace howdy::pam::compare_process {
 		return kPosixSpawnOperations;
 	}
 
-	auto Spawn(const CompareLaunchRequest &request, pid_t *child_pid,
+	auto Spawn(const CompareLaunchRequest &request, pid_t *child_pid, int *child_pidfd,
 	           const CompareOperations &operations) -> int {
-		return SpawnCompareProcess(request, child_pid, operations);
+		if (child_pid == nullptr || child_pidfd == nullptr) {
+			return EINVAL;  // the pidfd is required, so there is nowhere to put a child without it
+		}
+		*child_pidfd     = -1;
+		const int result = SpawnCompareProcess(request, child_pid, operations);
+		// Taken before the PAM application can reap compare and let the PID be reused.
+		if (result == 0 && *child_pid > 0) {
+			// A pidfd opened later could name another process, so a failure fails the spawn.
+			int error_number = 0;
+			*child_pidfd = howdy::pam::runtime::TakeSpawnedChildPidfd(*child_pid, &error_number);
+			if (*child_pidfd < 0) {
+				syslog(LOG_AUTHPRIV | LOG_ERR,
+				       "pam_howdy: Could not take a pidfd for compare process: %s (%d)",
+				       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
+				*child_pid = -1;
+				return error_number;
+			}
+		}
+		return result;
 	}
 
-	auto WaitUntil(pid_t child_pid, std::chrono::steady_clock::time_point deadline,
+	auto WaitUntil(pid_t child_pid, int child_pidfd, std::chrono::steady_clock::time_point deadline,
 	               void                          *cancellation_context,
 	               CompareCancellationRequestedFn cancellation_requested, int cancellation_fd)
 	    -> int {
-		return WaitForCompareProcess(child_pid, deadline, cancellation_context,
+		return WaitForCompareProcess(child_pid, child_pidfd, deadline, cancellation_context,
 		                             cancellation_requested, cancellation_fd);
 	}
 
-	auto Wait(void *context, pid_t child_pid, std::chrono::steady_clock::time_point deadline,
-	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
-	          int cancellation_fd) -> int {
+	auto Wait(void *context, pid_t child_pid, int child_pidfd,
+	          std::chrono::steady_clock::time_point deadline, void *cancellation_context,
+	          CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int {
 		(void)context;
-		return WaitUntil(child_pid, deadline, cancellation_context, cancellation_requested,
-		                 cancellation_fd);
+		return WaitUntil(child_pid, child_pidfd, deadline, cancellation_context,
+		                 cancellation_requested, cancellation_fd);
 	}
 
-	void CancelAndReap(pid_t child_pid) noexcept {
+	void CancelAndReap(pid_t child_pid, int child_pidfd) noexcept {
 		try {
-			(void)WaitForCompareProcess(child_pid, std::chrono::steady_clock::now(), nullptr,
-			                            nullptr, -1);
+			(void)WaitForCompareProcess(child_pid, child_pidfd, std::chrono::steady_clock::now(),
+			                            nullptr, nullptr, -1);
 		} catch (...) {
-			(void)kill(child_pid, SIGKILL);
-			int status = 0;
-			(void)howdy::native::RetryOnEintr([&] -> pid_t {
-				return waitpid(child_pid, &status, 0);
-			});
+			KillAndReapCompare(child_pid, child_pidfd);
 		}
 	}
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/auth_helper_process.hpp"
+#include "support/scoped_fd.hpp"
 
 #include <array>
 #include <chrono>
@@ -50,6 +51,9 @@ namespace howdy::pam::auth_helper_process::internal {
 		posix_spawn_file_actions_t actions{};
 		bool                       actions_initialized = false;
 		pid_t                      child_pid           = -1;
+		// Taken right after spawn, so later waits and signals name the helper itself even if
+		// the PAM application reaps it and the PID is reused during the helper's I/O.
+		howdy::native::ScopedFd child_pidfd;
 	};
 
 	class __attribute__((visibility("hidden"))) PreparedHelperCleanup {
@@ -93,13 +97,15 @@ namespace howdy::pam::auth_helper_process::internal {
 
 	// io.cpp
 	__attribute__((visibility("hidden"))) auto DeadlinePollTimeout(HelperDeadline deadline) -> int;
-	__attribute__((visibility("hidden"))) auto WaitForHelperProcess(pid_t child_pid) noexcept
+	// `pidfd` is the borrowed descriptor taken at spawn and must be passed explicitly. With -1
+	// every operation uses the PID, each only after the kernel reports an unreaped child with it;
+	// production always passes one, and only tests use -1.
+	__attribute__((visibility("hidden"))) auto TerminateAndReapHelperProcess(pid_t child_pid,
+	                                                                         int   pidfd) noexcept
 	    -> int;
 	__attribute__((visibility("hidden"))) auto
-	TerminateAndReapHelperProcess(pid_t child_pid) noexcept -> int;
-	__attribute__((visibility("hidden"))) auto
-	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status) noexcept
-	    -> HelperWaitResult;
+	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status,
+	                          int pidfd) noexcept -> HelperWaitResult;
 	__attribute__((visibility("hidden"))) void LogAuthHelperReadError(int error_number);
 
 	// lease.cpp

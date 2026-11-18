@@ -226,9 +226,10 @@ namespace {
 	                           const std::string &output, const Operations &operations) -> bool {
 		int        status = 0;
 		const auto result = howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
-		    spawn.child_pid, deadline, &status);
+		    spawn.child_pid, deadline, &status, spawn.child_pidfd.Get());
 		// The nonthrowing wait consumes child ownership on every outcome, including timeout.
 		spawn.child_pid = -1;
+		spawn.child_pidfd.Reset();
 		if (result != HelperWaitResult::kExited) {
 			if (result == HelperWaitResult::kTimedOut) {
 				LogPrepareTimeout(operations);

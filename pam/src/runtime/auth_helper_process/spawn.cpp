@@ -5,6 +5,7 @@
 #include "internal.hpp"
 #include "protocol/auth_helper_protocol.hpp"
 #include "runtime/auth_helper_process.hpp"
+#include "runtime/child_process.hpp"
 #include "support/error_message.hpp"
 
 #include <array>
@@ -154,7 +155,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		CloseOwnedFd(operations_, spawn_.lease_socket.Parent());
 		CloseOwnedFd(operations_, spawn_.lease_socket.Child());
 		if (spawn_.child_pid > 0) {
-			(void)TerminateAndReapHelperProcess(spawn_.child_pid);
+			(void)TerminateAndReapHelperProcess(spawn_.child_pid, spawn_.child_pidfd.Get());
 		}
 	}
 
@@ -305,8 +306,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		    username_string.data(),
 		    nullptr,
 		};
-		std::array<char *, 1> env    = {nullptr};
-		const int             result = operations.spawn({
+		std::array<char *, 1> env     = {nullptr};
+		const int             result  = operations.spawn({
 		    .context   = operations.context,
 		    .child_pid = &spawn->child_pid,
 		    .path      = kAuthHelperPath,
@@ -314,14 +315,25 @@ namespace howdy::pam::auth_helper_process::internal {
 		    .argv      = args,
 		    .envp      = env,
 		});
-		if (result != 0) {
+		bool                  spawned = result == 0 && spawn->child_pid > 0;
+		if (!spawned) {
 			spawn->child_pid = -1;
-			WriteHelperSpawnErrorLog(operations, "posix_spawn", result);
+			WriteHelperSpawnErrorLog(operations, "posix_spawn", result != 0 ? result : ECHILD);
+		} else {
+			// A pidfd opened later could name another process, so a failure fails the prepare.
+			int error_number = 0;
+			spawn->child_pidfd.Reset(
+			    howdy::pam::runtime::TakeSpawnedChildPidfd(spawn->child_pid, &error_number));
+			if (!spawn->child_pidfd.Valid()) {
+				WriteHelperSpawnErrorLog(operations, "pidfd_open", error_number);
+				spawn->child_pid = -1;
+				spawned          = false;
+			}
 		}
 		DestroySpawnActions(operations, *spawn);
 		CloseOwnedFd(operations, spawn->output_pipe.Child());
 		CloseOwnedFd(operations, spawn->lease_socket.Child());
-		if (result != 0) {
+		if (!spawned) {
 			CloseOwnedFd(operations, spawn->output_pipe.Parent());
 			CloseOwnedFd(operations, spawn->lease_socket.Parent());
 			return false;
