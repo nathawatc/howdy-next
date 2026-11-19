@@ -15,6 +15,7 @@
 #include "runtime/compare_process.hpp"
 #include "runtime/lid_probe.hpp"
 #include "storage/user_model_status.hpp"
+#include "support/process_status.hpp"
 #include "support/process_test_support.hpp"
 #include "support/scoped_fd.hpp"
 #include "test_support.hpp"
@@ -102,6 +103,39 @@ namespace {
 		                                             .authenticate = IdentifyForTest,
 		                                         }) == PAM_SYSTEM_ERR,
 		             "unavailable PAM conversation fails closed");
+		return ok;
+	}
+
+	auto ExpectSilentFlagSuppressesMessages() -> bool {
+		EligibilityFlowFixture fixture;
+		fixture.prompt.compare_status =
+		    howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kTimeoutReached);
+		auto                  dependencies = MakeEligibilityFlowDependencies(&fixture);
+		ConversationState     state;
+		struct pam_conv const conversation{
+		    .conv        = TestConversation,
+		    .appdata_ptr = &state,
+		};
+		ScopedPamHandle pam_handle;
+		bool            ok =
+		    Expect(pam_handle.Start(&conversation) == PAM_SUCCESS, "silent test starts PAM handle");
+		if (pam_handle.Get() == nullptr) {
+			return false;
+		}
+
+		const auto authenticate = [&](int flags) -> int {
+			state.calls         = 0;
+			state.last_msg_type = 0;
+			return RunAuthenticationEntrypoint(
+			    pam_handle.Get(), {.flags = flags}, false,
+			    {.context = &dependencies, .authenticate = IdentifyForTest});
+		};
+		ok &= Expect(authenticate(0) == PAM_AUTH_ERR, "timed-out compare fails authentication");
+		ok &= Expect(state.calls == 2 && state.last_msg_type == PAM_ERROR_MSG,
+		             "notice and timeout error are sent without PAM_SILENT");
+		ok &= Expect(authenticate(PAM_SILENT) == PAM_AUTH_ERR,
+		             "PAM_SILENT keeps the authentication result");
+		ok &= Expect(state.calls == 0, "PAM_SILENT sends neither the notice nor the timeout error");
 		return ok;
 	}
 
@@ -763,6 +797,7 @@ namespace {
 auto RunAuthFlowIntegrationTests() -> bool {
 	bool ok = true;
 	ok &= ExpectAuthenticationNoticeAndConversationGuards();
+	ok &= ExpectSilentFlagSuppressesMessages();
 	ok &= ExpectRuntimeLoadFailurePaths();
 	ok &= ExpectPromptResultMapping();
 	ok &= ExpectProductionPromptComposition();
