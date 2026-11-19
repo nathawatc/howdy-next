@@ -34,13 +34,11 @@ auto MapAuthenticationEligibility(
 
 auto MapCompareWaitStatus(int status) -> CompareStatusDecision {
 	CompareStatusDecision decision;
-	decision.pam_result = PAM_AUTH_ERR;
 
 	if (WIFEXITED(status)) {
 		const int exit_status = WEXITSTATUS(status);
 		switch (static_cast<howdy::native::CompareExit>(exit_status)) {
 			case howdy::native::CompareExit::kSuccess:
-				decision.pam_result  = PAM_SUCCESS;
 				decision.log_message = kFaceVerificationSucceededMessage;
 				break;
 			case howdy::native::CompareExit::kNoFaceModel:

@@ -13,7 +13,6 @@ enum class ConversationKind : std::uint8_t {
 };
 
 struct CompareStatusDecision {
-	int              pam_result        = 0;
 	ConversationKind conversation_kind = ConversationKind::kNone;
 	std::string      conversation_message;
 	std::string      log_message;
