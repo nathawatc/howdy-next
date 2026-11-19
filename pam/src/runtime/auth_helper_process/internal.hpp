@@ -83,6 +83,11 @@ namespace howdy::pam::auth_helper_process::internal {
 	};
 
 	// spawn.cpp
+	// Logs "<operation> failed for auth helper: <error text> (<error_code>)" to syslog and the
+	// log observer, falling back to a plain syslog line if building the message fails.
+	__attribute__((visibility("hidden"))) void LogAuthHelperFailure(const Operations &operations,
+	                                                                const char       *operation,
+	                                                                int error_code) noexcept;
 	__attribute__((visibility("hidden"))) void
 	DestroySpawnActions(const Operations &operations, PreparedHelperSpawn &spawn) noexcept;
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
