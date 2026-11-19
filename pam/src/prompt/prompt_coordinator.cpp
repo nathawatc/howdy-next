@@ -35,6 +35,13 @@ namespace {
 
 	constexpr auto kPromptCompletionGrace = std::chrono::milliseconds(100);
 
+	auto SystemErrorResult() -> howdy::pam::PromptCoordinatorResult {
+		return {
+		    .decision   = howdy::pam::PromptCoordinatorDecision::kPamResult,
+		    .pam_status = PAM_SYSTEM_ERR,
+		};
+	}
+
 }  // namespace
 
 namespace howdy::pam {
@@ -359,6 +366,13 @@ namespace howdy::pam {
 			return;
 		}
 
+		// An observation setup failure tears down what was built and leaves the standard prompt.
+		const auto disable_input_workaround = [this] -> void {
+			secret_prompt_conversation_.reset();
+			prompt_submitter_.reset();
+			effective_workaround_ = Workaround::kOff;
+		};
+
 		try {
 			secret_prompt_conversation_ = operations_.CreateSecretPromptConversation(
 			    pamh_, {.context = this, .begin = SecretPromptBegin, .end = SecretPromptEnd});
@@ -366,21 +380,15 @@ namespace howdy::pam {
 			    !secret_prompt_conversation_->Available() ||
 			    secret_prompt_conversation_->Install() != PAM_SUCCESS) {
 				pam_syslog(pamh_, LOG_ERR, "Input prompt observation setup failed");
-				secret_prompt_conversation_.reset();
-				prompt_submitter_.reset();
-				effective_workaround_ = Workaround::kOff;
+				disable_input_workaround();
 			}
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Input prompt observation setup failed: %s", error.what());
-			secret_prompt_conversation_.reset();
-			prompt_submitter_.reset();
-			effective_workaround_ = Workaround::kOff;
+			disable_input_workaround();
 		} catch (...) {
 			pam_syslog(pamh_, LOG_ERR,
 			           "Input prompt observation setup failed with non-standard exception");
-			secret_prompt_conversation_.reset();
-			prompt_submitter_.reset();
-			effective_workaround_ = Workaround::kOff;
+			disable_input_workaround();
 		}
 	}
 
@@ -488,10 +496,7 @@ namespace howdy::pam {
 			const int error_number = errno;
 			pam_syslog(pamh_, LOG_ERR, "Compare cancellation eventfd setup failed: %s (%d)",
 			           howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-			return {
-			    .decision   = PromptCoordinatorDecision::kPamResult,
-			    .pam_status = PAM_SYSTEM_ERR,
-			};
+			return SystemErrorResult();
 		}
 
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
@@ -521,18 +526,12 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Prompt workaround setup failed: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {
-			    .decision   = PromptCoordinatorDecision::kPamResult,
-			    .pam_status = PAM_SYSTEM_ERR,
-			};
+			return SystemErrorResult();
 		} catch (...) {
 			pam_syslog(pamh_, LOG_ERR,
 			           "Prompt workaround setup failed with non-standard exception");
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {
-			    .decision   = PromptCoordinatorDecision::kPamResult,
-			    .pam_status = PAM_SYSTEM_ERR,
-			};
+			return SystemErrorResult();
 		}
 
 		InitializeRunState(ask_pass);
@@ -544,10 +543,7 @@ namespace howdy::pam {
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Failed to start compare wait worker: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
-			return {
-			    .decision   = PromptCoordinatorDecision::kPamResult,
-			    .pam_status = PAM_SYSTEM_ERR,
-			};
+			return SystemErrorResult();
 		}
 		int pam_result = PAM_SUCCESS;
 		if (ask_pass) {
@@ -561,12 +557,7 @@ namespace howdy::pam {
 		const bool terminal_restore_failed =
 		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
 		const auto restore_result = RestorePromptConversation();
-		if (cancellation_signal_failed_ || terminal_restore_failed ||
-		    restore_result != ConversationRestoreResult::kOriginalRestored) {
-			pam_result = PAM_SYSTEM_ERR;
-		}
-
-		auto result = BuildResult(ask_pass, pam_result);
+		auto       result         = BuildResult(ask_pass, pam_result);
 		if (cancellation_signal_failed_ || terminal_restore_failed ||
 		    restore_result != ConversationRestoreResult::kOriginalRestored) {
 			result.decision   = PromptCoordinatorDecision::kPamResult;
