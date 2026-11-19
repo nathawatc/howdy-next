@@ -26,6 +26,7 @@ namespace {
 
 	using AuthHelperOperations   = howdy::pam::auth_helper_process::Operations;
 	using AuthHelperSpawnRequest = howdy::pam::auth_helper_process::SpawnRequest;
+	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 	using howdy::pam::auth_helper_process::internal::ProcessChannel;
 
@@ -84,24 +85,6 @@ namespace {
 		return close(fd);
 	}
 
-	void WriteHelperSpawnErrorLog(const AuthHelperOperations &operations, const char *operation,
-	                              int error_code) noexcept {
-		try {
-			const std::string error_message = howdy::native::SystemErrorMessage(error_code);
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper: %s (%d)",
-			       operation, error_message.c_str(), error_code);
-			if (operations.log_observer != nullptr) {
-				const std::string message = std::string(operation) +
-				                            " failed for auth helper: " + error_message + " (" +
-				                            std::to_string(error_code) + ")";
-				operations.log_observer(operations.context, message);
-			}
-		} catch (...) {
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper (%d)", operation,
-			       error_code);
-		}
-	}
-
 	auto NormalizePipeFds(const AuthHelperOperations &operations, ProcessChannel &channel,
 	                      int minimum_fd) -> bool {
 		for (int &pipe_fd : channel.Descriptors()) {
@@ -111,7 +94,7 @@ namespace {
 			const int normalized_fd =
 			    operations.duplicate_fd(operations.context, pipe_fd, minimum_fd);
 			if (normalized_fd < 0) {
-				WriteHelperSpawnErrorLog(operations, "fcntl(F_DUPFD_CLOEXEC)", errno);
+				LogAuthHelperFailure(operations, "fcntl(F_DUPFD_CLOEXEC)", errno);
 				howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
 				                                                        channel.Parent());
 				howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
@@ -126,7 +109,7 @@ namespace {
 
 	auto FailSpawnSetup(const AuthHelperOperations &operations, PreparedHelperSpawn *spawn,
 	                    const char *operation, int error_code) -> bool {
-		WriteHelperSpawnErrorLog(operations, operation, error_code);
+		LogAuthHelperFailure(operations, operation, error_code);
 		howdy::pam::auth_helper_process::internal::DestroySpawnActions(operations, *spawn);
 		howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
 		                                                        spawn->output_pipe.Parent());
@@ -142,6 +125,24 @@ namespace {
 }  // namespace
 
 namespace howdy::pam::auth_helper_process::internal {
+
+	void LogAuthHelperFailure(const AuthHelperOperations &operations, const char *operation,
+	                          int error_code) noexcept {
+		try {
+			const std::string error_message = howdy::native::SystemErrorMessage(error_code);
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper: %s (%d)",
+			       operation, error_message.c_str(), error_code);
+			if (operations.log_observer != nullptr) {
+				const std::string message = std::string(operation) +
+				                            " failed for auth helper: " + error_message + " (" +
+				                            std::to_string(error_code) + ")";
+				operations.log_observer(operations.context, message);
+			}
+		} catch (...) {
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %s failed for auth helper (%d)", operation,
+			       error_code);
+		}
+	}
 
 	PreparedHelperCleanup::PreparedHelperCleanup(const Operations    &operations,
 	                                             PreparedHelperSpawn &spawn)
@@ -166,7 +167,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		try {
 			const int result = operations.actions_destroy(operations.context, &spawn.actions);
 			if (result != 0) {
-				WriteHelperSpawnErrorLog(operations, "posix_spawn_file_actions_destroy", result);
+				LogAuthHelperFailure(operations, "posix_spawn_file_actions_destroy", result);
 			}
 		} catch (...) {
 			syslog(LOG_AUTHPRIV | LOG_ERR,
@@ -206,7 +207,7 @@ namespace howdy::pam::auth_helper_process::internal {
 	    -> bool {
 		if (operations.pipe2(operations.context, spawn->output_pipe.Data(), O_CLOEXEC) != 0) {
 			spawn->output_pipe = ProcessChannel{};
-			WriteHelperSpawnErrorLog(operations, "pipe2", errno);
+			LogAuthHelperFailure(operations, "pipe2", errno);
 			return false;
 		}
 		if (!NormalizePipeFds(operations, spawn->output_pipe, STDERR_FILENO + 1)) {
@@ -215,7 +216,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		if (operations.socketpair(operations.context, AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0,
 		                          spawn->lease_socket.Data()) != 0) {
 			spawn->lease_socket = ProcessChannel{};
-			WriteHelperSpawnErrorLog(operations, "socketpair", errno);
+			LogAuthHelperFailure(operations, "socketpair", errno);
 			CloseOwnedFd(operations, spawn->output_pipe.Parent());
 			CloseOwnedFd(operations, spawn->output_pipe.Child());
 			return false;
@@ -228,7 +229,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 		const int init_result = operations.actions_init(operations.context, &spawn->actions);
 		if (init_result != 0) {
-			WriteHelperSpawnErrorLog(operations, "posix_spawn_file_actions_init", init_result);
+			LogAuthHelperFailure(operations, "posix_spawn_file_actions_init", init_result);
 			CloseOwnedFd(operations, spawn->output_pipe.Parent());
 			CloseOwnedFd(operations, spawn->output_pipe.Child());
 			CloseOwnedFd(operations, spawn->lease_socket.Parent());
@@ -318,14 +319,14 @@ namespace howdy::pam::auth_helper_process::internal {
 		bool                  spawned = result == 0 && spawn->child_pid > 0;
 		if (!spawned) {
 			spawn->child_pid = -1;
-			WriteHelperSpawnErrorLog(operations, "posix_spawn", result != 0 ? result : ECHILD);
+			LogAuthHelperFailure(operations, "posix_spawn", result != 0 ? result : ECHILD);
 		} else {
 			// A pidfd opened later could name another process, so a failure fails the prepare.
 			int error_number = 0;
 			spawn->child_pidfd.Reset(
 			    howdy::pam::runtime::TakeSpawnedChildPidfd(spawn->child_pid, &error_number));
 			if (!spawn->child_pidfd.Valid()) {
-				WriteHelperSpawnErrorLog(operations, "pidfd_open", error_number);
+				LogAuthHelperFailure(operations, "pidfd_open", error_number);
 				spawn->child_pid = -1;
 				spawned          = false;
 			}

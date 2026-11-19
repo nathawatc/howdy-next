@@ -103,6 +103,7 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
 	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
+	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
 	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperCleanup;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
@@ -192,11 +193,16 @@ namespace {
 			auto const &lease_descriptor  = descriptors.back();
 			const int   poll_result =
 			    poll(descriptors.data(), descriptors.size(), DeadlinePollTimeout(deadline));
-			if (poll_result < 0 && errno == EINTR) {
+			const int poll_error = errno;
+			if (poll_result < 0 && poll_error == EINTR) {
 				continue;
 			}
-			if (poll_result <= 0) {
+			if (poll_result == 0) {
 				LogPrepareTimeout(operations);
+				return false;
+			}
+			if (poll_result < 0) {
+				LogAuthHelperFailure(operations, "poll", poll_error);
 				return false;
 			}
 
