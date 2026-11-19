@@ -13,6 +13,12 @@ The module reads the configured Howdy file at
 and enrolled user models from
 .IR @HOWDY_USER_MODELS_DIR_ROFF@ .
 These paths are expected to remain root-controlled and non-user-writable.
+.PP
+When the application passes
+.BR PAM_SILENT ,
+the module sends no informational or error messages: no detection notice, no
+timeout or camera error, and no success confirmation. The password prompt is
+unaffected.
 .SH OPTIONS
 The
 .B workaround=

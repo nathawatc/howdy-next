@@ -12,6 +12,7 @@
 #include "protocol/compare_exit.hpp"
 #include "runtime/compare_launch.hpp"
 #include "runtime/runtime_session.hpp"
+#include "support/bit_flags.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -185,8 +186,6 @@ namespace howdy::pam::auth_flow {
 	auto IdentifyWithDependencies(pam_handle_t *pamh, PamModuleArguments arguments,
 	                              bool ask_auth_tok, const IdentifyDependencies &dependencies)
 	    -> int {
-		(void)arguments.flags;
-
 		if (pamh == nullptr) {
 			return PAM_SYSTEM_ERR;
 		}
@@ -234,9 +233,13 @@ namespace howdy::pam::auth_flow {
 		if (pam_res != PAM_SUCCESS) {
 			return pam_res;
 		}
+		// PAM_SILENT asks for no informational or error messages. The password prompt does not
+		// go through this function, so it is unaffected.
+		const bool           silent = howdy::native::HasAnyBits(arguments.flags, PAM_SILENT);
 		const ConversationFn conv_function =
-		    [&conversation](const howdy::pam::ConversationMessage &message) noexcept -> int {
-			return conversation.Send(message);
+		    [&conversation,
+			 silent](const howdy::pam::ConversationMessage &message) noexcept -> int {
+			return silent ? PAM_SUCCESS : conversation.Send(message);
 		};
 
 		SendDetectionNotice(pamh, config, conv_function);

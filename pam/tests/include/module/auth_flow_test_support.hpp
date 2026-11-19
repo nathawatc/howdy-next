@@ -102,7 +102,8 @@ namespace howdy::test::auth_flow {
 	};
 
 	struct PromptFlowState {
-		int spawn_calls = 0;
+		int spawn_calls    = 0;
+		int compare_status = 0;
 	};
 
 	struct EligibilityFlowFixture {
@@ -219,13 +220,12 @@ namespace howdy::test::auth_flow {
 	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
 	                            int                                        cancellation_fd) -> int {
 		(void)cancellation_fd;
-		(void)context;
 		(void)child_pid;
 		(void)child_pidfd;
 		(void)deadline;
 		(void)cancellation_context;
 		(void)cancellation_requested;
-		return 0;
+		return static_cast<const PromptFlowState *>(context)->compare_status;
 	}
 
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
