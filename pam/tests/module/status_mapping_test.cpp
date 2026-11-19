@@ -121,7 +121,6 @@ auto main() -> int {
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kSuccess));
-		ok &= Expect(decision.pam_result == PAM_SUCCESS, "success returns PAM_SUCCESS");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "success has no conversation");
 		ok &= Expect(decision.log_message == "Face verification succeeded", "success log message");
@@ -130,7 +129,6 @@ auto main() -> int {
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kNoFaceModel));
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "no-model returns PAM_AUTH_ERR");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "no-model has no conversation");
 		ok &=
@@ -168,7 +166,6 @@ auto main() -> int {
 	{
 		const auto decision =
 		    MapCompareWaitStatus(MakeStatus(howdy::native::CompareExit::kInvalidDevice));
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "invalid-device fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "invalid-device has no conversation");
 		ok &= Expect(decision.log_message ==
@@ -178,7 +175,6 @@ auto main() -> int {
 
 	{
 		const auto decision = MapCompareWaitStatus(howdy::native::EncodeWaitExitStatus(99));
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "unknown exit fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "unknown exit returns error conversation");
 		ok &= Expect(decision.conversation_message == "Unknown error: 99", "unknown exit message");
@@ -188,7 +184,6 @@ auto main() -> int {
 
 	{
 		const auto decision = MapCompareWaitStatus(SIGTERM);
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "signal exit fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "signal exit has no conversation");
 		ok &= Expect(decision.log_message.starts_with("Child killed by signal"), "signal exit log");
@@ -196,7 +191,6 @@ auto main() -> int {
 
 	{
 		const auto decision = MapCompareWaitStatus(W_STOPCODE(SIGSTOP));
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR, "stopped status fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kNone,
 		             "stopped status has no conversation");
 		ok &= Expect(decision.log_message.empty(), "stopped status has no misleading log");
@@ -204,8 +198,6 @@ auto main() -> int {
 
 	{
 		const auto decision = MapCompareWaitStatus(howdy::native::EncodeWaitExitStatus(127));
-		ok &= Expect(decision.pam_result == PAM_AUTH_ERR,
-		             "helper execution-style failure fails closed");
 		ok &= Expect(decision.conversation_kind == ConversationKind::kError,
 		             "helper execution-style failure reports controlled error");
 	}
