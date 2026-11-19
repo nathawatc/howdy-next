@@ -124,8 +124,8 @@ namespace howdy::pam {
 		int status = howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort);
 		try {
 			status = operations_.WaitForCompareProcess(
-			    child_pid, child_pidfd_.Get(), compare_deadline, this, CancellationRequested,
-			    cancellation_fd_.Get());
+			    child_pid, child_pidfd_.Get(), compare_verdict_fd_.Get(), compare_deadline, this,
+			    CancellationRequested, cancellation_fd_.Get());
 		} catch (const std::exception &error) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Compare wait failed: %s", error.what());
 			operations_.CancelAndReapCompareProcess(child_pid, child_pidfd_.Get());
@@ -435,6 +435,7 @@ namespace howdy::pam {
 		condition_.notify_all();
 		CompareWorker(child_pid, compare_deadline);
 		child_pidfd_.Reset();
+		compare_verdict_fd_.Reset();
 		(void)RestorePromptConversation();
 	}
 
@@ -502,10 +503,30 @@ namespace howdy::pam {
 		const auto compare_deadline = std::chrono::steady_clock::now() + hard_timeout_;
 		pid_t      child_pid        = -1;
 		int        raw_child_pidfd  = -1;
-		const int  spawn_result =
-		    operations_.SpawnCompareProcess(request, &child_pid, &raw_child_pidfd);
-		// Owned from here on every path, including a failed spawn that still returned one.
+		int        raw_verdict_fd   = -1;
+		// A child a failed or throwing spawn still handed back with its pidfd is ours: stop and
+		// reap it through that pidfd. Without a pidfd it is left alone: the spawn contract stops
+		// such a child itself, and reaping by bare PID could take a reused PID's process.
+		const auto stop_handed_back_child = [this, &child_pid] noexcept -> void {
+			if (child_pid > 0 && child_pidfd_.Valid()) {
+				operations_.CancelAndReapCompareProcess(child_pid, child_pidfd_.Get());
+			}
+			child_pidfd_.Reset();
+			compare_verdict_fd_.Reset();
+		};
+		int spawn_result = 0;
+		try {
+			spawn_result = operations_.SpawnCompareProcess(request, &child_pid, &raw_child_pidfd,
+			                                               &raw_verdict_fd);
+		} catch (...) {
+			child_pidfd_.Reset(raw_child_pidfd);
+			compare_verdict_fd_.Reset(raw_verdict_fd);
+			stop_handed_back_child();
+			throw;
+		}
+		// Owned from here on every path, including a failed spawn that still returned them.
 		child_pidfd_.Reset(raw_child_pidfd);
+		compare_verdict_fd_.Reset(raw_verdict_fd);
 
 		if (spawn_result != 0 || child_pid <= 0) {
 			if (spawn_result != 0) {
@@ -514,7 +535,7 @@ namespace howdy::pam {
 			} else {
 				pam_syslog(pamh_, LOG_ERR, "Unable to start Howdy: invalid child pid");
 			}
-			child_pidfd_.Reset();  // a failed spawn may still have handed one over
+			stop_handed_back_child();
 			return {
 			    .decision = PromptCoordinatorDecision::kCompareSpawnFailed,
 			};
@@ -523,6 +544,7 @@ namespace howdy::pam {
 		bool ask_pass = false;
 		try {
 			ask_pass = ConfigurePromptWorkaround();
+			InitializeRunState(ask_pass);
 		} catch (const std::exception &error) {
 			pam_syslog(pamh_, LOG_ERR, "Prompt workaround setup failed: %s", error.what());
 			CleanupSpawnedChild(child_pid, compare_deadline);
@@ -533,8 +555,6 @@ namespace howdy::pam {
 			CleanupSpawnedChild(child_pid, compare_deadline);
 			return SystemErrorResult();
 		}
-
-		InitializeRunState(ask_pass);
 
 		std::thread child_thread;
 		try {
@@ -553,7 +573,9 @@ namespace howdy::pam {
 		}
 
 		child_thread.join();
-		child_pidfd_.Reset();  // the worker has reaped the child; nothing borrows it any more
+		// The worker has reaped the child; nothing borrows these any more.
+		child_pidfd_.Reset();
+		compare_verdict_fd_.Reset();
 		const bool terminal_restore_failed =
 		    native_prompt_ != nullptr && native_prompt_->TerminalRestoreFailed();
 		const auto restore_result = RestorePromptConversation();

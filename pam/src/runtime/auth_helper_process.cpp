@@ -103,22 +103,15 @@ namespace {
 	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
 	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
+	using howdy::pam::auth_helper_process::internal::LeaseSocketEnd;
 	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
+	using howdy::pam::auth_helper_process::internal::LogAuthHelperMessage;
 	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperCleanup;
 	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 
-	void CaptureAuthHelperLog(const Operations &operations, std::string_view message) {
-		if (operations.log_observer != nullptr) {
-			operations.log_observer(operations.context, message);
-		}
-	}
-
 	void LogPrepareTimeout(const Operations &operations) {
-		constexpr std::string_view message = "Howdy auth helper prepare timed out";
-		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: %.*s", static_cast<int>(message.size()),
-		       message.data());
-		CaptureAuthHelperLog(operations, message);
+		LogAuthHelperMessage(operations, LOG_ERR, "Howdy auth helper prepare timed out");
 	}
 
 	enum class PrepareIoResult : std::uint8_t {
@@ -228,14 +221,27 @@ namespace {
 		return true;
 	}
 
+	// Whether the helper may have succeeded: it exited 0, or the application reaped it and took
+	// its exit status, so only its completion record can tell.
 	auto ValidatePrepareHelper(PreparedHelperSpawn &spawn, HelperDeadline deadline,
 	                           const std::string &output, const Operations &operations) -> bool {
 		int        status = 0;
-		const auto result = howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
-		    spawn.child_pid, deadline, &status, spawn.child_pidfd.Get());
+		const auto result =
+		    spawn.reaped_before_pidfd
+		        // Already gone, so nothing to wait for: only the wait's deadline rule applies.
+		        ? howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(deadline)
+		        : howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+		              spawn.child_pid, deadline, &status, spawn.child_pidfd.Get());
 		// The nonthrowing wait consumes child ownership on every outcome, including timeout.
 		spawn.child_pid = -1;
 		spawn.child_pidfd.Reset();
+		if (result == HelperWaitResult::kReapedElsewhere) {
+			// Normal on such hosts, so not worth a line on every authentication.
+			LogAuthHelperMessage(operations, LOG_DEBUG,
+			                     "Howdy auth helper was reaped elsewhere; its completion record "
+			                     "decides");
+			return true;
+		}
 		if (result != HelperWaitResult::kExited) {
 			if (result == HelperWaitResult::kTimedOut) {
 				LogPrepareTimeout(operations);
@@ -290,15 +296,28 @@ namespace {
 		if (!ValidatePrepareHelper(spawn, deadline, helper_output, operations)) {
 			return false;
 		}
-		if (!howdy::pam::auth_helper_process::internal::LeaseSocketHasCleanEof(
-		        spawn.lease_socket.Parent())) {
-			syslog(LOG_AUTHPRIV | LOG_ERR,
-			       "pam_howdy: Howdy auth helper returned extra lease data");
+		const auto lease_end = howdy::pam::auth_helper_process::internal::ReceiveLeaseSocketEnd(
+		    spawn.lease_socket.Parent());
+		CloseOwnedFd(operations, spawn.lease_socket.Parent());
+		if (lease_end == LeaseSocketEnd::kInvalid) {
+			LogAuthHelperMessage(operations, LOG_ERR,
+			                     "Howdy auth helper left unexpected or unreadable data after the "
+			                     "lease");
 			return false;
 		}
-		CloseOwnedFd(operations, spawn.lease_socket.Parent());
-		if (!AssignPreparedPaths(helper_output, operations, prepared) ||
-		    !howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
+		// PAM asked for the record, so success needs it, and exit 0 as well when the exit status
+		// was still there to read.
+		if (lease_end != LeaseSocketEnd::kCompletedThenEof) {
+			LogAuthHelperMessage(operations, LOG_ERR,
+			                     "Howdy auth helper ended without its completion record");
+			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper output: %s",
+			       helper_output.c_str());
+			return false;
+		}
+		if (!AssignPreparedPaths(helper_output, operations, prepared)) {
+			return false;
+		}
+		if (!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
 		        lease_fd.Get(), prepared->root_dir, operations.lease_owner_uid)) {
 			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper lease validation failed");
 			return false;

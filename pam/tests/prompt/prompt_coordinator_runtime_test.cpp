@@ -3,6 +3,7 @@
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "prompt/workaround.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
@@ -13,6 +14,7 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -30,6 +32,7 @@
 
 #include <sys/eventfd.h>
 #include <sys/poll.h>
+#include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -208,7 +211,9 @@ namespace {
 
 	using howdy::test::Expect;
 
-	auto WatchdogWaitForCompare(void *context, pid_t child_pid, int child_pidfd,
+	constexpr int kVerdictFd = howdy::native::compare_verdict::kFd;
+
+	auto WatchdogWaitForCompare(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	                            std::chrono::steady_clock::time_point      deadline,
 	                            void                                      *cancellation_context,
 	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
@@ -223,8 +228,8 @@ namespace {
 		const auto wait_deadline = std::chrono::steady_clock::now() + remaining;
 		const int  status        = child_pidfd >= 0
 		                               ? howdy::pam::compare_process::WaitUntil(
-		                                     child_pid, child_pidfd, wait_deadline, cancellation_context,
-		                                     cancellation_requested, cancellation_fd)
+		                                     child_pid, child_pidfd, verdict_fd, wait_deadline,
+		                                     cancellation_context, cancellation_requested, cancellation_fd)
 		                               : howdy::test::prompt_coordinator::WaitUntilForTestChild(
 		                                     child_pid, wait_deadline, cancellation_context,
 		                                     cancellation_requested, cancellation_fd);
@@ -467,7 +472,7 @@ namespace {
 		WaitState().waitid_error = ECHILD;
 		WaitState().term_calls = WaitState().kill_calls = 0;
 		const int status                                = howdy::pam::compare_process::WaitUntil(
-		    child, pidfd.Get(), std::chrono::steady_clock::now() + 5s, nullptr, nullptr, -1);
+		    child, pidfd.Get(), -1, std::chrono::steady_clock::now() + 5s, nullptr, nullptr, -1);
 		WaitState().waitid_error = 0;
 		const bool untouched     = WaitState().term_calls == 0 && WaitState().kill_calls == 0;
 		howdy::pam::compare_process::CancelAndReap(child, -1);
@@ -592,20 +597,27 @@ namespace {
 	                                const std::string                      &label,
 	                                const std::vector<std::string> &expected_environment) -> bool {
 		PosixSpawnCapture capture;
-		pid_t             child_pid = -1;
-		int               raw_pidfd = -1;
-		const int result = howdy::pam::compare_process::Spawn(request, &child_pid, &raw_pidfd,
-		                                                      PosixSpawnOperations(&capture));
+		pid_t             child_pid      = -1;
+		int               raw_pidfd      = -1;
+		int               raw_verdict_fd = -1;
+		const int         result         = howdy::pam::compare_process::Spawn(
+		    request, &child_pid, &raw_pidfd, &raw_verdict_fd, PosixSpawnOperations(&capture));
 		const howdy::native::ScopedFd pidfd(raw_pidfd);
+		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
 		const bool reaped = child_pid > 0 && waitpid(child_pid, nullptr, 0) == child_pid;
 
 		return Expect(result == 0, label + " returns spawn success") &&
 		       Expect(pidfd.Get() > STDERR_FILENO, label + " takes a pidfd for the child") &&
+		       Expect(verdict_fd.Get() > STDERR_FILENO,
+		              label + " returns the verdict socket above stdio") &&
+		       Expect(capture.adddup2_calls == 1 && capture.adddup2_new_fd == kVerdictFd &&
+		                  capture.adddup2_fd > kVerdictFd,
+		              label + " places the verdict socket at its descriptor") &&
 		       Expect(reaped, label + " leaves the child for the caller to reap") &&
 		       Expect(capture.init_calls == 1, label + " initializes file actions once") &&
 		       Expect(capture.addclosefrom_calls == 1, label + " adds close-from action once") &&
-		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
-		              label + " closes descriptors beginning at 3") &&
+		       Expect(capture.closefrom_fd == kVerdictFd + 1,
+		              label + " closes descriptors above the verdict descriptor") &&
 		       Expect(capture.spawn_calls == 1, label + " calls posix_spawn once") &&
 		       Expect(capture.spawn_actions != nullptr,
 		              label + " passes non-null file actions to spawn") &&
@@ -626,7 +638,8 @@ namespace {
 		return TestProductionSpawnAdapter(
 		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
 		    {kCompareProcessPath, "--config", "/etc/howdy/config.ini", "alice"},
-		    "production direct runtime", {"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"});
+		    "production direct runtime",
+		    {"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1", "HOWDY_COMPARE_VERDICT_FD=3"});
 	}
 
 	auto TestProductionStagedRuntimeEnvironment() -> bool {
@@ -639,6 +652,7 @@ namespace {
 		        "HOWDY_USER_MODELS_DIR=/run/howdy/runtime/models",
 		        "OPENBLAS_NUM_THREADS=1",
 		        "OMP_NUM_THREADS=1",
+		        "HOWDY_COMPARE_VERDICT_FD=3",
 		    });
 	}
 
@@ -658,21 +672,26 @@ namespace {
 		        "HOWDY_USER_MODELS_DIR=/run/howdy/temporary/models",
 		        "OPENBLAS_NUM_THREADS=1",
 		        "OMP_NUM_THREADS=1",
+		        "HOWDY_COMPARE_VERDICT_FD=3",
 		    });
 	}
 
 	auto TestProductionFileActionsInitFailure() -> bool {
 		PosixSpawnCapture capture;
-		capture.init_result    = ENOMEM;
-		pid_t     child_pid    = -1;
-		int       unused_pidfd = -1;
-		const int result       = howdy::pam::compare_process::Spawn(
-		    MakeCompareRequest(), &child_pid, &unused_pidfd, PosixSpawnOperations(&capture));
+		capture.init_result      = ENOMEM;
+		pid_t     child_pid      = -1;
+		int       unused_pidfd   = -1;
+		int       unused_verdict = -1;
+		const int result =
+		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == ENOMEM, "file-actions init failure preserves error") &&
 		       Expect(capture.init_calls == 1, "file-actions init failure initializes once") &&
-		       Expect(capture.addclosefrom_calls == 0,
-		              "file-actions init failure does not add close-from action") &&
+		       Expect(capture.adddup2_calls == 0 && capture.addclosefrom_calls == 0,
+		              "file-actions init failure adds no file actions") &&
+		       Expect(unused_verdict == -1,
+		              "file-actions init failure returns no verdict socket") &&
 		       Expect(capture.spawn_calls == 0, "file-actions init failure does not spawn") &&
 		       Expect(capture.destroy_calls == 0,
 		              "file-actions init failure does not destroy uninitialized actions") &&
@@ -684,15 +703,18 @@ namespace {
 		capture.addclosefrom_result = EINVAL;
 		pid_t     child_pid         = -1;
 		int       unused_pidfd      = -1;
-		const int result            = howdy::pam::compare_process::Spawn(
-		    MakeCompareRequest(), &child_pid, &unused_pidfd, PosixSpawnOperations(&capture));
+		int       unused_verdict    = -1;
+		const int result =
+		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == EINVAL, "close-from setup failure preserves error") &&
 		       Expect(capture.init_calls == 1, "close-from setup failure initializes once") &&
 		       Expect(capture.addclosefrom_calls == 1,
 		              "close-from setup failure adds action once") &&
-		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
-		              "close-from setup failure begins at descriptor 3") &&
+		       Expect(capture.adddup2_calls == 1 && capture.closefrom_fd == kVerdictFd + 1,
+		              "close-from setup failure begins above the verdict descriptor") &&
+		       Expect(unused_verdict == -1, "close-from setup failure returns no verdict socket") &&
 		       Expect(capture.spawn_calls == 0, "close-from setup failure does not spawn") &&
 		       Expect(capture.destroy_calls == 1,
 		              "close-from setup failure destroys initialized actions once") &&
@@ -720,14 +742,16 @@ namespace {
 		operations.spawn             = SpawnBlockedForTest;
 		pid_t     child_pid          = -1;
 		int       raw_pidfd          = -1;
-		const int result = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
-		                                                      &raw_pidfd, operations);
+		int       raw_verdict_fd     = -1;
+		const int result             = howdy::pam::compare_process::Spawn(
+		    MakeCompareRequest(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
 		const howdy::native::ScopedFd pidfd(raw_pidfd);
+		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
 		if (!Expect(result == 0 && child_pid > 0, "spawn with pidfd starts the child")) {
 			return false;
 		}
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, pidfd.Get(), std::chrono::steady_clock::now(), nullptr, nullptr, -1);
+		    child_pid, pidfd.Get(), -1, std::chrono::steady_clock::now(), nullptr, nullptr, -1);
 		return Expect(pidfd.Get() > STDERR_FILENO, "spawn returns a pidfd above stdio") &&
 		       Expect(status == TimeoutWaitStatus(), "wait through the spawn pidfd times out") &&
 		       Expect(ChildReaped(child_pid), "wait through the spawn pidfd reaps the child");
@@ -767,13 +791,14 @@ namespace {
 		operations.spawn             = SpawnBlockedForTest;
 		pid_t child_pid              = -1;
 		int   raw_pidfd              = -1;
+		int   raw_verdict_fd         = -1;
 		WaitState().fail_pidfd       = true;
-		const int result = howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid,
-		                                                      &raw_pidfd, operations);
+		const int result             = howdy::pam::compare_process::Spawn(
+		    MakeCompareRequest(), &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
 		WaitState().fail_pidfd = false;
 		const pid_t spawned    = capture.next_pid;
 		return Expect(result != 0, "spawn without a pidfd reports failure") &&
-		       Expect(child_pid == -1 && raw_pidfd == -1,
+		       Expect(child_pid == -1 && raw_pidfd == -1 && raw_verdict_fd == -1,
 		              "spawn without a pidfd returns no child") &&
 		       Expect(spawned <= 0 || ChildReaped(spawned),
 		              "spawn without a pidfd stops and reaps the child");
@@ -786,9 +811,9 @@ namespace {
 		if (!Expect(child_pid > 0, "no-pidfd wait spawns child")) {
 			return false;
 		}
-		const auto start = std::chrono::steady_clock::now();
-		const int  status =
-		    howdy::pam::compare_process::WaitUntil(child_pid, -1, start + 5s, nullptr, nullptr, -1);
+		const auto start   = std::chrono::steady_clock::now();
+		const int  status  = howdy::pam::compare_process::WaitUntil(child_pid, -1, -1, start + 5s,
+		                                                            nullptr, nullptr, -1);
 		const auto elapsed = std::chrono::steady_clock::now() - start;
 		return Expect(status ==
 		                  howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kAbort),
@@ -817,12 +842,45 @@ namespace {
 			return false;
 		}
 		int status = 0;
+		static_assert(howdy::pam::runtime::PidfdErrorMeansChildGone(EINVAL) &&
+		              !howdy::pam::runtime::PidfdErrorMeansChildGone(EMFILE) &&
+		              !howdy::pam::runtime::PidfdErrorMeansChildGone(ENOSYS));
 		howdy::pam::runtime::StopChildWithoutPidfd(child_pid, ESRCH);
 		howdy::pam::runtime::StopChildWithoutPidfd(child_pid, ECHILD);
+		howdy::pam::runtime::StopChildWithoutPidfd(child_pid, EINVAL);
 		const bool untouched = waitpid(child_pid, &status, WNOHANG) == 0;
 		howdy::pam::runtime::StopChildWithoutPidfd(child_pid, ENOSYS);
 		return Expect(untouched, "a child reported gone is not signalled by PID") &&
 		       Expect(ChildReaped(child_pid), "another pidfd failure stops and reaps the child");
+	}
+
+	// A pidfd that lands on stdio and cannot be moved off it because of a low descriptor limit
+	// fails with EMFILE, never with the EINVAL that would read as a child already gone.
+	auto TestPidfdMoveFailureIsNotChildGone() -> bool {
+		const pid_t probe = fork();
+		if (probe == 0) {
+			const pid_t child = fork();
+			if (child == 0) {
+				pause();
+				_exit(EXIT_SUCCESS);
+			}
+			// pidfd_open takes the free fd 0, and the move to fd 3 is above the limit.
+			(void)close(STDIN_FILENO);
+			rlimit limit{};
+			(void)getrlimit(RLIMIT_NOFILE, &limit);
+			limit.rlim_cur = STDERR_FILENO + 1;
+			(void)setrlimit(RLIMIT_NOFILE, &limit);
+			errno           = 0;
+			const int pidfd = howdy::pam::runtime::OpenChildPidfd(child);
+			const int error = errno;
+			(void)RealKill(child, SIGKILL);
+			(void)waitpid(child, nullptr, 0);
+			_exit(child > 0 && pidfd < 0 && error == EMFILE ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		int status = 0;
+		return Expect(probe > 0 && waitpid(probe, &status, 0) == probe && WIFEXITED(status) &&
+		                  WEXITSTATUS(status) == EXIT_SUCCESS,
+		              "a pidfd that cannot leave stdio reports EMFILE, not a child gone");
 	}
 
 	// With the pidfd signal refused and no way to confirm the PID, nothing is signalled.
@@ -882,7 +940,7 @@ namespace {
 		ok &= Expect(dup2(saved_stdin.Get(), STDIN_FILENO) == STDIN_FILENO, "restores stdin");
 		ok &= Expect(pidfd.Get() > STDERR_FILENO, "pidfd is placed above stdio");
 		const int status = howdy::pam::compare_process::WaitUntil(
-		    child_pid, pidfd.Get(), std::chrono::steady_clock::now(), nullptr, nullptr, -1);
+		    child_pid, pidfd.Get(), -1, std::chrono::steady_clock::now(), nullptr, nullptr, -1);
 		ok &= Expect(status == TimeoutWaitStatus() && ChildReaped(child_pid),
 		             "stdio pidfd test reaps the child");
 		return ok;
@@ -896,30 +954,76 @@ namespace {
 			return false;
 		}
 		FakeContext context;
-		context.next_child_pid   = child_pid;
-		context.next_child_pidfd = howdy::pam::runtime::OpenChildPidfd(child_pid);
-		const int handed_pidfd   = context.next_child_pidfd;
+		context.next_child_pid          = child_pid;
+		context.next_child_pidfd        = howdy::pam::runtime::OpenChildPidfd(child_pid);
+		const int          handed_pidfd = context.next_child_pidfd;
+		std::array<int, 2> verdict_socket{-1, -1};
+		const bool         piped = pipe2(verdict_socket.data(), O_CLOEXEC) == 0;
+		(void)close(verdict_socket.at(1));
+		context.next_verdict_fd = verdict_socket.at(0);
 		{
 			PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false,
 			                              Operations(&context), Timeout());
 			(void)coordinator.Run(MakeCompareRequest());
 		}
-		errno             = 0;
-		const bool closed = fcntl(handed_pidfd, F_GETFD) < 0 && errno == EBADF;
+		errno                     = 0;
+		const bool closed         = fcntl(handed_pidfd, F_GETFD) < 0 && errno == EBADF;
+		errno                     = 0;
+		const bool verdict_closed = fcntl(verdict_socket.at(0), F_GETFD) < 0 && errno == EBADF;
 		return Expect(handed_pidfd > STDERR_FILENO, "test opened a pidfd for the child") &&
 		       Expect(context.waited_pidfd == handed_pidfd,
 		              "wait borrows the pidfd taken at spawn") &&
 		       Expect(closed, "coordinator closes the spawn pidfd after the run") &&
+		       Expect(piped && context.waited_verdict_fd == verdict_socket.at(0),
+		              "wait borrows the verdict socket taken at spawn") &&
+		       Expect(verdict_closed, "coordinator closes the verdict socket after the run") &&
 		       Expect(ChildReaped(child_pid), "pidfd carry test reaps the child");
+	}
+
+	// The verdict socket only matters when the application reaps compare first, so failing to
+	// set it up must not stop face unlock everywhere: compare runs without it, as before.
+	auto ExpectSpawnWithoutVerdictSocket(PosixSpawnCapture &capture, const std::string &label)
+	    -> bool {
+		pid_t     child_pid      = -1;
+		int       raw_pidfd      = -1;
+		int       raw_verdict_fd = -1;
+		const int result =
+		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &raw_pidfd,
+			                                   &raw_verdict_fd, PosixSpawnOperations(&capture));
+		const howdy::native::ScopedFd pidfd(raw_pidfd);
+		const bool reaped = child_pid > 0 && waitpid(child_pid, nullptr, 0) == child_pid;
+		return Expect(result == 0 && pidfd.Valid() && reaped, label + " still starts compare") &&
+		       Expect(raw_verdict_fd == -1, label + " returns no verdict socket") &&
+		       Expect(capture.closefrom_fd == STDERR_FILENO + 1,
+		              label + " closes everything above stdio") &&
+		       Expect(capture.environment ==
+		                  std::vector<std::string>{"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"},
+		              label + " does not announce a verdict socket");
+	}
+
+	auto TestProductionSpawnWithoutVerdictSocket() -> bool {
+		PosixSpawnCapture unopened;
+		unopened.socketpair_error = EMFILE;
+		PosixSpawnCapture unpassed;
+		unpassed.adddup2_result = ENOMEM;
+		return ExpectSpawnWithoutVerdictSocket(unopened, "spawn without a verdict socket") &&
+		       Expect(unopened.adddup2_calls == 0,
+		              "spawn without a verdict socket adds no dup2 action") &&
+		       ExpectSpawnWithoutVerdictSocket(unpassed,
+		                                       "spawn that cannot pass the verdict socket") &&
+		       Expect(unpassed.adddup2_calls == 1,
+		              "spawn that cannot pass the verdict socket tried once");
 	}
 
 	auto TestProductionSpawnFailure() -> bool {
 		PosixSpawnCapture capture;
-		capture.spawn_result   = EACCES;
-		pid_t     child_pid    = -1;
-		int       unused_pidfd = -1;
-		const int result       = howdy::pam::compare_process::Spawn(
-		    MakeCompareRequest(), &child_pid, &unused_pidfd, PosixSpawnOperations(&capture));
+		capture.spawn_result     = EACCES;
+		pid_t     child_pid      = -1;
+		int       unused_pidfd   = -1;
+		int       unused_verdict = -1;
+		const int result =
+		    howdy::pam::compare_process::Spawn(MakeCompareRequest(), &child_pid, &unused_pidfd,
+			                                   &unused_verdict, PosixSpawnOperations(&capture));
 
 		return Expect(result == EACCES, "production spawn failure preserves error") &&
 		       Expect(capture.init_calls == 1, "production spawn failure initializes once") &&
@@ -942,8 +1046,13 @@ namespace {
 		                      "alice",
 		                  },
 		              "production spawn failure preserves exact argv") &&
+		       Expect(unused_verdict == -1, "production spawn failure returns no verdict socket") &&
 		       Expect(capture.environment ==
-		                  std::vector<std::string>{"OPENBLAS_NUM_THREADS=1", "OMP_NUM_THREADS=1"},
+		                  std::vector<std::string>{
+		                      "OPENBLAS_NUM_THREADS=1",
+		                      "OMP_NUM_THREADS=1",
+		                      "HOWDY_COMPARE_VERDICT_FD=3",
+		                  },
 		              "production spawn failure preserves fixed direct environment");
 	}
 
@@ -977,6 +1086,7 @@ auto main() -> int {
 	ok &= TestProductionFileActionsInitFailure();
 	ok &= TestProductionClosefromFailure();
 	ok &= TestProductionSpawnFailure();
+	ok &= TestProductionSpawnWithoutVerdictSocket();
 	ok &= TestProductionSpawnReturnsPidfd();
 	ok &= TestCoordinatorCarriesSpawnPidfd();
 	ok &= TestChildPidfdAvoidsClosedStdio();
@@ -985,6 +1095,7 @@ auto main() -> int {
 	ok &= TestWaitWithoutPidfdFailsClosed();
 	ok &= TestChildPidfdRefusesNonChild();
 	ok &= TestStopChildWithoutPidfd();
+	ok &= TestPidfdMoveFailureIsNotChildGone();
 	ok &= TestUnconfirmedPidIsNotSignalled();
 	ok &= TestFilteredPidfdWaitDoesNotUsePid();
 	return ok ? 0 : 1;

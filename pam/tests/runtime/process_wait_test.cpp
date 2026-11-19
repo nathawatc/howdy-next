@@ -13,6 +13,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -22,6 +23,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -29,6 +31,7 @@ namespace {
 	using howdy::test::Expect;
 	using howdy::test::ScopedFd;
 	using howdy::test::process::ChildReaped;
+	using howdy::test::process::ScopedSigchldAction;
 	using howdy::test::process::SpawnBlockedChild;
 	using howdy::test::process::SpawnExitingChild;
 	using howdy::test::process::SpawnSigtermIgnoringChild;
@@ -153,8 +156,8 @@ namespace {
 		return ok;
 	}
 
-	// The helper paths share the same rule: a helper the application reaped is an error, and the
-	// terminate path reaps one that is still running.
+	// The helper paths share the same rule: a helper the application reaped is reported as reaped
+	// elsewhere, never as success, and the terminate path reaps one that is still running.
 	auto ExpectHelperTrackedThroughPidfd() -> bool {
 		using howdy::pam::auth_helper_process::internal::HelperWaitResult;
 		using howdy::pam::auth_helper_process::internal::TerminateAndReapHelperProcess;
@@ -177,8 +180,8 @@ namespace {
 			const auto waited      = WaitForHelperProcessUntil(
 			    reaped_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
 			    &wait_status, -1);
-			ok &= Expect(waited == HelperWaitResult::kWaitError,
-			             "waiting on a helper reaped elsewhere is an error, not success");
+			ok &= Expect(waited == HelperWaitResult::kReapedElsewhere,
+			             "waiting on a helper reaped elsewhere reports that, not success");
 		}
 
 		const pid_t stuck_child = SpawnSigtermIgnoringChild();
@@ -238,6 +241,194 @@ namespace {
 		return ok;
 	}
 
+	using SignalAction = struct sigaction;
+
+	auto CurrentSigchldAction() -> SignalAction {
+		SignalAction action{};
+		(void)sigaction(SIGCHLD, nullptr, &action);
+		return action;
+	}
+
+	// A compare stand-in: waits for the gate, writes `verdict` (unless negative) to its verdict
+	// socket, then exits with `exit_code`. The gate lets the test take the pidfd before the child
+	// can exit and, under SIG_IGN, be reaped by the kernel.
+	struct VerdictChild {
+		pid_t                   pid = -1;
+		howdy::native::ScopedFd pidfd;
+		howdy::native::ScopedFd verdict_read;
+		howdy::native::ScopedFd gate_write;
+	};
+
+	// `reports` records of `record_bytes` bytes each, every byte `verdict`.
+	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+	auto StartVerdictChild(int verdict, int exit_code, int reports = 1,
+	                       std::size_t record_bytes = 1) -> VerdictChild {
+		// NOLINTEND(bugprone-easily-swappable-parameters)
+		std::array<int, 2> gate{-1, -1};
+		std::array<int, 2> verdict_socket{-1, -1};
+		VerdictChild       child;
+		if (pipe2(gate.data(), O_CLOEXEC) != 0) {
+			return child;
+		}
+		if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
+		               verdict_socket.data()) != 0) {
+			(void)close(gate.at(0));
+			(void)close(gate.at(1));
+			return child;
+		}
+		child.pid = fork();
+		if (child.pid == 0) {
+			char go = '\0';
+			if (read(gate.at(0), &go, 1) == 1 && verdict >= 0) {
+				const std::array<unsigned char, 2> record{
+				    static_cast<unsigned char>(verdict),
+				    static_cast<unsigned char>(verdict),
+				};
+				for (int report = 0; report < reports; ++report) {
+					if (write(verdict_socket.at(1), record.data(), record_bytes) !=
+					    static_cast<ssize_t>(record_bytes)) {
+						_exit(EXIT_FAILURE);
+					}
+				}
+			}
+			_exit(exit_code);
+		}
+		(void)close(gate.at(0));
+		(void)close(verdict_socket.at(1));
+		child.gate_write.Reset(gate.at(1));
+		child.verdict_read.Reset(verdict_socket.at(0));
+		if (child.pid > 0) {
+			child.pidfd.Reset(howdy::pam::runtime::OpenChildPidfd(child.pid));
+		}
+		return child;
+	}
+
+	auto RunVerdictChild(VerdictChild &child) -> int {
+		const char go = '1';
+		if (write(child.gate_write.Get(), &go, 1) != 1) {
+			return -1;
+		}
+		return howdy::pam::compare_process::WaitUntil(
+		    child.pid, child.pidfd.Get(), child.verdict_read.Get(),
+		    std::chrono::steady_clock::now() + std::chrono::seconds(2), nullptr, nullptr, -1);
+	}
+
+	// With SIGCHLD ignored the kernel reaps compare on exit and its exit status is gone; the
+	// verdict it wrote stands in, with no change to the application's SIGCHLD action.
+	auto ExpectVerdictWhenReapedElsewhere() -> bool {
+		using howdy::native::CompareExit;
+		const auto encode = [](CompareExit exit) -> int {
+			return howdy::native::EncodeWaitExitStatus(exit);
+		};
+		bool ok = true;
+		{
+			const ScopedSigchldAction ignored(SIG_IGN, 0);
+			ok &= Expect(ignored.Valid(), "verdict test ignores SIGCHLD");
+			for (const auto verdict : {CompareExit::kSuccess, CompareExit::kTooDark}) {
+				auto child =
+				    StartVerdictChild(static_cast<int>(verdict), static_cast<int>(verdict));
+				ok &= Expect(child.pidfd.Valid(), "verdict child has a pidfd");
+				ok &= Expect(RunVerdictChild(child) == encode(verdict),
+				             "compare reaped by the kernel reports through its verdict");
+			}
+			auto silent = StartVerdictChild(-1, static_cast<int>(CompareExit::kSuccess));
+			ok &= Expect(silent.pidfd.Valid(), "silent child has a pidfd");
+			ok &= Expect(RunVerdictChild(silent) == encode(CompareExit::kAbort),
+			             "compare reaped without a verdict fails closed");
+			auto twice = StartVerdictChild(static_cast<int>(CompareExit::kSuccess),
+			                               static_cast<int>(CompareExit::kSuccess), 2);
+			ok &= Expect(twice.pidfd.Valid(), "double-report child has a pidfd");
+			ok &= Expect(RunVerdictChild(twice) == encode(CompareExit::kAbort),
+			             "more than one reported result fails closed");
+			auto longer = StartVerdictChild(static_cast<int>(CompareExit::kSuccess),
+			                                static_cast<int>(CompareExit::kSuccess), 1, 2);
+			ok &= Expect(longer.pidfd.Valid(), "long-record child has a pidfd");
+			ok &= Expect(RunVerdictChild(longer) == encode(CompareExit::kAbort),
+			             "a result record longer than one byte fails closed");
+			// A timeout stays a timeout when the kernel reaps compare after the wait's SIGTERM.
+			const pid_t                   blocked = SpawnBlockedChild();
+			const howdy::native::ScopedFd blocked_pidfd(
+			    howdy::pam::runtime::OpenChildPidfd(blocked));
+			ok &= Expect(blocked > 0 && blocked_pidfd.Valid(), "blocked child has a pidfd");
+			const int timed_out = howdy::pam::compare_process::WaitUntil(
+			    blocked, blocked_pidfd.Get(), -1,
+			    std::chrono::steady_clock::now() + std::chrono::milliseconds(40), nullptr, nullptr,
+			    -1);
+			ok &= Expect(timed_out == encode(CompareExit::kTimeoutReached),
+			             "a timeout survives the kernel reaping compare");
+			ok &= Expect(CurrentSigchldAction().sa_handler == SIG_IGN,
+			             "the compare wait leaves the application's SIGCHLD action alone");
+		}
+		auto reaped = StartVerdictChild(static_cast<int>(CompareExit::kSuccess),
+		                                static_cast<int>(CompareExit::kTooDark));
+		ok &= Expect(reaped.pidfd.Valid(), "exit-status child has a pidfd");
+		ok &= Expect(RunVerdictChild(reaped) == encode(CompareExit::kTooDark) &&
+		                 ChildReaped(reaped.pid),
+		             "an available exit status decides over the verdict");
+		return ok;
+	}
+
+	// Spawn hands back PAM's end of a verdict socket whose other end only the child holds.
+	auto SpawnVerdictWriter(const howdy::pam::compare_process::SpawnRequest &request) -> int {
+		auto &capture =
+		    *static_cast<howdy::test::prompt_coordinator::PosixSpawnCapture *>(request.context);
+		const pid_t child_pid = fork();
+		if (child_pid < 0) {
+			return errno;
+		}
+		if (child_pid == 0) {
+			char go = '\0';
+			// Spawn takes the pidfd before the gate opens, so the kernel cannot reap the child
+			// first.
+			if (read(capture.spawn_gate_fd, &go, 1) != 1) {
+				_exit(EXIT_FAILURE);
+			}
+			const auto byte = static_cast<unsigned char>(howdy::native::CompareExit::kTooDark);
+			_exit(write(capture.adddup2_fd, &byte, 1) == 1 ? EXIT_SUCCESS : EXIT_FAILURE);
+		}
+		capture.next_pid   = child_pid;
+		*request.child_pid = child_pid;
+		return 0;
+	}
+
+	auto ExpectSpawnWiresVerdictSocket() -> bool {
+		std::array<int, 2> gate{-1, -1};
+		if (!Expect(pipe2(gate.data(), O_CLOEXEC) == 0, "spawn verdict test opens its gate")) {
+			return false;
+		}
+		const howdy::native::ScopedFd                      gate_read(gate.at(0));
+		const howdy::native::ScopedFd                      gate_write(gate.at(1));
+		const ScopedSigchldAction                          ignored(SIG_IGN, 0);
+		howdy::test::prompt_coordinator::PosixSpawnCapture capture;
+		capture.spawn_gate_fd    = gate_read.Get();
+		auto operations          = howdy::test::prompt_coordinator::PosixSpawnOperations(&capture);
+		operations.spawn         = SpawnVerdictWriter;
+		pid_t     child_pid      = -1;
+		int       raw_pidfd      = -1;
+		int       raw_verdict_fd = -1;
+		const int result         = howdy::pam::compare_process::Spawn(
+		    {
+		        .config_path     = "/etc/howdy/config.ini",
+		        .username        = "alice",
+		        .user_models_dir = "/etc/howdy/models",
+		        .staged_runtime  = false,
+		    },
+		    &child_pid, &raw_pidfd, &raw_verdict_fd, operations);
+		const howdy::native::ScopedFd pidfd(raw_pidfd);
+		const howdy::native::ScopedFd verdict_fd(raw_verdict_fd);
+		bool ok = Expect(ignored.Valid() && result == 0 && pidfd.Valid() && verdict_fd.Valid(),
+		                 "spawn returns a pidfd and a verdict socket");
+		const char go = '1';
+		ok &= Expect(write(gate_write.Get(), &go, 1) == 1, "spawn verdict test opens the gate");
+		const int status = howdy::pam::compare_process::WaitUntil(
+		    child_pid, pidfd.Get(), verdict_fd.Get(),
+		    std::chrono::steady_clock::now() + std::chrono::seconds(2), nullptr, nullptr, -1);
+		ok &= Expect(status ==
+		                 howdy::native::EncodeWaitExitStatus(howdy::native::CompareExit::kTooDark),
+		             "the spawned child's verdict reaches the wait under SIG_IGN");
+		return ok;
+	}
+
 	auto ExpectProcessWaiting() -> bool {
 		bool        ok                = true;
 		const pid_t compare_child_pid = SpawnExitingChild(7);
@@ -272,12 +463,56 @@ namespace {
 		ok &= Expect(WIFEXITED(compare_failure) && WEXITSTATUS(compare_failure) == abort_code,
 		             "compare wait failure returns abort status");
 		int helper_failure_status = 0;
+		ok &= Expect(
+		    howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+		        nonexistent_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
+		        &helper_failure_status, -1) ==
+		        howdy::pam::auth_helper_process::internal::HelperWaitResult::kReapedElsewhere,
+		    "helper wait on a process that is not a child reports it gone");
+		// Past the deadline, a helper gone elsewhere counts as a timeout, as one the wait
+		// collects late does; the prepare uses the same rule for a helper gone before its pidfd.
 		ok &= Expect(howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
 		                 nonexistent_child,
-		                 std::chrono::steady_clock::now() + std::chrono::seconds(1),
+		                 std::chrono::steady_clock::now() - std::chrono::milliseconds(1),
 		                 &helper_failure_status, -1) ==
-		                 howdy::pam::auth_helper_process::internal::HelperWaitResult::kWaitError,
-		             "helper wait failure is reported as an error");
+		                 howdy::pam::auth_helper_process::internal::HelperWaitResult::kTimedOut,
+		             "helper gone elsewhere after its deadline counts as a timeout");
+		ok &= Expect(
+		    howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(
+		        std::chrono::steady_clock::now() - std::chrono::milliseconds(1)) ==
+		            howdy::pam::auth_helper_process::internal::HelperWaitResult::kTimedOut &&
+		        howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(
+		            std::chrono::steady_clock::now() + std::chrono::seconds(5)) ==
+		            howdy::pam::auth_helper_process::internal::HelperWaitResult::kReapedElsewhere,
+		    "reaped-elsewhere result honours the deadline");
+
+		// Any other wait failure is an error, not a helper gone elsewhere: a descriptor that is
+		// not a pidfd makes the pidfd wait fail with EBADF while the child still runs.
+		const pid_t unwaitable_child = SpawnBlockedChild();
+		const int   not_a_pidfd      = open("/dev/null", O_RDONLY | O_CLOEXEC);
+		ok &=
+		    Expect(unwaitable_child > 0 && not_a_pidfd >= 0, "spawns helper child to fail waiting");
+		if (unwaitable_child > 0 && not_a_pidfd >= 0) {
+			int        unwaitable_status = 0;
+			const auto waited =
+			    howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+			        unwaitable_child, std::chrono::steady_clock::now() + std::chrono::seconds(1),
+			        &unwaitable_status, not_a_pidfd);
+			ok &= Expect(
+			    waited == howdy::pam::auth_helper_process::internal::HelperWaitResult::kWaitError,
+			    "helper wait failure is reported as an error");
+		}
+		if (not_a_pidfd >= 0) {
+			(void)close(not_a_pidfd);
+		}
+		if (unwaitable_child > 0) {
+			// The failed wait could not stop it either, so the test does.
+			(void)kill(unwaitable_child, SIGKILL);
+			ok &= Expect(howdy::native::RetryOnEintr([&] -> pid_t {
+				             return waitpid(unwaitable_child, nullptr, 0);
+			             }) == unwaitable_child,
+			             "reaps helper child after failed wait");
+		}
 
 		const pid_t cancelled_child = SpawnBlockedChild();
 		ok &= Expect(cancelled_child > 0, "spawns cancellable compare child");
@@ -295,6 +530,8 @@ namespace {
 		ok &= ExpectReapedElsewhereFailsClosed();
 		ok &= ExpectSignalledChildStatus();
 		ok &= ExpectHelperTrackedThroughPidfd();
+		ok &= ExpectVerdictWhenReapedElsewhere();
+		ok &= ExpectSpawnWiresVerdictSocket();
 
 		const pid_t cleanup_child = SpawnSigtermIgnoringChild();
 		ok &= Expect(cleanup_child > 0, "spawns compare child for noexcept cleanup");

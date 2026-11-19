@@ -225,6 +225,11 @@ namespace {
 			if (state.close_output) {
 				(void)close(state.output_pipe.at(1));
 			}
+			// Every outcome sends the completion record PAM asks for, so a nonzero exit or a
+			// signal fails the prepare through the exit status alone. PAM may already have
+			// failed and closed its end; the outcome below still happens.
+			const char completed = howdy::native::auth_helper_protocol::kCompletionMarker;
+			(void)send(state.lease_socket.at(1), &completed, 1, MSG_NOSIGNAL);
 			(void)close(state.lease_socket.at(1));
 			switch (state.outcome) {
 				case ChildOutcome::kSuccess:

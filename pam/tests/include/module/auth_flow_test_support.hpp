@@ -203,18 +203,19 @@ namespace howdy::test::auth_flow {
 
 	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 	inline auto FlowSpawnCompare(void *context, const howdy::pam::CompareLaunchRequest &request,
-	                             pid_t *child_pid, int *child_pidfd) -> int {
+	                             pid_t *child_pid, int *child_pidfd, int *verdict_fd) -> int {
 		// NOLINTEND(bugprone-easily-swappable-parameters)
 		(void)request;
 		auto *state = static_cast<PromptFlowState *>(context);
 		++state->spawn_calls;
 		*child_pid   = 1;
 		*child_pidfd = -1;
+		*verdict_fd  = -1;
 		return 0;
 	}
 
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
-	inline auto FlowWaitCompare(void *context, pid_t child_pid, int child_pidfd,
+	inline auto FlowWaitCompare(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	                            std::chrono::steady_clock::time_point      deadline,
 	                            void                                      *cancellation_context,
 	                            howdy::pam::CompareCancellationRequestedFn cancellation_requested,
@@ -222,6 +223,7 @@ namespace howdy::test::auth_flow {
 		(void)cancellation_fd;
 		(void)child_pid;
 		(void)child_pidfd;
+		(void)verdict_fd;
 		(void)deadline;
 		(void)cancellation_context;
 		(void)cancellation_requested;

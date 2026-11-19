@@ -66,6 +66,7 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<int>                 wait_calls{0};
 		std::atomic<pid_t>               waited_pid{-1};
 		std::atomic<int>                 waited_pidfd{-1};
+		std::atomic<int>                 waited_verdict_fd{-1};
 		std::atomic<int>                 last_wait_status{0};
 		std::atomic<int>                 terminate_calls{0};
 		std::atomic<pid_t>               terminated_pid{-1};
@@ -85,7 +86,9 @@ namespace howdy::test::prompt_coordinator {
 		int                              spawn_result   = 0;
 		pid_t                            next_child_pid = -1;
 		// Handed to the coordinator by the fake spawn, which then owns and closes it.
-		int                                   next_child_pidfd = -1;
+		int next_child_pidfd = -1;
+		// Likewise handed over as the verdict socket's PAM end.
+		int                                   next_verdict_fd = -1;
 		std::atomic<bool>                     auth_token_active{false};
 		bool                                  block_token_until_release          = false;
 		bool                                  use_real_auth_token                = false;
@@ -135,6 +138,8 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<bool> pam_completion_observed_by_waiter{false};
 		bool              suppress_secret_prompt = false;
 		bool              spawned_staged_runtime = false;
+		bool              throw_after_spawn      = false;
+		bool              fail_after_spawn       = false;
 	};
 
 	class FakePromptSubmitter final : public PromptSubmitter {
@@ -258,9 +263,10 @@ namespace howdy::test::prompt_coordinator {
 
 	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 	inline auto SpawnCompareProcess(void *context, const howdy::pam::CompareLaunchRequest &request,
-	                                pid_t *child_pid, int *child_pidfd) -> int {
+	                                pid_t *child_pid, int *child_pidfd, int *verdict_fd) -> int {
 		// NOLINTEND(bugprone-easily-swappable-parameters)
-		auto &fake = *static_cast<FakeContext *>(context);
+		auto &fake  = *static_cast<FakeContext *>(context);
+		*verdict_fd = -1;
 
 		++fake.spawn_calls;
 		fake.spawned_config_path     = std::string(request.config_path);
@@ -274,8 +280,12 @@ namespace howdy::test::prompt_coordinator {
 
 		*child_pid       = fake.next_child_pid;
 		*child_pidfd     = std::exchange(fake.next_child_pidfd, -1);
+		*verdict_fd      = std::exchange(fake.next_verdict_fd, -1);
 		fake.spawned_pid = *child_pid;
-		return 0;
+		if (fake.throw_after_spawn) {
+			throw std::runtime_error("Fake compare spawn failure after hand-off");
+		}
+		return fake.fail_after_spawn ? EIO : 0;
 	}
 
 	inline auto WaitForNativePromptCompletion(FakeContext &fake) -> bool {
@@ -299,7 +309,7 @@ namespace howdy::test::prompt_coordinator {
 
 	inline void CancelAndReapCompare(void *context, pid_t child_pid, int child_pidfd) noexcept;
 
-	inline auto WaitForCompare(void *context, pid_t child_pid, int child_pidfd,
+	inline auto WaitForCompare(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	                           [[maybe_unused]] std::chrono::steady_clock::time_point deadline,
 	                           void                                      *cancellation_context,
 	                           howdy::pam::CompareCancellationRequestedFn cancellation_requested,
@@ -307,9 +317,10 @@ namespace howdy::test::prompt_coordinator {
 		(void)cancellation_fd;
 		auto &fake = *static_cast<FakeContext *>(context);
 		++fake.wait_calls;
-		fake.waited_pid   = child_pid;
-		fake.waited_pidfd = child_pidfd;
-		fake.wait_thread  = std::this_thread::get_id();
+		fake.waited_pid        = child_pid;
+		fake.waited_pidfd      = child_pidfd;
+		fake.waited_verdict_fd = verdict_fd;
+		fake.wait_thread       = std::this_thread::get_id();
 		if (fake.throw_compare_wait) {
 			throw std::runtime_error("simulated compare wait failure");
 		}

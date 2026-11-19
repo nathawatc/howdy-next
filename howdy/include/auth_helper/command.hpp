@@ -7,9 +7,15 @@
 
 namespace howdy::native::auth_helper::command {
 
+	// Writes the prepared paths of the prepare protocol.
 	__attribute__((visibility("hidden"))) auto
 	PrintPreparedPaths(const std::filesystem::path &config_path,
 	                   const std::filesystem::path &user_models_dir) -> void;
+	// The prepare's exit code. After a successful prepare it sends the completion record
+	// (protocol/auth_helper_protocol.hpp) on the lease socket when the environment asks for it,
+	// as the last thing the prepare does.
+	__attribute__((visibility("hidden"))) auto FinishPrepare(bool succeeded, int lease_socket_fd)
+	    -> int;
 	// Sends each line to syslog under a fixed ident; the default ident comes from argv[0], which
 	// the caller of the setuid helper controls.
 	__attribute__((visibility("hidden"))) void SyslogDiagnosticLines(std::string_view text);

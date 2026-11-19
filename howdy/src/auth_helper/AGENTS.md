@@ -17,6 +17,18 @@ staging runtime and this entry point without the setuid helper's `command.cpp`.
 `include/auth_helper/runtime/internal.hpp` is a separate shared/test-facing contract. Do not merge
 it with the private header.
 
+The prepare protocol is the lease over `SCM_RIGHTS` on the lease socket, then `CONFIG_PATH=` and
+`USER_MODELS_DIR=` on stdout, then, when the environment carries `HOWDY_AUTH_HELPER_COMPLETION=1`, a
+one-byte completion record as the lease socket's last message. `FinishPrepare` sends the record only
+after the whole prepare, including the diagnostics capture, has succeeded. Only returning from
+`PrepareForUser` and `Run`, the flush and `_exit` in `src/bin/auth_helper.cpp` follow it, so static
+teardown cannot end the helper abnormally after it; keep the locals destroyed on that return free of
+destructors that can fail or abort.
+A current PAM module always asks and rejects every prepare without the record, on every host, even
+after exit 0; it is the only proof of success when the PAM application reaped the helper and took its
+exit status. Never make it conditional on anything but the request, or send it before something that
+can still fail. A PAM module that does not ask for it never sees it.
+
 ## Security Invariants
 
 Preserve this high-level order: open/validate runtime root → allocation lock → secure config source

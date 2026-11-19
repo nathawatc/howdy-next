@@ -12,7 +12,10 @@ Read the [repository guidelines](../AGENTS.md) first.
 ## Package Invariants
 
 PAM authentication fails closed on invalid dependencies, malformed helper output, unsafe
-conversation restoration, unexpected process state, or staging/config failure.
+conversation restoration, unexpected process state, or staging/config failure. A child exit status
+the PAM application took (it reaped the child first) is replaced only by that child's own in-band
+result, compare's verdict socket or the helper's completion record, as `src/runtime/AGENTS.md`
+describes; without it the run fails closed.
 
 The caller thread owns PAM operations. Worker threads must not call PAM APIs. Preserve secure
 response erasure, descriptor ownership, child reap, timeout/cancellation behavior, and exact PAM

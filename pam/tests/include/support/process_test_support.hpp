@@ -51,6 +51,37 @@ namespace howdy::test::process {
 		bool     valid_ = false;
 	};
 
+	// Installs a SIGCHLD action for one test and puts the previous one back.
+	class ScopedSigchldAction {
+	public:
+		ScopedSigchldAction(void (*handler)(int), int flags) noexcept {
+			struct sigaction action{};
+			action.sa_handler = handler;
+			action.sa_flags   = flags;
+			valid_ =
+			    sigemptyset(&action.sa_mask) == 0 && sigaction(SIGCHLD, &action, &previous_) == 0;
+		}
+
+		~ScopedSigchldAction() {
+			if (valid_) {
+				(void)sigaction(SIGCHLD, &previous_, nullptr);
+			}
+		}
+
+		ScopedSigchldAction(const ScopedSigchldAction &)                     = delete;
+		ScopedSigchldAction(ScopedSigchldAction &&)                          = delete;
+		auto operator=(const ScopedSigchldAction &) -> ScopedSigchldAction & = delete;
+		auto operator=(ScopedSigchldAction &&) -> ScopedSigchldAction &      = delete;
+
+		[[nodiscard]] auto Valid() const noexcept -> bool {
+			return valid_;
+		}
+
+	private:
+		struct sigaction previous_{};
+		bool             valid_ = false;
+	};
+
 	inline auto ReapTestChild(pid_t child_pid, int *status) -> bool {
 		const pid_t waited = howdy::native::RetryOnEintr([&] -> pid_t {
 			return waitpid(child_pid, status, 0);

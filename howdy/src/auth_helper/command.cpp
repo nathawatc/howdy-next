@@ -8,6 +8,7 @@
 #include "support/user_names.hpp"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <functional>
@@ -51,6 +52,14 @@ namespace howdy::native::auth_helper::command {
 			return getsockname(fd, &address, &size) == 0 && address.sa_family == AF_UNIX;
 		}
 
+		// Whether the PAM module asked for the completion record; one loaded before an upgrade does
+		// not, and gets the lease socket it expects.
+		auto CompletionRequested() -> bool {
+			const char *const request = std::getenv(auth_helper_protocol::kCompletionRequestName);
+			return request != nullptr &&
+			       std::string_view(request) == auth_helper_protocol::kCompletionRequestValue;
+		}
+
 		struct LeaseTransfer {
 			int socket_fd;
 			int lease_fd;
@@ -75,6 +84,13 @@ namespace howdy::native::auth_helper::command {
 			       }) == 1;
 		}
 
+		auto SendCompletionRecord(int lease_socket_fd) -> bool {
+			const char marker = auth_helper_protocol::kCompletionMarker;
+			return RetryOnEintr([&] -> ssize_t {
+				       return send(lease_socket_fd, &marker, sizeof(marker), MSG_NOSIGNAL);
+			       }) == static_cast<ssize_t>(sizeof(marker));
+		}
+
 	}  // namespace
 
 	auto PrintPreparedPaths(const std::filesystem::path &config_path,
@@ -83,6 +99,20 @@ namespace howdy::native::auth_helper::command {
 		using howdy::native::auth_helper_protocol::kUserModelsDirKey;
 		std::cout << kConfigPathKey << "=" << config_path.string() << "\n";
 		std::cout << kUserModelsDirKey << "=" << user_models_dir.string() << "\n";
+	}
+
+	auto FinishPrepare(bool succeeded, int lease_socket_fd) -> int {
+		if (!succeeded) {
+			return 1;
+		}
+		// Sent only now, after everything that could still fail, so the record means the
+		// prepare finished. Only returning (destroying locals whose destructors cannot fail),
+		// the flush and _exit in main follow it.
+		if (CompletionRequested() && !SendCompletionRecord(lease_socket_fd)) {
+			std::cerr << "Failed to send the completion record\n";
+			return 1;
+		}
+		return 0;
 	}
 
 	void SyslogDiagnosticLines(std::string_view text) {
@@ -156,7 +186,7 @@ namespace howdy::native::auth_helper::command {
 			}
 			return true;
 		});
-		return succeeded ? 0 : 1;
+		return FinishPrepare(succeeded, auth_helper_protocol::kLeaseSocketFd);
 	}
 
 	auto Run(int argc, char **argv) -> int {

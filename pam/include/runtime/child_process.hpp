@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <optional>
@@ -29,7 +30,8 @@ namespace howdy::pam::runtime {
 	// signal, which a merely exited child never returns), the child is never signalled or waited
 	// on again.
 	//
-	// A pidfd is required: spawns stop the child and fail when they cannot take one. Where a
+	// A pidfd is required: spawns stop the child and fail when they cannot take one (only the auth
+	// helper continues when it was already reaped elsewhere; see src/runtime/AGENTS.md). Where a
 	// pidfd operation fails later, a signal falls back to the PID only after the kernel reports
 	// that a child of this process with that PID is still unreaped, and a wait falls back to the
 	// PID only on a kernel without waitid(P_PIDFD) (Linux 5.3); other wait failures fail. That is
@@ -57,6 +59,11 @@ namespace howdy::pam::runtime {
 		// it saw the exit. Polls the pidfd, so it wakes as soon as the child exits.
 		[[nodiscard]] auto AwaitExit(std::chrono::milliseconds timeout) noexcept -> bool;
 
+		// True once a wait or signal showed the child was reaped elsewhere (ECHILD or ESRCH).
+		[[nodiscard]] auto WasReapedElsewhere() const noexcept -> bool {
+			return reaped_elsewhere_;
+		}
+
 	private:
 		[[nodiscard]] auto SignalByPid(int signal) noexcept -> int;
 		[[nodiscard]] auto ReapedElsewhere() noexcept -> int;
@@ -74,9 +81,18 @@ namespace howdy::pam::runtime {
 	[[nodiscard]] __attribute__((visibility("hidden"))) auto
 	KillAndReap(TrackedChild &child) noexcept -> std::optional<int>;
 
-	// For a child just spawned when OpenChildPidfd failed with `open_error`. ESRCH or ECHILD means
-	// the child is already gone and its PID may name another process, so nothing is touched; any
-	// other error leaves the child ours, and it is stopped and reaped by PID.
+	// Whether an OpenChildPidfd error for a child just spawned means the child is already gone:
+	// ESRCH (no such PID), ECHILD (the PID no longer names our child), or EINVAL, which
+	// pidfd_open returns for a PID still allocated but with no process left, as while the kernel
+	// releases one the application reaped (older kernels; newer ones report ESRCH). With a PID
+	// above 0 and no flags, pidfd_open has no other cause for EINVAL.
+	[[nodiscard]] constexpr auto PidfdErrorMeansChildGone(int open_error) noexcept -> bool {
+		return open_error == ESRCH || open_error == ECHILD || open_error == EINVAL;
+	}
+
+	// For a child just spawned when OpenChildPidfd failed with `open_error`. When that means the
+	// child is gone (PidfdErrorMeansChildGone), its PID may name another process, so nothing is
+	// touched; any other error leaves the child ours, and it is stopped and reaped by PID.
 	__attribute__((visibility("hidden"))) void StopChildWithoutPidfd(pid_t child_pid,
 	                                                                 int   open_error) noexcept;
 

@@ -15,12 +15,20 @@
 #include <spawn.h>
 #include <unistd.h>
 
+#include <sys/socket.h>
 #include <sys/types.h>
 
 namespace howdy::test::prompt_coordinator {
 
 	struct PosixSpawnCapture {
-		int                               init_calls          = 0;
+		int init_calls       = 0;
+		int adddup2_calls    = 0;
+		int adddup2_fd       = -1;
+		int adddup2_new_fd   = -1;
+		int adddup2_result   = 0;
+		int socketpair_error = 0;
+		// Read end of a gate a spawn callback's child may wait on, or -1.
+		int                               spawn_gate_fd       = -1;
 		int                               addclosefrom_calls  = 0;
 		int                               destroy_calls       = 0;
 		int                               spawn_calls         = 0;
@@ -38,12 +46,36 @@ namespace howdy::test::prompt_coordinator {
 		std::vector<std::string>          environment;
 	};
 
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+	inline auto CaptureSocketpair(void *context, int domain, int type, int protocol,
+	                              int *socket_fds) -> int {
+		const auto &capture = *static_cast<const PosixSpawnCapture *>(context);
+		if (capture.socketpair_error != 0) {
+			errno = capture.socketpair_error;
+			return -1;
+		}
+		return socketpair(domain, type, protocol, socket_fds);
+	}
+
 	inline auto CapturePosixSpawnFileActionsInit(void *context, posix_spawn_file_actions_t *actions)
 	    -> int {
 		auto &capture = *static_cast<PosixSpawnCapture *>(context);
 		++capture.init_calls;
 		capture.initialized_actions = actions;
 		return capture.init_result;
+	}
+
+	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+	inline auto CapturePosixSpawnFileActionsAdddup2(void                       *context,
+	                                                posix_spawn_file_actions_t *actions, int fd,
+	                                                int new_fd) -> int {
+		// NOLINTEND(bugprone-easily-swappable-parameters)
+		(void)actions;
+		auto &capture = *static_cast<PosixSpawnCapture *>(context);
+		++capture.adddup2_calls;
+		capture.adddup2_fd     = fd;
+		capture.adddup2_new_fd = new_fd;
+		return capture.adddup2_result;
 	}
 
 	inline auto CapturePosixSpawnFileActionsAddclosefrom(void                       *context,
@@ -101,7 +133,9 @@ namespace howdy::test::prompt_coordinator {
 	inline auto PosixSpawnOperations(void *context) -> howdy::pam::compare_process::Operations {
 		return {
 		    .context                   = context,
+		    .socketpair                = CaptureSocketpair,
 		    .file_actions_init         = CapturePosixSpawnFileActionsInit,
+		    .file_actions_adddup2      = CapturePosixSpawnFileActionsAdddup2,
 		    .file_actions_addclosefrom = CapturePosixSpawnFileActionsAddclosefrom,
 		    .file_actions_destroy      = CapturePosixSpawnFileActionsDestroy,
 		    .spawn                     = CapturePosixSpawn,
@@ -116,7 +150,7 @@ namespace howdy::test::prompt_coordinator {
 	                      howdy::pam::CompareCancellationRequestedFn cancellation_requested,
 	                      int                                        cancellation_fd) -> int {
 		const howdy::native::ScopedFd pidfd(howdy::pam::runtime::OpenChildPidfd(child_pid));
-		return howdy::pam::compare_process::WaitUntil(child_pid, pidfd.Get(), deadline,
+		return howdy::pam::compare_process::WaitUntil(child_pid, pidfd.Get(), -1, deadline,
 		                                              cancellation_context, cancellation_requested,
 		                                              cancellation_fd);
 	}

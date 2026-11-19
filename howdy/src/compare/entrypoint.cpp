@@ -13,10 +13,13 @@
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_verdict.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
+#include "support/bit_flags.hpp"
 #include "support/cpu_topology.hpp"
+#include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "vision/face_inference.hpp"
@@ -26,6 +29,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
@@ -35,9 +40,14 @@
 #include <utility>
 #include <variant>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <opencv2/core/exception.hpp>
 #include <opencv2/core/utility.hpp>
 
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 
 namespace {
@@ -359,7 +369,64 @@ namespace {
 		}
 	}
 
-	auto RunCompareEntrypointImpl(
+	// The verdict socket as found at startup, so the report can check that the descriptor still
+	// names it and never writes into a file that took the number meanwhile.
+	struct VerdictSocket {
+		bool  announced = false;
+		dev_t device    = 0;
+		ino_t inode     = 0;
+	};
+
+	// The verdict socket PAM handed compare (protocol/compare_verdict.hpp), if any: the
+	// environment announces it and the descriptor is an AF_UNIX SOCK_SEQPACKET socket open for
+	// reading and writing. Checked before compare opens anything, so the descriptor cannot be one
+	// of compare's own files.
+	auto FindVerdictSocket() noexcept -> VerdictSocket {
+		using howdy::native::compare_verdict::kFd;
+		const char *const descriptor =
+		    std::getenv(howdy::native::compare_verdict::kEnvironmentName);
+		if (descriptor == nullptr ||
+		    std::string_view(descriptor) != howdy::native::compare_verdict::kEnvironmentValue) {
+			return {};
+		}
+		struct stat status{};
+		const int   flags = fcntl(kFd, F_GETFL);
+		if (flags < 0 ||
+		    howdy::native::MaskedBits(flags, O_ACCMODE) !=
+		        howdy::native::BitRepresentation(O_RDWR) ||
+		    fstat(kFd, &status) != 0 || !S_ISSOCK(status.st_mode)) {
+			return {};
+		}
+		int       domain = -1;
+		int       type   = -1;
+		socklen_t length = sizeof(domain);
+		if (getsockopt(kFd, SOL_SOCKET, SO_DOMAIN, &domain, &length) != 0 || domain != AF_UNIX) {
+			return {};
+		}
+		length = sizeof(type);
+		if (getsockopt(kFd, SOL_SOCKET, SO_TYPE, &type, &length) != 0 || type != SOCK_SEQPACKET) {
+			return {};
+		}
+		return {.announced = true, .device = status.st_dev, .inode = status.st_ino};
+	}
+
+	// Also reports the exit code on the verdict socket, so PAM still learns it if the application
+	// reaps compare first. Best effort: a failed write leaves PAM with only the exit status, which
+	// fails closed when it is gone.
+	auto ReportVerdict(const VerdictSocket &socket, int exit_code) noexcept -> int {
+		struct stat status{};
+		if (socket.announced && fstat(howdy::native::compare_verdict::kFd, &status) == 0 &&
+		    S_ISSOCK(status.st_mode) && status.st_dev == socket.device &&
+		    status.st_ino == socket.inode) {
+			const auto verdict = static_cast<unsigned char>(exit_code);
+			(void)howdy::native::RetryOnEintr([&] -> ssize_t {
+				return write(howdy::native::compare_verdict::kFd, &verdict, sizeof(verdict));
+			});
+		}
+		return exit_code;
+	}
+
+	auto RunCompareEntrypointBody(
 	    int argc, char **argv, const uid_t trusted_owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root,
 	    const howdy::native::CompareEntrypointDependencies          *dependencies) -> int {
@@ -483,6 +550,23 @@ namespace {
 			return static_cast<int>(howdy::native::CompareAbortFromUnknownException(
 			    std::cerr, "authentication compare path"));
 		}
+	}
+
+	// Every entry point goes through here, so the verdict socket is checked once, before compare
+	// opens anything, and reported once, after the exit code is known.
+	auto RunCompareEntrypointImpl(
+	    int argc, char **argv, const uid_t trusted_owner_uid,
+	    const howdy::native::file_security_internal::ValidationRoot &validation_root,
+	    const howdy::native::CompareEntrypointDependencies          *dependencies) -> int {
+		const VerdictSocket socket = FindVerdictSocket();
+		const int           exit_code =
+		    RunCompareEntrypointBody(argc, argv, trusted_owner_uid, validation_root, dependencies);
+		// Flushing can still end compare (SIGPIPE on a closed output), so it happens before the
+		// verdict, which has to be the last thing compare does.
+		std::cout.flush();
+		std::cerr.flush();
+		(void)std::fflush(nullptr);
+		return ReportVerdict(socket, exit_code);
 	}
 
 }  // namespace
