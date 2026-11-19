@@ -79,7 +79,9 @@ namespace howdy::pam::runtime {
 		if (pidfd >= 0 && pidfd <= STDERR_FILENO) {
 			// Keep the long-lived descriptor clear of stdio.
 			const int moved = fcntl(pidfd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
-			const int error = errno;
+			// A descriptor limit at or below the target makes this EINVAL, which callers would
+			// read as a child already gone (PidfdErrorMeansChildGone); report the limit instead.
+			const int error = errno == EINVAL ? EMFILE : errno;
 			(void)close(pidfd);
 			errno = error;
 			pidfd = moved;
@@ -268,7 +270,7 @@ namespace howdy::pam::runtime {
 
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	void StopChildWithoutPidfd(pid_t child_pid, int open_error) noexcept {
-		if (open_error == ESRCH || open_error == ECHILD) {
+		if (PidfdErrorMeansChildGone(open_error)) {
 			return;
 		}
 		TrackedChild child(child_pid, -1);

@@ -21,31 +21,42 @@ namespace howdy::pam::compare_process {
 	};
 
 	struct Operations {
-		void *context                                                     = nullptr;
-		int (*file_actions_init)(void *, posix_spawn_file_actions_t *)    = nullptr;
+		void *context                                                                  = nullptr;
+		int (*socketpair)(void *, int domain, int type, int protocol, int *socket_fds) = nullptr;
+		int (*file_actions_init)(void *, posix_spawn_file_actions_t *)                 = nullptr;
+		int (*file_actions_adddup2)(void *, posix_spawn_file_actions_t *, int fd,
+		                            int new_fd)                                        = nullptr;
 		int (*file_actions_addclosefrom)(void *, posix_spawn_file_actions_t *,
-		                                 int from_fd)                     = nullptr;
-		int (*file_actions_destroy)(void *, posix_spawn_file_actions_t *) = nullptr;
-		int (*spawn)(const SpawnRequest &)                                = nullptr;
+		                                 int from_fd)                                  = nullptr;
+		int (*file_actions_destroy)(void *, posix_spawn_file_actions_t *)              = nullptr;
+		int (*spawn)(const SpawnRequest &)                                             = nullptr;
 	};
 
 	__attribute__((visibility("hidden"))) auto ProductionOperations() -> Operations;
-	// On success `child_pidfd` receives an owned pidfd for the child taken right after spawn, which
-	// the caller passes to the wait. Both out-parameters are required (EINVAL otherwise). When no
-	// pidfd can be taken, the child is stopped and Spawn returns the error.
+	// On success `child_pidfd` receives an owned pidfd for the child taken right after spawn, and
+	// `verdict_fd` the owned, non-blocking PAM end of the verdict socket compare reports its exit
+	// code on (protocol/compare_verdict.hpp), or -1 when that socket could not be set up, in
+	// which case compare runs without it as before; the caller passes both to the wait. All
+	// out-parameters are required (EINVAL otherwise). When no pidfd can be taken, the child is
+	// stopped and Spawn returns the error.
 	__attribute__((visibility("hidden"))) auto Spawn(const CompareLaunchRequest &request,
 	                                                 pid_t *child_pid, int *child_pidfd,
-	                                                 const Operations &operations) -> int;
+	                                                 int *verdict_fd, const Operations &operations)
+	    -> int;
 	// `child_pidfd` is the borrowed pidfd from Spawn and is required: with -1 the child is
-	// stopped by PID and the wait fails closed. cancellation_fd is borrowed until return; signal it
-	// whenever cancellation becomes true. The callback preserves the initial cancellation/exit race
-	// and is not polled.
+	// stopped by PID and the wait fails closed. `verdict_fd` is the borrowed verdict socket from
+	// Spawn, or -1; it is read only when the PAM application reaped compare and took the exit
+	// status, and without exactly one verdict byte that wait fails closed. A timeout or
+	// cancellation stays one when compare is gone by the time this wait ends it, whether this
+	// wait or the application reaped it.
+	// cancellation_fd is borrowed until return; signal it whenever cancellation becomes true. The
+	// callback preserves the initial cancellation/exit race and is not polled.
 	__attribute__((visibility("hidden"))) auto
-	WaitUntil(pid_t child_pid, int child_pidfd, std::chrono::steady_clock::time_point deadline,
-	          void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
-	          int cancellation_fd) -> int;
+	WaitUntil(pid_t child_pid, int child_pidfd, int verdict_fd,
+	          std::chrono::steady_clock::time_point deadline, void *cancellation_context,
+	          CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int;
 	__attribute__((visibility("hidden"))) auto
-	Wait(void *context, pid_t child_pid, int child_pidfd,
+	Wait(void *context, pid_t child_pid, int child_pidfd, int verdict_fd,
 	     std::chrono::steady_clock::time_point deadline, void *cancellation_context,
 	     CompareCancellationRequestedFn cancellation_requested, int cancellation_fd) -> int;
 	__attribute__((visibility("hidden"))) void CancelAndReap(pid_t child_pid,

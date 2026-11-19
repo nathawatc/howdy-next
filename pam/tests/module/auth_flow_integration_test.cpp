@@ -469,6 +469,7 @@ namespace {
 		    environment == std::vector<std::string>{
 		                       "OPENBLAS_NUM_THREADS=1",
 		                       "OMP_NUM_THREADS=1",
+		                       "HOWDY_COMPARE_VERDICT_FD=3",
 		                   };
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
@@ -538,7 +539,7 @@ namespace {
 			const howdy::native::ScopedFd wait_pidfd(
 			    howdy::pam::runtime::OpenChildPidfd(wait_child));
 			const int wait_status = production_prompt.WaitForCompareProcess(
-			    wait_child, wait_pidfd.Get(),
+			    wait_child, wait_pidfd.Get(), -1,
 			    std::chrono::steady_clock::now() + std::chrono::seconds(1), nullptr, nullptr);
 			ok &= Expect(WIFEXITED(wait_status) && WEXITSTATUS(wait_status) == 7,
 			             "production wait adapter preserves child exit status");

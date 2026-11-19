@@ -54,6 +54,10 @@ namespace howdy::pam::auth_helper_process::internal {
 		// Taken right after spawn, so later waits and signals name the helper itself even if
 		// the PAM application reaps it and the PID is reused during the helper's I/O.
 		howdy::native::ScopedFd child_pidfd;
+		// The helper had already exited and been reaped by the application when the pidfd was
+		// taken (runtime::PidfdErrorMeansChildGone): its output and lease are in the channels,
+		// and its completion record decides, as for kReapedElsewhere.
+		bool reaped_before_pidfd = false;
 	};
 
 	class __attribute__((visibility("hidden"))) PreparedHelperCleanup {
@@ -73,6 +77,9 @@ namespace howdy::pam::auth_helper_process::internal {
 	enum class HelperWaitResult : std::uint8_t {
 		kExited,
 		kTimedOut,
+		// ECHILD: the helper is no longer a child this process can wait for, normally because the
+		// PAM application reaped it and took its exit status.
+		kReapedElsewhere,
 		kWaitError,
 	};
 
@@ -83,6 +90,10 @@ namespace howdy::pam::auth_helper_process::internal {
 	};
 
 	// spawn.cpp
+	// Logs `message` to syslog at `priority` and to the log observer. An exception from the
+	// observer propagates, as the prepare's cleanup tests rely on.
+	__attribute__((visibility("hidden"))) void
+	LogAuthHelperMessage(const Operations &operations, int priority, std::string_view message);
 	// Logs "<operation> failed for auth helper: <error text> (<error_code>)" to syslog and the
 	// log observer, falling back to a plain syslog line if building the message fails.
 	__attribute__((visibility("hidden"))) void LogAuthHelperFailure(const Operations &operations,
@@ -111,6 +122,10 @@ namespace howdy::pam::auth_helper_process::internal {
 	__attribute__((visibility("hidden"))) auto
 	WaitForHelperProcessUntil(pid_t child_pid, HelperDeadline deadline, int *status,
 	                          int pidfd) noexcept -> HelperWaitResult;
+	// The result for a helper reaped elsewhere: past the deadline it counts as a timeout, as a
+	// helper the wait collects late does; otherwise its completion record decides.
+	__attribute__((visibility("hidden"))) auto
+	ReapedElsewhereResult(HelperDeadline deadline) noexcept -> HelperWaitResult;
 	__attribute__((visibility("hidden"))) void LogAuthHelperReadError(int error_number);
 
 	// lease.cpp
@@ -118,6 +133,17 @@ namespace howdy::pam::auth_helper_process::internal {
 	                                                                      int *lease_fd)
 	    -> LeaseReceiveResult;
 	__attribute__((visibility("hidden"))) auto LeaseSocketHasCleanEof(int socket_fd) -> bool;
+
+	enum class LeaseSocketEnd : std::uint8_t {
+		kCleanEof,
+		// The completion record (protocol/auth_helper_protocol.hpp), then a clean end of file.
+		kCompletedThenEof,
+		kInvalid,
+	};
+
+	// What follows the lease once the helper is gone: nothing, or only the completion record.
+	__attribute__((visibility("hidden"))) auto ReceiveLeaseSocketEnd(int socket_fd)
+	    -> LeaseSocketEnd;
 	__attribute__((visibility("hidden"))) auto
 	ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir, uid_t owner_uid)
 	    -> bool;

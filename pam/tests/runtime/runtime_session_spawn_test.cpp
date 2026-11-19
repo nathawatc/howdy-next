@@ -6,6 +6,7 @@
 #include "runtime/runtime_session_process_test_support.hpp"
 #include "runtime/runtime_session_test_groups.hpp"
 #include "support/bit_flags.hpp"
+#include "support/process_test_support.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -18,11 +19,14 @@
 #include <cstring>
 #include <filesystem>
 #include <iterator>
+#include <optional>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -33,12 +37,16 @@
 #include <unistd.h>
 
 #include <sys/file.h>
+#include <sys/ioctl.h>
 #include <sys/poll.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/uio.h>  // IWYU pragma: keep
 #include <sys/wait.h>
+
+#include <linux/sockios.h>
 
 namespace {
 	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
@@ -200,8 +208,11 @@ namespace {
 		             "child closes original pipe and socket descriptors");
 		ok &= Expect(fake.spawn_argv ==
 		                     std::vector<std::string>{kAuthHelperPath, "prepare", "alice"} &&
-		                 fake.spawn_env.empty(),
-		             "prepare uses exact argv and empty environment");
+		                 fake.spawn_env ==
+		                     std::vector<std::string>{
+		                         howdy::native::auth_helper_protocol::kCompletionRequestEntry,
+		                     },
+		             "prepare uses exact argv and only the completion request as environment");
 		ok &= Expect(fake.operations ==
 		                 std::vector<std::string>{
 		                     "pipe2",
@@ -438,6 +449,49 @@ namespace {
 				             "EOF accepts clean shutdown");
 			}
 		}
+		// What may follow the lease: nothing, or exactly one bare completion record.
+		using howdy::pam::auth_helper_process::internal::LeaseSocketEnd;
+		const auto socket_end = [](const std::vector<std::string_view> &messages, bool with_rights,
+		                           bool sender_open = false) -> LeaseSocketEnd {
+			std::array<int, 2> sockets{};
+			if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets.data()) != 0) {
+				return LeaseSocketEnd::kInvalid;
+			}
+			const howdy::test::ScopedFd receiver(sockets.at(0));
+			howdy::test::ScopedFd       sender(sockets.at(1));
+			const howdy::test::ScopedFd source(open("/dev/null", O_RDONLY | O_CLOEXEC));
+			for (const std::string_view message : messages) {
+				const bool sent = with_rights
+				                      ? SendRightsMessage(sender.Get(), message, {source.Get()})
+				                      : send(sender.Get(), message.data(), message.size(),
+				                             MSG_NOSIGNAL) == static_cast<ssize_t>(message.size());
+				if (!sent) {
+					return LeaseSocketEnd::kInvalid;
+				}
+			}
+			if (!sender_open) {
+				sender.Reset();
+			}
+			return howdy::pam::auth_helper_process::internal::ReceiveLeaseSocketEnd(receiver.Get());
+		};
+		const std::string_view record(&howdy::native::auth_helper_protocol::kCompletionMarker, 1);
+		ok &= Expect(socket_end({}, false) == LeaseSocketEnd::kCleanEof,
+		             "lease socket end accepts a clean end of file");
+		ok &= Expect(socket_end({record}, false) == LeaseSocketEnd::kCompletedThenEof,
+		             "lease socket end accepts the completion record");
+		ok &= Expect(socket_end({record}, false, true) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects a record while the helper end is still open");
+		ok &= Expect(socket_end({}, false, true) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects an empty socket while the helper end is still open");
+		ok &= Expect(socket_end({record}, true) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects a record carrying descriptors");
+		ok &= Expect(socket_end({"X"}, false) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects another byte");
+		ok &= Expect(socket_end({"CC"}, false) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects a longer record");
+		ok &= Expect(socket_end({record, record}, false) == LeaseSocketEnd::kInvalid,
+		             "lease socket end rejects data after the record");
+
 		ok &= ReceiveCase("valid SCM_RIGHTS", 'L', 1, LeaseReceiveResult::kReceived);
 		ok &= ReceiveCase("wrong marker", 'X', 1, LeaseReceiveResult::kInvalid);
 		ok &= ReceiveCase("missing descriptor", 'L', 0, LeaseReceiveResult::kInvalid);
@@ -597,6 +651,17 @@ namespace {
 		PrepareExceptionPoint    exception_point   = PrepareExceptionPoint::kSetup;
 		bool                     lease_received    = false;
 		bool                     reaped_before_log = false;
+		bool                     omit_completion   = false;
+		// The helper exits, and is reaped by the kernel, before Spawn can take its pidfd.
+		bool exit_before_pidfd    = false;
+		bool completion_requested = false;
+		// Set when exit_before_pidfd was asked for and the kernel reaped the helper in time.
+		bool reaped_before_spawn_returned = false;
+		// Spawn returns with no descriptor left, so taking the pidfd fails with EMFILE.
+		bool exhaust_fds = false;
+		// The helper sends another byte where the completion record belongs.
+		bool                  bad_record = false;
+		std::optional<rlimit> saved_nofile;
 	};
 
 	auto RecordingPipe2(void *context, int *fds, int flags) -> int {
@@ -616,28 +681,74 @@ namespace {
 	}
 
 	auto ValidSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
-		auto       &state = *static_cast<ReapContext *>(request.context);
-		const pid_t pid   = fork();
+		auto &state = *static_cast<ReapContext *>(request.context);
+		for (const char *entry :
+		     request.envp | std::views::take_while([](const char *value) -> bool {
+			     return value != nullptr;
+		     })) {
+			state.completion_requested |=
+			    std::string_view(entry) ==
+			    howdy::native::auth_helper_protocol::kCompletionRequestEntry;
+		}
+		const pid_t pid = fork();
 		if (pid < 0) {
 			return errno;
 		}
 		if (pid == 0) {
+			// The production order: the lease, then the paths, then the completion record.
+			const bool lease_ok =
+			    SendRightsMessage(state.lease_socket.at(1), "L", {state.lease_fd});
+			// Unless the test wants the helper gone first, continue only once PAM has received
+			// the lease, which it does after taking the pidfd, so a kernel that reaps the helper
+			// on exit (SIGCHLD ignored) cannot do so first.
+			int pending = 1;
+			for (int tries = 0; !state.exit_before_pidfd && lease_ok && tries < 2000 && pending > 0;
+			     ++tries) {
+				if (ioctl(state.lease_socket.at(1), SIOCOUTQ, &pending) != 0) {
+					// Without the queue length, wait a fixed time instead.
+					(void)poll(nullptr, 0, 100);
+					break;
+				}
+				(void)poll(nullptr, 0, 1);
+			}
 			const std::string output = "CONFIG_PATH=" + (state.root / "config.ini").string() +
 			                           "\nUSER_MODELS_DIR=" + (state.root / "models").string() +
 			                           "\n";
 			const bool output_ok = write(state.output_pipe.at(1), output.data(), output.size()) ==
 			                       static_cast<ssize_t>(output.size());
-			const bool lease_ok =
-			    SendRightsMessage(state.lease_socket.at(1), "L", {state.lease_fd});
 			(void)close(state.output_pipe.at(0));
 			(void)close(state.output_pipe.at(1));
+			const char marker =
+			    state.bad_record ? 'X' : howdy::native::auth_helper_protocol::kCompletionMarker;
+			const bool record_ok = state.omit_completion ||
+			                       send(state.lease_socket.at(1), &marker, 1, MSG_NOSIGNAL) == 1;
 			(void)close(state.lease_socket.at(0));
 			(void)close(state.lease_socket.at(1));
 			(void)close(state.lease_fd);
-			_exit(output_ok && lease_ok ? EXIT_SUCCESS : EXIT_FAILURE);
+			_exit(output_ok && lease_ok && record_ok ? EXIT_SUCCESS : EXIT_FAILURE);
 		}
 		*request.child_pid = pid;
 		state.child_pid    = pid;
+		// Return only once the kernel has reaped the helper, so Spawn's pidfd_open fails with
+		// ESRCH.
+		for (int tries = 0; state.exit_before_pidfd && tries < 5000; ++tries) {
+			if (kill(pid, 0) != 0 && errno == ESRCH) {
+				state.reaped_before_spawn_returned = true;
+				break;
+			}
+			(void)poll(nullptr, 0, 1);
+		}
+		rlimit limit{};
+		if (state.exhaust_fds && getrlimit(RLIMIT_NOFILE, &limit) == 0) {
+			// Every descriptor below the lowest free one is taken, so a limit there leaves none.
+			const int lowest_free = fcntl(state.lease_socket.at(0), F_DUPFD_CLOEXEC, 0);
+			if (lowest_free >= 0) {
+				(void)close(lowest_free);
+				state.saved_nofile = limit;
+				limit.rlim_cur     = static_cast<rlim_t>(lowest_free);
+				(void)setrlimit(RLIMIT_NOFILE, &limit);
+			}
+		}
 		return 0;
 	}
 
@@ -655,14 +766,55 @@ namespace {
 	// Runs a valid helper exchange inside a temporary runtime root. With `inject_root` the
 	// operations point at that root; without it the production /run/howdy root applies and the
 	// output must be rejected as foreign, which proves the root is honored and fails closed.
-	auto RunValidPrepare(bool inject_root) -> bool {
+	struct PrepareVariant {
+		bool complete          = true;
+		bool exit_before_pidfd = false;
+		bool expect_accepted   = true;
+		// The kernel reaps the helper on exit, so its exit status is gone.
+		bool host_reaps = false;
+		// A host handler and the prepare's wait race to collect the helper, so either may.
+		bool reap_race = false;
+		// The pidfd cannot be taken for a live helper (EMFILE).
+		bool pidfd_fails = false;
+		bool bad_record  = false;
+	};
+
+	auto Logged(const ReapContext &state, std::string_view text) -> bool {
+		return std::ranges::any_of(state.log_messages, [text](const std::string &message) -> bool {
+			return message.contains(text);
+		});
+	}
+
+	// What an accepted prepare logs: the destroy failure, plus the reaped-elsewhere note when the
+	// host reaped the helper, plus the note that it was gone before its pidfd.
+	auto ExpectAcceptedPrepareLogs(const ReapContext &state, const PrepareVariant &variant)
+	    -> bool {
+		const std::size_t expected_logs =
+		    1U + (variant.host_reaps ? 1U : 0U) + (variant.exit_before_pidfd ? 1U : 0U);
+		const std::size_t count = state.log_messages.size();
+		const bool        counted =
+		    variant.reap_race ? count == 1U || count == 2U : count == expected_logs;
+		bool ok = Expect(counted && Logged(state, "posix_spawn_file_actions_destroy"),
+		                 "valid prepare logs post-spawn destroy failure");
+		ok &= Expect(!variant.exit_before_pidfd || Logged(state, "before its pidfd was taken"),
+		             "a helper gone before its pidfd is accepted on its record");
+		ok &= Expect(!variant.host_reaps || Logged(state, "its completion record decides"),
+		             "a helper the kernel reaped is accepted on its record");
+		return ok;
+	}
+
+	auto RunValidPrepare(bool inject_root, PrepareVariant variant = {}) -> bool {
 		auto        directory_template = std::to_array("/tmp/howdy-prepare-root-XXXXXX");
 		char const *parent             = mkdtemp(directory_template.data());
 		if (!Expect(parent != nullptr, "valid prepare creates temporary runtime root")) {
 			return false;
 		}
 		ReapContext state;
-		state.root = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
+		state.omit_completion   = !variant.complete;
+		state.exit_before_pidfd = variant.exit_before_pidfd;
+		state.exhaust_fds       = variant.pidfd_fails;
+		state.bad_record        = variant.bad_record;
+		state.root              = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
 		    parent, getuid(), howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
 		std::error_code error;
 		const auto      lock_path = std::filesystem::path(state.root.string() + ".lock");
@@ -690,15 +842,36 @@ namespace {
 			howdy::pam::PreparedRuntimeFiles prepared;
 			const bool accepted = howdy::pam::auth_helper_process::PrepareRuntimeAuthFiles(
 			    "alice", &prepared, operations,
-			    std::chrono::steady_clock::now() + std::chrono::seconds(1));
-			if (inject_root) {
+			    // Spawn may wait up to 5 s for the kernel to reap the helper first; the deadline
+			    // only bounds a run that would otherwise hang.
+			    std::chrono::steady_clock::now() + std::chrono::seconds(15));
+			if (state.saved_nofile.has_value()) {
+				(void)setrlimit(RLIMIT_NOFILE, &*state.saved_nofile);
+			}
+			ok &= Expect(!variant.pidfd_fails || state.saved_nofile.has_value(),
+			             "the test leaves no descriptor for the pidfd");
+			ok &= Expect(state.completion_requested,
+			             "prepare asks the helper for its completion record");
+			// Otherwise the run took another path, and the checks below would not say why.
+			ok &= Expect(!variant.exit_before_pidfd || state.reaped_before_spawn_returned,
+			             "the kernel reaped the helper before Spawn took its pidfd");
+			if (variant.pidfd_fails) {
+				// Any other pidfd failure leaves the helper ours: it is stopped and reaped, and
+				// the prepare fails without waiting for a record.
+				ok &= Expect(!accepted && Logged(state, "pidfd_open failed") &&
+				                 howdy::test::process::ChildReaped(state.child_pid),
+				             "a pidfd failure for a live helper stops it and fails the prepare");
+			} else if (!variant.expect_accepted) {
+				ok &=
+				    Expect(!accepted && !prepared.lease_fd.Valid() &&
+					           Logged(state, variant.bad_record ? "unexpected or unreadable data"
+					                                            : "without its completion record"),
+					       "a helper without a valid completion record is rejected");
+			} else if (inject_root) {
 				ok &= Expect(accepted, "valid output and lease survive post-spawn destroy failure");
 				ok &= Expect(state.destroy_calls == 1 && prepared.root_dir == state.root,
 				             "valid prepare preserves paths and destroys actions once");
-				ok &= Expect(
-				    state.log_messages.size() == 1 &&
-				        state.log_messages.at(0).contains("posix_spawn_file_actions_destroy"),
-				    "valid prepare logs post-spawn destroy failure");
+				ok &= ExpectAcceptedPrepareLogs(state, variant);
 			} else {
 				ok &= Expect(!accepted && !prepared.lease_fd.Valid(),
 				             "output outside the production runtime root is rejected");
@@ -716,6 +889,67 @@ namespace {
 
 	auto TestPrepareRejectsOutputOutsideProductionRoot() -> bool {
 		return RunValidPrepare(false);
+	}
+
+	// PAM asked for the record, so a helper that exits 0 without it is rejected as well.
+	auto TestPrepareRequiresCompletion() -> bool {
+		return RunValidPrepare(true, {.complete = false, .expect_accepted = false});
+	}
+
+	auto TestPrepareRejectsWrongRecord() -> bool {
+		return RunValidPrepare(true, {.expect_accepted = false, .bad_record = true});
+	}
+
+	// Only a helper already gone may continue without a pidfd; for a live one the spawn fails.
+	auto TestPrepareFailsWithoutPidfd() -> bool {
+		return RunValidPrepare(true, {.expect_accepted = false, .pidfd_fails = true});
+	}
+
+	// When the kernel reaps the helper on exit, its exit status is gone: the completion record
+	// decides, also when the helper was gone before its pidfd could be taken, and without it the
+	// prepare fails closed.
+	void ReapEveryChild(int signal_number) {
+		(void)signal_number;
+		const int saved_errno = errno;
+		while (waitpid(-1, nullptr, WNOHANG) > 0) {
+		}
+		errno = saved_errno;
+	}
+
+	auto TestPrepareWhenTheKernelReapsTheHelper() -> bool {
+		bool ok = true;
+		for (const auto &[handler, flags, label] : {
+		         std::tuple{SIG_IGN, 0, "SIGCHLD ignored"},
+		         std::tuple{SIG_DFL, SA_NOCLDWAIT, "SA_NOCLDWAIT"},
+		     }) {
+			const howdy::test::process::ScopedSigchldAction action(handler, flags);
+			ok &= Expect(action.Valid(), std::string("prepare test sets ") + label);
+			ok &= RunValidPrepare(true, {.host_reaps = true});
+			ok &= RunValidPrepare(true, {.expect_accepted = false, .bad_record = true});
+			ok &= RunValidPrepare(
+			    true, {.complete = false, .expect_accepted = false, .host_reaps = true});
+			ok &= RunValidPrepare(true, {.exit_before_pidfd = true, .host_reaps = true});
+			ok &= RunValidPrepare(true, {
+			                                .complete          = false,
+			                                .exit_before_pidfd = true,
+			                                .expect_accepted   = false,
+			                                .host_reaps        = true,
+			                            });
+		}
+		// A host handler that reaps every child. Whether it or the prepare's wait collects a
+		// helper that exits later is a race; a complete helper is accepted either way. A helper
+		// it reaps before the pidfd is taken gives a fixed outcome.
+		const howdy::test::process::ScopedSigchldAction action(ReapEveryChild, 0);
+		ok &= Expect(action.Valid(), "prepare test sets a reaping SIGCHLD handler");
+		ok &= RunValidPrepare(true, {.reap_race = true});
+		ok &= RunValidPrepare(true, {.exit_before_pidfd = true, .host_reaps = true});
+		ok &= RunValidPrepare(true, {
+		                                .complete          = false,
+		                                .exit_before_pidfd = true,
+		                                .expect_accepted   = false,
+		                                .host_reaps        = true,
+		                            });
+		return ok;
 	}
 
 	auto EofSpawn(const howdy::pam::auth_helper_process::SpawnRequest &request) -> int {
@@ -918,6 +1152,10 @@ auto RunRuntimeSessionSpawnTests() -> bool {
 	ok &= TestLeaseReceiver();
 	ok &= TestLeaseValidation();
 	ok &= TestValidPrepareIgnoresDestroyFailure();
+	ok &= TestPrepareRequiresCompletion();
+	ok &= TestPrepareFailsWithoutPidfd();
+	ok &= TestPrepareRejectsWrongRecord();
+	ok &= TestPrepareWhenTheKernelReapsTheHelper();
 	ok &= TestPrepareRejectsOutputOutsideProductionRoot();
 	ok &= TestPrepareFailureReapsChild();
 	for (const auto point : {

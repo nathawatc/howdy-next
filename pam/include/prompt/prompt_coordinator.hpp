@@ -25,11 +25,14 @@ namespace howdy::pam {
 	// On success `child_pidfd` receives an owned pidfd for the child, taken right after spawn and
 	// already placed above STDERR_FILENO (runtime::OpenChildPidfd); a spawn that cannot take one
 	// stops the child and fails. Wait and cancel borrow it and require it: with -1 the production
-	// wait stops the child by confirmed PID and fails closed.
+	// wait stops the child by confirmed PID and fails closed. `verdict_fd` receives the owned PAM
+	// end of the socket compare reports its exit code on (protocol/compare_verdict.hpp), or -1; the
+	// wait borrows it and reads it only when the application reaped compare first.
 	using SpawnCompareProcessFn = int (*)(void *context, const CompareLaunchRequest &request,
-	                                      pid_t *child_pid, int *child_pidfd);
+	                                      pid_t *child_pid, int *child_pidfd, int *verdict_fd);
 
 	using WaitForCompareProcessFn = int (*)(void *context, pid_t child_pid, int child_pidfd,
+	                                        int                                   verdict_fd,
 	                                        std::chrono::steady_clock::time_point deadline,
 	                                        void                          *cancellation_context,
 	                                        CompareCancellationRequestedFn cancellation_requested,
@@ -71,15 +74,19 @@ namespace howdy::pam {
 		}
 
 		[[nodiscard]] auto SpawnCompareProcess(const CompareLaunchRequest &request,
-		                                       pid_t *child_pid, int *child_pidfd) const -> int {
-			return spawn_compare_process_(context_, request, child_pid, child_pidfd);
+		                                       pid_t *child_pid, int *child_pidfd,
+		                                       int *verdict_fd) const -> int {
+			return spawn_compare_process_(context_, request, child_pid, child_pidfd, verdict_fd);
 		}
 
-		[[nodiscard]] auto WaitForCompareProcess(
-		    pid_t child_pid, int child_pidfd, std::chrono::steady_clock::time_point deadline,
-		    void *cancellation_context, CompareCancellationRequestedFn cancellation_requested,
-		    int cancellation_fd = -1) const -> int {
-			return wait_for_compare_process_(context_, child_pid, child_pidfd, deadline,
+		// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+		[[nodiscard]] auto
+		WaitForCompareProcess(pid_t child_pid, int child_pidfd, int verdict_fd,
+		                      std::chrono::steady_clock::time_point deadline,
+		                      void                                 *cancellation_context,
+		                      CompareCancellationRequestedFn        cancellation_requested,
+		                      int cancellation_fd = -1) const -> int {
+			return wait_for_compare_process_(context_, child_pid, child_pidfd, verdict_fd, deadline,
 			                                 cancellation_context, cancellation_requested,
 			                                 cancellation_fd);
 		}
@@ -271,8 +278,10 @@ namespace howdy::pam {
 		std::unique_ptr<SecretPromptConversation> secret_prompt_conversation_;
 		std::unique_ptr<PromptSubmitter>          prompt_submitter_;
 		howdy::native::ScopedFd                   cancellation_fd_;
-		// The spawned compare child's pidfd, owned for the run; the worker only borrows it.
+		// The spawned compare child's pidfd and verdict socket, owned for the run; the worker only
+		// borrows them.
 		howdy::native::ScopedFd child_pidfd_;
+		howdy::native::ScopedFd compare_verdict_fd_;
 		bool                    cancellation_signal_failed_ = false;
 		State                   state_;
 		Workaround              effective_workaround_ = Workaround::kOff;

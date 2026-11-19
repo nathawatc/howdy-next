@@ -48,6 +48,34 @@ namespace {
 		}
 	}
 
+	// One message, received without blocking; any descriptors it carried are closed.
+	struct BareMessage {
+		ssize_t size = -1;
+		char    byte = 0;
+		// It carried no control data and nothing was truncated.
+		bool bare = false;
+	};
+
+	auto ReceiveBareMessage(int socket_fd) -> BareMessage {
+		BareMessage result;
+		iovec       data{.iov_base = &result.byte, .iov_len = sizeof(result.byte)};
+		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
+		       control_buffer{};
+		msghdr message{};
+		message.msg_iov        = &data;
+		message.msg_iovlen     = 1;
+		message.msg_control    = control_buffer.data();
+		message.msg_controllen = control_buffer.size();
+		result.size            = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
+		if (result.size < 0) {
+			return result;
+		}
+		result.bare = CMSG_FIRSTHDR(&message) == nullptr &&
+		              !howdy::native::HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC);
+		CloseControlDescriptors(&message);
+		return result;
+	}
+
 }  // namespace
 
 namespace howdy::pam::auth_helper_process::internal {
@@ -96,23 +124,24 @@ namespace howdy::pam::auth_helper_process::internal {
 	}
 
 	auto LeaseSocketHasCleanEof(int socket_fd) -> bool {
-		char  byte = 0;
-		iovec data{.iov_base = &byte, .iov_len = sizeof(byte)};
-		alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int) * 4) + CMSG_SPACE(sizeof(ucred))>
-		       control_buffer{};
-		msghdr message{};
-		message.msg_iov        = &data;
-		message.msg_iovlen     = 1;
-		message.msg_control    = control_buffer.data();
-		message.msg_controllen = control_buffer.size();
-		const ssize_t received = recvmsg(socket_fd, &message, MSG_DONTWAIT | MSG_CMSG_CLOEXEC);
-		if (received < 0) {
-			return false;
+		const auto message = ReceiveBareMessage(socket_fd);
+		return message.size == 0 && message.bare;
+	}
+
+	auto ReceiveLeaseSocketEnd(int socket_fd) -> LeaseSocketEnd {
+		const auto message = ReceiveBareMessage(socket_fd);
+		if (message.size == 0 && message.bare) {
+			return LeaseSocketEnd::kCleanEof;
 		}
-		const bool clean = received == 0 && CMSG_FIRSTHDR(&message) == nullptr &&
-		                   !howdy::native::HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC);
-		CloseControlDescriptors(&message);
-		return clean;
+		// Exactly the one-byte record with no descriptors, and nothing after it. A zero-length
+		// message also reads as 0, so this relies on the helper being gone with its end closed,
+		// which the wait has established; only the helper can write to that end.
+		if (message.size == 1 && message.bare &&
+		    message.byte == howdy::native::auth_helper_protocol::kCompletionMarker &&
+		    LeaseSocketHasCleanEof(socket_fd)) {
+			return LeaseSocketEnd::kCompletedThenEof;
+		}
+		return LeaseSocketEnd::kInvalid;
 	}
 
 	auto ValidateLeaseDescriptor(int lease_fd, const std::filesystem::path &root_dir,

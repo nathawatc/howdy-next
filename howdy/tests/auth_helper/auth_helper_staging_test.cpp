@@ -6,6 +6,7 @@
 #include "protocol/auth_helper_protocol.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
+#include "support/scoped_fd.hpp"
 #include "support/scoped_stream_capture.hpp"
 #include "test_support.hpp"
 
@@ -31,6 +32,7 @@
 #include <sys/acl.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -204,6 +206,75 @@ namespace {
 		ok &= Expect(output.str() == "CONFIG_PATH=/run/howdy/pam-1000-gen000/config.ini\n"
 		                             "USER_MODELS_DIR=/run/howdy/pam-1000-gen000/models\n",
 		             "stdout protocol remains exact");
+
+		// FinishPrepare sends the completion record only after a successful prepare, and only
+		// when asked.
+		const char *const requested_value =
+		    howdy::native::auth_helper_protocol::kCompletionRequestValue;
+		// `request` is the environment value, or nullptr to leave the variable unset.
+		const auto finish = [](bool succeeded, const char *request,
+		                       bool peer_closed = false) -> std::pair<int, std::string> {
+			using howdy::native::auth_helper_protocol::kCompletionRequestName;
+			std::array<int, 2> sockets{-1, -1};
+			if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC | SOCK_NONBLOCK, 0,
+			               sockets.data()) != 0) {
+				return {-1, "socketpair failed"};
+			}
+			howdy::native::ScopedFd pam_end(sockets.at(0));
+			howdy::native::ScopedFd helper_end(sockets.at(1));
+			if (peer_closed) {
+				pam_end.Reset();
+			}
+			const bool environment_set = request != nullptr
+			                                 ? setenv(kCompletionRequestName, request, 1) == 0
+			                                 : unsetenv(kCompletionRequestName) == 0;
+			if (!environment_set) {
+				return {-1, "environment not set"};
+			}
+			const int code =
+			    howdy::native::auth_helper::command::FinishPrepare(succeeded, helper_end.Get());
+			(void)unsetenv(kCompletionRequestName);
+			helper_end.Reset();
+			if (!pam_end.Valid()) {
+				return {code, ""};
+			}
+			// As PAM reads it: one message without descriptors, then a clean end of file.
+			std::array<char, 4> received{};
+			iovec               data{.iov_base = received.data(), .iov_len = received.size()};
+			alignas(cmsghdr) std::array<char, CMSG_SPACE(sizeof(int))> control{};
+			msghdr                                                     message{};
+			message.msg_iov        = &data;
+			message.msg_iovlen     = 1;
+			message.msg_control    = control.data();
+			message.msg_controllen = control.size();
+			const ssize_t size     = recvmsg(pam_end.Get(), &message, MSG_CMSG_CLOEXEC);
+			if (size <= 0) {
+				return {code, ""};
+			}
+			std::string text(received.data(), static_cast<std::size_t>(size));
+			if (CMSG_FIRSTHDR(&message) != nullptr ||
+			    howdy::native::HasAnyBits(message.msg_flags, MSG_TRUNC, MSG_CTRUNC)) {
+				text += "+control";
+			}
+			if (read(pam_end.Get(), received.data(), received.size()) != 0) {
+				text += "+more";
+			}
+			return {code, text};
+		};
+		ok &= Expect(finish(true, requested_value) == std::pair<int, std::string>{0, "C"},
+		             "a successful prepare that was asked sends the completion record");
+		ok &= Expect(finish(true, nullptr) == std::pair<int, std::string>{0, ""},
+		             "a successful prepare that was not asked sends no record");
+		ok &= Expect(finish(false, requested_value) == std::pair<int, std::string>{1, ""},
+		             "a failed prepare sends no record");
+		ok &= Expect(finish(true, "0") == std::pair<int, std::string>{0, ""},
+		             "a request with another value sends no record");
+		int unsent_code = 0;
+		{
+			const howdy::native::ScopedStreamCapture quiet(std::cerr);
+			unsent_code = finish(true, requested_value, true).first;
+		}
+		ok &= Expect(unsent_code == 1, "a record that cannot be sent fails the prepare");
 		return ok;
 	}
 

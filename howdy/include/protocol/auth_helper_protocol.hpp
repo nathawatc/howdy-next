@@ -13,6 +13,28 @@ namespace howdy::native::auth_helper_protocol {
 
 	inline constexpr const char *kConfigPathKey    = "CONFIG_PATH";
 	inline constexpr const char *kUserModelsDirKey = "USER_MODELS_DIR";
+	// After a successful prepare, once the lease was sent and the paths were written, the helper
+	// sends this one-byte message, with no descriptors, as the lease socket's last message. A
+	// current PAM module requires it on every host, and it stands in for the exit status when
+	// the PAM application reaped the helper and took that status (for example SIGCHLD set to
+	// SIG_IGN); a socket, unlike the stdout pipe, cannot be
+	// reopened through /proc/<pid>/fd to add one. The helper sends it only when PAM asks with
+	// kCompletionRequestName=kCompletionRequestValue in its environment: a pam_howdy.so loaded
+	// before an upgrade never asks and still expects the lease socket to end right after the
+	// lease.
+	inline constexpr char        kCompletionMarker       = 'C';
+	inline constexpr const char *kCompletionRequestName  = "HOWDY_AUTH_HELPER_COMPLETION";
+	inline constexpr const char *kCompletionRequestValue = "1";
+	inline constexpr const char *kCompletionRequestEntry = "HOWDY_AUTH_HELPER_COMPLETION=1";
+
+	// PAM sends the entry, the helper checks name and value; keep them in step.
+	static_assert(std::string_view(kCompletionRequestEntry).starts_with(kCompletionRequestName) &&
+	              std::string_view(kCompletionRequestEntry).ends_with(kCompletionRequestValue) &&
+	              std::string_view(kCompletionRequestEntry).size() ==
+	                  std::string_view(kCompletionRequestName).size() + 1 +
+	                      std::string_view(kCompletionRequestValue).size() &&
+	              std::string_view(kCompletionRequestEntry)
+	                      .at(std::string_view(kCompletionRequestName).size()) == '=');
 
 	inline constexpr const char *kPreparedRuntimeRoot             = "/run/howdy";
 	inline constexpr const char *kPreparedRuntimeDirectoryPrefix  = "pam-";

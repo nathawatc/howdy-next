@@ -20,13 +20,18 @@
 #include <mutex>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
+#include <signal.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <security/pam_appl.h>
 
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 
 namespace {
 	using howdy::pam::PromptCoordinator;
@@ -772,6 +777,58 @@ namespace {
 		       Expect(ChildReaped(child_pid), "wait exception emergency cleanup reaps child");
 	}
 
+	// A spawn that still hands back a child with its pidfd has it reaped through that pidfd; one
+	// without a pidfd is left to the spawn, which stops such a child itself.
+	auto ExpectSpawnHandOff(bool throws, bool with_pidfd) -> bool {
+		FakeContext       context{.throw_after_spawn = throws, .fail_after_spawn = !throws};
+		const std::string label     = std::string(throws ? "throwing" : "failing") +
+		                              (with_pidfd ? " spawn with pidfd" : " spawn without pidfd");
+		const pid_t       child_pid = SpawnBlockedChild();
+		if (!Expect(child_pid > 0, label + ": hand-off child spawned")) {
+			return false;
+		}
+		context.next_child_pid = child_pid;
+		bool ok                = true;
+		if (with_pidfd) {
+			context.next_child_pidfd = static_cast<int>(syscall(SYS_pidfd_open, child_pid, 0));
+			ok &= Expect(context.next_child_pidfd >= 0, label + ": pidfd opened");
+		}
+		PromptCoordinator coordinator(nullptr, Workaround::kOff, false, false, Operations(&context),
+		                              Timeout());
+		bool              threw = false;
+		try {
+			const auto result = coordinator.Run(MakeCompareRequest());
+			ok &= Expect(result.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
+			             label + ": reports spawn failure");
+		} catch (const std::runtime_error &) {
+			threw = true;
+		}
+		const bool reaped = ChildReaped(child_pid);
+		ok &= Expect(threw == throws, label + ": propagates the spawn outcome");
+		if (with_pidfd) {
+			ok &= Expect(context.cleanup_calls == 1 && reaped,
+			             label + ": child is stopped and reaped through its pidfd");
+		} else {
+			ok &= Expect(context.cleanup_calls == 0 && !reaped,
+			             label + ": child is not touched without a pidfd");
+		}
+		if (!reaped) {
+			(void)kill(child_pid, SIGKILL);
+			(void)waitpid(child_pid, nullptr, 0);
+		}
+		return ok;
+	}
+
+	auto TestSpawnHandOff() -> bool {
+		bool ok = true;
+		for (const bool throws : {true, false}) {
+			for (const bool with_pidfd : {true, false}) {
+				ok &= ExpectSpawnHandOff(throws, with_pidfd);
+			}
+		}
+		return ok;
+	}
+
 	auto TestDefaultResultFailsClosed() -> bool {
 		const howdy::pam::PromptCoordinatorResult result;
 		return Expect(result.decision == PromptCoordinatorDecision::kPamResult,
@@ -802,6 +859,7 @@ auto main() -> int {
 	ok &= TestReapedChildIsNeverSignalledByCaller();
 	ok &= TestStalePromptGenerationCloseIsIgnored();
 	ok &= TestCompareWaitExceptionReapsChild();
+	ok &= TestSpawnHandOff();
 	ok &= RunPromptModeTests();
 	ok &= RunPromptAdapterTests();
 	return ok ? 0 : 1;

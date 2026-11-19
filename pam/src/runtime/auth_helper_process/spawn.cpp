@@ -126,6 +126,15 @@ namespace {
 
 namespace howdy::pam::auth_helper_process::internal {
 
+	void LogAuthHelperMessage(const AuthHelperOperations &operations, int priority,
+	                          std::string_view message) {
+		syslog(LOG_AUTHPRIV | priority, "pam_howdy: %.*s", static_cast<int>(message.size()),
+		       message.data());
+		if (operations.log_observer != nullptr) {
+			operations.log_observer(operations.context, message);
+		}
+	}
+
 	void LogAuthHelperFailure(const AuthHelperOperations &operations, const char *operation,
 	                          int error_code) noexcept {
 		try {
@@ -307,7 +316,10 @@ namespace howdy::pam::auth_helper_process::internal {
 		    username_string.data(),
 		    nullptr,
 		};
-		std::array<char *, 1> env     = {nullptr};
+		// Asks for the completion record; see protocol/auth_helper_protocol.hpp.
+		std::string completion_request(
+		    howdy::native::auth_helper_protocol::kCompletionRequestEntry);
+		std::array<char *, 2> env     = {completion_request.data(), nullptr};
 		const int             result  = operations.spawn({
 		    .context   = operations.context,
 		    .child_pid = &spawn->child_pid,
@@ -321,11 +333,22 @@ namespace howdy::pam::auth_helper_process::internal {
 			spawn->child_pid = -1;
 			LogAuthHelperFailure(operations, "posix_spawn", result != 0 ? result : ECHILD);
 		} else {
-			// A pidfd opened later could name another process, so a failure fails the prepare.
+			// A pidfd opened later could name another process, so a failure fails the prepare,
+			// unless the helper is already gone: then nothing is left to name, and the
+			// completion record decides.
 			int error_number = 0;
 			spawn->child_pidfd.Reset(
 			    howdy::pam::runtime::TakeSpawnedChildPidfd(spawn->child_pid, &error_number));
-			if (!spawn->child_pidfd.Valid()) {
+			if (!spawn->child_pidfd.Valid() &&
+			    howdy::pam::runtime::PidfdErrorMeansChildGone(error_number)) {
+				// Already exited and reaped by the application: nothing is left to wait for or
+				// stop, what it wrote is in the channels, and its completion record decides.
+				spawn->child_pid           = -1;
+				spawn->reaped_before_pidfd = true;
+				LogAuthHelperMessage(
+				    operations, LOG_DEBUG,
+				    "Howdy auth helper was reaped elsewhere before its pidfd was taken");
+			} else if (!spawn->child_pidfd.Valid()) {
 				LogAuthHelperFailure(operations, "pidfd_open", error_number);
 				spawn->child_pid = -1;
 				spawned          = false;
