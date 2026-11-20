@@ -81,6 +81,15 @@ namespace howdy::native {
 			bool        strict_shape;
 		};
 
+		// How a descriptor that is already open is validated before its document is read.
+		struct OpenedModelReadPolicy {
+			// Required file owner; nullopt skips the owner check.
+			std::optional<uid_t> owner_uid;
+			// Also accept a staged runtime model (two links, validated by its staged layout).
+			bool accept_staged_link      = false;
+			bool treat_empty_as_no_model = false;
+		};
+
 		struct UserModelPathResult {
 			UserModelStatus       status = UserModelStatus::kOk;
 			std::string           error_message;
@@ -105,7 +114,7 @@ namespace howdy::native {
 		    -> user_model_codec::Document;
 		[[nodiscard]] static auto LoadDocumentFromFd(int fd, const std::filesystem::path &path,
 		                                             const UserModelExpectations &expectations,
-		                                             bool treat_empty_as_no_model)
+		                                             const OpenedModelReadPolicy &policy)
 		    -> user_model_codec::Document;
 		[[nodiscard]] static auto InspectRegularFileStatus(const std::filesystem::path &path,
 		                                                   std::string *message) -> UserModelStatus;
@@ -122,6 +131,9 @@ namespace howdy::native {
 		friend auto LoadUserModels(const std::string &user, const std::string &expected_backend,
 		                           std::optional<uid_t>                          owner_uid,
 		                           const file_security_internal::ValidationRoot &validation_root)
+		    -> UserModelLoadResult;
+		friend auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
+		                                 const std::string &expected_backend, uid_t owner_uid)
 		    -> UserModelLoadResult;
 	};
 

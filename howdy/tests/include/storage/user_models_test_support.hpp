@@ -322,6 +322,7 @@ namespace howdy::test::user_models {
 	}
 
 	auto TestUserModelLoading() -> bool;
+	auto TestUserModelDescriptorLoading() -> bool;
 	auto TestUserModelMutationStart() -> bool;
 	auto TestUserModelMutationFailures() -> bool;
 

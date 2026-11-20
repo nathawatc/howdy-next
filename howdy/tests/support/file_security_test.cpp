@@ -140,6 +140,47 @@ namespace {
 
 }  // namespace
 
+namespace {
+
+	auto ReadOnlyFdChecks(const std::filesystem::path &fixture) -> bool {
+		using howdy::native::CheckReadOnlyFd;
+		using howdy::test::ScopedFd;
+		bool       ok   = true;
+		const auto file = fixture / "read-only-fd";
+		ok &= Expect(WriteFile(file, "content"), "write read-only fd fixture");
+
+		const ScopedFd read_only(open(file.c_str(), O_RDONLY | O_CLOEXEC));
+		ok &= Expect(CheckReadOnlyFd(read_only.Get(), file, "Test file").ok,
+		             "read-only descriptor is accepted");
+
+		const ScopedFd read_write(open(file.c_str(), O_RDWR | O_CLOEXEC));
+		const auto     read_write_result = CheckReadOnlyFd(read_write.Get(), file, "Test file");
+		ok &= Expect(!read_write_result.ok &&
+		                 read_write_result.error_message ==
+		                     "Test file must be open read-only: " + file.string(),
+		             "read-write descriptor is rejected");
+
+		const ScopedFd write_only(open(file.c_str(), O_WRONLY | O_CLOEXEC));
+		ok &= Expect(!CheckReadOnlyFd(write_only.Get(), file, "Test file").ok,
+		             "write-only descriptor is rejected");
+
+		// O_PATH reports an O_RDONLY access mode, so only the O_PATH flag shows it cannot read.
+		const ScopedFd path_only(open(file.c_str(), O_PATH | O_CLOEXEC));
+		ok &= Expect(path_only.Valid() && !CheckReadOnlyFd(path_only.Get(), file, "Test file").ok,
+		             "O_PATH descriptor is rejected");
+
+		const auto invalid = CheckReadOnlyFd(-1, file, "Test file");
+		ok &= Expect(!invalid.ok && invalid.error_code == EBADF, "negative descriptor is EBADF");
+
+		const int closed_fd = open(file.c_str(), O_RDONLY | O_CLOEXEC);
+		ok &= Expect(closed_fd >= 0 && close(closed_fd) == 0, "open and close a descriptor");
+		const auto closed = CheckReadOnlyFd(closed_fd, file, "Test file");
+		ok &= Expect(!closed.ok && closed.error_code == EBADF, "closed descriptor is EBADF");
+		return ok;
+	}
+
+}  // namespace
+
 auto main() -> int {
 	namespace fs = std::filesystem;
 
@@ -151,6 +192,7 @@ auto main() -> int {
 	ok &= Expect(!ec, "create temp root");
 	ok &= Expect(chmod(temp_root.c_str(), 0700) == 0, "secure fixture boundary");
 	ok &= BoundaryChecks(temp_root);
+	ok &= ReadOnlyFdChecks(temp_root);
 
 	const auto safe_file = temp_root / "safe-file";
 	const auto safe_dir  = temp_root / "safe-dir";

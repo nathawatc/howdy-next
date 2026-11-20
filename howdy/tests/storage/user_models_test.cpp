@@ -658,6 +658,7 @@ namespace howdy::test::user_models {
 auto main() -> int {
 	const std::array results = {
 	    howdy::test::user_models::TestUserModelLoading(),
+	    howdy::test::user_models::TestUserModelDescriptorLoading(),
 	    howdy::test::user_models::TestUserModelMutationStart(),
 	    howdy::test::user_models::TestUserModelMutationFailures(),
 	};

@@ -9,6 +9,7 @@
 #include "runtime_config_loader/internal.hpp"
 #include "support/error_message.hpp"
 #include "support/face_metric.hpp"
+#include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
 
@@ -112,6 +113,38 @@ namespace howdy::native {
 			return config;
 		}
 
+		// Reads, parses, validates and populates from a descriptor whose security checks have
+		// already passed; `config_path` only names the source in results and messages.
+		auto LoadCheckedRuntimeConfig(int fd, const std::filesystem::path &config_path)
+		    -> RuntimeConfigLoadResult {
+			const auto content = ReadConfigFromFd(fd);
+			if (!content.has_value()) {
+				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
+				    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
+			}
+
+			const ConfigReader reader(config_path.string(), *content);
+			if (!reader.Ok()) {
+				return FailureResult<RuntimeConfigLoadStatus::kParseError>(
+				    config_path, "Failed to parse config: " + config_path.string() + " (error " +
+				                     std::to_string(reader.ParseError()) + ")");
+			}
+
+			if (const auto validation = ValidateRuntimeConfig(reader)) {
+				return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
+				    config_path,
+				    "Invalid runtime config in " + config_path.string() + ": " + *validation);
+			}
+
+			auto populated = PopulateRuntimeConfig(reader);
+			if (!populated.has_value()) {
+				return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
+				    config_path,
+				    "Invalid runtime config in " + config_path.string() + ": unknown face metric");
+			}
+			return SuccessResult(config_path, std::move(*populated));
+		}
+
 	}  // namespace
 
 	auto LoadRuntimeConfig(const std::filesystem::path                  &config_path,
@@ -129,7 +162,7 @@ namespace howdy::native {
 			        ConfigAccessErrorHint(open_error),
 			    open_error);
 		}
-		ScopedFd fd(opened_fd);
+		const ScopedFd fd(opened_fd);
 		if (config_test_hooks::Current()) {
 			config_test_hooks::Current()();
 		}
@@ -140,33 +173,24 @@ namespace howdy::native {
 			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
 			    config_path, security.error_message, security.error_code);
 		}
+		return LoadCheckedRuntimeConfig(fd.Get(), config_path);
+	}
 
-		const auto content = ReadConfigFromFd(fd.Get());
-		fd.Reset();
-		if (!content.has_value()) {
-			return FailureResult<RuntimeConfigLoadStatus::kParseError>(
-			    config_path, "Failed to parse config: " + config_path.string() + " (error -1)");
+	auto LoadRuntimeConfigFromFd(int config_fd, const std::filesystem::path &display_path,
+	                             uid_t owner_uid) -> RuntimeConfigLoadResult {
+		// The descriptor was opened elsewhere, so there are no directories to walk: the opener
+		// checked them, and an open descriptor keeps naming the inode it was opened on.
+		const auto read_only = CheckReadOnlyFd(config_fd, display_path, kConfigFileLabel);
+		if (!read_only.ok) {
+			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
+			    display_path, read_only.error_message, read_only.error_code);
 		}
-
-		const ConfigReader reader(config_path.string(), *content);
-		if (!reader.Ok()) {
-			return FailureResult<RuntimeConfigLoadStatus::kParseError>(
-			    config_path, "Failed to parse config: " + config_path.string() + " (error " +
-			                     std::to_string(reader.ParseError()) + ")");
+		const auto security =
+		    CheckSecureRootOwnedFd(config_fd, display_path, kConfigFileLabel, owner_uid);
+		if (!security.ok) {
+			return FailureResult<RuntimeConfigLoadStatus::kPathError>(
+			    display_path, security.error_message, security.error_code);
 		}
-
-		if (const auto validation = ValidateRuntimeConfig(reader)) {
-			return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
-			    config_path,
-			    "Invalid runtime config in " + config_path.string() + ": " + *validation);
-		}
-
-		auto populated = PopulateRuntimeConfig(reader);
-		if (!populated.has_value()) {
-			return FailureResult<RuntimeConfigLoadStatus::kInvalidRuntimeValue>(
-			    config_path,
-			    "Invalid runtime config in " + config_path.string() + ": unknown face metric");
-		}
-		return SuccessResult(config_path, std::move(*populated));
+		return LoadCheckedRuntimeConfig(config_fd, display_path);
 	}
 }  // namespace howdy::native

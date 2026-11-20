@@ -110,13 +110,12 @@ namespace howdy::native {
 	inline auto ReadConfigFromFd(int                              fd,
 	                             const std::optional<std::size_t> max_bytes = kMaxConfigFileSize)
 	    -> std::optional<std::string> {
-		if (lseek(fd, 0, SEEK_SET) < 0) {
-			return std::nullopt;
-		}
-
+		// A positional read from the start leaves the descriptor offset alone, which matters when
+		// the descriptor was inherited and its open file description is shared.
 		const auto read_limit = max_bytes.has_value() ? *max_bytes + std::size_t{1}
 		                                              : std::numeric_limits<std::size_t>::max();
-		const auto result     = ReadFdToStringBounded({.fd = fd, .max_bytes = read_limit});
+		const auto result =
+		    ReadFdToStringBounded({.fd = fd, .max_bytes = read_limit, .offset = off_t{0}});
 		if (result.read_error || (max_bytes.has_value() && result.output.size() > *max_bytes)) {
 			return std::nullopt;
 		}

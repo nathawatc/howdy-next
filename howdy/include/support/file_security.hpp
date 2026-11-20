@@ -1,5 +1,6 @@
 #pragma once
 
+#include "support/bit_flags.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "support/scoped_fd.hpp"
@@ -122,6 +123,31 @@ namespace howdy::native {
 	                       const std::optional<uid_t> owner_uid = DefaultSecureOwnerUid())
 	    -> SecurePathCheckResult {
 		return CheckSecureFd(fd, SecurePathKind::kRegularFile, path, label, owner_uid);
+	}
+
+	// A descriptor received from another process carries no path to walk; its open flags are the
+	// only sign of whether it can write or is an O_PATH handle that cannot be read.
+	inline auto CheckReadOnlyFd(int fd, const std::filesystem::path &path,
+	                            const std::string_view label) -> SecurePathCheckResult {
+		const int flags = fd < 0 ? -1 : fcntl(fd, F_GETFL);
+		if (flags < 0) {
+			const int error_code = fd < 0 ? EBADF : errno;
+			return SecurePathCheckResult{
+			    .ok            = false,
+			    .error_message = "Failed to inspect " + std::string(label) + ": " + path.string() +
+				                 " (" + howdy::native::SystemErrorMessage(error_code) + ")",
+			    .error_code    = error_code,
+			};
+		}
+		if (HasAnyBits(flags, O_PATH) ||
+		    MaskedBits(flags, O_ACCMODE) != BitRepresentation(O_RDONLY)) {
+			return SecurePathCheckResult{
+			    .ok            = false,
+			    .error_message = std::string(label) + " must be open read-only: " + path.string(),
+			    .error_code    = 0,
+			};
+		}
+		return SecurePathCheckResult{.ok = true, .error_message = {}, .error_code = 0};
 	}
 
 	inline auto CheckSecurePath(const std::filesystem::path &path, SecurePathKind kind,

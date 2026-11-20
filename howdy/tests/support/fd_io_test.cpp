@@ -380,6 +380,50 @@ namespace {
 		return ok;
 	}
 
+	// An inherited descriptor shares its offset with other processes, so a positional read must
+	// read from the requested offset and leave the descriptor offset where it was.
+	auto ExpectPositionalReading(const std::filesystem::path &temp_root) -> bool {
+		bool              ok      = true;
+		const std::string content = "0123456789abcdef";
+		auto              file    = CreateTempFile(temp_root, "positional");
+		ok &= Expect(file.has_value(), "creates positional-read file");
+		if (!file.has_value()) {
+			return false;
+		}
+		unlink(file->path.c_str());
+		ok &= Expect(howdy::native::WriteAllToFd(file->fd.Get(), content),
+		             "writes positional-read content");
+		ok &= Expect(lseek(file->fd.Get(), 5, SEEK_SET) == 5, "moves the offset away from 0");
+
+		const auto whole = howdy::native::ReadFdToStringBounded(
+		    {.fd = file->fd.Get(), .max_bytes = 64, .offset = off_t{0}});
+		ok &= Expect(whole.output == content && !whole.hit_limit && !whole.read_error,
+		             "a positional read from 0 reads the whole file");
+		ok &= Expect(lseek(file->fd.Get(), 0, SEEK_CUR) == 5,
+		             "a positional read leaves the descriptor offset alone");
+
+		const auto tail = howdy::native::ReadFdToStringBounded(
+		    {.fd = file->fd.Get(), .max_bytes = 64, .offset = off_t{10}});
+		ok &= Expect(tail.output == content.substr(10), "a positional read starts at its offset");
+
+		const auto bounded = howdy::native::ReadFdToStringBounded(
+		    {.fd = file->fd.Get(), .max_bytes = 4, .offset = off_t{2}});
+		ok &= Expect(bounded.output == content.substr(2, 4) && bounded.hit_limit,
+		             "a positional read keeps the bound");
+		ok &= Expect(lseek(file->fd.Get(), 0, SEEK_CUR) == 5,
+		             "bounded positional reads leave the descriptor offset alone");
+
+		std::array<ScopedFd, 2> pipe_fds;
+		ok &= Expect(OpenPipe(&pipe_fds), "creates positional-read pipe");
+		ok &= Expect(howdy::native::WriteAllToFd(pipe_fds.at(1).Get(), content),
+		             "writes positional-read pipe content");
+		const auto piped = howdy::native::ReadFdToStringBounded(
+		    {.fd = pipe_fds.at(0).Get(), .max_bytes = 64, .offset = off_t{0}});
+		ok &= Expect(piped.read_error && piped.error_number == ESPIPE && piped.output.empty(),
+		             "a positional read of a pipe fails with ESPIPE");
+		return ok;
+	}
+
 	auto ExpectFullWrite(const std::filesystem::path &temp_root) -> bool {
 		bool ok   = true;
 		auto file = CreateTempFile(temp_root, "full");
@@ -414,6 +458,7 @@ auto main() -> int {
 	ok &= ExpectWriteRetries();
 	ok &= ExpectFullWrite(temp_root);
 	ok &= ExpectBoundedReading(temp_root);
+	ok &= ExpectPositionalReading(temp_root);
 	ok &= ExpectReadHintsAndInterruptions();
 	ok &= ExpectBoundedReadDoesNotProbeOpenPipe();
 

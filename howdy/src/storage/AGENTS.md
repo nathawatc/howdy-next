@@ -29,6 +29,10 @@ serialization behavior.
 commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not split it for
 LOC.
 
+`LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
+`LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one
+link, and a positional read. It never accepts a staged two-link model.
+
 `user_model_readiness` remains descriptor-relative and fail closed. Keep
 `storage/user_model_store/test_hooks.hpp` in production includes because the production store
 implements those deterministic hooks.

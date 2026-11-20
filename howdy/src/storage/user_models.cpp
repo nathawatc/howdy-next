@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <filesystem>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -104,6 +105,36 @@ namespace howdy::native {
 				return UserModelStatus::kParseError;
 			}
 			return status;
+		}
+
+		// Turns a loaded document into the flat encoding list compare matches against.
+		auto FlattenLoadedModels(user_model_codec::Document &document) -> UserModelLoadResult {
+			auto               &entries = document.Result();
+			UserModelLoadResult result{
+			    .status        = RemapLoadStatus(entries.status),
+			    .error_message = entries.error_message,
+			};
+			if (entries.status != UserModelStatus::kOk) {
+				return result;
+			}
+			std::size_t encoding_count = 0;
+			for (const auto &entry : entries.entries) {
+				encoding_count += entry.encodings.size();
+			}
+			result.stored.encodings.reserve(encoding_count);
+			result.stored.models.reserve(encoding_count);
+			for (auto &entry : entries.entries) {
+				for (auto &encoding : entry.encodings) {
+					result.stored.encodings.push_back(std::move(encoding));
+					result.stored.models.push_back(EncodingModelInfo{
+					    .id    = entry.id,
+					    .label = entry.label,
+					});
+				}
+			}
+			result.status =
+			    result.stored.encodings.empty() ? UserModelStatus::kNoModel : UserModelStatus::kOk;
+			return result;
 		}
 
 		auto RemoveEntryFromDocument(const UserModelStoreTransaction &transaction,
@@ -322,32 +353,29 @@ namespace howdy::native {
 		auto document = UserModelStore::LoadDocument(
 		    user, {.backend = expected_backend, .model = {}, .strict_shape = false}, owner_uid,
 		    validation_root);
-		auto               &entries = document.Result();
-		UserModelLoadResult result{
-		    .status        = RemapLoadStatus(entries.status),
-		    .error_message = entries.error_message,
-		};
-		if (entries.status != UserModelStatus::kOk) {
-			return result;
+		return FlattenLoadedModels(document);
+	}
+
+	auto LoadUserModelsFromFd(int model_fd, const std::filesystem::path &display_path,
+	                          const std::string &expected_backend, uid_t owner_uid)
+	    -> UserModelLoadResult {
+		const auto read_only = CheckReadOnlyFd(model_fd, display_path, "User model file");
+		if (!read_only.ok) {
+			return UserModelLoadResult{
+			    .status        = UserModelStatus::kInsecurePath,
+			    .error_message = read_only.error_message,
+			};
 		}
-		std::size_t encoding_count = 0;
-		for (const auto &entry : entries.entries) {
-			encoding_count += entry.encodings.size();
-		}
-		result.stored.encodings.reserve(encoding_count);
-		result.stored.models.reserve(encoding_count);
-		for (auto &entry : entries.entries) {
-			for (auto &encoding : entry.encodings) {
-				result.stored.encodings.push_back(std::move(encoding));
-				result.stored.models.push_back(EncodingModelInfo{
-				    .id    = entry.id,
-				    .label = entry.label,
-				});
-			}
-		}
-		result.status =
-		    result.stored.encodings.empty() ? UserModelStatus::kNoModel : UserModelStatus::kOk;
-		return result;
+		// No staged two-link model here: a descriptor comes from the canonical store.
+		auto document = UserModelStore::LoadDocumentFromFd(
+		    model_fd, display_path,
+		    {.backend = expected_backend, .model = {}, .strict_shape = false},
+		    {
+		        .owner_uid               = owner_uid,
+		        .accept_staged_link      = false,
+		        .treat_empty_as_no_model = false,
+		    });
+		return FlattenLoadedModels(document);
 	}
 
 }  // namespace howdy::native

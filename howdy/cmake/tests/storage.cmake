@@ -20,6 +20,7 @@ howdy_add_native_test(
  howdy_user_models_test
  native-user-models
  tests/storage/user_models_test.cpp
+ tests/storage/user_models_fd_load_test.cpp
  tests/storage/user_models_mutation_test.cpp
  tests/storage/user_models_failure_test.cpp
 )

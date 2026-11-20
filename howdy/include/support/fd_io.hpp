@@ -6,11 +6,14 @@
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include <unistd.h>
+
+#include <sys/types.h>
 
 namespace howdy::native {
 
@@ -25,6 +28,9 @@ namespace howdy::native {
 		int         fd            = -1;
 		std::size_t max_bytes     = 0;
 		std::size_t reserve_bytes = 0;
+		// Set to read with pread from this offset: the descriptor's file offset, which an
+		// inherited descriptor shares with other processes, never moves.
+		std::optional<off_t> offset;
 	};
 
 	inline auto WriteAllToFd(int fd, std::span<const std::byte> data) -> bool {
@@ -77,6 +83,10 @@ namespace howdy::native {
 			const std::size_t remaining     = request.max_bytes - result.output.size();
 			const std::size_t bytes_to_read = std::min(remaining, buffer.size());
 			const ssize_t     bytes_read    = RetryOnEintr([&] -> ssize_t {
+				if (request.offset.has_value()) {
+					return pread(request.fd, buffer.data(), bytes_to_read,
+					             *request.offset + static_cast<off_t>(result.output.size()));
+				}
 				return read(request.fd, buffer.data(), bytes_to_read);
 			});
 			if (bytes_read < 0) {

@@ -63,17 +63,11 @@ namespace howdy::native {
 			};
 		}
 
-		auto OpenedModelFileIsSecure(const struct stat &opened_file) -> bool {
-			const auto owner_uid = DefaultSecureOwnerUid();
+		auto OpenedModelFileIsSecure(const struct stat &opened_file, std::optional<uid_t> owner_uid)
+		    -> bool {
 			return S_ISREG(opened_file.st_mode) &&
 			       (!owner_uid.has_value() || opened_file.st_uid == *owner_uid) &&
 			       !HasAnyBits(opened_file.st_mode, S_IWGRP, S_IWOTH) && opened_file.st_nlink == 1;
-		}
-
-		auto OpenedModelFileIsSecureForRead(int fd, const std::filesystem::path &path,
-		                                    const struct stat &opened_file) -> bool {
-			return OpenedModelFileIsSecure(opened_file) ||
-			       (opened_file.st_nlink == 2 && ValidateStagedUserModelFile(fd, path));
 		}
 
 		auto SnapshotModelFile(const std::filesystem::path &path)
@@ -296,7 +290,8 @@ namespace howdy::native {
 				return std::nullopt;
 			}
 			struct stat opened_file{};
-			if (fstat(fd.Get(), &opened_file) != 0 || !OpenedModelFileIsSecure(opened_file) ||
+			if (fstat(fd.Get(), &opened_file) != 0 ||
+			    !OpenedModelFileIsSecure(opened_file, DefaultSecureOwnerUid()) ||
 			    RetryOnEintr([&] -> int {
 				    return flock(fd.Get(), LOCK_EX);
 			    }) != 0) {
@@ -492,7 +487,7 @@ namespace howdy::native {
 
 	auto UserModelStore::LoadDocumentFromFd(int fd, const std::filesystem::path &path,
 	                                        const UserModelExpectations &expectations,
-	                                        bool                         treat_empty_as_no_model)
+	                                        const OpenedModelReadPolicy &policy)
 	    -> user_model_codec::Document {
 		struct stat opened_file{};
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
@@ -501,14 +496,17 @@ namespace howdy::native {
 				                 "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
-		if (!OpenedModelFileIsSecureForRead(fd, path, opened_file)) {
+		const bool secure = OpenedModelFileIsSecure(opened_file, policy.owner_uid) ||
+		                    (policy.accept_staged_link && opened_file.st_nlink == 2 &&
+		                     ValidateStagedUserModelFile(fd, path));
+		if (!secure) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kInsecurePath,
 				                 "Opened user model file failed security validation: " +
 				                     path.string()),
 			};
 		}
-		if (opened_file.st_size == 0 && treat_empty_as_no_model) {
+		if (opened_file.st_size == 0 && policy.treat_empty_as_no_model) {
 			return user_model_codec::Document(
 			    UserModelListResult{.status = UserModelStatus::kNoModel});
 		}
@@ -518,17 +516,12 @@ namespace howdy::native {
 			    StoreListFailure(UserModelStatus::kOversized,
 				                 std::string(kUserModelFileTooLargeMessage) + path.string()));
 		}
-		if (lseek(fd, 0, SEEK_SET) < 0) {
-			return user_model_codec::Document{
-			    StoreListFailure(UserModelStatus::kParseError,
-				                 std::string(kUserModelFileReadFailedMessage) + path.string()),
-			};
-		}
-
+		// Read positionally from the start: the offset of an inherited descriptor is shared.
 		const auto content = ReadFdToStringBounded({
 		    .fd            = fd,
 		    .max_bytes     = user_model_limits::kMaxUserModelFileBytes + 1,
 		    .reserve_bytes = static_cast<std::size_t>(opened_file.st_size),
+		    .offset        = off_t{0},
 		});
 		if (content.read_error) {
 			return user_model_codec::Document{
@@ -561,7 +554,12 @@ namespace howdy::native {
 				                 "Failed to open user model file: " + path.string()),
 			};
 		}
-		return LoadDocumentFromFd(input.Get(), path, expectations, false);
+		return LoadDocumentFromFd(input.Get(), path, expectations,
+		                          {
+		                              .owner_uid               = DefaultSecureOwnerUid(),
+		                              .accept_staged_link      = true,
+		                              .treat_empty_as_no_model = false,
+		                          });
 	}
 
 	auto UserModelStore::LoadDocument(const std::string                            &user,
@@ -639,9 +637,14 @@ namespace howdy::native {
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
-		auto document = LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
-		                                   {.backend = {}, .model = {}, .strict_shape = true},
-		                                   locked_file->created_empty_file);
+		auto document =
+		    LoadDocumentFromFd(locked_file->lock.Get(), path_result.path,
+			                   {.backend = {}, .model = {}, .strict_shape = true},
+			                   {
+		                           .owner_uid               = DefaultSecureOwnerUid(),
+		                           .accept_staged_link      = true,
+		                           .treat_empty_as_no_model = locked_file->created_empty_file,
+		                       });
 		return UserModelStoreMutationResult{
 		    .transaction = UserModelStoreTransaction(
 		        path_result.path, std::move(locked_file->namespace_lock),

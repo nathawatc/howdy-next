@@ -33,6 +33,10 @@ Config tests include these private contracts directly; do not expose INIReader t
 - Preserve expected-current-content stale detection.
 - Keep INI text editing separate from filesystem transaction policy.
 - Treat post-rename sync failure as potentially committed.
+- `LoadRuntimeConfigFromFd` loads from a descriptor another process opened. It walks no path,
+  requires an explicit owner, rejects a descriptor that is not open read-only or is `O_PATH`, and
+  reads positionally, so the shared file offset never moves. A file unlinked since the open has no
+  link left and fails the one-link check, so a concurrent replace fails closed.
 
 Tests under `tests/config/` cover parsing, path security, atomic write/replace, runtime loading, and
 update behavior. Do not weaken failure-path coverage when simplifying helpers.
