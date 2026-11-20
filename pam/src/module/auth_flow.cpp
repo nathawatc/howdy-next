@@ -167,7 +167,11 @@ namespace howdy::pam::auth_flow {
 					           "Face verification skipped: no enrolled face model");
 					return;
 				case AuthenticationEligibility::kInvalidModelStorage:
-					if (!result.error_message.empty()) {
+					// The auth helper logs its own reason and sends none, so say why here too.
+					if (result.error_message.empty()) {
+						pam_syslog(pamh, LOG_ERR,
+						           "Face verification skipped: user model storage is invalid");
+					} else {
 						pam_syslog(pamh, LOG_ERR, "%s", result.error_message.c_str());
 					}
 					return;
