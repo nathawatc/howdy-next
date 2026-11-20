@@ -27,7 +27,7 @@ podman run --rm --network=none \
     set -e
     bash ci/nix/check-prebuilt.sh
     nix flake check --offline --no-update-lock-file --no-build --all-systems
-    nix build --offline --no-update-lock-file --no-link --max-jobs 1 -L \
+    nix build --offline --no-update-lock-file --no-link --max-jobs auto -L \
       .#checks.x86_64-linux.package
   '
 ```

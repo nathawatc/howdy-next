@@ -35,6 +35,6 @@ jobs:
             --offline \
             --no-update-lock-file \
             --no-link \
-            --max-jobs 1 \
+            --max-jobs auto \
             --print-build-logs \
             .#checks.x86_64-linux.package
