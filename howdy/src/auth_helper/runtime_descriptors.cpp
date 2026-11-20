@@ -15,6 +15,8 @@
 
 #include <fcntl.h>
 
+#include <sys/stat.h>
+
 namespace howdy::native::auth_helper {
 
 	namespace {
@@ -87,6 +89,25 @@ namespace howdy::native::auth_helper {
 			if (!security.ok) {
 				opened->model_state   = ModelState::kInvalidStorage;
 				opened->model_message = security.error_message;
+				return;
+			}
+			// A writer creates a first model as an empty file and exchanges the model in at
+			// commit, so an empty file is an enrollment not yet committed: no model yet, as the
+			// writer that created it reads it too. Compare would reject it as unparsable. An empty
+			// file a crashed writer left behind also reads as missing here, though the next writer
+			// rejects it as unparsable until it is removed. Committed models are never truncated,
+			// so a non-empty file stays one.
+			struct stat model_stat{};
+			if (fstat(model.Get(), &model_stat) != 0) {
+				const int error_number = errno;
+				opened->model_state    = ModelState::kInvalidStorage;
+				opened->model_message =
+				    "Failed to inspect user model file: " + readiness.path.string() + " (" +
+				    SystemErrorMessage(error_number) + ")";
+				return;
+			}
+			if (model_stat.st_size == 0) {
+				opened->model_state = ModelState::kMissing;
 				return;
 			}
 			opened->model_state = ModelState::kReady;
