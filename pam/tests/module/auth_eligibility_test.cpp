@@ -2,28 +2,23 @@
 #include "module/auth_eligibility.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/lid_probe.hpp"
-#include "storage/user_model_readiness.hpp"
-#include "storage/user_model_status.hpp"
 #include "test_support.hpp"
 
 #include <array>
 #include <cstdlib>
 #include <string>
-#include <utility>
 
 namespace {
 
 	using howdy::native::RuntimeConfig;
-	using howdy::native::UserModelReadinessResult;
-	using howdy::native::UserModelStatus;
 	using howdy::pam::auth_eligibility::AuthenticationConditions;
 	using howdy::pam::auth_eligibility::AuthenticationEligibility;
 	using howdy::pam::auth_eligibility::AuthenticationEligibilityOperations;
-	using howdy::pam::auth_eligibility::ClassifyModelReadiness;
 	using howdy::pam::auth_eligibility::ClassifyModelState;
 	using howdy::pam::auth_eligibility::DecideAuthenticationEligibility;
 	using howdy::pam::auth_eligibility::EvaluateAuthenticationEligibility;
 	using howdy::pam::auth_eligibility::ModelCondition;
+	using howdy::pam::auth_eligibility::UserModelFinding;
 	using howdy::pam::runtime::LidProbeStatus;
 	using howdy::pam::runtime::LidState;
 	using howdy::pam::runtime::LidStateResult;
@@ -203,49 +198,17 @@ namespace {
 		    "model states map to eligibility conditions");
 	}
 
-	auto ExpectModelClassification() -> bool {
-		const std::array cases = {
-		    std::pair{UserModelStatus::kOk, ModelCondition::kReady},
-		    std::pair{UserModelStatus::kInvalidUser, ModelCondition::kInvalidUser},
-		    std::pair{UserModelStatus::kNoModel, ModelCondition::kMissingModel},
-		    std::pair{UserModelStatus::kNoModelDirectory, ModelCondition::kMissingModel},
-		    std::pair{UserModelStatus::kIncompatibleBackend, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kIncompatibleModel, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kParseError, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kInvalidShape, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kOversized, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kInsecurePath, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kLockFailed, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kWriteFailed, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kDeleteFailed, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kDurabilityUncertain, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kCommitStateUncertain, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kDirectoryCreateFailed, ModelCondition::kInvalidStorage},
-		    std::pair{UserModelStatus::kModelChanged, ModelCondition::kInvalidStorage},
-		};
-
-		bool ok = true;
-		for (const auto &[status, expected] : cases) {
-			ok &= Expect(ClassifyModelReadiness({.status = status}) == expected,
-			             "storage readiness maps to eligibility condition");
-		}
-		return ok;
-	}
-
 	struct CollectorState {
-		bool                     ssh = false;
-		LidStateResult           lid{.status = LidProbeStatus::kOk, .state = LidState::kOpen};
-		UserModelReadinessResult readiness{.status = UserModelStatus::kOk};
-		int                      ssh_calls = 0;
-		int                      lid_calls = 0;
+		bool             ssh = false;
+		LidStateResult   lid{.status = LidProbeStatus::kOk, .state = LidState::kOpen};
+		UserModelFinding model{.condition = ModelCondition::kReady};
+		int              ssh_calls = 0;
+		int              lid_calls = 0;
 	};
 
-	// The model finding the runtime session would hand over for `state.readiness`.
-	auto Finding(const CollectorState &state) -> howdy::pam::auth_eligibility::UserModelFinding {
-		return {
-		    .condition = ClassifyModelReadiness(state.readiness),
-		    .message   = state.readiness.error_message,
-		};
+	// The model finding the runtime session hands over.
+	auto Finding(const CollectorState &state) -> UserModelFinding {
+		return state.model;
 	}
 
 	auto FakeSsh(void *context, pam_handle_t *pamh) -> bool {
@@ -337,8 +300,8 @@ namespace {
 		                 state.ssh_calls == 1 && state.lid_calls == 1,
 		             "closed-lid diagnostic remains separate and skips model readiness");
 
-		state.lid       = {.status = LidProbeStatus::kOk, .state = LidState::kOpen};
-		state.readiness = {.status = UserModelStatus::kOk};
+		state.lid   = {.status = LidProbeStatus::kOk, .state = LidState::kOpen};
+		state.model = {.condition = ModelCondition::kReady};
 		reset_probe_calls();
 		const auto eligible =
 		    EvaluateAuthenticationEligibility(nullptr, config, "alice", Finding(state), ops);
@@ -359,7 +322,7 @@ namespace {
 		config.core.abort_if_ssh = false;
 		state.ssh                = true;
 		state.lid                = {.status = LidProbeStatus::kOk, .state = LidState::kOpen};
-		state.readiness          = {.status = UserModelStatus::kOk};
+		state.model              = {.condition = ModelCondition::kReady};
 		reset_probe_calls();
 		const auto ssh_allowed =
 		    EvaluateAuthenticationEligibility(nullptr, config, "alice", Finding(state), ops);
@@ -376,7 +339,7 @@ namespace {
 		    .state         = LidState::kUnknown,
 		    .error_message = "lid probe must not run",
 		};
-		state.readiness = {.status = UserModelStatus::kOk};
+		state.model = {.condition = ModelCondition::kReady};
 		reset_probe_calls();
 		const auto lid_allowed =
 		    EvaluateAuthenticationEligibility(nullptr, config, "alice", Finding(state), ops);
@@ -394,7 +357,7 @@ namespace {
 		    .state         = LidState::kUnknown,
 		    .error_message = "lid probe must not run",
 		};
-		state.readiness = {.status = UserModelStatus::kOk};
+		state.model = {.condition = ModelCondition::kReady};
 		reset_probe_calls();
 		const auto probes_disabled =
 		    EvaluateAuthenticationEligibility(nullptr, config, "alice", Finding(state), ops);
@@ -407,9 +370,9 @@ namespace {
 		config.core.abort_if_lid_closed = true;
 		state.ssh                       = false;
 		state.lid                       = {.status = LidProbeStatus::kOk, .state = LidState::kOpen};
-		state.readiness                 = {
-		    .status        = UserModelStatus::kInsecurePath,
-		    .error_message = "insecure model storage",
+		state.model                     = {
+		    .condition = ModelCondition::kInvalidStorage,
+		    .message   = "insecure model storage",
 		};
 		reset_probe_calls();
 		const auto invalid_storage =
@@ -426,7 +389,7 @@ namespace {
 		    .state         = LidState::kUnknown,
 		    .error_message = "lid read failed",
 		};
-		state.readiness = {.status = UserModelStatus::kOk};
+		state.model = {.condition = ModelCondition::kReady};
 		reset_probe_calls();
 		const auto lid_error =
 		    EvaluateAuthenticationEligibility(nullptr, config, "alice", Finding(state), ops);
@@ -437,9 +400,9 @@ namespace {
 		                 state.ssh_calls == 1 && state.lid_calls == 1,
 		             "lid failure keeps independent diagnostic and calls model once");
 
-		state.readiness = {
-		    .status        = UserModelStatus::kInsecurePath,
-		    .error_message = "terminal model failure",
+		state.model = {
+		    .condition = ModelCondition::kInvalidStorage,
+		    .message   = "terminal model failure",
 		};
 		reset_probe_calls();
 		const auto simultaneous_errors =
@@ -465,7 +428,6 @@ namespace {
 auto main() -> int {
 	bool ok = true;
 	ok &= ExpectPurePolicy();
-	ok &= ExpectModelClassification();
 	ok &= ExpectModelStateClassification();
 	ok &= ExpectCollector();
 	return ok ? 0 : 1;

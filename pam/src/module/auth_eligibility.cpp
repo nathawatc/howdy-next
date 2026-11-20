@@ -4,8 +4,6 @@
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/lid_probe.hpp"
 #include "runtime/session_probe.hpp"
-#include "storage/user_model_readiness.hpp"
-#include "storage/user_model_status.hpp"
 
 #include <stdexcept>
 #include <string>
@@ -21,36 +19,6 @@ namespace howdy::pam::auth_eligibility {
 		}
 
 	}  // namespace
-
-	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
-	    -> ModelCondition {
-		using enum howdy::native::UserModelStatus;
-		switch (readiness.status) {
-			case kOk:
-				return ModelCondition::kReady;
-			case kInvalidUser:
-				return ModelCondition::kInvalidUser;
-			case kNoModel:
-			case kNoModelDirectory:
-				return ModelCondition::kMissingModel;
-			case kIncompatibleBackend:
-			case kIncompatibleModel:
-			case kParseError:
-			case kInvalidShape:
-			case kOversized:
-			case kInsecurePath:
-			case kLockFailed:
-			case kWriteFailed:
-			case kAtomicExchangeUnsupported:
-			case kDeleteFailed:
-			case kDurabilityUncertain:
-			case kCommitStateUncertain:
-			case kDirectoryCreateFailed:
-			case kModelChanged:
-				return ModelCondition::kInvalidStorage;
-		}
-		return ModelCondition::kInvalidStorage;
-	}
 
 	auto ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
 	    -> ModelCondition {

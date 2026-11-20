@@ -3,7 +3,6 @@
 #include "config/runtime_config.hpp"
 #include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/lid_probe.hpp"
-#include "storage/user_model_readiness.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -79,8 +78,6 @@ namespace howdy::pam::auth_eligibility {
 		ReadLidStateFn      read_lid_state_      = nullptr;
 	};
 
-	auto ClassifyModelReadiness(const howdy::native::UserModelReadinessResult &readiness)
-	    -> ModelCondition;
 	// The model state the runtime session got from its opener or the auth helper.
 	auto ClassifyModelState(howdy::native::runtime_descriptor_message::ModelState state)
 	    -> ModelCondition;
