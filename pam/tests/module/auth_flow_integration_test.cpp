@@ -10,7 +10,6 @@
 #include "prompt/observed_prompt_conversation.hpp"
 #include "prompt/prompt_coordinator_fake.hpp"
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_invocation.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_process.hpp"
 #include "runtime/lid_probe.hpp"
@@ -155,45 +154,37 @@ namespace {
 			return false;
 		}
 
-		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
-		fixture.runtime.initial_error_code  = EACCES;
-		fixture.runtime.effective_uid       = 1000;
-		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                         {
-		                                             .context      = &dependencies,
-		                                             .authenticate = IdentifyForTest,
-		                                         }) == PAM_SYSTEM_ERR,
-		             "runtime staging preparation failure maps to PAM_SYSTEM_ERR");
-		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
-		             "runtime staging attempts preparation after inaccessible config");
+		const auto authenticate = [&] -> int {
+			return RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
+			                                   {
+			                                       .context      = &dependencies,
+			                                       .authenticate = IdentifyForTest,
+			                                   });
+		};
 
-		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kParseError;
-		fixture.runtime.initial_error_code  = 0;
-		fixture.runtime.effective_uid       = 0;
-		fixture.runtime.load_calls          = 0;
-		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                         {
-		                                             .context      = &dependencies,
-		                                             .authenticate = IdentifyForTest,
-		                                         }) == PAM_SYSTEM_ERR,
+		fixture.runtime.effective_uid = 1000;
+		fixture.runtime.open_result   = false;
+		ok &= Expect(authenticate() == PAM_SYSTEM_ERR,
+		             "a helper that cannot open the runtime files maps to PAM_SYSTEM_ERR");
+		ok &= Expect(fixture.runtime.helper_calls == 1 && fixture.runtime.load_calls == 0,
+		             "a non-root module asks the helper and loads nothing without its result");
+
+		fixture.runtime.effective_uid = 0;
+		fixture.runtime.open_result   = true;
+		fixture.runtime.load_status   = howdy::native::RuntimeConfigLoadStatus::kParseError;
+		fixture.runtime.load_calls    = 0;
+		ok &= Expect(authenticate() == PAM_SYSTEM_ERR,
 		             "runtime configuration failure maps to PAM_SYSTEM_ERR");
-		ok &= Expect(fixture.runtime.prepare_calls == 1 && fixture.runtime.load_calls == 1,
-		             "non-staging runtime failure skips preparation");
+		ok &= Expect(fixture.runtime.helper_calls == 1 && fixture.runtime.load_calls == 1,
+		             "a root module opens the runtime files itself, without the helper");
 
-		fixture.runtime.initial_load_status = howdy::native::RuntimeConfigLoadStatus::kPathError;
-		fixture.runtime.initial_error_code  = EACCES;
-		fixture.runtime.effective_uid       = 1000;
-		fixture.runtime.prepare_result      = true;
-		fixture.runtime.staged_load_status  = howdy::native::RuntimeConfigLoadStatus::kOk;
-		fixture.runtime.load_calls          = 0;
-		ok &= Expect(RunAuthenticationEntrypoint(pam_handle.Get(), {}, true,
-		                                         {
-		                                             .context      = &dependencies,
-		                                             .authenticate = IdentifyForTest,
-		                                         }) == PAM_SUCCESS,
-		             "successful staged runtime continues authentication");
-		ok &= Expect(fixture.runtime.prepare_calls == 2 && fixture.runtime.load_calls == 2,
-		             "successful staged runtime reloads config without generation cleanup");
+		fixture.runtime.effective_uid = 1000;
+		fixture.runtime.load_status   = howdy::native::RuntimeConfigLoadStatus::kOk;
+		fixture.runtime.load_calls    = 0;
+		ok &= Expect(authenticate() == PAM_SUCCESS,
+		             "runtime files from the helper continue authentication");
+		ok &= Expect(fixture.runtime.helper_calls == 2 && fixture.runtime.load_calls == 1,
+		             "the helper's config descriptor is loaded once");
 		return ok;
 	}
 
@@ -330,7 +321,7 @@ namespace {
 		expect_ineligible("globally disabled");
 		expect_count("globally disabled", "SSH", fixture.eligibility.ssh_calls, 0);
 		expect_count("globally disabled", "lid", fixture.eligibility.lid_calls, 0);
-		expect_count("globally disabled", "model", fixture.eligibility.model_calls, 0);
+		expect_count("globally disabled", "model", fixture.eligibility.model_calls, 1);
 
 		fixture.runtime.disabled      = false;
 		fixture.eligibility.ssh       = true;
@@ -339,7 +330,7 @@ namespace {
 		expect_ineligible("SSH session");
 		expect_count("SSH session", "SSH", fixture.eligibility.ssh_calls, 1);
 		expect_count("SSH session", "lid", fixture.eligibility.lid_calls, 0);
-		expect_count("SSH session", "model", fixture.eligibility.model_calls, 0);
+		expect_count("SSH session", "model", fixture.eligibility.model_calls, 1);
 
 		fixture.eligibility.ssh       = false;
 		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kClosed};
@@ -347,7 +338,7 @@ namespace {
 		expect_ineligible("closed lid");
 		expect_count("closed lid", "SSH", fixture.eligibility.ssh_calls, 1);
 		expect_count("closed lid", "lid", fixture.eligibility.lid_calls, 1);
-		expect_count("closed lid", "model", fixture.eligibility.model_calls, 0);
+		expect_count("closed lid", "model", fixture.eligibility.model_calls, 1);
 
 		fixture.eligibility.lid       = {.state = howdy::pam::runtime::LidState::kOpen};
 		fixture.eligibility.readiness = {
@@ -426,16 +417,15 @@ namespace {
 	}
 
 	struct ProductionPromptSpawnState {
-		int         calls         = 0;
-		int         child_exit    = EXIT_SUCCESS;
-		pid_t       child_pid     = -1;
-		bool        request_valid = false;
-		std::string expected_config_path;
+		int   calls         = 0;
+		int   child_exit    = EXIT_SUCCESS;
+		pid_t child_pid     = -1;
+		bool  request_valid = false;
 	};
 
 	auto SpawnProductionCompare(const howdy::pam::compare_process::SpawnRequest &request) -> int {
 		auto *state = static_cast<ProductionPromptSpawnState *>(request.context);
-		if (state == nullptr || request.child_pid == nullptr || request.argv.size() != 5 ||
+		if (state == nullptr || request.child_pid == nullptr || request.argv.size() != 3 ||
 		    request.envp.empty()) {
 			return EINVAL;
 		}
@@ -447,29 +437,22 @@ namespace {
 		     })) {
 			environment.emplace_back(entry);
 		}
-		auto        arguments     = request.argv;
-		const char *program       = arguments.front();
-		arguments                 = arguments.subspan(1);
-		const char *config_option = arguments.front();
-		arguments                 = arguments.subspan(1);
-		const char *config_path   = arguments.front();
-		arguments                 = arguments.subspan(1);
-		const char *username      = arguments.front();
-		arguments                 = arguments.subspan(1);
-		const char *terminator    = arguments.front();
+		auto        arguments  = request.argv;
+		const char *program    = arguments.front();
+		arguments              = arguments.subspan(1);
+		const char *username   = arguments.front();
+		arguments              = arguments.subspan(1);
+		const char *terminator = arguments.front();
 		state->request_valid =
 		    request.path != nullptr && std::string_view(request.path) == kCompareProcessPath &&
 		    request.actions != nullptr && program != nullptr &&
-		    std::string_view(program) == kCompareProcessPath && config_option != nullptr &&
-		    std::string_view(config_option) == howdy::native::kCompareConfigOption &&
-		    config_path != nullptr &&
-		    std::string_view(config_path) == state->expected_config_path && username != nullptr &&
+		    std::string_view(program) == kCompareProcessPath && username != nullptr &&
 		    std::string_view(username) == "test-user" && terminator == nullptr &&
 		    request.envp.size() == environment.size() + 1 &&
 		    environment == std::vector<std::string>{
-		                       "OPENBLAS_NUM_THREADS=1",
-		                       "OMP_NUM_THREADS=1",
-		                       "HOWDY_COMPARE_VERDICT_FD=3",
+		                       "OPENBLAS_NUM_THREADS=1",     "OMP_NUM_THREADS=1",
+		                       "HOWDY_COMPARE_VERDICT_FD=3", "HOWDY_COMPARE_CONFIG_FD=4",
+		                       "HOWDY_COMPARE_MODEL_FD=5",
 		                   };
 		const pid_t child_pid = fork();
 		if (child_pid < 0) {
@@ -495,11 +478,9 @@ namespace {
 
 	auto ExpectProductionPromptComposition() -> bool {
 		ProductionPromptSpawnState spawn_state;
-		// The default fixture loads the configured config directly, without staging.
-		spawn_state.expected_config_path = kConfiguredConfigPath;
-		auto compare_operations          = howdy::pam::compare_process::ProductionOperations();
-		compare_operations.context       = &spawn_state;
-		compare_operations.spawn         = SpawnProductionCompare;
+		auto compare_operations    = howdy::pam::compare_process::ProductionOperations();
+		compare_operations.context = &spawn_state;
+		compare_operations.spawn   = SpawnProductionCompare;
 		auto const production_prompt =
 		    howdy::pam::ProductionPromptCoordinatorOperations(compare_operations);
 
@@ -780,10 +761,9 @@ namespace {
 				             "invalid coordinator timeout maps to PAM_SYSTEM_ERR");
 				ok &= Expect(fixture.runtime.load_calls == 1,
 				             "invalid timeout loads runtime config once");
-				ok &= Expect(fixture.eligibility.ssh_calls == 0 &&
-				                 fixture.eligibility.lid_calls == 0 &&
-				                 fixture.eligibility.model_calls == 0,
-				             "invalid timeout stops before evaluating eligibility probes");
+				ok &=
+				    Expect(fixture.eligibility.ssh_calls == 0 && fixture.eligibility.lid_calls == 0,
+					       "invalid timeout stops before evaluating eligibility probes");
 				ok &= Expect(state.calls == 0,
 				             "invalid timeout stops before PAM conversation or detection notice");
 				ok &= Expect(prompt_context.spawn_calls == 0,

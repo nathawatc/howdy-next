@@ -50,9 +50,9 @@ namespace howdy::test::prompt_coordinator {
 		std::chrono::milliseconds        token_delay{0};
 		PromptCoordinator               *coordinator_for_submission = nullptr;
 		howdy::pam::SecretPromptObserver secret_prompt_observer{};
-		std::string                      spawned_config_path;
 		std::string                      spawned_username;
-		std::string                      spawned_user_models_dir;
+		int                              spawned_config_fd = -1;
+		int                              spawned_model_fd  = -1;
 		std::mutex                       reap_mutex;
 		std::mutex                       token_mutex;
 		std::mutex                       submission_mutex;
@@ -137,7 +137,6 @@ namespace howdy::test::prompt_coordinator {
 		std::atomic<bool> native_prompt_completed{false};
 		std::atomic<bool> pam_completion_observed_by_waiter{false};
 		bool              suppress_secret_prompt = false;
-		bool              spawned_staged_runtime = false;
 		bool              throw_after_spawn      = false;
 		bool              fail_after_spawn       = false;
 	};
@@ -269,10 +268,9 @@ namespace howdy::test::prompt_coordinator {
 		*verdict_fd = -1;
 
 		++fake.spawn_calls;
-		fake.spawned_config_path     = std::string(request.config_path);
-		fake.spawned_username        = std::string(request.username);
-		fake.spawned_user_models_dir = std::string(request.user_models_dir);
-		fake.spawned_staged_runtime  = request.staged_runtime;
+		fake.spawned_username  = std::string(request.username);
+		fake.spawned_config_fd = request.config_fd;
+		fake.spawned_model_fd  = request.model_fd;
 
 		if (fake.spawn_result != 0) {
 			return fake.spawn_result;
@@ -630,16 +628,14 @@ namespace howdy::test::prompt_coordinator {
 		};
 	}
 
-	inline auto MakeCompareRequest(std::string_view config_path     = "/etc/howdy/config.ini",
-	                               std::string_view username        = "alice",
-	                               std::string_view user_models_dir = "/etc/howdy/models",
-	                               bool             staged_runtime  = false)
-	    -> howdy::pam::CompareLaunchRequest {
+	// The fake spawn never touches the descriptors, so any numbers do; tests that run the
+	// production spawn pass real ones.
+	inline auto MakeCompareRequest(std::string_view username = "alice", int config_fd = 40,
+	                               int model_fd = 41) -> howdy::pam::CompareLaunchRequest {
 		return {
-		    .config_path     = std::string(config_path),
-		    .username        = std::string(username),
-		    .user_models_dir = std::string(user_models_dir),
-		    .staged_runtime  = staged_runtime,
+		    .username  = std::string(username),
+		    .config_fd = config_fd,
+		    .model_fd  = model_fd,
 		};
 	}
 

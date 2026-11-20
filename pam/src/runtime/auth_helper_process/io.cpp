@@ -5,7 +5,6 @@
 #include "internal.hpp"
 #include "protocol/compare_exit.hpp"
 #include "runtime/child_process.hpp"
-#include "support/error_message.hpp"
 #include "support/process_status.hpp"
 
 #include <algorithm>
@@ -31,11 +30,6 @@ namespace {
 }  // namespace
 
 namespace howdy::pam::auth_helper_process::internal {
-
-	void LogAuthHelperReadError(int error_number) {
-		syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Failed to read auth helper output: %s (%d)",
-		       howdy::native::SystemErrorMessage(error_number).c_str(), error_number);
-	}
 
 	auto DeadlinePollTimeout(HelperDeadline deadline) -> int {
 		const auto remaining = deadline - std::chrono::steady_clock::now();
@@ -103,8 +97,7 @@ namespace howdy::pam::auth_helper_process::internal {
 							   : HelperWaitResult::kExited;
 				case ChildState::kError:
 					// ECHILD: reaped elsewhere, so there is nothing left that is ours to stop, and
-					// the exit status is gone. Any other failure leaves a live helper holding its
-					// lease; stop it.
+					// the exit status is gone. Any other failure leaves a live helper; stop it.
 					if (errno == ECHILD) {
 						return ReapedElsewhereResult(deadline);
 					}

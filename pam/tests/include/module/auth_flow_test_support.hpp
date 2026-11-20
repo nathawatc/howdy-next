@@ -1,7 +1,9 @@
 #pragma once
 #include "module/auth_flow.hpp"
 #include "pam_test_support.hpp"
-#include "protocol/auth_helper_protocol.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
+#include "storage/user_model_readiness.hpp"
+#include "storage/user_model_status.hpp"
 
 #include <array>
 #include <chrono>
@@ -63,6 +65,56 @@ namespace howdy::test::auth_flow {
 		kSecret,
 	};
 
+	// A real file the fake opener hands out, so the runtime session's descriptor checks pass
+	// for the test's own UID (IdentifyDependencies::runtime_owner_uid).
+	inline auto FlowDescriptorPath() -> const std::filesystem::path & {
+		class DescriptorFile {
+		public:
+			DescriptorFile() {
+				const howdy::native::ScopedFd file(
+				    open(path_.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600));
+			}
+
+			DescriptorFile(const DescriptorFile &)                     = delete;
+			auto operator=(const DescriptorFile &) -> DescriptorFile & = delete;
+			DescriptorFile(DescriptorFile &&)                          = delete;
+			auto operator=(DescriptorFile &&) -> DescriptorFile &      = delete;
+
+			~DescriptorFile() {
+				(void)unlink(path_.c_str());
+			}
+
+			[[nodiscard]] auto Path() const -> const std::filesystem::path & {
+				return path_;
+			}
+
+		private:
+			std::filesystem::path path_ =
+			    std::filesystem::current_path() /
+			    ("howdy-auth-flow-descriptor-" + std::to_string(getpid()));
+		};
+
+		static const DescriptorFile kDescriptorFile;
+		return kDescriptorFile.Path();
+	}
+
+	// The opener's model state for a readiness result.
+	inline auto FlowModelState(const howdy::native::UserModelReadinessResult &readiness)
+	    -> howdy::native::runtime_descriptor_message::ModelState {
+		using howdy::native::runtime_descriptor_message::ModelState;
+		switch (readiness.status) {
+			case howdy::native::UserModelStatus::kOk:
+				return ModelState::kReady;
+			case howdy::native::UserModelStatus::kNoModel:
+			case howdy::native::UserModelStatus::kNoModelDirectory:
+				return ModelState::kMissing;
+			case howdy::native::UserModelStatus::kInvalidUser:
+				return ModelState::kInvalidUser;
+			default:
+				return ModelState::kInvalidStorage;
+		}
+	}
+
 	struct ConversationState {
 		int          result        = PAM_SUCCESS;
 		int          calls         = 0;
@@ -75,16 +127,14 @@ namespace howdy::test::auth_flow {
 		bool                                   disabled         = false;
 		bool                                   detection_notice = true;
 		int                                    load_calls       = 0;
-		int                                    prepare_calls    = 0;
+		int                                    in_process_calls = 0;
+		int                                    helper_calls     = 0;
 		int                                    timeout          = 5;
 		uid_t                                  effective_uid    = 0;
-		bool                                   prepare_result   = false;
-		howdy::native::RuntimeConfigLoadStatus initial_load_status =
+		bool                                   open_result      = true;
+		howdy::native::RuntimeConfigLoadStatus load_status =
 		    howdy::native::RuntimeConfigLoadStatus::kOk;
-		howdy::native::RuntimeConfigLoadStatus staged_load_status =
-		    howdy::native::RuntimeConfigLoadStatus::kOk;
-		int initial_error_code = 0;
-		int staged_error_code  = 0;
+		int load_error_code = 0;
 	};
 
 	struct EligibilityFlowState {
@@ -112,57 +162,62 @@ namespace howdy::test::auth_flow {
 		PromptFlowState      prompt;
 	};
 
-	inline auto FlowPrepareRuntime(void *context, std::string_view username,
-	                               howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
-		(void)username;
-		auto *state = static_cast<RuntimeFlowState *>(context);
-		++state->prepare_calls;
-		if (!state->prepare_result) {
+	// The fake opener: real descriptors for a real file, and the model state the fixture's
+	// readiness result calls for. Counted as a model check, which the opener always makes.
+	inline auto FlowOpenDescriptors(EligibilityFlowFixture           *fixture,
+	                                howdy::pam::RuntimeDescriptorSet *descriptors) -> bool {
+		++fixture->eligibility.model_calls;
+		if (!fixture->runtime.open_result) {
 			return false;
 		}
-		const auto root = howdy::native::auth_helper_protocol::PreparedRuntimeGenerationDir(
-		    howdy::native::auth_helper_protocol::PreparedRuntimeRoot(), getuid(),
-		    howdy::native::auth_helper_protocol::RuntimeGenerationSlot::kSlot0);
-		std::array<int, 2> lease_pipe = {-1, -1};
-		if (pipe2(lease_pipe.data(), O_CLOEXEC) != 0) {
-			return false;
+		const auto &path    = FlowDescriptorPath();
+		descriptors->config = howdy::native::ScopedFd(open(path.c_str(), O_RDONLY | O_CLOEXEC));
+		descriptors->model_state   = FlowModelState(fixture->eligibility.readiness);
+		descriptors->model_message = fixture->eligibility.readiness.error_message;
+		if (descriptors->model_state ==
+		    howdy::native::runtime_descriptor_message::ModelState::kReady) {
+			descriptors->model = howdy::native::ScopedFd(open(path.c_str(), O_RDONLY | O_CLOEXEC));
 		}
-		(void)close(lease_pipe.at(1));
-		*prepared = {
-		    .root_dir    = root,
-		    .config_path = howdy::native::auth_helper_protocol::PreparedConfigPath(root).string(),
-		    .user_models_dir =
-		        howdy::native::auth_helper_protocol::PreparedUserModelsDir(root).string(),
-		    .lease_fd = howdy::native::ScopedFd(lease_pipe.at(0)),
-		};
 		return true;
 	}
 
-	inline auto FlowLoadRuntimeConfig(void *context, const std::filesystem::path &path)
+	inline auto FlowOpenThroughHelper(void *context, std::string_view username,
+	                                  howdy::pam::RuntimeDescriptorSet *descriptors) -> bool {
+		(void)username;
+		auto *fixture = static_cast<EligibilityFlowFixture *>(context);
+		++fixture->runtime.helper_calls;
+		return FlowOpenDescriptors(fixture, descriptors);
+	}
+
+	inline auto FlowEffectiveUid(void *context) -> uid_t {
+		return static_cast<const EligibilityFlowFixture *>(context)->runtime.effective_uid;
+	}
+
+	inline auto FlowLoadRuntimeConfig(void *context, int config_fd,
+	                                  const std::filesystem::path &path, uid_t owner_uid)
 	    -> howdy::native::RuntimeConfigLoadResult {
-		auto *state = static_cast<RuntimeFlowState *>(context);
-		++state->load_calls;
-		const bool staged_load = state->load_calls > 1;
-		const auto status = staged_load ? state->staged_load_status : state->initial_load_status;
-		const int  error_code = staged_load ? state->staged_error_code : state->initial_error_code;
-		if (status != howdy::native::RuntimeConfigLoadStatus::kOk) {
+		(void)config_fd;
+		(void)owner_uid;
+		auto &state = static_cast<EligibilityFlowFixture *>(context)->runtime;
+		++state.load_calls;
+		if (state.load_status != howdy::native::RuntimeConfigLoadStatus::kOk) {
 			return {
 			    .ok            = false,
-			    .status        = status,
+			    .status        = state.load_status,
 			    .path          = path,
 			    .config        = std::nullopt,
 			    .error_message = "flow runtime configuration failure",
-			    .error_code    = error_code,
+			    .error_code    = state.load_error_code,
 			};
 		}
 
 		howdy::native::RuntimeConfig config;
-		config.core.detection_notice    = state->detection_notice;
+		config.core.detection_notice    = state.detection_notice;
 		config.core.no_confirmation     = true;
 		config.core.abort_if_ssh        = true;
 		config.core.abort_if_lid_closed = true;
-		config.core.disabled            = state->disabled;
-		config.video.timeout            = state->timeout;
+		config.core.disabled            = state.disabled;
+		config.video.timeout            = state.timeout;
 		return {
 		    .ok            = true,
 		    .status        = howdy::native::RuntimeConfigLoadStatus::kOk,
@@ -173,9 +228,12 @@ namespace howdy::test::auth_flow {
 		};
 	}
 
-	inline auto FlowEffectiveUid(void *context) -> uid_t {
-		auto const *state = static_cast<RuntimeFlowState *>(context);
-		return state->effective_uid;
+	inline auto FlowOpenInProcess(void *context, std::string_view username,
+	                              const howdy::pam::RuntimeSessionPaths &paths,
+	                              howdy::pam::RuntimeDescriptorSet      *descriptors) -> bool {
+		(void)username;
+		(void)paths;
+		return FlowOpenDescriptors(static_cast<EligibilityFlowFixture *>(context), descriptors);
 	}
 
 	inline auto FlowSshSessionPresent(void *context, pam_handle_t *pamh) -> bool {
@@ -189,16 +247,6 @@ namespace howdy::test::auth_flow {
 		auto *state = static_cast<EligibilityFlowState *>(context);
 		++state->lid_calls;
 		return state->lid;
-	}
-
-	inline auto FlowCheckModelReadiness(void *context, const std::filesystem::path &models_dir,
-	                                    const char *username)
-	    -> howdy::native::UserModelReadinessResult {
-		(void)models_dir;
-		(void)username;
-		auto *state = static_cast<EligibilityFlowState *>(context);
-		++state->model_calls;
-		return state->readiness;
 	}
 
 	// NOLINTBEGIN(bugprone-easily-swappable-parameters)
@@ -273,15 +321,15 @@ namespace howdy::test::auth_flow {
 	inline auto MakeEligibilityFlowDependencies(EligibilityFlowFixture *fixture)
 	    -> howdy::pam::auth_flow::IdentifyDependencies {
 		auto runtime_ops = howdy::pam::RuntimeSessionOperations::Create(
-		    &fixture->runtime, FlowPrepareRuntime, FlowLoadRuntimeConfig, FlowEffectiveUid);
+		    fixture, FlowOpenInProcess, FlowOpenThroughHelper, FlowLoadRuntimeConfig,
+		    FlowEffectiveUid);
 		auto prompt_ops = howdy::pam::PromptCoordinatorOperations::Create(
 		    &fixture->prompt, FlowSpawnCompare, FlowWaitCompare, FlowCancelAndReapCompare,
 		    FlowInputPromptPreflight, FlowCreatePromptSubmitter, FlowCreateNativePrompt,
 		    FlowCreateSecretPromptConversation, FlowRequestAuthToken);
 		auto eligibility_ops =
 		    howdy::pam::auth_eligibility::AuthenticationEligibilityOperations::Create(
-		        &fixture->eligibility, FlowSshSessionPresent, FlowReadLidState,
-		        FlowCheckModelReadiness);
+		        &fixture->eligibility, FlowSshSessionPresent, FlowReadLidState);
 		if (!runtime_ops.has_value() || !prompt_ops.has_value() || !eligibility_ops.has_value()) {
 			std::abort();
 		}
@@ -289,6 +337,7 @@ namespace howdy::test::auth_flow {
 		    .runtime_session    = *std::move(runtime_ops),
 		    .prompt_coordinator = *std::move(prompt_ops),
 		    .eligibility        = *std::move(eligibility_ops),
+		    .runtime_owner_uid  = geteuid(),
 		};
 	}
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "protocol/compare_verdict.hpp"
 #include "runtime/child_process.hpp"
 #include "runtime/compare_launch.hpp"
 #include "runtime/compare_process.hpp"
@@ -8,10 +9,12 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <vector>
 
+#include <fcntl.h>
 #include <spawn.h>
 #include <unistd.h>
 
@@ -20,13 +23,21 @@
 
 namespace howdy::test::prompt_coordinator {
 
+	struct Dup2Action {
+		int fd     = -1;
+		int new_fd = -1;
+	};
+
 	struct PosixSpawnCapture {
-		int init_calls       = 0;
-		int adddup2_calls    = 0;
-		int adddup2_fd       = -1;
-		int adddup2_new_fd   = -1;
-		int adddup2_result   = 0;
-		int socketpair_error = 0;
+		int init_calls    = 0;
+		int adddup2_calls = 0;
+		// Every dup2 action in order, as Spawn added them.
+		std::vector<Dup2Action> adddup2;
+		// adddup2_result is returned by the call with this index (0-based), or by every call when
+		// it is -1.
+		int adddup2_fail_index = -1;
+		int adddup2_result     = 0;
+		int socketpair_error   = 0;
 		// Read end of a gate a spawn callback's child may wait on, or -1.
 		int                               spawn_gate_fd       = -1;
 		int                               addclosefrom_calls  = 0;
@@ -71,11 +82,12 @@ namespace howdy::test::prompt_coordinator {
 	                                                int new_fd) -> int {
 		// NOLINTEND(bugprone-easily-swappable-parameters)
 		(void)actions;
-		auto &capture = *static_cast<PosixSpawnCapture *>(context);
-		++capture.adddup2_calls;
-		capture.adddup2_fd     = fd;
-		capture.adddup2_new_fd = new_fd;
-		return capture.adddup2_result;
+		auto     &capture = *static_cast<PosixSpawnCapture *>(context);
+		const int index   = capture.adddup2_calls++;
+		capture.adddup2.push_back({.fd = fd, .new_fd = new_fd});
+		return capture.adddup2_fail_index < 0 || capture.adddup2_fail_index == index
+		           ? capture.adddup2_result
+				   : 0;
 	}
 
 	inline auto CapturePosixSpawnFileActionsAddclosefrom(void                       *context,
@@ -141,6 +153,37 @@ namespace howdy::test::prompt_coordinator {
 		    .spawn                     = CapturePosixSpawn,
 		};
 	}
+
+	// The source Spawn placed at `new_fd` in compare, if it added that action.
+	inline auto Dup2SourceFor(const PosixSpawnCapture &capture, int new_fd) -> std::optional<int> {
+		for (const auto &action : capture.adddup2) {
+			if (action.new_fd == new_fd) {
+				return action.fd;
+			}
+		}
+		return std::nullopt;
+	}
+
+	// Real descriptors for a compare request, which the production Spawn copies before placing.
+	class CompareRequestFiles {
+	public:
+		[[nodiscard]] auto Request(const std::string &username = "alice") const
+		    -> howdy::pam::CompareLaunchRequest {
+			return {.username = username, .config_fd = config_.Get(), .model_fd = model_.Get()};
+		}
+
+		[[nodiscard]] auto ConfigFd() const -> int {
+			return config_.Get();
+		}
+
+		[[nodiscard]] auto ModelFd() const -> int {
+			return model_.Get();
+		}
+
+	private:
+		howdy::native::ScopedFd config_{open("/dev/null", O_RDONLY | O_CLOEXEC)};
+		howdy::native::ScopedFd model_{open("/dev/null", O_RDONLY | O_CLOEXEC)};
+	};
 
 	// Waits for a child the test forked itself. Production takes the pidfd at spawn; a test may
 	// open it here because it knows the child is still its own unreaped child.

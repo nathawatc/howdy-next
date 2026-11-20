@@ -3,9 +3,10 @@
 #endif
 
 #include "internal.hpp"
-#include "protocol/auth_helper_protocol.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/auth_helper_process.hpp"
 #include "runtime/child_process.hpp"
+#include "support/bit_flags.hpp"
 #include "support/error_message.hpp"
 
 #include <array>
@@ -26,15 +27,15 @@ namespace {
 
 	using AuthHelperOperations   = howdy::pam::auth_helper_process::Operations;
 	using AuthHelperSpawnRequest = howdy::pam::auth_helper_process::SpawnRequest;
+	using howdy::native::runtime_descriptor_message::kHelperSocketFd;
+	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
+	using howdy::pam::auth_helper_process::internal::HelperSpawn;
 	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
-	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 	using howdy::pam::auth_helper_process::internal::ProcessChannel;
 
-	auto ProductionPipe2(void *context, int *pipe_fds, int flags) -> int {
-		(void)context;
-		return pipe2(pipe_fds, flags);
-	}
+	constexpr auto kNullDevice = "/dev/null";
 
+	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	auto ProductionSocketpair(void *context, int domain, int type, int protocol, int *socket_fds)
 	    -> int {
 		(void)context;
@@ -51,16 +52,16 @@ namespace {
 		return posix_spawn_file_actions_init(actions);
 	}
 
+	auto ProductionActionsAddopen(void *context, posix_spawn_file_actions_t *actions, int fd,
+	                              const char *path, int flags) -> int {
+		(void)context;
+		return posix_spawn_file_actions_addopen(actions, fd, path, flags, 0);
+	}
+
 	auto ProductionActionsAdddup2(void *context, posix_spawn_file_actions_t *actions, int source_fd,
 	                              int target_fd) -> int {
 		(void)context;
 		return posix_spawn_file_actions_adddup2(actions, source_fd, target_fd);
-	}
-
-	auto ProductionActionsAddclose(void *context, posix_spawn_file_actions_t *actions, int fd)
-	    -> int {
-		(void)context;
-		return posix_spawn_file_actions_addclose(actions, fd);
 	}
 
 	auto ProductionActionsAddclosefrom(void *context, posix_spawn_file_actions_t *actions,
@@ -85,40 +86,33 @@ namespace {
 		return close(fd);
 	}
 
-	auto NormalizePipeFds(const AuthHelperOperations &operations, ProcessChannel &channel,
-	                      int minimum_fd) -> bool {
-		for (int &pipe_fd : channel.Descriptors()) {
-			if (pipe_fd >= minimum_fd) {
+	// Moves both ends above the helper's socket descriptor, so the dup2 onto it in the child
+	// never meets one of them (a dup2 onto itself would also leave it close-on-exec).
+	auto RaiseSocketEnds(const AuthHelperOperations &operations, ProcessChannel &channel) -> bool {
+		for (int &end : channel.Descriptors()) {
+			if (end > kHelperSocketFd) {
 				continue;
 			}
-			const int normalized_fd =
-			    operations.duplicate_fd(operations.context, pipe_fd, minimum_fd);
-			if (normalized_fd < 0) {
+			const int raised =
+			    operations.duplicate_fd(operations.context, end, kHelperSocketFd + 1);
+			if (raised < 0) {
 				LogAuthHelperFailure(operations, "fcntl(F_DUPFD_CLOEXEC)", errno);
-				howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-				                                                        channel.Parent());
-				howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-				                                                        channel.Child());
+				CloseOwnedFd(operations, channel.Parent());
+				CloseOwnedFd(operations, channel.Child());
 				return false;
 			}
-			howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations, pipe_fd);
-			pipe_fd = normalized_fd;
+			CloseOwnedFd(operations, end);
+			end = raised;
 		}
 		return true;
 	}
 
-	auto FailSpawnSetup(const AuthHelperOperations &operations, PreparedHelperSpawn *spawn,
+	auto FailSpawnSetup(const AuthHelperOperations &operations, HelperSpawn *spawn,
 	                    const char *operation, int error_code) -> bool {
 		LogAuthHelperFailure(operations, operation, error_code);
 		howdy::pam::auth_helper_process::internal::DestroySpawnActions(operations, *spawn);
-		howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-		                                                        spawn->output_pipe.Parent());
-		howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-		                                                        spawn->output_pipe.Child());
-		howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-		                                                        spawn->lease_socket.Parent());
-		howdy::pam::auth_helper_process::internal::CloseOwnedFd(operations,
-		                                                        spawn->lease_socket.Child());
+		CloseOwnedFd(operations, spawn->socket.Parent());
+		CloseOwnedFd(operations, spawn->socket.Child());
 		return false;
 	}
 
@@ -153,23 +147,20 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
-	PreparedHelperCleanup::PreparedHelperCleanup(const Operations    &operations,
-	                                             PreparedHelperSpawn &spawn)
+	HelperSpawnCleanup::HelperSpawnCleanup(const Operations &operations, HelperSpawn &spawn)
 	    : operations_(operations)
 	    , spawn_(spawn) {}
 
-	PreparedHelperCleanup::~PreparedHelperCleanup() {
+	HelperSpawnCleanup::~HelperSpawnCleanup() {
 		DestroySpawnActions(operations_, spawn_);
-		CloseOwnedFd(operations_, spawn_.output_pipe.Parent());
-		CloseOwnedFd(operations_, spawn_.output_pipe.Child());
-		CloseOwnedFd(operations_, spawn_.lease_socket.Parent());
-		CloseOwnedFd(operations_, spawn_.lease_socket.Child());
+		CloseOwnedFd(operations_, spawn_.socket.Parent());
+		CloseOwnedFd(operations_, spawn_.socket.Child());
 		if (spawn_.child_pid > 0) {
 			(void)TerminateAndReapHelperProcess(spawn_.child_pid, spawn_.child_pidfd.Get());
 		}
 	}
 
-	void DestroySpawnActions(const Operations &operations, PreparedHelperSpawn &spawn) noexcept {
+	void DestroySpawnActions(const Operations &operations, HelperSpawn &spawn) noexcept {
 		if (!std::exchange(spawn.actions_initialized, false)) {
 			return;
 		}
@@ -186,12 +177,11 @@ namespace howdy::pam::auth_helper_process::internal {
 
 	auto ProductionOperations() -> AuthHelperOperations {
 		return {
-		    .pipe2                = ProductionPipe2,
 		    .socketpair           = ProductionSocketpair,
 		    .duplicate_fd         = ProductionDuplicateFd,
 		    .actions_init         = ProductionActionsInit,
+		    .actions_addopen      = ProductionActionsAddopen,
 		    .actions_adddup2      = ProductionActionsAdddup2,
-		    .actions_addclose     = ProductionActionsAddclose,
 		    .actions_addclosefrom = ProductionActionsAddclosefrom,
 		    .actions_destroy      = ProductionActionsDestroy,
 		    .spawn                = ProductionSpawn,
@@ -212,92 +202,66 @@ namespace howdy::pam::auth_helper_process::internal {
 		}
 	}
 
-	auto SetupHelperSpawn(const AuthHelperOperations &operations, PreparedHelperSpawn *spawn)
-	    -> bool {
-		if (operations.pipe2(operations.context, spawn->output_pipe.Data(), O_CLOEXEC) != 0) {
-			spawn->output_pipe = ProcessChannel{};
-			LogAuthHelperFailure(operations, "pipe2", errno);
-			return false;
-		}
-		if (!NormalizePipeFds(operations, spawn->output_pipe, STDERR_FILENO + 1)) {
-			return false;
-		}
-		if (operations.socketpair(operations.context, AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0,
-		                          spawn->lease_socket.Data()) != 0) {
-			spawn->lease_socket = ProcessChannel{};
+	// The helper gets /dev/null as stdio (its diagnostics go to syslog), its end of the socket at
+	// kHelperSocketFd, and nothing else.
+	auto SetupHelperSpawn(const AuthHelperOperations &operations, HelperSpawn *spawn) -> bool {
+		if (operations.socketpair(operations.context, AF_UNIX,
+		                          howdy::native::CombineBitsAs<int>(SOCK_SEQPACKET, SOCK_CLOEXEC),
+		                          0, spawn->socket.Data()) != 0) {
+			spawn->socket = ProcessChannel{};
 			LogAuthHelperFailure(operations, "socketpair", errno);
-			CloseOwnedFd(operations, spawn->output_pipe.Parent());
-			CloseOwnedFd(operations, spawn->output_pipe.Child());
 			return false;
 		}
-		if (!NormalizePipeFds(operations, spawn->lease_socket,
-		                      howdy::native::auth_helper_protocol::kLeaseSocketFd + 1)) {
-			CloseOwnedFd(operations, spawn->output_pipe.Parent());
-			CloseOwnedFd(operations, spawn->output_pipe.Child());
+		if (!RaiseSocketEnds(operations, spawn->socket)) {
 			return false;
 		}
 		const int init_result = operations.actions_init(operations.context, &spawn->actions);
 		if (init_result != 0) {
 			LogAuthHelperFailure(operations, "posix_spawn_file_actions_init", init_result);
-			CloseOwnedFd(operations, spawn->output_pipe.Parent());
-			CloseOwnedFd(operations, spawn->output_pipe.Child());
-			CloseOwnedFd(operations, spawn->lease_socket.Parent());
-			CloseOwnedFd(operations, spawn->lease_socket.Child());
+			CloseOwnedFd(operations, spawn->socket.Parent());
+			CloseOwnedFd(operations, spawn->socket.Child());
 			return false;
 		}
 		spawn->actions_initialized = true;
 
-		int result = operations.actions_addclose(operations.context, &spawn->actions,
-		                                         spawn->output_pipe.Parent());
-		if (result != 0) {
-			return FailSpawnSetup(operations, spawn,
-			                      "posix_spawn_file_actions_addclose(pipe read end)", result);
-		}
-		result = operations.actions_adddup2(operations.context, &spawn->actions,
-		                                    spawn->output_pipe.Child(), STDOUT_FILENO);
-		if (result != 0) {
-			return FailSpawnSetup(operations, spawn,
-			                      "posix_spawn_file_actions_adddup2(STDOUT_FILENO)", result);
-		}
-		result = operations.actions_adddup2(operations.context, &spawn->actions,
-		                                    spawn->output_pipe.Child(), STDERR_FILENO);
-		if (result != 0) {
-			return FailSpawnSetup(operations, spawn,
-			                      "posix_spawn_file_actions_adddup2(STDERR_FILENO)", result);
-		}
-		if (spawn->output_pipe.Child() != STDOUT_FILENO &&
-		    spawn->output_pipe.Child() != STDERR_FILENO) {
-			result = operations.actions_addclose(operations.context, &spawn->actions,
-			                                     spawn->output_pipe.Child());
+		struct StdioTarget {
+			int         fd;
+			int         flags;
+			const char *operation;
+		};
+
+		for (const auto &target : {
+		         StdioTarget{
+		             .fd        = STDIN_FILENO,
+		             .flags     = O_RDONLY,
+		             .operation = "posix_spawn_file_actions_addopen(stdin)",
+		         },
+		         StdioTarget{
+		             .fd        = STDOUT_FILENO,
+		             .flags     = O_WRONLY,
+		             .operation = "posix_spawn_file_actions_addopen(stdout)",
+		         },
+		         StdioTarget{
+		             .fd        = STDERR_FILENO,
+		             .flags     = O_WRONLY,
+		             .operation = "posix_spawn_file_actions_addopen(stderr)",
+		         },
+		     }) {
+			const int result = operations.actions_addopen(operations.context, &spawn->actions,
+			                                              target.fd, kNullDevice, target.flags);
 			if (result != 0) {
-				return FailSpawnSetup(operations, spawn,
-				                      "posix_spawn_file_actions_addclose(pipe write end)", result);
+				return FailSpawnSetup(operations, spawn, target.operation, result);
 			}
 		}
-		result = operations.actions_addclose(operations.context, &spawn->actions,
-		                                     spawn->lease_socket.Parent());
+		int result = operations.actions_adddup2(operations.context, &spawn->actions,
+		                                        spawn->socket.Child(), kHelperSocketFd);
 		if (result != 0) {
-			return FailSpawnSetup(operations, spawn,
-			                      "posix_spawn_file_actions_addclose(lease parent end)", result);
-		}
-		result = operations.actions_adddup2(operations.context, &spawn->actions,
-		                                    spawn->lease_socket.Child(),
-		                                    howdy::native::auth_helper_protocol::kLeaseSocketFd);
-		if (result != 0) {
-			return FailSpawnSetup(operations, spawn, "posix_spawn_file_actions_adddup2(lease fd)",
+			return FailSpawnSetup(operations, spawn, "posix_spawn_file_actions_adddup2(socket)",
 			                      result);
 		}
-		if (spawn->lease_socket.Child() != howdy::native::auth_helper_protocol::kLeaseSocketFd) {
-			result = operations.actions_addclose(operations.context, &spawn->actions,
-			                                     spawn->lease_socket.Child());
-			if (result != 0) {
-				return FailSpawnSetup(operations, spawn,
-				                      "posix_spawn_file_actions_addclose(lease child end)", result);
-			}
-		}
-		result = operations.actions_addclosefrom(
-		    operations.context, &spawn->actions,
-		    howdy::native::auth_helper_protocol::kLeaseSocketFd + 1);
+		// Both socket ends sit above kHelperSocketFd, so this closes them too.
+		result = operations.actions_addclosefrom(operations.context, &spawn->actions,
+		                                         kHelperSocketFd + 1);
 		if (result != 0) {
 			return FailSpawnSetup(operations, spawn, "posix_spawn_file_actions_addclosefrom",
 			                      result);
@@ -305,10 +269,10 @@ namespace howdy::pam::auth_helper_process::internal {
 		return true;
 	}
 
-	auto SpawnPrepareHelper(std::string_view username, const AuthHelperOperations &operations,
-	                        PreparedHelperSpawn *spawn) -> bool {
+	auto SpawnOpenHelper(std::string_view username, const AuthHelperOperations &operations,
+	                     HelperSpawn *spawn) -> bool {
 		std::string           helper_path(kAuthHelperPath);
-		std::string           command("prepare");
+		std::string           command("open");
 		std::string           username_string(username);
 		std::array<char *, 4> args = {
 		    helper_path.data(),
@@ -316,10 +280,7 @@ namespace howdy::pam::auth_helper_process::internal {
 		    username_string.data(),
 		    nullptr,
 		};
-		// Asks for the completion record; see protocol/auth_helper_protocol.hpp.
-		std::string completion_request(
-		    howdy::native::auth_helper_protocol::kCompletionRequestEntry);
-		std::array<char *, 2> env     = {completion_request.data(), nullptr};
+		std::array<char *, 1> env     = {nullptr};
 		const int             result  = operations.spawn({
 		    .context   = operations.context,
 		    .child_pid = &spawn->child_pid,
@@ -333,18 +294,15 @@ namespace howdy::pam::auth_helper_process::internal {
 			spawn->child_pid = -1;
 			LogAuthHelperFailure(operations, "posix_spawn", result != 0 ? result : ECHILD);
 		} else {
-			// A pidfd opened later could name another process, so a failure fails the prepare,
-			// unless the helper is already gone: then nothing is left to name, and the
-			// completion record decides.
+			// A pidfd opened later could name another process, so a failure fails the open,
+			// unless the helper is already gone: then nothing is left to name or stop, and its
+			// message, already in the socket, decides.
 			int error_number = 0;
 			spawn->child_pidfd.Reset(
 			    howdy::pam::runtime::TakeSpawnedChildPidfd(spawn->child_pid, &error_number));
 			if (!spawn->child_pidfd.Valid() &&
 			    howdy::pam::runtime::PidfdErrorMeansChildGone(error_number)) {
-				// Already exited and reaped by the application: nothing is left to wait for or
-				// stop, what it wrote is in the channels, and its completion record decides.
-				spawn->child_pid           = -1;
-				spawn->reaped_before_pidfd = true;
+				spawn->child_pid = -1;
 				LogAuthHelperMessage(
 				    operations, LOG_DEBUG,
 				    "Howdy auth helper was reaped elsewhere before its pidfd was taken");
@@ -355,11 +313,9 @@ namespace howdy::pam::auth_helper_process::internal {
 			}
 		}
 		DestroySpawnActions(operations, *spawn);
-		CloseOwnedFd(operations, spawn->output_pipe.Child());
-		CloseOwnedFd(operations, spawn->lease_socket.Child());
+		CloseOwnedFd(operations, spawn->socket.Child());
 		if (!spawned) {
-			CloseOwnedFd(operations, spawn->output_pipe.Parent());
-			CloseOwnedFd(operations, spawn->lease_socket.Parent());
+			CloseOwnedFd(operations, spawn->socket.Parent());
 			return false;
 		}
 		return true;

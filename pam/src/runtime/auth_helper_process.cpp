@@ -5,91 +5,80 @@
 #include "runtime/auth_helper_process.hpp"
 
 #include "auth_helper_process/internal.hpp"
-#include "protocol/auth_helper_protocol.hpp"
+#include "protocol/runtime_descriptor_message.hpp"
 #include "runtime/runtime_session.hpp"
 #include "support/bit_flags.hpp"
-#include "support/scoped_fd.hpp"
 
-#include <array>
 #include <cerrno>
 #include <chrono>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <utility>
 
 #include <stdlib.h>
-#include <unistd.h>
 
 #include <sys/poll.h>
 #include <sys/syslog.h>
-#include <sys/types.h>
 
 namespace howdy::pam::auth_helper_process::internal {
 
-	namespace {
-		auto SetRequiredHelperOutputValue(bool *seen, std::string *target, const std::string &value)
-		    -> bool {
-			if (*seen || value.empty()) {
+	auto ReceiveHelperResult(int socket_fd, HelperDeadline deadline, const Operations &operations,
+	                         RuntimeDescriptorSet *descriptors) -> bool {
+		namespace message = howdy::native::runtime_descriptor_message;
+		RuntimeDescriptorSet received;
+		bool                 have_message = false;
+		while (true) {
+			pollfd    socket{.fd = socket_fd, .events = POLLIN, .revents = 0};
+			const int ready = poll(&socket, 1, DeadlinePollTimeout(deadline));
+			if (ready < 0) {
+				if (errno == EINTR) {
+					continue;
+				}
+				LogAuthHelperFailure(operations, "poll", errno);
 				return false;
 			}
-			*seen   = true;
-			*target = value;
-			return true;
-		}
-	}  // namespace
-
-	auto ParseAuthHelperOutput(const std::string &output, const std::filesystem::path &runtime_root)
-	    -> Output {
-		Output result;
-		bool   saw_config_path     = false;
-		bool   saw_user_models_dir = false;
-
-		std::size_t offset = 0;
-		while (offset < output.size()) {
-			const auto next      = output.find('\n', offset);
-			const auto end       = next == std::string::npos ? output.size() : next;
-			const auto line      = output.substr(offset, end - offset);
-			const auto separator = line.find('=');
-
-			if (separator == std::string::npos) {
-				return result;
+			if (ready == 0) {
+				LogAuthHelperMessage(operations, LOG_ERR, "Howdy auth helper open timed out");
+				return false;
+			}
+			if (howdy::native::HasAnyBits(socket.revents, POLLERR, POLLNVAL)) {
+				LogAuthHelperMessage(operations, LOG_ERR, "Howdy auth helper socket failed");
+				return false;
 			}
 
-			const auto key   = line.substr(0, separator);
-			const auto value = line.substr(separator + 1);
-			if (key == howdy::native::auth_helper_protocol::kConfigPathKey) {
-				if (!SetRequiredHelperOutputValue(&saw_config_path, &result.config_path, value)) {
-					return result;
-				}
-			} else if (key == howdy::native::auth_helper_protocol::kUserModelsDirKey) {
-				if (!SetRequiredHelperOutputValue(&saw_user_models_dir, &result.user_models_dir,
-				                                  value)) {
-					return result;
-				}
-			} else {
-				return result;
+			auto incoming = message::ReceiveMessage(socket_fd);
+			switch (incoming.status) {
+				case message::ReceiveStatus::kRetry:
+					continue;
+				case message::ReceiveStatus::kMessage:
+					if (have_message) {
+						LogAuthHelperMessage(operations, LOG_ERR,
+						                     "Howdy auth helper sent more than one message");
+						return false;
+					}
+					have_message         = true;
+					received.config      = std::move(incoming.config);
+					received.model_state = incoming.model_state;
+					received.model       = std::move(incoming.model);
+					continue;
+				case message::ReceiveStatus::kEndOfFile:
+					if (!have_message) {
+						LogAuthHelperMessage(operations, LOG_ERR,
+						                     "Howdy auth helper ended without sending runtime "
+						                     "descriptors");
+						return false;
+					}
+					*descriptors = std::move(received);
+					return true;
+				case message::ReceiveStatus::kInvalid:
+					LogAuthHelperMessage(operations, LOG_ERR,
+					                     "Howdy auth helper sent a malformed message");
+					return false;
+				case message::ReceiveStatus::kError:
+					LogAuthHelperFailure(operations, "recvmsg", incoming.error_number);
+					return false;
 			}
-
-			if (next == std::string::npos) {
-				break;
-			}
-			offset = next + 1;
 		}
-
-		result.valid = saw_config_path && saw_user_models_dir;
-		if (!result.valid) {
-			return result;
-		}
-
-		const std::filesystem::path config_path(result.config_path);
-		const std::filesystem::path user_models_dir(result.user_models_dir);
-		result.valid = howdy::native::auth_helper_protocol::MatchesPreparedRuntimeLayout(
-		    runtime_root, config_path.parent_path(), config_path, user_models_dir, getuid());
-		return result;
 	}
 
 }  // namespace howdy::pam::auth_helper_process::internal
@@ -98,231 +87,78 @@ namespace {
 
 	using howdy::pam::auth_helper_process::Operations;
 	using howdy::pam::auth_helper_process::internal::CloseOwnedFd;
-	using howdy::pam::auth_helper_process::internal::DeadlinePollTimeout;
 	using howdy::pam::auth_helper_process::internal::HelperDeadline;
+	using howdy::pam::auth_helper_process::internal::HelperSpawn;
+	using howdy::pam::auth_helper_process::internal::HelperSpawnCleanup;
 	using howdy::pam::auth_helper_process::internal::HelperWaitResult;
-	using howdy::pam::auth_helper_process::internal::kAuthHelperOutputLimit;
-	using howdy::pam::auth_helper_process::internal::LeaseReceiveResult;
-	using howdy::pam::auth_helper_process::internal::LeaseSocketEnd;
-	using howdy::pam::auth_helper_process::internal::LogAuthHelperFailure;
 	using howdy::pam::auth_helper_process::internal::LogAuthHelperMessage;
-	using howdy::pam::auth_helper_process::internal::ParseAuthHelperOutput;
-	using howdy::pam::auth_helper_process::internal::PreparedHelperCleanup;
-	using howdy::pam::auth_helper_process::internal::PreparedHelperSpawn;
 
-	void LogPrepareTimeout(const Operations &operations) {
-		LogAuthHelperMessage(operations, LOG_ERR, "Howdy auth helper prepare timed out");
+	auto DescribeWaitStatus(int status) -> std::string {
+		if (WIFEXITED(status)) {
+			return "exit status " + std::to_string(WEXITSTATUS(status));
+		}
+		if (WIFSIGNALED(status)) {
+			return "signal " + std::to_string(WTERMSIG(status));
+		}
+		return "wait status " + std::to_string(status);
 	}
 
-	enum class PrepareIoResult : std::uint8_t {
-		kPending,
-		kComplete,
-		kFailed,
-	};
-
-	auto ReadPrepareOutputOnce(int output_fd, std::string *output) -> PrepareIoResult {
-		std::array<char, 4096> buffer{};
-		const ssize_t          size = read(output_fd, buffer.data(), buffer.size());
-		if (size > 0) {
-			if (output->size() + static_cast<std::size_t>(size) >= kAuthHelperOutputLimit) {
-				syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper reached output limit");
-				return PrepareIoResult::kFailed;
-			}
-			output->append(buffer.data(), static_cast<std::size_t>(size));
-			return PrepareIoResult::kPending;
+	// The result is already decided by the message; the exit status is only reaped and logged.
+	void ReapFinishedHelper(HelperSpawn &spawn, HelperDeadline deadline,
+	                        const Operations &operations) {
+		if (spawn.child_pid <= 0) {
+			return;
 		}
-		if (size == 0) {
-			return PrepareIoResult::kComplete;
-		}
-		if (errno == EINTR || errno == EAGAIN) {
-			return PrepareIoResult::kPending;
-		}
-		howdy::pam::auth_helper_process::internal::LogAuthHelperReadError(errno);
-		return PrepareIoResult::kFailed;
-	}
-
-	auto ReceivePrepareLeaseOnce(int socket_fd, howdy::native::ScopedFd &lease_fd)
-	    -> PrepareIoResult {
-		int        received_fd = -1;
-		const auto result = howdy::pam::auth_helper_process::internal::ReceiveLeaseDescriptorOnce(
-		    socket_fd, &received_fd);
-		if (result == LeaseReceiveResult::kReceived) {
-			lease_fd.Reset(received_fd);
-			return PrepareIoResult::kComplete;
-		}
-		if (result == LeaseReceiveResult::kRetry) {
-			return PrepareIoResult::kPending;
-		}
-		syslog(LOG_AUTHPRIV | LOG_ERR,
-		       "pam_howdy: Howdy auth helper returned malformed lease descriptor");
-		return PrepareIoResult::kFailed;
-	}
-
-	auto PollDescriptorFailed(const pollfd &descriptor) -> bool {
-		return descriptor.fd >= 0 &&
-		       howdy::native::HasAnyBits(descriptor.revents, POLLERR, POLLNVAL);
-	}
-
-	auto CollectPrepareResponse(const Operations &operations, PreparedHelperSpawn *spawn,
-	                            HelperDeadline deadline, std::string *output,
-	                            howdy::native::ScopedFd &lease_fd) -> bool {
-		output->clear();
-		bool output_eof = false;
-
-		while (!output_eof || !lease_fd.Valid()) {
-			std::array<pollfd, 2> descriptors = {
-			    pollfd{
-			        .fd      = output_eof ? -1 : spawn->output_pipe.Parent(),
-			        .events  = POLLIN,
-			        .revents = 0,
-			    },
-			    pollfd{
-			        .fd      = lease_fd.Valid() ? -1 : spawn->lease_socket.Parent(),
-			        .events  = POLLIN,
-			        .revents = 0,
-			    },
-			};
-			auto const &output_descriptor = descriptors.front();
-			auto const &lease_descriptor  = descriptors.back();
-			const int   poll_result =
-			    poll(descriptors.data(), descriptors.size(), DeadlinePollTimeout(deadline));
-			const int poll_error = errno;
-			if (poll_result < 0 && poll_error == EINTR) {
-				continue;
-			}
-			if (poll_result == 0) {
-				LogPrepareTimeout(operations);
-				return false;
-			}
-			if (poll_result < 0) {
-				LogAuthHelperFailure(operations, "poll", poll_error);
-				return false;
-			}
-
-			if (PollDescriptorFailed(output_descriptor) || PollDescriptorFailed(lease_descriptor)) {
-				return false;
-			}
-			if (output_descriptor.fd >= 0 &&
-			    howdy::native::HasAnyBits(output_descriptor.revents, POLLIN, POLLHUP)) {
-				const auto result = ReadPrepareOutputOnce(spawn->output_pipe.Parent(), output);
-				if (result == PrepareIoResult::kFailed) {
-					return false;
-				}
-				output_eof = result == PrepareIoResult::kComplete;
-			}
-
-			if (lease_descriptor.fd >= 0 &&
-			    howdy::native::HasAnyBits(lease_descriptor.revents, POLLIN, POLLHUP) &&
-			    ReceivePrepareLeaseOnce(spawn->lease_socket.Parent(), lease_fd) ==
-			        PrepareIoResult::kFailed) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	// Whether the helper may have succeeded: it exited 0, or the application reaped it and took
-	// its exit status, so only its completion record can tell.
-	auto ValidatePrepareHelper(PreparedHelperSpawn &spawn, HelperDeadline deadline,
-	                           const std::string &output, const Operations &operations) -> bool {
 		int        status = 0;
-		const auto result =
-		    spawn.reaped_before_pidfd
-		        // Already gone, so nothing to wait for: only the wait's deadline rule applies.
-		        ? howdy::pam::auth_helper_process::internal::ReapedElsewhereResult(deadline)
-		        : howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
-		              spawn.child_pid, deadline, &status, spawn.child_pidfd.Get());
+		const auto result = howdy::pam::auth_helper_process::internal::WaitForHelperProcessUntil(
+		    spawn.child_pid, deadline, &status, spawn.child_pidfd.Get());
 		// The nonthrowing wait consumes child ownership on every outcome, including timeout.
 		spawn.child_pid = -1;
 		spawn.child_pidfd.Reset();
-		if (result == HelperWaitResult::kReapedElsewhere) {
-			// Normal on such hosts, so not worth a line on every authentication.
-			LogAuthHelperMessage(operations, LOG_DEBUG,
-			                     "Howdy auth helper was reaped elsewhere; its completion record "
-			                     "decides");
-			return true;
+		switch (result) {
+			case HelperWaitResult::kExited:
+				if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+					LogAuthHelperMessage(operations, LOG_WARNING,
+					                     "Howdy auth helper exited abnormally after its result: " +
+					                         DescribeWaitStatus(status));
+				}
+				return;
+			case HelperWaitResult::kReapedElsewhere:
+				// Normal on hosts that reap their children, so not worth a line every time.
+				LogAuthHelperMessage(operations, LOG_DEBUG,
+				                     "Howdy auth helper was reaped elsewhere after its result");
+				return;
+			case HelperWaitResult::kTimedOut:
+				LogAuthHelperMessage(operations, LOG_WARNING,
+				                     "Howdy auth helper had to be stopped after its result");
+				return;
+			case HelperWaitResult::kWaitError:
+				LogAuthHelperMessage(operations, LOG_WARNING,
+				                     "Howdy auth helper could not be waited for after its result");
+				return;
 		}
-		if (result != HelperWaitResult::kExited) {
-			if (result == HelperWaitResult::kTimedOut) {
-				LogPrepareTimeout(operations);
-			} else {
-				syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper failed while waiting");
-			}
-			return false;
-		}
-		if (!WIFEXITED(status) || WEXITSTATUS(status) != EXIT_SUCCESS) {
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper failed: %s",
-			       output.c_str());
-			return false;
-		}
-		return true;
 	}
 
-	auto AssignPreparedPaths(const std::string &output, const Operations &operations,
-	                         howdy::pam::PreparedRuntimeFiles *prepared) -> bool {
-		const auto auth_output = ParseAuthHelperOutput(output, operations.runtime_root);
-		if (!auth_output.valid) {
-			syslog(LOG_AUTHPRIV | LOG_ERR,
-			       "pam_howdy: Howdy auth helper returned malformed output: %s", output.c_str());
-			return false;
-		}
-		prepared->config_path     = auth_output.config_path;
-		prepared->user_models_dir = auth_output.user_models_dir;
-		prepared->root_dir        = std::filesystem::path(prepared->config_path).parent_path();
-		return true;
-	}
-
-	auto PrepareRuntimeAuthFilesUntil(std::string_view                  username,
-	                                  howdy::pam::PreparedRuntimeFiles *prepared,
-	                                  const Operations &operations, HelperDeadline deadline)
+	auto OpenRuntimeDescriptorsUntil(std::string_view                  username,
+	                                 howdy::pam::RuntimeDescriptorSet *descriptors,
+	                                 const Operations &operations, HelperDeadline deadline)
 	    -> bool {
-		PreparedHelperSpawn         spawn;
-		const PreparedHelperCleanup cleanup(operations, spawn);
-		if (!howdy::pam::auth_helper_process::internal::SetupHelperSpawn(operations, &spawn)) {
+		HelperSpawn              spawn;
+		const HelperSpawnCleanup cleanup(operations, spawn);
+		if (!howdy::pam::auth_helper_process::internal::SetupHelperSpawn(operations, &spawn) ||
+		    !howdy::pam::auth_helper_process::internal::SpawnOpenHelper(username, operations,
+		                                                                &spawn)) {
 			return false;
 		}
-		if (!howdy::pam::auth_helper_process::internal::SpawnPrepareHelper(username, operations,
-		                                                                   &spawn)) {
-			return false;
+		howdy::pam::RuntimeDescriptorSet received;
+		const bool ok = howdy::pam::auth_helper_process::internal::ReceiveHelperResult(
+		    spawn.socket.Parent(), deadline, operations, &received);
+		CloseOwnedFd(operations, spawn.socket.Parent());
+		if (!ok) {
+			return false;  // the cleanup stops and reaps a helper that is still ours
 		}
-		std::string             helper_output;
-		howdy::native::ScopedFd lease_fd;
-		const bool              collected =
-		    CollectPrepareResponse(operations, &spawn, deadline, &helper_output, lease_fd);
-		CloseOwnedFd(operations, spawn.output_pipe.Parent());
-		if (!collected) {
-			return false;
-		}
-		if (!ValidatePrepareHelper(spawn, deadline, helper_output, operations)) {
-			return false;
-		}
-		const auto lease_end = howdy::pam::auth_helper_process::internal::ReceiveLeaseSocketEnd(
-		    spawn.lease_socket.Parent());
-		CloseOwnedFd(operations, spawn.lease_socket.Parent());
-		if (lease_end == LeaseSocketEnd::kInvalid) {
-			LogAuthHelperMessage(operations, LOG_ERR,
-			                     "Howdy auth helper left unexpected or unreadable data after the "
-			                     "lease");
-			return false;
-		}
-		// PAM asked for the record, so success needs it, and exit 0 as well when the exit status
-		// was still there to read.
-		if (lease_end != LeaseSocketEnd::kCompletedThenEof) {
-			LogAuthHelperMessage(operations, LOG_ERR,
-			                     "Howdy auth helper ended without its completion record");
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper output: %s",
-			       helper_output.c_str());
-			return false;
-		}
-		if (!AssignPreparedPaths(helper_output, operations, prepared)) {
-			return false;
-		}
-		if (!howdy::pam::auth_helper_process::internal::ValidateLeaseDescriptor(
-		        lease_fd.Get(), prepared->root_dir, operations.lease_owner_uid)) {
-			syslog(LOG_AUTHPRIV | LOG_ERR, "pam_howdy: Howdy auth helper lease validation failed");
-			return false;
-		}
-		prepared->lease_fd = std::move(lease_fd);
+		ReapFinishedHelper(spawn, deadline, operations);
+		*descriptors = std::move(received);
 		return true;
 	}
 
@@ -334,25 +170,23 @@ namespace howdy::pam::auth_helper_process {
 		return internal::ProductionOperations();
 	}
 
-	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
-	                             const Operations &operations) -> bool {
-		return PrepareRuntimeAuthFiles(username, prepared, operations,
-		                               std::chrono::steady_clock::now() +
-		                                   internal::kAuthHelperTimeout);
+	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
+	                            const Operations                     &operations,
+	                            std::chrono::steady_clock::time_point deadline) -> bool {
+		return ::OpenRuntimeDescriptorsUntil(username, descriptors, operations, deadline);
 	}
 
-	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared,
-	                             const Operations                     &operations,
-	                             std::chrono::steady_clock::time_point deadline) -> bool {
-		return ::PrepareRuntimeAuthFilesUntil(username, prepared, operations, deadline);
+	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors,
+	                            const Operations &operations) -> bool {
+		return OpenRuntimeDescriptors(username, descriptors, operations,
+		                              std::chrono::steady_clock::now() +
+		                                  internal::kAuthHelperTimeout);
 	}
 
-	auto PrepareRuntimeAuthFiles(std::string_view username, PreparedRuntimeFiles *prepared)
+	auto OpenRuntimeDescriptors(std::string_view username, RuntimeDescriptorSet *descriptors)
 	    -> bool {
-		auto const operations = ProductionOperations();
-		return ::PrepareRuntimeAuthFilesUntil(username, prepared, operations,
-		                                      std::chrono::steady_clock::now() +
-		                                          internal::kAuthHelperTimeout);
+		const auto operations = ProductionOperations();
+		return OpenRuntimeDescriptors(username, descriptors, operations);
 	}
 
 }  // namespace howdy::pam::auth_helper_process

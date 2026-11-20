@@ -11,6 +11,8 @@
 
 #include <security/pam_appl.h>
 
+#include <sys/types.h>
+
 namespace howdy::pam::auth_flow {
 
 	using ConversationFn = std::function<int(const howdy::pam::ConversationMessage &)>;
@@ -19,6 +21,8 @@ namespace howdy::pam::auth_flow {
 		RuntimeSessionOperations                                          runtime_session;
 		PromptCoordinatorOperations                                       prompt_coordinator;
 		howdy::pam::auth_eligibility::AuthenticationEligibilityOperations eligibility;
+		// Owner the runtime config and model descriptors must have: root in production.
+		uid_t runtime_owner_uid = 0;
 	};
 
 	__attribute__((visibility("hidden"))) auto

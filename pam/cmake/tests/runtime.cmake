@@ -37,5 +37,3 @@ target_link_libraries(
  pam_runtime_session_test
  PRIVATE pam_runtime pam_explicit_config_path
 )
-target_link_options(pam_runtime_session_test PRIVATE "LINKER:--wrap=read"
-                      "LINKER:--wrap=__read_chk")

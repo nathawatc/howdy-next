@@ -37,10 +37,7 @@ namespace {
 	using howdy::test::prompt_coordinator::WaitForCompare;
 
 	auto TestLaunchRequest(const howdy::pam::CompareLaunchRequest &request,
-	                       const std::string                      &expected_config_path,
-	                       const std::string                      &expected_username,
-	                       const std::string                      &expected_user_models_dir,
-	                       bool expected_staged_runtime, const std::string &label) -> bool {
+	                       const std::string                      &label) -> bool {
 		FakeContext context;
 		const pid_t child_pid = SpawnChild(EXIT_SUCCESS);
 		if (!Expect(child_pid > 0, label + " child spawned")) {
@@ -57,28 +54,17 @@ namespace {
 		              label + " spawns child once") &&
 		       Expect(context.wait_calls == 1 && context.waited_pid == child_pid,
 		              label + " waits for spawned child") &&
-		       Expect(context.spawned_config_path == expected_config_path,
-		              label + " preserves config path") &&
-		       Expect(context.spawned_username == expected_username,
+		       Expect(context.spawned_username == request.username,
 		              label + " preserves username") &&
-		       Expect(context.spawned_user_models_dir == expected_user_models_dir,
-		              label + " preserves models directory") &&
-		       Expect(context.spawned_staged_runtime == expected_staged_runtime,
-		              label + " preserves staged-runtime selection") &&
+		       Expect(context.spawned_config_fd == request.config_fd &&
+		                  context.spawned_model_fd == request.model_fd,
+		              label + " preserves the config and model descriptors") &&
 		       Expect(ChildReaped(child_pid), label + " reaps child");
 	}
 
-	auto TestDirectRuntimeLaunchRequest() -> bool {
-		return TestLaunchRequest(
-		    MakeCompareRequest("/etc/howdy/config.ini", "alice", "/etc/howdy/models", false),
-		    "/etc/howdy/config.ini", "alice", "/etc/howdy/models", false, "direct runtime request");
-	}
-
-	auto TestStagedRuntimeLaunchRequest() -> bool {
-		return TestLaunchRequest(MakeCompareRequest("/run/howdy/runtime/config.ini", "alice",
-		                                            "/run/howdy/runtime/models", true),
-		                         "/run/howdy/runtime/config.ini", "alice",
-		                         "/run/howdy/runtime/models", true, "staged runtime request");
+	auto TestDescriptorLaunchRequest() -> bool {
+		return TestLaunchRequest(MakeCompareRequest("alice", 40, 41), "descriptor request") &&
+		       TestLaunchRequest(MakeCompareRequest("bob", 52, 53), "other descriptor request");
 	}
 
 	auto TestSpawnFailure() -> bool {
@@ -113,8 +99,7 @@ namespace {
 		                              Operations(&context), Timeout());
 
 		const auto first  = coordinator.Run(MakeCompareRequest());
-		const auto second = coordinator.Run(
-		    MakeCompareRequest("/different/config.ini", "bob", "/different/models", true));
+		const auto second = coordinator.Run(MakeCompareRequest("bob", 52, 53));
 		return Expect(first.decision == PromptCoordinatorDecision::kCompareSpawnFailed,
 		              "spawn-failure one-shot first run reports spawn failure") &&
 		       Expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
@@ -159,7 +144,7 @@ namespace {
 			return false;
 		}
 		const auto before = GetCallbackCounts(context);
-		const auto second = coordinator.Run(MakeCompareRequest("/different/config.ini"));
+		const auto second = coordinator.Run(MakeCompareRequest("bob"));
 		return Expect(second.decision == PromptCoordinatorDecision::kAlreadyRun,
 		              "one-shot second run is rejected") &&
 		       Expect(context.spawn_calls == 1 && context.spawned_pid == child_pid,
@@ -175,8 +160,7 @@ namespace {
 
 auto RunPromptAdapterTests() -> bool {
 	bool ok = true;
-	ok &= TestDirectRuntimeLaunchRequest();
-	ok &= TestStagedRuntimeLaunchRequest();
+	ok &= TestDescriptorLaunchRequest();
 
 	ok &= TestSpawnFailure();
 	ok &= TestInvalidSpawnPid();
