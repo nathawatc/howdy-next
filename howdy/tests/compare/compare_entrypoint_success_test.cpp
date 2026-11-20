@@ -1,9 +1,12 @@
 #include "compare/capture_session.hpp"
+#include "compare/compare_descriptor_test_support.hpp"
 #include "compare/entrypoint.hpp"
 #include "compare/entrypoint/dependencies.hpp"
 #include "compare/privileges.hpp"
 #include "compare/sandbox.hpp"
+#include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_verdict.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "test_support.hpp"
 #include "vision/face_detection.hpp"
@@ -21,6 +24,7 @@
 #include <system_error>
 #include <vector>
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -225,6 +229,72 @@ namespace {
 		       chmod(model_path.c_str(), 0600) == 0;
 	}
 
+	// The whole compare pipeline in descriptor mode: config at fd 4, model at fd 5, verdict at
+	// fd 3, no paths. The path environment names a directory without the model, so only the
+	// descriptors can make this succeed.
+	auto ExpectDescriptorModeSuccess(const fs::path &root) -> bool {
+		using howdy::test::Expect;
+		using howdy::test::ScopedEnvironmentVariable;
+		using howdy::test::compare::OpenAboveProtocol;
+		using howdy::test::compare::ScopedDescriptorAt;
+		namespace descriptors = howdy::native::compare_descriptors;
+		namespace verdict     = howdy::native::compare_verdict;
+
+		const auto                 model_file = root / "models" / "fixture-user.dat";
+		std::array<std::string, 2> arguments{"howdy-compare", "fixture-user"};
+		std::array<char *, 2>      argv{arguments.at(0).data(), arguments.at(1).data()};
+		const auto                 validation_root =
+		    howdy::native::file_security_internal::ValidationRoot{.path = root};
+		const ScopedEnvironmentVariable verdict_env(verdict::kEnvironmentName,
+		                                            verdict::kEnvironmentValue);
+		const ScopedEnvironmentVariable config_env(descriptors::kConfigEnvironmentName,
+		                                           descriptors::kConfigEnvironmentValue);
+		const ScopedEnvironmentVariable model_env(descriptors::kModelEnvironmentName,
+		                                          descriptors::kModelEnvironmentValue);
+		const ScopedEnvironmentVariable models_dir("HOWDY_USER_MODELS_DIR",
+		                                           (root / "no-such-models").string());
+
+		const auto run = [&](FixtureContext &context, const fs::path &model_path) -> int {
+			const auto               config = OpenAboveProtocol(root / "config.ini", O_RDONLY);
+			const auto               model  = OpenAboveProtocol(model_path, O_RDONLY);
+			const auto               pair   = howdy::test::compare::MakeVerdictPair();
+			const ScopedDescriptorAt verdict_at(verdict::kFd, pair.compare_end.Get());
+			const ScopedDescriptorAt config_at(descriptors::kConfigFd, config.Get());
+			const ScopedDescriptorAt model_at(descriptors::kModelFd, model.Get());
+			const auto               dependencies = DependenciesFor(context);
+			return howdy::native::RunCompareEntrypoint(static_cast<int>(argv.size()), argv.data(),
+			                                           geteuid(), validation_root, dependencies);
+		};
+
+		bool                     ok = true;
+		FixtureContext           success;
+		const std::ostringstream report;
+		int                      result = -1;
+		{
+			const howdy::test::StreamRedirect redirect(std::cout, report.rdbuf());
+			result = run(success, model_file);
+		}
+		ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kSuccess) &&
+		                 success.read_calls == 1 && success.encode_calls == 1,
+		             "descriptor mode authenticates with the passed config and model");
+		ok &= Expect(report.str().contains("Winning model: 7 (\"fixture\")"),
+		             "descriptor mode matches the model read from its descriptor");
+
+		ok &= Expect(chmod(model_file.c_str(), 0666) == 0, "make descriptor model world-writable");
+		FixtureContext           writable;
+		const std::ostringstream writable_errors;
+		{
+			const howdy::test::StreamRedirect redirect(std::cerr, writable_errors.rdbuf());
+			result = run(writable, model_file);
+		}
+		ok &= Expect(result == static_cast<int>(howdy::native::CompareExit::kAbort) &&
+		                 writable.read_calls == 0 &&
+		                 writable_errors.str().contains("Opened user model file failed security"),
+		             "descriptor mode rejects a world-writable model before any capture read");
+		ok &= Expect(chmod(model_file.c_str(), 0600) == 0, "restore descriptor model mode");
+		return ok;
+	}
+
 }  // namespace
 
 auto main() -> int {
@@ -355,8 +425,9 @@ auto main() -> int {
 			};
 		};
 	};
-	const auto config_file = root / "config.ini";
-	const auto model_file  = root / "models" / "fixture-user.dat";
+	const auto config_file    = root / "config.ini";
+	const auto model_file     = root / "models" / "fixture-user.dat";
+	const auto original_model = howdy::test::ReadFile(model_file);
 
 	ok &= expect_abort("failing privilege drop aborts before reading any frame", geteuid(),
 	                   fail_drop, "Failed to drop compare privileges: injected");
@@ -375,6 +446,11 @@ auto main() -> int {
 	             "write malformed user model");
 	ok &= expect_abort("malformed user model aborts", geteuid(), keep,
 	                   "Failed to parse user model JSON");
+
+	ok &= Expect(howdy::test::WriteFile(model_file, original_model) &&
+	                 chmod(model_file.c_str(), 0600) == 0,
+	             "restore fixture user model");
+	ok &= ExpectDescriptorModeSuccess(root);
 
 	std::error_code cleanup_error;
 	fs::remove_all(root, cleanup_error);

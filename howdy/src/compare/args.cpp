@@ -33,7 +33,8 @@ namespace howdy::native {
 		for (std::size_t index = 1; index < arguments.size(); ++index) {
 			const std::string_view arg(arguments.subspan(index, 1).front());
 			if (arg == kCompareConfigOption && index + 1 < arguments.size()) {
-				result.args.config_path = arguments.subspan(++index, 1).front();
+				result.args.config_path       = arguments.subspan(++index, 1).front();
+				result.args.config_path_given = true;
 				continue;
 			}
 			if (!arg.empty() && arg.front() == '-') {

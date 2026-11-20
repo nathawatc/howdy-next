@@ -1,7 +1,6 @@
 #pragma once
 
 #include "protocol/compare_exit.hpp"
-#include "protocol/compare_invocation.hpp"
 
 #include <cstdint>
 #include <string>
@@ -10,6 +9,8 @@ namespace howdy::native {
 	struct CompareArgs {
 		std::string user;
 		std::string config_path;
+		// Set when --config named the path; descriptor mode rejects it.
+		bool config_path_given = false;
 	};
 
 	enum class CompareArgsStatus : std::uint8_t {

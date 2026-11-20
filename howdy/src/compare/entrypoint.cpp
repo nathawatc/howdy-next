@@ -12,7 +12,9 @@
 #include "config/runtime_config.hpp"
 #include "config/runtime_config_loader.hpp"
 #include "config/runtime_paths.hpp"
+#include "protocol/compare_descriptors.hpp"
 #include "protocol/compare_exit.hpp"
+#include "protocol/compare_invocation.hpp"
 #include "protocol/compare_verdict.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -22,6 +24,7 @@
 #include "support/eintr.hpp"
 #include "support/error_message.hpp"
 #include "support/file_security/validation_root.hpp"
+#include "support/scoped_fd.hpp"
 #include "vision/face_inference.hpp"
 #include "vision/face_model.hpp"
 
@@ -426,10 +429,129 @@ namespace {
 		return exit_code;
 	}
 
+	// Where compare's config and model come from: paths, or the descriptors PAM passed
+	// (protocol/compare_descriptors.hpp). Anything announced but unusable fails closed.
+	struct RuntimeDescriptors {
+		enum class Mode : std::uint8_t {
+			kPaths,
+			kDescriptors,
+			kMalformed,
+			kNotOpen,
+			kNoVerdict,
+		};
+
+		Mode                    mode = Mode::kPaths;
+		howdy::native::ScopedFd config;
+		howdy::native::ScopedFd model;
+	};
+
+	// Takes the descriptors the environment announces, before compare opens anything, so neither
+	// number can belong to one of compare's own files. Each descriptor announced with its exact
+	// value is compare's from here on and is closed on every path; type, owner, mode and link
+	// checks are left to the loaders.
+	auto TakeRuntimeDescriptors(bool verdict_announced) noexcept -> RuntimeDescriptors {
+		namespace descriptors           = howdy::native::compare_descriptors;
+		const char *const  config_value = std::getenv(descriptors::kConfigEnvironmentName);
+		const char *const  model_value  = std::getenv(descriptors::kModelEnvironmentName);
+		RuntimeDescriptors result;
+		if (config_value == nullptr && model_value == nullptr) {
+			return result;
+		}
+
+		const auto announced = [](const char *value, std::string_view expected) -> bool {
+			return value != nullptr && std::string_view(value) == expected;
+		};
+		const bool config_announced = announced(config_value, descriptors::kConfigEnvironmentValue);
+		const bool model_announced  = announced(model_value, descriptors::kModelEnvironmentValue);
+		const auto take             = [](int fd, howdy::native::ScopedFd *owner) -> bool {
+			if (fcntl(fd, F_GETFD) < 0) {
+				return false;
+			}
+			owner->Reset(fd);
+			return true;
+		};
+		const bool config_open = config_announced && take(descriptors::kConfigFd, &result.config);
+		const bool model_open  = model_announced && take(descriptors::kModelFd, &result.model);
+		if (!config_announced || !model_announced) {
+			result.mode = RuntimeDescriptors::Mode::kMalformed;
+		} else if (!config_open || !model_open) {
+			result.mode = RuntimeDescriptors::Mode::kNotOpen;
+		} else if (!verdict_announced) {
+			result.mode = RuntimeDescriptors::Mode::kNoVerdict;
+		} else {
+			result.mode = RuntimeDescriptors::Mode::kDescriptors;
+		}
+		return result;
+	}
+
+	// Why announced descriptors cannot be used, or nullopt when compare may go on.
+	auto RuntimeDescriptorsError(const RuntimeDescriptors         &descriptors,
+	                             const howdy::native::CompareArgs &args)
+	    -> std::optional<std::string> {
+		namespace protocol = howdy::native::compare_descriptors;
+		using Mode         = RuntimeDescriptors::Mode;
+		switch (descriptors.mode) {
+			case Mode::kPaths:
+				return std::nullopt;
+			case Mode::kDescriptors:
+				if (args.config_path_given) {
+					return std::string(howdy::native::kCompareConfigOption) +
+					       " cannot be combined with compare descriptors";
+				}
+				return std::nullopt;
+			case Mode::kMalformed:
+				return std::string("Compare descriptors must be announced together as ") +
+				       protocol::kConfigEnvironmentEntry + " and " +
+				       protocol::kModelEnvironmentEntry;
+			case Mode::kNotOpen:
+				return std::string("An announced compare descriptor is not open");
+			case Mode::kNoVerdict:
+				return std::string("Compare descriptors require the verdict socket");
+		}
+		return std::string("Invalid compare descriptors");
+	}
+
+	// Loads the runtime config from its descriptor or its path; the descriptor is closed after.
+	auto LoadCompareConfig(RuntimeDescriptors &descriptors, const howdy::native::CompareArgs &args,
+	                       const uid_t                                                  owner_uid,
+	                       const howdy::native::file_security_internal::ValidationRoot &root)
+	    -> howdy::native::RuntimeConfigLoadResult {
+		if (descriptors.mode != RuntimeDescriptors::Mode::kDescriptors) {
+			return howdy::native::LoadRuntimeConfig(args.config_path, owner_uid, root);
+		}
+		auto result = howdy::native::LoadRuntimeConfigFromFd(
+		    descriptors.config.Get(),
+		    std::string("config descriptor ") +
+		        howdy::native::compare_descriptors::kConfigEnvironmentValue,
+		    owner_uid);
+		descriptors.config.Reset();
+		return result;
+	}
+
+	// Loads the user's models from their descriptor or the model store; the descriptor is closed
+	// after.
+	auto LoadCompareModels(RuntimeDescriptors &descriptors, const howdy::native::CompareArgs &args,
+	                       const uid_t                                                  owner_uid,
+	                       const howdy::native::file_security_internal::ValidationRoot &root)
+	    -> howdy::native::UserModelLoadResult {
+		if (descriptors.mode != RuntimeDescriptors::Mode::kDescriptors) {
+			return howdy::native::LoadUserModels(args.user, howdy::native::FaceModel::kBackendName,
+			                                     owner_uid, root);
+		}
+		auto result = howdy::native::LoadUserModelsFromFd(
+		    descriptors.model.Get(),
+		    std::string("user model descriptor ") +
+		        howdy::native::compare_descriptors::kModelEnvironmentValue,
+		    howdy::native::FaceModel::kBackendName, owner_uid);
+		descriptors.model.Reset();
+		return result;
+	}
+
 	auto RunCompareEntrypointBody(
 	    int argc, char **argv, const uid_t trusted_owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root,
-	    const howdy::native::CompareEntrypointDependencies          *dependencies) -> int {
+	    const howdy::native::CompareEntrypointDependencies          *dependencies,
+	    RuntimeDescriptors                                          &descriptors) -> int {
 		try {
 			const auto start_time   = std::chrono::steady_clock::now();
 			const auto parse_result = howdy::native::ParseCompareArgs(
@@ -445,9 +567,12 @@ namespace {
 				return static_cast<int>(parse_result.exit_code);
 			}
 			const auto &args = parse_result.args;
-
-			auto config_result = howdy::native::LoadRuntimeConfig(
-			    args.config_path, trusted_owner_uid, validation_root);
+			if (const auto error = RuntimeDescriptorsError(descriptors, args)) {
+				std::cerr << *error << "\n";
+				return static_cast<int>(CompareExit::kAbort);
+			}
+			auto config_result =
+			    LoadCompareConfig(descriptors, args, trusted_owner_uid, validation_root);
 			if (config_result.status != howdy::native::RuntimeConfigLoadStatus::kOk ||
 			    !config_result.config.has_value()) {
 				std::cerr << config_result.error_message << "\n";
@@ -462,8 +587,7 @@ namespace {
 			}
 
 			auto loaded_models =
-			    howdy::native::LoadUserModels(args.user, howdy::native::FaceModel::kBackendName,
-				                              trusted_owner_uid, validation_root);
+			    LoadCompareModels(descriptors, args, trusted_owner_uid, validation_root);
 			if (loaded_models.status == howdy::native::UserModelStatus::kInvalidUser) {
 				std::cerr << loaded_models.error_message << "\n";
 				return static_cast<int>(CompareExit::kAbort);
@@ -552,15 +676,20 @@ namespace {
 		}
 	}
 
-	// Every entry point goes through here, so the verdict socket is checked once, before compare
-	// opens anything, and reported once, after the exit code is known.
+	// Every entry point goes through here, so the verdict socket and the runtime descriptors are
+	// checked once, before compare opens anything, and the verdict is reported once, after the
+	// exit code is known.
 	auto RunCompareEntrypointImpl(
 	    int argc, char **argv, const uid_t trusted_owner_uid,
 	    const howdy::native::file_security_internal::ValidationRoot &validation_root,
 	    const howdy::native::CompareEntrypointDependencies          *dependencies) -> int {
-		const VerdictSocket socket = FindVerdictSocket();
-		const int           exit_code =
-		    RunCompareEntrypointBody(argc, argv, trusted_owner_uid, validation_root, dependencies);
+		const VerdictSocket socket      = FindVerdictSocket();
+		RuntimeDescriptors  descriptors = TakeRuntimeDescriptors(socket.announced);
+		const int exit_code = RunCompareEntrypointBody(argc, argv, trusted_owner_uid,
+		                                               validation_root, dependencies, descriptors);
+		// A body that returned early leaves them open; close them before the verdict.
+		descriptors.config.Reset();
+		descriptors.model.Reset();
 		// Flushing can still end compare (SIGPIPE on a closed output), so it happens before the
 		// verdict, which has to be the last thing compare does.
 		std::cout.flush();

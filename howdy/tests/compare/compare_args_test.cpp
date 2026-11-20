@@ -34,6 +34,7 @@ auto main() -> int {
 		             "simple user parse succeeds");
 		ok &= Expect(result.args.user == "alice", "user parsed");
 		ok &= Expect(result.args.config_path == "/tmp/config.ini", "default config path preserved");
+		ok &= Expect(!result.args.config_path_given, "default config path is not marked as given");
 	}
 
 	{
@@ -45,6 +46,7 @@ auto main() -> int {
 		    Expect(result.status == howdy::native::CompareArgsStatus::kOk, "config parse succeeds");
 		ok &= Expect(result.args.user == "bob", "user parsed after config");
 		ok &= Expect(result.args.config_path == "/x.ini", "custom config parsed");
+		ok &= Expect(result.args.config_path_given, "custom config is marked as given");
 	}
 
 	{
