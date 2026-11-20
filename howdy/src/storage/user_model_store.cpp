@@ -8,6 +8,7 @@
 #include "support/atomic_files.hpp"
 #include "support/bit_flags.hpp"
 #include "support/eintr.hpp"
+#include "support/error_message.hpp"
 #include "support/fd_io.hpp"
 #include "support/file_lock.hpp"
 #include "support/file_security.hpp"
@@ -49,7 +50,8 @@ namespace howdy::native {
 		constexpr auto             kUserModelFileTooLargeMessage =
 		    "User model file is too large or unreadable: ";
 		constexpr auto kUserModelFileReadFailedMessage = "Failed to read user model file: ";
-		constexpr auto kModelFileLockFailedMessage     = "Failed to lock or open model file";
+		constexpr auto kOpenedModelFileInsecureMessage =
+		    "Opened user model file failed security validation: ";
 
 		auto StoreListFailure(UserModelStatus status, std::string message) -> UserModelListResult {
 			return UserModelListResult{
@@ -107,6 +109,42 @@ namespace howdy::native {
 			struct stat path_stat{};
 			return fd >= 0 && fstat(fd, &fd_stat) == 0 && lstat(path.c_str(), &path_stat) == 0 &&
 			       SameFileIdentity(fd_stat, path_stat);
+		}
+
+		// Whether anything, a symlink included, is at `path`; nullopt when lstat cannot tell.
+		auto PathIsPresent(const std::filesystem::path &path) -> std::optional<bool> {
+			struct stat path_stat{};
+			if (lstat(path.c_str(), &path_stat) == 0) {
+				return true;
+			}
+			if (errno == ENOENT) {
+				return false;
+			}
+			return std::nullopt;
+		}
+
+		// Whether `path` still names the opened `fd`, or, with no file open (-1), is still free.
+		// nullopt, with errno set, when fstat or lstat cannot tell.
+		auto PathStillMatches(const std::filesystem::path &path, int fd) -> std::optional<bool> {
+			if (fd >= 0) {
+				struct stat fd_stat{};
+				struct stat path_stat{};
+				if (fstat(fd, &fd_stat) != 0) {
+					return std::nullopt;
+				}
+				if (lstat(path.c_str(), &path_stat) != 0) {
+					if (errno == ENOENT) {
+						return false;
+					}
+					return std::nullopt;
+				}
+				return SameFileIdentity(fd_stat, path_stat);
+			}
+			const auto present = PathIsPresent(path);
+			if (!present.has_value()) {
+				return std::nullopt;
+			}
+			return !*present;
 		}
 
 		enum class RenameMode : std::uint8_t {
@@ -188,6 +226,18 @@ namespace howdy::native {
 			return !ec;
 		}
 
+		// Staging refuses a destination that is not a regular file. For a first model, such an
+		// entry was put there since the open, so report it as taken. A regular file put there
+		// passes staging and is caught by RENAME_NOREPLACE instead, so a staging failure with
+		// one there has another cause.
+		auto StagingFailureResult(const std::filesystem::path &path, bool creating)
+		    -> AtomicFileCommitResult {
+			struct stat path_stat{};
+			return creating && lstat(path.c_str(), &path_stat) == 0 && !S_ISREG(path_stat.st_mode)
+			           ? AtomicFileCommitResult::kDestinationExists
+					   : AtomicFileCommitResult::kNotCommitted;
+		}
+
 		// Links a first model in. RENAME_NOREPLACE fails rather than replace a path another
 		// actor has filled since the open, so nothing but a committed model ever appears there.
 		auto LinkStagedModel(StagedFile &staged, const std::filesystem::path &path)
@@ -224,7 +274,7 @@ namespace howdy::native {
 			                                         : StagedFileMetadataPolicy::kPreserveExisting,
 			                                StagedFileParentPolicy::kRequireExisting);
 			if (!staged.has_value()) {
-				return AtomicFileCommitResult::kNotCommitted;
+				return StagingFailureResult(path, creating);
 			}
 			auto const &hooks = user_model_store_test_hooks::Current();
 			if (hooks.fail_write || !WriteAllToFd(staged->fd.Get(), *serialized)) {
@@ -302,11 +352,36 @@ namespace howdy::native {
 					   : AtomicFileCommitResult::kCommittedSyncFailed;
 		}
 
+		// The namespace lock and the model, or why a writer could not get them.
 		struct OpenedUserModelFile {
-			ScopedFileLock namespace_lock;
+			UserModelStatus status = UserModelStatus::kOk;
+			std::string     error_message;
+			ScopedFileLock  namespace_lock;
 			// Not valid when no model exists and the caller allowed that.
 			ScopedFd file;
 		};
+
+		auto OpenFailure(UserModelStatus status, std::string message) -> OpenedUserModelFile {
+			return OpenedUserModelFile{
+			    .status        = status,
+			    .error_message = std::move(message),
+			};
+		}
+
+		auto WithErrno(std::string message, int error_number) -> std::string {
+			return std::move(message) + " (" + SystemErrorMessage(error_number) + ")";
+		}
+
+		// O_NOFOLLOW fails a symlink with ELOOP, a directory cannot be opened for writing, and a
+		// socket cannot be opened at all (ENXIO).
+		auto OpenErrorMeansNotRegularFile(int error_number) -> bool {
+			return error_number == ELOOP || error_number == EISDIR || error_number == ENXIO;
+		}
+
+		auto NotRegularFileMessage(std::string_view label, const std::filesystem::path &path)
+		    -> std::string {
+			return std::string(label) + " must be a regular file: " + path.string();
+		}
 
 		// `<models_dir>.lock`, beside the models directory rather than inside it, so nothing
 		// that lists the directory meets it. The trailing separator of a directory named
@@ -320,8 +395,7 @@ namespace howdy::native {
 			return LockFilePath(models_dir);
 		}
 
-		auto LockModelNamespace(const std::filesystem::path &model_path)
-		    -> std::optional<ScopedFileLock> {
+		auto LockModelNamespace(const std::filesystem::path &model_path) -> OpenedUserModelFile {
 			// Serializes cooperating UserModelStore writers only. Parent-directory write
 			// permission still allows uncooperative actors to rename or unlink entries.
 			// Writers lock a root-only file, never the models directory or a model file: flock
@@ -334,54 +408,86 @@ namespace howdy::native {
 			ScopedFd   fd(open(lock_path.c_str(), O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC,
 			                   kUserModelLockFileMode));
 			if (!fd.Valid()) {
-				return std::nullopt;
+				const int error_number = errno;
+				if (OpenErrorMeansNotRegularFile(error_number)) {
+					return OpenFailure(UserModelStatus::kInsecurePath,
+					                   NotRegularFileMessage(kUserModelLockFileLabel, lock_path));
+				}
+				return OpenFailure(
+				    UserModelStatus::kLockFailed,
+				    WithErrno("Failed to open user model lock file: " + lock_path.string(),
+					          error_number));
 			}
 			struct stat lock_stat{};
-			if (fstat(fd.Get(), &lock_stat) != 0 ||
-			    !CheckSecurePathStat(lock_stat, SecurePathKind::kRegularFile, lock_path,
-			                         kUserModelLockFileLabel, DefaultSecureOwnerUid())
-			         .ok ||
-			    HasAnyBits(lock_stat.st_mode, S_IRWXG, S_IRWXO)) {
-				return std::nullopt;
+			if (fstat(fd.Get(), &lock_stat) != 0) {
+				const int error_number = errno;
+				return OpenFailure(
+				    UserModelStatus::kLockFailed,
+				    WithErrno("Failed to inspect user model lock file: " + lock_path.string(),
+					          error_number));
+			}
+			// Checked before the blocking flock, so a bad lock file fails instead of waiting.
+			auto security = CheckSecurePathStat(lock_stat, SecurePathKind::kRegularFile, lock_path,
+			                                    kUserModelLockFileLabel, DefaultSecureOwnerUid());
+			if (!security.ok) {
+				return OpenFailure(UserModelStatus::kInsecurePath,
+				                   std::move(security.error_message));
+			}
+			if (HasAnyBits(lock_stat.st_mode, S_IRWXG, S_IRWXO)) {
+				return OpenFailure(
+				    UserModelStatus::kInsecurePath,
+				    std::string(kUserModelLockFileLabel) +
+				        " must not be accessible by group or others: " + lock_path.string());
 			}
 			if (RetryOnEintr([&] -> int {
 				    return flock(fd.Get(), LOCK_EX);
 			    }) != 0) {
-				return std::nullopt;
+				const int error_number = errno;
+				return OpenFailure(
+				    UserModelStatus::kLockFailed,
+				    WithErrno("Failed to lock user models: " + lock_path.string(), error_number));
 			}
 
-			return ScopedFileLock(std::move(fd));
+			return OpenedUserModelFile{.namespace_lock = ScopedFileLock(std::move(fd))};
 		}
 
-		// Never creates the model: a first model is linked in whole at commit.
+		// Never creates the model: a first model is linked in whole at commit. A model that is
+		// missing is no failure when `allow_missing`, and kNoModel otherwise.
 		auto LockNamespaceAndOpenModelFile(const std::filesystem::path &path, bool allow_missing)
-		    -> std::optional<OpenedUserModelFile> {
-			auto namespace_lock = LockModelNamespace(path);
-			if (!namespace_lock.has_value()) {
-				return std::nullopt;
+		    -> OpenedUserModelFile {
+			auto opened = LockModelNamespace(path);
+			if (opened.status != UserModelStatus::kOk) {
+				return opened;
 			}
 			ScopedFd fd(open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW));
 			if (!fd.Valid()) {
-				if (errno == ENOENT && allow_missing) {
-					return OpenedUserModelFile{.namespace_lock = std::move(*namespace_lock)};
+				const int error_number = errno;
+				if (error_number == ENOENT) {
+					return allow_missing ? std::move(opened)
+					                     : OpenFailure(UserModelStatus::kNoModel, {});
 				}
-				return std::nullopt;
+				if (OpenErrorMeansNotRegularFile(error_number)) {
+					return OpenFailure(UserModelStatus::kInsecurePath,
+					                   NotRegularFileMessage(kUserModelFileLabel, path));
+				}
+				return OpenFailure(
+				    UserModelStatus::kLockFailed,
+				    WithErrno("Failed to open user model file: " + path.string(), error_number));
 			}
 			struct stat opened_file{};
-			if (fstat(fd.Get(), &opened_file) != 0 ||
-			    !OpenedModelFileIsSecure(opened_file, DefaultSecureOwnerUid())) {
-				return std::nullopt;
+			if (fstat(fd.Get(), &opened_file) != 0) {
+				const int error_number = errno;
+				return OpenFailure(UserModelStatus::kLockFailed,
+				                   WithErrno(std::string(kUserModelFileInspectionFailedMessage) +
+				                                 ": " + path.string(),
+				                             error_number));
 			}
-
-			return OpenedUserModelFile{
-			    .namespace_lock = std::move(*namespace_lock),
-			    .file           = std::move(fd),
-			};
-		}
-
-		auto PathIsAbsent(const std::filesystem::path &path) -> bool {
-			struct stat path_stat{};
-			return lstat(path.c_str(), &path_stat) != 0 && errno == ENOENT;
+			if (!OpenedModelFileIsSecure(opened_file, DefaultSecureOwnerUid())) {
+				return OpenFailure(UserModelStatus::kInsecurePath,
+				                   std::string(kOpenedModelFileInsecureMessage) + path.string());
+			}
+			opened.file = std::move(fd);
+			return opened;
 		}
 
 	}  // namespace
@@ -434,6 +540,10 @@ namespace howdy::native {
 
 	auto UserModelStoreTransaction::WriteDocument(const user_model_codec::Document &document) const
 	    -> AtomicFileCommitResult {
+		// Without the namespace lock (a moved-from transaction), write nothing.
+		if (namespace_lock_.Get() < 0) {
+			return AtomicFileCommitResult::kNotCommitted;
+		}
 		// Without a file, no model existed when the transaction began: create one.
 		if (file_.Valid() && !PathMatchesOpenedFile()) {
 			return AtomicFileCommitResult::kNotCommitted;
@@ -442,6 +552,10 @@ namespace howdy::native {
 	}
 
 	auto UserModelStoreTransaction::RemoveFile() const -> AtomicFileCommitResult {
+		// As in WriteDocument, without the namespace lock, remove nothing.
+		if (namespace_lock_.Get() < 0) {
+			return AtomicFileCommitResult::kNotCommitted;
+		}
 		return RemoveOpenedFile(path_, file_.Get());
 	}
 
@@ -474,7 +588,8 @@ namespace howdy::native {
 				return UserModelPathResult{
 				    .status = UserModelStatus::kParseError,
 				    .error_message =
-				        "Failed to inspect user models directory: " + models_dir.string(),
+				        WithErrno("Failed to inspect user models directory: " + models_dir.string(),
+						          ec.value()),
 				};
 			}
 			const auto create_result =
@@ -507,8 +622,9 @@ namespace howdy::native {
 		if (ec) {
 			return UserModelPathResult{
 			    .status        = UserModelStatus::kParseError,
-			    .error_message = std::string(kUserModelFileInspectionFailedMessage) + ": " +
-				                 model_path->string(),
+			    .error_message = WithErrno(std::string(kUserModelFileInspectionFailedMessage) +
+				                               ": " + model_path->string(),
+				                           ec.value()),
 			};
 		}
 		if (model_exists) {
@@ -558,8 +674,15 @@ namespace howdy::native {
 		if (!OpenedModelFileIsSecure(opened_file, owner_uid)) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kInsecurePath,
-				                 "Opened user model file failed security validation: " +
-				                     path.string()),
+				                 std::string(kOpenedModelFileInsecureMessage) + path.string()),
+			};
+		}
+		// No writer leaves an empty model, so an empty file is damaged storage. Name it, as the
+		// auth helper does, rather than report it as unparsable JSON.
+		if (opened_file.st_size == 0) {
+			return user_model_codec::Document{
+			    StoreListFailure(UserModelStatus::kParseError,
+				                 std::string(kUserModelFileEmptyMessage) + path.string()),
 			};
 		}
 		if (opened_file.st_size < 0 ||
@@ -636,9 +759,11 @@ namespace howdy::native {
 		}
 		const auto current_snapshot = SnapshotModelFile(path_result.path);
 		if (!current_snapshot.has_value()) {
+			const int error_number = errno;
 			return InspectFailure(UserModelStatus::kParseError,
-			                      std::string(kUserModelFileInspectionFailedMessage) + ": " +
-			                          path_result.path.string());
+			                      WithErrno(std::string(kUserModelFileInspectionFailedMessage) +
+			                                    ": " + path_result.path.string(),
+			                                error_number));
 		}
 		return UserModelInspectResult{
 		    .status   = UserModelStatus::kOk,
@@ -661,10 +786,10 @@ namespace howdy::native {
 			user_model_store_test_hooks::Current().before_lock(path_result.path);
 		}
 		auto opened_model = LockNamespaceAndOpenModelFile(path_result.path, true);
-		if (!opened_model.has_value()) {
+		if (opened_model.status != UserModelStatus::kOk) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(
-			        StoreListFailure(UserModelStatus::kLockFailed, kModelFileLockFailedMessage)),
+			        StoreListFailure(opened_model.status, std::move(opened_model.error_message))),
 			};
 		}
 		if (user_model_store_test_hooks::Current().after_lock_before_revalidate) {
@@ -679,24 +804,34 @@ namespace howdy::native {
 			};
 		}
 		// The path must still name the opened model, or still be free when there was none.
-		const bool have_model = opened_model->file.Valid();
-		if (have_model ? !PathIdentifiesFd(path_result.path, opened_model->file.Get())
-		               : !PathIsAbsent(path_result.path)) {
+		const bool have_model = opened_model.file.Valid();
+		const auto unchanged  = PathStillMatches(path_result.path, opened_model.file.Get());
+		if (!unchanged.has_value()) {
+			const int error_number = errno;
+			return UserModelStoreMutationResult{
+			    .document = user_model_codec::Document(
+			        StoreListFailure(UserModelStatus::kParseError,
+					                 WithErrno(std::string(kUserModelFileInspectionFailedMessage) +
+					                               ": " + path_result.path.string(),
+					                           error_number))),
+			};
+		}
+		if (!*unchanged) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(StoreListFailure(
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
 		auto document = have_model
-		                    ? LoadDocumentFromFd(opened_model->file.Get(), path_result.path,
+		                    ? LoadDocumentFromFd(opened_model.file.Get(), path_result.path,
 		                                         {.backend = {}, .model = {}, .strict_shape = true},
 		                                         DefaultSecureOwnerUid())
 		                    : user_model_codec::Document(
 		                          UserModelListResult{.status = UserModelStatus::kNoModel});
 		return UserModelStoreMutationResult{
 		    .transaction =
-		        UserModelStoreTransaction(path_result.path, std::move(opened_model->namespace_lock),
-				                          std::move(opened_model->file)),
+		        UserModelStoreTransaction(path_result.path, std::move(opened_model.namespace_lock),
+				                          std::move(opened_model.file)),
 		    .document = std::move(document),
 		};
 	}
@@ -723,10 +858,10 @@ namespace howdy::native {
 			user_model_store_test_hooks::Current().before_lock(path_result.path);
 		}
 		auto opened_model = LockNamespaceAndOpenModelFile(path_result.path, false);
-		if (!opened_model.has_value()) {
+		if (opened_model.status != UserModelStatus::kOk) {
 			return UserModelStoreTransactionResult{
-			    .status        = UserModelStatus::kLockFailed,
-			    .error_message = kModelFileLockFailedMessage,
+			    .status        = opened_model.status,
+			    .error_message = std::move(opened_model.error_message),
 			};
 		}
 		if (user_model_store_test_hooks::Current().after_lock_before_revalidate) {
@@ -749,7 +884,18 @@ namespace howdy::native {
 			    .error_message = regular_error,
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, opened_model->file.Get())) {
+		// As in BeginMutation, only a path that names another file, or none, is a changed model.
+		const auto unchanged = PathStillMatches(path_result.path, opened_model.file.Get());
+		if (!unchanged.has_value()) {
+			const int error_number = errno;
+			return UserModelStoreTransactionResult{
+			    .status        = UserModelStatus::kParseError,
+			    .error_message = WithErrno(std::string(kUserModelFileInspectionFailedMessage) +
+				                               ": " + path_result.path.string(),
+				                           error_number),
+			};
+		}
+		if (!*unchanged) {
 			return UserModelStoreTransactionResult{
 			    .status        = UserModelStatus::kModelChanged,
 			    .error_message = std::string(kUserModelChangedMessage),
@@ -758,8 +904,8 @@ namespace howdy::native {
 		return UserModelStoreTransactionResult{
 		    .status = UserModelStatus::kOk,
 		    .transaction =
-		        UserModelStoreTransaction(path_result.path, std::move(opened_model->namespace_lock),
-				                          std::move(opened_model->file)),
+		        UserModelStoreTransaction(path_result.path, std::move(opened_model.namespace_lock),
+				                          std::move(opened_model.file)),
 		};
 	}
 

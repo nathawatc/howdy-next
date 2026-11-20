@@ -1,3 +1,4 @@
+#include "../../src/storage/user_model_codec/internal.hpp"
 #include "../../src/storage/user_model_store/internal.hpp"
 #include "storage/user_model_limits.hpp"
 #include "storage/user_model_status.hpp"
@@ -5,6 +6,7 @@
 #include "storage/user_model_types.hpp"
 #include "storage/user_models.hpp"
 #include "storage/user_models_test_support.hpp"
+#include "support/atomic_files.hpp"
 #include "support/bit_flags.hpp"
 #include "support/face_metric.hpp"
 #include "test_support.hpp"
@@ -13,6 +15,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -77,8 +80,10 @@ namespace howdy::test::user_models {
 				const auto current = ReadFile(model_path);
 				const auto result =
 				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
-				ok &= Expect(result.status == howdy::native::UserModelStatus::kLockFailed,
-				             std::string(description) + ": status");
+				ok &= Expect(result.status == howdy::native::UserModelStatus::kInsecurePath &&
+				                 result.error_message.contains("User model lock file") &&
+				                 result.error_message.contains(lock_path.string()),
+				             std::string(description) + ": reported as an insecure lock file");
 				ok &= Expect(ReadFile(model_path) == current,
 				             std::string(description) + ": model bytes unchanged");
 			};
@@ -106,6 +111,215 @@ namespace howdy::test::user_models {
 			// Later tests expect the model as it was before these appends.
 			ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
 			             "restore the model after the lock file checks");
+			return ok;
+		}
+
+		// The open reports what failed, not a lock failure. The before_lock hook runs after the
+		// path checks and before the open, where only the open itself can notice a change.
+		auto ExpectOpenFailureCauses(const std::filesystem::path            &model_path,
+		                             const howdy::native::NewUserModelEntry &entry) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::UserModelStatus;
+			using howdy::native::UserModelStore;
+			using howdy::native::user_model_store_test_hooks::ScopedHooks;
+
+			struct Outcome {
+				UserModelStatus status = UserModelStatus::kOk;
+				std::string     message;
+			};
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      temp_root = model_path.parent_path().parent_path();
+			const auto      before    = ReadFile(model_path);
+			const auto      restore   = [&](const std::string &description) -> void {
+				fs::remove(model_path, ec);
+				ok &= Expect(WriteFile(model_path, before) && chmod(model_path.c_str(), 0600) == 0,
+				             "restore the model after " + description);
+			};
+			const auto begin_mutation = [&] -> Outcome {
+				auto        result = UserModelStore::BeginMutation("alice", {temp_root});
+				const auto &listed = result.document.Result();
+				return {.status = listed.status, .message = listed.error_message};
+			};
+			const auto lock_existing = [&] -> Outcome {
+				const auto result = UserModelStore::LockExisting("alice", {temp_root});
+				return {.status = result.status, .message = result.error_message};
+			};
+
+			const auto victim_path    = temp_root / "open-symlink-victim.txt";
+			const auto victim_content = std::string("open victim sentinel\n");
+			ok &= Expect(WriteFile(victim_path, victim_content), "write the open victim");
+			const auto expect_symlink_rejected = [&](const std::string &name,
+			                                         const auto        &run) -> void {
+				PostLockSymlinkSwap hook{.victim_path = victim_path};
+				{
+					const ScopedHooks hooks({
+					    .before_lock = [&hook](const fs::path &path) -> void {
+						    ReplaceWithVictimSymlinkAfterLock(&hook, path);
+					    },
+					});
+					const auto        outcome = run();
+					ok &= Expect(hook.swapped, name + ": swap in a symlink before the open");
+					ok &= Expect(outcome.status == UserModelStatus::kInsecurePath &&
+					                 outcome.message.contains("must be a regular file"),
+					             name + ": a symlink at the open is an insecure path");
+				}
+				ok &= Expect(ReadFile(victim_path) == victim_content,
+				             name + ": a symlink at the open leaves its target unchanged");
+				restore(name + " symlink check");
+			};
+			expect_symlink_rejected("begin_mutation", begin_mutation);
+			expect_symlink_rejected("lock_existing", lock_existing);
+			fs::remove(victim_path, ec);
+
+			{
+				const ScopedHooks hooks({
+				    .before_lock = [&](const fs::path &path) -> void {
+					    ok &= Expect(chmod(path.c_str(), 0620) == 0,
+						             "make the model group-writable before the open");
+				    },
+				});
+				const auto        outcome = begin_mutation();
+				ok &= Expect(outcome.status == UserModelStatus::kInsecurePath &&
+				                 outcome.message.contains("failed security validation"),
+				             "a group-writable model at the open is an insecure path");
+			}
+			restore("group-writable check");
+
+			const auto remove_model = [&](const fs::path &path) -> void {
+				fs::remove(path, ec);
+			};
+			{
+				const ScopedHooks hooks({.before_lock = remove_model});
+				ok &= Expect(lock_existing().status == UserModelStatus::kNoModel,
+				             "lock_existing reports a model removed before the open as no model");
+			}
+			restore("removed-model lock check");
+			{
+				const auto inspection = howdy::native::InspectUserModelFile("alice", {temp_root});
+				const ScopedHooks hooks({.before_lock = remove_model});
+				ok &= Expect(inspection.snapshot.has_value() &&
+				                 howdy::native::ClearUserModelEntriesIfUnchanged(
+				                     "alice", *inspection.snapshot, {temp_root})
+				                         .status == UserModelStatus::kModelChanged,
+				             "clear reports a model removed before the open as changed");
+			}
+			restore("removed-model clear check");
+			{
+				const ScopedHooks hooks({.before_lock = remove_model});
+				const auto        appended =
+				    howdy::native::AppendUserModelEntry("alice", entry, {temp_root});
+				const auto listed = howdy::native::ListUserModelEntries("alice", entry.backend,
+				                                                        entry.model, {temp_root});
+				ok &=
+				    Expect(appended.status == UserModelStatus::kOk &&
+					           listed.status == UserModelStatus::kOk && listed.entries.size() == 1,
+					       "an append whose model was removed before the open creates one");
+			}
+			restore("removed-model append check");
+
+			WhenSupported(
+			    geteuid() != 0,
+			    [&] -> void {
+				    {
+					    const ScopedHooks hooks({
+					        .before_lock = [&](const fs::path &path) -> void {
+						        ok &= Expect(chmod(path.c_str(), 0) == 0,
+								             "make the model unreadable before the open");
+					        },
+					    });
+					    const auto        outcome = begin_mutation();
+					    ok &=
+					        Expect(outcome.status == UserModelStatus::kLockFailed &&
+							           outcome.message.contains("Failed to open user model file") &&
+							           outcome.message.contains(model_path.string()),
+							       "an unexpected open failure names the model file and errno");
+				    }
+				    restore("unreadable-model check");
+			    },
+			    "open permission failure while running as root");
+			return ok;
+		}
+
+		// Anything put at a free model path between the open and the commit is a taken path,
+		// however late it appears: staging refuses a symlink there, and RENAME_NOREPLACE refuses
+		// whatever is there once staged.
+		auto ExpectFirstModelPathTaken(const std::filesystem::path &model_path) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::AtomicFileCommitResult;
+			using howdy::native::user_model_store_test_hooks::ScopedHooks;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      models_dir     = model_path.parent_path();
+			const auto      temp_root      = models_dir.parent_path();
+			const auto      first_path     = models_dir / "bob.dat";
+			const auto      victim_path    = temp_root / "first-model-symlink-victim.txt";
+			const auto      victim_content = std::string("first model victim sentinel\n");
+			const auto      taker_content  = std::string("not a model\n");
+			const auto      put_symlink    = [&](const fs::path &path) -> bool {
+				return symlink(victim_path.c_str(), path.c_str()) == 0;
+			};
+			const auto put_file = [&](const fs::path &path) -> bool {
+				return WriteFile(path, taker_content);
+			};
+			const auto expect_taken = [&](const std::string &name, bool after_staging,
+			                              const std::function<bool(const fs::path &)> &take,
+			                              const std::function<bool()> &left_alone) -> void {
+				fs::remove(first_path, ec);
+				ok &= Expect(WriteFile(victim_path, victim_content), name + ": write the victim");
+				{
+					auto mutation =
+					    howdy::native::UserModelStore::BeginMutation("bob", {temp_root});
+					ok &= Expect(mutation.transaction.has_value() &&
+					                 mutation.document.Result().status ==
+					                     howdy::native::UserModelStatus::kNoModel,
+					             name + ": begin a first enrollment");
+					ok &= Expect(howdy::native::user_model_codec::AppendEntry(
+					                 mutation.document,
+					                 {
+					                     .id        = 0,
+					                     .time      = 1,
+					                     .label     = "first",
+					                     .encodings = {{0.1F, 0.2F}},
+					                 }),
+					             name + ": add the first entry");
+					bool taken = false;
+					if (!after_staging) {
+						taken = take(first_path);
+					}
+					const ScopedHooks hooks({
+					    .before_write_commit = [&](const fs::path &path) -> void {
+						    if (after_staging) {
+							    taken = take(path);
+						    }
+					    },
+					});
+					const auto result = mutation.transaction.has_value()
+					                        ? mutation.transaction->WriteDocument(mutation.document)
+					                        : AtomicFileCommitResult::kNotCommitted;
+					ok &= Expect(taken, name + ": take the free model path after the open");
+					ok &= Expect(result == AtomicFileCommitResult::kDestinationExists,
+					             name + ": a first model refuses a taken path");
+				}
+				ok &= Expect(left_alone() && ReadFile(victim_path) == victim_content,
+				             name + ": a refused first model leaves the path as it was");
+				ok &= Expect(StagedUserModelPaths(models_dir).empty(),
+				             name + ": a refused first model leaves nothing staged");
+				fs::remove(first_path, ec);
+				fs::remove(victim_path, ec);
+			};
+			const auto symlink_left = [&] -> bool {
+				struct stat path_stat{};
+				return lstat(first_path.c_str(), &path_stat) == 0 && S_ISLNK(path_stat.st_mode);
+			};
+			const auto file_left = [&] -> bool {
+				return ReadFile(first_path) == taker_content;
+			};
+			expect_taken("symlink before staging", false, put_symlink, symlink_left);
+			expect_taken("symlink after staging", true, put_symlink, symlink_left);
+			expect_taken("regular file after staging", true, put_file, file_left);
 			return ok;
 		}
 
@@ -511,6 +725,8 @@ namespace howdy::test::user_models {
 			             "restore the model after the locked write");
 		}
 		ok &= ExpectRootOnlyNamespaceLock(model_path, second_entry);
+		ok &= ExpectOpenFailureCauses(model_path, second_entry);
+		ok &= ExpectFirstModelPathTaken(model_path);
 		return ok;
 	}
 }  // namespace howdy::test::user_models

@@ -105,8 +105,9 @@ namespace howdy::native::auth_helper {
 				return;
 			}
 			if (model_stat.st_size == 0) {
-				opened->model_state   = ModelState::kInvalidStorage;
-				opened->model_message = "User model file is empty: " + readiness.path.string();
+				opened->model_state = ModelState::kInvalidStorage;
+				opened->model_message =
+				    std::string(kUserModelFileEmptyMessage) + readiness.path.string();
 				return;
 			}
 			opened->model_state = ModelState::kReady;

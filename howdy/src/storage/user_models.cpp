@@ -5,12 +5,14 @@
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
 #include "support/atomic_files.hpp"
+#include "support/error_message.hpp"
 #include "support/file_security.hpp"
 #include "support/file_security/validation_root.hpp"
 #include "user_model_codec/internal.hpp"
 #include "user_model_store/internal.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <ctime>
 #include <filesystem>
@@ -69,7 +71,7 @@ namespace howdy::native {
 				return MutationFailure(
 				    UserModelStatus::kAtomicExchangeUnsupported,
 				    "Cannot update user model file: filesystem or kernel does not support required "
-				    "atomic model-file exchange; no changes were made");
+				    "atomic model-file exchange or no-replace rename; no changes were made");
 			}
 			if (result == AtomicFileCommitResult::kDestinationExists) {
 				return ModelChangedFailure();
@@ -322,9 +324,15 @@ namespace howdy::native {
 		}
 		const auto unchanged = transaction.transaction->SnapshotMatches(expected_snapshot);
 		if (!unchanged.has_value()) {
+			const int error_number = errno;
+			// As in LockExisting, a model gone from the path is a changed model.
+			if (error_number == ENOENT) {
+				return ModelChangedFailure();
+			}
 			return MutationFailure(UserModelStatus::kParseError,
 			                       std::string(kUserModelFileInspectionFailedMessage) + ": " +
-			                           transaction.transaction->Path().string());
+			                           transaction.transaction->Path().string() + " (" +
+			                           SystemErrorMessage(error_number) + ")");
 		}
 		if (!*unchanged) {
 			return ModelChangedFailure();

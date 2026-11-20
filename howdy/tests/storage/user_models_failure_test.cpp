@@ -327,8 +327,11 @@ namespace howdy::test::user_models {
 				// An empty file, such as an older version's placeholder, is invalid storage.
 				ok &= Expect(WriteFile(model_path, "") && chmod(model_path.c_str(), 0600) == 0,
 				             "strand an empty model file");
-				ok &= Expect(append().status == UserModelStatus::kParseError,
-				             "append rejects a stranded empty model file");
+				const auto appended = append();
+				ok &= Expect(appended.status == UserModelStatus::kParseError &&
+				                 appended.error_message.contains("empty") &&
+				                 appended.error_message.contains(model_path.string()),
+				             "append rejects a stranded empty model file, by name");
 				ok &= Expect(howdy::native::ListUserModelEntries("first-user", entry.backend,
 				                                                 entry.model, {temp_root})
 				                     .status == UserModelStatus::kParseError,
