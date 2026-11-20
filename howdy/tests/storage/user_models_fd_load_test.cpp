@@ -99,8 +99,7 @@ namespace howdy::test::user_models {
 		}
 
 		{
-			// A second link is never accepted, even under a staged runtime path: descriptors come
-			// from the canonical store.
+			// A second link is never accepted, whatever path the descriptor claims.
 			const auto linked_path = temp_root / "alice-link.dat";
 			ok &= Expect(link(model_path.c_str(), linked_path.c_str()) == 0,
 			             "hard-link descriptor model");

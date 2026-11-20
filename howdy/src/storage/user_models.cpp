@@ -366,13 +366,11 @@ namespace howdy::native {
 			    .error_message = read_only.error_message,
 			};
 		}
-		// No staged two-link model here: a descriptor comes from the canonical store.
 		auto document = UserModelStore::LoadDocumentFromFd(
 		    model_fd, display_path,
 		    {.backend = expected_backend, .model = {}, .strict_shape = false},
 		    {
 		        .owner_uid               = owner_uid,
-		        .accept_staged_link      = false,
 		        .treat_empty_as_no_model = false,
 		    });
 		return FlattenLoadedModels(document);

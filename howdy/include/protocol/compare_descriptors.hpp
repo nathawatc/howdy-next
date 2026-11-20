@@ -5,13 +5,12 @@
 
 namespace howdy::native::compare_descriptors {
 
-	// Descriptor mode: instead of paths, PAM hands compare the runtime config at kConfigFd and the
-	// user's model at kModelFd, each opened read-only from the root-owned store, and announces
-	// them with kConfigEnvironmentEntry and kModelEnvironmentEntry. Both come together and only
-	// with the verdict socket (protocol/compare_verdict.hpp); compare rejects any other mix, and a
-	// --config argument alongside them. Compare owns the two descriptors, loads them before it
-	// opens anything else, and closes each one right after loading it. Without the two variables
-	// compare runs in path mode, which a PAM module loaded before the upgrade still uses.
+	// PAM hands compare the runtime config at kConfigFd and the user's model at kModelFd, each
+	// opened read-only from the root-owned store, and announces them with kConfigEnvironmentEntry
+	// and kModelEnvironmentEntry. Both come together and only with the verdict socket
+	// (protocol/compare_verdict.hpp); compare reads its config and model nowhere else and rejects
+	// any other mix. Compare owns the two descriptors, loads them before it opens anything else,
+	// and closes each one right after loading it.
 	inline constexpr int  kConfigFd               = 4;
 	inline constexpr auto kConfigEnvironmentName  = "HOWDY_COMPARE_CONFIG_FD";
 	inline constexpr auto kConfigEnvironmentValue = "4";

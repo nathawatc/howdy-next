@@ -92,14 +92,8 @@ target_link_libraries(
  PRIVATE howdy_config howdy_runtime_paths PkgConfig::INIREADER
 )
 
-add_library(
- howdy_user_model_readiness STATIC
- src/storage/user_model_readiness.cpp
- src/storage/user_model_readiness/internal.hpp
- src/storage/user_model_readiness/staged.cpp
-)
+add_library(howdy_user_model_readiness STATIC src/storage/user_model_readiness.cpp)
 howdy_configure_native_target(howdy_user_model_readiness)
-target_link_libraries(howdy_user_model_readiness PRIVATE PkgConfig::LIBACL)
 
 add_library(howdy_model_file STATIC src/model_assets/model_file.cpp)
 howdy_configure_native_target(howdy_model_file)
@@ -250,23 +244,6 @@ howdy_install(
  RUNTIME DESTINATION "${HOWDY_HELPER_DIR}"
 )
 
-# Staging runtime without the setuid helper's command front end, so the CLI can
-# purge staged copies without linking the helper's argument and lease handling.
-add_library(
- howdy_auth_helper_runtime STATIC
- src/auth_helper/acl.cpp
- src/auth_helper/runtime.cpp
- src/auth_helper/runtime/internal.hpp
- src/auth_helper/runtime/sources.cpp
- src/auth_helper/runtime/slots.cpp
- src/auth_helper/staged_copies.cpp
-)
-howdy_configure_native_target(howdy_auth_helper_runtime)
-target_link_libraries(
- howdy_auth_helper_runtime
- PRIVATE PkgConfig::LIBACL howdy_runtime_paths howdy_user_model_readiness
-)
-
 # The auth helper's one-message result (protocol/runtime_descriptor_message.hpp), shared by
 # the helper and the PAM module.
 add_library(
@@ -289,7 +266,7 @@ add_library(howdy_auth_helper_core STATIC src/auth_helper/command.cpp)
 howdy_configure_native_target(howdy_auth_helper_core)
 target_link_libraries(
  howdy_auth_helper_core
- PUBLIC howdy_auth_helper_runtime howdy_runtime_descriptors
+ PUBLIC howdy_runtime_descriptors
  PRIVATE howdy_runtime_paths
 )
 
@@ -354,7 +331,6 @@ target_link_libraries(
   PkgConfig::LIBCURL
   howdy_opencv
   howdy_cli_core
-  howdy_auth_helper_runtime
   howdy_config
   howdy_runtime_config_loader
   howdy_face_model

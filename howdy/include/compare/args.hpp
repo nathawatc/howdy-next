@@ -8,9 +8,6 @@
 namespace howdy::native {
 	struct CompareArgs {
 		std::string user;
-		std::string config_path;
-		// Set when --config named the path; descriptor mode rejects it.
-		bool config_path_given = false;
 	};
 
 	enum class CompareArgsStatus : std::uint8_t {
@@ -26,7 +23,8 @@ namespace howdy::native {
 		CompareArgs       args;
 	};
 
-	auto ParseCompareArgs(int argc, char **argv, const std::string &default_config_path)
-	    -> CompareArgsParseResult;
+	// Compare takes one argument, the user; its config and model come as descriptors
+	// (protocol/compare_descriptors.hpp).
+	auto ParseCompareArgs(int argc, char **argv) -> CompareArgsParseResult;
 
 }  // namespace howdy::native

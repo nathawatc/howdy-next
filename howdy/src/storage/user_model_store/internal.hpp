@@ -85,9 +85,7 @@ namespace howdy::native {
 		struct OpenedModelReadPolicy {
 			// Required file owner; nullopt skips the owner check.
 			std::optional<uid_t> owner_uid;
-			// Also accept a staged runtime model (two links, validated by its staged layout).
-			bool accept_staged_link      = false;
-			bool treat_empty_as_no_model = false;
+			bool                 treat_empty_as_no_model = false;
 		};
 
 		struct UserModelPathResult {

@@ -13,7 +13,6 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first.
 - `user_model_store.cpp`: secure user-model transaction boundary
 - `user_models.cpp`: high-level list/mutation/load operations
 - `user_model_readiness.cpp`: readiness routing and canonical checks
-- `user_model_readiness/staged.cpp`: staged-runtime ACL/path/model validation
 
 Private cross-TU contracts live under the matching `src/storage/<component>/internal.hpp`. Public
 `user_model_types.hpp` value/result consumers must not inherit codec, locking, transaction, path, or
@@ -31,7 +30,7 @@ LOC.
 
 `LoadUserModelsFromFd` loads from a descriptor another process opened, with the same rules as
 `LoadRuntimeConfigFromFd`: no path walk, an explicit owner, open read-only and not `O_PATH`, one
-link, and a positional read. It never accepts a staged two-link model.
+link, and a positional read.
 
 `user_model_readiness` remains descriptor-relative and fail closed. Keep
 `storage/user_model_store/test_hooks.hpp` in production includes because the production store

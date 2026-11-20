@@ -496,10 +496,7 @@ namespace howdy::native {
 				                 "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
-		const bool secure = OpenedModelFileIsSecure(opened_file, policy.owner_uid) ||
-		                    (policy.accept_staged_link && opened_file.st_nlink == 2 &&
-		                     ValidateStagedUserModelFile(fd, path));
-		if (!secure) {
+		if (!OpenedModelFileIsSecure(opened_file, policy.owner_uid)) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kInsecurePath,
 				                 "Opened user model file failed security validation: " +
@@ -557,7 +554,6 @@ namespace howdy::native {
 		return LoadDocumentFromFd(input.Get(), path, expectations,
 		                          {
 		                              .owner_uid               = DefaultSecureOwnerUid(),
-		                              .accept_staged_link      = true,
 		                              .treat_empty_as_no_model = false,
 		                          });
 	}
@@ -642,7 +638,6 @@ namespace howdy::native {
 			                   {.backend = {}, .model = {}, .strict_shape = true},
 			                   {
 		                           .owner_uid               = DefaultSecureOwnerUid(),
-		                           .accept_staged_link      = true,
 		                           .treat_empty_as_no_model = locked_file->created_empty_file,
 		                       });
 		return UserModelStoreMutationResult{

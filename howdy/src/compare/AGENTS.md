@@ -24,14 +24,13 @@ Privilege dropping is one security-sensitive subsystem:
 
 ## Invariants
 
-Compare runs in path mode or descriptor mode. In descriptor mode PAM passes the config at fd 4 and
-the user model at fd 5, announced by `HOWDY_COMPARE_CONFIG_FD=4` and `HOWDY_COMPARE_MODEL_FD=5`.
-`TakeRuntimeDescriptors` takes them before compare opens anything, so neither number can be one of
-compare's own files. Both must be announced exactly and open, the verdict socket must be announced,
-and `--config` must be absent; anything else aborts. Every descriptor announced at its exact
-number is compare's from then on and is closed on every path, each right after it is loaded. The
-step 1 fd loaders own the type, owner, mode, and link checks; do not duplicate them here. Path
-mode stays for a PAM module loaded before the upgrade.
+Compare reads its config and the user model only from descriptors: PAM passes the config at fd 4
+and the model at fd 5, announced by `HOWDY_COMPARE_CONFIG_FD=4` and `HOWDY_COMPARE_MODEL_FD=5`, and
+compare's only argument is the user. `TakeRuntimeDescriptors` takes them before compare opens
+anything, so neither number can be one of compare's own files. Both must be announced exactly and
+open, and the verdict socket must be announced; anything else aborts. Every descriptor announced at
+its exact number is compare's from then on and is closed on every path, each right after it is
+loaded. The fd loaders own the type, owner, mode, and link checks; do not duplicate them here.
 
 Preserve privilege-transition ordering, capability clearing, ID/fs-ID checks, root-regain
 verification, and fatal fail-closed behavior. Do not move policy into syscall adapters or split the

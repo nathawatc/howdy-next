@@ -57,7 +57,6 @@
           ];
 
           buildInputs = [
-            pkgs.acl
             pkgs.curl
             pkgs.inih
             pkgs.libevdev

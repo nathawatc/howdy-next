@@ -1,22 +1,13 @@
-#include "auth_helper/acl.hpp"
-#include "auth_helper/auth_helper_acl_fake.hpp"
-#include "auth_helper/auth_helper_acl_probe.hpp"
 #include "auth_helper/auth_helper_test_groups.hpp"
 #include "test_support.hpp"
 
 #include <filesystem>
-#include <iostream>
 #include <string>
 #include <system_error>
 
 #include <unistd.h>
 
-#include <sys/stat.h>
-
 using howdy::test::Expect;
-using howdy::test::auth_helper::AclSupport;
-using howdy::test::auth_helper::FakeAclContext;
-using howdy::test::auth_helper::ProbeAclSupport;
 
 auto main() -> int {
 	namespace fs = std::filesystem;
@@ -28,30 +19,9 @@ auto main() -> int {
 	fs::remove_all(temp_root, ec);
 	fs::create_directories(temp_root, ec);
 	ok &= Expect(!ec, "creates auth-helper temp root");
-	const auto acl_support_result = ProbeAclSupport(temp_root);
-	if (acl_support_result == AclSupport::kUnsupported) {
-		std::cerr << "SKIP: filesystem does not support usable POSIX named-user ACLs\n";
-	} else if (acl_support_result == AclSupport::kError) {
-		ok = false;
-	}
-	const bool  acl_supported  = acl_support_result == AclSupport::kSupported;
-	const bool  acl_functional = acl_support_result != AclSupport::kError;
-	const bool  use_fake_acl   = acl_support_result == AclSupport::kUnsupported;
-	const uid_t functional_target_uid =
-	    use_fake_acl && geteuid() == 0 && getuid() == geteuid() ? 61001 : getuid();
-	FakeAclContext fake_acl;
-	const auto     production_operations = howdy::native::auth_helper::ProductionAclOperations();
-	const auto     operations = use_fake_acl ? fake_acl.Operations() : production_operations;
 
-	ok &= RunAuthHelperPathTests(temp_root);
+	ok &= RunAuthHelperDiagnosticsTests();
 	ok &= RunAuthHelperDescriptorTests(temp_root);
-	ok &= RunAuthHelperStagingTests(temp_root, {
-	                                               .acl_functional        = acl_functional,
-	                                               .acl_supported         = acl_supported,
-	                                               .functional_target_uid = functional_target_uid,
-	                                               .operations            = operations,
-	                                               .production_operations = production_operations,
-	                                           });
 
 	fs::remove_all(temp_root, ec);
 	return ok ? 0 : 1;

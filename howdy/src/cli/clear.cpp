@@ -1,7 +1,6 @@
 #include "cli/clear.hpp"
 
 #include "app/command_invocation.hpp"
-#include "auth_helper/staged_copies.hpp"
 #include "cli/clear/internal.hpp"
 #include "storage/user_model_status.hpp"
 #include "storage/user_model_types.hpp"
@@ -45,18 +44,11 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(
 	if (!invocation.resolved_user.has_value()) {
 		return kClearExitAbort;
 	}
-	const auto &user = *invocation.resolved_user;
-	// Staged copies go whenever the stored models may have changed or are gone.
-	using howdy::native::auth_helper::StagedPurgeTrigger;
-	const howdy::native::auth_helper::StagedCopyPurger purge_staged_copies(
-	    dependencies.purge_staged_copies, dependencies.context, user);
-
-	const auto inspection = dependencies.inspect_user_model_file(dependencies.context, user);
+	const auto &user       = *invocation.resolved_user;
+	const auto  inspection = dependencies.inspect_user_model_file(dependencies.context, user);
 	if (inspection.status == howdy::native::UserModelStatus::kNoModelDirectory ||
 	    inspection.status == howdy::native::UserModelStatus::kNoModel) {
-		// An earlier run may have left a staged copy that was in use; this retries its removal.
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		purge_staged_copies(StagedPurgeTrigger::kRetry);
 		return kClearExitOk;
 	}
 	if (inspection.status != howdy::native::UserModelStatus::kOk) {
@@ -84,18 +76,12 @@ auto howdy::native::clear_internal::ClearMainWithDependencies(
 	if (clear_result.status == howdy::native::UserModelStatus::kNoModelDirectory ||
 	    clear_result.status == howdy::native::UserModelStatus::kNoModel) {
 		std::cout << kNoFaceModelsFoundMessage << '\n';
-		purge_staged_copies(StagedPurgeTrigger::kRetry);
 		return kClearExitOk;
 	}
 	if (clear_result.status != howdy::native::UserModelStatus::kOk) {
 		std::cout << clear_result.error_message << "\n";
 	} else {
 		std::cout << "\nModels cleared\n";
-	}
-	// An uncertain commit may have cleared the models too. The staged copy goes after the outcome
-	// is reported, so any notice about it follows that line.
-	if (howdy::native::UserModelMutationMayHaveCommitted(clear_result.status)) {
-		purge_staged_copies(StagedPurgeTrigger::kModelsChanged);
 	}
 	return clear_result.status == howdy::native::UserModelStatus::kOk ? kClearExitOk
 	                                                                  : kClearExitAbort;
@@ -110,10 +96,6 @@ auto howdy::native::clear_internal::ClearMainWithValidationRoot(
 	        .context                               = &validation_root,
 	        .inspect_user_model_file               = InspectUserModelFileDependency,
 	        .clear_user_model_entries_if_unchanged = ClearUserModelEntriesIfUnchangedDependency,
-	        // A fixture root has no staged copies; only the production store is purged.
-	        .purge_staged_copies = validation_root.path.empty()
-			                           ? howdy::native::auth_helper::PurgeStagedCopiesToStdout
-			                           : nullptr,
 	    });
 }
 
