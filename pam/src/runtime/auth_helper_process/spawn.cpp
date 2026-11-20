@@ -302,7 +302,8 @@ namespace howdy::pam::auth_helper_process::internal {
 		bool                    spawned = result == 0;
 		if (!spawned) {
 			spawn->child_pid = -1;
-			LogAuthHelperFailure(operations, "posix_spawn", result);
+			// SpawnChild's error may come from pidfd_spawn, pidfd_getpid or posix_spawn.
+			LogAuthHelperFailure(operations, "spawn", result);
 		} else if (taken_pidfd.Valid()) {
 			// Taken with the child, so it names the helper whatever the application reaps.
 			if (spawn->child_pid > 0) {

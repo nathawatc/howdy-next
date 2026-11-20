@@ -32,12 +32,18 @@ Signal and reap child processes through a pidfd, never a bare PID: a PAM applica
 children itself can free the PID for reuse. Both children start through `SpawnChild`, which uses
 `pidfd_spawn` (glibc 2.39, built only where available) so the pidfd comes with the child and no reap
 can come in between; `pidfd_getpid` supplies the PID the fallbacks below need, and a PID already
-gone reads as -1. Where the build has no `pidfd_spawn`, or it fails with `ENOSYS` (a kernel or
-filter without clone3), the child comes from `posix_spawn` and the pidfd is taken right after it.
-Carry it to every wait and signal; never open one later from the PID, which may by then name another
-process. A pidfd is required: when it cannot be taken, stop the child at once and fail the spawn
-(compare has always needed `pidfd_open` to poll, so this costs no configuration that worked before).
-The one exception is an auth helper already reaped elsewhere by the time its pidfd or PID is read
+gone reads as -1 (`ESRCH`). Depending on the glibc and kernel, `pidfd_getpid` reads
+`/proc/self/fdinfo`, which a chroot, a `/proc` from another PID namespace or a security profile can
+make unreadable, so `pidfd_spawn` is used only after `pidfd_getpid` returns this process's PID for a
+pidfd of itself (when no such pidfd can be opened the probe proves nothing, and `pidfd_spawn` is
+still tried, since the fallback below needs `pidfd_open` as well); any other `pidfd_getpid` failure
+after that stops the child through its pidfd and fails the spawn. Where the build has no
+`pidfd_spawn`, where that probe fails, or where it fails with `ENOSYS` (a kernel or filter without
+clone3), the child comes from `posix_spawn` and the pidfd is taken right after it. Carry it to
+every wait and signal; never open one later from the PID, which may by then name another process.
+A pidfd is required: when it cannot be taken, stop the child at once and fail the spawn (compare
+has always needed `pidfd_open` to poll, so this costs no configuration that worked before). The one
+exception is an auth helper already reaped elsewhere by the time its pidfd or PID is read
 (`ESRCH`; `ECHILD` from the ownership check; or `EINVAL`, which older kernels' `pidfd_open` returns
 while a reaped process is being released; see `PidfdErrorMeansChildGone`): nothing is left to name
 or stop, and its message decides, as below. Compare has no such path; it fails the spawn.

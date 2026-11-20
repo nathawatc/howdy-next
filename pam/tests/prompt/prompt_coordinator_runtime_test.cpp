@@ -782,7 +782,8 @@ namespace {
 #endif
 
 	// Where pidfd_spawn exists, the pidfd comes with compare, so Spawn never opens one: with
-	// pidfd_open failing, the spawn still succeeds and hands back that pidfd.
+	// pidfd_open failing everywhere (SpawnChild's pidfd_getpid probe then proves nothing and
+	// pidfd_spawn is still tried), the spawn still succeeds and hands back that pidfd.
 	auto TestProductionSpawnTakesPidfdWithChild() -> bool {
 #ifdef HOWDY_HAVE_PIDFD_SPAWN
 		const CompareRequestFiles files;

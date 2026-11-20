@@ -26,7 +26,11 @@ namespace {
 
 	struct PidfdSpawnState {
 		bool force_enosys = false;
-		int  calls        = 0;
+		// When set, pidfd_getpid fails with it: for every pidfd, or, with
+		// getpid_fails_children_only, only for a pidfd of another process than this one.
+		int  getpid_error               = 0;
+		bool getpid_fails_children_only = false;
+		int  calls                      = 0;
 	};
 
 	auto SpawnState() -> PidfdSpawnState & {
@@ -59,6 +63,22 @@ auto TestPidfdSpawn(int *pidfd, const char *path, const posix_spawn_file_actions
 }
 
 // NOLINTEND(bugprone-easily-swappable-parameters)
+
+extern "C" auto TestPidfdGetpid(int pidfd) -> pid_t __asm__("__wrap_pidfd_getpid");
+extern "C" auto RealPidfdGetpid(int pidfd) -> pid_t __asm__("__real_pidfd_getpid");
+
+// Stands in, when asked, for a pidfd_getpid that fails for a reason other than a reaped child:
+// everywhere (no readable /proc/self/fdinfo), or only after SpawnChild's probe of this process
+// passed.
+auto TestPidfdGetpid(int pidfd) -> pid_t {
+	const pid_t real  = RealPidfdGetpid(pidfd);
+	const auto &state = SpawnState();
+	if (state.getpid_error != 0 && (!state.getpid_fails_children_only || real != getpid())) {
+		errno = state.getpid_error;
+		return -1;
+	}
+	return real;
+}
 #endif
 
 namespace {
@@ -183,6 +203,39 @@ namespace {
 		return ok;
 	}
 
+	// Where pidfd_getpid does not work (it may need /proc/self/fdinfo), posix_spawn is used as
+	// before pidfd_spawn, and the caller takes the pidfd.
+	auto TestGetpidUnavailableFallsBack() -> bool {
+		const int calls_before    = SpawnState().calls;
+		SpawnState().getpid_error = EACCES;
+		const auto spawned        = SpawnSelf("--exit", "4");
+		SpawnState().getpid_error = 0;
+		bool ok    = Expect(spawned.result == 0 && spawned.pid > 0 && !spawned.pidfd.Valid() &&
+		                        SpawnState().calls == calls_before,
+		                    "where pidfd_getpid does not work, SpawnChild uses posix_spawn");
+		int  error = 0;
+		const ScopedFd taken(howdy::pam::runtime::TakeSpawnedChildPidfd(spawned.pid, &error));
+		ok &= Expect(taken.Valid() && ExitCode(spawned.pid, taken.Get()) == 4,
+		             "the posix_spawn child is taken and reaped as before");
+		return ok;
+	}
+
+	// A pidfd_getpid failure other than ESRCH says nothing about the child, which may still be
+	// running: SpawnChild stops and reaps it through the pidfd and fails the spawn.
+	auto TestGetpidFailureStopsChild() -> bool {
+		SpawnState().getpid_error               = EIO;
+		SpawnState().getpid_fails_children_only = true;
+		const auto spawned                      = SpawnSelf("--sleep", "30");
+		SpawnState().getpid_error               = 0;
+		SpawnState().getpid_fails_children_only = false;
+		bool      ok = Expect(spawned.result == EIO && spawned.pid == -1 && !spawned.pidfd.Valid(),
+		                      "an unexpected pidfd_getpid failure fails the spawn");
+		siginfo_t info{};
+		ok &= Expect(waitid(P_ALL, 0, &info, WEXITED | WNOHANG) == -1 && errno == ECHILD,
+		             "the running child is stopped and reaped before the spawn fails");
+		return ok;
+	}
+
 	// A PAM application may run with stdio closed; the pidfd still stays clear of it.
 	auto TestPidfdAboveClosedStdio() -> bool {
 		const pid_t tester = fork();
@@ -203,11 +256,15 @@ namespace {
 	}
 #endif
 
-	// Child modes: exit with a code, or check that a descriptor is open.
+	// Child modes: exit with a code, sleep for some seconds, or check that a descriptor is open.
 	// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 	auto RunChildMode(std::string_view mode, std::string_view argument) -> int {
 		if (mode == "--exit") {
 			return std::stoi(std::string(argument));
+		}
+		if (mode == "--sleep") {
+			(void)sleep(static_cast<unsigned int>(std::stoi(std::string(argument))));
+			return EXIT_SUCCESS;
 		}
 		if (mode == "--check-fd") {
 			return fcntl(std::stoi(std::string(argument)), F_GETFD) >= 0 ? EXIT_SUCCESS
@@ -230,6 +287,8 @@ auto main(int argc, char **argv) -> int {
 	ok &= TestMissingPath();
 #ifdef HOWDY_HAVE_PIDFD_SPAWN
 	ok &= TestEnosysFallsBack();
+	ok &= TestGetpidUnavailableFallsBack();
+	ok &= TestGetpidFailureStopsChild();
 	ok &= TestPidfdAboveClosedStdio();
 #endif
 	return ok ? 0 : 1;
