@@ -28,6 +28,12 @@ serialization behavior.
 → staged commit/exchange → rollback/cleanup → durability. Keep this transaction cohesive; do not
 split it for LOC.
 
+A model path is only ever absent or a committed model. Writers never create a placeholder: an update
+exchanges the staged file with the model (`RENAME_EXCHANGE`), and a first model is linked in with
+`RENAME_NOREPLACE`, which reports a path filled since the open as `kModelChanged`. A crash leaves at
+most a staged temp file, which the next write removes. An empty model file is therefore invalid
+storage everywhere.
+
 Writers lock only `<models_dir>.lock` (`LockModelNamespace`), a root-only `0600` file beside the
 models directory, and check it is a regular, root-owned, single-link file that no group or other
 user can open. Never lock the models directory or a model file: `flock` needs only a readable

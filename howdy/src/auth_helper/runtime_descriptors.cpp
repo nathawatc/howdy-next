@@ -91,12 +91,10 @@ namespace howdy::native::auth_helper {
 				opened->model_message = security.error_message;
 				return;
 			}
-			// A writer creates a first model as an empty file and exchanges the model in at
-			// commit, so an empty file is an enrollment not yet committed: no model yet, as the
-			// writer that created it reads it too. Compare would reject it as unparsable. An empty
-			// file a crashed writer left behind also reads as missing here, though the next writer
-			// rejects it as unparsable until it is removed. Committed models are never truncated,
-			// so a non-empty file stays one.
+			// No writer leaves an empty model: a first model is linked in whole at commit, and
+			// commits never truncate. An empty file is damaged storage, such as a placeholder an
+			// older version left behind, and is reported here by name rather than sent to
+			// compare, which could only call it unparsable.
 			struct stat model_stat{};
 			if (fstat(model.Get(), &model_stat) != 0) {
 				const int error_number = errno;
@@ -107,7 +105,8 @@ namespace howdy::native::auth_helper {
 				return;
 			}
 			if (model_stat.st_size == 0) {
-				opened->model_state = ModelState::kMissing;
+				opened->model_state   = ModelState::kInvalidStorage;
+				opened->model_message = "User model file is empty: " + readiness.path.string();
 				return;
 			}
 			opened->model_state = ModelState::kReady;

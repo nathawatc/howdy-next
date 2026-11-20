@@ -107,15 +107,16 @@ auto RunAuthHelperDescriptorTests(const fs::path &temp_root) -> bool {
 	}
 	ok &= Expect(unlink(link_path.c_str()) == 0, "remove opener model hard link");
 
-	// A first enrollment in progress: the writer has created the file but not committed it.
-	const auto pending = root / "models" / "carol.dat";
-	ok &= Expect(WriteFile(pending, "") && chmod(pending.c_str(), 0600) == 0,
-	             "create an empty model, as a first enrollment does");
+	// No writer produces an empty model; one is left over, for example by an older version.
+	const auto stranded = root / "models" / "carol.dat";
+	ok &= Expect(WriteFile(stranded, "") && chmod(stranded.c_str(), 0600) == 0,
+	             "create an empty model, as an older version could leave behind");
 	{
 		const auto opened = open_for("carol");
-		ok &= Expect(opened.ok && opened.model_state == ModelState::kMissing &&
-		                 !opened.model.Valid() && opened.model_message.empty(),
-		             "opener reports an empty model as missing, not ready");
+		ok &= Expect(opened.ok && opened.model_state == ModelState::kInvalidStorage &&
+		                 !opened.model.Valid() && opened.model_message.contains("empty") &&
+		                 opened.model_message.contains(stranded.string()),
+		             "opener reports an empty model as invalid storage, by name");
 	}
 
 	fs::remove_all(root / "models", ec);

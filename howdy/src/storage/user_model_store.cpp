@@ -109,48 +109,70 @@ namespace howdy::native {
 			       SameFileIdentity(fd_stat, path_stat);
 		}
 
-		enum class ExchangeResult : std::uint8_t {
+		enum class RenameMode : std::uint8_t {
+			// Swap two existing paths (RENAME_EXCHANGE).
+			kExchange,
+			// Link a new path in only if nothing is there yet (RENAME_NOREPLACE).
+			kNoReplace,
+		};
+
+		enum class RenameResult : std::uint8_t {
 			kSuccess,
 			kFailed,
 			kUnsupported,
+			kDestinationExists,
 		};
 
-		auto ExchangeResultForErrno(int error_number) -> ExchangeResult {
+		auto RenameResultForErrno(int error_number) -> RenameResult {
+			if (error_number == EEXIST) {
+				return RenameResult::kDestinationExists;
+			}
 			if (error_number == ENOSYS || error_number == EINVAL || error_number == EOPNOTSUPP) {
-				return ExchangeResult::kUnsupported;
+				return RenameResult::kUnsupported;
 			}
 #ifdef ENOTSUP
 			if (error_number == ENOTSUP) {
-				return ExchangeResult::kUnsupported;
+				return RenameResult::kUnsupported;
 			}
 #endif
-			return ExchangeResult::kFailed;
+			return RenameResult::kFailed;
 		}
 
-		auto ExchangePaths(const std::filesystem::path &left, const std::filesystem::path &right,
-		                   bool is_rollback) -> ExchangeResult {
-			auto const &hooks = user_model_store_test_hooks::Current();
-			const auto  injected_errno =
-			    is_rollback ? hooks.rollback_exchange_errno : hooks.exchange_errno;
+		// renameat2 in `mode`. A test hook's `injected_errno` stands in for the call.
+		auto RenamePaths(const std::filesystem::path &from, const std::filesystem::path &to,
+		                 RenameMode mode, std::optional<int> injected_errno) -> RenameResult {
 			if (injected_errno.has_value()) {
 				errno = *injected_errno;
-				return ExchangeResultForErrno(errno);
+				return RenameResultForErrno(errno);
 			}
 
-#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE)
+#if defined(SYS_renameat2) && defined(RENAME_EXCHANGE) && defined(RENAME_NOREPLACE)
+			const unsigned int flags =
+			    mode == RenameMode::kExchange ? RENAME_EXCHANGE : RENAME_NOREPLACE;
 			if (RetryOnEintr([&] -> decltype(syscall(0)) {
-				    return syscall(SYS_renameat2, AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(),
-					               RENAME_EXCHANGE);
+				    return syscall(SYS_renameat2, AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(),
+					               flags);
 			    }) != 0) {
-				return ExchangeResultForErrno(errno);
+				return RenameResultForErrno(errno);
 			}
-			return ExchangeResult::kSuccess;
+			return RenameResult::kSuccess;
 #else
-			(void)left;
-			(void)right;
+			(void)from;
+			(void)to;
+			(void)mode;
 			errno = ENOSYS;
-			return ExchangeResult::kUnsupported;
+			return RenameResult::kUnsupported;
 #endif
+		}
+
+		auto FailedRenameCommitResult(RenameResult result) -> AtomicFileCommitResult {
+			if (result == RenameResult::kUnsupported) {
+				return AtomicFileCommitResult::kAtomicExchangeUnsupported;
+			}
+			if (result == RenameResult::kDestinationExists) {
+				return AtomicFileCommitResult::kDestinationExists;
+			}
+			return AtomicFileCommitResult::kNotCommitted;
 		}
 
 		auto CleanupStaleWriteArtifacts(const std::filesystem::path &path) -> bool {
@@ -166,17 +188,40 @@ namespace howdy::native {
 			return !ec;
 		}
 
+		// Links a first model in. RENAME_NOREPLACE fails rather than replace a path another
+		// actor has filled since the open, so nothing but a committed model ever appears there.
+		auto LinkStagedModel(StagedFile &staged, const std::filesystem::path &path)
+		    -> AtomicFileCommitResult {
+			auto const &hooks = user_model_store_test_hooks::Current();
+			const auto  link_result =
+			    RenamePaths(staged.path, path, RenameMode::kNoReplace, hooks.create_errno);
+			if (link_result != RenameResult::kSuccess) {
+				CleanupStagedFile(staged);
+				return FailedRenameCommitResult(link_result);
+			}
+			staged.path.clear();
+			const bool parent_synced = !hooks.fail_parent_sync && SyncParentDirectory(path);
+			return parent_synced ? AtomicFileCommitResult::kCommitted
+			                     : AtomicFileCommitResult::kCommittedSyncFailed;
+		}
+
+		// Commits `document` at `path`. With `opened_fd`, the model it names is exchanged for
+		// the new one. Without one (-1), no model exists yet and the new one is linked in.
 		auto WriteModelsAtomically(const std::filesystem::path      &path,
 		                           const user_model_codec::Document &document, int opened_fd)
 		    -> AtomicFileCommitResult {
+			const bool creating   = opened_fd < 0;
 			const auto serialized = user_model_codec::SerializeDocument(document);
 			if (!serialized.has_value() ||
 			    serialized->size() > user_model_limits::kMaxUserModelFileBytes ||
 			    !CleanupStaleWriteArtifacts(path)) {
 				return AtomicFileCommitResult::kNotCommitted;
 			}
+			// A first model takes the default owner and mode, never those of a file that
+			// appeared at the path since the open.
 			auto staged = PrepareStagedFile(path, kUserModelTempPrefix, kUserModelFileMode,
-			                                StagedFileMetadataPolicy::kPreserveExisting,
+			                                creating ? StagedFileMetadataPolicy::kUseDefaultMode
+			                                         : StagedFileMetadataPolicy::kPreserveExisting,
 			                                StagedFileParentPolicy::kRequireExisting);
 			if (!staged.has_value()) {
 				return AtomicFileCommitResult::kNotCommitted;
@@ -193,7 +238,7 @@ namespace howdy::native {
 			if (hooks.before_write_commit) {
 				hooks.before_write_commit(path);
 			}
-			if (!PathIdentifiesFd(path, opened_fd)) {
+			if (!creating && !PathIdentifiesFd(path, opened_fd)) {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
@@ -204,15 +249,18 @@ namespace howdy::native {
 				CleanupStagedFile(*staged);
 				return AtomicFileCommitResult::kNotCommitted;
 			}
-			const auto exchange_result = ExchangePaths(staged->path, path, false);
-			if (exchange_result != ExchangeResult::kSuccess) {
+			if (creating) {
+				return LinkStagedModel(*staged, path);
+			}
+			const auto exchange_result =
+			    RenamePaths(staged->path, path, RenameMode::kExchange, hooks.exchange_errno);
+			if (exchange_result != RenameResult::kSuccess) {
 				CleanupStagedFile(*staged);
-				return exchange_result == ExchangeResult::kUnsupported
-				           ? AtomicFileCommitResult::kAtomicExchangeUnsupported
-						   : AtomicFileCommitResult::kNotCommitted;
+				return FailedRenameCommitResult(exchange_result);
 			}
 			if (!PathIdentifiesFd(staged->path, opened_fd)) {
-				if (ExchangePaths(staged->path, path, true) == ExchangeResult::kSuccess) {
+				if (RenamePaths(staged->path, path, RenameMode::kExchange,
+				                hooks.rollback_exchange_errno) == RenameResult::kSuccess) {
 					CleanupStagedFile(*staged);
 					return AtomicFileCommitResult::kNotCommitted;
 				}
@@ -256,8 +304,8 @@ namespace howdy::native {
 
 		struct OpenedUserModelFile {
 			ScopedFileLock namespace_lock;
-			ScopedFd       file;
-			bool           created_empty_file = false;
+			// Not valid when no model exists and the caller allowed that.
+			ScopedFd file;
 		};
 
 		// `<models_dir>.lock`, beside the models directory rather than inside it, so nothing
@@ -305,21 +353,18 @@ namespace howdy::native {
 			return ScopedFileLock(std::move(fd));
 		}
 
-		auto LockNamespaceAndOpenModelFile(const std::filesystem::path &path,
-		                                   bool                         create_if_missing)
+		// Never creates the model: a first model is linked in whole at commit.
+		auto LockNamespaceAndOpenModelFile(const std::filesystem::path &path, bool allow_missing)
 		    -> std::optional<OpenedUserModelFile> {
 			auto namespace_lock = LockModelNamespace(path);
 			if (!namespace_lock.has_value()) {
 				return std::nullopt;
 			}
 			ScopedFd fd(open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW));
-			bool     created_empty_file = false;
-			if (!fd.Valid() && errno == ENOENT && create_if_missing) {
-				fd.Reset(open(path.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-				              kUserModelFileMode));
-				created_empty_file = fd.Valid();
-			}
 			if (!fd.Valid()) {
+				if (errno == ENOENT && allow_missing) {
+					return OpenedUserModelFile{.namespace_lock = std::move(*namespace_lock)};
+				}
 				return std::nullopt;
 			}
 			struct stat opened_file{};
@@ -329,10 +374,14 @@ namespace howdy::native {
 			}
 
 			return OpenedUserModelFile{
-			    .namespace_lock     = std::move(*namespace_lock),
-			    .file               = std::move(fd),
-			    .created_empty_file = created_empty_file,
+			    .namespace_lock = std::move(*namespace_lock),
+			    .file           = std::move(fd),
 			};
+		}
+
+		auto PathIsAbsent(const std::filesystem::path &path) -> bool {
+			struct stat path_stat{};
+			return lstat(path.c_str(), &path_stat) != 0 && errno == ENOENT;
 		}
 
 	}  // namespace
@@ -357,22 +406,10 @@ namespace howdy::native {
 
 	UserModelStoreTransaction::UserModelStoreTransaction(std::filesystem::path path,
 	                                                     ScopedFileLock        namespace_lock,
-	                                                     ScopedFd file, bool created_empty_file)
+	                                                     ScopedFd              file)
 	    : path_(std::move(path))
 	    , namespace_lock_(std::move(namespace_lock))
-	    , file_(std::move(file))
-	    , created_empty_file_(created_empty_file) {}
-
-	UserModelStoreTransaction::~UserModelStoreTransaction() {
-		if (!created_empty_file_ || completed_ || !PathMatchesOpenedFile()) {
-			return;
-		}
-		struct stat opened_file{};
-		if (fstat(file_.Get(), &opened_file) != 0 || opened_file.st_size != 0) {
-			return;
-		}
-		(void)RemoveOpenedFile(path_, file_.Get());
-	}
+	    , file_(std::move(file)) {}
 
 	auto UserModelStoreTransaction::Path() const -> const std::filesystem::path & {
 		return path_;
@@ -397,22 +434,15 @@ namespace howdy::native {
 
 	auto UserModelStoreTransaction::WriteDocument(const user_model_codec::Document &document) const
 	    -> AtomicFileCommitResult {
-		if (!PathMatchesOpenedFile()) {
+		// Without a file, no model existed when the transaction began: create one.
+		if (file_.Valid() && !PathMatchesOpenedFile()) {
 			return AtomicFileCommitResult::kNotCommitted;
 		}
-		const auto result = WriteModelsAtomically(path_, document, file_.Get());
-		if (AtomicFileMayHaveCommitted(result)) {
-			completed_ = true;
-		}
-		return result;
+		return WriteModelsAtomically(path_, document, file_.Valid() ? file_.Get() : -1);
 	}
 
 	auto UserModelStoreTransaction::RemoveFile() const -> AtomicFileCommitResult {
-		const auto result = RemoveOpenedFile(path_, file_.Get());
-		if (AtomicFileMayHaveCommitted(result)) {
-			completed_ = true;
-		}
-		return result;
+		return RemoveOpenedFile(path_, file_.Get());
 	}
 
 	auto UserModelStore::Resolve(const std::string &user, bool create_directory,
@@ -516,7 +546,7 @@ namespace howdy::native {
 
 	auto UserModelStore::LoadDocumentFromFd(int fd, const std::filesystem::path &path,
 	                                        const UserModelExpectations &expectations,
-	                                        const OpenedModelReadPolicy &policy)
+	                                        std::optional<uid_t>         owner_uid)
 	    -> user_model_codec::Document {
 		struct stat opened_file{};
 		if (fd < 0 || fstat(fd, &opened_file) != 0) {
@@ -525,16 +555,12 @@ namespace howdy::native {
 				                 "Failed to inspect opened user model file: " + path.string()),
 			};
 		}
-		if (!OpenedModelFileIsSecure(opened_file, policy.owner_uid)) {
+		if (!OpenedModelFileIsSecure(opened_file, owner_uid)) {
 			return user_model_codec::Document{
 			    StoreListFailure(UserModelStatus::kInsecurePath,
 				                 "Opened user model file failed security validation: " +
 				                     path.string()),
 			};
-		}
-		if (opened_file.st_size == 0 && policy.treat_empty_as_no_model) {
-			return user_model_codec::Document(
-			    UserModelListResult{.status = UserModelStatus::kNoModel});
 		}
 		if (opened_file.st_size < 0 ||
 		    std::cmp_greater(opened_file.st_size, user_model_limits::kMaxUserModelFileBytes)) {
@@ -580,11 +606,7 @@ namespace howdy::native {
 				                 "Failed to open user model file: " + path.string()),
 			};
 		}
-		return LoadDocumentFromFd(input.Get(), path, expectations,
-		                          {
-		                              .owner_uid               = DefaultSecureOwnerUid(),
-		                              .treat_empty_as_no_model = false,
-		                          });
+		return LoadDocumentFromFd(input.Get(), path, expectations, DefaultSecureOwnerUid());
 	}
 
 	auto UserModelStore::LoadDocument(const std::string                            &user,
@@ -656,23 +678,25 @@ namespace howdy::native {
 			        StoreListFailure(secured_path.status, secured_path.error_message)),
 			};
 		}
-		if (!PathIdentifiesFd(path_result.path, opened_model->file.Get())) {
+		// The path must still name the opened model, or still be free when there was none.
+		const bool have_model = opened_model->file.Valid();
+		if (have_model ? !PathIdentifiesFd(path_result.path, opened_model->file.Get())
+		               : !PathIsAbsent(path_result.path)) {
 			return UserModelStoreMutationResult{
 			    .document = user_model_codec::Document(StoreListFailure(
 			        UserModelStatus::kModelChanged, std::string(kUserModelChangedMessage))),
 			};
 		}
-		auto document =
-		    LoadDocumentFromFd(opened_model->file.Get(), path_result.path,
-			                   {.backend = {}, .model = {}, .strict_shape = true},
-			                   {
-		                           .owner_uid               = DefaultSecureOwnerUid(),
-		                           .treat_empty_as_no_model = opened_model->created_empty_file,
-		                       });
+		auto document = have_model
+		                    ? LoadDocumentFromFd(opened_model->file.Get(), path_result.path,
+		                                         {.backend = {}, .model = {}, .strict_shape = true},
+		                                         DefaultSecureOwnerUid())
+		                    : user_model_codec::Document(
+		                          UserModelListResult{.status = UserModelStatus::kNoModel});
 		return UserModelStoreMutationResult{
-		    .transaction = UserModelStoreTransaction(
-		        path_result.path, std::move(opened_model->namespace_lock),
-		        std::move(opened_model->file), opened_model->created_empty_file),
+		    .transaction =
+		        UserModelStoreTransaction(path_result.path, std::move(opened_model->namespace_lock),
+				                          std::move(opened_model->file)),
 		    .document = std::move(document),
 		};
 	}
@@ -732,10 +756,10 @@ namespace howdy::native {
 			};
 		}
 		return UserModelStoreTransactionResult{
-		    .status      = UserModelStatus::kOk,
-		    .transaction = UserModelStoreTransaction(
-		        path_result.path, std::move(opened_model->namespace_lock),
-		        std::move(opened_model->file), opened_model->created_empty_file),
+		    .status = UserModelStatus::kOk,
+		    .transaction =
+		        UserModelStoreTransaction(path_result.path, std::move(opened_model->namespace_lock),
+				                          std::move(opened_model->file)),
 		};
 	}
 

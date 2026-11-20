@@ -18,6 +18,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <stdlib.h>
@@ -213,6 +214,129 @@ namespace howdy::test::user_models {
 					             "restore models directory after failed-write checks");
 			    },
 			    "atomic write failure checks while running as root");
+			return ok;
+		}
+
+		// A first enrollment creates nothing at the model path before it commits, so whichever
+		// step fails or returns early, the path is left absent.
+		auto ExpectFirstEnrollmentFailures(const std::filesystem::path            &models_dir,
+		                                   const howdy::native::NewUserModelEntry &entry) -> bool {
+			namespace fs = std::filesystem;
+			using howdy::native::UserModelStatus;
+			using howdy::native::user_model_store_test_hooks::Hooks;
+			using howdy::native::user_model_store_test_hooks::ScopedHooks;
+
+			bool            ok = true;
+			std::error_code ec;
+			const auto      temp_root  = models_dir.parent_path();
+			const auto      model_path = models_dir / "first-user.dat";
+			const auto      append     = [&] -> howdy::native::UserModelMutationResult {
+				return howdy::native::AppendUserModelEntry("first-user", entry, {temp_root});
+			};
+			const auto expect_nothing_left = [&](const std::string &description) -> void {
+				struct stat path_stat{};
+				ok &= Expect(lstat(model_path.c_str(), &path_stat) != 0 && errno == ENOENT,
+				             description + ": nothing at the model path");
+				ok &= Expect(!HasStagedModelFile(models_dir), description + ": no staged file");
+			};
+			const auto expect_failure = [&](Hooks hooks, UserModelStatus status,
+			                                const std::string &description) -> void {
+				const ScopedHooks scoped(std::move(hooks));
+				ok &= Expect(append().status == status, description + ": status");
+				expect_nothing_left(description);
+			};
+
+			expect_failure({.fail_write = true}, UserModelStatus::kWriteFailed,
+			               "first enrollment staged write failure");
+			expect_failure({.fail_fsync = true}, UserModelStatus::kWriteFailed,
+			               "first enrollment staged fsync failure");
+			expect_failure({.create_errno = EIO}, UserModelStatus::kWriteFailed,
+			               "first enrollment link failure");
+			for (const auto error_number : {ENOSYS, EINVAL, EOPNOTSUPP}) {
+				expect_failure({.create_errno = error_number},
+				               UserModelStatus::kAtomicExchangeUnsupported,
+				               "first enrollment without RENAME_NOREPLACE support");
+			}
+			// The early returns between the open and the transaction used to strand an empty
+			// placeholder: a directory that fails its second check, and a path that changed.
+			const Hooks insecure_directory{
+			    .after_lock_before_revalidate = [&](const fs::path &) -> void {
+				    ok &= Expect(chmod(models_dir.c_str(), 0777) == 0,
+					             "make the models directory world-writable");
+			    },
+			};
+			expect_failure(insecure_directory, UserModelStatus::kInsecurePath,
+			               "first enrollment into a directory that fails its second check");
+			ok &= Expect(chmod(models_dir.c_str(), 0750) == 0, "restore the models directory");
+			{
+				const std::string intruder = "intruder";
+				const ScopedHooks hooks({
+				    .after_lock_before_revalidate = [&](const fs::path &path) -> void {
+					    ok &=
+					        Expect(WriteFile(path, intruder), "fill the model path after the open");
+				    },
+				});
+				ok &= Expect(append().status == UserModelStatus::kModelChanged,
+				             "first enrollment rejects a path filled after the open");
+				ok &= Expect(ReadFile(model_path) == intruder && !HasStagedModelFile(models_dir),
+				             "a path filled after the open is left as it was");
+				fs::remove(model_path, ec);
+			}
+			{
+				// RENAME_NOREPLACE refuses a path filled after every check has passed.
+				const std::string intruder = "late intruder";
+				const ScopedHooks hooks({
+				    .after_write_identity_check = [&](const fs::path &path) -> void {
+					    ok &=
+					        Expect(WriteFile(path, intruder), "fill the model path before commit");
+				    },
+				});
+				ok &= Expect(append().status == UserModelStatus::kModelChanged,
+				             "first enrollment commit refuses to replace a new file");
+				ok &= Expect(ReadFile(model_path) == intruder && !HasStagedModelFile(models_dir),
+				             "a refused first enrollment leaves the new file and no staged file");
+				fs::remove(model_path, ec);
+			}
+			{
+				const ScopedHooks hooks({.fail_parent_sync = true});
+				const auto        result = append();
+				const auto listed = howdy::native::ListUserModelEntries("first-user", entry.backend,
+				                                                        entry.model, {temp_root});
+				ok &=
+				    Expect(result.status == UserModelStatus::kDurabilityUncertain,
+					       "first enrollment reports a parent sync failure as possibly committed");
+				ok &= Expect(listed.status == UserModelStatus::kOk && listed.entries.size() == 1,
+				             "first enrollment with a parent sync failure is committed");
+				fs::remove(model_path, ec);
+			}
+			{
+				bool              absent_before_commit = false;
+				const ScopedHooks hooks({
+				    .before_write_commit = [&](const fs::path &path) -> void {
+					    struct stat path_stat{};
+					    absent_before_commit =
+					        lstat(path.c_str(), &path_stat) != 0 && errno == ENOENT;
+				    },
+				});
+				ok &= Expect(append().status == UserModelStatus::kOk, "first enrollment succeeds");
+				ok &= Expect(absent_before_commit,
+				             "first enrollment leaves the model path absent until it commits");
+				fs::remove(model_path, ec);
+			}
+			{
+				// An empty file, such as an older version's placeholder, is invalid storage.
+				ok &= Expect(WriteFile(model_path, "") && chmod(model_path.c_str(), 0600) == 0,
+				             "strand an empty model file");
+				ok &= Expect(append().status == UserModelStatus::kParseError,
+				             "append rejects a stranded empty model file");
+				ok &= Expect(howdy::native::ListUserModelEntries("first-user", entry.backend,
+				                                                 entry.model, {temp_root})
+				                     .status == UserModelStatus::kParseError,
+				             "list rejects a stranded empty model file");
+				ok &= Expect(fs::exists(model_path) && fs::file_size(model_path, ec) == 0,
+				             "a rejected append leaves the empty model file unchanged");
+				fs::remove(model_path, ec);
+			}
 			return ok;
 		}
 
@@ -782,8 +906,9 @@ namespace howdy::test::user_models {
 			ok &= Expect(result.status == howdy::native::UserModelStatus::kInvalidShape,
 			             "invalid first append is rejected");
 			ok &= Expect(!fs::exists(rejected_path),
-			             "invalid first append removes empty model artifact");
+			             "invalid first append leaves nothing at the model path");
 		}
+		ok &= ExpectFirstEnrollmentFailures(created_models_dir, first_entry);
 		fs::remove_all(created_models_dir, ec);
 		ec.clear();
 		setenv("HOWDY_USER_MODELS_DIR", models_dir.c_str(), 1);

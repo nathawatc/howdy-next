@@ -19,6 +19,8 @@ namespace howdy::native::user_model_store_test_hooks {
 		bool                                               fail_delete_unlink = false;
 		std::optional<int>                                 exchange_errno;
 		std::optional<int>                                 rollback_exchange_errno;
+		// Stands in for the RENAME_NOREPLACE that links a first model in.
+		std::optional<int> create_errno;
 	};
 
 	[[nodiscard]] auto Current() -> Hooks &;

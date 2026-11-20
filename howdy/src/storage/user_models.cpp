@@ -71,6 +71,9 @@ namespace howdy::native {
 				    "Cannot update user model file: filesystem or kernel does not support required "
 				    "atomic model-file exchange; no changes were made");
 			}
+			if (result == AtomicFileCommitResult::kDestinationExists) {
+				return ModelChangedFailure();
+			}
 			if (result == AtomicFileCommitResult::kStateUncertain) {
 				return UserModelMutationResult{
 				    .status        = UserModelStatus::kCommitStateUncertain,
@@ -368,11 +371,7 @@ namespace howdy::native {
 		}
 		auto document = UserModelStore::LoadDocumentFromFd(
 		    model_fd, display_path,
-		    {.backend = expected_backend, .model = {}, .strict_shape = false},
-		    {
-		        .owner_uid               = owner_uid,
-		        .treat_empty_as_no_model = false,
-		    });
+		    {.backend = expected_backend, .model = {}, .strict_shape = false}, owner_uid);
 		return FlattenLoadedModels(document);
 	}
 
