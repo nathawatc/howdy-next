@@ -118,7 +118,7 @@ target_link_libraries(
  PRIVATE howdy_runtime_descriptor_message
 )
 
-if(HOWDY_ENABLE_FUZZING)
+if(HOWDY_BUILD_FUZZERS)
   # The decoder is compiled in, so libFuzzer's coverage instrumentation reaches it.
   add_executable(
   howdy_runtime_descriptor_message_fuzzer

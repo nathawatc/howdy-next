@@ -108,14 +108,35 @@ option(
  "Enable installed PAM/setuid end-to-end tests"
  OFF
 )
-option(
- HOWDY_ENABLE_FUZZING
- "Build libFuzzer targets (requires Clang)"
- OFF
+set(HOWDY_ENABLE_FUZZING
+    AUTO
+    CACHE STRING "Build libFuzzer targets: AUTO (when libFuzzer links), ON or OFF"
 )
-if(HOWDY_ENABLE_FUZZING AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  message(FATAL_ERROR "HOWDY_ENABLE_FUZZING requires Clang (libFuzzer)")
+set_property(CACHE HOWDY_ENABLE_FUZZING PROPERTY STRINGS AUTO ON OFF)
+set(HOWDY_BUILD_FUZZERS OFF)
+if(BUILD_TESTING AND NOT HOWDY_ENABLE_FUZZING STREQUAL "OFF")
+  # libFuzzer ships with Clang; probe that a fuzz target links rather than trusting the ID.
+  include(CheckCXXSourceCompiles)
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+  set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
+  check_cxx_source_compiles(
+   [=[
+    #include <cstddef>
+    #include <cstdint>
+    extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t *, std::size_t) { return 0; }
+   ]=]
+   HOWDY_HAVE_LIBFUZZER
+  )
+  cmake_pop_check_state()
+  if(HOWDY_HAVE_LIBFUZZER)
+    set(HOWDY_BUILD_FUZZERS ON)
+  elseif(NOT HOWDY_ENABLE_FUZZING STREQUAL "AUTO")
+    # Anything but AUTO here was an explicit request.
+    message(FATAL_ERROR "HOWDY_ENABLE_FUZZING=ON requires a compiler with libFuzzer (Clang)")
+  endif()
 endif()
+message(STATUS "Howdy libFuzzer targets: ${HOWDY_BUILD_FUZZERS}")
 
 if(HOWDY_USE_CCACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
   find_program(HOWDY_CCACHE_PROGRAM ccache)
